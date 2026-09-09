@@ -19,6 +19,11 @@ import org.terasology.engine.core.SimpleUri;
 import org.terasology.engine.entitySystem.entity.EntityRef;
 import org.terasology.engine.logic.spawner.FixedSpawner;
 import org.terasology.engine.registry.In;
+import org.terasology.engine.rendering.sphere.SphereProjection;
+import org.terasology.engine.rendering.sphere.SphereProjectionProvider;
+import org.terasology.engine.rendering.world.ChunkVisibilityPolicy;
+import org.terasology.cubeworlds.rendering.CubeSphereProjection;
+import org.terasology.cubeworlds.rendering.SphericalChunkVisibilityPolicy;
 import org.terasology.engine.world.generation.BaseFacetedWorldGenerator;
 import org.terasology.engine.world.generation.WorldBuilder;
 import org.terasology.engine.world.generator.RegisterWorldGenerator;
@@ -35,7 +40,7 @@ import org.terasology.engine.world.generator.plugin.WorldGeneratorPluginLibrary;
  */
 @RegisterWorldGenerator(id = "cubeworld", displayName = "Cube World",
         description = "Six faces of a cube, laid out as a net and rendered as a sphere")
-public class CubeWorldGenerator extends BaseFacetedWorldGenerator {
+public class CubeWorldGenerator extends BaseFacetedWorldGenerator implements SphereProjectionProvider {
 
     @In
     private WorldGeneratorPluginLibrary worldGeneratorPluginLibrary;
@@ -58,6 +63,9 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator {
         return geometry;
     }
 
+    private CubeSphereProjection projection;
+    private SphericalChunkVisibilityPolicy visibilityPolicy;
+
     @Override
     public void initialize() {
         // Published before the render graph is built, so generation and rendering read one and the
@@ -66,6 +74,28 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator {
             context.put(CubeGeometry.class, geometry);
         }
         super.initialize();
+    }
+
+    /**
+     * The projection and the culling policy come as a pair: drawing the world bent while culling it
+     * flat would leave the renderer half convinced, and the seam between the two beliefs shows up as
+     * chunks winking out at the horizon.
+     */
+    @Override
+    public synchronized SphereProjection getSphereProjection() {
+        if (projection == null) {
+            projection = new CubeSphereProjection(geometry, context);
+        }
+        return projection;
+    }
+
+    @Override
+    public synchronized ChunkVisibilityPolicy getChunkVisibilityPolicy() {
+        if (visibilityPolicy == null) {
+            visibilityPolicy = new SphericalChunkVisibilityPolicy(
+                    (CubeSphereProjection) getSphereProjection());
+        }
+        return visibilityPolicy;
     }
 
     @Override
