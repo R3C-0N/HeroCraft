@@ -1,0 +1,24 @@
+{
+    "id": "CubeWorlds",
+    "version": "1.0.0-SNAPSHOT",
+    "author": "R3C-0N",
+    "displayName": "CubeWorlds",
+    "description": "Cube-net world generation, rendered as a sphere.",
+    "dependencies": [
+        {
+            "id": "BiomesAPI",
+            "minVersion": "4.1.0"
+        },
+        {
+            "id": "CoreAssets",
+            "minVersion": "2.1.0-SNAPSHOT"
+        },
+        {
+            "id": "CoreWorlds",
+            "minVersion": "2.1.0-SNAPSHOT"
+        }
+    ],
+    "serverSideOnly": false,
+    "isWorld": true,
+    "defaultWorldGenerator": "CubeWorlds:cubeworld"
+}
