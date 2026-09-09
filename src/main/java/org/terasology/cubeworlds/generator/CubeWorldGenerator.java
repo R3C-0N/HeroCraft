@@ -12,6 +12,7 @@ import org.terasology.core.world.generator.rasterizers.SunlightRasterizer;
 import org.terasology.core.world.generator.rasterizers.TreeRasterizer;
 import org.terasology.cubeworlds.generator.facetProviders.CubeBiomeProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeClimateProvider;
+import org.terasology.cubeworlds.generator.facetProviders.CubeRegionProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeSurfaceProvider;
 import org.terasology.cubeworlds.generator.rasterizers.CubeSolidRasterizer;
 import org.terasology.engine.context.Context;
@@ -110,6 +111,7 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator implements Sph
                 .addProvider(new SeaLevelProvider(geometry.seaLevel()))
                 .addProvider(new CubeSurfaceProvider(geometry))
                 .addProvider(new CubeClimateProvider(geometry))
+                .addProvider(new CubeRegionProvider(geometry))
                 .addProvider(new CubeBiomeProvider())
                 .addProvider(new SurfaceToDensityProvider())
                 .addProvider(new DefaultFloraProvider())

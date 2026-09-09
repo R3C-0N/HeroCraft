@@ -11,6 +11,7 @@ import org.terasology.cubeworlds.generator.CubeGeometry;
 import org.terasology.cubeworlds.generator.SphereSampler;
 import org.terasology.cubeworlds.generator.facetProviders.CubeBiomeProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeClimateProvider;
+import org.terasology.cubeworlds.generator.facetProviders.CubeRegionProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeSurfaceProvider;
 import org.terasology.core.world.generator.facetProviders.SeaLevelProvider;
 import org.terasology.cubeworlds.projection.ConformalCubeTable;
@@ -53,6 +54,7 @@ class BiomeCensusTest {
                 .addProvider(new SeaLevelProvider(geometry.seaLevel()))
                 .addProvider(new CubeSurfaceProvider(geometry))
                 .addProvider(new CubeClimateProvider(geometry))
+                .addProvider(new CubeRegionProvider(geometry))
                 .addProvider(new CubeBiomeProvider());
         builder.setSeed(0xC0FFEE);
         world = builder.build();
@@ -92,10 +94,20 @@ class BiomeCensusTest {
                     where == null ? "nowhere" : "at x=" + where[0] + " z=" + where[1]);
         }
 
-        for (CoreBiome expected : new CoreBiome[]{
-                CoreBiome.OCEAN, CoreBiome.SNOW, CoreBiome.FOREST, CoreBiome.PLAINS}) {
+        // Every biome the cascade can reach. SKY and UNDERGROUND are deliberately absent: the
+        // skies have no column and the deep underground is a volume rather than a column, so
+        // nothing assigns them and nothing should expect them. Every other value is a threshold,
+        // and a threshold nobody crosses is a silent failure.
+        for (CoreBiome expected : CoreBiome.values()) {
+            if (expected == CoreBiome.SKY || expected == CoreBiome.UNDERGROUND) {
+                continue;
+            }
             assertTrue(census.getOrDefault(expected, 0) > 0, expected.getDisplayName() + " exists nowhere");
         }
+
+        assertEquals(0, census.getOrDefault(CoreBiome.SKY, 0), "the skies were given a column");
+        assertEquals(0, census.getOrDefault(CoreBiome.UNDERGROUND, 0),
+                "the deep underground was named on the surface");
     }
 
     /**

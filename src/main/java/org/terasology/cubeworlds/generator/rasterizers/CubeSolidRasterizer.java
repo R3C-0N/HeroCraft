@@ -86,12 +86,23 @@ public class CubeSolidRasterizer implements ScalableWorldRasterizer {
             } else if (density > 0) {
                 chunk.setBlock(pos, biome.getBelowSurfaceBlock(worldPos, density));
             } else if (posY <= seaLevel) {
-                if (posY + scale > seaLevel && CoreBiome.SNOW == biome) {
-                    chunk.setBlock(pos, ice);
+                if (posY + scale > seaLevel && freezesOver(biome)) {
+                    // The caps carry their own ice, and they are the only ones who know which:
+                    // pack ice fractures, an ice shelf does not, and the plain snow biome has
+                    // neither. Asking the biome keeps that with the rest of the material.
+                    chunk.setBlock(pos, CoreBiome.SNOW == biome
+                            ? ice
+                            : biome.getSurfaceBlock(worldPos, seaLevel));
                 } else {
                     chunk.setBlock(pos, water);
                 }
             }
         }
     }
+
+    /** Whether the sea has a lid here. */
+    private static boolean freezesOver(Biome biome) {
+        return CoreBiome.SNOW == biome || CoreBiome.PACK_ICE == biome || CoreBiome.ICE_SHELF == biome;
+    }
+
 }
