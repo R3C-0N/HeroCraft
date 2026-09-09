@@ -11,11 +11,11 @@
         },
         {
             "id": "CoreAssets",
-            "minVersion": "2.1.0-SNAPSHOT"
+            "minVersion": "2.0.0"
         },
         {
             "id": "CoreWorlds",
-            "minVersion": "2.1.0-SNAPSHOT"
+            "minVersion": "2.0.0"
         }
     ],
     "serverSideOnly": false,
