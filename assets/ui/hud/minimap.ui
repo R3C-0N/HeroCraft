@@ -1,30 +1,90 @@
 {
     "type" : "MinimapHudElement",
     "id" : "minimap",
+    "skin" : "framed",
     "contents" : {
         "type" : "relativeLayout",
         "contents" : [
             {
-                "type" : "ColumnLayout",
-                "contents" : [
-                    {
-                        "type" : "MinimapGrid",
-                        "id" : "minimapGrid",
-                        "skin": "framed"
-                    },
-                    {
-                        "type" : "UISlider",
-                        "id" : "minimapOffsetSlider"
-                    }
-                ],
+                "type" : "MinimapGrid",
+                "id" : "minimapGrid",
                 "layoutInfo" : {
                     "use-content-width" : true,
                     "use-content-height" : true,
                     "position-left" : {
-                        "target" : "LEFT"
+                        "target" : "LEFT",
+                        "offset" : 12
                     },
                     "position-top" : {
+                        "target" : "TOP",
+                        "offset" : 12
+                    }
+                }
+            },
+            {
+                "type" : "UIBox",
+                "family" : "minimapOver",
+                "layoutInfo" : {
+                    "position-left" : {
+                        "widget" : "minimapGrid",
+                        "target" : "LEFT"
+                    },
+                    "position-right" : {
+                        "widget" : "minimapGrid",
+                        "target" : "RIGHT"
+                    },
+                    "position-top" : {
+                        "widget" : "minimapGrid",
                         "target" : "TOP"
+                    },
+                    "position-bottom" : {
+                        "widget" : "minimapGrid",
+                        "target" : "BOTTOM"
+                    }
+                }
+            },
+            {
+                "type" : "UIImage",
+                "image" : "engine:strapSmH",
+                "layoutInfo" : {
+                    "use-content-width" : true,
+                    "use-content-height" : true,
+                    "position-left" : {
+                        "widget" : "minimapGrid",
+                        "target" : "LEFT"
+                    },
+                    "position-vertical-center" : {
+                        "widget" : "minimapGrid"
+                    }
+                }
+            },
+            {
+                "type" : "UIImage",
+                "image" : "engine:strapSmH",
+                "layoutInfo" : {
+                    "use-content-width" : true,
+                    "use-content-height" : true,
+                    "position-right" : {
+                        "widget" : "minimapGrid",
+                        "target" : "RIGHT"
+                    },
+                    "position-vertical-center" : {
+                        "widget" : "minimapGrid"
+                    }
+                }
+            },
+            {
+                "type" : "UIImage",
+                "image" : "engine:strapSmV",
+                "layoutInfo" : {
+                    "use-content-width" : true,
+                    "use-content-height" : true,
+                    "position-bottom" : {
+                        "widget" : "minimapGrid",
+                        "target" : "BOTTOM"
+                    },
+                    "position-horizontal-center" : {
+                        "widget" : "minimapGrid"
                     }
                 }
             }

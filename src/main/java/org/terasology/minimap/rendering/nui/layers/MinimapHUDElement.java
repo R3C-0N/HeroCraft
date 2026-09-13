@@ -6,49 +6,36 @@ import org.joml.Vector3ic;
 import org.terasology.engine.entitySystem.entity.EntityRef;
 import org.terasology.engine.rendering.nui.layers.hud.CoreHudWidget;
 import org.terasology.engine.world.WorldProvider;
-import org.terasology.math.TeraMath;
 import org.terasology.minimap.overlays.MinimapOverlay;
 import org.terasology.nui.databinding.ReadOnlyBinding;
-import org.terasology.nui.widgets.UISlider;
 
 /**
- * The minimap container that arranges the actual minimap and the zoom slider
- * in a single HUD element.
+ * The minimap container: the map in its HUD frame. Zoom has no widget of its
+ * own; it follows the zoom key bindings.
  */
 public class MinimapHUDElement extends CoreHudWidget {
 
     private static final String MINIMAP_GRID_WIDGET_ID = "minimapGrid";
-    private static final String MINIMAP_ZOOM_SLIDER_WIDGET_ID = "minimapOffsetSlider";
+    private static final int MIN_ZOOM = -10;
+    private static final int MAX_ZOOM = 10;
 
-    private UISlider minimapZoomSlider;
     private MinimapGrid minimapGrid;
+    private int zoomLevel;
 
     @Override
     public void initialise() {
         minimapGrid = find(MINIMAP_GRID_WIDGET_ID, MinimapGrid.class);
-        minimapZoomSlider = find(MINIMAP_ZOOM_SLIDER_WIDGET_ID, UISlider.class);
-
-        final UISlider minimapOffsetSlider = find(MINIMAP_ZOOM_SLIDER_WIDGET_ID, UISlider.class);
-        minimapOffsetSlider.setValue(0);
-        minimapOffsetSlider.setMinimum(-10);
-        minimapOffsetSlider.setRange(20);
-        minimapOffsetSlider.setIncrement(1);
 
         minimapGrid.bindZoomFactor(new ReadOnlyBinding<Integer>() {
             @Override
             public Integer get() {
-                return (int) minimapOffsetSlider.getValue();
+                return zoomLevel;
             }
         });
     }
 
     public void changeZoom(int delta) {
-        float min = minimapZoomSlider.getMinimum();
-        float range = minimapZoomSlider.getRange();
-        float increment = minimapZoomSlider.getIncrement();
-        float oldValue = minimapZoomSlider.getValue();
-        float newValue = TeraMath.clamp(oldValue + delta * increment, min, min + range);
-        minimapZoomSlider.setValue(newValue);
+        zoomLevel = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoomLevel + delta));
     }
 
     public void updateLocation(Vector3ic worldLocation) {

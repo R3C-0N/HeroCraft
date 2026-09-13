@@ -37,7 +37,6 @@ import org.terasology.joml.geom.Rectanglei;
 import org.terasology.math.TeraMath;
 import org.terasology.minimap.MinimapIconComponent;
 import org.terasology.minimap.overlays.MinimapOverlay;
-import org.terasology.nui.Border;
 import org.terasology.nui.Canvas;
 import org.terasology.nui.Color;
 import org.terasology.nui.CoreWidget;
@@ -72,13 +71,23 @@ public class MinimapGrid extends CoreWidget {
      */
     private static final float ZOOM_DELTA = 0.25f;
 
+    /**
+     * Fond de la cuvette, `--surface-sunken` : pose sous chaque case, et seul
+     * visible la ou le monde n'est pas encore charge.
+     */
+    private static final Color SUNKEN = new Color(0x20120AFF);
+    /** `--sky-200` : eau d'un seul bloc. */
+    private static final Color WATER_SHALLOW = new Color(0x48C8F5FF);
+    /** `--sky-300` : eau de {@link #WATER_DEPTH_MAX} blocs et plus. */
+    private static final Color WATER_DEEP = new Color(0x1F7FC0FF);
+    private static final int WATER_DEPTH_MAX = 8;
+
     private Binding<EntityRef> targetEntityBinding = new DefaultBinding<>(EntityRef.NULL);
     private Binding<Integer> zoomFactorBinding = new DefaultBinding<>(0);
 
     private final Set<EntityRef> alivePlayers = new HashSet<EntityRef>();
 
     private Texture textureAtlas;
-    private TextureRegion questionMark;
 
     private Multimap<Vector2ic, Vector3i> dirtyBlocks = LinkedHashMultimap.create();
 
@@ -110,7 +119,6 @@ public class MinimapGrid extends CoreWidget {
 
     public MinimapGrid() {
         textureAtlas = Assets.getTexture("engine:terrain").get();
-        questionMark = Assets.getTextureRegion("engine:items#questionMark").get();
     }
 
     public void setHeightRange(int bottom, int top) {
@@ -322,15 +330,17 @@ public class MinimapGrid extends CoreWidget {
 
     @Override
     public Vector2i getPreferredContentSize(Canvas canvas, Vector2i sizeHint) {
-        Border border = canvas.getCurrentStyle().getBackgroundBorder();
-        Vector2i size = getPreferredContentSize();
-        int width = size.x + border.getTotalWidth();
-        int height = size.y + border.getTotalHeight();
-        return new Vector2i(width, height);
+        // la marge du skin est ajoutee par le canvas ; y ajouter la bordure du
+        // fond decalerait la carte dans son cadre
+        return getPreferredContentSize();
     }
 
+    /**
+     * La cuvette de l'artboard 2g : 200 px de haut dans un panneau de 320 px,
+     * dont le cadre slim prend 30 px de chaque cote.
+     */
     public Vector2i getPreferredContentSize() {
-        return new Vector2i(320, 200);
+        return new Vector2i(260, 200);
     }
 
     public void bindTargetEntity(Binding<EntityRef> binding) {
@@ -358,12 +368,15 @@ public class MinimapGrid extends CoreWidget {
     }
 
     private void renderCell(Canvas canvas, Rectanglei rect, Vector3i pos) {
+        // Fond opaque d'abord : le FBO part transparent, et une tuile translucide
+        // y laisserait voir le monde derriere le HUD.
+        canvas.drawFilledRectangle(rect, SUNKEN);
+
         Block block = worldProvider.getBlock(pos);
         if (isIgnored(block)) {
             do {
                 pos.y -= 1;
                 if (!worldProvider.isBlockRelevant(pos)) {
-                    canvas.drawTexture(questionMark, rect);
                     return;
                 }
                 block = worldProvider.getBlock(pos);
@@ -372,7 +385,6 @@ public class MinimapGrid extends CoreWidget {
             do {
                 pos.y += 1;
                 if (!worldProvider.isBlockRelevant(pos)) {
-                    canvas.drawTexture(questionMark, rect);
                     return;
                 }
                 block = worldProvider.getBlock(pos);
@@ -380,10 +392,19 @@ public class MinimapGrid extends CoreWidget {
             pos.y -= 1;
         }
 
+        Block surface = worldProvider.getBlock(pos);
+        if (surface.isWater()) {
+            // La tuile d'eau est un bleu-gris pale a 80 % d'alpha, pense pour
+            // etre teinte par le shader : sur la carte, elle se lisait comme de
+            // la pierre. On pose la couleur du design, foncee par la profondeur.
+            canvas.drawFilledRectangle(rect, waterColor(pos));
+            return;
+        }
+
         float g = brightness.apply(pos.y());
         Color color = new Color(g, g, g);
 
-        TextureRegion reg = cache.getUnchecked(worldProvider.getBlock(pos));
+        TextureRegion reg = cache.getUnchecked(surface);
         canvas.drawTexture(reg, rect, color);
 
         pos.y += 1;
@@ -393,6 +414,24 @@ public class MinimapGrid extends CoreWidget {
             reg = cache.getUnchecked(top);
             canvas.drawTexture(reg, rect);
         }
+    }
+
+    /**
+     * @param surface le bloc d'eau le plus haut de la colonne
+     */
+    private Color waterColor(Vector3ic surface) {
+        Vector3i pos = new Vector3i(surface);
+        int depth = 0;
+        while (depth < WATER_DEPTH_MAX && worldProvider.isBlockRelevant(pos)
+                && worldProvider.getBlock(pos).isWater()) {
+            depth++;
+            pos.y -= 1;
+        }
+        float t = Math.max(0, depth - 1) / (float) (WATER_DEPTH_MAX - 1);
+        return new Color(
+                WATER_SHALLOW.rf() + (WATER_DEEP.rf() - WATER_SHALLOW.rf()) * t,
+                WATER_SHALLOW.gf() + (WATER_DEEP.gf() - WATER_SHALLOW.gf()) * t,
+                WATER_SHALLOW.bf() + (WATER_DEEP.bf() - WATER_SHALLOW.bf()) * t);
     }
 
     private static boolean isIgnored(Block block) {
