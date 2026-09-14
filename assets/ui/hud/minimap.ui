@@ -13,11 +13,11 @@
                     "use-content-height" : true,
                     "position-left" : {
                         "target" : "LEFT",
-                        "offset" : 12
+                        "offset" : 18
                     },
                     "position-top" : {
                         "target" : "TOP",
-                        "offset" : 12
+                        "offset" : 18
                     }
                 }
             },
@@ -40,51 +40,6 @@
                     "position-bottom" : {
                         "widget" : "minimapGrid",
                         "target" : "BOTTOM"
-                    }
-                }
-            },
-            {
-                "type" : "UIImage",
-                "image" : "engine:strapSmH",
-                "layoutInfo" : {
-                    "use-content-width" : true,
-                    "use-content-height" : true,
-                    "position-left" : {
-                        "widget" : "minimapGrid",
-                        "target" : "LEFT"
-                    },
-                    "position-vertical-center" : {
-                        "widget" : "minimapGrid"
-                    }
-                }
-            },
-            {
-                "type" : "UIImage",
-                "image" : "engine:strapSmH",
-                "layoutInfo" : {
-                    "use-content-width" : true,
-                    "use-content-height" : true,
-                    "position-right" : {
-                        "widget" : "minimapGrid",
-                        "target" : "RIGHT"
-                    },
-                    "position-vertical-center" : {
-                        "widget" : "minimapGrid"
-                    }
-                }
-            },
-            {
-                "type" : "UIImage",
-                "image" : "engine:strapSmV",
-                "layoutInfo" : {
-                    "use-content-width" : true,
-                    "use-content-height" : true,
-                    "position-bottom" : {
-                        "widget" : "minimapGrid",
-                        "target" : "BOTTOM"
-                    },
-                    "position-horizontal-center" : {
-                        "widget" : "minimapGrid"
                     }
                 }
             }

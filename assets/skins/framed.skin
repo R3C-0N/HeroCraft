@@ -1,20 +1,20 @@
 {
     "inherit": "default",
     "elements": {
-        "MinimapGrid" : {
-            "background" : "engine:hudFrameSlim",
-            "background-scale-mode" : "tiled",
-            "background-border" : {
-                "top" : 60,
-                "bottom" : 60,
-                "left" : 60,
-                "right" : 60
+        "MinimapGrid": {
+            "background": "engine:hudFrameFine",
+            "background-scale-mode": "tiled",
+            "background-border": {
+                "top": 36,
+                "bottom": 36,
+                "left": 36,
+                "right": 36
             },
-            "margin" : {
-                "top" : 42,
-                "bottom" : 42,
-                "left" : 42,
-                "right" : 42
+            "margin": {
+                "top": 24,
+                "bottom": 24,
+                "left": 24,
+                "right": 24
             }
         }
     },
@@ -22,19 +22,19 @@
         "minimapOver": {
             "elements": {
                 "UIBox": {
-                    "background" : "engine:hudFrameSlimOver",
-                    "background-scale-mode" : "tiled",
-                    "background-border" : {
-                        "top" : 60,
-                        "bottom" : 60,
-                        "left" : 60,
-                        "right" : 60
+                    "background": "engine:hudFrameFineOver",
+                    "background-scale-mode": "tiled",
+                    "background-border": {
+                        "top": 36,
+                        "bottom": 36,
+                        "left": 36,
+                        "right": 36
                     },
-                    "margin" : {
-                        "top" : 0,
-                        "bottom" : 0,
-                        "left" : 0,
-                        "right" : 0
+                    "margin": {
+                        "top": 0,
+                        "bottom": 0,
+                        "left": 0,
+                        "right": 0
                     }
                 }
             }
