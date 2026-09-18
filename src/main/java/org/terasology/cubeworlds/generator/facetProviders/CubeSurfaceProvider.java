@@ -33,11 +33,18 @@ import org.terasology.engine.world.generation.facets.SeaLevelFacet;
 @Requires(@Facet(SeaLevelFacet.class))
 public class CubeSurfaceProvider implements ScalableFacetProvider {
 
-    /** Size of the continental features, in blocks. */
-    private static final double CONTINENT_SIZE = 2600.0;
-
-    /** Size of the relief features, in blocks. */
-    private static final double RELIEF_SIZE = 420.0;
+    /**
+     * How many continents, and how many ranges of relief, fit around the sphere.
+     * <p>
+     * Counts and not sizes in blocks, for the reason {@link
+     * org.terasology.cubeworlds.generator.facetProviders.CubeRegionProvider} sets out at length: a
+     * size in blocks is a local feature on a large world and larger than the planet on a small one,
+     * and the field then comes out uniform. These two were sizes until the world shrank from 8192
+     * blocks to a face down to 3200; the counts here are the ones that reproduce what the larger
+     * world had, so the shape of the land is unchanged by the move.
+     */
+    private static final double CONTINENT_PATCHES = 1.94;
+    private static final double RELIEF_PATCHES = 12.0;
 
     /** How far above and below the reference level the land reaches. */
     private static final double CONTINENT_AMPLITUDE = 62.0;
@@ -76,12 +83,17 @@ public class CubeSurfaceProvider implements ScalableFacetProvider {
             return;
         }
 
+        // The sampler takes a size in blocks, so the counts above are turned into one here, against
+        // this world's own radius.
+        double continentSize = geometry.radius() / CONTINENT_PATCHES;
+        double reliefSize = geometry.radius() / RELIEF_PATCHES;
+
         SphereSampler sampler = new SphereSampler(geometry, face);
         for (Vector2ic pos : area) {
             sampler.moveTo(pos.x() * scale, pos.y() * scale);
-            double continent = sampler.read(continentNoise, CONTINENT_SIZE);
+            double continent = sampler.read(continentNoise, continentSize);
             double land = Math.max(0.0, continent);
-            double relief = sampler.read(reliefNoise, RELIEF_SIZE);
+            double relief = sampler.read(reliefNoise, reliefSize);
             double elevation = seaLevel
                     + continent * CONTINENT_AMPLITUDE
                     + relief * RELIEF_AMPLITUDE * land;

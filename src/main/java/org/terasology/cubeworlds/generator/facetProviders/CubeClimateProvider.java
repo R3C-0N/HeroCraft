@@ -52,8 +52,17 @@ public class CubeClimateProvider implements ScalableFacetProvider {
     /** Altitude at which the broad altitude tendency saturates, in blocks above the reference. */
     private static final double ALTITUDE_SPAN = 160.0;
 
-    private static final double CLIMATE_SIZE = 3400.0;
-    private static final double HUMIDITY_SIZE = 900.0;
+    /**
+     * How many climate bands, and how many patches of humidity, fit around the sphere.
+     * <p>
+     * Counts and not sizes in blocks, for the same reason as everywhere else in this package: a
+     * size in blocks is a band on a large world and a constant on a small one. These were sizes
+     * until the face shrank from 8192 blocks to 3200, at which point 3400 blocks exceeded a quarter
+     * of the circumference and the background field went flat over the whole planet. The counts are
+     * the ones that reproduce the larger world's climate, so nothing about the map changes.
+     */
+    private static final double CLIMATE_PATCHES = 1.48;
+    private static final double HUMIDITY_PATCHES = 5.60;
 
     /** Above this temperature the air starts drying out. */
     private static final double EVAPORATION_THRESHOLD = 0.60;
@@ -97,16 +106,21 @@ public class CubeClimateProvider implements ScalableFacetProvider {
             return;
         }
 
+        // The sampler takes a size in blocks, so the counts above are turned into one here, against
+        // this world's own radius.
+        double climateSize = geometry.radius() / CLIMATE_PATCHES;
+        double humiditySize = geometry.radius() / HUMIDITY_PATCHES;
+
         SphereSampler sampler = new SphereSampler(geometry, face);
         for (Vector2ic pos : area) {
             sampler.moveTo(pos.x() * scale, pos.y() * scale);
 
-            double band = 1.0 - Math.abs(sampler.sinLatitude() + sampler.read(bandNoise, CLIMATE_SIZE) * BAND_WAVER);
+            double band = 1.0 - Math.abs(sampler.sinLatitude() + sampler.read(bandNoise, climateSize) * BAND_WAVER);
             band = Math.max(0.0, Math.min(1.0, band));
 
             double height = elevation.getWorld(pos) * scale - seaLevel;
             double altitudeTendency = 1.0 - Math.max(0.0, Math.min(1.0, height / ALTITUDE_SPAN));
-            double background = (sampler.read(backgroundNoise, CLIMATE_SIZE) + 1.0) * 0.5;
+            double background = (sampler.read(backgroundNoise, climateSize) + 1.0) * 0.5;
 
             double mixed = (WEIGHT_LATITUDE * band
                     + WEIGHT_ALTITUDE * altitudeTendency
@@ -117,7 +131,7 @@ public class CubeClimateProvider implements ScalableFacetProvider {
             temp = Math.max(0.0, Math.min(1.0, temp));
             temperature.setWorld(pos.x(), pos.y(), (float) temp);
 
-            double wet = (sampler.read(humidityNoise, HUMIDITY_SIZE) + 1.0) * 0.5;
+            double wet = (sampler.read(humidityNoise, humiditySize) + 1.0) * 0.5;
             wet *= evaporation(temp);
             humidity.setWorld(pos.x(), pos.y(), (float) Math.max(0.0, Math.min(1.0, wet)));
         }

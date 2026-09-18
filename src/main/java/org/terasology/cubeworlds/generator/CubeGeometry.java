@@ -19,11 +19,24 @@ import org.terasology.engine.world.chunks.Chunks;
 @API
 public final class CubeGeometry {
 
-    /** Chunks along the edge of a face. 256 gives a radius of 5036 blocks, as the Veloren fork uses. */
-    public static final int DEFAULT_FACE_CHUNKS = 256;
+    /** Chunks along the edge of a face. 100 gives a radius of 1967 blocks, so 12360 around. */
+    public static final int DEFAULT_FACE_CHUNKS = 100;
 
     /** Reference height. Terrain is measured from here, and so is the sphere's surface. */
     public static final int DEFAULT_SEA_LEVEL = 32;
+
+    /**
+     * The bottom of the world, and the last block of it: a layer of mantle stone.
+     * <p>
+     * On a chunk boundary, and not by luck: -192 is -3 x 64 and 320 is 5 x 64, so the world is
+     * exactly eight chunks tall and no chunk is ever half in and half out. Kept here rather than in
+     * the rasterizer for the reason this whole class exists — two copies of a number are two chances
+     * to disagree, and the build limit reads the same two.
+     */
+    public static final int DEFAULT_FLOOR_Y = -192;
+
+    /** The top of the world. Nothing is generated above it, and nothing may be built above it. */
+    public static final int DEFAULT_CEILING_Y = 319;
 
     private final int faceChunks;
     private final int faceBlocks;
@@ -58,6 +71,16 @@ public final class CubeGeometry {
 
     public int seaLevel() {
         return seaLevel;
+    }
+
+    /** The lowest block of the world, which is mantle stone. Nothing exists below it. */
+    public int floorY() {
+        return DEFAULT_FLOOR_Y;
+    }
+
+    /** The highest block of the world. Nothing is generated or built above it. */
+    public int ceilingY() {
+        return DEFAULT_CEILING_Y;
     }
 
     public ConformalCubeTable table() {

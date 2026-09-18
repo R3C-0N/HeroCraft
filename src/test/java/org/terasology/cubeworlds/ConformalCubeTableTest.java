@@ -4,8 +4,10 @@ package org.terasology.cubeworlds;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.terasology.cubeworlds.generator.CubeGeometry;
 import org.terasology.cubeworlds.projection.ConformalCubeTable;
 import org.terasology.cubeworlds.topology.CubePattern;
+import org.terasology.engine.world.chunks.Chunks;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -103,9 +105,14 @@ class ConformalCubeTableTest {
                 }
             }
         }
-        // 8192 blocks per face edge, s spans 2, so one unit of s is 4096 blocks.
-        System.out.printf("worst round trip error: %.2e in (s,t), i.e. %.4f block at edge 8192%n",
-                worst, worst * 4096.0);
-        assertTrue(worst * 4096.0 < 1e-3, "round trip drifts by " + worst * 4096.0 + " block");
+        // s spans 2 across a face, so one unit of s is half a face edge. Derived and not written
+        // down: with 4096 hard-coded, shrinking the world left the printed figure 2.56x too large
+        // and the assertion in the wrong units, while still passing.
+        double faceEdge = CubeGeometry.DEFAULT_FACE_CHUNKS * (double) Chunks.SIZE_X;
+        double blocksPerUnit = faceEdge / 2.0;
+        System.out.printf("worst round trip error: %.2e in (s,t), i.e. %.4f block at edge %.0f%n",
+                worst, worst * blocksPerUnit, faceEdge);
+        assertTrue(worst * blocksPerUnit < 1e-3,
+                "round trip drifts by " + worst * blocksPerUnit + " block");
     }
 }

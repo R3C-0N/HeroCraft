@@ -13,14 +13,18 @@ import org.terasology.joml.geom.AABBfc;
  * Visibility on a world whose vertices are bent by the shader.
  * <p>
  * The stock test asks whether a chunk's bounding box is in the frustum, which stops being the right
- * question the moment the geometry no longer sits inside that box: with a radius of five thousand
- * blocks the drop reaches a whole chunk at five hundred and sixty-eight blocks out, and beyond that
+ * question the moment the geometry no longer sits inside that box: with a radius of two thousand
+ * blocks the drop reaches a whole chunk at three hundred and fifty-five blocks out, and beyond that
  * chunks are culled while still plainly in view.
  * <p>
  * So the chunk is tested where it is actually drawn — a bounding sphere around its curved centre —
  * and then against the horizon, which on a curved world is a real limit and a much tighter one than
- * the view distance: a hundred and forty-two blocks at eye height. Most of the loaded world is
- * behind it, so this is as much an optimisation as a correction.
+ * the view distance: eighty-nine blocks at eye height. Most of the loaded world is behind it, so
+ * this is as much an optimisation as a correction.
+ * <p>
+ * Both numbers are the radius', not settings: the drop reaches a chunk at {@code sqrt(2 * 32 * R)}
+ * and the horizon at {@code R * acos(R / (R + h))}. They were 568 and 142 when a face was 8192
+ * blocks across, and they will move again if it moves.
  */
 public class SphericalChunkVisibilityPolicy implements ChunkVisibilityPolicy {
 

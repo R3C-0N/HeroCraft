@@ -135,7 +135,16 @@ class ClimateDistributionTest {
 
         assertTrue(at(sorted(temp), 0.95) - at(sorted(temp), 0.05) > 0.25,
                 "the temperature collapsed towards its middle, no threshold can open a biome");
-        assertTrue(at(sorted(elev), 0.95) > 30, "the land never rises anywhere");
+        // Two claims about the land, and the first one is the one that matters. A collapsed
+        // continent field is flat, not low: when this test world still read its continent size in
+        // blocks, the field was sampled inside a ball of radius 0.12 and came out very nearly
+        // constant — at a constant well above 30, so the old "q95 > 30" passed on exactly the world
+        // it was meant to reject. A spread cannot be faked by a constant.
+        double[] elevSorted = sorted(elev);
+        double elevSpread = at(elevSorted, 0.95) - at(elevSorted, 0.05);
+        assertTrue(elevSpread > 30,
+                "the elevation collapsed towards a constant, there is no relief: spread " + elevSpread);
+        assertTrue(at(elevSorted, 0.95) > 15, "the land never rises anywhere");
         assertMaskIsUsable("volcanic", volcanic);
         assertMaskIsUsable("arcane", arcane);
         assertMaskIsUsable("miasma", miasma);

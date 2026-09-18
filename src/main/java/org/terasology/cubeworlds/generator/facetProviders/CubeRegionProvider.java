@@ -43,11 +43,15 @@ public class CubeRegionProvider implements ScalableFacetProvider {
      * How many patches of each region fit around the sphere.
      * <p>
      * A count and not a size in blocks, and that distinction is the whole reason these fields work.
-     * The default world is 8192 blocks to a face and the world the tests measure is 512, so a patch
+     * The default world is 3200 blocks to a face and the world the tests measure is 512, so a patch
      * of "1800 blocks" is a local feature in one and larger than the planet in the other — which is
      * exactly what happened: on the test world the arcane and miasmic fields came out very nearly
      * uniform, both regions landed in the sea, and both existed nowhere. Counted around the sphere,
      * a patch is the same share of the world at any size.
+     * <p>
+     * The lesson took a second time to land: the surface and climate fields were still written in
+     * blocks when the face went from 8192 down to 3200, and at that size one of them was larger than
+     * a quarter of the circumference. They are counts now too.
      * <p>
      * The seas of lava sit in the mountain ranges, so they are the coarsest of the three; the miasma
      * is the finest, because a swamp is a local thing.
