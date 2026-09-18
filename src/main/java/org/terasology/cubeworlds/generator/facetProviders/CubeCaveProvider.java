@@ -218,8 +218,8 @@ public class CubeCaveProvider implements ScalableFacetProvider {
                 int ex = Math.max(elevationArea.minX(), Math.min(elevationArea.maxX(), x));
                 int ez = Math.max(elevationArea.minY(), Math.min(elevationArea.maxY(), z));
                 float elevation = elevationFacet.getWorld(ex, ez);
-                double radius = radiusAt(lattice, fieldRooms, fieldEntrances, x, y, z, elevation, seaLevel);
-                if (radius > 0.0 && isCarved(lattice, x, y, z, radius,
+                double radius = radiusAt(lattice, fieldEntrances, x, y, z, elevation, seaLevel);
+                if (radius > 0.0 && isCarved(lattice, x, y, z, radius, fieldRooms,
                         fieldMainOne, fieldMainTwo, mainThreshold,
                         fieldMinorOne, fieldMinorTwo, minorThreshold)) {
                     densityValues[i] = CARVED;
@@ -275,10 +275,14 @@ public class CubeCaveProvider implements ScalableFacetProvider {
     }
 
     /**
-     * How wide the galleries run here, as a multiple of their nominal bore. Zero means no cave is
-     * allowed at all.
+     * How wide the galleries run here, as a multiple of their nominal bore, before any room. Zero
+     * means no cave is allowed at all.
+     * <p>
+     * The rooms are deliberately not folded in here. They cost a reading of a third volume field,
+     * and all but a few per cent of the rock is nowhere near a gallery at any radius — so the
+     * swelling is looked up in {@link #isCarved} only once the distance says it could matter.
      */
-    private double radiusAt(SphereFieldLattice lattice, int fieldRooms, int fieldEntrances,
+    private double radiusAt(SphereFieldLattice lattice, int fieldEntrances,
                             int x, int y, int z, float elevation, int seaLevel) {
         // A hard floor, and not merely a profile that fades to nothing: a profile is a floating
         // point multiplication, and the last rock above the mantle should not depend on a rounding.
@@ -294,7 +298,9 @@ public class CubeCaveProvider implements ScalableFacetProvider {
         double openness = 0.0;
         if (elevation < seaLevel + 2) {
             cover = SEA_FLOOR_SEAL;
-        } else {
+        } else if (depth < SEA_FLOOR_SEAL + ROOF_FADE) {
+            // Only near the surface does the permission mean anything: deeper than the cover plus
+            // the fade, the roof term is one whatever the field says, so there is nothing to ask.
             openness = clamp((lattice.column(fieldEntrances, x, z) - ENTRANCE_LEVEL) / ENTRANCE_SOFT);
         }
         // A mouth opens at full section, and that is the whole of it. Attenuating the radius under
@@ -309,24 +315,44 @@ public class CubeCaveProvider implements ScalableFacetProvider {
 
         double floor = clamp((y - geometry.floorY() - FLOOR_MARGIN) / FLOOR_FADE);
         double deep = 1.0 + DEEP_GAIN * clamp(-y / DEEP_AT);
-        double swell = 1.0 + ROOM_SWELL
-                * clamp((lattice.volume(fieldRooms, x, y, z) - ROOM_LEVEL) / (ROOM_PEAK - ROOM_LEVEL));
-        return roof * floor * deep * swell;
+        return roof * floor * deep;
     }
 
     private static boolean isCarved(SphereFieldLattice lattice, int x, int y, int z, double radius,
+                                    int fieldRooms,
                                     int mainOneField, int mainTwoField, double mainThreshold,
                                     int minorOneField, int minorTwoField, double minorThreshold) {
-        double main = mainThreshold * radius;
         double a = lattice.volume(mainOneField, x, y, z);
         double b = lattice.volume(mainTwoField, x, y, z);
-        if (a * a + b * b < main * main) {
-            return true;
+        double fromMain = a * a + b * b;
+        double swell = -1.0;
+        if (fromMain < square(mainThreshold * radius * (1.0 + ROOM_SWELL))) {
+            swell = swellAt(lattice, fieldRooms, x, y, z);
+            if (fromMain < square(mainThreshold * radius * swell)) {
+                return true;
+            }
         }
-        double minor = minorThreshold * radius;
+
         double c = lattice.volume(minorOneField, x, y, z);
         double d = lattice.volume(minorTwoField, x, y, z);
-        return c * c + d * d < minor * minor;
+        double fromMinor = c * c + d * d;
+        if (fromMinor < square(minorThreshold * radius * (1.0 + ROOM_SWELL))) {
+            if (swell < 0.0) {
+                swell = swellAt(lattice, fieldRooms, x, y, z);
+            }
+            return fromMinor < square(minorThreshold * radius * swell);
+        }
+        return false;
+    }
+
+    /** How much the room field widens a gallery here: one outside a room, up to four in one. */
+    private static double swellAt(SphereFieldLattice lattice, int fieldRooms, int x, int y, int z) {
+        return 1.0 + ROOM_SWELL
+                * clamp((lattice.volume(fieldRooms, x, y, z) - ROOM_LEVEL) / (ROOM_PEAK - ROOM_LEVEL));
+    }
+
+    private static double square(double value) {
+        return value * value;
     }
 
     private static double clamp(double value) {
