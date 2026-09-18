@@ -10,6 +10,7 @@ import org.terasology.biomesAPI.BiomeRegistry;
 import org.terasology.core.world.CoreBiome;
 import org.terasology.core.world.generator.facets.BiomeFacet;
 import org.terasology.cubeworlds.generator.CubeGeometry;
+import org.terasology.cubeworlds.generator.facets.CaveFacet;
 import org.terasology.cubeworlds.topology.CubePattern;
 import org.terasology.engine.registry.CoreRegistry;
 import org.terasology.engine.world.block.Block;
@@ -39,7 +40,8 @@ import org.terasology.engine.world.generation.facets.SurfacesFacet;
         @Facet(DensityFacet.class),
         @Facet(SurfacesFacet.class),
         @Facet(BiomeFacet.class),
-        @Facet(SeaLevelFacet.class)})
+        @Facet(SeaLevelFacet.class),
+        @Facet(CaveFacet.class)})
 public class CubeSolidRasterizer implements ScalableWorldRasterizer {
 
     private final CubeGeometry geometry;
@@ -74,6 +76,7 @@ public class CubeSolidRasterizer implements ScalableWorldRasterizer {
         DensityFacet solidityFacet = chunkRegion.getFacet(DensityFacet.class);
         SurfacesFacet surfacesFacet = chunkRegion.getFacet(SurfacesFacet.class);
         BiomeFacet biomeFacet = chunkRegion.getFacet(BiomeFacet.class);
+        CaveFacet caveFacet = chunkRegion.getFacet(CaveFacet.class);
         int seaLevel = chunkRegion.getFacet(SeaLevelFacet.class).getSeaLevel();
 
         Vector2i pos2d = new Vector2i();
@@ -93,6 +96,15 @@ public class CubeSolidRasterizer implements ScalableWorldRasterizer {
             chunk.chunkToWorldPosition(pos, worldPos);
 
             Biome biome = biomeFacet.get(pos2d);
+
+            if (caveFacet.get(pos)) {
+                // Ahead of every other branch, and the water branch in particular. An empty cell
+                // below the reference level is a cell of sea to the chain below, which is right for
+                // an ocean and would flood every gallery in the world: the sea sits at 32 and the
+                // floor of the world at -192. Nothing is written, the chunk having started as air.
+                biomeRegistry.setBiome(CoreBiome.UNDERGROUND, chunk, pos.x(), pos.y(), pos.z());
+                continue;
+            }
             biomeRegistry.setBiome(biome, chunk, pos.x(), pos.y(), pos.z());
 
             if (basePosY < geometry.floorY() + scale) {

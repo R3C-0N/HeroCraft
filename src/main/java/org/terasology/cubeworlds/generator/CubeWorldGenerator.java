@@ -11,6 +11,7 @@ import org.terasology.core.world.generator.rasterizers.FloraRasterizer;
 import org.terasology.core.world.generator.rasterizers.SunlightRasterizer;
 import org.terasology.core.world.generator.rasterizers.TreeRasterizer;
 import org.terasology.cubeworlds.generator.facetProviders.CubeBiomeProvider;
+import org.terasology.cubeworlds.generator.facetProviders.CubeCaveProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeClimateProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeRegionProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeSurfaceProvider;
@@ -114,6 +115,10 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator implements Sph
                 .addProvider(new CubeRegionProvider(geometry))
                 .addProvider(new CubeBiomeProvider())
                 .addProvider(new SurfaceToDensityProvider())
+                // After the density and the surfaces are produced, and before the flora reads
+                // them: the caves take surfaces away where they have eaten the ground, and a tree
+                // chosen before that would be left standing in mid-air over a cave mouth.
+                .addProvider(new CubeCaveProvider(geometry))
                 .addProvider(new DefaultFloraProvider())
                 .addProvider(new DefaultTreeProvider())
                 .addRasterizer(new CubeSolidRasterizer(geometry))
