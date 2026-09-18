@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.terasology.cubeworlds.generator;
 
+import org.joml.Vector2i;
+import org.joml.Vector2ic;
 import org.joml.Vector3fc;
 import org.terasology.core.world.generator.facetProviders.DefaultFloraProvider;
 import org.terasology.core.world.generator.facetProviders.DefaultTreeProvider;
@@ -27,6 +29,7 @@ import org.terasology.cubeworlds.rendering.CubeSphereProjection;
 import org.terasology.cubeworlds.rendering.SphericalChunkVisibilityPolicy;
 import org.terasology.engine.world.generation.BaseFacetedWorldGenerator;
 import org.terasology.engine.world.generation.WorldBuilder;
+import org.terasology.engine.world.generator.PreviewCentered;
 import org.terasology.engine.world.generator.RegisterWorldGenerator;
 import org.terasology.engine.world.generator.plugin.WorldGeneratorPluginLibrary;
 
@@ -41,7 +44,8 @@ import org.terasology.engine.world.generator.plugin.WorldGeneratorPluginLibrary;
  */
 @RegisterWorldGenerator(id = "cubeworld", displayName = "Cube World",
         description = "Six faces of a cube, laid out as a net and rendered as a sphere")
-public class CubeWorldGenerator extends BaseFacetedWorldGenerator implements SphereProjectionProvider {
+public class CubeWorldGenerator extends BaseFacetedWorldGenerator
+        implements SphereProjectionProvider, PreviewCentered {
 
     @In
     private WorldGeneratorPluginLibrary worldGeneratorPluginLibrary;
@@ -108,6 +112,20 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator implements Sph
     @Override
     public Vector3fc getSpawnPosition(EntityRef entity) {
         return spawner.getSpawnPosition(getWorld(), entity);
+    }
+
+    /**
+     * The middle of the spawn face, and deliberately not the spawn point.
+     * <p>
+     * The net runs from the origin outwards in one direction only, so a preview framed on (0, 0)
+     * sits entirely inside the dead slot at the corner — an empty square at every zoom the slider
+     * can reach, whatever the seed. This is a constant of the layout and costs nothing, where
+     * {@link #getSpawnPosition} now searches for land.
+     */
+    @Override
+    public Vector2ic getPreviewCentre() {
+        int[] centre = geometry.faceCentre(SPAWN_FACE);
+        return new Vector2i(centre[0], centre[1]);
     }
 
     @Override
