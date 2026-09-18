@@ -53,6 +53,35 @@ public class CubeWorldGenerationTest {
         assertTrue(solid > 0, "the middle of a face carries no ground at all");
     }
 
+    /**
+     * There is no companion test for the ceiling, and that is the finding rather than an omission:
+     * the land tops out around fifty blocks above the reference level, so nothing is generated
+     * anywhere near +319 and a test there would assert that air is air. The ceiling only means
+     * something to the build limit, which is a rule about placing blocks and not about generating
+     * them.
+     */
+    @Test
+    public void theWorldEndsOnMantleStone() {
+        int x = (int) (1.5 * EDGE);
+        int z = (int) (1.5 * EDGE);
+        // Below the floor first, so the chunk under the world is loaded too: asking for a block in
+        // a chunk nobody asked for answers engine:unloaded, which would pass for emptiness.
+        mainLoop.forceAndWaitForGeneration(new Vector3i(x, CubeGeometry.DEFAULT_FLOOR_Y - 1, z));
+        mainLoop.forceAndWaitForGeneration(new Vector3i(x, CubeGeometry.DEFAULT_FLOOR_Y + 1, z));
+
+        assertEquals("CoreAssets:MantleStone",
+                worldProvider.getBlock(x, CubeGeometry.DEFAULT_FLOOR_Y, z).getURI().toString(),
+                "the world does not end on mantle stone");
+        assertEquals("engine:air",
+                worldProvider.getBlock(x, CubeGeometry.DEFAULT_FLOOR_Y - 1, z).getURI().toString(),
+                "there is still something below the floor of the world");
+        // One layer and no more. The density down here is enormous and positive, so a floor written
+        // as "everything below" would have turned the bottom chunk into a slab of mantle.
+        assertNotEquals("CoreAssets:MantleStone",
+                worldProvider.getBlock(x, CubeGeometry.DEFAULT_FLOOR_Y + 1, z).getURI().toString(),
+                "the mantle is more than one layer thick");
+    }
+
     @Test
     public void aDeadSlotIsNothingButAir() {
         // slot (0, 0) of the net carries no world
