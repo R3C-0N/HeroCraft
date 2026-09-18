@@ -71,7 +71,27 @@ public final class SphereSampler {
      * "Up" is radial, so climbing moves the sample outwards.
      */
     public float readAt(Noise noise, double featureSize, double altitude) {
-        double k = (geometry.radius() + altitude) / featureSize;
+        return readAt(noise, featureSize, featureSize, altitude);
+    }
+
+    /**
+     * Reads at an altitude, with a feature size of its own for the vertical.
+     * <p>
+     * Squashing the vertical is what decides whether a field of tunnels runs along the ground or
+     * stands on end. A tunnel is the intersection of the zero sets of two of these fields, and the
+     * zero set of a field that varies slowly with height is a nearly vertical sheet: two of them
+     * meet in a shaft. Make the field vary <em>faster</em> with height than across it — a vertical
+     * size below the horizontal one — and the sheets lie over, their intersection runs level, and
+     * its section comes out wide and low, which is the shape of a gallery one can walk down.
+     * <p>
+     * The altitude term stays purely radial whatever the ratio, so the seams are as continuous as
+     * they are for {@link #read}: this is still one field of directions, read at a radius.
+     *
+     * @param horizontalSize the size of the features across the surface, in blocks
+     * @param verticalSize the size of the features up and down, in blocks
+     */
+    public float readAt(Noise noise, double horizontalSize, double verticalSize, double altitude) {
+        double k = (geometry.radius() + altitude * (horizontalSize / verticalSize)) / horizontalSize;
         return noise.noise((float) (direction[0] * k), (float) (direction[1] * k), (float) (direction[2] * k));
     }
 }
