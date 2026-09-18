@@ -19,7 +19,6 @@ import org.terasology.cubeworlds.generator.rasterizers.CubeSolidRasterizer;
 import org.terasology.engine.context.Context;
 import org.terasology.engine.core.SimpleUri;
 import org.terasology.engine.entitySystem.entity.EntityRef;
-import org.terasology.engine.logic.spawner.FixedSpawner;
 import org.terasology.engine.registry.In;
 import org.terasology.engine.rendering.sphere.SphereProjection;
 import org.terasology.engine.rendering.sphere.SphereProjectionProvider;
@@ -50,15 +49,21 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator implements Sph
     @In
     private Context context;
 
+    /**
+     * The equatorial band: as far as one can get from the seven seams that face a dead slot, and
+     * therefore from the void one would otherwise be looking at.
+     */
+    private static final int SPAWN_FACE = 1;
+
     private final CubeGeometry geometry = CubeGeometry.createDefault();
-    private final FixedSpawner spawner;
+    private final CubeLandSpawner spawner;
 
     public CubeWorldGenerator(SimpleUri uri) {
         super(uri);
-        // The equatorial band, at the middle of a face: as far as one can get from the seven seams
-        // that face a dead slot, and therefore from the void one would otherwise be looking at.
-        int[] centre = geometry.faceCentre(1);
-        spawner = new FixedSpawner(centre[0], centre[1]);
+        // Not a FixedSpawner on the middle of the face: whether that point is land or ocean is a
+        // coin toss on a world whose continents are a thousand blocks across, and on the first seed
+        // ever played it came up ocean. CubeLandSpawner says why the stock one cannot be widened.
+        spawner = new CubeLandSpawner(geometry, SPAWN_FACE);
     }
 
     public CubeGeometry getGeometry() {
