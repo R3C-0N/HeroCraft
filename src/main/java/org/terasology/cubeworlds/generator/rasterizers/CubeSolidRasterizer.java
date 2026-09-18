@@ -48,6 +48,7 @@ public class CubeSolidRasterizer implements ScalableWorldRasterizer {
     private Block water;
     private Block ice;
     private Block mantle;
+    private Block lava;
     private BiomeRegistry biomeRegistry;
 
     public CubeSolidRasterizer(CubeGeometry geometry) {
@@ -64,6 +65,9 @@ public class CubeSolidRasterizer implements ScalableWorldRasterizer {
         // allowed to end on. It had been sitting in CoreAssets describing itself as the bottom
         // layer of the world, and nothing had ever placed it.
         mantle = blockManager.getBlock("CoreAssets:MantleStone");
+        // Luminance 15, the maximum the engine's light will carry, and like the mantle it had
+        // never been placed by anything.
+        lava = blockManager.getBlock("CoreAssets:Lava");
     }
 
     @Override
@@ -103,6 +107,13 @@ public class CubeSolidRasterizer implements ScalableWorldRasterizer {
                 // an ocean and would flood every gallery in the world: the sea sits at 32 and the
                 // floor of the world at -192. Nothing is written, the chunk having started as air.
                 biomeRegistry.setBiome(CoreBiome.UNDERGROUND, chunk, pos.x(), pos.y(), pos.z());
+                if (basePosY <= geometry.lavaY()) {
+                    // The deepest galleries are drowned in lava, which is the only light there is
+                    // down here: a sealed cavity is pitch dark, there being no ambient minimum
+                    // anywhere in the renderer. It is also the only reason a screenshot of the
+                    // bottom of the world can be told from a screenshot of a generator that failed.
+                    chunk.setBlock(pos, lava);
+                }
                 continue;
             }
             biomeRegistry.setBiome(biome, chunk, pos.x(), pos.y(), pos.z());

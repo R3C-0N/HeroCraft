@@ -131,6 +131,40 @@ public class CubeWorldGenerationTest {
                 "the galleries filled with water: the rasterizer took carved rock for sea floor");
     }
 
+    /**
+     * The lava is a level, so the test is that it is one: full below the line and absent above it,
+     * everywhere, rather than a scattering of pools that happen to be deep.
+     */
+    @Test
+    public void theDeepestGalleriesAreDrownedInLava() {
+        int x0 = (int) (1.5 * EDGE);
+        int z0 = (int) (1.5 * EDGE);
+        mainLoop.forceAndWaitForGeneration(new Vector3i(x0, CubeGeometry.DEFAULT_LAVA_Y, z0));
+
+        int below = 0;
+        int above = 0;
+        for (int x = x0; x < x0 + 16; x++) {
+            for (int z = z0; z < z0 + 16; z++) {
+                for (int y = CubeGeometry.DEFAULT_LAVA_Y - 16; y <= CubeGeometry.DEFAULT_LAVA_Y + 16; y++) {
+                    if (worldProvider.getBlock(x, y, z).getURI().toString()
+                            .toLowerCase(Locale.ROOT).contains("lava")) {
+                        if (y <= CubeGeometry.DEFAULT_LAVA_Y) {
+                            below++;
+                        } else {
+                            above++;
+                        }
+                    }
+                }
+            }
+        }
+
+        System.out.printf("%d cells of lava at or below y=%d, %d above it%n",
+                below, CubeGeometry.DEFAULT_LAVA_Y, above);
+        assertTrue(below > 0, "the deepest galleries are dry, so the bottom of the world is dark "
+                + "and a screenshot of it says nothing");
+        assertEquals(0, above, "the lava is not a level: some of it stands above the line");
+    }
+
     /** @return the height of the highest non-penetrable block in a column, or the floor if none. */
     private int topOf(int x, int z) {
         for (int y = 128; y > CubeGeometry.DEFAULT_FLOOR_Y; y--) {

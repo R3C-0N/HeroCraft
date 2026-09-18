@@ -38,6 +38,16 @@ public final class CubeGeometry {
     /** The top of the world. Nothing is generated above it, and nothing may be built above it. */
     public static final int DEFAULT_CEILING_Y = 319;
 
+    /**
+     * The surface of the lava, filling whatever the caves opened below it.
+     * <p>
+     * A level and not a scattering of pools, for two reasons. A flat surface is what a liquid
+     * looks like, so it reads as one without anything having to flow; and it makes the bottom of
+     * the world one recognisable place rather than a series of accidents, which is what a region
+     * reached on purpose ought to be.
+     */
+    public static final int DEFAULT_LAVA_Y = -150;
+
     private final int faceChunks;
     private final int faceBlocks;
     private final double radius;
@@ -81,6 +91,11 @@ public final class CubeGeometry {
     /** The highest block of the world. Nothing is generated or built above it. */
     public int ceilingY() {
         return DEFAULT_CEILING_Y;
+    }
+
+    /** The surface of the lava that fills the deepest galleries. */
+    public int lavaY() {
+        return DEFAULT_LAVA_Y;
     }
 
     public ConformalCubeTable table() {
