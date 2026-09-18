@@ -56,7 +56,7 @@ class CaveFieldCalibrationTest {
         // one over the feature size, so the minor system's are the main one's times 64/40 across
         // and 42/30 up.
         bore("main  64x42", sigma, 0.014, oneOctave[1], oneOctave[2]);
-        bore("minor 40x30", sigma, 0.010, oneOctave[1] * 64 / 40, oneOctave[2] * 42 / 30);
+        bore("minor 40x34", sigma, 0.012, oneOctave[1] * 64 / 40, oneOctave[2] * 42 / 34);
         System.out.printf("  a room level of 2.0 sigma on the three-octave field is %.5f, "
                 + "its peak at 2.8 sigma is %.5f%n", 2.0 * threeOctaves[0], 2.8 * threeOctaves[0]);
 

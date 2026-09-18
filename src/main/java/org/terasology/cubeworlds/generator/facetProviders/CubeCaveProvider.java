@@ -80,9 +80,15 @@ public class CubeCaveProvider implements ScalableFacetProvider {
     private static final double MAIN_VERTICAL = 42.0;
     private static final double MAIN_FRACTION = 0.014;
 
+    /**
+     * The minor system is squashed less than the main one, and carves a little more. Its first
+     * numbers — 30 blocks vertical at one percent — gave galleries 1.82 blocks high against a
+     * character of 1.6, and the connectivity census read it straight away: barely half of the
+     * carved cells had a carved cell above them, so half of what had been dug was a crawl.
+     */
     private static final double MINOR_HORIZONTAL = 40.0;
-    private static final double MINOR_VERTICAL = 30.0;
-    private static final double MINOR_FRACTION = 0.010;
+    private static final double MINOR_VERTICAL = 34.0;
+    private static final double MINOR_FRACTION = 0.012;
 
     /**
      * Rooms are a swelling of the galleries rather than a system of their own. A separate field of
