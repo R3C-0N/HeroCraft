@@ -106,8 +106,8 @@ public class CubeCaveProvider implements ScalableFacetProvider {
      * a field in its own right, patchy at the size of a cave mouth.
      */
     private static final double ENTRANCE_SIZE = 120.0;
-    private static final double ENTRANCE_LEVEL = 0.85;
-    private static final double ENTRANCE_SOFT = 0.10;
+    private static final double ENTRANCE_LEVEL = 0.55;
+    private static final double ENTRANCE_SOFT = 0.15;
 
     /** Rock left over a gallery where no entrance is permitted, and the length of the fade. */
     private static final double ROOF_COVER = 6.0;
@@ -291,15 +291,18 @@ public class CubeCaveProvider implements ScalableFacetProvider {
         }
 
         double cover = ROOF_COVER;
-        double fade = ROOF_FADE;
+        double openness = 0.0;
         if (elevation < seaLevel + 2) {
             cover = SEA_FLOOR_SEAL;
         } else {
-            double openness = clamp((lattice.column(fieldEntrances, x, z) - ENTRANCE_LEVEL) / ENTRANCE_SOFT);
-            cover -= ROOF_COVER * openness;
-            fade -= (ROOF_FADE - ROOF_COVER) * openness;
+            openness = clamp((lattice.column(fieldEntrances, x, z) - ENTRANCE_LEVEL) / ENTRANCE_SOFT);
         }
-        double roof = clamp((depth - cover) / fade);
+        // A mouth opens at full section, and that is the whole of it. Attenuating the radius under
+        // a permitted entrance the way it is attenuated everywhere else closes the gallery to a
+        // point a few blocks short of daylight: the first version did exactly that, and the census
+        // found not one way in anywhere on the planet. Where the field permits an entrance the roof
+        // term is simply switched off, and the gallery carves through the last block of ground.
+        double roof = openness + (1.0 - openness) * clamp((depth - cover) / ROOF_FADE);
         if (roof <= 0.0) {
             return 0.0;
         }
