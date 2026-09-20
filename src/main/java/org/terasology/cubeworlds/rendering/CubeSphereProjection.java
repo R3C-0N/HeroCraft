@@ -123,7 +123,11 @@ public class CubeSphereProjection implements SphereProjection {
         curved(worldPosition.x(), worldPosition.y(), worldPosition.z(), dest);
         Vector3f originCurved = new Vector3f();
         curved(origin.x(), origin.y(), origin.z(), originCurved);
-        return dest.sub(originCurved);
+        dest.sub(originCurved);
+        // Back into world axes, exactly as the shader does. Planet space is not world space, and
+        // whoever receives this — chunk culling, entity placement — works in world axes. The two
+        // must agree to the bit or a chunk is culled on evidence from somewhere it is not.
+        return frameAtAbs(origin, new Matrix3f()).transpose().transform(dest);
     }
 
     /** Absolute curved position, in planet space, before the focus is taken off. */
@@ -142,6 +146,13 @@ public class CubeSphereProjection implements SphereProjection {
 
     @Override
     public Matrix3f frameAt(Vector3fc worldPosition, Matrix3f dest) {
+        // Relative to the focus, like the shader: the identity under the camera, turning by d over R
+        // away from it. The absolute frame would hand a planet-space vector to a world-space caller.
+        Matrix3f atFocus = frameAtAbs(getFocus(), new Matrix3f()).transpose();
+        return atFocus.mul(frameAtAbs(worldPosition, dest), dest);
+    }
+
+    private Matrix3f frameAtAbs(Vector3fc worldPosition, Matrix3f dest) {
         // Finite differences on the same table the shader uses, so the two frames agree. The step
         // is a fraction of a face rather than a block: closer than that and single precision noise
         // in the table starts to dominate the difference.
