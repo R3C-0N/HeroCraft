@@ -124,9 +124,12 @@ class CaveEntranceCensusTest {
         assertTrue(openLandColumns > 0,
                 "not one gallery reaches daylight: the network cannot be entered, so it may as "
                         + "well not exist");
-        // A bound that bites. A mouth is a few columns wide, so a rate of one per cent already puts
-        // one every twenty blocks or so and the ground reads as pitted rather than as a landscape
-        // with caves in it; the first pass measured 1.11 % and looked exactly like that.
+        // A bound of taste, and it is inherited: the 1.11 % that set it was measured with the
+        // any-of-three-cells rule this test no longer uses, so the figure and the quantity do not
+        // match any more. It has not been re-derived by eye against the new rule, and the reason it
+        // has not is that nothing has come near it: the flare settings tried read 0,046 % at 1.0,
+        // 0,174 % at 1.7 and 0,659 % at 3.2, so the bound separates settings even if the exact
+        // place it sits is not defended. Re-derive it the day a setting lands between 0,4 and 0,8.
         assertTrue(rate < 0.008,
                 "the ground is pitted rather than opened: " + (100 * rate) + " % of land columns "
                         + "have a hole in them");

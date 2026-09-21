@@ -204,7 +204,7 @@ class CaveReachTest {
         int highest = Integer.MIN_VALUE;
         for (int x = tileX; x < tileX + TILE; x++) {
             for (int z = tileZ; z < tileZ + TILE; z++) {
-                int top = Math.round(elevation.getWorld(x, z));
+                int top = topOf(elevation.getWorld(x, z));
                 if (top < geometry.seaLevel() + 1) {
                     continue;
                 }
@@ -227,7 +227,7 @@ class CaveReachTest {
                 if (!land[cell]) {
                     continue;
                 }
-                int top = Math.round(elevation.getWorld(x, z));
+                int top = topOf(elevation.getWorld(x, z));
                 if (caves.getWorld(x, top, z) && caves.getWorld(x, top - 1, z)) {
                     open[cell] = true;
                 }
@@ -236,6 +236,17 @@ class CaveReachTest {
     }
 
     /** Sizes of every mouth, and on the way, which columns belong to one of nine columns or more. */
+    /**
+     * The topmost cell a cave could ever have taken out of this column, which is a floor and never
+     * a rounding. The provider only considers a cell where the density is positive, and the density
+     * is exactly {@code elevation - y}: at an elevation of 36,7 the cell at 37 was never eligible.
+     * Rounding therefore asked about a cell that is structurally always solid on every column whose
+     * elevation has a fraction of a half or more — half the world, silently reading as sealed.
+     */
+    private static int topOf(float elevation) {
+        return (int) Math.floor(elevation);
+    }
+
     private List<Integer> cluster(boolean[] open, boolean[] wide) {
         List<Integer> sizes = new ArrayList<>();
         boolean[] seen = new boolean[open.length];

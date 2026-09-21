@@ -236,7 +236,7 @@ public class CubeStructureCommands extends BaseComponentSystem {
                 if (!onFace(column.x(), column.y())) {
                     continue;
                 }
-                int top = Math.round(elevation.getWorld(column));
+                int top = topOf(elevation.getWorld(column));
                 if (top < geometry.seaLevel() + DRY_MARGIN) {
                     continue;
                 }
@@ -270,7 +270,7 @@ public class CubeStructureCommands extends BaseComponentSystem {
                         continue;
                     }
                     scanned++;
-                    int top = Math.round(elevation.getWorld(x, z));
+                    int top = topOf(elevation.getWorld(x, z));
                     if (top < geometry.seaLevel() + DRY_MARGIN) {
                         continue;
                     }
@@ -283,6 +283,17 @@ public class CubeStructureCommands extends BaseComponentSystem {
                     }
                 }
             }
+        }
+
+        /**
+         * The topmost cell a cave could ever have taken out of a column, which is a floor and never
+         * a rounding. The provider only looks at cells where the density is positive, and the
+         * density is exactly {@code elevation - y}: at an elevation of 36,7 the cell at 37 was never
+         * eligible for carving. Rounding asked about it anyway, and so reported every column whose
+         * elevation has a fraction of a half or more as closed — half the world, silently.
+         */
+        private static int topOf(float elevation) {
+            return (int) Math.floor(elevation);
         }
 
         /**

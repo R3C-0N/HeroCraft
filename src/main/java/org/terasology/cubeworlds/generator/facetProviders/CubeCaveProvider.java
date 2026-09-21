@@ -128,21 +128,23 @@ public class CubeCaveProvider implements ScalableFacetProvider {
      * nearest way in went from 168 blocks to 388 while the median mouth stayed at three columns.
      * The permission is therefore left exactly where it was, and this is the only number that moved.
      * <p>
-     * Measured by {@code CaveReachTest}, which is the oracle to re-run before touching this: at 2.5
-     * the walk to a mouth of nine columns or more averages 168, 191 and 213 blocks over three
-     * windows of two seeds, against the 200 to 300 asked for, and 77 to 91 % of the dry land lies
-     * within three hundred blocks of one. Before the flare there were nought or one such mouth per
-     * window and no figure to quote.
-     * <p>
-     * <b>The ceiling is the surface, not the reach.</b> 3.2 was measured too and reads better on
-     * every reach figure — mean 126 to 189, coverage up to 99,7 % — but it takes the world-wide
-     * share of holed land columns from 0,046 % to 0,659 %, against the 0,8 % above which
-     * {@code CaveEntranceCensusTest} calls the ground pitted. Twenty per cent of headroom on a
-     * bound of taste is not headroom. 2.5 sits at 0,396 %, half the bound, and still meets the
-     * target. Read the world-wide census and not the three windows before moving this: the windows
-     * are coastal lowland and read 0,13 % where the whole planet reads 0,40 %.
+     * Measured by {@code CaveReachTest}, which is the oracle to re-run before touching this. The
+     * walk to a mouth of nine columns or more, over three windows of a thousand blocks on two
+     * seeds:
+     * <pre>
+     *   flare 1.0   288 blocks, 63 % of land within 300, largest mouth 43 columns
+     *   flare 1.7   175 / 192 / 222, 76 to 91 %, largest 97 to 130
+     *   flare 2.0   144 / 144 / 172, 88 to 96 %
+     *   flare 2.5   124 / 141 / 151, 91 to 99 %, largest up to 212
+     * </pre>
+     * 1.7 is the one that answers the target of two to three hundred blocks; the others overshoot
+     * it, and generosity here is paid for on the surface. The world-wide share of land columns
+     * holed at the surface goes 0,046 % at 1.0, 0,174 % at 1.7, 0,267 % at 2.0, 0,396 % at 2.5 and
+     * 0,659 % at 3.2, against the 0,8 % above which {@code CaveEntranceCensusTest} calls the ground
+     * pitted. Read that census and not the three windows before moving this: the windows are
+     * coastal lowland and read a third of the planet's rate.
      */
-    private static final double MOUTH_FLARE = 2.5;
+    private static final double MOUTH_FLARE = 1.7;
 
     /** Rock left over a gallery where no entrance is permitted, and the length of the fade. */
     private static final double ROOF_COVER = 6.0;
