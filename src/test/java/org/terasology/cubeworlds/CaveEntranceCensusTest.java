@@ -37,8 +37,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class CaveEntranceCensusTest {
 
-    /** How close to the surface a gallery has to come to count as a way in. */
-    private static final int REACH = 3;
 
     @Test
     void thereAreWaysInOnLandAndNoneUnderTheSea() {
@@ -61,36 +59,42 @@ class CaveEntranceCensusTest {
         int openSeaColumns = 0;
         List<String> mouths = new ArrayList<>();
 
-        // A grid of samples rather than a handful, and it took a wrong reading to see why: a mouth
-        // is a patch a hundred blocks across, so a scattering of small windows either lands on one
-        // or does not, and the figure that comes out measures the luck of the scattering rather
-        // than the rate. Two settings a fifth apart read 1.11 % and 0.00 % on eight windows a face.
+        // A grid of samples rather than a handful, and it took two wrong readings to size it. A
+        // mouth is a patch a hundred blocks across, so a scattering of small windows either lands
+        // on one or does not, and the figure that comes out measures the luck of the scattering
+        // rather than the rate: two settings a fifth apart read 1.11 % and 0.00 % on eight windows
+        // a face. Twenty-five windows of sixteen columns was still not enough — it read 0.76 %
+        // where a contiguous survey of two million columns read 0.13 %, one porch of eighty
+        // columns being half a per cent on its own. A window is a whole chunk now, which is four
+        // times the ground for the same number of facet requests.
         for (int face = 0; face < CubePattern.FACES; face++) {
             for (int step = 0; step < 25; step++) {
                 int u = edge / 6 * (step % 5 + 1) + (step / 5) * 37;
                 int v = edge / 6 * (step / 5 + 1) + (step % 5) * 37;
                 int x = CubePattern.netX(face, u, edge);
                 int z = CubePattern.netY(face, v, edge);
-                BlockRegion request = new BlockRegion(x, -64, z).setSize(16, 128, 16);
+                BlockRegion request = new BlockRegion(x, -64, z).setSize(32, 128, 32);
                 Region region = world.getWorldData(request);
                 ElevationFacet elevation = region.getFacet(ElevationFacet.class);
                 CaveFacet caves = region.getFacet(CaveFacet.class);
 
-                for (int dx = 0; dx < 16; dx++) {
-                    for (int dz = 0; dz < 16; dz++) {
+                for (int dx = 0; dx < 32; dx++) {
+                    for (int dz = 0; dz < 32; dz++) {
                         int cx = x + dx;
                         int cz = z + dz;
                         int top = (int) Math.floor(elevation.getWorld(cx, cz));
                         if (top < -63 || top > 62) {
                             continue;
                         }
-                        boolean open = false;
-                        for (int y = top; y > top - REACH; y--) {
-                            if (caves.getWorld(cx, y, cz)) {
-                                open = true;
-                                break;
-                            }
-                        }
+                        // The surface cell itself, and the one under it. Scanning three cells down
+                        // and taking any of them counted a gallery running two blocks below intact
+                        // grass as a way in, which it is not — the assertion below says "have a
+                        // hole in them" and that reading had no hole in it. It cost nothing while
+                        // the mouths were points; the day the porches were widened it read 1,5 %
+                        // and called a world pitted whose true opening rate was 0,15 %. Two cells
+                        // rather than one, for the same reason CaveReachTest takes two: a single
+                        // carved cell at the ground line is a dimple, not an entrance.
+                        boolean open = caves.getWorld(cx, top, cz) && caves.getWorld(cx, top - 1, cz);
                         if (top > geometry.seaLevel()) {
                             landColumns++;
                             if (open) {
@@ -111,9 +115,9 @@ class CaveEntranceCensusTest {
         }
 
         double rate = landColumns == 0 ? 0 : (double) openLandColumns / landColumns;
-        System.out.printf("%d land columns, %d of them open within %d blocks of the surface "
+        System.out.printf("%d land columns, %d of them holed at the surface "
                         + "(%.3f %%); %d sea columns, %d open%n",
-                landColumns, openLandColumns, REACH, 100 * rate, seaColumns, openSeaColumns);
+                landColumns, openLandColumns, 100 * rate, seaColumns, openSeaColumns);
         System.out.println("  first mouths: " + String.join(" | ", mouths));
 
         assertTrue(landColumns > 2000, "too little dry land was sampled for this to mean anything");

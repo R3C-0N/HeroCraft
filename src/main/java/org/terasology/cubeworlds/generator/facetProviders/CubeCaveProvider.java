@@ -109,6 +109,41 @@ public class CubeCaveProvider implements ScalableFacetProvider {
     private static final double ENTRANCE_LEVEL = 0.55;
     private static final double ENTRANCE_SOFT = 0.15;
 
+    /**
+     * How much wider a gallery runs where an entrance is permitted, and this is the difference
+     * between a cave one enters and a cave one falls into.
+     * <p>
+     * Switching the roof off lets the tunnel through the last block of ground, but what comes out is
+     * the <em>tip</em> of the tube grazing the surface, and a tip is a point: measured over a
+     * thousand blocks of two seeds, the median mouth was one column across and only one in thirty
+     * reached nine. A player walks over a one-column hole without seeing it, so a network that is
+     * open on paper reads as sealed. The flare widens the bore under a permitted entrance, and since
+     * the section goes as the square of the radius it is the cheapest lever there is. It reaches no
+     * deeper than the permission itself — {@code openness} is only read in the top few tens of
+     * blocks — so galleries keep their own bore and only the porch swells.
+     * <p>
+     * <b>The count is not the lever; the size is.</b> Moving {@link #ENTRANCE_LEVEL} instead was
+     * tried at four settings and only slides the number of mouths up and down: the field is noise at
+     * a hundred and twenty blocks, so rarer permission clumps what is left and the walk to the
+     * nearest way in went from 168 blocks to 388 while the median mouth stayed at three columns.
+     * The permission is therefore left exactly where it was, and this is the only number that moved.
+     * <p>
+     * Measured by {@code CaveReachTest}, which is the oracle to re-run before touching this: at 2.5
+     * the walk to a mouth of nine columns or more averages 168, 191 and 213 blocks over three
+     * windows of two seeds, against the 200 to 300 asked for, and 77 to 91 % of the dry land lies
+     * within three hundred blocks of one. Before the flare there were nought or one such mouth per
+     * window and no figure to quote.
+     * <p>
+     * <b>The ceiling is the surface, not the reach.</b> 3.2 was measured too and reads better on
+     * every reach figure — mean 126 to 189, coverage up to 99,7 % — but it takes the world-wide
+     * share of holed land columns from 0,046 % to 0,659 %, against the 0,8 % above which
+     * {@code CaveEntranceCensusTest} calls the ground pitted. Twenty per cent of headroom on a
+     * bound of taste is not headroom. 2.5 sits at 0,396 %, half the bound, and still meets the
+     * target. Read the world-wide census and not the three windows before moving this: the windows
+     * are coastal lowland and read 0,13 % where the whole planet reads 0,40 %.
+     */
+    private static final double MOUTH_FLARE = 2.5;
+
     /** Rock left over a gallery where no entrance is permitted, and the length of the fade. */
     private static final double ROOF_COVER = 6.0;
     private static final double ROOF_FADE = 16.0;
@@ -308,7 +343,7 @@ public class CubeCaveProvider implements ScalableFacetProvider {
         // point a few blocks short of daylight: the first version did exactly that, and the census
         // found not one way in anywhere on the planet. Where the field permits an entrance the roof
         // term is simply switched off, and the gallery carves through the last block of ground.
-        double roof = openness + (1.0 - openness) * clamp((depth - cover) / ROOF_FADE);
+        double roof = openness * MOUTH_FLARE + (1.0 - openness) * clamp((depth - cover) / ROOF_FADE);
         if (roof <= 0.0) {
             return 0.0;
         }
