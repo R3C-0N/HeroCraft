@@ -32,8 +32,8 @@ class CaveFieldCalibrationTest {
     private static final int LOWEST = -192;
     private static final int HIGHEST = 120;
 
-    private static final double TUNNEL_H = 64.0;
-    private static final double TUNNEL_V = 42.0;
+    private static final double TUNNEL_H = 96.0;
+    private static final double TUNNEL_V = 63.0;
 
     @Test
     void theFieldsAreAsWideAndAsSteepAsTheThresholdsAssume() {
@@ -55,10 +55,17 @@ class CaveFieldCalibrationTest {
         // The two systems the provider actually carves, at their own sizes. The gradients scale as
         // one over the feature size, so the minor system's are the main one's times 64/40 across
         // and 42/30 up.
-        bore("main  64x42", sigma, 0.014, oneOctave[1], oneOctave[2]);
-        bore("minor 40x34", sigma, 0.012, oneOctave[1] * 64 / 40, oneOctave[2] * 42 / 34);
-        System.out.printf("  a room level of 2.0 sigma on the three-octave field is %.5f, "
-                + "its peak at 2.8 sigma is %.5f%n", 2.0 * threeOctaves[0], 2.8 * threeOctaves[0]);
+        bore("main  96x63", sigma, 0.014, oneOctave[1], oneOctave[2]);
+        bore("minor 60x51", sigma, 0.012, oneOctave[1] * 96 / 60, oneOctave[2] * 63 / 51);
+        // The three room tiers, against what the field can actually reach: a level set past the
+        // range of the noise is a room that exists nowhere, and nothing on screen would say so.
+        double[][] tiers = {{1.5, 2.3}, {2.0, 2.8}, {2.4, 3.0}};
+        String[] names = {"chamber ", "hall    ", "cathedral"};
+        for (int tier = 0; tier < tiers.length; tier++) {
+            System.out.printf("  %s room: level %.1f sigma = %.5f, peak %.1f sigma = %.5f%n",
+                    names[tier], tiers[tier][0], tiers[tier][0] * threeOctaves[0],
+                    tiers[tier][1], tiers[tier][1] * threeOctaves[0]);
+        }
 
         assertTrue(sigma > 0.34 && sigma < 0.52,
                 "the one-octave field is not the width the thresholds were computed for: " + sigma);

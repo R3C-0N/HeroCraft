@@ -90,10 +90,18 @@ class CaveConnectivityTest {
         double headroom = runsOfAtLeast(carved, 2) / (double) Math.max(1, total);
         double halls = runsOfAtLeast(carved, 5) / (double) Math.max(1, total);
         System.out.printf("%d carved cells in %d components; largest %.1f %%, second %.1f %%, "
-                        + "%d components of 512 cells or more; %.1f %% stand two blocks tall, "
-                        + "%.1f %% stand five%n",
-                total, components, 100.0 * largest / total, 100.0 * second / total,
-                bigEnough, 100.0 * headroom, 100.0 * halls);
+                        + "%d components of 512 cells or more%n",
+                total, components, 100.0 * largest / total, 100.0 * second / total, bigEnough);
+
+        // The height profile, which is the only thing that says whether the caves are walked or
+        // crawled. A cell counts only if the cells above it are carved too, so a gallery of height h
+        // can never score better than (h-1)/h at the two-block mark: the figure is a ceiling on the
+        // shape, not a percentage of anything a player counts.
+        System.out.print("  standing room:");
+        for (int tall : new int[]{2, 3, 5, 10, 16, 24}) {
+            System.out.printf("  %d+ %.1f %%", tall, 100.0 * runsOfAtLeast(carved, tall) / total);
+        }
+        System.out.println();
 
         assertTrue(total > 20000, "too little was carved in this box for the shape to mean anything");
         assertTrue(largest > 0.5 * total,

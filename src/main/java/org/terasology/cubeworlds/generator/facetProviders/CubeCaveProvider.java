@@ -75,9 +75,16 @@ public class CubeCaveProvider implements ScalableFacetProvider {
      * <p>
      * The vertical size is the smaller of the pair on purpose — see
      * {@code SphereSampler.readAt}: it is what lays the galleries over on their side.
+     * <p>
+     * <b>The size of a gallery and the volume carved are separate levers, and that is what these
+     * numbers buy.</b> The fraction fixes what share of the rock is hollow; the feature size fixes
+     * how that share is parcelled out. Scaling both sizes by half again left the fraction alone and
+     * turned a bore of 5.3 by 3.0 into one of 8.0 by 4.5 — the same hollow rock, in a third fewer
+     * galleries, all of them walkable. Raising the fraction instead would have widened them too, and
+     * left the ground a sponge.
      */
-    private static final double MAIN_HORIZONTAL = 64.0;
-    private static final double MAIN_VERTICAL = 42.0;
+    private static final double MAIN_HORIZONTAL = 96.0;
+    private static final double MAIN_VERTICAL = 63.0;
     private static final double MAIN_FRACTION = 0.014;
 
     /**
@@ -86,19 +93,32 @@ public class CubeCaveProvider implements ScalableFacetProvider {
      * character of 1.6, and the connectivity census read it straight away: barely half of the
      * carved cells had a carved cell above them, so half of what had been dug was a crawl.
      */
-    private static final double MINOR_HORIZONTAL = 40.0;
-    private static final double MINOR_VERTICAL = 34.0;
+    private static final double MINOR_HORIZONTAL = 60.0;
+    private static final double MINOR_VERTICAL = 51.0;
     private static final double MINOR_FRACTION = 0.012;
 
     /**
      * Rooms are a swelling of the galleries rather than a system of their own. A separate field of
      * blobs would open caverns with no way in; a wider bore cannot, being the same tunnel.
+     * <p>
+     * <b>Three tiers, and they combine by the maximum.</b> A chamber one walks through, a hall one
+     * crosses, and a cathedral one remembers afterwards. Multiplying two swells together would give
+     * seven times three and a half, and a gallery twenty-four times its bore is not a room: it is
+     * the end of the rock.
+     * <p>
+     * <b>Rarity is bought with the feature size, never by raising the level.</b> A field at 320
+     * blocks has its peaks that much further apart, so a cathedral is rare because there is one per
+     * two hundred-odd blocks in each direction — not because the threshold sits somewhere the noise
+     * barely reaches. Past three sigma the three-octave field is at the edge of its range, and a
+     * room asked for beyond it is a room that exists nowhere at all.
      */
-    private static final double ROOM_HORIZONTAL = 110.0;
-    private static final double ROOM_VERTICAL = 50.0;
-    private static final double ROOM_LEVEL = 2.0 * SIGMA_THREE_OCTAVES;
-    private static final double ROOM_PEAK = 2.8 * SIGMA_THREE_OCTAVES;
-    private static final double ROOM_SWELL = 3.0;
+    private static final double[] ROOM_HORIZONTAL = {70.0, 150.0, 320.0};
+    private static final double[] ROOM_VERTICAL = {34.0, 64.0, 120.0};
+    private static final double[] ROOM_LEVEL = {
+            1.5 * SIGMA_THREE_OCTAVES, 2.0 * SIGMA_THREE_OCTAVES, 2.4 * SIGMA_THREE_OCTAVES};
+    private static final double[] ROOM_PEAK = {
+            2.3 * SIGMA_THREE_OCTAVES, 2.8 * SIGMA_THREE_OCTAVES, 3.0 * SIGMA_THREE_OCTAVES};
+    private static final double[] ROOM_SWELL = {1.0, 2.5, 6.0};
 
     /**
      * Where the caves are allowed to break the surface. A constant depth would either open every
@@ -173,7 +193,7 @@ public class CubeCaveProvider implements ScalableFacetProvider {
     private Noise mainTwo;
     private Noise minorOne;
     private Noise minorTwo;
-    private Noise rooms;
+    private final Noise[] rooms = new Noise[ROOM_HORIZONTAL.length];
     private Noise entrances;
 
     public CubeCaveProvider(CubeGeometry geometry) {
@@ -189,7 +209,9 @@ public class CubeCaveProvider implements ScalableFacetProvider {
         mainTwo = new BrownianNoise(new SimplexNoise(seed ^ 0x6a2f90e3L), 1);
         minorOne = new BrownianNoise(new SimplexNoise(seed ^ 0x11b4d80fL), 1);
         minorTwo = new BrownianNoise(new SimplexNoise(seed ^ 0x74e6a259L), 1);
-        rooms = new BrownianNoise(new SimplexNoise(seed ^ 0x2c871f45L), 3);
+        rooms[0] = new BrownianNoise(new SimplexNoise(seed ^ 0x2c871f45L), 3);
+        rooms[1] = new BrownianNoise(new SimplexNoise(seed ^ 0x48be2a91L), 3);
+        rooms[2] = new BrownianNoise(new SimplexNoise(seed ^ 0x7a0c5de3L), 3);
         entrances = new BrownianNoise(new SimplexNoise(seed ^ 0x59a3e6cbL), 2);
     }
 
@@ -231,7 +253,10 @@ public class CubeCaveProvider implements ScalableFacetProvider {
         int fieldMainTwo = lattice.addVolumeField(mainTwo, MAIN_HORIZONTAL, MAIN_VERTICAL);
         int fieldMinorOne = lattice.addVolumeField(minorOne, MINOR_HORIZONTAL, MINOR_VERTICAL);
         int fieldMinorTwo = lattice.addVolumeField(minorTwo, MINOR_HORIZONTAL, MINOR_VERTICAL);
-        int fieldRooms = lattice.addVolumeField(rooms, ROOM_HORIZONTAL, ROOM_VERTICAL);
+        int[] fieldRooms = new int[rooms.length];
+        for (int tier = 0; tier < rooms.length; tier++) {
+            fieldRooms[tier] = lattice.addVolumeField(rooms[tier], ROOM_HORIZONTAL[tier], ROOM_VERTICAL[tier]);
+        }
         int fieldEntrances = lattice.addColumnField(entrances, ENTRANCE_SIZE);
 
         BlockRegion densityRegion = density.getWorldRegion();
@@ -356,36 +381,53 @@ public class CubeCaveProvider implements ScalableFacetProvider {
     }
 
     private static boolean isCarved(SphereFieldLattice lattice, int x, int y, int z, double radius,
-                                    int fieldRooms,
+                                    int[] fieldRooms,
                                     int mainOneField, int mainTwoField, double mainThreshold,
                                     int minorOneField, int minorTwoField, double minorThreshold) {
         double a = lattice.volume(mainOneField, x, y, z);
         double b = lattice.volume(mainTwoField, x, y, z);
         double fromMain = a * a + b * b;
-        double swell = -1.0;
-        if (fromMain < square(mainThreshold * radius * (1.0 + ROOM_SWELL))) {
-            swell = swellAt(lattice, fieldRooms, x, y, z);
-            if (fromMain < square(mainThreshold * radius * swell)) {
-                return true;
-            }
+        double mainScale = mainThreshold * radius;
+        if (fromMain < square(mainScale) || roomReaches(lattice, fieldRooms, x, y, z, fromMain, mainScale)) {
+            return true;
         }
 
         double c = lattice.volume(minorOneField, x, y, z);
         double d = lattice.volume(minorTwoField, x, y, z);
         double fromMinor = c * c + d * d;
-        if (fromMinor < square(minorThreshold * radius * (1.0 + ROOM_SWELL))) {
-            if (swell < 0.0) {
-                swell = swellAt(lattice, fieldRooms, x, y, z);
-            }
-            return fromMinor < square(minorThreshold * radius * swell);
-        }
-        return false;
+        double minorScale = minorThreshold * radius;
+        return fromMinor < square(minorScale)
+                || roomReaches(lattice, fieldRooms, x, y, z, fromMinor, minorScale);
     }
 
-    /** How much the room field widens a gallery here: one outside a room, up to four in one. */
-    private static double swellAt(SphereFieldLattice lattice, int fieldRooms, int x, int y, int z) {
-        return 1.0 + ROOM_SWELL
-                * clamp((lattice.volume(fieldRooms, x, y, z) - ROOM_LEVEL) / (ROOM_PEAK - ROOM_LEVEL));
+    /**
+     * Whether a room opens this cell out far enough to reach it, at any tier.
+     * <p>
+     * The tiers are asked in order and the first that reaches wins, which is the maximum of the
+     * three and never their product: two tiers peaking in the same place should give the wider of
+     * the two rooms, not the two multiplied together.
+     * <p>
+     * <b>A tier that cannot reach this far is never read.</b> Half of the rock lies inside the
+     * radius the widest tier could open, so a cell that simply asks all three costs three
+     * interpolations almost everywhere, and the carving pass nearly doubled when the tiers went from
+     * one to three. Comparing the distance against what a tier reaches <em>at its peak</em> is a
+     * multiplication; reading the field is eight array loads and seven blends. Most cells in that
+     * annulus are far enough out that only the cathedral could ever have reached them.
+     */
+    private static boolean roomReaches(SphereFieldLattice lattice, int[] fieldRooms,
+                                       int x, int y, int z, double distance, double scale) {
+        for (int tier = 0; tier < fieldRooms.length; tier++) {
+            if (distance >= square(scale * (1.0 + ROOM_SWELL[tier]))) {
+                continue;
+            }
+            double swell = 1.0 + ROOM_SWELL[tier] * clamp(
+                    (lattice.volume(fieldRooms[tier], x, y, z) - ROOM_LEVEL[tier])
+                            / (ROOM_PEAK[tier] - ROOM_LEVEL[tier]));
+            if (distance < square(scale * swell)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static double square(double value) {
