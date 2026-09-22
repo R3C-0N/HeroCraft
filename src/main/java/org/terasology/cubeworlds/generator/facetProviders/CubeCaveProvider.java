@@ -60,12 +60,15 @@ public class CubeCaveProvider implements ScalableFacetProvider {
     private static final int LATTICE_STEP = 4;
 
     /**
-     * Widths of the fields, measured by {@code CaveFieldCalibrationTest} on the engine's noise.
-     * They belong to the shape of that noise and to nothing here, so they are checked rather than
+     * Width of the tunnel field, measured by {@code CaveFieldCalibrationTest} on the engine's noise.
+     * It belongs to the shape of that noise and to nothing here, so it is checked rather than
      * trusted: retune the engine's simplex and this generator carves either nothing or everything.
+     * <p>
+     * The room fields are <em>not</em> described by a sigma, and that is deliberate — see
+     * {@code ROOM_LEVEL}. A width says how far a field wanders on average and says nothing about how
+     * far it ever gets, which is the only question a level set asks.
      */
     private static final double SIGMA_ONE_OCTAVE = 0.4255;
-    private static final double SIGMA_THREE_OCTAVES = 0.2736;
 
     /**
      * The two systems of galleries. Sizes are in blocks and not counts around the sphere, unlike
@@ -106,19 +109,31 @@ public class CubeCaveProvider implements ScalableFacetProvider {
      * seven times three and a half, and a gallery twenty-four times its bore is not a room: it is
      * the end of the rock.
      * <p>
-     * <b>Rarity is bought with the feature size, never by raising the level.</b> A field at 320
-     * blocks has its peaks that much further apart, so a cathedral is rare because there is one per
-     * two hundred-odd blocks in each direction — not because the threshold sits somewhere the noise
-     * barely reaches. Past three sigma the three-octave field is at the edge of its range, and a
-     * room asked for beyond it is a room that exists nowhere at all.
+     * <b>The levels are measured quantiles, and writing them in sigma switched all three off.</b>
+     * They first read 1.5, 2.0 and 2.4 sigma for the levels and 2.3, 2.8 and 3.0 for the peaks,
+     * which looks like a reasonable spread until the field is measured: over 320 000 samples the
+     * cathedral field never exceeds <b>0.759</b>, and its peak was asking for 0.821. The swell
+     * therefore never left the neighbourhood of one, and the same was nearly true of the other two.
+     * Nothing said so. The galleries were there, the world rendered, and the halls simply did not
+     * exist — {@code RoomSizeProbeTest} put the largest open space in a whole sample at twenty-one
+     * blocks across, against the fifty-six the table claimed.
+     * <p>
+     * <b>And a tall column of air is not a room.</b> The first check measured the longest unbroken
+     * vertical run and read 2.1 % of the carved rock standing twenty-four blocks tall, which was
+     * true and meant nothing: that finds the places where a gallery happens to stand on end. A room
+     * has to be wide in all three directions at once, which is what the erosion in
+     * {@code RoomSizeProbeTest} measures and what these numbers are now set against.
      */
     private static final double[] ROOM_HORIZONTAL = {70.0, 150.0, 320.0};
     private static final double[] ROOM_VERTICAL = {34.0, 64.0, 120.0};
-    private static final double[] ROOM_LEVEL = {
-            1.5 * SIGMA_THREE_OCTAVES, 2.0 * SIGMA_THREE_OCTAVES, 2.4 * SIGMA_THREE_OCTAVES};
-    private static final double[] ROOM_PEAK = {
-            2.3 * SIGMA_THREE_OCTAVES, 2.8 * SIGMA_THREE_OCTAVES, 3.0 * SIGMA_THREE_OCTAVES};
-    private static final double[] ROOM_SWELL = {1.0, 2.5, 6.0};
+
+    /** A tenth, a twentieth and a hundredth of the volume, measured on each field in turn. */
+    private static final double[] ROOM_LEVEL = {0.3416, 0.4552, 0.6114};
+
+    /** Where each tier reaches its full swell: a fiftieth, a two-hundredth, a five-hundredth. */
+    private static final double[] ROOM_PEAK = {0.5114, 0.6369, 0.7133};
+
+    private static final double[] ROOM_SWELL = {1.0, 3.5, 9.0};
 
     /**
      * Where the caves are allowed to break the surface. A constant depth would either open every
