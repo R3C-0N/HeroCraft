@@ -15,8 +15,10 @@ import org.terasology.core.world.generator.rasterizers.TreeRasterizer;
 import org.terasology.cubeworlds.generator.facetProviders.CubeBiomeProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeCaveProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeClimateProvider;
+import org.terasology.cubeworlds.generator.facetProviders.CubeOreProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeRegionProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeSurfaceProvider;
+import org.terasology.cubeworlds.generator.rasterizers.CubeOreRasterizer;
 import org.terasology.cubeworlds.generator.rasterizers.CubeSolidRasterizer;
 import org.terasology.engine.context.Context;
 import org.terasology.engine.core.SimpleUri;
@@ -142,9 +144,15 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator
                 // them: the caves take surfaces away where they have eaten the ground, and a tree
                 // chosen before that would be left standing in mid-air over a cave mouth.
                 .addProvider(new CubeCaveProvider(geometry))
+                // After the caves, and the chain sees to it: requiring the density puts a provider
+                // below every priority that updates it, so the rock this reads is already carved.
+                .addProvider(new CubeOreProvider(geometry))
                 .addProvider(new DefaultFloraProvider())
                 .addProvider(new DefaultTreeProvider())
                 .addRasterizer(new CubeSolidRasterizer(geometry))
+                // Straight after the ground is laid: the ore replaces rock, so it has to see what
+                // the solid rasterizer wrote, and it must not be there for the flora to stand on.
+                .addRasterizer(new CubeOreRasterizer())
                 .addPlugins()
                 .addRasterizer(new FloraRasterizer())
                 .addRasterizer(new TreeRasterizer())

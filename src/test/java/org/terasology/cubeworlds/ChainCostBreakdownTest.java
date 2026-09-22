@@ -9,6 +9,7 @@ import org.terasology.cubeworlds.generator.CubeGeometry;
 import org.terasology.cubeworlds.generator.facetProviders.CubeBiomeProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeCaveProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeClimateProvider;
+import org.terasology.cubeworlds.generator.facetProviders.CubeOreProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeRegionProvider;
 import org.terasology.cubeworlds.generator.facetProviders.CubeSurfaceProvider;
 import org.terasology.cubeworlds.topology.CubePattern;
@@ -62,6 +63,8 @@ class ChainCostBreakdownTest {
         steps.add(() -> new SurfaceToDensityProvider());
         names.add("grottes (creusement)");
         steps.add(() -> new CubeCaveProvider(cube));
+        names.add("minerais (filons)");
+        steps.add(() -> new CubeOreProvider(cube));
 
         // Every chain is built and exercised before any of them is timed. Warming each chain just
         // before measuring it, which is the obvious way round, makes the first chain measured pay

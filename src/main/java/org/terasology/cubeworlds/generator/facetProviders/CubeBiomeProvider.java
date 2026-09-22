@@ -126,8 +126,8 @@ public class CubeBiomeProvider implements ScalableFacetProvider {
      * fields rescaled, 0.29 was still above everything the arcane field reached on land — and a
      * region that exists nowhere is not an error, it is a census line reading "nowhere".
      */
-    private static final float VOLCANIC_MASK = 0.22f;
-    private static final float ARCANE_MASK = 0.20f;
+    public static final float VOLCANIC_MASK = 0.22f;
+    public static final float ARCANE_MASK = 0.20f;
     private static final float MIASMA_MASK = 0.18f;
 
     @Override
