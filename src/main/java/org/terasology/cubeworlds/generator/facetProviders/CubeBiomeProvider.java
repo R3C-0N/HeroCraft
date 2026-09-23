@@ -157,7 +157,7 @@ public class CubeBiomeProvider implements ScalableFacetProvider {
         for (Vector2ic pos : biomeFacet.getWorldArea()) {
             float temp = temperatureFacet.getWorld(pos);
             float humidity = humidityFacet.getWorld(pos);
-            float height = elevationFacet.getWorld(pos) * scale;
+            float height = elevationFacet.getWorld(pos);
             float latitude = latitudeFacet.getWorld(pos);
             float depth = seaLevel - height;
             boolean land = height > seaLevel;

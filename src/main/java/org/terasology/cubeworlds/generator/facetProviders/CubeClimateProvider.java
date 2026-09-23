@@ -118,7 +118,7 @@ public class CubeClimateProvider implements ScalableFacetProvider {
             double band = 1.0 - Math.abs(sampler.sinLatitude() + sampler.read(bandNoise, climateSize) * BAND_WAVER);
             band = Math.max(0.0, Math.min(1.0, band));
 
-            double height = elevation.getWorld(pos) * scale - seaLevel;
+            double height = elevation.getWorld(pos) - seaLevel;
             double altitudeTendency = 1.0 - Math.max(0.0, Math.min(1.0, height / ALTITUDE_SPAN));
             double background = (sampler.read(backgroundNoise, climateSize) + 1.0) * 0.5;
 

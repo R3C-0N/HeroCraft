@@ -97,7 +97,11 @@ public class CubeSurfaceProvider implements ScalableFacetProvider {
             double elevation = seaLevel
                     + continent * CONTINENT_AMPLITUDE
                     + relief * RELIEF_AMPLITUDE * land;
-            facet.setWorld(pos.x(), pos.y(), (float) (elevation / scale));
+            // In blocks at every scale, which is what every reader of the facet expects: the stock
+            // density provider takes it as a height and the sunlight rasterizer compares it with
+            // one. Divided by the scale, the ground of a coarse region landed at a fraction of its
+            // height, under the sea everywhere.
+            facet.setWorld(pos.x(), pos.y(), (float) elevation);
         }
         region.setRegionFacet(ElevationFacet.class, facet);
     }
