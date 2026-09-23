@@ -16,6 +16,10 @@
         {
             "id": "CoreWorlds",
             "minVersion": "2.0.0"
+        },
+        {
+            "id": "CoreRendering",
+            "minVersion": "1.0.0"
         }
     ],
     "serverSideOnly": false,

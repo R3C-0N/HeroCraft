@@ -36,6 +36,11 @@ public final class ColumnSummarizer {
     @FunctionalInterface
     public interface MaterialNamer {
         int id(CubeCell cell, Biome biome, Vector3i worldPos, int seaLevel, float density);
+
+        /** Only asked of materials a player put there; the generator's cells know their own kind. */
+        default boolean isLiquid(int material) {
+            return false;
+        }
     }
 
     /** Light of a cell open to the sky, on the engine's scale of fifteen. */
@@ -44,11 +49,18 @@ public final class ColumnSummarizer {
     private final World world;
     private final CubeGeometry geometry;
     private final MaterialNamer namer;
+    private final DistantEdits edits;
 
     public ColumnSummarizer(World world, CubeGeometry geometry, MaterialNamer namer) {
+        this(world, geometry, namer, null);
+    }
+
+    /** @param edits what players changed, read before the generator wherever it covers a cell */
+    public ColumnSummarizer(World world, CubeGeometry geometry, MaterialNamer namer, DistantEdits edits) {
         this.world = world;
         this.geometry = geometry;
         this.namer = namer;
+        this.edits = edits;
     }
 
     public ColumnSection summarize(SectionKey key) {
@@ -79,6 +91,7 @@ public final class ColumnSummarizer {
                 int cx = cells.minX() + u;
                 int cz = cells.minZ() + v;
                 Biome biome = biomes.getWorld(column.set(cx, cz));
+                boolean edited = edits != null && edits.touches(cx * scale, cz * scale);
 
                 // Top down, so that the first run is the one the sky sees.
                 int runTop = -1;
@@ -94,11 +107,20 @@ public final class ColumnSummarizer {
                     CubeCell kind = CubeCell.classify(geometry, d, surfaces.getWorld(cell), caves.getWorld(cell),
                             basePosY, seaLevel, scale, biome);
                     int material = -1;
-                    if (kind.isFilled()) {
-                        worldPos.set(cx * scale, basePosY, cz * scale);
-                        material = namer.id(kind, biome, worldPos, seaLevel, d);
+                    boolean liquid;
+                    int edit = edited ? edits.cell(cx * scale, basePosY, cz * scale) : DistantEdits.NO_EDIT;
+                    if (edit != DistantEdits.NO_EDIT) {
+                        // What a player left there, in place of what the generator would have put.
+                        material = edit;
+                        liquid = edit >= 0 && namer.isLiquid(edit);
+                        kind = edit < 0 ? CubeCell.AIR : liquid ? CubeCell.WATER : CubeCell.SURFACE;
+                    } else {
+                        if (kind.isFilled()) {
+                            worldPos.set(cx * scale, basePosY, cz * scale);
+                            material = namer.id(kind, biome, worldPos, seaLevel, d);
+                        }
+                        liquid = kind.isLiquid();
                     }
-                    boolean liquid = kind.isLiquid();
                     if (material == runMaterial && liquid == runLiquid && material >= 0) {
                         runBottom = basePosY;
                         continue;
