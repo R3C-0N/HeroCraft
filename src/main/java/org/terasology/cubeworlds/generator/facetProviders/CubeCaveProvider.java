@@ -60,6 +60,13 @@ public class CubeCaveProvider implements ScalableFacetProvider {
     private static final int LATTICE_STEP = 4;
 
     /**
+     * The coarsest scale at which galleries are still carved, for the distant terrain. Past it a cell
+     * is wider than the bore of a gallery and would only read noise; see {@code
+     * DistantColumnCensusTest} for what each level keeps.
+     */
+    public static final int MAX_CARVED_SCALE = 4;
+
+    /**
      * Width of the tunnel field, measured by {@code CaveFieldCalibrationTest} on the engine's noise.
      * It belongs to the shape of that noise and to nothing here, so it is checked rather than
      * trusted: retune the engine's simplex and this generator carves either nothing or everything.
@@ -235,11 +242,12 @@ public class CubeCaveProvider implements ScalableFacetProvider {
         DensityFacet density = region.getRegionFacet(DensityFacet.class);
         CaveFacet caves = new CaveFacet(region.getRegion(), region.getBorderForFacet(DensityFacet.class));
 
-        // No caves in the distance. A level-of-detail cell stands for several blocks, so a gallery
-        // six blocks across is below the resolution and would come out as a scatter of single-cell
-        // holes in the far terrain. Skipping it also means the whole cost of this provider is paid
-        // only where one can actually walk into the result.
-        if (scale > 1f) {
+        // At a coarser scale, a cell of the region stands for scale blocks of the world in every
+        // direction, and it is carved if the world is carved where its corner falls: the distant
+        // terrain keeps its overhangs that way, down to the scale where a cell is wider than a
+        // gallery. Past that scale, or at a scale that is not a whole number of blocks, no caves.
+        int cellBlocks = Math.round(scale);
+        if (scale > 1f && (cellBlocks != scale || cellBlocks > MAX_CARVED_SCALE)) {
             region.setRegionFacet(CaveFacet.class, caves);
             return;
         }
@@ -263,7 +271,9 @@ public class CubeCaveProvider implements ScalableFacetProvider {
             return;
         }
 
-        SphereFieldLattice lattice = new SphereFieldLattice(geometry, LATTICE_STEP);
+        // The lattice is spaced no finer than the cells it serves, so its cost follows the number of
+        // cells whatever the scale; at scale one it is exactly what it always was.
+        SphereFieldLattice lattice = new SphereFieldLattice(geometry, Math.max(LATTICE_STEP, cellBlocks));
         int fieldMainOne = lattice.addVolumeField(mainOne, MAIN_HORIZONTAL, MAIN_VERTICAL);
         int fieldMainTwo = lattice.addVolumeField(mainTwo, MAIN_HORIZONTAL, MAIN_VERTICAL);
         int fieldMinorOne = lattice.addVolumeField(minorOne, MINOR_HORIZONTAL, MINOR_VERTICAL);
@@ -275,7 +285,10 @@ public class CubeCaveProvider implements ScalableFacetProvider {
         int fieldEntrances = lattice.addColumnField(entrances, ENTRANCE_SIZE);
 
         BlockRegion densityRegion = density.getWorldRegion();
-        lattice.prepare(face, densityRegion);
+        lattice.prepare(face, cellBlocks == 1 ? densityRegion : new BlockRegion(
+                densityRegion.minX() * cellBlocks, densityRegion.minY() * cellBlocks, densityRegion.minZ() * cellBlocks,
+                densityRegion.maxX() * cellBlocks + cellBlocks - 1, densityRegion.maxY() * cellBlocks + cellBlocks - 1,
+                densityRegion.maxZ() * cellBlocks + cellBlocks - 1));
 
         ElevationFacet elevationFacet = region.getRegionFacet(ElevationFacet.class);
         // Clamped for the same reason DensityNoiseProvider clamps: the density region can come out
@@ -295,8 +308,11 @@ public class CubeCaveProvider implements ScalableFacetProvider {
                 int ex = Math.max(elevationArea.minX(), Math.min(elevationArea.maxX(), x));
                 int ez = Math.max(elevationArea.minY(), Math.min(elevationArea.maxY(), z));
                 float elevation = elevationFacet.getWorld(ex, ez);
-                double radius = radiusAt(lattice, fieldEntrances, x, y, z, elevation, seaLevel);
-                if (radius > 0.0 && isCarved(lattice, x, y, z, radius, fieldRooms,
+                int wx = x * cellBlocks;
+                int wy = y * cellBlocks;
+                int wz = z * cellBlocks;
+                double radius = radiusAt(lattice, fieldEntrances, wx, wy, wz, elevation, seaLevel);
+                if (radius > 0.0 && isCarved(lattice, wx, wy, wz, radius, fieldRooms,
                         fieldMainOne, fieldMainTwo, mainThreshold,
                         fieldMinorOne, fieldMinorTwo, minorThreshold)) {
                     densityValues[i] = CARVED;
