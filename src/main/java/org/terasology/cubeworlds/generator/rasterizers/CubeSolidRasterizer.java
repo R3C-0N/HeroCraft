@@ -91,64 +91,71 @@ public class CubeSolidRasterizer implements ScalableWorldRasterizer {
             // basePosY and not worldPos.y(): the latter counts in chunk units, so it is the scaled
             // figure on a level-of-detail chunk, and the world would end somewhere else out there.
             float basePosY = (pos.y() + chunk.getChunkWorldOffsetY()) * scale;
-            if (basePosY < geometry.floorY() || basePosY > geometry.ceilingY()) {
-                // Off the world, above or below. No block, and no biome either: a biome hash of
-                // zero reads back as "nowhere", which is the truth here.
-                continue;
-            }
-            float posY = basePosY + Math.max(0, Math.min(scale, density));
-            chunk.chunkToWorldPosition(pos, worldPos);
-
             Biome biome = biomeFacet.get(pos2d);
-
-            if (caveFacet.get(pos)) {
-                // Ahead of every other branch, and the water branch in particular. An empty cell
-                // below the reference level is a cell of sea to the chain below, which is right for
-                // an ocean and would flood every gallery in the world: the sea sits at 32 and the
-                // floor of the world at -192. Nothing is written, the chunk having started as air.
-                biomeRegistry.setBiome(CoreBiome.UNDERGROUND, chunk, pos.x(), pos.y(), pos.z());
-                if (basePosY <= geometry.lavaY()) {
-                    // The deepest galleries are drowned in lava, which is the only light there is
-                    // down here: a sealed cavity is pitch dark, there being no ambient minimum
-                    // anywhere in the renderer. It is also the only reason a screenshot of the
-                    // bottom of the world can be told from a screenshot of a generator that failed.
-                    chunk.setBlock(pos, lava);
-                }
-                continue;
+            // The decision lives in CubeCell, which the distant terrain asks too. What is left here
+            // is turning it into blocks and biomes, and why each branch writes what it writes.
+            CubeCell cell = CubeCell.classify(geometry, density, surfacesFacet.get(pos), caveFacet.get(pos),
+                    basePosY, seaLevel, scale, biome);
+            switch (cell) {
+                case OUTSIDE:
+                    // Off the world, above or below. No block, and no biome either: a biome hash of
+                    // zero reads back as "nowhere", which is the truth here.
+                    continue;
+                case CAVE:
+                case CAVE_LAVA:
+                    // Ahead of every other branch, and the water branch in particular. An empty cell
+                    // below the reference level is a cell of sea to the chain below, which is right
+                    // for an ocean and would flood every gallery in the world: the sea sits at 32 and
+                    // the floor of the world at -192. Nothing is written, the chunk having started as
+                    // air.
+                    biomeRegistry.setBiome(CoreBiome.UNDERGROUND, chunk, pos.x(), pos.y(), pos.z());
+                    if (cell == CubeCell.CAVE_LAVA) {
+                        // The deepest galleries are drowned in lava, which is the only light there is
+                        // down here: a sealed cavity is pitch dark, there being no ambient minimum
+                        // anywhere in the renderer. It is also the only reason a screenshot of the
+                        // bottom of the world can be told from a screenshot of a generator that failed.
+                        chunk.setBlock(pos, lava);
+                    }
+                    continue;
+                default:
+                    break;
             }
             biomeRegistry.setBiome(biome, chunk, pos.x(), pos.y(), pos.z());
-
-            if (basePosY < geometry.floorY() + scale) {
-                // The floor, and it is the whole of the lowest layer: the density here is huge and
-                // positive, so without this the world would simply carry on downwards for ever.
-                chunk.setBlock(pos, mantle);
-                continue;
-            }
-
-            if (posY < seaLevel && basePosY + scale > seaLevel && seaLevel < scale) {
-                chunk.setBlock(pos, water);
-            } else if (density > 0 && surfacesFacet.get(pos)) {
-                chunk.setBlock(pos, biome.getSurfaceBlock(worldPos, seaLevel));
-            } else if (density > 0) {
-                chunk.setBlock(pos, biome.getBelowSurfaceBlock(worldPos, density));
-            } else if (posY <= seaLevel) {
-                if (posY + scale > seaLevel && freezesOver(biome)) {
-                    // The caps carry their own ice, and they are the only ones who know which:
-                    // pack ice fractures, an ice shelf does not, and the plain snow biome has
-                    // neither. Asking the biome keeps that with the rest of the material.
-                    chunk.setBlock(pos, CoreBiome.SNOW == biome
-                            ? ice
-                            : biome.getSurfaceBlock(worldPos, seaLevel));
-                } else {
-                    chunk.setBlock(pos, water);
-                }
+            chunk.chunkToWorldPosition(pos, worldPos);
+            Block block = blockFor(cell, biome, worldPos, seaLevel, density);
+            if (block != null) {
+                chunk.setBlock(pos, block);
             }
         }
     }
 
-    /** Whether the sea has a lid here. */
-    private static boolean freezesOver(Biome biome) {
-        return CoreBiome.SNOW == biome || CoreBiome.PACK_ICE == biome || CoreBiome.ICE_SHELF == biome;
+    /**
+     * The block a cell becomes, or null for air. Public because the distant terrain names its
+     * materials through this very table, never through a copy of it.
+     * <p>
+     * The floor is the whole of the lowest layer: the density there is huge and positive, so without
+     * its own branch the world would simply carry on downwards for ever. And the caps carry their
+     * own ice, and they are the only ones who know which: pack ice fractures, an ice shelf does not,
+     * and the plain snow biome has neither. Asking the biome keeps that with the rest of the
+     * material.
+     */
+    public Block blockFor(CubeCell cell, Biome biome, Vector3ic worldPos, int seaLevel, float density) {
+        switch (cell) {
+            case MANTLE:
+                return mantle;
+            case SEA_STRADDLE:
+            case WATER:
+                return water;
+            case SURFACE:
+                return biome.getSurfaceBlock(worldPos, seaLevel);
+            case BELOW_SURFACE:
+                return biome.getBelowSurfaceBlock(worldPos, density);
+            case SEA_LID:
+                return CoreBiome.SNOW == biome ? ice : biome.getSurfaceBlock(worldPos, seaLevel);
+            case CAVE_LAVA:
+                return lava;
+            default:
+                return null;
+        }
     }
-
 }
