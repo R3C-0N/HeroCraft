@@ -50,6 +50,8 @@ public final class DistantTerrain {
     public static final class Node {
         private final SectionKey key;
         private final ColumnSection columns;
+        private final int gridX;
+        private final int gridZ;
         private final Vector3f renderPosition;
         private final int lowest;
         private final int highest;
@@ -62,7 +64,11 @@ public final class DistantTerrain {
         Node(SectionKey key, ColumnSection columns, int[] origin, ChunkMesh mesh, int lowest, int highest) {
             this.key = key;
             this.columns = columns;
-            this.renderPosition = new Vector3f(origin[0], 0, origin[1]);
+            this.gridX = origin[0];
+            this.gridZ = origin[1];
+            // The engine centres a block on its coordinates, and the mesh has it in the unit cell above
+            // them: half a block back on every axis, and a distant vertex falls on a vertex of a block.
+            this.renderPosition = new Vector3f(origin[0] - 0.5f, -0.5f, origin[1] - 0.5f);
             this.mesh = mesh;
             this.lowest = lowest;
             this.highest = highest;
@@ -76,8 +82,18 @@ public final class DistantTerrain {
             return mesh;
         }
 
+        /** Where the mesh is drawn from: its origin on the net, in the engine's frame of blocks. */
         public Vector3fc renderPosition() {
             return renderPosition;
+        }
+
+        /** The net column of the node's first column. */
+        public int gridX() {
+            return gridX;
+        }
+
+        public int gridZ() {
+            return gridZ;
         }
 
         public int lowest() {
@@ -232,8 +248,8 @@ public final class DistantTerrain {
         }
         for (Node node : nodes.values()) {
             int span = node.key.span(geometry);
-            int x0 = (int) node.renderPosition.x;
-            int z0 = (int) node.renderPosition.z;
+            int x0 = node.gridX;
+            int z0 = node.gridZ;
             for (long column : chunkColumns) {
                 int cx = (int) (column >> 32) * Chunks.SIZE_X;
                 int cz = (int) column * Chunks.SIZE_Z;
@@ -282,7 +298,7 @@ public final class DistantTerrain {
             long start = System.nanoTime();
             ColumnSection columns = summarizer.summarize(key);
             int[] origin = key.netOrigin(geometry);
-            ChunkMesh mesh = mesher.mesh(columns, origin, this::opaqueRuns);
+            ChunkMesh mesh = mesher.mesh(columns, origin, this::runs);
             int[] range = heightRange(columns);
             Node node = new Node(key, columns, origin, mesh, range[0], range[1]);
             node.lastWanted = System.nanoTime();
@@ -324,10 +340,10 @@ public final class DistantTerrain {
     }
 
     /**
-     * The opaque runs of a column of the net at a level, read from whichever built node covers it
+     * The runs of a column of the net at a level, read from whichever built node covers it
      * after folding — the same level if it exists, else the nearest coarser one.
      */
-    int[] opaqueRuns(int face, int netX, int netZ, int level) {
+    int[] runs(int face, int netX, int netZ, int level) {
         FacePos pos = geometry.fold(face, netX + 0.5, netZ + 0.5);
         if (pos.face() == CubePattern.NO_FACE) {
             return null;
@@ -343,7 +359,7 @@ public final class DistantTerrain {
             Node node = nodes.get(new SectionKey(pos.face(), l, u / span, v / span));
             if (node != null) {
                 int stride = 1 << l;
-                return DistantMesher.opaqueRuns(node.columns, (u % span) / stride, (v % span) / stride);
+                return mesher.runs(node.columns, (u % span) / stride, (v % span) / stride);
             }
         }
         return null;

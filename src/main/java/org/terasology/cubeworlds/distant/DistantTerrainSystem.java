@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.terasology.cubeworlds.generator.CubeGeometry;
 import org.terasology.cubeworlds.generator.CubeWorldGenerator;
 import org.terasology.cubeworlds.generator.rasterizers.CubeSolidRasterizer;
+import org.terasology.cubeworlds.rendering.CubeSphereProjection;
 import org.terasology.engine.config.Config;
 import org.terasology.engine.context.Context;
 import org.terasology.engine.entitySystem.entity.EntityManager;
@@ -19,13 +20,17 @@ import org.terasology.engine.entitySystem.systems.UpdateSubscriberSystem;
 import org.terasology.engine.logic.console.commandSystem.annotations.Command;
 import org.terasology.engine.registry.In;
 import org.terasology.engine.rendering.cameras.Camera;
+import org.terasology.engine.rendering.sphere.SphereProjection;
+import org.terasology.engine.rendering.world.DistantGeometry;
 import org.terasology.engine.rendering.world.DistantReach;
 import org.terasology.engine.rendering.world.WorldRenderer;
+import org.terasology.engine.utilities.Assets;
 import org.terasology.engine.world.OnChangedBlock;
 import org.terasology.engine.world.WorldComponent;
 import org.terasology.engine.world.block.Block;
 import org.terasology.engine.world.block.BlockComponent;
 import org.terasology.engine.world.block.BlockManager;
+import org.terasology.engine.world.block.ColorProvider;
 import org.terasology.engine.world.chunks.ChunkProvider;
 import org.terasology.engine.world.chunks.Chunks;
 import org.terasology.engine.world.generation.World;
@@ -130,13 +135,21 @@ public class DistantTerrainSystem extends BaseComponentSystem implements UpdateS
     private boolean start() {
         geometry = context.get(CubeGeometry.class);
         World world = ((CubeWorldGenerator) worldGenerator).getWorld();
-        if (geometry == null || world == null) {
+        SphereProjection sphere = context.get(SphereProjection.class);
+        if (geometry == null || world == null || !(sphere instanceof CubeSphereProjection)) {
             // A remote client has the generator but never initialised it: there is no chain to ask.
             return false;
         }
+        CubeSphereProjection projection = (CubeSphereProjection) sphere;
         CubeSolidRasterizer rasterizer = new CubeSolidRasterizer(geometry);
         rasterizer.initialize();
         palette = new DistantPalette(rasterizer);
+        // A chunk tints grass and leaves by the world's colour provider, BiomesAPI's when it is there,
+        // which reads these two tables; the distance reads the same ones.
+        if (context.get(ColorProvider.class) != null) {
+            palette.setBiomeColours(Assets.getTexture("engine:grasscolor").get().getData(),
+                    Assets.getTexture("engine:foliagecolor").get().getData());
+        }
         DistantEditsComponent saved = worldEntity().getComponent(DistantEditsComponent.class);
         if (saved != null) {
             edits.loadFrom(saved, name -> {
@@ -146,10 +159,11 @@ public class DistantTerrainSystem extends BaseComponentSystem implements UpdateS
             logger.info("Distant terrain: {} changed chunk(s) read back from the save", edits.capturedChunks());
         }
         ColumnSummarizer summarizer = new ColumnSummarizer(world, geometry, palette, edits);
+        summarizer.setTrees(new DistantTrees(world, blockManager, palette));
         int threads = Math.max(1, Math.min(2, Runtime.getRuntime().availableProcessors() / 4));
         terrain = new DistantTerrain(geometry, summarizer, new DistantMesher(palette), FINEST_LEVEL, threads);
         hole = new DistantHole(geometry);
-        state().set(terrain, hole);
+        state().set(terrain, new DistantDrawer(terrain, hole, projection));
         logger.info("Distant terrain on, {} node(s) built at a time", threads);
         return true;
     }
@@ -187,6 +201,7 @@ public class DistantTerrainSystem extends BaseComponentSystem implements UpdateS
             state = new DistantState();
             context.put(DistantState.class, state);
             context.put(DistantReach.class, state);
+            context.put(DistantGeometry.class, state);
         }
         return state;
     }
@@ -200,9 +215,9 @@ public class DistantTerrainSystem extends BaseComponentSystem implements UpdateS
         if (terrain == null) {
             return "distant off (chunkLods=" + config.getRendering().getChunkLods() + ")";
         }
-        DistantTerrainNode node = state().node();
+        DistantDrawer drawer = state().drawer();
         return terrain.stats() + " hole_columns=" + hole.drawnColumns() + " edited_chunks=" + edits.capturedChunks()
-                + (node == null ? " pass=absent" : " " + node.stats());
+                + " " + (drawer == null ? "pass=absent" : drawer.stats());
     }
 
     @Override

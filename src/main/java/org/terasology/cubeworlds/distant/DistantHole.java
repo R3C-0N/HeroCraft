@@ -19,9 +19,13 @@ import java.nio.ByteBuffer;
  * which would overlap the loaded box in its corners and leave a gap along its sides, and not a box
  * either, which knows nothing of the chunks still on their way or of the ones a cut seam puts a
  * whole face away in the grid. A column counts as drawn when one of its chunks has geometry on the
- * GPU, in any phase: counting only the opaque one left the sea out, and the distance was drawn
- * under the real water, hiding its bed. A pilot high enough for the ground chunks to unload gets the
- * distance back underneath, and a hole never opens on nothing.
+ * GPU, in any phase — counting only the opaque one left the sea out, and the distance was drawn
+ * under the real water, hiding its bed — and when none of its loaded chunks is still waiting for its
+ * mesh. Without that second rule a column whose deep chunk was meshed and whose surface chunk was
+ * not yet counted as drawn, and showed the sky: along the edge of the loaded box that was a ring a
+ * chunk wide, a bright line two pixels thick seen from afar, and grey patches under a pilot. A pilot
+ * high enough for the ground chunks to unload gets the distance back underneath, and a hole never
+ * opens on nothing.
  */
 public final class DistantHole {
 
@@ -40,8 +44,28 @@ public final class DistantHole {
     /** Recounts the drawn columns. Main thread: it reads the chunks' meshes. */
     public void mark(Iterable<Chunk> chunks) {
         byte[] next = new byte[marks.length];
+        // The lowest and highest chunk loaded in each column: those two are never meshed, having no
+        // neighbour on one side, and waiting for them would wait for ever.
+        int[] lowest = new int[marks.length];
+        int[] highest = new int[marks.length];
+        java.util.Arrays.fill(lowest, Integer.MAX_VALUE);
+        java.util.Arrays.fill(highest, Integer.MIN_VALUE);
         for (Chunk chunk : chunks) {
+            int i = column(chunk);
+            if (i >= 0) {
+                lowest[i] = Math.min(lowest[i], chunk.getPosition().y());
+                highest[i] = Math.max(highest[i], chunk.getPosition().y());
+            }
+        }
+        boolean[] waiting = new boolean[marks.length];
+        for (Chunk chunk : chunks) {
+            int i = column(chunk);
+            if (i < 0) {
+                continue;
+            }
             if (!chunk.isReady() || !chunk.hasMesh()) {
+                int y = chunk.getPosition().y();
+                waiting[i] |= y > lowest[i] && y < highest[i];
                 continue;
             }
             ChunkMesh mesh = chunk.getMesh();
@@ -50,10 +74,11 @@ public final class DistantHole {
                     && mesh.triangleCount(ChunkMesh.RenderPhase.REFRACTIVE) == 0) {
                 continue;
             }
-            int x = chunk.getPosition().x();
-            int z = chunk.getPosition().z();
-            if (x >= 0 && z >= 0 && x < side && z < side) {
-                next[x + z * side] = (byte) 0xFF;
+            next[i] = (byte) 0xFF;
+        }
+        for (int i = 0; i < next.length; i++) {
+            if (waiting[i]) {
+                next[i] = 0;
             }
         }
         if (!java.util.Arrays.equals(next, marks)) {
@@ -88,6 +113,13 @@ public final class DistantHole {
      * Whether the game draws every column of chunks under a square of the net: a node standing
      * wholly in the hole is not sent to the GPU at all, rather than shaded and thrown away.
      */
+    /** The texel of a chunk's column, or -1 off the net. */
+    private int column(Chunk chunk) {
+        int x = chunk.getPosition().x();
+        int z = chunk.getPosition().z();
+        return x < 0 || z < 0 || x >= side || z >= side ? -1 : x + z * side;
+    }
+
     public boolean covers(int netX, int netZ, int span) {
         int x0 = Math.floorDiv(netX, 32);
         int z0 = Math.floorDiv(netZ, 32);

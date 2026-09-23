@@ -41,6 +41,14 @@ public final class ColumnSummarizer {
         default boolean isLiquid(int material) {
             return false;
         }
+
+        /**
+         * The number of a material as it looks in a biome, for those named without one — a player's
+         * block, a tree's leaves — since grass and leaves take their colour from the biome.
+         */
+        default int tinted(int material, Biome biome) {
+            return material;
+        }
     }
 
     /** Light of a cell open to the sky, on the engine's scale of fifteen. */
@@ -50,6 +58,7 @@ public final class ColumnSummarizer {
     private final CubeGeometry geometry;
     private final MaterialNamer namer;
     private final DistantEdits edits;
+    private volatile DistantTrees trees;
 
     public ColumnSummarizer(World world, CubeGeometry geometry, MaterialNamer namer) {
         this(world, geometry, namer, null);
@@ -61,6 +70,11 @@ public final class ColumnSummarizer {
         this.geometry = geometry;
         this.namer = namer;
         this.edits = edits;
+    }
+
+    /** Grows the real trees on the fine levels, over the ground the generator makes. */
+    void setTrees(DistantTrees newTrees) {
+        this.trees = newTrees;
     }
 
     public ColumnSection summarize(SectionKey key) {
@@ -78,6 +92,7 @@ public final class ColumnSummarizer {
         BiomeFacet biomes = region.getFacet(BiomeFacet.class);
         CaveFacet caves = region.getFacet(CaveFacet.class);
         int seaLevel = region.getFacet(SeaLevelFacet.class).getSeaLevel();
+        DistantTrees.Cells treeCells = treesOf(cells, size, scale, surfaces, seaLevel);
 
         int[] offsets = new int[size * size + 1];
         long[] segments = new long[size * size * 4];
@@ -92,6 +107,21 @@ public final class ColumnSummarizer {
                 int cz = cells.minZ() + v;
                 Biome biome = biomes.getWorld(column.set(cx, cz));
                 boolean edited = edits != null && edits.touches(cx * scale, cz * scale);
+                // Past the fine levels, the trees are the biome's canopy, standing on the top surface.
+                DistantTrees.Crown crown = null;
+                int crownBase = 0;
+                if (treeCells == null && trees != null) {
+                    DistantTrees.Canopy canopy = trees.canopy(biome);
+                    crown = canopy == null ? null : canopy.at(cx * scale, cz * scale);
+                    int surfaceCell = crown == null ? Integer.MIN_VALUE : topSurface(surfaces, cx, cz, top, bottom, cell);
+                    // The highest block of that cell is the ground; trees stand on land at or above the sea.
+                    int ground = surfaceCell == Integer.MIN_VALUE ? Integer.MIN_VALUE : surfaceCell * scale + scale - 1;
+                    if (ground < seaLevel || crown.leaf < 0) {
+                        crown = null;
+                    } else {
+                        crownBase = ground + 1;
+                    }
+                }
 
                 // Top down, so that the first run is the one the sky sees.
                 int runTop = -1;
@@ -111,7 +141,7 @@ public final class ColumnSummarizer {
                     int edit = edited ? edits.cell(cx * scale, basePosY, cz * scale) : DistantEdits.NO_EDIT;
                     if (edit != DistantEdits.NO_EDIT) {
                         // What a player left there, in place of what the generator would have put.
-                        material = edit;
+                        material = namer.tinted(edit, biome);
                         liquid = edit >= 0 && namer.isLiquid(edit);
                         kind = edit < 0 ? CubeCell.AIR : liquid ? CubeCell.WATER : CubeCell.SURFACE;
                     } else {
@@ -120,6 +150,17 @@ public final class ColumnSummarizer {
                             material = namer.id(kind, biome, worldPos, seaLevel, d);
                         }
                         liquid = kind.isLiquid();
+                        // A tree is set over whatever the ground left there, as the rasterizer sets it.
+                        int tree = treeCells == null ? -1 : treeCells.material(u, v, y);
+                        if (crown != null && kind == CubeCell.AIR && basePosY >= crownBase + crown.bottom
+                                && basePosY <= crownBase + crown.top) {
+                            tree = crown.leaf;
+                        }
+                        if (tree >= 0) {
+                            material = namer.tinted(tree, biome);
+                            liquid = false;
+                            kind = CubeCell.SURFACE;
+                        }
                     }
                     if (material == runMaterial && liquid == runLiquid && material >= 0) {
                         runBottom = basePosY;
@@ -147,9 +188,49 @@ public final class ColumnSummarizer {
     }
 
     /**
+     * The trees over a node of a fine level, grown from the heights its surfaces span: trees stand on
+     * ground at or above the sea.
+     */
+    private DistantTrees.Cells treesOf(BlockRegion cells, int size, int scale, SurfacesFacet surfaces, int seaLevel) {
+        DistantTrees current = trees;
+        if (current == null || scale > DistantTrees.MAX_STRIDE) {
+            return null;
+        }
+        int lowest = Integer.MAX_VALUE;
+        int highest = Integer.MIN_VALUE;
+        Vector3i cell = new Vector3i();
+        for (int v = 0; v < size; v++) {
+            for (int u = 0; u < size; u++) {
+                for (int y = cells.maxY(); y >= cells.minY(); y--) {
+                    if (surfaces.getWorld(cell.set(cells.minX() + u, y, cells.minZ() + v))) {
+                        lowest = Math.min(lowest, y * scale);
+                        highest = Math.max(highest, y * scale);
+                        break;
+                    }
+                }
+            }
+        }
+        // A cell stands for scale blocks: the ground is anywhere in it.
+        return current.plant(cells.minX() * scale, cells.minZ() * scale, size, scale,
+                Math.max(lowest, seaLevel), highest + scale - 1);
+    }
+
+    /** The cell of the highest surface of a column, or the floor if it has none. */
+    private static int topSurface(SurfacesFacet surfaces, int cx, int cz, int top, int bottom, Vector3i cell) {
+        for (int y = top; y >= bottom; y--) {
+            if (surfaces.getWorld(cell.set(cx, y, cz))) {
+                return y;
+            }
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    /**
      * The light a run is baked with. The sky reaches the first opaque run from the top and whatever
      * liquid lies above it, and nothing below: an overhang is dark underneath, which is the price
-     * of baking. The only block light the generator makes is the lava's.
+     * of baking. The only block light the generator makes is the lava's. The sky is kept for whoever
+     * reads a column on its own; the mesher lights each vertex again from the runs around it, as the
+     * engine lights a vertex from the blocks around it, which dims the bed of the sea with its depth.
      */
     private long seal(int runBottom, int runTop, int material, CubeCell kind, boolean skyOpen) {
         int floor = geometry.floorY();

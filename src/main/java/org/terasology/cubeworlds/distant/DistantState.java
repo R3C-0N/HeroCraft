@@ -2,20 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.terasology.cubeworlds.distant;
 
+import org.terasology.engine.rendering.assets.material.Material;
+import org.terasology.engine.rendering.cameras.Camera;
+import org.terasology.engine.rendering.primitives.ChunkMesh;
+import org.terasology.engine.rendering.world.DistantGeometry;
 import org.terasology.engine.rendering.world.DistantReach;
 
 /**
- * What the distant terrain pass reads each frame, put into the context once and emptied on shutdown.
+ * What the passes of the renderer read of the distant terrain each frame, put into the context once
+ * and emptied on shutdown: how far it reaches, for the haze, and the terrain itself, for the passes
+ * that draw the chunks and then draw it.
  * <p>
  * A holder and not the objects themselves: the context has no way to take an entry back out, and
  * putting null into it throws — which is what failed the clean shutdown of the game and left a JVM
  * behind with no main thread.
  */
-public final class DistantState implements DistantReach {
+public final class DistantState implements DistantReach, DistantGeometry {
 
     private volatile DistantTerrain terrain;
-    private volatile DistantHole hole;
-    private volatile DistantTerrainNode node;
+    private volatile DistantDrawer drawer;
     private volatile float reach;
     private volatile float frontier;
 
@@ -23,22 +28,13 @@ public final class DistantState implements DistantReach {
         return terrain;
     }
 
-    public DistantHole hole() {
-        return hole;
+    public DistantDrawer drawer() {
+        return drawer;
     }
 
-    /** The pass, which registers itself: it lives in the rendering context, the system does not. */
-    public DistantTerrainNode node() {
-        return node;
-    }
-
-    void setNode(DistantTerrainNode pass) {
-        this.node = pass;
-    }
-
-    void set(DistantTerrain newTerrain, DistantHole newHole) {
+    void set(DistantTerrain newTerrain, DistantDrawer newDrawer) {
         this.terrain = newTerrain;
-        this.hole = newHole;
+        this.drawer = newDrawer;
         if (newTerrain == null) {
             reach = 0;
         }
@@ -57,5 +53,11 @@ public final class DistantState implements DistantReach {
     @Override
     public float frontier() {
         return frontier;
+    }
+
+    @Override
+    public int render(ChunkMesh.RenderPhase phase, Material material, Camera camera, boolean shadow) {
+        DistantDrawer current = drawer;
+        return current == null ? 0 : current.render(phase, material, camera, shadow);
     }
 }
