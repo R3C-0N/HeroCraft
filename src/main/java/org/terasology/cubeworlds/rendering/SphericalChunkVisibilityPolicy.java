@@ -3,9 +3,10 @@
 package org.terasology.cubeworlds.rendering;
 
 import org.joml.Vector3f;
+import org.joml.Vector3fc;
+import org.terasology.cubeworlds.generator.CubeGeometry;
 import org.terasology.engine.rendering.cameras.Camera;
 import org.terasology.engine.rendering.world.ChunkVisibilityPolicy;
-import org.terasology.engine.world.chunks.Chunks;
 import org.terasology.engine.world.chunks.RenderableChunk;
 import org.terasology.joml.geom.AABBfc;
 
@@ -18,13 +19,15 @@ import org.terasology.joml.geom.AABBfc;
  * chunks are culled while still plainly in view.
  * <p>
  * So the chunk is tested where it is actually drawn — a bounding sphere around its curved centre —
- * and then against the horizon, which on a curved world is a real limit and a much tighter one than
- * the view distance: eighty-nine blocks at eye height. Most of the loaded world is behind it, so
- * this is as much an optimisation as a correction.
+ * and then against the horizon of the floor of the world, the one thing the planet is guaranteed to
+ * be made of. Within the loaded box that horizon culls nothing, wherever the eye stands:
+ * {@code HorizonCullCensusTest} counts it. The first version took the horizon over sea level and
+ * measured the separation as a straight line from the camera; it threw away 41 % of the loaded box
+ * from a beach and everything below the surface chunk from underground, where the aimed ray hit
+ * rock and the screen showed the sky. What the horizon is still for is what lies beyond the box.
  * <p>
- * Both numbers are the radius', not settings: the drop reaches a chunk at {@code sqrt(2 * 32 * R)}
- * and the horizon at {@code R * acos(R / (R + h))}. They were 568 and 142 when a face was 8192
- * blocks across, and they will move again if it moves.
+ * The drop is the radius', not a setting: it reaches a chunk at {@code sqrt(2 * 32 * R)}, and it
+ * will move if the face does.
  */
 public class SphericalChunkVisibilityPolicy implements ChunkVisibilityPolicy {
 
@@ -47,7 +50,7 @@ public class SphericalChunkVisibilityPolicy implements ChunkVisibilityPolicy {
         if (!camera.getViewFrustum().testSphere(curved.x, curved.y, curved.z, radius)) {
             return false;
         }
-        return withinHorizon(camera, centre, bounds);
+        return withinHorizon(camera, bounds);
     }
 
     @Override
@@ -76,27 +79,41 @@ public class SphericalChunkVisibilityPolicy implements ChunkVisibilityPolicy {
     /**
      * Whether the chunk pokes above the horizon seen from the eye.
      * <p>
-     * Heights are taken above the reference level and never as raw Y: getting that reference wrong
-     * makes the whole world disappear rather than fail visibly.
+     * The only thing that hides terrain on a planet is the planet, and the only part of it that is
+     * always solid is the mantle. So the horizon is taken over the floor of the world
+     * ({@link CubeGeometry#occluderRadius()}), never over the reference level: measured from sea
+     * level, every chunk below it had no reach at all, and underground only what lay within one
+     * chunk of the eye was drawn.
+     * <p>
+     * Everything is an angle at the centre of the planet, and the separation is the world's
+     * ({@link CubeGeometry#angle}), not a straight line from the camera. A straight line counts the
+     * drop into the ground as distance, which is what used to cull the chunk under one's feet.
      */
-    private boolean withinHorizon(Camera camera, Vector3f centre, AABBfc bounds) {
-        float reference = projection.getReferenceHeight();
-        float eyeHeight = camera.getPosition().y - reference;
-        float chunkTop = bounds.maxY() - reference;
-
-        double eyeReach = projection.horizon(Math.max(0.0f, eyeHeight));
-        double chunkReach = projection.horizon(Math.max(0.0f, chunkTop));
-        double separation = arcTo(centre, camera);
-        return separation <= eyeReach + chunkReach + Chunks.SIZE_X;
+    private boolean withinHorizon(Camera camera, AABBfc bounds) {
+        return withinHorizon(projection.geometry(), camera.getPosition(), bounds);
     }
 
-    /** Distance along the surface between a chunk centre and the camera, in blocks. */
-    private double arcTo(Vector3f centre, Camera camera) {
-        Vector3f relative = projection.curvedPosition(centre, new Vector3f());
-        // The focus is the camera, so the chord to the origin is the chord between the two points.
-        double chord = Math.sqrt(relative.x * relative.x + relative.y * relative.y + relative.z * relative.z);
-        double radius = projection.getRadius();
-        double half = Math.min(1.0, chord / (2.0 * radius));
-        return 2.0 * radius * Math.asin(half);
+    /**
+     * The horizon test on its own, with an eye instead of a camera, so that a census can put the eye
+     * anywhere without a renderer.
+     */
+    public static boolean withinHorizon(CubeGeometry geometry, Vector3fc eye, AABBfc bounds) {
+        double centreX = (bounds.minX() + bounds.maxX()) * 0.5;
+        double centreZ = (bounds.minZ() + bounds.maxZ()) * 0.5;
+        double separation = geometry.angle(eye.x(), eye.z(), centreX, centreZ);
+        if (Double.isInfinite(separation)) {
+            // Either the eye or the chunk is off the net. Nothing to decide on, so nothing is culled
+            // here: the frustum has already had its say.
+            return true;
+        }
+        double eyeRadius = geometry.renderRadius(eye.x(), eye.y(), eye.z());
+        double topRadius = geometry.renderRadius(centreX, bounds.maxY(), centreZ);
+        // The chunk is not a point: its far corner can stand clear while its centre is hidden. Half
+        // its horizontal diagonal, at the largest a block gets, over the smallest radius involved.
+        double dx = bounds.maxX() - bounds.minX();
+        double dz = bounds.maxZ() - bounds.minZ();
+        double halfWidth = 0.5 * Math.sqrt(dx * dx + dz * dz) * CubeGeometry.MAX_SCALE_FACTOR;
+        double slack = halfWidth / geometry.occluderRadius();
+        return separation <= geometry.horizonAngle(eyeRadius) + geometry.horizonAngle(topRadius) + slack;
     }
 }

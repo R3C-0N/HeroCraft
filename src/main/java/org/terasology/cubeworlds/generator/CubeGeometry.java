@@ -48,6 +48,12 @@ public final class CubeGeometry {
      */
     public static final int DEFAULT_LAVA_Y = -150;
 
+    /**
+     * The largest a block ever gets, at the centre of a face. The census of the table checks it;
+     * everything that must stay on the safe side of the scale factor reads this one number.
+     */
+    public static final double MAX_SCALE_FACTOR = 1.0;
+
     private final int faceChunks;
     private final int faceBlocks;
     private final double radius;
@@ -163,5 +169,83 @@ public final class CubeGeometry {
     public double horizon(double heightAboveSeaLevel) {
         double h = Math.max(0.0, heightAboveSeaLevel);
         return radius * Math.acos(radius / (radius + h));
+    }
+
+    /**
+     * The angle between two columns of the net, seen from the centre of the planet.
+     * <p>
+     * This is the distance of the world, and the only one: two columns on either side of a cut seam
+     * are neighbours here and a whole face apart in the grid. A difference of coordinates never
+     * says how far apart two things are. Taken by {@code atan2} rather than {@code acos}, which
+     * loses half its digits for the few blocks that separate neighbours.
+     *
+     * @return the angle in radians, or {@link Double#POSITIVE_INFINITY} if either column is in a
+     *         dead slot of the net, where there is nothing to be close to
+     */
+    public double angle(double xA, double zA, double xB, double zB) {
+        double[] a = new double[3];
+        double[] b = new double[3];
+        if (!columnDirection(xA, zA, a) || !columnDirection(xB, zB, b)) {
+            return Double.POSITIVE_INFINITY;
+        }
+        double cx = a[1] * b[2] - a[2] * b[1];
+        double cy = a[2] * b[0] - a[0] * b[2];
+        double cz = a[0] * b[1] - a[1] * b[0];
+        double cross = Math.sqrt(cx * cx + cy * cy + cz * cz);
+        double dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        return Math.atan2(cross, dot);
+    }
+
+    /** The same distance in blocks, along the reference sphere. */
+    public double arc(double xA, double zA, double xB, double zB) {
+        return angle(xA, zA, xB, zB) * radius;
+    }
+
+    /**
+     * The unit direction of a column of the net, read from the face it lies on.
+     *
+     * @return false for a dead slot, leaving {@code dest} untouched
+     */
+    public boolean columnDirection(double worldX, double worldZ, double[] dest) {
+        int face = faceOf((int) Math.floor(worldX), (int) Math.floor(worldZ));
+        if (face == CubePattern.NO_FACE) {
+            return false;
+        }
+        direction(fold(face, worldX, worldZ), dest);
+        return true;
+    }
+
+    /**
+     * How far from the centre of the planet a block is drawn, exactly as the shader places it.
+     *
+     * @return {@link Double#NaN} for a dead slot
+     */
+    public double renderRadius(double worldX, double y, double worldZ) {
+        int face = faceOf((int) Math.floor(worldX), (int) Math.floor(worldZ));
+        if (face == CubePattern.NO_FACE) {
+            return Double.NaN;
+        }
+        return radius + scaleFactor(fold(face, worldX, worldZ)) * (y - seaLevel);
+    }
+
+    /**
+     * The sphere nothing is ever drawn below: the floor of the world, sunk as deep as the largest
+     * block would sink it. The only thing that truly hides terrain on a planet is the planet, and
+     * the only part of it that is always solid is the mantle.
+     */
+    public double occluderRadius() {
+        return radius - (seaLevel - floorY()) * MAX_SCALE_FACTOR;
+    }
+
+    /**
+     * The angle from a point to where its line of sight grazes {@link #occluderRadius()}.
+     * A point inside the occluder, which the world never draws, sees nothing past itself.
+     */
+    public double horizonAngle(double renderRadius) {
+        double occluder = occluderRadius();
+        if (!(renderRadius > occluder)) {
+            return 0.0;
+        }
+        return Math.acos(occluder / renderRadius);
     }
 }
