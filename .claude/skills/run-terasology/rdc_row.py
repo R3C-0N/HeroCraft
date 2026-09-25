@@ -20,6 +20,8 @@ CAP = os.path.abspath(os.environ["RDC_CAPTURE"])
 ROW = int(os.environ.get("RDC_ROW", "400"))
 start, stop, step = (int(v) for v in os.environ.get("RDC_XS", "600:680:8").split(":"))
 XS = list(range(start, stop, step))
+# RDC_COLUMN=1 walks a column instead: RDC_ROW is then x, and RDC_XS the range of y
+COLUMN = os.environ.get("RDC_COLUMN") == "1"
 OUT = CAP + ".row.txt"
 lines = []
 
@@ -68,20 +70,26 @@ def work(ctrl):
     for a in draws.values():
         if a.depthOut != rd.ResourceId.Null() and a.depthOut not in depths:
             depths.append(a.depthOut)
+    # RDC_TARGETS=803,775 adds colour targets by resource number: a history only lists what wrote its own target
+    for extra in os.environ.get("RDC_TARGETS", "").split(","):
+        match = [t for t in texs if extra and str(t).endswith("::" + extra)]
+        depths += [t for t in match if t not in depths]
+    lines.append("depth targets: %s" % ["%s %dx%d" % (str(t).split("::")[1], texs[t].width, texs[t].height) for t in depths])
     cache = {}
     for px in XS:
-        lines.append("=== x=%d y=%d" % (px, ROW))
+        cx, cy = (ROW, px) if COLUMN else (px, ROW)
+        lines.append("=== x=%d y=%d" % (cx, cy))
         for t in depths:
             tx = texs[t]
             if tx.width < 900:
                 continue
-            for m in ctrl.PixelHistory(t, int(px * tx.width / 1280), int(ROW * tx.height / 800),
+            for m in ctrl.PixelHistory(t, int(cx * tx.width / 1280), int(cy * tx.height / 800),
                                        rd.Subresource(0, 0, 0), tx.format.compType):
                 a = draws.get(m.eventId)
                 if a is None or a.numIndices < 100:
                     continue
                 pts, chunk = triangle(ctrl, m.eventId, m.primitiveID, cache)
-                lines.append("  depth %s ev %d prim %d passed=%s discard=%s out=%.6f chunk=%s tri=%s" % (
+                lines.append("  target %s ev %d prim %d passed=%s discard=%s out=%.6f chunk=%s tri=%s" % (
                     str(t).split("::")[1], m.eventId, m.primitiveID, m.Passed(), m.shaderDiscarded,
                     m.shaderOut.depth, chunk, pts))
 
