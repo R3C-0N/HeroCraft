@@ -87,16 +87,18 @@ mat3 sphereFrameAbs(vec3 worldPos);
 // The height is multiplied by the scale factor, not added raw. A conformal map stretches both
 // tangential directions by that factor while leaving the radial one alone, and a block would stop
 // being cubic; scaling the height makes the deformation a local similarity instead.
+//
+// The focus is the same for the whole frame, so its bent point and its frame come from the CPU
+// (sphereFocusPoint, sphereFocusFrame), computed there in single precision and in this order: a
+// vertex used to recompute them itself, eleven of its seventeen table reads.
 vec3 sphereCurvedPos(vec3 worldPos) {
     vec4 here = sphereDirection(worldPos.xz);
-    vec4 origin = sphereDirection(sphereFocus.xz);
     float r = sphereRadius + here.w * (worldPos.y - sphereReferenceHeight);
-    float r0 = sphereRadius + origin.w * (sphereFocus.y - sphereReferenceHeight);
     // Back into world axes. The difference of two planet-space points is still planet space, and
     // the caller multiplies it by the linear part of a world-space view matrix: without this the
     // whole terrain is rotated, and at the middle of a face mirrored, out from under everything
     // that is not drawn through this function.
-    return transpose(sphereFrameAbs(sphereFocus)) * (here.xyz * r - origin.xyz * r0);
+    return sphereFocusFrame * (here.xyz * r - sphereFocusPoint);
 }
 
 // The local frame of a world column, in planet space: world X, Y, Z map onto east, up, north.
@@ -123,7 +125,7 @@ mat3 sphereFrameAbs(vec3 worldPos) {
 // renderer a planet-space normal while the sun stays in world space, and no amount of daylight
 // would land on the right face.
 mat3 sphereFrame(vec3 worldPos) {
-    return transpose(sphereFrameAbs(sphereFocus)) * sphereFrameAbs(worldPos);
+    return sphereFocusFrame * sphereFrameAbs(worldPos);
 }
 
 // The whole point of the exercise, in one call.

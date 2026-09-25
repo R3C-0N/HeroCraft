@@ -39,3 +39,7 @@ uniform float sphereFaceEdge;
 uniform float sphereReferenceHeight;
 uniform vec3 sphereFocus;
 uniform vec3 sphereModelOrigin;
+// The focus bent onto the surface, in planet space, and the turn from planet space back to world
+// axes there. Both the same for every vertex of a frame, so the CPU computes them once.
+uniform vec3 sphereFocusPoint;
+uniform mat3 sphereFocusFrame;

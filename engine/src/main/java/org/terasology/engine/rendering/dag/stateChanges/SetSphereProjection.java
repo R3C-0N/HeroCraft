@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.terasology.engine.rendering.dag.stateChanges;
 
+import org.joml.Matrix3f;
 import org.joml.Vector3f;
 import org.joml.Vector3fc;
 import org.terasology.engine.rendering.assets.material.Material;
@@ -56,6 +57,7 @@ public class SetSphereProjection implements StateChange {
     private final boolean enabled;
     private final Material material;
     private final Vector3f scratch = new Vector3f();
+    private final Matrix3f focusFrame = new Matrix3f();
 
     private SetSphereProjection defaultInstance;
 
@@ -136,5 +138,8 @@ public class SetSphereProjection implements StateChange {
         material.setFloat("sphereReferenceHeight", projection.getReferenceHeight(), ALL_PERMUTATIONS);
         material.setFloat3("sphereFocus", projection.getFocus(), ALL_PERMUTATIONS);
         material.setFloat3("sphereModelOrigin", scratch.set(modelOrigin.get()), ALL_PERMUTATIONS);
+        // Constant over the frame, so bent once here instead of by every vertex.
+        material.setFloat3("sphereFocusPoint", projection.focusPoint(scratch), ALL_PERMUTATIONS);
+        material.setMatrix3("sphereFocusFrame", projection.focusFrame(focusFrame), ALL_PERMUTATIONS);
     }
 }

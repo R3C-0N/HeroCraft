@@ -315,6 +315,7 @@ public class RenderableWorldImpl implements RenderableWorld {
     private int queueChunks(Iterable<? extends RenderableChunk> chunks, int firstChunkCounter, Camera activeCamera,
                             boolean isFirstRenderingStageForCurrentFrame) {
         boolean isDynamicShadows = renderingConfig.isDynamicShadows();
+        boolean reflections = renderingConfig.isReflectiveWater();
         int billboardLimit = (int) renderingConfig.getBillboardLimit();
 
         int chunkCounter = firstChunkCounter;
@@ -362,8 +363,10 @@ public class RenderableWorldImpl implements RenderableWorld {
                         chunk.setAnimated(statVisibleChunks < MAX_ANIMATED_CHUNKS);
                     }
 
-                    // The reflection pass draws the opaque phase and nothing else.
-                    if (opaqueTriangles > 0 && visibilityPolicy.isVisibleReflected(activeCamera, chunk)) {
+                    // The reflection pass draws the opaque phase and nothing else, and only when
+                    // reflections are on: otherwise nobody reads the queue, and the test was a
+                    // curved position per chunk and per frame for nothing.
+                    if (reflections && opaqueTriangles > 0 && visibilityPolicy.isVisibleReflected(activeCamera, chunk)) {
                         renderQueues.chunksOpaqueReflection.add(chunk);
                     }
                 }

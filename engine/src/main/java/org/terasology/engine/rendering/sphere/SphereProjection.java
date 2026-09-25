@@ -37,6 +37,23 @@ public interface SphereProjection {
     Vector3fc getFocus();
 
     /**
+     * The focus bent onto the surface, in the projection's own space: what every vertex subtracts
+     * from its own bent position. Constant over a frame, so it is computed here once rather than
+     * by each vertex — it was eleven of the seventeen table reads a vertex made.
+     * <p>
+     * Computed the way the shader would, in single precision, so that the vertex under the camera
+     * still lands exactly on it.
+     */
+    Vector3f focusPoint(Vector3f dest);
+
+    /**
+     * The rotation from the projection's own space back to world axes, taken at the focus. The
+     * shader applies it to every bent position and every surface frame; like {@link #focusPoint}
+     * it is the same for the whole frame.
+     */
+    Matrix3f focusFrame(Matrix3f dest);
+
+    /**
      * The name of the OpenGL texture holding the projection table, uploading it first if needed.
      * <p>
      * Must be called on the thread holding the GL context.
