@@ -329,6 +329,41 @@ Reference, 25 September 2026 (GTX 1070, NEAR, `chunkLods 3`, `fboScale 75`):
 GPU 9.8 ms on land, 13.7 ms at sea; flight p95 15.5 ms, p99 35 ms — 22 and
 59 ms with shadows.
 
+## Capturing a frame — RenderDoc
+
+When the screen shows something no measure explains, ask the GPU which draw wrote the
+pixel. RenderDoc 1.46 is unpacked, portable, in `C:\Users\mathi\tools\RenderDoc_1.46_64`
+(the winget installer waits for a UAC prompt nobody answers; the zip needs no rights).
+
+```bash
+RD=/c/Users/mathi/tools/RenderDoc_1.46_64
+"$RD/renderdoccmd.exe" capture -d "$(cygpath -w $PWD)" -c "$(cygpath -w $PWD/build/rdc)\\shot" \
+    "C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.20.101-hotspot\\bin\\java.exe" -Xmx2560M \
+    -XX:MaxDirectMemorySize=512M "@$(cygpath -w $PWD/build/run-args.txt)" org.terasology.engine.Terasology \
+    --homedir=. --no-splash --no-crash-report --load-last-game --inspect-port=17888 --inspect-allow-console &
+# place the camera through the port, then:
+python .claude/skills/run-terasology/driver.py key f12      # -> build/rdc/shot_frameN.rdc
+RDC_CAPTURE=build/rdc/shot_frameN.rdc RDC_ROW=520 RDC_XS=610:672:4 \
+    "$RD/qrenderdoc.exe" --ui-python "$(cygpath -w .claude/skills/run-terasology/rdc_row.py)"
+```
+
+`rdc_row.py` prints, for a row of pixels, every fragment of every draw: passed,
+discarded, depth, the draw's `chunkPositionWorld` and the grid position of its
+triangle. Three traps, paid once:
+
+- **The first launch raises a Windows firewall prompt** for RenderDoc's remote port. It
+  steals the focus, so F12 goes nowhere. Answer *Annuler*; it does not come back. Do not
+  click it through the driver: the move turns the camera and the capture shows another view.
+- **qrenderdoc asks about anonymous analytics** on first start and the script waits behind
+  the dialog. `Analytics_TotalOptOut` is set to `true` in
+  `%APPDATA%\qrenderdoc\UI.config`.
+- **`--python` runs before the UI and cannot load a capture**; use `--ui-python`.
+
+This is how the wall seen down a cut seam was found (no geometry at all under those
+pixels, so a CPU-side cull or a vertex thrown away), and the pale line at the frontier of
+the loaded box (a distant fragment discarded by the hole, at y = 35.4 over chunk water at
+32.4).
+
 ## Linux, without a graphics card
 
 The driver above is Windows only. On a Linux box, `docker/` already runs the game
@@ -657,6 +692,7 @@ backspaces rather than a count that has to be right. `click 564 555` is
   SKILL.md                     this file
   driver.py                    the harness - build, launch, input, screenshots, quit
   bench.py                     three fixed scenes measured the same way, for before/after
+  rdc_row.py                   pixel history along a row of a RenderDoc capture
   dump-classpath.init.gradle   Gradle init script that dumps the runtime classpath
 ```
 
