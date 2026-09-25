@@ -67,9 +67,23 @@ vec3 sphereTableAt(vec2 st) {
 }
 
 // The unit direction of a world column, in planet space, plus its scale factor in w.
+//
+// A block is centred on its coordinates, so the outer vertices of the blocks on the edge of a face lie half a block
+// past it. Over a glued edge that half block falls on the face next door, which places it where it belongs; over a
+// cut seam it falls in a dead slot, and the vertex was thrown to a fixed direction on the far side of the planet —
+// triangles stretched into a sheet standing down the seam, and a gap between the two faces through which the sky
+// showed. Such a point is brought back onto the edge of the face it is half a block from. Mirrored on the CPU by
+// CubeSphereProjection, in both its paths.
+const vec2 SPHERE_NUDGES[8] = vec2[8](
+    vec2(0.5, 0.0), vec2(-0.5, 0.0), vec2(0.0, 0.5), vec2(0.0, -0.5),
+    vec2(0.5, 0.5), vec2(-0.5, 0.5), vec2(0.5, -0.5), vec2(-0.5, -0.5));
+
 vec4 sphereDirection(vec2 column) {
     vec2 local;
     int face = sphereFaceOf(column, local);
+    for (int i = 0; i < 8 && face < 0; i++) {
+        face = sphereFaceOf(column + SPHERE_NUDGES[i], local);
+    }
     if (face < 0) {
         return vec4(0.0, 0.0, 1.0, 1.0);
     }
