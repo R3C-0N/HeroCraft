@@ -60,6 +60,15 @@ public interface SphereProjection {
      */
     int getTableTextureId();
 
+    /**
+     * Whether a column of the grid is not part of the world at all — a dead slot of a cube net, which belongs to no
+     * face. The mesher shows no face to it, as to a chunk that is not loaded: the ground across the seam is somewhere
+     * else in the grid. Cheap, and safe from any thread; a whole world by default.
+     */
+    default boolean isOutside(int blockX, int blockZ) {
+        return false;
+    }
+
     /** Side of the square projection table. */
     int getTableResolution();
 

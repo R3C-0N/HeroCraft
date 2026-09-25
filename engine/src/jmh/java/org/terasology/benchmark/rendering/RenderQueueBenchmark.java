@@ -111,7 +111,7 @@ public class RenderQueueBenchmark {
         WorldProvider worldProvider = proxy(WorldProvider.class, (method, args) -> null);
 
         world = new RenderableWorldImpl(() -> renderer, Optional.empty(), chunkProvider, new ChunkTessellator(),
-                worldProvider, config, Optional.empty());
+                worldProvider, config, Optional.empty(), Optional.empty(), null);
         world.setChunkMeshRenderer(new ChunkMeshRenderer());
         world.setShadowMapCamera(sun);
         world.updateChunksInProximity(region);

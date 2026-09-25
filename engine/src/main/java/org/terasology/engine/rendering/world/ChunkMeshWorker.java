@@ -12,11 +12,14 @@ import org.terasology.engine.core.GameScheduler;
 import org.terasology.engine.monitoring.chunk.ChunkMonitor;
 import org.terasology.engine.rendering.primitives.ChunkMesh;
 import org.terasology.engine.rendering.primitives.ChunkTessellator;
+import org.terasology.engine.rendering.sphere.SphereProjection;
 import org.terasology.engine.rendering.world.viewDistance.ViewDistance;
 import org.terasology.engine.world.ChunkView;
 import org.terasology.engine.world.WorldProvider;
+import org.terasology.engine.world.block.Block;
 import org.terasology.engine.world.chunks.Chunk;
 import org.terasology.engine.world.chunks.RenderableChunk;
+import org.terasology.engine.world.internal.ChunkViewCoreImpl;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -84,7 +87,19 @@ public final class ChunkMeshWorker {
     public static ChunkMeshWorker create(ChunkTessellator chunkTessellator,
                                          WorldProvider worldProvider,
                                          Comparator<RenderableChunk> frontToBackComparator) {
-        ChunkMeshWorker worker = new ChunkMeshWorker(generateMeshFunc(chunkTessellator, worldProvider),
+        return create(chunkTessellator, worldProvider, frontToBackComparator, null, null);
+    }
+
+    /**
+     * @param sphere the shape of a world that is not the grid it is stored in, or null; its columns off the world are
+     *         meshed against as though unloaded
+     * @param unloaded the block they are answered with
+     */
+    public static ChunkMeshWorker create(ChunkTessellator chunkTessellator,
+                                         WorldProvider worldProvider,
+                                         Comparator<RenderableChunk> frontToBackComparator,
+                                         SphereProjection sphere, Block unloaded) {
+        ChunkMeshWorker worker = new ChunkMeshWorker(generateMeshFunc(chunkTessellator, worldProvider, sphere, unloaded),
                 frontToBackComparator,
                 GameScheduler.parallel(), GameScheduler.gameMain());
         worker.completedChunks.subscribe();
@@ -166,11 +181,16 @@ public final class ChunkMeshWorker {
         return chunk;
     }
 
-    private static Function<Chunk, Mono<Tuple2<Chunk, ChunkMesh>>> generateMeshFunc(ChunkTessellator chunkTessellator, WorldProvider worldProvider) {
+    private static Function<Chunk, Mono<Tuple2<Chunk, ChunkMesh>>> generateMeshFunc(ChunkTessellator chunkTessellator,
+                                                                                    WorldProvider worldProvider,
+                                                                                    SphereProjection sphere, Block unloaded) {
         return (chunk -> {
             chunk.setDirty(false);
             ChunkView chunkView = worldProvider.getLocalView(chunk.getPosition());
             if (chunkView != null && chunkView.isValidView()) {
+                if (sphere != null && unloaded != null && chunkView instanceof ChunkViewCoreImpl) {
+                    ((ChunkViewCoreImpl) chunkView).hideOutside(sphere::isOutside, unloaded);
+                }
                 ChunkMesh newMesh = chunkTessellator.generateMesh(chunkView);
                 ChunkMonitor.fireChunkTessellated(chunk, newMesh);
                 return Mono.just(Tuples.of(chunk, newMesh));

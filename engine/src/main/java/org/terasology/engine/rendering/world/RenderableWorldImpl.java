@@ -17,9 +17,11 @@ import org.terasology.engine.rendering.cameras.Camera;
 import org.terasology.engine.rendering.logic.ChunkMeshRenderer;
 import org.terasology.engine.rendering.primitives.ChunkMesh;
 import org.terasology.engine.rendering.primitives.ChunkTessellator;
+import org.terasology.engine.rendering.sphere.SphereProjection;
 import org.terasology.engine.rendering.world.viewDistance.ViewDistance;
 import org.terasology.engine.world.ChunkView;
 import org.terasology.engine.world.WorldProvider;
+import org.terasology.engine.world.block.BlockManager;
 import org.terasology.engine.world.block.BlockRegion;
 import org.terasology.engine.world.chunks.Chunk;
 import org.terasology.engine.world.chunks.ChunkProvider;
@@ -90,7 +92,8 @@ public class RenderableWorldImpl implements RenderableWorld {
     @Inject
     public RenderableWorldImpl(Provider<WorldRenderer> worldRenderer, Optional<LodChunkProvider> lodChunkProvider, ChunkProvider chunkProvider,
                                ChunkTessellator chunkTessellator, WorldProvider worldProvider, Config config,
-                               Optional<ChunkVisibilityPolicy> visibilityPolicy) {
+                               Optional<ChunkVisibilityPolicy> visibilityPolicy, Optional<SphereProjection> sphere,
+                               BlockManager blockManager) {
         this.visibilityPolicy = visibilityPolicy.orElse(FrustumChunkVisibilityPolicy.INSTANCE);
         frontToBackComparator = new RenderableWorldImpl.ChunkFrontToBackComparator(cameraPosition);
         backToFrontComparator = new RenderableWorldImpl.ChunkBackToFrontComparator(cameraPosition);
@@ -103,7 +106,9 @@ public class RenderableWorldImpl implements RenderableWorld {
         this.renderingConfig = config.getRendering();
         this.maxChunksForShadows = Math.clamp(config.getRendering().getMaxChunksUsedForShadowMapping(), 64, 1024);
 
-        this.chunkWorker = ChunkMeshWorker.create(chunkTessellator, worldProvider, frontToBackComparator);
+        // A world with columns off it, the dead slots of a cube net, has them meshed against as unloaded ground.
+        this.chunkWorker = ChunkMeshWorker.create(chunkTessellator, worldProvider, frontToBackComparator,
+                sphere.orElse(null), sphere.map(s -> blockManager.getBlock(BlockManager.UNLOADED_ID)).orElse(null));
         renderQueues = new RenderQueuesHelper(new PriorityQueue<>(MAX_LOADABLE_CHUNKS,
                 frontToBackComparator),
                 new PriorityQueue<>(MAX_LOADABLE_CHUNKS, frontToBackComparator),

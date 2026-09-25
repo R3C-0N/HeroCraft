@@ -14,6 +14,8 @@ import org.terasology.engine.world.block.BlockRegionc;
 import org.terasology.engine.world.chunks.Chunk;
 import org.terasology.engine.world.chunks.Chunks;
 
+import java.util.function.BiPredicate;
+
 public class ChunkViewCoreImpl implements ChunkViewCore {
 
     private static final Logger logger = LoggerFactory.getLogger(ChunkViewCoreImpl.class);
@@ -27,6 +29,9 @@ public class ChunkViewCoreImpl implements ChunkViewCore {
     private Vector3i chunkFilterSize;
 
     private Block defaultBlock;
+    /** The chunks of the view that the world does not have, by index; null while every chunk is the world's. */
+    private boolean[] outside;
+    private Block outsideBlock;
 
     public ChunkViewCoreImpl(Chunk[] chunks, BlockRegionc chunkRegion, Vector3ic offset, Block defaultBlock) {
         this.chunkRegion.set(chunkRegion);
@@ -56,11 +61,41 @@ public class ChunkViewCoreImpl implements ChunkViewCore {
         return getBlock(pos.x(), pos.y(), pos.z());
     }
 
+    /**
+     * Answers the chunks of the view that lie outside the world with the given block — the unloaded one, which
+     * nothing shows a face to.
+     * <p>
+     * A cube net laid in a grid leaves slots that belong to no face. Their chunks exist, and hold air, so a block on
+     * the edge of a face showed its side to them all the way down: at a cut seam, where the net is glued back only on
+     * the sphere, that was a wall the height of the loaded box, seen edge on from the corner. Decided per chunk once,
+     * never per block — a slot is whole chunks, and this view is read seven times a block by the mesher.
+     *
+     * @param isOutside whether a column of the world, in block coordinates, is off the world
+     */
+    public void hideOutside(BiPredicate<Integer, Integer> isOutside, Block block) {
+        boolean[] marks = null;
+        for (Vector3ic chunkPos : chunkRegion) {
+            if (isOutside.test(chunkPos.x() * Chunks.SIZE_X, chunkPos.z() * Chunks.SIZE_Z)) {
+                if (marks == null) {
+                    marks = new boolean[chunks.length];
+                }
+                marks[(chunkPos.x() - chunkRegion.minX()) + chunkRegion.getSizeX()
+                        * ((chunkPos.z() - chunkRegion.minZ()) + chunkRegion.getSizeZ() * (chunkPos.y() - chunkRegion.minY()))] = true;
+            }
+        }
+        outside = marks;
+        outsideBlock = block;
+    }
+
     // TODO: Review
     @Override
     public Block getBlock(int blockX, int blockY, int blockZ) {
         if (blockRegion.contains(blockX, blockY, blockZ)) {
-            Chunk chunk = chunks[relChunkIndex(blockX, blockY, blockZ)];
+            int index = relChunkIndex(blockX, blockY, blockZ);
+            if (outside != null && outside[index]) {
+                return outsideBlock;
+            }
+            Chunk chunk = chunks[index];
             if (chunk != null) {
                 return chunk.getBlock(
                         Chunks.toRelative(blockX, chunkFilterSize.x),
