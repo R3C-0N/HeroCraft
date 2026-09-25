@@ -299,6 +299,36 @@ in `.mcp.json` — exposing all of the above as seventeen `tera_*` tools. Use th
 when they are available; `curl` stays valid and equivalent. Standard library
 only, so there is nothing to install.
 
+## Measuring the renderer — `bench.py`
+
+A before/after on the renderer is only worth something at the same view, the
+same settings and the same point in the loading of the world. `bench.py` owns
+all three: it launches on the newest save with the port open, and measures
+three fixed scenes — `land`, `sea`, and a 20 s `flight` held on the forwards
+key, which is where loading stutter shows.
+
+```bash
+python .claude/skills/run-terasology/bench.py --label lot1                 # ~5 min
+python .claude/skills/run-terasology/bench.py --label lot1 --shadows       # relaunches with shadows
+python .claude/skills/run-terasology/bench.py --label lot1 --only land,sea
+```
+
+Results land in `build/bench/<label>.txt`, screenshots in
+`build/shots/bench-<label>-<scene>.png`. Two traps it already handles:
+
+- **"pending=0" does not mean the distance is built.** Right after a load or a
+  teleport the selection has not seen the new eye yet: the first version of
+  the bench measured 25 nodes of an eventual 150, and reported a GPU three
+  times cheaper than the real one. It now waits for the build counter to stand
+  still for 15 s, at every scene.
+- **The shadow map only redraws when the camera or the sun moves.** Standing
+  still it costs 0.001 ms whatever it holds; its price shows in the flight.
+  And it is only created when the world loads, hence `--shadows` relaunching.
+
+Reference, 25 September 2026 (GTX 1070, NEAR, `chunkLods 3`, `fboScale 75`):
+GPU 9.8 ms on land, 13.7 ms at sea; flight p95 15.5 ms, p99 35 ms — 22 and
+59 ms with shadows.
+
 ## Linux, without a graphics card
 
 The driver above is Windows only. On a Linux box, `docker/` already runs the game
@@ -626,6 +656,7 @@ backspaces rather than a count that has to be right. `click 564 555` is
 .claude/skills/run-terasology/
   SKILL.md                     this file
   driver.py                    the harness - build, launch, input, screenshots, quit
+  bench.py                     three fixed scenes measured the same way, for before/after
   dump-classpath.init.gradle   Gradle init script that dumps the runtime classpath
 ```
 
