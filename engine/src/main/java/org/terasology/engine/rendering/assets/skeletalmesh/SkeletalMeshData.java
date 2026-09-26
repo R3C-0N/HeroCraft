@@ -23,6 +23,9 @@ import java.util.stream.IntStream;
 
 public class SkeletalMeshData implements AssetData {
 
+    /** The most bones a vertex may follow: what glTF carries in JOINTS_0 and WEIGHTS_0, and what the shader reads. */
+    public static final int MAX_WEIGHTS = 4;
+
     private Bone rootBone;
     private Map<String, Bone> boneLookup = Maps.newHashMap();
     private List<Bone> bones = Lists.newArrayList();
@@ -32,6 +35,7 @@ public class SkeletalMeshData implements AssetData {
     private List<BoneWeight> weights = Lists.newArrayList();
     private TIntList indices = new TIntArrayList();
     private AABBf staticAABB;
+    private List<Bone> parentFirst;
 
     public SkeletalMeshData(List<Bone> bones, List<Vector3f> vertices, List<Vector3f> normals,
                             List<BoneWeight> weights, List<Vector2f> uvs, TIntList indices, AABBf staticAABB) {
@@ -48,8 +52,31 @@ public class SkeletalMeshData implements AssetData {
         this.normals = ImmutableList.copyOf(normals);
         this.indices.addAll(indices);
         this.staticAABB = staticAABB;
+        this.parentFirst = parentFirst(bones);
 
         calculateNormals();
+    }
+
+    /** Every bone after its parent, so that a pose can be built in one pass down the hierarchy. */
+    private static List<Bone> parentFirst(List<Bone> bones) {
+        List<Bone> order = Lists.newArrayListWithCapacity(bones.size());
+        List<Bone> pending = Lists.newArrayList(bones);
+        while (!pending.isEmpty()) {
+            int before = pending.size();
+            pending.removeIf(bone -> {
+                if (bone.getParent() == null || order.contains(bone.getParent())) {
+                    order.add(bone);
+                    return true;
+                }
+                return false;
+            });
+            if (pending.size() == before) {
+                // A parent that is not a bone of this mesh: nothing below it can ever be placed after it.
+                order.addAll(pending);
+                break;
+            }
+        }
+        return ImmutableList.copyOf(order);
     }
 
     /**
@@ -57,6 +84,73 @@ public class SkeletalMeshData implements AssetData {
      */
     public Collection<Bone> getBones() {
         return bones;
+    }
+
+    /**
+     * @return All bones, each one after its parent
+     */
+    public List<Bone> getBonesParentFirst() {
+        return parentFirst;
+    }
+
+    /**
+     * Where a bone stands relative to its parent, or to the entity for the root.
+     */
+    @FunctionalInterface
+    public interface BoneLocal {
+        /**
+         * @return false when the bone has nothing to say, in which case the vertices that follow it stay where the
+         *         mesh has them at rest
+         */
+        boolean localTransform(Bone bone, Matrix4f dest);
+    }
+
+    /**
+     * The skinning matrix of each bone: from the mesh at rest to where the bone stands now, in the space of the entity.
+     * One pass down the hierarchy, each bone from its parent.
+     *
+     * @param localOf where each bone stands relative to its parent
+     * @param model   scratch, one matrix per bone: where each bone stands in the space of the entity
+     * @param skin    filled with one matrix per bone, indexed by {@link Bone#getIndex()}, as the shader takes them
+     */
+    public void skinMatrices(BoneLocal localOf, Matrix4f[] model, Matrix4f[] skin) {
+        Matrix4f local = new Matrix4f();
+        for (Bone bone : parentFirst) {
+            int index = bone.getIndex();
+            Matrix4f here = model[index];
+            if (bone.getParent() != null) {
+                here.set(model[bone.getParent().getIndex()]);
+            } else {
+                here.identity();
+            }
+            if (localOf.localTransform(bone, local.identity())) {
+                here.mul(local);
+                here.mul(bone.getInverseBindMatrix(), skin[index]);
+            } else {
+                skin[index].identity();
+            }
+        }
+    }
+
+    /**
+     * @return The vertex positions as loaded, in the space of the mesh: where the bones put them at rest
+     */
+    public List<Vector3f> getRestPositions() {
+        return vertices;
+    }
+
+    /**
+     * @return The vertex normals at rest, in the space of the mesh
+     */
+    public List<Vector3f> getRestNormals() {
+        return normals;
+    }
+
+    /**
+     * @return The bones each vertex follows, and how much
+     */
+    public List<BoneWeight> getWeights() {
+        return weights;
     }
 
     /**
@@ -129,7 +223,10 @@ public class SkeletalMeshData implements AssetData {
                 jointMat.scale(weight.getBias(w));
                 skinMat.add(jointMat);
             }
-            norm.mulTransposePosition(skinMat);
+            // A direction, not a point: the translation of the bones has no business here. Transformed as a position,
+            // every normal was shifted by the offset of its bone and the lighting of a creature depended on where its
+            // limbs were.
+            norm.mulTransposeDirection(skinMat).normalize();
             results.add(norm);
         }
         return results;
@@ -173,7 +270,10 @@ public class SkeletalMeshData implements AssetData {
 
     private void calculateNormals() {
         // TODO: Better algorithm (take into account triangle size and angles
-        List<Vector3f> vertices = getBindPoseVertexPositions();
+        // From the positions as loaded, which is where the skinning takes them from. The bind pose above composes the
+        // bone transforms in the reverse order and transposed, and a normal taken from it was turned by the rest
+        // rotation of its bone before the skinning turned it again.
+        List<Vector3f> vertices = this.vertices;
         List<Vector3f> normals = IntStream.range(0, vertices.size()).mapToObj(i -> new Vector3f()).collect(Collectors.toCollection(() ->
                 Lists.newArrayListWithCapacity(vertices.size())));
         Vector3f v1 = new Vector3f();

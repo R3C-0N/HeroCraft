@@ -24,6 +24,7 @@ import org.terasology.engine.entitySystem.systems.RenderSystem;
 import org.terasology.engine.entitySystem.systems.UpdateSubscriberSystem;
 import org.terasology.engine.logic.location.Location;
 import org.terasology.engine.logic.location.LocationComponent;
+import org.terasology.engine.registry.CoreRegistry;
 import org.terasology.engine.registry.In;
 import org.terasology.engine.rendering.assets.animation.MeshAnimation;
 import org.terasology.engine.rendering.assets.animation.MeshAnimationFrame;
@@ -34,6 +35,7 @@ import org.terasology.engine.rendering.assets.mesh.resource.AllocationType;
 import org.terasology.engine.rendering.assets.mesh.resource.DrawingMode;
 import org.terasology.engine.rendering.assets.skeletalmesh.Bone;
 import org.terasology.engine.rendering.opengl.OpenGLSkeletalMesh;
+import org.terasology.engine.rendering.sphere.SphereProjection;
 import org.terasology.engine.rendering.world.WorldRenderer;
 import org.terasology.engine.utilities.Assets;
 import org.terasology.gestalt.assets.management.AssetManager;
@@ -43,8 +45,10 @@ import org.terasology.nui.Color;
 
 import java.nio.FloatBuffer;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 /**
  * Renders the skeletal mesh of entities when the debug setting "renderSkeletons" is active.
@@ -76,10 +80,43 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
 
     private Random random = new Random();
 
+    /**
+     * Null on a flat world, in which case nothing below changes. Resolved by hand, as MeshRenderer does: an absent
+     * binding makes the injector log, and a flat world has nothing to report.
+     */
+    private SphereProjection sphereProjection;
+
+    // Scratch for the pose of a bone, set for every bone of every creature every frame.
+    private final Vector3f bonePos = new Vector3f();
+    private final Quaternionf boneRot = new Quaternionf();
+    private final Vector3f boneScale = new Vector3f();
+
+    // Scratch for renderOpaque, which runs once a frame for every creature in sight.
+    private final Quaternionf worldRot = new Quaternionf();
+    private final Vector3f worldPos = new Vector3f();
+    private final Vector3f offsetFromCamera = new Vector3f();
+    private final Vector3f drawnAt = new Vector3f();
+    private final Vector3f aabbCenter = new Vector3f();
+    private final Vector3f scaledExtents = new Vector3f();
+    private final AABBf aabb = new AABBf();
+    private final Matrix3f surfaceFrame = new Matrix3f();
+    private final Matrix3f normalMatrix = new Matrix3f();
+    private final Matrix4f frameMatrix = new Matrix4f();
+    private final Matrix4f entityMatrix = new Matrix4f();
+    private final Matrix4f modelViewMatrix = new Matrix4f();
+    private final FloatBuffer tempMatrixBuffer44 = BufferUtils.createFloatBuffer(16);
+    private final FloatBuffer tempMatrixBuffer33 = BufferUtils.createFloatBuffer(12);
+    private final FloatBuffer boneBuffer = BufferUtils.createFloatBuffer(16 * OpenGLSkeletalMesh.MAX_BONES);
+    private final Set<Material> skinnedMaterials = new HashSet<>();
+    /** Per bone: where it stands in the space of the entity, and the skinning matrix that follows from it. */
+    private Matrix4f[] model = new Matrix4f[0];
+    private Matrix4f[] skin = new Matrix4f[0];
+
     @Override
     public void initialise() {
         super.initialise();
         mesh = Assets.generateAsset(meshData, Mesh.class);
+        sphereProjection = CoreRegistry.get(SphereProjection.class);
         material = assetManager.getAsset("engine:white", Material.class).get();
     }
 
@@ -142,6 +179,12 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
             return;
         }
 
+        // Saved only when the animation itself changes, which is replicated and which other systems read. What moves
+        // every frame — the time into the animation, the pose of the bones — is written in place, as GaitClientSystem
+        // writes animationRate: saving it copied the component into the save's delta recorder and offered it to the
+        // network, for every creature and every bone, every frame, for data nobody sends and that is rebuilt from the
+        // animation on load.
+        MeshAnimation before = skeletalMeshComp.animation;
         if (skeletalMeshComp.animation == null && skeletalMeshComp.animationPool != null) {
             skeletalMeshComp.animation = randomAnimationData(skeletalMeshComp, random);
         }
@@ -194,7 +237,9 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
         MeshAnimationFrame frameA = skeletalMeshComp.animation.getFrame(frameAId);
         MeshAnimationFrame frameB = skeletalMeshComp.animation.getFrame(frameBId);
         updateSkeleton(skeletalMeshComp, frameA, frameB, framePos - frameAId);
-        entity.saveComponent(skeletalMeshComp);
+        if (skeletalMeshComp.animation != before) {
+            entity.saveComponent(skeletalMeshComp);
+        }
     }
 
     private float getDurationOfAnimation(SkeletalMeshComponent skeletalMeshComp) {
@@ -223,13 +268,13 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
             }
             LocationComponent boneLoc = boneEntity.getComponent(LocationComponent.class);
             if (boneLoc != null) {
-                Vector3f newPos = frameA.getPosition(i).lerp(frameB.getPosition(i), interpolationVal, new Vector3f());
-                boneLoc.setLocalPosition(newPos);
-                Quaternionf newRot = frameA.getRotation(i).slerp(frameB.getRotation(i), interpolationVal, new Quaternionf());
+                // In place, see updateSkeletalMeshOfEntity. A bone has a parent, so it never raises a
+                // LocationChangedEvent either way, and whatever hangs from it reads its place through the chain.
+                boneLoc.setLocalPosition(frameA.getPosition(i).lerp(frameB.getPosition(i), interpolationVal, bonePos));
+                Quaternionf newRot = frameA.getRotation(i).slerp(frameB.getRotation(i), interpolationVal, boneRot);
                 newRot.normalize();
                 boneLoc.setLocalRotation(newRot);
-                boneLoc.setLocalScale(frameA.getBoneScale(i).lerp(frameB.getBoneScale(i), interpolationVal, new Vector3f()).x);
-                boneEntity.saveComponent(boneLoc);
+                boneLoc.setLocalScale(frameA.getBoneScale(i).lerp(frameB.getBoneScale(i), interpolationVal, boneScale).x);
             }
         }
     }
@@ -237,13 +282,7 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
     @Override
     public void renderOpaque() {
         Vector3fc cameraPosition = worldRenderer.getActiveCamera().getPosition();
-
-        Quaternionf worldRot = new Quaternionf();
-        Vector3f worldPos = new Vector3f();
-        Quaternionf inverseWorldRot = new Quaternionf();
-
-        FloatBuffer tempMatrixBuffer44 = BufferUtils.createFloatBuffer(16);
-        FloatBuffer tempMatrixBuffer33 = BufferUtils.createFloatBuffer(12);
+        skinnedMaterials.clear();
 
         for (EntityRef entity : entityManager.getEntitiesWith(SkeletalMeshComponent.class, LocationComponent.class)) {
 
@@ -254,28 +293,38 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
                     || !skeletalMesh.material.isRenderable()) {
                 continue;
             }
+            OpenGLSkeletalMesh mesh = (OpenGLSkeletalMesh) skeletalMesh.mesh;
+            LocationComponent location = entity.getComponent(LocationComponent.class);
+            location.getWorldRotation(worldRot);
+            location.getWorldPosition(worldPos);
+            float worldScale = location.getWorldScale();
+
+            worldPos.sub(cameraPosition, offsetFromCamera);
+            if (sphereProjection != null) {
+                // Placed rigidly in the local frame at its own origin, as MeshRenderer places a static mesh: bent
+                // vertex by vertex, a creature straddling a seam would tear.
+                sphereProjection.curvedPosition(worldPos, offsetFromCamera);
+                sphereProjection.frameAt(worldPos, surfaceFrame);
+            }
+
             // The bind pose bounds always count. A glTF animation carries no bounds of its own - the loader hands out
             // AABBf(0, 0, 0) - so taking the animation's box alone would cull an animated character down to a single
             // point, and make it blink out at the edge of the screen the moment it started moving.
-            AABBf aabb = new AABBf(skeletalMesh.mesh.getStaticAabb());
+            aabb.set(skeletalMesh.mesh.getStaticAabb());
             MeshAnimation animation = skeletalMesh.animation;
             if (animation != null) {
                 aabb.union(animation.getAabb());
             }
-            LocationComponent location = entity.getComponent(LocationComponent.class);
-            location.getWorldRotation(worldRot);
-            worldRot.invert(inverseWorldRot);
-            location.getWorldPosition(worldPos);
-            float worldScale = location.getWorldScale();
-
-            aabb = aabb.transform(new Matrix4f().translationRotateScale(worldPos, worldRot, worldScale), new AABBf());
+            // Tested where it is drawn, which on a sphere is not where it stands in the grid.
+            drawnAt.set(cameraPosition).add(offsetFromCamera);
+            aabb.transform(entityMatrix.translationRotateScale(drawnAt, worldRot, worldScale));
 
             //Scale bounding box for skeletalMesh.
             Vector3f scale = skeletalMesh.scale;
 
-            Vector3f aabbCenter = aabb.center(new Vector3f());
-            Vector3f scaledExtents = aabb.extent(new Vector3f()).mul(scale.x(), scale.y(), scale.z());
-            aabb = new AABBf(aabbCenter, aabbCenter).expand(scaledExtents);
+            aabb.center(aabbCenter);
+            aabb.extent(scaledExtents).mul(scale.x(), scale.y(), scale.z());
+            aabb.setMin(aabbCenter).setMax(aabbCenter).expand(scaledExtents);
 
             if (!worldRenderer.getActiveCamera().hasInSight(aabb)) {
                 continue;
@@ -290,17 +339,22 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
             skeletalMesh.material.setMatrix4("projectionMatrix", worldRenderer.getActiveCamera().getProjectionMatrix());
             skeletalMesh.material.bindTextures();
 
-            Vector3f worldPositionCameraSpace = new Vector3f();
-            worldPos.sub(cameraPosition, worldPositionCameraSpace);
+            entityMatrix.translation(offsetFromCamera);
+            if (sphereProjection != null) {
+                entityMatrix.mul(frameMatrix.set(surfaceFrame));
+            }
+            entityMatrix.translate(0, skeletalMesh.heightOffset, 0).rotate(worldRot).scale(worldScale);
+            boolean onGpu = mesh.isSkinnedOnGpu();
+            if (onGpu) {
+                // The CPU path applies these to the skinned vertices themselves.
+                entityMatrix.translate(skeletalMesh.translate).scale(skeletalMesh.scale);
+            }
 
-            worldPositionCameraSpace.y += skeletalMesh.heightOffset;
-            Matrix4f matrixCameraSpace = new Matrix4f().translationRotateScale(worldPositionCameraSpace, worldRot, worldScale);
-
-            Matrix4f modelViewMatrix = worldRenderer.getActiveCamera().getViewMatrix().mul(matrixCameraSpace, new Matrix4f());
+            worldRenderer.getActiveCamera().getViewMatrix().mul(entityMatrix, modelViewMatrix);
             modelViewMatrix.get(tempMatrixBuffer44);
             skeletalMesh.material.setMatrix4("modelViewMatrix", tempMatrixBuffer44, true);
 
-            modelViewMatrix.normal(new Matrix3f()).get(tempMatrixBuffer33);
+            modelViewMatrix.normal(normalMatrix).get(tempMatrixBuffer33);
             skeletalMesh.material.setMatrix3("normalMatrix", tempMatrixBuffer33, true);
 
             // Lit where it is, unless it has been told otherwise — see SkeletalMeshComponent.lightPosition.
@@ -308,27 +362,67 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
             skeletalMesh.material.setFloat("sunlight", worldRenderer.getMainLightIntensityAt(lightPos), true);
             skeletalMesh.material.setFloat("blockLight", worldRenderer.getBlockLightIntensityAt(lightPos), true);
 
-            Matrix4f[] boneTransforms = new Matrix4f[skeletalMesh.mesh.getBones().size()];
-            for (Bone bone : skeletalMesh.mesh.getBones()) {
-                EntityRef boneEntity = skeletalMesh.boneEntities.get(bone.getName());
-                if (boneEntity == null) {
-                    boneEntity = EntityRef.NULL;
+            int boneCount = pose(skeletalMesh, mesh);
+            if (onGpu) {
+                boneBuffer.clear();
+                for (int i = 0; i < boneCount; i++) {
+                    skin[i].get(16 * i, boneBuffer);
                 }
-                LocationComponent boneLocation = boneEntity.getComponent(LocationComponent.class);
-                if (boneLocation != null) {
-                    Matrix4f boneTransform = new Matrix4f();
-                    boneLocation.getRelativeTransform(boneTransform, entity);
-                    boneTransform.mul(bone.getInverseBindMatrix());
-                    boneTransforms[bone.getIndex()] = boneTransform.transpose();
-                } else {
-                    logger.warn("Unable to resolve bone \"{}\"", bone.getName()); //NOPMD
-                    boneTransforms[bone.getIndex()] = new Matrix4f();
+                boneBuffer.limit(16 * boneCount);
+                skeletalMesh.material.setMatrix4("boneMatrices", boneBuffer, true);
+                skeletalMesh.material.setInt("boneCount", boneCount, true);
+                skinnedMaterials.add(skeletalMesh.material);
+                mesh.render();
+            } else {
+                skeletalMesh.material.setInt("boneCount", 0, true);
+                Matrix4f[] transposed = new Matrix4f[boneCount];
+                for (int i = 0; i < boneCount; i++) {
+                    transposed[i] = skin[i].transpose(new Matrix4f());
                 }
+                mesh.setScaleTranslate(skeletalMesh.scale, skeletalMesh.translate);
+                mesh.render(Arrays.asList(transposed));
             }
-
-            ((OpenGLSkeletalMesh) skeletalMesh.mesh).setScaleTranslate(skeletalMesh.scale, skeletalMesh.translate);
-            ((OpenGLSkeletalMesh) skeletalMesh.mesh).render(Arrays.asList(boneTransforms));
         }
+
+        // A material is a program of its own, and its uniforms outlive the draw: one also used for a static mesh
+        // must not skin it with the last creature's bones.
+        for (Material material : skinnedMaterials) {
+            material.setInt("boneCount", 0, true);
+        }
+    }
+
+    /**
+     * Fills {@link #skin} with the matrix of each bone, read from the bone entities. Built down the hierarchy, each
+     * bone from its parent: asking every bone for its transform relative to the entity walked the whole chain above
+     * it, one allocated matrix per link.
+     *
+     * @return the number of bones
+     */
+    private int pose(SkeletalMeshComponent skeletalMesh, OpenGLSkeletalMesh mesh) {
+        int boneCount = mesh.getBones().size();
+        if (skin.length < boneCount) {
+            skin = grow(skin, boneCount);
+            model = grow(model, boneCount);
+        }
+        mesh.skinMatrices((bone, dest) -> {
+            EntityRef boneEntity = skeletalMesh.boneEntities.get(bone.getName());
+            LocationComponent boneLocation = boneEntity == null ? null : boneEntity.getComponent(LocationComponent.class);
+            if (boneLocation == null) {
+                logger.warn("Unable to resolve bone \"{}\"", bone.getName()); //NOPMD
+                return false;
+            }
+            dest.translationRotateScale(boneLocation.position, boneLocation.rotation, boneLocation.scale);
+            return true;
+        }, model, skin);
+        return boneCount;
+    }
+
+    private static Matrix4f[] grow(Matrix4f[] matrices, int size) {
+        Matrix4f[] grown = Arrays.copyOf(matrices, size);
+        for (int i = matrices.length; i < size; i++) {
+            grown[i] = new Matrix4f();
+        }
+        return grown;
     }
 
     @Override
