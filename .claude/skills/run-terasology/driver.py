@@ -36,7 +36,7 @@ WINDOW_TITLE = "Terasology Alpha"
 MAIN_CLASS = "org.terasology.engine.Terasology"
 
 JDK17 = os.environ.get("TERA_JAVA_HOME",
-                       r"C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot")
+                       r"C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot")
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
@@ -142,7 +142,11 @@ def resolve_key(name):
 
 # ---------------------------------------------------------------- window
 
-user32.SetProcessDPIAware()
+# Per monitor, not system wide: with two screens at different scales, a system-aware process sees the window on the
+# other screen through a scaling it does not know about — the client area came back 1024x640 for a 1280x800 window,
+# and the screenshot was taken off by a fifth. -4 is DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 (Windows 10 1703+).
+if not user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+    user32.SetProcessDPIAware()
 
 WNDENUMPROC = ctypes.WINFUNCTYPE(w.BOOL, w.HWND, w.LPARAM)
 
@@ -203,6 +207,45 @@ def focus(hwnd):
     user32.SetForegroundWindow(hwnd)
     user32.AttachThreadInput(cur, other, False)
     time.sleep(0.15)
+
+
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", w.DWORD), ("rcMonitor", w.RECT), ("rcWork", w.RECT), ("dwFlags", w.DWORD)]
+
+
+MONITORENUMPROC = ctypes.WINFUNCTYPE(w.BOOL, w.HMONITOR, w.HDC, ctypes.POINTER(w.RECT), w.LPARAM)
+
+
+def secondary_work_area():
+    """The work area (left, top, right, bottom) of the first screen that is not the primary one, or None."""
+    areas = []
+
+    def cb(monitor, _dc, _rect, _data):
+        info = MONITORINFO()
+        info.cbSize = ctypes.sizeof(MONITORINFO)
+        user32.GetMonitorInfoW(monitor, ctypes.byref(info))
+        if not info.dwFlags & 1:  # MONITORINFOF_PRIMARY
+            r = info.rcWork
+            areas.append((r.left, r.top, r.right, r.bottom))
+        return True
+
+    user32.EnumDisplayMonitors(None, None, MONITORENUMPROC(cb), 0)
+    return areas[0] if areas else None
+
+
+def move_to_secondary_screen(hwnd):
+    """Centre the window on the second screen, out of the way of whoever works on the first. No-op on one screen."""
+    area = secondary_work_area()
+    if area is None:
+        return False
+    r = w.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(r))
+    width, height = r.right - r.left, r.bottom - r.top
+    left = area[0] + max(0, (area[2] - area[0] - width) // 2)
+    top = area[1] + max(0, (area[3] - area[1] - height) // 2)
+    # SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
+    user32.SetWindowPos(hwnd, None, left, top, 0, 0, 0x0001 | 0x0004 | 0x0010)
+    return True
 
 
 def require_window():
@@ -267,20 +310,42 @@ class BITMAPINFO(ctypes.Structure):
     _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", w.DWORD * 3)]
 
 
-def grab(hwnd, path, crop=None):
+def grab(hwnd, path, crop=None, from_window=False):
+    """Writes the client area to a PNG. Returns (width, height), or None when from_window came back black.
+
+    from_window asks the window itself for its pixels (PrintWindow), which works behind other windows and without
+    the foreground; otherwise they are read off the screen, where the window has to be visible.
+    """
     x, y, cw, ch = client_rect(hwnd)
+    ox, oy = 0, 0
     if crop:
         cx, cy, cwid, chei = crop
-        x, y = x + cx, y + cy
+        x, y, ox, oy = x + cx, y + cy, cx, cy
         cw, ch = min(cwid, cw - cx), min(chei, ch - cy)
     screen_dc = user32.GetDC(0)
     mem_dc = gdi32.CreateCompatibleDC(screen_dc)
-    bmp = gdi32.CreateCompatibleBitmap(screen_dc, cw, ch)
-    gdi32.SelectObject(mem_dc, bmp)
-    # SRCCOPY | CAPTUREBLT - the second flag is what makes composited surfaces
-    # come out instead of black.
-    if not gdi32.BitBlt(mem_dc, 0, 0, cw, ch, screen_dc, x, y, 0x00CC0020 | 0x40000000):
-        raise OSError("BitBlt failed")
+    if from_window:
+        # The whole client area first, then the crop out of it: PrintWindow draws from the client origin.
+        _, _, fw, fh = client_rect(hwnd)
+        full_dc = gdi32.CreateCompatibleDC(screen_dc)
+        full = gdi32.CreateCompatibleBitmap(screen_dc, fw, fh)
+        gdi32.SelectObject(full_dc, full)
+        # PW_CLIENTONLY | PW_RENDERFULLCONTENT - the second is what gets a GL surface instead of black.
+        ok = user32.PrintWindow(hwnd, full_dc, 0x1 | 0x2)
+        bmp = gdi32.CreateCompatibleBitmap(screen_dc, cw, ch)
+        gdi32.SelectObject(mem_dc, bmp)
+        gdi32.BitBlt(mem_dc, 0, 0, cw, ch, full_dc, ox, oy, 0x00CC0020)
+        gdi32.DeleteObject(full)
+        gdi32.DeleteDC(full_dc)
+        if not ok:
+            raise OSError("PrintWindow failed")
+    else:
+        bmp = gdi32.CreateCompatibleBitmap(screen_dc, cw, ch)
+        gdi32.SelectObject(mem_dc, bmp)
+        # SRCCOPY | CAPTUREBLT - the second flag is what makes composited surfaces
+        # come out instead of black.
+        if not gdi32.BitBlt(mem_dc, 0, 0, cw, ch, screen_dc, x, y, 0x00CC0020 | 0x40000000):
+            raise OSError("BitBlt failed")
 
     bi = BITMAPINFO()
     bi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
@@ -293,6 +358,11 @@ def grab(hwnd, path, crop=None):
     gdi32.GetDIBits(mem_dc, bmp, 0, ch, buf, ctypes.byref(bi), 0)
 
     raw = buf.raw
+    if from_window and not any(raw[i] for i in range(0, len(raw), 4 * 97)):
+        gdi32.DeleteObject(bmp)
+        gdi32.DeleteDC(mem_dc)
+        user32.ReleaseDC(0, screen_dc)
+        return None
     rows = []
     stride = cw * 4
     for r in range(ch):
@@ -414,6 +484,12 @@ def cmd_launch(a):
                     "address=127.0.0.1:" + str(jdwp))
     args += ["@" + str(argfile),
              MAIN_CLASS, "--homedir=.", "--no-splash", "--no-crash-report"]
+    # Somebody works at the same desk. A captured cursor locks their mouse inside the game window, and a game that
+    # loses the focus to their click hibernates at nine frames a second, in the middle of a measure. --capture
+    # brings the player's behaviour back, for anything that needs it — `move` among them: a free cursor turns
+    # nothing, and the view is aimed with `look`.
+    if not getattr(a, "capture", False):
+        args += ["--free-mouse", "--no-hibernation"]
     if a.load_last_game:
         args.append("--load-last-game")
     args.extend(a.extra)
@@ -425,6 +501,8 @@ def cmd_launch(a):
     while time.time() < deadline:
         hwnd = find_window(p.pid)
         if hwnd:
+            if not getattr(a, "primary_screen", False) and move_to_secondary_screen(hwnd):
+                print("moved to the second screen")
             time.sleep(a.settle)
             x, y, cw, ch = client_rect(hwnd)
             print("pid %d  hwnd %d  client %dx%d at (%d,%d)" % (p.pid, hwnd, cw, ch, x, y))
@@ -489,7 +567,8 @@ def cmd_type(a):
 
 
 def cmd_move(a):
-    """Relative mouse motion - this is what turns the camera in game."""
+    """Relative mouse motion - this is what turns the camera in game, but only after launch --capture: a free
+    mouse is ignored in game, and the view is aimed with the look command instead."""
     require_window()
     steps = max(1, a.steps)
     dx, dy = a.dx / steps, a.dy / steps
@@ -544,7 +623,12 @@ def cmd_scroll(a):
 
 
 def cmd_shot(a):
-    hwnd = require_window()
+    # No focus taken: whoever works at the other screen keeps their keyboard. The pixels are asked of the window
+    # itself, and only when it answers black is it brought forward and read off the screen.
+    st = load_state()
+    hwnd = find_window(st.get("pid")) or find_window(None)
+    if hwnd is None:
+        raise SystemExit("no Terasology window found - launch it first (python driver.py launch)")
     time.sleep(a.delay)
     path = Path(a.path)
     if not path.is_absolute():
@@ -555,8 +639,14 @@ def cmd_shot(a):
         crop = (0, 0, 1000, 80)  # the F3 overlay's four lines
     elif getattr(a, "crop", None):
         crop = tuple(int(v) for v in a.crop.split(","))
-    cw, ch = grab(hwnd, path, crop)
-    print("%s  %dx%d" % (path, cw, ch))
+    size = grab(hwnd, path, crop, from_window=True)
+    how = "from the window"
+    if size is None:
+        focus(hwnd)
+        time.sleep(a.delay)
+        size = grab(hwnd, path, crop)
+        how = "off the screen, window brought forward"
+    print("%s  %dx%d  (%s)" % (path, size[0], size[1], how))
     return 0
 
 
@@ -771,6 +861,10 @@ def main():
     lc.add_argument("--jdwp", nargs="?", const="5005", default=None, metavar="PORT",
                     help="open a JDWP debug port on 127.0.0.1 (default 5005) for the "
                          "debugger MCP server; TERA_JDWP sets it too")
+    lc.add_argument("--primary-screen", action="store_true",
+                    help="leave the window where it opens instead of moving it to the second screen")
+    lc.add_argument("--capture", action="store_true",
+                    help="capture the cursor and hibernate without focus, as for a player")
     lc.add_argument("extra", nargs="*", help="extra engine args, after --")
     lc.set_defaults(func=cmd_launch)
 

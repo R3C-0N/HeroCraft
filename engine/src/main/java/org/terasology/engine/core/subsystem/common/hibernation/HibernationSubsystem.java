@@ -15,6 +15,13 @@ import javax.inject.Inject;
 
 
 public class HibernationSubsystem implements EngineSubsystem {
+    /**
+     * Set to "true" and the game never hibernates. Hibernating sleeps 100 ms a frame as soon as the window loses the
+     * focus, which is right for a player who has switched away and wrong for a game measured or driven from outside:
+     * a click in another window was enough to drop it to nine frames a second in the middle of a measure.
+     */
+    public static final String DISABLED_PROPERTY = "terasology.hibernation.disabled";
+
     private static final Logger logger = LoggerFactory.getLogger(HibernationSubsystem.class);
     private HibernationManager hibernationManager;
     private DisplayDevice displayDevice;
@@ -37,6 +44,9 @@ public class HibernationSubsystem implements EngineSubsystem {
     @Override
     public void postInitialise(Context rootContext) {
         displayDevice = rootContext.get(DisplayDevice.class);
+        if (Boolean.getBoolean(DISABLED_PROPERTY)) {
+            hibernationManager.setHibernationAllowed(false);
+        }
     }
 
     @Override

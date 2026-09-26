@@ -12,8 +12,9 @@ desktop and takes the foreground while you drive it.
 Everything below goes through one harness,
 `.claude/skills/run-terasology/driver.py` — a stateless Python CLI. Each
 sub-command finds the running game by its window title, does one thing, and
-exits. Keys and mouse go in through Win32 `SendInput`; screenshots are a
-`BitBlt` of the window's client area; the player position comes back as text
+exits. Keys and mouse go in through Win32 `SendInput`; screenshots ask the window
+for its pixels (`PrintWindow`), without taking the focus, and fall back to a
+`BitBlt` of the client area; the player position comes back as text
 through the in-game console and the log.
 
 **There is now a second, much faster way in:** launch with `--inspect-port` and
@@ -28,7 +29,7 @@ there.
 
 - **JDK 17.** `build.gradle.kts` asserts at least 17 and warns on anything that
   is not exactly 17; the default `JAVA_HOME` here is 11, which fails the assert.
-  On this machine: `C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot`. The driver
+  On this machine: `C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot`. The driver
   sets `JAVA_HOME` itself; override with the `TERA_JAVA_HOME` environment
   variable if the JDK moves.
 - **Python 3** (3.11 here). Standard library only — `ctypes` and `zlib`, no pip
@@ -64,7 +65,7 @@ To force one compilation unit to re-run (Gradle hashes content, so `touch` is
 not enough):
 
 ```bash
-JAVA_HOME='C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot' ./gradlew.bat :facades:PC:compileJava --rerun --console=plain
+JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot' ./gradlew.bat :facades:PC:compileJava --rerun --console=plain
 ```
 
 ## Run — the agent path
@@ -86,6 +87,19 @@ so the symptom is a solid, hollow-free, ore-free underground that looks exactly 
 a broken generator. Set `worldGeneration.defaultGenerator` to `CubeWorlds:cubeworld`
 before any such session, and read the new save's `worlds.main.worldGenerator` to
 confirm what you actually got.
+
+**The game stays out of the user's way by default.** Somebody works at the same
+desk while the agent drives it, so `launch` moves the window to the second screen
+and passes `--free-mouse --no-hibernation`:
+
+- **`--free-mouse`** never captures the cursor, and ignores its motion in game:
+  the view turns only through `look`. A captured cursor locked the user's mouse
+  in the window, and a free one the camera followed handed them the view.
+- **`--no-hibernation`** keeps full speed without the focus. A click elsewhere
+  used to make the game sleep 100 ms a frame, which ruined a measure.
+
+`--capture` gives both back (needed for `move`), and `--primary-screen` leaves the
+window where it opens.
 
 `launch` starts `java` directly off the dumped classpath — not through Gradle —
 so the driver owns the PID and can close it cleanly. It returns once the window
@@ -118,7 +132,7 @@ running.
 | Tap keys | `driver.py key escape` · `driver.py key f3` · `driver.py key 0` |
 | Walk | `driver.py hold z --ms 2500` · `driver.py hold shift z --ms 2000` — **`z`, not `w`**, see below |
 | Type into a field | `driver.py type "SkillSmoke"` |
-| Turn the camera | `driver.py move 600 0 --steps 30` (relative, in mickeys) |
+| Turn the camera | `driver.py move 600 0 --steps 30` (relative, in mickeys) — **only with `launch --capture`**; otherwise use `look` |
 | Toolbar wheel | `driver.py scroll -2` |
 | Console command | `driver.py console ghost` — **slow (~5 s); prefer `curl -X POST -d ghost http://127.0.0.1:17888/console` when the port is open** |
 | **Aim, absolutely** | `driver.py console "look 180 30"` — yaw then pitch, in degrees |
@@ -472,7 +486,7 @@ debug on|off` sets it for the next launch. Do not press `f3` blind — see below
 ## Run — the human path
 
 ```bash
-JAVA_HOME='C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot' ./gradlew.bat game --console=plain
+JAVA_HOME='C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot' ./gradlew.bat game --console=plain
 ```
 
 Builds and launches, and blocks the shell until the game window closes.

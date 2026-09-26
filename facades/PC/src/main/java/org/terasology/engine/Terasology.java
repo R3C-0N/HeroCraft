@@ -32,6 +32,7 @@ import org.terasology.engine.core.subsystem.lwjgl.LwjglGraphics;
 import org.terasology.engine.core.subsystem.lwjgl.LwjglInput;
 import org.terasology.engine.core.subsystem.lwjgl.LwjglTimer;
 import org.terasology.engine.game.GameManifest;
+import org.terasology.engine.input.lwjgl.LwjglMouseDevice;
 import org.terasology.engine.network.NetworkMode;
 import org.terasology.engine.rendering.nui.layers.mainMenu.savedGames.GameInfo;
 import org.terasology.engine.rendering.nui.layers.mainMenu.savedGames.GameProvider;
@@ -137,6 +138,14 @@ public final class Terasology implements Callable<Integer> {
     @Option(names = "--inspect-allow-write",
             description = "Autorise POST /place sur le canal d'inspection : pose de blocs sans le joueur.")
     private boolean inspectAllowWrite;
+
+    @Option(names = "--free-mouse",
+            description = "Ne capture jamais le curseur et ne le suit pas : la vue ne tourne que sur commande (look).")
+    private boolean freeMouse;
+
+    @Option(names = "--no-hibernation",
+            description = "Ne ralentit jamais le jeu quand la fenetre perd le focus.")
+    private boolean noHibernation;
 
     @Option(names = "--override-default-config", description = "Override default config")
     private Path overrideConfigPath;
@@ -317,6 +326,12 @@ public final class Terasology implements Callable<Integer> {
         }
         if (inspectAllowWrite) {
             System.setProperty(InspectSubsystem.ALLOW_WRITE_PROPERTY, "true");
+        }
+        if (freeMouse) {
+            System.setProperty(LwjglMouseDevice.FREE_MOUSE_PROPERTY, "true");
+        }
+        if (noHibernation) {
+            System.setProperty(HibernationSubsystem.DISABLED_PROPERTY, "true");
         }
         if (overrideConfigPath != null) {
             System.setProperty(Config.PROPERTY_OVERRIDE_DEFAULT_CONFIG, overrideConfigPath.toString());

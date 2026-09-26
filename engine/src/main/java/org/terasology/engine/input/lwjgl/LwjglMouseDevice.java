@@ -28,6 +28,14 @@ import java.util.Queue;
  * Handles mouse state.
  */
 public class LwjglMouseDevice implements MouseDevice, PropertyChangeListener {
+    /**
+     * Set to "true" and the cursor is never captured, nor followed by the camera: the pointer stays free to leave the
+     * window, and the view turns only when told to. For a game driven from outside while somebody works at the same
+     * desk. Clicks and the wheel still reach the game.
+     */
+    public static final String FREE_MOUSE_PROPERTY = "terasology.mouse.free";
+
+    private final boolean freeMouse = Boolean.getBoolean(FREE_MOUSE_PROPERTY);
     private RenderingConfig renderingConfig;
     private float uiScale;
     private boolean mouseGrabbed;
@@ -64,8 +72,12 @@ public class LwjglMouseDevice implements MouseDevice, PropertyChangeListener {
         double x = mouseX.get(0);
         double y = mouseY.get(0);
 
-        xposDelta = x - this.xpos;
-        yposDelta = y - this.ypos;
+        // A free cursor wanders over the whole desk, and turning the camera after it would hand the view to whoever
+        // is working next to the game: while the game would hold the cursor, it takes no motion at all, and the view
+        // is aimed from outside (the look command). The menus read the position, which still follows.
+        boolean ignoreMotion = freeMouse && mouseGrabbed;
+        xposDelta = ignoreMotion ? 0 : x - this.xpos;
+        yposDelta = ignoreMotion ? 0 : y - this.ypos;
         this.xpos = x;
         this.ypos = y;
     }
@@ -95,7 +107,7 @@ public class LwjglMouseDevice implements MouseDevice, PropertyChangeListener {
         if (newGrabbed != mouseGrabbed) {
             mouseGrabbed = newGrabbed;
             GLFW.glfwSetInputMode(GLFW.glfwGetCurrentContext(), GLFW.GLFW_CURSOR,
-                    newGrabbed ? GLFW.GLFW_CURSOR_DISABLED : GLFW.GLFW_CURSOR_NORMAL);
+                    newGrabbed && !freeMouse ? GLFW.GLFW_CURSOR_DISABLED : GLFW.GLFW_CURSOR_NORMAL);
         }
     }
 
