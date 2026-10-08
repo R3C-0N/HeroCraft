@@ -29,7 +29,24 @@ final class Stride {
     /** How far above the destination's floor the liquid probe sits. */
     private static final float SONDE_LIQUIDE = 0.25f;
 
+    /** Volume of the reference creature's box, a wolf's, in cubic blocks. */
+    private static final float VOLUME_ETALON = 0.45f * 1.0125f * 1.7228f;
+
     private Stride() {
+    }
+
+    /**
+     * How big the creature is next to a wolf, as a length: 2 means twice as long, twice as tall and twice as
+     * wide. Taken from the volume of the collision box rather than its height, or a lizard, flat and two
+     * blocks long, would count as smaller than a rabbit.
+     */
+    static float taille(EntityRef creature) {
+        BoxShapeComponent box = creature.getComponent(BoxShapeComponent.class);
+        if (box == null) {
+            return 1f;
+        }
+        float volume = box.extents.x * box.extents.y * box.extents.z;
+        return (float) Math.cbrt(Math.max(1e-3f, volume) / VOLUME_ETALON);
     }
 
     /** Half the creature's height, which is how far its feet are below the position it is stored at. */

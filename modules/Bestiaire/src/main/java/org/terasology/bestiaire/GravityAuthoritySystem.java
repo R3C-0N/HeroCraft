@@ -21,9 +21,9 @@ import java.util.Map;
 /**
  * Creatures fall.
  * <p>
- * A creature's body is <em>kinematic</em>: Bullet never moves it, which is what keeps a blow from shoving the
- * target across the ground — a target that backs away measures nothing. The price of that choice is that
- * gravity has to be given back by hand, and this is where.
+ * A creature's body is <em>kinematic</em>: Bullet never moves it, which is what lets the module walk it, and
+ * shove it when struck, by writing its position by hand. The price of that choice is that gravity has to be
+ * given back by hand too, and this is where.
  * <p>
  * Moving the {@link LocationComponent} is enough to move the collision box with it: for a kinematic body
  * Bullet asks {@code EntityMotionState.getWorldTransform} where the entity is, every step, instead of telling
@@ -37,12 +37,12 @@ import java.util.Map;
 @RegisterSystem(RegisterMode.AUTHORITY)
 public class GravityAuthoritySystem extends BaseComponentSystem implements UpdateSubscriberSystem {
 
+    /** The engine's own character gravity and terminal velocity, in blocks per second. */
+    static final float GRAVITE = 28.0f;
+    private static final float VITESSE_MAX = 64.0f;
+
     /** Under this, the feet are on the ground and nothing moves. */
     private static final float EPSILON = 0.001f;
-
-    /** The engine's own character gravity and terminal velocity, in blocks per second. */
-    private static final float GRAVITE = 28.0f;
-    private static final float VITESSE_MAX = 64.0f;
 
     @In
     private EntityManager entityManager;
@@ -64,8 +64,8 @@ public class GravityAuthoritySystem extends BaseComponentSystem implements Updat
                 continue;
             }
             if (ReculAuthoritySystem.enCours(creature)) {
-                // Bullet fait deja tomber ce corps-la, et bien mieux : il tient compte de ce qu'il percute.
-                // Deux gravites sur la meme bete la feraient descendre deux fois plus vite.
+                // Le recul fait deja tomber ce corps-la, avec la meme gravite. Deux chutes sur la meme bete la
+                // feraient descendre deux fois plus vite.
                 vitesses.remove(creature);
                 continue;
             }

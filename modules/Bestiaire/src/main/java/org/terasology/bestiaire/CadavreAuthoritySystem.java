@@ -114,8 +114,8 @@ public class CadavreAuthoritySystem extends BaseComponentSystem implements Updat
         bete.removeComponent(HabitatComponent.class);
         bete.removeComponent(SauvageComponent.class);
         bete.removeComponent(CreatureComponent.class);
-        // Tuee en plein vol : le recul ne tiendra pas ses promesses, faute de systeme pour le finir. Le corps
-        // se reprend ici, sans quoi il resterait dynamique et Bullet se disputerait l'enfoncement.
+        // Tuee en plein vol : le recul s'arrete ici, sans quoi il continuerait d'ecrire la position et se
+        // disputerait l'enfoncement avec ce systeme.
         bete.removeComponent(ReculComponent.class);
         bete.addComponent(cadavre);
 
@@ -190,8 +190,8 @@ public class CadavreAuthoritySystem extends BaseComponentSystem implements Updat
             return;
         }
         corps.collidesWith = Lists.newArrayList(TRAVERSABLE);
-        // Cinematique quoi qu'il arrive : l'enfoncement ecrit la position a la main, et un corps encore
-        // dynamique d'un recul interrompu se la verrait reecrire par Bullet a chaque pas de simulation.
+        // Cinematique quoi qu'il arrive : l'enfoncement ecrit la position a la main, et un corps dynamique se
+        // la verrait reecrire par Bullet a chaque pas de simulation.
         corps.kinematic = true;
         bete.saveComponent(corps);
     }
