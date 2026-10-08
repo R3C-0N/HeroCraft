@@ -22,9 +22,10 @@ import org.terasology.module.health.events.OnDamagedEvent;
  * direction and the size of the push. The character is lifted off its feet a little, or the ground friction of
  * the very next step would eat the push before it showed.
  * <p>
- * <strong>The bigger the beast, the harder the shove,</strong> measured against the same reference wolf as
- * {@link ReculAuthoritySystem}, and the heavier the bite, the more again. A rabbit that ever bites will barely
- * nudge; the demon champion moves you a couple of blocks.
+ * <strong>The bigger the beast, the harder the shove,</strong> in proportion to {@link Stride#taille}, the same
+ * size that decides how far the beast itself is thrown. A lizard nudges, a bear staggers you, and the demon
+ * champion sends you flying. The bite's damage plays no part, as the weapon's damage plays none in
+ * {@link ReculAuthoritySystem}: what pushes is the mass behind the teeth.
  * <p>
  * <strong>To know:</strong> this runs on the authority. In single player and on a listen server's own
  * character that is the whole story; a remote client predicts its own movement and will see the push arrive
@@ -39,15 +40,9 @@ public class ReculJoueurAuthoritySystem extends BaseComponentSystem {
     /** Upward speed, in blocks per second: enough to leave the ground for a quarter of a second. */
     private static final float ENVOL = 3.5f;
 
-    /** The half-height the push is calibrated on: a wolf. */
-    private static final float ETALON = 0.5f;
-
-    /** Extra push per point of damage, as a fraction. */
-    private static final float PART_DEGATS = 0.02f;
-
-    /** What size and bite together are allowed to do. */
+    /** What the size is allowed to do: the smallest biter still moves you, the champion does not launch you. */
     private static final float MOINDRE = 0.5f;
-    private static final float PLUS = 2f;
+    private static final float PLUS = 2.5f;
 
     @ReceiveEvent(components = {CharacterMovementComponent.class, LocationComponent.class})
     public void onMordu(OnDamagedEvent event, EntityRef personnage) {
@@ -67,9 +62,7 @@ public class ReculJoueurAuthoritySystem extends BaseComponentSystem {
         }
         fuite.normalize();
 
-        float taille = Stride.demiHauteur(bete) / ETALON;
-        float morsure = 1f + Math.max(0, event.getDamageAmount()) * PART_DEGATS;
-        float force = Math.max(MOINDRE, Math.min(PLUS, taille * morsure));
+        float force = Math.max(MOINDRE, Math.min(PLUS, Stride.taille(bete)));
         personnage.send(new CharacterImpulseEvent(
                 new Vector3f(fuite.x * POUSSEE * force, ENVOL * Math.min(force, 1.2f), fuite.z * POUSSEE * force)));
     }

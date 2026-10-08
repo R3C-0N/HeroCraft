@@ -14,6 +14,7 @@ import org.terasology.engine.entitySystem.entity.EntityRef;
 import org.terasology.engine.entitySystem.systems.UpdateSubscriberSystem;
 import org.terasology.engine.integrationenvironment.MainLoop;
 import org.terasology.engine.integrationenvironment.jupiter.IntegrationEnvironment;
+import org.terasology.engine.logic.characters.CharacterHeldItemComponent;
 import org.terasology.engine.logic.characters.CharacterMovementComponent;
 import org.terasology.engine.logic.location.LocationComponent;
 import org.terasology.engine.registry.In;
@@ -32,7 +33,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The shove, frame by frame: it slows down rather than stopping dead, it rears, it stands back up, and a wall
- * stops it. And a bite sends the character backwards.
+ * stops it; the beast's size and the weapon's amplification decide how far. And a bite sends the character
+ * backwards.
  */
 @Tag("MteTest")
 @IntegrationEnvironment(dependencies = {"Bestiaire"})
@@ -129,6 +131,52 @@ public class ReculTest {
         assertTrue(vitesse.x > 2f, "not pushed away from the wolf: " + vitesse);
         assertTrue(vitesse.y > 0f, "not lifted off the ground: " + vitesse);
         assertEquals(0f, vitesse.z, 1e-3f, "pushed sideways: " + vitesse);
+    }
+
+    @Test
+    public void unLapinVolePlusLoinQuUnOurs() {
+        EntityRef lapin = poser("Bestiaire:lapin", new Vector3f(0, 2, -6));
+        EntityRef ours = poser("Bestiaire:ours", new Vector3f(0, 2, 6));
+        float lapin0 = position(lapin).x;
+        float ours0 = position(ours).x;
+        frapper(lapin, new Vector3f(-2, 1, -6));
+        frapper(ours, new Vector3f(-2, 1, 6));
+        laisserRetomber(lapin, ours);
+        float vol = position(lapin).x - lapin0;
+        float poussee = position(ours).x - ours0;
+        assertTrue(vol > 1.5f * poussee, "rabbit " + vol + " blocks, bear " + poussee);
+    }
+
+    @Test
+    public void unMarteauProjetteDeuxFoisPlusLoinQueLaMain() {
+        EntityRef nu = poser("Bestiaire:mouflon", new Vector3f(0, 2, -6));
+        EntityRef arme = poser("Bestiaire:mouflon", new Vector3f(0, 2, 6));
+        float nu0 = position(nu).x;
+        float arme0 = position(arme).x;
+        frapper(nu, new Vector3f(-2, 1, -6));
+        ImpactComponent impact = new ImpactComponent();
+        impact.amplification = 2f;
+        CharacterHeldItemComponent tenu = new CharacterHeldItemComponent();
+        tenu.selectedItem = entityManager.create(impact);
+        EntityRef frappeur = entityManager.create(new LocationComponent(new Vector3f(-2, 1, 6)), tenu);
+        arme.send(new OnDamagedEvent(4, null, frappeur));
+        laisserRetomber(nu, arme);
+        float main = position(nu).x - nu0;
+        float marteau = position(arme).x - arme0;
+        assertEquals(2f, marteau / main, 0.05f, "bare hand " + main + " blocks, hammer " + marteau);
+    }
+
+    private void laisserRetomber(EntityRef... betes) {
+        for (int i = 0; i < 200; i++) {
+            boolean fini = true;
+            for (EntityRef bete : betes) {
+                fini &= !bete.hasComponent(ReculComponent.class);
+            }
+            if (fini) {
+                return;
+            }
+            image();
+        }
     }
 
     private EntityRef poser(String prefab, Vector3f ou) {

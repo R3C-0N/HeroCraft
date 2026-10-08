@@ -10,6 +10,7 @@ import org.terasology.engine.entitySystem.systems.BaseComponentSystem;
 import org.terasology.engine.entitySystem.systems.RegisterMode;
 import org.terasology.engine.entitySystem.systems.RegisterSystem;
 import org.terasology.engine.entitySystem.systems.UpdateSubscriberSystem;
+import org.terasology.engine.logic.characters.CharacterHeldItemComponent;
 import org.terasology.engine.logic.location.LocationComponent;
 import org.terasology.engine.registry.In;
 import org.terasology.engine.world.WorldProvider;
@@ -47,9 +48,11 @@ import java.util.List;
  * <strong>The killing blow does not throw.</strong> A carcass is made out of the creature itself and has its
  * own descent to run; a beast therefore dies on the spot.
  * <p>
- * <strong>The push is measured against the creature, not against the weapon alone.</strong> A rabbit flies and
- * a bear shifts, because the distance is divided by the beast's own half-height; the weapon then adds to it, so
- * a mallet throws further than a knife without a second table to keep in step with the first.
+ * <strong>The push is the weapon's amplification divided by the beast's size.</strong> The size is
+ * {@link Stride#taille}, a length taken from the volume of the box, so a rabbit flies, a bear shifts and the
+ * demon champion barely flinches. The amplification is the {@link ImpactComponent} of the item the striker
+ * holds, {@code 1} for a bare hand: a war hammer throws, a dagger nudges. The damage plays no part — it already
+ * has its own consequence, and a sharp blade that hits hard is exactly the weapon that should not shove.
  */
 @RegisterSystem(RegisterMode.AUTHORITY)
 public class ReculAuthoritySystem extends BaseComponentSystem implements UpdateSubscriberSystem {
@@ -57,11 +60,8 @@ public class ReculAuthoritySystem extends BaseComponentSystem implements UpdateS
     /** Seconds from the blow to a standstill. */
     private static final float DUREE = 0.3f;
 
-    /** Blocks a creature of the reference size is thrown, before the weapon adds to it. */
+    /** Blocks a creature of the reference size is thrown by a bare hand. */
     private static final float DISTANCE = 0.75f;
-
-    /** The half-height that distance is calibrated on: a wolf. */
-    private static final float ETALON = 0.5f;
 
     /** Height of the hop, in blocks. Enough to unstick the feet, not enough to launch. */
     private static final float BOND = 0.18f;
@@ -69,12 +69,9 @@ public class ReculAuthoritySystem extends BaseComponentSystem implements UpdateS
     /** Largest lean backwards, in radians, for a creature of the reference size. */
     private static final float CABRE = (float) Math.toRadians(14);
 
-    /** Extra push per point of damage, as a fraction. */
-    private static final float PART_DEGATS = 0.02f;
-
     /** Neither a mouse nor a mountain: what the size and the weapon together are allowed to do. */
-    private static final float MOINDRE = 0.4f;
-    private static final float PLUS = 2f;
+    private static final float MOINDRE = 0.1f;
+    private static final float PLUS = 2.5f;
 
     /** A floor higher than this above the feet is a wall. A beast thrown backwards does not climb. */
     private static final float MARCHE = 0.55f;
@@ -116,7 +113,7 @@ public class ReculAuthoritySystem extends BaseComponentSystem implements UpdateS
             return;
         }
 
-        float force = force(bete, event.getDamageAmount());
+        float force = force(bete, event.getInstigator());
         ReculComponent recul = bete.getComponent(ReculComponent.class);
         boolean nouveau = recul == null;
         // Un second coup en plein vol repart de la ou en est le corps, mais garde l'assise du premier : la
@@ -252,10 +249,22 @@ public class ReculAuthoritySystem extends BaseComponentSystem implements UpdateS
         return fuite.normalize();
     }
 
-    /** How hard the blow lands on this beast: smaller beasts go further, and a heavier blow adds to it. */
-    private float force(EntityRef bete, int degats) {
-        float taille = ETALON / Math.max(0.1f, Stride.demiHauteur(bete));
-        float arme = 1f + Math.max(0, degats) * PART_DEGATS;
-        return Math.max(MOINDRE, Math.min(PLUS, taille * arme));
+    /** How hard the blow lands on this beast: the weapon's amplification over the beast's size. */
+    private static float force(EntityRef bete, EntityRef frappeur) {
+        return Math.max(MOINDRE, Math.min(PLUS, amplification(frappeur) / Stride.taille(bete)));
+    }
+
+    /**
+     * The amplification of what the striker holds, {@code 1} when it holds nothing that says otherwise. Read at
+     * the moment the damage lands, which for a melee blow is the moment of the swing: the held item is the
+     * weapon that struck.
+     */
+    static float amplification(EntityRef frappeur) {
+        CharacterHeldItemComponent tenu = frappeur.getComponent(CharacterHeldItemComponent.class);
+        if (tenu == null) {
+            return 1f;
+        }
+        ImpactComponent impact = tenu.selectedItem.getComponent(ImpactComponent.class);
+        return impact == null ? 1f : Math.max(0f, impact.amplification);
     }
 }
