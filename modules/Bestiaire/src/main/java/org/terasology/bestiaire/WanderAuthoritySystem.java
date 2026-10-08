@@ -101,9 +101,9 @@ public class WanderAuthoritySystem extends BaseComponentSystem implements Update
                 continue;
             }
             if (ReculAuthoritySystem.enCours(creature)) {
-                // Elle est en l'air, et c'est Bullet qui la porte. Marcher pendant ce temps reviendrait a
-                // reecrire la position que le moteur physique vient d'ecrire : la bete avancerait par
-                // saccades au lieu d'etre projetee.
+                // Elle est projetee, et c'est le recul qui la porte. Marcher pendant ce temps reviendrait a
+                // reecrire la position qu'il vient d'ecrire : la bete avancerait par saccades au lieu
+                // d'etre projetee.
                 humeurs.remove(creature);
                 continue;
             }

@@ -123,7 +123,7 @@ public class HuntAuthoritySystem extends BaseComponentSystem implements UpdateSu
                 continue;
             }
             if (ReculAuthoritySystem.enCours(creature)) {
-                // Projetee : le corps appartient a Bullet jusqu'a ce qu'il se pose. Les horloges de la
+                // Projetee : le corps appartient au recul jusqu'a ce qu'il se pose. Les horloges de la
                 // chasse s'arretent avec les jambes, sinon elle mord depuis les airs.
                 continue;
             }

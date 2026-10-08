@@ -77,6 +77,16 @@ public class GaitClientSystem extends BaseComponentSystem implements UpdateSubsc
                 continue;
             }
 
+            if (creature.hasComponent(ReculComponent.class)) {
+                // Projetee, elle ne marche pas : la vitesse mesuree est celle du coup, et la traduire en
+                // foulees la faisait courir a reculons, pattes a plein regime. Les jambes se figent, et
+                // l'allure repart de zero a la reprise plutot que du pic du recul.
+                allure.derniere.set(position);
+                allure.vitesse = 0f;
+                maillage.animationRate = 0f;
+                continue;
+            }
+
             float dx = position.x - allure.derniere.x;
             float dz = position.z - allure.derniere.z;
             allure.derniere.set(position);

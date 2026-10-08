@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.terasology.bestiaire;
 
+import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.terasology.engine.entitySystem.entity.EntityManager;
 import org.terasology.engine.entitySystem.entity.EntityRef;
@@ -10,9 +11,6 @@ import org.terasology.engine.entitySystem.systems.RegisterMode;
 import org.terasology.engine.entitySystem.systems.RegisterSystem;
 import org.terasology.engine.entitySystem.systems.UpdateSubscriberSystem;
 import org.terasology.engine.logic.location.LocationComponent;
-import org.terasology.engine.physics.components.RigidBodyComponent;
-import org.terasology.engine.physics.events.ChangeVelocityEvent;
-import org.terasology.engine.physics.events.ImpulseEvent;
 import org.terasology.engine.registry.In;
 import org.terasology.engine.world.WorldProvider;
 import org.terasology.gestalt.entitysystem.event.ReceiveEvent;
@@ -23,69 +21,71 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * A struck beast goes backwards, and Bullet is the one that throws it.
+ * A struck beast is thrown backwards, rears, and comes to rest.
  * <p>
- * <strong>Kinematic is a state here, not a property.</strong> A creature's body is kinematic at rest, which
- * is what lets {@link Stride} and {@link GravityAuthoritySystem} walk it by writing its position: Bullet
- * reads a kinematic body's transform off the entity and never writes it back. That is also exactly why a
- * blow used to move nothing. So the blow hands the body over — the flag comes off, an impulse goes in, and
- * for the length of the shove the creature is an ordinary falling object that slides on slopes and stops at
- * walls. When the clock runs out the body is taken back, set down on the ground and made kinematic again.
- * The alternative — dynamic bodies at all times — would mean rewriting walking, climbing a step, rounding a
- * rock and the carcass's descent in forces, and re-tuning nineteen creatures.
+ * <strong>The shove is written, not simulated.</strong> It used to be Bullet's: the body went dynamic for a
+ * quarter of a second, took an impulse, and was snatched back when the clock ran out — at whatever speed it
+ * still had, so the beast slid at a constant pace and stopped dead. Here the slide is a curve: full speed at
+ * the blow, falling away to nothing, the distance being {@code 1 - (1 - u)³} of the whole at fraction
+ * {@code u} of the time. That is a speed falling as {@code (1 - u)²}, which is what reads as weight. The body
+ * stays kinematic throughout, so there is no hand-over, no velocity to cancel and no landing to correct.
  * <p>
- * <strong>Every system that walks a creature stands aside while {@link ReculComponent} is on it.</strong>
- * Two owners of one position do not share it, they tear at it — the same reason {@link ChaseComponent} keeps
- * {@link WanderAuthoritySystem} off a hunting wolf. Gravity stands aside too, Bullet's own being better than
- * the hand-written one for a body in the air.
+ * <strong>The ground is read the way the legs read it.</strong> Each frame's step asks {@link Ground#under}, as
+ * {@link Stride} does: a floor more than {@link #MARCHE} above the feet is a wall and ends the slide where it
+ * stands, a lower one is simply fallen to. The hop is a real fall, with the gravity of
+ * {@link GravityAuthoritySystem}: a beast shoved off a ledge keeps falling until it lands, and only then is it
+ * handed back.
  * <p>
- * <strong>The killing blow does not throw.</strong> A carcass is made out of the creature itself, in the
- * middle of the destruction it consumes, and it has a five-minute descent of its own to run; handing that
- * body to Bullet at the same instant would make two things own it. A beast therefore dies on the spot.
+ * <strong>The body rears.</strong> It leans back along the shove — its top thrown the way it is going — up to
+ * {@link #CABRE} halfway through the slide, and straightens by the end. The skeletons carry one clip each, so
+ * this lean is the only flinch there is. It is written into the rotation, which is replicated already.
  * <p>
- * <strong>The push is measured against the creature, not against the weapon alone.</strong> A rabbit flies
- * and a bear shifts, because the speed is divided by the beast's own half-height; the weapon then adds to
- * it, so a mallet throws further than a knife without a second table to keep in step with the first.
+ * <strong>Every system that walks a creature stands aside while {@link ReculComponent} is on it.</strong> Two
+ * owners of one position do not share it, they tear at it — the same reason {@link ChaseComponent} keeps
+ * {@link WanderAuthoritySystem} off a hunting wolf.
+ * <p>
+ * <strong>The killing blow does not throw.</strong> A carcass is made out of the creature itself and has its
+ * own descent to run; a beast therefore dies on the spot.
+ * <p>
+ * <strong>The push is measured against the creature, not against the weapon alone.</strong> A rabbit flies and
+ * a bear shifts, because the distance is divided by the beast's own half-height; the weapon then adds to it, so
+ * a mallet throws further than a knife without a second table to keep in step with the first.
  */
 @RegisterSystem(RegisterMode.AUTHORITY)
 public class ReculAuthoritySystem extends BaseComponentSystem implements UpdateSubscriberSystem {
 
-    /**
-     * How long the body belongs to Bullet, in seconds.
-     * <p>
-     * Shortened from 0.4 s, which read as a slow slide rather than a blow. The push went up by the
-     * same factor so the distance is unchanged: the beast ends up where it used to, it simply gets
-     * there faster — which is what makes a hit feel like a hit.
-     */
-    private static final float DUREE = 0.28f;
+    /** Seconds from the blow to a standstill. */
+    private static final float DUREE = 0.3f;
 
-    /** Backward speed given to a creature of the reference size, in blocks per second. */
-    private static final float POUSSEE = 2.9f;
+    /** Blocks a creature of the reference size is thrown, before the weapon adds to it. */
+    private static final float DISTANCE = 0.75f;
 
-    /** The half-height that speed is calibrated on: a wolf. */
+    /** The half-height that distance is calibrated on: a wolf. */
     private static final float ETALON = 0.5f;
 
-    /** Share of the push that goes upwards. Enough to unstick the feet, not enough to launch. */
-    private static final float ENVOL = 0.25f;
+    /** Height of the hop, in blocks. Enough to unstick the feet, not enough to launch. */
+    private static final float BOND = 0.18f;
 
-    /** Extra speed per point of damage, as a fraction of {@link #POUSSEE}. */
+    /** Largest lean backwards, in radians, for a creature of the reference size. */
+    private static final float CABRE = (float) Math.toRadians(14);
+
+    /** Extra push per point of damage, as a fraction. */
     private static final float PART_DEGATS = 0.02f;
 
     /** Neither a mouse nor a mountain: what the size and the weapon together are allowed to do. */
     private static final float MOINDRE = 0.4f;
     private static final float PLUS = 2f;
 
-    /**
-     * How far the landing is allowed to correct the height, in blocks.
-     * <p>
-     * Beyond it the beast is over a hole or a cliff, and the floor found below is not a rounding error but a
-     * fall to be made. Snapping to it would drop the animal four blocks in one frame — measured, the first
-     * wolf shoved towards the shore arrived on the beach by teleport.
-     */
-    private static final float RATTRAPAGE = 0.6f;
+    /** A floor higher than this above the feet is a wall. A beast thrown backwards does not climb. */
+    private static final float MARCHE = 0.55f;
 
-    private static final Vector3f LIBRE = new Vector3f(1f, 1f, 1f);
-    private static final Vector3f BLOQUE = new Vector3f();
+    /**
+     * Longest a shove may last, in seconds, landing included. A beast thrown into a shaft falls with it and
+     * is handed to gravity at this point rather than held for as long as the fall takes.
+     */
+    private static final float PLAFOND = 1.5f;
+
+    private static final Vector3f HAUT = new Vector3f(0f, 1f, 0f);
 
     @In
     private EntityManager entityManager;
@@ -112,98 +112,130 @@ public class ReculAuthoritySystem extends BaseComponentSystem implements UpdateS
             return;
         }
         LocationComponent location = bete.getComponent(LocationComponent.class);
-        RigidBodyComponent corps = bete.getComponent(RigidBodyComponent.class);
-        if (location == null || corps == null) {
+        if (location == null) {
             return;
         }
 
-        Vector3f fuite = ecarter(bete, location, event.getInstigator());
-        float vitesse = allure(bete, event.getDamageAmount());
-
-        corps.kinematic = false;
-        // Elle glisse, elle ne culbute pas : un loup qui part en tonneau se lit comme un bug, et il faudrait
-        // en plus le redresser avant de le rendre au sol.
-        corps.angularFactor = new Vector3f(BLOQUE);
+        float force = force(bete, event.getDamageAmount());
         ReculComponent recul = bete.getComponent(ReculComponent.class);
-        if (recul == null) {
+        boolean nouveau = recul == null;
+        // Un second coup en plein vol repart de la ou en est le corps, mais garde l'assise du premier : la
+        // rotation courante est deja penchee, et la reprendre pour reference ne la redresserait jamais.
+        if (nouveau) {
             recul = new ReculComponent();
-            recul.reste = DUREE;
+            location.getWorldRotation(recul.assise);
+            recul.pieds = location.getWorldPosition(new Vector3f()).y - Stride.demiHauteur(bete);
+        }
+        recul.direction.set(ecarter(location, event.getInstigator()));
+        recul.ecoule = 0f;
+        recul.duree = DUREE;
+        recul.distance = DISTANCE * force;
+        recul.parcouru = 0f;
+        recul.montee = (float) Math.sqrt(2f * GravityAuthoritySystem.GRAVITE * BOND * Math.min(force, 1.5f));
+        recul.pose = false;
+        recul.bute = false;
+        recul.inclinaison = CABRE * Math.min(force, 1.5f);
+        if (nouveau) {
             bete.addComponent(recul);
         } else {
-            recul.reste = DUREE;
             bete.saveComponent(recul);
         }
-        bete.saveComponent(corps);
-
-        bete.send(new ChangeVelocityEvent(new Vector3f(), new Vector3f()));
-        bete.send(new ImpulseEvent(new Vector3f(fuite.x * vitesse, ENVOL * vitesse, fuite.z * vitesse)
-                .mul(corps.mass)));
     }
 
     /**
-     * The clock, and the landing.
+     * One frame of every shove in progress.
      * <p>
-     * The list is copied before it is walked: taking the body back removes the component the iteration is
-     * built on.
+     * The list is copied before it is walked: ending a shove removes the component the iteration is built on.
      */
     @Override
     public void update(float delta) {
         List<EntityRef> voltigeurs = new ArrayList<>();
-        entityManager.getEntitiesWith(ReculComponent.class).forEach(voltigeurs::add);
+        entityManager.getEntitiesWith(ReculComponent.class, LocationComponent.class).forEach(voltigeurs::add);
 
         for (EntityRef bete : voltigeurs) {
             ReculComponent recul = bete.getComponent(ReculComponent.class);
-            if (recul == null) {
+            LocationComponent location = bete.getComponent(LocationComponent.class);
+            if (recul == null || location == null) {
                 continue;
             }
-            recul.reste -= delta;
-            if (recul.reste > 0f) {
-                bete.saveComponent(recul);
-                continue;
+            recul.ecoule += delta;
+            float u = Math.min(1f, recul.ecoule / Math.max(1e-3f, recul.duree));
+            Vector3f position = location.getWorldPosition(new Vector3f());
+            float demiHauteur = Stride.demiHauteur(bete);
+
+            glisser(recul, position, u);
+            tomber(recul, position, delta);
+            position.y = recul.pieds + demiHauteur;
+            location.setWorldPosition(position);
+
+            float penche = recul.inclinaison * (float) Math.sin(Math.PI * u);
+            Vector3f axe = new Vector3f(HAUT).cross(recul.direction);
+            Quaternionf rotation = new Quaternionf(recul.assise);
+            if (penche != 0f && axe.lengthSquared() > 1e-6f) {
+                rotation.premul(new Quaternionf().rotationAxis(penche, axe.normalize()));
             }
-            poser(bete);
+            location.setWorldRotation(rotation);
+            bete.saveComponent(location);
+
+            if ((u >= 1f && recul.pose) || recul.ecoule >= PLAFOND) {
+                // Rendue telle quelle : droite, cinematique, les pieds la ou ils sont. Encore en l'air au
+                // plafond, c'est la gravite maison qui finit la chute.
+                location.setWorldRotation(recul.assise);
+                bete.saveComponent(location);
+                bete.removeComponent(ReculComponent.class);
+            }
         }
     }
 
-    /**
-     * Takes the body back: still, upright, kinematic, and set down on the floor it ended above.
-     * <p>
-     * The landing is not cosmetic. Bullet leaves a box resting <em>on</em> the ground by its own contact
-     * margin, and the walking code measures the feet against {@link Ground#under}; handing back a creature
-     * that the two disagree about makes it sink or hover for as long as it lives. It corrects a margin and
-     * not a fall: a beast still in the air over lower ground is simply handed to
-     * {@link GravityAuthoritySystem}, whose whole job is to bring it down at a speed the eye can follow.
-     */
-    private void poser(EntityRef bete) {
-        bete.send(new ChangeVelocityEvent(new Vector3f(), new Vector3f()));
-
-        RigidBodyComponent corps = bete.getComponent(RigidBodyComponent.class);
-        if (corps != null) {
-            corps.kinematic = true;
-            corps.angularFactor = new Vector3f(LIBRE);
-            bete.saveComponent(corps);
+    /** The horizontal part: this frame's share of the curve, unless the ground refuses it. */
+    private void glisser(ReculComponent recul, Vector3f position, float u) {
+        if (recul.bute) {
+            return;
         }
-
-        LocationComponent location = bete.getComponent(LocationComponent.class);
-        if (location != null) {
-            Vector3f position = location.getWorldPosition(new Vector3f());
-            float pieds = position.y - Stride.demiHauteur(bete);
-            float sol = Ground.under(worldProvider, position.x, pieds, position.z);
-            if (!Float.isNaN(sol) && Math.abs(sol - pieds) <= RATTRAPAGE) {
-                position.y += sol - pieds;
-                location.setWorldPosition(position);
-                bete.saveComponent(location);
-            }
+        float reste = 1f - u;
+        float voulu = recul.distance * (1f - reste * reste * reste);
+        float pas = voulu - recul.parcouru;
+        if (pas <= 0f) {
+            return;
         }
-        bete.removeComponent(ReculComponent.class);
+        float x = position.x + recul.direction.x * pas;
+        float z = position.z + recul.direction.z * pas;
+        float sol = Ground.under(worldProvider, x, recul.pieds, z);
+        if (Float.isNaN(sol) || sol - recul.pieds > MARCHE) {
+            // Un mur : la bete s'y arrete net, comme on s'arrete contre un mur, et finit son bond sur place.
+            recul.bute = true;
+            return;
+        }
+        position.x = x;
+        position.z = z;
+        recul.parcouru = voulu;
+    }
+
+    /** The vertical part: the hop, the fall that follows it, and the floor that ends both. */
+    private void tomber(ReculComponent recul, Vector3f position, float delta) {
+        float sol = Ground.under(worldProvider, position.x, recul.pieds, position.z);
+        if (Float.isNaN(sol)) {
+            // Le monde ne repond plus sous elle : on ne la fait pas tomber dans un chunk absent.
+            recul.pose = true;
+            return;
+        }
+        recul.montee -= GravityAuthoritySystem.GRAVITE * delta;
+        recul.pieds += recul.montee * delta;
+        if (recul.pieds <= sol) {
+            recul.pieds = sol;
+            recul.montee = 0f;
+            recul.pose = true;
+        } else {
+            recul.pose = false;
+        }
     }
 
     /**
      * Away from whoever struck, flat. A blow from straight above has no direction to give, and the beast then
-     * goes out the way it is facing — anything rather than a zero vector, which would leave it hanging in the
-     * air for half a second doing nothing.
+     * goes out the way it is facing — anything rather than a zero vector, which would leave it rearing on the
+     * spot for nothing.
      */
-    private Vector3f ecarter(EntityRef bete, LocationComponent location, EntityRef frappeur) {
+    private static Vector3f ecarter(LocationComponent location, EntityRef frappeur) {
         Vector3f fuite = new Vector3f();
         LocationComponent depuis = frappeur.getComponent(LocationComponent.class);
         if (depuis != null) {
@@ -220,10 +252,10 @@ public class ReculAuthoritySystem extends BaseComponentSystem implements UpdateS
         return fuite.normalize();
     }
 
-    /** The push itself: smaller beasts go further, and a heavier blow adds to it. */
-    private float allure(EntityRef bete, int degats) {
+    /** How hard the blow lands on this beast: smaller beasts go further, and a heavier blow adds to it. */
+    private float force(EntityRef bete, int degats) {
         float taille = ETALON / Math.max(0.1f, Stride.demiHauteur(bete));
         float arme = 1f + Math.max(0, degats) * PART_DEGATS;
-        return POUSSEE * Math.max(MOINDRE, Math.min(PLUS, taille * arme));
+        return Math.max(MOINDRE, Math.min(PLUS, taille * arme));
     }
 }
