@@ -18,6 +18,7 @@ import org.terasology.engine.core.subsystem.headless.renderer.HeadlessRenderingS
 import org.terasology.engine.core.subsystem.headless.renderer.ShaderManagerHeadless;
 import org.terasology.engine.rendering.ShaderManager;
 import org.terasology.engine.rendering.assets.animation.MeshAnimation;
+import org.terasology.engine.rendering.assets.animation.MeshAnimationBundle;
 import org.terasology.engine.rendering.assets.animation.MeshAnimationImpl;
 import org.terasology.engine.rendering.assets.atlas.Atlas;
 import org.terasology.engine.rendering.assets.font.Font;
@@ -64,7 +65,11 @@ public class HeadlessGraphics implements EngineSubsystem {
         assetTypeManager.createAssetType(Material.class, HeadlessMaterial::new, "materials");
         assetTypeManager.createAssetType(Mesh.class, HeadlessMesh::new, "mesh");
         assetTypeManager.createAssetType(SkeletalMesh.class, HeadlessSkeletalMesh::new, "skeletalMesh");
-        assetTypeManager.createAssetType(MeshAnimation.class, MeshAnimationImpl::new, "animations");
+        // The same folders as the windowed engine: a glTF skeletal mesh carries its animations inside it, and
+        // without the bundle type a headless engine loaded the mesh and silently dropped every clip in it.
+        assetTypeManager.createAssetType(MeshAnimation.class, MeshAnimationImpl::new, "animations", "skeletalMesh");
+        assetTypeManager.createAssetType(MeshAnimationBundle.class, MeshAnimationBundle::new,
+                "skeletalMesh", "animations");
         assetTypeManager.createAssetType(Atlas.class, Atlas::new, "atlas");
         assetTypeManager.createAssetType(Subtexture.class, Subtexture::new);
 

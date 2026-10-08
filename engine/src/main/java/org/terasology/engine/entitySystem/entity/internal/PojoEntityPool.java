@@ -19,7 +19,9 @@ import org.terasology.gestalt.entitysystem.component.Component;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import static org.terasology.engine.entitySystem.entity.internal.PojoEntityManager.NULL_ID;
@@ -282,21 +284,78 @@ public class PojoEntityPool implements EngineEntityPool {
         return entity;
     }
 
+    /**
+     * The entities holding every one of the given components.
+     * <p>
+     * The walk starts from the rarest of them and not from the whole pool: a query for the creatures used to visit
+     * every bone, block entity and item in the world, and a system that runs each frame paid that once per frame
+     * whether or not it had any work. The ids are taken as a snapshot when iteration starts, so a caller may add,
+     * remove or destroy along the way; an entity that loses one of the components before it is reached is skipped.
+     */
     @SafeVarargs
     @Override
     public final Iterable<EntityRef> getEntitiesWith(Class<? extends Component>... componentClasses) {
-        return () -> entityStore.keySet().stream()
-                //Keep entities which have all of the required components
-                .filter(id -> {
-                    for (Class<? extends Component> component : componentClasses) {
-                        if (componentStore.get(id, component) == null) {
-                            return false;
-                        }
+        if (componentClasses.length == 0) {
+            return getAllEntities();
+        }
+        return () -> {
+            Class<? extends Component> rarest = componentClasses[0];
+            int rarestCount = componentStore.getComponentCount(rarest);
+            for (int i = 1; i < componentClasses.length && rarestCount > 0; i++) {
+                int n = componentStore.getComponentCount(componentClasses[i]);
+                if (n < rarestCount) {
+                    rarestCount = n;
+                    rarest = componentClasses[i];
+                }
+            }
+            return new FilteredEntityIterator(componentStore.entityIdsWith(rarest), componentClasses);
+        };
+    }
+
+    /** Walks a snapshot of ids, keeping those that still hold every component when they are reached. */
+    private final class FilteredEntityIterator implements Iterator<EntityRef> {
+        private final long[] ids;
+        private final Class<? extends Component>[] componentClasses;
+        private int index;
+        private EntityRef pending;
+
+        private FilteredEntityIterator(long[] ids, Class<? extends Component>[] componentClasses) {
+            this.ids = ids;
+            this.componentClasses = componentClasses;
+        }
+
+        @Override
+        public boolean hasNext() {
+            while (pending == null && index < ids.length) {
+                long id = ids[index++];
+                if (holdsAll(id)) {
+                    EntityRef entity = getEntity(id);
+                    if (entity.exists()) {
+                        pending = entity;
                     }
-                    return true;
-                })
-                .map(id -> getEntity(id))
-                .iterator();
+                }
+            }
+            return pending != null;
+        }
+
+        @Override
+        public EntityRef next() {
+            if (!hasNext()) {
+                throw new NoSuchElementException();
+            }
+            EntityRef entity = pending;
+            pending = null;
+            return entity;
+        }
+
+        private boolean holdsAll(long id) {
+            for (Class<? extends Component> component : componentClasses) {
+                if (componentStore.get(id, component) == null) {
+                    return false;
+                }
+            }
+            return true;
+        }
     }
 
     @Override

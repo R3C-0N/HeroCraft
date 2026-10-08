@@ -80,6 +80,14 @@ public class ComponentTable {
     }
 
     /**
+     * @return a copy of the ids of every entity holding this component, safe to walk while components change
+     */
+    public long[] entityIdsWith(Class<? extends Component> componentClass) {
+        TLongObjectMap<Component> map = store.get(componentClass);
+        return (map == null) ? new long[0] : map.keys();
+    }
+
+    /**
      *
      * @return an iterable that should be only used for iteration over the components. It can't be used to remove
      *         components. It should not be used after components have been added or removed from the entity.
