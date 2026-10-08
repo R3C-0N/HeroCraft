@@ -30,6 +30,7 @@ extensions
 !/modules/Minimap
 !/modules/CubeWorlds
 !/modules/CoreSampleGameplay
+!/modules/WorkstationCrafting
 # Modules nes du fork, sans amont : suivis ici meme plutot qu'en submodule
 !/modules/CreativeGameplay
 !/modules/Bestiaire

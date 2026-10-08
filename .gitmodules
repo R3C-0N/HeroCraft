@@ -16,3 +16,6 @@
 [submodule "modules/CoreSampleGameplay"]
 	path = modules/CoreSampleGameplay
 	url = ../CoreSampleGameplay-Evolve.git
+[submodule "modules/WorkstationCrafting"]
+	path = modules/WorkstationCrafting
+	url = ../WorkstationCrafting-Evolve.git
