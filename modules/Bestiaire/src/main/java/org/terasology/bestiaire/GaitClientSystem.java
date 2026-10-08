@@ -44,13 +44,17 @@ public class GaitClientSystem extends BaseComponentSystem implements UpdateSubsc
     @In
     private EntityManager entityManager;
 
-    private final Map<EntityRef, Vector3f> dernieres = new HashMap<>();
-    private final Map<EntityRef, Float> vitesses = new HashMap<>();
+    private final Map<EntityRef, Allure> allures = new HashMap<>();
+
+    /** Where an animal was last frame, and how fast it has been going. One entry, so one lookup a frame. */
+    private static final class Allure {
+        private final Vector3f derniere = new Vector3f();
+        private float vitesse;
+    }
 
     @Override
     public void update(float delta) {
-        dernieres.keySet().removeIf(entity -> !entity.exists());
-        vitesses.keySet().removeIf(entity -> !entity.exists());
+        allures.keySet().removeIf(entity -> !entity.exists());
         if (delta <= 0f) {
             return;
         }
@@ -65,18 +69,20 @@ public class GaitClientSystem extends BaseComponentSystem implements UpdateSubsc
             }
 
             Vector3f position = location.getWorldPosition(new Vector3f());
-            Vector3f avant = dernieres.get(creature);
-            dernieres.put(creature, new Vector3f(position));
-            if (avant == null) {
+            Allure allure = allures.get(creature);
+            if (allure == null) {
+                allure = new Allure();
+                allure.derniere.set(position);
+                allures.put(creature, allure);
                 continue;
             }
 
-            float dx = position.x - avant.x;
-            float dz = position.z - avant.z;
+            float dx = position.x - allure.derniere.x;
+            float dz = position.z - allure.derniere.z;
+            allure.derniere.set(position);
             float brute = (float) Math.sqrt(dx * dx + dz * dz) / delta;
-            float lissee = vitesses.getOrDefault(creature, 0f);
-            lissee += (brute - lissee) * Math.min(1f, delta * SUIVI);
-            vitesses.put(creature, lissee);
+            allure.vitesse += (brute - allure.vitesse) * Math.min(1f, delta * SUIVI);
+            float lissee = allure.vitesse;
 
             float nominal = wander.speed <= 0f ? 1f : wander.speed;
             float ratio = lissee / nominal;

@@ -72,9 +72,19 @@ final class Stride {
         return true;
     }
 
-    /** Turns the body on the spot, for a creature that is standing, blocked, or biting. */
+    /**
+     * Turns the body on the spot, for a creature that is standing, blocked, or biting.
+     * <p>
+     * Nothing is saved when the body already faces that way, which is every frame of a creature at rest. A save
+     * is not free: it goes through the physics body, copies the component into the pending save game and marks it for
+     * every client — for a herd that grazes, that was most of what the herd cost.
+     */
     static void tourner(EntityRef creature, LocationComponent location, float regard) {
-        location.setWorldRotation(new Quaternionf().rotationY(regard));
+        Quaternionf voulue = new Quaternionf().rotationY(regard);
+        if (voulue.equals(location.getWorldRotation(new Quaternionf()))) {
+            return;
+        }
+        location.setWorldRotation(voulue);
         creature.saveComponent(location);
     }
 
