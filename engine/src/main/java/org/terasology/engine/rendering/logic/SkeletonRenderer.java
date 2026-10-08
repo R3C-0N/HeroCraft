@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.terasology.engine.config.Config;
 import org.terasology.engine.entitySystem.entity.EntityManager;
 import org.terasology.engine.entitySystem.entity.EntityRef;
+import org.terasology.engine.entitySystem.entity.lifecycleEvents.BeforeDeactivateComponent;
 import org.terasology.engine.entitySystem.entity.lifecycleEvents.OnActivatedComponent;
 import org.terasology.engine.entitySystem.systems.BaseComponentSystem;
 import org.terasology.engine.entitySystem.systems.RegisterMode;
@@ -33,6 +34,7 @@ import org.terasology.engine.rendering.assets.mesh.StandardMeshData;
 import org.terasology.engine.rendering.assets.mesh.resource.AllocationType;
 import org.terasology.engine.rendering.assets.mesh.resource.DrawingMode;
 import org.terasology.engine.rendering.assets.skeletalmesh.Bone;
+import org.terasology.engine.rendering.assets.skeletalmesh.SkeletalMesh;
 import org.terasology.engine.rendering.opengl.OpenGLSkeletalMesh;
 import org.terasology.engine.rendering.world.WorldRenderer;
 import org.terasology.engine.utilities.Assets;
@@ -43,7 +45,9 @@ import org.terasology.nui.Color;
 
 import java.nio.FloatBuffer;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -76,6 +80,12 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
 
     private Random random = new Random();
 
+    /** Which bone entity each channel of an animation drives, per skeleton — see {@link BoneChannels}. */
+    private final Map<EntityRef, BoneChannels> channels = new HashMap<>();
+    private final Vector3f bonePosition = new Vector3f();
+    private final Quaternionf boneRotation = new Quaternionf();
+    private final Vector3f boneScale = new Vector3f();
+
     @Override
     public void initialise() {
         super.initialise();
@@ -85,6 +95,8 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
 
     @ReceiveEvent(components = {SkeletalMeshComponent.class, LocationComponent.class})
     public void newSkeleton(OnActivatedComponent event, EntityRef entity) {
+        // The bone map below may be refilled in place, which an identity check would not notice.
+        channels.remove(entity);
         SkeletalMeshComponent skeleton = entity.getComponent(SkeletalMeshComponent.class);
         if (skeleton.mesh == null) {
             return;
@@ -129,6 +141,11 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
         entity.saveComponent(skeleton);
     }
 
+    @ReceiveEvent(components = SkeletalMeshComponent.class)
+    public void forgetSkeleton(BeforeDeactivateComponent event, EntityRef entity) {
+        channels.remove(entity);
+    }
+
     @Override
     public void update(float delta) {
         for (EntityRef entity : entityManager.getEntitiesWith(SkeletalMeshComponent.class, LocationComponent.class)) {
@@ -142,6 +159,7 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
             return;
         }
 
+        MeshAnimation playing = skeletalMeshComp.animation;
         if (skeletalMeshComp.animation == null && skeletalMeshComp.animationPool != null) {
             skeletalMeshComp.animation = randomAnimationData(skeletalMeshComp, random);
         }
@@ -169,7 +187,7 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
                 MeshAnimation finishedAnimation = skeletalMeshComp.animation;
                 skeletalMeshComp.animationTime = animationDuration;
                 MeshAnimationFrame frame = skeletalMeshComp.animation.getFrame(skeletalMeshComp.animation.getFrameCount() - 1);
-                updateSkeleton(skeletalMeshComp, frame, frame, 1.0f);
+                updateSkeleton(entity, skeletalMeshComp, frame, frame, 1.0f);
                 // Set animation to null so that AnimEndEvent fires only once
                 skeletalMeshComp.animation = null;
                 entity.saveComponent(skeletalMeshComp);
@@ -193,8 +211,13 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
         }
         MeshAnimationFrame frameA = skeletalMeshComp.animation.getFrame(frameAId);
         MeshAnimationFrame frameB = skeletalMeshComp.animation.getFrame(frameBId);
-        updateSkeleton(skeletalMeshComp, frameA, frameB, framePos - frameAId);
-        entity.saveComponent(skeletalMeshComp);
+        updateSkeleton(entity, skeletalMeshComp, frameA, frameB, framePos - frameAId);
+        // Only a change of animation is worth telling anyone about. The clock alone moves every frame, is not
+        // replicated, and saving for it copied the whole component — bone map included — into the pending save
+        // and flagged it dirty for every connected client, once per animated entity per frame.
+        if (skeletalMeshComp.animation != playing) {
+            entity.saveComponent(skeletalMeshComp);
+        }
     }
 
     private float getDurationOfAnimation(SkeletalMeshComponent skeletalMeshComp) {
@@ -212,25 +235,66 @@ public class SkeletonRenderer extends BaseComponentSystem implements RenderSyste
         return animationPool.get(random.nextInt(animationPool.size()));
     }
 
-    private void updateSkeleton(SkeletalMeshComponent skeletalMeshComp, MeshAnimationFrame frameA, MeshAnimationFrame frameB,
-                                float interpolationVal) {
-        for (int i = 0; i < skeletalMeshComp.animation.getBoneCount(); ++i) {
-            String boneName = skeletalMeshComp.animation.getBoneName(i);
-            Bone bone = skeletalMeshComp.mesh.getBone(boneName);
-            EntityRef boneEntity = skeletalMeshComp.boneEntities.get(boneName);
-            if (boneEntity == null || bone == null) {
+    private void updateSkeleton(EntityRef entity, SkeletalMeshComponent skeletalMeshComp, MeshAnimationFrame frameA,
+                                MeshAnimationFrame frameB, float interpolationVal) {
+        EntityRef[] bones = channelsOf(entity, skeletalMeshComp).bones;
+        for (int i = 0; i < bones.length; ++i) {
+            if (bones[i] == null) {
                 continue;
             }
-            LocationComponent boneLoc = boneEntity.getComponent(LocationComponent.class);
+            LocationComponent boneLoc = bones[i].getComponent(LocationComponent.class);
             if (boneLoc != null) {
-                Vector3f newPos = frameA.getPosition(i).lerp(frameB.getPosition(i), interpolationVal, new Vector3f());
-                boneLoc.setLocalPosition(newPos);
-                Quaternionf newRot = frameA.getRotation(i).slerp(frameB.getRotation(i), interpolationVal, new Quaternionf());
-                newRot.normalize();
-                boneLoc.setLocalRotation(newRot);
-                boneLoc.setLocalScale(frameA.getBoneScale(i).lerp(frameB.getBoneScale(i), interpolationVal, new Vector3f()).x);
-                boneEntity.saveComponent(boneLoc);
+                boneLoc.setLocalPosition(frameA.getPosition(i).lerp(frameB.getPosition(i), interpolationVal, bonePosition));
+                boneLoc.setLocalRotation(frameA.getRotation(i).slerp(frameB.getRotation(i), interpolationVal, boneRotation)
+                        .normalize());
+                boneLoc.setLocalScale(frameA.getBoneScale(i).lerp(frameB.getBoneScale(i), interpolationVal, boneScale).x);
+                // Not saved, on purpose. A bone is local to this client, nothing listens for its changes, and
+                // the pose is recomputed from the animation every frame: saving it only copied each bone into the
+                // pending save game, seven times per creature per frame.
             }
+        }
+    }
+
+    private BoneChannels channelsOf(EntityRef entity, SkeletalMeshComponent skeletalMeshComp) {
+        BoneChannels bound = channels.get(entity);
+        if (bound == null || !bound.isFor(skeletalMeshComp)) {
+            bound = new BoneChannels(skeletalMeshComp);
+            channels.put(entity, bound);
+        }
+        return bound;
+    }
+
+    /**
+     * The bone entity behind each channel of an animation, resolved once.
+     * <p>
+     * An animation names its bones and a skeleton keeps its bone entities by name, so posing a frame used to cost two
+     * string-keyed lookups per bone per frame before any arithmetic. The answer only changes when the mesh, the
+     * animation or the bone map does, and those three are compared by identity each frame instead. The entities are
+     * kept, not their components: the component is fetched afresh every frame, so a bone that is restored from a save
+     * is never animated through a stale copy.
+     */
+    private static final class BoneChannels {
+        private final SkeletalMesh mesh;
+        private final MeshAnimation animation;
+        private final Map<String, EntityRef> boneEntities;
+        private final EntityRef[] bones;
+
+        BoneChannels(SkeletalMeshComponent skeletalMeshComp) {
+            mesh = skeletalMeshComp.mesh;
+            animation = skeletalMeshComp.animation;
+            boneEntities = skeletalMeshComp.boneEntities;
+            bones = new EntityRef[animation.getBoneCount()];
+            for (int i = 0; i < bones.length; ++i) {
+                String boneName = animation.getBoneName(i);
+                if (mesh.getBone(boneName) != null && boneEntities != null) {
+                    bones[i] = boneEntities.get(boneName);
+                }
+            }
+        }
+
+        boolean isFor(SkeletalMeshComponent skeletalMeshComp) {
+            return mesh == skeletalMeshComp.mesh && animation == skeletalMeshComp.animation
+                    && boneEntities == skeletalMeshComp.boneEntities;
         }
     }
 
