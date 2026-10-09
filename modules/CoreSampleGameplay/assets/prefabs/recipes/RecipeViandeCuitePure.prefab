@@ -1,7 +1,7 @@
 {
     "Recipe": {
         "ingredients": [
-            "1*Bestiaire:viandePure",
+            "1*HeroBestiary:viandePure",
             "1*CoreAssets:Coal|CoreAssets:Plank"
         ],
         "result": "CoreSampleGameplay:viandeCuitePure",

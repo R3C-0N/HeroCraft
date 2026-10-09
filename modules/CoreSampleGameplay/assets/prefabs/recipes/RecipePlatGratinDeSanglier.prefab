@@ -2,7 +2,7 @@
     "Recipe": {
         "ingredients": [
             "1*CoreSampleGameplay:pommeDeTerre",
-            "1*Bestiaire:viandeSanglier",
+            "1*HeroBestiary:viandeSanglier",
             "1*CoreSampleGameplay:oignon",
             "1*CoreAssets:Coal|CoreAssets:Plank"
         ],

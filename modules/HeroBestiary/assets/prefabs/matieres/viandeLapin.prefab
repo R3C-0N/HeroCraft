@@ -1,0 +1,10 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Viande crue de lapin"
+    },
+    "Item": {
+        "icon": "HeroBestiary:butin#viandeLapin",
+        "stackId": "HeroBestiary:viandeLapin"
+    }
+}

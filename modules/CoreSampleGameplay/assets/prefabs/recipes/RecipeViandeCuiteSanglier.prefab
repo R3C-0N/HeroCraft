@@ -1,7 +1,7 @@
 {
     "Recipe": {
         "ingredients": [
-            "1*Bestiaire:viandeSanglier",
+            "1*HeroBestiary:viandeSanglier",
             "1*CoreAssets:Coal|CoreAssets:Plank"
         ],
         "result": "CoreSampleGameplay:viandeCuiteSanglier",

@@ -1,0 +1,89 @@
+{
+  "SkeletalMesh": {
+    "mesh": "HeroBestiary:loup",
+    "material": "HeroBestiary:loupPeau",
+    "animation": "HeroBestiary:loup#repos",
+    "loop": true
+  },
+  "Location": {},
+  "Network": {},
+  "DisplayName": {
+    "name": "Loup",
+    "description": "Chasse en meute à la lisière des forêts et attaque quand il se sent en nombre."
+  },
+  "Creature": {
+    "species": "loup",
+    "item": "HeroBestiary:loupTotem"
+  },
+  "Wander": {
+    "speed": 1.7,
+    "pauseMin": 1,
+    "pauseMax": 4,
+    "walkMin": 2,
+    "walkMax": 7,
+    "turnCalm": 110,
+    "turnRate": 260
+  },
+  "Predator": {
+    "sight": 16,
+    "giveUp": 24,
+    "chaseSpeed": 4.2,
+    "turnRate": 400,
+    "reach": 1.9,
+    "bite": 6,
+    "cadence": 1.2,
+    "dropMax": 4,
+    "meute": 20,
+    "cercle": 5
+  },
+  "Habitat": {
+    "biomes": [
+      "CoreWorlds:FOREST",
+      "CoreWorlds:SNOW",
+      "CoreWorlds:TAIGA"
+    ],
+    "densite": 0.6,
+    "groupeMin": 3,
+    "groupeMax": 4,
+    "ecart": 4,
+    "plafond": 4,
+    "heureDe": 0.7,
+    "heureA": 0.3,
+    "ciel": 10
+  },
+  "Home": {
+    "suit": 0,
+    "tire": 110,
+    "franc": 6,
+    "laisse": 16
+  },
+  "Health": {
+    "maxHealth": 40,
+    "currentHealth": 40,
+    "destroyEntityOnNoHealth": true
+  },
+  "BaseRegen": {
+    "regenRate": 1,
+    "waitBeforeRegen": 20
+  },
+  "BoxShape": {
+    "extents": [
+      0.45,
+      1.0125,
+      1.7228
+    ]
+  },
+  "RigidBody": {
+    "kinematic": true,
+    "mass": 1
+  },
+  "DropGrammar": {
+    "itemDrops": [
+      "1-2*HeroBestiary:viandeLoup",
+      "1-2*CoreAssets:Bone",
+      "1*CoreAssets:Hide",
+      "1-2*HeroBestiary:fourrure",
+      "0.6|1-3*HeroBestiary:crocsEffiles"
+    ]
+  }
+}

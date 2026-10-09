@@ -1,0 +1,10 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Défenses robustes"
+    },
+    "Item": {
+        "icon": "HeroBestiary:butin#defenses",
+        "stackId": "HeroBestiary:defenses"
+    }
+}

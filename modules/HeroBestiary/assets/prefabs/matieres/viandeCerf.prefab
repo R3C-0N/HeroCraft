@@ -1,0 +1,10 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Viande crue de cerf"
+    },
+    "Item": {
+        "icon": "HeroBestiary:butin#viandeCerf",
+        "stackId": "HeroBestiary:viandeCerf"
+    }
+}

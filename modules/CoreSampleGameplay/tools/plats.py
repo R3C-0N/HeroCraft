@@ -9,7 +9,7 @@ def camel(slug):
     parts = slug.split("-")
     return parts[0] + "".join(p[:1].upper() + p[1:] for p in parts[1:])
 
-M = "Bestiaire:viande"
+M = "HeroBestiary:viande"
 CROP = {"Blé": "ble", "Pomme de terre": "pommeDeTerre", "Carotte": "carotte", "Oignon": "oignon",
         "Riz": "riz", "Courge": "courge", "Soja": "soja"}
 def c(name): return "CoreSampleGameplay:" + CROP[name]

@@ -1,0 +1,79 @@
+{
+  "SkeletalMesh": {
+    "mesh": "HeroBestiary:rampant",
+    "material": "HeroBestiary:rampantPeau",
+    "animation": "HeroBestiary:rampant#repos",
+    "loop": true
+  },
+  "Location": {},
+  "Network": {},
+  "DisplayName": {
+    "name": "Rampant aveugle",
+    "description": "N’a pas d’yeux : il chasse au bruit et s’immobilise quand le silence revient."
+  },
+  "Creature": {
+    "species": "rampant",
+    "item": "HeroBestiary:rampantTotem"
+  },
+  "Wander": {
+    "speed": 0.9,
+    "pauseMin": 3,
+    "pauseMax": 9,
+    "walkMin": 2,
+    "walkMax": 5,
+    "turnCalm": 110,
+    "turnRate": 220
+  },
+  "Predator": {
+    "sight": 0,
+    "giveUp": 28,
+    "reachUp": 6,
+    "ouie": 26,
+    "chaseSpeed": 4.0,
+    "turnRate": 300,
+    "reach": 1.8,
+    "bite": 7,
+    "cadence": 1.3,
+    "dropMax": 5
+  },
+  "Habitat": {
+    "biomes": ["CoreWorlds:UNDERGROUND"],
+    "densite": 0.8,
+    "groupeMin": 1,
+    "groupeMax": 1,
+    "ecart": 3,
+    "plafond": 2,
+    "ombre": 0,
+    "ciel": 0,
+    "sols": [
+      "CoreAssets:Stone", "CoreAssets:HardStone", "CoreAssets:Dirt", "CoreAssets:Gravel",
+      "CoreAssets:Sand", "CoreAssets:Snow"
+    ],
+    "relief": 8
+  },
+  "Health": {
+    "maxHealth": 45,
+    "currentHealth": 45,
+    "destroyEntityOnNoHealth": true
+  },
+  "BaseRegen": {
+    "regenRate": 1,
+    "waitBeforeRegen": 20
+  },
+  "BoxShape": {
+    "extents": [
+      0.916,
+      1.0099,
+      1.4661
+    ]
+  },
+  "RigidBody": {
+    "kinematic": true,
+    "mass": 1
+  },
+  "DropGrammar": {
+    "itemDrops": [
+      "1-2*HeroBestiary:sangVisqueux"
+    ]
+  }
+}

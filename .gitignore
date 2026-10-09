@@ -34,7 +34,7 @@ extensions
 !/modules/CoreSampleGameplay
 !/modules/WorkstationCrafting
 !/modules/CreativeGameplay
-!/modules/Bestiaire
+!/modules/HeroBestiary
 /metas/*
 !/metas/subprojects.gradle
 /libs/*

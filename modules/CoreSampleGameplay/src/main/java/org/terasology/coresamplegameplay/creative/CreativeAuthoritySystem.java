@@ -16,7 +16,7 @@ import org.terasology.engine.logic.health.EngineDamageTypes;
 import org.terasology.engine.world.block.BlockComponent;
 import org.terasology.engine.world.block.entity.CreateBlockDropsEvent;
 import org.terasology.engine.world.block.items.BlockItemComponent;
-import org.terasology.bestiaire.BeforeHuntedEvent;
+import org.terasology.herobestiary.BeforeHuntedEvent;
 import org.terasology.gestalt.entitysystem.event.ReceiveEvent;
 import org.terasology.module.health.events.BeforeDamagedEvent;
 

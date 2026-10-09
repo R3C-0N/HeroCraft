@@ -1,0 +1,10 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Viande de lézard"
+    },
+    "Item": {
+        "icon": "HeroBestiary:butin#viandeLezard",
+        "stackId": "HeroBestiary:viandeLezard"
+    }
+}
