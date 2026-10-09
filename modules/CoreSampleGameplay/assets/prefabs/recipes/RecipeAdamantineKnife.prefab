@@ -1,0 +1,14 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*CoreAssets:AdamantineIngot",
+            "1*CoreAssets:Stick",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "CoreSampleGameplay:AdamantineKnife",
+        "station": "astralforge",
+        "repair": [
+            "1*CoreAssets:AdamantineIngot"
+        ]
+    }
+}

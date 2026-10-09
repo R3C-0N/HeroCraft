@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Pourpoint d'orichalque"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:OrichalcumMailChestplate",
+        "stackId": "CoreSampleGameplay:OrichalcumMailChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "chest",
+        "protection": 23
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

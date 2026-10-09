@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Chausses d'adamantine"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:AdamantineScaleLeggings",
+        "stackId": "CoreSampleGameplay:AdamantineScaleLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "legs",
+        "protection": 20
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

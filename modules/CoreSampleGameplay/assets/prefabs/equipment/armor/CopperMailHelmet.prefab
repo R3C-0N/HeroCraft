@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Capuche de cuivre"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:CopperMailHelmet",
+        "stackId": "CoreSampleGameplay:CopperMailHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "head",
+        "protection": 4
+    },
+    "Durability": {
+        "durability": 300,
+        "maxDurability": 300
+    }
+}

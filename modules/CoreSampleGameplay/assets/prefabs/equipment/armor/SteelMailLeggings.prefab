@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Braies d'acier"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:SteelMailLeggings",
+        "stackId": "CoreSampleGameplay:SteelMailLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "legs",
+        "protection": 12
+    },
+    "Durability": {
+        "durability": 2000,
+        "maxDurability": 2000
+    }
+}

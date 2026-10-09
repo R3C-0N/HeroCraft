@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Chausses d'acier"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:SteelScaleLeggings",
+        "stackId": "CoreSampleGameplay:SteelScaleLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "legs",
+        "protection": 15
+    },
+    "Durability": {
+        "durability": 2000,
+        "maxDurability": 2000
+    }
+}

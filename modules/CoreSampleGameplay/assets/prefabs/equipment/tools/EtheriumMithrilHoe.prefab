@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Houe en étherium (mithril)"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:EtheriumMithrilHoe",
+        "stackId": "CoreSampleGameplay:EtheriumMithrilHoe",
+        "maxStackSize": 1,
+        "baseDamage": 7
+    },
+    "Tool": {
+        "family": "hoe",
+        "grade": 7
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

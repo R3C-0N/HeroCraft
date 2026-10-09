@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Camail d'étherium (mithril)"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:EtheriumMithrilScaleHelmet",
+        "stackId": "CoreSampleGameplay:EtheriumMithrilScaleHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "head",
+        "protection": 19
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

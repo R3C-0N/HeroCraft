@@ -1,0 +1,14 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*CoreSampleGameplay:MithrilSoulStaff|CoreSampleGameplay:OrichalcumSoulStaff|CoreSampleGameplay:AdamantineSoulStaff",
+            "3*CoreAssets:EtheriumAdamantineIngot",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "CoreSampleGameplay:EtheriumAdamantineSoulStaff",
+        "station": "ultimateforge",
+        "repair": [
+            "1*CoreAssets:EtheriumAdamantineIngot"
+        ]
+    }
+}

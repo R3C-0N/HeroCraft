@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Chausses de cuivre"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:CopperScaleLeggings",
+        "stackId": "CoreSampleGameplay:CopperScaleLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "legs",
+        "protection": 6
+    },
+    "Durability": {
+        "durability": 300,
+        "maxDurability": 300
+    }
+}

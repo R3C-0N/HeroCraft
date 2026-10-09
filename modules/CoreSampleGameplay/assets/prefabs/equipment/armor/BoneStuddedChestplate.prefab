@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Brigandine de silex"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:BoneStuddedChestplate",
+        "stackId": "CoreSampleGameplay:BoneStuddedChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "chest",
+        "protection": 5
+    },
+    "Durability": {
+        "durability": 220,
+        "maxDurability": 220
+    }
+}

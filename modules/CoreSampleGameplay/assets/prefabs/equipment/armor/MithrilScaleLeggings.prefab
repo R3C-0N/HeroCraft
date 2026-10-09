@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Chausses de mithril"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:MithrilScaleLeggings",
+        "stackId": "CoreSampleGameplay:MithrilScaleLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "legs",
+        "protection": 18
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

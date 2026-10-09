@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Pourpoint de fer"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:IronMailChestplate",
+        "stackId": "CoreSampleGameplay:IronMailChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "chest",
+        "protection": 13
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

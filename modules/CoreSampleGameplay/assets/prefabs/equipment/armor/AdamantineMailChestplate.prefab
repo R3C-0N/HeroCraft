@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Pourpoint d'adamantine"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:AdamantineMailChestplate",
+        "stackId": "CoreSampleGameplay:AdamantineMailChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "chest",
+        "protection": 22
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

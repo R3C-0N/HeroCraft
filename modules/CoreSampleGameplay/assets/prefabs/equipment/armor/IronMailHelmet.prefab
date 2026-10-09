@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Capuche de fer"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:IronMailHelmet",
+        "stackId": "CoreSampleGameplay:IronMailHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "head",
+        "protection": 7
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

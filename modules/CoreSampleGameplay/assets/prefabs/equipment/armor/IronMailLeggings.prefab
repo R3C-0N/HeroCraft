@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Braies de fer"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:IronMailLeggings",
+        "stackId": "CoreSampleGameplay:IronMailLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "legs",
+        "protection": 9
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

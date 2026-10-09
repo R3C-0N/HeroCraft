@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Cuirasse d'os"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:BoneChestplate",
+        "stackId": "CoreSampleGameplay:BoneChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "chest",
+        "protection": 7
+    },
+    "Durability": {
+        "durability": 150,
+        "maxDurability": 150
+    }
+}

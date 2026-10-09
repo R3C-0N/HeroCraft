@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bottes d'adamantine"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:AdamantineScaleBoots",
+        "stackId": "CoreSampleGameplay:AdamantineScaleBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "feet",
+        "protection": 10
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}
