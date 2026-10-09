@@ -98,7 +98,7 @@ public class CubeBiomeCommands extends BaseComponentSystem {
                     }
                     sampled++;
                     census.merge(biome.getId().toString(), 1, Integer::sum);
-                    if (wanted != null && normalise(biome.getId().toString()).equals(wanted)) {
+                    if (wanted != null && matches(biome, wanted)) {
                         int ground = Math.round(elevation.getWorld(cell));
                         found.add(new Place(x, ground, z, face, geometry.arc(eye.x, eye.z, x, z)));
                     }
@@ -111,7 +111,7 @@ public class CubeBiomeCommands extends BaseComponentSystem {
             out.append(String.format(Locale.ROOT, "%d colonnes échantillonnées sur les six faces", sampled))
                     .append(Console.NEW_LINE);
             for (Map.Entry<String, Integer> entry : census.entrySet()) {
-                out.append(String.format(Locale.ROOT, "  %-14s %5.1f %%", entry.getKey(),
+                out.append(String.format(Locale.ROOT, "  %-22s %5.1f %%", entry.getKey(),
                         100.0 * entry.getValue() / Math.max(1, sampled))).append(Console.NEW_LINE);
             }
             return out.toString();
@@ -133,7 +133,13 @@ public class CubeBiomeCommands extends BaseComponentSystem {
         return out.toString();
     }
 
-    /** Case and spaces aside, so that « pack ice », « PackIce » and « Pack Ice » are one name. */
+    /** Whether a biome answers to a name, with or without the module in front of it. */
+    private static boolean matches(Biome biome, String wanted) {
+        String id = biome.getId().toString();
+        return normalise(id).equals(wanted) || normalise(id.substring(id.indexOf(':') + 1)).equals(wanted);
+    }
+
+    /** Case and spaces aside, so that « pack ice », « PACK_ICE » and « Pack Ice » are one name. */
     private static String normalise(String name) {
         return name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
