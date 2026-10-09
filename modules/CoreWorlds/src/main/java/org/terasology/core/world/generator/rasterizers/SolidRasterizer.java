@@ -1,0 +1,100 @@
+// Copyright 2017 The Terasology Foundation
+// SPDX-License-Identifier: Apache-2.0
+
+package org.terasology.core.world.generator.rasterizers;
+
+import org.joml.Vector2i;
+import org.joml.Vector3i;
+import org.joml.Vector3ic;
+import org.terasology.biomesAPI.Biome;
+import org.terasology.biomesAPI.BiomeRegistry;
+import org.terasology.core.world.CoreBiome;
+import org.terasology.core.world.generator.facets.BiomeFacet;
+import org.terasology.engine.registry.CoreRegistry;
+import org.terasology.engine.world.block.Block;
+import org.terasology.engine.world.block.BlockManager;
+import org.terasology.engine.world.chunks.Chunk;
+import org.terasology.engine.world.chunks.Chunks;
+import org.terasology.engine.world.generation.Facet;
+import org.terasology.engine.world.generation.Region;
+import org.terasology.engine.world.generation.Requires;
+import org.terasology.engine.world.generation.ScalableWorldRasterizer;
+import org.terasology.engine.world.generation.facets.DensityFacet;
+import org.terasology.engine.world.generation.facets.SeaLevelFacet;
+import org.terasology.engine.world.generation.facets.SurfaceDepthFacet;
+import org.terasology.engine.world.generation.facets.SurfacesFacet;
+
+@Requires({
+    @Facet(DensityFacet.class),
+    @Facet(SurfacesFacet.class),
+    @Facet(BiomeFacet.class),
+    @Facet(SeaLevelFacet.class)
+})
+public class SolidRasterizer implements ScalableWorldRasterizer {
+
+    private Block water;
+    private Block ice;
+    private BiomeRegistry biomeRegistry;
+
+    @Override
+    public void initialize() {
+        BlockManager blockManager = CoreRegistry.get(BlockManager.class);
+        biomeRegistry = CoreRegistry.get(BiomeRegistry.class);
+        water = blockManager.getBlock("CoreAssets:Water");
+        ice = blockManager.getBlock("CoreAssets:Ice");
+    }
+
+    @Override
+    public void generateChunk(Chunk chunk, Region chunkRegion, float scale) {
+        DensityFacet solidityFacet = chunkRegion.getFacet(DensityFacet.class);
+        SurfacesFacet surfacesFacet = chunkRegion.getFacet(SurfacesFacet.class);
+        SurfaceDepthFacet surfaceDepthFacet = chunkRegion.getFacet(SurfaceDepthFacet.class);
+        BiomeFacet biomeFacet = chunkRegion.getFacet(BiomeFacet.class);
+        SeaLevelFacet seaLevelFacet = chunkRegion.getFacet(SeaLevelFacet.class);
+        int seaLevel = seaLevelFacet.getSeaLevel();
+
+        Vector2i pos2d = new Vector2i();
+        Vector3i worldPos = new Vector3i();
+        for (Vector3ic pos : Chunks.CHUNK_REGION) {
+            pos2d.set(pos.x(), pos.z());
+            float density = solidityFacet.get(pos);
+            float basePosY = (pos.y() + chunk.getChunkWorldOffsetY()) * scale;
+            float posY = basePosY + Math.max(0, Math.min(scale, density));
+            chunk.chunkToWorldPosition(pos,  worldPos);
+
+            // Check for an optional depth for this layer - if defined stop generating below that level
+            if (surfaceDepthFacet != null && posY < surfaceDepthFacet.get(pos2d)) {
+                continue;
+            }
+
+            Biome biome = biomeFacet.get(pos2d);
+            biomeRegistry.setBiome(biome, chunk, pos.x(), pos.y(), pos.z());
+
+            if (posY < seaLevel && basePosY + scale > seaLevel && seaLevel < scale) {
+                // ensure that the ocean is at least 1 block thick.
+                chunk.setBlock(pos, water);
+            } else if (density > 0 && surfacesFacet.get(pos)) {
+                chunk.setBlock(pos, biome.getSurfaceBlock(worldPos, seaLevel));
+            } else if (density > 0) {
+                chunk.setBlock(pos, biome.getBelowSurfaceBlock(worldPos, density));
+            } else if (posY <= seaLevel) {         // open water, or a cap's ice
+                if (posY + scale > seaLevel && freezesOver(biome)) {
+                    // The caps carry their own ice, and they are the only ones who know which:
+                    // pack ice fractures, an ice shelf does not, and the plain snow biome has
+                    // neither. Asking the biome keeps that with the rest of the material.
+                    chunk.setBlock(pos, CoreBiome.SNOW == biome
+                            ? ice
+                            : biome.getSurfaceBlock(worldPos, seaLevel));
+                } else {
+                    chunk.setBlock(pos, water);
+                }
+            }
+        }
+    }
+
+    /** Whether the sea has a lid here. */
+    private static boolean freezesOver(Biome biome) {
+        return CoreBiome.SNOW == biome || CoreBiome.PACK_ICE == biome || CoreBiome.ICE_SHELF == biome;
+    }
+
+}
