@@ -1,0 +1,8 @@
+/**
+ * Dirt is pretty basic
+ */
+{
+    "basedOn": "CoreAssets:soil",
+    "tile": "CoreAssets:Dirt",
+    "displayName": "Terre"
+}

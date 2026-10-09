@@ -1,0 +1,8 @@
+/**
+ * Basalt is what a lava sea cools into: the rock under a volcanic region.
+ */
+{
+    "basedOn": "CoreAssets:rock2",
+    "displayName": "Basalte",
+    "tile": "CoreAssets:Basalt"
+}

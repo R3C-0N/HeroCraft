@@ -1,0 +1,8 @@
+/**
+ * A mineral block that would drop Gold
+ */
+{
+    "basedOn": "CoreAssets:mineral",
+    "displayName": "Minerai d'or",
+    "tile": "CoreAssets:GoldOre"
+}

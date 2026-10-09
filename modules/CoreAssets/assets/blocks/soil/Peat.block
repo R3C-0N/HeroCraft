@@ -1,0 +1,8 @@
+/**
+ * Peat is the ground of a swamp: waterlogged, half-rotted plant matter.
+ */
+{
+    "basedOn": "CoreAssets:soil",
+    "displayName": "Peat",
+    "tile": "CoreAssets:Peat"
+}
