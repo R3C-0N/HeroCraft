@@ -1,10 +1,15 @@
 {
     "parent": "engine:iconItem",
     "DisplayName": {
-        "name": "Viande de lézard"
+        "name": "Viande de lézard",
+        "description": "Se mange au clic droit. Rassasie de 8, de 20 une fois cuite au fourneau."
     },
     "Item": {
         "icon": "HeroBestiary:butin#viandeLezard",
-        "stackId": "HeroBestiary:viandeLezard"
+        "stackId": "HeroBestiary:viandeLezard",
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 8
     }
 }

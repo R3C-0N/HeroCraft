@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Sceptre d'orichalque"
+    },
+    "Item": {
+        "icon": "HeroEquipment:OrichalcumScepter",
+        "stackId": "HeroEquipment:OrichalcumScepter",
+        "maxStackSize": 1,
+        "baseDamage": 12,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "healingScepter",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

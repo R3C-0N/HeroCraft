@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "11*CoreAssets:AdamantineIngot",
+            "2*CoreAssets:Rope"
+        ],
+        "result": "HeroEquipment:AdamantinePlateChestplate",
+        "station": "astralforge",
+        "repair": [
+            "4*CoreAssets:AdamantineIngot"
+        ]
+    }
+}

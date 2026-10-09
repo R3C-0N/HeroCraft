@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Solerets d'adamantine"
+    },
+    "Item": {
+        "icon": "HeroEquipment:AdamantinePlateBoots",
+        "stackId": "HeroEquipment:AdamantinePlateBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "feet",
+        "protection": 12
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

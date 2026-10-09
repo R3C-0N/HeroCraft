@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Houe en fer"
+    },
+    "Item": {
+        "icon": "HeroEquipment:IronHoe",
+        "stackId": "HeroEquipment:IronHoe",
+        "maxStackSize": 1,
+        "baseDamage": 3
+    },
+    "Tool": {
+        "family": "hoe",
+        "grade": 4
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

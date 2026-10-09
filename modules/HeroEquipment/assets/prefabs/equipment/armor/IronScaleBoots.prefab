@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bottes de fer"
+    },
+    "Item": {
+        "icon": "HeroEquipment:IronScaleBoots",
+        "stackId": "HeroEquipment:IronScaleBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "feet",
+        "protection": 6
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

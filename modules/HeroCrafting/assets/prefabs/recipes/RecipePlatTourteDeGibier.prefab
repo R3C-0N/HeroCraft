@@ -1,0 +1,11 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroSurvival:ble",
+            "1*HeroBestiary:viandeCerf",
+            "1*CoreAssets:Coal|CoreAssets:Plank"
+        ],
+        "result": "HeroSurvival:tourteDeGibier",
+        "station": "furnace"
+    }
+}

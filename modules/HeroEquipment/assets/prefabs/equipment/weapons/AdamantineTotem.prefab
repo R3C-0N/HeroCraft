@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Totem d'adamantine"
+    },
+    "Item": {
+        "icon": "HeroEquipment:AdamantineTotem",
+        "stackId": "HeroEquipment:AdamantineTotem",
+        "maxStackSize": 1,
+        "baseDamage": 16,
+        "cooldownTime": 360
+    },
+    "Weapon": {
+        "type": "totem",
+        "hands": 2
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

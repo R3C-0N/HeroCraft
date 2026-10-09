@@ -1,0 +1,16 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Flèche de fer"
+    },
+    "Item": {
+        "icon": "HeroEquipment:IronArrow",
+        "stackId": "HeroEquipment:IronArrow",
+        "maxStackSize": 99,
+        "baseDamage": 7
+    },
+    "Weapon": {
+        "type": "arrow",
+        "hands": 0
+    }
+}

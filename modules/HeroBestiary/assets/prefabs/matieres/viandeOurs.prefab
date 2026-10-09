@@ -1,10 +1,15 @@
 {
     "parent": "engine:iconItem",
     "DisplayName": {
-        "name": "Viande crue d'ours"
+        "name": "Viande crue d'ours",
+        "description": "Se mange au clic droit. Rassasie de 18, de 45 une fois cuite au fourneau."
     },
     "Item": {
         "icon": "HeroBestiary:butin#viandeOurs",
-        "stackId": "HeroBestiary:viandeOurs"
+        "stackId": "HeroBestiary:viandeOurs",
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 18
     }
 }

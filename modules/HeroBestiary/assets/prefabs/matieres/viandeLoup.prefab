@@ -1,10 +1,15 @@
 {
     "parent": "engine:iconItem",
     "DisplayName": {
-        "name": "Viande crue de loup"
+        "name": "Viande crue de loup",
+        "description": "Se mange au clic droit. Rassasie de 10, de 25 une fois cuite au fourneau."
     },
     "Item": {
         "icon": "HeroBestiary:butin#viandeLoup",
-        "stackId": "HeroBestiary:viandeLoup"
+        "stackId": "HeroBestiary:viandeLoup",
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 10
     }
 }

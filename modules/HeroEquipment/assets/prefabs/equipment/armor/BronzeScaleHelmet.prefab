@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Camail de bronze"
+    },
+    "Item": {
+        "icon": "HeroEquipment:BronzeScaleHelmet",
+        "stackId": "HeroEquipment:BronzeScaleHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "head",
+        "protection": 6
+    },
+    "Durability": {
+        "durability": 500,
+        "maxDurability": 500
+    }
+}

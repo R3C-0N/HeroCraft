@@ -1,0 +1,10 @@
+{
+    "basedOn": "CoreAssets:plant",
+    "displayName": "Soja — plant",
+    "tile": "HeroSurvival:SojaStade3",
+    "entity": {
+        "prefab": "HeroSurvival:SojaStade3Entity",
+        "keepActive": true
+    },
+    "waving": true
+}

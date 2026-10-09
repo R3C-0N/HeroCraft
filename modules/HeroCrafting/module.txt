@@ -1,0 +1,42 @@
+{
+    "id": "HeroCrafting",
+    "version": "1.0.0",
+    "author": "R3C-0N",
+    "displayName": "HeroCraft — fabrication",
+    "description": "Les stations, leurs recettes et leurs paliers, le fourneau.",
+    "dependencies": [
+        {
+            "id": "HeroEquipment",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "HeroSurvival",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "HeroBestiary",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "CoreAssets",
+            "minVersion": "2.0.0"
+        },
+        {
+            "id": "Durability",
+            "minVersion": "1.1.0"
+        },
+        {
+            "id": "Health",
+            "minVersion": "2.0.0-SNAPSHOT"
+        },
+        {
+            "id": "Inventory",
+            "minVersion": "1.2.1"
+        },
+        {
+            "id": "WorkstationCrafting",
+            "minVersion": "2.0.0"
+        }
+    ],
+    "serverSideOnly": false
+}

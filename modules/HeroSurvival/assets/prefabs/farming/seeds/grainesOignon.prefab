@@ -1,0 +1,15 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bulbilles d'oignon"
+    },
+    "Item": {
+        "icon": "HeroSurvival:agriculture#grainesOignon",
+        "stackId": "HeroSurvival:grainesOignon",
+        "maxStackSize": 99,
+        "consumedOnUse": true
+    },
+    "Seed": {
+        "plant": "HeroSurvival:OignonStade1"
+    }
+}

@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Totem de silex"
+    },
+    "Item": {
+        "icon": "HeroEquipment:FlintTotem",
+        "stackId": "HeroEquipment:FlintTotem",
+        "maxStackSize": 1,
+        "baseDamage": 4,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "totem",
+        "hands": 2
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 150,
+        "maxDurability": 150
+    }
+}

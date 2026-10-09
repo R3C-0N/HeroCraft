@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Épée d'étherium (orichalque)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumOrichalcumSword",
+        "stackId": "HeroEquipment:EtheriumOrichalcumSword",
+        "maxStackSize": 1,
+        "baseDamage": 22,
+        "cooldownTime": 225
+    },
+    "Weapon": {
+        "type": "oneHandedSword",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 1.0
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

@@ -1,10 +1,15 @@
 {
     "parent": "engine:iconItem",
     "DisplayName": {
-        "name": "Viande crue de sanglier"
+        "name": "Viande crue de sanglier",
+        "description": "Se mange au clic droit. Rassasie de 12, de 30 une fois cuite au fourneau."
     },
     "Item": {
         "icon": "HeroBestiary:butin#viandeSanglier",
-        "stackId": "HeroBestiary:viandeSanglier"
+        "stackId": "HeroBestiary:viandeSanglier",
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 12
     }
 }

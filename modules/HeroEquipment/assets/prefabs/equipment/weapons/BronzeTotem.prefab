@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Totem de bronze"
+    },
+    "Item": {
+        "icon": "HeroEquipment:BronzeTotem",
+        "stackId": "HeroEquipment:BronzeTotem",
+        "maxStackSize": 1,
+        "baseDamage": 8,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "totem",
+        "hands": 2
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 500,
+        "maxDurability": 500
+    }
+}

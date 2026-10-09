@@ -1,10 +1,15 @@
 {
     "parent": "engine:iconItem",
     "DisplayName": {
-        "name": "Viande crue de lapin"
+        "name": "Viande crue de lapin",
+        "description": "Se mange au clic droit. Rassasie de 6, de 15 une fois cuite au fourneau."
     },
     "Item": {
         "icon": "HeroBestiary:butin#viandeLapin",
-        "stackId": "HeroBestiary:viandeLapin"
+        "stackId": "HeroBestiary:viandeLapin",
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 6
     }
 }

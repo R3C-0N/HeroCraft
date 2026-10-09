@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Cuirasse d'étherium (orichalque)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumOrichalcumPlateChestplate",
+        "stackId": "HeroEquipment:EtheriumOrichalcumPlateChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "chest",
+        "protection": 38
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

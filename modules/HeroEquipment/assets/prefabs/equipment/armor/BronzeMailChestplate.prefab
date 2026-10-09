@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Pourpoint de bronze"
+    },
+    "Item": {
+        "icon": "HeroEquipment:BronzeMailChestplate",
+        "stackId": "HeroEquipment:BronzeMailChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "chest",
+        "protection": 10
+    },
+    "Durability": {
+        "durability": 500,
+        "maxDurability": 500
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Camail d'étherium (adamantine)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumAdamantineScaleHelmet",
+        "stackId": "HeroEquipment:EtheriumAdamantineScaleHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "head",
+        "protection": 19
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

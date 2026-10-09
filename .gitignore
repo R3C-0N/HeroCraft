@@ -26,15 +26,19 @@ extensions
 !/modules/README.md
 # Modules du jeu, suivis ici meme. Les autres dossiers de modules/ (modules
 # recuperes par groovyw, par exemple) restent ignores.
-!/modules/CoreWorlds
-!/modules/CoreRendering
 !/modules/CoreAssets
+!/modules/CoreRendering
+!/modules/CoreWorlds
 !/modules/Minimap
-!/modules/HeroCubeWorlds
-!/modules/CoreSampleGameplay
 !/modules/WorkstationCrafting
-!/modules/CreativeGameplay
 !/modules/HeroBestiary
+!/modules/HeroCommon
+!/modules/HeroCraft
+!/modules/HeroCrafting
+!/modules/HeroCreative
+!/modules/HeroCubeWorlds
+!/modules/HeroEquipment
+!/modules/HeroSurvival
 /metas/*
 !/metas/subprojects.gradle
 /libs/*

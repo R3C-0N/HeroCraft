@@ -1,0 +1,10 @@
+{
+    "basedOn": "CoreAssets:plant",
+    "displayName": "Blé — plant",
+    "tile": "HeroSurvival:BleStade3",
+    "entity": {
+        "prefab": "HeroSurvival:BleStade3Entity",
+        "keepActive": true
+    },
+    "waving": true
+}

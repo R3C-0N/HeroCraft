@@ -1,0 +1,12 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroSurvival:ble",
+            "1*HeroSurvival:tofu",
+            "1*HeroSurvival:oignon",
+            "1*CoreAssets:Coal|CoreAssets:Plank"
+        ],
+        "result": "HeroSurvival:pateDeTofuEnCroute",
+        "station": "furnace"
+    }
+}

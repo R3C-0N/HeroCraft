@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Totem d'étherium (mithril)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumMithrilTotem",
+        "stackId": "HeroEquipment:EtheriumMithrilTotem",
+        "maxStackSize": 1,
+        "baseDamage": 21,
+        "cooldownTime": 225
+    },
+    "Weapon": {
+        "type": "totem",
+        "hands": 2
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

@@ -1,0 +1,16 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Viande cuite de mouflon",
+        "description": "Se mange au clic droit. Rassasie de 25."
+    },
+    "Item": {
+        "icon": "HeroSurvival:cuisine#viandeMouflon",
+        "stackId": "HeroSurvival:viandeCuiteMouflon",
+        "maxStackSize": 99,
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 25
+    }
+}

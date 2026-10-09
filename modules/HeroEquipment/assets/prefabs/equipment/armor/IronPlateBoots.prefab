@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Solerets de fer"
+    },
+    "Item": {
+        "icon": "HeroEquipment:IronPlateBoots",
+        "stackId": "HeroEquipment:IronPlateBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "feet",
+        "protection": 7
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

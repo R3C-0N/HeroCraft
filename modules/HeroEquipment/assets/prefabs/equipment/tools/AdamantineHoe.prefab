@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Houe en adamantine"
+    },
+    "Item": {
+        "icon": "HeroEquipment:AdamantineHoe",
+        "stackId": "HeroEquipment:AdamantineHoe",
+        "maxStackSize": 1,
+        "baseDamage": 6
+    },
+    "Tool": {
+        "family": "hoe",
+        "grade": 6
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

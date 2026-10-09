@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Maillet de combat"
+    },
+    "Item": {
+        "icon": "HeroEquipment:WarMallet",
+        "stackId": "HeroEquipment:WarMallet",
+        "maxStackSize": 1,
+        "baseDamage": 4,
+        "cooldownTime": 400
+    },
+    "Weapon": {
+        "type": "warHammer",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 2.0
+    },
+    "Durability": {
+        "durability": 80,
+        "maxDurability": 80
+    }
+}

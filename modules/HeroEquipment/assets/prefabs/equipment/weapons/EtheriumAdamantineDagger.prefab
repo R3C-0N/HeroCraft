@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Dague d'étherium (adamantine)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumAdamantineDagger",
+        "stackId": "HeroEquipment:EtheriumAdamantineDagger",
+        "maxStackSize": 1,
+        "baseDamage": 22,
+        "cooldownTime": 150
+    },
+    "Weapon": {
+        "type": "dagger",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 0.6
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Marteau d'étherium (mithril)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumMithrilMallet",
+        "stackId": "HeroEquipment:EtheriumMithrilMallet",
+        "maxStackSize": 1,
+        "baseDamage": 27,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "warHammer",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 2.0
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

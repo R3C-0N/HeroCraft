@@ -1,10 +1,15 @@
 {
     "parent": "engine:iconItem",
     "DisplayName": {
-        "name": "Viande crue de faisan"
+        "name": "Viande crue de faisan",
+        "description": "Se mange au clic droit. Rassasie de 6, de 15 une fois cuite au fourneau."
     },
     "Item": {
         "icon": "HeroBestiary:butin#viandeFaisan",
-        "stackId": "HeroBestiary:viandeFaisan"
+        "stackId": "HeroBestiary:viandeFaisan",
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 6
     }
 }

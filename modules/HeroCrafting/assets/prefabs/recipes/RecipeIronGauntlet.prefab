@@ -1,0 +1,14 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroEquipment:BronzeGauntlet",
+            "3*CoreAssets:IronIngot",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "HeroEquipment:IronGauntlet",
+        "station": "workbench",
+        "repair": [
+            "1*CoreAssets:IronIngot"
+        ]
+    }
+}

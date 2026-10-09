@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bouclier d'orichalque"
+    },
+    "Item": {
+        "icon": "HeroEquipment:OrichalcumShield",
+        "stackId": "HeroEquipment:OrichalcumShield",
+        "maxStackSize": 1,
+        "baseDamage": 7,
+        "cooldownTime": 400
+    },
+    "Weapon": {
+        "type": "shield",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 1.8
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Hache en mithril"
+    },
+    "Item": {
+        "icon": "HeroEquipment:MithrilAxe",
+        "stackId": "HeroEquipment:MithrilAxe",
+        "maxStackSize": 1,
+        "baseDamage": 8,
+        "damageType": "CoreAssets:axeTier4Damage"
+    },
+    "Tool": {
+        "family": "axe",
+        "grade": 6
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

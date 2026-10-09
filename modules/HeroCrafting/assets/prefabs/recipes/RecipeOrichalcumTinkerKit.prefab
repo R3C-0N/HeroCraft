@@ -1,0 +1,14 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "3*CoreAssets:OrichalcumIngot",
+            "2*CoreAssets:Stick",
+            "2*CoreAssets:Rope"
+        ],
+        "result": "HeroEquipment:OrichalcumTinkerKit",
+        "station": "astralforge",
+        "repair": [
+            "1*CoreAssets:OrichalcumIngot"
+        ]
+    }
+}

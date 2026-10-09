@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Couteau en silex"
+    },
+    "Item": {
+        "icon": "HeroEquipment:FlintKnife",
+        "stackId": "HeroEquipment:FlintKnife",
+        "maxStackSize": 1,
+        "baseDamage": 2
+    },
+    "Tool": {
+        "family": "knife",
+        "grade": 1
+    },
+    "Depeceur": {},
+    "Durability": {
+        "durability": 150,
+        "maxDurability": 150
+    }
+}

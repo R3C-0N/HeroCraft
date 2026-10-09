@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Pioche en adamantine"
+    },
+    "Item": {
+        "icon": "HeroEquipment:AdamantinePickaxe",
+        "stackId": "HeroEquipment:AdamantinePickaxe",
+        "maxStackSize": 1,
+        "baseDamage": 9,
+        "damageType": "CoreAssets:pickaxeTier4Damage"
+    },
+    "Tool": {
+        "family": "pickaxe",
+        "grade": 6
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

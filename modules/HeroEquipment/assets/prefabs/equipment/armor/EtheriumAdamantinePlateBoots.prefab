@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Solerets d'étherium (adamantine)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumAdamantinePlateBoots",
+        "stackId": "HeroEquipment:EtheriumAdamantinePlateBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "feet",
+        "protection": 14
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

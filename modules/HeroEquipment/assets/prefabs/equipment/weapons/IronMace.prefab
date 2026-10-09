@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Masse de fer"
+    },
+    "Item": {
+        "icon": "HeroEquipment:IronMace",
+        "stackId": "HeroEquipment:IronMace",
+        "maxStackSize": 1,
+        "baseDamage": 12,
+        "cooldownTime": 450
+    },
+    "Weapon": {
+        "type": "club",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 1.6
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

@@ -2,7 +2,7 @@
     "id": "HeroCubeWorlds",
     "version": "1.0.0-SNAPSHOT",
     "author": "R3C-0N",
-    "displayName": "HeroCubeWorlds",
+    "displayName": "HeroCraft — monde-cube",
     "description": "Cube-net world generation, rendered as a sphere.",
     "dependencies": [
         {

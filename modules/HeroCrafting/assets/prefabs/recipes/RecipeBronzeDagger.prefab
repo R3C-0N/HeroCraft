@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "2*CoreAssets:BronzeIngot",
+            "1*CoreAssets:Stick"
+        ],
+        "result": "HeroEquipment:BronzeDagger",
+        "station": "workbench",
+        "repair": [
+            "1*CoreAssets:BronzeIngot"
+        ]
+    }
+}

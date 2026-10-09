@@ -1,0 +1,14 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroEquipment:SteelTotem",
+            "3*CoreAssets:OrichalcumIngot",
+            "2*CoreAssets:Fibre"
+        ],
+        "result": "HeroEquipment:OrichalcumTotem",
+        "station": "astralforge",
+        "repair": [
+            "1*CoreAssets:OrichalcumIngot"
+        ]
+    }
+}

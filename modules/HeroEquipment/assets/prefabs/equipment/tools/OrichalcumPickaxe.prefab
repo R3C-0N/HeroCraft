@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Pioche en orichalque"
+    },
+    "Item": {
+        "icon": "HeroEquipment:OrichalcumPickaxe",
+        "stackId": "HeroEquipment:OrichalcumPickaxe",
+        "maxStackSize": 1,
+        "baseDamage": 7,
+        "damageType": "CoreAssets:pickaxeTier4Damage"
+    },
+    "Tool": {
+        "family": "pickaxe",
+        "grade": 6
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

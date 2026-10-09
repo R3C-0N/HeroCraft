@@ -1,0 +1,15 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Graines de blé"
+    },
+    "Item": {
+        "icon": "HeroSurvival:agriculture#grainesBle",
+        "stackId": "HeroSurvival:grainesBle",
+        "maxStackSize": 99,
+        "consumedOnUse": true
+    },
+    "Seed": {
+        "plant": "HeroSurvival:BleStade1"
+    }
+}

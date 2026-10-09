@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Camail d'orichalque"
+    },
+    "Item": {
+        "icon": "HeroEquipment:OrichalcumScaleHelmet",
+        "stackId": "HeroEquipment:OrichalcumScaleHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "head",
+        "protection": 16
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

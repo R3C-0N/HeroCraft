@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Pelle en adamantine"
+    },
+    "Item": {
+        "icon": "HeroEquipment:AdamantineShovel",
+        "stackId": "HeroEquipment:AdamantineShovel",
+        "maxStackSize": 1,
+        "baseDamage": 9,
+        "damageType": "CoreAssets:shovelTier4Damage"
+    },
+    "Tool": {
+        "family": "shovel",
+        "grade": 6
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

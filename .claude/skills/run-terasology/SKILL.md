@@ -469,7 +469,7 @@ Other run targets exist in `facades/PC/build.gradle.kts`: `debug` (JDWP on 1044)
   prefab walk, so it changes under you the moment you craft something.
 - **A workbench does not have to be placed by hand.** `click --button right`
   fails silently when the crosshair is on the block under your own feet, which is
-  where it lands by default. `console replaceBlock CoreSampleGameplay:Workbench`
+  where it lands by default. `console replaceBlock HeroCrafting:Workbench`
   turns that very block into the station, in reach and under the crosshair, ready
   for `key e`. And `console debugTarget` names the aimed block, which is the only
   reliable way to know what you are pointing at.

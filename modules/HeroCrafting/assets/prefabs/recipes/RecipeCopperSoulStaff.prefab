@@ -1,0 +1,14 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroEquipment:FlintSoulStaff",
+            "3*CoreAssets:CopperIngot",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "HeroEquipment:CopperSoulStaff",
+        "station": "workbench",
+        "repair": [
+            "1*CoreAssets:CopperIngot"
+        ]
+    }
+}

@@ -1,0 +1,15 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Graines de courge"
+    },
+    "Item": {
+        "icon": "HeroSurvival:agriculture#grainesCourge",
+        "stackId": "HeroSurvival:grainesCourge",
+        "maxStackSize": 99,
+        "consumedOnUse": true
+    },
+    "Seed": {
+        "plant": "HeroSurvival:CourgeStade1"
+    }
+}

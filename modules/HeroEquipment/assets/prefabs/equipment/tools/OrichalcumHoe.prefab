@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Houe en orichalque"
+    },
+    "Item": {
+        "icon": "HeroEquipment:OrichalcumHoe",
+        "stackId": "HeroEquipment:OrichalcumHoe",
+        "maxStackSize": 1,
+        "baseDamage": 4
+    },
+    "Tool": {
+        "family": "hoe",
+        "grade": 6
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Solerets de cuivre"
+    },
+    "Item": {
+        "icon": "HeroEquipment:CopperPlateBoots",
+        "stackId": "HeroEquipment:CopperPlateBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "feet",
+        "protection": 5
+    },
+    "Durability": {
+        "durability": 300,
+        "maxDurability": 300
+    }
+}

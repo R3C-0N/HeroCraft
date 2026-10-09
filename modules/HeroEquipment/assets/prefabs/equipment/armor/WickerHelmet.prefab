@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Casque en osier"
+    },
+    "Item": {
+        "icon": "HeroEquipment:WickerHelmet",
+        "stackId": "HeroEquipment:WickerHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "head",
+        "protection": 1
+    },
+    "Durability": {
+        "durability": 80,
+        "maxDurability": 80
+    }
+}
