@@ -23,7 +23,9 @@ extensions
 !/facades/subprojects.gradle
 /modules/*
 !/modules/subprojects.gradle
-# Modules rattaches en submodules pour l'etude de la topologie cubique
+!/modules/README.md
+# Modules du jeu, suivis ici meme. Les autres dossiers de modules/ (modules
+# recuperes par groovyw, par exemple) restent ignores.
 !/modules/CoreWorlds
 !/modules/CoreRendering
 !/modules/CoreAssets
@@ -31,7 +33,6 @@ extensions
 !/modules/CubeWorlds
 !/modules/CoreSampleGameplay
 !/modules/WorkstationCrafting
-# Modules nes du fork, sans amont : suivis ici meme plutot qu'en submodule
 !/modules/CreativeGameplay
 !/modules/Bestiaire
 /metas/*
