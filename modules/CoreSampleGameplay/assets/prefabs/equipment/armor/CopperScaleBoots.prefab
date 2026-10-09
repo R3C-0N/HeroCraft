@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bottes de cuivre"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:CopperScaleBoots",
+        "stackId": "CoreSampleGameplay:CopperScaleBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "feet",
+        "protection": 4
+    },
+    "Durability": {
+        "durability": 300,
+        "maxDurability": 300
+    }
+}

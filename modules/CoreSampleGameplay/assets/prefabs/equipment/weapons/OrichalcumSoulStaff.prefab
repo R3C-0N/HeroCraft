@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bâton d'âmes d'orichalque"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:OrichalcumSoulStaff",
+        "stackId": "CoreSampleGameplay:OrichalcumSoulStaff",
+        "maxStackSize": 1,
+        "baseDamage": 17,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "soulStaff",
+        "hands": 2
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

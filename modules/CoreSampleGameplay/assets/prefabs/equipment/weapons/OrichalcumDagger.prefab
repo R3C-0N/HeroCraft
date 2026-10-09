@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Dague d'orichalque"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:OrichalcumDagger",
+        "stackId": "CoreSampleGameplay:OrichalcumDagger",
+        "maxStackSize": 1,
+        "baseDamage": 19,
+        "cooldownTime": 200
+    },
+    "Weapon": {
+        "type": "dagger",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 0.6
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

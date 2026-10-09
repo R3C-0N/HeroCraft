@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Capuche d'acier"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:SteelMailHelmet",
+        "stackId": "CoreSampleGameplay:SteelMailHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "head",
+        "protection": 9
+    },
+    "Durability": {
+        "durability": 2000,
+        "maxDurability": 2000
+    }
+}

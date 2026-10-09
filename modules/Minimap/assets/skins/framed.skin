@@ -1,0 +1,43 @@
+{
+    "inherit": "default",
+    "elements": {
+        "MinimapGrid": {
+            "background": "engine:hudFrameFine",
+            "background-scale-mode": "tiled",
+            "background-border": {
+                "top": 36,
+                "bottom": 36,
+                "left": 36,
+                "right": 36
+            },
+            "margin": {
+                "top": 24,
+                "bottom": 24,
+                "left": 24,
+                "right": 24
+            }
+        }
+    },
+    "families": {
+        "minimapOver": {
+            "elements": {
+                "UIBox": {
+                    "background": "engine:hudFrameFineOver",
+                    "background-scale-mode": "tiled",
+                    "background-border": {
+                        "top": 36,
+                        "bottom": 36,
+                        "left": 36,
+                        "right": 36
+                    },
+                    "margin": {
+                        "top": 0,
+                        "bottom": 0,
+                        "left": 0,
+                        "right": 0
+                    }
+                }
+            }
+        }
+    }
+}

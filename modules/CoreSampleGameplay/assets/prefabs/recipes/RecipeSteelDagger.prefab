@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "2*CoreAssets:SteelIngot",
+            "1*CoreAssets:Stick"
+        ],
+        "result": "CoreSampleGameplay:SteelDagger",
+        "station": "workbench",
+        "repair": [
+            "1*CoreAssets:SteelIngot"
+        ]
+    }
+}

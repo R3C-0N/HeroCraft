@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Marteau de mithril"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:MithrilMallet",
+        "stackId": "CoreSampleGameplay:MithrilMallet",
+        "maxStackSize": 1,
+        "baseDamage": 17,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "warHammer",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 2.0
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

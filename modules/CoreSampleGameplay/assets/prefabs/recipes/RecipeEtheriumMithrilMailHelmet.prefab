@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "5*CoreAssets:EtheriumMithrilIngot",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "CoreSampleGameplay:EtheriumMithrilMailHelmet",
+        "station": "ultimateforge",
+        "repair": [
+            "2*CoreAssets:EtheriumMithrilIngot"
+        ]
+    }
+}

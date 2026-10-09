@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bottines de bronze"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:BronzeMailBoots",
+        "stackId": "CoreSampleGameplay:BronzeMailBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "feet",
+        "protection": 4
+    },
+    "Durability": {
+        "durability": 500,
+        "maxDurability": 500
+    }
+}

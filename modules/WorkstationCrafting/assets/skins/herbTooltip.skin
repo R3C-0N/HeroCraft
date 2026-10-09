@@ -1,0 +1,12 @@
+{
+    "inherit": "inventory:itemTooltip",
+    "elements": {
+        "UIList": {
+            "parts": {
+                "item": {
+                    "text-color": "ccccccff"
+                }
+            }
+        }
+    }
+}

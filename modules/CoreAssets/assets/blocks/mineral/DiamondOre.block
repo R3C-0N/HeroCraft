@@ -1,0 +1,8 @@
+/**
+ * A mineral block that would drop Diamond
+ */
+{
+    "basedOn": "CoreAssets:mineral",
+    "displayName": "Minerai de diamant",
+    "tile": "CoreAssets:DiamondOre"
+}

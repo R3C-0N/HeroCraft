@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Brigandine d'adamantine"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:AdamantineScaleChestplate",
+        "stackId": "CoreSampleGameplay:AdamantineScaleChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "chest",
+        "protection": 27
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

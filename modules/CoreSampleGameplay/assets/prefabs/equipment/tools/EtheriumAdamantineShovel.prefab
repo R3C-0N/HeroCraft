@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Pelle en étherium (adamantine)"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:EtheriumAdamantineShovel",
+        "stackId": "CoreSampleGameplay:EtheriumAdamantineShovel",
+        "maxStackSize": 1,
+        "baseDamage": 11,
+        "damageType": "CoreAssets:shovelTier4Damage"
+    },
+    "Tool": {
+        "family": "shovel",
+        "grade": 7
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Chausses de silex"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:BoneStuddedLeggings",
+        "stackId": "CoreSampleGameplay:BoneStuddedLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "legs",
+        "protection": 3
+    },
+    "Durability": {
+        "durability": 220,
+        "maxDurability": 220
+    }
+}

@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "7*CoreAssets:IronIngot",
+            "2*CoreAssets:Rope"
+        ],
+        "result": "CoreSampleGameplay:IronScaleChestplate",
+        "station": "workbench",
+        "repair": [
+            "2*CoreAssets:IronIngot"
+        ]
+    }
+}

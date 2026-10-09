@@ -1,0 +1,345 @@
+#version 330 core
+// Copyright 2021 The Terasology Foundation
+// SPDX-License-Identifier: Apache-2.0
+
+#define WATER_COLOR_SWIMMING 0.8, 1.0, 1.0, 0.975
+#define WATER_TINT 0.1, 0.41, 0.627, 1.0
+
+#define WATER_SPEC 1.0
+
+#ifdef FEATURE_REFRACTIVE_PASS
+uniform vec4 waterSettingsFrag;
+#define waterNormalBias waterSettingsFrag.x
+#define waterRefraction waterSettingsFrag.y
+#define waterFresnelBias waterSettingsFrag.z
+#define waterFresnelPow waterSettingsFrag.w
+
+uniform vec4 alternativeWaterSettingsFrag;
+#define waterTint alternativeWaterSettingsFrag.x
+uniform vec4 lightingSettingsFrag;
+#define waterSpecExp lightingSettingsFrag.z
+
+uniform sampler2D textureWater;
+uniform sampler2D textureWaterReflection;
+uniform sampler2D texSceneOpaque;
+uniform sampler2D textureWaterNormal;
+uniform sampler2D textureWaterNormalAlt;
+
+in vec3 waterNormalViewSpace;
+#endif
+
+#if defined (NORMAL_MAPPING)
+in vec3 worldSpaceNormal;
+uniform sampler2D textureAtlasNormal;
+#endif
+
+#if defined (PARALLAX_MAPPING)
+uniform vec4 parallaxProperties;
+#define parallaxBias parallaxProperties.x
+#define parallaxScale parallaxProperties.y
+
+uniform sampler2D textureAtlasHeight;
+#endif
+
+
+#if defined (FLICKERING_LIGHT)
+in float flickeringLightOffset;
+#endif
+
+in vec3 vertexWorldPos;
+in vec4 vertexViewPos;
+in vec4 vertexProjPos;
+in vec3 sunVecView;
+
+in vec3 normal;
+
+in vec2 v_uv0;
+flat in int v_blockHint;
+flat in int isUpside;
+
+uniform sampler2D textureAtlas;
+uniform sampler2D textureEffects;
+
+uniform float clip;
+
+// The distant terrain draws with this very shader, so that it is placed and lit as the terrain is. Its quads are
+// whole columns of the world, a tile stretched over several blocks, so the atlas is tiled once per block here from
+// the flat position; and it steps aside wherever the game already draws the terrain, read from a texture with one
+// texel per column of chunks of the net. Zero for every other pass, which never sets it.
+uniform int distantTerrain;
+uniform sampler2D distantHole;
+
+in float v_sunlight;
+in float v_blocklight;
+in float v_ambientLight;
+// The warm share of the block light here, and the grid normal that says which block this fragment sits on.
+in float v_warmth;
+flat in vec3 v_gridNormal;
+in vec4 v_colorOffset;
+
+//inverse is not available in GLSL 1.20, so calculate it manually
+mat2 inverse2(mat2 m) {
+    float det = m[0][0] * m[1][1] - m[1][0] * m[0][1];
+    return mat2(m[1][1], -m[0][1], -m[1][0], m[0][0]) / det;
+}
+
+layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 outNormal;
+layout(location = 2) out vec4 outLight;
+
+void main() {
+
+// Active for worldReflectionNode only.
+#if defined FEATURE_USE_FORWARD_LIGHTING
+    if (vertexWorldPos.y < clip) {
+        discard;
+    }
+#endif
+
+    vec2 texCoord = v_uv0.xy;
+    vec2 distantPlane = vec2(0.0);
+    if (distantTerrain == 1) {
+        // A block is centred on its coordinates: half a block on, and a block's faces fall on whole numbers.
+        vec3 gridPos = vertexWorldPos + 0.5;
+        if (texelFetch(distantHole, ivec2(floor(gridPos.xz / 32.0)), 0).r > 0.5) {
+            discard;
+        }
+        // Along the face the fragment is on: the ground for a top, the height and the run of the wall for a side,
+        // upside down so that a tile stands the right way up.
+        distantPlane = abs(v_gridNormal.y) > 0.5 ? gridPos.xz
+                : (abs(v_gridNormal.x) > 0.5 ? vec2(gridPos.z, -gridPos.y)
+                                              : vec2(gridPos.x, -gridPos.y));
+        texCoord = v_uv0.xy + fract(distantPlane) * TEXTURE_OFFSET;
+    }
+
+    vec3 normalizedViewPos = -normalize(vertexViewPos.xyz);
+    vec2 projectedPos = projectVertexToTexCoord(vertexProjPos);
+    vec3 normalOpaque = normal;
+    float shininess = 0.0;
+
+#if defined (NORMAL_MAPPING) || defined (PARALLAX_MAPPING)
+    // TODO: Calculates the tangent frame on the fly - this is absurdly costly... But storing
+    // the tangent for each vertex in the chunk VBO might be not the best idea either.
+    // The only reason dFdx and dFdy are used here is that it happens to be possible to relate
+    // both view and UV coordinates to screen-space coordinated. The specific relationship between
+    // screen coordinates and view coordinates is irrelevant.
+    mat2x3 screenToView = mat2x3(dFdx(vertexViewPos.xyz), dFdy(vertexViewPos.xyz));
+    // A distant quad has one uv at every corner, the tile's: its frame is the continuous position on the face.
+    mat2   screenToUv   = distantTerrain == 1 ? mat2(dFdx(distantPlane), dFdy(distantPlane))
+                                              : mat2(dFdx(v_uv0.xy), dFdy(v_uv0.xy)) / TEXTURE_OFFSET;
+    mat2 uvToScreen = inverse2(screenToUv);
+    mat2x3 uvToView = screenToView * uvToScreen;
+
+    #if defined (PARALLAX_MAPPING)
+        vec2 viewDirectionUvProjection = -normalizedViewPos * uvToView;
+
+        float height = parallaxScale * texture(textureAtlasHeight, texCoord).r - parallaxBias;
+        // Ideally this should be divided by dot(normal, normalizedViewPos), as the offset for texCoord
+        // is the component parallel to the surface of a vector along the view's forward axis,
+        // the other component being a vector perpendicular to the surface and having magnitude "height".
+        // In practice the current way looks better at low angles, as the height-map can't make the triangle
+        // protrude beyond its boundaries like displacement mapping would.
+        texCoord += height * viewDirectionUvProjection * TEXTURE_OFFSET;
+
+        //Crudely prevent the parallax from extending to other textures in the same atlas.
+        vec2 texCorner = floor(v_uv0.xy/TEXTURE_OFFSET)*TEXTURE_OFFSET;
+        vec2 texSize = vec2(1,1)*TEXTURE_OFFSET*0.9999; //Remain strictly this side of the edge of the texture.
+        texCoord = clamp(texCoord, texCorner, texCorner + texSize);
+    #endif
+    #if defined (NORMAL_MAPPING)
+        // Normalised but not orthonormalised. It should be orthogonal anyway (except for some non-rectangular
+        // block shapes like torches), but it's not obvious what's the best thing to do when it isn't.
+        mat3 uvnSpaceToViewSpace = mat3(normalize(uvToView[0]), normalize(uvToView[1]), normal);
+        normalOpaque = normalize(texture(textureAtlasNormal, texCoord).xyz * 2.0 - 1.0);
+        normalOpaque = normalize(uvnSpaceToViewSpace * normalOpaque);
+
+        shininess = texture(textureAtlasNormal, texCoord).w;
+    #endif
+#endif
+
+#ifdef FEATURE_REFRACTIVE_PASS
+    vec2 normalWaterOffset;
+    vec3 normalWater = waterNormalViewSpace;
+    bool isWater = false;
+    bool isOceanWater = false;
+
+    if (BLOCK_HINT_WATER_SURFACE == v_blockHint && isUpside == 1) {
+        vec2 scaledVertexWorldPos = vertexWorldPos.xz / 32.0;
+
+        vec2 waterOffset = vec2(scaledVertexWorldPos.x + timeToTick(time, 0.0075), scaledVertexWorldPos.y + timeToTick(time, 0.0075));
+        vec2 waterOffset2 = vec2(scaledVertexWorldPos.x + timeToTick(time, 0.005), scaledVertexWorldPos.y - timeToTick(time, 0.005));
+
+        normalWaterOffset = (texture(textureWaterNormal, waterOffset).xyz * 2.0 - 1.0).xy;
+        normalWaterOffset += (texture(textureWaterNormalAlt, waterOffset2).xyz * 2.0 - 1.0).xy;
+        normalWaterOffset *= 0.5 * (1.0 / vertexViewPos.z * waterNormalBias);
+
+        normalWater.xy += normalWaterOffset;
+        normalWater = normalize(normalWater);
+
+        isOceanWater = true;
+        isWater = true;
+    }
+#endif
+
+#if defined (FEATURE_REFRACTIVE_PASS) || defined (FEATURE_USE_FORWARD_LIGHTING)
+    vec3 sunVecViewAdjusted = sunVecView;
+
+    /* DAYLIGHT BECOMES... MOONLIGHT! */
+    // Now featuring linear interpolation to make the transition smoother... :-)
+    if (daylight < 0.1) {
+        sunVecViewAdjusted = mix(sunVecViewAdjusted * -1.0, sunVecViewAdjusted, daylight / 0.1);
+    }
+#endif
+
+    vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
+
+#if !defined (FEATURE_REFRACTIVE_PASS)
+    if (distantTerrain == 1) {
+        // The gradient of the continuous position, not of the wrapped one: fract jumps at every block edge and
+        // would send the sampler to its coarsest level along each seam.
+        color = textureGrad(textureAtlas, texCoord.xy, dFdx(distantPlane) * TEXTURE_OFFSET,
+                            dFdy(distantPlane) * TEXTURE_OFFSET);
+    } else {
+        color = texture(textureAtlas, texCoord.xy);
+    }
+
+    #if defined FEATURE_ALPHA_REJECT
+        if (color.a < 0.1) {
+            discard;
+        }
+    #endif
+
+    /* APPLY OVERALL BIOME COLOR OFFSET */
+    if (v_blockHint != BLOCK_HINT_GRASS) {
+        if (v_colorOffset.r < 0.99 && v_colorOffset.g < 0.99 && v_colorOffset.b < 0.99) {
+            if (color.g > 0.5) {
+                color.rgb = vec3(color.g) * v_colorOffset.rgb;
+            } else {
+                color.rgb *= v_colorOffset.rgb;
+            }
+        }
+        /* MASK GRASS AND APPLY BIOME COLOR */
+    } else {
+        vec4 maskColor = texture(textureEffects, vec2(10.0 * TEXTURE_OFFSET_EFFECTS + mod(texCoord.x, TEXTURE_OFFSET_EFFECTS), mod(texCoord.y, TEXTURE_OFFSET_EFFECTS)));
+
+        // Only use one channel so the color won't be altered
+        if (maskColor.a != 0.0) color.rgb = vec3(color.g) * v_colorOffset.rgb;
+    }
+#endif
+
+    // Calculate daylight lighting value
+    float daylightValue = v_sunlight;
+    // Calculate blocklight lighting value
+    float blocklightValue = v_blocklight;
+    // ...and finally the occlusion value
+    float occlusionValue = expOccValue(v_ambientLight);
+
+#if defined (FLICKERING_LIGHT)
+    // Torches and glowbells keep the frame wide offset to the bit. Only the lava share of the light here is
+    // swapped for the beat this particular block is on, so at v_warmth of zero nothing about the old behaviour
+    // changes.
+    float flickerOffset = mix(flickeringLightOffset,
+                              lavaFlickerOffset(vertexWorldPos, v_gridNormal),
+                              v_warmth);
+#endif
+
+    float blocklightColorBrightness = calcBlocklightColorBrightness(blocklightValue
+    #if defined (FLICKERING_LIGHT)
+            , flickerOffset
+    #endif
+    );
+    // The lava part of that brightness, as an absolute quantity rather than a share: the tint is additive.
+    float warmBrightness = blocklightColorBrightness * v_warmth;
+    vec3 blocklightColorValue = calcBlocklightColor(blocklightColorBrightness, warmBrightness);
+
+#if defined (FEATURE_REFRACTIVE_PASS)
+    vec3 daylightColorValue;
+
+    if (isOceanWater) {
+        daylightColorValue = calcSunlightColorWater(daylightValue, normalWater, sunVecViewAdjusted);
+    } else {
+        daylightColorValue = calcSunlightColorOpaque(daylightValue, normal, sunVecViewAdjusted);
+    }
+
+    vec3 combinedLightValue = max(daylightColorValue, blocklightColorValue);
+#elif defined (FEATURE_USE_FORWARD_LIGHTING)
+    vec3 daylightColorValue = calcSunlightColorOpaque(daylightValue, normal, sunVecViewAdjusted);
+    vec3 combinedLightValue = max(daylightColorValue, blocklightColorValue);
+#endif
+
+#if defined (FEATURE_REFRACTIVE_PASS)
+    // Apply the final lighting mix
+    color.xyz *= combinedLightValue * occlusionValue;
+
+    // Apply reflection and refraction AFTER the lighting has been applied (otherwise bright areas below water become dark)
+    // The water tint has still to be adjusted adjusted though...
+    if (isWater && isOceanWater) {
+        float specularHighlight = WATER_SPEC * calcDayAndNightLightingFactor(daylightValue, daylight) * calcSpecLightNormalized(normalWater, sunVecViewAdjusted, normalizedViewPos, waterSpecExp);
+        color.xyz += vec3(specularHighlight, specularHighlight, specularHighlight);
+
+        vec4 reflectionColor = vec4(texture(textureWaterReflection, projectedPos + normalWaterOffset.xy * waterRefraction).xyz, 1.0);
+        vec4 refractionColor = vec4(texture(texSceneOpaque, projectedPos + normalWaterOffset.xy * waterRefraction).xyz, 1.0);
+        vec4 litWaterTint = vec4(WATER_TINT) * vec4(combinedLightValue.x, combinedLightValue.y, combinedLightValue.z, 1.0);
+
+        /* FRESNEL */
+        if (!swimming) {
+            float f = fresnel(dot(normalWater, normalizedViewPos), waterFresnelBias, waterFresnelPow);
+            color += mix(refractionColor * (1.0 - waterTint) +  waterTint * litWaterTint,
+                    reflectionColor * (1.0 - waterTint) + waterTint * litWaterTint, f);
+        } else {
+            // Seen from below, whatever lies above the surface takes the colour of the water.
+            color += (refractionColor * (1.0 - waterTint) +  waterTint * litWaterTint) * vec4(WATER_COLOR_SWIMMING);
+        }
+
+        color.a = 1.0;
+    } else if (isWater) {
+        texCoord.x = mod(texCoord.x, TEXTURE_OFFSET) * (1.0 / TEXTURE_OFFSET);
+        texCoord.y = mod(texCoord.y, TEXTURE_OFFSET) / (128.0 / (1.0 / TEXTURE_OFFSET));
+        texCoord.y += mod(timeToTick(time, -0.1), 127.0) * (1.0/128.0);
+        vec4 albedoColor = texture(textureWater, texCoord.xy).rgba;
+        albedoColor.rgb *= combinedLightValue;
+
+        vec3 refractionColor = texture(texSceneOpaque, projectedPos + albedoColor.rg * 0.05).rgb;
+
+
+        color.rgb += mix(refractionColor, albedoColor.rgb, albedoColor.a);
+        color.a = 1.0;
+    } else {
+        vec3 refractionColor = texture(texSceneOpaque, projectedPos).rgb;
+        vec4 albedoColor = texture(textureAtlas, texCoord.xy);
+        albedoColor.rgb *= combinedLightValue;
+
+        // TODO: Add support for actual refraction here
+        color.rgb += mix(refractionColor, albedoColor.rgb, albedoColor.a);
+        color.a = 1.0;
+    }
+#elif defined (FEATURE_USE_FORWARD_LIGHTING)
+    // Apply the final lighting mix
+    color.xyz *= combinedLightValue * occlusionValue;
+#else
+    // z carries the lava part of the brightness through to the deferred lighting pass, which is the only channel
+    // of this buffer nothing reads. The light nodes in between blend additively over it, so lightGeometryPass
+    // writes a zero there to leave it alone.
+    outLight.rgba = vec4(blocklightColorBrightness, daylightValue, warmBrightness, 0.0);
+#endif
+
+#if defined (FEATURE_REFRACTIVE_PASS) || defined (FEATURE_USE_FORWARD_LIGHTING)
+    outColor.rgba = color.rgba;
+    #if defined (FEATURE_REFRACTIVE_PASS)
+        // Encode "reflection" intensity into normal alpha
+        outNormal.a = 1.0;
+    #endif
+#else
+    outColor.rgb = color.rgb;
+    // Encode occlusion value into the alpha channel
+    outColor.a = occlusionValue;
+    // Encode shininess value into the normal alpha channel
+    outNormal.a = shininess;
+#endif
+
+#if !defined (FEATURE_REFRACTIVE_PASS) && !defined (FEATURE_USE_FORWARD_LIGHTING)
+    outNormal.rgb = vec3(normalOpaque.x / 2.0 + 0.5, normalOpaque.y / 2.0 + 0.5, normalOpaque.z / 2.0 + 0.5);
+#elif defined (FEATURE_REFRACTIVE_PASS)
+    outNormal.rgb = vec3(normalWater.x / 2.0 + 0.5, normalWater.y / 2.0 + 0.5, normalWater.z / 2.0 + 0.5);
+#endif
+}

@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Solerets d'os"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:BoneBoots",
+        "stackId": "CoreSampleGameplay:BoneBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "feet",
+        "protection": 3
+    },
+    "Durability": {
+        "durability": 150,
+        "maxDurability": 150
+    }
+}

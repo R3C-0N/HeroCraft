@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Solerets d'étherium (orichalque)"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:EtheriumOrichalcumPlateBoots",
+        "stackId": "CoreSampleGameplay:EtheriumOrichalcumPlateBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "feet",
+        "protection": 14
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

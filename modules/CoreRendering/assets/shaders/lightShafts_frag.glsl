@@ -1,0 +1,52 @@
+#version 330 core
+// Copyright 2021 The Terasology Foundation
+// SPDX-License-Identifier: Apache-2.0
+
+in vec2 v_uv0;
+
+uniform float weight;
+uniform float decay;
+uniform float exposure;
+uniform float density;
+
+uniform sampler2D texScene;
+
+uniform float lightDirDotViewDir;
+uniform vec2 lightScreenPos;
+
+layout(location = 0) out vec4 outExposure;
+
+void main() {
+    outExposure.rgba = vec4(0.0, 0.0, 0.0, 1.0);
+
+    if (lightDirDotViewDir > 0.0) {
+        vec2 uv0 = v_uv0;
+        vec2 deltaTexCoord = (1.0 / float(LIGHT_SHAFT_SAMPLES)) * density * vec2(uv0.xy - lightScreenPos.xy);
+
+        float dist = length(deltaTexCoord.xy);
+
+        // TODO: This shouldn't be hardcoded
+        float threshold = 0.01;
+        if (dist > threshold) {
+            deltaTexCoord.xy /= (dist / threshold);
+        }
+
+        float illuminationDecay = 1.0;
+        for(int i=0; i < LIGHT_SHAFT_SAMPLES; i++) {
+            uv0 -= deltaTexCoord;
+            vec3 sampler = texture(texScene, uv0).rgb;
+
+            sampler *= illuminationDecay * weight;
+            outExposure.rgb += sampler;
+            illuminationDecay *= decay;
+        }
+
+        // lightDirDotViewDir is the raw cosine, so any sun in front of the camera -
+        // a full 90 degree cone - got shafts at nearly full strength. Squaring it
+        // still confines them to the neighbourhood of the sun, as crepuscular rays
+        // are, while keeping them readable off-axis: cubed, they vanished as soon
+        // as the sun left the middle of the screen.
+        float aim = clamp(lightDirDotViewDir, 0.0, 1.0);
+        outExposure.rgb *= exposure * aim * aim;
+    }
+}

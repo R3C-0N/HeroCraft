@@ -1,0 +1,8 @@
+/**
+ * Crystal is the rock of an unstable-magic region.
+ */
+{
+    "basedOn": "CoreAssets:rock2",
+    "displayName": "Crystal",
+    "tile": "CoreAssets:Crystal"
+}

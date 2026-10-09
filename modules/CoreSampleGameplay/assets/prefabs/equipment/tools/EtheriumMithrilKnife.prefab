@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Couteau en étherium (mithril)"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:EtheriumMithrilKnife",
+        "stackId": "CoreSampleGameplay:EtheriumMithrilKnife",
+        "maxStackSize": 1,
+        "baseDamage": 11
+    },
+    "Tool": {
+        "family": "knife",
+        "grade": 7
+    },
+    "Depeceur": {},
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

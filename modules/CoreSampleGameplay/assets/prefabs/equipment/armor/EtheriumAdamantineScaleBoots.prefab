@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bottes d'étherium (adamantine)"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:EtheriumAdamantineScaleBoots",
+        "stackId": "CoreSampleGameplay:EtheriumAdamantineScaleBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "feet",
+        "protection": 13
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

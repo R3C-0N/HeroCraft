@@ -1,0 +1,8 @@
+/**
+ * The bark is BirchTrunkSides.png and the rings BirchTrunkTopBottom.png, both found by name.
+ * There is no plain BirchTrunk.png: the two suffixes cover all six faces between them.
+ */
+{
+    "basedOn": "CoreAssets:wood",
+    "displayName": "Tronc de bouleau"
+}

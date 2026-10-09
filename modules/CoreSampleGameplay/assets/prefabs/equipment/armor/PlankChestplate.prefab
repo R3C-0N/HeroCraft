@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Plastron en planches"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:PlankChestplate",
+        "stackId": "CoreSampleGameplay:PlankChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "chest",
+        "protection": 3
+    },
+    "Durability": {
+        "durability": 80,
+        "maxDurability": 80
+    }
+}

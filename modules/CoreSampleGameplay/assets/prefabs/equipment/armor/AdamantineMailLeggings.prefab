@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Braies d'adamantine"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:AdamantineMailLeggings",
+        "stackId": "CoreSampleGameplay:AdamantineMailLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "legs",
+        "protection": 16
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

@@ -1,0 +1,11 @@
+/**
+ * Blight is peat that has gone further: the surface of a miasmic swamp.
+ *
+ * A miasmic swamp is not a poisoned swamp — it is a region of its own, and this
+ * is the material that says so at a glance.
+ */
+{
+    "basedOn": "CoreAssets:soil",
+    "displayName": "Blight",
+    "tile": "CoreAssets:Blight"
+}

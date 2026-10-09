@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bottes d'orichalque"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:OrichalcumScaleBoots",
+        "stackId": "CoreSampleGameplay:OrichalcumScaleBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "feet",
+        "protection": 11
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

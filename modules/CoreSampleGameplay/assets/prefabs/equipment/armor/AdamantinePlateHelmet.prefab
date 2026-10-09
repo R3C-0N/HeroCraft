@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Heaume d'adamantine"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:AdamantinePlateHelmet",
+        "stackId": "CoreSampleGameplay:AdamantinePlateHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "head",
+        "protection": 18
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

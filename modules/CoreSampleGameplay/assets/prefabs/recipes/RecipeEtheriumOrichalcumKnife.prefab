@@ -1,0 +1,14 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*CoreAssets:EtheriumOrichalcumIngot",
+            "1*CoreAssets:Stick",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "CoreSampleGameplay:EtheriumOrichalcumKnife",
+        "station": "ultimateforge",
+        "repair": [
+            "1*CoreAssets:EtheriumOrichalcumIngot"
+        ]
+    }
+}

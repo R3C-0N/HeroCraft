@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "2*CoreAssets:MithrilIngot",
+            "2*CoreAssets:Stick"
+        ],
+        "result": "CoreSampleGameplay:MithrilHoe",
+        "station": "astralforge",
+        "repair": [
+            "1*CoreAssets:MithrilIngot"
+        ]
+    }
+}

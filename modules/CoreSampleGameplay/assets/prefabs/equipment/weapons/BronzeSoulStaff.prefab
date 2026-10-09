@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bâton d'âmes de bronze"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:BronzeSoulStaff",
+        "stackId": "CoreSampleGameplay:BronzeSoulStaff",
+        "maxStackSize": 1,
+        "baseDamage": 7,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "soulStaff",
+        "hands": 2
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 500,
+        "maxDurability": 500
+    }
+}

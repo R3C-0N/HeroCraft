@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Capuche de bronze"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:BronzeMailHelmet",
+        "stackId": "CoreSampleGameplay:BronzeMailHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "head",
+        "protection": 5
+    },
+    "Durability": {
+        "durability": 500,
+        "maxDurability": 500
+    }
+}

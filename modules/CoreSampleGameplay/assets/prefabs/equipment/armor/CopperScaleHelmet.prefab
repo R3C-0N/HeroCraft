@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Camail de cuivre"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:CopperScaleHelmet",
+        "stackId": "CoreSampleGameplay:CopperScaleHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "head",
+        "protection": 5
+    },
+    "Durability": {
+        "durability": 300,
+        "maxDurability": 300
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Capuche d'adamantine"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:AdamantineMailHelmet",
+        "stackId": "CoreSampleGameplay:AdamantineMailHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "head",
+        "protection": 12
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bottes de mithril"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:MithrilScaleBoots",
+        "stackId": "CoreSampleGameplay:MithrilScaleBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "feet",
+        "protection": 9
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

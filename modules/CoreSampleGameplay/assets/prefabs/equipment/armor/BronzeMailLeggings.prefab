@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Braies de bronze"
+    },
+    "Item": {
+        "icon": "CoreSampleGameplay:BronzeMailLeggings",
+        "stackId": "CoreSampleGameplay:BronzeMailLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "legs",
+        "protection": 7
+    },
+    "Durability": {
+        "durability": 500,
+        "maxDurability": 500
+    }
+}

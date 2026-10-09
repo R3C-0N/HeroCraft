@@ -21,8 +21,7 @@ cubique dépend.
 |---|---|
 | Type de ressource | Docker Compose |
 | Fichier | `docker/docker-compose.yaml` |
-| Submodules | **à activer** (`Advanced → Git Submodules`) — sans eux `modules/` reste vide et il n'y a aucun générateur |
-| Source | la **GitHub App**, pas « Public GitHub » : `CubeWorlds-Evolve` est privé, et une clé de déploiement ne couvre qu'un dépôt. Les URL du `.gitmodules` sont relatives pour que les submodules héritent du jeton du parent — vérifier que l'installation de l'App a accès aux sept dépôts |
+| Source | la **GitHub App**, pas « Public GitHub » : le dépôt est privé. Tous les modules sont dans le dépôt : aucun submodule à activer |
 | Domaine | **à poser à la main** : `SERVICE_FQDN_TERASOLOGY_6080=terasology.exemple.fr` |
 | Mot de passe | généré depuis `SERVICE_PASSWORD_VNC`, visible dans l'interface Coolify |
 
