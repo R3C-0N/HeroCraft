@@ -1,0 +1,342 @@
+// Copyright 2021 The Terasology Foundation
+// SPDX-License-Identifier: Apache-2.0
+package org.terasology.corerendering.rendering.dag.nodes;
+
+import org.joml.Vector3f;
+import org.terasology.corerendering.rendering.utils.UnderwaterHelper;
+import org.terasology.engine.config.Config;
+import org.terasology.engine.config.RenderingConfig;
+import org.terasology.engine.context.Context;
+import org.terasology.engine.monitoring.PerformanceMonitor;
+import org.terasology.engine.rendering.assets.material.Material;
+import org.terasology.engine.rendering.assets.mesh.Mesh;
+import org.terasology.engine.rendering.backdrop.BackdropProvider;
+import org.terasology.engine.rendering.cameras.Camera;
+import org.terasology.engine.rendering.dag.AbstractNode;
+import org.terasology.engine.rendering.dag.StateChange;
+import org.terasology.engine.rendering.dag.dependencyConnections.BufferPairConnection;
+import org.terasology.engine.rendering.dag.dependencyConnections.DependencyConnection;
+import org.terasology.engine.rendering.dag.stateChanges.BindFbo;
+import org.terasology.engine.rendering.dag.stateChanges.EnableMaterial;
+import org.terasology.engine.rendering.dag.stateChanges.SetInputTextureFromFbo;
+import org.terasology.engine.rendering.opengl.FBO;
+import org.terasology.engine.rendering.opengl.fbms.DisplayResolutionDependentFbo;
+import org.terasology.engine.rendering.world.DistantReach;
+import org.terasology.engine.rendering.world.WorldRenderer;
+import org.terasology.engine.utilities.Assets;
+import org.terasology.engine.world.WorldProvider;
+import org.terasology.engine.world.chunks.Chunks;
+import org.terasology.gestalt.assets.ResourceUrn;
+import org.terasology.gestalt.naming.Name;
+import org.terasology.nui.properties.Range;
+
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
+
+import static org.terasology.engine.rendering.dag.stateChanges.SetInputTextureFromFbo.FboTexturesTypes.ColorTexture;
+import static org.terasology.engine.rendering.dag.stateChanges.SetInputTextureFromFbo.FboTexturesTypes.DepthStencilTexture;
+import static org.terasology.engine.rendering.dag.stateChanges.SetInputTextureFromFbo.FboTexturesTypes.LightAccumulationTexture;
+import static org.terasology.engine.rendering.dag.stateChanges.SetInputTextureFromFbo.FboTexturesTypes.NormalsTexture;
+
+/**
+ * An instance of this class takes advantage of the content of a number of previously filled buffers
+ * to add screen-space ambient occlusion (SSAO), outlines, reflections [1], atmospheric haze and volumetric fog
+ *
+ * As this node does not quite use 3D geometry and only relies on 2D sources and a 2D output buffer, it
+ * could be argued that, despite its name, it represents the first step of the PostProcessing portion
+ * of the rendering engine. This line of thinking draws a parallel from the film industry where
+ * Post-Processing (or Post-Production) is everything that happens -after- the footage for the film
+ * has been shot on stage or on location.
+ *
+ * [1] And refractions? To be verified.
+ */
+public class PrePostCompositeNode extends AbstractNode implements PropertyChangeListener {
+    private static final ResourceUrn PRE_POST_MATERIAL_URN = new ResourceUrn("CoreRendering:prePostComposite");
+
+    private RenderingConfig renderingConfig;
+    private WorldRenderer worldRenderer;
+    private Camera activeCamera;
+    private WorldProvider worldProvider;
+    private BackdropProvider backdropProvider;
+    private DisplayResolutionDependentFbo displayResolutionDependentFbo;
+
+    private Material prePostMaterial;
+
+    private int textureSlot = 0;
+
+    private boolean localReflectionsAreEnabled;
+
+    private boolean ssaoIsEnabled;
+    private int texSsaoSlot = -1;
+
+    private boolean outlineIsEnabled;
+
+    private boolean hazeIsEnabled;
+    private int texHazeSlot = -1;
+
+    private boolean volumetricFogIsEnabled;
+
+    private StateChange setReflectiveRefractiveNormalsInputTexture;
+    private StateChange setSsaoInputTexture;
+    private StateChange setEdgesInputTexture;
+    private StateChange setHazeInputTexture;
+
+    @SuppressWarnings("FieldCanBeLocal")
+    @Range(min = 0.001f, max = 0.005f)
+    private float outlineDepthThreshold = 0.001f;
+    @SuppressWarnings("FieldCanBeLocal")
+    @Range(min = 0.0f, max = 1.0f)
+    private float outlineThickness = 0.65f;
+
+    // TODO : Consider a more descriptive name for this variable.
+    @SuppressWarnings("FieldCanBeLocal")
+    @Range(min = 0.0f, max = 1.0f)
+    private float hazeLength = 1.0f;
+    @SuppressWarnings("FieldCanBeLocal")
+    @Range(min = 0.0f, max = 1.0f)
+    private float hazeStrength = 0.25f;
+    @SuppressWarnings("FieldCanBeLocal")
+    @Range(min = 0.0f, max = 1.0f)
+    private float hazeThreshold = 0.8f;
+
+    @SuppressWarnings("FieldCanBeLocal")
+    @Range(min = 0.0f, max = 0.1f)
+    private float volumetricFogGlobalDensity = 0.005f;
+    @SuppressWarnings("FieldCanBeLocal")
+    @Range(min = -0.1f, max = 0.1f)
+    private float volumetricFogHeightFalloff = -0.01f;
+
+    // Underwater, light is lost at this rate per block to the colour of the water under full daylight. The colour
+    // is dimmed with the light that reaches the camera, so a flooded cave or a night sea is not bright blue.
+    @SuppressWarnings("FieldCanBeLocal")
+    @Range(min = 0.0f, max = 0.5f)
+    private float underwaterFogDensity = 0.06f;
+    @SuppressWarnings("FieldCanBeLocal")
+    @Range(min = 0.0f, max = 1.0f)
+    private float underwaterFogMinimumBrightness = 0.02f;
+    private final Vector3f underwaterFogDaylightColor = new Vector3f(0.1f, 0.41f, 0.627f);
+    private final Vector3f underwaterFogColor = new Vector3f();
+
+    private Mesh renderQuad;
+
+    // Where the veil over the edge of the loaded ground starts, in blocks before that edge, when a distant terrain is
+    // drawn beyond it: two chunks, so the edge is hazed and the distance is not.
+    @SuppressWarnings("FieldCanBeLocal")
+    @Range(min = 0.0f, max = 256.0f)
+    private float distantVeil = 64.0f;
+    private final Context nodeContext;
+
+    public PrePostCompositeNode(String nodeUri, Name providingModule, Context context) {
+        super(nodeUri, providingModule, context);
+        nodeContext = context;
+
+        worldRenderer = context.get(WorldRenderer.class);
+        activeCamera = worldRenderer.getActiveCamera();
+        worldProvider = context.get(WorldProvider.class);
+        backdropProvider = context.get(BackdropProvider.class);
+        addOutputBufferPairConnection(1);
+
+        this.renderQuad = Assets.get(new ResourceUrn("engine:ScreenQuad"), Mesh.class)
+                .orElseThrow(() -> new RuntimeException("Failed to resolve render Quad"));
+
+    }
+
+    @Override
+    public void setDependencies(Context context) {
+        // TODO: Move everything you can into constructor
+
+        BufferPairConnection bufferPairConnection = getInputBufferPairConnection(1);
+        // Add new instance of swapped bufferPair as output
+        addOutputBufferPairConnection(1, bufferPairConnection.getSwappedCopy(DependencyConnection.Type.OUTPUT, this.getUri()));
+
+        addDesiredStateChange(new EnableMaterial(PRE_POST_MATERIAL_URN));
+        addDesiredStateChange(new BindFbo(bufferPairConnection.getBufferPair().getSecondaryFbo()));
+
+        prePostMaterial = getMaterial(PRE_POST_MATERIAL_URN);
+
+        renderingConfig = context.get(Config.class).getRendering();
+        localReflectionsAreEnabled = renderingConfig.isLocalReflections();
+        renderingConfig.subscribe(RenderingConfig.LOCAL_REFLECTIONS, this);
+        ssaoIsEnabled = renderingConfig.isSsao();
+        renderingConfig.subscribe(RenderingConfig.SSAO, this);
+        outlineIsEnabled = renderingConfig.isOutline();
+        renderingConfig.subscribe(RenderingConfig.OUTLINE, this);
+        hazeIsEnabled = renderingConfig.isInscattering();
+        renderingConfig.subscribe(RenderingConfig.INSCATTERING, this);
+        volumetricFogIsEnabled = renderingConfig.isVolumetricFog();
+        renderingConfig.subscribe(RenderingConfig.VOLUMETRIC_FOG, this);
+
+        FBO lastUpdatedGBuffer = bufferPairConnection.getBufferPair().getPrimaryFbo();
+
+        displayResolutionDependentFbo = context.get(DisplayResolutionDependentFbo.class);
+        textureSlot = 0;
+        addDesiredStateChange(new SetInputTextureFromFbo(textureSlot++, lastUpdatedGBuffer,
+                ColorTexture, displayResolutionDependentFbo, PRE_POST_MATERIAL_URN, "texSceneOpaque"));
+        addDesiredStateChange(new SetInputTextureFromFbo(textureSlot++, lastUpdatedGBuffer,
+                DepthStencilTexture, displayResolutionDependentFbo, PRE_POST_MATERIAL_URN,
+                "texSceneOpaqueDepth"));
+        addDesiredStateChange(new SetInputTextureFromFbo(textureSlot++, lastUpdatedGBuffer,
+                NormalsTexture, displayResolutionDependentFbo, PRE_POST_MATERIAL_URN, "texSceneOpaqueNormals"));
+        addDesiredStateChange(new SetInputTextureFromFbo(textureSlot++, lastUpdatedGBuffer,
+                LightAccumulationTexture, displayResolutionDependentFbo, PRE_POST_MATERIAL_URN,
+                "texSceneOpaqueLightBuffer"));
+        addDesiredStateChange(new SetInputTextureFromFbo(textureSlot++, getInputFboData(4),
+                ColorTexture, displayResolutionDependentFbo, PRE_POST_MATERIAL_URN,
+                "texSceneReflectiveRefractive"));
+        setReflectiveRefractiveNormalsInputTexture = new SetInputTextureFromFbo(textureSlot++, getInputFboData(4),
+                NormalsTexture, displayResolutionDependentFbo, PRE_POST_MATERIAL_URN,
+                "texSceneReflectiveRefractiveNormals");
+
+        setEdgesInputTexture = new SetInputTextureFromFbo(textureSlot++, getInputFboData(2),
+                ColorTexture, displayResolutionDependentFbo, PRE_POST_MATERIAL_URN, "texEdges");
+
+
+        if (localReflectionsAreEnabled) {
+            // setReflectiveRefractiveNormalsInputTexture = new SetInputTextureFromFbo(textureSlot++, getInputFboData(4),
+            // NormalsTexture, displayResolutionDependentFbo, PRE_POST_MATERIAL_URN, "texSceneReflectiveRefractiveNormals");
+            addDesiredStateChange(setReflectiveRefractiveNormalsInputTexture);
+        }
+        if (ssaoIsEnabled) {
+            if (texSsaoSlot < 0) {
+                texSsaoSlot = textureSlot++;
+            }
+            setSsaoInputTexture = new SetInputTextureFromFbo(texSsaoSlot, getInputFboData(1),
+                    ColorTexture, displayResolutionDependentFbo, PRE_POST_MATERIAL_URN, "texSsao");
+            addDesiredStateChange(setSsaoInputTexture);
+        }
+        if (outlineIsEnabled) {
+            addDesiredStateChange(setEdgesInputTexture);
+        }
+        if (hazeIsEnabled) {
+            if (texHazeSlot < 0) {
+                texHazeSlot = textureSlot++;
+            }
+            setHazeInputTexture = new SetInputTextureFromFbo(texHazeSlot, getInputFboData(3),
+                    ColorTexture, displayResolutionDependentFbo, PRE_POST_MATERIAL_URN, "texSceneSkyBand");
+            addDesiredStateChange(setHazeInputTexture);
+        }
+    }
+
+    /**
+     * Called every frame, the shader program used by this method only composites per-pixel information from a number
+     * of buffers and renders it into a full-screen quad, which is the only piece of geometry processed.
+     */
+    @Override
+    public void process() {
+        PerformanceMonitor.startActivity("rendering/" + getUri());
+
+        // Shader Parameters
+
+        // The haze is set on the view distance and saturates a little past it, which drowns anything drawn further out.
+        // A world with a distant terrain says how far it draws: the haze stretches to there, and starts a couple of
+        // chunks before the loaded ground ends, as a veil over the edge rather than a wall at it.
+        float viewingDistance = renderingConfig.getViewDistance().getChunkDistance().x() * 8.0f;
+        float threshold = hazeThreshold;
+        DistantReach distant = nodeContext.get(DistantReach.class);
+        if (distant != null && distant.reach() > viewingDistance) {
+            viewingDistance = distant.reach();
+            threshold = Math.max(0.0f, Math.min(0.95f, (distant.frontier() - distantVeil) / viewingDistance));
+        }
+        prePostMaterial.setFloat("viewingDistance", viewingDistance, true);
+        prePostMaterial.setFloat3("cameraParameters", activeCamera.getzNear(), activeCamera.getzFar(), 0.0f, true);
+
+        if (localReflectionsAreEnabled) {
+            prePostMaterial.setMatrix4("invProjMatrix", activeCamera.getInverseProjectionMatrix(), true);
+            prePostMaterial.setMatrix4("projMatrix", activeCamera.getProjectionMatrix(), true);
+        }
+
+        if (outlineIsEnabled) {
+            prePostMaterial.setFloat("outlineDepthThreshold", outlineDepthThreshold, true);
+            prePostMaterial.setFloat("outlineThickness", outlineThickness, true);
+        }
+
+        if (volumetricFogIsEnabled) {
+            prePostMaterial.setMatrix4("invViewProjMatrix", activeCamera.getInverseViewProjectionMatrix(), true);
+            prePostMaterial.setFloat3("volumetricFogSettings", 1f, volumetricFogGlobalDensity, volumetricFogHeightFalloff,
+                    true);
+        }
+
+        if (hazeIsEnabled) {
+            prePostMaterial.setFloat4("skyInscatteringSettingsFrag", 0, hazeStrength, hazeLength, threshold, true);
+        }
+
+        boolean underwater = UnderwaterHelper.isUnderwater(activeCamera.getPosition(), worldProvider, renderingConfig);
+        prePostMaterial.setFloat("swimming", underwater ? 1.0f : 0.0f, true);
+        if (underwater) {
+            float sunlight = worldProvider.getSunlight(activeCamera.getPosition()) / (float) Chunks.MAX_SUNLIGHT;
+            float brightness = Math.max(backdropProvider.getDaylight() * sunlight, underwaterFogMinimumBrightness);
+            prePostMaterial.setFloat3("underwaterFogColor", underwaterFogDaylightColor.mul(brightness, underwaterFogColor), true);
+            prePostMaterial.setFloat("underwaterFogDensity", underwaterFogDensity, true);
+        }
+
+        // TODO: We never set the "fogWorldPosition" uniform in prePostComposite_frag.glsl . Either use it, or remove it.
+
+        // Actual Node Processing
+
+        renderQuad.render();
+
+        PerformanceMonitor.endActivity();
+    }
+
+    @Override
+    public void propertyChange(PropertyChangeEvent event) {
+        String propertyName = event.getPropertyName();
+
+        switch (propertyName) {
+            case RenderingConfig.LOCAL_REFLECTIONS:
+                localReflectionsAreEnabled = renderingConfig.isLocalReflections();
+                if (localReflectionsAreEnabled) {
+                    addDesiredStateChange(setReflectiveRefractiveNormalsInputTexture);
+                } else {
+                    removeDesiredStateChange(setReflectiveRefractiveNormalsInputTexture);
+                }
+                break;
+
+            case RenderingConfig.SSAO:
+                ssaoIsEnabled = renderingConfig.isSsao();
+                if (ssaoIsEnabled) {
+                    if (texSsaoSlot < 0) {
+                        texSsaoSlot = textureSlot++;
+                    }
+                    setSsaoInputTexture = new SetInputTextureFromFbo(texSsaoSlot, getInputFboData(1),
+                            ColorTexture, displayResolutionDependentFbo, PRE_POST_MATERIAL_URN, "texSsao");
+                    addDesiredStateChange(setSsaoInputTexture);
+                } else {
+                    removeDesiredStateChange(setSsaoInputTexture);
+                }
+                break;
+
+            case RenderingConfig.OUTLINE:
+                outlineIsEnabled = renderingConfig.isOutline();
+                if (outlineIsEnabled) {
+                    getInputFboData(2);
+                    addDesiredStateChange(setEdgesInputTexture);
+                } else {
+                    removeDesiredStateChange(setEdgesInputTexture);
+                }
+                break;
+
+            case RenderingConfig.INSCATTERING:
+                hazeIsEnabled = renderingConfig.isInscattering();
+                if (hazeIsEnabled) {
+                    if (texHazeSlot < 0) {
+                        texHazeSlot = textureSlot++;
+                    }
+                    setHazeInputTexture = new SetInputTextureFromFbo(texHazeSlot, getInputFboData(3),
+                            ColorTexture, displayResolutionDependentFbo, PRE_POST_MATERIAL_URN, "texSceneSkyBand");
+                    addDesiredStateChange(setHazeInputTexture);
+                } else {
+                    removeDesiredStateChange(setHazeInputTexture);
+                }
+                break;
+
+            case RenderingConfig.VOLUMETRIC_FOG:
+                volumetricFogIsEnabled = renderingConfig.isVolumetricFog();
+                break;
+
+            // default: no other cases are possible - see subscribe operations in initialize().
+        }
+
+        worldRenderer.requestTaskListRefresh();
+    }
+}
