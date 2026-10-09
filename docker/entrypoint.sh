@@ -18,7 +18,7 @@ if [[ ! -x ./gradlew ]]; then
     exit 1
 fi
 
-WORLD_GENERATOR="${WORLD_GENERATOR:-CubeWorlds:cubeworld}"
+WORLD_GENERATOR="${WORLD_GENERATOR:-HeroCubeWorlds:cubeworld}"
 GAME_ARGS="${GAME_ARGS:-}"
 SCREEN="${SCREEN:-1600x900x24}"
 NOVNC_PORT="${NOVNC_PORT:-6080}"

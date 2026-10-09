@@ -31,7 +31,7 @@
             "maxVersion": "3.0.0"
         },
         {
-            "id": "CubeWorlds",
+            "id": "HeroCubeWorlds",
             "minVersion": "1.0.0"
         },
         {
@@ -56,5 +56,5 @@
         }
     ],
     "isGameplay": "true",
-    "defaultWorldGenerator": "CubeWorlds:cubeworld"
+    "defaultWorldGenerator": "HeroCubeWorlds:cubeworld"
 }

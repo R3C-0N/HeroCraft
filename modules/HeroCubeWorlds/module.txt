@@ -1,0 +1,28 @@
+{
+    "id": "HeroCubeWorlds",
+    "version": "1.0.0-SNAPSHOT",
+    "author": "R3C-0N",
+    "displayName": "HeroCubeWorlds",
+    "description": "Cube-net world generation, rendered as a sphere.",
+    "dependencies": [
+        {
+            "id": "BiomesAPI",
+            "minVersion": "4.1.0"
+        },
+        {
+            "id": "CoreAssets",
+            "minVersion": "2.0.0"
+        },
+        {
+            "id": "CoreWorlds",
+            "minVersion": "2.0.0"
+        },
+        {
+            "id": "CoreRendering",
+            "minVersion": "1.0.0"
+        }
+    ],
+    "serverSideOnly": false,
+    "isWorld": true,
+    "defaultWorldGenerator": "HeroCubeWorlds:cubeworld"
+}

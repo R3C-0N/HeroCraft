@@ -30,7 +30,7 @@ extensions
 !/modules/CoreRendering
 !/modules/CoreAssets
 !/modules/Minimap
-!/modules/CubeWorlds
+!/modules/HeroCubeWorlds
 !/modules/CoreSampleGameplay
 !/modules/WorkstationCrafting
 !/modules/CreativeGameplay

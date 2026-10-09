@@ -80,10 +80,10 @@ is the trap.** An already-generated chunk never runs a new provider again, so th
 only honest check is a world built from scratch: pass `--create-last-game` through
 `--`. But it recreates the world with the **default generator from `config.cfg`**,
 not the one the game it copies was played with — so it will hand you
-`CoreWorlds:facetedsimplex` while the save it came from says `CubeWorlds:cubeworld`.
+`CoreWorlds:facetedsimplex` while the save it came from says `HeroCubeWorlds:cubeworld`.
 The flat generator has neither the cave provider nor the ore provider in its chain,
 so the symptom is a solid, hollow-free, ore-free underground that looks exactly like
-a broken generator. Set `worldGeneration.defaultGenerator` to `CubeWorlds:cubeworld`
+a broken generator. Set `worldGeneration.defaultGenerator` to `HeroCubeWorlds:cubeworld`
 before any such session, and read the new save's `worlds.main.worldGenerator` to
 confirm what you actually got.
 

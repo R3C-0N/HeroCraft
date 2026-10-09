@@ -12,7 +12,7 @@ import org.terasology.coresamplegameplay.equipment.ArmorComponent;
 import org.terasology.coresamplegameplay.equipment.CharacterStats;
 import org.terasology.coresamplegameplay.equipment.EquipmentSlots;
 import org.terasology.coresamplegameplay.food.HungerComponent;
-import org.terasology.cubeworlds.generator.CubeGeometry;
+import org.terasology.herocubeworlds.generator.CubeGeometry;
 import org.terasology.engine.context.Context;
 import org.terasology.engine.core.Time;
 import org.terasology.engine.entitySystem.entity.EntityManager;
