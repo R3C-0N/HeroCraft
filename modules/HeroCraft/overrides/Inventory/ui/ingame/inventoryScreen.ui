@@ -213,6 +213,39 @@
                         "id": "speed",
                         "family": "stat-value",
                         "text": ""
+                    },
+                    {
+                        "type": "UILabel",
+                        "family": "stat-label",
+                        "text": "Niveau"
+                    },
+                    {
+                        "type": "UILabel",
+                        "id": "level",
+                        "family": "stat-value",
+                        "text": ""
+                    },
+                    {
+                        "type": "UILabel",
+                        "family": "stat-label",
+                        "text": "Expérience"
+                    },
+                    {
+                        "type": "UILabel",
+                        "id": "experience",
+                        "family": "stat-value",
+                        "text": ""
+                    },
+                    {
+                        "type": "UILabel",
+                        "family": "stat-label",
+                        "text": "Points"
+                    },
+                    {
+                        "type": "UILabel",
+                        "id": "skillPoints",
+                        "family": "stat-value",
+                        "text": ""
                     }
                 ],
                 "layoutInfo": {
@@ -227,7 +260,7 @@
                         "offset": 286
                     },
                     "width": 240,
-                    "height": 96
+                    "height": 196
                 }
             },
             {
