@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "5*CoreAssets:CopperIngot",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "HeroEquipment:CopperPlateLeggings",
+        "station": "workbench",
+        "repair": [
+            "2*CoreAssets:CopperIngot"
+        ]
+    }
+}

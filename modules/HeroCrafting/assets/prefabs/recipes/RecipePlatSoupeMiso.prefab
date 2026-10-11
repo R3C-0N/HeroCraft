@@ -1,0 +1,12 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroSurvival:soja",
+            "1*HeroSurvival:riz",
+            "1*HeroSurvival:oignon",
+            "1*CoreAssets:Coal|CoreAssets:Plank"
+        ],
+        "result": "HeroSurvival:soupeMiso",
+        "station": "furnace"
+    }
+}

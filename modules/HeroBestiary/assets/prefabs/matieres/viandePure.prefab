@@ -1,0 +1,15 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Viande pure de cerf de cristal",
+        "description": "Se mange au clic droit. Rassasie de 14, de 35 une fois cuite au fourneau."
+    },
+    "Item": {
+        "icon": "HeroBestiary:butin#viandePure",
+        "stackId": "HeroBestiary:viandePure",
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 14
+    }
+}

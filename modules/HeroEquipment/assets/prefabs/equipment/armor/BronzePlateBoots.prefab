@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Solerets de bronze"
+    },
+    "Item": {
+        "icon": "HeroEquipment:BronzePlateBoots",
+        "stackId": "HeroEquipment:BronzePlateBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "feet",
+        "protection": 6
+    },
+    "Durability": {
+        "durability": 500,
+        "maxDurability": 500
+    }
+}

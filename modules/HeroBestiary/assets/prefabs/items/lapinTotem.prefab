@@ -1,0 +1,16 @@
+{
+  "parent": "engine:iconItem",
+  "DisplayName": {
+    "name": "Totem : lapin",
+    "description": "Posé au sol, fait apparaître un lapin."
+  },
+  "Item": {
+    "icon": "HeroBestiary:lapinIcone",
+    "stackId": "HeroBestiary:lapinTotem",
+    "maxStackSize": 16,
+    "consumedOnUse": true
+  },
+  "Spawner": {
+    "creature": "HeroBestiary:lapin"
+  }
+}

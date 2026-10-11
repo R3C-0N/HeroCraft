@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Trousse d'adamantine"
+    },
+    "Item": {
+        "icon": "HeroEquipment:AdamantineTinkerKit",
+        "stackId": "HeroEquipment:AdamantineTinkerKit",
+        "maxStackSize": 1,
+        "baseDamage": 8,
+        "cooldownTime": 360
+    },
+    "Weapon": {
+        "type": "engineerKit",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 0.7
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

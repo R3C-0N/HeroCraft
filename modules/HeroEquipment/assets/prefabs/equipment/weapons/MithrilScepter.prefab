@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Sceptre de mithril"
+    },
+    "Item": {
+        "icon": "HeroEquipment:MithrilScepter",
+        "stackId": "HeroEquipment:MithrilScepter",
+        "maxStackSize": 1,
+        "baseDamage": 11,
+        "cooldownTime": 225
+    },
+    "Weapon": {
+        "type": "healingScepter",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

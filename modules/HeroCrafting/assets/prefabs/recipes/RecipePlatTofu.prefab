@@ -1,0 +1,8 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "2*HeroSurvival:soja"
+        ],
+        "result": "HeroSurvival:tofu"
+    }
+}

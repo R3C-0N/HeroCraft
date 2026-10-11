@@ -1,0 +1,10 @@
+{
+    "basedOn": "CoreAssets:plant",
+    "displayName": "Carotte — mûr",
+    "tile": "HeroSurvival:CarotteStade4",
+    "entity": {
+        "prefab": "HeroSurvival:CarotteStade4Entity",
+        "keepActive": true
+    },
+    "waving": true
+}

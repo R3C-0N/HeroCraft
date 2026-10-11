@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Trousse de mithril"
+    },
+    "Item": {
+        "icon": "HeroEquipment:MithrilTinkerKit",
+        "stackId": "HeroEquipment:MithrilTinkerKit",
+        "maxStackSize": 1,
+        "baseDamage": 7,
+        "cooldownTime": 225
+    },
+    "Weapon": {
+        "type": "engineerKit",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 0.7
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

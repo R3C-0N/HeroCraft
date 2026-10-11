@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "2*CoreAssets:EtheriumAdamantineIngot",
+            "1*CoreAssets:Stick"
+        ],
+        "result": "HeroEquipment:EtheriumAdamantineDagger",
+        "station": "ultimateforge",
+        "repair": [
+            "1*CoreAssets:EtheriumAdamantineIngot"
+        ]
+    }
+}

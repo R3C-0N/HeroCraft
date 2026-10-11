@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Totem de fer"
+    },
+    "Item": {
+        "icon": "HeroEquipment:IronTotem",
+        "stackId": "HeroEquipment:IronTotem",
+        "maxStackSize": 1,
+        "baseDamage": 10,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "totem",
+        "hands": 2
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

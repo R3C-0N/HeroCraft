@@ -1,0 +1,15 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Graines de carotte"
+    },
+    "Item": {
+        "icon": "HeroSurvival:agriculture#grainesCarotte",
+        "stackId": "HeroSurvival:grainesCarotte",
+        "maxStackSize": 99,
+        "consumedOnUse": true
+    },
+    "Seed": {
+        "plant": "HeroSurvival:CarotteStade1"
+    }
+}

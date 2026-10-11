@@ -1,0 +1,15 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Viande crue de cerf",
+        "description": "Se mange au clic droit. Rassasie de 12, de 30 une fois cuite au fourneau."
+    },
+    "Item": {
+        "icon": "HeroBestiary:butin#viandeCerf",
+        "stackId": "HeroBestiary:viandeCerf",
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 12
+    }
+}

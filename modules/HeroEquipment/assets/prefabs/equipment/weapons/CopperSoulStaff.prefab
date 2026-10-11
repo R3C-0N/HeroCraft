@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bâton d'âmes de cuivre"
+    },
+    "Item": {
+        "icon": "HeroEquipment:CopperSoulStaff",
+        "stackId": "HeroEquipment:CopperSoulStaff",
+        "maxStackSize": 1,
+        "baseDamage": 5,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "soulStaff",
+        "hands": 2
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 300,
+        "maxDurability": 300
+    }
+}

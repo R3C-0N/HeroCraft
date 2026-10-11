@@ -1,0 +1,16 @@
+{
+  "parent": "engine:iconItem",
+  "DisplayName": {
+    "name": "Totem : sanglier",
+    "description": "Posé au sol, fait apparaître un sanglier."
+  },
+  "Item": {
+    "icon": "HeroBestiary:sanglierIcone",
+    "stackId": "HeroBestiary:sanglierTotem",
+    "maxStackSize": 16,
+    "consumedOnUse": true
+  },
+  "Spawner": {
+    "creature": "HeroBestiary:sanglier"
+  }
+}

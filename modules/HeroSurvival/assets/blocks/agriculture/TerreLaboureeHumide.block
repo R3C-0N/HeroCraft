@@ -1,0 +1,12 @@
+{
+    "basedOn": "CoreAssets:soil",
+    "displayName": "Terre labourée humide",
+    "tile": "CoreAssets:Dirt",
+    "tiles": {
+        "top": "HeroSurvival:TerreLaboureeHumide"
+    },
+    "entity": {
+        "prefab": "HeroSurvival:TerreLaboureeEntity",
+        "keepActive": true
+    }
+}

@@ -1,0 +1,11 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Soja"
+    },
+    "Item": {
+        "icon": "HeroSurvival:plats#soja",
+        "stackId": "HeroSurvival:soja",
+        "maxStackSize": 99
+    }
+}

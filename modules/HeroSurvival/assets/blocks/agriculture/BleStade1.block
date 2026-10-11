@@ -1,0 +1,10 @@
+{
+    "basedOn": "CoreAssets:plant",
+    "displayName": "Blé — semis",
+    "tile": "HeroSurvival:BleStade1",
+    "entity": {
+        "prefab": "HeroSurvival:BleStade1Entity",
+        "keepActive": true
+    },
+    "waving": true
+}

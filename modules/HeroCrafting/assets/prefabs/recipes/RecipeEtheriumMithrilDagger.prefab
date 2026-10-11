@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "2*CoreAssets:EtheriumMithrilIngot",
+            "1*CoreAssets:Stick"
+        ],
+        "result": "HeroEquipment:EtheriumMithrilDagger",
+        "station": "ultimateforge",
+        "repair": [
+            "1*CoreAssets:EtheriumMithrilIngot"
+        ]
+    }
+}

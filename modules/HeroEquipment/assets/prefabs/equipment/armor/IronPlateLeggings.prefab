@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Grèves de fer"
+    },
+    "Item": {
+        "icon": "HeroEquipment:IronPlateLeggings",
+        "stackId": "HeroEquipment:IronPlateLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "legs",
+        "protection": 14
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

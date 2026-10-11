@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Couteau en acier"
+    },
+    "Item": {
+        "icon": "HeroEquipment:SteelKnife",
+        "stackId": "HeroEquipment:SteelKnife",
+        "maxStackSize": 1,
+        "baseDamage": 6
+    },
+    "Tool": {
+        "family": "knife",
+        "grade": 5
+    },
+    "Depeceur": {},
+    "Durability": {
+        "durability": 2000,
+        "maxDurability": 2000
+    }
+}

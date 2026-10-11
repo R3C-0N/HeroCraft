@@ -1,0 +1,13 @@
+{
+    "Network": {},
+    "Crop": {
+        "next": "",
+        "seed": "HeroSurvival:grainesCarotte"
+    },
+    "DropGrammar": {
+        "itemDrops": [
+            "1-3*HeroSurvival:carotte",
+            "1-2*HeroSurvival:grainesCarotte"
+        ]
+    }
+}

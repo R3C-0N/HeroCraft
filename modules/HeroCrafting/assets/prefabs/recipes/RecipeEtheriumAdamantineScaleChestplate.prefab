@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "11*CoreAssets:EtheriumAdamantineIngot",
+            "2*CoreAssets:Rope"
+        ],
+        "result": "HeroEquipment:EtheriumAdamantineScaleChestplate",
+        "station": "ultimateforge",
+        "repair": [
+            "4*CoreAssets:EtheriumAdamantineIngot"
+        ]
+    }
+}

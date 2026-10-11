@@ -1,0 +1,11 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Blé"
+    },
+    "Item": {
+        "icon": "HeroSurvival:plats#ble",
+        "stackId": "HeroSurvival:ble",
+        "maxStackSize": 99
+    }
+}

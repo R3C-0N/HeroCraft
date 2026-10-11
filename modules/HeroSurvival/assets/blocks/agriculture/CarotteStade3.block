@@ -1,0 +1,10 @@
+{
+    "basedOn": "CoreAssets:plant",
+    "displayName": "Carotte — plant",
+    "tile": "HeroSurvival:CarotteStade3",
+    "entity": {
+        "prefab": "HeroSurvival:CarotteStade3Entity",
+        "keepActive": true
+    },
+    "waving": true
+}

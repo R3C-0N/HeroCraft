@@ -1,0 +1,11 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroSurvival:carotte",
+            "1*HeroBestiary:viandeLapin",
+            "1*CoreAssets:Coal|CoreAssets:Plank"
+        ],
+        "result": "HeroSurvival:lapinAuxCarottes",
+        "station": "furnace"
+    }
+}

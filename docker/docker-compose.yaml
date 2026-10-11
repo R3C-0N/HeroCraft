@@ -32,7 +32,7 @@ services:
       # Software rendering: give it the cores, it has nothing else.
       - SCREEN=${SCREEN:-1600x900x24}
       - LP_NUM_THREADS=${LP_NUM_THREADS:-8}
-      - WORLD_GENERATOR=${WORLD_GENERATOR:-CubeWorlds:cubeworld}
+      - WORLD_GENERATOR=${WORLD_GENERATOR:-HeroCubeWorlds:cubeworld}
       - GAME_ARGS=${GAME_ARGS:-}
 
     # No expose and no ports: the proxy reaches the container over the network it shares with it,

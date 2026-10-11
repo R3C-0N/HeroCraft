@@ -1,0 +1,14 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroEquipment:CopperTotem",
+            "3*CoreAssets:BronzeIngot",
+            "2*CoreAssets:Fibre"
+        ],
+        "result": "HeroEquipment:BronzeTotem",
+        "station": "workbench",
+        "repair": [
+            "1*CoreAssets:BronzeIngot"
+        ]
+    }
+}

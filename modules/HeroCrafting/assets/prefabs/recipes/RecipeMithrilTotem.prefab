@@ -1,0 +1,14 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroEquipment:SteelTotem",
+            "3*CoreAssets:MithrilIngot",
+            "2*CoreAssets:Fibre"
+        ],
+        "result": "HeroEquipment:MithrilTotem",
+        "station": "astralforge",
+        "repair": [
+            "1*CoreAssets:MithrilIngot"
+        ]
+    }
+}

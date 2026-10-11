@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Heaume de fer"
+    },
+    "Item": {
+        "icon": "HeroEquipment:IronPlateHelmet",
+        "stackId": "HeroEquipment:IronPlateHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "head",
+        "protection": 10
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

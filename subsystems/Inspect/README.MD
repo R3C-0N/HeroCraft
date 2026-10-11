@@ -135,7 +135,7 @@ Une ligne par image, une par événement :
 
 ```
 f 5.921 P 5.780,37.210,24.140 -134.5 20.0 currentHealth=100.00 | 1378568 4.114,37.006,22.505 45.5 currentHealth=34.00
-ev 5.921 use item=CoreSampleGameplay:FlintKnife cooldown=0.200
+ev 5.921 use item=HeroEquipment:FlintKnife cooldown=0.200
 ev 5.921 probe 1378568 currentHealth 34.00->32.00
 ev 5.921 flag 1378568 +Recul
 ev 6.341 flag 1378568 -Recul

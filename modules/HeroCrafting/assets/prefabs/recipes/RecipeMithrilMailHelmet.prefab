@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "4*CoreAssets:MithrilIngot",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "HeroEquipment:MithrilMailHelmet",
+        "station": "astralforge",
+        "repair": [
+            "1*CoreAssets:MithrilIngot"
+        ]
+    }
+}

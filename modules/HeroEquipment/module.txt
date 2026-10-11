@@ -1,0 +1,30 @@
+{
+    "id": "HeroEquipment",
+    "version": "1.0.0",
+    "author": "R3C-0N",
+    "displayName": "HeroCraft — équipement",
+    "description": "Outils, armes et armures : les emplacements, les grades de récolte, le grattage, l'usure et la réparation.",
+    "dependencies": [
+        {
+            "id": "HeroCommon",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "CoreAssets",
+            "minVersion": "2.0.0"
+        },
+        {
+            "id": "Durability",
+            "minVersion": "1.1.0"
+        },
+        {
+            "id": "Health",
+            "minVersion": "2.0.0-SNAPSHOT"
+        },
+        {
+            "id": "Inventory",
+            "minVersion": "1.2.1"
+        }
+    ],
+    "serverSideOnly": false
+}

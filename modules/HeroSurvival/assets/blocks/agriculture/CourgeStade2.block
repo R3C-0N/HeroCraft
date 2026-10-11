@@ -1,0 +1,10 @@
+{
+    "basedOn": "CoreAssets:plant",
+    "displayName": "Courge — jeune pousse",
+    "tile": "HeroSurvival:CourgeStade2",
+    "entity": {
+        "prefab": "HeroSurvival:CourgeStade2Entity",
+        "keepActive": true
+    },
+    "waving": true
+}

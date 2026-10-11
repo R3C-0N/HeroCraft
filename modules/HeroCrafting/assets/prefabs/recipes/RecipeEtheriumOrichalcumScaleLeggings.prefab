@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "8*CoreAssets:EtheriumOrichalcumIngot",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "HeroEquipment:EtheriumOrichalcumScaleLeggings",
+        "station": "ultimateforge",
+        "repair": [
+            "3*CoreAssets:EtheriumOrichalcumIngot"
+        ]
+    }
+}

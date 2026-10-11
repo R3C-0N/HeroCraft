@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Couteau en cuivre"
+    },
+    "Item": {
+        "icon": "HeroEquipment:CopperKnife",
+        "stackId": "HeroEquipment:CopperKnife",
+        "maxStackSize": 1,
+        "baseDamage": 3
+    },
+    "Tool": {
+        "family": "knife",
+        "grade": 2
+    },
+    "Depeceur": {},
+    "Durability": {
+        "durability": 300,
+        "maxDurability": 300
+    }
+}

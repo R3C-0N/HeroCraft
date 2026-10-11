@@ -1,0 +1,15 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Viande crue de vache",
+        "description": "Se mange au clic droit. Rassasie de 16, de 40 une fois cuite au fourneau."
+    },
+    "Item": {
+        "icon": "HeroBestiary:butin#viandeVache",
+        "stackId": "HeroBestiary:viandeVache",
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 16
+    }
+}

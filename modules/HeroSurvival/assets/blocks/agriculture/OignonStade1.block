@@ -1,0 +1,10 @@
+{
+    "basedOn": "CoreAssets:plant",
+    "displayName": "Oignon — semis",
+    "tile": "HeroSurvival:OignonStade1",
+    "entity": {
+        "prefab": "HeroSurvival:OignonStade1Entity",
+        "keepActive": true
+    },
+    "waving": true
+}

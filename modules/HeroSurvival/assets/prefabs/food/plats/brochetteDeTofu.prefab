@@ -1,0 +1,16 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Brochette de tofu",
+        "description": "Se mange au clic droit. Rassasie de 40."
+    },
+    "Item": {
+        "icon": "HeroSurvival:plats#brochetteDeTofu",
+        "stackId": "HeroSurvival:brochetteDeTofu",
+        "maxStackSize": 99,
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 40
+    }
+}

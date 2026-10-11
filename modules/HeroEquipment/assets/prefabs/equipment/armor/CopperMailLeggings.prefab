@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Braies de cuivre"
+    },
+    "Item": {
+        "icon": "HeroEquipment:CopperMailLeggings",
+        "stackId": "HeroEquipment:CopperMailLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "legs",
+        "protection": 5
+    },
+    "Durability": {
+        "durability": 300,
+        "maxDurability": 300
+    }
+}

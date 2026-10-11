@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "2*CoreAssets:SteelIngot",
+            "2*CoreAssets:Stick"
+        ],
+        "result": "HeroEquipment:SteelHoe",
+        "station": "workbench",
+        "repair": [
+            "1*CoreAssets:SteelIngot"
+        ]
+    }
+}

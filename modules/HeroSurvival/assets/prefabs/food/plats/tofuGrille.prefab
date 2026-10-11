@@ -1,0 +1,16 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Tofu grillé",
+        "description": "Se mange au clic droit. Rassasie de 30."
+    },
+    "Item": {
+        "icon": "HeroSurvival:plats#tofuGrille",
+        "stackId": "HeroSurvival:tofuGrille",
+        "maxStackSize": 99,
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 30
+    }
+}

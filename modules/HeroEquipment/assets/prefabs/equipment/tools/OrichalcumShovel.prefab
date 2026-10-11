@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Pelle en orichalque"
+    },
+    "Item": {
+        "icon": "HeroEquipment:OrichalcumShovel",
+        "stackId": "HeroEquipment:OrichalcumShovel",
+        "maxStackSize": 1,
+        "baseDamage": 7,
+        "damageType": "CoreAssets:shovelTier4Damage"
+    },
+    "Tool": {
+        "family": "shovel",
+        "grade": 6
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

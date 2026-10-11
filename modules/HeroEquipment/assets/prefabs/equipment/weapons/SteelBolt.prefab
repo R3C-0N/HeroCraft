@@ -1,0 +1,16 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Carreau d'acier"
+    },
+    "Item": {
+        "icon": "HeroEquipment:SteelBolt",
+        "stackId": "HeroEquipment:SteelBolt",
+        "maxStackSize": 99,
+        "baseDamage": 9
+    },
+    "Weapon": {
+        "type": "bolt",
+        "hands": 0
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Casque en rondins"
+    },
+    "Item": {
+        "icon": "HeroEquipment:LogHelmet",
+        "stackId": "HeroEquipment:LogHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "head",
+        "protection": 3
+    },
+    "Durability": {
+        "durability": 80,
+        "maxDurability": 80
+    }
+}

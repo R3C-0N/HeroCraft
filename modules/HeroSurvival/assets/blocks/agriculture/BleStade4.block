@@ -1,0 +1,10 @@
+{
+    "basedOn": "CoreAssets:plant",
+    "displayName": "Blé — mûr",
+    "tile": "HeroSurvival:BleStade4",
+    "entity": {
+        "prefab": "HeroSurvival:BleStade4Entity",
+        "keepActive": true
+    },
+    "waving": true
+}

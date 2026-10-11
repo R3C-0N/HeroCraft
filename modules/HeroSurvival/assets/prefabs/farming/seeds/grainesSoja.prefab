@@ -1,0 +1,15 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Graines de soja"
+    },
+    "Item": {
+        "icon": "HeroSurvival:agriculture#grainesSoja",
+        "stackId": "HeroSurvival:grainesSoja",
+        "maxStackSize": 99,
+        "consumedOnUse": true
+    },
+    "Seed": {
+        "plant": "HeroSurvival:SojaStade1"
+    }
+}

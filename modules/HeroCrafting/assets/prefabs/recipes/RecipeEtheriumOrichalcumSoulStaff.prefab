@@ -1,0 +1,14 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroEquipment:MithrilSoulStaff|HeroEquipment:OrichalcumSoulStaff|HeroEquipment:AdamantineSoulStaff",
+            "3*CoreAssets:EtheriumOrichalcumIngot",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "HeroEquipment:EtheriumOrichalcumSoulStaff",
+        "station": "ultimateforge",
+        "repair": [
+            "1*CoreAssets:EtheriumOrichalcumIngot"
+        ]
+    }
+}

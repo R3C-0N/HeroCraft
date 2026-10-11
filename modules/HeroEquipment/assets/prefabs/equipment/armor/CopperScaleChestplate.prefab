@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Brigandine de cuivre"
+    },
+    "Item": {
+        "icon": "HeroEquipment:CopperScaleChestplate",
+        "stackId": "HeroEquipment:CopperScaleChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "chest",
+        "protection": 9
+    },
+    "Durability": {
+        "durability": 300,
+        "maxDurability": 300
+    }
+}
