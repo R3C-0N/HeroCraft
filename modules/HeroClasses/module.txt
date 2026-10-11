@@ -6,6 +6,10 @@
     "description": "La progression du personnage : l'expérience gagnée sur les bêtes hostiles, les niveaux sans plafond et les points de compétence qu'ils rapportent.",
     "dependencies": [
         {
+            "id": "HeroCommon",
+            "minVersion": "1.0.0"
+        },
+        {
             "id": "HeroBestiary",
             "minVersion": "1.0.0"
         },
