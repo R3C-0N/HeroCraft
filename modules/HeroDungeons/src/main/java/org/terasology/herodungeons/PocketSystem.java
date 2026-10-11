@@ -218,15 +218,15 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
         Block pillar = blockManager.getBlock("CoreAssets:Brick");
         Map<Vector3ic, Block> blocks = new HashMap<>();
         for (Vector3ic pos : PocketRoom.box(centre)) {
-            Block block = air;
-            if (build) {
-                switch (PocketRoom.at(pos.x() - centre.x(), pos.y() - centre.y(), pos.z() - centre.z())) {
-                    case FLOOR -> block = floor;
-                    case WALL -> block = wall;
-                    case PILLAR -> block = pillar;
-                    default -> block = air;
-                }
-            }
+            PocketRoom.Kind kind = build
+                    ? PocketRoom.at(pos.x() - centre.x(), pos.y() - centre.y(), pos.z() - centre.z())
+                    : PocketRoom.Kind.AIR;
+            Block block = switch (kind) {
+                case FLOOR -> floor;
+                case WALL -> wall;
+                case PILLAR -> pillar;
+                case AIR -> air;
+            };
             blocks.put(new Vector3i(pos), block);
         }
         return blocks;
