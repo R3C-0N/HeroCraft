@@ -1,0 +1,18 @@
+{
+    "id": "HeroDungeons",
+    "version": "1.0.0",
+    "author": "R3C-0N",
+    "displayName": "HeroCraft — donjons",
+    "description": "Le passé des ruines : les poches où se jouent les donjons, logées dans les cases mortes du patron du cube.",
+    "dependencies": [
+        {
+            "id": "HeroCubeWorlds",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "CoreAssets",
+            "minVersion": "2.0.0"
+        }
+    ],
+    "serverSideOnly": false
+}

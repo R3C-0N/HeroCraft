@@ -18,6 +18,7 @@ d'upstream, qui ne reçoivent que des correctifs.
 | `HeroBestiary` | créatures, apparition, recul, dépeçage, viandes | né du fork (ex-`Bestiaire`) |
 | `HeroCreative` | le mode créatif complet, et le gameplay qui démarre en créatif | né du fork (ex-`CreativeGameplay`, plus le créatif de `CoreSampleGameplay`) |
 | `HeroCubeWorlds` | monde-cube rendu en sphère, terrain lointain | né du fork (ex-`CubeWorlds`) ; importé de `CubeWorlds-Evolve` à `cc70066` |
+| `HeroDungeons` | le passé des ruines : les poches où se jouent les donjons, une par case morte du patron du cube | né du fork |
 | `CoreRendering` | passes de rendu, ouvertes au monde courbe | fork de `Terasology/CoreRendering` ; importé à `6961156` |
 | `CoreWorlds` | générateurs plats et biomes de base | fork de `Terasology/CoreWorlds` ; importé à `e43e41a` |
 | `CoreAssets` | blocs et textures de base | fork de `Terasology/CoreAssets` ; importé à `0ee3169` |
@@ -29,8 +30,10 @@ dépend de `A`) :
 
 ```
 HeroCommon ← HeroEquipment ← HeroSurvival ← HeroBestiary ← HeroCrafting ← HeroCraft ← HeroCreative
-                               ↑                                            ↑
-                         HeroCubeWorlds ────────────────────────────────────┘
+                               ↑                                            ↑ ↑
+                         HeroCubeWorlds ────────────────────────────────────┘ │
+                               ↑                                              │
+                         HeroDungeons ────────────────────────────────────────┘
 ```
 
 Un système qui a besoin d'un module placé plus à droite n'a pas sa place

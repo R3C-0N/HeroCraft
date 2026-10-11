@@ -41,6 +41,9 @@ const vec3 SPHERE_NORMAL[SPHERE_FACES] = vec3[SPHERE_FACES](
 const vec2 SPHERE_PATTERN[SPHERE_FACES] = vec2[SPHERE_FACES](
     vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(2.0, 1.0), vec2(3.0, 1.0), vec2(1.0, 2.0), vec2(1.0, 0.0));
 
+// Where a vertex that must not be seen is sent: far below the focus, past any far plane.
+const float SPHERE_EXILE = 1.0e7;
+
 // Which face a world column belongs to, and where inside it. Returns -1 for a dead slot.
 int sphereFaceOf(vec2 column, out vec2 local) {
     vec2 slot = floor(column / sphereFaceEdge);
@@ -88,6 +91,15 @@ mat3 sphereFrameAbs(vec3 worldPos);
 // tangential directions by that factor while leaving the radial one alone, and a block would stop
 // being cubic; scaling the height makes the deformation a local similarity instead.
 vec3 sphereCurvedPos(vec3 worldPos) {
+    vec2 local;
+    bool hereDead = sphereFaceOf(worldPos.xz, local) < 0;
+    bool focusDead = sphereFaceOf(sphereFocus.xz, local) < 0;
+    // A pocket: the dead slots of the net hold the instances of the past, and they are flat. Seen
+    // from inside one, they are drawn as they are stored; anything on the other side of the line,
+    // planet seen from a pocket or pocket seen from the planet, is sent out of every frustum.
+    if (hereDead || focusDead) {
+        return hereDead && focusDead ? worldPos - sphereFocus : vec3(0.0, -SPHERE_EXILE, 0.0);
+    }
     vec4 here = sphereDirection(worldPos.xz);
     vec4 origin = sphereDirection(sphereFocus.xz);
     float r = sphereRadius + here.w * (worldPos.y - sphereReferenceHeight);
@@ -105,6 +117,12 @@ vec3 sphereCurvedPos(vec3 worldPos) {
 // one by a reflection, determinant minus one. Nothing outside this file knows about planet space,
 // so nothing outside may see a vector expressed in it. Both users below bring it back.
 mat3 sphereFrameAbs(vec3 worldPos) {
+    vec2 local;
+    if (sphereFaceOf(worldPos.xz, local) < 0) {
+        // A pocket is flat, and its frame is the world's. Left to the differences below, a dead slot
+        // reads the same direction on every side and normalises a zero vector.
+        return mat3(1.0);
+    }
     float step = sphereFaceEdge / 256.0;
     vec3 up = sphereDirection(worldPos.xz).xyz;
     vec3 alongX = sphereDirection(worldPos.xz + vec2(step, 0.0)).xyz

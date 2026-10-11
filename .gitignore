@@ -37,6 +37,7 @@ extensions
 !/modules/HeroCrafting
 !/modules/HeroCreative
 !/modules/HeroCubeWorlds
+!/modules/HeroDungeons
 !/modules/HeroEquipment
 !/modules/HeroSurvival
 /metas/*
