@@ -6,6 +6,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.terasology.herocrafting.RecipeBook;
 import org.terasology.herocrafting.RecipeView;
+import org.terasology.heroclasses.ExperienceComponent;
+import org.terasology.heroclasses.Progression;
 import org.terasology.heroequipment.CharacterStats;
 import org.terasology.heroequipment.EquipmentSlots;
 import org.terasology.engine.entitySystem.entity.EntityRef;
@@ -86,6 +88,10 @@ public class CharacterScreen extends CoreScreenLayer {
         bindText("attack", () -> String.valueOf(CharacterStats.attack(character())));
         bindText("defense", () -> String.valueOf(CharacterStats.defense(character())));
         bindText("speed", () -> String.format(Locale.FRANCE, "%.1f", CharacterStats.attackSpeed(character())));
+        bindText("level", () -> String.valueOf(experience().level));
+        bindText("experience", () -> experience().experience + " / "
+                + Progression.experienceFor(experience().level + 1));
+        bindText("skillPoints", () -> String.valueOf(experience().skillPoints));
         bindText("heroName", this::heroName);
 
         recipes = find("recipes", UIList.class);
@@ -138,6 +144,12 @@ public class CharacterScreen extends CoreScreenLayer {
                 return text.get();
             }
         });
+    }
+
+    /** A character without the component reads as a fresh one rather than as a blank line. */
+    private ExperienceComponent experience() {
+        ExperienceComponent component = character().getComponent(ExperienceComponent.class);
+        return component == null ? new ExperienceComponent() : component;
     }
 
     private String heroName() {

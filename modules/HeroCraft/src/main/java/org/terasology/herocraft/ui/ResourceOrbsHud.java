@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.terasology.herocraft.ui;
 
+import org.terasology.heroclasses.ExperienceComponent;
+import org.terasology.heroclasses.Progression;
 import org.terasology.herosurvival.food.HungerComponent;
 import org.terasology.engine.logic.players.LocalPlayer;
 import org.terasology.engine.registry.In;
@@ -13,7 +15,8 @@ import java.util.function.Function;
 
 /**
  * Replaces the row of hearts through an override of {@code Health:healthHud}. Health and hunger are real; stamina
- * and mana do not exist yet, so their globes stand full rather than show a number that means nothing.
+ * and mana do not exist yet, so their globes stand full rather than show a number that means nothing. The
+ * experience rule above the toolbar lives here too: the toolbar's own layer belongs to {@code Inventory}.
  */
 public class ResourceOrbsHud extends CoreHudWidget {
     @In
@@ -28,6 +31,28 @@ public class ResourceOrbsHud extends CoreHudWidget {
         if (hunger != null) {
             hunger.bindValue(hungerBinding(component -> component.currentFood));
             hunger.bindMax(hungerBinding(component -> component.maxFood));
+        }
+        ExperienceBar experience = find("experience", ExperienceBar.class);
+        if (experience != null) {
+            experience.bindLevel(new ReadOnlyBinding<Integer>() {
+                @Override
+                public Integer get() {
+                    ExperienceComponent component = experience();
+                    return component == null ? 1 : component.level;
+                }
+            });
+            experience.bindProgress(new ReadOnlyBinding<Float>() {
+                @Override
+                public Float get() {
+                    ExperienceComponent component = experience();
+                    if (component == null) {
+                        return 0f;
+                    }
+                    long start = Progression.experienceFor(component.level);
+                    long end = Progression.experienceFor(component.level + 1);
+                    return (float) (component.experience - start) / (end - start);
+                }
+            });
         }
         for (String id : new String[]{"stamina", "mana"}) {
             ResourceOrb orb = find(id, ResourceOrb.class);
@@ -56,5 +81,9 @@ public class ResourceOrbsHud extends CoreHudWidget {
                 return component == null ? 0f : read.apply(component);
             }
         };
+    }
+
+    private ExperienceComponent experience() {
+        return localPlayer.getCharacterEntity().getComponent(ExperienceComponent.class);
     }
 }

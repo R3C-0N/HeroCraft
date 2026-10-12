@@ -14,6 +14,7 @@ d'upstream, qui ne reçoivent que des correctifs.
 | `HeroCommon` | ce que plusieurs modules lisent sans dépendre les uns des autres : le marqueur du mode créatif | né du fork |
 | `HeroEquipment` | outils, armes, armures, grades de récolte, grattage, usure et réparation | né du fork ; tiré de `CoreSampleGameplay` |
 | `HeroSurvival` | faim, nourriture et plats, agriculture, exposition, brûlure dans les liquides | né du fork ; tiré de `CoreSampleGameplay` |
+| `HeroClasses` | la progression du personnage : expérience gagnée sur les bêtes hostiles, niveaux sans plafond, points de compétence ; les compétences et leurs arbres viendront ici | né du fork |
 | `HeroCrafting` | stations, recettes, paliers, fourneau | né du fork ; tiré de `CoreSampleGameplay` |
 | `HeroBestiary` | créatures, apparition, recul, dépeçage, viandes | né du fork (ex-`Bestiaire`) |
 | `HeroCreative` | le mode créatif complet, et le gameplay qui démarre en créatif | né du fork (ex-`CreativeGameplay`, plus le créatif de `CoreSampleGameplay`) |
@@ -30,7 +31,8 @@ dépend de `A`) :
 
 ```
 HeroCommon ← HeroEquipment ← HeroSurvival ← HeroBestiary ← HeroCrafting ← HeroCraft ← HeroCreative
-                               ↑                                            ↑ ↑
+                               ↑                  ↑                         ↑ ↑
+                               │                  └─── HeroClasses ─────────┤ │
                          HeroCubeWorlds ────────────────────────────────────┘ │
                                ↑                                              │
                          HeroDungeons ────────────────────────────────────────┘
