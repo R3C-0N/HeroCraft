@@ -5,6 +5,7 @@ package org.terasology.herocubeworlds;
 import org.junit.jupiter.api.Test;
 import org.terasology.core.world.generator.facetProviders.SeaLevelProvider;
 import org.terasology.herocubeworlds.generator.CubeGeometry;
+import org.terasology.herocubeworlds.generator.CubeWorldGenerator;
 import org.terasology.herocubeworlds.generator.RuinCulture;
 import org.terasology.herocubeworlds.generator.RuinLattice;
 import org.terasology.herocubeworlds.generator.RuinShape;
@@ -40,7 +41,7 @@ class RuinCensusTest {
     @Test
     void ruinsStandOnDryFlatSettledGroundAndEveryChunkAgrees() {
         CubeGeometry geometry = CubeGeometry.createDefault();
-        CubeRuinProvider ruins = new CubeRuinProvider(geometry);
+        CubeRuinProvider ruins = new CubeRuinProvider(geometry, CubeWorldGenerator::columnProviders);
         WorldBuilder builder = new WorldBuilder(null)
                 .setSeaLevel(geometry.seaLevel())
                 .addProvider(new SeaLevelProvider(geometry.seaLevel()))
@@ -90,6 +91,9 @@ class RuinCensusTest {
                     highest = Math.max(highest, top);
                 }
             }
+            // The verdict is taken on a private copy of the column chain; this is the world's own.
+            assertEquals(CubeRuinProvider.topOf(elevation.getWorld(site.x(), site.z())), ruin.floorY(),
+                    "the ruin was judged on other ground than the world lays");
             assertTrue(lowest >= geometry.seaLevel() + CubeRuinProvider.DRY_MARGIN, "a ruin stands in the sea");
             assertTrue(highest - lowest <= CubeRuinProvider.MAX_RELIEF, "a ruin stands on a cliff");
         }

@@ -3,9 +3,9 @@
 package org.terasology.herocubeworlds;
 
 import org.joml.Vector3f;
-import org.terasology.herocubeworlds.generator.CubeGeometry;
 import org.terasology.herocubeworlds.generator.CubeWorldGenerator;
 import org.terasology.herocubeworlds.generator.RuinLattice;
+import org.terasology.herocubeworlds.generator.facetProviders.CubeRuinProvider;
 import org.terasology.herocubeworlds.generator.facets.RuinFacet;
 import org.terasology.engine.entitySystem.systems.BaseComponentSystem;
 import org.terasology.engine.entitySystem.systems.RegisterSystem;
@@ -15,8 +15,6 @@ import org.terasology.engine.logic.console.commandSystem.annotations.CommandPara
 import org.terasology.engine.logic.permission.PermissionManager;
 import org.terasology.engine.logic.players.LocalPlayer;
 import org.terasology.engine.registry.In;
-import org.terasology.engine.world.block.BlockRegion;
-import org.terasology.engine.world.generation.World;
 import org.terasology.engine.world.generator.WorldGenerator;
 
 import java.util.ArrayList;
@@ -29,8 +27,8 @@ import java.util.Locale;
  * Kept apart from {@code locateStructures}, which counts cave mouths tile by tile and is capped at
  * 256 blocks for the cost of the cave pass. A ruin is one candidate per cell of 640 blocks, so a scan
  * that short would come back empty most of the time; and it needs no cave pass at all — the verdict
- * reads only the elevation and the biome around the site, two cheap column facets. Asking every
- * candidate within two kilometres costs a few dozen of those.
+ * is the generator's own, taken once per site from the elevation and the biome over the footprint and
+ * remembered, so asking every candidate within two kilometres costs a few dozen small surveys.
  */
 @RegisterSystem
 public class CubeRuinCommands extends BaseComponentSystem {
@@ -55,31 +53,27 @@ public class CubeRuinCommands extends BaseComponentSystem {
             return "this world was not made by the cube generator, and only that one builds ruins";
         }
         CubeWorldGenerator generator = (CubeWorldGenerator) worldGenerator;
-        CubeGeometry geometry = generator.getGeometry();
-        RuinLattice lattice = generator.getRuinLattice();
+        CubeRuinProvider ruins = generator.getRuinProvider();
+        if (ruins.lattice() == null) {
+            return "the generator has not been seeded yet";
+        }
         int radius = radiusParam != null ? radiusParam : DEFAULT_RADIUS;
         if (radius < 1 || radius > MAX_RADIUS) {
             return "the radius runs from 1 to " + MAX_RADIUS + " blocks";
         }
 
-        World world = worldGenerator.getWorld();
         Vector3f eye = localPlayer.getPosition(new Vector3f());
         int px = Math.round(eye.x);
         int pz = Math.round(eye.z);
 
         int candidates = 0;
         List<RuinFacet.Ruin> found = new ArrayList<>();
-        for (RuinLattice.Site site : lattice.sitesNear(px, pz, px, pz, radius)) {
-            candidates++;
-            // The whole height of the world: the provider keeps only the ruins that reach the band
-            // asked for, and a one-block band would miss every ruin whose floor is not on it.
-            BlockRegion column = new BlockRegion(site.x(), geometry.floorY(), site.z())
-                    .setSize(1, geometry.ceilingY() - geometry.floorY() + 1, 1);
-            for (RuinFacet.Ruin ruin : world.getWorldData(column).getFacet(RuinFacet.class).getRuins()) {
-                if (ruin.site().x() == site.x() && ruin.site().z() == site.z()) {
-                    found.add(ruin);
-                }
+        for (RuinLattice.Site site : ruins.lattice().sitesNear(px, pz, px, pz, radius)) {
+            if (distance2(site, px, pz) > (long) radius * radius) {
+                continue;
             }
+            candidates++;
+            ruins.judge(site).ifPresent(found::add);
         }
         found.sort((a, b) -> Long.compare(distance2(a, px, pz), distance2(b, px, pz)));
 
@@ -97,8 +91,12 @@ public class CubeRuinCommands extends BaseComponentSystem {
     }
 
     private static long distance2(RuinFacet.Ruin ruin, int x, int z) {
-        long dx = ruin.site().x() - x;
-        long dz = ruin.site().z() - z;
+        return distance2(ruin.site(), x, z);
+    }
+
+    private static long distance2(RuinLattice.Site site, int x, int z) {
+        long dx = site.x() - x;
+        long dz = site.z() - z;
         return dx * dx + dz * dz;
     }
 }

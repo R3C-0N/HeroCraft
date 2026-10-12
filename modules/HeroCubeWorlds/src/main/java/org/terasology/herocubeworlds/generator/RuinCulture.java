@@ -20,7 +20,7 @@ public enum RuinCulture {
 
     TEMPERATE("CoreAssets:CobbleStone", "CoreAssets:Stone", "CoreAssets:HardStoneCut", "CoreAssets:Crystal",
             CoreBiome.PLAINS, CoreBiome.FOREST, CoreBiome.SWAMP),
-    ARID("CoreAssets:Brick", "CoreAssets:Brick", "CoreAssets:BrickWhitewashed", "CoreAssets:Crystal",
+    ARID("CoreAssets:Brick", "CoreAssets:FlintBrick", "CoreAssets:BrickWhitewashed", "CoreAssets:Crystal",
             CoreBiome.DESERT, CoreBiome.SAVANNA),
     BOREAL("CoreAssets:PackIce", "CoreAssets:HardStoneCut", "CoreAssets:Ice", "CoreAssets:Crystal",
             CoreBiome.SNOW, CoreBiome.TAIGA, CoreBiome.PACK_ICE, CoreBiome.ICE_SHELF),

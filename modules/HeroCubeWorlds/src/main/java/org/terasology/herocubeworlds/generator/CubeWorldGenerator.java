@@ -32,10 +32,13 @@ import org.terasology.engine.rendering.world.ChunkVisibilityPolicy;
 import org.terasology.herocubeworlds.rendering.CubeSphereProjection;
 import org.terasology.herocubeworlds.rendering.SphericalChunkVisibilityPolicy;
 import org.terasology.engine.world.generation.BaseFacetedWorldGenerator;
+import org.terasology.engine.world.generation.FacetProvider;
 import org.terasology.engine.world.generation.WorldBuilder;
 import org.terasology.engine.world.generator.PreviewCentered;
 import org.terasology.engine.world.generator.RegisterWorldGenerator;
 import org.terasology.engine.world.generator.plugin.WorldGeneratorPluginLibrary;
+
+import java.util.List;
 
 /**
  * A world laid out as the net of a cube.
@@ -73,7 +76,7 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator
         // coin toss on a world whose continents are a thousand blocks across, and on the first seed
         // ever played it came up ocean. CubeLandSpawner says why the stock one cannot be widened.
         spawner = new CubeLandSpawner(geometry, SPAWN_FACE);
-        ruinProvider = new CubeRuinProvider(geometry);
+        ruinProvider = new CubeRuinProvider(geometry, CubeWorldGenerator::columnProviders);
     }
 
     public CubeGeometry getGeometry() {
@@ -81,13 +84,12 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator
     }
 
     /**
-     * The candidate sites of the ruins, seeded as the chain seeded them: the chain hashes the seed
-     * string, and recomputing that elsewhere would be a second copy of a rule nobody owns.
-     *
-     * @return the lattice, or null before the world builder has been seeded
+     * The ruins, as the chain judges them: the same lattice, seeded as the chain seeded it, and the
+     * same remembered verdicts. The chain hashes the seed string, and recomputing that elsewhere
+     * would be a second copy of a rule nobody owns.
      */
-    public RuinLattice getRuinLattice() {
-        return ruinProvider.lattice();
+    public CubeRuinProvider getRuinProvider() {
+        return ruinProvider;
     }
 
     private CubeSphereProjection projection;
@@ -144,15 +146,29 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator
         return new Vector2i(centre[0], centre[1]);
     }
 
+    /**
+     * The head of the chain: everything that decides a column's ground and biome, and nothing in
+     * three dimensions. Built afresh at each call, because {@link CubeRuinProvider} runs a private
+     * copy of it to judge its sites, and a copy written out by hand would drift from the ground the
+     * world actually lays.
+     */
+    public static List<FacetProvider> columnProviders(CubeGeometry geometry) {
+        return List.of(
+                new SeaLevelProvider(geometry.seaLevel()),
+                new CubeSurfaceProvider(geometry),
+                new CubeClimateProvider(geometry),
+                new CubeRegionProvider(geometry),
+                new CubeBiomeProvider());
+    }
+
     @Override
     protected WorldBuilder createWorld() {
-        return new WorldBuilder(worldGeneratorPluginLibrary)
-                .setSeaLevel(geometry.seaLevel())
-                .addProvider(new SeaLevelProvider(geometry.seaLevel()))
-                .addProvider(new CubeSurfaceProvider(geometry))
-                .addProvider(new CubeClimateProvider(geometry))
-                .addProvider(new CubeRegionProvider(geometry))
-                .addProvider(new CubeBiomeProvider())
+        WorldBuilder builder = new WorldBuilder(worldGeneratorPluginLibrary)
+                .setSeaLevel(geometry.seaLevel());
+        for (FacetProvider provider : columnProviders(geometry)) {
+            builder.addProvider(provider);
+        }
+        return builder
                 .addProvider(new SurfaceToDensityProvider())
                 // After the density and the surfaces are produced, and before the flora reads
                 // them: the caves take surfaces away where they have eaten the ground, and a tree

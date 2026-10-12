@@ -9,22 +9,33 @@ import org.terasology.herocubeworlds.generator.RuinLattice;
 import org.terasology.herocubeworlds.generator.RuinShape;
 import org.terasology.herocubeworlds.generator.facets.RuinFacet;
 import org.terasology.engine.world.block.BlockRegion;
-import org.terasology.engine.world.generation.Facet;
-import org.terasology.engine.world.generation.FacetBorder;
 import org.terasology.engine.world.generation.FacetProvider;
 import org.terasology.engine.world.generation.GeneratingRegion;
 import org.terasology.engine.world.generation.Produces;
-import org.terasology.engine.world.generation.Requires;
+import org.terasology.engine.world.generation.Region;
+import org.terasology.engine.world.generation.World;
+import org.terasology.engine.world.generation.WorldBuilder;
 import org.terasology.engine.world.generation.facets.ElevationFacet;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 /**
  * Decides which candidate sites carry a ruin, and at what height.
  * <p>
  * <b>Every chunk a ruin touches must reach the same verdict</b>, or a ruin comes out cut in half
- * along a chunk line. The verdict therefore reads nothing but the elevation and the biome over the
- * whole footprint, two column facts that do not depend on the region asking; and the border asked
- * for is wide enough to see the whole footprint of any ruin that reaches the region — its centre may
- * lie {@link RuinShape#RADIUS} outside, and its far wall as much again.
+ * along a chunk line. So the verdict is not taken from the chunk's facets: it is taken once per
+ * site, from a private chain of the same column providers the world is made of, over the whole
+ * footprint, and remembered. A chunk then costs a few hashes and a lookup.
+ * <p>
+ * <b>Not by widening the borders of the chain.</b> That was the first version, and it was right and
+ * ruinous: asking the elevation and the biome fifteen blocks around every chunk makes the surface,
+ * the climate, the regions and the biome compute nearly four times their area for every chunk of the
+ * world, to serve one site in six hundred chunks. {@code ChainCostBreakdownTest} priced it at
+ * 6,5 ms a chunk, twice the caves.
  * <p>
  * <b>A site carries a ruin when the ground is dry, flat enough and settled.</b> Dry: every column of
  * the footprint stands {@link #DRY_MARGIN} over the sea, so the court never floods and the foundation
@@ -35,9 +46,6 @@ import org.terasology.engine.world.generation.facets.ElevationFacet;
  * Not a {@code ScalableFacetProvider}: a ruin is fifteen blocks across, under the resolution of the
  * distant terrain, and nobody walks into a level-of-detail cell.
  */
-@Requires({
-        @Facet(value = ElevationFacet.class, border = @FacetBorder(sides = CubeRuinProvider.REACH)),
-        @Facet(value = BiomeFacet.class, border = @FacetBorder(sides = CubeRuinProvider.REACH))})
 @Produces(RuinFacet.class)
 public class CubeRuinProvider implements FacetProvider {
 
@@ -47,19 +55,32 @@ public class CubeRuinProvider implements FacetProvider {
     /** Blocks between the highest and the lowest column of the footprint. */
     public static final int MAX_RELIEF = 6;
 
-    /** How far outside a region the facets must be read: a centre one radius out, its far wall another. */
-    static final int REACH = 2 * RuinShape.RADIUS + 1;
-
     private final CubeGeometry geometry;
+    private final Function<CubeGeometry, List<FacetProvider>> columnProviders;
+    private final Map<Long, Optional<RuinFacet.Ruin>> verdicts = new ConcurrentHashMap<>();
     private RuinLattice lattice;
+    private World columns;
 
-    public CubeRuinProvider(CubeGeometry geometry) {
+    /**
+     * @param columnProviders the providers of the elevation and the biome, built afresh: the same
+     *         list the world generator puts at the head of its chain, so that the ground judged is
+     *         the ground laid
+     */
+    public CubeRuinProvider(CubeGeometry geometry, Function<CubeGeometry, List<FacetProvider>> columnProviders) {
         this.geometry = geometry;
+        this.columnProviders = columnProviders;
     }
 
     @Override
     public void setSeed(long seed) {
         lattice = new RuinLattice(seed, geometry.faceBlocks());
+        WorldBuilder builder = new WorldBuilder(null).setSeaLevel(geometry.seaLevel());
+        for (FacetProvider provider : columnProviders.apply(geometry)) {
+            builder.addProvider(provider);
+        }
+        builder.setSeed(seed);
+        columns = builder.build();
+        verdicts.clear();
     }
 
     /** @return the candidate sites, or null before {@link #setSeed} */
@@ -71,28 +92,33 @@ public class CubeRuinProvider implements FacetProvider {
     public void process(GeneratingRegion region) {
         RuinFacet facet = new RuinFacet(region.getRegion(), region.getBorderForFacet(RuinFacet.class));
         BlockRegion area = region.getRegion();
-        ElevationFacet elevation = region.getRegionFacet(ElevationFacet.class);
-        BiomeFacet biomes = region.getRegionFacet(BiomeFacet.class);
-
         for (RuinLattice.Site site : lattice.sitesNear(area.minX(), area.minZ(), area.maxX(), area.maxZ(),
                 RuinShape.RADIUS)) {
-            RuinFacet.Ruin ruin = judge(site, elevation, biomes);
-            if (ruin != null && reaches(ruin, area)) {
-                facet.add(ruin);
-            }
+            judge(site).filter(ruin -> reaches(ruin, area)).ifPresent(facet::add);
         }
         region.setRegionFacet(RuinFacet.class, facet);
     }
 
-    private RuinFacet.Ruin judge(RuinLattice.Site site, ElevationFacet elevation, BiomeFacet biomes) {
+    /** The verdict on a site, taken once and remembered: the same answer for every chunk that asks. */
+    public Optional<RuinFacet.Ruin> judge(RuinLattice.Site site) {
+        long key = ((long) site.x() << 32) ^ (site.z() & 0xffffffffL);
+        return verdicts.computeIfAbsent(key, k -> Optional.ofNullable(survey(site)));
+    }
+
+    private RuinFacet.Ruin survey(RuinLattice.Site site) {
+        int r = RuinShape.RADIUS;
+        Region footprint = columns.getWorldData(new BlockRegion(site.x() - r, geometry.seaLevel(), site.z() - r)
+                .setSize(2 * r + 1, 1, 2 * r + 1));
+        BiomeFacet biomes = footprint.getFacet(BiomeFacet.class);
         RuinCulture culture = RuinCulture.of(biomes.getWorld(site.x(), site.z()));
         if (culture == null) {
             return null;
         }
+        ElevationFacet elevation = footprint.getFacet(ElevationFacet.class);
         int lowest = Integer.MAX_VALUE;
         int highest = Integer.MIN_VALUE;
-        for (int dz = -RuinShape.RADIUS; dz <= RuinShape.RADIUS; dz++) {
-            for (int dx = -RuinShape.RADIUS; dx <= RuinShape.RADIUS; dx++) {
+        for (int dz = -r; dz <= r; dz++) {
+            for (int dx = -r; dx <= r; dx++) {
                 int top = topOf(elevation.getWorld(site.x() + dx, site.z() + dz));
                 lowest = Math.min(lowest, top);
                 highest = Math.max(highest, top);
