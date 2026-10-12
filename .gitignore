@@ -32,6 +32,7 @@ extensions
 !/modules/Minimap
 !/modules/WorkstationCrafting
 !/modules/HeroBestiary
+!/modules/HeroClasses
 !/modules/HeroCommon
 !/modules/HeroCraft
 !/modules/HeroCrafting

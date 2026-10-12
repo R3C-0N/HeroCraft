@@ -5,6 +5,19 @@
         "type": "relativeLayout",
         "contents": [
             {
+                "type": "HeroCraft:ExperienceBar",
+                "id": "experience",
+                "layoutInfo": {
+                    "width": 516,
+                    "use-content-height": true,
+                    "position-horizontal-center": {},
+                    "position-bottom": {
+                        "target": "BOTTOM",
+                        "offset": 74
+                    }
+                }
+            },
+            {
                 "type": "HeroCraft:ResourceOrb",
                 "id": "mana",
                 "kind": "mana",
