@@ -16,11 +16,11 @@ import org.terasology.nui.Colorc;
  */
 public enum Preset {
     MINIMAL("minimal", SettingsPalette.SUCCESS, medium()
-            .fboScale(50).fieldOfView(80).viewDistance(ViewDistance.LEGALLY_BLIND).chunkLods(0).billboardLimit(16)
+            .fboScale(50).fieldOfView(80).viewDistance(ViewDistance.LEGALLY_BLIND).chunkLods(1).billboardLimit(16)
             .shadows(DynamicShadows.OFF).reflections(WaterReflection.SKY).bloom(false).lightShafts(false)
             .normalMapping(false).cloudShadows(false).animate(false)),
     LOW("low", SettingsPalette.SUCCESS, medium()
-            .fboScale(75).viewDistance(ViewDistance.NEAR).chunkLods(0).billboardLimit(32)
+            .fboScale(75).viewDistance(ViewDistance.NEAR).chunkLods(1).billboardLimit(32)
             .shadows(DynamicShadows.OFF).reflections(WaterReflection.SKY).lightShafts(false)
             .normalMapping(false).cloudShadows(false)),
     MEDIUM("medium", SettingsPalette.ACCENT, medium()),

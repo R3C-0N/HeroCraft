@@ -10,6 +10,7 @@ import org.terasology.engine.context.Context;
 import org.terasology.engine.core.SimpleUri;
 import org.terasology.engine.core.module.ModuleManager;
 import org.terasology.engine.registry.InjectionHelper;
+import org.terasology.engine.rendering.sphere.SphereProjectionProvider;
 import org.terasology.engine.world.generator.RegisterWorldGenerator;
 import org.terasology.engine.world.generator.UnresolvedWorldGeneratorException;
 import org.terasology.engine.world.generator.WorldGenerator;
@@ -60,7 +61,10 @@ public class WorldGeneratorManager {
                             }
                         } else if (providedBy.equals(module.getId())) {
                             RegisterWorldGenerator annotation = generatorClass.getAnnotation(RegisterWorldGenerator.class);
-                            if (isValidWorldGenerator(generatorClass)) {
+                            if (!isSphericalWorldGenerator(generatorClass)) {
+                                logger.info("{} makes a flat world, which this game no longer offers; skipping",
+                                        generatorClass);
+                            } else if (isValidWorldGenerator(generatorClass)) {
                                 SimpleUri uri = new SimpleUri(moduleId, annotation.id());
                                 infos.add(new WorldGeneratorInfo(uri, annotation.displayName(), annotation.description()));
                                 logger.debug("{} added from {}", uri, generatorClass);
@@ -157,6 +161,22 @@ public class WorldGeneratorManager {
         } else {
             throw new UnresolvedWorldGeneratorException(uri + " is not a valid world generator");
         }
+    }
+
+    /**
+     * Whether a generator makes a planet, which is the only kind of world this game offers.
+     * <p>
+     * The cube world is not an option among others any more: the distant terrain, the map, the sky and
+     * the horizon are all written against a sphere, and a flat generator leaves each of them drawing
+     * something that is no longer part of the game. The test is the engine-side interface the
+     * generator has to implement anyway to hand over its projection, so no module name is named here
+     * — a second spherical generator would be offered without a line changing.
+     * <p>
+     * This gates the <em>listing</em>, which is where a world is chosen. Loading stays permissive, so
+     * a save made before this build still opens, flat as it was written.
+     */
+    private static boolean isSphericalWorldGenerator(Class<?> generatorClass) {
+        return SphereProjectionProvider.class.isAssignableFrom(generatorClass);
     }
 
     private static boolean isValidWorldGenerator(Class<?> generatorClass) {

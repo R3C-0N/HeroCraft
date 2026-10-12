@@ -26,6 +26,17 @@ public class RenderingConfig extends AbstractSubscribable {
     public static final String ANIMATED_MENU = "AnimatedMenu";
     public static final String VIEW_DISTANCE = "viewDistance";
     public static final String CHUNK_LODS = "chunkLods";
+
+    /**
+     * The level of detail, and it never reaches zero.
+     * <p>
+     * Distant terrain is part of the game, not an option: a planet whose ground stops at the view
+     * distance is a different game from the one this build renders. Zero was the setting that turned
+     * it off, and it is no longer reachable — the floor is enforced here rather than in the settings
+     * screen alone, because the field is written straight by the deserializer and an old
+     * {@code config.cfg} still carries the zero it was saved with.
+     */
+    public static final float MIN_CHUNK_LODS = 1;
     public static final String CHUNK_THREADS = "chunkThreads";
     public static final String BILLBOARD_LIMIT = "billboardLimit";
     public static final String FLICKERING_LIGHT = "FlickeringLight";
@@ -263,13 +274,13 @@ public class RenderingConfig extends AbstractSubscribable {
     }
 
     public float getChunkLods() {
-        return chunkLods;
+        return Math.max(MIN_CHUNK_LODS, chunkLods);
     }
 
     public void setChunkLods(float chunkLods) {
         float oldLods = this.chunkLods;
-        this.chunkLods = chunkLods;
-        propertyChangeSupport.firePropertyChange(CHUNK_LODS, oldLods, chunkLods);
+        this.chunkLods = Math.max(MIN_CHUNK_LODS, chunkLods);
+        propertyChangeSupport.firePropertyChange(CHUNK_LODS, oldLods, this.chunkLods);
     }
 
     public int getChunkThreads() {

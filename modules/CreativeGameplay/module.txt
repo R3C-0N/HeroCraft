@@ -10,5 +10,5 @@
         }
     ],
     "isGameplay": "true",
-    "defaultWorldGenerator": "CoreWorlds:FacetedSimplex"
+    "defaultWorldGenerator": "CubeWorlds:cubeworld"
 }

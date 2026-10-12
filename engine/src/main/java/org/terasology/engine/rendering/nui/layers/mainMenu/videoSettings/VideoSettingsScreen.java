@@ -148,7 +148,7 @@ public class VideoSettingsScreen extends SettingsTabScreen {
                         value -> rendering.setViewDistance(ViewDistance.forIndex(Math.round(value))),
                         value -> rows.format("${engine:menu#opt-chunks}",
                                 ViewDistance.forIndex(Math.round(value)).getChunkDistance().x())))
-                .add(slider("lod", Impact.MODERATE, false, ESTIMATED, 0, MAX_CHUNK_LODS, 1,
+                .add(slider("lod", Impact.MODERATE, false, ESTIMATED, RenderingConfig.MIN_CHUNK_LODS, MAX_CHUNK_LODS, 1,
                         () -> Math.min(MAX_CHUNK_LODS, rendering.getChunkLods()), rendering::setChunkLods,
                         value -> rows.format("${engine:menu#opt-lod-levels}", Math.round(value))))
                 .add(slider("billboard", Impact.MODERATE, false, ESTIMATED, 0, BILLBOARD_LIMITS.length - 1, 1,
