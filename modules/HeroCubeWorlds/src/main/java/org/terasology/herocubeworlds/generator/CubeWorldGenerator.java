@@ -17,8 +17,10 @@ import org.terasology.herocubeworlds.generator.facetProviders.CubeCaveProvider;
 import org.terasology.herocubeworlds.generator.facetProviders.CubeClimateProvider;
 import org.terasology.herocubeworlds.generator.facetProviders.CubeOreProvider;
 import org.terasology.herocubeworlds.generator.facetProviders.CubeRegionProvider;
+import org.terasology.herocubeworlds.generator.facetProviders.CubeRuinProvider;
 import org.terasology.herocubeworlds.generator.facetProviders.CubeSurfaceProvider;
 import org.terasology.herocubeworlds.generator.rasterizers.CubeOreRasterizer;
+import org.terasology.herocubeworlds.generator.rasterizers.CubeRuinRasterizer;
 import org.terasology.herocubeworlds.generator.rasterizers.CubeSolidRasterizer;
 import org.terasology.engine.context.Context;
 import org.terasology.engine.core.SimpleUri;
@@ -63,6 +65,7 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator
 
     private final CubeGeometry geometry = CubeGeometry.createDefault();
     private final CubeLandSpawner spawner;
+    private final CubeRuinProvider ruinProvider;
 
     public CubeWorldGenerator(SimpleUri uri) {
         super(uri);
@@ -70,10 +73,21 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator
         // coin toss on a world whose continents are a thousand blocks across, and on the first seed
         // ever played it came up ocean. CubeLandSpawner says why the stock one cannot be widened.
         spawner = new CubeLandSpawner(geometry, SPAWN_FACE);
+        ruinProvider = new CubeRuinProvider(geometry);
     }
 
     public CubeGeometry getGeometry() {
         return geometry;
+    }
+
+    /**
+     * The candidate sites of the ruins, seeded as the chain seeded them: the chain hashes the seed
+     * string, and recomputing that elsewhere would be a second copy of a rule nobody owns.
+     *
+     * @return the lattice, or null before the world builder has been seeded
+     */
+    public RuinLattice getRuinLattice() {
+        return ruinProvider.lattice();
     }
 
     private CubeSphereProjection projection;
@@ -149,6 +163,7 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator
                 .addProvider(new CubeOreProvider(geometry))
                 .addProvider(new DefaultFloraProvider())
                 .addProvider(new DefaultTreeProvider())
+                .addProvider(ruinProvider)
                 .addRasterizer(new CubeSolidRasterizer(geometry))
                 // Straight after the ground is laid: the ore replaces rock, so it has to see what
                 // the solid rasterizer wrote, and it must not be there for the flora to stand on.
@@ -156,6 +171,9 @@ public class CubeWorldGenerator extends BaseFacetedWorldGenerator
                 .addPlugins()
                 .addRasterizer(new FloraRasterizer())
                 .addRasterizer(new TreeRasterizer())
+                // After the trees, so the court is cleared over whatever grew in it; before the
+                // sunlight, so the light falls on the ruin as it stands.
+                .addRasterizer(new CubeRuinRasterizer())
                 // How far above the surface the sun is taken to stop reaching. The stock value,
                 // for the stock light chain.
                 .addRasterizer(new SunlightRasterizer(-20));
