@@ -69,13 +69,21 @@ public class ChunkViewCoreImpl implements ChunkViewCore {
      * the edge of a face showed its side to them all the way down: at a cut seam, where the net is glued back only on
      * the sphere, that was a wall the height of the loaded box, seen edge on from the corner. Decided per chunk once,
      * never per block — a slot is whole chunks, and this view is read seven times a block by the mesher.
+     * <p>
+     * <b>Outside is relative to the chunk being meshed</b>, the centre of the view. A dead slot is not empty for
+     * everybody: the pockets of the past are built there, and a pocket chunk that took its own slot for off the world
+     * would mesh as nothing at all. So a chunk is hidden when it lies on the other side of the line from the centre —
+     * a dead slot seen from a face, or a face seen from a dead slot — and never when both are on the same side.
      *
      * @param isOutside whether a column of the world, in block coordinates, is off the world
      */
     public void hideOutside(BiPredicate<Integer, Integer> isOutside, Block block) {
         boolean[] marks = null;
+        int centreX = (chunkRegion.minX() + chunkRegion.maxX()) / 2;
+        int centreZ = (chunkRegion.minZ() + chunkRegion.maxZ()) / 2;
+        boolean centreOutside = isOutside.test(centreX * Chunks.SIZE_X, centreZ * Chunks.SIZE_Z);
         for (Vector3ic chunkPos : chunkRegion) {
-            if (isOutside.test(chunkPos.x() * Chunks.SIZE_X, chunkPos.z() * Chunks.SIZE_Z)) {
+            if (isOutside.test(chunkPos.x() * Chunks.SIZE_X, chunkPos.z() * Chunks.SIZE_Z) != centreOutside) {
                 if (marks == null) {
                     marks = new boolean[chunks.length];
                 }
