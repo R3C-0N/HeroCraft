@@ -5,6 +5,25 @@ import java.net.URI
 
 // We use both Maven Central and our own Artifactory instance, which contains module builds, extra libs, and so on
 repositories {
+    // Depot Maven local : filet de secours quand l'Artifactory de Terasology est
+    // injoignable, ce qui rend introuvables deux artefacts qu'il etait seul a
+    // servir. Les deposer a la main dans ~/.m2 :
+    //   - org.terasology.gestalt:gestalt-inject-java  (processeur d'annotations)
+    //     `gradlew :gestalt-inject-java:publishToMavenLocal` depuis une copie de
+    //     MovingBlocks/gestalt, dont le `gradle.properties` porte deja la bonne
+    //     version.
+    //   - com.jagrosh:DiscordIPC  (sous-systeme DiscordRPC), absent de Maven
+    //     Central ; une copie identique au sha1 publie vit chez Sponge.
+    // Tout le reste continue de passer par les depots distants. Bornage strict
+    // aux deux groupes, sinon mavenLocal masquerait n'importe quelle dependance
+    // au gre de ce qui traine dans ~/.m2.
+    mavenLocal {
+        content {
+            includeGroup("org.terasology.gestalt")
+            includeModule("com.jagrosh", "DiscordIPC")
+        }
+    }
+
     mavenCentral {
         content {
             // This is first choice for most java dependencies, but assume we'll need to check our
