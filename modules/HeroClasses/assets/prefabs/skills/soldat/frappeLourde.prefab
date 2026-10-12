@@ -1,0 +1,15 @@
+{
+    "Skill": {
+        "name": "Frappe lourde",
+        "description": "Un coup ample qui balaie tout ce qui se tient devant.",
+        "classId": "HeroClasses:soldat",
+        "tier": 1,
+        "family": "melee",
+        "cooldown": 4,
+        "power": 1.6
+    },
+    "Arc": {
+        "range": 3,
+        "angle": 100
+    }
+}

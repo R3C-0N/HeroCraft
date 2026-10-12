@@ -1,0 +1,15 @@
+{
+    "Skill": {
+        "name": "Brise-garde",
+        "description": "Un coup sec et étroit, porté droit sur l'adversaire.",
+        "classId": "HeroClasses:soldat",
+        "tier": 1,
+        "family": "melee",
+        "cooldown": 6,
+        "power": 1.2
+    },
+    "Arc": {
+        "range": 2.5,
+        "angle": 60
+    }
+}

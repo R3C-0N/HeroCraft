@@ -1,0 +1,15 @@
+{
+    "Skill": {
+        "name": "Onde sismique",
+        "description": "Un coup frappé au sol, dont l'onde court droit devant.",
+        "classId": "HeroClasses:soldat",
+        "tier": 1,
+        "family": "melee",
+        "cooldown": 7,
+        "power": 1.0
+    },
+    "Line": {
+        "length": 8,
+        "width": 2
+    }
+}
