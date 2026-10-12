@@ -41,14 +41,14 @@ import org.terasology.engine.world.generation.facets.ElevationFacet;
 @Produces(RuinFacet.class)
 public class CubeRuinProvider implements FacetProvider {
 
-    /** How far outside a region the facets must be read: a centre one radius out, its far wall another. */
-    static final int REACH = 2 * RuinShape.RADIUS + 1;
-
     /** Blocks over the sea the lowest column of the footprint must stand. */
     public static final int DRY_MARGIN = 2;
 
     /** Blocks between the highest and the lowest column of the footprint. */
     public static final int MAX_RELIEF = 6;
+
+    /** How far outside a region the facets must be read: a centre one radius out, its far wall another. */
+    static final int REACH = 2 * RuinShape.RADIUS + 1;
 
     private final CubeGeometry geometry;
     private RuinLattice lattice;
