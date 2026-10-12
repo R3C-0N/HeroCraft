@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Hache en bronze"
+    },
+    "Item": {
+        "icon": "HeroEquipment:BronzeAxe",
+        "stackId": "HeroEquipment:BronzeAxe",
+        "maxStackSize": 1,
+        "baseDamage": 4,
+        "damageType": "CoreAssets:axeTier2Damage"
+    },
+    "Tool": {
+        "family": "axe",
+        "grade": 3
+    },
+    "Durability": {
+        "durability": 500,
+        "maxDurability": 500
+    }
+}

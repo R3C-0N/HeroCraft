@@ -1,0 +1,11 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroEquipment:WoodenSoulStaff",
+            "3*CoreAssets:Flint",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "HeroEquipment:FlintSoulStaff",
+        "station": "workbench"
+    }
+}

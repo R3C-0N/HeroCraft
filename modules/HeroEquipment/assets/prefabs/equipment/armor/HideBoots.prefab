@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bottines de cuir"
+    },
+    "Item": {
+        "icon": "HeroEquipment:HideBoots",
+        "stackId": "HeroEquipment:HideBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "feet",
+        "protection": 1
+    },
+    "Durability": {
+        "durability": 80,
+        "maxDurability": 80
+    }
+}

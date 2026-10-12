@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Sabre d'étherium (adamantine)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumAdamantineSabre",
+        "stackId": "HeroEquipment:EtheriumAdamantineSabre",
+        "maxStackSize": 1,
+        "baseDamage": 22,
+        "cooldownTime": 190
+    },
+    "Weapon": {
+        "type": "windBlade",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 0.8
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

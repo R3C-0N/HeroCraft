@@ -45,7 +45,7 @@ public final class TerasologyConstants {
      */
     //TODO: CSG moved out of the engine repo, so this should either be removed or reference the Builder Sample Gameplay
     //      which still lives in the engine repo.
-    public static final Name CORE_GAMEPLAY_MODULE = new Name("coresamplegameplay");
+    public static final Name CORE_GAMEPLAY_MODULE = new Name("herocraft");
     /**
      * Name of a module's assets directory.
      */

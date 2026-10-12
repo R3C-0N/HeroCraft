@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "4*CoreAssets:OrichalcumIngot",
+            "2*CoreAssets:Stick"
+        ],
+        "result": "HeroEquipment:OrichalcumMallet",
+        "station": "astralforge",
+        "repair": [
+            "1*CoreAssets:OrichalcumIngot"
+        ]
+    }
+}

@@ -1,0 +1,10 @@
+{
+    "basedOn": "CoreAssets:plant",
+    "displayName": "Courge — plant",
+    "tile": "HeroSurvival:CourgeStade3",
+    "entity": {
+        "prefab": "HeroSurvival:CourgeStade3Entity",
+        "keepActive": true
+    },
+    "waving": true
+}

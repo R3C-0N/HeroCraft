@@ -1,0 +1,10 @@
+{
+    "basedOn": "CoreAssets:plant",
+    "displayName": "Soja — mûr",
+    "tile": "HeroSurvival:SojaStade4",
+    "entity": {
+        "prefab": "HeroSurvival:SojaStade4Entity",
+        "keepActive": true
+    },
+    "waving": true
+}

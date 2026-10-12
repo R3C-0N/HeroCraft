@@ -41,6 +41,9 @@ const vec3 SPHERE_NORMAL[SPHERE_FACES] = vec3[SPHERE_FACES](
 const vec2 SPHERE_PATTERN[SPHERE_FACES] = vec2[SPHERE_FACES](
     vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(2.0, 1.0), vec2(3.0, 1.0), vec2(1.0, 2.0), vec2(1.0, 0.0));
 
+// Where a vertex that must not be seen is sent: far below the focus, past any far plane.
+const float SPHERE_EXILE = 1.0e7;
+
 // Which face a world column belongs to, and where inside it. Returns -1 for a dead slot.
 int sphereFaceOf(vec2 column, out vec2 local) {
     vec2 slot = floor(column / sphereFaceEdge);
@@ -78,12 +81,18 @@ const vec2 SPHERE_NUDGES[8] = vec2[8](
     vec2(0.5, 0.0), vec2(-0.5, 0.0), vec2(0.0, 0.5), vec2(0.0, -0.5),
     vec2(0.5, 0.5), vec2(-0.5, 0.5), vec2(0.5, -0.5), vec2(-0.5, -0.5));
 
-vec4 sphereDirection(vec2 column) {
-    vec2 local;
+// The face of a column once brought out of a dead slot, or -1 when no face is within half a block: a pocket.
+int sphereOwnFace(vec2 column, out vec2 local) {
     int face = sphereFaceOf(column, local);
     for (int i = 0; i < 8 && face < 0; i++) {
         face = sphereFaceOf(column + SPHERE_NUDGES[i], local);
     }
+    return face;
+}
+
+vec4 sphereDirection(vec2 column) {
+    vec2 local;
+    int face = sphereOwnFace(column, local);
     if (face < 0) {
         return vec4(0.0, 0.0, 1.0, 1.0);
     }
@@ -106,6 +115,16 @@ mat3 sphereFrameAbs(vec3 worldPos);
 // (sphereFocusPoint, sphereFocusFrame), computed there in single precision and in this order: a
 // vertex used to recompute them itself, eleven of its seventeen table reads.
 vec3 sphereCurvedPos(vec3 worldPos) {
+    vec2 local;
+    bool hereDead = sphereOwnFace(worldPos.xz, local) < 0;
+    bool focusDead = sphereOwnFace(sphereFocus.xz, local) < 0;
+    // A pocket: the dead slots of the net hold the instances of the past, and they are flat. Seen
+    // from inside one, they are drawn as they are stored; anything on the other side of the line,
+    // planet seen from a pocket or pocket seen from the planet, is sent out of every frustum. The
+    // corner of a block on a cut seam lies half a block into a dead slot and is not a pocket.
+    if (hereDead || focusDead) {
+        return hereDead && focusDead ? worldPos - sphereFocus : vec3(0.0, -SPHERE_EXILE, 0.0);
+    }
     vec4 here = sphereDirection(worldPos.xz);
     float r = sphereRadius + here.w * (worldPos.y - sphereReferenceHeight);
     // Back into world axes. The difference of two planet-space points is still planet space, and
@@ -121,6 +140,12 @@ vec3 sphereCurvedPos(vec3 worldPos) {
 // one by a reflection, determinant minus one. Nothing outside this file knows about planet space,
 // so nothing outside may see a vector expressed in it. Both users below bring it back.
 mat3 sphereFrameAbs(vec3 worldPos) {
+    vec2 local;
+    if (sphereOwnFace(worldPos.xz, local) < 0) {
+        // A pocket is flat, and its frame is the world's. Left to the differences below, a dead slot
+        // reads the same direction on every side and normalises a zero vector.
+        return mat3(1.0);
+    }
     float step = sphereFaceEdge / 256.0;
     vec3 up = sphereDirection(worldPos.xz).xyz;
     vec3 alongX = sphereDirection(worldPos.xz + vec2(step, 0.0)).xyz

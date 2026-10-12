@@ -1,0 +1,16 @@
+{
+  "parent": "engine:iconItem",
+  "DisplayName": {
+    "name": "Totem : cerf de cristal",
+    "description": "Posé au sol, fait apparaître un cerf de cristal."
+  },
+  "Item": {
+    "icon": "HeroBestiary:cerfCristalIcone",
+    "stackId": "HeroBestiary:cerfCristalTotem",
+    "maxStackSize": 16,
+    "consumedOnUse": true
+  },
+  "Spawner": {
+    "creature": "HeroBestiary:cerfCristal"
+  }
+}

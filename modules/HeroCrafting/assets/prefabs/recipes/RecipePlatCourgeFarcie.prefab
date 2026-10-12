@@ -1,0 +1,12 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroSurvival:courge",
+            "1*HeroBestiary:viandePure",
+            "1*HeroSurvival:riz",
+            "1*CoreAssets:Coal|CoreAssets:Plank"
+        ],
+        "result": "HeroSurvival:courgeFarcie",
+        "station": "furnace"
+    }
+}

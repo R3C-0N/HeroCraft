@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Marteau de fer"
+    },
+    "Item": {
+        "icon": "HeroEquipment:IronMallet",
+        "stackId": "HeroEquipment:IronMallet",
+        "maxStackSize": 1,
+        "baseDamage": 11,
+        "cooldownTime": 400
+    },
+    "Weapon": {
+        "type": "warHammer",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 2.0
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

@@ -1,0 +1,11 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroEquipment:WoodenTotem",
+            "3*CoreAssets:Flint",
+            "2*CoreAssets:Fibre"
+        ],
+        "result": "HeroEquipment:FlintTotem",
+        "station": "workbench"
+    }
+}

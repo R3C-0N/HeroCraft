@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Chausses de fer"
+    },
+    "Item": {
+        "icon": "HeroEquipment:IronScaleLeggings",
+        "stackId": "HeroEquipment:IronScaleLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "legs",
+        "protection": 12
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Épée d'orichalque"
+    },
+    "Item": {
+        "icon": "HeroEquipment:OrichalcumSword",
+        "stackId": "HeroEquipment:OrichalcumSword",
+        "maxStackSize": 1,
+        "baseDamage": 19,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "oneHandedSword",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 1.0
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

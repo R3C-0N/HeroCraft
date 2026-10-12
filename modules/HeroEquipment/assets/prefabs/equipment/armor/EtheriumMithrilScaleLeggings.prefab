@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Chausses d'étherium (mithril)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumMithrilScaleLeggings",
+        "stackId": "HeroEquipment:EtheriumMithrilScaleLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "legs",
+        "protection": 25
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

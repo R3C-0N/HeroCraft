@@ -1,0 +1,16 @@
+{
+  "parent": "engine:iconItem",
+  "DisplayName": {
+    "name": "Totem : brute cornue",
+    "description": "Posé au sol, fait apparaître une brute cornue."
+  },
+  "Item": {
+    "icon": "HeroBestiary:bruteIcone",
+    "stackId": "HeroBestiary:bruteTotem",
+    "maxStackSize": 16,
+    "consumedOnUse": true
+  },
+  "Spawner": {
+    "creature": "HeroBestiary:brute"
+  }
+}

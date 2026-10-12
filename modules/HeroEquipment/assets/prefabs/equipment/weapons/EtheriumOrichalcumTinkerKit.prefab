@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Trousse d'étherium (orichalque)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumOrichalcumTinkerKit",
+        "stackId": "HeroEquipment:EtheriumOrichalcumTinkerKit",
+        "maxStackSize": 1,
+        "baseDamage": 12,
+        "cooldownTime": 225
+    },
+    "Weapon": {
+        "type": "engineerKit",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 0.7
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

@@ -1,0 +1,9 @@
+{
+    "id": "HeroCommon",
+    "version": "1.0.0",
+    "author": "R3C-0N",
+    "displayName": "HeroCraft — commun",
+    "description": "Ce que plusieurs modules du jeu lisent sans dépendre les uns des autres : le marqueur du mode créatif.",
+    "dependencies": [],
+    "serverSideOnly": false
+}

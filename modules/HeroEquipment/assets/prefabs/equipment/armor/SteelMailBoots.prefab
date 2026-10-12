@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bottines d'acier"
+    },
+    "Item": {
+        "icon": "HeroEquipment:SteelMailBoots",
+        "stackId": "HeroEquipment:SteelMailBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "feet",
+        "protection": 6
+    },
+    "Durability": {
+        "durability": 2000,
+        "maxDurability": 2000
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Brigandine d'orichalque"
+    },
+    "Item": {
+        "icon": "HeroEquipment:OrichalcumScaleChestplate",
+        "stackId": "HeroEquipment:OrichalcumScaleChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "chest",
+        "protection": 29
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

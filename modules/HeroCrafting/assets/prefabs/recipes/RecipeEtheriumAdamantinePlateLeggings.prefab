@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "10*CoreAssets:EtheriumAdamantineIngot",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "HeroEquipment:EtheriumAdamantinePlateLeggings",
+        "station": "ultimateforge",
+        "repair": [
+            "3*CoreAssets:EtheriumAdamantineIngot"
+        ]
+    }
+}

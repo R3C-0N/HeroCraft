@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Sabre de fer"
+    },
+    "Item": {
+        "icon": "HeroEquipment:IronSabre",
+        "stackId": "HeroEquipment:IronSabre",
+        "maxStackSize": 1,
+        "baseDamage": 10,
+        "cooldownTime": 250
+    },
+    "Weapon": {
+        "type": "windBlade",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 0.8
+    },
+    "Durability": {
+        "durability": 900,
+        "maxDurability": 900
+    }
+}

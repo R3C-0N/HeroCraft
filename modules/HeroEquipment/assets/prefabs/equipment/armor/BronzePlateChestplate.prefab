@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Cuirasse de bronze"
+    },
+    "Item": {
+        "icon": "HeroEquipment:BronzePlateChestplate",
+        "stackId": "HeroEquipment:BronzePlateChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "chest",
+        "protection": 14
+    },
+    "Durability": {
+        "durability": 500,
+        "maxDurability": 500
+    }
+}

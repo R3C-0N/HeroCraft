@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bouclier de bronze"
+    },
+    "Item": {
+        "icon": "HeroEquipment:BronzeShield",
+        "stackId": "HeroEquipment:BronzeShield",
+        "maxStackSize": 1,
+        "baseDamage": 3,
+        "cooldownTime": 400
+    },
+    "Weapon": {
+        "type": "shield",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 1.8
+    },
+    "Durability": {
+        "durability": 500,
+        "maxDurability": 500
+    }
+}

@@ -1,0 +1,16 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Carreau de fer"
+    },
+    "Item": {
+        "icon": "HeroEquipment:IronBolt",
+        "stackId": "HeroEquipment:IronBolt",
+        "maxStackSize": 99,
+        "baseDamage": 7
+    },
+    "Weapon": {
+        "type": "bolt",
+        "hands": 0
+    }
+}

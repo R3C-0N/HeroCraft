@@ -1,0 +1,10 @@
+{
+    "basedOn": "CoreAssets:plant",
+    "displayName": "Pomme de terre — mûr",
+    "tile": "HeroSurvival:PommeDeTerreStade4",
+    "entity": {
+        "prefab": "HeroSurvival:PommeDeTerreStade4Entity",
+        "keepActive": true
+    },
+    "waving": true
+}

@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Capuche d'étherium (orichalque)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumOrichalcumMailHelmet",
+        "stackId": "HeroEquipment:EtheriumOrichalcumMailHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "head",
+        "protection": 18
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

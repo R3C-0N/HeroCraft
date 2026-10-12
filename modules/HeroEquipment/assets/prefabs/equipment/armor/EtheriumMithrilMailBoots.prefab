@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bottines d'étherium (mithril)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumMithrilMailBoots",
+        "stackId": "HeroEquipment:EtheriumMithrilMailBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "feet",
+        "protection": 12
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

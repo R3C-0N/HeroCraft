@@ -1,0 +1,15 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Graines de riz"
+    },
+    "Item": {
+        "icon": "HeroSurvival:agriculture#grainesRiz",
+        "stackId": "HeroSurvival:grainesRiz",
+        "maxStackSize": 99,
+        "consumedOnUse": true
+    },
+    "Seed": {
+        "plant": "HeroSurvival:RizStade1"
+    }
+}

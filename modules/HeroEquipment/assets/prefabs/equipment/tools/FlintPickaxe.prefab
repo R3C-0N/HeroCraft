@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Pioche en silex"
+    },
+    "Item": {
+        "icon": "HeroEquipment:FlintPickaxe",
+        "stackId": "HeroEquipment:FlintPickaxe",
+        "maxStackSize": 1,
+        "baseDamage": 2,
+        "damageType": "CoreAssets:pickaxeDamage"
+    },
+    "Tool": {
+        "family": "pickaxe",
+        "grade": 1
+    },
+    "Durability": {
+        "durability": 150,
+        "maxDurability": 150
+    }
+}

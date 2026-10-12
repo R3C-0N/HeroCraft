@@ -1,0 +1,12 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroSurvival:tofu",
+            "1*HeroSurvival:carotte",
+            "1*HeroSurvival:oignon",
+            "1*CoreAssets:Coal|CoreAssets:Plank"
+        ],
+        "result": "HeroSurvival:tofuSauteAuxLegumes",
+        "station": "furnace"
+    }
+}

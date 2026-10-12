@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Marteau d'adamantine"
+    },
+    "Item": {
+        "icon": "HeroEquipment:AdamantineMallet",
+        "stackId": "HeroEquipment:AdamantineMallet",
+        "maxStackSize": 1,
+        "baseDamage": 24,
+        "cooldownTime": 480
+    },
+    "Weapon": {
+        "type": "warHammer",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 2.0
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

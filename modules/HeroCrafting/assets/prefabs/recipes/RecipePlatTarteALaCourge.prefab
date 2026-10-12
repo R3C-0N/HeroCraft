@@ -1,0 +1,11 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroSurvival:courge",
+            "1*HeroSurvival:ble",
+            "1*CoreAssets:Coal|CoreAssets:Plank"
+        ],
+        "result": "HeroSurvival:tarteALaCourge",
+        "station": "furnace"
+    }
+}

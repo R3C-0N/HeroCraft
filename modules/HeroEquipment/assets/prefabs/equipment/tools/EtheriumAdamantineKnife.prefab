@@ -1,0 +1,21 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Couteau en étherium (adamantine)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumAdamantineKnife",
+        "stackId": "HeroEquipment:EtheriumAdamantineKnife",
+        "maxStackSize": 1,
+        "baseDamage": 11
+    },
+    "Tool": {
+        "family": "knife",
+        "grade": 7
+    },
+    "Depeceur": {},
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

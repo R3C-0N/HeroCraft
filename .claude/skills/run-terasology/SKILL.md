@@ -81,10 +81,10 @@ is the trap.** An already-generated chunk never runs a new provider again, so th
 only honest check is a world built from scratch: pass `--create-last-game` through
 `--`. But it recreates the world with the **default generator from `config.cfg`**,
 not the one the game it copies was played with — so it will hand you
-`CoreWorlds:facetedsimplex` while the save it came from says `CubeWorlds:cubeworld`.
+`CoreWorlds:facetedsimplex` while the save it came from says `HeroCubeWorlds:cubeworld`.
 The flat generator has neither the cave provider nor the ore provider in its chain,
 so the symptom is a solid, hollow-free, ore-free underground that looks exactly like
-a broken generator. Set `worldGeneration.defaultGenerator` to `CubeWorlds:cubeworld`
+a broken generator. Set `worldGeneration.defaultGenerator` to `HeroCubeWorlds:cubeworld`
 before any such session, and read the new save's `worlds.main.worldGenerator` to
 confirm what you actually got.
 
@@ -548,7 +548,7 @@ Other run targets exist in `facades/PC/build.gradle.kts`: `debug` (JDWP on 1044)
   prefab walk, so it changes under you the moment you craft something.
 - **A workbench does not have to be placed by hand.** `click --button right`
   fails silently when the crosshair is on the block under your own feet, which is
-  where it lands by default. `console replaceBlock CoreSampleGameplay:Workbench`
+  where it lands by default. `console replaceBlock HeroCrafting:Workbench`
   turns that very block into the station, in reach and under the crosshair, ready
   for `key e`. And `console debugTarget` names the aimed block, which is the only
   reliable way to know what you are pointing at.

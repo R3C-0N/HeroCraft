@@ -1,0 +1,10 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Peau fine"
+    },
+    "Item": {
+        "icon": "HeroBestiary:butin#peauFine",
+        "stackId": "HeroBestiary:peauFine"
+    }
+}

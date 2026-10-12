@@ -23,16 +23,24 @@ extensions
 !/facades/subprojects.gradle
 /modules/*
 !/modules/subprojects.gradle
-# Modules rattaches en submodules pour l'etude de la topologie cubique
-!/modules/CoreWorlds
-!/modules/CoreRendering
+!/modules/README.md
+# Modules du jeu, suivis ici meme. Les autres dossiers de modules/ (modules
+# recuperes par groovyw, par exemple) restent ignores.
 !/modules/CoreAssets
+!/modules/CoreRendering
+!/modules/CoreWorlds
 !/modules/Minimap
-!/modules/CubeWorlds
-!/modules/CoreSampleGameplay
-# Modules nes du fork, sans amont : suivis ici meme plutot qu'en submodule
-!/modules/CreativeGameplay
-!/modules/Bestiaire
+!/modules/WorkstationCrafting
+!/modules/HeroBestiary
+!/modules/HeroClasses
+!/modules/HeroCommon
+!/modules/HeroCraft
+!/modules/HeroCrafting
+!/modules/HeroCreative
+!/modules/HeroCubeWorlds
+!/modules/HeroDungeons
+!/modules/HeroEquipment
+!/modules/HeroSurvival
 /metas/*
 !/metas/subprojects.gradle
 /libs/*

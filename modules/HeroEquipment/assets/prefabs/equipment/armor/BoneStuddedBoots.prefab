@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bottes de silex"
+    },
+    "Item": {
+        "icon": "HeroEquipment:BoneStuddedBoots",
+        "stackId": "HeroEquipment:BoneStuddedBoots",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "medium",
+        "slot": "feet",
+        "protection": 2
+    },
+    "Durability": {
+        "durability": 220,
+        "maxDurability": 220
+    }
+}

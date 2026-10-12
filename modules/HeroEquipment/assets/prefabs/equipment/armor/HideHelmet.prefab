@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Capuche de cuir"
+    },
+    "Item": {
+        "icon": "HeroEquipment:HideHelmet",
+        "stackId": "HeroEquipment:HideHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "head",
+        "protection": 2
+    },
+    "Durability": {
+        "durability": 80,
+        "maxDurability": 80
+    }
+}

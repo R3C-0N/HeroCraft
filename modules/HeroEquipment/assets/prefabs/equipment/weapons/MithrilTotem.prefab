@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Totem de mithril"
+    },
+    "Item": {
+        "icon": "HeroEquipment:MithrilTotem",
+        "stackId": "HeroEquipment:MithrilTotem",
+        "maxStackSize": 1,
+        "baseDamage": 17,
+        "cooldownTime": 225
+    },
+    "Weapon": {
+        "type": "totem",
+        "hands": 2
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

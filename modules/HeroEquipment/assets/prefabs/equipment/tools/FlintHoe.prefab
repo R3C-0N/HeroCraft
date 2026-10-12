@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Houe en silex"
+    },
+    "Item": {
+        "icon": "HeroEquipment:FlintHoe",
+        "stackId": "HeroEquipment:FlintHoe",
+        "maxStackSize": 1,
+        "baseDamage": 1
+    },
+    "Tool": {
+        "family": "hoe",
+        "grade": 1
+    },
+    "Durability": {
+        "durability": 150,
+        "maxDurability": 150
+    }
+}

@@ -1,0 +1,39 @@
+{
+    "id": "HeroCreative",
+    "version": "1.0.0",
+    "author": "R3C-0N",
+    "displayName": "HeroCraft — créatif",
+    "description": "Le jeu entier, tout de suite : un catalogue de tous les blocs et de tous les objets, la pose sans dépense, la casse d'un coup, le vol et l'invulnérabilité. Tout le contenu de HeroCraft, sans la survie.",
+    "dependencies": [
+        {
+            "id": "HeroCraft",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "HeroCommon",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "HeroEquipment",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "HeroSurvival",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "HeroBestiary",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "Health",
+            "minVersion": "2.0.0-SNAPSHOT"
+        },
+        {
+            "id": "Inventory",
+            "minVersion": "1.2.1"
+        }
+    ],
+    "isGameplay": "true",
+    "defaultWorldGenerator": "HeroCubeWorlds:cubeworld"
+}

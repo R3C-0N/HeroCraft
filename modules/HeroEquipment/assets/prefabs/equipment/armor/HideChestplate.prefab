@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Pourpoint de cuir"
+    },
+    "Item": {
+        "icon": "HeroEquipment:HideChestplate",
+        "stackId": "HeroEquipment:HideChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "chest",
+        "protection": 3
+    },
+    "Durability": {
+        "durability": 80,
+        "maxDurability": 80
+    }
+}

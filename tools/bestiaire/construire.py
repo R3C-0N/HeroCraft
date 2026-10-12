@@ -66,7 +66,7 @@ import modeles
 import peinture
 
 RACINE = pathlib.Path(__file__).resolve().parents[2]
-ASSETS = RACINE / "modules/Bestiaire/assets"
+ASSETS = RACINE / "modules/HeroBestiary/assets"
 
 UNITE = modeles.TEXEL_M          # 0,05625 bloc par texel
 MARGE = 0.01                     # cf. `tools/heros/construire.py` : jamais pile au bord

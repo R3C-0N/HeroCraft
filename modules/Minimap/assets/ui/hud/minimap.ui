@@ -1,0 +1,48 @@
+{
+    "type" : "MinimapHudElement",
+    "id" : "minimap",
+    "skin" : "framed",
+    "contents" : {
+        "type" : "relativeLayout",
+        "contents" : [
+            {
+                "type" : "MinimapGrid",
+                "id" : "minimapGrid",
+                "layoutInfo" : {
+                    "use-content-width" : true,
+                    "use-content-height" : true,
+                    "position-left" : {
+                        "target" : "LEFT",
+                        "offset" : 18
+                    },
+                    "position-top" : {
+                        "target" : "TOP",
+                        "offset" : 18
+                    }
+                }
+            },
+            {
+                "type" : "UIBox",
+                "family" : "minimapOver",
+                "layoutInfo" : {
+                    "position-left" : {
+                        "widget" : "minimapGrid",
+                        "target" : "LEFT"
+                    },
+                    "position-right" : {
+                        "widget" : "minimapGrid",
+                        "target" : "RIGHT"
+                    },
+                    "position-top" : {
+                        "widget" : "minimapGrid",
+                        "target" : "TOP"
+                    },
+                    "position-bottom" : {
+                        "widget" : "minimapGrid",
+                        "target" : "BOTTOM"
+                    }
+                }
+            }
+        ]
+    }
+}

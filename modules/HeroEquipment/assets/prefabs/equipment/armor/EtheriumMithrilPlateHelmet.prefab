@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Heaume d'étherium (mithril)"
+    },
+    "Item": {
+        "icon": "HeroEquipment:EtheriumMithrilPlateHelmet",
+        "stackId": "HeroEquipment:EtheriumMithrilPlateHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "head",
+        "protection": 21
+    },
+    "Durability": {
+        "durability": 5000,
+        "maxDurability": 5000
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Heaume de cuivre"
+    },
+    "Item": {
+        "icon": "HeroEquipment:CopperPlateHelmet",
+        "stackId": "HeroEquipment:CopperPlateHelmet",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "heavy",
+        "slot": "head",
+        "protection": 6
+    },
+    "Durability": {
+        "durability": 300,
+        "maxDurability": 300
+    }
+}

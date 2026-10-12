@@ -1,0 +1,5 @@
+{
+    "basedOn": "CoreAssets:wood",
+    "displayName": "Tronc de pin"
+    // Graphics: PineTrunkSides.png and PineTrunkTopBottom.png, found by name
+}

@@ -1,0 +1,33 @@
+{
+    "id": "HeroBestiary",
+    "version": "1.0.0",
+    "displayName": "HeroCraft — bestiaire",
+    "description": "Les créatures du bestiaire, les totems qui les font apparaître, et les dégâts qu'on leur inflige. Le mannequin d'entraînement encaisse sans bouger ; les six animaux paisibles — cerf, mouflon laineux, mouflon tondu, lapin, vache, faisan — se baladent et détalent quand on les frappe ; les douze bêtes hostiles — du mille-pattes au champion démon — viennent vous chercher. Et le monde les pose lui-même : chaque espèce a son biome, son heure et sa taille de groupe, un troupeau tient ensemble, une meute encercle, un sanglier garde son territoire, et le mouflon tondu broute jusqu'à retrouver sa toison.",
+    "dependencies": [
+        {
+            "id": "HeroSurvival",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "BiomesAPI",
+            "minVersion": "4.1.0"
+        },
+        {
+            "id": "CoreAssets",
+            "minVersion": "2.0.0"
+        },
+        {
+            "id": "Drops",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "Health",
+            "minVersion": "2.0.0-SNAPSHOT"
+        },
+        {
+            "id": "Inventory",
+            "minVersion": "1.2.1"
+        }
+    ],
+    "serverSideOnly": false
+}

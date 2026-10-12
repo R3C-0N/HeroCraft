@@ -1,0 +1,15 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Germes de pomme de terre"
+    },
+    "Item": {
+        "icon": "HeroSurvival:agriculture#grainesPommeDeTerre",
+        "stackId": "HeroSurvival:grainesPommeDeTerre",
+        "maxStackSize": 99,
+        "consumedOnUse": true
+    },
+    "Seed": {
+        "plant": "HeroSurvival:PommeDeTerreStade1"
+    }
+}

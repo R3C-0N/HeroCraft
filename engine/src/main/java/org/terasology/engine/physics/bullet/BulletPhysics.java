@@ -367,19 +367,36 @@ public class BulletPhysics implements PhysicsEngine, Physics {
                     + " warning instead. Entity: {}", entity);
             return false;
         } else if (rigidBody != null) {
+            // This runs on every save of the LocationComponent too, which for anything that walks is every
+            // frame. Each setter below is a call into native code, so only what actually differs from what
+            // Bullet already holds is sent; the scale is compared against the one the body was built with
+            // rather than read back from the shape, which was one more native call and an allocation.
             float scale = location.getWorldScale();
-            if (Math.abs(rigidBody.rb.getCollisionShape().getLocalScaling().x - scale) > this.getEpsilon()
+            if (Math.abs(rigidBody.scale - scale) > this.getEpsilon()
                     || rigidBody.collidesWith != combineGroups(rb.collidesWith)) {
                 removeRigidBody(rigidBody);
                 newRigidBody(entity);
             } else {
-                rigidBody.rb.setAngularFactor(rb.angularFactor);
-                rigidBody.rb.setLinearFactor(rb.linearFactor);
-                rigidBody.rb.setFriction(rb.friction);
+                if (!rigidBody.angularFactor.equals(rb.angularFactor)) {
+                    rigidBody.rb.setAngularFactor(rb.angularFactor);
+                    rigidBody.angularFactor.set(rb.angularFactor);
+                }
+                if (!rigidBody.linearFactor.equals(rb.linearFactor)) {
+                    rigidBody.rb.setLinearFactor(rb.linearFactor);
+                    rigidBody.linearFactor.set(rb.linearFactor);
+                }
+                if (rigidBody.friction != rb.friction) {
+                    rigidBody.rb.setFriction(rb.friction);
+                    rigidBody.friction = rb.friction;
+                }
                 // Kinematic is a state, not just a birth setting: a body can be handed to Bullet for the
                 // length of a shove and taken back afterwards. Without this the flag could only ever be read
                 // once, at creation, and flipping it on the component changed nothing at all — in silence.
-                updateKinematicSettings(rb, rigidBody);
+                // A dynamic body is still woken on every update, as it always was; a kinematic one never
+                // sleeps, so restating it changes nothing.
+                if (!rb.kinematic || !rigidBody.kinematic) {
+                    updateKinematicSettings(rb, rigidBody);
+                }
             }
 
             return true;
@@ -602,6 +619,10 @@ public class BulletPhysics implements PhysicsEngine, Physics {
             collider.rb.setAngularFactor(rigidBody.angularFactor);
             collider.rb.setLinearFactor(rigidBody.linearFactor);
             collider.rb.setFriction(rigidBody.friction);
+            collider.scale = scale;
+            collider.angularFactor.set(rigidBody.angularFactor);
+            collider.linearFactor.set(rigidBody.linearFactor);
+            collider.friction = rigidBody.friction;
             collider.collidesWith = combineGroups(rigidBody.collidesWith);
             collider.setVelocity(rigidBody.velocity, rigidBody.angularVelocity);
             collider.setTransform(location.getWorldPosition(new Vector3f()),
@@ -757,6 +778,7 @@ public class BulletPhysics implements PhysicsEngine, Physics {
     }
 
     private void updateKinematicSettings(RigidBodyComponent rigidBody, BulletRigidBody collider) {
+        collider.kinematic = rigidBody.kinematic;
         if (rigidBody.kinematic) {
             collider.rb.setCollisionFlags(collider.rb.getCollisionFlags() | btCollisionObject.CollisionFlags.CF_KINEMATIC_OBJECT);
             collider.rb.setActivationState(Collision.DISABLE_DEACTIVATION);
@@ -868,6 +890,12 @@ public class BulletPhysics implements PhysicsEngine, Physics {
         public final btRigidBody.btRigidBodyConstructionInfo info;
         public short collidesWith;
         public boolean isDisposed;
+        // What Bullet was last told, so that an update can skip the native calls that would restate it.
+        private float scale;
+        private final Vector3f angularFactor = new Vector3f();
+        private final Vector3f linearFactor = new Vector3f();
+        private float friction;
+        private boolean kinematic;
         //  private final Transform pooledTransform = new Transform();
         private final Vector3f pendingImpulse = new Vector3f();
         private final Vector3f pendingForce = new Vector3f();

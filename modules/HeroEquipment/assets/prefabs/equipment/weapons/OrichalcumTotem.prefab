@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Totem d'orichalque"
+    },
+    "Item": {
+        "icon": "HeroEquipment:OrichalcumTotem",
+        "stackId": "HeroEquipment:OrichalcumTotem",
+        "maxStackSize": 1,
+        "baseDamage": 18,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "totem",
+        "hands": 2
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

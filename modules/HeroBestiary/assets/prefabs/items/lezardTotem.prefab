@@ -1,0 +1,16 @@
+{
+  "parent": "engine:iconItem",
+  "DisplayName": {
+    "name": "Totem : lézard cavernicole",
+    "description": "Posé au sol, fait apparaître un lézard cavernicole."
+  },
+  "Item": {
+    "icon": "HeroBestiary:lezardIcone",
+    "stackId": "HeroBestiary:lezardTotem",
+    "maxStackSize": 16,
+    "consumedOnUse": true
+  },
+  "Spawner": {
+    "creature": "HeroBestiary:lezard"
+  }
+}

@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Marteau de bronze"
+    },
+    "Item": {
+        "icon": "HeroEquipment:BronzeMallet",
+        "stackId": "HeroEquipment:BronzeMallet",
+        "maxStackSize": 1,
+        "baseDamage": 9,
+        "cooldownTime": 400
+    },
+    "Weapon": {
+        "type": "warHammer",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 2.0
+    },
+    "Durability": {
+        "durability": 500,
+        "maxDurability": 500
+    }
+}

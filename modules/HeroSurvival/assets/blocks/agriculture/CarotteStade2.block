@@ -1,0 +1,10 @@
+{
+    "basedOn": "CoreAssets:plant",
+    "displayName": "Carotte — jeune pousse",
+    "tile": "HeroSurvival:CarotteStade2",
+    "entity": {
+        "prefab": "HeroSurvival:CarotteStade2Entity",
+        "keepActive": true
+    },
+    "waving": true
+}

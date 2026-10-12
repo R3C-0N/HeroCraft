@@ -1,0 +1,89 @@
+{
+  "SkeletalMesh": {
+    "mesh": "HeroBestiary:ours",
+    "material": "HeroBestiary:oursPeau",
+    "animation": "HeroBestiary:ours#repos",
+    "loop": true
+  },
+  "Location": {},
+  "Network": {},
+  "DisplayName": {
+    "name": "Ours",
+    "description": "Lent à s’énerver, redoutable une fois dressé sur ses pattes arrière."
+  },
+  "Creature": {
+    "species": "ours",
+    "item": "HeroBestiary:oursTotem"
+  },
+  "Wander": {
+    "speed": 0.9,
+    "pauseMin": 2,
+    "pauseMax": 6,
+    "walkMin": 3,
+    "walkMax": 8,
+    "turnCalm": 90,
+    "turnRate": 160
+  },
+  "Predator": {
+    "sight": 14,
+    "giveUp": 20,
+    "reachUp": 5,
+    "chaseSpeed": 3.6,
+    "turnRate": 220,
+    "reach": 2.2,
+    "bite": 14,
+    "cadence": 2.0,
+    "dropMax": 4,
+    "garde": 12,
+    "portee": 22
+  },
+  "Habitat": {
+    "biomes": [
+      "CoreWorlds:FOREST",
+      "CoreWorlds:MOUNTAINS",
+      "CoreWorlds:TAIGA"
+    ],
+    "densite": 0.2,
+    "groupeMin": 1,
+    "groupeMax": 1,
+    "plafond": 1,
+    "eau": 12,
+    "ombre": 4,
+    "exige": 1
+  },
+  "Home": {
+    "suit": 0,
+    "tire": 90,
+    "franc": 6,
+    "laisse": 14
+  },
+  "Health": {
+    "maxHealth": 110,
+    "currentHealth": 110,
+    "destroyEntityOnNoHealth": true
+  },
+  "BaseRegen": {
+    "regenRate": 2,
+    "waitBeforeRegen": 25
+  },
+  "BoxShape": {
+    "extents": [
+      0.7875,
+      1.35,
+      1.8281
+    ]
+  },
+  "RigidBody": {
+    "kinematic": true,
+    "mass": 1
+  },
+  "DropGrammar": {
+    "itemDrops": [
+      "4-6*HeroBestiary:viandeOurs",
+      "2-3*CoreAssets:Bone",
+      "1-2*CoreAssets:Hide",
+      "2-3*HeroBestiary:cuirEpais",
+      "0.4|1-2*HeroBestiary:griffesOurs"
+    ]
+  }
+}

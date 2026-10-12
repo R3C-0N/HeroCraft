@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Sabre d'orichalque"
+    },
+    "Item": {
+        "icon": "HeroEquipment:OrichalcumSabre",
+        "stackId": "HeroEquipment:OrichalcumSabre",
+        "maxStackSize": 1,
+        "baseDamage": 19,
+        "cooldownTime": 250
+    },
+    "Weapon": {
+        "type": "windBlade",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 0.8
+    },
+    "Durability": {
+        "durability": 3000,
+        "maxDurability": 3000
+    }
+}

@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Masse d'acier"
+    },
+    "Item": {
+        "icon": "HeroEquipment:SteelMace",
+        "stackId": "HeroEquipment:SteelMace",
+        "maxStackSize": 1,
+        "baseDamage": 15,
+        "cooldownTime": 450
+    },
+    "Weapon": {
+        "type": "club",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 1.6
+    },
+    "Durability": {
+        "durability": 2000,
+        "maxDurability": 2000
+    }
+}

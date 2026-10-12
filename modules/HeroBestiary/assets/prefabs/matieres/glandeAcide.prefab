@@ -1,0 +1,10 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Glandes acides"
+    },
+    "Item": {
+        "icon": "HeroBestiary:butin#glandeAcide",
+        "stackId": "HeroBestiary:glandeAcide"
+    }
+}

@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bâton d'âmes à pointe de silex"
+    },
+    "Item": {
+        "icon": "HeroEquipment:FlintSoulStaff",
+        "stackId": "HeroEquipment:FlintSoulStaff",
+        "maxStackSize": 1,
+        "baseDamage": 3,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "soulStaff",
+        "hands": 2
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 150,
+        "maxDurability": 150
+    }
+}

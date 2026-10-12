@@ -1,0 +1,16 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Viande cuite de sanglier",
+        "description": "Se mange au clic droit. Rassasie de 30."
+    },
+    "Item": {
+        "icon": "HeroSurvival:cuisine#viandeSanglier",
+        "stackId": "HeroSurvival:viandeCuiteSanglier",
+        "maxStackSize": 99,
+        "consumedOnUse": true
+    },
+    "Food": {
+        "nourishment": 30
+    }
+}

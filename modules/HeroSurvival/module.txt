@@ -1,0 +1,47 @@
+{
+    "id": "HeroSurvival",
+    "version": "1.0.0",
+    "author": "R3C-0N",
+    "displayName": "HeroCraft — survie",
+    "description": "Faim, nourriture et plats, agriculture, exposition au froid, à la chaleur et à l'altitude, brûlure dans les liquides.",
+    "dependencies": [
+        {
+            "id": "HeroCommon",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "HeroEquipment",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "HeroCubeWorlds",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "BiomesAPI",
+            "minVersion": "4.1.0"
+        },
+        {
+            "id": "CoreAssets",
+            "minVersion": "2.0.0"
+        },
+        {
+            "id": "CoreWorlds",
+            "minVersion": "1.1.0",
+            "maxVersion": "3.0.0"
+        },
+        {
+            "id": "Drops",
+            "minVersion": "1.0.0"
+        },
+        {
+            "id": "Health",
+            "minVersion": "2.0.0-SNAPSHOT"
+        },
+        {
+            "id": "Inventory",
+            "minVersion": "1.2.1"
+        }
+    ],
+    "serverSideOnly": false
+}

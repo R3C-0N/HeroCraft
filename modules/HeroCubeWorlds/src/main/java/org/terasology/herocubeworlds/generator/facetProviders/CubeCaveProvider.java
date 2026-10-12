@@ -1,0 +1,471 @@
+// Copyright 2026 R3C-0N
+// SPDX-License-Identifier: Apache-2.0
+package org.terasology.herocubeworlds.generator.facetProviders;
+
+import org.joml.Vector3ic;
+import org.terasology.herocubeworlds.generator.CubeGeometry;
+import org.terasology.herocubeworlds.generator.SphereFieldLattice;
+import org.terasology.herocubeworlds.generator.facets.CaveFacet;
+import org.terasology.herocubeworlds.topology.CubePattern;
+import org.terasology.engine.utilities.procedural.BrownianNoise;
+import org.terasology.engine.utilities.procedural.Noise;
+import org.terasology.engine.utilities.procedural.SimplexNoise;
+import org.terasology.engine.world.block.BlockAreac;
+import org.terasology.engine.world.block.BlockRegion;
+import org.terasology.engine.world.generation.Facet;
+import org.terasology.engine.world.generation.GeneratingRegion;
+import org.terasology.engine.world.generation.Produces;
+import org.terasology.engine.world.generation.Requires;
+import org.terasology.engine.world.generation.ScalableFacetProvider;
+import org.terasology.engine.world.generation.Updates;
+import org.terasology.engine.world.generation.facets.DensityFacet;
+import org.terasology.engine.world.generation.facets.ElevationFacet;
+import org.terasology.engine.world.generation.facets.SeaLevelFacet;
+import org.terasology.engine.world.generation.facets.SurfacesFacet;
+
+/**
+ * Takes the caves out of the rock.
+ * <p>
+ * <b>A tunnel is an intersection, not a ridge.</b> In three dimensions the set where one scalar
+ * field is near zero is a <em>sheet</em>, because a level set of a scalar function is a surface; a
+ * world carved from one would be full of enormous flat fissures. A tunnel is a <em>curve</em>, so it
+ * takes two independent fields: the set where both are near zero at once, thickened into a tube.
+ * Hence {@code n1² + n2² < t²}, squared to keep a square root out of the inner loop.
+ * <p>
+ * <b>The threshold is computed, not tuned.</b> For two independent fields of width sigma the
+ * distance of the pair from the origin is Rayleigh distributed, so a target fraction of the rock
+ * fixes the threshold outright: {@code t = sigma * sqrt(-2 ln(1 - phi))}. Sigma is measured, by
+ * {@code CaveFieldCalibrationTest}, because it belongs to the engine's noise and not to us.
+ * <p>
+ * <b>One octave for the tunnels.</b> The weights of a Brownian noise fall as roughly one half per
+ * octave, so a fourth octave still carries about an eighth of sigma — and the threshold here is
+ * about a sixth of sigma. An octave of that size does not decorate the tube, it pinches it, and the
+ * network comes apart into a string of sealed pockets. That failure is invisible in a screenshot
+ * and invisible in a volume census; only {@code CaveConnectivityTest} sees it.
+ * <p>
+ * <b>The depth profile multiplies the radius, never the threshold's meaning.</b> Moving a threshold
+ * makes a tunnel stop dead, leaving a section cut clean across; scaling the radius closes it to a
+ * point. Same arithmetic, different shape at the end of the gallery.
+ * <p>
+ * <b>Implements {@link ScalableFacetProvider} and must.</b> {@code WorldBuilder.addProviderChain}
+ * filters providers by that interface when the chain is scalable, and drops the others without a
+ * word: the facet would simply never be produced.
+ */
+@Requires({@Facet(ElevationFacet.class), @Facet(SeaLevelFacet.class)})
+@Updates({@Facet(DensityFacet.class), @Facet(SurfacesFacet.class)})
+@Produces(CaveFacet.class)
+public class CubeCaveProvider implements ScalableFacetProvider {
+
+    /** Spacing of the noise lattice, in blocks. Must divide a face edge. */
+    private static final int LATTICE_STEP = 4;
+
+    /**
+     * The coarsest scale at which galleries are still carved, for the distant terrain. Past it a cell
+     * is wider than the bore of a gallery and would only read noise; see {@code
+     * DistantColumnCensusTest} for what each level keeps.
+     */
+    public static final int MAX_CARVED_SCALE = 4;
+
+    /**
+     * Width of the tunnel field, measured by {@code CaveFieldCalibrationTest} on the engine's noise.
+     * It belongs to the shape of that noise and to nothing here, so it is checked rather than
+     * trusted: retune the engine's simplex and this generator carves either nothing or everything.
+     * <p>
+     * The room fields are <em>not</em> described by a sigma, and that is deliberate — see
+     * {@code ROOM_LEVEL}. A width says how far a field wanders on average and says nothing about how
+     * far it ever gets, which is the only question a level set asks.
+     */
+    private static final double SIGMA_ONE_OCTAVE = 0.4255;
+
+    /**
+     * The two systems of galleries. Sizes are in blocks and not counts around the sphere, unlike
+     * every field that describes a region: a gallery is a thing a player walks down, and a player
+     * is 1.6 blocks tall whatever the planet measures. Tie the bore to the radius and a larger
+     * world gets seventeen-block corridors.
+     * <p>
+     * The vertical size is the smaller of the pair on purpose — see
+     * {@code SphereSampler.readAt}: it is what lays the galleries over on their side.
+     * <p>
+     * <b>The size of a gallery and the volume carved are separate levers, and that is what these
+     * numbers buy.</b> The fraction fixes what share of the rock is hollow; the feature size fixes
+     * how that share is parcelled out. Scaling both sizes by half again left the fraction alone and
+     * turned a bore of 5.3 by 3.0 into one of 8.0 by 4.5 — the same hollow rock, in a third fewer
+     * galleries, all of them walkable. Raising the fraction instead would have widened them too, and
+     * left the ground a sponge.
+     */
+    private static final double MAIN_HORIZONTAL = 96.0;
+    private static final double MAIN_VERTICAL = 63.0;
+    private static final double MAIN_FRACTION = 0.014;
+
+    /**
+     * The minor system is squashed less than the main one, and carves a little more. Its first
+     * numbers — 30 blocks vertical at one percent — gave galleries 1.82 blocks high against a
+     * character of 1.6, and the connectivity census read it straight away: barely half of the
+     * carved cells had a carved cell above them, so half of what had been dug was a crawl.
+     */
+    private static final double MINOR_HORIZONTAL = 60.0;
+    private static final double MINOR_VERTICAL = 51.0;
+    private static final double MINOR_FRACTION = 0.012;
+
+    /**
+     * Rooms are a swelling of the galleries rather than a system of their own. A separate field of
+     * blobs would open caverns with no way in; a wider bore cannot, being the same tunnel.
+     * <p>
+     * <b>Three tiers, and they combine by the maximum.</b> A chamber one walks through, a hall one
+     * crosses, and a cathedral one remembers afterwards. Multiplying two swells together would give
+     * seven times three and a half, and a gallery twenty-four times its bore is not a room: it is
+     * the end of the rock.
+     * <p>
+     * <b>The levels are measured quantiles, and writing them in sigma switched all three off.</b>
+     * They first read 1.5, 2.0 and 2.4 sigma for the levels and 2.3, 2.8 and 3.0 for the peaks,
+     * which looks like a reasonable spread until the field is measured: over 320 000 samples the
+     * cathedral field never exceeds <b>0.759</b>, and its peak was asking for 0.821. The swell
+     * therefore never left the neighbourhood of one, and the same was nearly true of the other two.
+     * Nothing said so. The galleries were there, the world rendered, and the halls simply did not
+     * exist — {@code RoomSizeProbeTest} put the largest open space in a whole sample at twenty-one
+     * blocks across, against the fifty-six the table claimed.
+     * <p>
+     * <b>And a tall column of air is not a room.</b> The first check measured the longest unbroken
+     * vertical run and read 2.1 % of the carved rock standing twenty-four blocks tall, which was
+     * true and meant nothing: that finds the places where a gallery happens to stand on end. A room
+     * has to be wide in all three directions at once, which is what the erosion in
+     * {@code RoomSizeProbeTest} measures and what these numbers are now set against.
+     */
+    private static final double[] ROOM_HORIZONTAL = {70.0, 150.0, 320.0};
+    private static final double[] ROOM_VERTICAL = {34.0, 64.0, 120.0};
+
+    /** A tenth, a twentieth and a hundredth of the volume, measured on each field in turn. */
+    private static final double[] ROOM_LEVEL = {0.3416, 0.4552, 0.6114};
+
+    /** Where each tier reaches its full swell: a fiftieth, a two-hundredth, a five-hundredth. */
+    private static final double[] ROOM_PEAK = {0.5114, 0.6369, 0.7133};
+
+    private static final double[] ROOM_SWELL = {1.0, 3.5, 9.0};
+
+    /**
+     * Where the caves are allowed to break the surface. A constant depth would either open every
+     * tunnel that runs shallow, shredding the ground, or open none at all: the permission has to be
+     * a field in its own right, patchy at the size of a cave mouth.
+     */
+    private static final double ENTRANCE_SIZE = 120.0;
+    private static final double ENTRANCE_LEVEL = 0.55;
+    private static final double ENTRANCE_SOFT = 0.15;
+
+    /**
+     * How much wider a gallery runs where an entrance is permitted, and this is the difference
+     * between a cave one enters and a cave one falls into.
+     * <p>
+     * Switching the roof off lets the tunnel through the last block of ground, but what comes out is
+     * the <em>tip</em> of the tube grazing the surface, and a tip is a point: measured over a
+     * thousand blocks of two seeds, the median mouth was one column across and only one in thirty
+     * reached nine. A player walks over a one-column hole without seeing it, so a network that is
+     * open on paper reads as sealed. The flare widens the bore under a permitted entrance, and since
+     * the section goes as the square of the radius it is the cheapest lever there is. It reaches no
+     * deeper than the permission itself — {@code openness} is only read in the top few tens of
+     * blocks — so galleries keep their own bore and only the porch swells.
+     * <p>
+     * <b>The count is not the lever; the size is.</b> Moving {@link #ENTRANCE_LEVEL} instead was
+     * tried at four settings and only slides the number of mouths up and down: the field is noise at
+     * a hundred and twenty blocks, so rarer permission clumps what is left and the walk to the
+     * nearest way in went from 168 blocks to 388 while the median mouth stayed at three columns.
+     * The permission is therefore left exactly where it was, and this is the only number that moved.
+     * <p>
+     * Measured by {@code CaveReachTest}, which is the oracle to re-run before touching this. The
+     * walk to a mouth of nine columns or more, over three windows of a thousand blocks on two
+     * seeds:
+     * <pre>
+     *   flare 1.0   288 blocks, 63 % of land within 300, largest mouth 43 columns
+     *   flare 1.7   175 / 192 / 222, 76 to 91 %, largest 97 to 130
+     *   flare 2.0   144 / 144 / 172, 88 to 96 %
+     *   flare 2.5   124 / 141 / 151, 91 to 99 %, largest up to 212
+     * </pre>
+     * 1.7 is the one that answers the target of two to three hundred blocks; the others overshoot
+     * it, and generosity here is paid for on the surface. The world-wide share of land columns
+     * holed at the surface goes 0,046 % at 1.0, 0,174 % at 1.7, 0,267 % at 2.0, 0,396 % at 2.5 and
+     * 0,659 % at 3.2, against the 0,8 % above which {@code CaveEntranceCensusTest} calls the ground
+     * pitted. Read that census and not the three windows before moving this: the windows are
+     * coastal lowland and read a third of the planet's rate.
+     */
+    private static final double MOUTH_FLARE = 1.7;
+
+    /** Rock left over a gallery where no entrance is permitted, and the length of the fade. */
+    private static final double ROOF_COVER = 6.0;
+    private static final double ROOF_FADE = 16.0;
+
+    /**
+     * Rock left under the sea floor, and it is exact rather than hopeful: this chain has no density
+     * noise in it, so the density is exactly {@code elevation - y} and a ten block seal is ten
+     * blocks. A hole in the sea floor would be a dry shaft under the ocean.
+     */
+    private static final double SEA_FLOOR_SEAL = 10.0;
+
+    /** Solid rock kept over the mantle, and the fade above it. */
+    private static final int FLOOR_MARGIN = 16;
+    private static final double FLOOR_FADE = 16.0;
+
+    /** How much wider the galleries run at depth, and the depth at which that is reached. */
+    private static final double DEEP_GAIN = 0.20;
+    private static final double DEEP_AT = 150.0;
+
+    /** What a carved cell's density becomes. Assigned and not subtracted, so it is idempotent. */
+    private static final float CARVED = -1f;
+
+    private final CubeGeometry geometry;
+    private Noise mainOne;
+    private Noise mainTwo;
+    private Noise minorOne;
+    private Noise minorTwo;
+    private final Noise[] rooms = new Noise[ROOM_HORIZONTAL.length];
+    private Noise entrances;
+
+    public CubeCaveProvider(CubeGeometry geometry) {
+        this.geometry = geometry;
+    }
+
+    @Override
+    public void setSeed(long seed) {
+        // Each field takes its own stream, derived by an independent constant. Deriving them by
+        // adding to one seed would correlate them, and two correlated fields do not intersect in a
+        // curve — they fall onto each other and the tunnels degenerate back into sheets.
+        mainOne = new BrownianNoise(new SimplexNoise(seed ^ 0x3d5c1b77L), 1);
+        mainTwo = new BrownianNoise(new SimplexNoise(seed ^ 0x6a2f90e3L), 1);
+        minorOne = new BrownianNoise(new SimplexNoise(seed ^ 0x11b4d80fL), 1);
+        minorTwo = new BrownianNoise(new SimplexNoise(seed ^ 0x74e6a259L), 1);
+        rooms[0] = new BrownianNoise(new SimplexNoise(seed ^ 0x2c871f45L), 3);
+        rooms[1] = new BrownianNoise(new SimplexNoise(seed ^ 0x48be2a91L), 3);
+        rooms[2] = new BrownianNoise(new SimplexNoise(seed ^ 0x7a0c5de3L), 3);
+        entrances = new BrownianNoise(new SimplexNoise(seed ^ 0x59a3e6cbL), 2);
+    }
+
+    @Override
+    public void process(GeneratingRegion region, float scale) {
+        DensityFacet density = region.getRegionFacet(DensityFacet.class);
+        CaveFacet caves = new CaveFacet(region.getRegion(), region.getBorderForFacet(DensityFacet.class));
+
+        // At a coarser scale, a cell of the region stands for scale blocks of the world in every
+        // direction, and it is carved if the world is carved where its corner falls: the distant
+        // terrain keeps its overhangs that way, down to the scale where a cell is wider than a
+        // gallery. Past that scale, or at a scale that is not a whole number of blocks, no caves.
+        int cellBlocks = Math.round(scale);
+        if (scale > 1f && (cellBlocks != scale || cellBlocks > MAX_CARVED_SCALE)) {
+            region.setRegionFacet(CaveFacet.class, caves);
+            return;
+        }
+
+        int face = geometry.faceOfRegion(region.getRegion(), scale);
+        if (face == CubePattern.NO_FACE) {
+            region.setRegionFacet(CaveFacet.class, caves);
+            return;
+        }
+
+        float[] densityValues = density.getInternal();
+        boolean[] carved = caves.getInternal();
+        if (densityValues.length != carved.length) {
+            throw new IllegalStateException("the cave facet was built on a different region from "
+                    + "the density it carves: " + carved.length + " against " + densityValues.length);
+        }
+        if (!hasRock(densityValues)) {
+            // Open sky or open sea, which is more than half of everything generated. Leaving before
+            // the lattice is built is what keeps that half free.
+            region.setRegionFacet(CaveFacet.class, caves);
+            return;
+        }
+
+        // The lattice is spaced no finer than the cells it serves, so its cost follows the number of
+        // cells whatever the scale; at scale one it is exactly what it always was.
+        SphereFieldLattice lattice = new SphereFieldLattice(geometry, Math.max(LATTICE_STEP, cellBlocks));
+        int fieldMainOne = lattice.addVolumeField(mainOne, MAIN_HORIZONTAL, MAIN_VERTICAL);
+        int fieldMainTwo = lattice.addVolumeField(mainTwo, MAIN_HORIZONTAL, MAIN_VERTICAL);
+        int fieldMinorOne = lattice.addVolumeField(minorOne, MINOR_HORIZONTAL, MINOR_VERTICAL);
+        int fieldMinorTwo = lattice.addVolumeField(minorTwo, MINOR_HORIZONTAL, MINOR_VERTICAL);
+        int[] fieldRooms = new int[rooms.length];
+        for (int tier = 0; tier < rooms.length; tier++) {
+            fieldRooms[tier] = lattice.addVolumeField(rooms[tier], ROOM_HORIZONTAL[tier], ROOM_VERTICAL[tier]);
+        }
+        int fieldEntrances = lattice.addColumnField(entrances, ENTRANCE_SIZE);
+
+        BlockRegion densityRegion = density.getWorldRegion();
+        lattice.prepare(face, cellBlocks == 1 ? densityRegion : new BlockRegion(
+                densityRegion.minX() * cellBlocks, densityRegion.minY() * cellBlocks, densityRegion.minZ() * cellBlocks,
+                densityRegion.maxX() * cellBlocks + cellBlocks - 1, densityRegion.maxY() * cellBlocks + cellBlocks - 1,
+                densityRegion.maxZ() * cellBlocks + cellBlocks - 1));
+
+        ElevationFacet elevationFacet = region.getRegionFacet(ElevationFacet.class);
+        // Clamped for the same reason DensityNoiseProvider clamps: the density region can come out
+        // wider than the elevation area, borders being propagated in one reverse pass over a
+        // provider list whose order is not a guaranteed topological order.
+        BlockAreac elevationArea = elevationFacet.getWorldArea();
+        int seaLevel = region.getRegionFacet(SeaLevelFacet.class).getSeaLevel();
+
+        double mainThreshold = thresholdFor(MAIN_FRACTION);
+        double minorThreshold = thresholdFor(MINOR_FRACTION);
+
+        int x = densityRegion.minX();
+        int y = densityRegion.minY();
+        int z = densityRegion.minZ();
+        for (int i = 0; i < densityValues.length; i++) {
+            if (densityValues[i] > 0) {
+                int ex = Math.max(elevationArea.minX(), Math.min(elevationArea.maxX(), x));
+                int ez = Math.max(elevationArea.minY(), Math.min(elevationArea.maxY(), z));
+                float elevation = elevationFacet.getWorld(ex, ez);
+                int wx = x * cellBlocks;
+                int wy = y * cellBlocks;
+                int wz = z * cellBlocks;
+                double radius = radiusAt(lattice, fieldEntrances, wx, wy, wz, elevation, seaLevel);
+                if (radius > 0.0 && isCarved(lattice, wx, wy, wz, radius, fieldRooms,
+                        fieldMainOne, fieldMainTwo, mainThreshold,
+                        fieldMinorOne, fieldMinorTwo, minorThreshold)) {
+                    densityValues[i] = CARVED;
+                    carved[i] = true;
+                }
+            }
+
+            x++;
+            if (x > densityRegion.maxX()) {
+                x = densityRegion.minX();
+                y++;
+                if (y > densityRegion.maxY()) {
+                    y = densityRegion.minY();
+                    z++;
+                }
+            }
+        }
+
+        eraseCarvedSurfaces(region.getRegionFacet(SurfacesFacet.class), caves);
+        region.setRegionFacet(CaveFacet.class, caves);
+    }
+
+    /**
+     * Surfaces are taken away and never added, which is the whole of the flora problem.
+     * <p>
+     * Recomputing them the way {@code DensityNoiseProvider} does would mark every gallery floor a
+     * surface, and {@code SurfaceObjectProvider} walks <em>all</em> the surfaces of a column with no
+     * notion of open sky: there would be grass and trees underground. Removing instead also settles
+     * the other half — a surface whose ground a tunnel has eaten leaves a tree standing in the air,
+     * and {@code TreeRasterizer} does not check that the space is free before it builds.
+     */
+    private static void eraseCarvedSurfaces(SurfacesFacet surfaces, CaveFacet caves) {
+        BlockRegion carvedRegion = caves.getWorldRegion();
+        for (Vector3ic pos : surfaces.getWorldRegion()) {
+            if (carvedRegion.contains(pos) && surfaces.getWorld(pos) && caves.getWorld(pos)) {
+                surfaces.setWorld(pos, false);
+            }
+        }
+    }
+
+    private static boolean hasRock(float[] densityValues) {
+        for (float value : densityValues) {
+            if (value > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The threshold that carves a given fraction of the rock, from the Rayleigh distribution. */
+    private static double thresholdFor(double fraction) {
+        return SIGMA_ONE_OCTAVE * Math.sqrt(-2.0 * Math.log(1.0 - fraction));
+    }
+
+    /**
+     * How wide the galleries run here, as a multiple of their nominal bore, before any room. Zero
+     * means no cave is allowed at all.
+     * <p>
+     * The rooms are deliberately not folded in here. They cost a reading of a third volume field,
+     * and all but a few per cent of the rock is nowhere near a gallery at any radius — so the
+     * swelling is looked up in {@link #isCarved} only once the distance says it could matter.
+     */
+    private double radiusAt(SphereFieldLattice lattice, int fieldEntrances,
+                            int x, int y, int z, float elevation, int seaLevel) {
+        // A hard floor, and not merely a profile that fades to nothing: a profile is a floating
+        // point multiplication, and the last rock above the mantle should not depend on a rounding.
+        if (y < geometry.floorY() + FLOOR_MARGIN) {
+            return 0.0;
+        }
+        double depth = elevation - y;
+        if (depth <= 0.0) {
+            return 0.0;
+        }
+
+        double cover = ROOF_COVER;
+        double openness = 0.0;
+        if (elevation < seaLevel + 2) {
+            cover = SEA_FLOOR_SEAL;
+        } else if (depth < SEA_FLOOR_SEAL + ROOF_FADE) {
+            // Only near the surface does the permission mean anything: deeper than the cover plus
+            // the fade, the roof term is one whatever the field says, so there is nothing to ask.
+            openness = clamp((lattice.column(fieldEntrances, x, z) - ENTRANCE_LEVEL) / ENTRANCE_SOFT);
+        }
+        // A mouth opens at full section, and that is the whole of it. Attenuating the radius under
+        // a permitted entrance the way it is attenuated everywhere else closes the gallery to a
+        // point a few blocks short of daylight: the first version did exactly that, and the census
+        // found not one way in anywhere on the planet. Where the field permits an entrance the roof
+        // term is simply switched off, and the gallery carves through the last block of ground.
+        double roof = openness * MOUTH_FLARE + (1.0 - openness) * clamp((depth - cover) / ROOF_FADE);
+        if (roof <= 0.0) {
+            return 0.0;
+        }
+
+        double floor = clamp((y - geometry.floorY() - FLOOR_MARGIN) / FLOOR_FADE);
+        double deep = 1.0 + DEEP_GAIN * clamp(-y / DEEP_AT);
+        return roof * floor * deep;
+    }
+
+    private static boolean isCarved(SphereFieldLattice lattice, int x, int y, int z, double radius,
+                                    int[] fieldRooms,
+                                    int mainOneField, int mainTwoField, double mainThreshold,
+                                    int minorOneField, int minorTwoField, double minorThreshold) {
+        double a = lattice.volume(mainOneField, x, y, z);
+        double b = lattice.volume(mainTwoField, x, y, z);
+        double fromMain = a * a + b * b;
+        double mainScale = mainThreshold * radius;
+        if (fromMain < square(mainScale) || roomReaches(lattice, fieldRooms, x, y, z, fromMain, mainScale)) {
+            return true;
+        }
+
+        double c = lattice.volume(minorOneField, x, y, z);
+        double d = lattice.volume(minorTwoField, x, y, z);
+        double fromMinor = c * c + d * d;
+        double minorScale = minorThreshold * radius;
+        return fromMinor < square(minorScale)
+                || roomReaches(lattice, fieldRooms, x, y, z, fromMinor, minorScale);
+    }
+
+    /**
+     * Whether a room opens this cell out far enough to reach it, at any tier.
+     * <p>
+     * The tiers are asked in order and the first that reaches wins, which is the maximum of the
+     * three and never their product: two tiers peaking in the same place should give the wider of
+     * the two rooms, not the two multiplied together.
+     * <p>
+     * <b>A tier that cannot reach this far is never read.</b> Half of the rock lies inside the
+     * radius the widest tier could open, so a cell that simply asks all three costs three
+     * interpolations almost everywhere, and the carving pass nearly doubled when the tiers went from
+     * one to three. Comparing the distance against what a tier reaches <em>at its peak</em> is a
+     * multiplication; reading the field is eight array loads and seven blends. Most cells in that
+     * annulus are far enough out that only the cathedral could ever have reached them.
+     */
+    private static boolean roomReaches(SphereFieldLattice lattice, int[] fieldRooms,
+                                       int x, int y, int z, double distance, double scale) {
+        for (int tier = 0; tier < fieldRooms.length; tier++) {
+            if (distance >= square(scale * (1.0 + ROOM_SWELL[tier]))) {
+                continue;
+            }
+            double swell = 1.0 + ROOM_SWELL[tier] * clamp(
+                    (lattice.volume(fieldRooms[tier], x, y, z) - ROOM_LEVEL[tier])
+                            / (ROOM_PEAK[tier] - ROOM_LEVEL[tier]));
+            if (distance < square(scale * swell)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static double square(double value) {
+        return value * value;
+    }
+
+    private static double clamp(double value) {
+        return Math.max(0.0, Math.min(1.0, value));
+    }
+}

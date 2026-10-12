@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Pourpoint de cuivre"
+    },
+    "Item": {
+        "icon": "HeroEquipment:CopperMailChestplate",
+        "stackId": "HeroEquipment:CopperMailChestplate",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "chest",
+        "protection": 7
+    },
+    "Durability": {
+        "durability": 300,
+        "maxDurability": 300
+    }
+}

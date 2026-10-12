@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Bâton d'âmes d'acier"
+    },
+    "Item": {
+        "icon": "HeroEquipment:SteelSoulStaff",
+        "stackId": "HeroEquipment:SteelSoulStaff",
+        "maxStackSize": 1,
+        "baseDamage": 12,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "soulStaff",
+        "hands": 2
+    },
+    "Impact": {
+        "amplification": 0.9
+    },
+    "Durability": {
+        "durability": 2000,
+        "maxDurability": 2000
+    }
+}

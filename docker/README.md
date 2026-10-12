@@ -21,8 +21,7 @@ cubique dépend.
 |---|---|
 | Type de ressource | Docker Compose |
 | Fichier | `docker/docker-compose.yaml` |
-| Submodules | **à activer** (`Advanced → Git Submodules`) — sans eux `modules/` reste vide et il n'y a aucun générateur |
-| Source | la **GitHub App**, pas « Public GitHub » : `CubeWorlds-Evolve` est privé, et une clé de déploiement ne couvre qu'un dépôt. Les URL du `.gitmodules` sont relatives pour que les submodules héritent du jeton du parent — vérifier que l'installation de l'App a accès aux six dépôts |
+| Source | la **GitHub App**, pas « Public GitHub » : le dépôt est privé. Tous les modules sont dans le dépôt : aucun submodule à activer |
 | Domaine | **à poser à la main** : `SERVICE_FQDN_TERASOLOGY_6080=terasology.exemple.fr` |
 | Mot de passe | généré depuis `SERVICE_PASSWORD_VNC`, visible dans l'interface Coolify |
 
@@ -87,7 +86,7 @@ accroché, et la page s'ouvre sans rien demander.
 |---|---|---|
 | `SCREEN` | `1600x900x24` | taille de l'écran virtuel, la fenêtre s'y cale |
 | `LP_NUM_THREADS` | `8` | fils du rasteriseur logiciel |
-| `WORLD_GENERATOR` | `CubeWorlds:cubeworld` | générateur par défaut du menu |
+| `WORLD_GENERATOR` | `HeroCubeWorlds:cubeworld` | générateur par défaut du menu |
 | `GAME_ARGS` | vide | arguments passés au lanceur, par exemple `--load-last-game` |
 | `CPUS`, `MEM_LIMIT` | `8`, `8g` | plafonds du conteneur |
 

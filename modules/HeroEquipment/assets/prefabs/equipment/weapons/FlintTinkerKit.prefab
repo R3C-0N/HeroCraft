@@ -1,0 +1,24 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Trousse de tailleur de pierre"
+    },
+    "Item": {
+        "icon": "HeroEquipment:FlintTinkerKit",
+        "stackId": "HeroEquipment:FlintTinkerKit",
+        "maxStackSize": 1,
+        "baseDamage": 2,
+        "cooldownTime": 300
+    },
+    "Weapon": {
+        "type": "engineerKit",
+        "hands": 1
+    },
+    "Impact": {
+        "amplification": 0.7
+    },
+    "Durability": {
+        "durability": 150,
+        "maxDurability": 150
+    }
+}

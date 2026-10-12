@@ -1,0 +1,20 @@
+{
+    "parent": "engine:iconItem",
+    "DisplayName": {
+        "name": "Braies de cuir"
+    },
+    "Item": {
+        "icon": "HeroEquipment:HideLeggings",
+        "stackId": "HeroEquipment:HideLeggings",
+        "maxStackSize": 1
+    },
+    "Armor": {
+        "weight": "light",
+        "slot": "legs",
+        "protection": 2
+    },
+    "Durability": {
+        "durability": 80,
+        "maxDurability": 80
+    }
+}

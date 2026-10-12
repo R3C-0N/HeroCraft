@@ -1,0 +1,10 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "1*HeroSurvival:riz",
+            "1*CoreAssets:Coal|CoreAssets:Plank"
+        ],
+        "result": "HeroSurvival:rizCuit",
+        "station": "furnace"
+    }
+}

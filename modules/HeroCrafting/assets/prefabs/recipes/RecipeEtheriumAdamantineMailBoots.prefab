@@ -1,0 +1,13 @@
+{
+    "Recipe": {
+        "ingredients": [
+            "4*CoreAssets:EtheriumAdamantineIngot",
+            "1*CoreAssets:Rope"
+        ],
+        "result": "HeroEquipment:EtheriumAdamantineMailBoots",
+        "station": "ultimateforge",
+        "repair": [
+            "1*CoreAssets:EtheriumAdamantineIngot"
+        ]
+    }
+}

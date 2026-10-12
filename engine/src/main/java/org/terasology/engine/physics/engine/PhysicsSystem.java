@@ -186,6 +186,13 @@ public class PhysicsSystem extends BaseComponentSystem implements UpdateSubscrib
                 physics.updateTrigger(entity);
             }
 
+            // A kinematic body is moved by the game and never by Bullet, and it never sleeps: everything below
+            // would copy back a velocity nobody reads and cast a ray ahead of something the physics does not
+            // drive, for every such body, every frame. Creatures are kinematic, so this was most of the loop.
+            if (comp.kinematic) {
+                continue;
+            }
+
             if (body.isActive()) {
                 body.getLinearVelocity(comp.velocity);
                 body.getAngularVelocity(comp.angularVelocity);
