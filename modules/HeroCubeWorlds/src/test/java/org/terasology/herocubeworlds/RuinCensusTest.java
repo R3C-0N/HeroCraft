@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * How many ruins the planet carries, of which cultures, and whether each stands where the rule says
- * — dry, flat enough, and judged alike by every chunk it touches.
+ * — dry, flat enough, on the ground the world actually lays, and found by every chunk it touches.
  * <p>
  * The coordinates of the first ruins are printed on purpose: they are where to go in the running
  * game to look at one.
