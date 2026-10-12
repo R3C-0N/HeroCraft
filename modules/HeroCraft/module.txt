@@ -34,6 +34,10 @@
             "minVersion": "1.0.0"
         },
         {
+            "id": "HeroDungeons",
+            "minVersion": "1.0.0"
+        },
+        {
             "id": "BiomesAPI",
             "minVersion": "4.1.0"
         },

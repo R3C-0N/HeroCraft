@@ -117,9 +117,24 @@ public class CubeSphereProjection implements SphereProjection {
         return textureId;
     }
 
+    /**
+     * Where a position that must not be seen is sent, as the shader's {@code SPHERE_EXILE}: far below
+     * the focus, past any far plane, so a frustum test turns it down.
+     */
+    public static final float EXILE = 1.0e7f;
+
     @Override
     public Vector3f curvedPosition(Vector3fc worldPosition, Vector3f dest) {
         Vector3fc origin = getFocus();
+        // The pockets of the past live in the dead slots of the net, and they are flat. Seen from
+        // inside one they are drawn as stored; across the line, either way, nothing is seen.
+        boolean hereDead = geometry.faceOf((int) Math.floor(worldPosition.x()),
+                (int) Math.floor(worldPosition.z())) == CubePattern.NO_FACE;
+        boolean focusDead = geometry.faceOf((int) Math.floor(origin.x()),
+                (int) Math.floor(origin.z())) == CubePattern.NO_FACE;
+        if (hereDead || focusDead) {
+            return hereDead && focusDead ? dest.set(worldPosition).sub(origin) : dest.set(0.0f, -EXILE, 0.0f);
+        }
         curved(worldPosition.x(), worldPosition.y(), worldPosition.z(), dest);
         Vector3f originCurved = new Vector3f();
         curved(origin.x(), origin.y(), origin.z(), originCurved);

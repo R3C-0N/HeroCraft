@@ -4,6 +4,7 @@ package org.terasology.herocubeworlds;
 
 import org.junit.jupiter.api.Test;
 import org.terasology.herocubeworlds.projection.ConformalCubeTable;
+import org.terasology.herocubeworlds.rendering.CubeSphereProjection;
 import org.terasology.herocubeworlds.topology.CubePattern;
 import org.terasology.herocubeworlds.topology.FaceBasis;
 
@@ -103,6 +104,18 @@ class ShaderAgreementTest {
      * The shader's read of the table, transcribed in single precision, against the double precision
      * one. Same four texels, same weights, same clamp.
      */
+    /**
+     * The pockets of the past sit on dead slots, and both sides send what must not be seen to the same
+     * place. A CPU that culled on one exile and a shader that drew at another would decide visibility
+     * on evidence from somewhere the vertex is not.
+     */
+    @Test
+    void theShaderExilesWhereTheCpuDoes() throws IOException {
+        Matcher m = Pattern.compile("const float SPHERE_EXILE\\s*=\\s*([0-9.eE+-]+)\\s*;").matcher(source());
+        assertTrue(m.find(), "no SPHERE_EXILE in the shader");
+        assertEquals(CubeSphereProjection.EXILE, Float.parseFloat(m.group(1)));
+    }
+
     @Test
     void theShaderReadsTheSameTable() {
         ConformalCubeTable table = ConformalCubeTable.build();

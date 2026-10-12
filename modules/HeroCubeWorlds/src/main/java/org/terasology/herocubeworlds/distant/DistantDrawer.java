@@ -9,6 +9,7 @@ import org.joml.Vector3fc;
 import org.terasology.herocubeworlds.generator.CubeGeometry;
 import org.terasology.herocubeworlds.rendering.CubeSphereProjection;
 import org.terasology.herocubeworlds.rendering.SphericalChunkVisibilityPolicy;
+import org.terasology.herocubeworlds.topology.CubePattern;
 import org.terasology.engine.rendering.assets.material.Material;
 import org.terasology.engine.rendering.cameras.Camera;
 import org.terasology.engine.rendering.primitives.ChunkMesh;
@@ -72,6 +73,12 @@ public final class DistantDrawer {
     /** @see org.terasology.engine.rendering.world.DistantGeometry#render */
     public int render(ChunkMesh.RenderPhase phase, Material material, Camera camera, boolean shadow) {
         CubeGeometry geometry = projection.geometry();
+        Vector3fc focus = projection.getFocus();
+        if (geometry.faceOf((int) Math.floor(focus.x()), (int) Math.floor(focus.z())) == CubePattern.NO_FACE) {
+            // The eye is in a pocket of the past, on a dead slot of the net: the planet is not there
+            // to be seen, and the shader would exile every node anyway, at the cost of drawing it.
+            return 0;
+        }
         glActiveTexture(GL_TEXTURE0 + HOLE_SLOT);
         glBindTexture(GL_TEXTURE_2D, hole.textureId());
         glActiveTexture(GL_TEXTURE0);
