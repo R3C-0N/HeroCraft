@@ -66,6 +66,33 @@ public class ChunkViewTest extends TerasologyTestingEnvironment {
         assertEquals(solidBlock, chunkView.getBlock(0, 0, 0));
     }
 
+    /**
+     * Outside is relative to the chunk being meshed: from a face, a dead slot is hidden; from a dead slot — a pocket
+     * of the past — its own slot is the world and the face is hidden.
+     */
+    @Test
+    public void testHideOutsideIsRelativeToTheCentre() {
+        // The chunks east of x = 32 lie on the other side of the line.
+        ChunkViewCoreImpl fromInside = rowView();
+        fromInside.hideOutside((x, z) -> x >= Chunks.SIZE_X, solidBlock);
+        assertEquals(airBlock, fromInside.getBlock(1, 0, 0), "the meshed chunk is hidden from itself");
+        assertEquals(solidBlock, fromInside.getBlock(Chunks.SIZE_X + 1, 0, 0), "the dead slot shows through");
+
+        // Now the centre and the west are the dead slot, and the east is the face.
+        ChunkViewCoreImpl fromPocket = rowView();
+        fromPocket.hideOutside((x, z) -> x < Chunks.SIZE_X, solidBlock);
+        assertEquals(airBlock, fromPocket.getBlock(1, 0, 0), "a pocket chunk is hidden from itself");
+        assertEquals(airBlock, fromPocket.getBlock(-1, 0, 0), "the pocket's own slot is hidden from it");
+        assertEquals(solidBlock, fromPocket.getBlock(Chunks.SIZE_X + 1, 0, 0), "the face shows through");
+    }
+
+    private ChunkViewCoreImpl rowView() {
+        Chunk[] chunks = new Chunk[]{createChunk(-1, 0, -1), createChunk(0, 0, -1), createChunk(1, 0, -1),
+            createChunk(-1, 0, 0), createChunk(0, 0, 0), createChunk(1, 0, 0),
+            createChunk(-1, 0, 1), createChunk(0, 0, 1), createChunk(1, 0, 1)};
+        return new ChunkViewCoreImpl(chunks, new BlockRegion(0, 0, 0).expand(1, 0, 1), new Vector3i(1, 0, 1), airBlock);
+    }
+
     @Test
     public void testOffsetWorldView() {
         Chunk chunk = createChunk(0, 0, 0);
