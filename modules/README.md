@@ -18,7 +18,7 @@ d'upstream, qui ne reçoivent que des correctifs.
 | `HeroCrafting` | stations, recettes, paliers, fourneau | né du fork ; tiré de `CoreSampleGameplay` |
 | `HeroBestiary` | créatures, apparition, recul, dépeçage, viandes | né du fork (ex-`Bestiaire`) |
 | `HeroCreative` | le mode créatif complet, et le gameplay qui démarre en créatif | né du fork (ex-`CreativeGameplay`, plus le créatif de `CoreSampleGameplay`) |
-| `HeroCubeWorlds` | monde-cube rendu en sphère, terrain lointain | né du fork (ex-`CubeWorlds`) ; importé de `CubeWorlds-Evolve` à `cc70066` |
+| `HeroCubeWorlds` | monde-cube rendu en sphère, terrain lointain, ruines au présent | né du fork (ex-`CubeWorlds`) ; importé de `CubeWorlds-Evolve` à `cc70066` |
 | `HeroDungeons` | le passé des ruines : les poches où se jouent les donjons, une par case morte du patron du cube | né du fork |
 | `CoreRendering` | passes de rendu, ouvertes au monde courbe | fork de `Terasology/CoreRendering` ; importé à `6961156` |
 | `CoreWorlds` | générateurs plats et biomes de base | fork de `Terasology/CoreWorlds` ; importé à `e43e41a` |

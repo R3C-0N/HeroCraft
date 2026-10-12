@@ -6,11 +6,13 @@ import org.junit.jupiter.api.Test;
 import org.terasology.core.world.generator.facetProviders.SeaLevelProvider;
 import org.terasology.core.world.generator.facetProviders.SurfaceToDensityProvider;
 import org.terasology.herocubeworlds.generator.CubeGeometry;
+import org.terasology.herocubeworlds.generator.CubeWorldGenerator;
 import org.terasology.herocubeworlds.generator.facetProviders.CubeBiomeProvider;
 import org.terasology.herocubeworlds.generator.facetProviders.CubeCaveProvider;
 import org.terasology.herocubeworlds.generator.facetProviders.CubeClimateProvider;
 import org.terasology.herocubeworlds.generator.facetProviders.CubeOreProvider;
 import org.terasology.herocubeworlds.generator.facetProviders.CubeRegionProvider;
+import org.terasology.herocubeworlds.generator.facetProviders.CubeRuinProvider;
 import org.terasology.herocubeworlds.generator.facetProviders.CubeSurfaceProvider;
 import org.terasology.herocubeworlds.topology.CubePattern;
 import org.terasology.engine.world.block.BlockRegion;
@@ -65,6 +67,8 @@ class ChainCostBreakdownTest {
         steps.add(() -> new CubeCaveProvider(cube));
         names.add("minerais (filons)");
         steps.add(() -> new CubeOreProvider(cube));
+        names.add("ruines (verdict sur l'emprise)");
+        steps.add(() -> new CubeRuinProvider(cube, CubeWorldGenerator::columnProviders));
 
         // Every chain is built and exercised before any of them is timed. Warming each chain just
         // before measuring it, which is the obvious way round, makes the first chain measured pay

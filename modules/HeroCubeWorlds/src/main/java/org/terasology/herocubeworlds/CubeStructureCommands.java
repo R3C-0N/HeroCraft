@@ -38,9 +38,9 @@ import java.util.Locale;
  * world. The facet chain answers anywhere, at any distance, for the cost of the passes involved and
  * nothing else. Nothing is generated, meshed, lit or saved.
  * <p>
- * <b>The only structure this generator makes is a cave mouth.</b> There are no villages, no ruins
- * and no dungeons in {@code CubeWorldGenerator}'s chain, so a registry of structure kinds would be a
- * table with one row in it. The report is nonetheless written as a table by kind: adding a kind is
+ * <b>The only structure this counts is a cave mouth.</b> The ruins have their own command,
+ * {@code locateRuins}: they are one per cell of 640 blocks and would hardly ever fall inside this
+ * scan's capped radius, so a registry of structure kinds here would still be a table with one row. The report is nonetheless written as a table by kind: adding a kind is
  * one private method returning its {@link Found} list, and one line in {@link #locateStructures}.
  * <p>
  * <b>Two queries per tile, and that is the cheap way round.</b> The caves are a three dimensional
