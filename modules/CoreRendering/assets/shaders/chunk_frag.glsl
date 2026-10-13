@@ -67,6 +67,10 @@ uniform float clip;
 // the flat position; and it steps aside wherever the game already draws the terrain, read from a texture with one
 // texel per column of chunks of the net. Zero for every other pass, which never sets it.
 uniform int distantTerrain;
+// How dark the inside of a far canopy reads, and how many grass blocks carry plants and how much they darken them.
+const float DISTANT_HOLLOW_SHADE = 0.3;
+const float DISTANT_PLANT_DENSITY = 0.5;
+const float DISTANT_PLANT_SHADE = 0.5;
 uniform sampler2D distantHole;
 
 in float v_sunlight;
@@ -199,6 +203,19 @@ void main() {
         // would send the sampler to its coarsest level along each seam.
         color = textureGrad(textureAtlas, texCoord.xy, dFdx(distantPlane) * TEXTURE_OFFSET,
                             dFdy(distantPlane) * TEXTURE_OFFSET);
+        // A far column is drawn as a solid box, so what a near block lets through is not there to see: through
+        // the holes of a canopy one sees its dark inside, not the colour the tile keeps under its clear texels.
+        color.rgb *= mix(DISTANT_HOLLOW_SHADE, 1.0, color.a);
+        color.a = 1.0;
+        if (v_blockHint == BLOCK_HINT_PLANTED && v_gridNormal.y > 0.5) {
+            // The plants a near chunk grows on its grass are not meshed this far: one block in a few is darkened in
+            // their stead. Once a block shrinks under a pixel the dots blend into their average, or they would shimmer.
+            vec2 cell = floor(distantPlane);
+            float planted = step(fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453), DISTANT_PLANT_DENSITY);
+            float blocksPerPixel = max(length(dFdx(distantPlane)), length(dFdy(distantPlane)));
+            float dotted = mix(planted, DISTANT_PLANT_DENSITY, smoothstep(0.5, 1.5, blocksPerPixel));
+            color.rgb *= 1.0 - DISTANT_PLANT_SHADE * dotted;
+        }
     } else {
         color = texture(textureAtlas, texCoord.xy);
     }

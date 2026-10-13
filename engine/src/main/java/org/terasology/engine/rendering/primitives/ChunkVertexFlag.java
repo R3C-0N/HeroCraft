@@ -11,7 +11,9 @@ public enum ChunkVertexFlag {
     WATER_SURFACE(2, "BLOCK_HINT_WATER_SURFACE"),
     COLOR_MASK(3, "BLOCK_HINT_GRASS"),
     WAVING(4, "BLOCK_HINT_WAVING"),
-    WAVING_BLOCK(5, "BLOCK_HINT_WAVING_BLOCK");
+    WAVING_BLOCK(5, "BLOCK_HINT_WAVING_BLOCK"),
+    /** A top that stands for ground with plants on it, drawn without them: far terrain dots it where they grow. */
+    PLANTED(6, "BLOCK_HINT_PLANTED");
 
     private int value;
     private String defineName;
