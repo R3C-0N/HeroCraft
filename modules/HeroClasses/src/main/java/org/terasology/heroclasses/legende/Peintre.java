@@ -194,9 +194,9 @@ public final class Peintre {
             px(x, y, col, 1, w, h);
         }
 
-        void px(int x, int y, int col, double alpha, int w, int h) {
-            w = w != 0 ? w : 1;
-            h = h != 0 ? h : 1;
+        void px(int x, int y, int col, double alpha, int largeur, int hauteur) {
+            int w = largeur != 0 ? largeur : 1;
+            int h = hauteur != 0 ? hauteur : 1;
             if (x < 0 || y < 0 || x + w > r.largeur() || y + h > r.hauteur()) {
                 return;
             }
@@ -208,9 +208,9 @@ public final class Peintre {
             sym(x, y, col, 1, 1);
         }
 
-        void sym(int x, int y, int col, int w, int h) {
-            w = w != 0 ? w : 1;
-            h = h != 0 ? h : 1;
+        void sym(int x, int y, int col, int largeur, int hauteur) {
+            int w = largeur != 0 ? largeur : 1;
+            int h = hauteur != 0 ? hauteur : 1;
             px(x, y, col, w, h);
             px(r.largeur() - x - w, y, col, w, h);
         }

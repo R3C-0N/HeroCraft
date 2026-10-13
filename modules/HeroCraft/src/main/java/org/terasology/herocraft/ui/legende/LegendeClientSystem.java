@@ -12,10 +12,10 @@ import org.terasology.engine.logic.permission.PermissionManager;
 import org.terasology.engine.logic.players.LocalPlayer;
 import org.terasology.engine.registry.In;
 import org.terasology.engine.rendering.nui.NUIManager;
+import org.terasology.engine.rendering.nui.UIScreenLayer;
 import org.terasology.gestalt.entitysystem.event.ReceiveEvent;
 import org.terasology.heroclasses.legende.BaptemeRefuseEvent;
 import org.terasology.heroclasses.legende.LegendeComponent;
-import org.terasology.nui.UIScreenLayer;
 
 /**
  * Opens the creator on a hero not yet baptised, once per arrival: a player who closes it plays on unsealed until
