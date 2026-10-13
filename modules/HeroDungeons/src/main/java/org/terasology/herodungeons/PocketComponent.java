@@ -5,6 +5,9 @@ package org.terasology.herodungeons;
 import org.terasology.engine.entitySystem.entity.EntityRef;
 import org.terasology.gestalt.entitysystem.component.Component;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * One pocket of the past, held open on a plot of {@link PocketPlots}.
  * <p>
@@ -26,10 +29,44 @@ public class PocketComponent implements Component<PocketComponent> {
     /** The character who opened the pocket and is waiting to be let in, or NULL once inside. */
     public EntityRef waiting = EntityRef.NULL;
 
+    /** Whether the pocket is the past of a ruin, opened at its anchor stone, rather than the bench of lot 0. */
+    public boolean fromRuin;
+
+    /** The ruin: its centre, its floor and the side of its gate, which is all its window needs. */
+    public int ruinX;
+    public int ruinZ;
+    public int floorY;
+    public int gateSide;
+
+    /** Game time at which the window closes of itself (D16), in milliseconds; 0 for the bench, which never does. */
+    public long closesAt;
+
+    /** Whether the group has been told the window is about to close. */
+    public boolean warned;
+
+    /** The characters standing at the anchor stone when the window opened: the only ones who may cross it (D17). */
+    public List<EntityRef> members = new ArrayList<>();
+
+    /** The entity at the anchor stone that keeps the ruin loaded while its window is open. */
+    public EntityRef keeper = EntityRef.NULL;
+
+    /** Whether the pocket has been emptied and wiped, and only its window is still to be taken down. */
+    public boolean closing;
+
     @Override
     public void copyFrom(PocketComponent other) {
         this.plot = other.plot;
         this.built = other.built;
         this.waiting = other.waiting;
+        this.fromRuin = other.fromRuin;
+        this.ruinX = other.ruinX;
+        this.ruinZ = other.ruinZ;
+        this.floorY = other.floorY;
+        this.gateSide = other.gateSide;
+        this.closesAt = other.closesAt;
+        this.warned = other.warned;
+        this.members = new ArrayList<>(other.members);
+        this.keeper = other.keeper;
+        this.closing = other.closing;
     }
 }

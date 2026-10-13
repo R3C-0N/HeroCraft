@@ -38,7 +38,14 @@ public final class PocketRoom {
     /** Height of a pillar. */
     public static final int PILLAR = 3;
 
-    public enum Kind { AIR, FLOOR, WALL, PILLAR }
+    /** From the centre to the way out, behind where one arrives. */
+    public static final int EXIT_DISTANCE = 4;
+
+    /** Half the width of the way out, and its height above the walking level. */
+    public static final int EXIT_HALF_WIDTH = 1;
+    public static final int EXIT_HEIGHT = 3;
+
+    public enum Kind { AIR, FLOOR, WALL, PILLAR, WINDOW }
 
     private PocketRoom() {
     }
@@ -67,7 +74,18 @@ public final class PocketRoom {
         if (onGrid && dy < PILLAR) {
             return Kind.PILLAR;
         }
+        if (isExit(dx, dy, dz)) {
+            return Kind.WINDOW;
+        }
         return Kind.AIR;
+    }
+
+    /**
+     * Whether a position, relative to the centre, is in the window that leads back out: a step behind
+     * where one arrives, so that one turns round to leave, and never walks into it on arriving.
+     */
+    public static boolean isExit(int dx, int dy, int dz) {
+        return dz == -EXIT_DISTANCE && Math.abs(dx) <= EXIT_HALF_WIDTH && dy >= 0 && dy < EXIT_HEIGHT;
     }
 
     /**

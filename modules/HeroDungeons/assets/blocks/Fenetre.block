@@ -1,0 +1,20 @@
+/**
+ * La nappe d'une fenêtre sur le passé : on la traverse en marchant, on ne la
+ * casse pas, on ne la vise pas. Elle luit faiblement, pour qu'on la trouve de
+ * nuit dans une ruine.
+ */
+{
+    "displayName": "Fenêtre sur le passé",
+    "tile": "HeroDungeons:Fenetre",
+    "translucent": true,
+    "doubleSided": true,
+    "shadowCasting": false,
+    "penetrable": true,
+    "targetable": false,
+    "attachmentAllowed": false,
+    "replacementAllowed": false,
+    "debrisOnDestroy": false,
+    "luminance": 10,
+    "hardness": 0,
+    "mass": 1
+}
