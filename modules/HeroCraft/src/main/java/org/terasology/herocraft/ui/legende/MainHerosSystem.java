@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.terasology.herocraft.ui.legende;
 
+import org.joml.Vector3f;
 import org.terasology.engine.entitySystem.entity.EntityRef;
 import org.terasology.engine.entitySystem.entity.lifecycleEvents.OnActivatedComponent;
 import org.terasology.engine.entitySystem.entity.lifecycleEvents.OnChangedComponent;
@@ -29,6 +30,12 @@ import org.terasology.heroclasses.legende.Peaux;
 public class MainHerosSystem extends BaseComponentSystem {
 
     private static final String MAIN = "engine:hand";
+    /**
+     * The engine holds its hand end-on, which shows the palm and little else; tipped further and drawn in, the arm
+     * shows its sleeve along the side, as a hero's arm should.
+     */
+    private static final Vector3f INCLINAISON = new Vector3f(45, 5, 0);
+    private static final Vector3f DECALAGE = new Vector3f(-0.15f, -1.35f, 0);
 
     @In
     private LocalPlayer localPlayer;
@@ -59,6 +66,15 @@ public class MainHerosSystem extends BaseComponentSystem {
         }
     }
 
+    private void poser(Vector3f rotation, Vector3f translation) {
+        FirstPersonHeldItemTransformComponent pose = main.getComponent(FirstPersonHeldItemTransformComponent.class);
+        if (pose != null) {
+            pose.rotateDegrees = new Vector3f(rotation);
+            pose.translate = new Vector3f(translation);
+            main.saveComponent(pose);
+        }
+    }
+
     private void habiller() {
         MeshComponent mesh = main.getComponent(MeshComponent.class);
         if (mesh == null) {
@@ -71,9 +87,11 @@ public class MainHerosSystem extends BaseComponentSystem {
             }
             mesh.mesh = bras;
             mesh.material = Peaux.materiau(legende.apparence());
+            poser(INCLINAISON, DECALAGE);
         } else {
             mesh.mesh = Assets.getMesh(MAIN).orElse(mesh.mesh);
             mesh.material = Assets.getMaterial(MAIN).orElse(mesh.material);
+            poser(new Vector3f(25, 5, 0), new Vector3f(-0.5f, -1.5f, 0));
         }
         main.saveComponent(mesh);
     }
