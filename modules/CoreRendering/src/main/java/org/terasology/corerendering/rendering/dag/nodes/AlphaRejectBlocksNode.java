@@ -25,6 +25,7 @@ import org.terasology.engine.rendering.sphere.SphereProjection;
 import org.terasology.engine.rendering.dag.stateChanges.SetInputTexture2D;
 import org.terasology.engine.rendering.dag.stateChanges.SetWireframe;
 import org.terasology.engine.rendering.primitives.ChunkMesh;
+import org.terasology.engine.rendering.world.DistantGeometry;
 import org.terasology.engine.rendering.world.RenderQueuesHelper;
 import org.terasology.engine.rendering.world.WorldRenderer;
 import org.terasology.engine.world.WorldProvider;
@@ -59,6 +60,7 @@ public class AlphaRejectBlocksNode extends AbstractNode implements WireframeCapa
     private static final int SPHERE_TABLE_SLOT = 8;
 
     private WorldRenderer worldRenderer;
+    private final Context nodeContext;
     private RenderQueuesHelper renderQueues;
     private RenderingConfig renderingConfig;
     private WorldProvider worldProvider;
@@ -84,6 +86,7 @@ public class AlphaRejectBlocksNode extends AbstractNode implements WireframeCapa
     public AlphaRejectBlocksNode(String nodeUri, Name providingModule, Context context) {
         super(nodeUri, providingModule, context);
 
+        nodeContext = context;
         renderQueues = context.get(RenderQueuesHelper.class);
         worldProvider = context.get(WorldProvider.class);
         addOutputBufferPairConnection(1);
@@ -194,6 +197,11 @@ public class AlphaRejectBlocksNode extends AbstractNode implements WireframeCapa
         Matrix4f model = new Matrix4f();
         Matrix3f normalMatrix = new Matrix3f();
         chunkMaterial.setMatrix4("projectionMatrix", activeCamera.getProjectionMatrix(), true);
+        // Plants and leaves thin out along the edge of the chunks as the ground there gives way to the distance.
+        DistantGeometry distant = nodeContext.get(DistantGeometry.class);
+        if (distant != null) {
+            distant.fadeChunks(chunkMaterial, true);
+        }
 
         while (renderQueues.chunksAlphaReject.size() > 0) {
             RenderableChunk chunk = renderQueues.chunksAlphaReject.poll();
@@ -216,6 +224,10 @@ public class AlphaRejectBlocksNode extends AbstractNode implements WireframeCapa
             } else {
                 numberOfChunksThatAreNotReadyYet++; // TODO: verify - should we count them only in ChunksOpaqueNode?
             }
+        }
+
+        if (distant != null) {
+            distant.fadeChunks(chunkMaterial, false);
         }
 
         worldRenderer.increaseTrianglesCount(numberOfRenderedTriangles);

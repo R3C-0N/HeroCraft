@@ -6,13 +6,17 @@ import org.joml.Vector3i;
 import org.joml.Vector3ic;
 import org.terasology.biomesAPI.Biome;
 import org.terasology.core.world.CoreBiome;
+import org.terasology.core.world.generator.facets.FloraFacet;
 import org.terasology.core.world.generator.facets.TreeFacet;
+import org.terasology.core.world.generator.rasterizers.FloraType;
 import org.terasology.core.world.generator.trees.TreeGenerator;
 import org.terasology.core.world.generator.trees.Trees;
+import org.terasology.engine.utilities.procedural.WhiteNoise;
 import org.terasology.engine.utilities.random.FastRandom;
 import org.terasology.engine.world.block.Block;
 import org.terasology.engine.world.block.BlockManager;
 import org.terasology.engine.world.block.BlockRegion;
+import org.terasology.engine.world.chunks.Chunks;
 import org.terasology.engine.world.generation.Region;
 import org.terasology.engine.world.generation.World;
 
@@ -39,6 +43,10 @@ import java.util.Set;
  * and a tree there is a few pixels at most. The coarse levels get a {@link Canopy} instead: as much
  * of the ground under leaves as the biome's trees would cover, where a hash of the column says, with
  * crowns as wide and as high as the real generators grow them — measured on them, not guessed.
+ * <p>
+ * The same full-scale chain lists the plants of the fine levels: tall grass, flowers, mushrooms, each
+ * chosen as {@code FloraRasterizer} chooses it. A column the distance draws does not grow them, but
+ * the ground under one takes its colour, so a meadow far off is speckled where it is speckled near.
  */
 final class DistantTrees {
 
@@ -57,11 +65,38 @@ final class DistantTrees {
     private final BlockManager blockManager;
     private final DistantPalette palette;
     private volatile Map<CoreBiome, Canopy> canopies;
+    private volatile Map<FloraType, int[]> flora;
 
     DistantTrees(World world, BlockManager blockManager, DistantPalette palette) {
         this.world = world;
         this.blockManager = blockManager;
         this.palette = palette;
+    }
+
+    /**
+     * The plants of each kind, as {@code FloraRasterizer} lists them — its table is private, so it is
+     * repeated here, in its order, which is part of the choice.
+     */
+    private Map<FloraType, int[]> flora() {
+        Map<FloraType, int[]> known = flora;
+        if (known == null) {
+            known = new EnumMap<>(FloraType.class);
+            known.put(FloraType.GRASS, ids("TallGrass1", "TallGrass2", "TallGrass3"));
+            known.put(FloraType.FLOWER, ids("Dandelion", "Glowbell", "Iris", "Lavender", "RedClover", "RedFlower",
+                    "Tulip", "YellowFlower"));
+            known.put(FloraType.MUSHROOM, ids("BigBrownShroom", "BrownShroom", "RedShroom"));
+            flora = known;
+        }
+        return known;
+    }
+
+    private int[] ids(String... names) {
+        int[] ids = new int[names.length];
+        for (int i = 0; i < names.length; i++) {
+            Block block = blockManager.getBlock("CoreAssets:" + names[i]);
+            ids[i] = block == null ? -1 : palette.idOf(block);
+        }
+        return ids;
     }
 
     /**
@@ -225,15 +260,22 @@ final class DistantTrees {
                 bottoms.get(bottoms.size() / 2), tops.get(tops.size() / 2));
     }
 
-    /** The tree blocks of a node, by sampled cell. */
+    /** The tree blocks of a node, by sampled cell, and the plants on its sampled columns. */
     static final class Cells {
         private final Map<Long, Integer> materials = new HashMap<>();
+        private final Map<Long, Integer> plants = new HashMap<>();
         private int trees;
 
         /** @return the palette number of the tree block in this cell, or -1 */
         int material(int u, int v, int y) {
             Integer material = materials.get(key(u, v, y));
             return material == null ? -1 : material;
+        }
+
+        /** @return the palette number of the plant standing on the ground of this column, or -1 */
+        int plant(int u, int v) {
+            Integer plant = plants.get(key(u, v, 0));
+            return plant == null ? -1 : plant;
         }
 
         boolean isEmpty() {
@@ -267,6 +309,10 @@ final class DistantTrees {
         BlockRegion area = new BlockRegion(minX - REACH_SIDEWAYS, lowestGround + 1, minZ - REACH_SIDEWAYS)
                 .setSize(span + 2 * REACH_SIDEWAYS, highestGround - lowestGround + 1, span + 2 * REACH_SIDEWAYS);
         Region region = world.getWorldData(area, 1);
+        FloraFacet plants = region.getFacet(FloraFacet.class);
+        if (plants != null) {
+            sow(cells, plants, minX, minZ, size, stride);
+        }
         TreeFacet facet = region.getFacet(TreeFacet.class);
         if (facet == null) {
             return cells;
@@ -286,6 +332,37 @@ final class DistantTrees {
                     TreeRecorder.BASE_X, TreeRecorder.BASE_Y, TreeRecorder.BASE_Z);
         }
         return cells;
+    }
+
+    /**
+     * The plants on the sampled columns, each the block {@code FloraRasterizer} would set: picked from its
+     * kind's list by white noise seeded with the chunk's position, at the block's place in the chunk.
+     */
+    private void sow(Cells cells, FloraFacet facet, int minX, int minZ, int size, int stride) {
+        Map<FloraType, int[]> kinds = flora();
+        Vector3i chunk = new Vector3i();
+        for (Map.Entry<Vector3ic, FloraType> entry : facet.getWorldEntries().entrySet()) {
+            Vector3ic pos = entry.getKey();
+            int x = pos.x();
+            int z = pos.z();
+            if (Math.floorMod(x - minX, stride) != 0 || Math.floorMod(z - minZ, stride) != 0) {
+                continue;
+            }
+            int u = Math.floorDiv(x - minX, stride);
+            int v = Math.floorDiv(z - minZ, stride);
+            int[] list = kinds.get(entry.getValue());
+            if (u < 0 || v < 0 || u >= size || v >= size || list == null) {
+                continue;
+            }
+            chunk.set(Math.floorDiv(x, Chunks.SIZE_X), Math.floorDiv(pos.y(), Chunks.SIZE_Y),
+                    Math.floorDiv(z, Chunks.SIZE_Z));
+            WhiteNoise noise = new WhiteNoise(chunk.hashCode());
+            int pick = Math.abs(noise.intNoise(Math.floorMod(x, Chunks.SIZE_X), Math.floorMod(pos.y(), Chunks.SIZE_Y),
+                    Math.floorMod(z, Chunks.SIZE_Z))) % list.length;
+            if (list[pick] >= 0) {
+                cells.plants.put(Cells.key(u, v, 0), list[pick]);
+            }
+        }
     }
 
     private void sample(Cells cells, Block block, int x, int y, int z, int minX, int minZ, int size, int stride) {

@@ -67,11 +67,40 @@ uniform float clip;
 // the flat position; and it steps aside wherever the game already draws the terrain, read from a texture with one
 // texel per column of chunks of the net. Zero for every other pass, which never sets it.
 uniform int distantTerrain;
-// How dark the inside of a far canopy reads, and how many grass blocks carry plants and how much they darken them.
+// How dark the inside of a far canopy reads through its holes.
 const float DISTANT_HOLLOW_SHADE = 0.3;
-const float DISTANT_PLANT_DENSITY = 0.5;
-const float DISTANT_PLANT_SHADE = 0.5;
 uniform sampler2D distantHole;
+// Along the edge of the chunks the two terrains are crossfaded rather than cut, as Distant Horizons does: in a column
+// of chunks that borders the distance, marked so in the hole, each pixel shows one or the other by a dither whose
+// share of the distance grows to one at the border. The chunk passes switch it on, and draw the distance last.
+uniform int distantFade;
+const float DISTANT_EDGE = 224.0 / 255.0;
+
+// Of the open columns round this one, how near the nearest is: one at its border, zero a column away.
+float distantFadeWeight(vec2 gridXZ) {
+    ivec2 column = ivec2(floor(gridXZ / 32.0));
+    ivec2 side = textureSize(distantHole, 0);
+    vec2 inside = fract(gridXZ / 32.0);
+    float weight = 0.0;
+    for (int dz = -1; dz <= 1; dz++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            ivec2 next = column + ivec2(dx, dz);
+            if ((dx == 0 && dz == 0) || any(lessThan(next, ivec2(0))) || any(greaterThanEqual(next, side))
+                    || texelFetch(distantHole, next, 0).r > 0.1) {
+                continue;
+            }
+            float acrossX = dx > 0 ? 1.0 - inside.x : (dx < 0 ? inside.x : 0.0);
+            float acrossZ = dz > 0 ? 1.0 - inside.y : (dz < 0 ? inside.y : 0.0);
+            weight = max(weight, 1.0 - max(acrossX, acrossZ));
+        }
+    }
+    return weight;
+}
+
+// A threshold per pixel, still from one frame to the next: interleaved gradient noise.
+float distantDither() {
+    return fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+}
 
 in float v_sunlight;
 in float v_blocklight;
@@ -102,10 +131,22 @@ void main() {
 
     vec2 texCoord = v_uv0.xy;
     vec2 distantPlane = vec2(0.0);
+    if (distantTerrain == 0 && distantFade == 1) {
+        // A chunk along the edge gives way where the dither falls under the distance's share.
+        vec3 gridPos = vertexWorldPos + 0.5;
+        float hole = texelFetch(distantHole, ivec2(floor(gridPos.xz / 32.0)), 0).r;
+        if (abs(hole - DISTANT_EDGE) < 0.02 && distantDither() < distantFadeWeight(gridPos.xz)) {
+            discard;
+        }
+    }
     if (distantTerrain == 1) {
         // A block is centred on its coordinates: half a block on, and a block's faces fall on whole numbers.
         vec3 gridPos = vertexWorldPos + 0.5;
-        if (texelFetch(distantHole, ivec2(floor(gridPos.xz / 32.0)), 0).r > 0.5) {
+        float hole = texelFetch(distantHole, ivec2(floor(gridPos.xz / 32.0)), 0).r;
+        // Along the edge, exactly the pixels the chunks gave way on; anywhere else the chunks have it.
+        bool fading = distantFade == 1 && abs(hole - DISTANT_EDGE) < 0.02
+                && distantDither() < distantFadeWeight(gridPos.xz);
+        if (hole > 0.5 && !fading) {
             discard;
         }
         // Along the face the fragment is on: the ground for a top, the height and the run of the wall for a side,
@@ -207,15 +248,6 @@ void main() {
         // the holes of a canopy one sees its dark inside, not the colour the tile keeps under its clear texels.
         color.rgb *= mix(DISTANT_HOLLOW_SHADE, 1.0, color.a);
         color.a = 1.0;
-        if (v_blockHint == BLOCK_HINT_PLANTED && v_gridNormal.y > 0.5) {
-            // The plants a near chunk grows on its grass are not meshed this far: one block in a few is darkened in
-            // their stead. Once a block shrinks under a pixel the dots blend into their average, or they would shimmer.
-            vec2 cell = floor(distantPlane);
-            float planted = step(fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453), DISTANT_PLANT_DENSITY);
-            float blocksPerPixel = max(length(dFdx(distantPlane)), length(dFdy(distantPlane)));
-            float dotted = mix(planted, DISTANT_PLANT_DENSITY, smoothstep(0.5, 1.5, blocksPerPixel));
-            color.rgb *= 1.0 - DISTANT_PLANT_SHADE * dotted;
-        }
     } else {
         color = texture(textureAtlas, texCoord.xy);
     }

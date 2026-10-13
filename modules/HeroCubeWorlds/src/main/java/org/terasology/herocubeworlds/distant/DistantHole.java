@@ -34,6 +34,12 @@ import java.nio.ByteBuffer;
  * square of the grid, so it stops at a cut seam: across it, the distance still stands in until the
  * chunks there are drawn. Its texels are {@link #KEPT}, the chunks' {@link #DRAWN}: the shaders cut
  * both alike, at a half, and only the count tells them apart.
+ * <p>
+ * A drawn column that touches an open one is {@link #EDGE}: there the two terrains are crossfaded
+ * rather than cut, each pixel the chunks give way on taken by the distance, more of them nearer the
+ * border — the transition Distant Horizons makes, which hides the line the eye otherwise finds.
+ * The distance is therefore sent for those columns too. A slot of the net no face covers is
+ * {@link #DEAD}, so that a cut seam is never taken for an open column and faded.
  */
 public final class DistantHole {
 
@@ -41,10 +47,15 @@ public final class DistantHole {
     static final byte DRAWN = (byte) 0xFF;
     /** A column only the ring round the player keeps clear: nothing is drawn there yet. */
     static final byte KEPT = (byte) 0xC0;
+    /** A column the chunks draw, next to one they do not: the shaders crossfade it. */
+    static final byte EDGE = (byte) 0xE0;
+    /** A slot of the net no face covers: never open, never faded into. */
+    static final byte DEAD = (byte) 0x30;
 
     private final CubeGeometry geometry;
     private final int side;
     private final byte[] marks;
+    private final boolean[] dead;
     private final ByteBuffer upload;
     private boolean dirty = true;
     private int textureId;
@@ -53,6 +64,13 @@ public final class DistantHole {
         this.geometry = geometry;
         this.side = CubePattern.PATTERN_SIDE * geometry.faceChunks();
         this.marks = new byte[side * side];
+        this.dead = new boolean[side * side];
+        for (int z = 0; z < side; z++) {
+            for (int x = 0; x < side; x++) {
+                dead[x + z * side] = geometry.faceOf(x * Chunks.SIZE_X + Chunks.SIZE_X / 2,
+                        z * Chunks.SIZE_Z + Chunks.SIZE_Z / 2) == CubePattern.NO_FACE;
+            }
+        }
         this.upload = BufferUtils.createByteBuffer(side * side);
     }
 
@@ -61,6 +79,15 @@ public final class DistantHole {
      * column; a negative radius keeps none. Main thread: it reads the chunks' meshes.
      */
     public void mark(Iterable<Chunk> chunks, int centreX, int centreZ, int radius) {
+        mark(chunks, centreX, centreZ, radius, null);
+    }
+
+    /**
+     * As {@link #mark(Iterable, int, int, int)}, crossfading a drawn column into the distance only where
+     * the distance is there to take over: a column {@code distant} does not mark keeps its chunks whole,
+     * rather than showing the sky through them while its node builds. Null for everywhere.
+     */
+    public void mark(Iterable<Chunk> chunks, int centreX, int centreZ, int radius, boolean[] distant) {
         byte[] next = new byte[marks.length];
         // The lowest and highest chunk loaded in each column: those two are never meshed, having no
         // neighbour on one side, and waiting for them would wait for ever.
@@ -101,10 +128,21 @@ public final class DistantHole {
         }
         for (int z = centreZ - radius; z <= centreZ + radius; z++) {
             for (int x = centreX - radius; x <= centreX + radius; x++) {
-                if (x >= 0 && z >= 0 && x < side && z < side && next[x + z * side] == 0
-                        && geometry.faceOf(x * Chunks.SIZE_X + Chunks.SIZE_X / 2,
-                                z * Chunks.SIZE_Z + Chunks.SIZE_Z / 2) != CubePattern.NO_FACE) {
+                if (x >= 0 && z >= 0 && x < side && z < side && next[x + z * side] == 0 && !dead[x + z * side]) {
                     next[x + z * side] = KEPT;
+                }
+            }
+        }
+        for (int i = 0; i < next.length; i++) {
+            if (next[i] == 0 && dead[i]) {
+                next[i] = DEAD;
+            }
+        }
+        for (int z = 0; z < side; z++) {
+            for (int x = 0; x < side; x++) {
+                if (next[x + z * side] == DRAWN && (distant == null || distant[x + z * side])
+                        && touchesOpen(next, x, z)) {
+                    next[x + z * side] = EDGE;
                 }
             }
         }
@@ -112,6 +150,20 @@ public final class DistantHole {
             System.arraycopy(next, 0, marks, 0, marks.length);
             dirty = true;
         }
+    }
+
+    /** Whether a column has an open one among its eight neighbours, where the distance shows. */
+    private boolean touchesOpen(byte[] next, int x, int z) {
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                int nx = x + dx;
+                int nz = z + dz;
+                if (nx >= 0 && nz >= 0 && nx < side && nz < side && next[nx + nz * side] == 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** The texture, uploaded again if the marks moved. Main thread, with the GL context current. */
@@ -136,6 +188,11 @@ public final class DistantHole {
         return textureId;
     }
 
+    /** Columns of chunks along a side of the net, the grid the marks are kept on. */
+    public int side() {
+        return side;
+    }
+
     /** The texel of a chunk's column, or -1 off the net. */
     private int column(Chunk chunk) {
         int x = chunk.getPosition().x();
@@ -154,7 +211,8 @@ public final class DistantHole {
         int z1 = Math.floorDiv(netZ + span - 1, 32);
         for (int z = z0; z <= z1; z++) {
             for (int x = x0; x <= x1; x++) {
-                if (x < 0 || z < 0 || x >= side || z >= side || marks[x + z * side] == 0) {
+                byte mark = x < 0 || z < 0 || x >= side || z >= side ? 0 : marks[x + z * side];
+                if (mark == 0 || mark == EDGE) {
                     return false;
                 }
             }
@@ -164,7 +222,12 @@ public final class DistantHole {
 
     /** How many columns of chunks are drawn by the game, for the bench. */
     public int drawnColumns() {
-        return count(DRAWN);
+        return count(DRAWN) + count(EDGE);
+    }
+
+    /** How many drawn columns border the distance and are crossfaded into it, for the bench. */
+    public int edgeColumns() {
+        return count(EDGE);
     }
 
     /** How many columns only the ring round the player keeps clear, for the bench. */

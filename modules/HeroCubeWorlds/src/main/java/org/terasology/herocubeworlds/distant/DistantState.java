@@ -70,4 +70,12 @@ public final class DistantState implements DistantReach, DistantGeometry {
         DistantDrawer current = drawer;
         return current == null || hidden ? 0 : current.render(phase, material, camera, shadow);
     }
+
+    @Override
+    public void fadeChunks(Material material, boolean on) {
+        DistantDrawer current = drawer;
+        if (current != null) {
+            current.fadeChunks(material, on && !hidden);
+        }
+    }
 }

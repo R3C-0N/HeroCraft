@@ -151,8 +151,7 @@ public final class DistantMesher {
                                     material, block, CORNER_DEPTH, WATER_SURFACE_DROP);
                         } else {
                             patch(ground, columns, corner, Z_AXIS, stride, X_AXIS, stride, UP,
-                                    looks.topTile(material), looks.topTint(material),
-                                    looks.isGrass(material) ? ChunkVertexFlag.PLANTED : ChunkVertexFlag.NORMAL,
+                                    looks.topTile(material), looks.topTint(material), ChunkVertexFlag.NORMAL,
                                     material, block, (byte) 0, 0);
                         }
                     }

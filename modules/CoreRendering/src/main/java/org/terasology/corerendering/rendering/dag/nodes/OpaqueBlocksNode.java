@@ -200,6 +200,12 @@ public class OpaqueBlocksNode extends AbstractNode implements WireframeCapable, 
         Matrix4f model = new Matrix4f();
         Matrix3f normalMatrix = new Matrix3f();
         chunkMaterial.setMatrix4("projectionMatrix", activeCamera.getProjectionMatrix(), true);
+        // What the world draws past its chunks, with everything above still set: asked every frame, since
+        // the graph is built before the systems that publish it start. Its edge is crossfaded with the chunks.
+        DistantGeometry distant = nodeContext.get(DistantGeometry.class);
+        if (distant != null) {
+            distant.fadeChunks(chunkMaterial, true);
+        }
 
         while (renderQueues.chunksOpaque.size() > 0) {
             RenderableChunk chunk = renderQueues.chunksOpaque.poll();
@@ -228,11 +234,9 @@ public class OpaqueBlocksNode extends AbstractNode implements WireframeCapable, 
             }
         }
 
-        // What the world draws past its chunks, with everything above still set: asked every frame, since
-        // the graph is built before the systems that publish it start.
-        DistantGeometry distant = nodeContext.get(DistantGeometry.class);
         if (distant != null) {
             numberOfRenderedTriangles += distant.render(OPAQUE, chunkMaterial, activeCamera, false);
+            distant.fadeChunks(chunkMaterial, false);
         }
 
         worldRenderer.increaseTrianglesCount(numberOfRenderedTriangles);

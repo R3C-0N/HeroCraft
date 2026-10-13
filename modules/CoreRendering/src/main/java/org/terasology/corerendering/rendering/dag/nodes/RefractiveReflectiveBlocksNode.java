@@ -323,6 +323,11 @@ public class RefractiveReflectiveBlocksNode extends AbstractNode implements Prop
         Matrix3f normalMat = new Matrix3f();
 
         chunkMaterial.setMatrix4("projectionMatrix", activeCamera.getProjectionMatrix(), true);
+        // The distant sea, through the same variant, textures and uniforms as the near one, crossfaded at the edge.
+        DistantGeometry distant = nodeContext.get(DistantGeometry.class);
+        if (distant != null) {
+            distant.fadeChunks(chunkMaterial, true);
+        }
 
         while (renderQueues.chunksAlphaBlend.size() > 0) {
             RenderableChunk chunk = renderQueues.chunksAlphaBlend.poll();
@@ -346,10 +351,9 @@ public class RefractiveReflectiveBlocksNode extends AbstractNode implements Prop
             }
         }
 
-        // The distant sea, through the same variant, textures and uniforms as the near one.
-        DistantGeometry distant = nodeContext.get(DistantGeometry.class);
         if (distant != null) {
             numberOfRenderedTriangles += distant.render(REFRACTIVE, chunkMaterial, activeCamera, false);
+            distant.fadeChunks(chunkMaterial, false);
         }
 
         worldRenderer.increaseTrianglesCount(numberOfRenderedTriangles);
