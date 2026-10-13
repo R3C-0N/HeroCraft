@@ -41,7 +41,7 @@ public class ApercuHeros extends CoreWidget {
     /** Share of the shorter side the drawing fits the model's height into — the renderer's own fit. */
     private static final float AJUSTEMENT = 0.7f;
     /** The renderer fits the model to a third of the frame; the figure is the point of the panel. */
-    private static final float AGRANDI = 1.3f;
+    private static final float AGRANDI = 1.5f;
 
     private Mesh mesh;
     private Material materiau;

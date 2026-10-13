@@ -38,7 +38,7 @@
             {
                 "type": "UILabel",
                 "id": "titre",
-                "family": "title",
+                "family": "titre",
                 "text": "",
                 "layoutInfo": {
                     "width": 700,
@@ -228,7 +228,7 @@
                         "target": "TOP"
                     },
                     "position-bottom": {
-                        "offset": 246,
+                        "offset": 272,
                         "widget": "apercuPanneau",
                         "target": "BOTTOM"
                     }
@@ -338,7 +338,7 @@
                         "target": "BOTTOM"
                     },
                     "position-bottom": {
-                        "offset": 40,
+                        "offset": 30,
                         "widget": "apercuPanneau",
                         "target": "BOTTOM"
                     }
@@ -429,7 +429,7 @@
                         "target": "LEFT"
                     },
                     "position-top": {
-                        "offset": 116,
+                        "offset": 118,
                         "widget": "infoFond",
                         "target": "TOP"
                     }

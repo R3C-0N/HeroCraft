@@ -372,6 +372,16 @@
                     "text-align-vertical": "middle"
                 }
             }
+        },
+        "titre": {
+            "elements": {
+                "UILabel": {
+                    "font": "Uncial-Title",
+                    "text-color": "FFF3DCFF",
+                    "text-align-horizontal": "left",
+                    "text-align-vertical": "middle"
+                }
+            }
         }
     },
     "elements": {

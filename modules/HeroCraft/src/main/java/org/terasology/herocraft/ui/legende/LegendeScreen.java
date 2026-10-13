@@ -323,14 +323,14 @@ public class LegendeScreen extends CoreScreenLayer {
         pied.setHorizontalSpacing(12);
         UILabel avertissement = new UILabel("Aucun trait n’est définitif avant le baptême.");
         avertissement.setFamily("small-muted");
-        pied.addWidget(avertissement, new RowLayoutHint());
+        pied.addWidget(avertissement, new RowLayoutHint(0.7f));
         UIButton des = new UIButton("", "Tirer au sort");
         des.setFamily("fantome");
         des.subscribe(widget -> {
             cfg = Atlas.aleatoire(hasard);
             rafraichir();
         });
-        pied.addWidget(des, new RowLayoutHint().setUseContentWidth(true));
+        pied.addWidget(des, new RowLayoutHint(0.3f));
         contenu.addWidget(pied);
     }
 
