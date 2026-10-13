@@ -1,0 +1,25 @@
+{
+    "Class": {
+        "name": "Prêtre-guerrier",
+        "order": 4,
+        "category": "magic",
+        "role": "Vous bénissez d’une main et vous corrigez de l’autre.",
+        "armament": "Sceptre + Maillet de combat / Marteau (les deux mains occupées).",
+        "weapons": [
+            "healingScepter",
+            "warHammer"
+        ],
+        "melee": 40,
+        "ranged": 0,
+        "magic": 60,
+        "kit": [
+            {
+                "item": "HeroEquipment:FlintScepter"
+            }
+        ],
+        "arsenal": [
+            "HeroEquipment:WarMallet",
+            "HeroEquipment:FlintMallet"
+        ]
+    }
+}

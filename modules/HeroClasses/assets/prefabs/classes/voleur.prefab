@@ -1,0 +1,24 @@
+{
+    "Class": {
+        "name": "Voleur",
+        "order": 5,
+        "category": "ranged",
+        "role": "Deux métiers, une seule paire de mains : ouvrir, puis disparaître.",
+        "armament": "Arbalète de poing (une main) + main libre (magie de l’ombre et disparition).",
+        "weapons": [
+            "handCrossbow"
+        ],
+        "melee": 15,
+        "ranged": 60,
+        "magic": 25,
+        "kit": [
+            {
+                "item": "HeroEquipment:HandCrossbow"
+            },
+            {
+                "item": "HeroEquipment:FlintBolt",
+                "count": 32
+            }
+        ]
+    }
+}

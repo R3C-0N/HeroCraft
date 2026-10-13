@@ -22,6 +22,9 @@ public interface SkillCatalog {
 
     Optional<Prefab> characterClass(String id);
 
+    /** Every class, in the creator's order. */
+    List<Prefab> classes();
+
     /** The weapon types that wake a skill: its own, or its class's when it names none. */
     List<String> weaponsFor(Prefab skill);
 }

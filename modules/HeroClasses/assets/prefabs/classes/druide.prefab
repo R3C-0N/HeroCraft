@@ -1,0 +1,20 @@
+{
+    "Class": {
+        "name": "Druide",
+        "order": 1,
+        "category": "magic",
+        "role": "La forêt vous a laissé partir avec un morceau d’elle-même.",
+        "armament": "Totem (une main) + main libre (magie de la nature et métamorphoses).",
+        "weapons": [
+            "totem"
+        ],
+        "melee": 5,
+        "ranged": 0,
+        "magic": 95,
+        "kit": [
+            {
+                "item": "HeroEquipment:FlintTotem"
+            }
+        ]
+    }
+}

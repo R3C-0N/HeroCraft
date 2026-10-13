@@ -1,0 +1,24 @@
+{
+    "Class": {
+        "name": "Archer",
+        "order": 7,
+        "category": "ranged",
+        "role": "On vous reconnaît à la corde, pas au visage.",
+        "armament": "Arc (les deux mains occupées).",
+        "weapons": [
+            "bow"
+        ],
+        "melee": 0,
+        "ranged": 100,
+        "magic": 0,
+        "kit": [
+            {
+                "item": "HeroEquipment:ShortBow"
+            },
+            {
+                "item": "HeroEquipment:FlintArrow",
+                "count": 32
+            }
+        ]
+    }
+}

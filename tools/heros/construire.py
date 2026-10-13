@@ -164,6 +164,39 @@ BOITES = [
 
 TAILLE = 64                     # le patron est carre, 64 de cote
 
+# ------------------------------------------------------------- les plaques
+#
+# La pilosite ne se peint jamais sur la peau : barbe et chute de cheveux ont
+# chacune leur carre de 8 x 8 dans la premiere bande du patron, laisse libre par
+# Minecraft. Elles se posent sur deux plaques fines accrochees au crane, et la
+# decoupe alpha de la couche 2 leur donne leur silhouette : une plaque sans
+# barbe peinte est invisible. Devant et derriere lisent tout le carre, les
+# tranches n'en lisent que le bord -- c'est le decoupage de `hero-atlas.js`.
+#
+# (nom, os, centre x, bas, largeur, hauteur, z proche, z loin, coin du carre).
+# La barbe pend devant le visage, du milieu du visage au haut du torse ; la
+# chute de cheveux, au meme niveau, derriere le crane. Le z proche s'ecarte d'un
+# vingtieme d'unite de la couche 2 du crane, pour ne jamais lutter avec elle.
+
+PLAQUES = [
+    ("barbe", "tete", 0, EPAULE_U - 4, 8, 8, 4.05, 4.45, (0, 0)),
+    ("chevelure", "tete", 0, EPAULE_U - 4, 8, 8, -4.05, -4.45, (24, 0)),
+]
+
+
+def rect_plaque(coin, largeur, hauteur, face):
+    """Le rectangle d'une face de plaque : le carre entier de face, son bord
+    sur les tranches."""
+    u, v = coin
+    return {
+        "+z": (u, v, largeur, hauteur),
+        "-z": (u, v, largeur, hauteur),
+        "-x": (u, v, 1, hauteur),
+        "+x": (u + largeur - 1, v, 1, hauteur),
+        "+y": (u, v, largeur, 1),
+        "-y": (u, v + hauteur - 1, largeur, 1),
+    }[face]
+
 
 def etendue(centre_x, bas, dims, gonflement):
     """Les coins min et max d'une boite, en blocs."""
@@ -234,6 +267,22 @@ def construire_geometrie():
             u0, v0, u1, v1 = uv_face(coin, dims, face)
             base = len(positions)
             # v du glTF descend : le bas du rectangle est vmax.
+            for sommet, (u, v) in zip(sommets, [(u0, v1), (u1, v1), (u1, v0), (u0, v0)]):
+                positions.append(sommet)
+                normales.append(normale)
+                uvs.append((u, v))
+                joints.append((j, 0, 0, 0))
+                poids.append((1.0, 0.0, 0.0, 0.0))
+            indices.extend([base, base + 1, base + 2, base, base + 2, base + 3])
+    for _, os_nom, centre_x, bas, largeur, haut, z_proche, z_loin, coin in PLAQUES:
+        j = INDEX_OS[os_nom]
+        mn = (bloc(centre_x - largeur / 2.0), hauteur_de(bas), bloc(min(z_proche, z_loin)))
+        mx = (bloc(centre_x + largeur / 2.0), hauteur_de(bas + haut), bloc(max(z_proche, z_loin)))
+        for face, (sommets, normale) in faces(mn, mx).items():
+            x, y, w, h = rect_plaque(coin, largeur, haut, face)
+            u0, v0 = (x + MARGE) / TAILLE, (y + MARGE) / TAILLE
+            u1, v1 = (x + w - MARGE) / TAILLE, (y + h - MARGE) / TAILLE
+            base = len(positions)
             for sommet, (u, v) in zip(sommets, [(u0, v1), (u1, v1), (u1, v0), (u0, v0)]):
                 positions.append(sommet)
                 normales.append(normale)
@@ -442,6 +491,19 @@ def ecrire_patron(chemin):
             "gonflement": gonflement,
             "faces": faces_json,
         }
+    for nom, os_nom, _, _, largeur, haut, _, _, coin in PLAQUES:
+        faces_json = {}
+        for face, nom_fr in NOM_FACE.items():
+            x, y, w, h = rect_plaque(coin, largeur, haut, face)
+            faces_json[nom_fr] = {"x": x, "y": y, "largeur": w, "hauteur": h}
+        parties[nom] = {
+            "os": os_nom,
+            "couche": 2,
+            "coin": list(coin),
+            "boite": {"largeur": largeur, "hauteur": haut, "profondeur": 1},
+            "gonflement": 0,
+            "faces": faces_json,
+        }
     patron = {
         "image": "engine:heros",
         "taille": [TAILLE, TAILLE],
@@ -550,11 +612,11 @@ def construire(reecrire_texture):
     GLTF.write_text(json.dumps(gltf, indent=2), encoding="utf-8")
 
     print("%s : %d sommets, %d triangles, %d boites, %d os, %d animations, %d o de tampon"
-          % (GLTF.name, n, len(indices) // 3, len(BOITES), len(OS), len(animations),
+          % (GLTF.name, n, len(indices) // 3, len(BOITES) + len(PLAQUES), len(OS), len(animations),
              len(tampon.octets)))
 
     ecrire_patron(PATRON)
-    print("%s : %d parties, %d rectangles" % (PATRON.name, len(BOITES), len(BOITES) * 6))
+    print("%s : %d parties, %d rectangles" % (PATRON.name, len(BOITES) + len(PLAQUES), (len(BOITES) + len(PLAQUES)) * 6))
 
     # La peau, elle, se peint a la main : on ne l'ecrase jamais sans le dire.
     if reecrire_texture or not PNG.exists():

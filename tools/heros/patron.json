@@ -637,6 +637,110 @@
           "hauteur": 12
         }
       }
+    },
+    "barbe": {
+      "os": "tete",
+      "couche": 2,
+      "coin": [
+        0,
+        0
+      ],
+      "boite": {
+        "largeur": 8,
+        "hauteur": 8,
+        "profondeur": 1
+      },
+      "gonflement": 0,
+      "faces": {
+        "dessus": {
+          "x": 0,
+          "y": 0,
+          "largeur": 8,
+          "hauteur": 1
+        },
+        "dessous": {
+          "x": 0,
+          "y": 7,
+          "largeur": 8,
+          "hauteur": 1
+        },
+        "droite": {
+          "x": 0,
+          "y": 0,
+          "largeur": 1,
+          "hauteur": 8
+        },
+        "devant": {
+          "x": 0,
+          "y": 0,
+          "largeur": 8,
+          "hauteur": 8
+        },
+        "gauche": {
+          "x": 7,
+          "y": 0,
+          "largeur": 1,
+          "hauteur": 8
+        },
+        "derriere": {
+          "x": 0,
+          "y": 0,
+          "largeur": 8,
+          "hauteur": 8
+        }
+      }
+    },
+    "chevelure": {
+      "os": "tete",
+      "couche": 2,
+      "coin": [
+        24,
+        0
+      ],
+      "boite": {
+        "largeur": 8,
+        "hauteur": 8,
+        "profondeur": 1
+      },
+      "gonflement": 0,
+      "faces": {
+        "dessus": {
+          "x": 24,
+          "y": 0,
+          "largeur": 8,
+          "hauteur": 1
+        },
+        "dessous": {
+          "x": 24,
+          "y": 7,
+          "largeur": 8,
+          "hauteur": 1
+        },
+        "droite": {
+          "x": 24,
+          "y": 0,
+          "largeur": 1,
+          "hauteur": 8
+        },
+        "devant": {
+          "x": 24,
+          "y": 0,
+          "largeur": 8,
+          "hauteur": 8
+        },
+        "gauche": {
+          "x": 31,
+          "y": 0,
+          "largeur": 1,
+          "hauteur": 8
+        },
+        "derriere": {
+          "x": 24,
+          "y": 0,
+          "largeur": 8,
+          "hauteur": 8
+        }
+      }
     }
   }
 }

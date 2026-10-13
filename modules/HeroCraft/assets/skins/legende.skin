@@ -1,0 +1,155 @@
+{
+    "inherit": "HeroCraft:characterScreen",
+    "families": {
+        "fantome": {
+            "elements": {
+                "UIButton": {
+                    "background": "engine:buttonGhost",
+                    "background-scale-mode": "tiled",
+                    "background-border": {
+                        "top": 9,
+                        "bottom": 18,
+                        "left": 9,
+                        "right": 9
+                    },
+                    "margin": {
+                        "top": 4,
+                        "bottom": 14,
+                        "left": 14,
+                        "right": 14
+                    },
+                    "min-height": 40,
+                    "font": "Grenze-Body",
+                    "text-color": "F2E2C0FF",
+                    "modes": {
+                        "hover": {
+                            "background": "engine:buttonGhostOver"
+                        },
+                        "down": {
+                            "background": "engine:buttonGhostDown",
+                            "text-color": "FFE08CFF"
+                        },
+                        "disabled": {
+                            "background": "engine:buttonDisabled",
+                            "text-color": "7A6A54FF"
+                        }
+                    }
+                }
+            }
+        },
+        "choisi": {
+            "elements": {
+                "UIButton": {
+                    "background": "engine:button",
+                    "background-scale-mode": "tiled",
+                    "background-border": {
+                        "top": 9,
+                        "bottom": 18,
+                        "left": 9,
+                        "right": 9
+                    },
+                    "margin": {
+                        "top": 4,
+                        "bottom": 14,
+                        "left": 14,
+                        "right": 14
+                    },
+                    "min-height": 40,
+                    "font": "Grenze-Body",
+                    "text-color": "FFF3DCFF",
+                    "modes": {
+                        "hover": {
+                            "background": "engine:buttonOver"
+                        },
+                        "down": {
+                            "background": "engine:buttonDown",
+                            "text-color": "FFE08CFF"
+                        },
+                        "disabled": {
+                            "background": "engine:buttonDisabled",
+                            "text-color": "7A6A54FF"
+                        }
+                    }
+                }
+            }
+        },
+        "choix": {
+            "elements": {
+                "UILabel": {
+                    "font": "Grenze-Body",
+                    "text-color": "FFF3DCFF",
+                    "text-align-horizontal": "center",
+                    "text-align-vertical": "middle",
+                    "background": "engine:slot",
+                    "background-scale-mode": "tiled",
+                    "background-border": {
+                        "top": 12,
+                        "bottom": 12,
+                        "left": 12,
+                        "right": 12
+                    },
+                    "min-height": 34
+                }
+            }
+        },
+        "rubrique": {
+            "elements": {
+                "UILabel": {
+                    "font": "Grenze-Caps",
+                    "text-color": "B49E7CFF",
+                    "text-align-horizontal": "left",
+                    "text-align-vertical": "middle"
+                }
+            }
+        },
+        "valeur": {
+            "elements": {
+                "UILabel": {
+                    "font": "Grenze-Strong",
+                    "text-color": "E0B24AFF",
+                    "text-align-horizontal": "right",
+                    "text-align-vertical": "middle"
+                }
+            }
+        },
+        "voie": {
+            "elements": {
+                "UILabel": {
+                    "font": "Uncial-Item",
+                    "text-color": "FFF3DCFF",
+                    "text-align-horizontal": "left",
+                    "text-align-vertical": "middle"
+                }
+            }
+        },
+        "citation": {
+            "elements": {
+                "UILabel": {
+                    "font": "Grenze-Body",
+                    "text-color": "F2E2C0FF",
+                    "text-align-horizontal": "left",
+                    "text-align-vertical": "top"
+                }
+            }
+        },
+        "refus": {
+            "elements": {
+                "UILabel": {
+                    "font": "Grenze-Strong",
+                    "text-color": "E2604AFF",
+                    "text-align-horizontal": "left",
+                    "text-align-vertical": "middle"
+                }
+            }
+        },
+        "nom": {
+            "elements": {
+                "UIText": {
+                    "font": "Grenze-Body",
+                    "text-color": "FFF3DCFF",
+                    "min-height": 40
+                }
+            }
+        }
+    }
+}

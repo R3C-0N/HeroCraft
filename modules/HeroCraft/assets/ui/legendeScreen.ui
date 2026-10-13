@@ -1,0 +1,416 @@
+{
+    "type": "HeroCraft:LegendeScreen",
+    "skin": "HeroCraft:legende",
+    "contents": {
+        "type": "relativeLayout",
+        "contents": [
+            {
+                "type": "UISpace",
+                "id": "cadre",
+                "layoutInfo": {
+                    "width": 1200,
+                    "height": 660,
+                    "position-horizontal-center": {},
+                    "position-vertical-center": {}
+                }
+            },
+            {
+                "type": "UILabel",
+                "id": "kicker",
+                "family": "caps",
+                "text": "Herocraft · naissance d’un héros",
+                "layoutInfo": {
+                    "width": 700,
+                    "height": 24,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 0
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 0
+                    }
+                }
+            },
+            {
+                "type": "UILabel",
+                "id": "titre",
+                "family": "title",
+                "text": "",
+                "layoutInfo": {
+                    "width": 700,
+                    "height": 56,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 0
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 26
+                    }
+                }
+            },
+            {
+                "type": "UILabel",
+                "id": "intro",
+                "family": "secondary",
+                "text": "",
+                "layoutInfo": {
+                    "width": 720,
+                    "height": 48,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 0
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 84
+                    }
+                }
+            },
+            {
+                "type": "RowLayout",
+                "id": "pas",
+                "horizontalSpacing": 8,
+                "contents": [],
+                "layoutInfo": {
+                    "width": 460,
+                    "height": 48,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 740
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 40
+                    }
+                }
+            },
+            {
+                "type": "UIBox",
+                "id": "panneau",
+                "layoutInfo": {
+                    "width": 740,
+                    "height": 450,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 0
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 144
+                    }
+                }
+            },
+            {
+                "type": "UILabel",
+                "id": "panneauTitre",
+                "family": "panel-title",
+                "text": "",
+                "layoutInfo": {
+                    "width": 340,
+                    "height": 60,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 200
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 126
+                    }
+                }
+            },
+            {
+                "type": "ScrollableArea",
+                "id": "defilement",
+                "content": {
+                    "type": "ColumnLayout",
+                    "id": "contenu",
+                    "verticalSpacing": 10,
+                    "fillVerticalSpace": false,
+                    "contents": []
+                },
+                "layoutInfo": {
+                    "width": 676,
+                    "height": 350,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 32
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 212
+                    }
+                }
+            },
+            {
+                "type": "UIBox",
+                "id": "apercuPanneau",
+                "layoutInfo": {
+                    "width": 440,
+                    "height": 450,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 760
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 144
+                    }
+                }
+            },
+            {
+                "type": "UILabel",
+                "family": "panel-title",
+                "text": "Aperçu",
+                "layoutInfo": {
+                    "width": 240,
+                    "height": 60,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 860
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 126
+                    }
+                }
+            },
+            {
+                "type": "HeroCraft:ApercuHeros",
+                "id": "apercu",
+                "layoutInfo": {
+                    "width": 380,
+                    "height": 230,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 790
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 196
+                    }
+                }
+            },
+            {
+                "type": "UILabel",
+                "family": "small-muted",
+                "text": "Glisser pour tourner",
+                "layoutInfo": {
+                    "width": 180,
+                    "height": 20,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 790
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 404
+                    }
+                }
+            },
+            {
+                "type": "UILabel",
+                "id": "infoTaille",
+                "family": "stat-value",
+                "text": "",
+                "layoutInfo": {
+                    "width": 200,
+                    "height": 20,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 970
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 404
+                    }
+                }
+            },
+            {
+                "type": "UIButton",
+                "id": "rotation",
+                "family": "fantome",
+                "text": "Rotation",
+                "layoutInfo": {
+                    "width": 130,
+                    "height": 34,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 790
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 428
+                    }
+                }
+            },
+            {
+                "type": "UILabel",
+                "id": "infoTitre",
+                "family": "item-name",
+                "text": "",
+                "layoutInfo": {
+                    "width": 380,
+                    "height": 28,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 790
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 468
+                    }
+                }
+            },
+            {
+                "type": "UILabel",
+                "id": "infoVariante",
+                "family": "small-muted",
+                "text": "",
+                "layoutInfo": {
+                    "width": 380,
+                    "height": 20,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 790
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 496
+                    }
+                }
+            },
+            {
+                "type": "UILabel",
+                "id": "infoApparence",
+                "family": "small-secondary",
+                "text": "",
+                "layoutInfo": {
+                    "width": 380,
+                    "height": 40,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 790
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 516
+                    }
+                }
+            },
+            {
+                "type": "UILabel",
+                "id": "infoMains",
+                "family": "small-secondary",
+                "text": "",
+                "layoutInfo": {
+                    "width": 380,
+                    "height": 20,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 790
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 558
+                    }
+                }
+            },
+            {
+                "type": "UIButton",
+                "id": "retour",
+                "family": "fantome",
+                "text": "Retour",
+                "layoutInfo": {
+                    "width": 180,
+                    "height": 44,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 0
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 612
+                    }
+                }
+            },
+            {
+                "type": "UILabel",
+                "id": "pied",
+                "family": "muted",
+                "text": "",
+                "layoutInfo": {
+                    "width": 700,
+                    "height": 44,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 200
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 612
+                    }
+                }
+            },
+            {
+                "type": "UIButton",
+                "id": "suivant",
+                "family": "choisi",
+                "text": "",
+                "layoutInfo": {
+                    "width": 280,
+                    "height": 44,
+                    "position-left": {
+                        "widget": "cadre",
+                        "target": "LEFT",
+                        "offset": 920
+                    },
+                    "position-top": {
+                        "widget": "cadre",
+                        "target": "TOP",
+                        "offset": 612
+                    }
+                }
+            }
+        ]
+    }
+}

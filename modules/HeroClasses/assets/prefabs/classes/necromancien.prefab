@@ -1,0 +1,20 @@
+{
+    "Class": {
+        "name": "Nécromancien",
+        "order": 2,
+        "category": "magic",
+        "role": "On vous a confié la lanterne parce que personne d’autre n’en voulait.",
+        "armament": "Bâton-lanterne d’âmes (une main) + main libre (invocations et magie de mort).",
+        "weapons": [
+            "soulStaff"
+        ],
+        "melee": 0,
+        "ranged": 0,
+        "magic": 100,
+        "kit": [
+            {
+                "item": "HeroEquipment:FlintSoulStaff"
+            }
+        ]
+    }
+}

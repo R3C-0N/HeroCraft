@@ -1,9 +1,32 @@
 {
     "Class": {
         "name": "Soldat",
-        "weapons": ["oneHandedSword", "battleAxe", "club", "spear"],
+        "order": 12,
+        "category": "melee",
+        "role": "Vous savez tout tenir, pourvu qu’un bouclier reste à gauche.",
+        "armament": "Arsenal au choix + Bouclier (les deux mains occupées).",
+        "weapons": [
+            "oneHandedSword",
+            "windBlade",
+            "battleAxe",
+            "warHammer",
+            "club",
+            "spear"
+        ],
         "melee": 90,
         "ranged": 10,
-        "magic": 0
+        "magic": 0,
+        "kit": [
+            {
+                "item": "HeroEquipment:FlintShield"
+            }
+        ],
+        "arsenal": [
+            "HeroEquipment:FlintSword",
+            "HeroEquipment:FlintSabre",
+            "HeroEquipment:FlintBattleAxe",
+            "HeroEquipment:FlintMallet",
+            "HeroEquipment:WarMallet"
+        ]
     }
 }

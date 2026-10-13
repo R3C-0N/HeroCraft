@@ -8,6 +8,7 @@ import org.terasology.herocrafting.RecipeBook;
 import org.terasology.herocrafting.RecipeView;
 import org.terasology.heroclasses.ExperienceComponent;
 import org.terasology.heroclasses.Progression;
+import org.terasology.heroclasses.legende.LegendeComponent;
 import org.terasology.heroequipment.CharacterStats;
 import org.terasology.heroequipment.EquipmentSlots;
 import org.terasology.engine.entitySystem.entity.EntityRef;
@@ -152,7 +153,12 @@ public class CharacterScreen extends CoreScreenLayer {
         return component == null ? new ExperienceComponent() : component;
     }
 
+    /** The name the hero was baptised with, else the account's. */
     private String heroName() {
+        LegendeComponent legende = character().getComponent(LegendeComponent.class);
+        if (legende != null && legende.scelle && !legende.nom.isEmpty()) {
+            return legende.nom;
+        }
         DisplayNameComponent name = localPlayer.getClientInfoEntity().getComponent(DisplayNameComponent.class);
         return name != null && !name.name.isEmpty() ? name.name : "Personnage";
     }
