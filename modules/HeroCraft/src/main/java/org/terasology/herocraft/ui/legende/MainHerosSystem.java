@@ -31,7 +31,7 @@ public class MainHerosSystem extends BaseComponentSystem {
 
     private static final String MAIN = "engine:hand";
     /**
-     * The engine holds its hand end-on, which shows the palm and little else; tipped further and drawn in, the arm
+     * The engine holds its hand end-on, which shows the palm and little else; tipped further, the arm
      * shows its sleeve along the side, as a hero's arm should.
      */
     private static final Vector3f INCLINAISON = new Vector3f(55, 5, 0);
