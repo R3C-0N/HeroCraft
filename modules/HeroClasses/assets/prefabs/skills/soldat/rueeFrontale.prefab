@@ -1,0 +1,18 @@
+{
+    "Skill": {
+        "name": "Ruée frontale",
+        "description": "Une charge qui frappe tout ce qui se trouve sur sa trajectoire.",
+        "classId": "HeroClasses:soldat",
+        "tier": 1,
+        "family": "melee",
+        "cooldown": 8,
+        "power": 0.8
+    },
+    "Line": {
+        "length": 6,
+        "width": 1.5
+    },
+    "Dash": {
+        "distance": 6
+    }
+}

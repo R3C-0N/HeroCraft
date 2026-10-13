@@ -1,0 +1,9 @@
+{
+    "Class": {
+        "name": "Soldat",
+        "weapons": ["oneHandedSword", "battleAxe", "club", "spear"],
+        "melee": 90,
+        "ranged": 10,
+        "magic": 0
+    }
+}
