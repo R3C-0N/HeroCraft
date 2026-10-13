@@ -226,7 +226,7 @@ public class LegendeScreen extends CoreScreenLayer {
         pas.removeAllWidgets();
         for (int i = 0; i < PAS.length; i++) {
             int vers = i;
-            UIButton bouton = new UIButton((i + 1) + "  " + PAS[i]);
+            UIButton bouton = new UIButton("", (i + 1) + "  " + PAS[i]);
             bouton.setFamily(i == etape ? "choisi" : "fantome");
             bouton.setEnabled(!fige && (i < 2 || classe != null));
             bouton.subscribe(widget -> aller(vers));
@@ -248,7 +248,7 @@ public class LegendeScreen extends CoreScreenLayer {
         RowLayout onglets = new RowLayout();
         onglets.setHorizontalSpacing(4);
         for (String[] o : ONGLETS) {
-            UIButton bouton = new UIButton(o[1]);
+            UIButton bouton = new UIButton("", o[1]);
             bouton.setFamily(o[0].equals(onglet) ? "tab-active" : "tab-bar");
             bouton.subscribe(widget -> {
                 onglet = o[0];
@@ -268,7 +268,7 @@ public class LegendeScreen extends CoreScreenLayer {
                 grille.setFillVerticalSpace(false);
                 for (String id : Atlas.ORDRE_ESPECES) {
                     Espece e = Atlas.espece(id);
-                    UIButton bouton = new UIButton(e.nom() + "  ·  " + metres(e.taille()));
+                    UIButton bouton = new UIButton("", e.nom() + "  ·  " + metres(e.taille()));
                     bouton.setFamily(id.equals(cfg.espece) ? "choisi" : "fantome");
                     bouton.subscribe(widget -> {
                         cfg = Atlas.defaut(id);
@@ -330,7 +330,7 @@ public class LegendeScreen extends CoreScreenLayer {
         UILabel avertissement = new UILabel("Aucun trait n’est définitif avant le baptême.");
         avertissement.setFamily("small-muted");
         pied.addWidget(avertissement, new RowLayoutHint());
-        UIButton des = new UIButton("Tirer au sort");
+        UIButton des = new UIButton("", "Tirer au sort");
         des.setFamily("fantome");
         des.subscribe(widget -> {
             cfg = Atlas.aleatoire(hasard);
@@ -364,7 +364,7 @@ public class LegendeScreen extends CoreScreenLayer {
                 if (!famille[0].equals(voie.category)) {
                     continue;
                 }
-                UIButton bouton = new UIButton(voie.name);
+                UIButton bouton = new UIButton("", voie.name);
                 bouton.setFamily(prefab.equals(classe) ? "choisi" : "fantome");
                 bouton.subscribe(widget -> {
                     classe = prefab;
@@ -393,7 +393,7 @@ public class LegendeScreen extends CoreScreenLayer {
             FlowLayout choix = new FlowLayout();
             choix.setHorizontalSpacing(8);
             for (String item : voie.arsenal) {
-                UIButton bouton = new UIButton(nomObjet(item));
+                UIButton bouton = new UIButton("", nomObjet(item));
                 bouton.setFamily(item.equals(arme()) ? "choisi" : "fantome");
                 bouton.subscribe(widget -> {
                     armes.put(classe.getUrn().toString(), item);
@@ -426,7 +426,7 @@ public class LegendeScreen extends CoreScreenLayer {
             suivant.setEnabled(!envoye && !nom.trim().isEmpty());
         });
         champ.addWidget(saisie, new RowLayoutHint());
-        UIButton tirer = new UIButton("Tirer un nom");
+        UIButton tirer = new UIButton("", "Tirer un nom");
         tirer.setFamily("fantome");
         tirer.setEnabled(!scelle() && !envoye);
         tirer.subscribe(widget -> {
@@ -498,7 +498,7 @@ public class LegendeScreen extends CoreScreenLayer {
     }
 
     private UIButton fleche(String signe, Runnable action) {
-        UIButton bouton = new UIButton(signe);
+        UIButton bouton = new UIButton("", signe);
         bouton.setFamily("fantome");
         bouton.subscribe(widget -> {
             action.run();

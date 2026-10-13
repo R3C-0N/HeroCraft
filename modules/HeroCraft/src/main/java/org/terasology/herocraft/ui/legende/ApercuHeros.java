@@ -40,6 +40,8 @@ public class ApercuHeros extends CoreWidget {
     private static final float PENTE = (float) Math.toRadians(-4);
     /** Share of the shorter side the drawing fits the model's height into — the renderer's own fit. */
     private static final float AJUSTEMENT = 0.7f;
+    /** The renderer fits the model to a third of the frame; the figure is the point of the panel. */
+    private static final float AGRANDI = 1.3f;
 
     private Mesh mesh;
     private Material materiau;
@@ -133,11 +135,11 @@ public class ApercuHeros extends CoreWidget {
         materiau.setTexture("tex", texture);
 
         Rectanglei region = canvas.getRegion();
-        float echelle = taille / CADRE;
+        float echelle = AGRANDI * taille / CADRE;
         // The renderer centres the model and fits its height; this puts the feet back on one line whatever the
         // height, by shifting down what the scale took off the bottom.
         float hauteur = AJUSTEMENT * Math.min(region.lengthX(), region.lengthY());
-        Vector3f decalage = new Vector3f(0, hauteur * (1 - echelle) / 2, 0);
+        Vector3f decalage = new Vector3f(0, hauteur * (AGRANDI - echelle) / 2, 0);
         Quaternionf rotation = new Quaternionf().rotateX(pente).rotateY(angle);
         CanvasUtility.drawMesh(canvas, mesh, materiau, region, rotation, decalage, echelle);
     }

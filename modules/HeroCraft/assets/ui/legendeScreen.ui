@@ -180,12 +180,12 @@
                 "family": "panel-title",
                 "text": "Aperçu",
                 "layoutInfo": {
-                    "width": 240,
+                    "width": 300,
                     "height": 60,
                     "position-left": {
                         "widget": "cadre",
                         "target": "LEFT",
-                        "offset": 860
+                        "offset": 830
                     },
                     "position-top": {
                         "widget": "cadre",
@@ -199,7 +199,7 @@
                 "id": "apercu",
                 "layoutInfo": {
                     "width": 380,
-                    "height": 230,
+                    "height": 206,
                     "position-left": {
                         "widget": "cadre",
                         "target": "LEFT",
@@ -208,7 +208,7 @@
                     "position-top": {
                         "widget": "cadre",
                         "target": "TOP",
-                        "offset": 196
+                        "offset": 192
                     }
                 }
             },
@@ -217,17 +217,17 @@
                 "family": "small-muted",
                 "text": "Glisser pour tourner",
                 "layoutInfo": {
-                    "width": 180,
-                    "height": 20,
+                    "width": 130,
+                    "height": 34,
                     "position-left": {
                         "widget": "cadre",
                         "target": "LEFT",
-                        "offset": 790
+                        "offset": 928
                     },
                     "position-top": {
                         "widget": "cadre",
                         "target": "TOP",
-                        "offset": 404
+                        "offset": 402
                     }
                 }
             },
@@ -237,17 +237,17 @@
                 "family": "stat-value",
                 "text": "",
                 "layoutInfo": {
-                    "width": 200,
-                    "height": 20,
+                    "width": 160,
+                    "height": 34,
                     "position-left": {
                         "widget": "cadre",
                         "target": "LEFT",
-                        "offset": 970
+                        "offset": 1010
                     },
                     "position-top": {
                         "widget": "cadre",
                         "target": "TOP",
-                        "offset": 404
+                        "offset": 402
                     }
                 }
             },
@@ -267,7 +267,7 @@
                     "position-top": {
                         "widget": "cadre",
                         "target": "TOP",
-                        "offset": 428
+                        "offset": 402
                     }
                 }
             },
@@ -278,7 +278,7 @@
                 "text": "",
                 "layoutInfo": {
                     "width": 380,
-                    "height": 28,
+                    "height": 26,
                     "position-left": {
                         "widget": "cadre",
                         "target": "LEFT",
@@ -287,7 +287,7 @@
                     "position-top": {
                         "widget": "cadre",
                         "target": "TOP",
-                        "offset": 468
+                        "offset": 442
                     }
                 }
             },
@@ -307,7 +307,7 @@
                     "position-top": {
                         "widget": "cadre",
                         "target": "TOP",
-                        "offset": 496
+                        "offset": 468
                     }
                 }
             },
@@ -318,7 +318,7 @@
                 "text": "",
                 "layoutInfo": {
                     "width": 380,
-                    "height": 40,
+                    "height": 56,
                     "position-left": {
                         "widget": "cadre",
                         "target": "LEFT",
@@ -327,7 +327,7 @@
                     "position-top": {
                         "widget": "cadre",
                         "target": "TOP",
-                        "offset": 516
+                        "offset": 490
                     }
                 }
             },
@@ -347,7 +347,7 @@
                     "position-top": {
                         "widget": "cadre",
                         "target": "TOP",
-                        "offset": 558
+                        "offset": 548
                     }
                 }
             },
