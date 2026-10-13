@@ -10,11 +10,15 @@ import org.terasology.engine.core.modes.VariableStepLoadProcess;
 import org.terasology.engine.rendering.world.WorldRenderer;
 
 /**
- * Loops until world is pre-generated or 5 seconds elapsed.
+ * Loops until the chunks round the player are meshed, or a minute has elapsed.
+ * <p>
+ * Five seconds used to be the limit, and a world slower to generate than that opened on whatever stood in for
+ * the ground: the distant terrain of a cube world, coarse and at the wrong height, right under the player. The
+ * minute is only there so that a world that never finishes cannot hold the loading screen for ever.
  */
 public class PrepareWorld extends VariableStepLoadProcess {
 
-    public static int maximumWaitMs = 5000;
+    public static int maximumWaitMs = 60000;
 
     private final Context context;
     private long startTime;

@@ -24,6 +24,7 @@ import org.terasology.engine.rendering.cameras.Camera;
 import org.terasology.engine.rendering.sphere.SphereProjection;
 import org.terasology.engine.rendering.world.DistantGeometry;
 import org.terasology.engine.rendering.world.DistantReach;
+import org.terasology.engine.rendering.world.RenderableWorldImpl;
 import org.terasology.engine.rendering.world.WorldRenderer;
 import org.terasology.engine.utilities.Assets;
 import org.terasology.engine.world.OnChangedBlock;
@@ -89,6 +90,9 @@ public class DistantTerrainSystem extends BaseComponentSystem implements UpdateS
     private float sinceHole;
     private float sinceEdits;
     private boolean unsupportedChunks;
+    private int holeCentreX = Integer.MIN_VALUE;
+    private int holeCentreZ = Integer.MIN_VALUE;
+    private int holeRadius;
 
     @Override
     public void update(float delta) {
@@ -122,11 +126,20 @@ public class DistantTerrainSystem extends BaseComponentSystem implements UpdateS
             }
         }
 
+        // At once when the eye enters another chunk: a teleport would otherwise show the distance under
+        // the player for up to a period.
+        int centreX = Math.floorDiv((int) Math.floor(eye.x()), Chunks.SIZE_X);
+        int centreZ = Math.floorDiv((int) Math.floor(eye.z()), Chunks.SIZE_Z);
+        int radius = keptRadius(eye);
+        boolean moved = centreX != holeCentreX || centreZ != holeCentreZ || radius != holeRadius;
         sinceHole += delta;
-        if (sinceHole >= HOLE_PERIOD && !unsupportedChunks) {
+        if ((sinceHole >= HOLE_PERIOD || moved) && !unsupportedChunks) {
             sinceHole = 0;
+            holeCentreX = centreX;
+            holeCentreZ = centreZ;
+            holeRadius = radius;
             try {
-                hole.mark(chunkProvider.getAllChunks());
+                hole.mark(chunkProvider.getAllChunks(), centreX, centreZ, radius);
             } catch (UnsupportedOperationException e) {
                 // A remote client cannot list its chunks: no hole, so the distance would be drawn
                 // under the terrain. Better to say it once than to fight the depth buffer quietly.
@@ -134,6 +147,17 @@ public class DistantTerrainSystem extends BaseComponentSystem implements UpdateS
                 unsupportedChunks = true;
             }
         }
+    }
+
+    /**
+     * How many chunks round the eye the distance is kept out of, whatever is drawn: the ring the loading
+     * screen waits for. None when the eye is too high above the sea for its chunks to be loaded at all —
+     * a pilot that high sees the ground only through the distance, and a ring of sky under it would be
+     * a hole onto nothing.
+     */
+    private int keptRadius(Vector3fc eye) {
+        int halfHeight = config.getRendering().getViewDistance().getChunkDistance().y() / 2 * Chunks.SIZE_Y;
+        return eye.y() - geometry.seaLevel() > halfHeight ? -1 : RenderableWorldImpl.PREGENERATED_RADIUS;
     }
 
     private boolean start() {
@@ -229,7 +253,8 @@ public class DistantTerrainSystem extends BaseComponentSystem implements UpdateS
             return "distant off (chunkLods=" + config.getRendering().getChunkLods() + ")";
         }
         DistantDrawer drawer = state().drawer();
-        return terrain.stats() + " hole_columns=" + hole.drawnColumns() + " edited_chunks=" + edits.capturedChunks()
+        return terrain.stats() + " hole_columns=" + hole.drawnColumns() + " kept_columns=" + hole.keptColumns()
+                + " edited_chunks=" + edits.capturedChunks()
                 + " " + (drawer == null ? "pass=absent" : drawer.stats());
     }
 
