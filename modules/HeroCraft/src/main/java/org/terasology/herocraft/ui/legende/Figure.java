@@ -29,6 +29,8 @@ final class Figure {
 
     private static final float SHEET = 64f;
     private static final float MARGIN = 0.01f;
+    /** Metres per pattern unit for the hand: twelve units make the engine hand's 1.2. */
+    private static final float BRAS = 0.1f;
 
     private Figure() {
     }
@@ -60,6 +62,29 @@ final class Figure {
         }
         for (Vector3f normal : pinceau.normals) {
             data.normal.put(normal);
+            data.color0.put(Color.WHITE);
+        }
+        return Assets.generateAsset(data, Mesh.class);
+    }
+
+    /**
+     * The right arm alone, for the first-person hand: layer 1 then its sleeve, in metres at a tenth of a pattern
+     * unit, turned end over end so the hand is at the top — where the engine's hand box keeps the end nearest the
+     * eye — and the box's foot on zero, as that box has it.
+     */
+    static Mesh bras() {
+        Pinceau pinceau = new Pinceau();
+        box(pinceau, 0, 0, 4, 12, 4, 40, 16, 0);
+        box(pinceau, 0, 0, 4, 12, 4, 40, 32, 0.25f);
+
+        StandardMeshData data = pinceau.mesh.buildMeshData();
+        for (int i = 0; i < data.position.elements(); i++) {
+            Vector3f p = data.position.get(i, new Vector3f());
+            // a half turn about z keeps the winding, which a mirror would reverse
+            data.position.set(i, new Vector3f(-p.x, 12 - p.y, p.z).mul(BRAS));
+        }
+        for (Vector3f normal : pinceau.normals) {
+            data.normal.put(new Vector3f(-normal.x, -normal.y, normal.z));
             data.color0.put(Color.WHITE);
         }
         return Assets.generateAsset(data, Mesh.class);
