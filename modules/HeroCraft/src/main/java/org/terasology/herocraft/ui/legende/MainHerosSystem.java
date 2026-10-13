@@ -34,8 +34,8 @@ public class MainHerosSystem extends BaseComponentSystem {
      * The engine holds its hand end-on, which shows the palm and little else; tipped further and drawn in, the arm
      * shows its sleeve along the side, as a hero's arm should.
      */
-    private static final Vector3f INCLINAISON = new Vector3f(45, 5, 0);
-    private static final Vector3f DECALAGE = new Vector3f(-0.15f, -1.35f, 0);
+    private static final Vector3f INCLINAISON = new Vector3f(55, 5, 0);
+    private static final Vector3f DECALAGE = new Vector3f(-0.5f, -1.5f, 0);
 
     @In
     private LocalPlayer localPlayer;
