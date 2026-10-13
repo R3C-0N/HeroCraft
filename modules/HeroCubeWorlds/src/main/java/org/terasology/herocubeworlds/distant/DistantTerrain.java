@@ -143,8 +143,10 @@ public final class DistantTerrain {
      * has arrived. Main thread only: the uploads need the GL context.
      *
      * @param reach how far along the surface anything is kept, in blocks
+     * @param sharpFrom where the band drawn at level 0 begins, along the surface
+     * @param sharpTo where it ends
      */
-    public void update(Vector3fc eye, double reach) {
+    public void update(Vector3fc eye, double reach, double sharpFrom, double sharpTo) {
         long now = System.nanoTime();
         for (int i = 0; i < UPLOADS_PER_FRAME; i++) {
             Node node = built.poll();
@@ -166,7 +168,7 @@ public final class DistantTerrain {
         lastEyeX = eye.x();
         lastEyeZ = eye.z();
         missing.clear();
-        List<SectionKey> wanted = selection.select(eye.x(), eye.z(), reach);
+        List<SectionKey> wanted = selection.select(eye.x(), eye.z(), reach, sharpFrom, sharpTo);
         List<Node> next = new ArrayList<>(wanted.size());
         Set<SectionKey> standIns = new HashSet<>();
         for (SectionKey key : wanted) {
@@ -208,16 +210,46 @@ public final class DistantTerrain {
     }
 
     /** Nodes built so far, and the mean cost of building one, for the bench. */
+    /**
+     * Marks the columns of chunks of the net that a drawable node shown now covers, on a grid {@code side}
+     * columns wide: where the distance can take over from the chunks along their edge.
+     */
+    public void coverage(boolean[] columns, int side) {
+        java.util.Arrays.fill(columns, false);
+        for (Node node : shown) {
+            if (!node.isDrawable()) {
+                continue;
+            }
+            int span = node.key.span(geometry);
+            int x1 = Math.min(side - 1, Math.floorDiv(node.gridX + span - 1, Chunks.SIZE_X));
+            int z1 = Math.min(side - 1, Math.floorDiv(node.gridZ + span - 1, Chunks.SIZE_Z));
+            for (int z = Math.max(0, Math.floorDiv(node.gridZ, Chunks.SIZE_Z)); z <= z1; z++) {
+                for (int x = Math.max(0, Math.floorDiv(node.gridX, Chunks.SIZE_X)); x <= x1; x++) {
+                    columns[x + z * side] = true;
+                }
+            }
+        }
+    }
+
     public String stats() {
         int count = buildCount.get();
         long bytes = 0;
         for (Node node : nodes.values()) {
             bytes += node.columns.bytes();
         }
+        // How many of the shown nodes stand at each level, finest first: where the band and the coarsening fall.
+        int[] levels = new int[SectionKey.TOP_LEVEL + 1];
+        for (Node node : shown) {
+            levels[node.key.level()]++;
+        }
+        StringBuilder byLevel = new StringBuilder();
+        for (int level = 0; level < levels.length; level++) {
+            byLevel.append(level == 0 ? "" : ",").append(levels[level]);
+        }
         return String.format(java.util.Locale.ROOT,
-                "distant nodes=%d shown=%d pending=%d stale=%d built=%d build_ms_mean=%.1f columns_mb=%.1f",
+                "distant nodes=%d shown=%d pending=%d stale=%d built=%d build_ms_mean=%.1f columns_mb=%.1f levels=%s",
                 nodes.size(), shown.size(), pending.size(), stale.size(), count,
-                count == 0 ? 0.0 : buildNanos.get() / 1e6 / count, bytes / 1048576.0);
+                count == 0 ? 0.0 : buildNanos.get() / 1e6 / count, bytes / 1048576.0, byLevel);
     }
 
     public void dispose() {

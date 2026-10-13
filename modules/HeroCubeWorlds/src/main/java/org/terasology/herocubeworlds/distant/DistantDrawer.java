@@ -141,6 +141,20 @@ public final class DistantDrawer {
         return triangles;
     }
 
+    /**
+     * Before a pass draws its chunks: the hole bound, so that those along the edge give way to the
+     * distance by the dither; after it has drawn the distance, off again.
+     */
+    public void fadeChunks(Material material, boolean on) {
+        if (on) {
+            glActiveTexture(GL_TEXTURE0 + HOLE_SLOT);
+            glBindTexture(GL_TEXTURE_2D, hole.textureId());
+            glActiveTexture(GL_TEXTURE0);
+            material.setInt("distantHole", HOLE_SLOT, true);
+        }
+        material.setInt("distantFade", on ? 1 : 0, true);
+    }
+
     /** How near a node comes to a point, along the surface: its centre's distance less its half diagonal. */
     private static double nearest(CubeGeometry geometry, DistantTerrain.Node node, int span, Vector3fc point) {
         double half = span / 2.0;

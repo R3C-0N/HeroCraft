@@ -21,6 +21,7 @@ import org.terasology.engine.rendering.sphere.SphereProjection;
 import org.terasology.engine.rendering.world.viewDistance.ViewDistance;
 import org.terasology.engine.world.ChunkView;
 import org.terasology.engine.world.WorldProvider;
+import org.terasology.engine.world.block.Block;
 import org.terasology.engine.world.block.BlockManager;
 import org.terasology.engine.world.block.BlockRegion;
 import org.terasology.engine.world.chunks.Chunk;
@@ -28,6 +29,7 @@ import org.terasology.engine.world.chunks.ChunkProvider;
 import org.terasology.engine.world.chunks.Chunks;
 import org.terasology.engine.world.chunks.LodChunkProvider;
 import org.terasology.engine.world.chunks.RenderableChunk;
+import org.terasology.engine.world.internal.ChunkViewCoreImpl;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -48,6 +50,12 @@ public class RenderableWorldImpl implements RenderableWorld {
     private static final int MAX_LOADABLE_CHUNKS =
             ViewDistance.MEGA.getChunkDistance().x() * ViewDistance.MEGA.getChunkDistance().y() * ViewDistance.MEGA.getChunkDistance().z();
     private static final Vector3fc CHUNK_CENTER_OFFSET = new Vector3f(Chunks.CHUNK_SIZE).div(2);
+    /**
+     * How many chunks around the camera's, across, are meshed before the game is entered. The same ring as the hole
+     * a distant terrain keeps round the player: inside it the world is never stood in for, so it must be there when
+     * the loading screen lifts, or the first thing seen is the sky under one's feet.
+     */
+    public static final int PREGENERATED_RADIUS = 3;
 
     private final int maxChunksForShadows;
 
@@ -89,6 +97,12 @@ public class RenderableWorldImpl implements RenderableWorld {
      */
     private final ChunkVisibilityPolicy visibilityPolicy;
 
+    /** The world's projection and the block its dead slots are meshed against, as the mesh worker has them. */
+    @Nullable
+    private final SphereProjection sphere;
+    @Nullable
+    private final Block unloaded;
+
     @Inject
     public RenderableWorldImpl(Provider<WorldRenderer> worldRenderer, Optional<LodChunkProvider> lodChunkProvider, ChunkProvider chunkProvider,
                                ChunkTessellator chunkTessellator, WorldProvider worldProvider, Config config,
@@ -107,8 +121,10 @@ public class RenderableWorldImpl implements RenderableWorld {
         this.maxChunksForShadows = Math.clamp(config.getRendering().getMaxChunksUsedForShadowMapping(), 64, 1024);
 
         // A world with columns off it, the dead slots of a cube net, has them meshed against as unloaded ground.
+        this.sphere = sphere.orElse(null);
+        this.unloaded = sphere.map(s -> blockManager.getBlock(BlockManager.UNLOADED_ID)).orElse(null);
         this.chunkWorker = ChunkMeshWorker.create(chunkTessellator, worldProvider, frontToBackComparator,
-                sphere.orElse(null), sphere.map(s -> blockManager.getBlock(BlockManager.UNLOADED_ID)).orElse(null));
+                this.sphere, this.unloaded);
         renderQueues = new RenderQueuesHelper(new PriorityQueue<>(MAX_LOADABLE_CHUNKS,
                 frontToBackComparator),
                 new PriorityQueue<>(MAX_LOADABLE_CHUNKS, frontToBackComparator),
@@ -151,6 +167,13 @@ public class RenderableWorldImpl implements RenderableWorld {
     }
 
     /**
+     * Meshes one more chunk of those round the camera, for the loading screen.
+     * <p>
+     * Only the ring of {@link #PREGENERATED_RADIUS} chunks, and the loaded height but its first and last layer: those
+     * have a neighbour out of the loaded box and are never meshed, so waiting for them would wait for ever. A chunk
+     * whose neighbours are not there yet holds the loading screen too — it used to be skipped as though it were done,
+     * and the game opened with holes. It is meshed as the worker meshes it, the dead slots of a net hidden.
+     *
      * @return true if pregeneration is complete
      */
     @Override
@@ -159,17 +182,25 @@ public class RenderableWorldImpl implements RenderableWorld {
 
         chunkProvider.update();
 
+        Vector3ic extents = renderingConfig.getViewDistance().getChunkDistance();
+        int across = Math.min(PREGENERATED_RADIUS, extents.x() / 2 - 1);
+        int up = Math.max(0, extents.y() / 2 - 1);
+        BlockRegion region = new BlockRegion(calcCameraCoordinatesInChunkUnits()).expand(across, up, across);
         Chunk chunk;
         ChunkMesh newMesh;
         ChunkView localView;
-        for (Vector3ic chunkCoordinates : calculateRenderableRegion(renderingConfig.getViewDistance())) {
+        for (Vector3ic chunkCoordinates : region) {
             chunk = chunkProvider.getChunk(chunkCoordinates);
             if (chunk == null) {
                 pregenerationIsComplete = false;
             } else if (chunk.isDirty()) {
+                pregenerationIsComplete = false;
                 localView = worldProvider.getLocalView(chunkCoordinates);
                 if (localView == null) {
                     continue;
+                }
+                if (sphere != null && unloaded != null && localView instanceof ChunkViewCoreImpl) {
+                    ((ChunkViewCoreImpl) localView).hideOutside(sphere::isOutside, unloaded);
                 }
                 chunk.setDirty(false);
 
@@ -181,8 +212,6 @@ public class RenderableWorldImpl implements RenderableWorld {
                     chunk.getMesh().dispose();
                 }
                 chunk.setMesh(newMesh);
-
-                pregenerationIsComplete = false;
                 break;
             }
         }

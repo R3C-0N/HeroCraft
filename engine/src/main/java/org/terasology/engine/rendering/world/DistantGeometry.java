@@ -25,4 +25,11 @@ public interface DistantGeometry {
      * @return the triangles drawn
      */
     int render(ChunkMesh.RenderPhase phase, Material material, Camera camera, boolean shadow);
+
+    /**
+     * Readies the chunks of a pass to be crossfaded into the distance along its edge, before they are
+     * drawn, or stops it once the pass has drawn the distance too. Nothing by default.
+     */
+    default void fadeChunks(Material material, boolean on) {
+    }
 }

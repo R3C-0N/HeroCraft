@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Function;
 
 /**
  * The materials of the distant terrain, named by block — the very block the rasterizer would write.
@@ -35,6 +36,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * the bare colour of its tile and leaves in grey, when the terrain drew them in the green of their
  * biome. So a block whose colour comes from a table is numbered once per biome it is met in, and
  * each number carries its colour; every other block has one number whatever the biome.
+ * <p>
+ * A plant is not drawn in the distance, but the ground it stands on takes its colour, as Distant
+ * Horizons does: a ground with a plant on it is one more number, the same block, whose top is tinted
+ * so that its tile comes out as the mean of the tile and the plant, weighed by how much of the
+ * ground the plant hides. The means are read off the tiles themselves.
  */
 public final class DistantPalette implements ColumnSummarizer.MaterialNamer, DistantMesher.Looks {
 
@@ -46,6 +52,11 @@ public final class DistantPalette implements ColumnSummarizer.MaterialNamer, Dis
     private final List<Integer> bases = new CopyOnWriteArrayList<>();
     private volatile TextureData grassColours;
     private volatile TextureData foliageColours;
+    private final Map<Long, Integer> plantedIds = new ConcurrentHashMap<>();
+    private volatile Function<Vector2fc, Colorc> tileColours;
+
+    /** How much of the ground a plant hides, seen from afar: a billboard's cross, from above and aslant. */
+    static final float PLANT_COVER = 0.5f;
 
     /** @param rasterizer an initialised rasterizer: its blocks are resolved */
     public DistantPalette(CubeSolidRasterizer rasterizer) {
@@ -59,6 +70,61 @@ public final class DistantPalette implements ColumnSummarizer.MaterialNamer, Dis
     public void setBiomeColours(TextureData grass, TextureData foliage) {
         this.grassColours = grass;
         this.foliageColours = foliage;
+    }
+
+    /**
+     * The mean colour of the tile at a place in the atlas, its clear texels left out; null where it is not
+     * known. Without it a plant leaves its ground as it is. Before any block is numbered.
+     */
+    public void setTileColours(Function<Vector2fc, Colorc> tileColours) {
+        this.tileColours = tileColours;
+    }
+
+    @Override
+    public int planted(int ground, int plant) {
+        Function<Vector2fc, Colorc> means = tileColours;
+        if (means == null || ground < 0 || plant < 0) {
+            return ground;
+        }
+        long key = ((long) ground << 32) | (plant & 0xFFFFFFFFL);
+        Integer id = plantedIds.get(key);
+        if (id != null) {
+            return id;
+        }
+        synchronized (blocks) {
+            return plantedIds.computeIfAbsent(key, k -> {
+                Colorc groundMean = means.apply(topTile(ground));
+                // A plant is a billboard: its tile is on its sides, or on its centre for a cross.
+                Colorc plantMean = means.apply(sideTile(plant));
+                if (plantMean == null) {
+                    plantMean = means.apply(block(plant).getPrimaryAppearance().getTextureAtlasPos(BlockPart.CENTER));
+                }
+                if (groundMean == null || plantMean == null) {
+                    return ground;
+                }
+                Colorc top = topTint(ground);
+                Colorc leaves = sideTint(plant);
+                Color blended = new Color(
+                        blend(top.rf(), groundMean.rf(), plantMean.rf() * leaves.rf()),
+                        blend(top.gf(), groundMean.gf(), plantMean.gf() * leaves.gf()),
+                        blend(top.bf(), groundMean.bf(), plantMean.bf() * leaves.bf()),
+                        top.af());
+                int planted = blocks.size();
+                blocks.add(blocks.get(ground));
+                tints.add(new Colorc[]{blended, sideTint(ground)});
+                bases.add(bases.get(ground));
+                return planted;
+            });
+        }
+    }
+
+    /**
+     * The tint that makes a tile of this mean colour look, once multiplied, like the mix of itself
+     * tinted and of the plant: {@code mean · t' = (1 - c) · mean · t + c · plant}.
+     */
+    private static float blend(float tint, float tileMean, float plant) {
+        float mixed = (1 - PLANT_COVER) * tint + PLANT_COVER * plant / Math.max(tileMean, 0.05f);
+        return Math.min(1.0f, mixed);
     }
 
     @Override

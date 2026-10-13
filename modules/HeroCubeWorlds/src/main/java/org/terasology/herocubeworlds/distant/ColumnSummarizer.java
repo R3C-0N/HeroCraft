@@ -50,6 +50,11 @@ public final class ColumnSummarizer {
         default int tinted(int material, Biome biome) {
             return material;
         }
+
+        /** The number of a ground with a plant on it, coloured as the two look together from afar. */
+        default int planted(int ground, int plant) {
+            return ground;
+        }
     }
 
     /** Light of a cell open to the sky, on the engine's scale of fifteen. */
@@ -164,6 +169,7 @@ public final class ColumnSummarizer {
                 boolean runLiquid = false;
                 CubeCell runKind = CubeCell.AIR;
                 boolean skyOpen = true;
+                int plant = treeCells == null ? -1 : treeCells.plant(u, v);
                 for (int y = top; y >= bottom; y--) {
                     cell.set(cx, y, cz);
                     float d = density.getWorld(cell);
@@ -194,6 +200,10 @@ public final class ColumnSummarizer {
                             material = namer.tinted(tree, biome);
                             liquid = false;
                             kind = CubeCell.SURFACE;
+                        } else if (plant >= 0 && material >= 0 && !liquid && runMaterial < 0) {
+                            // The first ground under the sky is what the plant of the column stands on.
+                            material = namer.planted(material, namer.tinted(plant, biome));
+                            plant = -1;
                         }
                     }
                     if (material == runMaterial && liquid == runLiquid && material >= 0) {

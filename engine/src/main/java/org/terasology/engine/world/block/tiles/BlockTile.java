@@ -32,6 +32,34 @@ public class BlockTile extends Asset<TileData> {
         return images[i];
     }
 
+    /**
+     * The mean colour of the first image, its clear texels left out, as {red, green, blue} from 0 to 1:
+     * what the tile reads as from afar. Grey 0.5 for a tile with nothing opaque.
+     */
+    public float[] getMeanColour() {
+        BufferedImage image = images[0];
+        double red = 0;
+        double green = 0;
+        double blue = 0;
+        int opaque = 0;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                int argb = image.getRGB(x, y);
+                if ((argb >>> 24) < 26) {
+                    continue;
+                }
+                red += (argb >> 16) & 0xFF;
+                green += (argb >> 8) & 0xFF;
+                blue += argb & 0xFF;
+                opaque++;
+            }
+        }
+        if (opaque == 0) {
+            return new float[]{0.5f, 0.5f, 0.5f};
+        }
+        return new float[]{(float) (red / opaque / 255), (float) (green / opaque / 255), (float) (blue / opaque / 255)};
+    }
+
     public int getLength() {
         return images.length;
     }
