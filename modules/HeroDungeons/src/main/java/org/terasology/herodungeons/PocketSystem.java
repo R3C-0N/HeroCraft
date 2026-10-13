@@ -89,6 +89,9 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
     /** How often a character turned away at a window is told why, in milliseconds. */
     private static final long REFUSAL_COOLDOWN = 3000L;
 
+    /** Longer than any step between two ticks: a teleport, which crosses nothing on its way. */
+    private static final float TELEPORT = 16f;
+
     @In
     private Time time;
 
@@ -109,6 +112,9 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
 
     /** When each character turned away at a window was last told why. Not saved: a courtesy, not a state. */
     private final Map<EntityRef, Long> refused = new HashMap<>();
+
+    /** Where each character stood last tick, so that a crossing is judged on the whole step. */
+    private final Map<EntityRef, Vector3f> lastSeen = new HashMap<>();
 
     @Override
     public void update(float delta) {
@@ -160,9 +166,8 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
     }
 
     /**
-     * Who walks through a window this tick. A character stands in a window when its body's block is one
-     * of the window's: the window is a slab one block deep and a walker covers a fraction of a block a
-     * tick, so no step jumps it.
+     * Who walks through a window this tick, judged on the step from last tick's position: a window is one
+     * block deep, and a server that ticks once a second lets a walker clear it between two looks.
      */
     private void crossings(long now) {
         for (EntityRef client : entityManager.getEntitiesWith(ClientComponent.class)) {
@@ -172,15 +177,15 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
                 continue;
             }
             Vector3f at = location.getWorldPosition(new Vector3f());
-            int x = Math.round(at.x);
-            int y = Math.round(at.y);
-            int z = Math.round(at.z);
+            Vector3f before = lastSeen.put(character, new Vector3f(at));
+            if (before == null || before.distance(at) > TELEPORT) {
+                // A first sighting, or a jump no walker makes: judged where it stands, not on the way.
+                before = at;
+            }
             PocketVisitorComponent visit = character.getComponent(PocketVisitorComponent.class);
             if (visit != null) {
-                Vector3i centre = centre(visit.plot);
-                // Two cells of a body: a character's position is the middle of it, its feet a block lower.
-                if (PocketRoom.isExit(x - centre.x(), y - centre.y(), z - centre.z())
-                        || PocketRoom.isExit(x - centre.x(), y - 1 - centre.y(), z - centre.z())) {
+                if (PocketRoom.exit(centre(visit.plot)).crossedBy(before, at)) {
+                    lastSeen.remove(character);
                     expel(character, visit);
                 }
                 continue;
@@ -191,10 +196,11 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
                     continue;
                 }
                 RuinWindow window = window(state);
-                if (!window.contains(x, y, z) && !window.contains(x, y - 1, z)) {
+                if (!window.crossedBy(before, at)) {
                     continue;
                 }
                 if (state.members.contains(character)) {
+                    lastSeen.remove(character);
                     enter(character, state.plot, window.outside());
                 } else {
                     Long last = refused.get(character);

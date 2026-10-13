@@ -88,6 +88,11 @@ public final class PocketRoom {
         return dz == -EXIT_DISTANCE && Math.abs(dx) <= EXIT_HALF_WIDTH && dy >= 0 && dy < EXIT_HEIGHT;
     }
 
+    /** The way out as a walker meets it, for a room centred on {@code centre}. */
+    static WindowPlane exit(Vector3ic centre) {
+        return new WindowPlane(centre.x(), centre.z(), 0, -1, EXIT_DISTANCE, EXIT_HALF_WIDTH, centre.y(), EXIT_HEIGHT);
+    }
+
     /**
      * Where a character is set down: over the centre of the floor, clear of the pillars, one block
      * up because a character's position is the middle of its body, not its feet.

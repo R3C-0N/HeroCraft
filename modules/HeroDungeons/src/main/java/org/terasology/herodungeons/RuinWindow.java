@@ -3,6 +3,7 @@
 package org.terasology.herodungeons;
 
 import org.joml.Vector3f;
+import org.joml.Vector3fc;
 import org.joml.Vector3i;
 import org.terasology.herocubeworlds.generator.RuinShape;
 
@@ -42,6 +43,7 @@ public final class RuinWindow {
     private final int floorY;
     private final int axisX;
     private final int axisZ;
+    private final WindowPlane plane;
 
     /**
      * @param floorY the floor of the ruin; one walks on the level above it
@@ -53,6 +55,7 @@ public final class RuinWindow {
         this.floorY = floorY;
         this.axisX = gateSide == 0 ? 1 : gateSide == 1 ? -1 : 0;
         this.axisZ = gateSide == 2 ? 1 : gateSide == 3 ? -1 : 0;
+        this.plane = new WindowPlane(centreX, centreZ, axisX, axisZ, DISTANCE, HALF_WIDTH, floorY + 1, HEIGHT);
     }
 
     /** Every block of the window. */
@@ -69,12 +72,12 @@ public final class RuinWindow {
 
     /** Whether a block position is part of the window. */
     public boolean contains(int x, int y, int z) {
-        if (y < floorY + 1 || y > floorY + HEIGHT) {
-            return false;
-        }
-        int along = (x - centreX) * axisX + (z - centreZ) * axisZ;
-        int across = (x - centreX) * axisZ + (z - centreZ) * axisX;
-        return along == DISTANCE && Math.abs(across) <= HALF_WIDTH;
+        return plane.contains(x, y, z);
+    }
+
+    /** Whether a body moving between two positions walks through the window, or stands in it. */
+    public boolean crossedBy(Vector3fc from, Vector3fc to) {
+        return plane.crossedBy(from, to);
     }
 
     /**

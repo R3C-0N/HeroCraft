@@ -83,4 +83,34 @@ class RuinWindowTest {
             assertEquals(PocketRoom.Kind.AIR, PocketRoom.at(arrival.x, dy, arrival.z));
         }
     }
+
+    @Test
+    void aLongStepThroughTheWindowStillCrossesIt() {
+        // East gate: the window stands at x = 3, across z in [-1, 1]; one walks in from the gate, westward.
+        RuinWindow window = new RuinWindow(0, 0, 0, 0);
+        assertTrue(window.crossedBy(new Vector3f(6, 1.4f, 0), new Vector3f(1, 1.4f, 0)), "five blocks a tick");
+        assertTrue(window.crossedBy(new Vector3f(3.9f, 1.4f, 1), new Vector3f(3.2f, 1.4f, 1)), "a short step in");
+        assertTrue(window.crossedBy(new Vector3f(3, 1.4f, 0), new Vector3f(3, 1.4f, 0)), "standing in it");
+    }
+
+    @Test
+    void aStepBesideOrShortOfTheWindowDoesNot() {
+        RuinWindow window = new RuinWindow(0, 0, 0, 0);
+        assertFalse(window.crossedBy(new Vector3f(6, 1.4f, 3), new Vector3f(1, 1.4f, 3)), "beside it");
+        assertFalse(window.crossedBy(new Vector3f(8, 1.4f, 0), new Vector3f(4, 1.4f, 0)), "short of it");
+        assertFalse(window.crossedBy(new Vector3f(6, 6.4f, 0), new Vector3f(1, 6.4f, 0)), "over it");
+        Vector3f out = window.outside();
+        assertFalse(window.crossedBy(out, out), "where one comes back out");
+    }
+
+    @Test
+    void aLongStepThroughTheWayOutOfAPocketCrossesIt() {
+        Vector3i centre = new Vector3i(1600, 32, 1600);
+        WindowPlane exit = PocketRoom.exit(centre);
+        Vector3i arrival = PocketRoom.arrival(centre);
+        Vector3f from = new Vector3f(arrival.x, arrival.y + 0.4f, arrival.z);
+        assertFalse(exit.crossedBy(from, from), "one arrives clear of it");
+        assertTrue(exit.crossedBy(from, new Vector3f(from).add(0, 0, -6)), "turning round and walking out");
+        assertFalse(exit.crossedBy(from, new Vector3f(from).add(0, 0, 6)), "walking the other way");
+    }
 }
