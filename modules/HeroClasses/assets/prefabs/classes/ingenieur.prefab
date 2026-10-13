@@ -1,0 +1,20 @@
+{
+    "Class": {
+        "name": "Ingénieur",
+        "order": 8,
+        "category": "ranged",
+        "role": "Vos pièges travaillent pendant que vous réfléchissez.",
+        "armament": "Trousse du bricoleur (une main) + main libre (déploiement de tourelles et de pièges).",
+        "weapons": [
+            "engineerKit"
+        ],
+        "melee": 10,
+        "ranged": 90,
+        "magic": 0,
+        "kit": [
+            {
+                "item": "HeroEquipment:FlintTinkerKit"
+            }
+        ]
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "Class": {
+        "name": "Chapelain",
+        "order": 3,
+        "category": "magic",
+        "role": "Vous soignez depuis plus longtemps que vous ne priez.",
+        "armament": "Sceptre (une main) + main libre (magie divine et sorts de soin).",
+        "weapons": [
+            "healingScepter"
+        ],
+        "melee": 5,
+        "ranged": 0,
+        "magic": 95,
+        "kit": [
+            {
+                "item": "HeroEquipment:FlintScepter"
+            }
+        ]
+    }
+}

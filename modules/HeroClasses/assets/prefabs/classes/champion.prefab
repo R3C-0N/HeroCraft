@@ -1,0 +1,23 @@
+{
+    "Class": {
+        "name": "Champion",
+        "order": 11,
+        "category": "melee",
+        "role": "Vous tenez la ligne : c’est déjà un métier.",
+        "armament": "Épée à une main + Bouclier (les deux mains occupées).",
+        "weapons": [
+            "oneHandedSword"
+        ],
+        "melee": 100,
+        "ranged": 0,
+        "magic": 0,
+        "kit": [
+            {
+                "item": "HeroEquipment:FlintSword"
+            },
+            {
+                "item": "HeroEquipment:FlintShield"
+            }
+        ]
+    }
+}

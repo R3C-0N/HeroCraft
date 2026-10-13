@@ -4,11 +4,14 @@ package org.terasology.heroclasses.skills;
 
 import com.google.common.collect.Lists;
 import org.terasology.gestalt.entitysystem.component.Component;
+import org.terasology.reflection.MappedContainer;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
- * A class, as a prefab: its name, the weapons its skills answer to, and the split it starts a character on.
+ * A class, as a prefab: its name, the weapons its skills answer to, the split it starts a character on, and what it
+ * puts in the character's hands on the first morning.
  * <p>
  * A class is a starting profile, not a cage (D60): nothing here stops a character from learning another class's
  * skills. What it fixes is which weapons wake them — a skill that names none takes its class's.
@@ -16,6 +19,18 @@ import java.util.List;
 public class ClassComponent implements Component<ClassComponent> {
 
     public String name = "";
+
+    /** Where the creator files it: {@code melee}, {@code ranged} or {@code magic}. */
+    public String category = "melee";
+
+    /** Its rank in the creator, within and across categories. */
+    public int order;
+
+    /** One line of who the character was before the story starts. */
+    public String role = "";
+
+    /** What the class carries, in words, as the creator shows it. */
+    public String armament = "";
 
     /** {@code WeaponComponent.type} values, any of which unlocks the class's skills. */
     public List<String> weapons = Lists.newArrayList();
@@ -25,12 +40,38 @@ public class ClassComponent implements Component<ClassComponent> {
     public int ranged;
     public int magic;
 
+    /** Items every character of the class starts with, ammunition included. */
+    public List<KitItem> kit = Lists.newArrayList();
+
+    /** Item prefabs of which the player picks exactly one at creation; empty when there is no choice. */
+    public List<String> arsenal = Lists.newArrayList();
+
     @Override
     public void copyFrom(ClassComponent other) {
         this.name = other.name;
+        this.category = other.category;
+        this.order = other.order;
+        this.role = other.role;
+        this.armament = other.armament;
         this.weapons = Lists.newArrayList(other.weapons);
         this.melee = other.melee;
         this.ranged = other.ranged;
         this.magic = other.magic;
+        this.kit = other.kit.stream().map(KitItem::copy).collect(Collectors.toList());
+        this.arsenal = Lists.newArrayList(other.arsenal);
+    }
+
+    /** An item prefab and how many of it. */
+    @MappedContainer
+    public static class KitItem {
+        public String item = "";
+        public int count = 1;
+
+        KitItem copy() {
+            KitItem copy = new KitItem();
+            copy.item = this.item;
+            copy.count = this.count;
+            return copy;
+        }
     }
 }

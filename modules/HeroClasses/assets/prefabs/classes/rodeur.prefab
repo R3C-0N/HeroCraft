@@ -1,0 +1,27 @@
+{
+    "Class": {
+        "name": "Rôdeur",
+        "order": 6,
+        "category": "ranged",
+        "role": "Vous chassez seul, et vous tirez deux fois.",
+        "armament": "Deux arbalètes de poing (les deux mains occupées).",
+        "weapons": [
+            "handCrossbow"
+        ],
+        "melee": 0,
+        "ranged": 75,
+        "magic": 25,
+        "kit": [
+            {
+                "item": "HeroEquipment:HandCrossbow"
+            },
+            {
+                "item": "HeroEquipment:HandCrossbow"
+            },
+            {
+                "item": "HeroEquipment:FlintBolt",
+                "count": 32
+            }
+        ]
+    }
+}

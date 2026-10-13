@@ -1,0 +1,20 @@
+{
+    "Class": {
+        "name": "Lame du vent",
+        "order": 10,
+        "category": "melee",
+        "role": "Le sabre part avant le vent, le vent finit le geste.",
+        "armament": "Sabre (une main) + main libre (magie de vent pour frapper à distance).",
+        "weapons": [
+            "windBlade"
+        ],
+        "melee": 60,
+        "ranged": 25,
+        "magic": 15,
+        "kit": [
+            {
+                "item": "HeroEquipment:FlintSabre"
+            }
+        ]
+    }
+}

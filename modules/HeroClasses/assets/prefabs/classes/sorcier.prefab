@@ -1,0 +1,20 @@
+{
+    "Class": {
+        "name": "Sorcier élémentaire",
+        "order": 0,
+        "category": "magic",
+        "role": "Vous avez appris les runes sur un gantelet volé, une ligne par hiver.",
+        "armament": "Gantelet runique (une main) + main libre (incantation et projection de sorts à distance).",
+        "weapons": [
+            "runicGauntlet"
+        ],
+        "melee": 0,
+        "ranged": 15,
+        "magic": 85,
+        "kit": [
+            {
+                "item": "HeroEquipment:FlintGauntlet"
+            }
+        ]
+    }
+}

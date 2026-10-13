@@ -10,12 +10,14 @@ import org.terasology.engine.registry.In;
 import org.terasology.engine.registry.Share;
 
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 /**
  * The catalog, built at start-up the way the bestiary is: prefabs do not appear while the game runs.
@@ -53,6 +55,13 @@ public class SkillCatalogSystem extends BaseComponentSystem implements SkillCata
     @Override
     public Optional<Prefab> characterClass(String id) {
         return lookup(classes, id);
+    }
+
+    @Override
+    public List<Prefab> classes() {
+        return new LinkedHashSet<>(classes.values()).stream()
+                .sorted(Comparator.comparingInt(prefab -> prefab.getComponent(ClassComponent.class).order))
+                .collect(Collectors.toList());
     }
 
     @Override

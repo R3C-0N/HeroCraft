@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "author": "R3C-0N",
     "displayName": "HeroCraft — classes et compétences",
-    "description": "La progression du personnage : l'expérience gagnée sur les bêtes hostiles, les niveaux sans plafond et les points de compétence qu'ils rapportent ; les classes, leurs compétences et le moteur qui les lance.",
+    "description": "La progression du personnage : l'expérience gagnée sur les bêtes hostiles, les niveaux sans plafond et les points de compétence qu'ils rapportent ; le créateur de légende — espèce, apparence, voie et nom ; les classes, leurs compétences et le moteur qui les lance.",
     "dependencies": [
         {
             "id": "HeroCommon",
@@ -16,6 +16,10 @@
         {
             "id": "HeroBestiary",
             "minVersion": "1.0.0"
+        },
+        {
+            "id": "Inventory",
+            "minVersion": "1.2.1"
         },
         {
             "id": "Health",

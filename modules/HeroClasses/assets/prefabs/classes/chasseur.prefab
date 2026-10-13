@@ -1,0 +1,28 @@
+{
+    "Class": {
+        "name": "Chasseur de monstres",
+        "order": 9,
+        "category": "ranged",
+        "role": "Vous facturez à la tête, et vous rentrez rarement entier.",
+        "armament": "Arbalète de poing + Épée à une main (les deux mains occupées).",
+        "weapons": [
+            "oneHandedSword",
+            "handCrossbow"
+        ],
+        "melee": 45,
+        "ranged": 55,
+        "magic": 0,
+        "kit": [
+            {
+                "item": "HeroEquipment:FlintSword"
+            },
+            {
+                "item": "HeroEquipment:HandCrossbow"
+            },
+            {
+                "item": "HeroEquipment:FlintBolt",
+                "count": 32
+            }
+        ]
+    }
+}

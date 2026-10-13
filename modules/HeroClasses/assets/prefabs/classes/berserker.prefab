@@ -1,0 +1,20 @@
+{
+    "Class": {
+        "name": "Berserker",
+        "order": 13,
+        "category": "melee",
+        "role": "La rage vous coûte moins cher qu’une armure.",
+        "armament": "Gourdin ou Hache (une main) + main libre (canalisation de la rage magique).",
+        "weapons": [
+            "battleAxe",
+            "club"
+        ],
+        "melee": 85,
+        "ranged": 0,
+        "magic": 15,
+        "arsenal": [
+            "HeroEquipment:FlintBattleAxe",
+            "HeroEquipment:Club"
+        ]
+    }
+}

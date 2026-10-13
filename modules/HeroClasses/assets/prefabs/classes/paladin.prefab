@@ -1,0 +1,25 @@
+{
+    "Class": {
+        "name": "Paladin",
+        "order": 14,
+        "category": "melee",
+        "role": "Votre serment tient tant que votre bras tient.",
+        "armament": "Épée ou Marteau + Bouclier (les deux mains occupées, magie défensive et lumineuse canalisée à travers ses armes).",
+        "weapons": [
+            "oneHandedSword",
+            "warHammer"
+        ],
+        "melee": 70,
+        "ranged": 0,
+        "magic": 30,
+        "kit": [
+            {
+                "item": "HeroEquipment:FlintShield"
+            }
+        ],
+        "arsenal": [
+            "HeroEquipment:FlintSword",
+            "HeroEquipment:FlintMallet"
+        ]
+    }
+}
