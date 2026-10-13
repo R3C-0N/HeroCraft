@@ -486,12 +486,12 @@ public class LegendeScreen extends CoreScreenLayer {
         entete(label, (i + 1) + " / " + liste.size());
         RowLayout rang = new RowLayout();
         rang.setHorizontalSpacing(8);
-        rang.addWidget(fleche("‹", () -> choisir.accept(liste.get((ici - 1 + liste.size()) % liste.size()).id())),
+        rang.addWidget(fleche("<", () -> choisir.accept(liste.get((ici - 1 + liste.size()) % liste.size()).id())),
                 new RowLayoutHint(0.12f));
         UILabel choix = new UILabel(liste.isEmpty() ? "" : liste.get(i).nom());
         choix.setFamily("choix");
         rang.addWidget(choix, new RowLayoutHint(0.76f));
-        rang.addWidget(fleche("›", () -> choisir.accept(liste.get((ici + 1) % liste.size()).id())),
+        rang.addWidget(fleche(">", () -> choisir.accept(liste.get((ici + 1) % liste.size()).id())),
                 new RowLayoutHint(0.12f));
         contenu.addWidget(rang);
         note(note);
