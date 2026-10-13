@@ -58,7 +58,7 @@ public class LegendeScreen extends CoreScreenLayer {
         "Le maître d’armes ouvre le râtelier. Votre voie décide de ce que vos mains tiendront au premier matin.",
         "Tout est en place, sauf le nom. C’est lui que les tavernes répéteront, ou oublieront."
     };
-    private static final String[] PANNEAUX = {"Modelage", "Voies du palier 1", "Baptême"};
+    private static final String[] PANNEAUX = {"Modelage", "Les voies", "Baptême"};
     private static final String[] PAS = {"Le corps", "La voie", "Le nom"};
     private static final String[][] ONGLETS = {
         {"espece", "Espèce"}, {"corps", "Corps"}, {"visage", "Visage"}, {"pilosite", "Pilosité"}, {"tenue", "Tenue"}
@@ -348,10 +348,10 @@ public class LegendeScreen extends CoreScreenLayer {
             tete.setHorizontalSpacing(12);
             UILabel titre = new UILabel(famille[1]);
             titre.setFamily("rubrique");
-            tete.addWidget(titre, new RowLayoutHint().setUseContentWidth(true));
+            tete.addWidget(titre, new RowLayoutHint(0.32f));
             UILabel ligne = new UILabel(famille[2]);
             ligne.setFamily("small-muted");
-            tete.addWidget(ligne, new RowLayoutHint());
+            tete.addWidget(ligne, new RowLayoutHint(0.68f));
             contenu.addWidget(tete);
 
             ColumnLayout grille = new ColumnLayout();
@@ -425,7 +425,7 @@ public class LegendeScreen extends CoreScreenLayer {
             refus = "";
             suivant.setEnabled(!envoye && !nom.trim().isEmpty());
         });
-        champ.addWidget(saisie, new RowLayoutHint());
+        champ.addWidget(saisie, new RowLayoutHint(0.68f));
         UIButton tirer = new UIButton("", "Tirer un nom");
         tirer.setFamily("fantome");
         tirer.setEnabled(!scelle() && !envoye);
@@ -434,7 +434,7 @@ public class LegendeScreen extends CoreScreenLayer {
             refus = "";
             rafraichir();
         });
-        champ.addWidget(tirer, new RowLayoutHint().setUseContentWidth(true));
+        champ.addWidget(tirer, new RowLayoutHint(0.32f));
         contenu.addWidget(rubrique("Nom du héros"));
         contenu.addWidget(champ);
         contenu.addWidget(texte("Un nom se porte longtemps. Les crieurs le répéteront mal, les bardes l’allongeront, "
@@ -487,12 +487,12 @@ public class LegendeScreen extends CoreScreenLayer {
         RowLayout rang = new RowLayout();
         rang.setHorizontalSpacing(8);
         rang.addWidget(fleche("‹", () -> choisir.accept(liste.get((ici - 1 + liste.size()) % liste.size()).id())),
-                new RowLayoutHint().setUseContentWidth(true));
+                new RowLayoutHint(0.12f));
         UILabel choix = new UILabel(liste.isEmpty() ? "" : liste.get(i).nom());
         choix.setFamily("choix");
-        rang.addWidget(choix, new RowLayoutHint());
+        rang.addWidget(choix, new RowLayoutHint(0.76f));
         rang.addWidget(fleche("›", () -> choisir.accept(liste.get((ici + 1) % liste.size()).id())),
-                new RowLayoutHint().setUseContentWidth(true));
+                new RowLayoutHint(0.12f));
         contenu.addWidget(rang);
         note(note);
     }

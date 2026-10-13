@@ -88,7 +88,13 @@
                         "left": 12,
                         "right": 12
                     },
-                    "min-height": 34
+                    "fixed-height": 40,
+                    "margin": {
+                        "top": 4,
+                        "bottom": 4,
+                        "left": 10,
+                        "right": 10
+                    }
                 }
             }
         },
