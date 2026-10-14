@@ -41,6 +41,7 @@ import org.terasology.herocubeworlds.generator.RuinShape;
 import org.terasology.herocubeworlds.generator.facetProviders.CubeRuinProvider;
 import org.terasology.herocubeworlds.generator.facets.RuinFacet;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -123,6 +124,7 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
             return;
         }
         long now = time.getGameTimeInMs();
+        adoptChunkStored();
         for (EntityRef pocket : entityManager.getEntitiesWith(PocketComponent.class)) {
             PocketComponent state = pocket.getComponent(PocketComponent.class);
             if (state.closing) {
@@ -146,6 +148,41 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
             }
         }
         crossings(now);
+    }
+
+    /**
+     * Pockets saved before they were global come back with their room's chunk, and only then: one may be
+     * a pocket long closed, whose chunk was never saved again, now sharing its plot with a live one. A
+     * pocket alone on its plot is made global; one that finds its plot taken is dropped, with its keeper,
+     * and leaves the room alone.
+     */
+    private void adoptChunkStored() {
+        Map<Integer, EntityRef> global = new HashMap<>();
+        List<EntityRef> chunkStored = new ArrayList<>();
+        for (EntityRef pocket : entityManager.getEntitiesWith(PocketComponent.class)) {
+            if (pocket.getScope() == EntityScope.GLOBAL) {
+                global.put(pocket.getComponent(PocketComponent.class).plot, pocket);
+            } else {
+                chunkStored.add(pocket);
+            }
+        }
+        for (EntityRef pocket : chunkStored) {
+            PocketComponent state = pocket.getComponent(PocketComponent.class);
+            if (global.containsKey(state.plot)) {
+                logger.info("Dropping a stale copy of pocket {}", state.plot);
+                if (state.keeper.exists() && !state.keeper.equals(global.get(state.plot)
+                        .getComponent(PocketComponent.class).keeper)) {
+                    state.keeper.destroy();
+                }
+                pocket.destroy();
+            } else {
+                pocket.setScope(EntityScope.GLOBAL);
+                if (state.keeper.exists()) {
+                    state.keeper.setScope(EntityScope.GLOBAL);
+                }
+                global.put(state.plot, pocket);
+            }
+        }
     }
 
     /** Lays the room down once every chunk of its box answers, and lets in whoever was waiting for it. */
