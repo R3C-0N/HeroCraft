@@ -147,6 +147,7 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
     private boolean enabled = true;
     private boolean diagnose;
     private String diagnosis = "";
+    private String prelude = "";
 
     private final Matrix4f projection = new Matrix4f();
     private final Matrix4f modelView = new Matrix4f();
@@ -209,7 +210,13 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
             textures[unit] = glGetInteger(GL_TEXTURE_BINDING_2D);
         }
 
+        int errorBefore = diagnose ? glGetError() : 0;
         int triangles = drawOtherSide(camera, eye, view, width, height);
+        int errorPicture = diagnose ? glGetError() : 0;
+        String drawn = diagnose ? drawnPixels() : "";
+        prelude = diagnose ? String.format("erreurs avant %d, image %d, %s, rendable %s/%s, ", errorBefore,
+                errorPicture, drawn, Assets.getMaterial(CHUNK_MATERIAL).map(Material::isRenderable).orElse(null),
+                Assets.getMaterial(PORTAL_MATERIAL).map(Material::isRenderable).orElse(null)) : prelude;
 
         glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
         glViewport(viewport.get(0), viewport.get(1), width, height);
@@ -384,7 +391,7 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
             diagnosis = "matériau du portail introuvable";
             return;
         }
-        glEnable(GL_DEPTH_TEST);
+        set(GL_DEPTH_TEST, !diagnose);
         glDepthMask(false);
         glEnable(GL_BLEND);
         glDisable(GL_CULL_FACE);
@@ -408,11 +415,27 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
             glBindFramebuffer(GL_FRAMEBUFFER, picture.getId());
             float[] inside = new float[4];
             glReadPixels(picture.width() / 2, picture.height() / 2, 1, 1, GL_RGBA, GL_FLOAT, inside);
-            diagnosis = String.format("écran avant %s, après %s, image %s, erreur GL %d, coins %s",
+            diagnosis = prelude + String.format("écran avant %s, après %s, image %s, erreur GL %d, coins %s",
                     java.util.Arrays.toString(before), java.util.Arrays.toString(after),
                     java.util.Arrays.toString(inside), glGetError(), java.util.Arrays.toString(corners));
             glBindFramebuffer(GL_FRAMEBUFFER, bound);
         }
+    }
+
+    /** How many pixels of the picture are not the sky it was cleared to. */
+    private String drawnPixels() {
+        int bound = glGetInteger(GL_FRAMEBUFFER_BINDING);
+        glBindFramebuffer(GL_FRAMEBUFFER, picture.getId());
+        float[] pixels = new float[picture.width() * picture.height() * 4];
+        glReadPixels(0, 0, picture.width(), picture.height(), GL_RGBA, GL_FLOAT, pixels);
+        glBindFramebuffer(GL_FRAMEBUFFER, bound);
+        int drawn = 0;
+        for (int i = 0; i < pixels.length; i += 4) {
+            if (Math.abs(pixels[i] - pixels[0]) + Math.abs(pixels[i + 2] - pixels[2]) > 0.02f) {
+                drawn++;
+            }
+        }
+        return drawn + " pixels peints sur " + pixels.length / 4;
     }
 
     private static float[] centre(int width, int height) {
