@@ -38,9 +38,9 @@ import org.terasology.heroclasses.legende.Peaux;
  * The engine makes that hand lazily and keeps it to itself, so it is recognised by its prefab when it activates.
  * On a reload the hand can come before the local player is known; a half-second look puts that right.
  * <p>
- * Holding something, a baptised hero keeps that arm in view, its fist on the item's handle. The item stays where
- * the engine shows it, drawn to be read from the eye; the arm, a second mesh tipped as the empty hand is, comes to
- * it.
+ * Holding something, a baptised hero keeps that arm in view, a second mesh where the empty hand is, and the item
+ * comes to it, its handle in the fist: it keeps the turn and size the engine draws it with, to be read from the
+ * eye.
  */
 @RegisterSystem(RegisterMode.CLIENT)
 public class MainHerosSystem extends BaseComponentSystem implements UpdateSubscriberSystem {
@@ -137,19 +137,19 @@ public class MainHerosSystem extends BaseComponentSystem implements UpdateSubscr
             return;
         }
 
-        // The item stays where the engine shows it, which is drawn to be read from the eye; the arm comes to it,
-        // tipped as the empty hand is, its fist on the item's handle.
-        FirstPersonHeldItemTransformComponent place = copie.getComponent(FirstPersonHeldItemTransformComponent.class);
-        Vector3f poignee = Prise.poignee(tenue.selectedItem.hasComponent(BlockItemComponent.class));
-        if (place != null) {
-            new Matrix4f().translationRotateScale(place.translate, rotation(place.rotateDegrees), place.scale)
-                    .transformPosition(poignee);
-        }
+        // The arm stays where the empty hand is; the item keeps the turn and size the engine draws it with, to be
+        // read from the eye, and comes to the arm, its handle in the fist.
         Quaternionf inclinaison = rotation(INCLINAISON);
-        Vector3f poing = new Matrix4f().rotation(inclinaison).scale(ECHELLE)
+        Vector3f poing = new Matrix4f().translationRotateScale(DECALAGE, inclinaison, ECHELLE)
                 .mul(Figure.versBras(new Matrix4f()))
                 .transformPosition(new Vector3f(Prise.POING));
-        Vector3f epaule = poignee.sub(poing);
+        FirstPersonHeldItemTransformComponent place = copie.getComponent(FirstPersonHeldItemTransformComponent.class);
+        Quaternionf tour = place == null ? new Quaternionf() : rotation(place.rotateDegrees);
+        float taille = place == null ? 1 : place.scale;
+        Vector3f poignee = tour.transform(Prise.poignee(tenue.selectedItem.hasComponent(BlockItemComponent.class)))
+                .mul(taille);
+        Location.removeChild(monture, copie);
+        Location.attachChild(monture, copie, poing.sub(poignee), tour, taille);
 
         if (bras == null || bras.isDisposed()) {
             bras = Figure.bras();
@@ -162,7 +162,7 @@ public class MainHerosSystem extends BaseComponentSystem implements UpdateSubscr
         builder.addComponent(mesh);
         builder.addComponent(new LocationComponent());
         brasTenant = builder.build();
-        Location.attachChild(monture, brasTenant, epaule, inclinaison, ECHELLE);
+        Location.attachChild(monture, brasTenant, DECALAGE, inclinaison, ECHELLE);
     }
 
     private static Quaternionf rotation(Vector3f degres) {
