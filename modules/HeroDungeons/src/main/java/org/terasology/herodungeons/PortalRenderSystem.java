@@ -111,6 +111,12 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
     /** How much of the swirl still shows through the picture. */
     private static final float OPACITY = 0.92f;
 
+    /**
+     * How far the picture stands in front of the window's face. The swirl is drawn where its tile is opaque and
+     * writes its depth there, on that very face: laid on it exactly, the picture would lose the depth test to it.
+     */
+    private static final float LIFT = 0.02f;
+
     /** Room round the window's centre for the frustum test: half its diagonal and a margin. */
     private static final float PANE_RADIUS = 2.5f;
 
@@ -264,7 +270,8 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
             if (PocketRoom.box(link.pocketCentre()).contains(block)) {
                 int side = link.alongPocket(eye) >= 0 ? 1 : -1;
                 Vector3f far = farFace(state.ruinX, state.ruinZ, RuinWindow.DISTANCE, axis, side);
-                return new View(link.pocketPane(side), new Vector3i(shift).negate(), ruinChunks(state),
+                return new View(lifted(link.pocketPane(side), axis, side), new Vector3i(shift).negate(),
+                        ruinChunks(state),
                         plane(axis, side, far), 0);
             }
             Vector3f middle = middle(link.ruinPane(1));
@@ -275,7 +282,8 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
             int side = link.alongRuin(eye) >= 0 ? 1 : -1;
             Vector3ic centre = link.pocketCentre();
             Vector3f far = farFace(centre.x(), centre.z(), PocketRoom.EXIT_DISTANCE, axis, side);
-            best = new View(link.ruinPane(side), new Vector3i(shift), chunksOf(PocketRoom.box(centre)),
+            best = new View(lifted(link.ruinPane(side), axis, side), new Vector3i(shift),
+                    chunksOf(PocketRoom.box(centre)),
                     plane(axis, side, far), distance);
         }
         return best;
@@ -412,6 +420,14 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
     private static Vector4f plane(Vector3f axis, int side, Vector3f through) {
         Vector3f normal = new Vector3f(axis).mul(-side);
         return new Vector4f(normal, normal.dot(through));
+    }
+
+    /** The face of a window moved a little towards the eye, on the given side. */
+    private static Vector3f[] lifted(Vector3f[] pane, Vector3f axis, int side) {
+        for (Vector3f corner : pane) {
+            corner.fma(LIFT * side, axis);
+        }
+        return pane;
     }
 
     /** A point on the far face of a window's slab, seen from the given side. */
