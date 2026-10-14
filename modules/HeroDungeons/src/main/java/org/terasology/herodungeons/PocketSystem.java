@@ -12,6 +12,7 @@ import org.terasology.engine.context.Context;
 import org.terasology.engine.core.Time;
 import org.terasology.engine.entitySystem.entity.EntityManager;
 import org.terasology.engine.entitySystem.entity.EntityRef;
+import org.terasology.engine.entitySystem.entity.internal.EntityScope;
 import org.terasology.engine.entitySystem.systems.BaseComponentSystem;
 import org.terasology.engine.entitySystem.systems.RegisterMode;
 import org.terasology.engine.entitySystem.systems.RegisterSystem;
@@ -331,8 +332,9 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
             }
         }
         state.keeper = entityManager.create(new LocationComponent(anchor), new RelevanceRegionComponent(KEEPER_RELEVANCE));
+        state.keeper.setScope(EntityScope.GLOBAL);
         entityManager.create(state, new LocationComponent(new Vector3f(centre(plot))),
-                new RelevanceRegionComponent(RELEVANCE));
+                new RelevanceRegionComponent(RELEVANCE)).setScope(EntityScope.GLOBAL);
         logger.info("Window of the ruin at ({}, {}) opened onto pocket {} for {} min, {} member(s)",
                 state.ruinX, state.ruinZ, plot, minutes, state.members.size());
         return String.format("La pierre d'ancre répond : une fenêtre va s'ouvrir sur le passé de cette ruine. "
@@ -437,7 +439,7 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
         state.plot = plot;
         state.waiting = character;
         LocationComponent location = new LocationComponent(new Vector3f(centre));
-        entityManager.create(state, location, new RelevanceRegionComponent(RELEVANCE));
+        entityManager.create(state, location, new RelevanceRegionComponent(RELEVANCE)).setScope(EntityScope.GLOBAL);
         return String.format("Poche %d ouverte en (%d, %d, %d) ; vous y entrerez quand elle sera chargée.",
                 plot, centre.x(), centre.y(), centre.z());
     }
