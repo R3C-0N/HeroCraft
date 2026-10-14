@@ -54,6 +54,8 @@ import static org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT;
 import static org.lwjgl.opengl.GL11.GL_CULL_FACE;
 import static org.lwjgl.opengl.GL11.GL_CULL_FACE_MODE;
 import static org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT;
+import static org.lwjgl.opengl.GL11.GL_DEPTH_COMPONENT;
+import static org.lwjgl.opengl.GL11.GL_DEPTH_FUNC;
 import static org.lwjgl.opengl.GL11.GL_DEPTH_TEST;
 import static org.lwjgl.opengl.GL11.GL_DEPTH_WRITEMASK;
 import static org.lwjgl.opengl.GL11.GL_FLOAT;
@@ -314,10 +316,12 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
         float daylight = backdrop == null ? 1.0f : backdrop.getDaylight();
         // Past the chunks drawn, a sky: a flat colour that follows the day, as the fog of a far horizon does.
         glClearColor(0.02f + 0.50f * daylight, 0.03f + 0.65f * daylight, 0.06f + 0.84f * daylight, 1.0f);
+        // Depth writes are off in the blending pass, and a clear honours the mask: on first, or the depth is never
+        // cleared and no block passes its test.
+        glDepthMask(true);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glDisable(GL_BLEND);
         glEnable(GL_DEPTH_TEST);
-        glDepthMask(true);
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
 
@@ -407,6 +411,15 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
         portal.setMatrix4("projectionMatrix", camera.getProjectionMatrix(), true);
         portal.setMatrix4("modelViewMatrix", camera.getViewMatrix(), true);
         float[] before = diagnose ? centre(width, height) : null;
+        if (diagnose) {
+            float[] depth = new float[1];
+            glReadPixels(width / 2, height / 2, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, depth);
+            Vector3f middle = new Vector3f(corners[0]).add(corners[2]).mul(0.5f);
+            Vector4f clipSpace = new Matrix4f(camera.getProjectionMatrix()).mul(camera.getViewMatrix())
+                    .transform(new Vector4f(middle, 1));
+            prelude += String.format("profondeur écran %.6f, vitre %.6f, test %d, ", depth[0],
+                    clipSpace.z / clipSpace.w * 0.5f + 0.5f, glGetInteger(GL_DEPTH_FUNC));
+        }
         quad().render();
         if (diagnose) {
             diagnose = false;
