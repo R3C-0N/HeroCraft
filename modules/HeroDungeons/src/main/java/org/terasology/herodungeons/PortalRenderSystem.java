@@ -56,6 +56,8 @@ import static org.lwjgl.opengl.GL11.GL_CULL_FACE_MODE;
 import static org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT;
 import static org.lwjgl.opengl.GL11.GL_DEPTH_TEST;
 import static org.lwjgl.opengl.GL11.GL_DEPTH_WRITEMASK;
+import static org.lwjgl.opengl.GL11.GL_FLOAT;
+import static org.lwjgl.opengl.GL11.GL_RGBA;
 import static org.lwjgl.opengl.GL11.GL_TEXTURE_2D;
 import static org.lwjgl.opengl.GL11.GL_TEXTURE_BINDING_2D;
 import static org.lwjgl.opengl.GL11.GL_VIEWPORT;
@@ -67,9 +69,11 @@ import static org.lwjgl.opengl.GL11.glDepthMask;
 import static org.lwjgl.opengl.GL11.glDisable;
 import static org.lwjgl.opengl.GL11.glEnable;
 import static org.lwjgl.opengl.GL11.glGetBoolean;
+import static org.lwjgl.opengl.GL11.glGetError;
 import static org.lwjgl.opengl.GL11.glGetInteger;
 import static org.lwjgl.opengl.GL11.glGetIntegerv;
 import static org.lwjgl.opengl.GL11.glIsEnabled;
+import static org.lwjgl.opengl.GL11.glReadPixels;
 import static org.lwjgl.opengl.GL11.glViewport;
 import static org.lwjgl.opengl.GL13.GL_ACTIVE_TEXTURE;
 import static org.lwjgl.opengl.GL13.GL_TEXTURE0;
@@ -141,6 +145,8 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
     private FBO picture;
     private Mesh quad;
     private boolean enabled = true;
+    private boolean diagnose;
+    private String diagnosis = "";
 
     private final Matrix4f projection = new Matrix4f();
     private final Matrix4f modelView = new Matrix4f();
@@ -245,6 +251,9 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
     public String fenetreVivante(@CommandParam(value = "etat", required = false) String state) {
         if ("on".equals(state)) {
             enabled = true;
+        } else if ("diag".equals(state)) {
+            diagnose = true;
+            return "Diagnostic à la prochaine image : " + diagnosis;
         } else if ("off".equals(state)) {
             enabled = false;
             idle();
@@ -372,6 +381,7 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
     private void composite(Camera camera, Vector3f[] corners, int width, int height) {
         Material portal = Assets.getMaterial(PORTAL_MATERIAL).orElse(null);
         if (portal == null) {
+            diagnosis = "matériau du portail introuvable";
             return;
         }
         glEnable(GL_DEPTH_TEST);
@@ -389,7 +399,26 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
         }
         portal.setMatrix4("projectionMatrix", camera.getProjectionMatrix(), true);
         portal.setMatrix4("modelViewMatrix", camera.getViewMatrix(), true);
+        float[] before = diagnose ? centre(width, height) : null;
         quad().render();
+        if (diagnose) {
+            diagnose = false;
+            float[] after = centre(width, height);
+            int bound = glGetInteger(GL_FRAMEBUFFER_BINDING);
+            glBindFramebuffer(GL_FRAMEBUFFER, picture.getId());
+            float[] inside = new float[4];
+            glReadPixels(picture.width() / 2, picture.height() / 2, 1, 1, GL_RGBA, GL_FLOAT, inside);
+            diagnosis = String.format("écran avant %s, après %s, image %s, erreur GL %d, coins %s",
+                    java.util.Arrays.toString(before), java.util.Arrays.toString(after),
+                    java.util.Arrays.toString(inside), glGetError(), java.util.Arrays.toString(corners));
+            glBindFramebuffer(GL_FRAMEBUFFER, bound);
+        }
+    }
+
+    private static float[] centre(int width, int height) {
+        float[] pixel = new float[4];
+        glReadPixels(width / 2, height / 2, 1, 1, GL_RGBA, GL_FLOAT, pixel);
+        return pixel;
     }
 
     /** Where a point of the world is drawn, from the eye: bent on the planet, as the chunks round it are. */
