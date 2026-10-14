@@ -35,10 +35,11 @@ public class MainHerosSystem extends BaseComponentSystem implements UpdateSubscr
     private static final String MAIN = "engine:hand";
     /**
      * The engine holds its hand end-on, which shows the palm and little else; tipped further, the arm
-     * shows its sleeve along the side, as a hero's arm should.
+     * shows its sleeve along the side, as a hero's arm should. Tipped that far it sinks under the bar, so it
+     * is lifted to match.
      */
     private static final Vector3f INCLINAISON = new Vector3f(55, 5, 0);
-    private static final Vector3f DECALAGE = new Vector3f(-0.5f, -1.5f, 0);
+    private static final Vector3f DECALAGE = new Vector3f(-0.5f, -1.1f, 0);
 
     @In
     private LocalPlayer localPlayer;
