@@ -1,0 +1,8 @@
+{
+    "params": [
+        {
+            "name": "portalView",
+            "type": "sampler2D"
+        }
+    ]
+}

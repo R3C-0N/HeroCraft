@@ -53,9 +53,19 @@ public final class RuinWindow {
         this.centreX = centreX;
         this.centreZ = centreZ;
         this.floorY = floorY;
-        this.axisX = gateSide == 0 ? 1 : gateSide == 1 ? -1 : 0;
-        this.axisZ = gateSide == 2 ? 1 : gateSide == 3 ? -1 : 0;
+        this.axisX = axisX(gateSide);
+        this.axisZ = axisZ(gateSide);
         this.plane = new WindowPlane(centreX, centreZ, axisX, axisZ, DISTANCE, HALF_WIDTH, floorY + 1, HEIGHT);
+    }
+
+    /** The step along X out of a gate on {@code side}: 0 east, 1 west, 2 south, 3 north. */
+    public static int axisX(int side) {
+        return side == 0 ? 1 : side == 1 ? -1 : 0;
+    }
+
+    /** The step along Z out of a gate on {@code side}. */
+    public static int axisZ(int side) {
+        return side == 2 ? 1 : side == 3 ? -1 : 0;
     }
 
     /** Every block of the window. */
