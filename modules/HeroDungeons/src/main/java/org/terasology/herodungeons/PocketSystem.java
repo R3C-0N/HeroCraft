@@ -150,11 +150,14 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
     /** Lays the room down once every chunk of its box answers, and lets in whoever was waiting for it. */
     private void build(EntityRef pocket, PocketComponent state) {
         Vector3i centre = centre(state.plot);
-        if (!loaded(PocketRoom.box(centre))) {
+        if (!loaded(PocketRoom.box(centre)) || state.fromRuin && !windowLoaded(state)) {
             return;
         }
         Map<Vector3ic, Block> blocks = lay(centre, true);
         worldProvider.setBlocks(blocks);
+        if (state.fromRuin) {
+            raiseWindow(state);
+        }
         state.built = true;
         EntityRef waiting = state.waiting;
         state.waiting = EntityRef.NULL;
@@ -163,6 +166,31 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
         if (waiting.exists()) {
             enter(waiting, state.plot, null);
         }
+        if (state.fromRuin) {
+            tellGroup(state, "La fenêtre est ouverte : franchissez-la pour entrer dans le passé.");
+        }
+    }
+
+    /** Stands the window up in the ruin, in the cells of it that are air: a block someone put there stays. */
+    private void raiseWindow(PocketComponent state) {
+        Block pane = blockManager.getBlock("HeroDungeons:Fenetre");
+        Block air = blockManager.getBlock(BlockManager.AIR_ID);
+        Map<Vector3ic, Block> blocks = new HashMap<>();
+        for (Vector3i cell : window(state).cells()) {
+            if (worldProvider.getBlock(cell) == air) {
+                blocks.put(cell, pane);
+            }
+        }
+        worldProvider.setBlocks(blocks);
+    }
+
+    private boolean windowLoaded(PocketComponent state) {
+        for (Vector3i cell : window(state).cells()) {
+            if (!worldProvider.isBlockRelevant(cell)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -305,19 +333,9 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
         state.keeper = entityManager.create(new LocationComponent(anchor), new RelevanceRegionComponent(KEEPER_RELEVANCE));
         entityManager.create(state, new LocationComponent(new Vector3f(centre(plot))),
                 new RelevanceRegionComponent(RELEVANCE));
-
-        Block pane = blockManager.getBlock("HeroDungeons:Fenetre");
-        Block air = blockManager.getBlock(BlockManager.AIR_ID);
-        Map<Vector3ic, Block> blocks = new HashMap<>();
-        for (Vector3i cell : window.cells()) {
-            if (worldProvider.getBlock(cell) == air) {
-                blocks.put(cell, pane);
-            }
-        }
-        worldProvider.setBlocks(blocks);
         logger.info("Window of the ruin at ({}, {}) opened onto pocket {} for {} min, {} member(s)",
                 state.ruinX, state.ruinZ, plot, minutes, state.members.size());
-        return String.format("La pierre d'ancre répond : une fenêtre s'ouvre sur le passé de cette ruine. "
+        return String.format("La pierre d'ancre répond : une fenêtre va s'ouvrir sur le passé de cette ruine. "
                 + "Elle se refermera dans %d minutes.", minutes);
     }
 
@@ -340,13 +358,10 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
 
     private void finishClosing(EntityRef pocket, PocketComponent state) {
         if (state.fromRuin) {
-            RuinWindow window = window(state);
-            List<Vector3i> cells = window.cells();
-            for (Vector3i cell : cells) {
-                if (!worldProvider.isBlockRelevant(cell)) {
-                    return;
-                }
+            if (!windowLoaded(state)) {
+                return;
             }
+            List<Vector3i> cells = window(state).cells();
             Block pane = blockManager.getBlock("HeroDungeons:Fenetre");
             Block air = blockManager.getBlock(BlockManager.AIR_ID);
             Map<Vector3ic, Block> blocks = new HashMap<>();
