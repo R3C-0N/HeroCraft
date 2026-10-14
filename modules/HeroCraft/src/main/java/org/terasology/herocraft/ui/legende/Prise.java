@@ -55,4 +55,9 @@ final class Prise {
     static Matrix4f objet(boolean bloc, Matrix4f dest) {
         return objet(bloc, POING, dest);
     }
+
+    /** Where the fist closes, in the item's own model: the handle of an icon, the bottom face of a block. */
+    static Vector3f poignee(boolean bloc) {
+        return bloc ? new Vector3f(0, -0.5f, 0) : new Vector3f(POIGNEE);
+    }
 }
