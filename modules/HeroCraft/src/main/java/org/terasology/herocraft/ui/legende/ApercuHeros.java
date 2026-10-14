@@ -7,7 +7,9 @@ import org.joml.Vector2i;
 import org.joml.Vector3f;
 import org.terasology.engine.rendering.assets.material.Material;
 import org.terasology.engine.rendering.assets.mesh.Mesh;
+import org.terasology.engine.logic.inventory.ItemComponent;
 import org.terasology.engine.rendering.assets.texture.Texture;
+import org.terasology.engine.rendering.assets.texture.TextureRegion;
 import org.terasology.engine.rendering.nui.CanvasUtility;
 import org.terasology.engine.utilities.Assets;
 import org.terasology.heroclasses.legende.Apparence;
@@ -29,6 +31,8 @@ import org.terasology.nui.events.NUIMouseReleaseEvent;
  * Heights compare: the figure is drawn at its species' size against a two-metre frame, feet on the same line, so a
  * gnome reads as small beside where a half-orc would stand. The build widens it as it widens the hero in the
  * world.
+ * <p>
+ * The weapon picked from the arsenal is in its right hand, as the hero will hold it in the world.
  */
 public class ApercuHeros extends CoreWidget {
 
@@ -50,6 +54,8 @@ public class ApercuHeros extends CoreWidget {
     private float taille = 1.75f;
     private float largeur = -1;
     private float largeurVoulue = 1;
+    private String arme = "";
+    private String armeVoulue = "";
 
     private float angle = DEPART;
     private float pente = PENTE;
@@ -97,6 +103,11 @@ public class ApercuHeros extends CoreWidget {
         }
     }
 
+    /** Puts this item in the right hand, by its prefab; empty for empty hands. */
+    public void armer(String prefab) {
+        armeVoulue = prefab == null ? "" : prefab;
+    }
+
     public boolean isTourne() {
         return tourne;
     }
@@ -119,12 +130,13 @@ public class ApercuHeros extends CoreWidget {
         if (texture == null) {
             return;
         }
-        if (mesh == null || mesh.isDisposed() || largeur != largeurVoulue) {
+        if (mesh == null || mesh.isDisposed() || largeur != largeurVoulue || !arme.equals(armeVoulue)) {
             if (mesh != null && !mesh.isDisposed()) {
                 mesh.dispose();
             }
-            mesh = Figure.build(largeurVoulue);
+            mesh = Figure.build(largeurVoulue, icone(armeVoulue));
             largeur = largeurVoulue;
+            arme = armeVoulue;
         }
         if (materiau == null || materiau.isDisposed()) {
             materiau = Assets.getMaterial("HeroCraft:apercuHeros").orElse(null);
@@ -142,6 +154,16 @@ public class ApercuHeros extends CoreWidget {
         Vector3f decalage = new Vector3f(0, hauteur * (AGRANDI - echelle) / 2, 0);
         Quaternionf rotation = new Quaternionf().rotateX(pente).rotateY(angle);
         CanvasUtility.drawMesh(canvas, mesh, materiau, region, rotation, decalage, echelle);
+    }
+
+    private static TextureRegion icone(String prefab) {
+        if (prefab.isEmpty()) {
+            return null;
+        }
+        return Assets.getPrefab(prefab)
+                .map(p -> p.getComponent(ItemComponent.class))
+                .map(item -> (TextureRegion) item.icon)
+                .orElse(null);
     }
 
     @Override

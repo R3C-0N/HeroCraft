@@ -215,6 +215,7 @@ public class LegendeScreen extends CoreScreenLayer {
             return;
         }
         apercu.montrer(cfg);
+        apercu.armer(arme());
         boolean fige = scelle() || envoye;
         retour.setEnabled(etape > 0 && !fige);
         suivant.setEnabled(scelle() || (!envoye && (etape == 0 || classe != null)
