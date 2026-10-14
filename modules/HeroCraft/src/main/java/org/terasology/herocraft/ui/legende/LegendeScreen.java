@@ -27,6 +27,7 @@ import org.terasology.nui.layouts.RowLayout;
 import org.terasology.nui.layouts.RowLayoutHint;
 import org.terasology.nui.layouts.ScrollableArea;
 import org.terasology.nui.widgets.TextChangeEventListener;
+import org.terasology.nui.widgets.UIBox;
 import org.terasology.nui.widgets.UIButton;
 import org.terasology.nui.widgets.UILabel;
 import org.terasology.nui.widgets.UISlider;
@@ -83,7 +84,7 @@ public class LegendeScreen extends CoreScreenLayer {
     private ApercuHeros apercu;
     private UIButton suivant;
     private UIButton retour;
-    private UIButton rotation;
+    private Case rotation;
 
     private int etape;
     private String onglet = "espece";
@@ -103,15 +104,11 @@ public class LegendeScreen extends CoreScreenLayer {
         apercu = find("apercu", ApercuHeros.class);
         suivant = find("suivant", UIButton.class);
         retour = find("retour", UIButton.class);
-        rotation = find("rotation", UIButton.class);
+        rotation = find("rotation", Case.class);
 
         suivant.subscribe(widget -> avancer());
         retour.subscribe(widget -> aller(etape - 1));
-        rotation.subscribe(widget -> {
-            apercu.setTourne(!apercu.isTourne());
-            rotation.setFamily(apercu.isTourne() ? "choisi" : "fantome");
-        });
-        rotation.setFamily("choisi");
+        rotation.regler("Rotation", "", apercu::isTourne, () -> apercu.setTourne(!apercu.isTourne()));
 
         lier("titre", () -> TITRES[etape]);
         lier("intro", () -> INTROS[etape]);
@@ -218,6 +215,7 @@ public class LegendeScreen extends CoreScreenLayer {
             return;
         }
         apercu.montrer(cfg);
+        apercu.armer(arme());
         boolean fige = scelle() || envoye;
         retour.setEnabled(etape > 0 && !fige);
         suivant.setEnabled(scelle() || (!envoye && (etape == 0 || classe != null)
@@ -226,8 +224,8 @@ public class LegendeScreen extends CoreScreenLayer {
         pas.removeAllWidgets();
         for (int i = 0; i < PAS.length; i++) {
             int vers = i;
-            UIButton bouton = new UIButton("", (i + 1) + "  " + PAS[i]);
-            bouton.setFamily(i == etape ? "choisi" : "fantome");
+            UIButton bouton = new UIButton("", (i + 1) + "  " + PAS[i].toUpperCase(Locale.FRENCH));
+            bouton.setFamily(i == etape ? "pasActif" : "pas");
             bouton.setEnabled(!fige && (i < 2 || classe != null));
             bouton.subscribe(widget -> aller(vers));
             pas.addWidget(bouton, new RowLayoutHint());
@@ -248,8 +246,8 @@ public class LegendeScreen extends CoreScreenLayer {
         RowLayout onglets = new RowLayout();
         onglets.setHorizontalSpacing(4);
         for (String[] o : ONGLETS) {
-            UIButton bouton = new UIButton("", o[1]);
-            bouton.setFamily(o[0].equals(onglet) ? "tab-active" : "tab-bar");
+            UIButton bouton = new UIButton("", o[1].toUpperCase(Locale.FRENCH));
+            bouton.setFamily(o[0].equals(onglet) ? "ongletActif" : "onglet");
             bouton.subscribe(widget -> {
                 onglet = o[0];
                 rafraichir();
@@ -268,13 +266,10 @@ public class LegendeScreen extends CoreScreenLayer {
                 grille.setFillVerticalSpace(false);
                 for (String id : Atlas.ORDRE_ESPECES) {
                     Espece e = Atlas.espece(id);
-                    UIButton bouton = new UIButton("", e.nom() + "  ·  " + metres(e.taille()));
-                    bouton.setFamily(id.equals(cfg.espece) ? "choisi" : "fantome");
-                    bouton.subscribe(widget -> {
+                    grille.addWidget(new Case(e.nom(), metres(e.taille()), () -> id.equals(cfg.espece), () -> {
                         cfg = Atlas.defaut(id);
                         rafraichir();
-                    });
-                    grille.addWidget(bouton);
+                    }));
                 }
                 contenu.addWidget(grille);
                 List<Option> variantes = new ArrayList<>();
@@ -329,14 +324,14 @@ public class LegendeScreen extends CoreScreenLayer {
         pied.setHorizontalSpacing(12);
         UILabel avertissement = new UILabel("Aucun trait n’est définitif avant le baptême.");
         avertissement.setFamily("small-muted");
-        pied.addWidget(avertissement, new RowLayoutHint());
+        pied.addWidget(avertissement, new RowLayoutHint(0.7f));
         UIButton des = new UIButton("", "Tirer au sort");
         des.setFamily("fantome");
         des.subscribe(widget -> {
             cfg = Atlas.aleatoire(hasard);
             rafraichir();
         });
-        pied.addWidget(des, new RowLayoutHint().setUseContentWidth(true));
+        pied.addWidget(des, new RowLayoutHint(0.3f));
         contenu.addWidget(pied);
     }
 
@@ -346,16 +341,16 @@ public class LegendeScreen extends CoreScreenLayer {
         for (String[] famille : FAMILLES) {
             RowLayout tete = new RowLayout();
             tete.setHorizontalSpacing(12);
-            UILabel titre = new UILabel(famille[1]);
-            titre.setFamily("rubrique");
-            tete.addWidget(titre, new RowLayoutHint(0.32f));
+            UILabel titre = new UILabel(famille[1].toUpperCase(Locale.FRENCH));
+            titre.setFamily("rubrique-or");
+            tete.addWidget(titre, new RowLayoutHint(0.34f));
             UILabel ligne = new UILabel(famille[2]);
             ligne.setFamily("small-muted");
-            tete.addWidget(ligne, new RowLayoutHint(0.68f));
+            tete.addWidget(ligne, new RowLayoutHint(0.66f));
             contenu.addWidget(tete);
 
             ColumnLayout grille = new ColumnLayout();
-            grille.setColumns(3);
+            grille.setColumns(2);
             grille.setHorizontalSpacing(8);
             grille.setVerticalSpacing(6);
             grille.setFillVerticalSpace(false);
@@ -364,14 +359,11 @@ public class LegendeScreen extends CoreScreenLayer {
                 if (!famille[0].equals(voie.category)) {
                     continue;
                 }
-                UIButton bouton = new UIButton("", voie.name);
-                bouton.setFamily(prefab.equals(classe) ? "choisi" : "fantome");
-                bouton.subscribe(widget -> {
+                grille.addWidget(new Case(voie.name, "", () -> prefab.equals(classe), () -> {
                     classe = prefab;
                     refus = "";
                     rafraichir();
-                });
-                grille.addWidget(bouton);
+                }));
             }
             contenu.addWidget(grille);
         }
@@ -380,36 +372,43 @@ public class LegendeScreen extends CoreScreenLayer {
         }
 
         ClassComponent voie = voie();
+        ColumnLayout fiche = boite();
         UILabel nomVoie = new UILabel(voie.name);
         nomVoie.setFamily("voie");
-        contenu.addWidget(nomVoie);
-        contenu.addWidget(texte("« " + voie.role + " »", "citation"));
-        contenu.addWidget(texte(voie.armament, "small-secondary"));
+        fiche.addWidget(nomVoie);
+        fiche.addWidget(texte("« " + voie.role + " »", "citation"));
+        fiche.addWidget(texte(voie.armament, "small-secondary"));
 
         if (!voie.arsenal.isEmpty()) {
-            UILabel titre = new UILabel("Arsenal");
-            titre.setFamily("rubrique");
-            contenu.addWidget(titre);
+            fiche.addWidget(rubrique("ARSENAL"));
             FlowLayout choix = new FlowLayout();
             choix.setHorizontalSpacing(8);
+            choix.setVerticalSpacing(8);
             for (String item : voie.arsenal) {
-                UIButton bouton = new UIButton("", nomObjet(item));
-                bouton.setFamily(item.equals(arme()) ? "choisi" : "fantome");
-                bouton.subscribe(widget -> {
+                choix.addWidget(new Case(nomObjet(item), "", () -> item.equals(arme()), () -> {
                     armes.put(classe.getUrn().toString(), item);
                     rafraichir();
-                });
-                choix.addWidget(bouton, null);
+                }), null);
             }
-            contenu.addWidget(choix);
+            fiche.addWidget(choix);
         }
 
-        UILabel sac = new UILabel("Au premier matin");
-        sac.setFamily("rubrique");
-        contenu.addWidget(sac);
+        fiche.addWidget(rubrique("AU PREMIER MATIN"));
         for (String ligne : paquetage()) {
-            contenu.addWidget(texte("·  " + ligne, "small-secondary"));
+            fiche.addWidget(texte("·  " + ligne, "small-secondary"));
         }
+    }
+
+    /** A sunken box in the panel, the mock-up's well for whatever is read rather than picked. */
+    private ColumnLayout boite() {
+        ColumnLayout colonne = new ColumnLayout();
+        colonne.setVerticalSpacing(8);
+        colonne.setFillVerticalSpace(false);
+        UIBox boite = new UIBox();
+        boite.setFamily("sombre");
+        boite.setContent(colonne);
+        contenu.addWidget(boite);
+        return colonne;
     }
 
     /** Step 3: the name, and the sheet it will be written on. */
@@ -435,18 +434,19 @@ public class LegendeScreen extends CoreScreenLayer {
             rafraichir();
         });
         champ.addWidget(tirer, new RowLayoutHint(0.32f));
-        contenu.addWidget(rubrique("Nom du héros"));
+        contenu.addWidget(rubrique("NOM DU HÉROS"));
         contenu.addWidget(champ);
         contenu.addWidget(texte("Un nom se porte longtemps. Les crieurs le répéteront mal, les bardes l’allongeront, "
                 + "les registres de garnison l’abrégeront.", "small-muted"));
 
-        contenu.addWidget(rubrique("Feuille de départ"));
+        ColumnLayout feuille = boite();
+        feuille.addWidget(rubrique("FEUILLE DE DÉPART"));
         Variante variante = variante();
-        ligne("Espèce", espece().nom() + " · " + variante.nom());
-        ligne("Taille", metres(cfg.taille) + " · corpulence " + corpulence().toLowerCase(Locale.FRENCH));
-        ligne("Voie", voie().name);
-        ligne("Armement", voie().armament);
-        ligne("Palier", "1 · première sortie");
+        ligne(feuille, "Espèce", espece().nom() + " · " + variante.nom());
+        ligne(feuille, "Taille", metres(cfg.taille) + " · corpulence " + corpulence().toLowerCase(Locale.FRENCH));
+        ligne(feuille, "Voie", voie().name);
+        ligne(feuille, "Armement", voie().armament);
+        ligne(feuille, "Palier", "1 · première sortie");
 
         if (scelle()) {
             LegendeComponent legende = localPlayer.getCharacterEntity().getComponent(LegendeComponent.class);
@@ -487,19 +487,19 @@ public class LegendeScreen extends CoreScreenLayer {
         RowLayout rang = new RowLayout();
         rang.setHorizontalSpacing(8);
         rang.addWidget(fleche("<", () -> choisir.accept(liste.get((ici - 1 + liste.size()) % liste.size()).id())),
-                new RowLayoutHint(0.12f));
+                new RowLayoutHint(0.08f));
         UILabel choix = new UILabel(liste.isEmpty() ? "" : liste.get(i).nom());
         choix.setFamily("choix");
-        rang.addWidget(choix, new RowLayoutHint(0.76f));
+        rang.addWidget(choix, new RowLayoutHint(0.84f));
         rang.addWidget(fleche(">", () -> choisir.accept(liste.get((ici + 1) % liste.size()).id())),
-                new RowLayoutHint(0.12f));
+                new RowLayoutHint(0.08f));
         contenu.addWidget(rang);
         note(note);
     }
 
     private UIButton fleche(String signe, Runnable action) {
         UIButton bouton = new UIButton("", signe);
-        bouton.setFamily("fantome");
+        bouton.setFamily("fleche");
         bouton.subscribe(widget -> {
             action.run();
             Forge.retoucher(cfg, false);
@@ -576,20 +576,20 @@ public class LegendeScreen extends CoreScreenLayer {
         }
     }
 
-    private void ligne(String label, String valeur) {
+    private static void ligne(ColumnLayout feuille, String label, String valeur) {
         RowLayout rang = new RowLayout();
         rang.setHorizontalSpacing(12);
-        UILabel gauche = new UILabel(label);
-        gauche.setFamily("stat-label");
-        rang.addWidget(gauche, new RowLayoutHint(0.25f));
+        UILabel gauche = new UILabel(label.toUpperCase(Locale.FRENCH));
+        gauche.setFamily("cle");
+        rang.addWidget(gauche, new RowLayoutHint(0.3f));
         UILabel droite = new UILabel(valeur);
-        droite.setFamily("small-secondary");
-        rang.addWidget(droite, new RowLayoutHint(0.75f));
-        contenu.addWidget(rang);
+        droite.setFamily("droite");
+        rang.addWidget(droite, new RowLayoutHint(0.7f));
+        feuille.addWidget(rang);
     }
 
     private static UILabel rubrique(String texte) {
-        UILabel label = new UILabel(texte);
+        UILabel label = new UILabel(texte.toUpperCase(Locale.FRENCH));
         label.setFamily("rubrique");
         return label;
     }
@@ -649,7 +649,7 @@ public class LegendeScreen extends CoreScreenLayer {
 
     private String mains() {
         if (classe == null) {
-            return "Mains vides. Aucune voie n’a encore été choisie.";
+            return "Vides. Aucune voie n’a encore été choisie.";
         }
         return String.join(" · ", paquetage());
     }
