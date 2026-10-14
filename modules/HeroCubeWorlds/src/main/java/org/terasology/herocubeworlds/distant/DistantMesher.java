@@ -95,6 +95,7 @@ public final class DistantMesher {
     private static final Vector3f X_AXIS = new Vector3f(1, 0, 0);
     private static final Vector3f Z_AXIS = new Vector3f(0, 0, 1);
     private static final int SKIRT_COLUMNS = 4;
+    private static final int SKIRT_MIN_DEPTH = 16;
     /**
      * Said of a water patch instead of a depth: each corner takes the depth of the columns around it. A patch used to
      * carry its own column's depth at all four corners, so two patches meeting at a corner over a shelving bed drove
@@ -165,15 +166,31 @@ public final class DistantMesher {
                             // to the floor of the world that the neighbour will cover a moment later.
                             // It hides the crack between two nodes whose heights disagree.
                             emitWall(ground, columns, side, u, v, Math.max(section.bottom(seg),
-                                    top - SKIRT_COLUMNS * stride), top, material, block);
+                                    top - skirtDepth(stride)), top, material, block);
                             continue;
                         }
                         wall(ground, columns, side, u, v, section.bottom(seg), top, other, material, block);
+                        int nu = u + SIDE_STEP[side][0];
+                        int nv = v + SIDE_STEP[side][1];
+                        if (nu < 0 || nv < 0 || nu >= size || nv >= size) {
+                            // Across the edge of the node, what was read is what the neighbour showed when this one
+                            // was built: perhaps another level than the one drawn there now, and nothing rebuilds
+                            // this node when that changes. A wall cut to the old neighbour leaves a slit wherever the
+                            // new one lies lower, and through the slit the sky under the world showed, in pale dashes
+                            // along the joins of the sea bed. A skirt hangs under every edge whatever the neighbour.
+                            emitWall(ground, columns, side, u, v,
+                                    Math.max(section.bottom(seg), top - skirtDepth(stride)), top, material, block);
+                        }
                     }
                 }
             }
         }
         return mesh;
+    }
+
+    /** How far a skirt hangs: four columns of the node, and never less than the steps a coarser neighbour can hide. */
+    static int skirtDepth(int stride) {
+        return Math.max(SKIRT_MIN_DEPTH, SKIRT_COLUMNS * stride);
     }
 
     /** The parts of a run no neighbouring ground hides, as walls facing that neighbour. */
@@ -343,8 +360,21 @@ public final class DistantMesher {
             runs[(u + 1) + (v + 1) * (size + 2)] = columnRuns;
         }
 
+        /**
+         * The column the light is read from: the column itself, or, past the edge of the node where nothing is known
+         * yet, the node's own column beside it. Read as open sky, an unknown neighbour lit every skirt in full and left
+         * it unoccluded; under the sea that is a sunlit wall at the bottom of dark water, and seen from above the joins
+         * between nodes were drawn in pale dashes wherever the bed next door lay lower. The skirt stands in for ground
+         * like its own, so it is lit like its own.
+         */
         private int[] columnAt(float x, float z) {
-            return at(Math.floorDiv((int) Math.floor(x), stride), Math.floorDiv((int) Math.floor(z), stride));
+            int u = Math.floorDiv((int) Math.floor(x), stride);
+            int v = Math.floorDiv((int) Math.floor(z), stride);
+            int[] column = at(u, v);
+            if (column != null || u < -1 || v < -1 || u > size || v > size) {
+                return column;
+            }
+            return at(Math.max(0, Math.min(size - 1, u)), Math.max(0, Math.min(size - 1, v)));
         }
 
         /**
