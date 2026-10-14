@@ -17,6 +17,11 @@ import org.terasology.nui.Colorc;
 import java.util.List;
 
 public class BlockMeshGeneratorSingleShape extends BlockMeshShapeGenerator {
+    /** How many leaves deep the shade inside a crown keeps darkening. */
+    private static final int FOLIAGE_DEPTH = 4;
+    /** What is left of the light on a face that many leaves deep. */
+    private static final float FOLIAGE_DEEPEST = 0.35f;
+
     private final Block block;
     private final ResourceUrn baseUrn = new ResourceUrn("engine", "blockmesh");
 
@@ -104,6 +109,9 @@ public class BlockMeshGeneratorSingleShape extends BlockMeshShapeGenerator {
                             .setGreen(colorSource.gf() * colorOffset.gf())
                             .setBlue(colorSource.bf() * colorOffset.bf())
                             .setAlpha(colorSource.af() * colorOffset.af());
+                    if (isFoliage(block) && isFoliage(adjacent)) {
+                        shadeInsideFoliage(colorCache, view, x, y, z, sideOffset);
+                    }
                     if (surfaceOfLiquid && LiquidSurfaceField.deforms(block)) {
                         if (!cornersRead) {
                             corners = LiquidSurfaceField.corners(view, block, x, y, z);
@@ -171,6 +179,26 @@ public class BlockMeshGeneratorSingleShape extends BlockMeshShapeGenerator {
     }
 
 
+    /** A see-through block that sways: a leaf, as opposed to glass, ice or a plant. */
+    private static boolean isFoliage(Block block) {
+        return block.isTranslucent() && block.isWaving() && !block.isDoubleSided() && !block.isLiquid();
+    }
+
+    /**
+     * Darkens a face inside a crown by the leaves one looks through to see it. Every leaf lets the full sunlight
+     * by, so without it the faces behind the holes are as bright as the outside, and the crown reads as one flat
+     * sheet of noise instead of a volume.
+     */
+    private static void shadeInsideFoliage(Color color, ChunkView view, int x, int y, int z, Vector3ic towards) {
+        int depth = 0;
+        while (depth < FOLIAGE_DEPTH && isFoliage(view.getBlock(x + towards.x() * (depth + 1),
+                y + towards.y() * (depth + 1), z + towards.z() * (depth + 1)))) {
+            depth++;
+        }
+        float shade = 1.0f - (1.0f - FOLIAGE_DEEPEST) * depth / FOLIAGE_DEPTH;
+        color.setRed(color.rf() * shade).setGreen(color.gf() * shade).setBlue(color.bf() * shade);
+    }
+
     /**
      * Returns true if the side should be rendered adjacent to the second side provided.
      *
@@ -193,6 +221,12 @@ public class BlockMeshGeneratorSingleShape extends BlockMeshShapeGenerator {
 
         if (blockToCheck.getURI().equals(BlockManager.UNLOADED_ID)) {
             return false;
+        }
+
+        // Through the holes of a see-through canopy, the faces between two leaves are what one sees: culled, the
+        // crown is an empty shell.
+        if (isFoliage(currentBlock) && isFoliage(blockToCheck)) {
+            return true;
         }
 
         return currentBlock.isWaving() != blockToCheck.isWaving() || blockToCheck.getMeshGenerator() == null
