@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.terasology.herocraft.ui.legende;
 
-import org.joml.Vector2f;
+import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.terasology.engine.rendering.assets.mesh.Mesh;
 import org.terasology.engine.rendering.assets.mesh.MeshBuilder;
@@ -37,15 +37,6 @@ final class Figure {
     private static final float MARGIN = 0.01f;
     /** Metres per pattern unit for the hand: twelve units make the engine hand's 1.2. */
     private static final float BRAS = 0.1f;
-    /** Pattern units per icon unit: an icon spans two, so a sixteen-pixel weapon is fourteen units long. */
-    private static final float ARME = 7f;
-    /** Where the fist closes on an icon: the arsenal draws every handle from the bottom-left corner. */
-    private static final Vector2f POIGNEE = new Vector2f(-0.625f, -0.625f);
-    /** The icon's diagonal lowered from 45° to this, so the blade points ahead more than up. */
-    private static final float LEVEE = (float) Math.toRadians(-20);
-    /** The right fist, in pattern units: the bottom of the arm at x = −6, facing +z. */
-    private static final Vector3f POING = new Vector3f(-6, 13, 0.5f);
-
     private Figure() {
     }
 
@@ -89,29 +80,22 @@ final class Figure {
     }
 
     /**
-     * Puts the icon's model in the right fist, its flat side against the thigh and its blade ahead. The renderer
+     * Puts the icon's model in the right fist, held as {@link Prise} says. The renderer
      * centres the figure on its bounds, and a blade ahead would pull that centre forward and the turn off the
      * body's axis: a point with no area, as far behind as the blade reaches ahead, keeps the bounds square.
      */
     private static void tenir(Pinceau b, TextureRegion arme, float largeur) {
         StandardMeshData icone = (StandardMeshData) IconMeshFactory.generateIconMeshData(arme);
-        float cos = (float) Math.cos(LEVEE);
-        float sin = (float) Math.sin(LEVEE);
-        Vector3f poing = new Vector3f(POING).mul(largeur, 1, largeur);
+        Matrix4f prise = Prise.objet(false, new Vector3f(Prise.POING).mul(largeur, 1, largeur), new Matrix4f());
         float loin = 0;
         int n = icone.position.elements();
         Vector3f[] coin = new Vector3f[4];
         for (int i = 0; i + 3 < n; i += 4) {
             for (int k = 0; k < 4; k++) {
-                Vector3f p = icone.position.get(i + k, new Vector3f());
-                float x = p.x - POIGNEE.x;
-                float y = p.y - POIGNEE.y;
-                // the icon's plane turned to face sideways: its x runs ahead, its thickness across
-                coin[k] = new Vector3f(-p.z * ARME, (x * sin + y * cos) * ARME, (x * cos - y * sin) * ARME).add(poing);
+                coin[k] = prise.transformPosition(icone.position.get(i + k, new Vector3f()));
                 loin = Math.max(loin, Math.abs(coin[k].z));
             }
-            Vector3f n0 = icone.normal.get(i, new Vector3f());
-            Vector3f normal = new Vector3f(-n0.z, n0.x * sin + n0.y * cos, n0.x * cos - n0.y * sin);
+            Vector3f normal = prise.transformDirection(icone.normal.get(i, new Vector3f())).normalize();
             ajouter(b, coin, normal, icone.color0.get(i, new Color()));
         }
         Vector3f arriere = new Vector3f(0, 16, -loin);
@@ -149,6 +133,14 @@ final class Figure {
             data.color0.put(Color.WHITE);
         }
         return Assets.generateAsset(data, Mesh.class);
+    }
+
+    /**
+     * From the pattern to {@link #bras()}: what the arm box gets, so what the fist holds follows it — the arm's
+     * corner taken to zero, the half turn, a tenth of a unit.
+     */
+    static Matrix4f versBras(Matrix4f dest) {
+        return dest.translation(-0.6f, 2.4f, 0).scale(-BRAS, -BRAS, BRAS);
     }
 
     /** A box unwrapped the Minecraft way from its pattern corner, inflated by {@code g} on every side. */
