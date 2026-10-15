@@ -2,6 +2,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiAction {
     GenerateNewPlanet,
+    ToggleGroundCamera,
     ToggleAutoRotate,
     ResetCamera,
     ToggleTectonics,
@@ -48,10 +49,21 @@ impl UiState {
             UiButton {
                 id: UiAction::GenerateNewPlanet,
                 x: 16.0,
-                y: 66.0,
+                y: 64.0,
                 w: 288.0,
-                h: 36.0,
+                h: 32.0,
                 label: "NOUVELLE PLANETE [G]",
+                is_checkbox: false,
+                is_hovered: false,
+                is_pressed: false,
+            },
+            UiButton {
+                id: UiAction::ToggleGroundCamera,
+                x: 16.0,
+                y: 100.0,
+                w: 288.0,
+                h: 32.0,
+                label: "VUE SOL (FPS) / ORBITE [F]",
                 is_checkbox: false,
                 is_hovered: false,
                 is_pressed: false,
@@ -59,7 +71,7 @@ impl UiState {
             UiButton {
                 id: UiAction::ToggleAutoRotate,
                 x: 16.0,
-                y: 108.0,
+                y: 136.0,
                 w: 288.0,
                 h: 32.0,
                 label: "AUTO-ROTATION [ESPACE]",
@@ -70,7 +82,7 @@ impl UiState {
             UiButton {
                 id: UiAction::ResetCamera,
                 x: 16.0,
-                y: 146.0,
+                y: 172.0,
                 w: 288.0,
                 h: 32.0,
                 label: "REINITIALISER VUE [R]",
@@ -81,9 +93,9 @@ impl UiState {
             UiButton {
                 id: UiAction::ToggleTectonics,
                 x: 16.0,
-                y: 188.0,
+                y: 212.0,
                 w: 288.0,
-                h: 34.0,
+                h: 32.0,
                 label: "PLAQUES TECTONIQUES",
                 is_checkbox: true,
                 is_hovered: false,
@@ -92,9 +104,9 @@ impl UiState {
             UiButton {
                 id: UiAction::ToggleOceanCurrents,
                 x: 16.0,
-                y: 228.0,
+                y: 248.0,
                 w: 288.0,
-                h: 34.0,
+                h: 32.0,
                 label: "COURANTS MARINS",
                 is_checkbox: true,
                 is_hovered: false,

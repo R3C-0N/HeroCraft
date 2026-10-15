@@ -30,14 +30,16 @@ fn main() {
     info!("   HeroCraft — Moteur Planétaire QuadTree LOD (Rust / WGPU) ");
     info!("==========================================================");
     info!("Contrôles :");
-    info!(" • [Bouton Écran]                   : Cliquer sur 'NOUVELLE PLANETE'");
-    info!(" • Clic Gauche / Droit (Drag & Drop) : Tourner la planète");
-    info!(" • Molette de la souris (Scroll)    : Zoomer / Dézoomer");
-    info!(" • [ESPACE]                         : Activer/Désactiver l'auto-rotation");
-    info!(" • [R]                              : Réinitialiser la caméra");
-    info!(" • [Case Écran] / [T]        : Basculer le filtre des plaques tectoniques");
-    info!(" • [Case Écran] / [C]        : Basculer le filtre des courants marins");
-    info!(" • [ÉCHAP]                  : Quitter");
+    info!(" • [Z,Q,S,D] / [W,A,S,D]            : Marcher au sol sur les blocs (gravité sphérique)");
+    info!(" • [SHIFT]                            : Courir / Sprinter");
+    info!(" • [ESPACE]                           : Sauter (au sol) / Auto-rotation (en orbite)");
+    info!(" • [F] ou Bouton HUD                  : Basculer instantanément Vue Sol (FPS) <-> Satellite");
+    info!(" • Molette de la souris (Scroll)      : Zoom continu FPS (0m) -> TPS (1-25m) -> Satellite");
+    info!(" • Clic Gauche / Droit (Drag & Drop)   : Orienter le regard (sol) / Tourner la planète (orbite)");
+    info!(" • [R] ou Bouton HUD                  : Réinitialiser la vue en orbite");
+    info!(" • [G] ou Bouton HUD                  : Générer une nouvelle planète procédurale");
+    info!(" • [T] / [C]                          : Filtres plaques tectoniques / courants marins");
+    info!(" • [ÉCHAP]                            : Quitter");
     info!("==========================================================");
 
     let event_loop = EventLoop::new().expect("Échec d'initialisation de l'EventLoop Winit");
@@ -62,8 +64,8 @@ fn main() {
     let storage = herocraft_voxel_engine::ChunkStorage::new(&save_dir).ok();
     let mut chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
 
-    // Initialisation de la caméra orbitale
-    let mut camera = OrbitCamera::default();
+    // Initialisation de la caméra multi-échelle unifiée (Sol FPS <-> TPS <-> Satellite)
+    let mut camera = OrbitCamera::new(165.0, 25.0, &generator);
     let size = window.inner_size();
     camera.aspect = size.width as f32 / size.height.max(1) as f32;
 
@@ -131,10 +133,22 @@ fn main() {
                                             let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
                                             chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
                                             lod_manager.clear(current_seed);
+                                            camera.spawn_on_ground(&generator);
                                             lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
                                             state.update_mesh(&lod_manager.combined_mesh);
                                             ui_state.set_seed(current_seed);
                                             info!("Bouton cliqué : Nouvelle planète générée ! (Graine: #{})", current_seed);
+                                        }
+                                        UiAction::ToggleGroundCamera => {
+                                            if camera.distance <= 25.0 {
+                                                camera.sync_orbit_to_ground();
+                                                camera.distance = 165.0;
+                                                info!("Bouton cliqué : Vue Satellite / Orbite globale");
+                                            } else {
+                                                camera.sync_ground_to_orbit(&generator);
+                                                camera.distance = 0.0;
+                                                info!("Bouton cliqué : Vue Première Personne (FPS) au sol");
+                                            }
                                         }
                                         UiAction::ToggleAutoRotate => {
                                             camera.auto_rotate = !camera.auto_rotate;
@@ -154,7 +168,7 @@ fn main() {
                                         }
                                     }
                                 } else {
-                                    // Clic dans la scène 3D pour faire tourner la planète
+                                    // Clic dans la scène 3D pour faire tourner la caméra ou la planète
                                     is_dragging = true;
                                 }
                             } else {
@@ -166,7 +180,7 @@ fn main() {
                         }
                     }
 
-                    // Déplacement curseur (Survol des boutons UI et rotation de la planète)
+                    // Déplacement curseur (Survol des boutons UI et rotation de la vue)
                     WindowEvent::CursorMoved { position, .. } => {
                         let is_over_ui = ui_state.on_cursor_moved(position.x as f32, position.y as f32);
 
@@ -178,7 +192,7 @@ fn main() {
                         last_mouse_pos = (position.x, position.y);
                     }
 
-                    // Molette de souris (Dézoom / Zoom)
+                    // Molette de souris (Dézoom / Zoom continu FPS <-> TPS <-> Orbite)
                     WindowEvent::MouseWheel { delta, .. } => {
                         let zoom_delta = match delta {
                             MouseScrollDelta::LineDelta(_x, y) => *y,
@@ -187,76 +201,117 @@ fn main() {
                         camera.zoom(zoom_delta);
                     }
 
-                    // Touches clavier (G, Espace, R, Échap)
+                    // Touches clavier (Déplacements ZQSD/WASD, Saut, Sprint, Mode caméra)
                     WindowEvent::KeyboardInput {
                         event: KeyEvent {
-                            state: ElementState::Pressed,
+                            state: key_state,
                             physical_key: PhysicalKey::Code(key_code),
                             ..
                         },
                         ..
-                    } => match key_code {
-                        KeyCode::Escape => {
-                            let _ = chunk_cache.flush_dirty();
-                            target.exit();
-                        }
-                        KeyCode::Space => {
-                            camera.auto_rotate = !camera.auto_rotate;
-                            ui_state.set_auto_rotate(camera.auto_rotate);
-                            info!("Auto-rotation de la planète : {}", if camera.auto_rotate { "ACTIVÉE" } else { "DÉSACTIVÉE" });
-                        }
-                        KeyCode::KeyR => {
-                            camera.reset();
-                            info!("Vue de la caméra réinitialisée.");
-                        }
-                        KeyCode::KeyG => {
-                            let _ = chunk_cache.flush_dirty();
-                            current_seed = current_seed.wrapping_add(1337);
-                            let mut new_desc = herocraft_world::PlanetDescriptor::default();
-                            new_desc.seed = current_seed;
-                            generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
-                            let new_save_dir = format!("saves/monde_{}", current_seed);
-                            let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
-                            chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
-                            lod_manager.clear(current_seed);
-                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
-                            state.update_mesh(&lod_manager.combined_mesh);
-                            ui_state.set_seed(current_seed);
-                            info!("Raccourci [G] : Nouvelle planète générée (Graine: #{})", current_seed);
-                        }
-                        KeyCode::KeyT => {
-                            ui_state.show_tectonics = !ui_state.show_tectonics;
-                            if ui_state.show_tectonics {
-                                ui_state.show_ocean_currents = false;
+                    } => {
+                        let is_pressed = *key_state == ElementState::Pressed;
+
+                        match key_code {
+                            // Déplacements au sol (Support ZQSD et WASD)
+                            KeyCode::KeyW | KeyCode::KeyZ => {
+                                camera.move_forward = is_pressed;
                             }
-                            ui_state.redraw();
-                            let filter = ui_state.active_filter();
-                            lod_manager.set_filter(filter);
-                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
-                            state.update_mesh(&lod_manager.combined_mesh);
-                            info!("Raccourci [T] : Filtre plaques tectoniques = {}", ui_state.show_tectonics);
-                        }
-                        KeyCode::KeyC => {
-                            ui_state.show_ocean_currents = !ui_state.show_ocean_currents;
-                            if ui_state.show_ocean_currents {
-                                ui_state.show_tectonics = false;
+                            KeyCode::KeyS => {
+                                camera.move_backward = is_pressed;
                             }
-                            ui_state.redraw();
-                            let filter = ui_state.active_filter();
-                            lod_manager.set_filter(filter);
-                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
-                            state.update_mesh(&lod_manager.combined_mesh);
-                            info!("Raccourci [C] : Filtre courants marins = {}", ui_state.show_ocean_currents);
+                            KeyCode::KeyA | KeyCode::KeyQ => {
+                                camera.move_left = is_pressed;
+                            }
+                            KeyCode::KeyD => {
+                                camera.move_right = is_pressed;
+                            }
+                            KeyCode::ShiftLeft | KeyCode::ShiftRight => {
+                                camera.is_sprinting = is_pressed;
+                            }
+
+                            // Actions ponctuelles déclenchées à l'appui
+                            _ if is_pressed => match key_code {
+                                KeyCode::Escape => {
+                                    let _ = chunk_cache.flush_dirty();
+                                    target.exit();
+                                }
+                                KeyCode::Space => {
+                                    if camera.distance <= 25.0 {
+                                        camera.jump_requested = true;
+                                    } else {
+                                        camera.auto_rotate = !camera.auto_rotate;
+                                        ui_state.set_auto_rotate(camera.auto_rotate);
+                                        info!("Auto-rotation de la planète : {}", if camera.auto_rotate { "ACTIVÉE" } else { "DÉSACTIVÉE" });
+                                    }
+                                }
+                                KeyCode::KeyF => {
+                                    if camera.distance <= 25.0 {
+                                        camera.sync_orbit_to_ground();
+                                        camera.distance = 165.0;
+                                        info!("Raccourci [F] : Vue Satellite / Orbite globale");
+                                    } else {
+                                        camera.sync_ground_to_orbit(&generator);
+                                        camera.distance = 0.0;
+                                        info!("Raccourci [F] : Vue Première Personne (FPS) au sol");
+                                    }
+                                }
+                                KeyCode::KeyR => {
+                                    camera.reset();
+                                    info!("Vue de la caméra réinitialisée.");
+                                }
+                                KeyCode::KeyG => {
+                                    let _ = chunk_cache.flush_dirty();
+                                    current_seed = current_seed.wrapping_add(1337);
+                                    let mut new_desc = herocraft_world::PlanetDescriptor::default();
+                                    new_desc.seed = current_seed;
+                                    generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
+                                    let new_save_dir = format!("saves/monde_{}", current_seed);
+                                    let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
+                                    chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
+                                    lod_manager.clear(current_seed);
+                                    camera.spawn_on_ground(&generator);
+                                    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
+                                    state.update_mesh(&lod_manager.combined_mesh);
+                                    ui_state.set_seed(current_seed);
+                                    info!("Raccourci [G] : Nouvelle planète générée (Graine: #{})", current_seed);
+                                }
+                                KeyCode::KeyT => {
+                                    ui_state.show_tectonics = !ui_state.show_tectonics;
+                                    if ui_state.show_tectonics {
+                                        ui_state.show_ocean_currents = false;
+                                    }
+                                    ui_state.redraw();
+                                    let filter = ui_state.active_filter();
+                                    lod_manager.set_filter(filter);
+                                    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
+                                    state.update_mesh(&lod_manager.combined_mesh);
+                                    info!("Raccourci [T] : Filtre plaques tectoniques = {}", ui_state.show_tectonics);
+                                }
+                                KeyCode::KeyC => {
+                                    ui_state.show_ocean_currents = !ui_state.show_ocean_currents;
+                                    if ui_state.show_ocean_currents {
+                                        ui_state.show_tectonics = false;
+                                    }
+                                    ui_state.redraw();
+                                    let filter = ui_state.active_filter();
+                                    lod_manager.set_filter(filter);
+                                    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
+                                    state.update_mesh(&lod_manager.combined_mesh);
+                                    info!("Raccourci [C] : Filtre courants marins = {}", ui_state.show_ocean_currents);
+                                }
+                                _ => {}
+                            },
+                            _ => {}
                         }
-                        _ => {}
-                    },
+                    }
 
                     WindowEvent::RedrawRequested => {
                         let now = Instant::now();
                         let dt = now.duration_since(last_frame_time).as_secs_f32();
                         last_frame_time = now;
 
-                        camera.update(dt);
+                        camera.update(dt, &generator);
                         state.update_camera(&camera);
 
                         // Mise à jour adaptative du QuadTree LOD (planète entière visible + voxels proches avec transition douce)
