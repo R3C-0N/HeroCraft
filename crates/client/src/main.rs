@@ -212,8 +212,8 @@ fn main() {
                         camera.update(dt);
                         state.update_camera(&camera);
 
-                        // LOD Dynamique : Transition vers le terrain voxel en zoom rapproché (D <= 42.0)
-                        let is_near_ground = camera.distance <= 42.0;
+                        // LOD Dynamique : Transition vers le terrain voxel en zoom rapproché (D <= 34.0)
+                        let is_near_ground = camera.distance <= 34.0;
 
                         if is_near_ground {
                             let eye_dir = camera.eye_position().normalize();
@@ -238,7 +238,6 @@ fn main() {
                                     face,
                                     chunk_x,
                                     chunk_y,
-                                    1, // Grille 3x3 de chunks
                                     25.0, // Rayon de base
                                 );
                                 state.update_mesh(&voxel_mesh);

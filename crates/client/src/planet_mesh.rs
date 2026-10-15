@@ -79,10 +79,11 @@ impl PlanetMesh {
 
                     // Pour l'eau (océans et mers), la surface liquide est parfaitement sphérique au niveau de la mer
                     let is_water = biome.is_water();
+                    let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0)) as f32;
                     let elevation_clamped = if is_water {
-                        SEA_LEVEL_BLOCKS as f32 * 0.22
+                        SEA_LEVEL_BLOCKS as f32 * altitude_scale
                     } else {
-                        (raw_elevation as f32) * 0.22
+                        (raw_elevation as f32) * altitude_scale
                     };
 
                     let radius = base_radius + elevation_clamped;
