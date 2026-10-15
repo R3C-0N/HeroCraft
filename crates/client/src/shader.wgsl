@@ -32,50 +32,27 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Normale géométrique pure de la facette (style Low-Poly / Voxel franc et net)
     let dpx = dpdx(in.world_pos);
     let dpy = dpdy(in.world_pos);
     let cross_norm = normalize(cross(dpx, dpy));
-    let geom_n = select(cross_norm, -cross_norm, dot(cross_norm, in.normal) < 0.0);
-
-    // Calcul de l'altitude réelle par pixel à partir de la distance au centre de la planète
-    let radial_dist = length(in.world_pos);
-    let base_radius = 25.0;
-    let altitude = radial_dist - base_radius;
-
-    // Dérivation du gradient d'altitude (pente et micro-relief per-pixel)
-    let dh_dx = dpdx(radial_dist);
-    let dh_dy = dpdy(radial_dist);
-
-    // Perturbation de la normale selon la pente pour sculpter les crêtes de montagne
-    let bump_offset = (dpx * dh_dx + dpy * dh_dy) * 45.0;
-    let bumped = normalize(geom_n - bump_offset);
-    let n = select(geom_n, bumped, altitude > 0.05);
+    let n = select(cross_norm, -cross_norm, dot(cross_norm, in.normal) < 0.0);
 
     let l = normalize(camera.light_dir);
 
-    // Éclairage diffus doux (Half-Lambert) réagissant au relief sculpté
+    // Éclairage directionnel net sans dégradés flous ni artefacts
     let ndotl = dot(n, l);
-    let half_lambert = pow(clamp(ndotl * 0.5 + 0.5, 0.0, 1.0), 1.25);
-    let ambient = 0.20;
+    let half_lambert = pow(clamp(ndotl * 0.5 + 0.5, 0.0, 1.0), 1.2);
+    let ambient = 0.28;
     let light_intensity = ambient + (1.0 - ambient) * half_lambert;
 
-    // 1. Ombrage hypsométrique : met en valeur les sommets et donne du contraste aux dépressions
-    let alt_factor = clamp(altitude / 0.85, 0.0, 1.0);
-    let hypsometric = 0.88 + 0.24 * alt_factor;
-
-    // 2. Micro-ombrage des marches de blocs voxels (hauteur ~0.03835)
-    let block_h = 0.03835;
-    let layer_frac = fract(altitude / block_h);
-    let voxel_step_shade = select(1.0, 0.88 + 0.12 * smoothstep(0.08, 0.35, layer_frac), altitude > 0.05);
-
-    // Lumière rasante atmosphérique (Rim lighting / lueur d'horizon planétaire)
+    // Légère lueur atmosphérique rasante sur le limbe planétaire
     let view_dir = normalize(-in.world_pos);
-    let rim = 1.0 - clamp(dot(geom_n, view_dir), 0.0, 1.0);
-    let rim_light = pow(rim, 3.5) * 0.45;
-    let atmosphere_color = vec3<f32>(0.25, 0.65, 1.0); // Bleu atmosphérique
+    let rim = 1.0 - clamp(dot(n, view_dir), 0.0, 1.0);
+    let rim_light = pow(rim, 4.0) * 0.35;
+    let atmosphere_color = vec3<f32>(0.25, 0.65, 1.0);
 
-    let shaded_color = in.color.rgb * light_intensity * hypsometric * voxel_step_shade;
-    let lit_rgb = shaded_color + atmosphere_color * rim_light;
+    let lit_rgb = in.color.rgb * light_intensity + atmosphere_color * rim_light;
 
     return vec4<f32>(lit_rgb, in.color.a);
 }
