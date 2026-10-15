@@ -53,7 +53,7 @@ pub struct PlanetWorldGenerator {
 
 impl PlanetWorldGenerator {
     pub fn new(planet: PlanetDescriptor) -> Self {
-        let tectonics = TectonicSimulation::new(planet.seed, 10);
+        let tectonics = TectonicSimulation::new(planet.seed);
         let ocean_currents = OceanicCurrentSimulation::new(planet.seed);
         Self {
             planet,
@@ -127,7 +127,7 @@ impl PlanetWorldGenerator {
     }
 
     /// Calcule la valeur continentale brute sur la sphère
-    /// Continents massifs, formes unies sans trous ni morcellement
+    /// Continents massifs ancrés au cœur des plaques continentales, entourés de leurs marges océaniques
     pub fn sample_continental_value(&self, dir: DVec3) -> f64 {
         let seed = self.planet.seed;
 
@@ -137,14 +137,30 @@ impl PlanetWorldGenerator {
         let warp_z = fbm_3d(dir * 1.1, 2, 2.0, 0.40, seed.wrapping_add(303));
         let warped_dir = (dir + DVec3::new(warp_x, warp_y, warp_z) * 0.22).normalize();
 
-        // 2. Forme macroscopique des continents : très basse fréquence (continents larges et d'un seul tenant)
-        let macro_continent = fbm_3d(warped_dir * 0.95, 2, 2.0, 0.35, seed);
+        // 2. Ancrage géologique réaliste sur les plaques tectoniques :
+        // Les plaques continentales portent les continents en leur cœur (terres émergées entourées de marges océaniques).
+        // Les plaques océaniques forment les vastes bassins maritimes.
+        let tec = self.tectonics.sample(warped_dir);
+        let plate = &self.tectonics.plates[tec.plate_id];
+
+        let plate_bias = if !plate.is_oceanic {
+            // Cœur de continent : dist_to_boundary va de 0 (frontière) à 1 (cœur)
+            // Plus on est au centre de la plaque continentale, plus la masse de terre est compacte
+            0.12 + tec.dist_to_boundary * 0.32
+        } else {
+            // Plaque océanique : bassin sous-marin profond
+            -0.22 - (1.0 - tec.dist_to_boundary) * 0.12
+        };
+
+        // Bruit fractal macroscopique combiné à l'ancrage des plaques
+        let macro_noise = fbm_3d(warped_dir * 0.95, 2, 2.0, 0.35, seed);
+        let macro_continent = plate_bias * 0.60 + macro_noise * 0.40;
 
         // 3. Mers intérieures (type Méditerranée ou Mer Baltique) bien délimitées,
         // évitant de percer le cœur des terres
-        let inland_sea = if macro_continent > 0.06 && macro_continent < 0.26 {
+        let inland_sea = if macro_continent > 0.08 && macro_continent < 0.28 {
             let sea_dip = fbm_3d(dir * 2.6, 2, 2.0, 0.50, seed.wrapping_add(5555));
-            if sea_dip < -0.30 {
+            if sea_dip < -0.32 {
                 -0.18 // Creuse une mer intérieure nette
             } else {
                 0.0
@@ -166,7 +182,6 @@ impl PlanetWorldGenerator {
         macro_continent + inland_sea + coastal_detail
     }
 
-    /// Fonction de relief procédurale planétaire garantissant au moins 40-50% d'océans et mers
     /// Fonction de relief procédurale planétaire garantissant au moins 40-50% d'océans et mers
     pub fn sample_elevation(&self, dir: DVec3, lat: f64, _lon: f64) -> f64 {
         let continental = self.sample_continental_value(dir);
@@ -190,7 +205,7 @@ impl PlanetWorldGenerator {
                     .clamp(3.0, SEA_LEVEL_BLOCKS - 0.2)
             }
         } else {
-            // Terre émergée : continents, collines et chaînes de montagnes
+            // Terre émergée : continents, collines, montagnes intérieures ET super-chaînes tectoniques
             let land_ratio = (continental - sea_threshold) / (1.0 - sea_threshold);
 
             // Dôme glaciaire naturel sur la terre polaire
@@ -200,18 +215,25 @@ impl PlanetWorldGenerator {
                 0.0
             };
 
-            // Relief montagneux plissé (Ridged Multi-Fractal)
+            // 1. Montagnes ordinaires (pouvant apparaître n'importe où sur les terres émergées)
             let mountain_raw = fbm_3d(dir * 4.5, 4, 2.0, 0.50, self.planet.seed.wrapping_add(10101));
             let ridge = 1.0 - mountain_raw.abs();
-            let mountain_height = ridge * ridge * 13.0 * land_ratio.min(1.0);
+            let standard_mountains = ridge * ridge * 7.5 * land_ratio.min(1.0);
 
-            // Collines douces
-            let hills = fbm_3d(dir * 10.0, 3, 2.0, 0.50, self.planet.seed.wrapping_add(20202)) * 2.2;
+            // 2. Collines douces
+            let hills = fbm_3d(dir * 10.0, 3, 2.0, 0.50, self.planet.seed.wrapping_add(20202)) * 2.0;
 
-            // Relief tectonique : surrection de chaînes de montagnes aux frontières convergentes
-            let tectonic_boost = tectonic_sample.elevation_offset * 0.35 * land_ratio.min(1.0);
+            // 3. SUPER-CHAÎNES TECTONIQUES : Orogenèse colossale le long des collisions de plaques (Himalaya, Andes)
+            let super_chain = if tectonic_sample.orogeny_strength > 0.02 {
+                let super_noise = fbm_3d(dir * 8.5, 4, 2.0, 0.50, self.planet.seed.wrapping_add(88888));
+                let super_ridge = (1.0 - super_noise.abs()).powi(2);
+                super_ridge * 16.0 * tectonic_sample.orogeny_strength.min(1.5) * land_ratio.min(1.0)
+            } else {
+                0.0
+            };
 
-            (SEA_LEVEL_BLOCKS + land_ratio * 5.0 + mountain_height + hills + polar_dome + tectonic_boost).max(SEA_LEVEL_BLOCKS + 0.2)
+            (SEA_LEVEL_BLOCKS + land_ratio * 4.5 + standard_mountains + hills + polar_dome + super_chain)
+                .max(SEA_LEVEL_BLOCKS + 0.2)
         }
     }
 
