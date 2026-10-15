@@ -87,9 +87,20 @@ impl PlanetLodManager {
             match leaf.kind {
                 QuadLeafKind::LodPatch => {
                     let mesh = self.lod_cache.entry(leaf.key).or_insert_with(|| {
-                        // Résolution 4x4 quads par patch LOD :
-                        // Au Level 3 (64 nœuds par face), cela donne exactement 32x32 = 1024 cellules par face (1 cellule par chunk !)
-                        PlanetMesh::generate_lod_patch(generator, &leaf.key, self.base_radius, 4)
+                        // Finesse de maillage adaptative selon le niveau :
+                        // Level 0 (espace) : 32x32 quads par face (1024 cellules = 1 par chunk, relief très fin dès l'orbite !)
+                        // Level 1 : 24x24 quads par nœud
+                        // Level 2 : 16x16 quads par nœud
+                        // Level 3 : 12x12 quads par nœud
+                        // Level 4 : 8x8 quads par nœud
+                        let resolution = match leaf.key.level {
+                            0 => 32,
+                            1 => 24,
+                            2 => 16,
+                            3 => 12,
+                            _ => 8,
+                        };
+                        PlanetMesh::generate_lod_patch(generator, &leaf.key, self.base_radius, resolution)
                     });
                     total_vertices += mesh.vertices.len();
                     total_indices += mesh.indices.len();

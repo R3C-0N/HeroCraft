@@ -90,22 +90,23 @@ pub struct PlanetQuadTree {
 impl PlanetQuadTree {
     /// Crée un QuadTree configuré pour un rayon de planète donné
     pub fn new(base_radius: f64) -> Self {
-        // Au dézoom maximal, on force un niveau minimum de 3 :
-        // Chaque face est découpée en au moins 8x8 = 64 nœuds (soit ~192 à 384 nœuds pour la planète).
-        // Cela offre un relief et des biomes nets et détaillés dès la vue spatiale.
-        // Puis le QuadTree s'affine vers le Level 4 (256 nœuds) et jusqu'au Level 5 (1024 chunks voxels).
-        let min_level = 3;
+        // On conserve tous les niveaux du QuadTree (Level 0 à 5),
+        // mais avec une finesse de maillage adaptative par niveau (finesse élevée dès l'orbite).
+        let min_level = 0;
         let max_level = 5;
 
         // Seuils de distance caméra-nœud pour déclencher la subdivision :
-        // Level 3 (taille ~5.0)  : split si distance < 28.0 (passe à Level 4)
-        // Level 4 (taille ~2.5)  : split si distance < 2.8  (zone sous la caméra -> Level 5 voxels)
+        // Level 0 (face globale ~40) : split si distance < 85.0
+        // Level 1 (quadrant ~20)     : split si distance < 50.0
+        // Level 2 (région ~10)       : split si distance < 30.0
+        // Level 3 (zone ~5.0)        : split si distance < 14.0
+        // Level 4 (local ~2.5)       : split si distance < 2.8 (passage aux voxels 3D Level 5)
         let split_distances = vec![
-            9999.0, // Level 0 (forcé par min_level)
-            9999.0, // Level 1 (forcé par min_level)
-            9999.0, // Level 2 (forcé par min_level)
-            28.0,   // Level 3 -> Level 4 (256 nœuds)
-            2.8,    // Level 4 -> Level 5 (voxels)
+            85.0,
+            50.0,
+            30.0,
+            14.0,
+            2.8,
         ];
 
         Self {
@@ -213,11 +214,11 @@ mod tests {
         let cam_pos = DVec3::new(0.0, 0.0, 150.0);
         let leaves = qt.evaluate(cam_pos);
 
-        // Toutes les feuilles doivent être au niveau minimum (Level 3 = 64 nœuds par face)
+        // Toutes les feuilles doivent être au niveau racine (Level 0)
         assert!(!leaves.is_empty());
         for leaf in &leaves {
             assert_eq!(leaf.kind, QuadLeafKind::LodPatch);
-            assert_eq!(leaf.key.level, 3);
+            assert_eq!(leaf.key.level, 0);
         }
     }
 
