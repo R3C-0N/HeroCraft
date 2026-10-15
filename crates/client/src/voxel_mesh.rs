@@ -1,5 +1,6 @@
 use glam::Vec3;
 use herocraft_common::{BlockId, PlanetChunkCoord, PlanetFace};
+use herocraft_voxel_engine::cache::WorldChunkCache;
 use herocraft_voxel_engine::chunk::{ChunkData, CHUNK_SIZE};
 use herocraft_world::generator::PlanetWorldGenerator;
 
@@ -11,6 +12,7 @@ impl VoxelMeshBuilder {
     /// Construit le maillage de voxels incurvés pour une grille 3x3 de chunks sans murs internes
     pub fn build_incurved_grid(
         generator: &PlanetWorldGenerator,
+        chunk_cache: &mut WorldChunkCache,
         face: PlanetFace,
         center_x: i32,
         center_y: i32,
@@ -28,7 +30,7 @@ impl VoxelMeshBuilder {
         // Sur une planète de rayon 25.0, la taille horizontale d'un voxel vaut environ 0.03835 unité
         let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * voxel_span_uv) as f32;
 
-        // 1. Chargement de la grille 3x3 de chunks
+        // 1. Chargement de la grille 3x3 de chunks depuis le cache/disque ou générateur
         let mut chunks: Vec<ChunkData> = Vec::with_capacity(9);
         let start_cx = (center_x - 1).max(0);
         let start_cy = (center_y - 1).max(0);
@@ -38,7 +40,8 @@ impl VoxelMeshBuilder {
                 let cx = (start_cx + dx).min(31);
                 let cy = (start_cy + dy).min(31);
                 let coord = PlanetChunkCoord::new(face, cx, cy, 0);
-                chunks.push(generator.generate_chunk(&coord));
+                let chunk = chunk_cache.get_or_load(&coord, || generator.generate_chunk(&coord));
+                chunks.push(chunk.clone());
             }
         }
 

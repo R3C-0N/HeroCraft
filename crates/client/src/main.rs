@@ -80,9 +80,13 @@ fn main() {
     let mut last_mouse_pos = (0.0_f64, 0.0_f64);
     let mut last_frame_time = Instant::now();
 
-    // État du streaming voxel (LOD dynamique)
+    // État du streaming voxel (LOD dynamique) et persistance
     let mut is_voxel_mode = false;
     let mut current_voxel_chunk: Option<(PlanetFace, i32, i32)> = None;
+
+    let save_dir = format!("saves/monde_{}", current_seed);
+    let storage = herocraft_voxel_engine::ChunkStorage::new(&save_dir).ok();
+    let mut chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
 
     event_loop.run(move |event, target| {
         target.set_control_flow(ControlFlow::Poll);
@@ -90,7 +94,10 @@ fn main() {
         match event {
             Event::WindowEvent { window_id, ref event } if window_id == window.id() => {
                 match event {
-                    WindowEvent::CloseRequested => target.exit(),
+                    WindowEvent::CloseRequested => {
+                        let _ = chunk_cache.flush_dirty();
+                        target.exit();
+                    }
 
                     WindowEvent::Resized(physical_size) => {
                         state.resize(*physical_size);
@@ -115,11 +122,15 @@ fn main() {
                                     is_dragging = false;
                                     match action {
                                         UiAction::GenerateNewPlanet => {
+                                            let _ = chunk_cache.flush_dirty();
                                             current_seed = current_seed.wrapping_add(1337);
                                             let mut new_desc = herocraft_world::PlanetDescriptor::default();
                                             new_desc.seed = current_seed;
                                             generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
                                             planet_mesh = PlanetMesh::generate_planet(&generator, 25.0, 48);
+                                            let new_save_dir = format!("saves/monde_{}", current_seed);
+                                            let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
+                                            chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
                                             is_voxel_mode = false;
                                             current_voxel_chunk = None;
                                             state.update_mesh(&planet_mesh);
@@ -179,7 +190,10 @@ fn main() {
                         },
                         ..
                     } => match key_code {
-                        KeyCode::Escape => target.exit(),
+                        KeyCode::Escape => {
+                            let _ = chunk_cache.flush_dirty();
+                            target.exit();
+                        }
                         KeyCode::Space => {
                             camera.auto_rotate = !camera.auto_rotate;
                             ui_state.set_auto_rotate(camera.auto_rotate);
@@ -190,11 +204,15 @@ fn main() {
                             info!("Vue de la caméra réinitialisée.");
                         }
                         KeyCode::KeyG => {
+                            let _ = chunk_cache.flush_dirty();
                             current_seed = current_seed.wrapping_add(1337);
                             let mut new_desc = herocraft_world::PlanetDescriptor::default();
                             new_desc.seed = current_seed;
                             generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
                             planet_mesh = PlanetMesh::generate_planet(&generator, 25.0, 48);
+                            let new_save_dir = format!("saves/monde_{}", current_seed);
+                            let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
+                            chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
                             is_voxel_mode = false;
                             current_voxel_chunk = None;
                             state.update_mesh(&planet_mesh);
@@ -235,6 +253,7 @@ fn main() {
 
                                 let voxel_mesh = VoxelMeshBuilder::build_incurved_grid(
                                     &generator,
+                                    &mut chunk_cache,
                                     face,
                                     chunk_x,
                                     chunk_y,
