@@ -85,7 +85,9 @@ impl PlanetMesh {
                     let color = match filter {
                         herocraft_world::VisualizationFilter::Standard => Self::biome_color(biome),
                         herocraft_world::VisualizationFilter::Tectonics => {
-                            generator.tectonics.sample(sphere_dir).debug_color
+                            let base_color = Self::biome_color(biome);
+                            let sample = generator.tectonics.sample(sphere_dir);
+                            Self::blend_tectonic_color(base_color, &sample)
                         }
                         herocraft_world::VisualizationFilter::OceanCurrents => {
                             let continental = generator.sample_continental_value(sphere_dir);
@@ -198,6 +200,23 @@ impl PlanetMesh {
         }
     }
 
+    /// Calcule la couleur avec transparence pour le filtre tectonique au-dessus du relief naturel
+    pub fn blend_tectonic_color(base_color: [f32; 4], sample: &herocraft_world::TectonicSample) -> [f32; 4] {
+        // Sur les lignes de failles (< 0.12), l'accent est marqué (80%),
+        // au cœur des plaques, transparence douce (35%) pour laisser voir les continents, mers et biomes
+        let alpha = if sample.dist_to_boundary < 0.12 {
+            0.80_f32
+        } else {
+            0.35_f32
+        };
+        [
+            base_color[0] * (1.0 - alpha) + sample.debug_color[0] * alpha,
+            base_color[1] * (1.0 - alpha) + sample.debug_color[1] * alpha,
+            base_color[2] * (1.0 - alpha) + sample.debug_color[2] * alpha,
+            1.0,
+        ]
+    }
+
     /// Construit le maillage polygonal d'un patch LOD pour un nœud du QuadTree
     pub fn generate_lod_patch(
         generator: &PlanetWorldGenerator,
@@ -233,7 +252,9 @@ impl PlanetMesh {
                 let color = match filter {
                     herocraft_world::VisualizationFilter::Standard => Self::biome_color(biome),
                     herocraft_world::VisualizationFilter::Tectonics => {
-                        generator.tectonics.sample(sphere_dir).debug_color
+                        let base_color = Self::biome_color(biome);
+                        let sample = generator.tectonics.sample(sphere_dir);
+                        Self::blend_tectonic_color(base_color, &sample)
                     }
                     herocraft_world::VisualizationFilter::OceanCurrents => {
                         let continental = generator.sample_continental_value(sphere_dir);

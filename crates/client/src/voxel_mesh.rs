@@ -284,7 +284,9 @@ impl VoxelMeshBuilder {
                     let u = base_u + vx * voxel_span_uv;
                     let v = base_v + vz * voxel_span_uv;
                     let dir = face.uv_to_sphere_direction(u, v);
-                    generator.tectonics.sample(dir).debug_color
+                    let base_color = Self::block_color(block, is_top);
+                    let sample = generator.tectonics.sample(dir);
+                    PlanetMesh::blend_tectonic_color(base_color, &sample)
                 }
                 herocraft_world::VisualizationFilter::OceanCurrents => {
                     let u = base_u + vx * voxel_span_uv;
