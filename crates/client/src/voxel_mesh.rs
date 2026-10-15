@@ -267,24 +267,29 @@ impl VoxelMeshBuilder {
             let u = base_u + vx * voxel_span_uv;
             let v = base_v + vz * voxel_span_uv;
             let dir = face.uv_to_sphere_direction(u, v);
+            let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
+            let raw_elevation = generator.sample_elevation(dir, lat, lon);
+            let biome = generator.determine_biome(lat, raw_elevation, dir);
+
+            let biome_color = PlanetMesh::relief_biome_color(biome, raw_elevation);
 
             let base_color = if block == BlockId::WATER {
-                let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
-                let raw_elevation = generator.sample_elevation(dir, lat, lon);
-                let biome = generator.determine_biome(lat, raw_elevation, dir);
-                let mut c = PlanetMesh::relief_biome_color(biome, raw_elevation);
+                let mut c = biome_color;
                 c[3] = 0.90; // Translucidité de l'eau
                 c
-            } else if block == BlockId::STONE {
-                let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
-                let raw_elevation = generator.sample_elevation(dir, lat, lon);
-                if raw_elevation > 180.0 {
-                    PlanetMesh::relief_biome_color(herocraft_world::BiomeType::Mountains, raw_elevation)
-                } else {
-                    Self::block_color(block, is_top)
-                }
+            } else if is_top {
+                // Sur le sommet du terrain voxel : couleur exacte du biome LOD !
+                // Assure une parfaite harmonie et continuité visuelle entre le LOD et les voxels
+                biome_color
             } else {
-                Self::block_color(block, is_top)
+                // Sur les tranches verticales des blocs :
+                // Teinte contrastée (78% de luminosité) pour faire ressortir le relief cubique
+                [
+                    biome_color[0] * 0.78,
+                    biome_color[1] * 0.78,
+                    biome_color[2] * 0.78,
+                    1.0,
+                ]
             };
 
             match filter {
@@ -321,6 +326,9 @@ impl VoxelMeshBuilder {
             let chunk_below = prev_chunk;
 
             let get_voxel = |gx: i32, gy: i32, gz: i32| -> BlockId {
+                if gx >= 0 && gx < 32 && gz >= 0 && gz < 32 && gy >= 0 && gy < 32 {
+                    return center_chunk.get_voxel(gx as u8, gy as u8, gz as u8);
+                }
                 if gy < 0 {
                     if layer == 0 {
                         return BlockId::STONE;
@@ -328,16 +336,21 @@ impl VoxelMeshBuilder {
                     if let Some(ref below) = chunk_below {
                         return below.get_voxel(gx.clamp(0, 31) as u8, 31, gz.clamp(0, 31) as u8);
                     }
-                    return BlockId::STONE;
-                }
-                if gy >= 32 {
-                    return BlockId::AIR;
-                }
-                if gx >= 0 && gx < 32 && gz >= 0 && gz < 32 {
-                    return center_chunk.get_voxel(gx as u8, gy as u8, gz as u8);
                 }
                 let global_y = (layer as f64) * 32.0 + (gy as f64);
-                if global_y <= sea { BlockId::STONE } else { BlockId::AIR }
+                let u = base_u + (gx as f64 + 0.5) * voxel_span_uv;
+                let v = base_v + (gz as f64 + 0.5) * voxel_span_uv;
+                let dir = face.uv_to_sphere_direction(u, v);
+                let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
+                let col_elevation = generator.sample_elevation(dir, lat, lon);
+
+                if global_y < col_elevation {
+                    BlockId::STONE
+                } else if global_y <= sea {
+                    BlockId::WATER
+                } else {
+                    BlockId::AIR
+                }
             };
 
             for gy in 0..CHUNK_SIZE as i32 {

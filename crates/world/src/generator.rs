@@ -94,9 +94,10 @@ impl PlanetWorldGenerator {
                     .clamp(0.0, CHUNK_SIZE as f64)) as u8;
 
                 // 1. Remplissage du sol solide
+                let elev_floor = elevation.floor();
                 for y in 0..ground_y {
                     let global_y = layer_base_y + y as f64;
-                    let is_surface = global_y + 1.0 >= elevation;
+                    let is_surface = global_y + 1.0 >= elev_floor;
 
                     let block = if is_surface {
                         // Enneigement strict au-dessus de 300 blocs
@@ -124,7 +125,7 @@ impl PlanetWorldGenerator {
                     } else if global_y >= 295.0 {
                         // Socle rocheux sous les neiges d'altitude
                         BlockId::STONE
-                    } else if global_y + 4.0 >= elevation {
+                    } else if global_y + 4.0 >= elev_floor {
                         if biome == BiomeType::Mountains {
                             let rock_noise = fbm_3d(sphere_dir * 16.0, 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
                             if global_y > 215.0 || rock_noise > -0.05 {
