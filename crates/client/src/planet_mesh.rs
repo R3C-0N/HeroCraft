@@ -150,15 +150,15 @@ impl PlanetMesh {
                     let v2 = row2 + 1;
                     let v3 = row2;
 
-                    // Premier triangle (v0, v1, v2)
+                    // Premier triangle CCW (v0, v2, v1)
                     indices.push(v0);
+                    indices.push(v2);
                     indices.push(v1);
-                    indices.push(v2);
 
-                    // Deuxième triangle (v0, v2, v3)
+                    // Deuxième triangle CCW (v0, v3, v2)
                     indices.push(v0);
-                    indices.push(v2);
                     indices.push(v3);
+                    indices.push(v2);
                 }
             }
         }
@@ -283,13 +283,15 @@ impl PlanetMesh {
                 let v2 = row2 + 1;
                 let v3 = row2;
 
+                // Premier triangle CCW (v0, v2, v1)
                 indices.push(v0);
+                indices.push(v2);
                 indices.push(v1);
-                indices.push(v2);
 
+                // Deuxième triangle CCW (v0, v3, v2)
                 indices.push(v0);
-                indices.push(v2);
                 indices.push(v3);
+                indices.push(v2);
             }
         }
 

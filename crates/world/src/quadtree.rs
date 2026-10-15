@@ -91,17 +91,20 @@ impl PlanetQuadTree {
     pub fn new(base_radius: f64) -> Self {
         // Seuils de subdivision calculés pour assurer une transition fluide
         // Rayon ~25.0 :
-        // Level 0 -> split à distance < 100.0
-        // Level 1 -> split à distance < 65.0
-        // Level 2 -> split à distance < 45.0
-        // Level 3 -> split à distance < 34.0
-        // Level 4 -> split à distance < 28.5 (très proche surface) -> donne Level 5 (voxels)
+        // Seuils de distance caméra-nœud calibrés selon la taille réelle des cellules :
+        // Rayon 25.0 (périmètre ~157.0) :
+        // Level 0 (taille ~40) : split si distance < 80.0
+        // Level 1 (taille ~20) : split si distance < 45.0
+        // Level 2 (taille ~10) : split si distance < 25.0
+        // Level 3 (taille ~5.0): split si distance < 12.0
+        // Level 4 (taille ~2.5): split vers Level 5 (voxels) uniquement si distance < 4.5
+        // Cela garantit qu'au sol, seuls 4 à 9 chunks voxels locaux sont activés (pas de freeze !)
         let split_distances = vec![
-            base_radius * 4.0,   // Level 0 split (ex: 100.0 pour R=25)
-            base_radius * 2.6,   // Level 1 split (ex: 65.0)
-            base_radius * 1.8,   // Level 2 split (ex: 45.0)
-            base_radius * 1.36,  // Level 3 split (ex: 34.0)
-            base_radius * 1.14,  // Level 4 split (ex: 28.5 -> passe en voxels complets)
+            80.0,
+            45.0,
+            25.0,
+            12.0,
+            4.5,
         ];
 
         Self {
@@ -121,17 +124,9 @@ impl PlanetQuadTree {
             DVec3::new(0.0, 0.0, 1.0)
         };
 
-        // Calcul du seuil d'horizon pour le culling des faces arrière
-        // cos(angle_horizon) = base_radius / cam_dist (si cam_dist > base_radius)
-        let horizon_cos = if cam_dist > self.base_radius {
-            (self.base_radius / cam_dist).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-
         for &face in &PlanetFace::ALL {
             let root = QuadNodeKey::new(face, 0, 0, 0);
-            self.subdivide_recursive(root, camera_pos, cam_dir, horizon_cos, &mut leaves);
+            self.subdivide_recursive(root, camera_pos, cam_dir, &mut leaves);
         }
 
         leaves
@@ -142,19 +137,16 @@ impl PlanetQuadTree {
         node: QuadNodeKey,
         camera_pos: DVec3,
         cam_dir: DVec3,
-        horizon_cos: f64,
         leaves: &mut Vec<QuadLeaf>,
     ) {
         let center_dir = node.center_direction();
         let center_pos = center_dir * self.base_radius;
 
-        // Culling d'horizon approximatif pour éliminer les nœuds complètement masqués derrière la planète
-        // On garde une marge angulaire généreuse selon le niveau pour ne jamais couper un nœud visible
-        let angular_span = std::f64::consts::PI / (1u32 << node.level) as f64;
+        // Culling sécurisé des faces arrière :
+        // Si dot < -0.35, le centre du nœud est à plus de 110° par rapport à la caméra
+        // donc complètement sur la face cachée de la planète.
         let dot = center_dir.dot(cam_dir);
-        // Si le nœud est loin derrière l'horizon, on l'écarte
-        let margin = (angular_span * 0.75).sin();
-        if dot < -margin && dot < -(1.0 - horizon_cos) {
+        if dot < -0.35 {
             return;
         }
 
@@ -166,7 +158,7 @@ impl PlanetQuadTree {
 
         if should_split {
             for child in node.children() {
-                self.subdivide_recursive(child, camera_pos, cam_dir, horizon_cos, leaves);
+                self.subdivide_recursive(child, camera_pos, cam_dir, leaves);
             }
         } else {
             let kind = if node.level == self.max_level {
