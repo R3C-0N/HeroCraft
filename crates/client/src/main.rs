@@ -11,25 +11,23 @@ use winit::{
 };
 
 mod camera;
+mod lod;
 mod planet_mesh;
 mod renderer;
 mod ui;
 mod voxel_mesh;
 
 use camera::OrbitCamera;
-use glam::DVec3;
-use herocraft_common::PlanetFace;
-use planet_mesh::PlanetMesh;
+use lod::PlanetLodManager;
 use renderer::State;
 use ui::{UiAction, UiState};
-use voxel_mesh::VoxelMeshBuilder;
 
 fn main() {
     std::env::set_var("RUST_LOG", "info");
     env_logger::init();
 
     info!("==========================================================");
-    info!("   HeroCraft — Prototype Moteur & Rendu Planétaire (WGPU) ");
+    info!("   HeroCraft — Moteur Planétaire QuadTree LOD (Rust / WGPU) ");
     info!("==========================================================");
     info!("Contrôles :");
     info!(" • [Bouton Écran]                   : Cliquer sur 'NOUVELLE PLANETE'");
@@ -43,7 +41,7 @@ fn main() {
 
     let event_loop = EventLoop::new().expect("Échec d'initialisation de l'EventLoop Winit");
     let window = WindowBuilder::new()
-        .with_title("HeroCraft — Prototype Planétaire Voxel (Rust / WGPU)")
+        .with_title("HeroCraft — Planète QuadTree LOD (Rust / WGPU)")
         .with_inner_size(LogicalSize::new(1280, 720))
         .build(&event_loop)
         .expect("Échec de création de la fenêtre Winit");
@@ -55,38 +53,39 @@ fn main() {
     let mut planet_desc = herocraft_world::PlanetDescriptor::default();
     planet_desc.seed = current_seed;
 
-    info!("Génération de la planète (Cubed-Sphere avec 6 faces et biomes)...");
+    info!("Initialisation de la planète et du gestionnaire QuadTree...");
     let mut generator = herocraft_world::PlanetWorldGenerator::new(planet_desc);
-    let mut planet_mesh = PlanetMesh::generate_planet(&generator, 25.0, 48);
-    info!(
-        "Planète générée : {} sommets, {} polygones.",
-        planet_mesh.vertices.len(),
-        planet_mesh.indices.len() / 3
-    );
 
-    // Initialisation de l'interface graphique (HUD avec bouton interactif)
-    let mut ui_state = UiState::new(current_seed);
+    // Initialisation du stockage et du cache de chunks voxels
+    let save_dir = format!("saves/monde_{}", current_seed);
+    let storage = herocraft_voxel_engine::ChunkStorage::new(&save_dir).ok();
+    let mut chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
 
-    // Initialisation du moteur WGPU
-    let mut state = pollster::block_on(State::new(window.clone(), &planet_mesh, &ui_state));
-
-    // Caméra orbitale interactive
+    // Initialisation de la caméra orbitale
     let mut camera = OrbitCamera::default();
     let size = window.inner_size();
     camera.aspect = size.width as f32 / size.height.max(1) as f32;
+
+    // Initialisation du gestionnaire de LOD QuadTree
+    let mut lod_manager = PlanetLodManager::new(25.0);
+    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache);
+    info!(
+        "QuadTree initialisé : {} sommets, {} polygones ({} feuilles actives).",
+        lod_manager.combined_mesh.vertices.len(),
+        lod_manager.combined_mesh.indices.len() / 3,
+        lod_manager.current_leaves.len()
+    );
+
+    // Initialisation de l'interface graphique (HUD avec boutons interactifs)
+    let mut ui_state = UiState::new(current_seed);
+
+    // Initialisation du moteur WGPU
+    let mut state = pollster::block_on(State::new(window.clone(), &lod_manager.combined_mesh, &ui_state));
 
     // Gestion des entrées souris
     let mut is_dragging = false;
     let mut last_mouse_pos = (0.0_f64, 0.0_f64);
     let mut last_frame_time = Instant::now();
-
-    // État du streaming voxel (LOD dynamique) et persistance
-    let mut is_voxel_mode = false;
-    let mut current_voxel_chunk: Option<(PlanetFace, i32, i32)> = None;
-
-    let save_dir = format!("saves/monde_{}", current_seed);
-    let storage = herocraft_voxel_engine::ChunkStorage::new(&save_dir).ok();
-    let mut chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
 
     event_loop.run(move |event, target| {
         target.set_control_flow(ControlFlow::Poll);
@@ -127,13 +126,12 @@ fn main() {
                                             let mut new_desc = herocraft_world::PlanetDescriptor::default();
                                             new_desc.seed = current_seed;
                                             generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
-                                            planet_mesh = PlanetMesh::generate_planet(&generator, 25.0, 48);
                                             let new_save_dir = format!("saves/monde_{}", current_seed);
                                             let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
                                             chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
-                                            is_voxel_mode = false;
-                                            current_voxel_chunk = None;
-                                            state.update_mesh(&planet_mesh);
+                                            lod_manager.clear();
+                                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache);
+                                            state.update_mesh(&lod_manager.combined_mesh);
                                             ui_state.set_seed(current_seed);
                                             info!("Bouton cliqué : Nouvelle planète générée ! (Graine: #{})", current_seed);
                                         }
@@ -209,13 +207,12 @@ fn main() {
                             let mut new_desc = herocraft_world::PlanetDescriptor::default();
                             new_desc.seed = current_seed;
                             generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
-                            planet_mesh = PlanetMesh::generate_planet(&generator, 25.0, 48);
                             let new_save_dir = format!("saves/monde_{}", current_seed);
                             let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
                             chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
-                            is_voxel_mode = false;
-                            current_voxel_chunk = None;
-                            state.update_mesh(&planet_mesh);
+                            lod_manager.clear();
+                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache);
+                            state.update_mesh(&lod_manager.combined_mesh);
                             ui_state.set_seed(current_seed);
                             info!("Raccourci [G] : Nouvelle planète générée (Graine: #{})", current_seed);
                         }
@@ -230,42 +227,9 @@ fn main() {
                         camera.update(dt);
                         state.update_camera(&camera);
 
-                        // LOD Dynamique : Transition vers le terrain voxel en zoom rapproché (D <= 34.0)
-                        let is_near_ground = camera.distance <= 34.0;
-
-                        if is_near_ground {
-                            let eye_dir = camera.eye_position().normalize();
-                            let (face, u, v) = PlanetFace::sphere_direction_to_face_uv(
-                                DVec3::new(eye_dir.x as f64, eye_dir.y as f64, eye_dir.z as f64),
-                            );
-                            let chunk_x = (((u + 1.0) * 0.5 * 32.0).floor() as i32).clamp(0, 31);
-                            let chunk_y = (((v + 1.0) * 0.5 * 32.0).floor() as i32).clamp(0, 31);
-
-                            let needs_update = !is_voxel_mode
-                                || current_voxel_chunk != Some((face, chunk_x, chunk_y));
-
-                            if needs_update {
-                                if !is_voxel_mode {
-                                    info!("LOD : Entrée dans l'atmosphère, affichage des voxels 3D au sol !");
-                                }
-                                is_voxel_mode = true;
-                                current_voxel_chunk = Some((face, chunk_x, chunk_y));
-
-                                let voxel_mesh = VoxelMeshBuilder::build_incurved_grid(
-                                    &generator,
-                                    &mut chunk_cache,
-                                    face,
-                                    chunk_x,
-                                    chunk_y,
-                                    25.0, // Rayon de base
-                                );
-                                state.update_mesh(&voxel_mesh);
-                            }
-                        } else if is_voxel_mode {
-                            info!("LOD : Sortie en orbite haute, vue globale de la planète.");
-                            is_voxel_mode = false;
-                            current_voxel_chunk = None;
-                            state.update_mesh(&planet_mesh);
+                        // Mise à jour adaptative du QuadTree LOD (planète entière visible + voxels proches)
+                        if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache) {
+                            state.update_mesh(&lod_manager.combined_mesh);
                         }
 
                         // Mise à jour de l'affichage UI si l'état des boutons ou la seed a changé

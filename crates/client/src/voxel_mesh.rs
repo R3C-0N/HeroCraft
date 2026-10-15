@@ -10,6 +10,7 @@ pub struct VoxelMeshBuilder;
 
 impl VoxelMeshBuilder {
     /// Construit le maillage de voxels incurvés pour une grille 3x3 de chunks sans murs internes
+    #[allow(dead_code)]
     pub fn build_incurved_grid(
         generator: &PlanetWorldGenerator,
         chunk_cache: &mut WorldChunkCache,
@@ -181,6 +182,202 @@ impl VoxelMeshBuilder {
                         let c1 = get_corner(fx + 1.0, fy, fz);
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz);
                         let c3 = get_corner(fx, fy + 1.0, fz);
+                        let color = Self::block_color(block, false);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                    }
+                }
+            }
+        }
+
+        PlanetMesh { vertices, indices }
+    }
+
+    /// Construit le maillage d'un unique chunk voxel incurvé avec raccordement des voisins
+    pub fn build_incurved_single_chunk(
+        generator: &PlanetWorldGenerator,
+        chunk_cache: &mut WorldChunkCache,
+        face: PlanetFace,
+        chunk_x: i32,
+        chunk_y: i32,
+        base_radius: f32,
+    ) -> PlanetMesh {
+        let mut vertices: Vec<PlanetVertex> = Vec::new();
+        let mut indices: Vec<u32> = Vec::new();
+
+        let face_chunks_count = 32.0;
+        let chunk_span_uv = 2.0 / face_chunks_count;
+        let voxel_span_uv = chunk_span_uv / (CHUNK_SIZE as f64);
+        let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * voxel_span_uv) as f32;
+
+        let coord = PlanetChunkCoord::new(face, chunk_x, chunk_y, 0);
+        let center_chunk = chunk_cache.get_or_load(&coord, || generator.generate_chunk(&coord)).clone();
+
+        // Chargement des chunks voisins pour éliminer les parois artificielles
+        let left_chunk = if chunk_x > 0 {
+            let c = PlanetChunkCoord::new(face, chunk_x - 1, chunk_y, 0);
+            Some(chunk_cache.get_or_load(&c, || generator.generate_chunk(&c)).clone())
+        } else {
+            None
+        };
+        let right_chunk = if chunk_x < 31 {
+            let c = PlanetChunkCoord::new(face, chunk_x + 1, chunk_y, 0);
+            Some(chunk_cache.get_or_load(&c, || generator.generate_chunk(&c)).clone())
+        } else {
+            None
+        };
+        let bottom_chunk = if chunk_y > 0 {
+            let c = PlanetChunkCoord::new(face, chunk_x, chunk_y - 1, 0);
+            Some(chunk_cache.get_or_load(&c, || generator.generate_chunk(&c)).clone())
+        } else {
+            None
+        };
+        let top_chunk = if chunk_y < 31 {
+            let c = PlanetChunkCoord::new(face, chunk_x, chunk_y + 1, 0);
+            Some(chunk_cache.get_or_load(&c, || generator.generate_chunk(&c)).clone())
+        } else {
+            None
+        };
+
+        let base_u = -1.0 + (chunk_x as f64) * chunk_span_uv;
+        let base_v = -1.0 + (chunk_y as f64) * chunk_span_uv;
+
+        let get_voxel = |gx: i32, gy: i32, gz: i32| -> BlockId {
+            if gy < 0 || gy >= CHUNK_SIZE as i32 {
+                return BlockId::AIR;
+            }
+            if gx >= 0 && gx < 32 && gz >= 0 && gz < 32 {
+                return center_chunk.get_voxel(gx as u8, gy as u8, gz as u8);
+            }
+            if gx < 0 && gz >= 0 && gz < 32 {
+                if let Some(ref c) = left_chunk {
+                    return c.get_voxel(31, gy as u8, gz as u8);
+                }
+            } else if gx >= 32 && gz >= 0 && gz < 32 {
+                if let Some(ref c) = right_chunk {
+                    return c.get_voxel(0, gy as u8, gz as u8);
+                }
+            } else if gz < 0 && gx >= 0 && gx < 32 {
+                if let Some(ref c) = bottom_chunk {
+                    return c.get_voxel(gx as u8, gy as u8, 31);
+                }
+            } else if gz >= 32 && gx >= 0 && gx < 32 {
+                if let Some(ref c) = top_chunk {
+                    return c.get_voxel(gx as u8, gy as u8, 0);
+                }
+            }
+            if gy <= 12 { BlockId::STONE } else { BlockId::AIR }
+        };
+
+        let get_corner = |vx: f64, vy: f64, vz: f64| -> Vec3 {
+            let u = base_u + vx * voxel_span_uv;
+            let v = base_v + vz * voxel_span_uv;
+            let dir = face.uv_to_sphere_direction(u, v);
+            let r = base_radius + (vy as f32) * altitude_scale;
+            Vec3::new(dir.x as f32, dir.y as f32, dir.z as f32) * r
+        };
+
+        for gy in 0..CHUNK_SIZE as i32 {
+            for gz in 0..32 {
+                for gx in 0..32 {
+                    let block = get_voxel(gx, gy, gz);
+                    if block.is_air() {
+                        continue;
+                    }
+
+                    let is_water = block == BlockId::WATER;
+                    let fx = gx as f64;
+                    let fy = gy as f64;
+                    let fz = gz as f64;
+
+                    // 1. Face Haut (+Y)
+                    let neighbor_top = get_voxel(gx, gy + 1, gz);
+                    let should_emit_top = if is_water {
+                        neighbor_top.is_air()
+                    } else {
+                        neighbor_top.is_air() || neighbor_top == BlockId::WATER
+                    };
+                    if should_emit_top {
+                        let c0 = get_corner(fx, fy + 1.0, fz);
+                        let c1 = get_corner(fx, fy + 1.0, fz + 1.0);
+                        let c2 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0);
+                        let c3 = get_corner(fx + 1.0, fy + 1.0, fz);
+                        let color = Self::block_color(block, true);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                    }
+
+                    // 2. Face Bas (-Y)
+                    if !is_water {
+                        let neighbor_bottom = get_voxel(gx, gy - 1, gz);
+                        if neighbor_bottom.is_air() {
+                            let c0 = get_corner(fx, fy, fz);
+                            let c1 = get_corner(fx + 1.0, fy, fz);
+                            let c2 = get_corner(fx + 1.0, fy, fz + 1.0);
+                            let c3 = get_corner(fx, fy, fz + 1.0);
+                            let color = Self::block_color(block, false);
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                        }
+                    }
+
+                    // 3. Face Gauche (-X)
+                    let neighbor_left = get_voxel(gx - 1, gy, gz);
+                    let should_emit_left = if is_water {
+                        neighbor_left.is_air()
+                    } else {
+                        neighbor_left.is_air() || neighbor_left == BlockId::WATER
+                    };
+                    if should_emit_left {
+                        let c0 = get_corner(fx, fy, fz);
+                        let c1 = get_corner(fx, fy, fz + 1.0);
+                        let c2 = get_corner(fx, fy + 1.0, fz + 1.0);
+                        let c3 = get_corner(fx, fy + 1.0, fz);
+                        let color = Self::block_color(block, false);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                    }
+
+                    // 4. Face Droite (+X)
+                    let neighbor_right = get_voxel(gx + 1, gy, gz);
+                    let should_emit_right = if is_water {
+                        neighbor_right.is_air()
+                    } else {
+                        neighbor_right.is_air() || neighbor_right == BlockId::WATER
+                    };
+                    if should_emit_right {
+                        let c0 = get_corner(fx + 1.0, fy, fz + 1.0);
+                        let c1 = get_corner(fx + 1.0, fy, fz);
+                        let c2 = get_corner(fx + 1.0, fy + 1.0, fz);
+                        let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0);
+                        let color = Self::block_color(block, false);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                    }
+
+                    // 5. Face Avant (+Z)
+                    let neighbor_front = get_voxel(gx, gy, gz + 1);
+                    let should_emit_front = if is_water {
+                        neighbor_front.is_air()
+                    } else {
+                        neighbor_front.is_air() || neighbor_front == BlockId::WATER
+                    };
+                    if should_emit_front {
+                        let c0 = get_corner(fx, fy, fz + 1.0);
+                        let c1 = get_corner(fx + 1.0, fy, fz + 1.0);
+                        let c2 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0);
+                        let c3 = get_corner(fx, fy + 1.0, fz + 1.0);
+                        let color = Self::block_color(block, false);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                    }
+
+                    // 6. Face Arrière (-Z)
+                    let neighbor_back = get_voxel(gx, gy, gz - 1);
+                    let should_emit_back = if is_water {
+                        neighbor_back.is_air()
+                    } else {
+                        neighbor_back.is_air() || neighbor_back == BlockId::WATER
+                    };
+                    if should_emit_back {
+                        let c0 = get_corner(fx + 1.0, fy, fz);
+                        let c1 = get_corner(fx, fy, fz);
+                        let c2 = get_corner(fx, fy + 1.0, fz);
+                        let c3 = get_corner(fx + 1.0, fy + 1.0, fz);
                         let color = Self::block_color(block, false);
                         Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                     }

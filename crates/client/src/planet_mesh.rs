@@ -51,6 +51,7 @@ pub struct PlanetMesh {
 
 impl PlanetMesh {
     /// Construit le maillage complet de la planète Cubed-Sphere avec relief et biomes
+    #[allow(dead_code)]
     pub fn generate_planet(generator: &PlanetWorldGenerator, base_radius: f32, grid_resolution: usize) -> Self {
         let n = grid_resolution.max(8);
         let mut vertices: Vec<PlanetVertex> = Vec::new();
@@ -166,7 +167,7 @@ impl PlanetMesh {
     }
 
     /// Palette de couleurs selon le biome
-    fn biome_color(biome: BiomeType) -> [f32; 4] {
+    pub fn biome_color(biome: BiomeType) -> [f32; 4] {
         match biome {
             // Zones maritimes (Océans et Mers)
             BiomeType::DeepOcean => [0.03, 0.10, 0.38, 1.0], // Bleu abyssal profond
@@ -180,5 +181,118 @@ impl PlanetMesh {
             BiomeType::Mountains => [0.52, 0.50, 0.48, 1.0],  // Roches grises des massifs
             BiomeType::SnowPeaks => [0.96, 0.97, 1.00, 1.0],  // Sommets enneigés et calottes polaires
         }
+    }
+
+    /// Construit le maillage polygonal d'un patch LOD pour un nœud du QuadTree
+    pub fn generate_lod_patch(
+        generator: &PlanetWorldGenerator,
+        key: &herocraft_world::QuadNodeKey,
+        base_radius: f32,
+        grid_resolution: usize,
+    ) -> Self {
+        let n = grid_resolution.max(2);
+        let mut vertices: Vec<PlanetVertex> = Vec::with_capacity((n + 1) * (n + 1));
+        let mut indices: Vec<u32> = Vec::with_capacity(n * n * 6);
+
+        let (u_min, u_max, v_min, v_max) = key.uv_bounds();
+
+        let mut patch_positions = Vec::with_capacity((n + 1) * (n + 1));
+        let mut patch_colors = Vec::with_capacity((n + 1) * (n + 1));
+        let mut patch_normals = Vec::with_capacity((n + 1) * (n + 1));
+        let mut is_water_flags = Vec::with_capacity((n + 1) * (n + 1));
+
+        let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0)) as f32;
+
+        for j in 0..=n {
+            let v = v_min + (v_max - v_min) * (j as f64) / (n as f64);
+            for i in 0..=n {
+                let u = u_min + (u_max - u_min) * (i as f64) / (n as f64);
+
+                let sphere_dir: DVec3 = key.face.uv_to_sphere_direction(u, v);
+                let (lat, lon) = unit_sphere_to_lat_lon(sphere_dir);
+                let raw_elevation = generator.sample_elevation(sphere_dir, lat, lon);
+                let biome = generator.determine_biome(lat, raw_elevation, sphere_dir);
+
+                let color = Self::biome_color(biome);
+                let is_water = biome.is_water();
+
+                let elevation_clamped = if is_water {
+                    SEA_LEVEL_BLOCKS as f32 * altitude_scale
+                } else {
+                    (raw_elevation as f32) * altitude_scale
+                };
+
+                let radius = base_radius + elevation_clamped;
+                let dir_f32 = Vec3::new(sphere_dir.x as f32, sphere_dir.y as f32, sphere_dir.z as f32);
+                let pos = dir_f32 * radius;
+
+                patch_positions.push(pos);
+                patch_colors.push(color);
+                patch_normals.push(dir_f32);
+                is_water_flags.push(is_water);
+            }
+        }
+
+        // Calcul des normales par dérivation
+        for j in 0..=n {
+            for i in 0..=n {
+                let idx = j * (n + 1) + i;
+                let pos = patch_positions[idx];
+                let norm = patch_normals[idx];
+                let is_water = is_water_flags[idx];
+
+                let final_normal = if is_water {
+                    norm
+                } else {
+                    let dx = if i + 1 <= n {
+                        patch_positions[j * (n + 1) + (i + 1)] - pos
+                    } else {
+                        pos - patch_positions[j * (n + 1) + (i - 1)]
+                    };
+
+                    let dy = if j + 1 <= n {
+                        patch_positions[(j + 1) * (n + 1) + i] - pos
+                    } else {
+                        pos - patch_positions[(j - 1) * (n + 1) + i]
+                    };
+
+                    let computed = dx.cross(dy).normalize_or_zero();
+                    if computed.dot(norm) > 0.0 {
+                        computed
+                    } else {
+                        -computed
+                    }
+                };
+
+                vertices.push(PlanetVertex {
+                    position: pos.to_array(),
+                    normal: final_normal.to_array(),
+                    color: patch_colors[idx],
+                });
+            }
+        }
+
+        // Triangulation
+        for j in 0..n {
+            for i in 0..n {
+                let row1 = (j * (n + 1) + i) as u32;
+                let row2 = ((j + 1) * (n + 1) + i) as u32;
+
+                let v0 = row1;
+                let v1 = row1 + 1;
+                let v2 = row2 + 1;
+                let v3 = row2;
+
+                indices.push(v0);
+                indices.push(v1);
+                indices.push(v2);
+
+                indices.push(v0);
+                indices.push(v2);
+                indices.push(v3);
+            }
+        }
+
+        PlanetMesh { vertices, indices }
     }
 }
