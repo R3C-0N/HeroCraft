@@ -95,16 +95,49 @@ impl PlanetWorldGenerator {
                 // 1. Remplissage du sol solide
                 for y in 0..ground_y {
                     let global_y = layer_base_y + y as f64;
-                    let block = if global_y + 1.0 >= elevation {
-                        match biome {
-                            BiomeType::DeepOcean | BiomeType::Ocean | BiomeType::Sea => BlockId::SAND,
-                            BiomeType::Beach | BiomeType::Desert => BlockId::SAND,
-                            BiomeType::SnowPeaks => BlockId::SNOW,
-                            BiomeType::Mountains => BlockId::STONE,
-                            _ => BlockId::GRASS,
+                    let is_surface = global_y + 1.0 >= elevation;
+
+                    let block = if is_surface {
+                        // Enneigement strict au-dessus de 300 blocs
+                        if global_y >= 300.0 {
+                            BlockId::SNOW
+                        } else {
+                            match biome {
+                                BiomeType::DeepOcean | BiomeType::Ocean | BiomeType::Sea => BlockId::SAND,
+                                BiomeType::Beach | BiomeType::Desert => BlockId::SAND,
+                                BiomeType::SnowPeaks => BlockId::SNOW,
+                                BiomeType::Mountains => {
+                                    // Versants rocailleux des montagnes :
+                                    // - Au-dessus de 220 : crêtes et parois de roche massive (BlockId::STONE)
+                                    // - Entre 170 et 220 : alternance réaliste d'affleurements rocheux et d'alpages
+                                    let rock_noise = fbm_3d(sphere_dir * 16.0, 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
+                                    if global_y > 220.0 || rock_noise > -0.05 {
+                                        BlockId::STONE
+                                    } else {
+                                        BlockId::GRASS
+                                    }
+                                }
+                                _ => BlockId::GRASS,
+                            }
                         }
+                    } else if global_y >= 295.0 {
+                        // Socle rocheux sous les neiges d'altitude
+                        BlockId::STONE
                     } else if global_y + 4.0 >= elevation {
-                        BlockId::DIRT
+                        if biome == BiomeType::Mountains {
+                            let rock_noise = fbm_3d(sphere_dir * 16.0, 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
+                            if global_y > 215.0 || rock_noise > -0.05 {
+                                BlockId::STONE
+                            } else {
+                                BlockId::DIRT
+                            }
+                        } else if biome == BiomeType::SnowPeaks {
+                            BlockId::STONE
+                        } else if biome == BiomeType::Desert || biome == BiomeType::Beach {
+                            BlockId::SAND
+                        } else {
+                            BlockId::DIRT
+                        }
                     } else {
                         BlockId::STONE
                     };
@@ -248,7 +281,7 @@ impl PlanetWorldGenerator {
         let polar_boundary = 1.28 + polar_noise;
         let is_polar = lat.abs() > polar_boundary;
 
-        if is_polar {
+        if is_polar || elevation >= 300.0 {
             return BiomeType::SnowPeaks;
         }
 
@@ -256,12 +289,14 @@ impl PlanetWorldGenerator {
         let sea_threshold = 0.01;
 
         // 2. Biomes maritimes (Océans et Mers)
-        if continental < -0.20 || elevation < 50.0 {
-            BiomeType::DeepOcean // Plaines et fosses océaniques profondes
-        } else if continental < -0.05 {
-            BiomeType::Ocean // Grands océans ouverts
-        } else if continental < sea_threshold {
-            BiomeType::Sea // Mers intérieures, détroits et golfes
+        if (elevation <= SEA_LEVEL_BLOCKS || continental < sea_threshold) && elevation < 110.0 {
+            if continental < -0.20 || elevation < 50.0 {
+                BiomeType::DeepOcean // Plaines et fosses océaniques profondes
+            } else if continental < -0.05 {
+                BiomeType::Ocean // Grands océans ouverts
+            } else {
+                BiomeType::Sea // Mers intérieures, détroits et golfes
+            }
         } else if continental < sea_threshold + 0.03 {
             BiomeType::Beach // Rivages de sable côtier
         } else {
@@ -273,10 +308,11 @@ impl PlanetWorldGenerator {
             // Humidité procédurale
             let moisture = fbm_3d(dir * 2.2, 3, 2.0, 0.50, self.planet.seed.wrapping_add(77777)) * 0.5 + 0.5;
 
-            if temp < 0.22 || elevation > 270.0 {
-                BiomeType::SnowPeaks // Sommets de haute montagne
-            } else if elevation > 180.0 {
-                BiomeType::Mountains // Crêtes rocheuses
+            // Enneigement strict au-dessus de 300 blocs
+            if elevation >= 300.0 {
+                BiomeType::SnowPeaks // Sommets enneigés et neiges éternelles
+            } else if elevation > 170.0 {
+                BiomeType::Mountains // Versants et massifs montagneux
             } else if temp > 0.65 && moisture < 0.38 {
                 BiomeType::Desert // Déserts chauds
             } else if moisture > 0.52 {
@@ -496,5 +532,33 @@ mod tests {
             "Deux graines différentes doivent générer des cartes fondamentalement distinctes (différence constatée : {:.1}%)",
             diff_ratio * 100.0
         );
+    }
+
+    #[test]
+    fn test_snow_peaks_above_300_and_mountains() {
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor::default());
+        // Trouver un point continental tempéré (non-polaire)
+        let mut land_dir = DVec3::new(1.0, 0.0, 0.0);
+        let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
+        for i in 0..100 {
+            let y = 1.0 - (i as f64 / 99.0) * 2.0;
+            let radius = (1.0 - y * y).max(0.0).sqrt();
+            let theta = 2.0 * std::f64::consts::PI * (i as f64) / phi;
+            let dir = DVec3::new(radius * theta.cos(), y, radius * theta.sin()).normalize();
+            let (lat, _) = unit_sphere_to_lat_lon(dir);
+            if lat.abs() < 0.8 && generator.sample_continental_value(dir) > 0.10 {
+                land_dir = dir;
+                break;
+            }
+        }
+        let (lat, _) = unit_sphere_to_lat_lon(land_dir);
+
+        // Au-dessus de 300 : obligatoire SnowPeaks (neiges éternelles)
+        let biome_snow = generator.determine_biome(lat, 310.0, land_dir);
+        assert_eq!(biome_snow, BiomeType::SnowPeaks);
+
+        // Entre 180 et 290 sur un continent : biome Montagnes
+        let biome_mountain = generator.determine_biome(lat, 250.0, land_dir);
+        assert_eq!(biome_mountain, BiomeType::Mountains);
     }
 }

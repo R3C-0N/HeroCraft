@@ -186,6 +186,19 @@ impl PlanetMesh {
     /// Palette de couleurs enrichie avec gradation altimétrique et bathymétrique
     /// Fait ressortir les fosses océaniques (bleu nuit abyssal très contrasté) et les massifs/super-chaînes de montagnes (ardoise sombre -> granite -> cimes éclatantes)
     pub fn relief_biome_color(biome: BiomeType, raw_elevation: f64) -> [f32; 4] {
+        // Enneigement strict au-dessus de 300 blocs pour n'importe quel relief continental
+        if !biome.is_water() && raw_elevation >= 300.0 {
+            let t = ((raw_elevation - 300.0) / 50.0).clamp(0.0, 1.0) as f32;
+            let c_snowline = [0.88, 0.93, 0.99, 1.0]; // Ligne des neiges / séracs bleutés à 300
+            let c_summit = [1.00, 1.00, 1.00, 1.0];   // Sommet éclatant de pureté à 350
+            return [
+                c_snowline[0] * (1.0 - t) + c_summit[0] * t,
+                c_snowline[1] * (1.0 - t) + c_summit[1] * t,
+                c_snowline[2] * (1.0 - t) + c_summit[2] * t,
+                1.0,
+            ];
+        }
+
         if biome.is_water() {
             // Dégradé bathymétrique sous-marin :
             // raw_elevation va de ~15.0 (fosses océaniques et subductions profondes) à 100.0 (niveau de la mer)
@@ -254,27 +267,41 @@ impl PlanetMesh {
                     }
                 }
                 BiomeType::Mountains => {
-                    // Massifs montagneux : base rocheuse sombre (ardoise/basalte) s'éclaircissant
-                    // vers le granite clair et les pré-neiges en altitude (180.0 -> 270.0)
-                    let t = ((raw_elevation - 180.0) / 90.0).clamp(0.0, 1.0) as f32;
-                    let c_base = [0.30, 0.28, 0.28, 1.0];  // Ardoise / roche sombre très contrastée
-                    let c_crest = [0.60, 0.58, 0.58, 1.0]; // Granite clair de crête
-                    [
-                        c_base[0] * (1.0 - t) + c_crest[0] * t,
-                        c_base[1] * (1.0 - t) + c_crest[1] * t,
-                        c_base[2] * (1.0 - t) + c_crest[2] * t,
-                        1.0,
-                    ]
+                    // Massifs montagneux rocailleux (170.0 -> 300.0) :
+                    // - Piémont et alpages (170 -> 215) : transition d'alpages montagnards vers la roche
+                    // - Versants rocailleux et crêtes (215 -> 300) : roches minérales rugueuses (ardoise, basalte, granite)
+                    let t = ((raw_elevation - 170.0) / 130.0).clamp(0.0, 1.0) as f32;
+                    if t < 0.35 {
+                        let k = t / 0.35;
+                        let c_alpage = [0.26, 0.48, 0.22, 1.0]; // Vert alpage montagnard
+                        let c_rock_base = [0.36, 0.34, 0.33, 1.0]; // Roche ardoise sombre
+                        [
+                            c_alpage[0] * (1.0 - k) + c_rock_base[0] * k,
+                            c_alpage[1] * (1.0 - k) + c_rock_base[1] * k,
+                            c_alpage[2] * (1.0 - k) + c_rock_base[2] * k,
+                            1.0,
+                        ]
+                    } else {
+                        let k = (t - 0.35) / 0.65;
+                        let c_rock_base = [0.36, 0.34, 0.33, 1.0]; // Ardoise / basalte sombre
+                        let c_granite = [0.60, 0.58, 0.56, 1.0];   // Granite minéral clair
+                        [
+                            c_rock_base[0] * (1.0 - k) + c_granite[0] * k,
+                            c_rock_base[1] * (1.0 - k) + c_granite[1] * k,
+                            c_rock_base[2] * (1.0 - k) + c_granite[2] * k,
+                            1.0,
+                        ]
+                    }
                 }
                 BiomeType::SnowPeaks => {
                     // Calotte polaire affleurante au niveau de la mer (~101) vs Hauts sommets
                     if raw_elevation < SEA_LEVEL_BLOCKS + 5.0 {
                         [0.92, 0.96, 0.99, 1.0] // Banquise polaire immaculée
                     } else {
-                        // Super-chaînes et hauts sommets (260.0 -> 340.0+)
-                        let t = ((raw_elevation - 260.0) / 80.0).clamp(0.0, 1.0) as f32;
-                        let c_snowline = [0.88, 0.92, 0.98, 1.0]; // Séracs / ligne des neiges bleutée
-                        let c_summit = [0.99, 1.00, 1.00, 1.0];   // Sommet éclatant de pureté
+                        // Enneigement au-dessus de 300.0 jusqu'aux sommets (300.0 -> 350.0)
+                        let t = ((raw_elevation - 300.0) / 50.0).clamp(0.0, 1.0) as f32;
+                        let c_snowline = [0.88, 0.93, 0.99, 1.0]; // Ligne des neiges / séracs bleutés
+                        let c_summit = [1.00, 1.00, 1.00, 1.0];   // Sommet éclatant de pureté
                         [
                             c_snowline[0] * (1.0 - t) + c_summit[0] * t,
                             c_snowline[1] * (1.0 - t) + c_summit[1] * t,
@@ -485,5 +512,16 @@ mod tests {
         assert!(foothills[0] < high_ridge[0]);
         assert!(high_ridge[0] < snow_summit[0]);
         assert!(snow_summit[0] > 0.95 && snow_summit[1] > 0.95 && snow_summit[2] > 0.95);
+    }
+
+    #[test]
+    fn test_snowline_at_300() {
+        let just_below = PlanetMesh::relief_biome_color(BiomeType::Mountains, 298.0);
+        let at_snow = PlanetMesh::relief_biome_color(BiomeType::Mountains, 305.0);
+
+        // Sous 300 : granite / crête rocheuse (< 0.70 de composante rouge/vert)
+        assert!(just_below[0] < 0.70);
+        // Au-dessus de 300 : enneigement automatique (> 0.85 de clarté éclatante)
+        assert!(at_snow[0] > 0.85 && at_snow[1] > 0.85 && at_snow[2] > 0.85);
     }
 }
