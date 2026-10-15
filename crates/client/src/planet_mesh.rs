@@ -219,7 +219,7 @@ impl PlanetMesh {
                 let elevation_clamped = if is_water {
                     SEA_LEVEL_BLOCKS as f32 * altitude_scale
                 } else {
-                    (raw_elevation as f32) * altitude_scale
+                    (raw_elevation.round() as f32) * altitude_scale
                 };
 
                 let radius = base_radius + elevation_clamped;

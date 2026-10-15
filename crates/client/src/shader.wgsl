@@ -16,7 +16,7 @@ struct VertexInput {
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) normal: vec3<f32>,
-    @location(1) color: vec4<f32>,
+    @location(1) @interpolate(flat) color: vec4<f32>,
     @location(2) world_pos: vec3<f32>,
 };
 
@@ -32,7 +32,12 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let n = normalize(in.normal);
+    // Calcul de la normale par dérivées d'écran pour un aspect facetté / pixelisé net (style voxel)
+    let dpx = dpdx(in.world_pos);
+    let dpy = dpdy(in.world_pos);
+    let cross_norm = normalize(cross(dpx, dpy));
+    let n = select(cross_norm, -cross_norm, dot(cross_norm, in.normal) < 0.0);
+
     let l = normalize(camera.light_dir);
 
     // Éclairage diffus doux (Half-Lambert)
