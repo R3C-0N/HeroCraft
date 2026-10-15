@@ -15,6 +15,7 @@ pub enum CameraViewMode {
 /// Caméra planétaire multi-échelle unifiée :
 /// Passe sans couture de la Première Personne (FPS au sol) à la Troisième Personne (TPS)
 /// puis à l'Orbite Planétaire globale (Satellite) par simple molette de souris.
+/// Équipée d'un bras de collision dynamique (Spring-Arm) empêchant toute pénétration sous le relief.
 pub struct OrbitCamera {
     /// Position 3D du joueur sur la sphère
     pub player_pos: Vec3,
@@ -34,13 +35,15 @@ pub struct OrbitCamera {
     pub is_sprinting: bool,
     pub jump_requested: bool,
 
-    /// Distance de la caméra (continuum de zoom) :
-    /// - 0.0        : Première Personne (FPS)
-    /// - 0.05..25.0 : Troisième Personne (TPS)
-    /// - > 25.0     : Vue Satellite globale
+    /// Distance souhaitée de la caméra (continuum de zoom)
     pub distance: f32,
     pub min_distance: f32,
     pub max_distance: f32,
+
+    /// Distance effective après détection de collision avec le relief
+    pub effective_distance: f32,
+    /// Position 3D effective de l'œil de la caméra (garantie strictement au-dessus du sol)
+    pub effective_eye: Vec3,
 
     /// Angles d'orientation pour la vue satellite orbitale
     pub orbit_yaw: f32,
@@ -85,6 +88,8 @@ impl Default for OrbitCamera {
             distance: 165.0,
             min_distance: 0.0,
             max_distance: 450.0,
+            effective_distance: 165.0,
+            effective_eye: Vec3::new(0.0, 165.0, 0.0),
 
             orbit_yaw: 0.5,
             orbit_pitch: 0.35,
@@ -109,10 +114,12 @@ impl OrbitCamera {
     pub fn new(distance: f32, base_radius: f32, generator: &PlanetWorldGenerator) -> Self {
         let mut cam = Self {
             distance,
+            effective_distance: distance,
             base_radius,
             ..Default::default()
         };
         cam.spawn_on_ground(generator);
+        cam.update_camera_bounds(generator);
         cam
     }
 
@@ -147,13 +154,14 @@ impl OrbitCamera {
         self.vertical_velocity = 0.0;
         self.is_grounded = true;
         self.sync_orbit_to_ground();
+        self.update_camera_bounds(generator);
     }
 
-    /// Mode de caméra déduit du continuum de distance
+    /// Mode de caméra déduit du continuum de distance effective
     pub fn view_mode(&self) -> CameraViewMode {
-        if self.distance <= 0.05 {
+        if self.effective_distance <= 0.05 {
             CameraViewMode::FirstPerson
-        } else if self.distance <= 25.0 {
+        } else if self.effective_distance <= 25.0 {
             CameraViewMode::ThirdPerson
         } else {
             CameraViewMode::SatelliteOrbit
@@ -198,6 +206,18 @@ impl OrbitCamera {
         .normalize()
     }
 
+    /// Calcule le rayon minimum de sécurité du sol sous une direction donnée
+    pub fn ground_radius_at(&self, dir: Vec3, generator: &PlanetWorldGenerator) -> f32 {
+        let dir_norm = dir.normalize();
+        let dir_dvec = DVec3::new(dir_norm.x as f64, dir_norm.y as f64, dir_norm.z as f64);
+        let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir_dvec);
+        let elevation = generator.sample_elevation(dir_dvec, lat, lon);
+        let sea = herocraft_world::generator::SEA_LEVEL_BLOCKS;
+        let eff_elev = elevation.max(sea);
+        let altitude_scale = (self.base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0)) as f32;
+        self.base_radius + (eff_elev as f32) * altitude_scale
+    }
+
     /// Oriente la caméra ou le regard selon le glisser de souris
     pub fn orbit(&mut self, dx: f32, dy: f32) {
         match self.view_mode() {
@@ -223,17 +243,12 @@ impl OrbitCamera {
     /// Synchronise la position au sol du joueur avec la vue orbitale satellite
     pub fn sync_ground_to_orbit(&mut self, generator: &PlanetWorldGenerator) {
         let dir = self.orbit_direction();
-        let dir_dvec = DVec3::new(dir.x as f64, dir.y as f64, dir.z as f64);
-        let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir_dvec);
-        let elevation = generator.sample_elevation(dir_dvec, lat, lon);
-        let sea = herocraft_world::generator::SEA_LEVEL_BLOCKS;
-        let eff_elev = elevation.max(sea);
-        let altitude_scale = (self.base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0)) as f32;
-        let ground_radius = self.base_radius + (eff_elev as f32) * altitude_scale;
+        let ground_radius = self.ground_radius_at(dir, generator);
 
         self.player_pos = dir * ground_radius;
         self.vertical_velocity = 0.0;
         self.is_grounded = true;
+        self.update_camera_bounds(generator);
     }
 
     /// Synchronise les angles orbitaux avec la position du joueur au sol
@@ -268,6 +283,77 @@ impl OrbitCamera {
         }
     }
 
+    /// Calcule la position de la caméra sans aucune pénétration sous le relief (Spring-Arm anti-collision)
+    pub fn update_camera_bounds(&mut self, generator: &PlanetWorldGenerator) {
+        let (up, _, _, look_dir) = self.look_vectors();
+        let eye_height = 0.065; // ~1.7 blocs au-dessus des pieds
+        let head = self.player_pos + up * eye_height;
+
+        let margin = 0.035; // Marge de sécurité stricte au-dessus du sol (~0.9 bloc)
+
+        if self.distance <= 0.05 {
+            // Mode Première Personne (FPS) : positionné aux yeux de l'avatar
+            self.effective_distance = 0.0;
+            self.effective_eye = head;
+        } else if self.distance <= 25.0 {
+            // Mode Troisième Personne (TPS) : Spring-Arm avec détection de collision
+            // On teste des points le long du rayon allant de la tête vers la caméra arrière
+            let max_d = self.distance;
+            let mut safe_d = max_d;
+            let num_samples = 14;
+
+            for i in 1..=num_samples {
+                let frac = (i as f32) / (num_samples as f32);
+                let test_d = max_d * frac;
+                let test_pos = head - look_dir * test_d;
+                let test_r = test_pos.length();
+                let ground_r = self.ground_radius_at(test_pos, generator);
+
+                if test_r < ground_r + margin {
+                    // Collision avec le relief : raccourcissement immédiat du bras de caméra
+                    let prev_frac = ((i - 1) as f32) / (num_samples as f32);
+                    safe_d = (max_d * prev_frac - margin * 0.5).max(0.0);
+                    break;
+                }
+            }
+
+            self.effective_distance = safe_d;
+            if self.effective_distance <= 0.05 {
+                // Adossé à un mur ou relief : bascule fluide et transparente en FPS
+                self.effective_eye = head;
+            } else {
+                let mut eye = head - look_dir * self.effective_distance;
+                // Double sécurité : clamp strict au-dessus du relief sous l'œil
+                let eye_ground_r = self.ground_radius_at(eye, generator);
+                let eye_len = eye.length();
+                if eye_len < eye_ground_r + margin {
+                    eye = eye.normalize() * (eye_ground_r + margin);
+                }
+                self.effective_eye = eye;
+            }
+        } else {
+            // Mode Satellite / Orbite globale
+            let t_orbit = ((self.distance - 25.0) / 45.0).clamp(0.0, 1.0);
+            let target = head.lerp(Vec3::ZERO, t_orbit);
+
+            let orbit_dir = self.orbit_direction();
+            let orbit_eye = target + orbit_dir * self.distance;
+            let tps_eye = head - look_dir * self.distance;
+
+            let mut eye = tps_eye.lerp(orbit_eye, t_orbit);
+
+            // Garantie absolue d'altitude au-dessus du relief
+            let ground_r = self.ground_radius_at(eye, generator);
+            let eye_len = eye.length();
+            if eye_len < ground_r + margin {
+                eye = eye.normalize() * (ground_r + margin);
+            }
+
+            self.effective_distance = self.distance;
+            self.effective_eye = eye;
+        }
+    }
+
     /// Mise à jour physique du joueur et de la caméra (déplacement ZQSD, gravité sphérique, détection de relief)
     pub fn update(&mut self, dt: f32, generator: &PlanetWorldGenerator) {
         if self.auto_rotate && self.view_mode() == CameraViewMode::SatelliteOrbit {
@@ -292,13 +378,7 @@ impl OrbitCamera {
 
         // 2. Gravité sphérique et hauteur du relief sous les pieds
         let new_up = self.player_pos.normalize();
-        let dir_dvec = DVec3::new(new_up.x as f64, new_up.y as f64, new_up.z as f64);
-        let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir_dvec);
-        let elevation = generator.sample_elevation(dir_dvec, lat, lon);
-        let sea = herocraft_world::generator::SEA_LEVEL_BLOCKS;
-        let eff_elev = elevation.max(sea);
-        let altitude_scale = (self.base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0)) as f32;
-        let ground_radius = self.base_radius + (eff_elev as f32) * altitude_scale;
+        let ground_radius = self.ground_radius_at(new_up, generator);
 
         let mut current_radius = self.player_pos.length();
 
@@ -339,51 +419,34 @@ impl OrbitCamera {
         if self.view_mode() != CameraViewMode::SatelliteOrbit {
             self.sync_orbit_to_ground();
         }
+
+        // Calcul anti-collision garanti au-dessus du relief
+        self.update_camera_bounds(generator);
     }
 
-    /// Position 3D de l'œil de la caméra dans l'espace monde
+    /// Position 3D de l'œil de la caméra dans l'espace monde (garantie strictement au-dessus du sol)
     pub fn eye_position(&self) -> Vec3 {
-        let (up, _, _, look_dir) = self.look_vectors();
-        let eye_height = 0.065; // ~1.7 blocs au-dessus des pieds
-        let head = self.player_pos + up * eye_height;
-
-        if self.distance <= 0.05 {
-            // Mode Première Personne (FPS)
-            head
-        } else if self.distance <= 25.0 {
-            // Mode Troisième Personne (TPS)
-            head - look_dir * self.distance
-        } else {
-            // Mode Satellite / Orbite
-            let t_orbit = ((self.distance - 25.0) / 45.0).clamp(0.0, 1.0);
-            let target = head.lerp(Vec3::ZERO, t_orbit);
-
-            let orbit_dir = self.orbit_direction();
-            let orbit_eye = target + orbit_dir * self.distance;
-            let tps_eye = head - look_dir * self.distance;
-
-            tps_eye.lerp(orbit_eye, t_orbit)
-        }
+        self.effective_eye
     }
 
     /// Matrice View-Projection avec FOV adaptatif selon le mode (FPS immersif -> Satellite téléobjectif)
     pub fn build_view_projection_matrix(&self) -> Mat4 {
-        let eye = self.eye_position();
+        let eye = self.effective_eye;
         let (up, _, _, look_dir) = self.look_vectors();
         let eye_height = 0.065;
         let head = self.player_pos + up * eye_height;
 
-        let (target, cam_up, fov, z_near) = if self.distance <= 0.05 {
+        let (target, cam_up, fov, z_near) = if self.effective_distance <= 0.05 {
             // FPS : regard orienté selon le pitch/yaw du joueur
             (eye + look_dir, up, 70.0_f32.to_radians(), 0.01_f32)
-        } else if self.distance <= 25.0 {
+        } else if self.effective_distance <= 25.0 {
             // TPS : regard centré sur la tête du joueur
-            let t_fov = (self.distance / 25.0).clamp(0.0, 1.0);
+            let t_fov = (self.effective_distance / 25.0).clamp(0.0, 1.0);
             let fov = (70.0 * (1.0 - t_fov) + 38.0 * t_fov).to_radians();
             (head, up, fov, 0.05_f32)
         } else {
             // Satellite / Orbite : transition douce de la cible vers le centre du monde (0,0,0)
-            let t_orbit = ((self.distance - 25.0) / 45.0).clamp(0.0, 1.0);
+            let t_orbit = ((self.effective_distance - 25.0) / 45.0).clamp(0.0, 1.0);
             let target = head.lerp(Vec3::ZERO, t_orbit);
             let cam_up = up.lerp(Vec3::Y, t_orbit).normalize();
             let fov = (38.0 * (1.0 - t_orbit) + 22.0 * t_orbit).to_radians();
@@ -398,6 +461,7 @@ impl OrbitCamera {
     /// Réinitialise la caméra en vue satellite
     pub fn reset(&mut self) {
         self.distance = 165.0;
+        self.effective_distance = 165.0;
         self.orbit_yaw = 0.5;
         self.orbit_pitch = 0.35;
     }
@@ -410,22 +474,22 @@ mod tests {
     #[test]
     fn test_view_mode_thresholds() {
         let mut cam = OrbitCamera::default();
-        cam.distance = 0.0;
+        cam.effective_distance = 0.0;
         assert_eq!(cam.view_mode(), CameraViewMode::FirstPerson);
 
-        cam.distance = 0.04;
+        cam.effective_distance = 0.04;
         assert_eq!(cam.view_mode(), CameraViewMode::FirstPerson);
 
-        cam.distance = 0.1;
+        cam.effective_distance = 0.1;
         assert_eq!(cam.view_mode(), CameraViewMode::ThirdPerson);
 
-        cam.distance = 25.0;
+        cam.effective_distance = 25.0;
         assert_eq!(cam.view_mode(), CameraViewMode::ThirdPerson);
 
-        cam.distance = 25.1;
+        cam.effective_distance = 25.1;
         assert_eq!(cam.view_mode(), CameraViewMode::SatelliteOrbit);
 
-        cam.distance = 165.0;
+        cam.effective_distance = 165.0;
         assert_eq!(cam.view_mode(), CameraViewMode::SatelliteOrbit);
     }
 
@@ -448,12 +512,45 @@ mod tests {
         let mut cam = OrbitCamera::default();
         for &dist in &[0.0, 0.05, 1.0, 10.0, 25.0, 50.0, 165.0] {
             cam.distance = dist;
+            cam.effective_distance = dist;
+            cam.effective_eye = if dist <= 0.05 {
+                cam.player_pos + Vec3::Y * 0.065
+            } else {
+                cam.player_pos + Vec3::Y * 0.065 + Vec3::Z * dist
+            };
             let mat = cam.build_view_projection_matrix();
             for col in 0..4 {
                 for row in 0..4 {
                     assert!(!mat.col(col)[row].is_nan(), "NaN at distance {}", dist);
                     assert!(!mat.col(col)[row].is_infinite(), "Inf at distance {}", dist);
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn test_camera_never_penetrates_ground() {
+        let desc = herocraft_world::PlanetDescriptor {
+            seed: 2026,
+            ..Default::default()
+        };
+        let gen = PlanetWorldGenerator::new(desc);
+        let mut cam = OrbitCamera::new(165.0, 25.0, &gen);
+
+        // Test à différentes distances (FPS, TPS court, TPS long, Transition, Satellite)
+        // et sous différents angles de tangage (regard en l'air, vers le sol, etc.)
+        for &dist in &[0.0, 0.5, 2.0, 5.0, 15.0, 25.0, 45.0, 165.0] {
+            for &pitch in &[-1.4, -0.7, 0.0, 0.7, 1.4] {
+                cam.distance = dist;
+                cam.player_pitch = pitch;
+                cam.update_camera_bounds(&gen);
+
+                let ground_r = cam.ground_radius_at(cam.effective_eye, &gen);
+                assert!(
+                    cam.effective_eye.length() >= ground_r + 0.02,
+                    "Camera went underground! Eye radius {}, ground radius {} at dist {}, pitch {}",
+                    cam.effective_eye.length(), ground_r, dist, pitch
+                );
             }
         }
     }
