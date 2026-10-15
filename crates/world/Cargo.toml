@@ -1,0 +1,13 @@
+[package]
+name = "herocraft_world"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+herocraft_common = { path = "../common" }
+herocraft_voxel_engine = { path = "../voxel_engine" }
+glam = { workspace = true }
+serde = { workspace = true }
+log = { workspace = true }
+rand = { workspace = true }

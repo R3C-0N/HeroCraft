@@ -1,0 +1,16 @@
+# Rust target directory
+/target/
+
+# IDE & Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
