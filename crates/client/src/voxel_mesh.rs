@@ -278,20 +278,36 @@ impl VoxelMeshBuilder {
         };
 
         let get_color = |vx: f64, vz: f64, block: BlockId, is_top: bool| -> [f32; 4] {
+            let u = base_u + vx * voxel_span_uv;
+            let v = base_v + vz * voxel_span_uv;
+            let dir = face.uv_to_sphere_direction(u, v);
+
+            let base_color = if block == BlockId::WATER {
+                let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
+                let raw_elevation = generator.sample_elevation(dir, lat, lon);
+                let biome = generator.determine_biome(lat, raw_elevation, dir);
+                let mut c = PlanetMesh::relief_biome_color(biome, raw_elevation);
+                c[3] = 0.90; // Translucidité de l'eau
+                c
+            } else if block == BlockId::STONE {
+                let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
+                let raw_elevation = generator.sample_elevation(dir, lat, lon);
+                if raw_elevation > 15.5 {
+                    PlanetMesh::relief_biome_color(herocraft_world::BiomeType::Mountains, raw_elevation)
+                } else {
+                    Self::block_color(block, is_top)
+                }
+            } else {
+                Self::block_color(block, is_top)
+            };
+
             match filter {
-                herocraft_world::VisualizationFilter::Standard => Self::block_color(block, is_top),
+                herocraft_world::VisualizationFilter::Standard => base_color,
                 herocraft_world::VisualizationFilter::Tectonics => {
-                    let u = base_u + vx * voxel_span_uv;
-                    let v = base_v + vz * voxel_span_uv;
-                    let dir = face.uv_to_sphere_direction(u, v);
-                    let base_color = Self::block_color(block, is_top);
                     let sample = generator.tectonics.sample(dir);
                     PlanetMesh::blend_tectonic_color(base_color, &sample)
                 }
                 herocraft_world::VisualizationFilter::OceanCurrents => {
-                    let u = base_u + vx * voxel_span_uv;
-                    let v = base_v + vz * voxel_span_uv;
-                    let dir = face.uv_to_sphere_direction(u, v);
                     let continental = generator.sample_continental_value(dir);
                     generator.ocean_currents.sample(dir, block == BlockId::WATER, continental).color
                 }

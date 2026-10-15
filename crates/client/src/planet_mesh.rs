@@ -83,9 +83,9 @@ impl PlanetMesh {
                     let is_water = biome.is_water();
 
                     let color = match filter {
-                        herocraft_world::VisualizationFilter::Standard => Self::biome_color(biome),
+                        herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, raw_elevation),
                         herocraft_world::VisualizationFilter::Tectonics => {
-                            let base_color = Self::biome_color(biome);
+                            let base_color = Self::relief_biome_color(biome, raw_elevation);
                             let sample = generator.tectonics.sample(sphere_dir);
                             Self::blend_tectonic_color(base_color, &sample)
                         }
@@ -183,7 +183,112 @@ impl PlanetMesh {
         PlanetMesh { vertices, indices }
     }
 
-    /// Palette de couleurs selon le biome
+    /// Palette de couleurs enrichie avec gradation altimétrique et bathymétrique
+    /// Fait ressortir les fosses océaniques (bleu nuit abyssal très contrasté) et les massifs/super-chaînes de montagnes (ardoise sombre -> granite -> cimes éclatantes)
+    pub fn relief_biome_color(biome: BiomeType, raw_elevation: f64) -> [f32; 4] {
+        if biome.is_water() {
+            // Dégradé bathymétrique sous-marin :
+            // raw_elevation va de ~3.0 (fosses océaniques et subductions profondes) à 12.0 (niveau de la mer)
+            let depth = (SEA_LEVEL_BLOCKS - raw_elevation).max(0.0);
+            let t = (depth / 8.5).clamp(0.0, 1.0) as f32;
+
+            // 3 paliers d'interpolation :
+            // t = 0.0 : Lagons et mers côtières peu profondes (azur / cyan lumineux)
+            // t = 0.40 : Bassins océaniques moyens (bleu roi profond)
+            // t = 1.0 : Fosses abyssales et zones de subduction (bleu nuit / noir abyssal très sombre et contrasté)
+            let c_shallow = [0.12, 0.65, 0.88, 1.0];
+            let c_mid = [0.04, 0.22, 0.62, 1.0];
+            let c_trench = [0.006, 0.025, 0.16, 1.0];
+
+            if t < 0.40 {
+                let k = t / 0.40;
+                [
+                    c_shallow[0] * (1.0 - k) + c_mid[0] * k,
+                    c_shallow[1] * (1.0 - k) + c_mid[1] * k,
+                    c_shallow[2] * (1.0 - k) + c_mid[2] * k,
+                    1.0,
+                ]
+            } else {
+                let k = (t - 0.40) / 0.60;
+                [
+                    c_mid[0] * (1.0 - k) + c_trench[0] * k,
+                    c_mid[1] * (1.0 - k) + c_trench[1] * k,
+                    c_mid[2] * (1.0 - k) + c_trench[2] * k,
+                    1.0,
+                ]
+            }
+        } else {
+            match biome {
+                BiomeType::Beach => [0.88, 0.82, 0.56, 1.0],
+                BiomeType::Desert => [0.90, 0.72, 0.38, 1.0],
+                BiomeType::Forest => {
+                    // Piémont forestier : fonce légèrement avec l'altitude en approchant des montagnes
+                    if raw_elevation > 14.5 {
+                        let k = ((raw_elevation - 14.5) / 2.0).clamp(0.0, 1.0) as f32;
+                        let base = [0.14, 0.44, 0.16, 1.0];
+                        let rock = [0.25, 0.35, 0.22, 1.0];
+                        [
+                            base[0] * (1.0 - k) + rock[0] * k,
+                            base[1] * (1.0 - k) + rock[1] * k,
+                            base[2] * (1.0 - k) + rock[2] * k,
+                            1.0,
+                        ]
+                    } else {
+                        [0.14, 0.44, 0.16, 1.0]
+                    }
+                }
+                BiomeType::Plains => {
+                    // Piémont des plaines : transition douce vers la roche sombre
+                    if raw_elevation > 14.5 {
+                        let k = ((raw_elevation - 14.5) / 2.0).clamp(0.0, 1.0) as f32;
+                        let base = [0.28, 0.64, 0.22, 1.0];
+                        let rock = [0.35, 0.42, 0.26, 1.0];
+                        [
+                            base[0] * (1.0 - k) + rock[0] * k,
+                            base[1] * (1.0 - k) + rock[1] * k,
+                            base[2] * (1.0 - k) + rock[2] * k,
+                            1.0,
+                        ]
+                    } else {
+                        [0.28, 0.64, 0.22, 1.0]
+                    }
+                }
+                BiomeType::Mountains => {
+                    // Massifs montagneux : base rocheuse sombre (ardoise/basalte) s'éclaircissant
+                    // vers le granite clair et les pré-neiges en altitude (15.5 -> 21.0)
+                    let t = ((raw_elevation - 15.5) / 5.5).clamp(0.0, 1.0) as f32;
+                    let c_base = [0.30, 0.28, 0.28, 1.0];  // Ardoise / roche sombre très contrastée
+                    let c_crest = [0.60, 0.58, 0.58, 1.0]; // Granite clair de crête
+                    [
+                        c_base[0] * (1.0 - t) + c_crest[0] * t,
+                        c_base[1] * (1.0 - t) + c_crest[1] * t,
+                        c_base[2] * (1.0 - t) + c_crest[2] * t,
+                        1.0,
+                    ]
+                }
+                BiomeType::SnowPeaks => {
+                    // Calotte polaire affleurante au niveau de la mer (~12.1) vs Hauts sommets
+                    if raw_elevation < SEA_LEVEL_BLOCKS + 1.0 {
+                        [0.92, 0.96, 0.99, 1.0] // Banquise polaire immaculée
+                    } else {
+                        // Super-chaînes et hauts sommets (20.0 -> 26.0+)
+                        let t = ((raw_elevation - 20.0) / 6.0).clamp(0.0, 1.0) as f32;
+                        let c_snowline = [0.88, 0.92, 0.98, 1.0]; // Séracs / ligne des neiges bleutée
+                        let c_summit = [0.99, 1.00, 1.00, 1.0];   // Sommet éclatant de pureté
+                        [
+                            c_snowline[0] * (1.0 - t) + c_summit[0] * t,
+                            c_snowline[1] * (1.0 - t) + c_summit[1] * t,
+                            c_snowline[2] * (1.0 - t) + c_summit[2] * t,
+                            1.0,
+                        ]
+                    }
+                }
+                _ => Self::biome_color(biome),
+            }
+        }
+    }
+
+    /// Palette de couleurs de base selon le biome (utilisée comme repli)
     pub fn biome_color(biome: BiomeType) -> [f32; 4] {
         match biome {
             // Zones maritimes (Océans et Mers)
@@ -250,9 +355,9 @@ impl PlanetMesh {
                 let is_water = biome.is_water();
 
                 let color = match filter {
-                    herocraft_world::VisualizationFilter::Standard => Self::biome_color(biome),
+                    herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, raw_elevation),
                     herocraft_world::VisualizationFilter::Tectonics => {
-                        let base_color = Self::biome_color(biome);
+                        let base_color = Self::relief_biome_color(biome, raw_elevation);
                         let sample = generator.tectonics.sample(sphere_dir);
                         Self::blend_tectonic_color(base_color, &sample)
                     }
@@ -342,5 +447,43 @@ impl PlanetMesh {
         }
 
         PlanetMesh { vertices, indices }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_relief_biome_color_trench_vs_shallow_water() {
+        let shallow = PlanetMesh::relief_biome_color(BiomeType::Sea, 11.8);
+        let mid_ocean = PlanetMesh::relief_biome_color(BiomeType::Ocean, 8.5);
+        let trench = PlanetMesh::relief_biome_color(BiomeType::DeepOcean, 3.5);
+
+        // La fosse abyssale doit être nettement plus sombre que le lagon côtier
+        let brightness_shallow = shallow[0] * 0.299 + shallow[1] * 0.587 + shallow[2] * 0.114;
+        let brightness_trench = trench[0] * 0.299 + trench[1] * 0.587 + trench[2] * 0.114;
+        assert!(
+            brightness_trench < brightness_shallow * 0.35,
+            "La fosse abyssale ({:?}) doit être profondément plus sombre que l'eau côtière ({:?})",
+            trench,
+            shallow
+        );
+
+        // Décroissance continue de clarté
+        assert!(shallow[1] > mid_ocean[1]);
+        assert!(mid_ocean[2] > trench[2]);
+    }
+
+    #[test]
+    fn test_relief_biome_color_mountains_progression() {
+        let foothills = PlanetMesh::relief_biome_color(BiomeType::Mountains, 15.6);
+        let high_ridge = PlanetMesh::relief_biome_color(BiomeType::Mountains, 20.8);
+        let snow_summit = PlanetMesh::relief_biome_color(BiomeType::SnowPeaks, 26.0);
+
+        // La base de la montagne est sombre (ardoise), la crête est en granite clair, le sommet est blanc éclatant
+        assert!(foothills[0] < high_ridge[0]);
+        assert!(high_ridge[0] < snow_summit[0]);
+        assert!(snow_summit[0] > 0.95 && snow_summit[1] > 0.95 && snow_summit[2] > 0.95);
     }
 }

@@ -201,7 +201,7 @@ impl PlanetWorldGenerator {
             } else {
                 // Fond marin sous le niveau de la mer (avec fosses ou dorsales médio-océaniques)
                 let depth_ratio = (sea_threshold - continental) / (1.0 + sea_threshold);
-                (SEA_LEVEL_BLOCKS - depth_ratio * 7.0 + tectonic_sample.elevation_offset * 0.15)
+                (SEA_LEVEL_BLOCKS - depth_ratio * 7.0 + tectonic_sample.elevation_offset * 0.40)
                     .clamp(3.0, SEA_LEVEL_BLOCKS - 0.2)
             }
         } else {
@@ -253,7 +253,7 @@ impl PlanetWorldGenerator {
         let sea_threshold = 0.01;
 
         // 2. Biomes maritimes (Océans et Mers)
-        if continental < -0.20 {
+        if continental < -0.20 || elevation < 6.5 {
             BiomeType::DeepOcean // Plaines et fosses océaniques profondes
         } else if continental < -0.05 {
             BiomeType::Ocean // Grands océans ouverts
@@ -272,7 +272,7 @@ impl PlanetWorldGenerator {
 
             if temp < 0.22 || elevation > 21.0 {
                 BiomeType::SnowPeaks // Sommets de haute montagne
-            } else if elevation > 16.0 {
+            } else if elevation > 15.5 {
                 BiomeType::Mountains // Crêtes rocheuses
             } else if temp > 0.65 && moisture < 0.38 {
                 BiomeType::Desert // Déserts chauds
