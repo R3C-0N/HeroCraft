@@ -96,17 +96,17 @@ impl PlanetQuadTree {
         let max_level = 5;
 
         // Seuils de distance caméra-nœud pour déclencher la subdivision :
-        // Level 0 (face globale ~40) : split si distance < 85.0
-        // Level 1 (quadrant ~20)     : split si distance < 50.0
-        // Level 2 (région ~10)       : split si distance < 30.0
-        // Level 3 (zone ~5.0)        : split si distance < 14.0
-        // Level 4 (local ~2.5)       : split si distance < 2.8 (passage aux voxels 3D Level 5)
+        // Level 0 (face globale) : split si distance < 95.0
+        // Level 1 (quadrant)     : split si distance < 60.0
+        // Level 2 (région)       : split si distance < 38.0
+        // Level 3 (zone)         : split si distance < 20.0
+        // Level 4 (local)        : split si distance < 6.5 (passage aux voxels 3D Level 5)
         let split_distances = vec![
-            85.0,
-            50.0,
-            30.0,
-            14.0,
-            2.8,
+            95.0,
+            60.0,
+            38.0,
+            20.0,
+            6.5,
         ];
 
         Self {

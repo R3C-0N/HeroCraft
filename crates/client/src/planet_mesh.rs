@@ -188,9 +188,9 @@ impl PlanetMesh {
     pub fn relief_biome_color(biome: BiomeType, raw_elevation: f64) -> [f32; 4] {
         if biome.is_water() {
             // Dégradé bathymétrique sous-marin :
-            // raw_elevation va de ~3.0 (fosses océaniques et subductions profondes) à 12.0 (niveau de la mer)
+            // raw_elevation va de ~15.0 (fosses océaniques et subductions profondes) à 100.0 (niveau de la mer)
             let depth = (SEA_LEVEL_BLOCKS - raw_elevation).max(0.0);
-            let t = (depth / 8.5).clamp(0.0, 1.0) as f32;
+            let t = (depth / 80.0).clamp(0.0, 1.0) as f32;
 
             // 3 paliers d'interpolation :
             // t = 0.0 : Lagons et mers côtières peu profondes (azur / cyan lumineux)
@@ -223,8 +223,8 @@ impl PlanetMesh {
                 BiomeType::Desert => [0.90, 0.72, 0.38, 1.0],
                 BiomeType::Forest => {
                     // Piémont forestier : fonce légèrement avec l'altitude en approchant des montagnes
-                    if raw_elevation > 14.5 {
-                        let k = ((raw_elevation - 14.5) / 2.0).clamp(0.0, 1.0) as f32;
+                    if raw_elevation > 140.0 {
+                        let k = ((raw_elevation - 140.0) / 30.0).clamp(0.0, 1.0) as f32;
                         let base = [0.14, 0.44, 0.16, 1.0];
                         let rock = [0.25, 0.35, 0.22, 1.0];
                         [
@@ -239,8 +239,8 @@ impl PlanetMesh {
                 }
                 BiomeType::Plains => {
                     // Piémont des plaines : transition douce vers la roche sombre
-                    if raw_elevation > 14.5 {
-                        let k = ((raw_elevation - 14.5) / 2.0).clamp(0.0, 1.0) as f32;
+                    if raw_elevation > 140.0 {
+                        let k = ((raw_elevation - 140.0) / 30.0).clamp(0.0, 1.0) as f32;
                         let base = [0.28, 0.64, 0.22, 1.0];
                         let rock = [0.35, 0.42, 0.26, 1.0];
                         [
@@ -255,8 +255,8 @@ impl PlanetMesh {
                 }
                 BiomeType::Mountains => {
                     // Massifs montagneux : base rocheuse sombre (ardoise/basalte) s'éclaircissant
-                    // vers le granite clair et les pré-neiges en altitude (15.5 -> 21.0)
-                    let t = ((raw_elevation - 15.5) / 5.5).clamp(0.0, 1.0) as f32;
+                    // vers le granite clair et les pré-neiges en altitude (180.0 -> 270.0)
+                    let t = ((raw_elevation - 180.0) / 90.0).clamp(0.0, 1.0) as f32;
                     let c_base = [0.30, 0.28, 0.28, 1.0];  // Ardoise / roche sombre très contrastée
                     let c_crest = [0.60, 0.58, 0.58, 1.0]; // Granite clair de crête
                     [
@@ -267,12 +267,12 @@ impl PlanetMesh {
                     ]
                 }
                 BiomeType::SnowPeaks => {
-                    // Calotte polaire affleurante au niveau de la mer (~12.1) vs Hauts sommets
-                    if raw_elevation < SEA_LEVEL_BLOCKS + 1.0 {
+                    // Calotte polaire affleurante au niveau de la mer (~101) vs Hauts sommets
+                    if raw_elevation < SEA_LEVEL_BLOCKS + 5.0 {
                         [0.92, 0.96, 0.99, 1.0] // Banquise polaire immaculée
                     } else {
-                        // Super-chaînes et hauts sommets (20.0 -> 26.0+)
-                        let t = ((raw_elevation - 20.0) / 6.0).clamp(0.0, 1.0) as f32;
+                        // Super-chaînes et hauts sommets (260.0 -> 340.0+)
+                        let t = ((raw_elevation - 260.0) / 80.0).clamp(0.0, 1.0) as f32;
                         let c_snowline = [0.88, 0.92, 0.98, 1.0]; // Séracs / ligne des neiges bleutée
                         let c_summit = [0.99, 1.00, 1.00, 1.0];   // Sommet éclatant de pureté
                         [
@@ -456,9 +456,9 @@ mod tests {
 
     #[test]
     fn test_relief_biome_color_trench_vs_shallow_water() {
-        let shallow = PlanetMesh::relief_biome_color(BiomeType::Sea, 11.8);
-        let mid_ocean = PlanetMesh::relief_biome_color(BiomeType::Ocean, 8.5);
-        let trench = PlanetMesh::relief_biome_color(BiomeType::DeepOcean, 3.5);
+        let shallow = PlanetMesh::relief_biome_color(BiomeType::Sea, 98.0);
+        let mid_ocean = PlanetMesh::relief_biome_color(BiomeType::Ocean, 65.0);
+        let trench = PlanetMesh::relief_biome_color(BiomeType::DeepOcean, 20.0);
 
         // La fosse abyssale doit être nettement plus sombre que le lagon côtier
         let brightness_shallow = shallow[0] * 0.299 + shallow[1] * 0.587 + shallow[2] * 0.114;
@@ -477,9 +477,9 @@ mod tests {
 
     #[test]
     fn test_relief_biome_color_mountains_progression() {
-        let foothills = PlanetMesh::relief_biome_color(BiomeType::Mountains, 15.6);
-        let high_ridge = PlanetMesh::relief_biome_color(BiomeType::Mountains, 20.8);
-        let snow_summit = PlanetMesh::relief_biome_color(BiomeType::SnowPeaks, 26.0);
+        let foothills = PlanetMesh::relief_biome_color(BiomeType::Mountains, 185.0);
+        let high_ridge = PlanetMesh::relief_biome_color(BiomeType::Mountains, 265.0);
+        let snow_summit = PlanetMesh::relief_biome_color(BiomeType::SnowPeaks, 345.0);
 
         // La base de la montagne est sombre (ardoise), la crête est en granite clair, le sommet est blanc éclatant
         assert!(foothills[0] < high_ridge[0]);

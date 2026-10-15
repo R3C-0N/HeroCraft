@@ -14,8 +14,8 @@ pub enum VisualizationFilter {
     OceanCurrents,
 }
 
-/// Niveau de la mer de référence en blocs (dans un chunk vertical de 32 blocs)
-pub const SEA_LEVEL_BLOCKS: f64 = 10.0;
+/// Niveau de la mer de référence en blocs
+pub const SEA_LEVEL_BLOCKS: f64 = 100.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BiomeType {
@@ -73,7 +73,9 @@ impl PlanetWorldGenerator {
         let base_v = -1.0 + (coord.y as f64) * chunk_span_uv;
         let voxel_span_uv = chunk_span_uv / (CHUNK_SIZE as f64);
 
-        let sea_level_y = (SEA_LEVEL_BLOCKS - (coord.altitude_layer as f64 * CHUNK_SIZE as f64))
+        let layer_base_y = coord.altitude_layer as f64 * CHUNK_SIZE as f64;
+
+        let sea_level_y = (SEA_LEVEL_BLOCKS - layer_base_y)
             .clamp(0.0, CHUNK_SIZE as f64) as u8;
 
         for z in 0..CHUNK_SIZE as u8 {
@@ -87,12 +89,13 @@ impl PlanetWorldGenerator {
                 let elevation = self.sample_elevation(sphere_dir, lat, lon);
                 let biome = self.determine_biome(lat, elevation, sphere_dir);
 
-                let ground_y = ((elevation - (coord.altitude_layer as f64 * CHUNK_SIZE as f64))
+                let ground_y = ((elevation - layer_base_y)
                     .clamp(0.0, CHUNK_SIZE as f64)) as u8;
 
                 // 1. Remplissage du sol solide
                 for y in 0..ground_y {
-                    let block = if y + 1 == ground_y {
+                    let global_y = layer_base_y + y as f64;
+                    let block = if global_y + 1.0 >= elevation {
                         match biome {
                             BiomeType::DeepOcean | BiomeType::Ocean | BiomeType::Sea => BlockId::SAND,
                             BiomeType::Beach | BiomeType::Desert => BlockId::SAND,
@@ -100,7 +103,7 @@ impl PlanetWorldGenerator {
                             BiomeType::Mountains => BlockId::STONE,
                             _ => BlockId::GRASS,
                         }
-                    } else if y + 4 >= ground_y {
+                    } else if global_y + 4.0 >= elevation {
                         BlockId::DIRT
                     } else {
                         BlockId::STONE
@@ -196,13 +199,13 @@ impl PlanetWorldGenerator {
         if continental < sea_threshold {
             // Zone maritime
             if is_polar {
-                // Banquise affleurante parfaitement alignée sur la sphère océanique (évite l'effet de plateau en profil)
-                SEA_LEVEL_BLOCKS + 0.1
+                // Banquise affleurante parfaitement alignée sur la sphère océanique
+                SEA_LEVEL_BLOCKS + 1.0
             } else {
                 // Fond marin sous le niveau de la mer (avec fosses ou dorsales médio-océaniques)
                 let depth_ratio = (sea_threshold - continental) / (1.0 + sea_threshold);
-                (SEA_LEVEL_BLOCKS - depth_ratio * 7.0 + tectonic_sample.elevation_offset * 0.40)
-                    .clamp(3.0, SEA_LEVEL_BLOCKS - 0.2)
+                (SEA_LEVEL_BLOCKS - depth_ratio * 65.0 + tectonic_sample.elevation_offset * 3.5)
+                    .clamp(15.0, SEA_LEVEL_BLOCKS - 2.0)
             }
         } else {
             // Terre émergée : continents, collines, montagnes intérieures ET super-chaînes tectoniques
@@ -210,7 +213,7 @@ impl PlanetWorldGenerator {
 
             // Dôme glaciaire naturel sur la terre polaire
             let polar_dome = if is_polar {
-                (lat.abs() - polar_boundary).max(0.0) * 4.0
+                (lat.abs() - polar_boundary).max(0.0) * 40.0
             } else {
                 0.0
             };
@@ -218,22 +221,22 @@ impl PlanetWorldGenerator {
             // 1. Montagnes ordinaires (pouvant apparaître n'importe où sur les terres émergées)
             let mountain_raw = fbm_3d(dir * 4.5, 4, 2.0, 0.50, self.planet.seed.wrapping_add(10101));
             let ridge = 1.0 - mountain_raw.abs();
-            let standard_mountains = ridge * ridge * 7.5 * land_ratio.min(1.0);
+            let standard_mountains = ridge * ridge * 75.0 * land_ratio.min(1.0);
 
             // 2. Collines douces
-            let hills = fbm_3d(dir * 10.0, 3, 2.0, 0.50, self.planet.seed.wrapping_add(20202)) * 2.0;
+            let hills = fbm_3d(dir * 10.0, 3, 2.0, 0.50, self.planet.seed.wrapping_add(20202)) * 18.0;
 
             // 3. SUPER-CHAÎNES TECTONIQUES : Orogenèse colossale le long des collisions de plaques (Himalaya, Andes)
             let super_chain = if tectonic_sample.orogeny_strength > 0.02 {
                 let super_noise = fbm_3d(dir * 8.5, 4, 2.0, 0.50, self.planet.seed.wrapping_add(88888));
                 let super_ridge = (1.0 - super_noise.abs()).powi(2);
-                super_ridge * 16.0 * tectonic_sample.orogeny_strength.min(1.5) * land_ratio.min(1.0)
+                super_ridge * 135.0 * tectonic_sample.orogeny_strength.min(1.5) * land_ratio.min(1.0)
             } else {
                 0.0
             };
 
-            (SEA_LEVEL_BLOCKS + land_ratio * 4.5 + standard_mountains + hills + polar_dome + super_chain)
-                .max(SEA_LEVEL_BLOCKS + 0.2)
+            (SEA_LEVEL_BLOCKS + land_ratio * 40.0 + standard_mountains + hills + polar_dome + super_chain)
+                .clamp(SEA_LEVEL_BLOCKS + 1.0, 350.0)
         }
     }
 
@@ -253,7 +256,7 @@ impl PlanetWorldGenerator {
         let sea_threshold = 0.01;
 
         // 2. Biomes maritimes (Océans et Mers)
-        if continental < -0.20 || elevation < 6.5 {
+        if continental < -0.20 || elevation < 50.0 {
             BiomeType::DeepOcean // Plaines et fosses océaniques profondes
         } else if continental < -0.05 {
             BiomeType::Ocean // Grands océans ouverts
@@ -264,15 +267,15 @@ impl PlanetWorldGenerator {
         } else {
             // 3. Biomes continentaux
             let solar_temp = base_solar_temperature(lat);
-            let altitude_cooling = (elevation - SEA_LEVEL_BLOCKS) / 26.0;
+            let altitude_cooling = (elevation - SEA_LEVEL_BLOCKS) / 250.0;
             let temp = (solar_temp - altitude_cooling).clamp(0.0, 1.0);
 
             // Humidité procédurale
             let moisture = fbm_3d(dir * 2.2, 3, 2.0, 0.50, self.planet.seed.wrapping_add(77777)) * 0.5 + 0.5;
 
-            if temp < 0.22 || elevation > 21.0 {
+            if temp < 0.22 || elevation > 270.0 {
                 BiomeType::SnowPeaks // Sommets de haute montagne
-            } else if elevation > 15.5 {
+            } else if elevation > 180.0 {
                 BiomeType::Mountains // Crêtes rocheuses
             } else if temp > 0.65 && moisture < 0.38 {
                 BiomeType::Desert // Déserts chauds
@@ -363,11 +366,13 @@ mod tests {
     #[test]
     fn test_generate_chunk_has_blocks() {
         let generator = PlanetWorldGenerator::new(PlanetDescriptor::default());
-        let coord = PlanetChunkCoord::new(PlanetFace::PosX, 0, 0, 0);
-        let chunk = generator.generate_chunk(&coord);
+        let coord_base = PlanetChunkCoord::new(PlanetFace::PosX, 0, 0, 0);
+        let chunk_base = generator.generate_chunk(&coord_base);
+        assert!(!chunk_base.get_voxel(0, 0, 0).is_air());
 
-        assert!(!chunk.get_voxel(0, 0, 0).is_air());
-        assert!(chunk.get_voxel(0, 31, 0).is_air());
+        let coord_sky = PlanetChunkCoord::new(PlanetFace::PosX, 0, 0, 16);
+        let chunk_sky = generator.generate_chunk(&coord_sky);
+        assert!(chunk_sky.get_voxel(0, 31, 0).is_air());
     }
 
     #[test]
