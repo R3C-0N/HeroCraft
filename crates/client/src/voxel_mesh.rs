@@ -200,6 +200,7 @@ impl VoxelMeshBuilder {
         chunk_x: i32,
         chunk_y: i32,
         base_radius: f32,
+        filter: herocraft_world::VisualizationFilter,
     ) -> PlanetMesh {
         let mut vertices: Vec<PlanetVertex> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
@@ -276,6 +277,25 @@ impl VoxelMeshBuilder {
             Vec3::new(dir.x as f32, dir.y as f32, dir.z as f32) * r
         };
 
+        let get_color = |vx: f64, vz: f64, block: BlockId, is_top: bool| -> [f32; 4] {
+            match filter {
+                herocraft_world::VisualizationFilter::Standard => Self::block_color(block, is_top),
+                herocraft_world::VisualizationFilter::Tectonics => {
+                    let u = base_u + vx * voxel_span_uv;
+                    let v = base_v + vz * voxel_span_uv;
+                    let dir = face.uv_to_sphere_direction(u, v);
+                    generator.tectonics.sample(dir).debug_color
+                }
+                herocraft_world::VisualizationFilter::OceanCurrents => {
+                    let u = base_u + vx * voxel_span_uv;
+                    let v = base_v + vz * voxel_span_uv;
+                    let dir = face.uv_to_sphere_direction(u, v);
+                    let continental = generator.sample_continental_value(dir);
+                    generator.ocean_currents.sample(dir, block == BlockId::WATER, continental).color
+                }
+            }
+        };
+
         for gy in 0..CHUNK_SIZE as i32 {
             for gz in 0..32 {
                 for gx in 0..32 {
@@ -301,7 +321,7 @@ impl VoxelMeshBuilder {
                         let c1 = get_corner(fx, fy + 1.0, fz + 1.0);
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0);
                         let c3 = get_corner(fx + 1.0, fy + 1.0, fz);
-                        let color = Self::block_color(block, true);
+                        let color = get_color(fx + 0.5, fz + 0.5, block, true);
                         Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                     }
 
@@ -313,7 +333,7 @@ impl VoxelMeshBuilder {
                             let c1 = get_corner(fx + 1.0, fy, fz);
                             let c2 = get_corner(fx + 1.0, fy, fz + 1.0);
                             let c3 = get_corner(fx, fy, fz + 1.0);
-                            let color = Self::block_color(block, false);
+                            let color = get_color(fx + 0.5, fz + 0.5, block, false);
                             Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                         }
                     }
@@ -330,7 +350,7 @@ impl VoxelMeshBuilder {
                         let c1 = get_corner(fx, fy, fz + 1.0);
                         let c2 = get_corner(fx, fy + 1.0, fz + 1.0);
                         let c3 = get_corner(fx, fy + 1.0, fz);
-                        let color = Self::block_color(block, false);
+                        let color = get_color(fx + 0.5, fz + 0.5, block, false);
                         Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                     }
 
@@ -346,7 +366,7 @@ impl VoxelMeshBuilder {
                         let c1 = get_corner(fx + 1.0, fy, fz);
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz);
                         let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0);
-                        let color = Self::block_color(block, false);
+                        let color = get_color(fx + 0.5, fz + 0.5, block, false);
                         Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                     }
 
@@ -362,7 +382,7 @@ impl VoxelMeshBuilder {
                         let c1 = get_corner(fx + 1.0, fy, fz + 1.0);
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0);
                         let c3 = get_corner(fx, fy + 1.0, fz + 1.0);
-                        let color = Self::block_color(block, false);
+                        let color = get_color(fx + 0.5, fz + 0.5, block, false);
                         Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                     }
 
@@ -378,7 +398,7 @@ impl VoxelMeshBuilder {
                         let c1 = get_corner(fx, fy, fz);
                         let c2 = get_corner(fx, fy + 1.0, fz);
                         let c3 = get_corner(fx + 1.0, fy + 1.0, fz);
-                        let color = Self::block_color(block, false);
+                        let color = get_color(fx + 0.5, fz + 0.5, block, false);
                         Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                     }
                 }

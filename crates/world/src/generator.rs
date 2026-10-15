@@ -1,7 +1,18 @@
 use crate::cubed_sphere::{base_solar_temperature, unit_sphere_to_lat_lon, PlanetDescriptor};
+use crate::ocean_currents::OceanicCurrentSimulation;
+use crate::tectonics::TectonicSimulation;
 use glam::DVec3;
 use herocraft_common::{BlockId, PlanetChunkCoord};
 use herocraft_voxel_engine::{ChunkData, CHUNK_SIZE};
+
+/// Mode de filtre de visualisation pour la planète
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VisualizationFilter {
+    #[default]
+    Standard,
+    Tectonics,
+    OceanCurrents,
+}
 
 /// Niveau de la mer de référence en blocs (dans un chunk vertical de 32 blocs)
 pub const SEA_LEVEL_BLOCKS: f64 = 10.0;
@@ -36,11 +47,19 @@ impl BiomeType {
 
 pub struct PlanetWorldGenerator {
     pub planet: PlanetDescriptor,
+    pub tectonics: TectonicSimulation,
+    pub ocean_currents: OceanicCurrentSimulation,
 }
 
 impl PlanetWorldGenerator {
     pub fn new(planet: PlanetDescriptor) -> Self {
-        Self { planet }
+        let tectonics = TectonicSimulation::new(planet.seed, 10);
+        let ocean_currents = OceanicCurrentSimulation::new(planet.seed);
+        Self {
+            planet,
+            tectonics,
+            ocean_currents,
+        }
     }
 
     /// Génère un chunk voxel complet sur une face de la planète
@@ -152,6 +171,7 @@ impl PlanetWorldGenerator {
     pub fn sample_elevation(&self, dir: DVec3, lat: f64, _lon: f64) -> f64 {
         let continental = self.sample_continental_value(dir);
         let sea_threshold = 0.01;
+        let tectonic_sample = self.tectonics.sample(dir);
 
         // Calotte polaire resserrée (~73° de latitude) avec découpage fractal naturel
         let polar_noise = fbm_3d(dir * 3.2, 2, 2.0, 0.50, self.planet.seed.wrapping_add(3333)) * 0.08;
@@ -164,9 +184,10 @@ impl PlanetWorldGenerator {
                 // Banquise affleurante parfaitement alignée sur la sphère océanique (évite l'effet de plateau en profil)
                 SEA_LEVEL_BLOCKS + 0.1
             } else {
-                // Fond marin sous le niveau de la mer
+                // Fond marin sous le niveau de la mer (avec fosses ou dorsales médio-océaniques)
                 let depth_ratio = (sea_threshold - continental) / (1.0 + sea_threshold);
-                (SEA_LEVEL_BLOCKS - depth_ratio * 7.0).max(3.0)
+                (SEA_LEVEL_BLOCKS - depth_ratio * 7.0 + tectonic_sample.elevation_offset * 0.15)
+                    .clamp(3.0, SEA_LEVEL_BLOCKS - 0.2)
             }
         } else {
             // Terre émergée : continents, collines et chaînes de montagnes
@@ -187,7 +208,10 @@ impl PlanetWorldGenerator {
             // Collines douces
             let hills = fbm_3d(dir * 10.0, 3, 2.0, 0.50, self.planet.seed.wrapping_add(20202)) * 2.2;
 
-            (SEA_LEVEL_BLOCKS + land_ratio * 5.0 + mountain_height + hills + polar_dome).max(SEA_LEVEL_BLOCKS + 0.2)
+            // Relief tectonique : surrection de chaînes de montagnes aux frontières convergentes
+            let tectonic_boost = tectonic_sample.elevation_offset * 0.35 * land_ratio.min(1.0);
+
+            (SEA_LEVEL_BLOCKS + land_ratio * 5.0 + mountain_height + hills + polar_dome + tectonic_boost).max(SEA_LEVEL_BLOCKS + 0.2)
         }
     }
 

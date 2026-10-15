@@ -52,7 +52,12 @@ pub struct PlanetMesh {
 impl PlanetMesh {
     /// Construit le maillage complet de la planète Cubed-Sphere avec relief et biomes
     #[allow(dead_code)]
-    pub fn generate_planet(generator: &PlanetWorldGenerator, base_radius: f32, grid_resolution: usize) -> Self {
+    pub fn generate_planet(
+        generator: &PlanetWorldGenerator,
+        base_radius: f32,
+        grid_resolution: usize,
+        filter: herocraft_world::VisualizationFilter,
+    ) -> Self {
         let n = grid_resolution.max(8);
         let mut vertices: Vec<PlanetVertex> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
@@ -75,8 +80,18 @@ impl PlanetMesh {
                     let (lat, lon) = unit_sphere_to_lat_lon(sphere_dir);
                     let raw_elevation = generator.sample_elevation(sphere_dir, lat, lon);
                     let biome = generator.determine_biome(lat, raw_elevation, sphere_dir);
+                    let is_water = biome.is_water();
 
-                    let color = Self::biome_color(biome);
+                    let color = match filter {
+                        herocraft_world::VisualizationFilter::Standard => Self::biome_color(biome),
+                        herocraft_world::VisualizationFilter::Tectonics => {
+                            generator.tectonics.sample(sphere_dir).debug_color
+                        }
+                        herocraft_world::VisualizationFilter::OceanCurrents => {
+                            let continental = generator.sample_continental_value(sphere_dir);
+                            generator.ocean_currents.sample(sphere_dir, is_water, continental).color
+                        }
+                    };
 
                     // Pour l'eau (océans et mers), la surface liquide est parfaitement sphérique au niveau de la mer
                     let is_water = biome.is_water();
@@ -189,6 +204,7 @@ impl PlanetMesh {
         key: &herocraft_world::QuadNodeKey,
         base_radius: f32,
         grid_resolution: usize,
+        filter: herocraft_world::VisualizationFilter,
     ) -> Self {
         let n = grid_resolution.max(2);
         let mut vertices: Vec<PlanetVertex> = Vec::with_capacity((n + 1) * (n + 1));
@@ -212,9 +228,18 @@ impl PlanetMesh {
                 let (lat, lon) = unit_sphere_to_lat_lon(sphere_dir);
                 let raw_elevation = generator.sample_elevation(sphere_dir, lat, lon);
                 let biome = generator.determine_biome(lat, raw_elevation, sphere_dir);
-
-                let color = Self::biome_color(biome);
                 let is_water = biome.is_water();
+
+                let color = match filter {
+                    herocraft_world::VisualizationFilter::Standard => Self::biome_color(biome),
+                    herocraft_world::VisualizationFilter::Tectonics => {
+                        generator.tectonics.sample(sphere_dir).debug_color
+                    }
+                    herocraft_world::VisualizationFilter::OceanCurrents => {
+                        let continental = generator.sample_continental_value(sphere_dir);
+                        generator.ocean_currents.sample(sphere_dir, is_water, continental).color
+                    }
+                };
 
                 let elevation_clamped = if is_water {
                     SEA_LEVEL_BLOCKS as f32 * altitude_scale

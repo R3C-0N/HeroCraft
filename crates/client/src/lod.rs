@@ -16,6 +16,7 @@ pub struct PlanetLodManager {
     voxel_cache: HashMap<QuadNodeKey, PlanetMesh>,
     pub current_leaves: Vec<QuadLeaf>,
     pub combined_mesh: PlanetMesh,
+    pub active_filter: herocraft_world::VisualizationFilter,
     last_camera_pos: Vec3,
 }
 
@@ -31,7 +32,16 @@ impl PlanetLodManager {
                 vertices: Vec::new(),
                 indices: Vec::new(),
             },
+            active_filter: herocraft_world::VisualizationFilter::Standard,
             last_camera_pos: Vec3::splat(f32::NAN),
+        }
+    }
+
+    /// Définit le filtre de visualisation actif et force la régénération si modifié
+    pub fn set_filter(&mut self, filter: herocraft_world::VisualizationFilter) {
+        if self.active_filter != filter {
+            self.active_filter = filter;
+            self.clear();
         }
     }
 
@@ -82,6 +92,9 @@ impl PlanetLodManager {
         let mut total_vertices = 0;
         let mut total_indices = 0;
 
+        let filter = self.active_filter;
+        let base_radius = self.base_radius;
+
         // 1. Assure la présence des maillages pour chaque feuille
         for leaf in &self.current_leaves {
             match leaf.kind {
@@ -100,7 +113,7 @@ impl PlanetLodManager {
                             3 => 12,
                             _ => 8,
                         };
-                        PlanetMesh::generate_lod_patch(generator, &leaf.key, self.base_radius, resolution)
+                        PlanetMesh::generate_lod_patch(generator, &leaf.key, base_radius, resolution, filter)
                     });
                     total_vertices += mesh.vertices.len();
                     total_indices += mesh.indices.len();
@@ -113,7 +126,8 @@ impl PlanetLodManager {
                             leaf.key.face,
                             leaf.key.x as i32,
                             leaf.key.y as i32,
-                            self.base_radius,
+                            base_radius,
+                            filter,
                         )
                     });
                     total_vertices += mesh.vertices.len();

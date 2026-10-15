@@ -35,8 +35,9 @@ fn main() {
     info!(" • Molette de la souris (Scroll)    : Zoomer / Dézoomer");
     info!(" • [ESPACE]                         : Activer/Désactiver l'auto-rotation");
     info!(" • [R]                              : Réinitialiser la caméra");
-    info!(" • [G]                              : Générer une nouvelle graine (seed)");
-    info!(" • [ÉCHAP]                          : Quitter");
+    info!(" • [Case Écran] / [T]        : Basculer le filtre des plaques tectoniques");
+    info!(" • [Case Écran] / [C]        : Basculer le filtre des courants marins");
+    info!(" • [ÉCHAP]                  : Quitter");
     info!("==========================================================");
 
     let event_loop = EventLoop::new().expect("Échec d'initialisation de l'EventLoop Winit");
@@ -144,6 +145,13 @@ fn main() {
                                             camera.reset();
                                             info!("Bouton cliqué : Vue réinitialisée.");
                                         }
+                                        UiAction::ToggleTectonics | UiAction::ToggleOceanCurrents => {
+                                            let filter = ui_state.active_filter();
+                                            lod_manager.set_filter(filter);
+                                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache);
+                                            state.update_mesh(&lod_manager.combined_mesh);
+                                            info!("Filtre de visualisation sélectionné : {:?}", filter);
+                                        }
                                     }
                                 } else {
                                     // Clic dans la scène 3D pour faire tourner la planète
@@ -215,6 +223,30 @@ fn main() {
                             state.update_mesh(&lod_manager.combined_mesh);
                             ui_state.set_seed(current_seed);
                             info!("Raccourci [G] : Nouvelle planète générée (Graine: #{})", current_seed);
+                        }
+                        KeyCode::KeyT => {
+                            ui_state.show_tectonics = !ui_state.show_tectonics;
+                            if ui_state.show_tectonics {
+                                ui_state.show_ocean_currents = false;
+                            }
+                            ui_state.redraw();
+                            let filter = ui_state.active_filter();
+                            lod_manager.set_filter(filter);
+                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache);
+                            state.update_mesh(&lod_manager.combined_mesh);
+                            info!("Raccourci [T] : Filtre plaques tectoniques = {}", ui_state.show_tectonics);
+                        }
+                        KeyCode::KeyC => {
+                            ui_state.show_ocean_currents = !ui_state.show_ocean_currents;
+                            if ui_state.show_ocean_currents {
+                                ui_state.show_tectonics = false;
+                            }
+                            ui_state.redraw();
+                            let filter = ui_state.active_filter();
+                            lod_manager.set_filter(filter);
+                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache);
+                            state.update_mesh(&lod_manager.combined_mesh);
+                            info!("Raccourci [C] : Filtre courants marins = {}", ui_state.show_ocean_currents);
                         }
                         _ => {}
                     },

@@ -4,6 +4,8 @@ pub enum UiAction {
     GenerateNewPlanet,
     ToggleAutoRotate,
     ResetCamera,
+    ToggleTectonics,
+    ToggleOceanCurrents,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -14,6 +16,7 @@ pub struct UiButton {
     pub w: f32,
     pub h: f32,
     pub label: &'static str,
+    pub is_checkbox: bool,
     pub is_hovered: bool,
     pub is_pressed: bool,
 }
@@ -31,42 +34,69 @@ pub struct UiState {
     pub buttons: Vec<UiButton>,
     pub current_seed: u64,
     pub auto_rotate: bool,
+    pub show_tectonics: bool,
+    pub show_ocean_currents: bool,
     pub dirty: bool,
 }
 
 impl UiState {
     pub fn new(initial_seed: u64) -> Self {
         let canvas_width = 320;
-        let canvas_height = 240;
+        let canvas_height = 310;
 
         let buttons = vec![
             UiButton {
                 id: UiAction::GenerateNewPlanet,
                 x: 16.0,
-                y: 68.0,
+                y: 66.0,
                 w: 288.0,
-                h: 44.0,
+                h: 36.0,
                 label: "NOUVELLE PLANETE [G]",
+                is_checkbox: false,
                 is_hovered: false,
                 is_pressed: false,
             },
             UiButton {
                 id: UiAction::ToggleAutoRotate,
                 x: 16.0,
-                y: 120.0,
+                y: 108.0,
                 w: 288.0,
-                h: 36.0,
+                h: 32.0,
                 label: "AUTO-ROTATION [ESPACE]",
+                is_checkbox: false,
                 is_hovered: false,
                 is_pressed: false,
             },
             UiButton {
                 id: UiAction::ResetCamera,
                 x: 16.0,
-                y: 164.0,
+                y: 146.0,
                 w: 288.0,
-                h: 36.0,
+                h: 32.0,
                 label: "REINITIALISER VUE [R]",
+                is_checkbox: false,
+                is_hovered: false,
+                is_pressed: false,
+            },
+            UiButton {
+                id: UiAction::ToggleTectonics,
+                x: 16.0,
+                y: 188.0,
+                w: 288.0,
+                h: 34.0,
+                label: "PLAQUES TECTONIQUES",
+                is_checkbox: true,
+                is_hovered: false,
+                is_pressed: false,
+            },
+            UiButton {
+                id: UiAction::ToggleOceanCurrents,
+                x: 16.0,
+                y: 228.0,
+                w: 288.0,
+                h: 34.0,
+                label: "COURANTS MARINS",
+                is_checkbox: true,
                 is_hovered: false,
                 is_pressed: false,
             },
@@ -79,6 +109,8 @@ impl UiState {
             buttons,
             current_seed: initial_seed,
             auto_rotate: false,
+            show_tectonics: false,
+            show_ocean_currents: false,
             dirty: true,
         };
 
@@ -86,10 +118,20 @@ impl UiState {
         ui
     }
 
+    pub fn active_filter(&self) -> herocraft_world::VisualizationFilter {
+        if self.show_tectonics {
+            herocraft_world::VisualizationFilter::Tectonics
+        } else if self.show_ocean_currents {
+            herocraft_world::VisualizationFilter::OceanCurrents
+        } else {
+            herocraft_world::VisualizationFilter::Standard
+        }
+    }
+
     /// Vérifie si la souris survole l'un des boutons ou le panneau d'interface
     pub fn on_cursor_moved(&mut self, x: f32, y: f32) -> bool {
         let mut changed = false;
-        let is_over_panel = x >= 12.0 && x <= 312.0 && y >= 12.0 && y <= 230.0;
+        let is_over_panel = x >= 12.0 && x <= 308.0 && y >= 12.0 && y <= 300.0;
 
         for btn in &mut self.buttons {
             let hovered = btn.contains(x, y);
@@ -114,6 +156,22 @@ impl UiState {
             if btn.contains(x, y) {
                 btn.is_pressed = true;
                 clicked_action = Some(btn.id);
+
+                match btn.id {
+                    UiAction::ToggleTectonics => {
+                        self.show_tectonics = !self.show_tectonics;
+                        if self.show_tectonics {
+                            self.show_ocean_currents = false;
+                        }
+                    }
+                    UiAction::ToggleOceanCurrents => {
+                        self.show_ocean_currents = !self.show_ocean_currents;
+                        if self.show_ocean_currents {
+                            self.show_tectonics = false;
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
 
@@ -152,7 +210,7 @@ impl UiState {
         self.pixels.fill(0);
 
         // 1. Fond du panneau translucide façon "Glassmorphism"
-        self.draw_rounded_box(12, 12, 296, 216, [14, 22, 38, 220], [45, 75, 115, 240]);
+        self.draw_rounded_box(12, 12, 296, 286, [14, 22, 38, 220], [45, 75, 115, 240]);
 
         // 2. Titre et informations planétaires
         self.draw_text_5x7(24, 24, "HEROCRAFT VOXEL RPG", [220, 235, 255, 255], 2);
@@ -160,7 +218,7 @@ impl UiState {
         self.draw_text_5x7(24, 46, &seed_text, [130, 185, 240, 255], 1);
         self.draw_text_5x7(180, 46, "EAU : ~54%", [80, 210, 235, 255], 1);
 
-        // 3. Dessin des boutons
+        // 3. Dessin des boutons et checkboxes
         let buttons = self.buttons.clone();
         for btn in buttons {
             let bx = btn.x as usize;
@@ -168,43 +226,114 @@ impl UiState {
             let bw = btn.w as usize;
             let bh = btn.h as usize;
 
-            let (bg_color, border_color, text_color) = if btn.is_pressed {
-                ([12, 85, 160, 255], [100, 200, 255, 255], [255, 255, 255, 255])
-            } else if btn.is_hovered {
-                if btn.id == UiAction::GenerateNewPlanet {
-                    ([25, 95, 180, 245], [90, 220, 255, 255], [255, 255, 255, 255])
+            if btn.is_checkbox {
+                let is_checked = match btn.id {
+                    UiAction::ToggleTectonics => self.show_tectonics,
+                    UiAction::ToggleOceanCurrents => self.show_ocean_currents,
+                    _ => false,
+                };
+
+                // Style du cadre de la checkbox
+                let (bg_color, border_color, box_color, text_color) = if is_checked {
+                    if btn.id == UiAction::ToggleTectonics {
+                        (
+                            [40, 20, 24, 225],
+                            [230, 75, 60, 255],
+                            [240, 80, 60, 255],
+                            [255, 230, 225, 255],
+                        )
+                    } else {
+                        (
+                            [16, 36, 48, 225],
+                            [50, 185, 220, 255],
+                            [45, 195, 235, 255],
+                            [225, 245, 255, 255],
+                        )
+                    }
+                } else if btn.is_hovered {
+                    (
+                        [26, 38, 62, 220],
+                        [75, 120, 175, 240],
+                        [70, 110, 160, 255],
+                        [230, 240, 255, 255],
+                    )
                 } else {
-                    ([35, 55, 90, 240], [80, 160, 240, 255], [240, 248, 255, 255])
+                    (
+                        [18, 28, 46, 190],
+                        [40, 65, 100, 180],
+                        [45, 75, 115, 200],
+                        [175, 195, 220, 255],
+                    )
+                };
+
+                self.draw_rounded_box(bx, by, bw, bh, bg_color, border_color);
+
+                // Boîte carrée de la checkbox (16x16)
+                let cbox_x = bx + 12;
+                let cbox_y = by + (bh - 16) / 2;
+                self.draw_rounded_box(cbox_x, cbox_y, 16, 16, [12, 18, 30, 255], box_color);
+
+                if is_checked {
+                    // Cœur lumineux de la case cochée
+                    for cy in 3..13 {
+                        for cx in 3..13 {
+                            let px = cbox_x + cx;
+                            let py = cbox_y + cy;
+                            if px < self.canvas_width && py < self.canvas_height {
+                                let idx = (py * self.canvas_width + px) * 4;
+                                self.pixels[idx] = box_color[0];
+                                self.pixels[idx + 1] = box_color[1];
+                                self.pixels[idx + 2] = box_color[2];
+                                self.pixels[idx + 3] = 255;
+                            }
+                        }
+                    }
+                    self.draw_text_5x7(cbox_x + 5, cbox_y + 4, "X", [255, 255, 255, 255], 1);
                 }
+
+                // Texte descriptif du filtre
+                let text_x = bx + 38;
+                let text_y = by + (bh - 8) / 2;
+                self.draw_text_5x7(text_x, text_y, btn.label, text_color, 1);
             } else {
-                if btn.id == UiAction::GenerateNewPlanet {
-                    ([18, 65, 130, 230], [50, 150, 240, 230], [225, 240, 255, 255])
+                let (bg_color, border_color, text_color) = if btn.is_pressed {
+                    ([12, 85, 160, 255], [100, 200, 255, 255], [255, 255, 255, 255])
+                } else if btn.is_hovered {
+                    if btn.id == UiAction::GenerateNewPlanet {
+                        ([25, 95, 180, 245], [90, 220, 255, 255], [255, 255, 255, 255])
+                    } else {
+                        ([35, 55, 90, 240], [80, 160, 240, 255], [240, 248, 255, 255])
+                    }
                 } else {
-                    ([22, 34, 56, 210], [50, 80, 120, 200], [180, 205, 230, 255])
-                }
-            };
+                    if btn.id == UiAction::GenerateNewPlanet {
+                        ([18, 65, 130, 230], [50, 150, 240, 230], [225, 240, 255, 255])
+                    } else {
+                        ([22, 34, 56, 210], [50, 80, 120, 200], [180, 205, 230, 255])
+                    }
+                };
 
-            self.draw_rounded_box(bx, by, bw, bh, bg_color, border_color);
+                self.draw_rounded_box(bx, by, bw, bh, bg_color, border_color);
 
-            // Centrage approximatif du texte dans le bouton
-            let text = if btn.id == UiAction::ToggleAutoRotate {
-                if self.auto_rotate {
-                    "AUTO-ROTATION : [OUI]"
+                // Centrage du texte dans le bouton classique
+                let text = if btn.id == UiAction::ToggleAutoRotate {
+                    if self.auto_rotate {
+                        "AUTO-ROTATION : [OUI]"
+                    } else {
+                        "AUTO-ROTATION : [NON]"
+                    }
                 } else {
-                    "AUTO-ROTATION : [NON]"
-                }
-            } else {
-                btn.label
-            };
+                    btn.label
+                };
 
-            let text_pixel_width = text.len() * 6;
-            let tx = bx + (bw.saturating_sub(text_pixel_width)) / 2;
-            let ty = by + (bh.saturating_sub(8)) / 2;
-            self.draw_text_5x7(tx, ty, text, text_color, 1);
+                let text_pixel_width = text.len() * 6;
+                let tx = bx + (bw.saturating_sub(text_pixel_width)) / 2;
+                let ty = by + (bh.saturating_sub(8)) / 2;
+                self.draw_text_5x7(tx, ty, text, text_color, 1);
+            }
         }
 
         // 4. Instructions d'aide au bas du panneau
-        self.draw_text_5x7(24, 212, "GLISSER : ORBITE | SCROLL : ZOOM", [100, 135, 175, 255], 1);
+        self.draw_text_5x7(24, 278, "GLISSER : ORBITE | SCROLL : ZOOM", [100, 135, 175, 255], 1);
 
         self.dirty = true;
     }
