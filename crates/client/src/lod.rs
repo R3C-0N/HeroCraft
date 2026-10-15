@@ -87,8 +87,9 @@ impl PlanetLodManager {
             match leaf.kind {
                 QuadLeafKind::LodPatch => {
                     let mesh = self.lod_cache.entry(leaf.key).or_insert_with(|| {
-                        // Résolution 8x8 quads par patch LOD polygonal
-                        PlanetMesh::generate_lod_patch(generator, &leaf.key, self.base_radius, 8)
+                        // Résolution 4x4 quads par patch LOD :
+                        // Au Level 3 (64 nœuds par face), cela donne exactement 32x32 = 1024 cellules par face (1 cellule par chunk !)
+                        PlanetMesh::generate_lod_patch(generator, &leaf.key, self.base_radius, 4)
                     });
                     total_vertices += mesh.vertices.len();
                     total_indices += mesh.indices.len();
@@ -111,7 +112,7 @@ impl PlanetLodManager {
         }
 
         // Nettoyage régulier des caches pour éviter la rétention infinie de mémoire
-        if self.lod_cache.len() > 600 {
+        if self.lod_cache.len() > 1200 {
             let active_keys: HashSet<_> = self.current_leaves.iter().map(|l| l.key).collect();
             self.lod_cache.retain(|k, _| active_keys.contains(k));
         }

@@ -81,6 +81,7 @@ pub struct QuadLeaf {
 /// Évaluateur de QuadTree planétaire pour Cubed-Sphere
 pub struct PlanetQuadTree {
     pub base_radius: f64,
+    pub min_level: u8,
     pub max_level: u8,
     /// Seuils de distance caméra pour subdiviser chaque niveau (index = level 0..max_level)
     pub split_distances: Vec<f64>,
@@ -89,34 +90,35 @@ pub struct PlanetQuadTree {
 impl PlanetQuadTree {
     /// Crée un QuadTree configuré pour un rayon de planète donné
     pub fn new(base_radius: f64) -> Self {
-        // Seuils de subdivision calculés pour assurer une transition fluide
-        // Rayon ~25.0 :
-        // Seuils de distance caméra-nœud calibrés selon la taille réelle des cellules :
-        // Rayon 25.0 (périmètre ~157.0) :
-        // Level 0 (taille ~40) : split si distance < 80.0
-        // Level 1 (taille ~20) : split si distance < 45.0
-        // Level 2 (taille ~10) : split si distance < 25.0
-        // Level 3 (taille ~5.0): split si distance < 12.0
-        // Level 4 (taille ~2.5): split vers Level 5 (voxels) uniquement si distance < 4.5
-        // Cela garantit qu'au sol, seuls 4 à 9 chunks voxels locaux sont activés (pas de freeze !)
+        // Au dézoom maximal, on force un niveau minimum de 3 :
+        // Chaque face est découpée en au moins 8x8 = 64 nœuds (soit ~192 à 384 nœuds pour la planète).
+        // Cela offre un relief et des biomes nets et détaillés dès la vue spatiale.
+        // Puis le QuadTree s'affine vers le Level 4 (256 nœuds) et jusqu'au Level 5 (1024 chunks voxels).
+        let min_level = 3;
+        let max_level = 5;
+
+        // Seuils de distance caméra-nœud pour déclencher la subdivision :
+        // Level 3 (taille ~5.0)  : split si distance < 28.0 (passe à Level 4)
+        // Level 4 (taille ~2.5)  : split si distance < 2.8  (zone sous la caméra -> Level 5 voxels)
         let split_distances = vec![
-            80.0,
-            45.0,
-            25.0,
-            12.0,
-            4.5,
+            9999.0, // Level 0 (forcé par min_level)
+            9999.0, // Level 1 (forcé par min_level)
+            9999.0, // Level 2 (forcé par min_level)
+            28.0,   // Level 3 -> Level 4 (256 nœuds)
+            2.8,    // Level 4 -> Level 5 (voxels)
         ];
 
         Self {
             base_radius,
-            max_level: 5,
+            min_level,
+            max_level,
             split_distances,
         }
     }
 
     /// Évalue l'arbre complet depuis la position de la caméra et renvoie la liste des feuilles visibles
     pub fn evaluate(&self, camera_pos: DVec3) -> Vec<QuadLeaf> {
-        let mut leaves = Vec::with_capacity(128);
+        let mut leaves = Vec::with_capacity(256);
         let cam_dist = camera_pos.length();
         let cam_dir = if cam_dist > 1e-4 {
             camera_pos / cam_dist
@@ -152,9 +154,10 @@ impl PlanetQuadTree {
 
         let dist_to_node = (camera_pos - center_pos).length();
 
-        let should_split = (node.level as usize) < self.split_distances.len()
-            && node.level < self.max_level
-            && dist_to_node < self.split_distances[node.level as usize];
+        let should_split = node.level < self.min_level
+            || ((node.level as usize) < self.split_distances.len()
+                && node.level < self.max_level
+                && dist_to_node < self.split_distances[node.level as usize]);
 
         if should_split {
             for child in node.children() {
@@ -210,11 +213,11 @@ mod tests {
         let cam_pos = DVec3::new(0.0, 0.0, 150.0);
         let leaves = qt.evaluate(cam_pos);
 
-        // Toutes les feuilles doivent être de faible niveau (LOD patchs)
+        // Toutes les feuilles doivent être au niveau minimum (Level 3 = 64 nœuds par face)
         assert!(!leaves.is_empty());
         for leaf in &leaves {
             assert_eq!(leaf.kind, QuadLeafKind::LodPatch);
-            assert!(leaf.key.level <= 1);
+            assert_eq!(leaf.key.level, 3);
         }
     }
 
