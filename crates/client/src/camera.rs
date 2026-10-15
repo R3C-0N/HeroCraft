@@ -41,7 +41,7 @@ impl Default for OrbitCamera {
             z_far: 2000.0,
             rotate_sensitivity: 0.005,
             zoom_sensitivity: 0.08,
-            min_distance: 27.5,
+            min_distance: 28.5,
             max_distance: 450.0,
             auto_rotate: false,
             auto_rotate_speed: 0.2,

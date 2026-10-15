@@ -43,6 +43,38 @@ impl PlanetFace {
         };
         DVec3::new(x, y, z).normalize()
     }
+
+    /// Détermine la face et les coordonnées (u, v) d'une direction 3D sur la sphère (inverse de uv_to_sphere_direction)
+    pub fn sphere_direction_to_face_uv(dir: DVec3) -> (PlanetFace, f64, f64) {
+        let abs_x = dir.x.abs();
+        let abs_y = dir.y.abs();
+        let abs_z = dir.z.abs();
+
+        let (face, u_tan, v_tan) = if abs_x >= abs_y && abs_x >= abs_z {
+            if dir.x > 0.0 {
+                (PlanetFace::PosX, -dir.z / dir.x, -dir.y / dir.x)
+            } else {
+                (PlanetFace::NegX, -dir.z / dir.x, dir.y / dir.x)
+            }
+        } else if abs_y >= abs_x && abs_y >= abs_z {
+            if dir.y > 0.0 {
+                (PlanetFace::PosY, dir.x / dir.y, dir.z / dir.y)
+            } else {
+                (PlanetFace::NegY, -dir.x / dir.y, dir.z / dir.y)
+            }
+        } else {
+            if dir.z > 0.0 {
+                (PlanetFace::PosZ, dir.x / dir.z, -dir.y / dir.z)
+            } else {
+                (PlanetFace::NegZ, dir.x / dir.z, dir.y / dir.z)
+            }
+        };
+
+        let inv_pi_4 = 4.0 / std::f64::consts::PI;
+        let u = (u_tan.atan() * inv_pi_4).clamp(-1.0, 1.0);
+        let v = (v_tan.atan() * inv_pi_4).clamp(-1.0, 1.0);
+        (face, u, v)
+    }
 }
 
 /// Coordonnée d'un chunk sur la planète
@@ -123,5 +155,20 @@ mod tests {
         let idx = coord.to_linear_index();
         let recovered = LocalVoxelCoord::from_linear_index(idx);
         assert_eq!(coord, recovered);
+    }
+
+    #[test]
+    fn test_sphere_direction_to_face_uv_roundtrip() {
+        for &face in &PlanetFace::ALL {
+            for &u in &[-0.8, -0.2, 0.0, 0.4, 0.9] {
+                for &v in &[-0.7, -0.1, 0.0, 0.5, 0.85] {
+                    let dir = face.uv_to_sphere_direction(u, v);
+                    let (rec_face, rec_u, rec_v) = PlanetFace::sphere_direction_to_face_uv(dir);
+                    assert_eq!(face, rec_face, "Face mismatch for u={}, v={}", u, v);
+                    assert!((u - rec_u).abs() < 1e-5, "u mismatch: {} vs {}", u, rec_u);
+                    assert!((v - rec_v).abs() < 1e-5, "v mismatch: {} vs {}", v, rec_v);
+                }
+            }
+        }
     }
 }

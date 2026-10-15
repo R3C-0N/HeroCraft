@@ -14,11 +14,15 @@ mod camera;
 mod planet_mesh;
 mod renderer;
 mod ui;
+mod voxel_mesh;
 
 use camera::OrbitCamera;
+use glam::DVec3;
+use herocraft_common::PlanetFace;
 use planet_mesh::PlanetMesh;
 use renderer::State;
 use ui::{UiAction, UiState};
+use voxel_mesh::VoxelMeshBuilder;
 
 fn main() {
     std::env::set_var("RUST_LOG", "info");
@@ -52,8 +56,8 @@ fn main() {
     planet_desc.seed = current_seed;
 
     info!("Génération de la planète (Cubed-Sphere avec 6 faces et biomes)...");
-    let generator = herocraft_world::PlanetWorldGenerator::new(planet_desc);
-    let planet_mesh = PlanetMesh::generate_planet(&generator, 25.0, 48);
+    let mut generator = herocraft_world::PlanetWorldGenerator::new(planet_desc);
+    let mut planet_mesh = PlanetMesh::generate_planet(&generator, 25.0, 48);
     info!(
         "Planète générée : {} sommets, {} polygones.",
         planet_mesh.vertices.len(),
@@ -76,13 +80,9 @@ fn main() {
     let mut last_mouse_pos = (0.0_f64, 0.0_f64);
     let mut last_frame_time = Instant::now();
 
-    // Helper de régénération planétaire
-    let regenerate_planet = |seed: u64| -> PlanetMesh {
-        let mut new_desc = herocraft_world::PlanetDescriptor::default();
-        new_desc.seed = seed;
-        let new_gen = herocraft_world::PlanetWorldGenerator::new(new_desc);
-        PlanetMesh::generate_planet(&new_gen, 25.0, 48)
-    };
+    // État du streaming voxel (LOD dynamique)
+    let mut is_voxel_mode = false;
+    let mut current_voxel_chunk: Option<(PlanetFace, i32, i32)> = None;
 
     event_loop.run(move |event, target| {
         target.set_control_flow(ControlFlow::Poll);
@@ -116,8 +116,13 @@ fn main() {
                                     match action {
                                         UiAction::GenerateNewPlanet => {
                                             current_seed = current_seed.wrapping_add(1337);
-                                            let new_mesh = regenerate_planet(current_seed);
-                                            state.update_mesh(&new_mesh);
+                                            let mut new_desc = herocraft_world::PlanetDescriptor::default();
+                                            new_desc.seed = current_seed;
+                                            generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
+                                            planet_mesh = PlanetMesh::generate_planet(&generator, 25.0, 48);
+                                            is_voxel_mode = false;
+                                            current_voxel_chunk = None;
+                                            state.update_mesh(&planet_mesh);
                                             ui_state.set_seed(current_seed);
                                             info!("Bouton cliqué : Nouvelle planète générée ! (Graine: #{})", current_seed);
                                         }
@@ -186,8 +191,13 @@ fn main() {
                         }
                         KeyCode::KeyG => {
                             current_seed = current_seed.wrapping_add(1337);
-                            let new_mesh = regenerate_planet(current_seed);
-                            state.update_mesh(&new_mesh);
+                            let mut new_desc = herocraft_world::PlanetDescriptor::default();
+                            new_desc.seed = current_seed;
+                            generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
+                            planet_mesh = PlanetMesh::generate_planet(&generator, 25.0, 48);
+                            is_voxel_mode = false;
+                            current_voxel_chunk = None;
+                            state.update_mesh(&planet_mesh);
                             ui_state.set_seed(current_seed);
                             info!("Raccourci [G] : Nouvelle planète générée (Graine: #{})", current_seed);
                         }
@@ -201,6 +211,44 @@ fn main() {
 
                         camera.update(dt);
                         state.update_camera(&camera);
+
+                        // LOD Dynamique : Transition vers le terrain voxel en zoom rapproché (D <= 42.0)
+                        let is_near_ground = camera.distance <= 42.0;
+
+                        if is_near_ground {
+                            let eye_dir = camera.eye_position().normalize();
+                            let (face, u, v) = PlanetFace::sphere_direction_to_face_uv(
+                                DVec3::new(eye_dir.x as f64, eye_dir.y as f64, eye_dir.z as f64),
+                            );
+                            let chunk_x = (((u + 1.0) * 0.5 * 32.0).floor() as i32).clamp(0, 31);
+                            let chunk_y = (((v + 1.0) * 0.5 * 32.0).floor() as i32).clamp(0, 31);
+
+                            let needs_update = !is_voxel_mode
+                                || current_voxel_chunk != Some((face, chunk_x, chunk_y));
+
+                            if needs_update {
+                                if !is_voxel_mode {
+                                    info!("LOD : Entrée dans l'atmosphère, affichage des voxels 3D au sol !");
+                                }
+                                is_voxel_mode = true;
+                                current_voxel_chunk = Some((face, chunk_x, chunk_y));
+
+                                let voxel_mesh = VoxelMeshBuilder::build_incurved_grid(
+                                    &generator,
+                                    face,
+                                    chunk_x,
+                                    chunk_y,
+                                    1, // Grille 3x3 de chunks
+                                    25.0, // Rayon de base
+                                );
+                                state.update_mesh(&voxel_mesh);
+                            }
+                        } else if is_voxel_mode {
+                            info!("LOD : Sortie en orbite haute, vue globale de la planète.");
+                            is_voxel_mode = false;
+                            current_voxel_chunk = None;
+                            state.update_mesh(&planet_mesh);
+                        }
 
                         // Mise à jour de l'affichage UI si l'état des boutons ou la seed a changé
                         if ui_state.dirty {
