@@ -67,9 +67,9 @@ fn main() {
     let size = window.inner_size();
     camera.aspect = size.width as f32 / size.height.max(1) as f32;
 
-    // Initialisation du gestionnaire de LOD QuadTree
-    let mut lod_manager = PlanetLodManager::new(25.0);
-    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache);
+    // Initialisation du gestionnaire de LOD QuadTree avec transitions douces hybrides
+    let mut lod_manager = PlanetLodManager::new(25.0, current_seed);
+    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
     info!(
         "QuadTree initialisé : {} sommets, {} polygones ({} feuilles actives).",
         lod_manager.combined_mesh.vertices.len(),
@@ -130,8 +130,8 @@ fn main() {
                                             let new_save_dir = format!("saves/monde_{}", current_seed);
                                             let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
                                             chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
-                                            lod_manager.clear();
-                                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache);
+                                            lod_manager.clear(current_seed);
+                                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
                                             state.update_mesh(&lod_manager.combined_mesh);
                                             ui_state.set_seed(current_seed);
                                             info!("Bouton cliqué : Nouvelle planète générée ! (Graine: #{})", current_seed);
@@ -148,7 +148,7 @@ fn main() {
                                         UiAction::ToggleTectonics | UiAction::ToggleOceanCurrents => {
                                             let filter = ui_state.active_filter();
                                             lod_manager.set_filter(filter);
-                                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache);
+                                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
                                             state.update_mesh(&lod_manager.combined_mesh);
                                             info!("Filtre de visualisation sélectionné : {:?}", filter);
                                         }
@@ -218,8 +218,8 @@ fn main() {
                             let new_save_dir = format!("saves/monde_{}", current_seed);
                             let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
                             chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
-                            lod_manager.clear();
-                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache);
+                            lod_manager.clear(current_seed);
+                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
                             state.update_mesh(&lod_manager.combined_mesh);
                             ui_state.set_seed(current_seed);
                             info!("Raccourci [G] : Nouvelle planète générée (Graine: #{})", current_seed);
@@ -232,7 +232,7 @@ fn main() {
                             ui_state.redraw();
                             let filter = ui_state.active_filter();
                             lod_manager.set_filter(filter);
-                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache);
+                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
                             state.update_mesh(&lod_manager.combined_mesh);
                             info!("Raccourci [T] : Filtre plaques tectoniques = {}", ui_state.show_tectonics);
                         }
@@ -244,7 +244,7 @@ fn main() {
                             ui_state.redraw();
                             let filter = ui_state.active_filter();
                             lod_manager.set_filter(filter);
-                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache);
+                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0);
                             state.update_mesh(&lod_manager.combined_mesh);
                             info!("Raccourci [C] : Filtre courants marins = {}", ui_state.show_ocean_currents);
                         }
@@ -259,8 +259,8 @@ fn main() {
                         camera.update(dt);
                         state.update_camera(&camera);
 
-                        // Mise à jour adaptative du QuadTree LOD (planète entière visible + voxels proches)
-                        if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache) {
+                        // Mise à jour adaptative du QuadTree LOD (planète entière visible + voxels proches avec transition douce)
+                        if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, dt) {
                             state.update_mesh(&lod_manager.combined_mesh);
                         }
 

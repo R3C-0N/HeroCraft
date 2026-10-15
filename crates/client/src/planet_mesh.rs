@@ -44,12 +44,20 @@ impl PlanetVertex {
 }
 
 /// Maillage indexé prêt pour WGPU
+#[derive(Clone)]
 pub struct PlanetMesh {
     pub vertices: Vec<PlanetVertex>,
     pub indices: Vec<u32>,
 }
 
 impl PlanetMesh {
+    /// Applique un facteur d'opacité/fondu alpha à tous les sommets du maillage
+    #[allow(dead_code)]
+    pub fn set_alpha(&mut self, alpha: f32) {
+        for v in &mut self.vertices {
+            v.color[3] = alpha;
+        }
+    }
     /// Construit le maillage complet de la planète Cubed-Sphere avec relief et biomes
     #[allow(dead_code)]
     pub fn generate_planet(
@@ -394,11 +402,24 @@ impl PlanetMesh {
                     }
                 };
 
-                let elevation_clamped = if is_water {
-                    SEA_LEVEL_BLOCKS as f32 * altitude_scale
+                let final_elevation = if is_water {
+                    SEA_LEVEL_BLOCKS
+                } else if key.level >= 4 {
+                    // Pré-voxélisation progressive (Terracing en escalier de 1 bloc) :
+                    // On quantifie l'altitude vers des paliers de 1 bloc avec un profil de marche net
+                    let base = raw_elevation.floor();
+                    let frac = raw_elevation - base;
+                    let step = if frac < 0.5 {
+                        0.5 * (frac * 2.0).powi(3)
+                    } else {
+                        1.0 - 0.5 * ((1.0 - frac) * 2.0).powi(3)
+                    };
+                    base + step
                 } else {
-                    (raw_elevation as f32) * altitude_scale
+                    raw_elevation
                 };
+
+                let elevation_clamped = (final_elevation as f32) * altitude_scale;
 
                 let radius = base_radius + elevation_clamped;
                 let dir_f32 = Vec3::new(sphere_dir.x as f32, sphere_dir.y as f32, sphere_dir.z as f32);

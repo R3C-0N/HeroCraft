@@ -193,9 +193,22 @@ impl VoxelMeshBuilder {
     }
 
     /// Construit le maillage d'une colonne verticale complète de chunks voxels (jusqu'à 16-17 chunks, 528+ blocs de haut)
+    #[allow(dead_code)]
     pub fn build_incurved_single_chunk(
         generator: &PlanetWorldGenerator,
-        chunk_cache: &mut WorldChunkCache,
+        _chunk_cache: &mut WorldChunkCache,
+        face: PlanetFace,
+        chunk_x: i32,
+        chunk_y: i32,
+        base_radius: f32,
+        filter: herocraft_world::VisualizationFilter,
+    ) -> PlanetMesh {
+        Self::build_incurved_single_chunk_fast(generator, face, chunk_x, chunk_y, base_radius, filter)
+    }
+
+    /// Version optimisée thread-safe sans dépendance de cache mutable
+    pub fn build_incurved_single_chunk_fast(
+        generator: &PlanetWorldGenerator,
         face: PlanetFace,
         chunk_x: i32,
         chunk_y: i32,
@@ -287,47 +300,25 @@ impl VoxelMeshBuilder {
             }
         };
 
+        let mut prev_chunk: Option<herocraft_voxel_engine::ChunkData> = None;
+
         for layer in min_layer..=max_layer {
+            let layer_base = (layer * 32) as f64;
+            let layer_top = layer_base + 32.0;
+
+            // Optimisation : saut des chunks 100% souterrains ou 100% dans le ciel
+            if min_elev >= layer_top && sea < layer_base {
+                prev_chunk = None;
+                continue;
+            }
+            if max_elev < layer_base && sea < layer_base {
+                prev_chunk = None;
+                continue;
+            }
+
             let coord = PlanetChunkCoord::new(face, chunk_x, chunk_y, layer);
-            let center_chunk = chunk_cache.get_or_load(&coord, || generator.generate_chunk(&coord)).clone();
-
-            let left_chunk = if chunk_x > 0 {
-                let c = PlanetChunkCoord::new(face, chunk_x - 1, chunk_y, layer);
-                Some(chunk_cache.get_or_load(&c, || generator.generate_chunk(&c)).clone())
-            } else {
-                None
-            };
-            let right_chunk = if chunk_x < 31 {
-                let c = PlanetChunkCoord::new(face, chunk_x + 1, chunk_y, layer);
-                Some(chunk_cache.get_or_load(&c, || generator.generate_chunk(&c)).clone())
-            } else {
-                None
-            };
-            let bottom_chunk = if chunk_y > 0 {
-                let c = PlanetChunkCoord::new(face, chunk_x, chunk_y - 1, layer);
-                Some(chunk_cache.get_or_load(&c, || generator.generate_chunk(&c)).clone())
-            } else {
-                None
-            };
-            let top_chunk = if chunk_y < 31 {
-                let c = PlanetChunkCoord::new(face, chunk_x, chunk_y + 1, layer);
-                Some(chunk_cache.get_or_load(&c, || generator.generate_chunk(&c)).clone())
-            } else {
-                None
-            };
-
-            let chunk_below = if layer > 0 {
-                let c = PlanetChunkCoord::new(face, chunk_x, chunk_y, layer - 1);
-                Some(chunk_cache.get_or_load(&c, || generator.generate_chunk(&c)).clone())
-            } else {
-                None
-            };
-            let chunk_above = if layer < 16 {
-                let c = PlanetChunkCoord::new(face, chunk_x, chunk_y, layer + 1);
-                Some(chunk_cache.get_or_load(&c, || generator.generate_chunk(&c)).clone())
-            } else {
-                None
-            };
+            let center_chunk = generator.generate_chunk(&coord);
+            let chunk_below = prev_chunk;
 
             let get_voxel = |gx: i32, gy: i32, gz: i32| -> BlockId {
                 if gy < 0 {
@@ -340,33 +331,10 @@ impl VoxelMeshBuilder {
                     return BlockId::STONE;
                 }
                 if gy >= 32 {
-                    if layer >= 16 {
-                        return BlockId::AIR;
-                    }
-                    if let Some(ref above) = chunk_above {
-                        return above.get_voxel(gx.clamp(0, 31) as u8, 0, gz.clamp(0, 31) as u8);
-                    }
                     return BlockId::AIR;
                 }
                 if gx >= 0 && gx < 32 && gz >= 0 && gz < 32 {
                     return center_chunk.get_voxel(gx as u8, gy as u8, gz as u8);
-                }
-                if gx < 0 && gz >= 0 && gz < 32 {
-                    if let Some(ref c) = left_chunk {
-                        return c.get_voxel(31, gy as u8, gz as u8);
-                    }
-                } else if gx >= 32 && gz >= 0 && gz < 32 {
-                    if let Some(ref c) = right_chunk {
-                        return c.get_voxel(0, gy as u8, gz as u8);
-                    }
-                } else if gz < 0 && gx >= 0 && gx < 32 {
-                    if let Some(ref c) = bottom_chunk {
-                        return c.get_voxel(gx as u8, gy as u8, 31);
-                    }
-                } else if gz >= 32 && gx >= 0 && gx < 32 {
-                    if let Some(ref c) = top_chunk {
-                        return c.get_voxel(gx as u8, gy as u8, 0);
-                    }
                 }
                 let global_y = (layer as f64) * 32.0 + (gy as f64);
                 if global_y <= sea { BlockId::STONE } else { BlockId::AIR }
@@ -480,6 +448,7 @@ impl VoxelMeshBuilder {
                     }
                 }
             }
+            prev_chunk = Some(center_chunk);
         }
 
         PlanetMesh { vertices, indices }

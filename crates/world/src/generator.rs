@@ -45,6 +45,7 @@ impl BiomeType {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct PlanetWorldGenerator {
     pub planet: PlanetDescriptor,
     pub tectonics: TectonicSimulation,

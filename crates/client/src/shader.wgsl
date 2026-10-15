@@ -30,8 +30,40 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     return out;
 }
 
+// Matrice de tramage Bayer 4x4 normalisée [0.0, 1.0] pour transition douce stochastique
+fn bayer4x4(pos: vec2<u32>) -> f32 {
+    let bayer = array<f32, 16>(
+        0.0 / 16.0,  8.0 / 16.0,  2.0 / 16.0, 10.0 / 16.0,
+        12.0 / 16.0, 4.0 / 16.0, 14.0 / 16.0,  6.0 / 16.0,
+        3.0 / 16.0, 11.0 / 16.0,  1.0 / 16.0,  9.0 / 16.0,
+        15.0 / 16.0, 7.0 / 16.0, 13.0 / 16.0,  5.0 / 16.0
+    );
+    let x = pos.x % 4u;
+    let y = pos.y % 4u;
+    return bayer[y * 4u + x];
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Transition douce hybride par tramage stochastique (Dithered Cross-Fade)
+    let alpha = in.color.a;
+    if (abs(alpha) < 0.999) {
+        let screen_coord = vec2<u32>(in.clip_position.xy);
+        let dither = bayer4x4(screen_coord);
+        if (alpha >= 0.0) {
+            // Fade-in : on conserve les pixels où dither <= alpha
+            if (dither > alpha) {
+                discard;
+            }
+        } else {
+            // Fade-out : on conserve les pixels où dither > (1.0 - abs(alpha))
+            let opacity = -alpha;
+            if (dither <= (1.0 - opacity)) {
+                discard;
+            }
+        }
+    }
+
     // Normale géométrique pure de la facette (style Low-Poly / Voxel franc et net)
     let dpx = dpdx(in.world_pos);
     let dpy = dpdy(in.world_pos);
@@ -54,5 +86,5 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let lit_rgb = in.color.rgb * light_intensity + atmosphere_color * rim_light;
 
-    return vec4<f32>(lit_rgb, in.color.a);
+    return vec4<f32>(lit_rgb, 1.0);
 }
