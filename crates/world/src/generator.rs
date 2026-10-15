@@ -451,4 +451,45 @@ mod tests {
         assert!(land_points > 0, "Il doit y avoir des continents massifs");
         assert!(polar_points > 0, "Il doit y avoir des calottes polaires aux pôles");
     }
+
+    #[test]
+    fn test_planets_diversity_across_seeds() {
+        let mut desc1 = PlanetDescriptor::default();
+        desc1.seed = 1001;
+        let gen1 = PlanetWorldGenerator::new(desc1);
+
+        let mut desc2 = PlanetDescriptor::default();
+        desc2.seed = 2026;
+        let gen2 = PlanetWorldGenerator::new(desc2);
+
+        let mut diff_water = 0;
+        let sample_count = 500;
+        let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
+
+        for i in 0..sample_count {
+            let y = 1.0 - (i as f64 / (sample_count - 1) as f64) * 2.0;
+            let radius = (1.0 - y * y).max(0.0).sqrt();
+            let theta = 2.0 * std::f64::consts::PI * (i as f64) / phi;
+            let dir = DVec3::new(radius * theta.cos(), y, radius * theta.sin()).normalize();
+            let (lat, lon) = unit_sphere_to_lat_lon(dir);
+
+            let elev1 = gen1.sample_elevation(dir, lat, lon);
+            let biome1 = gen1.determine_biome(lat, elev1, dir);
+
+            let elev2 = gen2.sample_elevation(dir, lat, lon);
+            let biome2 = gen2.determine_biome(lat, elev2, dir);
+
+            if biome1.is_water() != biome2.is_water() {
+                diff_water += 1;
+            }
+        }
+
+        let diff_ratio = diff_water as f64 / sample_count as f64;
+        println!("Différence Terre/Mer entre deux graines différentes : {:.1}%", diff_ratio * 100.0);
+        assert!(
+            diff_ratio > 0.25,
+            "Deux graines différentes doivent générer des cartes fondamentalement distinctes (différence constatée : {:.1}%)",
+            diff_ratio * 100.0
+        );
+    }
 }

@@ -66,27 +66,68 @@ pub struct TectonicSimulation {
     pub plates: Vec<TectonicPlate>,
 }
 
+/// Générateur pseudo-aléatoire rapide déterministe par graine
+struct PlateRng(u64);
+
+impl PlateRng {
+    fn new(seed: u64) -> Self {
+        Self(seed ^ 0x517cc1b727220a95)
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.0
+    }
+
+    fn next_f64(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    fn next_range(&mut self, min: f64, max: f64) -> f64 {
+        min + self.next_f64() * (max - min)
+    }
+
+    fn next_vec3(&mut self) -> DVec3 {
+        let x = self.next_range(-1.0, 1.0);
+        let y = self.next_range(-1.0, 1.0);
+        let z = self.next_range(-1.0, 1.0);
+        DVec3::new(x, y, z).normalize_or_zero()
+    }
+}
+
+fn rotate_vector(v: DVec3, axis: DVec3, angle: f64) -> DVec3 {
+    let cos_a = angle.cos();
+    let sin_a = angle.sin();
+    v * cos_a + axis.cross(v) * sin_a + axis * axis.dot(v) * (1.0 - cos_a)
+}
+
+#[derive(Clone, Copy)]
+struct PlateRole {
+    category: PlateCategory,
+    weight: f64,
+    is_oceanic: bool,
+    drift_speed: f64,
+}
+
 impl TectonicSimulation {
-    /// Génère un système hiérarchisé de 15 plaques tectoniques :
+    /// Génère un système hiérarchisé de 15 plaques tectoniques avec rotation 3D et brassage par graine :
     /// - 4 Grosses plaques
     /// - 3 Moyennes plaques
     /// - 8 Petites plaques
     pub fn new(seed: u64) -> Self {
         let count = 15;
         let mut plates = Vec::with_capacity(count);
+        let mut rng = PlateRng::new(seed);
 
         // Palette de 15 teintes distinctes pour chaque plaque
         let palette: [[f32; 4]; 15] = [
-            // 4 Plaques Majeures
             [0.85, 0.32, 0.30, 1.0], // 0: Rouge rubis
             [0.25, 0.55, 0.85, 1.0], // 1: Bleu saphir
             [0.30, 0.75, 0.45, 1.0], // 2: Vert émeraude
             [0.88, 0.72, 0.25, 1.0], // 3: Jaune ambre
-            // 3 Plaques Moyennes
             [0.70, 0.38, 0.82, 1.0], // 4: Violet améthyste
             [0.22, 0.82, 0.80, 1.0], // 5: Cyan turquoise
             [0.90, 0.52, 0.22, 1.0], // 6: Orange topaze
-            // 8 Petites Plaques
             [0.45, 0.78, 0.30, 1.0], // 7: Vert pomme
             [0.85, 0.38, 0.65, 1.0], // 8: Rose fuchsia
             [0.55, 0.42, 0.28, 1.0], // 9: Brun caramel
@@ -97,61 +138,75 @@ impl TectonicSimulation {
             [0.60, 0.30, 0.45, 1.0], // 14: Prune pourpre
         ];
 
-        // Répartition sphérique des 15 centres (Fibonacci sphere)
+        // Rôles géologiques : exactement 4 majeures, 3 moyennes, 8 mineures
+        let mut roles = [
+            // 4 Grosses plaques (3 super-continents + 1 méga-océan Pacifique)
+            PlateRole { category: PlateCategory::Major, weight: 1.45, is_oceanic: false, drift_speed: 0.45 },
+            PlateRole { category: PlateCategory::Major, weight: 1.45, is_oceanic: false, drift_speed: 0.48 },
+            PlateRole { category: PlateCategory::Major, weight: 1.45, is_oceanic: false, drift_speed: 0.52 },
+            PlateRole { category: PlateCategory::Major, weight: 1.45, is_oceanic: true,  drift_speed: 0.56 },
+            // 3 Moyennes plaques (2 continents moyens + 1 océan intermédiaire)
+            PlateRole { category: PlateCategory::Medium, weight: 1.05, is_oceanic: false, drift_speed: 0.65 },
+            PlateRole { category: PlateCategory::Medium, weight: 1.05, is_oceanic: false, drift_speed: 0.68 },
+            PlateRole { category: PlateCategory::Medium, weight: 1.05, is_oceanic: true,  drift_speed: 0.72 },
+            // 8 Petites plaques (2 micro-continents + 6 plaques de subduction rapides)
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: false, drift_speed: 0.85 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: false, drift_speed: 0.90 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true,  drift_speed: 1.05 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true,  drift_speed: 1.10 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true,  drift_speed: 1.15 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true,  drift_speed: 1.20 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true,  drift_speed: 1.25 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true,  drift_speed: 1.30 },
+        ];
+
+        // Brassage aléatoire (Fisher-Yates) des rôles selon la graine
+        for i in (1..roles.len()).rev() {
+            let j = (rng.next_u64() as usize) % (i + 1);
+            roles.swap(i, j);
+        }
+
+        // Rotation 3D globale aléatoire de toute la lithosphère selon la graine
+        let global_rot_axis = rng.next_vec3();
+        let global_rot_angle = rng.next_range(0.0, std::f64::consts::TAU);
+
+        // Répartition sphérique des 15 centres (Fibonacci sphere) réorientée en 3D
         let phi = (1.0 + 5.0_f64.sqrt()) * 0.5;
         for i in 0..count {
             let y = 1.0 - (i as f64) / ((count - 1) as f64) * 2.0; // [-1.0, 1.0]
             let radius_at_y = (1.0 - y * y).max(0.0).sqrt();
             let theta = 2.0 * std::f64::consts::PI * (i as f64) / phi;
 
-            // Gigue pseudo-aléatoire selon la graine
-            let jitter_seed = seed.wrapping_add((i as u64).wrapping_mul(987654321));
-            let jx = ((jitter_seed.wrapping_mul(1103515245) >> 16) & 0xFFF) as f64 / 4096.0 - 0.5;
-            let jy = ((jitter_seed.wrapping_mul(1664525) >> 16) & 0xFFF) as f64 / 4096.0 - 0.5;
-            let jz = ((jitter_seed.wrapping_mul(214013) >> 16) & 0xFFF) as f64 / 4096.0 - 0.5;
+            // Gigue pseudo-aléatoire
+            let jx = rng.next_range(-0.25, 0.25);
+            let jy = rng.next_range(-0.25, 0.25);
+            let jz = rng.next_range(-0.25, 0.25);
 
             let raw_pos = DVec3::new(
-                radius_at_y * theta.cos() + jx * 0.22,
-                y + jy * 0.22,
-                radius_at_y * theta.sin() + jz * 0.22,
-            );
-            let center = raw_pos.normalize();
+                radius_at_y * theta.cos() + jx,
+                y + jy,
+                radius_at_y * theta.sin() + jz,
+            ).normalize();
 
-            // Attribution équilibrée sur le globe :
-            // 4 Grosses Plaques : indices 2, 5, 9, 12
-            // 3 Moyennes Plaques : indices 4, 7, 10
-            // 8 Petites Plaques : indices 0, 1, 3, 6, 8, 11, 13, 14
-            let (category, weight, is_oceanic, drift_speed) = match i {
-                // 4 Grandes plaques (w = 1.45)
-                2 | 9 | 12 => (PlateCategory::Major, 1.45, false, 0.45), // 3 grands continents
-                5 => (PlateCategory::Major, 1.45, true, 0.55),           // 1 méga-bassin océanique (Pacifique)
-                // 3 Moyennes plaques (w = 1.05)
-                4 | 10 => (PlateCategory::Medium, 1.05, false, 0.65),    // 2 continents secondaires
-                7 => (PlateCategory::Medium, 1.05, true, 0.70),          // 1 océan intermédiaire
-                // 8 Petites plaques (w = 0.65, rapides et dynamiques)
-                1 | 13 => (PlateCategory::Minor, 0.65, false, 0.85),     // 2 micro-continents
-                _ => (PlateCategory::Minor, 0.65, true, 1.05),           // 6 plaques océaniques de subduction
-            };
+            // Application de la rotation 3D globale pour une disposition spatiale 100% unique par seed
+            let center = rotate_vector(raw_pos, global_rot_axis, global_rot_angle).normalize();
 
-            // Axe de dérive de rotation
-            let raw_axis = DVec3::new(
-                ((jitter_seed.wrapping_add(1).wrapping_mul(2246822519)) & 0xFFF) as f64 / 2048.0 - 1.0,
-                ((jitter_seed.wrapping_add(2).wrapping_mul(3266489917)) & 0xFFF) as f64 / 2048.0 - 1.0,
-                ((jitter_seed.wrapping_add(3).wrapping_mul(668265263)) & 0xFFF) as f64 / 2048.0 - 1.0,
-            );
-            let rotation_axis = raw_axis.normalize_or_zero();
+            let role = roles[i];
 
-            let base_elevation = if is_oceanic { 5.0 } else { 15.0 };
+            // Axe de dérive propre à chaque plaque
+            let rotation_axis = rng.next_vec3();
+
+            let base_elevation = if role.is_oceanic { 5.0 } else { 15.0 };
             let color = palette[i % palette.len()];
 
             plates.push(TectonicPlate {
                 id: i,
-                category,
+                category: role.category,
                 center,
-                weight,
-                is_oceanic,
+                weight: role.weight,
+                is_oceanic: role.is_oceanic,
                 rotation_axis,
-                drift_speed,
+                drift_speed: role.drift_speed,
                 base_elevation,
                 color,
             });
