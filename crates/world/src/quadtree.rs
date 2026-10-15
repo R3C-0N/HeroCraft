@@ -120,16 +120,12 @@ impl PlanetQuadTree {
     /// Évalue l'arbre complet depuis la position de la caméra et renvoie la liste des feuilles visibles
     pub fn evaluate(&self, camera_pos: DVec3) -> Vec<QuadLeaf> {
         let mut leaves = Vec::with_capacity(256);
-        let cam_dist = camera_pos.length();
-        let cam_dir = if cam_dist > 1e-4 {
-            camera_pos / cam_dist
-        } else {
-            DVec3::new(0.0, 0.0, 1.0)
-        };
 
+        // Toutes les 6 faces de la planète sont toujours conservées pour garantir
+        // une planète 3D fermée et complète à 360° sans aucune face manquante.
         for &face in &PlanetFace::ALL {
             let root = QuadNodeKey::new(face, 0, 0, 0);
-            self.subdivide_recursive(root, camera_pos, cam_dir, &mut leaves);
+            self.subdivide_recursive(root, camera_pos, &mut leaves);
         }
 
         leaves
@@ -139,20 +135,10 @@ impl PlanetQuadTree {
         &self,
         node: QuadNodeKey,
         camera_pos: DVec3,
-        cam_dir: DVec3,
         leaves: &mut Vec<QuadLeaf>,
     ) {
         let center_dir = node.center_direction();
         let center_pos = center_dir * self.base_radius;
-
-        // Culling sécurisé des faces arrière :
-        // Si dot < -0.35, le centre du nœud est à plus de 110° par rapport à la caméra
-        // donc complètement sur la face cachée de la planète.
-        let dot = center_dir.dot(cam_dir);
-        if dot < -0.35 {
-            return;
-        }
-
         let dist_to_node = (camera_pos - center_pos).length();
 
         let should_split = node.level < self.min_level
@@ -162,7 +148,7 @@ impl PlanetQuadTree {
 
         if should_split {
             for child in node.children() {
-                self.subdivide_recursive(child, camera_pos, cam_dir, leaves);
+                self.subdivide_recursive(child, camera_pos, leaves);
             }
         } else {
             let kind = if node.level == self.max_level {
@@ -214,8 +200,8 @@ mod tests {
         let cam_pos = DVec3::new(0.0, 0.0, 150.0);
         let leaves = qt.evaluate(cam_pos);
 
-        // Toutes les feuilles doivent être au niveau racine (Level 0)
-        assert!(!leaves.is_empty());
+        // Toutes les 6 faces doivent être présentes au niveau racine (Level 0)
+        assert_eq!(leaves.len(), 6);
         for leaf in &leaves {
             assert_eq!(leaf.kind, QuadLeafKind::LodPatch);
             assert_eq!(leaf.key.level, 0);
