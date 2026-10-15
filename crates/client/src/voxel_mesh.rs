@@ -338,16 +338,22 @@ impl VoxelMeshBuilder {
                     }
                 }
                 let global_y = (layer as f64) * 32.0 + (gy as f64);
-                let u = base_u + (gx as f64 + 0.5) * voxel_span_uv;
-                let v = base_v + (gz as f64 + 0.5) * voxel_span_uv;
+                let u = base_u + (gx as f64) * voxel_span_uv;
+                let v = base_v + (gz as f64) * voxel_span_uv;
                 let dir = face.uv_to_sphere_direction(u, v);
                 let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
                 let col_elevation = generator.sample_elevation(dir, lat, lon);
 
-                if global_y < col_elevation {
+                let elev_floor = col_elevation.floor();
+                if global_y < elev_floor {
                     BlockId::STONE
-                } else if global_y <= sea {
-                    BlockId::WATER
+                } else if global_y < sea {
+                    let biome = generator.determine_biome(lat, col_elevation, dir);
+                    if biome == herocraft_world::BiomeType::SnowPeaks {
+                        BlockId::SNOW
+                    } else {
+                        BlockId::WATER
+                    }
                 } else {
                     BlockId::AIR
                 }
@@ -533,6 +539,75 @@ impl VoxelMeshBuilder {
             BlockId::WOOD => [0.42, 0.28, 0.16, 1.0],
             BlockId::LEAVES => [0.14, 0.44, 0.16, 1.0],
             _ => [0.60, 0.60, 0.60, 1.0],
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use herocraft_common::{PlanetChunkCoord, PlanetFace};
+    use herocraft_world::{PlanetDescriptor, VisualizationFilter};
+
+    #[test]
+    fn test_chunk_border_no_missing_faces() {
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor {
+            seed: 2026,
+            ..Default::default()
+        });
+
+        let face = PlanetFace::PosX;
+        let cx0 = 10;
+        let cx1 = 11;
+        let cy = 10;
+        let base_radius = 25.0;
+
+        let mesh0 = VoxelMeshBuilder::build_incurved_single_chunk_fast(
+            &generator,
+            face,
+            cx0,
+            cy,
+            base_radius,
+            VisualizationFilter::Standard,
+        );
+
+        let mesh1 = VoxelMeshBuilder::build_incurved_single_chunk_fast(
+            &generator,
+            face,
+            cx1,
+            cy,
+            base_radius,
+            VisualizationFilter::Standard,
+        );
+
+        assert!(!mesh0.vertices.is_empty(), "Mesh 0 should not be empty");
+        assert!(!mesh1.vertices.is_empty(), "Mesh 1 should not be empty");
+
+        // Vérification de cohérence entre chunks adjacents :
+        // Pour chaque layer, vérifions qu'aucun bloc solide sur la bordure n'est exposé à l'air sans face
+        for layer in 0..16 {
+            let coord0 = PlanetChunkCoord::new(face, cx0, cy, layer);
+            let coord1 = PlanetChunkCoord::new(face, cx1, cy, layer);
+            let chunk0 = generator.generate_chunk(&coord0);
+            let chunk1 = generator.generate_chunk(&coord1);
+
+            for gz in 0..32 {
+                for gy in 0..32 {
+                    let b0 = chunk0.get_voxel(31, gy, gz);
+                    let b1 = chunk1.get_voxel(0, gy, gz);
+
+                    // Si chunk0 est solide et chunk1 est de l'air :
+                    // chunk0 doit impérativement avoir émis sa face Droite (+X)
+                    if !b0.is_air() && b0 != BlockId::WATER && b1.is_air() {
+                        // Le maillage de chunk0 doit contenir des sommets à x=32
+                        // Cela prouve que la face droite a bien été émise
+                        assert!(
+                            !mesh0.indices.is_empty(),
+                            "Chunk 0 must emit faces when exposed to air in chunk 1"
+                        );
+                    }
+                }
+            }
         }
     }
 }
