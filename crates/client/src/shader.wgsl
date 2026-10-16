@@ -75,11 +75,31 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         }
     }
 
-    // 2. Normale géométrique pure de la facette (style Voxel et Low-Poly franc et net)
+    // 2. Détection des types de matériaux selon la couleur du bloc/terrain
+    // Eau : bathymétrie complète (lagons azur, bleu océan moyen et fosses abyssales sombres)
+    let is_water = in.color.b > in.color.r * 1.5 && in.color.r < 0.25;
+    // Neige / Glace : haute luminance et équilibre des canaux
+    let is_snow = in.color.r > 0.82 && in.color.g > 0.84 && in.color.b > 0.88;
+
+    // Normale géométrique pure de la facette (style Voxel et Low-Poly franc et net pour le sol terrestre)
     let dpx = dpdx(in.world_pos);
     let dpy = dpdy(in.world_pos);
     let cross_norm = normalize(cross(dpx, dpy));
-    let n = select(cross_norm, -cross_norm, dot(cross_norm, in.normal) < 0.0);
+    let n_facet = select(cross_norm, -cross_norm, dot(cross_norm, in.normal) < 0.0);
+
+    // Normale sphérique continue idéale pour la surface de l'océan
+    let n_sphere = normalize(in.world_pos);
+
+    // Facteur d'altitude orbitale : transition fluide entre vue au sol (alt < 3.0) et vue satellite (alt > 15.0)
+    let cam_dist = length(camera.camera_pos);
+    let cam_alt = cam_dist - camera.planet_radius;
+    let orbit_factor = clamp((cam_alt - 3.0) / 12.0, 0.0, 1.0);
+
+    // Pour l'eau : en vue satellite, on lisse les facettes des polygones en interpolant vers la normale sphérique,
+    // garantissant un reflet spéculaire pur, doux et sans polygone visible.
+    // Le sol terrestre (roche, herbe, terre, sable, neige) reste quant à lui 100% voxelisé et facetté (n_facet).
+    let water_normal = normalize(mix(n_facet, n_sphere, orbit_factor));
+    let n = select(n_facet, water_normal, is_water);
 
     let l = normalize(camera.light_dir);
     let view_dir = normalize(camera.camera_pos - in.world_pos);
@@ -91,20 +111,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ambient = 0.26;
     let light_intensity = ambient + (1.0 - ambient) * half_lambert;
 
-    // Détection des types de matériaux selon la couleur du bloc/terrain
-    // Eau : teinte bleutée à dominante bleue
-    let is_water = in.color.b > 0.45 && in.color.r < 0.30;
-    // Neige / Glace : haute luminance et équilibre des canaux
-    let is_snow = in.color.r > 0.82 && in.color.g > 0.84 && in.color.b > 0.88;
-
     // 4. Reflets spéculaires d'eau et de glace
     var specular_light = vec3<f32>(0.0);
     let ndoth = max(dot(n, h), 0.0);
     let ndotv = max(dot(n, view_dir), 0.0);
 
     if (is_water) {
-        // Reflet spéculaire Blinn-Phong tranchant pour l'océan
-        let sun_spec = pow(ndoth, 64.0) * 1.6;
+        // Reflet spéculaire Blinn-Phong pour l'océan (fin et intense en vue satellite)
+        let spec_power = mix(48.0, 96.0, orbit_factor);
+        let sun_spec = pow(ndoth, spec_power) * 1.8;
         // Effet Fresnel rasante
         let fresnel = pow(1.0 - ndotv, 5.0) * 0.45 + 0.05;
         specular_light += vec3<f32>(1.0, 0.95, 0.85) * (sun_spec * clamp(ndotl * 2.0, 0.0, 1.0) + fresnel * 0.35);
@@ -124,7 +139,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // 6. Brouillard atmosphérique de distance au sol (Ground Distance Fog)
     let dist = length(camera.camera_pos - in.world_pos);
-    let cam_alt = length(camera.camera_pos) - camera.planet_radius;
     let ground_proximity = clamp(1.0 - cam_alt / 8.0, 0.0, 1.0);
 
     if (ground_proximity > 0.001) {
