@@ -82,6 +82,7 @@ fn main() {
 
     // Initialisation de l'interface graphique (HUD avec boutons interactifs et menu paramètres)
     let mut ui_state = UiState::new(current_seed);
+    ui_state.set_scale_factor(window.scale_factor() as f32);
     ui_state.set_screen_size(size.width as f32, size.height as f32);
 
     // Initialisation du moteur WGPU
@@ -99,6 +100,9 @@ fn main() {
 
         match event {
             Event::WindowEvent { window_id, ref event } if window_id == window.id() => {
+                // Transmettre les événements de fenêtre à egui
+                ui_state.handle_event(&window, event);
+
                 match event {
                     WindowEvent::CloseRequested => {
                         let _ = chunk_cache.flush_dirty();
@@ -107,123 +111,45 @@ fn main() {
 
                     WindowEvent::Resized(physical_size) => {
                         state.resize(*physical_size);
+                        ui_state.set_scale_factor(window.scale_factor() as f32);
                         ui_state.set_screen_size(physical_size.width as f32, physical_size.height as f32);
                         camera.aspect = physical_size.width as f32 / physical_size.height.max(1) as f32;
                     }
 
-                    WindowEvent::ScaleFactorChanged { .. } => {
+                    WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                         let physical_size = window.inner_size();
                         state.resize(physical_size);
+                        ui_state.set_scale_factor(*scale_factor as f32);
                         ui_state.set_screen_size(physical_size.width as f32, physical_size.height as f32);
                         camera.aspect = physical_size.width as f32 / physical_size.height.max(1) as f32;
                     }
 
                     // Clic souris (Bouton UI ou Drag & Drop planète)
                     WindowEvent::MouseInput { state: btn_state, button, .. } => {
+                        let is_over_ui = ui_state.is_settings_open
+                            || ui_state.ctx.is_pointer_over_area()
+                            || ui_state.ctx.wants_pointer_input();
+
                         if *button == MouseButton::Left {
                             if *btn_state == ElementState::Pressed {
-                                let mx = last_mouse_pos.0 as f32;
-                                let my = last_mouse_pos.1 as f32;
-
-                                if let Some(action) = ui_state.on_mouse_down(mx, my) {
-                                    // Clic sur l'interface utilisateur
-                                    is_dragging = false;
-                                    match action {
-                                        UiAction::ResumeGame => {
-                                            ui_state.set_settings_open(false);
-                                            state.set_settings_open(false);
-                                            state.update_ui(&ui_state);
-                                            info!("Bouton cliqué : Reprise de la partie.");
-                                        }
-                                        UiAction::QuitGame => {
-                                            let _ = chunk_cache.flush_dirty();
-                                            info!("Bouton cliqué : Sauvegarde des chunks et fermeture du jeu.");
-                                            target.exit();
-                                        }
-                                        UiAction::ToggleVsync => {
-                                            state.set_vsync(ui_state.video_settings.vsync);
-                                            state.update_ui(&ui_state);
-                                            info!("Paramètre V-Sync mis à jour : {}", if ui_state.video_settings.vsync { "ACTIVÉE" } else { "DÉSACTIVÉE" });
-                                        }
-                                        UiAction::ToggleFullscreen => {
-                                            let is_fs = ui_state.video_settings.fullscreen;
-                                            if is_fs {
-                                                window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
-                                            } else {
-                                                window.set_fullscreen(None);
-                                            }
-                                            state.update_ui(&ui_state);
-                                            info!("Paramètre Plein Écran mis à jour : {}", if is_fs { "ACTIVÉ" } else { "DÉSACTIVÉ" });
-                                        }
-                                        UiAction::CycleLodDistance => {
-                                            lod_manager.set_distance_preset(ui_state.video_settings.lod_distance);
-                                            state.update_ui(&ui_state);
-                                            info!("Paramètre Distance LOD mis à jour : {:?}", ui_state.video_settings.lod_distance);
-                                        }
-                                        UiAction::CycleFpsLimit => {
-                                            state.update_ui(&ui_state);
-                                            info!("Paramètre Limite FPS mis à jour : {:?}", ui_state.video_settings.fps_limit);
-                                        }
-                                        UiAction::GenerateNewPlanet => {
-                                            let _ = chunk_cache.flush_dirty();
-                                            current_seed = current_seed.wrapping_add(1337);
-                                            let mut new_desc = herocraft_world::PlanetDescriptor::default();
-                                            new_desc.seed = current_seed;
-                                            generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
-                                            let new_save_dir = format!("saves/monde_{}", current_seed);
-                                            let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
-                                            chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
-                                            lod_manager.clear(current_seed);
-                                            camera.spawn_on_ground(&generator);
-                                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                            state.update_mesh(&lod_manager.combined_mesh);
-                                            ui_state.set_seed(current_seed);
-                                            info!("Bouton cliqué : Nouvelle planète générée ! (Graine: #{})", current_seed);
-                                        }
-                                        UiAction::ToggleGroundCamera => {
-                                            camera.toggle_view(&generator);
-                                            info!(
-                                                "Bouton cliqué : Transition vers {}",
-                                                if camera.target_distance <= 25.0 { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
-                                            );
-                                        }
-                                        UiAction::ToggleAutoRotate => {
-                                            camera.auto_rotate = !camera.auto_rotate;
-                                            ui_state.set_auto_rotate(camera.auto_rotate);
-                                            info!("Bouton cliqué : Auto-rotation = {}", camera.auto_rotate);
-                                        }
-                                        UiAction::ResetCamera => {
-                                            camera.reset();
-                                            info!("Bouton cliqué : Vue réinitialisée.");
-                                        }
-                                        UiAction::ToggleTectonics | UiAction::ToggleOceanCurrents => {
-                                            let filter = ui_state.active_filter();
-                                            lod_manager.set_filter(filter);
-                                            lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                            state.update_mesh(&lod_manager.combined_mesh);
-                                            info!("Filtre de visualisation sélectionné : {:?}", filter);
-                                        }
-                                    }
-                                } else {
-                                    // Clic dans la scène 3D pour faire tourner la caméra ou la planète (si hors menu)
-                                    if !ui_state.is_settings_open {
-                                        is_dragging = true;
-                                    }
+                                if !is_over_ui {
+                                    is_dragging = true;
                                 }
                             } else {
-                                ui_state.on_mouse_up();
                                 is_dragging = false;
                             }
                         } else if *button == MouseButton::Right {
-                            is_dragging = *btn_state == ElementState::Pressed && !ui_state.is_settings_open;
+                            is_dragging = *btn_state == ElementState::Pressed && !is_over_ui;
                         }
                     }
 
                     // Déplacement curseur (Survol des boutons UI et rotation de la vue)
                     WindowEvent::CursorMoved { position, .. } => {
-                        let is_over_ui = ui_state.on_cursor_moved(position.x as f32, position.y as f32);
+                        let is_over_ui = ui_state.is_settings_open
+                            || ui_state.ctx.is_pointer_over_area()
+                            || ui_state.ctx.wants_pointer_input();
 
-                        if is_dragging && !is_over_ui && !ui_state.is_settings_open {
+                        if is_dragging && !is_over_ui {
                             let dx = (position.x - last_mouse_pos.0) as f32;
                             let dy = (position.y - last_mouse_pos.1) as f32;
                             camera.orbit(dx, dy);
@@ -233,7 +159,11 @@ fn main() {
 
                     // Molette de souris (Dézoom / Zoom continu FPS <-> TPS <-> Orbite)
                     WindowEvent::MouseWheel { delta, .. } => {
-                        if !ui_state.is_settings_open {
+                        let is_over_ui = ui_state.is_settings_open
+                            || ui_state.ctx.is_pointer_over_area()
+                            || ui_state.ctx.wants_pointer_input();
+
+                        if !is_over_ui {
                             let zoom_delta = match delta {
                                 MouseScrollDelta::LineDelta(_x, y) => *y,
                                 MouseScrollDelta::PixelDelta(pos) => (pos.y as f32) * 0.04,
@@ -256,8 +186,6 @@ fn main() {
                         if *key_code == KeyCode::Escape && is_pressed {
                             // Touche Échap : Ouvre ou ferme le Menu des Paramètres Vidéo
                             let new_open = ui_state.toggle_settings();
-                            state.set_settings_open(new_open);
-                            state.update_ui(&ui_state);
 
                             // Réinitialise les touches de déplacement pour éviter tout glissement fantôme
                             camera.move_forward = false;
@@ -330,7 +258,6 @@ fn main() {
                                         if ui_state.show_tectonics {
                                             ui_state.show_ocean_currents = false;
                                         }
-                                        ui_state.redraw();
                                         let filter = ui_state.active_filter();
                                         lod_manager.set_filter(filter);
                                         lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
@@ -342,7 +269,6 @@ fn main() {
                                         if ui_state.show_ocean_currents {
                                             ui_state.show_tectonics = false;
                                         }
-                                        ui_state.redraw();
                                         let filter = ui_state.active_filter();
                                         lod_manager.set_filter(filter);
                                         lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
@@ -382,13 +308,93 @@ fn main() {
                             state.update_mesh(&lod_manager.combined_mesh);
                         }
 
-                        // Mise à jour de l'affichage UI si l'état des boutons ou la seed a changé
-                        if ui_state.dirty {
-                            state.update_ui(&ui_state);
-                            ui_state.dirty = false;
+                        // 1. Mise à jour de l'interface egui
+                        let is_ground = camera.distance <= 25.0;
+                        let (full_output, maybe_action) = ui_state.update_ui(camera.distance, is_ground);
+
+                        // 2. Traitement des actions déclenchées par les boutons egui
+                        if let Some(action) = maybe_action {
+                            match action {
+                                UiAction::ResumeGame => {
+                                    ui_state.set_settings_open(false);
+                                    info!("Bouton cliqué : Reprise de la partie.");
+                                }
+                                UiAction::QuitGame => {
+                                    let _ = chunk_cache.flush_dirty();
+                                    info!("Bouton cliqué : Sauvegarde des chunks et fermeture du jeu.");
+                                    target.exit();
+                                }
+                                UiAction::ToggleVsync => {
+                                    state.set_vsync(ui_state.video_settings.vsync);
+                                    info!("Paramètre V-Sync mis à jour : {}", if ui_state.video_settings.vsync { "ACTIVÉE" } else { "DÉSACTIVÉE" });
+                                }
+                                UiAction::ToggleFullscreen => {
+                                    let is_fs = ui_state.video_settings.fullscreen;
+                                    if is_fs {
+                                        window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+                                    } else {
+                                        window.set_fullscreen(None);
+                                    }
+                                    info!("Paramètre Plein Écran mis à jour : {}", if is_fs { "ACTIVÉ" } else { "DÉSACTIVÉ" });
+                                }
+                                UiAction::CycleLodDistance => {
+                                    lod_manager.set_distance_preset(ui_state.video_settings.lod_distance);
+                                    info!("Paramètre Distance LOD mis à jour : {:?}", ui_state.video_settings.lod_distance);
+                                }
+                                UiAction::CycleFpsLimit => {
+                                    info!("Paramètre Limite FPS mis à jour : {:?}", ui_state.video_settings.fps_limit);
+                                }
+                                UiAction::GenerateNewPlanet => {
+                                    let _ = chunk_cache.flush_dirty();
+                                    current_seed = current_seed.wrapping_add(1337);
+                                    let mut new_desc = herocraft_world::PlanetDescriptor::default();
+                                    new_desc.seed = current_seed;
+                                    generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
+                                    let new_save_dir = format!("saves/monde_{}", current_seed);
+                                    let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
+                                    chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
+                                    lod_manager.clear(current_seed);
+                                    camera.spawn_on_ground(&generator);
+                                    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
+                                    state.update_mesh(&lod_manager.combined_mesh);
+                                    ui_state.set_seed(current_seed);
+                                    info!("Bouton cliqué : Nouvelle planète générée ! (Graine: #{})", current_seed);
+                                }
+                                UiAction::ToggleGroundCamera => {
+                                    camera.toggle_view(&generator);
+                                    info!(
+                                        "Bouton cliqué : Transition vers {}",
+                                        if camera.target_distance <= 25.0 { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
+                                    );
+                                }
+                                UiAction::ToggleAutoRotate => {
+                                    camera.auto_rotate = !camera.auto_rotate;
+                                    ui_state.set_auto_rotate(camera.auto_rotate);
+                                    info!("Bouton cliqué : Auto-rotation = {}", camera.auto_rotate);
+                                }
+                                UiAction::ResetCamera => {
+                                    camera.reset();
+                                    info!("Bouton cliqué : Vue réinitialisée.");
+                                }
+                                UiAction::ToggleTectonics | UiAction::ToggleOceanCurrents => {
+                                    let filter = ui_state.active_filter();
+                                    lod_manager.set_filter(filter);
+                                    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
+                                    state.update_mesh(&lod_manager.combined_mesh);
+                                    info!("Filtre de visualisation sélectionné : {:?}", filter);
+                                }
+                            }
                         }
 
-                        match state.render() {
+                        // 3. Tessellation egui
+                        let paint_jobs = ui_state.ctx.tessellate(full_output.shapes, ui_state.scale_factor);
+                        let screen_descriptor = egui_wgpu::ScreenDescriptor {
+                            size_in_pixels: [state.size.width, state.size.height],
+                            pixels_per_point: ui_state.scale_factor,
+                        };
+
+                        // 4. Rendu WGPU (3D + egui pass)
+                        match state.render(&paint_jobs, &screen_descriptor, &full_output.textures_delta) {
                             Ok(_) => {}
                             Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
                             Err(wgpu::SurfaceError::OutOfMemory) => target.exit(),

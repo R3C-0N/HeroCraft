@@ -1,3 +1,6 @@
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::window::Window;
+
 /// Actions déclenchées par l'interface utilisateur
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiAction {
@@ -23,11 +26,31 @@ pub enum LodDistanceSetting {
     Elevee,
 }
 
+impl LodDistanceSetting {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Courte => "Courte (Rapide)",
+            Self::Normale => "Normale (Équilibrée)",
+            Self::Elevee => "Élevée (Haute Fidélité)",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FpsLimitSetting {
     Fps60,
     Fps120,
     Unlimited,
+}
+
+impl FpsLimitSetting {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Fps60 => "60 FPS",
+            Self::Fps120 => "120 FPS",
+            Self::Unlimited => "Illimité",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,31 +72,11 @@ impl Default for VideoSettings {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct UiButton {
-    pub id: UiAction,
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
-    pub label: &'static str,
-    pub is_checkbox: bool,
-    pub is_hovered: bool,
-    pub is_pressed: bool,
-}
-
-impl UiButton {
-    pub fn contains(&self, px: f32, py: f32) -> bool {
-        px >= self.x && px <= self.x + self.w && py >= self.y && py <= self.y + self.h
-    }
-}
-
 pub struct UiState {
-    pub canvas_width: usize,
-    pub canvas_height: usize,
-    pub pixels: Vec<u8>,
-    pub buttons: Vec<UiButton>,
-    pub settings_buttons: Vec<UiButton>,
+    pub ctx: egui::Context,
+    pub raw_input: egui::RawInput,
+    pub scale_factor: f32,
+    pub pointer_pos: egui::Pos2,
     pub current_seed: u64,
     pub auto_rotate: bool,
     pub show_tectonics: bool,
@@ -83,158 +86,18 @@ pub struct UiState {
     pub video_settings: VideoSettings,
     pub screen_width: f32,
     pub screen_height: f32,
-    pub dirty: bool,
 }
 
 impl UiState {
     pub fn new(initial_seed: u64) -> Self {
-        let canvas_width = 512;
-        let canvas_height = 512;
+        let ctx = egui::Context::default();
+        Self::apply_custom_theme(&ctx);
 
-        let buttons = vec![
-            UiButton {
-                id: UiAction::GenerateNewPlanet,
-                x: 16.0,
-                y: 64.0,
-                w: 288.0,
-                h: 32.0,
-                label: "NOUVELLE PLANETE [G]",
-                is_checkbox: false,
-                is_hovered: false,
-                is_pressed: false,
-            },
-            UiButton {
-                id: UiAction::ToggleGroundCamera,
-                x: 16.0,
-                y: 100.0,
-                w: 288.0,
-                h: 32.0,
-                label: "VUE SOL (FPS) / ORBITE [F]",
-                is_checkbox: false,
-                is_hovered: false,
-                is_pressed: false,
-            },
-            UiButton {
-                id: UiAction::ToggleAutoRotate,
-                x: 16.0,
-                y: 136.0,
-                w: 288.0,
-                h: 32.0,
-                label: "AUTO-ROTATION [ESPACE]",
-                is_checkbox: false,
-                is_hovered: false,
-                is_pressed: false,
-            },
-            UiButton {
-                id: UiAction::ResetCamera,
-                x: 16.0,
-                y: 172.0,
-                w: 288.0,
-                h: 32.0,
-                label: "REINITIALISER VUE [R]",
-                is_checkbox: false,
-                is_hovered: false,
-                is_pressed: false,
-            },
-            UiButton {
-                id: UiAction::ToggleTectonics,
-                x: 16.0,
-                y: 212.0,
-                w: 288.0,
-                h: 32.0,
-                label: "PLAQUES TECTONIQUES",
-                is_checkbox: true,
-                is_hovered: false,
-                is_pressed: false,
-            },
-            UiButton {
-                id: UiAction::ToggleOceanCurrents,
-                x: 16.0,
-                y: 248.0,
-                w: 288.0,
-                h: 32.0,
-                label: "COURANTS MARINS",
-                is_checkbox: true,
-                is_hovered: false,
-                is_pressed: false,
-            },
-        ];
-
-        let settings_buttons = vec![
-            UiButton {
-                id: UiAction::ToggleVsync,
-                x: 24.0,
-                y: 68.0,
-                w: 332.0,
-                h: 36.0,
-                label: "V-SYNC",
-                is_checkbox: false,
-                is_hovered: false,
-                is_pressed: false,
-            },
-            UiButton {
-                id: UiAction::CycleLodDistance,
-                x: 24.0,
-                y: 110.0,
-                w: 332.0,
-                h: 36.0,
-                label: "DISTANCE LOD",
-                is_checkbox: false,
-                is_hovered: false,
-                is_pressed: false,
-            },
-            UiButton {
-                id: UiAction::ToggleFullscreen,
-                x: 24.0,
-                y: 152.0,
-                w: 332.0,
-                h: 36.0,
-                label: "PLEIN ECRAN",
-                is_checkbox: false,
-                is_hovered: false,
-                is_pressed: false,
-            },
-            UiButton {
-                id: UiAction::CycleFpsLimit,
-                x: 24.0,
-                y: 194.0,
-                w: 332.0,
-                h: 36.0,
-                label: "LIMITE FPS",
-                is_checkbox: false,
-                is_hovered: false,
-                is_pressed: false,
-            },
-            UiButton {
-                id: UiAction::ResumeGame,
-                x: 24.0,
-                y: 250.0,
-                w: 332.0,
-                h: 36.0,
-                label: "REPRENDRE LA PARTIE [ECHAP]",
-                is_checkbox: false,
-                is_hovered: false,
-                is_pressed: false,
-            },
-            UiButton {
-                id: UiAction::QuitGame,
-                x: 24.0,
-                y: 296.0,
-                w: 332.0,
-                h: 36.0,
-                label: "QUITTER LE JEU",
-                is_checkbox: false,
-                is_hovered: false,
-                is_pressed: false,
-            },
-        ];
-
-        let mut ui = Self {
-            canvas_width,
-            canvas_height,
-            pixels: vec![0; canvas_width * canvas_height * 4],
-            buttons,
-            settings_buttons,
+        Self {
+            ctx,
+            raw_input: egui::RawInput::default(),
+            scale_factor: 1.0_f32,
+            pointer_pos: egui::Pos2::ZERO,
             current_seed: initial_seed,
             auto_rotate: false,
             show_tectonics: false,
@@ -242,13 +105,77 @@ impl UiState {
             current_fps: 60,
             is_settings_open: false,
             video_settings: VideoSettings::default(),
-            screen_width: 1280.0,
-            screen_height: 720.0,
-            dirty: true,
-        };
+            screen_width: 1280.0_f32,
+            screen_height: 720.0_f32,
+        }
+    }
 
-        ui.redraw();
-        ui
+    /// Applique un thème personnalisé sombre fantasy/voxel aux teintes obsidienne et or
+    pub fn apply_custom_theme(ctx: &egui::Context) {
+        let mut visuals = egui::Visuals::dark();
+
+        visuals.window_rounding = egui::Rounding::same(8.0_f32);
+        visuals.window_fill = egui::Color32::from_rgba_premultiplied(14, 18, 28, 240);
+        visuals.window_stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(212, 175, 55));
+        visuals.panel_fill = egui::Color32::from_rgba_premultiplied(10, 14, 22, 210);
+
+        // Boutons inactifs
+        visuals.widgets.inactive.bg_fill = egui::Color32::from_rgba_premultiplied(24, 32, 46, 220);
+        visuals.widgets.inactive.rounding = egui::Rounding::same(5.0_f32);
+        visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(55, 70, 95));
+        visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(220, 225, 235));
+
+        // Boutons survolés
+        visuals.widgets.hovered.bg_fill = egui::Color32::from_rgba_premultiplied(42, 54, 78, 235);
+        visuals.widgets.hovered.rounding = egui::Rounding::same(5.0_f32);
+        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(212, 175, 55));
+        visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
+
+        // Boutons cliqués / actifs
+        visuals.widgets.active.bg_fill = egui::Color32::from_rgba_premultiplied(65, 85, 125, 245);
+        visuals.widgets.active.rounding = egui::Rounding::same(5.0_f32);
+        visuals.widgets.active.bg_stroke = egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(255, 215, 0));
+        visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
+
+        // Menu & fenêtres
+        visuals.override_text_color = Some(egui::Color32::from_rgb(235, 240, 248));
+
+        let mut style = (*ctx.style()).clone();
+        style.visuals = visuals;
+        style.spacing.item_spacing = egui::vec2(8.0_f32, 8.0_f32);
+        style.spacing.button_padding = egui::vec2(12.0_f32, 6.0_f32);
+
+        ctx.set_style(style);
+    }
+
+    pub fn set_scale_factor(&mut self, factor: f32) {
+        self.scale_factor = factor.max(0.1_f32);
+    }
+
+    pub fn set_screen_size(&mut self, width: f32, height: f32) {
+        self.screen_width = width;
+        self.screen_height = height;
+    }
+
+    pub fn set_seed(&mut self, seed: u64) {
+        self.current_seed = seed;
+    }
+
+    pub fn set_auto_rotate(&mut self, auto_rotate: bool) {
+        self.auto_rotate = auto_rotate;
+    }
+
+    pub fn set_fps(&mut self, fps: u32) {
+        self.current_fps = fps;
+    }
+
+    pub fn set_settings_open(&mut self, is_open: bool) {
+        self.is_settings_open = is_open;
+    }
+
+    pub fn toggle_settings(&mut self) -> bool {
+        self.is_settings_open = !self.is_settings_open;
+        self.is_settings_open
     }
 
     pub fn active_filter(&self) -> herocraft_world::VisualizationFilter {
@@ -261,609 +188,317 @@ impl UiState {
         }
     }
 
-    pub fn set_screen_size(&mut self, width: f32, height: f32) {
-        self.screen_width = width;
-        self.screen_height = height;
-    }
+    /// Transmet les événements de fenêtre Winit à egui
+    pub fn handle_event(&mut self, _window: &Window, event: &WindowEvent) {
+        let ppp = self.scale_factor.max(0.1_f32);
 
-    pub fn set_settings_open(&mut self, is_open: bool) {
-        if self.is_settings_open != is_open {
-            self.is_settings_open = is_open;
-            self.redraw();
-        }
-    }
+        match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                let pos = egui::pos2((position.x as f32) / ppp, (position.y as f32) / ppp);
+                self.pointer_pos = pos;
+                self.raw_input.events.push(egui::Event::PointerMoved(pos));
+            }
 
-    pub fn toggle_settings(&mut self) -> bool {
-        self.set_settings_open(!self.is_settings_open);
-        self.is_settings_open
-    }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let egui_btn = match button {
+                    MouseButton::Left => Some(egui::PointerButton::Primary),
+                    MouseButton::Right => Some(egui::PointerButton::Secondary),
+                    MouseButton::Middle => Some(egui::PointerButton::Middle),
+                    _ => None,
+                };
 
-    /// Vérifie si la souris survole l'un des boutons ou le panneau d'interface
-    pub fn on_cursor_moved(&mut self, x: f32, y: f32) -> bool {
-        let mut changed = false;
-
-        if self.is_settings_open {
-            let menu_w = 380.0_f32;
-            let menu_h = 400.0_f32;
-            let menu_x = ((self.screen_width - menu_w) * 0.5).max(0.0);
-            let menu_y = ((self.screen_height - menu_h) * 0.5).max(0.0);
-
-            let rel_x = x - menu_x;
-            let rel_y = y - menu_y;
-
-            for btn in &mut self.settings_buttons {
-                let hovered = btn.contains(rel_x, rel_y);
-                if btn.is_hovered != hovered {
-                    btn.is_hovered = hovered;
-                    changed = true;
+                if let Some(btn) = egui_btn {
+                    let pressed = *state == ElementState::Pressed;
+                    self.raw_input.events.push(egui::Event::PointerButton {
+                        pos: self.pointer_pos,
+                        button: btn,
+                        pressed,
+                        modifiers: egui::Modifiers::default(),
+                    });
                 }
             }
 
-            if changed {
-                self.redraw();
+            WindowEvent::MouseWheel { delta, .. } => {
+                let (dx, dy) = match delta {
+                    MouseScrollDelta::LineDelta(x, y) => (*x * 20.0_f32, *y * 20.0_f32),
+                    MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
+                };
+
+                self.raw_input.events.push(egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(dx, dy),
+                    modifiers: egui::Modifiers::default(),
+                });
             }
 
-            // En mode menu des paramètres, tout déplacement souris est absorbé par l'UI
-            true
-        } else {
-            let is_over_panel = x >= 12.0 && x <= 308.0 && y >= 12.0 && y <= 300.0;
-
-            for btn in &mut self.buttons {
-                let hovered = btn.contains(x, y);
-                if btn.is_hovered != hovered {
-                    btn.is_hovered = hovered;
-                    changed = true;
-                }
-            }
-
-            if changed {
-                self.redraw();
-            }
-
-            is_over_panel
+            _ => {}
         }
     }
 
-    /// Gère le clic de la souris
-    pub fn on_mouse_down(&mut self, x: f32, y: f32) -> Option<UiAction> {
-        let mut clicked_action = None;
+    /// Construit l'interface graphique immédiate pour la frame courante
+    pub fn update_ui(&mut self, camera_distance: f32, is_ground: bool) -> (egui::FullOutput, Option<UiAction>) {
+        let mut raw_input = std::mem::take(&mut self.raw_input);
+        let ppp = self.scale_factor.max(0.1_f32);
+        let logical_width = self.screen_width / ppp;
+        let logical_height = self.screen_height / ppp;
 
-        if self.is_settings_open {
-            let menu_w = 380.0_f32;
-            let menu_h = 400.0_f32;
-            let menu_x = ((self.screen_width - menu_w) * 0.5).max(0.0);
-            let menu_y = ((self.screen_height - menu_h) * 0.5).max(0.0);
+        raw_input.screen_rect = Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(logical_width, logical_height),
+        ));
+        self.ctx.set_pixels_per_point(ppp);
 
-            let rel_x = x - menu_x;
-            let rel_y = y - menu_y;
+        let mut action: Option<UiAction> = None;
 
-            for btn in &mut self.settings_buttons {
-                if btn.contains(rel_x, rel_y) {
-                    btn.is_pressed = true;
-                    clicked_action = Some(btn.id);
+        let full_output = self.ctx.run(raw_input, |ctx| {
+            // 1. Réticule de visée en mode FPS (quand le menu est fermé)
+            if is_ground && !self.is_settings_open {
+                let center = ctx.screen_rect().center();
+                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("crosshair")));
+                let stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_white_alpha(180));
+                painter.line_segment([center - egui::vec2(6.0_f32, 0.0_f32), center + egui::vec2(6.0_f32, 0.0_f32)], stroke);
+                painter.line_segment([center - egui::vec2(0.0_f32, 6.0_f32), center + egui::vec2(0.0_f32, 6.0_f32)], stroke);
+                painter.circle_filled(center, 1.2_f32, egui::Color32::from_rgb(255, 215, 0));
+            }
 
-                    match btn.id {
-                        UiAction::ToggleVsync => {
+            // 2. Panneau HUD supérieur gauche (Planète, actions, filtres)
+            egui::Area::new(egui::Id::new("top_left_hud"))
+                .fixed_pos(egui::pos2(16.0_f32, 16.0_f32))
+                .show(ctx, |ui| {
+                    egui::Frame::none()
+                        .fill(egui::Color32::from_rgba_premultiplied(12, 16, 24, 215))
+                        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(180, 140, 45)))
+                        .rounding(egui::Rounding::same(6.0_f32))
+                        .inner_margin(egui::Margin::same(12.0_f32))
+                        .show(ui, |ui| {
+                            ui.set_width(260.0_f32);
+
+                            // Titre & Graine du monde
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new("HEROCRAFT")
+                                        .strong()
+                                        .color(egui::Color32::from_rgb(240, 200, 60))
+                                        .size(16.0_f32),
+                                );
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("#{}", self.current_seed))
+                                            .monospace()
+                                            .color(egui::Color32::from_rgb(150, 165, 185))
+                                            .size(11.0_f32),
+                                    );
+                                });
+                            });
+
+                            ui.add_space(4.0_f32);
+                            ui.separator();
+                            ui.add_space(4.0_f32);
+
+                            // Boutons d'actions du monde
+                            if ui.button("🎲  Nouvelle planète [G]").clicked() {
+                                action = Some(UiAction::GenerateNewPlanet);
+                            }
+
+                            let view_label = if is_ground { "🛰  Vue Satellite [F]" } else { "🚶  Vue Sol (FPS) [F]" };
+                            if ui.button(view_label).clicked() {
+                                action = Some(UiAction::ToggleGroundCamera);
+                            }
+
+                            let rot_label = if self.auto_rotate { "⏸  Arrêter rotation [Espace]" } else { "▶  Auto-rotation [Espace]" };
+                            if ui.button(rot_label).clicked() {
+                                action = Some(UiAction::ToggleAutoRotate);
+                            }
+
+                            if ui.button("🔄  Réinitialiser vue [R]").clicked() {
+                                action = Some(UiAction::ResetCamera);
+                            }
+
+                            ui.add_space(4.0_f32);
+                            ui.separator();
+                            ui.add_space(4.0_f32);
+
+                            // Filtres cartographiques
+                            ui.label(
+                                egui::RichText::new("Filtres cartographiques :")
+                                    .size(12.0_f32)
+                                    .color(egui::Color32::from_rgb(180, 185, 200)),
+                            );
+
+                            if ui.checkbox(&mut self.show_tectonics, "Plaques tectoniques [T]").changed() {
+                                if self.show_tectonics {
+                                    self.show_ocean_currents = false;
+                                }
+                                action = Some(UiAction::ToggleTectonics);
+                            }
+
+                            if ui.checkbox(&mut self.show_ocean_currents, "Courants marins [C]").changed() {
+                                if self.show_ocean_currents {
+                                    self.show_tectonics = false;
+                                }
+                                action = Some(UiAction::ToggleOceanCurrents);
+                            }
+                        });
+                });
+
+            // 3. Panneau HUD supérieur droit (FPS, altitude, raccourci menu)
+            egui::Area::new(egui::Id::new("top_right_hud"))
+                .pivot(egui::Align2::RIGHT_TOP)
+                .fixed_pos(egui::pos2(logical_width - 16.0_f32, 16.0_f32))
+                .show(ctx, |ui| {
+                    egui::Frame::none()
+                        .fill(egui::Color32::from_rgba_premultiplied(12, 16, 24, 215))
+                        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(180, 140, 45)))
+                        .rounding(egui::Rounding::same(6.0_f32))
+                        .inner_margin(egui::Margin::same(10.0_f32))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                let fps_color = if self.current_fps >= 55 {
+                                    egui::Color32::from_rgb(80, 220, 100)
+                                } else if self.current_fps >= 30 {
+                                    egui::Color32::from_rgb(240, 190, 50)
+                                } else {
+                                    egui::Color32::from_rgb(240, 80, 80)
+                                };
+                                ui.label(egui::RichText::new(format!("{} FPS", self.current_fps)).strong().color(fps_color));
+
+                                ui.separator();
+
+                                let dist_label = if is_ground {
+                                    "Sol (FPS)".to_string()
+                                } else {
+                                    format!("{:.0} m", camera_distance)
+                                };
+                                ui.label(egui::RichText::new(dist_label).color(egui::Color32::from_rgb(180, 205, 240)));
+
+                                ui.separator();
+
+                                if ui.button("⚙ Menu [Échap]").clicked() {
+                                    self.is_settings_open = !self.is_settings_open;
+                                }
+                            });
+                        });
+                });
+
+            // 4. Menu Paramètres Vidéo & Commandes (Modal centré lors de l'appui sur Échap)
+            if self.is_settings_open {
+                // Fond assombrissant l'arrière-plan 3D
+                let screen_rect = ctx.screen_rect();
+                ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("backdrop")))
+                    .rect_filled(screen_rect, 0.0_f32, egui::Color32::from_rgba_premultiplied(0, 0, 0, 160));
+
+                egui::Window::new("⚙  PARAMÈTRES — HEROCRAFT")
+                    .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0_f32, 0.0_f32))
+                    .collapsible(false)
+                    .resizable(false)
+                    .default_width(400.0_f32)
+                    .frame(
+                        egui::Frame::window(&ctx.style())
+                            .fill(egui::Color32::from_rgba_premultiplied(14, 18, 28, 252))
+                            .stroke(egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(212, 175, 55)))
+                            .rounding(egui::Rounding::same(8.0_f32))
+                            .inner_margin(egui::Margin::same(18.0_f32)),
+                    )
+                    .show(ctx, |ui| {
+                        ui.heading(
+                            egui::RichText::new("OPTIONS GRAPHIQUES")
+                                .size(14.0_f32)
+                                .color(egui::Color32::from_rgb(220, 185, 60)),
+                        );
+                        ui.add_space(4.0_f32);
+
+                        // Synchronisation verticale
+                        let vsync_text = if self.video_settings.vsync { "Activée" } else { "Désactivée" };
+                        if ui.button(format!("Synchronisation Verticale (V-Sync) : {}", vsync_text)).clicked() {
                             self.video_settings.vsync = !self.video_settings.vsync;
+                            action = Some(UiAction::ToggleVsync);
                         }
-                        UiAction::CycleLodDistance => {
+
+                        // Plein écran
+                        let fs_text = if self.video_settings.fullscreen { "Plein Écran" } else { "Fenêtré" };
+                        if ui.button(format!("Mode d'affichage : {}", fs_text)).clicked() {
+                            self.video_settings.fullscreen = !self.video_settings.fullscreen;
+                            action = Some(UiAction::ToggleFullscreen);
+                        }
+
+                        // Distance LOD
+                        if ui.button(format!("Distance LOD : {}", self.video_settings.lod_distance.label())).clicked() {
                             self.video_settings.lod_distance = match self.video_settings.lod_distance {
                                 LodDistanceSetting::Courte => LodDistanceSetting::Normale,
                                 LodDistanceSetting::Normale => LodDistanceSetting::Elevee,
                                 LodDistanceSetting::Elevee => LodDistanceSetting::Courte,
                             };
+                            action = Some(UiAction::CycleLodDistance);
                         }
-                        UiAction::ToggleFullscreen => {
-                            self.video_settings.fullscreen = !self.video_settings.fullscreen;
-                        }
-                        UiAction::CycleFpsLimit => {
+
+                        // Limite FPS
+                        if ui.button(format!("Limite FPS : {}", self.video_settings.fps_limit.label())).clicked() {
                             self.video_settings.fps_limit = match self.video_settings.fps_limit {
                                 FpsLimitSetting::Fps60 => FpsLimitSetting::Fps120,
                                 FpsLimitSetting::Fps120 => FpsLimitSetting::Unlimited,
                                 FpsLimitSetting::Unlimited => FpsLimitSetting::Fps60,
                             };
+                            action = Some(UiAction::CycleFpsLimit);
                         }
-                        UiAction::ResumeGame => {
-                            self.is_settings_open = false;
-                        }
-                        _ => {}
-                    }
-                }
-            }
 
-            if clicked_action.is_some() {
-                self.redraw();
-            }
+                        ui.add_space(10.0_f32);
+                        ui.separator();
+                        ui.add_space(6.0_f32);
 
-            clicked_action
-        } else {
-            for btn in &mut self.buttons {
-                if btn.contains(x, y) {
-                    btn.is_pressed = true;
-                    clicked_action = Some(btn.id);
+                        ui.heading(
+                            egui::RichText::new("GUIDE DES CONTRÔLES")
+                                .size(14.0_f32)
+                                .color(egui::Color32::from_rgb(220, 185, 60)),
+                        );
+                        ui.add_space(4.0_f32);
 
-                    match btn.id {
-                        UiAction::ToggleTectonics => {
-                            self.show_tectonics = !self.show_tectonics;
-                            if self.show_tectonics {
-                                self.show_ocean_currents = false;
+                        egui::Grid::new("controls_grid")
+                            .num_columns(2)
+                            .spacing([14.0_f32, 5.0_f32])
+                            .show(ui, |ui| {
+                                ui.label(egui::RichText::new("[Z,Q,S,D] / [W,A,S,D]").monospace().color(egui::Color32::from_rgb(200, 215, 235)));
+                                ui.label("Marcher sur les voxels (gravité sphérique)");
+                                ui.end_row();
+
+                                ui.label(egui::RichText::new("[SHIFT]").monospace().color(egui::Color32::from_rgb(200, 215, 235)));
+                                ui.label("Courir / Sprinter");
+                                ui.end_row();
+
+                                ui.label(egui::RichText::new("[ESPACE]").monospace().color(egui::Color32::from_rgb(200, 215, 235)));
+                                ui.label("Sauter (au sol) / Auto-rotation (orbite)");
+                                ui.end_row();
+
+                                ui.label(egui::RichText::new("[F]").monospace().color(egui::Color32::from_rgb(200, 215, 235)));
+                                ui.label("Basculer Vue Sol (FPS) <-> Orbite");
+                                ui.end_row();
+
+                                ui.label(egui::RichText::new("Molette Souris").monospace().color(egui::Color32::from_rgb(200, 215, 235)));
+                                ui.label("Zoom continu FPS -> TPS -> Orbite");
+                                ui.end_row();
+
+                                ui.label(egui::RichText::new("Clic Droit / Gauche").monospace().color(egui::Color32::from_rgb(200, 215, 235)));
+                                ui.label("Orienter la vue / Tourner la planète");
+                                ui.end_row();
+                            });
+
+                        ui.add_space(12.0_f32);
+                        ui.separator();
+                        ui.add_space(8.0_f32);
+
+                        ui.horizontal(|ui| {
+                            if ui.button(egui::RichText::new("▶  Reprendre la partie [Échap]").strong()).clicked() {
+                                self.is_settings_open = false;
+                                action = Some(UiAction::ResumeGame);
                             }
-                        }
-                        UiAction::ToggleOceanCurrents => {
-                            self.show_ocean_currents = !self.show_ocean_currents;
-                            if self.show_ocean_currents {
-                                self.show_tectonics = false;
+                            if ui.button(egui::RichText::new("🚪  Quitter le jeu").color(egui::Color32::from_rgb(245, 110, 110))).clicked() {
+                                action = Some(UiAction::QuitGame);
                             }
-                        }
-                        _ => {}
-                    }
-                }
+                        });
+                    });
             }
+        });
 
-            if clicked_action.is_some() {
-                self.redraw();
-            }
-
-            clicked_action
-        }
-    }
-
-    pub fn on_mouse_up(&mut self) {
-        let mut changed = false;
-        for btn in &mut self.buttons {
-            if btn.is_pressed {
-                btn.is_pressed = false;
-                changed = true;
-            }
-        }
-        for btn in &mut self.settings_buttons {
-            if btn.is_pressed {
-                btn.is_pressed = false;
-                changed = true;
-            }
-        }
-        if changed {
-            self.redraw();
-        }
-    }
-
-    pub fn set_seed(&mut self, seed: u64) {
-        self.current_seed = seed;
-        self.redraw();
-    }
-
-    pub fn set_auto_rotate(&mut self, enabled: bool) {
-        self.auto_rotate = enabled;
-        self.redraw();
-    }
-
-    /// Redessine le panneau d'interface dans le buffer de pixels
-    pub fn redraw(&mut self) {
-        self.pixels.fill(0);
-
-        if self.is_settings_open {
-            // Pixel assombrissant (Backdrop) tout en bas à droite du canvas
-            let dark_idx = ((self.canvas_height - 1) * self.canvas_width + (self.canvas_width - 1)) * 4;
-            self.pixels[dark_idx] = 8;
-            self.pixels[dark_idx + 1] = 14;
-            self.pixels[dark_idx + 2] = 26;
-            self.pixels[dark_idx + 3] = 190;
-
-            // Fenêtre centrale du Menu Paramètres Vidéo (380x400)
-            self.draw_rounded_box(12, 12, 356, 376, [14, 22, 38, 245], [55, 95, 150, 255]);
-
-            // Titre & Sous-titre
-            self.draw_text_5x7(94, 24, "PARAMETRES VIDEO", [220, 240, 255, 255], 2);
-            self.draw_text_5x7(90, 48, "[ECHAP] POUR REPRENDRE", [120, 165, 220, 255], 1);
-
-            // Boutons de réglages
-            let settings_buttons = self.settings_buttons.clone();
-            for btn in settings_buttons {
-                let bx = btn.x as usize;
-                let by = btn.y as usize;
-                let bw = btn.w as usize;
-                let bh = btn.h as usize;
-
-                let (label, bg_color, border_color, text_color) = match btn.id {
-                    UiAction::ToggleVsync => {
-                        let text = if self.video_settings.vsync {
-                            "V-SYNC : [ACTIVE (60 FPS)]"
-                        } else {
-                            "V-SYNC : [DESACTIVE (ILLIMITE)]"
-                        };
-                        let (bg, border, tc) = if btn.is_pressed {
-                            ([12, 85, 160, 255], [100, 200, 255, 255], [255, 255, 255, 255])
-                        } else if btn.is_hovered {
-                            ([35, 55, 90, 240], [80, 160, 240, 255], [240, 248, 255, 255])
-                        } else {
-                            ([22, 34, 56, 210], [50, 80, 120, 200], [180, 205, 230, 255])
-                        };
-                        (text, bg, border, tc)
-                    }
-                    UiAction::CycleLodDistance => {
-                        let text = match self.video_settings.lod_distance {
-                            LodDistanceSetting::Courte => "DISTANCE LOD : [COURTE]",
-                            LodDistanceSetting::Normale => "DISTANCE LOD : [NORMALE]",
-                            LodDistanceSetting::Elevee => "DISTANCE LOD : [MAXIMALE]",
-                        };
-                        let (bg, border, tc) = if btn.is_pressed {
-                            ([12, 85, 160, 255], [100, 200, 255, 255], [255, 255, 255, 255])
-                        } else if btn.is_hovered {
-                            ([35, 55, 90, 240], [80, 160, 240, 255], [240, 248, 255, 255])
-                        } else {
-                            ([22, 34, 56, 210], [50, 80, 120, 200], [180, 205, 230, 255])
-                        };
-                        (text, bg, border, tc)
-                    }
-                    UiAction::ToggleFullscreen => {
-                        let text = if self.video_settings.fullscreen {
-                            "PLEIN ECRAN : [OUI]"
-                        } else {
-                            "PLEIN ECRAN : [NON]"
-                        };
-                        let (bg, border, tc) = if btn.is_pressed {
-                            ([12, 85, 160, 255], [100, 200, 255, 255], [255, 255, 255, 255])
-                        } else if btn.is_hovered {
-                            ([35, 55, 90, 240], [80, 160, 240, 255], [240, 248, 255, 255])
-                        } else {
-                            ([22, 34, 56, 210], [50, 80, 120, 200], [180, 205, 230, 255])
-                        };
-                        (text, bg, border, tc)
-                    }
-                    UiAction::CycleFpsLimit => {
-                        let text = match self.video_settings.fps_limit {
-                            FpsLimitSetting::Fps60 => "LIMITE FPS : [60 FPS]",
-                            FpsLimitSetting::Fps120 => "LIMITE FPS : [120 FPS]",
-                            FpsLimitSetting::Unlimited => "LIMITE FPS : [ILLIMITE]",
-                        };
-                        let (bg, border, tc) = if btn.is_pressed {
-                            ([12, 85, 160, 255], [100, 200, 255, 255], [255, 255, 255, 255])
-                        } else if btn.is_hovered {
-                            ([35, 55, 90, 240], [80, 160, 240, 255], [240, 248, 255, 255])
-                        } else {
-                            ([22, 34, 56, 210], [50, 80, 120, 200], [180, 205, 230, 255])
-                        };
-                        (text, bg, border, tc)
-                    }
-                    UiAction::ResumeGame => {
-                        let (bg, border, tc) = if btn.is_pressed {
-                            ([20, 95, 75, 255], [80, 225, 175, 255], [255, 255, 255, 255])
-                        } else if btn.is_hovered {
-                            ([25, 80, 65, 245], [60, 200, 155, 255], [240, 255, 250, 255])
-                        } else {
-                            ([18, 55, 45, 220], [45, 150, 120, 220], [210, 245, 235, 255])
-                        };
-                        ("REPRENDRE LA PARTIE [ECHAP]", bg, border, tc)
-                    }
-                    UiAction::QuitGame => {
-                        let (bg, border, tc) = if btn.is_pressed {
-                            ([110, 30, 30, 255], [240, 90, 90, 255], [255, 255, 255, 255])
-                        } else if btn.is_hovered {
-                            ([85, 25, 25, 245], [210, 70, 70, 255], [255, 235, 235, 255])
-                        } else {
-                            ([55, 20, 20, 210], [150, 50, 50, 200], [240, 195, 195, 255])
-                        };
-                        ("QUITTER LE JEU", bg, border, tc)
-                    }
-                    _ => (btn.label, [22, 34, 56, 210], [50, 80, 120, 200], [180, 205, 230, 255]),
-                };
-
-                self.draw_rounded_box(bx, by, bw, bh, bg_color, border_color);
-
-                let text_pixel_width = label.len() * 6;
-                let tx = bx + (bw.saturating_sub(text_pixel_width)) / 2;
-                let ty = by + (bh.saturating_sub(8)) / 2;
-                self.draw_text_5x7(tx, ty, label, text_color, 1);
-            }
-
-            self.draw_text_5x7(76, 350, "OPTIONS APPLIQUEES EN TEMPS REEL", [100, 135, 175, 255], 1);
-        } else {
-            // 1. Fond du panneau HUD classique translucide
-            self.draw_rounded_box(12, 12, 296, 286, [14, 22, 38, 220], [45, 75, 115, 240]);
-
-            // 2. Titre et informations planétaires
-            self.draw_text_5x7(24, 24, "HEROCRAFT VOXEL RPG", [220, 235, 255, 255], 2);
-            let seed_text = format!("GRAINE : #{}", self.current_seed);
-            self.draw_text_5x7(24, 46, &seed_text, [130, 185, 240, 255], 1);
-            self.draw_text_5x7(180, 46, "EAU : ~54%", [80, 210, 235, 255], 1);
-
-            // 3. Dessin des boutons et checkboxes HUD
-            let buttons = self.buttons.clone();
-            for btn in buttons {
-                let bx = btn.x as usize;
-                let by = btn.y as usize;
-                let bw = btn.w as usize;
-                let bh = btn.h as usize;
-
-                if btn.is_checkbox {
-                    let is_checked = match btn.id {
-                        UiAction::ToggleTectonics => self.show_tectonics,
-                        UiAction::ToggleOceanCurrents => self.show_ocean_currents,
-                        _ => false,
-                    };
-
-                    let (bg_color, border_color, box_color, text_color) = if is_checked {
-                        if btn.id == UiAction::ToggleTectonics {
-                            (
-                                [40, 20, 24, 225],
-                                [230, 75, 60, 255],
-                                [240, 80, 60, 255],
-                                [255, 230, 225, 255],
-                            )
-                        } else {
-                            (
-                                [16, 36, 48, 225],
-                                [50, 185, 220, 255],
-                                [45, 195, 235, 255],
-                                [225, 245, 255, 255],
-                            )
-                        }
-                    } else if btn.is_hovered {
-                        (
-                            [26, 38, 62, 220],
-                            [75, 120, 175, 240],
-                            [70, 110, 160, 255],
-                            [230, 240, 255, 255],
-                        )
-                    } else {
-                        (
-                            [18, 28, 46, 190],
-                            [40, 65, 100, 180],
-                            [45, 75, 115, 200],
-                            [175, 195, 220, 255],
-                        )
-                    };
-
-                    self.draw_rounded_box(bx, by, bw, bh, bg_color, border_color);
-
-                    let cbox_x = bx + 12;
-                    let cbox_y = by + (bh - 16) / 2;
-                    self.draw_rounded_box(cbox_x, cbox_y, 16, 16, [12, 18, 30, 255], box_color);
-
-                    if is_checked {
-                        for cy in 3..13 {
-                            for cx in 3..13 {
-                                let px = cbox_x + cx;
-                                let py = cbox_y + cy;
-                                if px < self.canvas_width && py < self.canvas_height {
-                                    let idx = (py * self.canvas_width + px) * 4;
-                                    self.pixels[idx] = box_color[0];
-                                    self.pixels[idx + 1] = box_color[1];
-                                    self.pixels[idx + 2] = box_color[2];
-                                    self.pixels[idx + 3] = 255;
-                                }
-                            }
-                        }
-                        self.draw_text_5x7(cbox_x + 5, cbox_y + 4, "X", [255, 255, 255, 255], 1);
-                    }
-
-                    let text_x = bx + 38;
-                    let text_y = by + (bh - 8) / 2;
-                    self.draw_text_5x7(text_x, text_y, btn.label, text_color, 1);
-                } else {
-                    let (bg_color, border_color, text_color) = if btn.is_pressed {
-                        ([12, 85, 160, 255], [100, 200, 255, 255], [255, 255, 255, 255])
-                    } else if btn.is_hovered {
-                        if btn.id == UiAction::GenerateNewPlanet {
-                            ([25, 95, 180, 245], [90, 220, 255, 255], [255, 255, 255, 255])
-                        } else {
-                            ([35, 55, 90, 240], [80, 160, 240, 255], [240, 248, 255, 255])
-                        }
-                    } else {
-                        if btn.id == UiAction::GenerateNewPlanet {
-                            ([18, 65, 130, 230], [50, 150, 240, 230], [225, 240, 255, 255])
-                        } else {
-                            ([22, 34, 56, 210], [50, 80, 120, 200], [180, 205, 230, 255])
-                        }
-                    };
-
-                    self.draw_rounded_box(bx, by, bw, bh, bg_color, border_color);
-
-                    let text = if btn.id == UiAction::ToggleAutoRotate {
-                        if self.auto_rotate {
-                            "AUTO-ROTATION : [OUI]"
-                        } else {
-                            "AUTO-ROTATION : [NON]"
-                        }
-                    } else {
-                        btn.label
-                    };
-
-                    let text_pixel_width = text.len() * 6;
-                    let tx = bx + (bw.saturating_sub(text_pixel_width)) / 2;
-                    let ty = by + (bh.saturating_sub(8)) / 2;
-                    self.draw_text_5x7(tx, ty, text, text_color, 1);
-                }
-            }
-
-            // 4. Instructions d'aide au bas du panneau
-            self.draw_text_5x7(24, 278, "GLISSER : ORBITE | SCROLL : ZOOM", [100, 135, 175, 255], 1);
-        }
-
-        // 5. Badge Compteur FPS en haut à droite
-        self.draw_fps_badge();
-
-        self.dirty = true;
-    }
-
-    /// Dessine le badge du compteur de FPS dans la zone réservée (320..436, 0..32)
-    pub fn draw_fps_badge(&mut self) {
-        let bx = 320;
-        let by = 0;
-        let bw = 116;
-        let bh = 32;
-
-        // Efface la zone du badge FPS dans le buffer
-        for dy in 0..bh {
-            let py = by + dy;
-            if py >= self.canvas_height {
-                continue;
-            }
-            for dx in 0..bw {
-                let px = bx + dx;
-                if px >= self.canvas_width {
-                    continue;
-                }
-                let idx = (py * self.canvas_width + px) * 4;
-                self.pixels[idx] = 0;
-                self.pixels[idx + 1] = 0;
-                self.pixels[idx + 2] = 0;
-                self.pixels[idx + 3] = 0;
-            }
-        }
-
-        // Couleurs adaptatives selon le framerate (Vert > 55, Jaune > 30, Rouge < 30)
-        let (bg, border, text_color) = if self.current_fps >= 55 {
-            ([14, 22, 38, 220], [45, 140, 110, 240], [70, 235, 160, 255])
-        } else if self.current_fps >= 30 {
-            ([14, 22, 38, 220], [150, 130, 45, 240], [245, 210, 70, 255])
-        } else {
-            ([24, 14, 18, 220], [180, 50, 45, 240], [255, 90, 80, 255])
-        };
-
-        self.draw_rounded_box(bx, by, bw, bh, bg, border);
-
-        // Texte au format "XXX FPS" avec centrage précis
-        let fps_text = format!("{:>3} FPS", self.current_fps);
-        // Police 5x7 mise à l'échelle x2 : chaque caractère fait 6*2 = 12px de large, hauteur = 7*2 = 14px
-        let text_width = fps_text.len() * 12;
-        let tx = bx + (bw.saturating_sub(text_width)) / 2;
-        let ty = by + (bh.saturating_sub(14)) / 2;
-        self.draw_text_5x7(tx, ty, &fps_text, text_color, 2);
-    }
-
-    /// Met à jour la valeur du compteur FPS
-    pub fn set_fps(&mut self, fps: u32) {
-        if self.current_fps != fps {
-            self.current_fps = fps;
-            self.draw_fps_badge();
-            self.dirty = true;
-        }
-    }
-
-    fn draw_rounded_box(
-        &mut self,
-        x: usize,
-        y: usize,
-        w: usize,
-        h: usize,
-        bg: [u8; 4],
-        border: [u8; 4],
-    ) {
-        for dy in 0..h {
-            let py = y + dy;
-            if py >= self.canvas_height {
-                continue;
-            }
-            for dx in 0..w {
-                let px = x + dx;
-                if px >= self.canvas_width {
-                    continue;
-                }
-
-                // Coins arrondis légers (rayon 3px)
-                let is_corner = (dx < 3 && dy < 3 && (3 - dx) * (3 - dx) + (3 - dy) * (3 - dy) > 9)
-                    || (dx >= w - 3 && dy < 3 && (dx - (w - 3)) * (dx - (w - 3)) + (3 - dy) * (3 - dy) > 9)
-                    || (dx < 3 && dy >= h - 3 && (3 - dx) * (3 - dx) + (dy - (h - 3)) * (dy - (h - 3)) > 9)
-                    || (dx >= w - 3 && dy >= h - 3 && (dx - (w - 3)) * (dx - (w - 3)) + (dy - (h - 3)) * (dy - (h - 3)) > 9);
-
-                if is_corner {
-                    continue;
-                }
-
-                let is_border = dx == 0 || dx == w - 1 || dy == 0 || dy == h - 1;
-                let c = if is_border { border } else { bg };
-
-                let idx = (py * self.canvas_width + px) * 4;
-                self.pixels[idx] = c[0];
-                self.pixels[idx + 1] = c[1];
-                self.pixels[idx + 2] = c[2];
-                self.pixels[idx + 3] = c[3];
-            }
-        }
-    }
-
-    /// Rendu de texte ASCII via police bitmap 5x7 intégrée
-    fn draw_text_5x7(&mut self, x: usize, y: usize, text: &str, color: [u8; 4], scale: usize) {
-        let mut cur_x = x;
-        for ch in text.chars() {
-            let glyph = get_glyph_5x7(ch);
-            for row in 0..7 {
-                for col in 0..5 {
-                    if (glyph[row] & (1 << (4 - col))) != 0 {
-                        for sy in 0..scale {
-                            for sx in 0..scale {
-                                let px = cur_x + col * scale + sx;
-                                let py = y + row * scale + sy;
-                                if px < self.canvas_width && py < self.canvas_height {
-                                    let idx = (py * self.canvas_width + px) * 4;
-                                    self.pixels[idx] = color[0];
-                                    self.pixels[idx + 1] = color[1];
-                                    self.pixels[idx + 2] = color[2];
-                                    self.pixels[idx + 3] = color[3];
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            cur_x += (5 + 1) * scale;
-        }
-    }
-}
-
-/// Définition 5x7 des caractères ASCII courants
-fn get_glyph_5x7(c: char) -> [u8; 7] {
-    match c {
-        'A' => [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
-        'B' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
-        'C' => [0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111],
-        'D' => [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
-        'E' => [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
-        'F' => [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000],
-        'G' => [0b01111, 0b10000, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110],
-        'H' => [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
-        'I' => [0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-        'J' => [0b00001, 0b00001, 0b00001, 0b00001, 0b10001, 0b10001, 0b01110],
-        'K' => [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
-        'L' => [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
-        'M' => [0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001],
-        'N' => [0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001],
-        'O' => [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-        'P' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
-        'Q' => [0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10011, 0b01111],
-        'R' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
-        'S' => [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
-        'T' => [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
-        'U' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-        'V' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
-        'W' => [0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b11011, 0b10001],
-        'X' => [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
-        'Y' => [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
-        'Z' => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111],
-        '0' => [0b01110, 0b10011, 0b10101, 0b10101, 0b11001, 0b10001, 0b01110],
-        '1' => [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-        '2' => [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111],
-        '3' => [0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110],
-        '4' => [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
-        '5' => [0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110],
-        '6' => [0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
-        '7' => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
-        '8' => [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
-        '9' => [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100],
-        ':' => [0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000],
-        '#' => [0b01010, 0b01010, 0b11111, 0b01010, 0b11111, 0b01010, 0b01010],
-        '[' => [0b01110, 0b01000, 0b01000, 0b01000, 0b01000, 0b01000, 0b01110],
-        ']' => [0b01110, 0b00010, 0b00010, 0b00010, 0b00010, 0b00010, 0b01110],
-        '(' => [0b00010, 0b00100, 0b01000, 0b01000, 0b01000, 0b00100, 0b00010],
-        ')' => [0b01000, 0b00100, 0b00010, 0b00010, 0b00010, 0b00100, 0b01000],
-        '/' => [0b00001, 0b00010, 0b00100, 0b00100, 0b01000, 0b10000, 0b00000],
-        '-' => [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
-        '%' => [0b11001, 0b11010, 0b00010, 0b00100, 0b01000, 0b01011, 0b10011],
-        '~' => [0b00000, 0b01001, 0b10101, 0b10010, 0b00000, 0b00000, 0b00000],
-        '|' => [0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
-        '.' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b00100],
-        _ => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
+        (full_output, action)
     }
 }
 
@@ -872,76 +507,66 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_ui_initialization_and_fps_badge() {
-        let mut ui = UiState::new(2026);
-        assert_eq!(ui.canvas_width, 512);
-        assert_eq!(ui.canvas_height, 512);
+    fn test_ui_initialization() {
+        let ui = UiState::new(2026);
+        assert_eq!(ui.current_seed, 2026);
         assert_eq!(ui.current_fps, 60);
-
-        // Vérification qu'il y a des pixels non nuls dans la zone du badge FPS (320..436, 0..32)
-        let mut fps_pixels_found = false;
-        for y in 0..32 {
-            for x in 320..436 {
-                let idx = (y * ui.canvas_width + x) * 4;
-                if ui.pixels[idx + 3] > 0 {
-                    fps_pixels_found = true;
-                    break;
-                }
-            }
-        }
-        assert!(fps_pixels_found, "Le badge FPS doit contenir des pixels visibles dessinés");
-
-        // Test de mise à jour du FPS
-        ui.dirty = false;
-        ui.set_fps(144);
-        assert_eq!(ui.current_fps, 144);
-        assert!(ui.dirty, "set_fps avec une nouvelle valeur doit marquer l'UI comme dirty");
-
-        // Mettre à jour avec la même valeur ne doit pas marquer dirty
-        ui.dirty = false;
-        ui.set_fps(144);
-        assert!(!ui.dirty, "set_fps avec la même valeur ne doit pas marquer dirty");
+        assert!(!ui.is_settings_open);
+        assert!(!ui.auto_rotate);
+        assert!(!ui.show_tectonics);
+        assert!(!ui.show_ocean_currents);
+        assert_eq!(ui.active_filter(), herocraft_world::VisualizationFilter::Standard);
     }
 
     #[test]
-    fn test_video_settings_menu_toggle_and_actions() {
-        let mut ui = UiState::new(2026);
-        ui.set_screen_size(1280.0, 720.0);
+    fn test_video_settings_labels_and_defaults() {
+        let settings = VideoSettings::default();
+        assert!(settings.vsync);
+        assert!(!settings.fullscreen);
+        assert_eq!(settings.lod_distance, LodDistanceSetting::Normale);
+        assert_eq!(settings.fps_limit, FpsLimitSetting::Fps60);
+
+        assert_eq!(LodDistanceSetting::Courte.label(), "Courte (Rapide)");
+        assert_eq!(LodDistanceSetting::Normale.label(), "Normale (Équilibrée)");
+        assert_eq!(LodDistanceSetting::Elevee.label(), "Élevée (Haute Fidélité)");
+
+        assert_eq!(FpsLimitSetting::Fps60.label(), "60 FPS");
+        assert_eq!(FpsLimitSetting::Fps120.label(), "120 FPS");
+        assert_eq!(FpsLimitSetting::Unlimited.label(), "Illimité");
+    }
+
+    #[test]
+    fn test_ui_settings_toggle_and_filters() {
+        let mut ui = UiState::new(42);
+
+        assert!(!ui.is_settings_open);
+        assert!(ui.toggle_settings());
+        assert!(ui.is_settings_open);
+        assert!(!ui.toggle_settings());
         assert!(!ui.is_settings_open);
 
-        // Ouverture du menu
-        ui.toggle_settings();
-        assert!(ui.is_settings_open);
-        assert!(ui.dirty);
+        ui.show_tectonics = true;
+        assert_eq!(ui.active_filter(), herocraft_world::VisualizationFilter::Tectonics);
 
-        // En mode menu des paramètres, on_cursor_moved absorbe toujours l'événement
-        assert!(ui.on_cursor_moved(10.0, 10.0));
+        ui.show_tectonics = false;
+        ui.show_ocean_currents = true;
+        assert_eq!(ui.active_filter(), herocraft_world::VisualizationFilter::OceanCurrents);
+    }
 
-        // Clic sur V-Sync (bouton 0: y=68..104, menu centré en x=(1280-380)/2=450, y=(720-400)/2=160)
-        let vsync_click_x = 450.0 + 30.0;
-        let vsync_click_y = 160.0 + 80.0;
-        assert_eq!(ui.video_settings.vsync, true);
-        let action = ui.on_mouse_down(vsync_click_x, vsync_click_y);
-        assert_eq!(action, Some(UiAction::ToggleVsync));
-        assert_eq!(ui.video_settings.vsync, false);
+    #[test]
+    fn test_ui_update_runs_cleanly() {
+        let mut ui = UiState::new(100);
+        ui.set_screen_size(1280.0, 720.0);
 
-        // Deuxième clic réactive la V-Sync
-        let action = ui.on_mouse_down(vsync_click_x, vsync_click_y);
-        assert_eq!(action, Some(UiAction::ToggleVsync));
-        assert_eq!(ui.video_settings.vsync, true);
+        // Vue orbite
+        let (output_orbit, action_orbit) = ui.update_ui(200.0, false);
+        assert!(action_orbit.is_none());
+        assert!(!output_orbit.shapes.is_empty());
 
-        // Clic sur Distance LOD (bouton 1: y=110..146)
-        let lod_click_y = 160.0 + 125.0;
-        assert_eq!(ui.video_settings.lod_distance, LodDistanceSetting::Normale);
-        let action = ui.on_mouse_down(vsync_click_x, lod_click_y);
-        assert_eq!(action, Some(UiAction::CycleLodDistance));
-        assert_eq!(ui.video_settings.lod_distance, LodDistanceSetting::Elevee);
-
-        // Clic sur Bouton Reprendre (bouton 4: y=250..286)
-        let resume_click_y = 160.0 + 265.0;
-        let action = ui.on_mouse_down(vsync_click_x, resume_click_y);
-        assert_eq!(action, Some(UiAction::ResumeGame));
-        assert!(!ui.is_settings_open, "Le bouton Reprendre doit fermer le menu");
+        // Vue sol avec menu paramètres ouvert
+        ui.set_settings_open(true);
+        let (output_ground, action_ground) = ui.update_ui(10.0, true);
+        assert!(action_ground.is_none());
+        assert!(!output_ground.shapes.is_empty());
     }
 }
-
