@@ -118,8 +118,14 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
      */
     private static final float LIFT = 0.1f;
 
-    /** Room round the window's centre for the frustum test: half its diagonal and a margin. */
-    private static final float PANE_RADIUS = 2.5f;
+    /**
+     * How far the glowing rim reaches past the window's edge, in blocks: it tells at a glance that the opening is
+     * not a hole in the wall but a way into another time.
+     */
+    private static final float RIM = 0.3f;
+
+    /** Room round the window's centre for the frustum test: half its diagonal with the rim, and a margin. */
+    private static final float PANE_RADIUS = 3.0f;
 
     private static final String CHUNK_MATERIAL = "CoreRendering:chunk";
     private static final String PORTAL_MATERIAL = "HeroDungeons:portal";
@@ -142,6 +148,8 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
     private FBO picture;
     private Mesh quad;
     private boolean enabled = true;
+    private float rimWidth = 1.0f;
+    private float rimHeight = 1.0f;
 
     private final Matrix4f projection = new Matrix4f();
     private final Matrix4f modelView = new Matrix4f();
@@ -177,8 +185,9 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
         SphereProjection sphere = context.get(SphereProjection.class);
         Vector3f[] corners = new Vector3f[4];
         Vector3f centre = new Vector3f();
+        Vector3f[] rimmed = rimmed(view.pane());
         for (int i = 0; i < 4; i++) {
-            corners[i] = relative(sphere, view.pane()[i], eye);
+            corners[i] = relative(sphere, rimmed[i], eye);
             centre.add(corners[i]);
         }
         centre.mul(0.25f);
@@ -387,12 +396,35 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
         portal.setInt("portalView", 0, true);
         portal.setFloat2("invViewSize", 1.0f / width, 1.0f / height, true);
         portal.setFloat("opacity", OPACITY, true);
+        portal.setFloat2("border", RIM / rimWidth, RIM / rimHeight, true);
+        portal.setFloat("glowTime", (System.currentTimeMillis() % 3_600_000L) / 1000.0f, true);
         for (int i = 0; i < 4; i++) {
             portal.setFloat3("corner" + i, corners[i], true);
         }
         portal.setMatrix4("projectionMatrix", camera.getProjectionMatrix(), true);
         portal.setMatrix4("modelViewMatrix", camera.getViewMatrix(), true);
         quad().render();
+    }
+
+    /**
+     * The face of a window grown by the rim on every side, corners in the same order. The shader draws the picture
+     * inside and the glow in the band between.
+     */
+    private Vector3f[] rimmed(Vector3f[] pane) {
+        Vector3f across = new Vector3f(pane[1]).sub(pane[0]);
+        Vector3f up = new Vector3f(pane[3]).sub(pane[0]);
+        float width = across.length();
+        float height = up.length();
+        rimWidth = width + 2 * RIM;
+        rimHeight = height + 2 * RIM;
+        across.mul(RIM / width);
+        up.mul(RIM / height);
+        return new Vector3f[] {
+            new Vector3f(pane[0]).sub(across).sub(up),
+            new Vector3f(pane[1]).add(across).sub(up),
+            new Vector3f(pane[2]).add(across).add(up),
+            new Vector3f(pane[3]).sub(across).add(up)
+        };
     }
 
     /** Where a point of the world is drawn, from the eye: bent on the planet, as the chunks round it are. */
