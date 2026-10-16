@@ -110,59 +110,76 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     sun_color += vec3<f32>(1.0, 0.82, 0.55) * corona + vec3<f32>(0.8, 0.5, 0.25) * wide_glow;
 
     // 2. Ciel étoilé dans le vide spatial
-    var space_color = render_starfield(ray_dir, camera.time) + sun_color;
+    let stars = render_starfield(ray_dir, camera.time);
+    var space_color = stars + sun_color;
 
-    // 3. Halo atmosphérique externe planétaire (vu depuis l'orbite / espace)
+    // Facteur d'altitude : transition fluide entre vue au sol (< 38.0) et orbite spatiale (> 58.0)
+    // Le terrain réel avec relief et mers se situe entre les rayons 28.8 (océan) et 38.5 (hauts sommets)
     let cam_dist = length(camera.camera_pos);
-    let r_planet = camera.planet_radius;
-    let r_atm = r_planet * 1.055; // Épaisseur atmosphérique ~5.5% du rayon planétaire
+    let ground_factor = clamp((58.0 - cam_dist) / 20.0, 0.0, 1.0);
+    let orbit_factor = 1.0 - ground_factor;
 
-    // Test d'intersection rayon / atmosphère planétaire
-    let o = camera.camera_pos;
-    let b = dot(o, ray_dir);
+    // 3. Halo atmosphérique externe planétaire (vu depuis l'orbite spatiale uniquement)
+    if (orbit_factor > 0.001) {
+        let r_atm_inner = 28.5; // Surface moyenne océanique / continentale
+        let r_atm_outer = 39.5; // Sommet de l'atmosphère visible depuis l'espace
 
-    if (b < 0.0) { // Le rayon se dirige vers l'avant de la caméra
-        let closest_dist = length(o - ray_dir * b);
-        if (closest_dist > r_planet && closest_dist < r_atm) {
-            // Le rayon rase le limbe planétaire à travers l'atmosphère
-            let t_atm = (closest_dist - r_planet) / (r_atm - r_planet);
-            let density = pow(1.0 - t_atm, 2.2);
+        let o = camera.camera_pos;
+        let b = dot(o, ray_dir);
 
-            // Point le plus proche sur le limbe
-            let p_limb = normalize(o - ray_dir * b) * r_planet;
-            let limb_sun = clamp(dot(normalize(p_limb), l) * 2.0 + 0.2, 0.0, 1.0);
-            let terminator = clamp(1.0 - abs(dot(normalize(p_limb), l)) * 2.5, 0.0, 1.0);
+        if (b < 0.0) { // Le rayon se dirige vers la planète
+            let closest_dist = length(o - ray_dir * b);
+            if (closest_dist > r_atm_inner && closest_dist < r_atm_outer) {
+                let t_atm = (closest_dist - r_atm_inner) / (r_atm_outer - r_atm_inner);
+                let density = pow(1.0 - t_atm, 2.2);
 
-            // Teinte bleue Rayleigh le jour, halo crépusculaire doré/orangé au terminateur
-            let atm_hue = mix(vec3<f32>(0.22, 0.65, 1.0), vec3<f32>(1.0, 0.55, 0.22), terminator * 0.85);
-            let limb_glow = atm_hue * (density * limb_sun * 2.5);
+                let p_limb = normalize(o - ray_dir * b);
+                let limb_sun = clamp(dot(p_limb, l) * 1.5 + 0.3, 0.0, 1.0);
+                let terminator = clamp(1.0 - abs(dot(p_limb, l)) * 2.5, 0.0, 1.0);
 
-            // Atténuation si la caméra est très proche du sol
-            let orbit_factor = clamp((cam_dist - r_planet) / 10.0, 0.0, 1.0);
-            space_color += limb_glow * orbit_factor;
+                let atm_hue = mix(vec3<f32>(0.22, 0.65, 1.0), vec3<f32>(1.0, 0.55, 0.22), terminator * 0.85);
+                let limb_glow = atm_hue * (density * limb_sun * 2.5);
+
+                space_color += limb_glow * orbit_factor;
+            }
         }
     }
 
-    // 4. Diffusion atmosphérique au sol (Dôme céleste bleu diurne + Horizon)
-    let cam_alt = cam_dist - r_planet;
-    let ground_factor = clamp(1.0 - cam_alt / 8.0, 0.0, 1.0);
-
+    // 4. Diffusion atmosphérique au sol (Dôme céleste bleu azur en journée, crépuscule doré, nuit étoilée)
     if (ground_factor > 0.001) {
         let cam_up = normalize(camera.camera_pos);
         let ray_up = dot(ray_dir, cam_up);
         let sun_up = dot(l, cam_up);
-        let daylight = clamp(sun_up * 1.8 + 0.3, 0.0, 1.0);
 
-        // Dégradé zénith azur vers horizon clair
-        let horizon_blend = pow(1.0 - max(ray_up, 0.0), 2.8);
-        let zenith_color = vec3<f32>(0.18, 0.48, 0.90);
-        let horizon_color = mix(vec3<f32>(0.68, 0.80, 0.95), vec3<f32>(0.98, 0.65, 0.35), clamp(1.0 - sun_up * 3.0, 0.0, 1.0));
-        let day_sky = mix(zenith_color, horizon_color, horizon_blend) * daylight;
+        // Clarté du jour : transition douce entre nuit (sun_up < -0.20), crépuscule et plein jour (sun_up > 0.08)
+        let daylight = clamp((sun_up + 0.20) / 0.28, 0.0, 1.0);
 
-        // Éclaircissement autour du soleil dans l'atmosphère au sol
-        let ground_sun_glow = pow(clamp(cos_sun, 0.0, 1.0), 8.0) * vec3<f32>(0.35, 0.30, 0.20) * daylight;
+        // Facteur de crépuscule / coucher de soleil (soleil rasant l'horizon)
+        let sunset_factor = clamp(1.0 - abs(sun_up) / 0.25, 0.0, 1.0);
 
-        let final_sky = mix(space_color, day_sky + ground_sun_glow, ground_factor * daylight);
+        // Dégradé de couleurs du zénith
+        let zenith_day = vec3<f32>(0.15, 0.45, 0.88); // Bleu azur pur éclatant
+        let zenith_sunset = vec3<f32>(0.08, 0.16, 0.42); // Bleu crépusculaire profond
+        let zenith_color = mix(zenith_day, zenith_sunset, sunset_factor);
+
+        // Dégradé de couleurs de l'horizon
+        let horizon_day = vec3<f32>(0.65, 0.80, 0.96); // Horizon clair estompé
+        let sun_azimuth = max(dot(ray_dir, l), 0.0);
+        let sunset_warm = mix(vec3<f32>(0.65, 0.42, 0.55), vec3<f32>(1.0, 0.62, 0.22), pow(sun_azimuth, 2.0));
+        let horizon_color = mix(horizon_day, sunset_warm, sunset_factor);
+
+        // Dégradé vertical du dôme céleste (zénith -> horizon)
+        let ray_h = max(ray_up, 0.0);
+        let horizon_blend = pow(1.0 - ray_h, 2.5);
+        let day_sky = mix(zenith_color, horizon_color, horizon_blend);
+
+        // Éclaircissement et halo solaire diffus dans l'atmosphère au sol
+        let ground_sun_glow = pow(clamp(cos_sun, 0.0, 1.0), 8.0) * vec3<f32>(0.40, 0.35, 0.22);
+
+        // Ciel au sol : interpolation douce entre nuit étoilée et ciel bleu diurne, avec soleil toujours net
+        let ground_sky = mix(stars, day_sky, daylight) + sun_color + ground_sun_glow * daylight;
+
+        let final_sky = mix(space_color, ground_sky, ground_factor);
         return vec4<f32>(final_sky, 1.0);
     }
 
