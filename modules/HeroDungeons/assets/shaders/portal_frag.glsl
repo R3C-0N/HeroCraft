@@ -31,16 +31,16 @@ void main() {
     float wave = 0.5 + 0.5 * sin(angle * 7.0 - glowTime * 2.2 + edge * 5.0);
     float flicker = 0.85 + 0.15 * sin(glowTime * 9.0 + angle * 3.0);
     // Past the tone mapping, values above one bloom into a glow: the frame shines a little even at night.
-    vec3 glow = mix(vec3(0.45, 0.75, 2.4), vec3(1.9, 0.7, 2.6), wave) * flicker;
+    vec3 glow = mix(vec3(0.1, 0.45, 3.2), vec3(2.4, 0.2, 3.0), wave) * flicker;
 
     if (edge < 1.0) {
         // Brightest against the opening, fading out to nothing at the rim's edge.
         float strength = smoothstep(0.0, 1.0, edge);
-        outColor = vec4(glow, strength * strength * (0.55 + 0.45 * wave));
+        outColor = vec4(glow, strength * (0.7 + 0.3 * wave));
         return;
     }
     vec3 picture = texture(portalView, gl_FragCoord.xy * invViewSize).rgb;
     // The inner edge of the picture takes a little of the glow, so frame and opening are one thing.
-    float halo = exp(-(edge - 1.0) * 3.0) * 0.45;
+    float halo = exp(-(edge - 1.0) * 3.0) * 0.6;
     outColor = vec4(mix(picture, glow, halo * wave), opacity);
 }
