@@ -41,6 +41,12 @@ public final class PocketRoom {
     /** From the centre to the way out, behind where one arrives. */
     public static final int EXIT_DISTANCE = 4;
 
+    /**
+     * The side the way out stands on in a bench pocket, numbered as {@link RuinWindow} numbers a gate: north. A
+     * ruin's pocket puts it on the side of the ruin's gate, so that the two windows face the same way.
+     */
+    public static final int BENCH_EXIT_SIDE = 3;
+
     /** Half the width of the way out, and its height above the walking level. */
     public static final int EXIT_HALF_WIDTH = 1;
     public static final int EXIT_HEIGHT = 3;
@@ -57,8 +63,13 @@ public final class PocketRoom {
                 centre.x() + HALF + 1, centre.y() + WALL + HEADROOM, centre.z() + HALF + 1);
     }
 
-    /** What stands at a position, relative to the centre of the room. */
+    /** What stands at a position, relative to the centre of the room, in a bench pocket. */
     public static Kind at(int dx, int dy, int dz) {
+        return at(dx, dy, dz, BENCH_EXIT_SIDE);
+    }
+
+    /** What stands at a position, relative to the centre of the room, the way out on {@code exitSide}. */
+    public static Kind at(int dx, int dy, int dz, int exitSide) {
         int ax = Math.abs(dx);
         int az = Math.abs(dz);
         if (ax > HALF + 1 || az > HALF + 1 || dy < -FLOOR) {
@@ -74,23 +85,34 @@ public final class PocketRoom {
         if (onGrid && dy < PILLAR) {
             return Kind.PILLAR;
         }
-        if (isExit(dx, dy, dz)) {
+        if (isExit(dx, dy, dz, exitSide)) {
             return Kind.WINDOW;
         }
         return Kind.AIR;
     }
 
     /**
-     * Whether a position, relative to the centre, is in the window that leads back out: a step behind
-     * where one arrives, so that one turns round to leave, and never walks into it on arriving.
+     * Whether a position, relative to the centre, is in the window that leads back out of a bench pocket: a step
+     * behind where one arrives, so that one turns round to leave, and never walks into it on arriving.
      */
     public static boolean isExit(int dx, int dy, int dz) {
-        return dz == -EXIT_DISTANCE && Math.abs(dx) <= EXIT_HALF_WIDTH && dy >= 0 && dy < EXIT_HEIGHT;
+        return isExit(dx, dy, dz, BENCH_EXIT_SIDE);
     }
 
-    /** The way out as a walker meets it, for a room centred on {@code centre}. */
+    /** Whether a position, relative to the centre, is in the way out standing on {@code exitSide}. */
+    public static boolean isExit(int dx, int dy, int dz, int exitSide) {
+        return exit(new Vector3i(), exitSide).contains(dx, dy, dz);
+    }
+
+    /** The way out of a bench pocket as a walker meets it, for a room centred on {@code centre}. */
     static WindowPlane exit(Vector3ic centre) {
-        return new WindowPlane(centre.x(), centre.z(), 0, -1, EXIT_DISTANCE, EXIT_HALF_WIDTH, centre.y(), EXIT_HEIGHT);
+        return exit(centre, BENCH_EXIT_SIDE);
+    }
+
+    /** The way out standing on {@code exitSide}, as a walker meets it. */
+    static WindowPlane exit(Vector3ic centre, int exitSide) {
+        return new WindowPlane(centre.x(), centre.z(), RuinWindow.axisX(exitSide), RuinWindow.axisZ(exitSide),
+                EXIT_DISTANCE, EXIT_HALF_WIDTH, centre.y(), EXIT_HEIGHT);
     }
 
     /**

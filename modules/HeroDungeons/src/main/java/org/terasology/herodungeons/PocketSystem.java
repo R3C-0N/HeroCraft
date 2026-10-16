@@ -76,8 +76,11 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
     /** Chunks kept loaded around a pocket's centre: its room, with a chunk to spare on every side. */
     private static final Vector3ic RELEVANCE = new Vector3i(5, 3, 5);
 
-    /** Chunks kept loaded around a ruin whose window is open, so the window can always be taken down. */
-    private static final Vector3ic KEEPER_RELEVANCE = new Vector3i(1, 1, 1);
+    /**
+     * Chunks kept loaded around a ruin whose window is open: so the window can always be taken down, and so the
+     * ruin can be seen through the pocket's way out, as far as {@link PortalRenderSystem} looks.
+     */
+    private static final Vector3ic KEEPER_RELEVANCE = new Vector3i(3, 1, 3);
 
     /** How far from the anchor stone the power answers, in blocks, across and up or down. */
     private static final int ANCHOR_REACH = 6;
@@ -191,7 +194,7 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
         if (!loaded(PocketRoom.box(centre)) || state.fromRuin && !windowLoaded(state)) {
             return;
         }
-        Map<Vector3ic, Block> blocks = lay(centre, true);
+        Map<Vector3ic, Block> blocks = lay(centre, true, exitSide(state));
         worldProvider.setBlocks(blocks);
         if (state.fromRuin) {
             raiseWindow(state);
@@ -202,7 +205,7 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
         pocket.saveComponent(state);
         logger.info("Pocket {} laid down at {}: {} blocks", state.plot, centre, blocks.size());
         if (waiting.exists()) {
-            enter(waiting, state.plot, null);
+            enter(waiting, state.plot, null, null);
         }
         if (state.fromRuin) {
             tellGroup(state, "La fenêtre est ouverte : franchissez-la pour entrer dans le passé.");
@@ -250,7 +253,15 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
             }
             PocketVisitorComponent visit = character.getComponent(PocketVisitorComponent.class);
             if (visit != null) {
-                if (PocketRoom.exit(centre(visit.plot)).crossedBy(before, at)) {
+                PocketComponent home = stateOn(visit.plot);
+                if (home != null && home.fromRuin) {
+                    PortalLink link = link(home);
+                    if (link.pocketExit().crossedBy(before, at)) {
+                        lastSeen.remove(character);
+                        character.removeComponent(PocketVisitorComponent.class);
+                        character.send(new CharacterTeleportEvent(link.toRuin(at, link.heading(before, at, 1))));
+                    }
+                } else if (PocketRoom.exit(centre(visit.plot)).crossedBy(before, at)) {
                     lastSeen.remove(character);
                     expel(character, visit);
                 }
@@ -267,7 +278,8 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
                 }
                 if (state.members.contains(character)) {
                     lastSeen.remove(character);
-                    enter(character, state.plot, window.outside());
+                    PortalLink link = link(state);
+                    enter(character, state.plot, window.outside(), link.toPocket(at, link.heading(before, at, -1)));
                 } else {
                     Long last = refused.get(character);
                     if (last == null || now - last > REFUSAL_COOLDOWN) {
@@ -388,7 +400,7 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
             }
         }
         if (state.built) {
-            worldProvider.setBlocks(lay(centre(state.plot), false));
+            worldProvider.setBlocks(lay(centre(state.plot), false, exitSide(state)));
         }
         state.closing = true;
         pocket.saveComponent(state);
@@ -432,6 +444,26 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
             }
         }
         return Optional.empty();
+    }
+
+    /** The ruin's window and the pocket's way out, as one link. */
+    private PortalLink link(PocketComponent state) {
+        return new PortalLink(state.ruinX, state.ruinZ, state.floorY, state.gateSide, centre(state.plot));
+    }
+
+    /** Where the way out of a pocket stands: on the side of its ruin's gate, or north on the bench. */
+    private static int exitSide(PocketComponent state) {
+        return state.fromRuin ? state.gateSide : PocketRoom.BENCH_EXIT_SIDE;
+    }
+
+    private PocketComponent stateOn(int plot) {
+        for (EntityRef pocket : entityManager.getEntitiesWith(PocketComponent.class)) {
+            PocketComponent state = pocket.getComponent(PocketComponent.class);
+            if (state.plot == plot) {
+                return state;
+            }
+        }
+        return null;
     }
 
     private static RuinWindow window(PocketComponent state) {
@@ -545,7 +577,11 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
      * @param returnPosition where the character comes back out, or null for where it stands now: a window
      *         gives the spot on its outer side, so that coming back does not land in the window again
      */
-    private void enter(EntityRef character, int plot, Vector3f returnPosition) {
+    /**
+     * @param returnPosition where an expulsion sets the character down; its current position if null
+     * @param destination where it comes out in the pocket; the room's arrival point if null
+     */
+    private void enter(EntityRef character, int plot, Vector3f returnPosition, Vector3f destination) {
         LocationComponent location = character.getComponent(LocationComponent.class);
         if (location == null) {
             return;
@@ -554,7 +590,8 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
         visit.plot = plot;
         visit.returnPosition = returnPosition != null ? returnPosition : location.getWorldPosition(new Vector3f());
         character.addComponent(visit);
-        character.send(new CharacterTeleportEvent(new Vector3f(PocketRoom.arrival(centre(plot)))));
+        character.send(new CharacterTeleportEvent(destination != null
+                ? destination : new Vector3f(PocketRoom.arrival(centre(plot)))));
     }
 
     private void expel(EntityRef character, PocketVisitorComponent visit) {
@@ -563,7 +600,7 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
     }
 
     /** The room's blocks around a centre, or air over the same box when {@code build} is false. */
-    private Map<Vector3ic, Block> lay(Vector3i centre, boolean build) {
+    private Map<Vector3ic, Block> lay(Vector3i centre, boolean build, int exitSide) {
         Block air = blockManager.getBlock(BlockManager.AIR_ID);
         Block floor = blockManager.getBlock("CoreAssets:Stone");
         Block wall = blockManager.getBlock("CoreAssets:CobbleStone");
@@ -572,7 +609,7 @@ public class PocketSystem extends BaseComponentSystem implements UpdateSubscribe
         Map<Vector3ic, Block> blocks = new HashMap<>();
         for (Vector3ic pos : PocketRoom.box(centre)) {
             PocketRoom.Kind kind = build
-                    ? PocketRoom.at(pos.x() - centre.x(), pos.y() - centre.y(), pos.z() - centre.z())
+                    ? PocketRoom.at(pos.x() - centre.x(), pos.y() - centre.y(), pos.z() - centre.z(), exitSide)
                     : PocketRoom.Kind.AIR;
             Block block = switch (kind) {
                 case FLOOR -> floor;
