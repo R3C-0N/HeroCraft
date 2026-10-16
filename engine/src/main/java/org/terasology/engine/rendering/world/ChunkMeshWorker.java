@@ -24,10 +24,13 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 import reactor.function.TupleUtils;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -101,7 +104,7 @@ public final class ChunkMeshWorker {
                                          SphereProjection sphere, Block unloaded) {
         ChunkMeshWorker worker = new ChunkMeshWorker(generateMeshFunc(chunkTessellator, worldProvider, sphere, unloaded),
                 frontToBackComparator,
-                GameScheduler.parallel(), GameScheduler.gameMain());
+                MeshThreads.SCHEDULER, GameScheduler.gameMain());
         worker.completedChunks.subscribe();
         return worker;
     }
@@ -170,6 +173,24 @@ public final class ChunkMeshWorker {
 
     Flux<Chunk> getCompletedChunks() {
         return completedChunks;
+    }
+
+    /**
+     * The threads that mesh chunks, and nothing else.
+     * <p>
+     * Each rail of the worker is pinned to one thread and waits behind whatever that thread was given before. On the
+     * shared {@link GameScheduler#parallel()} that included the distant terrain, which a broken block sets rebuilding
+     * at the very moment its own chunk needs a mesh: the chunk then waited out a whole distant node, more than a second
+     * on the test machine, before the block left the screen. Here a mesh only ever waits behind another mesh.
+     * <p>
+     * One pool for the life of the process, like the shared one: a world that is left and another loaded reuse it.
+     */
+    static final class MeshThreads {
+        static final Scheduler SCHEDULER = AccessController.doPrivileged((PrivilegedAction<Scheduler>) () ->
+                Schedulers.newParallel("chunk-mesh", Schedulers.DEFAULT_POOL_SIZE, true));
+
+        private MeshThreads() {
+        }
     }
 
     private static Chunk uploadNewMesh(Chunk chunk, ChunkMesh chunkMesh) {

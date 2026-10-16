@@ -23,6 +23,8 @@ import reactor.util.function.Tuples;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import static com.google.common.truth.Truth.assertThat;
@@ -236,6 +238,43 @@ public class ChunkMeshWorkerTest {
 
         // TODO: change the state of the comparator
         // assert the next one through the gate is the one closest *now*
+    }
+
+    /**
+     * A mesh is not held up by whatever else runs on the shared threads. The distant terrain builds there, and a
+     * broken block sets it rebuilding at the moment the block's own chunk needs a mesh.
+     */
+    @Test
+    void testMeshIsNotQueuedBehindSharedWork() throws InterruptedException {
+        int threads = Schedulers.DEFAULT_POOL_SIZE;
+        var sharedBusy = new CountDownLatch(threads);
+        var release = new CountDownLatch(1);
+        var meshed = new CountDownLatch(1);
+        try {
+            for (int i = 0; i < threads; i++) {
+                Schedulers.parallel().schedule(() -> {
+                    sharedBusy.countDown();
+                    try {
+                        release.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            }
+            assertThat(sharedBusy.await(5, TimeUnit.SECONDS)).isTrue();
+
+            var meshWorker = new ChunkMeshWorker(chunk -> {
+                meshed.countDown();
+                return alwaysCreateMesh(chunk);
+            }, comparator, ChunkMeshWorker.MeshThreads.SCHEDULER, Schedulers.single());
+            meshWorker.getCompletedChunks().subscribe();
+            meshWorker.add(newDirtyChunk(position0));
+            meshWorker.update();
+
+            assertThat(meshed.await(5, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            release.countDown();
+        }
     }
 
     @Test
