@@ -2,6 +2,9 @@ use glam::DVec3;
 use herocraft_common::{PlanetChunkCoord, PlanetFace};
 use serde::{Deserialize, Serialize};
 
+use crate::cubed_sphere::unit_sphere_to_lat_lon;
+use crate::generator::{PlanetWorldGenerator, SEA_LEVEL_BLOCKS};
+
 /// Identifiant unique d'un nœud dans le QuadTree de la Cubed-Sphere
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct QuadNodeKey {
@@ -100,13 +103,13 @@ impl PlanetQuadTree {
         // Level 1 (quadrant)     : split si distance < 60.0
         // Level 2 (région)       : split si distance < 38.0
         // Level 3 (zone)         : split si distance < 18.0
-        // Level 4 (local)        : split si distance < 4.2 (passage aux voxels 3D Level 5 locaux)
+        // Level 4 (local)        : split si distance < 5.2 (passage aux voxels 3D Level 5 locaux)
         let split_distances = vec![
             95.0,
             60.0,
             38.0,
             18.0,
-            4.2,
+            5.2,
         ];
 
         Self {
@@ -119,13 +122,22 @@ impl PlanetQuadTree {
 
     /// Évalue l'arbre complet depuis la position de la caméra et renvoie la liste des feuilles visibles
     pub fn evaluate(&self, camera_pos: DVec3) -> Vec<QuadLeaf> {
+        self.evaluate_with_generator(camera_pos, None)
+    }
+
+    /// Évalue l'arbre en tenant compte de l'élévation réelle du relief planétaire pour un niveau de détail parfait
+    pub fn evaluate_with_generator(
+        &self,
+        camera_pos: DVec3,
+        generator: Option<&PlanetWorldGenerator>,
+    ) -> Vec<QuadLeaf> {
         let mut leaves = Vec::with_capacity(256);
 
         // Toutes les 6 faces de la planète sont toujours conservées pour garantir
         // une planète 3D fermée et complète à 360° sans aucune face manquante.
         for &face in &PlanetFace::ALL {
             let root = QuadNodeKey::new(face, 0, 0, 0);
-            self.subdivide_recursive(root, camera_pos, &mut leaves);
+            self.subdivide_recursive(root, camera_pos, generator, &mut leaves);
         }
 
         leaves
@@ -135,10 +147,29 @@ impl PlanetQuadTree {
         &self,
         node: QuadNodeKey,
         camera_pos: DVec3,
+        generator: Option<&PlanetWorldGenerator>,
         leaves: &mut Vec<QuadLeaf>,
     ) {
         let center_dir = node.center_direction();
-        let center_pos = center_dir * self.base_radius;
+        let altitude_scale = self.base_radius * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0);
+
+        // Calcule le rayon réel de surface du nœud (tenant compte du relief montagneux ou niveau de la mer)
+        let node_radius = if let Some(gen) = generator {
+            let (lat, lon) = unit_sphere_to_lat_lon(center_dir);
+            let elev = gen.sample_elevation(center_dir, lat, lon);
+            let eff_elev = elev.max(SEA_LEVEL_BLOCKS);
+            self.base_radius + eff_elev * altitude_scale
+        } else {
+            let sea_r = self.base_radius + 100.0 * altitude_scale;
+            let cam_r = camera_pos.length();
+            if cam_r >= self.base_radius && cam_r <= self.base_radius + 400.0 * altitude_scale {
+                cam_r
+            } else {
+                sea_r
+            }
+        };
+
+        let center_pos = center_dir * node_radius;
         let dist_to_node = (camera_pos - center_pos).length();
 
         let should_split = node.level < self.min_level
@@ -148,7 +179,7 @@ impl PlanetQuadTree {
 
         if should_split {
             for child in node.children() {
-                self.subdivide_recursive(child, camera_pos, leaves);
+                self.subdivide_recursive(child, camera_pos, generator, leaves);
             }
         } else {
             let kind = if node.level == self.max_level {
@@ -228,5 +259,43 @@ mod tests {
             .filter(|l| l.kind == QuadLeafKind::LodPatch)
             .collect();
         assert!(!lod_leaves.is_empty());
+    }
+
+    #[test]
+    fn test_quadtree_evaluation_real_ground_elevation() {
+        let qt = PlanetQuadTree::new(25.0);
+        // Altitude de la mer (100 blocs) : rayon ~28.84
+        let cam_sea = DVec3::new(0.0, 0.0, 28.9);
+        let leaves_sea = qt.evaluate(cam_sea);
+        let voxels_sea = leaves_sea.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).count();
+        println!("Leaves at sea (r=28.9): total={}, voxels={}", leaves_sea.len(), voxels_sea);
+
+        // Altitude d'une colline (180 blocs) : rayon ~31.90
+        let cam_hill = DVec3::new(0.0, 0.0, 32.0);
+        let leaves_hill = qt.evaluate(cam_hill);
+        let voxels_hill = leaves_hill.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).count();
+        println!("Leaves on hill (r=32.0): total={}, voxels={}", leaves_hill.len(), voxels_hill);
+
+        // Altitude d'une montagne (280 blocs) : rayon ~35.74
+        let cam_mountain = DVec3::new(0.0, 0.0, 35.8);
+        let leaves_mountain = qt.evaluate(cam_mountain);
+        let voxels_mountain = leaves_mountain.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).count();
+        println!("Leaves on mountain (r=35.8): total={}, voxels={}", leaves_mountain.len(), voxels_mountain);
+
+        assert!(voxels_sea > 0, "Les voxels doivent apparaître au niveau de la mer");
+        assert!(voxels_hill > 0, "Les voxels doivent apparaître sur les collines");
+        assert!(voxels_mountain > 0, "Les voxels doivent apparaître sur les montagnes");
+
+        let desc = crate::PlanetDescriptor::default();
+        let gen = PlanetWorldGenerator::new(desc);
+        let dir = DVec3::new(0.0, 0.0, 1.0);
+        let (lat, lon) = unit_sphere_to_lat_lon(dir);
+        let elev = gen.sample_elevation(dir, lat, lon).max(SEA_LEVEL_BLOCKS);
+        let altitude_scale = qt.base_radius * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0);
+        let ground_r = qt.base_radius + elev * altitude_scale;
+        let cam_ground = dir * (ground_r + 0.065);
+        let leaves_gen = qt.evaluate_with_generator(cam_ground, Some(&gen));
+        let voxels_gen = leaves_gen.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).count();
+        assert!(voxels_gen > 0, "Les voxels doivent être générés au sol avec le générateur planétaire");
     }
 }
