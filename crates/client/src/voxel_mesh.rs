@@ -263,45 +263,49 @@ impl VoxelMeshBuilder {
             Vec3::new(dir.x as f32, dir.y as f32, dir.z as f32) * r
         };
 
-        let get_color = |vx: f64, vz: f64, block: BlockId, is_top: bool| -> [f32; 4] {
-            let u = base_u + vx * voxel_span_uv;
-            let v = base_v + vz * voxel_span_uv;
-            let dir = face.uv_to_sphere_direction(u, v);
-            let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
-            let raw_elevation = generator.sample_elevation(dir, lat, lon);
-            let biome = generator.determine_biome(lat, raw_elevation, dir);
+        // Précalcul des couleurs de colonnes 32x32 pour éviter de répéter l'échantillonnage de bruit sur chaque face
+        let mut column_colors = vec![[0.0_f32; 4]; 32 * 32];
+        for cz in 0..32 {
+            for cx in 0..32 {
+                let u = base_u + (cx as f64 + 0.5) * voxel_span_uv;
+                let v = base_v + (cz as f64 + 0.5) * voxel_span_uv;
+                let dir = face.uv_to_sphere_direction(u, v);
+                let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
+                let raw_elevation = generator.sample_elevation(dir, lat, lon);
+                let biome = generator.determine_biome(lat, raw_elevation, dir);
+                let mut biome_color = PlanetMesh::relief_biome_color(biome, raw_elevation);
 
-            let biome_color = PlanetMesh::relief_biome_color(biome, raw_elevation);
+                match filter {
+                    herocraft_world::VisualizationFilter::Standard => {}
+                    herocraft_world::VisualizationFilter::Tectonics => {
+                        let sample = generator.tectonics.sample(dir);
+                        biome_color = PlanetMesh::blend_tectonic_color(biome_color, &sample);
+                    }
+                    herocraft_world::VisualizationFilter::OceanCurrents => {
+                        let continental = generator.sample_continental_value(dir);
+                        biome_color = generator.ocean_currents.sample(dir, false, continental).color;
+                    }
+                }
+                column_colors[cz * 32 + cx] = biome_color;
+            }
+        }
 
-            let base_color = if block == BlockId::WATER {
+        let get_color = |gx: i32, gz: i32, block: BlockId, is_top: bool| -> [f32; 4] {
+            let idx = (gz.clamp(0, 31) as usize) * 32 + (gx.clamp(0, 31) as usize);
+            let biome_color = column_colors[idx];
+            if block == BlockId::WATER {
                 let mut c = biome_color;
                 c[3] = 0.90; // Translucidité de l'eau
                 c
             } else if is_top {
-                // Sur le sommet du terrain voxel : couleur exacte du biome LOD !
-                // Assure une parfaite harmonie et continuité visuelle entre le LOD et les voxels
                 biome_color
             } else {
-                // Sur les tranches verticales des blocs :
-                // Teinte contrastée (78% de luminosité) pour faire ressortir le relief cubique
                 [
                     biome_color[0] * 0.78,
                     biome_color[1] * 0.78,
                     biome_color[2] * 0.78,
                     1.0,
                 ]
-            };
-
-            match filter {
-                herocraft_world::VisualizationFilter::Standard => base_color,
-                herocraft_world::VisualizationFilter::Tectonics => {
-                    let sample = generator.tectonics.sample(dir);
-                    PlanetMesh::blend_tectonic_color(base_color, &sample)
-                }
-                herocraft_world::VisualizationFilter::OceanCurrents => {
-                    let continental = generator.sample_continental_value(dir);
-                    generator.ocean_currents.sample(dir, block == BlockId::WATER, continental).color
-                }
             }
         };
 
@@ -384,7 +388,7 @@ impl VoxelMeshBuilder {
                             let c1 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
                             let c2 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
                             let c3 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
-                            let color = get_color(fx + 0.5, fz + 0.5, block, true);
+                            let color = get_color(gx, gz, block, true);
                             Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                         }
 
@@ -396,7 +400,7 @@ impl VoxelMeshBuilder {
                                 let c1 = get_corner(fx + 1.0, fy, fz, layer);
                                 let c2 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
                                 let c3 = get_corner(fx, fy, fz + 1.0, layer);
-                                let color = get_color(fx + 0.5, fz + 0.5, block, false);
+                                let color = get_color(gx, gz, block, false);
                                 Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                             }
                         }
@@ -413,7 +417,7 @@ impl VoxelMeshBuilder {
                             let c1 = get_corner(fx, fy, fz + 1.0, layer);
                             let c2 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
                             let c3 = get_corner(fx, fy + 1.0, fz, layer);
-                            let color = get_color(fx + 0.5, fz + 0.5, block, false);
+                            let color = get_color(gx, gz, block, false);
                             Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                         }
 
@@ -429,7 +433,7 @@ impl VoxelMeshBuilder {
                             let c1 = get_corner(fx + 1.0, fy, fz, layer);
                             let c2 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
                             let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
-                            let color = get_color(fx + 0.5, fz + 0.5, block, false);
+                            let color = get_color(gx, gz, block, false);
                             Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                         }
 
@@ -445,7 +449,7 @@ impl VoxelMeshBuilder {
                             let c1 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
                             let c2 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
                             let c3 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
-                            let color = get_color(fx + 0.5, fz + 0.5, block, false);
+                            let color = get_color(gx, gz, block, false);
                             Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                         }
 
@@ -461,7 +465,7 @@ impl VoxelMeshBuilder {
                             let c1 = get_corner(fx, fy, fz, layer);
                             let c2 = get_corner(fx, fy + 1.0, fz, layer);
                             let c3 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
-                            let color = get_color(fx + 0.5, fz + 0.5, block, false);
+                            let color = get_color(gx, gz, block, false);
                             Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                         }
                     }

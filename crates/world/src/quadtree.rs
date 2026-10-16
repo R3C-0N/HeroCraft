@@ -172,10 +172,21 @@ impl PlanetQuadTree {
         let center_pos = center_dir * node_radius;
         let dist_to_node = (camera_pos - center_pos).length();
 
-        let should_split = node.level < self.min_level
-            || ((node.level as usize) < self.split_distances.len()
-                && node.level < self.max_level
-                && dist_to_node < self.split_distances[node.level as usize]);
+        // Culling d'horizon planétaire : si le nœud se trouve sur l'hémisphère arrière masqué
+        // par la courbure de la planète, on ne le subdivise pas au-delà du niveau 1
+        let cam_r = camera_pos.length();
+        let is_behind_horizon = if cam_r < self.base_radius * 2.2 && node.level >= 1 {
+            let cam_dir = camera_pos / cam_r;
+            center_dir.dot(cam_dir) < -0.22
+        } else {
+            false
+        };
+
+        let should_split = !is_behind_horizon
+            && (node.level < self.min_level
+                || ((node.level as usize) < self.split_distances.len()
+                    && node.level < self.max_level
+                    && dist_to_node < self.split_distances[node.level as usize]));
 
         if should_split {
             for child in node.children() {

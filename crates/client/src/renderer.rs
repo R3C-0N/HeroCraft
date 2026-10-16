@@ -64,7 +64,9 @@ pub struct State {
     pub depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
     pub vertex_buffer: wgpu::Buffer,
+    pub vertex_buffer_capacity: usize,
     pub index_buffer: wgpu::Buffer,
+    pub index_buffer_capacity: usize,
     pub num_indices: u32,
 
     // Pipeline Interface Utilisateur 2D
@@ -248,17 +250,27 @@ impl State {
             cache: None,
         });
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let vertex_buffer_capacity = (planet_mesh.vertices.len() * 3 / 2).max(65536);
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Planet Vertex Buffer"),
-            contents: bytemuck::cast_slice(&planet_mesh.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
+            size: (vertex_buffer_capacity * std::mem::size_of::<PlanetVertex>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
+        if !planet_mesh.vertices.is_empty() {
+            queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&planet_mesh.vertices));
+        }
 
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let index_buffer_capacity = (planet_mesh.indices.len() * 3 / 2).max(131072);
+        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Planet Index Buffer"),
-            contents: bytemuck::cast_slice(&planet_mesh.indices),
-            usage: wgpu::BufferUsages::INDEX,
+            size: (index_buffer_capacity * std::mem::size_of::<u32>()) as u64,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
+        if !planet_mesh.indices.is_empty() {
+            queue.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&planet_mesh.indices));
+        }
 
         // -------------------------------------------------------------
         // Pipeline Interface Utilisateur 2D (Boutons, HUD)
@@ -428,7 +440,9 @@ impl State {
             depth_texture,
             depth_view,
             vertex_buffer,
+            vertex_buffer_capacity,
             index_buffer,
+            index_buffer_capacity,
             num_indices: planet_mesh.indices.len() as u32,
             ui_pipeline,
             ui_texture,
@@ -564,18 +578,33 @@ impl State {
     }
 
     pub fn update_mesh(&mut self, mesh: &PlanetMesh) {
-        use wgpu::util::DeviceExt;
-        self.vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Planet Vertex Buffer"),
-            contents: bytemuck::cast_slice(&mesh.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let vertex_bytes = bytemuck::cast_slice(&mesh.vertices);
+        if mesh.vertices.len() > self.vertex_buffer_capacity {
+            self.vertex_buffer_capacity = (mesh.vertices.len() * 3 / 2).max(65536);
+            self.vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Planet Vertex Buffer"),
+                size: (self.vertex_buffer_capacity * std::mem::size_of::<PlanetVertex>()) as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        if !mesh.vertices.is_empty() {
+            self.queue.write_buffer(&self.vertex_buffer, 0, vertex_bytes);
+        }
 
-        self.index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Planet Index Buffer"),
-            contents: bytemuck::cast_slice(&mesh.indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let index_bytes = bytemuck::cast_slice(&mesh.indices);
+        if mesh.indices.len() > self.index_buffer_capacity {
+            self.index_buffer_capacity = (mesh.indices.len() * 3 / 2).max(131072);
+            self.index_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Planet Index Buffer"),
+                size: (self.index_buffer_capacity * std::mem::size_of::<u32>()) as u64,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        if !mesh.indices.is_empty() {
+            self.queue.write_buffer(&self.index_buffer, 0, index_bytes);
+        }
 
         self.num_indices = mesh.indices.len() as u32;
     }

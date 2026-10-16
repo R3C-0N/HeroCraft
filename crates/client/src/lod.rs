@@ -36,6 +36,8 @@ pub struct PlanetLodManager {
     pub combined_mesh: PlanetMesh,
     pub active_filter: herocraft_world::VisualizationFilter,
     last_camera_pos: Vec3,
+    last_evaluated_pos: Vec3,
+    time_since_eval: f32,
     // Système de calcul asynchrone en tâche de fond (élimine tout freeze au zoom max)
     request_tx: std::sync::mpsc::Sender<VoxelBuildRequest>,
     result_rx: std::sync::mpsc::Receiver<VoxelBuildResult>,
@@ -82,6 +84,8 @@ impl PlanetLodManager {
             },
             active_filter: herocraft_world::VisualizationFilter::Standard,
             last_camera_pos: Vec3::splat(f32::NAN),
+            last_evaluated_pos: Vec3::splat(f32::NAN),
+            time_since_eval: 0.0,
             request_tx,
             result_rx,
             pending_requests: HashSet::new(),
@@ -104,6 +108,8 @@ impl PlanetLodManager {
         self.current_leaves.clear();
         self.pending_requests.clear();
         self.last_camera_pos = Vec3::splat(f32::NAN);
+        self.last_evaluated_pos = Vec3::splat(f32::NAN);
+        self.time_since_eval = 0.0;
     }
 
     /// Invalide un chunk voxel modifié pour forcer son recalcul
@@ -119,7 +125,7 @@ impl PlanetLodManager {
         camera_pos: Vec3,
         generator: &PlanetWorldGenerator,
         _chunk_cache: &mut WorldChunkCache,
-        _dt: f32,
+        dt: f32,
     ) -> bool {
         // 1. Récupération non-bloquante des chunks voxels calculés par le thread en arrière-plan
         let mut received_new_voxel = false;
@@ -131,20 +137,37 @@ impl PlanetLodManager {
             }
         }
 
-        let cam_dvec = DVec3::new(
-            camera_pos.x as f64,
-            camera_pos.y as f64,
-            camera_pos.z as f64,
-        );
+        self.time_since_eval += dt;
+        let moved_dist = if self.last_evaluated_pos.is_nan() {
+            f32::INFINITY
+        } else {
+            (camera_pos - self.last_evaluated_pos).length()
+        };
 
-        let new_leaves = self.quadtree.evaluate_with_generator(cam_dvec, Some(generator));
+        // On ne réévalue le QuadTree que si la caméra a bougé significativement (>= 20 cm)
+        // ou après un court délai (>= 100 ms si déplacement >= 2 cm), ou première frame.
+        let should_re_eval = self.last_evaluated_pos.is_nan()
+            || moved_dist > 0.20
+            || (moved_dist > 0.02 && self.time_since_eval > 0.10);
 
-        // Vérifie si la topologie des feuilles visibles a changé
-        let leaves_changed = new_leaves.len() != self.current_leaves.len()
-            || new_leaves
-                .iter()
-                .zip(&self.current_leaves)
-                .any(|(a, b)| a.key != b.key);
+        let (new_leaves, leaves_changed) = if should_re_eval {
+            let cam_dvec = DVec3::new(
+                camera_pos.x as f64,
+                camera_pos.y as f64,
+                camera_pos.z as f64,
+            );
+            let leaves = self.quadtree.evaluate_with_generator(cam_dvec, Some(generator));
+            let changed = leaves.len() != self.current_leaves.len()
+                || leaves
+                    .iter()
+                    .zip(&self.current_leaves)
+                    .any(|(a, b)| a.key != b.key);
+            self.last_evaluated_pos = camera_pos;
+            self.time_since_eval = 0.0;
+            (leaves, changed)
+        } else {
+            (self.current_leaves.clone(), false)
+        };
 
         // On ne reconstruit le maillage lourd QUE si la topologie a changé ou qu'un nouveau chunk voxel est prêt
         if !leaves_changed && !received_new_voxel && !self.last_camera_pos.is_nan() {
@@ -204,31 +227,28 @@ impl PlanetLodManager {
             self.voxel_cache.retain(|k, _| active_keys.contains(k));
         }
 
-        // 3. Assemblage du maillage global combiné (copie directe haute performance)
-        let mut combined = PlanetMesh {
-            vertices: Vec::with_capacity(32768),
-            indices: Vec::with_capacity(65536),
-        };
+        // 3. Assemblage du maillage global combiné (réutilisation des buffers pour éliminer les allocations)
+        self.combined_mesh.vertices.clear();
+        self.combined_mesh.indices.clear();
 
         for leaf in &self.current_leaves {
             match leaf.kind {
                 QuadLeafKind::LodPatch => {
                     if let Some(mesh) = self.lod_cache.get(&leaf.key) {
-                        append_mesh(&mut combined, mesh);
+                        append_mesh(&mut self.combined_mesh, mesh);
                     }
                 }
                 QuadLeafKind::VoxelChunk => {
                     if let Some(voxel_mesh) = self.voxel_cache.get(&leaf.key) {
-                        append_mesh(&mut combined, voxel_mesh);
+                        append_mesh(&mut self.combined_mesh, voxel_mesh);
                     } else if let Some(patch) = self.lod_cache.get(&leaf.key) {
                         // Voxel chunk encore en calcul : affichage immédiat du patch LOD 4 sans freeze !
-                        append_mesh(&mut combined, patch);
+                        append_mesh(&mut self.combined_mesh, patch);
                     }
                 }
             }
         }
 
-        self.combined_mesh = combined;
         true
     }
 }
@@ -289,5 +309,37 @@ mod tests {
         // Au repos sans mouvement, le coût CPU par frame doit être minime même en mode debug
         assert!(total_time.as_millis() < 1000, "Update took too long: {:?}", total_time);
     }
+
+    #[test]
+    fn test_lod_update_performance_when_moving() {
+        let desc = herocraft_world::PlanetDescriptor {
+            seed: 2026,
+            ..Default::default()
+        };
+        let generator = PlanetWorldGenerator::new(desc);
+        let mut cache = herocraft_voxel_engine::WorldChunkCache::new(None, 64);
+        let mut lod_manager = PlanetLodManager::new(25.0, 2026);
+
+        let mut cam_pos = Vec3::new(25.5, 0.0, 0.0);
+        lod_manager.update(cam_pos, &generator, &mut cache, 0.0);
+
+        let start = Instant::now();
+        let mut rebuild_count = 0;
+        // Simule 60 frames de marche lente (0.01 unité par frame à 60 FPS)
+        for _ in 0..60 {
+            cam_pos.y += 0.01;
+            if lod_manager.update(cam_pos, &generator, &mut cache, 0.016) {
+                rebuild_count += 1;
+            }
+        }
+        let total_time = start.elapsed();
+        // Grâce au deadband throttle, le QuadTree n'est pas réévalué de manière intempestive à chaque micro-mouvement
+        println!(
+            "Moving camera (60 frames): rebuilds={} total_time={:?}",
+            rebuild_count, total_time
+        );
+        assert!(total_time.as_millis() < 1000, "Moving camera update took too long: {:?}", total_time);
+    }
 }
+
 
