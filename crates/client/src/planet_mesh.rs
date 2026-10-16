@@ -73,7 +73,7 @@ impl PlanetMesh {
             v.color[3] = alpha;
         }
     }
-    /// Construit le maillage complet de la planète Cubed-Sphere avec relief et biomes
+    /// Construit le maillage complet de la planète Cubed-Sphere avec relief en colonnes voxels à 90° et biomes
     #[allow(dead_code)]
     pub fn generate_planet(
         generator: &PlanetWorldGenerator,
@@ -81,129 +81,20 @@ impl PlanetMesh {
         grid_resolution: usize,
         filter: herocraft_world::VisualizationFilter,
     ) -> Self {
-        let n = grid_resolution.max(8);
-        let mut vertices: Vec<PlanetVertex> = Vec::new();
-        let mut indices: Vec<u32> = Vec::new();
+        let mut combined_mesh = PlanetMesh {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        };
 
         for &face in &PlanetFace::ALL {
-            let base_vertex_index = vertices.len() as u32;
-
-            // 1. Génération de la grille de sommets pour cette face
-            let mut face_positions = Vec::with_capacity((n + 1) * (n + 1));
-            let mut face_colors = Vec::with_capacity((n + 1) * (n + 1));
-            let mut face_normals = Vec::with_capacity((n + 1) * (n + 1));
-            let mut is_water_flags = Vec::with_capacity((n + 1) * (n + 1));
-
-            for j in 0..=n {
-                let v = -1.0 + 2.0 * (j as f64) / (n as f64);
-                for i in 0..=n {
-                    let u = -1.0 + 2.0 * (i as f64) / (n as f64);
-
-                    let sphere_dir: DVec3 = face.uv_to_sphere_direction(u, v);
-                    let (lat, lon) = unit_sphere_to_lat_lon(sphere_dir);
-                    let raw_elevation = generator.sample_elevation(sphere_dir, lat, lon);
-                    let biome = generator.determine_biome(lat, raw_elevation, sphere_dir);
-                    let is_water = biome.is_water();
-
-                    let stepped_elevation = if is_water {
-                        SEA_LEVEL_BLOCKS
-                    } else {
-                        Self::quantize_terrace_elevation(raw_elevation)
-                    };
-
-                    let color = match filter {
-                        herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, stepped_elevation),
-                        herocraft_world::VisualizationFilter::Tectonics => {
-                            let base_color = Self::relief_biome_color(biome, stepped_elevation);
-                            let sample = generator.tectonics.sample(sphere_dir);
-                            Self::blend_tectonic_color(base_color, &sample)
-                        }
-                        herocraft_world::VisualizationFilter::OceanCurrents => {
-                            let continental = generator.sample_continental_value(sphere_dir);
-                            generator.ocean_currents.sample(sphere_dir, is_water, continental).color
-                        }
-                    };
-
-                    let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0)) as f32;
-                    let elevation_clamped = (stepped_elevation as f32) * altitude_scale;
-
-                    let radius = base_radius + elevation_clamped;
-                    let dir_f32 = Vec3::new(sphere_dir.x as f32, sphere_dir.y as f32, sphere_dir.z as f32);
-                    let pos = dir_f32 * radius;
-
-                    face_positions.push(pos);
-                    face_colors.push(color);
-                    face_normals.push(dir_f32);
-                    is_water_flags.push(is_water);
-                }
-            }
-
-            // 2. Calcul des normales par dérivation pour le relief montagneux et les plaines
-            for j in 0..=n {
-                for i in 0..=n {
-                    let idx = j * (n + 1) + i;
-
-                    let pos = face_positions[idx];
-                    let norm = face_normals[idx];
-                    let is_water = is_water_flags[idx];
-
-                    // Si c'est de l'eau, la normale est la normale sphérique pure pour des reflets lisses
-                    let final_normal = if is_water {
-                        norm
-                    } else {
-                        let dx = if i + 1 <= n {
-                            face_positions[j * (n + 1) + (i + 1)] - pos
-                        } else {
-                            pos - face_positions[j * (n + 1) + (i - 1)]
-                        };
-
-                        let dy = if j + 1 <= n {
-                            face_positions[(j + 1) * (n + 1) + i] - pos
-                        } else {
-                            pos - face_positions[(j - 1) * (n + 1) + i]
-                        };
-
-                        let computed = dx.cross(dy).normalize_or_zero();
-                        if computed.dot(norm) > 0.0 {
-                            computed
-                        } else {
-                            -computed
-                        }
-                    };
-
-                    vertices.push(PlanetVertex {
-                        position: pos.to_array(),
-                        normal: final_normal.to_array(),
-                        color: face_colors[idx],
-                    });
-                }
-            }
-
-            // 3. Triangulation des quads de la face
-            for j in 0..n {
-                for i in 0..n {
-                    let row1 = base_vertex_index + (j * (n + 1) + i) as u32;
-                    let row2 = base_vertex_index + ((j + 1) * (n + 1) + i) as u32;
-
-                    let v0 = row1;
-                    let v1 = row1 + 1;
-                    let v2 = row2 + 1;
-                    let v3 = row2;
-
-                    // Premier triangle CCW (v0, v2, v1)
-                    indices.push(v0);
-                    indices.push(v2);
-                    indices.push(v1);
-
-                    // Deuxième triangle CCW (v0, v3, v2)
-                    indices.push(v0);
-                    indices.push(v3);
-                    indices.push(v2);
-                }
-            }
+            let key = herocraft_world::QuadNodeKey::new(face, 0, 0, 0);
+            let patch = Self::generate_lod_patch(generator, &key, base_radius, grid_resolution, filter);
+            let base_idx = combined_mesh.vertices.len() as u32;
+            combined_mesh.vertices.extend(patch.vertices);
+            combined_mesh.indices.extend(patch.indices.into_iter().map(|idx| idx + base_idx));
         }
 
-        PlanetMesh { vertices, indices }
+        combined_mesh
     }
 
     /// Palette de couleurs enrichie avec gradation altimétrique et bathymétrique
@@ -373,7 +264,7 @@ impl PlanetMesh {
         ]
     }
 
-    /// Construit le maillage polygonal d'un patch LOD pour un nœud du QuadTree
+    /// Construit le maillage d'un patch LOD sous forme de colonnes voxels avec falaises à 90°
     pub fn generate_lod_patch(
         generator: &PlanetWorldGenerator,
         key: &herocraft_world::QuadNodeKey,
@@ -382,186 +273,208 @@ impl PlanetMesh {
         filter: herocraft_world::VisualizationFilter,
     ) -> Self {
         let n = grid_resolution.max(2);
-        let mut vertices: Vec<PlanetVertex> = Vec::with_capacity((n + 1) * (n + 1));
-        let mut indices: Vec<u32> = Vec::with_capacity(n * n * 6);
+        let mut vertices: Vec<PlanetVertex> = Vec::with_capacity(n * n * 8);
+        let mut indices: Vec<u32> = Vec::with_capacity(n * n * 12);
 
         let (u_min, u_max, v_min, v_max) = key.uv_bounds();
-
-        let mut patch_positions = Vec::with_capacity((n + 1) * (n + 1));
-        let mut patch_colors = Vec::with_capacity((n + 1) * (n + 1));
-        let mut patch_normals = Vec::with_capacity((n + 1) * (n + 1));
-        let mut is_water_flags = Vec::with_capacity((n + 1) * (n + 1));
-
+        let du = (u_max - u_min) / (n as f64);
+        let dv = (v_max - v_min) / (n as f64);
         let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0)) as f32;
 
-        for j in 0..=n {
-            let v = v_min + (v_max - v_min) * (j as f64) / (n as f64);
-            for i in 0..=n {
-                let u = u_min + (u_max - u_min) * (i as f64) / (n as f64);
-
-                let sphere_dir: DVec3 = key.face.uv_to_sphere_direction(u, v);
-                let (lat, lon) = unit_sphere_to_lat_lon(sphere_dir);
-                let raw_elevation = generator.sample_elevation(sphere_dir, lat, lon);
-                let biome = generator.determine_biome(lat, raw_elevation, sphere_dir);
-                let is_water = biome.is_water();
-
-                let stepped_elevation = if is_water {
-                    SEA_LEVEL_BLOCKS
-                } else {
-                    Self::quantize_terrace_elevation(raw_elevation)
-                };
-
-                let color = match filter {
-                    herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, stepped_elevation),
-                    herocraft_world::VisualizationFilter::Tectonics => {
-                        let base_color = Self::relief_biome_color(biome, stepped_elevation);
-                        let sample = generator.tectonics.sample(sphere_dir);
-                        Self::blend_tectonic_color(base_color, &sample)
-                    }
-                    herocraft_world::VisualizationFilter::OceanCurrents => {
-                        let continental = generator.sample_continental_value(sphere_dir);
-                        generator.ocean_currents.sample(sphere_dir, is_water, continental).color
-                    }
-                };
-
-                let elevation_clamped = (stepped_elevation as f32) * altitude_scale;
-
-                let radius = base_radius + elevation_clamped;
-                let dir_f32 = Vec3::new(sphere_dir.x as f32, sphere_dir.y as f32, sphere_dir.z as f32);
-                let pos = dir_f32 * radius;
-
-                patch_positions.push(pos);
-                patch_colors.push(color);
-                patch_normals.push(dir_f32);
-                is_water_flags.push(is_water);
-            }
-        }
-
-        // Calcul des normales par dérivation
-        for j in 0..=n {
-            for i in 0..=n {
-                let idx = j * (n + 1) + i;
-                let pos = patch_positions[idx];
-                let norm = patch_normals[idx];
-                let is_water = is_water_flags[idx];
-
-                let final_normal = if is_water {
-                    norm
-                } else {
-                    let dx = if i + 1 <= n {
-                        patch_positions[j * (n + 1) + (i + 1)] - pos
-                    } else {
-                        pos - patch_positions[j * (n + 1) + (i - 1)]
-                    };
-
-                    let dy = if j + 1 <= n {
-                        patch_positions[(j + 1) * (n + 1) + i] - pos
-                    } else {
-                        pos - patch_positions[(j - 1) * (n + 1) + i]
-                    };
-
-                    let computed = dx.cross(dy).normalize_or_zero();
-                    if computed.dot(norm) > 0.0 {
-                        computed
-                    } else {
-                        -computed
-                    }
-                };
-
-                vertices.push(PlanetVertex {
-                    position: pos.to_array(),
-                    normal: final_normal.to_array(),
-                    color: patch_colors[idx],
-                });
-            }
-        }
-
-        // Triangulation
-        for j in 0..n {
-            for i in 0..n {
-                let row1 = (j * (n + 1) + i) as u32;
-                let row2 = ((j + 1) * (n + 1) + i) as u32;
-
-                let v0 = row1;
-                let v1 = row1 + 1;
-                let v2 = row2 + 1;
-                let v3 = row2;
-
-                // Premier triangle CCW (v0, v2, v1)
-                indices.push(v0);
-                indices.push(v2);
-                indices.push(v1);
-
-                // Deuxième triangle CCW (v0, v3, v2)
-                indices.push(v0);
-                indices.push(v3);
-                indices.push(v2);
-            }
-        }
-
-        // 4. Jupes verticales de bordure (Skirts) :
-        // Masquent 100% des fissures, craquelures et trous de LOD entre niveaux de détail adjacents
-        let skirt_depth = (base_radius * 0.015).max(0.20);
-        let mut add_skirt_segment = |idx_a: usize, idx_b: usize| {
-            let va = vertices[idx_a];
-            let vb = vertices[idx_b];
-
-            let pos_a = Vec3::from(va.position);
-            let pos_b = Vec3::from(vb.position);
-            let norm_a = Vec3::from(va.normal);
-            let norm_b = Vec3::from(vb.normal);
-
-            let pos_a_down = pos_a - norm_a * skirt_depth;
-            let pos_b_down = pos_b - norm_b * skirt_depth;
-
-            let base_idx = vertices.len() as u32;
-
-            vertices.push(PlanetVertex {
-                position: pos_a_down.to_array(),
-                normal: va.normal,
-                color: va.color,
-            });
-            vertices.push(PlanetVertex {
-                position: pos_b_down.to_array(),
-                normal: vb.normal,
-                color: vb.color,
-            });
-
-            let ia = idx_a as u32;
-            let ib = idx_b as u32;
-            let ia_down = base_idx;
-            let ib_down = base_idx + 1;
-
-            // Quad (ia, ib, ib_down, ia_down)
-            indices.push(ia);
-            indices.push(ib_down);
-            indices.push(ib);
-
-            indices.push(ia);
-            indices.push(ia_down);
-            indices.push(ib_down);
+        let sample_cell = |ci: i32, cj: i32| -> (f64, bool, [f32; 4]) {
+            let u_mid = u_min + ((ci as f64) + 0.5) * du;
+            let v_mid = v_min + ((cj as f64) + 0.5) * dv;
+            let sphere_dir: DVec3 = key.face.uv_to_sphere_direction(u_mid, v_mid);
+            let (lat, lon) = unit_sphere_to_lat_lon(sphere_dir);
+            let raw_elevation = generator.sample_elevation(sphere_dir, lat, lon);
+            let biome = generator.determine_biome(lat, raw_elevation, sphere_dir);
+            let is_water = biome.is_water();
+            let stepped = if is_water {
+                SEA_LEVEL_BLOCKS
+            } else {
+                Self::quantize_terrace_elevation(raw_elevation)
+            };
+            let color = match filter {
+                herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, stepped),
+                herocraft_world::VisualizationFilter::Tectonics => {
+                    let base_color = Self::relief_biome_color(biome, stepped);
+                    let sample = generator.tectonics.sample(sphere_dir);
+                    Self::blend_tectonic_color(base_color, &sample)
+                }
+                herocraft_world::VisualizationFilter::OceanCurrents => {
+                    let continental = generator.sample_continental_value(sphere_dir);
+                    generator.ocean_currents.sample(sphere_dir, is_water, continental).color
+                }
+            };
+            (stepped, is_water, color)
         };
 
-        // Bord Sud (j = 0, i = 0..n)
-        for i in 0..n {
-            add_skirt_segment(i, i + 1);
-        }
-        // Bord Nord (j = n, i = 0..n)
-        for i in 0..n {
-            let row = n * (n + 1);
-            add_skirt_segment(row + i + 1, row + i);
-        }
-        // Bord Ouest (i = 0, j = 0..n)
+        // Pré-échantillonnage de la grille n x n
+        let mut grid_cells = Vec::with_capacity(n * n);
         for j in 0..n {
-            add_skirt_segment((j + 1) * (n + 1), j * (n + 1));
+            for i in 0..n {
+                grid_cells.push(sample_cell(i as i32, j as i32));
+            }
         }
-        // Bord Est (i = n, j = 0..n)
+
+        // Helper pour ajouter un quad (4 sommets + 2 triangles CCW)
+        let add_quad = |verts: &mut Vec<PlanetVertex>, inds: &mut Vec<u32>,
+                        p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3,
+                        normal: Vec3, color: [f32; 4]| {
+            let base_idx = verts.len() as u32;
+            let norm_arr = normal.to_array();
+            verts.push(PlanetVertex { position: p0.to_array(), normal: norm_arr, color });
+            verts.push(PlanetVertex { position: p1.to_array(), normal: norm_arr, color });
+            verts.push(PlanetVertex { position: p2.to_array(), normal: norm_arr, color });
+            verts.push(PlanetVertex { position: p3.to_array(), normal: norm_arr, color });
+
+            // Triangle 1 CCW: (0, 1, 2)
+            inds.push(base_idx);
+            inds.push(base_idx + 1);
+            inds.push(base_idx + 2);
+
+            // Triangle 2 CCW: (0, 2, 3)
+            inds.push(base_idx);
+            inds.push(base_idx + 2);
+            inds.push(base_idx + 3);
+        };
+
+        let skirt_depth = (base_radius * 0.015).max(0.25);
+
         for j in 0..n {
-            add_skirt_segment(j * (n + 1) + n, (j + 1) * (n + 1) + n);
+            let v0 = v_min + (j as f64) * dv;
+            let v1 = v_min + ((j + 1) as f64) * dv;
+
+            for i in 0..n {
+                let u0 = u_min + (i as f64) * du;
+                let u1 = u_min + ((i + 1) as f64) * du;
+
+                let (stepped, _is_water, color) = grid_cells[j * n + i];
+                let r_top = base_radius + (stepped as f32) * altitude_scale;
+
+                // 4 directions des coins de la cellule sur la sphère
+                let d00 = key.face.uv_to_sphere_direction(u0, v0);
+                let d10 = key.face.uv_to_sphere_direction(u1, v0);
+                let d11 = key.face.uv_to_sphere_direction(u1, v1);
+                let d01 = key.face.uv_to_sphere_direction(u0, v1);
+
+                let v00 = Vec3::new(d00.x as f32, d00.y as f32, d00.z as f32);
+                let v10 = Vec3::new(d10.x as f32, d10.y as f32, d10.z as f32);
+                let v11 = Vec3::new(d11.x as f32, d11.y as f32, d11.z as f32);
+                let v01 = Vec3::new(d01.x as f32, d01.y as f32, d01.z as f32);
+
+                let v_center = (v00 + v10 + v11 + v01).normalize();
+
+                // 1. Face supérieure horizontale de la colonne (plateau plat à hauteur H)
+                let p00_top = v00 * r_top;
+                let p10_top = v10 * r_top;
+                let p11_top = v11 * r_top;
+                let p01_top = v01 * r_top;
+
+                add_quad(&mut vertices, &mut indices, p00_top, p10_top, p11_top, p01_top, v_center, color);
+
+                // Couleur de roche / falaise pour les murs verticaux
+                let cliff_color = [color[0] * 0.55, color[1] * 0.55, color[2] * 0.55, color[3]];
+
+                // 2. Murs verticaux à 90° (les falaises perpendiculaires aux plateaux)
+
+                // Voisin Est (+U)
+                let (h_east, _, _) = if i + 1 < n {
+                    grid_cells[j * n + (i + 1)]
+                } else {
+                    sample_cell(i as i32 + 1, j as i32)
+                };
+                if stepped > h_east {
+                    let r_bot = base_radius + (h_east as f32) * altitude_scale;
+                    let p10_bot = v10 * r_bot;
+                    let p11_bot = v11 * r_bot;
+                    let wall_norm = (p11_top - p10_top).cross(p10_top - p10_bot).normalize_or_zero();
+                    add_quad(&mut vertices, &mut indices, p10_top, p10_bot, p11_bot, p11_top, wall_norm, cliff_color);
+                }
+
+                // Voisin Ouest (-U)
+                let (h_west, _, _) = if i > 0 {
+                    grid_cells[j * n + (i - 1)]
+                } else {
+                    sample_cell(i as i32 - 1, j as i32)
+                };
+                if stepped > h_west {
+                    let r_bot = base_radius + (h_west as f32) * altitude_scale;
+                    let p01_bot = v01 * r_bot;
+                    let p00_bot = v00 * r_bot;
+                    let wall_norm = (p00_top - p01_top).cross(p01_top - p01_bot).normalize_or_zero();
+                    add_quad(&mut vertices, &mut indices, p01_top, p01_bot, p00_bot, p00_top, wall_norm, cliff_color);
+                }
+
+                // Voisin Nord (+V)
+                let (h_north, _, _) = if j + 1 < n {
+                    grid_cells[(j + 1) * n + i]
+                } else {
+                    sample_cell(i as i32, j as i32 + 1)
+                };
+                if stepped > h_north {
+                    let r_bot = base_radius + (h_north as f32) * altitude_scale;
+                    let p11_bot = v11 * r_bot;
+                    let p01_bot = v01 * r_bot;
+                    let wall_norm = (p01_top - p11_top).cross(p11_top - p11_bot).normalize_or_zero();
+                    add_quad(&mut vertices, &mut indices, p11_top, p11_bot, p01_bot, p01_top, wall_norm, cliff_color);
+                }
+
+                // Voisin Sud (-V)
+                let (h_south, _, _) = if j > 0 {
+                    grid_cells[(j - 1) * n + i]
+                } else {
+                    sample_cell(i as i32, j as i32 - 1)
+                };
+                if stepped > h_south {
+                    let r_bot = base_radius + (h_south as f32) * altitude_scale;
+                    let p00_bot = v00 * r_bot;
+                    let p10_bot = v10 * r_bot;
+                    let wall_norm = (p10_top - p00_top).cross(p00_top - p00_bot).normalize_or_zero();
+                    add_quad(&mut vertices, &mut indices, p00_top, p00_bot, p10_bot, p10_top, wall_norm, cliff_color);
+                }
+
+                // Jupes de bordure extérieure (Skirts) pour garantir l'absence de fissure entre niveaux de LOD
+                if i == 0 {
+                    let r_base_west = base_radius + (stepped.min(h_west) as f32) * altitude_scale;
+                    let p_top_a = v01 * r_base_west;
+                    let p_top_b = v00 * r_base_west;
+                    let p_bot_a = v01 * (r_base_west - skirt_depth);
+                    let p_bot_b = v00 * (r_base_west - skirt_depth);
+                    let skirt_norm = (p_top_b - p_top_a).cross(p_top_a - p_bot_a).normalize_or_zero();
+                    add_quad(&mut vertices, &mut indices, p_top_a, p_bot_a, p_bot_b, p_top_b, skirt_norm, cliff_color);
+                }
+                if i == n - 1 {
+                    let r_base_east = base_radius + (stepped.min(h_east) as f32) * altitude_scale;
+                    let p_top_a = v10 * r_base_east;
+                    let p_top_b = v11 * r_base_east;
+                    let p_bot_a = v10 * (r_base_east - skirt_depth);
+                    let p_bot_b = v11 * (r_base_east - skirt_depth);
+                    let skirt_norm = (p_top_b - p_top_a).cross(p_top_a - p_bot_a).normalize_or_zero();
+                    add_quad(&mut vertices, &mut indices, p_top_a, p_bot_a, p_bot_b, p_top_b, skirt_norm, cliff_color);
+                }
+                if j == 0 {
+                    let r_base_south = base_radius + (stepped.min(h_south) as f32) * altitude_scale;
+                    let p_top_a = v00 * r_base_south;
+                    let p_top_b = v10 * r_base_south;
+                    let p_bot_a = v00 * (r_base_south - skirt_depth);
+                    let p_bot_b = v10 * (r_base_south - skirt_depth);
+                    let skirt_norm = (p_top_b - p_top_a).cross(p_top_a - p_bot_a).normalize_or_zero();
+                    add_quad(&mut vertices, &mut indices, p_top_a, p_bot_a, p_bot_b, p_top_b, skirt_norm, cliff_color);
+                }
+                if j == n - 1 {
+                    let r_base_north = base_radius + (stepped.min(h_north) as f32) * altitude_scale;
+                    let p_top_a = v11 * r_base_north;
+                    let p_top_b = v01 * r_base_north;
+                    let p_bot_a = v11 * (r_base_north - skirt_depth);
+                    let p_bot_b = v01 * (r_base_north - skirt_depth);
+                    let skirt_norm = (p_top_b - p_top_a).cross(p_top_a - p_bot_a).normalize_or_zero();
+                    add_quad(&mut vertices, &mut indices, p_top_a, p_bot_a, p_bot_b, p_top_b, skirt_norm, cliff_color);
+                }
+            }
         }
 
         PlanetMesh { vertices, indices }
-
     }
 }
 
@@ -611,5 +524,38 @@ mod tests {
         assert!(just_below[0] < 0.70);
         // Au-dessus de 300 : enneigement automatique (> 0.85 de clarté éclatante)
         assert!(at_snow[0] > 0.85 && at_snow[1] > 0.85 && at_snow[2] > 0.85);
+    }
+
+    #[test]
+    fn test_vertical_walls_are_orthogonal() {
+        let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor {
+            seed: 2026,
+            ..Default::default()
+        });
+        let key = herocraft_world::QuadNodeKey::new(PlanetFace::PosZ, 2, 1, 1);
+        let mesh = PlanetMesh::generate_lod_patch(&generator, &key, 50.0, 8, herocraft_world::VisualizationFilter::Standard);
+
+        assert!(!mesh.vertices.is_empty());
+        assert!(!mesh.indices.is_empty());
+        assert_eq!(mesh.indices.len() % 3, 0);
+
+        // Vérifier que chaque triangle a une normale valide et que les parois de falaises
+        // sont orthogonales au vecteur radial (verticalité proche de 0.0)
+        let mut found_vertical_cliff = false;
+        for chunk in mesh.indices.chunks_exact(3) {
+            let v0 = Vec3::from(mesh.vertices[chunk[0] as usize].position);
+            let v1 = Vec3::from(mesh.vertices[chunk[1] as usize].position);
+            let v2 = Vec3::from(mesh.vertices[chunk[2] as usize].position);
+            let radial = ((v0 + v1 + v2) / 3.0).normalize();
+            let face_normal = (v1 - v0).cross(v2 - v0).normalize_or_zero();
+
+            // Sur une paroi verticale à 90°, face_normal est perpendiculaire au vecteur radial (dot ≈ 0)
+            let verticality = face_normal.dot(radial).abs();
+            if verticality < 0.15 {
+                found_vertical_cliff = true;
+                assert!(verticality < 0.10, "Une paroi verticale doit être à ~90° du rayon");
+            }
+        }
+        assert!(found_vertical_cliff, "Le maillage doit contenir des falaises verticales à 90°");
     }
 }
