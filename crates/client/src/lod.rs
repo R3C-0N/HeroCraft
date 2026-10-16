@@ -157,16 +157,16 @@ impl PlanetLodManager {
     /// Ajuste les seuils de distance du QuadTree selon le préréglage vidéo sélectionné
     pub fn set_distance_preset(&mut self, preset: crate::ui::LodDistanceSetting) {
         let mult = match preset {
-            crate::ui::LodDistanceSetting::Courte => 0.75,
+            crate::ui::LodDistanceSetting::Courte => 0.8,
             crate::ui::LodDistanceSetting::Normale => 1.0,
-            crate::ui::LodDistanceSetting::Elevee => 1.35,
+            crate::ui::LodDistanceSetting::Elevee => 1.25,
         };
         self.quadtree.split_distances = vec![
-            350.0 * mult,
-            220.0 * mult,
-            120.0 * mult,
+            95.0 * mult,
             60.0 * mult,
-            30.0 * mult,
+            38.0 * mult,
+            18.0 * mult,
+            5.2 * mult,
         ];
         // Force la réévaluation du QuadTree au prochain frame
         self.last_evaluated_pos = Vec3::splat(f32::NAN);

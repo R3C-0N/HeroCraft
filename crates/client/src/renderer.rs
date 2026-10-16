@@ -113,11 +113,13 @@ impl State {
 
         // 4. Device et Queue
         let adapter_limits = adapter.limits();
-        let required_limits = if adapter_limits.max_compute_workgroups_per_dimension == 0 {
-            wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter_limits)
+        let mut required_limits = if adapter_limits.max_compute_workgroups_per_dimension == 0 {
+            wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter_limits.clone())
         } else {
             wgpu::Limits::default()
         };
+        // Débloque la taille maximale de buffer jusqu'à la capacité matérielle réelle du GPU
+        required_limits.max_buffer_size = adapter_limits.max_buffer_size;
 
         let (device, queue) = adapter
             .request_device(
@@ -671,35 +673,60 @@ impl State {
 
     #[allow(dead_code)]
     pub fn update_mesh(&mut self, mesh: &PlanetMesh) {
-        let vertex_bytes = bytemuck::cast_slice(&mesh.vertices);
+        let max_buf_size = self.device.limits().max_buffer_size;
+
         if mesh.vertices.len() > self.vertex_buffer_capacity {
-            self.vertex_buffer_capacity = (mesh.vertices.len() * 3 / 2).max(262144);
+            let target_cap = (mesh.vertices.len() * 3 / 2).max(262144);
+            let target_bytes = (target_cap * std::mem::size_of::<PlanetVertex>()) as u64;
+            let (final_cap, final_bytes) = if target_bytes <= max_buf_size {
+                (target_cap, target_bytes)
+            } else {
+                let max_possible = (max_buf_size as usize) / std::mem::size_of::<PlanetVertex>();
+                let clamped_cap = max_possible.min(mesh.vertices.len().max(self.vertex_buffer_capacity));
+                (clamped_cap, (clamped_cap * std::mem::size_of::<PlanetVertex>()) as u64)
+            };
+
+            self.vertex_buffer_capacity = final_cap;
             self.vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Planet Vertex Buffer"),
-                size: (self.vertex_buffer_capacity * std::mem::size_of::<PlanetVertex>()) as u64,
+                size: final_bytes,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             });
         }
-        if !mesh.vertices.is_empty() {
+        if !mesh.vertices.is_empty() && self.vertex_buffer_capacity > 0 {
+            let copy_count = mesh.vertices.len().min(self.vertex_buffer_capacity);
+            let vertex_bytes = bytemuck::cast_slice(&mesh.vertices[..copy_count]);
             self.queue.write_buffer(&self.vertex_buffer, 0, vertex_bytes);
         }
 
-        let index_bytes = bytemuck::cast_slice(&mesh.indices);
         if mesh.indices.len() > self.index_buffer_capacity {
-            self.index_buffer_capacity = (mesh.indices.len() * 3 / 2).max(524288);
+            let target_cap = (mesh.indices.len() * 3 / 2).max(524288);
+            let target_bytes = (target_cap * std::mem::size_of::<u32>()) as u64;
+            let (final_cap, final_bytes) = if target_bytes <= max_buf_size {
+                (target_cap, target_bytes)
+            } else {
+                let max_possible = (max_buf_size as usize) / std::mem::size_of::<u32>();
+                let clamped_cap = max_possible.min(mesh.indices.len().max(self.index_buffer_capacity));
+                (clamped_cap, (clamped_cap * std::mem::size_of::<u32>()) as u64)
+            };
+
+            self.index_buffer_capacity = final_cap;
             self.index_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("Planet Index Buffer"),
-                size: (self.index_buffer_capacity * std::mem::size_of::<u32>()) as u64,
+                size: final_bytes,
                 usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             });
         }
-        if !mesh.indices.is_empty() {
+        if !mesh.indices.is_empty() && self.index_buffer_capacity > 0 {
+            let copy_count = mesh.indices.len().min(self.index_buffer_capacity);
+            let index_bytes = bytemuck::cast_slice(&mesh.indices[..copy_count]);
             self.queue.write_buffer(&self.index_buffer, 0, index_bytes);
+            self.num_indices = copy_count as u32;
+        } else {
+            self.num_indices = 0;
         }
-
-        self.num_indices = mesh.indices.len() as u32;
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
