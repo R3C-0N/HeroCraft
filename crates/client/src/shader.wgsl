@@ -152,28 +152,33 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // 6. Lueur atmosphérique rasante sur le limbe planétaire en vue orbitale
-    let rim = 1.0 - clamp(dot(n, view_dir), 0.0, 1.0);
-    let rim_light = pow(rim, 4.0) * 0.45 * clamp(ndotl * 0.5 + 0.5, 0.0, 1.0);
+    // Utilise la normale sphérique planétaire (n_sphere) et non la facette du bloc (n_facet),
+    // afin que le halo atmosphérique soit strictement restreint au contour extérieur du disque planétaire contre l'espace,
+    // sans jamais illuminer les contremarches, falaises ou blocs à 90° à l'intérieur des terres.
+    let sphere_view = clamp(dot(n_sphere, view_dir), 0.0, 1.0);
+    let rim = 1.0 - sphere_view;
+    let sun_side = clamp(dot(n_sphere, l) * 0.5 + 0.5, 0.0, 1.0);
+    let rim_light = pow(rim, 8.0) * 0.35 * sun_side * orbit_factor;
     let atmosphere_color = vec3<f32>(0.25, 0.65, 1.0);
 
     // Couleur éclairée de base avec Ambient Occlusion (AO) per-vertex interpolé
     var lit_rgb = base_color * light_intensity + specular_light + atmosphere_color * rim_light;
 
-    // 6. Brouillard atmosphérique de distance au sol (Ground Distance Fog)
+    // 7. Brouillard atmosphérique de distance au sol (Ground Distance Fog)
     let dist = length(camera.camera_pos - in.world_pos);
     let ground_proximity = clamp(1.0 - cam_alt / 8.0, 0.0, 1.0);
 
     if (ground_proximity > 0.001) {
-        // Début du brouillard à 1.5 unités (~40 blocs), saturation douce à 7.5 unités (~200 blocs)
-        let fog_factor = clamp((dist - 1.5) / 6.0, 0.0, 1.0) * ground_proximity;
+        // Début du brouillard à 2.5 unités (~65 blocs), saturation douce à 8.0 unités
+        let fog_factor = clamp((dist - 2.5) / 5.5, 0.0, 1.0) * ground_proximity;
 
         // Diffusion dorée vers le soleil (Mie forward scattering)
         let forward_scatter = pow(max(dot(view_dir, -l), 0.0), 3.0);
-        let fog_ambient = vec3<f32>(0.62, 0.76, 0.94);
-        let fog_sun = vec3<f32>(1.0, 0.82, 0.55);
+        let fog_ambient = vec3<f32>(0.72, 0.80, 0.90);
+        let fog_sun = vec3<f32>(1.0, 0.85, 0.60);
         let fog_color = mix(fog_ambient, fog_sun, forward_scatter * 0.55);
 
-        lit_rgb = mix(lit_rgb, fog_color, fog_factor * 0.80);
+        lit_rgb = mix(lit_rgb, fog_color, fog_factor * 0.75);
     }
 
     return vec4<f32>(lit_rgb, 1.0);
