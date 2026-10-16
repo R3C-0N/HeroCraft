@@ -40,8 +40,6 @@ pub struct PlanetLodManager {
     request_tx: std::sync::mpsc::Sender<VoxelBuildRequest>,
     result_rx: std::sync::mpsc::Receiver<VoxelBuildResult>,
     pending_requests: HashSet<QuadNodeKey>,
-    // Suivi de fondu croisé tramé (Dithered Cross-Fade) pour transition progressive [0.0, 1.0]
-    fade_progress: HashMap<QuadNodeKey, f32>,
 }
 
 impl PlanetLodManager {
@@ -87,7 +85,6 @@ impl PlanetLodManager {
             request_tx,
             result_rx,
             pending_requests: HashSet::new(),
-            fade_progress: HashMap::new(),
         }
     }
 
@@ -106,7 +103,6 @@ impl PlanetLodManager {
         self.voxel_cache.clear();
         self.current_leaves.clear();
         self.pending_requests.clear();
-        self.fade_progress.clear();
         self.last_camera_pos = Vec3::splat(f32::NAN);
     }
 
@@ -123,7 +119,7 @@ impl PlanetLodManager {
         camera_pos: Vec3,
         generator: &PlanetWorldGenerator,
         _chunk_cache: &mut WorldChunkCache,
-        dt: f32,
+        _dt: f32,
     ) -> bool {
         // 1. Récupération non-bloquante des chunks voxels calculés par le thread en arrière-plan
         let mut received_new_voxel = false;
@@ -131,24 +127,9 @@ impl PlanetLodManager {
             if res.seed == self.current_seed {
                 self.pending_requests.remove(&res.key);
                 self.voxel_cache.insert(res.key, res.mesh);
-                // Démarre la transition douce en fondu croisé
-                self.fade_progress.insert(res.key, 0.0);
                 received_new_voxel = true;
             }
         }
-
-        // 2. Progression temporelle des fondus croisés actifs
-        let mut fades_active = false;
-        if dt > 0.0 {
-            let fade_speed = 4.0; // Transition complète en 250 ms
-            for progress in self.fade_progress.values_mut() {
-                if *progress < 1.0 {
-                    *progress = (*progress + dt * fade_speed).min(1.0);
-                    fades_active = true;
-                }
-            }
-        }
-        self.fade_progress.retain(|_, p| *p < 1.0);
 
         let cam_dvec = DVec3::new(
             camera_pos.x as f64,
@@ -165,7 +146,8 @@ impl PlanetLodManager {
                 .zip(&self.current_leaves)
                 .any(|(a, b)| a.key != b.key);
 
-        if !leaves_changed && !received_new_voxel && !fades_active && !self.last_camera_pos.is_nan() {
+        // On ne reconstruit le maillage lourd QUE si la topologie a changé ou qu'un nouveau chunk voxel est prêt
+        if !leaves_changed && !received_new_voxel && !self.last_camera_pos.is_nan() {
             return false;
         }
 
@@ -175,7 +157,7 @@ impl PlanetLodManager {
         let filter = self.active_filter;
         let base_radius = self.base_radius;
 
-        // 3. Préparation et requêtes asynchrones pour chaque feuille
+        // 2. Préparation et requêtes asynchrones pour chaque feuille
         for leaf in &self.current_leaves {
             match leaf.kind {
                 QuadLeafKind::LodPatch => {
@@ -222,7 +204,7 @@ impl PlanetLodManager {
             self.voxel_cache.retain(|k, _| active_keys.contains(k));
         }
 
-        // 4. Assemblage du maillage global combiné avec application du fondu croisé tramé
+        // 3. Assemblage du maillage global combiné (copie directe haute performance)
         let mut combined = PlanetMesh {
             vertices: Vec::with_capacity(32768),
             indices: Vec::with_capacity(65536),
@@ -232,28 +214,15 @@ impl PlanetLodManager {
             match leaf.kind {
                 QuadLeafKind::LodPatch => {
                     if let Some(mesh) = self.lod_cache.get(&leaf.key) {
-                        append_mesh_with_alpha(&mut combined, mesh, 1.0);
+                        append_mesh(&mut combined, mesh);
                     }
                 }
                 QuadLeafKind::VoxelChunk => {
                     if let Some(voxel_mesh) = self.voxel_cache.get(&leaf.key) {
-                        if let Some(&fade) = self.fade_progress.get(&leaf.key) {
-                            // En cours de transition douce (Dithered Cross-Fade) :
-                            // 1) Patch polygonal LOD 4 en train de disparaître (fade-out négatif)
-                            if let Some(patch) = self.lod_cache.get(&leaf.key) {
-                                append_mesh_with_alpha(&mut combined, patch, -(1.0 - fade));
-                            }
-                            // 2) Voxel chunk en train d'apparaître (fade-in positif)
-                            append_mesh_with_alpha(&mut combined, voxel_mesh, fade);
-                        } else {
-                            // Voxel chunk pleinement opaque
-                            append_mesh_with_alpha(&mut combined, voxel_mesh, 1.0);
-                        }
-                    } else {
+                        append_mesh(&mut combined, voxel_mesh);
+                    } else if let Some(patch) = self.lod_cache.get(&leaf.key) {
                         // Voxel chunk encore en calcul : affichage immédiat du patch LOD 4 sans freeze !
-                        if let Some(patch) = self.lod_cache.get(&leaf.key) {
-                            append_mesh_with_alpha(&mut combined, patch, 1.0);
-                        }
+                        append_mesh(&mut combined, patch);
                     }
                 }
             }
@@ -264,20 +233,61 @@ impl PlanetLodManager {
     }
 }
 
-/// Fusionne un maillage source dans le maillage combiné en assignant un canal alpha pour le fondu croisé
-fn append_mesh_with_alpha(combined: &mut PlanetMesh, source: &PlanetMesh, alpha: f32) {
+/// Fusionne un maillage source dans le maillage combiné (copie mémoire directe rapide)
+fn append_mesh(combined: &mut PlanetMesh, source: &PlanetMesh) {
     let base_idx = combined.vertices.len() as u32;
-    combined.vertices.reserve(source.vertices.len());
+    combined.vertices.extend_from_slice(&source.vertices);
     combined.indices.reserve(source.indices.len());
-
-    for v in &source.vertices {
-        let mut v_copy = *v;
-        if alpha < 0.999 {
-            v_copy.color[3] = alpha;
-        }
-        combined.vertices.push(v_copy);
-    }
     for &idx in &source.indices {
         combined.indices.push(base_idx + idx);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn test_lod_update_performance_when_stationary() {
+        let desc = herocraft_world::PlanetDescriptor {
+            seed: 2026,
+            ..Default::default()
+        };
+        let generator = PlanetWorldGenerator::new(desc);
+        let mut cache = herocraft_voxel_engine::WorldChunkCache::new(None, 64);
+        let mut lod_manager = PlanetLodManager::new(25.0, 2026);
+
+        let cam_pos = Vec3::new(25.5, 0.0, 0.0);
+
+        // Frame 0 (initialisation)
+        lod_manager.update(cam_pos, &generator, &mut cache, 0.0);
+
+        let mut true_returns = 0;
+        let start = Instant::now();
+        for frame in 0..60 {
+            let pending_count = lod_manager.pending_requests.len();
+            let voxel_cache_count = lod_manager.voxel_cache.len();
+            let leaves_count = lod_manager.current_leaves.len();
+
+            let updated = lod_manager.update(cam_pos, &generator, &mut cache, 0.016);
+            if updated {
+                true_returns += 1;
+            }
+            if frame < 5 || frame == 30 || frame == 59 {
+                println!(
+                    "Frame {}: updated={} | leaves={} | pending={} | cached_voxels={}",
+                    frame, updated, leaves_count, pending_count, voxel_cache_count
+                );
+            }
+        }
+        let total_time = start.elapsed();
+        println!(
+            "Stationary camera: {}/60 frames triggered mesh rebuild! Total time: {:?}",
+            true_returns, total_time
+        );
+        // Au repos sans mouvement, le coût CPU par frame doit être quasi-nul (< 1ms par frame, soit < 60ms au total)
+        assert!(total_time.as_millis() < 500, "Update took too long: {:?}", total_time);
+    }
+}
+

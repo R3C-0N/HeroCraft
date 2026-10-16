@@ -99,14 +99,14 @@ impl PlanetQuadTree {
         // Level 0 (face globale) : split si distance < 95.0
         // Level 1 (quadrant)     : split si distance < 60.0
         // Level 2 (région)       : split si distance < 38.0
-        // Level 3 (zone)         : split si distance < 20.0
-        // Level 4 (local)        : split si distance < 7.5 (passage aux voxels 3D Level 5)
+        // Level 3 (zone)         : split si distance < 18.0
+        // Level 4 (local)        : split si distance < 4.2 (passage aux voxels 3D Level 5 locaux)
         let split_distances = vec![
             95.0,
             60.0,
             38.0,
-            20.0,
-            7.5,
+            18.0,
+            4.2,
         ];
 
         Self {
