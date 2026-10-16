@@ -76,6 +76,12 @@ pub struct State {
     pub ui_uniform_buffer: wgpu::Buffer,
     pub ui_vertex_buffer: wgpu::Buffer,
     pub ui_index_buffer: wgpu::Buffer,
+
+    // Paramètres Vidéo & Menu
+    pub is_settings_open: bool,
+    pub num_ui_indices: u32,
+    pub vsync_mode: wgpu::PresentMode,
+    pub novsync_mode: wgpu::PresentMode,
 }
 
 impl State {
@@ -106,11 +112,18 @@ impl State {
         log::info!("Adaptateur WGPU sélectionné : {:?}", adapter.get_info().name);
 
         // 4. Device et Queue
+        let adapter_limits = adapter.limits();
+        let required_limits = if adapter_limits.max_compute_workgroups_per_dimension == 0 {
+            wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter_limits)
+        } else {
+            wgpu::Limits::default()
+        };
+
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
+                    required_limits,
                     label: Some("HeroCraft Device"),
                     memory_hints: Default::default(),
                 },
@@ -128,17 +141,25 @@ impl State {
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
 
-        // Sélection du mode de présentation le plus fluide disponible :
-        // Mailbox (triple buffering fluide sans déchirement, élimine les saccades quantifiées 60->30 FPS)
-        // ou AutoNoVsync, avec repli sur AutoVsync
-        let present_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
-            wgpu::PresentMode::Mailbox
-        } else if surface_caps.present_modes.contains(&wgpu::PresentMode::AutoNoVsync) {
-            wgpu::PresentMode::AutoNoVsync
-        } else {
+        // Détection des modes de présentation pour V-Sync activé / désactivé
+        let vsync_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::AutoVsync) {
             wgpu::PresentMode::AutoVsync
+        } else {
+            wgpu::PresentMode::Fifo
         };
-        log::info!("Mode de présentation WGPU sélectionné : {:?}", present_mode);
+
+        let novsync_mode = if surface_caps.present_modes.contains(&wgpu::PresentMode::AutoNoVsync) {
+            wgpu::PresentMode::AutoNoVsync
+        } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
+            wgpu::PresentMode::Immediate
+        } else if surface_caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+            wgpu::PresentMode::Mailbox
+        } else {
+            vsync_mode
+        };
+
+        let present_mode = vsync_mode;
+        log::info!("Mode de présentation WGPU initial (V-Sync) : {:?}", present_mode);
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -408,11 +429,14 @@ impl State {
             cache: None,
         });
 
-        // Quads 2D de l'UI (Panneau HUD à gauche + Compteur FPS à droite)
-        let ui_vertices = Self::build_ui_vertices(size.width as f32, size.height as f32);
-        let ui_indices: [u32; 12] = [
-            0, 1, 2, 0, 2, 3, // Quad 1 : Panneau principal HUD
-            4, 5, 6, 4, 6, 7, // Quad 2 : Badge FPS en haut à droite
+        // Quads 2D de l'UI (Panneau HUD ou Backdrop assombrissant + Compteur FPS + Menu Paramètres)
+        let (ui_vertices, num_ui_indices) =
+            Self::build_ui_vertices(size.width as f32, size.height as f32, false);
+
+        let ui_indices: [u32; 18] = [
+            0, 1, 2, 0, 2, 3,       // Quad 1 : Panneau principal HUD ou Backdrop
+            4, 5, 6, 4, 6, 7,       // Quad 2 : Badge FPS en haut à droite
+            8, 9, 10, 8, 10, 11,    // Quad 3 : Menu Paramètres Vidéo
         ];
 
         let ui_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -450,6 +474,10 @@ impl State {
             ui_uniform_buffer,
             ui_vertex_buffer,
             ui_index_buffer,
+            is_settings_open: false,
+            num_ui_indices,
+            vsync_mode,
+            novsync_mode,
         };
 
         // Chargement initial des pixels de l'UI
@@ -482,33 +510,72 @@ impl State {
     }
 
     /// Génère les sommets des quads de l'interface utilisateur 2D :
-    /// - Quad 1 : Panneau principal HUD dans le coin supérieur gauche (320x310)
-    /// - Quad 2 : Badge du compteur FPS dans le coin supérieur droit (116x32)
-    pub fn build_ui_vertices(screen_w: f32, _screen_h: f32) -> [UiVertex; 8] {
+    /// - Mode Jeu : Quad 1 (Panneau HUD gauche) + Quad 2 (Badge FPS)
+    /// - Mode Menu : Quad 1 (Backdrop plein écran sombre) + Quad 2 (Badge FPS) + Quad 3 (Fenêtre centrale Paramètres)
+    pub fn build_ui_vertices(screen_w: f32, screen_h: f32, is_settings_open: bool) -> ([UiVertex; 12], u32) {
         let cw = 512.0_f32;
-        let ch = 320.0_f32;
-
-        let panel_w = 320.0_f32;
-        let panel_h = 310.0_f32;
+        let ch = 512.0_f32;
 
         let fps_w = 116.0_f32;
         let fps_h = 32.0_f32;
-        let fps_x0 = (screen_w - fps_w - 16.0).max(panel_w + 16.0);
+        let fps_x0 = (screen_w - fps_w - 16.0).max(16.0);
         let fps_y0 = 16.0_f32;
 
-        [
-            // Quad 1: Panneau principal (Haut-Gauche)
-            UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
-            UiVertex { position: [panel_w, 0.0], uv: [panel_w / cw, 0.0] },
-            UiVertex { position: [panel_w, panel_h], uv: [panel_w / cw, panel_h / ch] },
-            UiVertex { position: [0.0, panel_h], uv: [0.0, panel_h / ch] },
+        if !is_settings_open {
+            let panel_w = 320.0_f32;
+            let panel_h = 310.0_f32;
 
-            // Quad 2: Badge FPS (Haut-Droite)
-            UiVertex { position: [fps_x0, fps_y0], uv: [320.0 / cw, 0.0] },
-            UiVertex { position: [fps_x0 + fps_w, fps_y0], uv: [(320.0 + fps_w) / cw, 0.0] },
-            UiVertex { position: [fps_x0 + fps_w, fps_y0 + fps_h], uv: [(320.0 + fps_w) / cw, fps_h / ch] },
-            UiVertex { position: [fps_x0, fps_y0 + fps_h], uv: [320.0 / cw, fps_h / ch] },
-        ]
+            let vertices = [
+                // Quad 1: Panneau principal HUD (Haut-Gauche)
+                UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
+                UiVertex { position: [panel_w, 0.0], uv: [panel_w / cw, 0.0] },
+                UiVertex { position: [panel_w, panel_h], uv: [panel_w / cw, panel_h / ch] },
+                UiVertex { position: [0.0, panel_h], uv: [0.0, panel_h / ch] },
+
+                // Quad 2: Badge FPS (Haut-Droite)
+                UiVertex { position: [fps_x0, fps_y0], uv: [320.0 / cw, 0.0] },
+                UiVertex { position: [fps_x0 + fps_w, fps_y0], uv: [(320.0 + fps_w) / cw, 0.0] },
+                UiVertex { position: [fps_x0 + fps_w, fps_y0 + fps_h], uv: [(320.0 + fps_w) / cw, fps_h / ch] },
+                UiVertex { position: [fps_x0, fps_y0 + fps_h], uv: [320.0 / cw, fps_h / ch] },
+
+                // Quad 3: Inactif (zéroté)
+                UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
+                UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
+                UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
+                UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
+            ];
+            (vertices, 12)
+        } else {
+            // Backdrop foncé plein écran : UV pointe vers le pixel sombre en (511, 511)
+            let dark_u = 511.0 / cw;
+            let dark_v = 511.0 / ch;
+
+            let menu_w = 380.0_f32;
+            let menu_h = 400.0_f32;
+            let menu_x = ((screen_w - menu_w) * 0.5).max(0.0);
+            let menu_y = ((screen_h - menu_h) * 0.5).max(0.0);
+
+            let vertices = [
+                // Quad 1: Fond assombrissant plein écran (Backdrop)
+                UiVertex { position: [0.0, 0.0], uv: [dark_u, dark_v] },
+                UiVertex { position: [screen_w, 0.0], uv: [dark_u, dark_v] },
+                UiVertex { position: [screen_w, screen_h], uv: [dark_u, dark_v] },
+                UiVertex { position: [0.0, screen_h], uv: [dark_u, dark_v] },
+
+                // Quad 2: Badge FPS (Haut-Droite)
+                UiVertex { position: [fps_x0, fps_y0], uv: [320.0 / cw, 0.0] },
+                UiVertex { position: [fps_x0 + fps_w, fps_y0], uv: [(320.0 + fps_w) / cw, 0.0] },
+                UiVertex { position: [fps_x0 + fps_w, fps_y0 + fps_h], uv: [(320.0 + fps_w) / cw, fps_h / ch] },
+                UiVertex { position: [fps_x0, fps_y0 + fps_h], uv: [320.0 / cw, fps_h / ch] },
+
+                // Quad 3: Fenêtre centrale du Menu Paramètres Vidéo
+                UiVertex { position: [menu_x, menu_y], uv: [0.0, 0.0] },
+                UiVertex { position: [menu_x + menu_w, menu_y], uv: [menu_w / cw, 0.0] },
+                UiVertex { position: [menu_x + menu_w, menu_y + menu_h], uv: [menu_w / cw, menu_h / ch] },
+                UiVertex { position: [menu_x, menu_y + menu_h], uv: [0.0, menu_h / ch] },
+            ];
+            (vertices, 18)
+        }
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -534,14 +601,39 @@ impl State {
                 bytemuck::cast_slice(&[ui_uniform]),
             );
 
-            // Mise à jour des positions des quads UI (repositionne le badge FPS en haut à droite)
-            let ui_vertices = Self::build_ui_vertices(new_size.width as f32, new_size.height as f32);
-            self.queue.write_buffer(
-                &self.ui_vertex_buffer,
-                0,
-                bytemuck::cast_slice(&ui_vertices),
-            );
+            self.update_ui_geometry();
         }
+    }
+
+    pub fn set_vsync(&mut self, enabled: bool) {
+        let target_mode = if enabled {
+            self.vsync_mode
+        } else {
+            self.novsync_mode
+        };
+        if self.config.present_mode != target_mode {
+            self.config.present_mode = target_mode;
+            self.surface.configure(&self.device, &self.config);
+            log::info!("Mode de présentation WGPU mis à jour : {:?}", target_mode);
+        }
+    }
+
+    pub fn set_settings_open(&mut self, is_open: bool) {
+        if self.is_settings_open != is_open {
+            self.is_settings_open = is_open;
+            self.update_ui_geometry();
+        }
+    }
+
+    pub fn update_ui_geometry(&mut self) {
+        let (ui_vertices, num_indices) =
+            Self::build_ui_vertices(self.size.width as f32, self.size.height as f32, self.is_settings_open);
+        self.num_ui_indices = num_indices;
+        self.queue.write_buffer(
+            &self.ui_vertex_buffer,
+            0,
+            bytemuck::cast_slice(&ui_vertices),
+        );
     }
 
     pub fn update_camera(&mut self, camera: &OrbitCamera) {
@@ -679,7 +771,7 @@ impl State {
             ui_pass.set_bind_group(0, &self.ui_bind_group, &[]);
             ui_pass.set_vertex_buffer(0, self.ui_vertex_buffer.slice(..));
             ui_pass.set_index_buffer(self.ui_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            ui_pass.draw_indexed(0..12, 0, 0..1);
+            ui_pass.draw_indexed(0..self.num_ui_indices, 0, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

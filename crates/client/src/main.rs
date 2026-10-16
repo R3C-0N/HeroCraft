@@ -80,8 +80,9 @@ fn main() {
         lod_manager.current_leaves.len()
     );
 
-    // Initialisation de l'interface graphique (HUD avec boutons interactifs)
+    // Initialisation de l'interface graphique (HUD avec boutons interactifs et menu paramètres)
     let mut ui_state = UiState::new(current_seed);
+    ui_state.set_screen_size(size.width as f32, size.height as f32);
 
     // Initialisation du moteur WGPU
     let mut state = pollster::block_on(State::new(window.clone(), &lod_manager.combined_mesh, &ui_state));
@@ -106,12 +107,14 @@ fn main() {
 
                     WindowEvent::Resized(physical_size) => {
                         state.resize(*physical_size);
+                        ui_state.set_screen_size(physical_size.width as f32, physical_size.height as f32);
                         camera.aspect = physical_size.width as f32 / physical_size.height.max(1) as f32;
                     }
 
                     WindowEvent::ScaleFactorChanged { .. } => {
                         let physical_size = window.inner_size();
                         state.resize(physical_size);
+                        ui_state.set_screen_size(physical_size.width as f32, physical_size.height as f32);
                         camera.aspect = physical_size.width as f32 / physical_size.height.max(1) as f32;
                     }
 
@@ -126,6 +129,41 @@ fn main() {
                                     // Clic sur l'interface utilisateur
                                     is_dragging = false;
                                     match action {
+                                        UiAction::ResumeGame => {
+                                            ui_state.set_settings_open(false);
+                                            state.set_settings_open(false);
+                                            state.update_ui(&ui_state);
+                                            info!("Bouton cliqué : Reprise de la partie.");
+                                        }
+                                        UiAction::QuitGame => {
+                                            let _ = chunk_cache.flush_dirty();
+                                            info!("Bouton cliqué : Sauvegarde des chunks et fermeture du jeu.");
+                                            target.exit();
+                                        }
+                                        UiAction::ToggleVsync => {
+                                            state.set_vsync(ui_state.video_settings.vsync);
+                                            state.update_ui(&ui_state);
+                                            info!("Paramètre V-Sync mis à jour : {}", if ui_state.video_settings.vsync { "ACTIVÉE" } else { "DÉSACTIVÉE" });
+                                        }
+                                        UiAction::ToggleFullscreen => {
+                                            let is_fs = ui_state.video_settings.fullscreen;
+                                            if is_fs {
+                                                window.set_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+                                            } else {
+                                                window.set_fullscreen(None);
+                                            }
+                                            state.update_ui(&ui_state);
+                                            info!("Paramètre Plein Écran mis à jour : {}", if is_fs { "ACTIVÉ" } else { "DÉSACTIVÉ" });
+                                        }
+                                        UiAction::CycleLodDistance => {
+                                            lod_manager.set_distance_preset(ui_state.video_settings.lod_distance);
+                                            state.update_ui(&ui_state);
+                                            info!("Paramètre Distance LOD mis à jour : {:?}", ui_state.video_settings.lod_distance);
+                                        }
+                                        UiAction::CycleFpsLimit => {
+                                            state.update_ui(&ui_state);
+                                            info!("Paramètre Limite FPS mis à jour : {:?}", ui_state.video_settings.fps_limit);
+                                        }
                                         UiAction::GenerateNewPlanet => {
                                             let _ = chunk_cache.flush_dirty();
                                             current_seed = current_seed.wrapping_add(1337);
@@ -167,15 +205,17 @@ fn main() {
                                         }
                                     }
                                 } else {
-                                    // Clic dans la scène 3D pour faire tourner la caméra ou la planète
-                                    is_dragging = true;
+                                    // Clic dans la scène 3D pour faire tourner la caméra ou la planète (si hors menu)
+                                    if !ui_state.is_settings_open {
+                                        is_dragging = true;
+                                    }
                                 }
                             } else {
                                 ui_state.on_mouse_up();
                                 is_dragging = false;
                             }
                         } else if *button == MouseButton::Right {
-                            is_dragging = *btn_state == ElementState::Pressed;
+                            is_dragging = *btn_state == ElementState::Pressed && !ui_state.is_settings_open;
                         }
                     }
 
@@ -183,7 +223,7 @@ fn main() {
                     WindowEvent::CursorMoved { position, .. } => {
                         let is_over_ui = ui_state.on_cursor_moved(position.x as f32, position.y as f32);
 
-                        if is_dragging && !is_over_ui {
+                        if is_dragging && !is_over_ui && !ui_state.is_settings_open {
                             let dx = (position.x - last_mouse_pos.0) as f32;
                             let dy = (position.y - last_mouse_pos.1) as f32;
                             camera.orbit(dx, dy);
@@ -193,11 +233,13 @@ fn main() {
 
                     // Molette de souris (Dézoom / Zoom continu FPS <-> TPS <-> Orbite)
                     WindowEvent::MouseWheel { delta, .. } => {
-                        let zoom_delta = match delta {
-                            MouseScrollDelta::LineDelta(_x, y) => *y,
-                            MouseScrollDelta::PixelDelta(pos) => (pos.y as f32) * 0.04,
-                        };
-                        camera.zoom(zoom_delta);
+                        if !ui_state.is_settings_open {
+                            let zoom_delta = match delta {
+                                MouseScrollDelta::LineDelta(_x, y) => *y,
+                                MouseScrollDelta::PixelDelta(pos) => (pos.y as f32) * 0.04,
+                            };
+                            camera.zoom(zoom_delta);
+                        }
                     }
 
                     // Touches clavier (Déplacements ZQSD/WASD, Saut, Sprint, Mode caméra)
@@ -211,93 +253,106 @@ fn main() {
                     } => {
                         let is_pressed = *key_state == ElementState::Pressed;
 
-                        match key_code {
-                            // Déplacements au sol (Support ZQSD et WASD)
-                            KeyCode::KeyW | KeyCode::KeyZ => {
-                                camera.move_forward = is_pressed;
-                            }
-                            KeyCode::KeyS => {
-                                camera.move_backward = is_pressed;
-                            }
-                            KeyCode::KeyA | KeyCode::KeyQ => {
-                                camera.move_left = is_pressed;
-                            }
-                            KeyCode::KeyD => {
-                                camera.move_right = is_pressed;
-                            }
-                            KeyCode::ShiftLeft | KeyCode::ShiftRight => {
-                                camera.is_sprinting = is_pressed;
-                            }
+                        if *key_code == KeyCode::Escape && is_pressed {
+                            // Touche Échap : Ouvre ou ferme le Menu des Paramètres Vidéo
+                            let new_open = ui_state.toggle_settings();
+                            state.set_settings_open(new_open);
+                            state.update_ui(&ui_state);
 
-                            // Actions ponctuelles déclenchées à l'appui
-                            _ if is_pressed => match key_code {
-                                KeyCode::Escape => {
-                                    let _ = chunk_cache.flush_dirty();
-                                    target.exit();
+                            // Réinitialise les touches de déplacement pour éviter tout glissement fantôme
+                            camera.move_forward = false;
+                            camera.move_backward = false;
+                            camera.move_left = false;
+                            camera.move_right = false;
+                            camera.is_sprinting = false;
+
+                            info!("Touche [Échap] : Menu Paramètres {}", if new_open { "OUVERT" } else { "FERMÉ" });
+                        } else if !ui_state.is_settings_open {
+                            // En jeu normal (menu fermé) : traitement des commandes de déplacement et raccourcis
+                            match key_code {
+                                // Déplacements au sol (Support ZQSD et WASD)
+                                KeyCode::KeyW | KeyCode::KeyZ => {
+                                    camera.move_forward = is_pressed;
                                 }
-                                KeyCode::Space => {
-                                    if camera.distance <= 25.0 {
-                                        camera.jump_requested = true;
-                                    } else {
-                                        camera.auto_rotate = !camera.auto_rotate;
-                                        ui_state.set_auto_rotate(camera.auto_rotate);
-                                        info!("Auto-rotation de la planète : {}", if camera.auto_rotate { "ACTIVÉE" } else { "DÉSACTIVÉE" });
+                                KeyCode::KeyS => {
+                                    camera.move_backward = is_pressed;
+                                }
+                                KeyCode::KeyA | KeyCode::KeyQ => {
+                                    camera.move_left = is_pressed;
+                                }
+                                KeyCode::KeyD => {
+                                    camera.move_right = is_pressed;
+                                }
+                                KeyCode::ShiftLeft | KeyCode::ShiftRight => {
+                                    camera.is_sprinting = is_pressed;
+                                }
+
+                                // Actions ponctuelles déclenchées à l'appui
+                                _ if is_pressed => match key_code {
+                                    KeyCode::Space => {
+                                        if camera.distance <= 25.0 {
+                                            camera.jump_requested = true;
+                                        } else {
+                                            camera.auto_rotate = !camera.auto_rotate;
+                                            ui_state.set_auto_rotate(camera.auto_rotate);
+                                            info!("Auto-rotation de la planète : {}", if camera.auto_rotate { "ACTIVÉE" } else { "DÉSACTIVÉE" });
+                                        }
                                     }
-                                }
-                                KeyCode::KeyF => {
-                                    camera.toggle_view(&generator);
-                                    info!(
-                                        "Raccourci [F] : Transition vers {}",
-                                        if camera.target_distance <= 25.0 { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
-                                    );
-                                }
-                                KeyCode::KeyR => {
-                                    camera.reset();
-                                    info!("Vue de la caméra réinitialisée.");
-                                }
-                                KeyCode::KeyG => {
-                                    let _ = chunk_cache.flush_dirty();
-                                    current_seed = current_seed.wrapping_add(1337);
-                                    let mut new_desc = herocraft_world::PlanetDescriptor::default();
-                                    new_desc.seed = current_seed;
-                                    generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
-                                    let new_save_dir = format!("saves/monde_{}", current_seed);
-                                    let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
-                                    chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
-                                    lod_manager.clear(current_seed);
-                                    camera.spawn_on_ground(&generator);
-                                    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                    state.update_mesh(&lod_manager.combined_mesh);
-                                    ui_state.set_seed(current_seed);
-                                    info!("Raccourci [G] : Nouvelle planète générée (Graine: #{})", current_seed);
-                                }
-                                KeyCode::KeyT => {
-                                    ui_state.show_tectonics = !ui_state.show_tectonics;
-                                    if ui_state.show_tectonics {
-                                        ui_state.show_ocean_currents = false;
+                                    KeyCode::KeyF => {
+                                        camera.toggle_view(&generator);
+                                        info!(
+                                            "Raccourci [F] : Transition vers {}",
+                                            if camera.target_distance <= 25.0 { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
+                                        );
                                     }
-                                    ui_state.redraw();
-                                    let filter = ui_state.active_filter();
-                                    lod_manager.set_filter(filter);
-                                    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                    state.update_mesh(&lod_manager.combined_mesh);
-                                    info!("Raccourci [T] : Filtre plaques tectoniques = {}", ui_state.show_tectonics);
-                                }
-                                KeyCode::KeyC => {
-                                    ui_state.show_ocean_currents = !ui_state.show_ocean_currents;
-                                    if ui_state.show_ocean_currents {
-                                        ui_state.show_tectonics = false;
+                                    KeyCode::KeyR => {
+                                        camera.reset();
+                                        info!("Vue de la caméra réinitialisée.");
                                     }
-                                    ui_state.redraw();
-                                    let filter = ui_state.active_filter();
-                                    lod_manager.set_filter(filter);
-                                    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                    state.update_mesh(&lod_manager.combined_mesh);
-                                    info!("Raccourci [C] : Filtre courants marins = {}", ui_state.show_ocean_currents);
-                                }
+                                    KeyCode::KeyG => {
+                                        let _ = chunk_cache.flush_dirty();
+                                        current_seed = current_seed.wrapping_add(1337);
+                                        let mut new_desc = herocraft_world::PlanetDescriptor::default();
+                                        new_desc.seed = current_seed;
+                                        generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
+                                        let new_save_dir = format!("saves/monde_{}", current_seed);
+                                        let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
+                                        chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
+                                        lod_manager.clear(current_seed);
+                                        camera.spawn_on_ground(&generator);
+                                        lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
+                                        state.update_mesh(&lod_manager.combined_mesh);
+                                        ui_state.set_seed(current_seed);
+                                        info!("Raccourci [G] : Nouvelle planète générée (Graine: #{})", current_seed);
+                                    }
+                                    KeyCode::KeyT => {
+                                        ui_state.show_tectonics = !ui_state.show_tectonics;
+                                        if ui_state.show_tectonics {
+                                            ui_state.show_ocean_currents = false;
+                                        }
+                                        ui_state.redraw();
+                                        let filter = ui_state.active_filter();
+                                        lod_manager.set_filter(filter);
+                                        lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
+                                        state.update_mesh(&lod_manager.combined_mesh);
+                                        info!("Raccourci [T] : Filtre plaques tectoniques = {}", ui_state.show_tectonics);
+                                    }
+                                    KeyCode::KeyC => {
+                                        ui_state.show_ocean_currents = !ui_state.show_ocean_currents;
+                                        if ui_state.show_ocean_currents {
+                                            ui_state.show_tectonics = false;
+                                        }
+                                        ui_state.redraw();
+                                        let filter = ui_state.active_filter();
+                                        lod_manager.set_filter(filter);
+                                        lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
+                                        state.update_mesh(&lod_manager.combined_mesh);
+                                        info!("Raccourci [C] : Filtre courants marins = {}", ui_state.show_ocean_currents);
+                                    }
+                                    _ => {}
+                                },
                                 _ => {}
-                            },
-                            _ => {}
+                            }
                         }
                     }
 
@@ -316,7 +371,10 @@ fn main() {
                             fps_timer = now;
                         }
 
-                        camera.update(dt, &generator);
+                        // Mise à jour de la caméra uniquement si le menu n'est pas ouvert
+                        if !ui_state.is_settings_open {
+                            camera.update(dt, &generator);
+                        }
                         state.update_camera(&camera);
 
                         // Mise à jour adaptative du QuadTree LOD
@@ -335,6 +393,21 @@ fn main() {
                             Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
                             Err(wgpu::SurfaceError::OutOfMemory) => target.exit(),
                             Err(e) => log::warn!("Erreur lors du rendu : {:?}", e),
+                        }
+
+                        // Limiteur de framerate si V-Sync est désactivée
+                        if !ui_state.video_settings.vsync {
+                            let min_duration = match ui_state.video_settings.fps_limit {
+                                crate::ui::FpsLimitSetting::Fps60 => Some(std::time::Duration::from_millis(16)),
+                                crate::ui::FpsLimitSetting::Fps120 => Some(std::time::Duration::from_micros(8333)),
+                                crate::ui::FpsLimitSetting::Unlimited => None,
+                            };
+                            if let Some(target_dur) = min_duration {
+                                let frame_elapsed = last_frame_time.elapsed();
+                                if frame_elapsed < target_dur {
+                                    std::thread::sleep(target_dur - frame_elapsed);
+                                }
+                            }
                         }
                     }
 
