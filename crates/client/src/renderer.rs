@@ -5,7 +5,7 @@ use crate::camera::OrbitCamera;
 use crate::planet_mesh::{PlanetMesh, PlanetVertex};
 use crate::ui::UiState;
 
-#[repr(C)]
+#[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
     pub view_proj: [[f32; 4]; 4],
@@ -60,12 +60,18 @@ pub struct State {
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
 
+    // Pipeline Ciel & Atmosphère 3D
+    pub sky_pipeline: wgpu::RenderPipeline,
+
     // Pipeline Planète & Voxels 3D
     pub render_pipeline: wgpu::RenderPipeline,
     pub camera_buffer: wgpu::Buffer,
     pub camera_bind_group: wgpu::BindGroup,
     pub depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
+    pub sample_count: u32,
+    pub msaa_color_texture: Option<wgpu::Texture>,
+    pub msaa_color_view: Option<wgpu::TextureView>,
     pub vertex_buffer: wgpu::Buffer,
     pub vertex_buffer_capacity: usize,
     pub index_buffer: wgpu::Buffer,
@@ -530,11 +536,15 @@ impl State {
             queue,
             config,
             size,
+            sky_pipeline,
             render_pipeline,
             camera_buffer,
             camera_bind_group,
             depth_texture,
             depth_view,
+            sample_count,
+            msaa_color_texture,
+            msaa_color_view,
             vertex_buffer,
             vertex_buffer_capacity,
             index_buffer,
@@ -561,6 +571,7 @@ impl State {
     fn create_depth_texture(
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
+        sample_count: u32,
     ) -> (wgpu::Texture, wgpu::TextureView) {
         let size = wgpu::Extent3d {
             width: config.width.max(1),
@@ -571,7 +582,7 @@ impl State {
             label: Some("Depth Texture"),
             size,
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
@@ -580,6 +591,32 @@ impl State {
         let texture = device.create_texture(&desc);
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         (texture, view)
+    }
+
+    fn create_msaa_color_texture(
+        device: &wgpu::Device,
+        config: &wgpu::SurfaceConfiguration,
+        sample_count: u32,
+    ) -> Option<(wgpu::Texture, wgpu::TextureView)> {
+        if sample_count <= 1 {
+            return None;
+        }
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("MSAA Color Texture"),
+            size: wgpu::Extent3d {
+                width: config.width.max(1),
+                height: config.height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count,
+            dimension: wgpu::TextureDimension::D2,
+            format: config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        Some((texture, view))
     }
 
     /// Génère les sommets des quads de l'interface utilisateur 2D :
@@ -619,21 +656,17 @@ impl State {
             ];
             (vertices, 12)
         } else {
-            // Backdrop foncé plein écran : UV pointe vers le pixel sombre en (511, 511)
-            let dark_u = 511.0 / cw;
-            let dark_v = 511.0 / ch;
-
             let menu_w = 380.0_f32;
             let menu_h = 400.0_f32;
-            let menu_x = ((screen_w - menu_w) * 0.5).max(0.0);
-            let menu_y = ((screen_h - menu_h) * 0.5).max(0.0);
+            let menu_x0 = (screen_w - menu_w) * 0.5;
+            let menu_y0 = (screen_h - menu_h) * 0.5;
 
             let vertices = [
-                // Quad 1: Fond assombrissant plein écran (Backdrop)
-                UiVertex { position: [0.0, 0.0], uv: [dark_u, dark_v] },
-                UiVertex { position: [screen_w, 0.0], uv: [dark_u, dark_v] },
-                UiVertex { position: [screen_w, screen_h], uv: [dark_u, dark_v] },
-                UiVertex { position: [0.0, screen_h], uv: [dark_u, dark_v] },
+                // Quad 1: Backdrop plein écran assombrissant semi-transparent
+                UiVertex { position: [0.0, 0.0], uv: [480.0 / cw, 480.0 / ch] },
+                UiVertex { position: [screen_w, 0.0], uv: [480.0 / cw, 480.0 / ch] },
+                UiVertex { position: [screen_w, screen_h], uv: [480.0 / cw, 480.0 / ch] },
+                UiVertex { position: [0.0, screen_h], uv: [480.0 / cw, 480.0 / ch] },
 
                 // Quad 2: Badge FPS (Haut-Droite)
                 UiVertex { position: [fps_x0, fps_y0], uv: [320.0 / cw, 0.0] },
@@ -641,11 +674,11 @@ impl State {
                 UiVertex { position: [fps_x0 + fps_w, fps_y0 + fps_h], uv: [(320.0 + fps_w) / cw, fps_h / ch] },
                 UiVertex { position: [fps_x0, fps_y0 + fps_h], uv: [320.0 / cw, fps_h / ch] },
 
-                // Quad 3: Fenêtre centrale du Menu Paramètres Vidéo
-                UiVertex { position: [menu_x, menu_y], uv: [0.0, 0.0] },
-                UiVertex { position: [menu_x + menu_w, menu_y], uv: [menu_w / cw, 0.0] },
-                UiVertex { position: [menu_x + menu_w, menu_y + menu_h], uv: [menu_w / cw, menu_h / ch] },
-                UiVertex { position: [menu_x, menu_y + menu_h], uv: [0.0, menu_h / ch] },
+                // Quad 3: Menu Paramètres Vidéo (Centré à l'écran)
+                UiVertex { position: [menu_x0, menu_y0], uv: [0.0, 112.0 / ch] },
+                UiVertex { position: [menu_x0 + menu_w, menu_y0], uv: [menu_w / cw, 112.0 / ch] },
+                UiVertex { position: [menu_x0 + menu_w, menu_y0 + menu_h], uv: [menu_w / cw, (112.0 + menu_h) / ch] },
+                UiVertex { position: [menu_x0, menu_y0 + menu_h], uv: [0.0, (112.0 + menu_h) / ch] },
             ];
             (vertices, 18)
         }
@@ -659,9 +692,16 @@ impl State {
             self.surface.configure(&self.device, &self.config);
 
             let (depth_texture, depth_view) =
-                Self::create_depth_texture(&self.device, &self.config);
+                Self::create_depth_texture(&self.device, &self.config, self.sample_count);
             self.depth_texture = depth_texture;
             self.depth_view = depth_view;
+
+            let (msaa_texture, msaa_view) = match Self::create_msaa_color_texture(&self.device, &self.config, self.sample_count) {
+                Some((t, v)) => (Some(t), Some(v)),
+                None => (None, None),
+            };
+            self.msaa_color_texture = msaa_texture;
+            self.msaa_color_view = msaa_view;
 
             // Mise à jour de la taille écran pour l'UI
             let ui_uniform = UiUniform {
@@ -709,22 +749,6 @@ impl State {
         );
     }
 
-    pub fn update_camera(&mut self, camera: &OrbitCamera) {
-        let view_proj = camera.build_view_projection_matrix();
-        let inv_view_proj = view_proj.inverse();
-        let eye = camera.eye_position();
-        let uniform = CameraUniform {
-            view_proj: view_proj.to_cols_array_2d(),
-            inv_view_proj: inv_view_proj.to_cols_array_2d(),
-            camera_pos: eye.to_array(),
-            planet_radius: camera.base_radius,
-            light_dir: [0.6, 0.8, 0.5],
-            time: self.start_time.elapsed().as_secs_f32(),
-        };
-        self.queue
-            .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
-    }
-
     pub fn update_ui(&mut self, ui_state: &UiState) {
         self.queue.write_texture(
             wgpu::ImageCopyTexture {
@@ -745,6 +769,22 @@ impl State {
                 depth_or_array_layers: 1,
             },
         );
+    }
+
+    pub fn update_camera(&mut self, camera: &OrbitCamera) {
+        let view_proj = camera.build_view_projection_matrix();
+        let inv_view_proj = view_proj.inverse();
+        let eye = camera.eye_position();
+        let uniform = CameraUniform {
+            view_proj: view_proj.to_cols_array_2d(),
+            inv_view_proj: inv_view_proj.to_cols_array_2d(),
+            camera_pos: eye.to_array(),
+            planet_radius: camera.base_radius,
+            light_dir: [0.6, 0.8, 0.5],
+            time: self.start_time.elapsed().as_secs_f32(),
+        };
+        self.queue
+            .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
 
     #[allow(dead_code)]
@@ -807,7 +847,7 @@ impl State {
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
-        let view = output
+        let swapchain_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -817,21 +857,35 @@ impl State {
                 label: Some("Render Encoder"),
             });
 
-        // 1. Passe 3D Planète (Fond spatial sombre + test de profondeur)
+        // 1. Passe 3D (Ciel étoilé + Soleil + Halo atmosphérique + Planète & Voxels avec MSAA 4x si supporté)
         {
+            let (color_view, resolve_target, store_op) = if self.sample_count > 1 {
+                (
+                    self.msaa_color_view.as_ref().unwrap(),
+                    Some(&swapchain_view),
+                    wgpu::StoreOp::Discard, // La cible résolue reçoit l'image antialiadée finale
+                )
+            } else {
+                (
+                    &swapchain_view,
+                    None,
+                    wgpu::StoreOp::Store,
+                )
+            };
+
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Planet Render Pass"),
+                label: Some("3D World Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
+                    view: color_view,
+                    resolve_target,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.02,
-                            g: 0.03,
-                            b: 0.06,
+                            r: 0.01,
+                            g: 0.015,
+                            b: 0.03,
                             a: 1.0,
                         }),
-                        store: wgpu::StoreOp::Store,
+                        store: store_op,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -846,19 +900,27 @@ impl State {
                 timestamp_writes: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline);
+            // 1.a. Ciel étoilé & Soleil & Halo atmosphérique
+            render_pass.set_pipeline(&self.sky_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+            render_pass.draw(0..3, 0..1);
+
+            // 1.b. Relief planétaire & Voxels
+            if self.num_indices > 0 {
+                render_pass.set_pipeline(&self.render_pipeline);
+                render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+            }
         }
 
-        // 2. Passe 2D Interface Utilisateur (Alpha Blending, sans test de profondeur)
+        // 2. Passe 2D Interface Utilisateur (sample_count = 1 sur la swapchain résolue)
         {
             let mut ui_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("UI Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &swapchain_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load, // Conserver le rendu 3D
@@ -881,5 +943,16 @@ impl State {
         output.present();
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_camera_uniform_size_and_alignment() {
+        assert_eq!(std::mem::size_of::<CameraUniform>(), 160);
+        assert_eq!(std::mem::align_of::<CameraUniform>(), 16);
     }
 }
