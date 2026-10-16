@@ -9,8 +9,11 @@ use crate::ui::UiState;
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
     pub view_proj: [[f32; 4]; 4],
+    pub inv_view_proj: [[f32; 4]; 4],
+    pub camera_pos: [f32; 3],
+    pub planet_radius: f32,
     pub light_dir: [f32; 3],
-    pub _pad: f32,
+    pub time: f32,
 }
 
 #[repr(C)]
@@ -57,7 +60,7 @@ pub struct State {
     pub config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
 
-    // Pipeline Planète 3D
+    // Pipeline Planète & Voxels 3D
     pub render_pipeline: wgpu::RenderPipeline,
     pub camera_buffer: wgpu::Buffer,
     pub camera_bind_group: wgpu::BindGroup,
@@ -82,6 +85,7 @@ pub struct State {
     pub num_ui_indices: u32,
     pub vsync_mode: wgpu::PresentMode,
     pub novsync_mode: wgpu::PresentMode,
+    pub start_time: std::time::Instant,
 }
 
 impl State {
@@ -186,8 +190,11 @@ impl State {
         // Uniform Camera
         let initial_uniform = CameraUniform {
             view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            inv_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            camera_pos: [0.0, 0.0, 165.0],
+            planet_radius: 25.0,
             light_dir: [0.6, 0.8, 0.5],
-            _pad: 0.0,
+            time: 0.0,
         };
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -227,20 +234,39 @@ impl State {
                 push_constant_ranges: &[],
             });
 
-        let (depth_texture, depth_view) = Self::create_depth_texture(&device, &config);
+        // Détection du support matériel MSAA 4x
+        let msaa_flags = adapter.get_texture_format_features(config.format).flags;
+        let sample_count = if msaa_flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X4) {
+            4
+        } else {
+            1
+        };
+        log::info!("Anti-Aliasing MSAA 4x : {} (sample_count = {})", sample_count == 4, sample_count);
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Planet Render Pipeline"),
+        let (depth_texture, depth_view) = Self::create_depth_texture(&device, &config, sample_count);
+        let (msaa_color_texture, msaa_color_view) = match Self::create_msaa_color_texture(&device, &config, sample_count) {
+            Some((t, v)) => (Some(t), Some(v)),
+            None => (None, None),
+        };
+
+        // Pipeline Ciel & Atmosphère 3D (Étoiles, Soleil, Halo spatial, Ciel bleu)
+        let sky_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Sky Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("sky_shader.wgsl").into()),
+        });
+
+        let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Sky Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[PlanetVertex::desc()],
+                module: &sky_shader,
+                entry_point: Some("vs_sky"),
+                buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
+                module: &sky_shader,
+                entry_point: Some("fs_sky"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
@@ -259,13 +285,57 @@ impl State {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState {
-                count: 1,
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Planet Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[PlanetVertex::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -480,6 +550,7 @@ impl State {
             num_ui_indices,
             vsync_mode,
             novsync_mode,
+            start_time: std::time::Instant::now(),
         };
 
         // Chargement initial des pixels de l'UI
@@ -640,10 +711,15 @@ impl State {
 
     pub fn update_camera(&mut self, camera: &OrbitCamera) {
         let view_proj = camera.build_view_projection_matrix();
+        let inv_view_proj = view_proj.inverse();
+        let eye = camera.eye_position();
         let uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
+            inv_view_proj: inv_view_proj.to_cols_array_2d(),
+            camera_pos: eye.to_array(),
+            planet_radius: camera.base_radius,
             light_dir: [0.6, 0.8, 0.5],
-            _pad: 0.0,
+            time: self.start_time.elapsed().as_secs_f32(),
         };
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));

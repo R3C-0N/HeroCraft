@@ -106,7 +106,17 @@ impl VoxelMeshBuilder {
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0);
                         let c3 = get_corner(fx + 1.0, fy + 1.0, fz);
                         let color = Self::block_color(block, true);
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                        let ao = if is_water {
+                            [1.0, 1.0, 1.0, 1.0]
+                        } else {
+                            [
+                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx, gy + 1, gz - 1), (gx - 1, gy + 1, gz - 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx, gy + 1, gz + 1), (gx - 1, gy + 1, gz + 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx, gy + 1, gz + 1), (gx + 1, gy + 1, gz + 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx, gy + 1, gz - 1), (gx + 1, gy + 1, gz - 1)),
+                            ]
+                        };
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
                     }
 
                     // 2. Face Bas (-Y) - uniquement pour blocs solides au-dessus d'une caverne d'air
@@ -118,7 +128,13 @@ impl VoxelMeshBuilder {
                             let c2 = get_corner(fx + 1.0, fy, fz + 1.0);
                             let c3 = get_corner(fx, fy, fz + 1.0);
                             let color = Self::block_color(block, false);
-                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                            let ao = [
+                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx, gy - 1, gz - 1), (gx - 1, gy - 1, gz - 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx, gy - 1, gz - 1), (gx + 1, gy - 1, gz - 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx, gy - 1, gz + 1), (gx + 1, gy - 1, gz + 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx, gy - 1, gz + 1), (gx - 1, gy - 1, gz + 1)),
+                            ];
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
                         }
                     }
 
@@ -135,7 +151,17 @@ impl VoxelMeshBuilder {
                         let c2 = get_corner(fx, fy + 1.0, fz + 1.0);
                         let c3 = get_corner(fx, fy + 1.0, fz);
                         let color = Self::block_color(block, false);
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                        let ao = if is_water {
+                            [1.0, 1.0, 1.0, 1.0]
+                        } else {
+                            [
+                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx - 1, gy, gz - 1), (gx - 1, gy - 1, gz - 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx - 1, gy, gz + 1), (gx - 1, gy - 1, gz + 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx - 1, gy, gz + 1), (gx - 1, gy + 1, gz + 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx - 1, gy, gz - 1), (gx - 1, gy + 1, gz - 1)),
+                            ]
+                        };
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
                     }
 
                     // 4. Face Droite (+X)
@@ -151,7 +177,17 @@ impl VoxelMeshBuilder {
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz);
                         let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0);
                         let color = Self::block_color(block, false);
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                        let ao = if is_water {
+                            [1.0, 1.0, 1.0, 1.0]
+                        } else {
+                            [
+                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx + 1, gy, gz + 1), (gx + 1, gy - 1, gz + 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx + 1, gy, gz - 1), (gx + 1, gy - 1, gz - 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx + 1, gy, gz - 1), (gx + 1, gy + 1, gz - 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx + 1, gy, gz + 1), (gx + 1, gy + 1, gz + 1)),
+                            ]
+                        };
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
                     }
 
                     // 5. Face Avant (+Z)
@@ -167,7 +203,17 @@ impl VoxelMeshBuilder {
                         let c2 = get_corner(fx, fy + 1.0, fz + 1.0);
                         let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0);
                         let color = Self::block_color(block, false);
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                        let ao = if is_water {
+                            [1.0, 1.0, 1.0, 1.0]
+                        } else {
+                            [
+                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz + 1), (gx, gy - 1, gz + 1), (gx + 1, gy - 1, gz + 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz + 1), (gx, gy - 1, gz + 1), (gx - 1, gy - 1, gz + 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz + 1), (gx, gy + 1, gz + 1), (gx - 1, gy + 1, gz + 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz + 1), (gx, gy + 1, gz + 1), (gx + 1, gy + 1, gz + 1)),
+                            ]
+                        };
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
                     }
 
                     // 6. Face Arrière (-Z)
@@ -183,7 +229,17 @@ impl VoxelMeshBuilder {
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz);
                         let c3 = get_corner(fx, fy + 1.0, fz);
                         let color = Self::block_color(block, false);
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                        let ao = if is_water {
+                            [1.0, 1.0, 1.0, 1.0]
+                        } else {
+                            [
+                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz - 1), (gx, gy - 1, gz - 1), (gx - 1, gy - 1, gz - 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz - 1), (gx, gy - 1, gz - 1), (gx + 1, gy - 1, gz - 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz - 1), (gx, gy + 1, gz - 1), (gx + 1, gy + 1, gz - 1)),
+                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz - 1), (gx, gy + 1, gz - 1), (gx - 1, gy + 1, gz - 1)),
+                            ]
+                        };
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
                     }
                 }
             }
@@ -391,7 +447,17 @@ impl VoxelMeshBuilder {
                             let c1 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
                             let c2 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
                             let c3 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
-                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                            let ao = if is_water {
+                                [1.0, 1.0, 1.0, 1.0]
+                            } else {
+                                [
+                                    Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx, gy + 1, gz - 1), (gx - 1, gy + 1, gz - 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx, gy + 1, gz + 1), (gx - 1, gy + 1, gz + 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx, gy + 1, gz + 1), (gx + 1, gy + 1, gz + 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx, gy + 1, gz - 1), (gx + 1, gy + 1, gz - 1)),
+                                ]
+                            };
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
                         }
 
                         // 2. Face Bas (-Y)
@@ -403,7 +469,13 @@ impl VoxelMeshBuilder {
                                 let c1 = get_corner(fx + 1.0, fy, fz, layer);
                                 let c2 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
                                 let c3 = get_corner(fx, fy, fz + 1.0, layer);
-                                Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                                let ao = [
+                                    Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx, gy - 1, gz - 1), (gx - 1, gy - 1, gz - 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx, gy - 1, gz - 1), (gx + 1, gy - 1, gz - 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx, gy - 1, gz + 1), (gx + 1, gy - 1, gz + 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx, gy - 1, gz + 1), (gx - 1, gy - 1, gz + 1)),
+                                ];
+                                Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
                             }
                         }
 
@@ -420,7 +492,17 @@ impl VoxelMeshBuilder {
                             let c1 = get_corner(fx, fy, fz + 1.0, layer);
                             let c2 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
                             let c3 = get_corner(fx, fy + 1.0, fz, layer);
-                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                            let ao = if is_water {
+                                [1.0, 1.0, 1.0, 1.0]
+                            } else {
+                                [
+                                    Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx - 1, gy, gz - 1), (gx - 1, gy - 1, gz - 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx - 1, gy, gz + 1), (gx - 1, gy - 1, gz + 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx - 1, gy, gz + 1), (gx - 1, gy + 1, gz + 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx - 1, gy, gz - 1), (gx - 1, gy + 1, gz - 1)),
+                                ]
+                            };
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
                         }
 
                         // 4. Face Droite (+X)
@@ -436,7 +518,17 @@ impl VoxelMeshBuilder {
                             let c1 = get_corner(fx + 1.0, fy, fz, layer);
                             let c2 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
                             let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
-                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                            let ao = if is_water {
+                                [1.0, 1.0, 1.0, 1.0]
+                            } else {
+                                [
+                                    Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx + 1, gy, gz + 1), (gx + 1, gy - 1, gz + 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx + 1, gy, gz - 1), (gx + 1, gy - 1, gz - 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx + 1, gy, gz - 1), (gx + 1, gy + 1, gz - 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx + 1, gy, gz + 1), (gx + 1, gy + 1, gz + 1)),
+                                ]
+                            };
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
                         }
 
                         // 5. Face Avant (+Z)
@@ -452,7 +544,17 @@ impl VoxelMeshBuilder {
                             let c1 = get_corner(fx, fy, fz + 1.0, layer);
                             let c2 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
                             let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
-                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                            let ao = if is_water {
+                                [1.0, 1.0, 1.0, 1.0]
+                            } else {
+                                [
+                                    Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz + 1), (gx, gy - 1, gz + 1), (gx + 1, gy - 1, gz + 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz + 1), (gx, gy - 1, gz + 1), (gx - 1, gy - 1, gz + 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz + 1), (gx, gy + 1, gz + 1), (gx - 1, gy + 1, gz + 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz + 1), (gx, gy + 1, gz + 1), (gx + 1, gy + 1, gz + 1)),
+                                ]
+                            };
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
                         }
 
                         // 6. Face Arrière (-Z)
@@ -468,7 +570,17 @@ impl VoxelMeshBuilder {
                             let c1 = get_corner(fx + 1.0, fy, fz, layer);
                             let c2 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
                             let c3 = get_corner(fx, fy + 1.0, fz, layer);
-                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
+                            let ao = if is_water {
+                                [1.0, 1.0, 1.0, 1.0]
+                            } else {
+                                [
+                                    Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz - 1), (gx, gy - 1, gz - 1), (gx - 1, gy - 1, gz - 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz - 1), (gx, gy - 1, gz - 1), (gx + 1, gy - 1, gz - 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz - 1), (gx, gy + 1, gz - 1), (gx + 1, gy + 1, gz - 1)),
+                                    Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz - 1), (gx, gy + 1, gz - 1), (gx - 1, gy + 1, gz - 1)),
+                                ]
+                            };
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
                         }
                     }
                 }
@@ -479,6 +591,31 @@ impl VoxelMeshBuilder {
         PlanetMesh { vertices, indices }
     }
 
+    #[inline(always)]
+    fn is_solid_for_ao(block: BlockId) -> bool {
+        !block.is_air() && block != BlockId::WATER
+    }
+
+    fn calc_corner_ao<F>(get_voxel: &F, s1: (i32, i32, i32), s2: (i32, i32, i32), c: (i32, i32, i32)) -> f32
+    where
+        F: Fn(i32, i32, i32) -> BlockId,
+    {
+        let b_s1 = Self::is_solid_for_ao(get_voxel(s1.0, s1.1, s1.2));
+        let b_s2 = Self::is_solid_for_ao(get_voxel(s2.0, s2.1, s2.2));
+        if b_s1 && b_s2 {
+            0.55
+        } else {
+            let b_c = Self::is_solid_for_ao(get_voxel(c.0, c.1, c.2));
+            let count = (b_s1 as u8) + (b_s2 as u8) + (b_c as u8);
+            match count {
+                0 => 1.0,
+                1 => 0.82,
+                2 => 0.68,
+                _ => 0.55,
+            }
+        }
+    }
+
     fn add_quad(
         vertices: &mut Vec<PlanetVertex>,
         indices: &mut Vec<u32>,
@@ -487,6 +624,7 @@ impl VoxelMeshBuilder {
         c2: Vec3,
         c3: Vec3,
         color: [f32; 4],
+        ao: [f32; 4],
     ) {
         let base_idx = vertices.len() as u32;
 
@@ -495,36 +633,42 @@ impl VoxelMeshBuilder {
         let e2 = c2 - c0;
         let normal = e1.cross(e2).normalize_or_zero().to_array();
 
-        vertices.push(PlanetVertex {
-            position: c0.to_array(),
+        let make_vert = |pos: Vec3, ao_factor: f32| PlanetVertex {
+            position: pos.to_array(),
             normal,
-            color,
-        });
-        vertices.push(PlanetVertex {
-            position: c1.to_array(),
-            normal,
-            color,
-        });
-        vertices.push(PlanetVertex {
-            position: c2.to_array(),
-            normal,
-            color,
-        });
-        vertices.push(PlanetVertex {
-            position: c3.to_array(),
-            normal,
-            color,
-        });
+            color: [
+                color[0] * ao_factor,
+                color[1] * ao_factor,
+                color[2] * ao_factor,
+                color[3],
+            ],
+        };
 
-        // Premier triangle (c0, c1, c2)
-        indices.push(base_idx);
-        indices.push(base_idx + 1);
-        indices.push(base_idx + 2);
+        vertices.push(make_vert(c0, ao[0]));
+        vertices.push(make_vert(c1, ao[1]));
+        vertices.push(make_vert(c2, ao[2]));
+        vertices.push(make_vert(c3, ao[3]));
 
-        // Deuxième triangle (c0, c2, c3)
-        indices.push(base_idx);
-        indices.push(base_idx + 2);
-        indices.push(base_idx + 3);
+        // Inversion de diagonale selon la direction du gradient AO (élimine le pli d'anisotropie)
+        if ao[0] + ao[2] > ao[1] + ao[3] {
+            // Diagonale c0 - c2
+            indices.push(base_idx);
+            indices.push(base_idx + 1);
+            indices.push(base_idx + 2);
+
+            indices.push(base_idx);
+            indices.push(base_idx + 2);
+            indices.push(base_idx + 3);
+        } else {
+            // Diagonale c1 - c3
+            indices.push(base_idx + 1);
+            indices.push(base_idx + 2);
+            indices.push(base_idx + 3);
+
+            indices.push(base_idx + 1);
+            indices.push(base_idx + 3);
+            indices.push(base_idx);
+        }
     }
 
     /// Palette de couleurs fidèle aux blocs HeroCraft

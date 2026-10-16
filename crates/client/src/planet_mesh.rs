@@ -217,9 +217,10 @@ impl PlanetMesh {
             // t = 0.0 : Lagons et mers côtières peu profondes (azur / cyan lumineux)
             // t = 0.40 : Bassins océaniques moyens (bleu roi profond)
             // t = 1.0 : Fosses abyssales et zones de subduction (bleu nuit / noir abyssal très sombre et contrasté)
-            let c_shallow = [0.12, 0.65, 0.88, 1.0];
+            let c_shallow = [0.08, 0.48, 0.78, 1.0];
             let c_mid = [0.04, 0.22, 0.62, 1.0];
             let c_trench = [0.006, 0.025, 0.16, 1.0];
+
 
             if t < 0.40 {
                 let k = t / 0.40;
@@ -404,20 +405,10 @@ impl PlanetMesh {
 
                 let final_elevation = if is_water {
                     SEA_LEVEL_BLOCKS
-                } else if key.level >= 4 {
-                    // Pré-voxélisation progressive (Terracing en escalier de 1 bloc) :
-                    // On quantifie l'altitude vers des paliers de 1 bloc avec un profil de marche net
-                    let base = raw_elevation.floor();
-                    let frac = raw_elevation - base;
-                    let step = if frac < 0.5 {
-                        0.5 * (frac * 2.0).powi(3)
-                    } else {
-                        1.0 - 0.5 * ((1.0 - frac) * 2.0).powi(3)
-                    };
-                    base + step
                 } else {
                     raw_elevation
                 };
+
 
                 let elevation_clamped = (final_elevation as f32) * altitude_scale;
 
@@ -494,7 +485,69 @@ impl PlanetMesh {
             }
         }
 
+        // 4. Jupes verticales de bordure (Skirts) :
+        // Masquent 100% des fissures, craquelures et trous de LOD entre niveaux de détail adjacents
+        let skirt_depth = (base_radius * 0.015).max(0.20);
+        let mut add_skirt_segment = |idx_a: usize, idx_b: usize| {
+            let va = vertices[idx_a];
+            let vb = vertices[idx_b];
+
+            let pos_a = Vec3::from(va.position);
+            let pos_b = Vec3::from(vb.position);
+            let norm_a = Vec3::from(va.normal);
+            let norm_b = Vec3::from(vb.normal);
+
+            let pos_a_down = pos_a - norm_a * skirt_depth;
+            let pos_b_down = pos_b - norm_b * skirt_depth;
+
+            let base_idx = vertices.len() as u32;
+
+            vertices.push(PlanetVertex {
+                position: pos_a_down.to_array(),
+                normal: va.normal,
+                color: va.color,
+            });
+            vertices.push(PlanetVertex {
+                position: pos_b_down.to_array(),
+                normal: vb.normal,
+                color: vb.color,
+            });
+
+            let ia = idx_a as u32;
+            let ib = idx_b as u32;
+            let ia_down = base_idx;
+            let ib_down = base_idx + 1;
+
+            // Quad (ia, ib, ib_down, ia_down)
+            indices.push(ia);
+            indices.push(ib_down);
+            indices.push(ib);
+
+            indices.push(ia);
+            indices.push(ia_down);
+            indices.push(ib_down);
+        };
+
+        // Bord Sud (j = 0, i = 0..n)
+        for i in 0..n {
+            add_skirt_segment(i, i + 1);
+        }
+        // Bord Nord (j = n, i = 0..n)
+        for i in 0..n {
+            let row = n * (n + 1);
+            add_skirt_segment(row + i + 1, row + i);
+        }
+        // Bord Ouest (i = 0, j = 0..n)
+        for j in 0..n {
+            add_skirt_segment((j + 1) * (n + 1), j * (n + 1));
+        }
+        // Bord Est (i = n, j = 0..n)
+        for j in 0..n {
+            add_skirt_segment(j * (n + 1) + n, (j + 1) * (n + 1) + n);
+        }
+
         PlanetMesh { vertices, indices }
+
     }
 }
 
