@@ -143,15 +143,11 @@ fn main() {
                                             info!("Bouton cliqué : Nouvelle planète générée ! (Graine: #{})", current_seed);
                                         }
                                         UiAction::ToggleGroundCamera => {
-                                            if camera.distance <= 25.0 {
-                                                camera.sync_orbit_to_ground();
-                                                camera.distance = 165.0;
-                                                info!("Bouton cliqué : Vue Satellite / Orbite globale");
-                                            } else {
-                                                camera.sync_ground_to_orbit(&generator);
-                                                camera.distance = 0.0;
-                                                info!("Bouton cliqué : Vue Première Personne (FPS) au sol");
-                                            }
+                                            camera.toggle_view(&generator);
+                                            info!(
+                                                "Bouton cliqué : Transition vers {}",
+                                                if camera.target_distance <= 25.0 { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
+                                            );
                                         }
                                         UiAction::ToggleAutoRotate => {
                                             camera.auto_rotate = !camera.auto_rotate;
@@ -249,15 +245,11 @@ fn main() {
                                     }
                                 }
                                 KeyCode::KeyF => {
-                                    if camera.distance <= 25.0 {
-                                        camera.sync_orbit_to_ground();
-                                        camera.distance = 165.0;
-                                        info!("Raccourci [F] : Vue Satellite / Orbite globale");
-                                    } else {
-                                        camera.sync_ground_to_orbit(&generator);
-                                        camera.distance = 0.0;
-                                        info!("Raccourci [F] : Vue Première Personne (FPS) au sol");
-                                    }
+                                    camera.toggle_view(&generator);
+                                    info!(
+                                        "Raccourci [F] : Transition vers {}",
+                                        if camera.target_distance <= 25.0 { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
+                                    );
                                 }
                                 KeyCode::KeyR => {
                                     camera.reset();

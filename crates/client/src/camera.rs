@@ -35,8 +35,10 @@ pub struct OrbitCamera {
     pub is_sprinting: bool,
     pub jump_requested: bool,
 
-    /// Distance souhaitée de la caméra (continuum de zoom)
+    /// Distance actuelle de la caméra (interpolée avec fluidité vers target_distance)
     pub distance: f32,
+    /// Distance cible souhaitée de la caméra (définie par la molette, touches ou boutons)
+    pub target_distance: f32,
     pub min_distance: f32,
     pub max_distance: f32,
 
@@ -86,6 +88,7 @@ impl Default for OrbitCamera {
             jump_requested: false,
 
             distance: 165.0,
+            target_distance: 165.0,
             min_distance: 0.0,
             max_distance: 450.0,
             effective_distance: 165.0,
@@ -114,11 +117,14 @@ impl OrbitCamera {
     pub fn new(distance: f32, base_radius: f32, generator: &PlanetWorldGenerator) -> Self {
         let mut cam = Self {
             distance,
+            target_distance: distance,
             effective_distance: distance,
             base_radius,
             ..Default::default()
         };
         cam.spawn_on_ground(generator);
+        cam.distance = distance;
+        cam.target_distance = distance;
         cam.update_camera_bounds(generator);
         cam
     }
@@ -154,6 +160,8 @@ impl OrbitCamera {
         self.vertical_velocity = 0.0;
         self.is_grounded = true;
         self.sync_orbit_to_ground();
+        self.distance = 0.0;
+        self.target_distance = 0.0;
         self.update_camera_bounds(generator);
     }
 
@@ -263,23 +271,44 @@ impl OrbitCamera {
 
     /// Zoom continu via la molette : passe sans couture de Satellite à TPS puis à FPS
     pub fn zoom(&mut self, delta_y: f32) {
-        if self.distance <= 0.05 && delta_y < 0.0 {
+        if self.target_distance <= 0.05 && delta_y < 0.0 {
             // Sortie du mode FPS vers TPS
-            self.distance = 1.0;
+            self.target_distance = 1.2;
             return;
         }
 
-        if self.distance <= 2.5 && delta_y > 0.0 {
+        if self.target_distance <= 2.5 && delta_y > 0.0 {
             // Rentrée douce dans le mode FPS
-            self.distance = (self.distance - delta_y * 0.40).max(0.0);
+            self.target_distance = (self.target_distance - delta_y * 0.40).max(0.0);
             return;
         }
 
         let factor = 1.0 - delta_y * self.zoom_sensitivity;
-        self.distance = (self.distance * factor).clamp(self.min_distance, self.max_distance);
+        self.target_distance = (self.target_distance * factor).clamp(self.min_distance, self.max_distance);
 
-        if self.distance < 0.08 {
-            self.distance = 0.0;
+        if self.target_distance < 0.08 {
+            self.target_distance = 0.0;
+        }
+    }
+
+    /// Déclenche une transition fluide vers la vue satellite orbitale
+    pub fn transition_to_orbit(&mut self) {
+        self.sync_orbit_to_ground();
+        self.target_distance = 165.0;
+    }
+
+    /// Déclenche une transition fluide vers la vue au sol à la première personne (FPS)
+    pub fn transition_to_ground(&mut self, generator: &PlanetWorldGenerator) {
+        self.sync_ground_to_orbit(generator);
+        self.target_distance = 0.0;
+    }
+
+    /// Bascule de manière fluide entre la vue au sol et la vue satellite orbitale
+    pub fn toggle_view(&mut self, generator: &PlanetWorldGenerator) {
+        if self.target_distance <= 25.0 {
+            self.transition_to_orbit();
+        } else {
+            self.transition_to_ground(generator);
         }
     }
 
@@ -364,6 +393,27 @@ impl OrbitCamera {
 
     /// Mise à jour physique du joueur et de la caméra (déplacement ZQSD, gravité sphérique, détection de relief)
     pub fn update(&mut self, dt: f32, generator: &PlanetWorldGenerator) {
+        // 0. Transition fluide et sans à-coups de la distance de zoom (sans téléportation)
+        if self.distance > 25.0 && self.target_distance <= 25.0 {
+            self.sync_ground_to_orbit(generator);
+        }
+
+        let diff = self.target_distance - self.distance;
+        if diff.abs() > 0.001 {
+            let speed = if diff.abs() > 10.0 { 6.0 } else { 9.0 };
+            let factor = 1.0 - (-speed * dt).exp();
+            let step = diff * factor;
+            let min_step = 1.5 * dt * diff.signum();
+            if step.abs() < min_step.abs() && diff.abs() > 0.02 {
+                self.distance += min_step;
+            } else {
+                self.distance += step;
+            }
+            if (self.distance - self.target_distance).abs() < 0.01 {
+                self.distance = self.target_distance;
+            }
+        }
+
         if self.auto_rotate && self.view_mode() == CameraViewMode::SatelliteOrbit {
             self.orbit_yaw += self.auto_rotate_speed * dt;
         }
@@ -466,10 +516,9 @@ impl OrbitCamera {
         proj * view
     }
 
-    /// Réinitialise la caméra en vue satellite
+    /// Réinitialise la caméra en vue satellite avec transition fluide
     pub fn reset(&mut self) {
-        self.distance = 165.0;
-        self.effective_distance = 165.0;
+        self.target_distance = 165.0;
         self.orbit_yaw = 0.5;
         self.orbit_pitch = 0.35;
     }
@@ -561,5 +610,38 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_camera_smooth_zoom_transition() {
+        let desc = herocraft_world::PlanetDescriptor {
+            seed: 2026,
+            ..Default::default()
+        };
+        let gen = PlanetWorldGenerator::new(desc);
+        let mut cam = OrbitCamera::new(165.0, 25.0, &gen);
+
+        // Au départ en orbite
+        assert_eq!(cam.target_distance, 165.0);
+        assert_eq!(cam.distance, 165.0);
+
+        // Déclenchement d'une transition vers le sol (FPS)
+        cam.transition_to_ground(&gen);
+        assert_eq!(cam.target_distance, 0.0);
+        assert_eq!(cam.distance, 165.0); // La distance ne se téléporte pas !
+
+        // Simulation de quelques frames
+        let mut intermediate_distances = Vec::new();
+        for _ in 0..60 {
+            cam.update(0.016, &gen);
+            intermediate_distances.push(cam.distance);
+        }
+
+        // Vérification de la continuité et de la progression fluide
+        assert!(intermediate_distances[0] < 165.0, "Camera should start descending");
+        assert!(intermediate_distances[10] < intermediate_distances[0]);
+        assert!(intermediate_distances[30] < intermediate_distances[10]);
+        let final_d = intermediate_distances.last().copied().unwrap();
+        assert!(final_d < 5.0, "Camera should have approached ground: final_d={}", final_d);
     }
 }
