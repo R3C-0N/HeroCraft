@@ -119,9 +119,10 @@ public class PortalRenderSystem extends BaseComponentSystem implements RenderSys
 
     /**
      * How far the picture stands in front of the window's face. The swirl is drawn where its tile is opaque and
-     * writes its depth there, on that very face: laid on it exactly, the picture would lose the depth test to it.
+     * writes its depth there, a hair in front of that face as the shader bends it: laid on it, even two hundredths of
+     * a block off it, the picture lost the depth test to it. A tenth of a block clears it and cannot be seen.
      */
-    private static final float LIFT = 0.02f;
+    private static final float LIFT = 0.1f;
 
     /** Room round the window's centre for the frustum test: half its diagonal and a margin. */
     private static final float PANE_RADIUS = 2.5f;
