@@ -86,8 +86,12 @@ public class ArmeTenueSystem extends BaseComponentSystem implements UpdateSubscr
         });
         for (EntityRef copie : entityManager.getEntitiesWith(ItemIsRemotelyHeldComponent.class)) {
             if (vus.contains(copie.getComponent(ItemIsRemotelyHeldComponent.class).remotePlayer)) {
-                copie.removeComponent(MeshComponent.class);
-                copie.removeComponent(LightComponent.class);
+                if (copie.hasComponent(MeshComponent.class)) {
+                    copie.removeComponent(MeshComponent.class);
+                }
+                if (copie.hasComponent(LightComponent.class)) {
+                    copie.removeComponent(LightComponent.class);
+                }
             }
         }
     }
