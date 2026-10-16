@@ -105,13 +105,35 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let view_dir = normalize(camera.camera_pos - in.world_pos);
     let h = normalize(l + view_dir);
 
-    // 3. Éclairage Half-Lambert doux et contrasté
+    // 3. Détection des falaises et contremarches entre terrasses étagées (Approche B)
+    // Sur un plateau horizontal, n_facet est presque colinéaire à n_sphere (verticality >= 0.88).
+    // Sur un flanc de marche ou une falaise abrupte, n_facet s'incline fortement (verticality < 0.82).
+    let verticality = dot(n_facet, n_sphere);
+    let cliff_factor = clamp((0.88 - verticality) / 0.22, 0.0, 1.0) * orbit_factor;
+
+    var base_color = in.color.rgb;
+
+    // Si on est sur une falaise terrestre en vue orbitale :
+    // On applique une roche minérale sombre avec fines strates rocheuses étagées
+    if (!is_water && cliff_factor > 0.01) {
+        let rock_strata = vec3<f32>(0.26, 0.24, 0.23); // Roche ardoise minérale sombre
+        let alt_blocks = (length(in.world_pos) - camera.planet_radius) / (camera.planet_radius * 0.001534);
+        // Micro-strates horizontales périodiques selon la hauteur des terrasses (6 blocs)
+        let strata_band = sin(alt_blocks * (3.14159265 * 2.0 / 6.0));
+        let strata_shading = 0.90 + strata_band * 0.12;
+        let cliff_colored = rock_strata * strata_shading;
+
+        // Ombrage de contact et accentuation de falaise
+        base_color = mix(base_color, cliff_colored, cliff_factor * 0.85);
+    }
+
+    // 4. Éclairage Half-Lambert doux et contrasté
     let ndotl = dot(n, l);
     let half_lambert = pow(clamp(ndotl * 0.5 + 0.5, 0.0, 1.0), 1.25);
     let ambient = 0.26;
     let light_intensity = ambient + (1.0 - ambient) * half_lambert;
 
-    // 4. Reflets spéculaires d'eau et de glace
+    // 5. Reflets spéculaires d'eau et de glace
     var specular_light = vec3<f32>(0.0);
     let ndoth = max(dot(n, h), 0.0);
     let ndotv = max(dot(n, view_dir), 0.0);
@@ -129,13 +151,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         specular_light += vec3<f32>(0.92, 0.95, 1.0) * snow_glint;
     }
 
-    // 5. Lueur atmosphérique rasante sur le limbe planétaire en vue orbitale
+    // 6. Lueur atmosphérique rasante sur le limbe planétaire en vue orbitale
     let rim = 1.0 - clamp(dot(n, view_dir), 0.0, 1.0);
     let rim_light = pow(rim, 4.0) * 0.45 * clamp(ndotl * 0.5 + 0.5, 0.0, 1.0);
     let atmosphere_color = vec3<f32>(0.25, 0.65, 1.0);
 
     // Couleur éclairée de base avec Ambient Occlusion (AO) per-vertex interpolé
-    var lit_rgb = in.color.rgb * light_intensity + specular_light + atmosphere_color * rim_light;
+    var lit_rgb = base_color * light_intensity + specular_light + atmosphere_color * rim_light;
 
     // 6. Brouillard atmosphérique de distance au sol (Ground Distance Fog)
     let dist = length(camera.camera_pos - in.world_pos);

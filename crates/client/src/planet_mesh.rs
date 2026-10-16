@@ -51,6 +51,21 @@ pub struct PlanetMesh {
 }
 
 impl PlanetMesh {
+    /// Hauteur d'un palier pour le relief orbital étagé en strates / terrasses (en blocs)
+    pub const ORBIT_TERRACE_STEP_HEIGHT: f64 = 6.0;
+
+    /// Discrétise une altitude continue en terrasses géologiques étagées pour la vue orbitale
+    #[inline]
+    pub fn quantize_terrace_elevation(elevation: f64) -> f64 {
+        if elevation <= SEA_LEVEL_BLOCKS {
+            elevation
+        } else {
+            let diff = elevation - SEA_LEVEL_BLOCKS;
+            let step = (diff / Self::ORBIT_TERRACE_STEP_HEIGHT).floor() * Self::ORBIT_TERRACE_STEP_HEIGHT;
+            SEA_LEVEL_BLOCKS + step
+        }
+    }
+
     /// Applique un facteur d'opacité/fondu alpha à tous les sommets du maillage
     #[allow(dead_code)]
     pub fn set_alpha(&mut self, alpha: f32) {
@@ -90,10 +105,16 @@ impl PlanetMesh {
                     let biome = generator.determine_biome(lat, raw_elevation, sphere_dir);
                     let is_water = biome.is_water();
 
+                    let stepped_elevation = if is_water {
+                        SEA_LEVEL_BLOCKS
+                    } else {
+                        Self::quantize_terrace_elevation(raw_elevation)
+                    };
+
                     let color = match filter {
-                        herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, raw_elevation),
+                        herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, stepped_elevation),
                         herocraft_world::VisualizationFilter::Tectonics => {
-                            let base_color = Self::relief_biome_color(biome, raw_elevation);
+                            let base_color = Self::relief_biome_color(biome, stepped_elevation);
                             let sample = generator.tectonics.sample(sphere_dir);
                             Self::blend_tectonic_color(base_color, &sample)
                         }
@@ -103,14 +124,8 @@ impl PlanetMesh {
                         }
                     };
 
-                    // Pour l'eau (océans et mers), la surface liquide est parfaitement sphérique au niveau de la mer
-                    let is_water = biome.is_water();
                     let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0)) as f32;
-                    let elevation_clamped = if is_water {
-                        SEA_LEVEL_BLOCKS as f32 * altitude_scale
-                    } else {
-                        (raw_elevation as f32) * altitude_scale
-                    };
+                    let elevation_clamped = (stepped_elevation as f32) * altitude_scale;
 
                     let radius = base_radius + elevation_clamped;
                     let dir_f32 = Vec3::new(sphere_dir.x as f32, sphere_dir.y as f32, sphere_dir.z as f32);
@@ -390,10 +405,16 @@ impl PlanetMesh {
                 let biome = generator.determine_biome(lat, raw_elevation, sphere_dir);
                 let is_water = biome.is_water();
 
+                let stepped_elevation = if is_water {
+                    SEA_LEVEL_BLOCKS
+                } else {
+                    Self::quantize_terrace_elevation(raw_elevation)
+                };
+
                 let color = match filter {
-                    herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, raw_elevation),
+                    herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, stepped_elevation),
                     herocraft_world::VisualizationFilter::Tectonics => {
-                        let base_color = Self::relief_biome_color(biome, raw_elevation);
+                        let base_color = Self::relief_biome_color(biome, stepped_elevation);
                         let sample = generator.tectonics.sample(sphere_dir);
                         Self::blend_tectonic_color(base_color, &sample)
                     }
@@ -403,14 +424,7 @@ impl PlanetMesh {
                     }
                 };
 
-                let final_elevation = if is_water {
-                    SEA_LEVEL_BLOCKS
-                } else {
-                    raw_elevation
-                };
-
-
-                let elevation_clamped = (final_elevation as f32) * altitude_scale;
+                let elevation_clamped = (stepped_elevation as f32) * altitude_scale;
 
                 let radius = base_radius + elevation_clamped;
                 let dir_f32 = Vec3::new(sphere_dir.x as f32, sphere_dir.y as f32, sphere_dir.z as f32);
