@@ -75,6 +75,11 @@ uniform sampler2D distantHole;
 // share of the distance grows to one at the border. The chunk passes switch it on, and draw the distance last.
 uniform int distantFade;
 const float DISTANT_EDGE = 224.0 / 255.0;
+// The distance keeps more pixels than the chunks give up. The dither weighs each terrain where its own surface is, and
+// the two surfaces are not at one place under a pixel: the distant sea bed lies a few blocks off the near one, so a
+// pixel could be given up by the chunks and refused by the distance, and the water showed nothing through it, a white
+// dot. Where both keep a pixel, the depth test settles it.
+const float DISTANT_FADE_OVERLAP = 0.5;
 
 // Of the open columns round this one, how near the nearest is: one at its border, zero a column away.
 float distantFadeWeight(vec2 gridXZ) {
@@ -131,7 +136,14 @@ void main() {
 
     vec2 texCoord = v_uv0.xy;
     vec2 distantPlane = vec2(0.0);
-    if (distantTerrain == 0 && distantFade == 1) {
+    // Water is not crossfaded: the near sea holds the edge columns whole and the distant one gives way there, as two
+    // surfaces dithered into one drew a pale seam along the border.
+#if !defined (FEATURE_REFRACTIVE_PASS)
+    const bool waterPass = false;
+#else
+    const bool waterPass = true;
+#endif
+    if (distantTerrain == 0 && distantFade == 1 && !waterPass) {
         // A chunk along the edge gives way where the dither falls under the distance's share.
         vec3 gridPos = vertexWorldPos + 0.5;
         float hole = texelFetch(distantHole, ivec2(floor(gridPos.xz / 32.0)), 0).r;
@@ -143,9 +155,9 @@ void main() {
         // A block is centred on its coordinates: half a block on, and a block's faces fall on whole numbers.
         vec3 gridPos = vertexWorldPos + 0.5;
         float hole = texelFetch(distantHole, ivec2(floor(gridPos.xz / 32.0)), 0).r;
-        // Along the edge, exactly the pixels the chunks gave way on; anywhere else the chunks have it.
-        bool fading = distantFade == 1 && abs(hole - DISTANT_EDGE) < 0.02
-                && distantDither() < distantFadeWeight(gridPos.xz);
+        // Along the edge, the pixels the chunks gave way on and some more; anywhere else the chunks have it.
+        bool fading = distantFade == 1 && !waterPass && abs(hole - DISTANT_EDGE) < 0.02
+                && distantDither() < distantFadeWeight(gridPos.xz) + DISTANT_FADE_OVERLAP;
         if (hole > 0.5 && !fading) {
             discard;
         }
