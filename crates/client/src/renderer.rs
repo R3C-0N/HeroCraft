@@ -16,41 +16,6 @@ pub struct CameraUniform {
     pub time: f32,
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct UiVertex {
-    pub position: [f32; 2],
-    pub uv: [f32; 2],
-}
-
-impl UiVertex {
-    pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<UiVertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    offset: 8,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-            ],
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct UiUniform {
-    pub screen_size: [f32; 2],
-    pub _pad: [f32; 2],
-}
-
 pub struct State {
     #[allow(dead_code)]
     pub window: Arc<Window>,
@@ -78,24 +43,17 @@ pub struct State {
     pub index_buffer_capacity: usize,
     pub num_indices: u32,
 
-    // Pipeline Interface Utilisateur 2D
-    pub ui_pipeline: wgpu::RenderPipeline,
-    pub ui_texture: wgpu::Texture,
-    pub ui_bind_group: wgpu::BindGroup,
-    pub ui_uniform_buffer: wgpu::Buffer,
-    pub ui_vertex_buffer: wgpu::Buffer,
-    pub ui_index_buffer: wgpu::Buffer,
+    // Rendu Interface Utilisateur egui
+    pub egui_renderer: egui_wgpu::Renderer,
 
     // Paramètres Vidéo & Menu
-    pub is_settings_open: bool,
-    pub num_ui_indices: u32,
     pub vsync_mode: wgpu::PresentMode,
     pub novsync_mode: wgpu::PresentMode,
     pub start_time: std::time::Instant,
 }
 
 impl State {
-    pub async fn new(window: Arc<Window>, planet_mesh: &PlanetMesh, ui_state: &UiState) -> Self {
+    pub async fn new(window: Arc<Window>, planet_mesh: &PlanetMesh, _ui_state: &UiState) -> Self {
         let size = window.inner_size();
 
         // 1. Instance WGPU
@@ -372,164 +330,17 @@ impl State {
         }
 
         // -------------------------------------------------------------
-        // Pipeline Interface Utilisateur 2D (Boutons, HUD)
+        // Rendu Interface Utilisateur egui
         // -------------------------------------------------------------
-        let ui_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("UI Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("ui_shader.wgsl").into()),
-        });
+        let egui_renderer = egui_wgpu::Renderer::new(
+            &device,
+            config.format,
+            None,
+            1,
+            false,
+        );
 
-        let ui_texture_desc = wgpu::TextureDescriptor {
-            label: Some("UI Canvas Texture"),
-            size: wgpu::Extent3d {
-                width: ui_state.canvas_width as u32,
-                height: ui_state.canvas_height as u32,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        };
-        let ui_texture = device.create_texture(&ui_texture_desc);
-        let ui_texture_view = ui_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let ui_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
-        let initial_ui_uniform = UiUniform {
-            screen_size: [size.width as f32, size.height as f32],
-            _pad: [0.0, 0.0],
-        };
-        let ui_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("UI Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[initial_ui_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let ui_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-                label: Some("ui_bind_group_layout"),
-            });
-
-        let ui_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &ui_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: ui_uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&ui_texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&ui_sampler),
-                },
-            ],
-            label: Some("ui_bind_group"),
-        });
-
-        let ui_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("UI Pipeline Layout"),
-                bind_group_layouts: &[&ui_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-        let ui_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("UI Render Pipeline"),
-            layout: Some(&ui_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &ui_shader,
-                entry_point: Some("vs_ui"),
-                buffers: &[UiVertex::desc()],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &ui_shader,
-                entry_point: Some("fs_ui"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-
-        // Quads 2D de l'UI (Panneau HUD ou Backdrop assombrissant + Compteur FPS + Menu Paramètres)
-        let (ui_vertices, num_ui_indices) =
-            Self::build_ui_vertices(size.width as f32, size.height as f32, false);
-
-        let ui_indices: [u32; 18] = [
-            0, 1, 2, 0, 2, 3,       // Quad 1 : Panneau principal HUD ou Backdrop
-            4, 5, 6, 4, 6, 7,       // Quad 2 : Badge FPS en haut à droite
-            8, 9, 10, 8, 10, 11,    // Quad 3 : Menu Paramètres Vidéo
-        ];
-
-        let ui_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("UI Vertex Buffer"),
-            contents: bytemuck::cast_slice(&ui_vertices),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
-
-        let ui_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("UI Index Buffer"),
-            contents: bytemuck::cast_slice(&ui_indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        let mut state = Self {
+        Self {
             window,
             surface,
             device,
@@ -550,22 +361,11 @@ impl State {
             index_buffer,
             index_buffer_capacity,
             num_indices: planet_mesh.indices.len() as u32,
-            ui_pipeline,
-            ui_texture,
-            ui_bind_group,
-            ui_uniform_buffer,
-            ui_vertex_buffer,
-            ui_index_buffer,
-            is_settings_open: false,
-            num_ui_indices,
+            egui_renderer,
             vsync_mode,
             novsync_mode,
             start_time: std::time::Instant::now(),
-        };
-
-        // Chargement initial des pixels de l'UI
-        state.update_ui(ui_state);
-        state
+        }
     }
 
     fn create_depth_texture(
@@ -619,70 +419,6 @@ impl State {
         Some((texture, view))
     }
 
-    /// Génère les sommets des quads de l'interface utilisateur 2D :
-    /// - Mode Jeu : Quad 1 (Panneau HUD gauche) + Quad 2 (Badge FPS)
-    /// - Mode Menu : Quad 1 (Backdrop plein écran sombre) + Quad 2 (Badge FPS) + Quad 3 (Fenêtre centrale Paramètres)
-    pub fn build_ui_vertices(screen_w: f32, screen_h: f32, is_settings_open: bool) -> ([UiVertex; 12], u32) {
-        let cw = 512.0_f32;
-        let ch = 512.0_f32;
-
-        let fps_w = 116.0_f32;
-        let fps_h = 32.0_f32;
-        let fps_x0 = (screen_w - fps_w - 16.0).max(16.0);
-        let fps_y0 = 16.0_f32;
-
-        if !is_settings_open {
-            let panel_w = 320.0_f32;
-            let panel_h = 310.0_f32;
-
-            let vertices = [
-                // Quad 1: Panneau principal HUD (Haut-Gauche)
-                UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
-                UiVertex { position: [panel_w, 0.0], uv: [panel_w / cw, 0.0] },
-                UiVertex { position: [panel_w, panel_h], uv: [panel_w / cw, panel_h / ch] },
-                UiVertex { position: [0.0, panel_h], uv: [0.0, panel_h / ch] },
-
-                // Quad 2: Badge FPS (Haut-Droite)
-                UiVertex { position: [fps_x0, fps_y0], uv: [320.0 / cw, 0.0] },
-                UiVertex { position: [fps_x0 + fps_w, fps_y0], uv: [(320.0 + fps_w) / cw, 0.0] },
-                UiVertex { position: [fps_x0 + fps_w, fps_y0 + fps_h], uv: [(320.0 + fps_w) / cw, fps_h / ch] },
-                UiVertex { position: [fps_x0, fps_y0 + fps_h], uv: [320.0 / cw, fps_h / ch] },
-
-                // Quad 3: Inactif (zéroté)
-                UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
-                UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
-                UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
-                UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
-            ];
-            (vertices, 12)
-        } else {
-            let menu_w = 380.0_f32;
-            let menu_h = 400.0_f32;
-            let menu_x0 = (screen_w - menu_w) * 0.5;
-            let menu_y0 = (screen_h - menu_h) * 0.5;
-
-            let vertices = [
-                // Quad 1: Backdrop plein écran assombrissant semi-transparent
-                UiVertex { position: [0.0, 0.0], uv: [480.0 / cw, 480.0 / ch] },
-                UiVertex { position: [screen_w, 0.0], uv: [480.0 / cw, 480.0 / ch] },
-                UiVertex { position: [screen_w, screen_h], uv: [480.0 / cw, 480.0 / ch] },
-                UiVertex { position: [0.0, screen_h], uv: [480.0 / cw, 480.0 / ch] },
-
-                // Quad 2: Badge FPS (Haut-Droite)
-                UiVertex { position: [fps_x0, fps_y0], uv: [320.0 / cw, 0.0] },
-                UiVertex { position: [fps_x0 + fps_w, fps_y0], uv: [(320.0 + fps_w) / cw, 0.0] },
-                UiVertex { position: [fps_x0 + fps_w, fps_y0 + fps_h], uv: [(320.0 + fps_w) / cw, fps_h / ch] },
-                UiVertex { position: [fps_x0, fps_y0 + fps_h], uv: [320.0 / cw, fps_h / ch] },
-
-                // Quad 3: Menu Paramètres Vidéo (Centré à l'écran)
-                UiVertex { position: [menu_x0, menu_y0], uv: [0.0, 112.0 / ch] },
-                UiVertex { position: [menu_x0 + menu_w, menu_y0], uv: [menu_w / cw, 112.0 / ch] },
-                UiVertex { position: [menu_x0 + menu_w, menu_y0 + menu_h], uv: [menu_w / cw, (112.0 + menu_h) / ch] },
-                UiVertex { position: [menu_x0, menu_y0 + menu_h], uv: [0.0, (112.0 + menu_h) / ch] },
-            ];
-            (vertices, 18)
-        }
-    }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
@@ -702,19 +438,6 @@ impl State {
             };
             self.msaa_color_texture = msaa_texture;
             self.msaa_color_view = msaa_view;
-
-            // Mise à jour de la taille écran pour l'UI
-            let ui_uniform = UiUniform {
-                screen_size: [new_size.width as f32, new_size.height as f32],
-                _pad: [0.0, 0.0],
-            };
-            self.queue.write_buffer(
-                &self.ui_uniform_buffer,
-                0,
-                bytemuck::cast_slice(&[ui_uniform]),
-            );
-
-            self.update_ui_geometry();
         }
     }
 
@@ -729,46 +452,6 @@ impl State {
             self.surface.configure(&self.device, &self.config);
             log::info!("Mode de présentation WGPU mis à jour : {:?}", target_mode);
         }
-    }
-
-    pub fn set_settings_open(&mut self, is_open: bool) {
-        if self.is_settings_open != is_open {
-            self.is_settings_open = is_open;
-            self.update_ui_geometry();
-        }
-    }
-
-    pub fn update_ui_geometry(&mut self) {
-        let (ui_vertices, num_indices) =
-            Self::build_ui_vertices(self.size.width as f32, self.size.height as f32, self.is_settings_open);
-        self.num_ui_indices = num_indices;
-        self.queue.write_buffer(
-            &self.ui_vertex_buffer,
-            0,
-            bytemuck::cast_slice(&ui_vertices),
-        );
-    }
-
-    pub fn update_ui(&mut self, ui_state: &UiState) {
-        self.queue.write_texture(
-            wgpu::ImageCopyTexture {
-                texture: &self.ui_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &ui_state.pixels,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(ui_state.canvas_width as u32 * 4),
-                rows_per_image: Some(ui_state.canvas_height as u32),
-            },
-            wgpu::Extent3d {
-                width: ui_state.canvas_width as u32,
-                height: ui_state.canvas_height as u32,
-                depth_or_array_layers: 1,
-            },
-        );
     }
 
     pub fn update_camera(&mut self, camera: &OrbitCamera) {
@@ -845,7 +528,16 @@ impl State {
         }
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(
+        &mut self,
+        paint_jobs: &[egui::ClippedPrimitive],
+        screen_descriptor: &egui_wgpu::ScreenDescriptor,
+        textures_delta: &egui::TexturesDelta,
+    ) -> Result<(), wgpu::SurfaceError> {
+        for (id, delta) in &textures_delta.set {
+            self.egui_renderer.update_texture(&self.device, &self.queue, *id, delta);
+        }
+
         let output = self.surface.get_current_texture()?;
         let swapchain_view = output
             .texture
@@ -915,10 +607,18 @@ impl State {
             }
         }
 
-        // 2. Passe 2D Interface Utilisateur (sample_count = 1 sur la swapchain résolue)
+        // 2. Passe 2D Interface Utilisateur egui (sample_count = 1 sur la swapchain résolue)
+        self.egui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            paint_jobs,
+            screen_descriptor,
+        );
+
         {
             let mut ui_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("UI Render Pass"),
+                label: Some("egui Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &swapchain_view,
                     resolve_target: None,
@@ -930,17 +630,17 @@ impl State {
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
-            });
+            }).forget_lifetime();
 
-            ui_pass.set_pipeline(&self.ui_pipeline);
-            ui_pass.set_bind_group(0, &self.ui_bind_group, &[]);
-            ui_pass.set_vertex_buffer(0, self.ui_vertex_buffer.slice(..));
-            ui_pass.set_index_buffer(self.ui_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            ui_pass.draw_indexed(0..self.num_ui_indices, 0, 0..1);
+            self.egui_renderer.render(&mut ui_pass, paint_jobs, screen_descriptor);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+
+        for id in &textures_delta.free {
+            self.egui_renderer.free_texture(id);
+        }
 
         Ok(())
     }
@@ -954,5 +654,28 @@ mod tests {
     fn test_camera_uniform_size_and_alignment() {
         assert_eq!(std::mem::size_of::<CameraUniform>(), 160);
         assert_eq!(std::mem::align_of::<CameraUniform>(), 16);
+    }
+
+    #[test]
+    fn test_shaders_wgsl_validation() {
+        let sky_shader = include_str!("sky_shader.wgsl");
+        let terrain_shader = include_str!("shader.wgsl");
+        let ui_shader = include_str!("ui_shader.wgsl");
+
+        for (name, source) in [
+            ("sky_shader.wgsl", sky_shader),
+            ("shader.wgsl", terrain_shader),
+            ("ui_shader.wgsl", ui_shader),
+        ] {
+            let module = naga::front::wgsl::parse_str(source)
+                .unwrap_or_else(|e| panic!("Failed to parse {name}:\n{e}"));
+            let mut validator = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::all(),
+            );
+            validator
+                .validate(&module)
+                .unwrap_or_else(|e| panic!("Failed to validate {name}:\n{e}"));
+        }
     }
 }

@@ -22,3 +22,8 @@ winit = "0.29"
 pollster = "0.3"
 bytemuck = { version = "1.18", features = ["derive"] }
 rayon = "1.10"
+egui = "0.30"
+egui-wgpu = "0.30"
+
+[dev-dependencies]
+naga = { version = "23", features = ["wgsl-in"] }

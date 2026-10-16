@@ -41,7 +41,7 @@ fn vs_sky(@builtin(vertex_index) vertex_index: u32) -> SkyVertexOutput {
 // Fonction de hachage 3D pour la répartition spatiale pseudo-aléatoire des étoiles
 fn hash33(p: vec3<f32>) -> vec3<f32> {
     var q = fract(p * vec3<f32>(0.1031, 0.1030, 0.0973));
-    q += dot(q, q.yxz + 33.33);
+    q += vec3<f32>(dot(q, q.yxz + vec3<f32>(33.33)));
     return fract((q.xxy + q.yxx) * q.zyx);
 }
 
@@ -56,7 +56,7 @@ fn render_starfield(ray_dir: vec3<f32>, time: f32) -> vec3<f32> {
     let f1 = fract(p1);
     let h1 = hash33(cell1);
     if (h1.x > 0.88) {
-        let center = h1.yz * 0.75 + 0.125;
+        let center = h1 * 0.75 + vec3<f32>(0.125);
         let d = length(f1 - center);
         let brightness = (h1.x - 0.88) / 0.12;
         let twinkle = sin(time * 3.5 + h1.y * 50.0) * 0.35 + 0.65;
@@ -72,7 +72,7 @@ fn render_starfield(ray_dir: vec3<f32>, time: f32) -> vec3<f32> {
     let f2 = fract(p2);
     let h2 = hash33(cell2);
     if (h2.x > 0.92) {
-        let center2 = h2.yz * 0.7 + 0.15;
+        let center2 = h2 * 0.7 + vec3<f32>(0.15);
         let d2 = length(f2 - center2);
         let intensity2 = exp(-d2 * 45.0) * (h2.x - 0.92) / 0.08;
         stars += vec3<f32>(0.85, 0.92, 1.0) * intensity2 * 1.2;
