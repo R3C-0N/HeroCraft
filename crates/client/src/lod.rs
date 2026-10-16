@@ -8,31 +8,11 @@ use herocraft_voxel_engine::cache::WorldChunkCache;
 use crate::planet_mesh::PlanetMesh;
 use crate::voxel_mesh::VoxelMeshBuilder;
 
-pub enum LodBuildTask {
-    VoxelChunk {
-        seed: u64,
-        key: QuadNodeKey,
-        generator: PlanetWorldGenerator,
-        face: herocraft_common::PlanetFace,
-        chunk_x: i32,
-        chunk_y: i32,
-        base_radius: f32,
-        filter: herocraft_world::VisualizationFilter,
-    },
-    LodPatch {
-        seed: u64,
-        key: QuadNodeKey,
-        generator: PlanetWorldGenerator,
-        base_radius: f32,
-        resolution: usize,
-        filter: herocraft_world::VisualizationFilter,
-    },
-}
+use rayon::prelude::*;
 
-pub struct LodBuildResult {
+pub struct VoxelBuildResult {
     pub seed: u64,
     pub key: QuadNodeKey,
-    pub kind: QuadLeafKind,
     pub mesh: PlanetMesh,
 }
 
@@ -50,8 +30,8 @@ pub struct PlanetLodManager {
     last_evaluated_pos: Vec3,
     time_since_eval: f32,
     thread_pool: rayon::ThreadPool,
-    result_tx: std::sync::mpsc::Sender<LodBuildResult>,
-    result_rx: std::sync::mpsc::Receiver<LodBuildResult>,
+    result_tx: std::sync::mpsc::Sender<VoxelBuildResult>,
+    result_rx: std::sync::mpsc::Receiver<VoxelBuildResult>,
     pending_requests: HashSet<QuadNodeKey>,
 }
 
@@ -66,7 +46,7 @@ impl PlanetLodManager {
             .build()
             .expect("Échec d'initialisation du pool de workers Rayon");
 
-        let (result_tx, result_rx) = std::sync::mpsc::channel::<LodBuildResult>();
+        let (result_tx, result_rx) = std::sync::mpsc::channel::<VoxelBuildResult>();
 
         let mut mgr = Self {
             quadtree: PlanetQuadTree::new(base_radius as f64),
@@ -89,8 +69,7 @@ impl PlanetLodManager {
             pending_requests: HashSet::new(),
         };
 
-        // Pré-génération synchrone ultra-rapide des 6 faces racines (LOD 0)
-        // Elles servent d'ancêtre et de fallback immédiat pour éliminer tout trou dans la géométrie
+        // Pré-génération synchrone des 6 faces racines (LOD 0)
         let desc = herocraft_world::PlanetDescriptor {
             seed: current_seed,
             ..Default::default()
@@ -105,45 +84,13 @@ impl PlanetLodManager {
         mgr
     }
 
-    /// Envoie une tâche de calcul de maillage au pool Rayon en tâche de fond
-    fn request_mesh(&mut self, task: LodBuildTask) {
-        let (key, seed, kind) = match &task {
-            LodBuildTask::VoxelChunk { key, seed, .. } => (*key, *seed, QuadLeafKind::VoxelChunk),
-            LodBuildTask::LodPatch { key, seed, .. } => (*key, *seed, QuadLeafKind::LodPatch),
-        };
-        if self.pending_requests.insert(key) {
-            let tx = self.result_tx.clone();
-            self.thread_pool.spawn(move || {
-                let mesh = match task {
-                    LodBuildTask::VoxelChunk { generator, face, chunk_x, chunk_y, base_radius, filter, .. } => {
-                        VoxelMeshBuilder::build_incurved_single_chunk_fast(&generator, face, chunk_x, chunk_y, base_radius, filter)
-                    }
-                    LodBuildTask::LodPatch { generator, key, base_radius, resolution, filter, .. } => {
-                        PlanetMesh::generate_lod_patch(&generator, &key, base_radius, resolution, filter)
-                    }
-                };
-                let _ = tx.send(LodBuildResult { seed, key, kind, mesh });
-            });
-        }
-    }
-
-    /// Récupère le maillage le plus précis disponible pour un nœud donné,
-    /// ou remonte chez ses ancêtres parents s'il est encore en cours de calcul (zéro freeze, zéro popping)
+    /// Récupère le maillage propre au nœud (voxel haute résolution ou patch polygonal dédié)
+    #[allow(dead_code)]
     pub fn get_mesh_or_ancestor(&self, key: &QuadNodeKey) -> Option<&PlanetMesh> {
         if let Some(m) = self.voxel_cache.get(key) {
             return Some(m);
         }
-        if let Some(m) = self.lod_cache.get(key) {
-            return Some(m);
-        }
-        let mut curr = key.parent();
-        while let Some(parent_key) = curr {
-            if let Some(m) = self.lod_cache.get(&parent_key) {
-                return Some(m);
-            }
-            curr = parent_key.parent();
-        }
-        None
+        self.lod_cache.get(key)
     }
 
     /// Définit le filtre de visualisation actif et force la régénération si modifié
@@ -212,19 +159,12 @@ impl PlanetLodManager {
         dt: f32,
         _frustum: Option<&herocraft_world::WorldFrustum>,
     ) -> bool {
-        // 1. Récupération non-bloquante des maillages calculés par le pool Rayon
+        // 1. Récupération non-bloquante des chunks voxels calculés par le pool Rayon
         let mut received_new_mesh = false;
         while let Ok(res) = self.result_rx.try_recv() {
             if res.seed == self.current_seed {
                 self.pending_requests.remove(&res.key);
-                match res.kind {
-                    QuadLeafKind::VoxelChunk => {
-                        self.voxel_cache.insert(res.key, res.mesh);
-                    }
-                    QuadLeafKind::LodPatch => {
-                        self.lod_cache.insert(res.key, res.mesh);
-                    }
-                }
+                self.voxel_cache.insert(res.key, res.mesh);
                 received_new_mesh = true;
             }
         }
@@ -267,52 +207,71 @@ impl PlanetLodManager {
         self.current_leaves = new_leaves;
         self.last_camera_pos = camera_pos;
 
-        // 2. Déclenchement asynchrone des calculs sur le pool Rayon UNIQUEMENT quand la topologie change
+        // 2. Génération parallèle immédiate des patchs polygonaux manquants et requêtes voxels en tâche de fond
         if leaves_changed {
             let filter = self.active_filter;
             let base_radius = self.base_radius;
-            let mut tasks = Vec::new();
+            let gen = generator.clone();
 
-            for leaf in &self.current_leaves {
-                match leaf.kind {
-                    QuadLeafKind::LodPatch => {
-                        if !self.lod_cache.contains_key(&leaf.key) {
-                            let resolution = match leaf.key.level {
+            // Détection de tous les patchs polygonaux nécessaires non encore en cache
+            // (couvre à la fois les feuilles LodPatch et les patchs de secours immédiat des VoxelChunks)
+            let missing_patch_keys: Vec<QuadNodeKey> = self
+                .current_leaves
+                .iter()
+                .filter(|l| !self.lod_cache.contains_key(&l.key))
+                .map(|l| l.key)
+                .collect();
+
+            if !missing_patch_keys.is_empty() {
+                let new_patches: Vec<(QuadNodeKey, PlanetMesh)> = self.thread_pool.install(|| {
+                    missing_patch_keys
+                        .into_par_iter()
+                        .map(|key| {
+                            let resolution = match key.level {
                                 0 => 32,
                                 1 => 24,
                                 2 => 16,
                                 3 => 16,
                                 _ => 16,
                             };
-                            tasks.push(LodBuildTask::LodPatch {
-                                seed: self.current_seed,
-                                key: leaf.key,
-                                generator: generator.clone(),
+                            let patch = PlanetMesh::generate_lod_patch(
+                                &gen,
+                                &key,
                                 base_radius,
                                 resolution,
                                 filter,
-                            });
-                        }
-                    }
-                    QuadLeafKind::VoxelChunk => {
-                        if !self.voxel_cache.contains_key(&leaf.key) {
-                            tasks.push(LodBuildTask::VoxelChunk {
-                                seed: self.current_seed,
-                                key: leaf.key,
-                                generator: generator.clone(),
-                                face: leaf.key.face,
-                                chunk_x: leaf.key.x as i32,
-                                chunk_y: leaf.key.y as i32,
-                                base_radius,
-                                filter,
-                            });
-                        }
-                    }
+                            );
+                            (key, patch)
+                        })
+                        .collect()
+                });
+
+                for (key, patch) in new_patches {
+                    self.lod_cache.insert(key, patch);
                 }
             }
 
-            for task in tasks {
-                self.request_mesh(task);
+            // Déclenchement en arrière-plan des maillages de voxels 3D non encore calculés
+            for leaf in &self.current_leaves {
+                if leaf.kind == QuadLeafKind::VoxelChunk {
+                    if !self.voxel_cache.contains_key(&leaf.key) && self.pending_requests.insert(leaf.key) {
+                        let tx = self.result_tx.clone();
+                        let task_gen = generator.clone();
+                        let key = leaf.key;
+                        let seed = self.current_seed;
+                        self.thread_pool.spawn(move || {
+                            let mesh = VoxelMeshBuilder::build_incurved_single_chunk_fast(
+                                &task_gen,
+                                key.face,
+                                key.x as i32,
+                                key.y as i32,
+                                base_radius,
+                                filter,
+                            );
+                            let _ = tx.send(VoxelBuildResult { seed, key, mesh });
+                        });
+                    }
+                }
             }
         }
 
@@ -339,8 +298,20 @@ impl PlanetLodManager {
         combined.indices.clear();
 
         for leaf in &self.current_leaves {
-            if let Some(mesh) = self.get_mesh_or_ancestor(&leaf.key) {
-                append_mesh(&mut combined, mesh);
+            match leaf.kind {
+                QuadLeafKind::LodPatch => {
+                    if let Some(mesh) = self.lod_cache.get(&leaf.key) {
+                        append_mesh(&mut combined, mesh);
+                    }
+                }
+                QuadLeafKind::VoxelChunk => {
+                    if let Some(voxel_mesh) = self.voxel_cache.get(&leaf.key) {
+                        append_mesh(&mut combined, voxel_mesh);
+                    } else if let Some(patch) = self.lod_cache.get(&leaf.key) {
+                        // Voxel chunk encore en calcul : affichage immédiat de son patch dédié sans trou
+                        append_mesh(&mut combined, patch);
+                    }
+                }
             }
         }
         self.combined_mesh = combined;
@@ -433,6 +404,63 @@ mod tests {
             rebuild_count, total_time
         );
         assert!(total_time.as_millis() < 10000, "Moving camera update took too long: {:?}", total_time);
+    }
+
+    #[test]
+    fn test_inspect_lod_distribution() {
+        let desc = herocraft_world::PlanetDescriptor {
+            seed: 2026,
+            ..Default::default()
+        };
+        let generator = PlanetWorldGenerator::new(desc);
+        let mut camera = crate::camera::OrbitCamera::new(165.0, 25.0, &generator);
+        let mut cache = herocraft_voxel_engine::WorldChunkCache::new(None, 64);
+        let mut lod = PlanetLodManager::new(25.0, 2026);
+
+        println!("Spawn player_pos: {:?}", camera.player_pos);
+        println!("Spawn eye: {:?}", camera.eye_position());
+
+        lod.update(camera.eye_position(), &generator, &mut cache, 0.0, None);
+        println!("Leaves count at spawn: {}", lod.current_leaves.len());
+
+        let mut face_levels = std::collections::HashMap::new();
+        for l in &lod.current_leaves {
+            *face_levels.entry((l.key.face, l.key.level)).or_insert(0) += 1;
+        }
+        println!("Levels at spawn: {:?}", face_levels);
+
+        // Zoom out smoothly towards orbit
+        camera.toggle_view(&generator);
+        for _ in 0..100 {
+            camera.update(0.016, &generator);
+        }
+        lod.update(camera.eye_position(), &generator, &mut cache, 0.016, None);
+        let mut face_levels_orbit = std::collections::HashMap::new();
+        for l in &lod.current_leaves {
+            *face_levels_orbit.entry((l.key.face, l.key.level)).or_insert(0) += 1;
+        }
+        println!("Levels in orbit: {:?}", face_levels_orbit);
+
+        // Let Rayon process all tasks and pump updates
+        let start_wait = std::time::Instant::now();
+        while !lod.pending_requests.is_empty() && start_wait.elapsed().as_secs() < 5 {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            lod.update(camera.eye_position(), &generator, &mut cache, 0.016, None);
+        }
+        println!("After processing: pending={}, cached_lod={}, cached_voxels={}", lod.pending_requests.len(), lod.lod_cache.len(), lod.voxel_cache.len());
+        println!("Combined mesh: verts={}, indices={}", lod.combined_mesh.vertices.len(), lod.combined_mesh.indices.len());
+
+        // Check if ANY leaf in current_leaves is using an ancestor!
+        let mut using_ancestor = 0;
+        let mut using_self = 0;
+        for l in &lod.current_leaves {
+            if lod.lod_cache.contains_key(&l.key) || lod.voxel_cache.contains_key(&l.key) {
+                using_self += 1;
+            } else {
+                using_ancestor += 1;
+            }
+        }
+        println!("Leaves breakdown: using_self={}, using_ancestor={}", using_self, using_ancestor);
     }
 }
 
