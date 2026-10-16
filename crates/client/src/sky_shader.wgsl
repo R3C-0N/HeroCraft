@@ -151,11 +151,11 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         let ray_up = dot(ray_dir, cam_up);
         let sun_up = dot(l, cam_up);
 
-        // Clarté du jour : transition douce entre nuit (sun_up < -0.20), crépuscule et plein jour (sun_up > 0.08)
-        let daylight = clamp((sun_up + 0.20) / 0.28, 0.0, 1.0);
+        // Clarté du jour : transition naturelle vers la nuit noire dès que le soleil passe sous l'horizon
+        let daylight = clamp((sun_up + 0.05) / 0.16, 0.0, 1.0);
 
         // Facteur de crépuscule / coucher de soleil (soleil rasant l'horizon)
-        let sunset_factor = clamp(1.0 - abs(sun_up) / 0.25, 0.0, 1.0);
+        let sunset_factor = clamp(1.0 - abs(sun_up) / 0.18, 0.0, 1.0) * daylight;
 
         // Dégradé de couleurs du zénith
         let zenith_day = vec3<f32>(0.15, 0.45, 0.88); // Bleu azur pur éclatant
@@ -176,8 +176,11 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         // Éclaircissement et halo solaire diffus dans l'atmosphère au sol
         let ground_sun_glow = pow(clamp(cos_sun, 0.0, 1.0), 8.0) * vec3<f32>(0.40, 0.35, 0.22);
 
-        // Ciel au sol : interpolation douce entre nuit étoilée et ciel bleu diurne, avec soleil toujours net
-        let ground_sky = mix(stars, day_sky, daylight) + sun_color + ground_sun_glow * daylight;
+        // Visibilité du soleil au sol : masqué dès qu'il passe sous l'horizon planétaire
+        let sun_visibility = clamp(sun_up * 15.0 + 0.5, 0.0, 1.0);
+
+        // Ciel au sol : nuit étoilée profonde et sombre vs ciel bleu diurne
+        let ground_sky = mix(stars, day_sky, daylight) + sun_color * sun_visibility + ground_sun_glow * daylight;
 
         let final_sky = mix(space_color, ground_sky, ground_factor);
         return vec4<f32>(final_sky, 1.0);
