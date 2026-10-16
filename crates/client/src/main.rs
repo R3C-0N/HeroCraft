@@ -89,6 +89,8 @@ fn main() {
     let mut is_dragging = false;
     let mut last_mouse_pos = (0.0_f64, 0.0_f64);
     let mut last_frame_time = Instant::now();
+    let mut fps_timer = Instant::now();
+    let mut fps_frame_count = 0u32;
 
     event_loop.run(move |event, target| {
         target.set_control_flow(ControlFlow::Poll);
@@ -310,6 +312,16 @@ fn main() {
                         let now = Instant::now();
                         let dt = now.duration_since(last_frame_time).as_secs_f32();
                         last_frame_time = now;
+
+                        // Mesure et mise à jour du compteur FPS (rafraîchi toutes les 250 ms pour une lecture stable)
+                        fps_frame_count += 1;
+                        let fps_elapsed = now.duration_since(fps_timer).as_secs_f32();
+                        if fps_elapsed >= 0.25 {
+                            let current_fps = (fps_frame_count as f32 / fps_elapsed).round() as u32;
+                            ui_state.set_fps(current_fps);
+                            fps_frame_count = 0;
+                            fps_timer = now;
+                        }
 
                         camera.update(dt, &generator);
                         state.update_camera(&camera);

@@ -37,13 +37,14 @@ pub struct UiState {
     pub auto_rotate: bool,
     pub show_tectonics: bool,
     pub show_ocean_currents: bool,
+    pub current_fps: u32,
     pub dirty: bool,
 }
 
 impl UiState {
     pub fn new(initial_seed: u64) -> Self {
-        let canvas_width = 320;
-        let canvas_height = 310;
+        let canvas_width = 512;
+        let canvas_height = 320;
 
         let buttons = vec![
             UiButton {
@@ -123,6 +124,7 @@ impl UiState {
             auto_rotate: false,
             show_tectonics: false,
             show_ocean_currents: false,
+            current_fps: 60,
             dirty: true,
         };
 
@@ -347,7 +349,65 @@ impl UiState {
         // 4. Instructions d'aide au bas du panneau
         self.draw_text_5x7(24, 278, "GLISSER : ORBITE | SCROLL : ZOOM", [100, 135, 175, 255], 1);
 
+        // 5. Badge Compteur FPS en haut à droite
+        self.draw_fps_badge();
+
         self.dirty = true;
+    }
+
+    /// Dessine le badge du compteur de FPS dans la zone réservée (320..436, 0..32)
+    pub fn draw_fps_badge(&mut self) {
+        let bx = 320;
+        let by = 0;
+        let bw = 116;
+        let bh = 32;
+
+        // Efface la zone du badge FPS dans le buffer
+        for dy in 0..bh {
+            let py = by + dy;
+            if py >= self.canvas_height {
+                continue;
+            }
+            for dx in 0..bw {
+                let px = bx + dx;
+                if px >= self.canvas_width {
+                    continue;
+                }
+                let idx = (py * self.canvas_width + px) * 4;
+                self.pixels[idx] = 0;
+                self.pixels[idx + 1] = 0;
+                self.pixels[idx + 2] = 0;
+                self.pixels[idx + 3] = 0;
+            }
+        }
+
+        // Couleurs adaptatives selon le framerate (Vert > 55, Jaune > 30, Rouge < 30)
+        let (bg, border, text_color) = if self.current_fps >= 55 {
+            ([14, 22, 38, 220], [45, 140, 110, 240], [70, 235, 160, 255])
+        } else if self.current_fps >= 30 {
+            ([14, 22, 38, 220], [150, 130, 45, 240], [245, 210, 70, 255])
+        } else {
+            ([24, 14, 18, 220], [180, 50, 45, 240], [255, 90, 80, 255])
+        };
+
+        self.draw_rounded_box(bx, by, bw, bh, bg, border);
+
+        // Texte au format "XXX FPS" avec centrage précis
+        let fps_text = format!("{:>3} FPS", self.current_fps);
+        // Police 5x7 mise à l'échelle x2 : chaque caractère fait 6*2 = 12px de large, hauteur = 7*2 = 14px
+        let text_width = fps_text.len() * 12;
+        let tx = bx + (bw.saturating_sub(text_width)) / 2;
+        let ty = by + (bh.saturating_sub(14)) / 2;
+        self.draw_text_5x7(tx, ty, &fps_text, text_color, 2);
+    }
+
+    /// Met à jour la valeur du compteur FPS
+    pub fn set_fps(&mut self, fps: u32) {
+        if self.current_fps != fps {
+            self.current_fps = fps;
+            self.draw_fps_badge();
+            self.dirty = true;
+        }
     }
 
     fn draw_rounded_box(
@@ -468,6 +528,45 @@ fn get_glyph_5x7(c: char) -> [u8; 7] {
         '%' => [0b11001, 0b11010, 0b00010, 0b00100, 0b01000, 0b01011, 0b10011],
         '~' => [0b00000, 0b01001, 0b10101, 0b10010, 0b00000, 0b00000, 0b00000],
         '|' => [0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
+        '.' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100, 0b00100],
         _ => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ui_initialization_and_fps_badge() {
+        let mut ui = UiState::new(2026);
+        assert_eq!(ui.canvas_width, 512);
+        assert_eq!(ui.canvas_height, 320);
+        assert_eq!(ui.current_fps, 60);
+
+        // Vérification qu'il y a des pixels non nuls dans la zone du badge FPS (320..436, 0..32)
+        let mut fps_pixels_found = false;
+        for y in 0..32 {
+            for x in 320..436 {
+                let idx = (y * ui.canvas_width + x) * 4;
+                if ui.pixels[idx + 3] > 0 {
+                    fps_pixels_found = true;
+                    break;
+                }
+            }
+        }
+        assert!(fps_pixels_found, "Le badge FPS doit contenir des pixels visibles dessinés");
+
+        // Test de mise à jour du FPS
+        ui.dirty = false;
+        ui.set_fps(144);
+        assert_eq!(ui.current_fps, 144);
+        assert!(ui.dirty, "set_fps avec une nouvelle valeur doit marquer l'UI comme dirty");
+
+        // Mettre à jour avec la même valeur ne doit pas marquer dirty
+        ui.dirty = false;
+        ui.set_fps(144);
+        assert!(!ui.dirty, "set_fps avec la même valeur ne doit pas marquer dirty");
+    }
+}
+

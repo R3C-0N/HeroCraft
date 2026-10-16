@@ -384,20 +384,17 @@ impl State {
             cache: None,
         });
 
-        // Quad 2D du panneau UI dans le coin supérieur gauche
-        let (uw, uh) = (ui_state.canvas_width as f32, ui_state.canvas_height as f32);
-        let ui_vertices = [
-            UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
-            UiVertex { position: [uw, 0.0], uv: [1.0, 0.0] },
-            UiVertex { position: [uw, uh], uv: [1.0, 1.0] },
-            UiVertex { position: [0.0, uh], uv: [0.0, 1.0] },
+        // Quads 2D de l'UI (Panneau HUD à gauche + Compteur FPS à droite)
+        let ui_vertices = Self::build_ui_vertices(size.width as f32, size.height as f32);
+        let ui_indices: [u32; 12] = [
+            0, 1, 2, 0, 2, 3, // Quad 1 : Panneau principal HUD
+            4, 5, 6, 4, 6, 7, // Quad 2 : Badge FPS en haut à droite
         ];
-        let ui_indices: [u32; 6] = [0, 1, 2, 0, 2, 3];
 
         let ui_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("UI Vertex Buffer"),
             contents: bytemuck::cast_slice(&ui_vertices),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
         let ui_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -458,6 +455,36 @@ impl State {
         (texture, view)
     }
 
+    /// Génère les sommets des quads de l'interface utilisateur 2D :
+    /// - Quad 1 : Panneau principal HUD dans le coin supérieur gauche (320x310)
+    /// - Quad 2 : Badge du compteur FPS dans le coin supérieur droit (116x32)
+    pub fn build_ui_vertices(screen_w: f32, _screen_h: f32) -> [UiVertex; 8] {
+        let cw = 512.0_f32;
+        let ch = 320.0_f32;
+
+        let panel_w = 320.0_f32;
+        let panel_h = 310.0_f32;
+
+        let fps_w = 116.0_f32;
+        let fps_h = 32.0_f32;
+        let fps_x0 = (screen_w - fps_w - 16.0).max(panel_w + 16.0);
+        let fps_y0 = 16.0_f32;
+
+        [
+            // Quad 1: Panneau principal (Haut-Gauche)
+            UiVertex { position: [0.0, 0.0], uv: [0.0, 0.0] },
+            UiVertex { position: [panel_w, 0.0], uv: [panel_w / cw, 0.0] },
+            UiVertex { position: [panel_w, panel_h], uv: [panel_w / cw, panel_h / ch] },
+            UiVertex { position: [0.0, panel_h], uv: [0.0, panel_h / ch] },
+
+            // Quad 2: Badge FPS (Haut-Droite)
+            UiVertex { position: [fps_x0, fps_y0], uv: [320.0 / cw, 0.0] },
+            UiVertex { position: [fps_x0 + fps_w, fps_y0], uv: [(320.0 + fps_w) / cw, 0.0] },
+            UiVertex { position: [fps_x0 + fps_w, fps_y0 + fps_h], uv: [(320.0 + fps_w) / cw, fps_h / ch] },
+            UiVertex { position: [fps_x0, fps_y0 + fps_h], uv: [320.0 / cw, fps_h / ch] },
+        ]
+    }
+
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
@@ -479,6 +506,14 @@ impl State {
                 &self.ui_uniform_buffer,
                 0,
                 bytemuck::cast_slice(&[ui_uniform]),
+            );
+
+            // Mise à jour des positions des quads UI (repositionne le badge FPS en haut à droite)
+            let ui_vertices = Self::build_ui_vertices(new_size.width as f32, new_size.height as f32);
+            self.queue.write_buffer(
+                &self.ui_vertex_buffer,
+                0,
+                bytemuck::cast_slice(&ui_vertices),
             );
         }
     }
@@ -602,7 +637,7 @@ impl State {
             ui_pass.set_bind_group(0, &self.ui_bind_group, &[]);
             ui_pass.set_vertex_buffer(0, self.ui_vertex_buffer.slice(..));
             ui_pass.set_index_buffer(self.ui_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            ui_pass.draw_indexed(0..6, 0, 0..1);
+            ui_pass.draw_indexed(0..12, 0, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
