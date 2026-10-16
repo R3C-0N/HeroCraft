@@ -152,35 +152,48 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         let sun_up = dot(l, cam_up);
 
         // Clarté du jour : transition naturelle vers la nuit noire dès que le soleil passe sous l'horizon
-        let daylight = clamp((sun_up + 0.05) / 0.16, 0.0, 1.0);
+        let daylight = clamp((sun_up + 0.06) / 0.18, 0.0, 1.0);
 
-        // Facteur de crépuscule / coucher de soleil (soleil rasant l'horizon)
-        let sunset_factor = clamp(1.0 - abs(sun_up) / 0.18, 0.0, 1.0) * daylight;
+        // Facteur de crépuscule / coucher de soleil (soleil rasant l'horizon : -0.05 à +0.20)
+        let sunset_raw = clamp(1.0 - abs(sun_up - 0.03) / 0.18, 0.0, 1.0);
+        let sunset_factor = sunset_raw * clamp((sun_up + 0.06) / 0.10, 0.0, 1.0);
 
         // Dégradé de couleurs du zénith
         let zenith_day = vec3<f32>(0.15, 0.45, 0.88); // Bleu azur pur éclatant
-        let zenith_sunset = vec3<f32>(0.08, 0.16, 0.42); // Bleu crépusculaire profond
+        let zenith_sunset = vec3<f32>(0.07, 0.13, 0.38); // Bleu crépusculaire profond / saphir
         let zenith_color = mix(zenith_day, zenith_sunset, sunset_factor);
 
         // Dégradé de couleurs de l'horizon
-        let horizon_day = vec3<f32>(0.65, 0.80, 0.96); // Horizon clair estompé
-        let sun_azimuth = max(dot(ray_dir, l), 0.0);
-        let sunset_warm = mix(vec3<f32>(0.65, 0.42, 0.55), vec3<f32>(1.0, 0.62, 0.22), pow(sun_azimuth, 2.0));
-        let horizon_color = mix(horizon_day, sunset_warm, sunset_factor);
+        let horizon_day = vec3<f32>(0.65, 0.80, 0.96); // Horizon clair estompé en journée
+
+        // Horizon au lever/coucher :
+        // Vers le soleil : or ambré, jaune incandescent et orange flamboyant
+        // À l'opposé du soleil : l'Arche Crépusculaire / Ceinture de Vénus (rose/magenta doux et ombre pourpre)
+        let sun_azimuth = dot(ray_dir, l); // -1.0 à l'opposé, +1.0 face au soleil
+        let forward_sun = clamp(sun_azimuth * 0.5 + 0.5, 0.0, 1.0);
+        let sunset_facing_sun = mix(vec3<f32>(1.0, 0.58, 0.15), vec3<f32>(1.0, 0.82, 0.35), pow(forward_sun, 3.0));
+        let sunset_opposite_sun = vec3<f32>(0.65, 0.32, 0.48); // Ceinture de Vénus rosée/violacée
+        let sunset_horizon = mix(sunset_opposite_sun, sunset_facing_sun, pow(forward_sun, 1.5));
+
+        let horizon_color = mix(horizon_day, sunset_horizon, sunset_factor);
 
         // Dégradé vertical du dôme céleste (zénith -> horizon)
         let ray_h = max(ray_up, 0.0);
         let horizon_blend = pow(1.0 - ray_h, 2.5);
         let day_sky = mix(zenith_color, horizon_color, horizon_blend);
 
-        // Éclaircissement et halo solaire diffus dans l'atmosphère au sol
-        let ground_sun_glow = pow(clamp(cos_sun, 0.0, 1.0), 8.0) * vec3<f32>(0.40, 0.35, 0.22);
+        // Éclaircissement et halo solaire diffus au coucher/lever de soleil
+        let sunset_glow_color = vec3<f32>(1.0, 0.52, 0.15);
+        let day_glow_color = vec3<f32>(0.40, 0.35, 0.22);
+        let active_glow_color = mix(day_glow_color, sunset_glow_color, sunset_factor);
+        let ground_sun_glow = pow(clamp(cos_sun, 0.0, 1.0), 6.0) * active_glow_color * (1.0 + sunset_factor * 1.8);
 
         // Visibilité du soleil au sol : masqué dès qu'il passe sous l'horizon planétaire
         let sun_visibility = clamp(sun_up * 15.0 + 0.5, 0.0, 1.0);
+        let sun_disk_tint = mix(vec3<f32>(1.0, 1.0, 1.0), vec3<f32>(1.0, 0.65, 0.25), sunset_factor);
 
         // Ciel au sol : nuit étoilée profonde et sombre vs ciel bleu diurne
-        let ground_sky = mix(stars, day_sky, daylight) + sun_color * sun_visibility + ground_sun_glow * daylight;
+        let ground_sky = mix(stars, day_sky, daylight) + sun_color * sun_disk_tint * sun_visibility + ground_sun_glow * daylight;
 
         let final_sky = mix(space_color, ground_sky, ground_factor);
         return vec4<f32>(final_sky, 1.0);

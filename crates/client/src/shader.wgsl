@@ -127,17 +127,33 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         base_color = mix(base_color, cliff_colored, cliff_factor * 0.85);
     }
 
-    // 4. Éclairage solaire et nocturne (transition douce jour/nuit)
+    // 4. Éclairage solaire et nocturne avec teintes chaudes de levé / couché de soleil
     let sun_elevation = dot(n_sphere, l);
-    let day_factor = clamp(sun_elevation * 4.0 + 0.5, 0.0, 1.0);
+    let day_factor = clamp((sun_elevation + 0.08) / 0.24, 0.0, 1.0);
+
+    // Teinte du soleil selon la hauteur sur l'horizon :
+    // - Plein jour (sun_elevation > 0.25) : Blanc solaire chaud naturel
+    // - Heure dorée / crépuscule (sun_elevation ~ 0.04..0.18) : Or ambré éclatant
+    // - Rasante au coucher/lever (sun_elevation ~ 0.0) : Orange flamboyant / cuivré
+    let sunset_factor = clamp(1.0 - abs(sun_elevation - 0.04) / 0.18, 0.0, 1.0) * day_factor;
+    let day_sun_color = vec3<f32>(1.0, 0.96, 0.88);
+    let sunset_sun_color = vec3<f32>(1.0, 0.52, 0.18);
+    let sun_color = mix(day_sun_color, sunset_sun_color, sunset_factor);
+
+    // Lumière ambiante : ciel bleu le jour, indigo/pourpre au crépuscule, nuit noire étoilée
+    let day_ambient = vec3<f32>(0.68, 0.78, 0.92);
+    let sunset_ambient = vec3<f32>(0.38, 0.26, 0.48); // Teinte d'ombre crépusculaire violacée
+    let night_ambient = vec3<f32>(0.04, 0.06, 0.12);
+    let ambient_tint = mix(night_ambient, mix(day_ambient, sunset_ambient, sunset_factor), day_factor);
+    let ambient_level = mix(0.04, 0.22, day_factor);
 
     let ndotl = dot(n, l);
     let direct = max(ndotl, 0.0) * day_factor;
     let half_lambert = pow(clamp(ndotl * 0.5 + 0.5, 0.0, 1.0), 1.35) * day_factor;
+    let direct_level = (1.0 - ambient_level) * mix(half_lambert, direct, 0.40);
 
-    // Ambiance nocturne sombre et immersive (0.04 sous les étoiles vs 0.22 en plein jour)
-    let ambient = mix(0.04, 0.22, day_factor);
-    let light_intensity = ambient + (1.0 - ambient) * mix(half_lambert, direct, 0.40);
+    // Éclairage combiné : surfaces éclairées par le soleil (teinte dorée/rouge au coucher) + ombres bleutées/pourpres
+    let total_light = ambient_tint * ambient_level + sun_color * direct_level;
 
     // 5. Reflets spéculaires d'eau et de glace
     var specular_light = vec3<f32>(0.0);
@@ -145,12 +161,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ndotv = max(dot(n, view_dir), 0.0);
 
     if (is_water) {
-        // Reflet spéculaire Blinn-Phong pour l'océan (fin et intense en vue satellite, atténué la nuit)
+        // Reflet spéculaire Blinn-Phong pour l'océan (fin et intense en vue satellite, doré/flamboyant au coucher)
         let spec_power = mix(48.0, 96.0, orbit_factor);
         let sun_spec = pow(ndoth, spec_power) * 1.8;
         // Effet Fresnel rasante
         let fresnel = pow(1.0 - ndotv, 5.0) * 0.45 + 0.05;
-        specular_light += vec3<f32>(1.0, 0.95, 0.85) * (sun_spec * clamp(ndotl * 2.0, 0.0, 1.0) + fresnel * 0.35) * day_factor;
+        let ocean_spec_color = mix(sun_color, vec3<f32>(1.0, 0.95, 0.85), clamp(sun_elevation * 3.0, 0.0, 1.0));
+        specular_light += ocean_spec_color * (sun_spec * clamp(ndotl * 2.0, 0.0, 1.0) + fresnel * 0.35) * day_factor;
     } else if (is_snow) {
         // Scintillement cristallin diffus sur les névés et glaciers
         let snow_glint = pow(ndoth, 24.0) * 0.40 * clamp(ndotl * 2.0, 0.0, 1.0);
@@ -168,7 +185,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let atmosphere_color = vec3<f32>(0.25, 0.65, 1.0);
 
     // Couleur éclairée de base avec Ambient Occlusion (AO) per-vertex interpolé
-    var lit_rgb = base_color * light_intensity + specular_light + atmosphere_color * rim_light;
+    var lit_rgb = base_color * total_light + specular_light + atmosphere_color * rim_light;
 
     // 7. Brouillard atmosphérique de distance au sol (Ground Distance Fog)
     let dist = length(camera.camera_pos - in.world_pos);
@@ -178,12 +195,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // Début du brouillard à 2.5 unités (~65 blocs), saturation douce à 8.0 unités
         let fog_factor = clamp((dist - 2.5) / 5.5, 0.0, 1.0) * ground_proximity;
 
-        // Diffusion dorée vers le soleil en journée, brume nocturne sombre la nuit
+        // Diffusion dorée/ambrée au coucher vers le soleil, pourpre à l'opposé
         let forward_scatter = pow(max(dot(view_dir, -l), 0.0), 3.0);
+        let sunset_fog_color = mix(vec3<f32>(0.65, 0.38, 0.50), vec3<f32>(1.0, 0.58, 0.24), forward_scatter);
+        let day_fog_color = mix(vec3<f32>(0.72, 0.80, 0.90), vec3<f32>(1.0, 0.85, 0.60), forward_scatter * 0.55);
         let night_fog = vec3<f32>(0.015, 0.02, 0.04);
-        let fog_ambient = mix(night_fog, vec3<f32>(0.72, 0.80, 0.90), day_factor);
-        let fog_sun = mix(night_fog, vec3<f32>(1.0, 0.85, 0.60), day_factor);
-        let fog_color = mix(fog_ambient, fog_sun, forward_scatter * 0.55 * day_factor);
+
+        let active_fog = mix(day_fog_color, sunset_fog_color, sunset_factor);
+        let fog_color = mix(night_fog, active_fog, day_factor);
 
         lit_rgb = mix(lit_rgb, fog_color, fog_factor * 0.75);
     }
