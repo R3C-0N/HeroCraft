@@ -44,7 +44,7 @@ impl PlanetVertex {
 }
 
 /// Maillage indexé prêt pour WGPU
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct PlanetMesh {
     pub vertices: Vec<PlanetVertex>,
     pub indices: Vec<u32>,

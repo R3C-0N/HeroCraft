@@ -363,28 +363,22 @@ impl VoxelMeshBuilder {
                 }
             };
 
-            let pack_key = |block: BlockId, is_top: bool, color: [f32; 4]| -> u32 {
-                let r = (color[0] * 31.0).clamp(0.0, 31.0) as u32;
-                let g = (color[1] * 31.0).clamp(0.0, 31.0) as u32;
-                let b = (color[2] * 31.0).clamp(0.0, 31.0) as u32;
-                (block.0 as u32) | ((is_top as u32) << 8) | (r << 9) | (g << 14) | (b << 19)
-            };
-
-            // 1 & 2. Slices horizontales Y : Faces Haut (+Y) et Bas (-Y)
+            // Émission directe des faces de voxels exposées (1x1) sans greedy meshing
+            // Sur une planète incurvée (Cubed-Sphere), les quads 1x1 épousent parfaitement la courbure
+            // sans aucun décollement, fissure, trou ni artefact diagonal.
             for gy in 0..CHUNK_SIZE as i32 {
                 let fy = gy as f64;
-                let mut top_grid: [Option<(u32, [f32; 4])>; 32 * 32] = [None; 32 * 32];
-                let mut bottom_grid: [Option<(u32, [f32; 4])>; 32 * 32] = [None; 32 * 32];
-
                 for gz in 0..32 {
+                    let fz = gz as f64;
                     for gx in 0..32 {
+                        let fx = gx as f64;
                         let block = get_voxel(gx, gy, gz);
                         if block.is_air() {
                             continue;
                         }
                         let is_water = block == BlockId::WATER;
 
-                        // Face Haut (+Y)
+                        // 1. Face Haut (+Y)
                         let neighbor_top = get_voxel(gx, gy + 1, gz);
                         let should_emit_top = if is_water {
                             neighbor_top.is_air()
@@ -393,56 +387,27 @@ impl VoxelMeshBuilder {
                         };
                         if should_emit_top {
                             let color = get_color(gx, gz, block, true);
-                            let key = pack_key(block, true, color);
-                            top_grid[(gz as usize) * 32 + (gx as usize)] = Some((key, color));
+                            let c0 = get_corner(fx, fy + 1.0, fz, layer);
+                            let c1 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
+                            let c2 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
+                            let c3 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                         }
 
-                        // Face Bas (-Y)
+                        // 2. Face Bas (-Y)
                         if !is_water {
                             let neighbor_bottom = get_voxel(gx, gy - 1, gz);
                             if neighbor_bottom.is_air() {
                                 let color = get_color(gx, gz, block, false);
-                                let key = pack_key(block, false, color);
-                                bottom_grid[(gz as usize) * 32 + (gx as usize)] = Some((key, color));
+                                let c0 = get_corner(fx, fy, fz, layer);
+                                let c1 = get_corner(fx + 1.0, fy, fz, layer);
+                                let c2 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
+                                let c3 = get_corner(fx, fy, fz + 1.0, layer);
+                                Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                             }
                         }
-                    }
-                }
 
-                // Greedy meshing sur la face Haut (+Y)
-                Self::greedy_mesh_2d(top_grid, |u, v, w, h, color| {
-                    let c0 = get_corner(u as f64, fy + 1.0, v as f64, layer);
-                    let c1 = get_corner(u as f64, fy + 1.0, (v + h) as f64, layer);
-                    let c2 = get_corner((u + w) as f64, fy + 1.0, (v + h) as f64, layer);
-                    let c3 = get_corner((u + w) as f64, fy + 1.0, v as f64, layer);
-                    Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
-                });
-
-                // Greedy meshing sur la face Bas (-Y)
-                Self::greedy_mesh_2d(bottom_grid, |u, v, w, h, color| {
-                    let c0 = get_corner(u as f64, fy, v as f64, layer);
-                    let c1 = get_corner((u + w) as f64, fy, v as f64, layer);
-                    let c2 = get_corner((u + w) as f64, fy, (v + h) as f64, layer);
-                    let c3 = get_corner(u as f64, fy, (v + h) as f64, layer);
-                    Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
-                });
-            }
-
-            // 3 & 4. Slices verticales X : Faces Gauche (-X) et Droite (+X)
-            for gx in 0..32 {
-                let fx = gx as f64;
-                let mut left_grid: [Option<(u32, [f32; 4])>; 32 * 32] = [None; 32 * 32];
-                let mut right_grid: [Option<(u32, [f32; 4])>; 32 * 32] = [None; 32 * 32];
-
-                for gy in 0..CHUNK_SIZE as i32 {
-                    for gz in 0..32 {
-                        let block = get_voxel(gx, gy, gz);
-                        if block.is_air() {
-                            continue;
-                        }
-                        let is_water = block == BlockId::WATER;
-
-                        // Face Gauche (-X)
+                        // 3. Face Gauche (-X)
                         let neighbor_left = get_voxel(gx - 1, gy, gz);
                         let should_emit_left = if is_water {
                             neighbor_left.is_air()
@@ -451,11 +416,14 @@ impl VoxelMeshBuilder {
                         };
                         if should_emit_left {
                             let color = get_color(gx, gz, block, false);
-                            let key = pack_key(block, false, color);
-                            left_grid[(gy as usize) * 32 + (gz as usize)] = Some((key, color));
+                            let c0 = get_corner(fx, fy, fz, layer);
+                            let c1 = get_corner(fx, fy, fz + 1.0, layer);
+                            let c2 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
+                            let c3 = get_corner(fx, fy + 1.0, fz, layer);
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                         }
 
-                        // Face Droite (+X)
+                        // 4. Face Droite (+X)
                         let neighbor_right = get_voxel(gx + 1, gy, gz);
                         let should_emit_right = if is_water {
                             neighbor_right.is_air()
@@ -464,46 +432,14 @@ impl VoxelMeshBuilder {
                         };
                         if should_emit_right {
                             let color = get_color(gx, gz, block, false);
-                            let key = pack_key(block, false, color);
-                            right_grid[(gy as usize) * 32 + (gz as usize)] = Some((key, color));
+                            let c0 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
+                            let c1 = get_corner(fx + 1.0, fy, fz, layer);
+                            let c2 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
+                            let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                         }
-                    }
-                }
 
-                // Greedy meshing sur la face Gauche (-X) : u=gz, v=gy
-                Self::greedy_mesh_2d(left_grid, |u, v, w, h, color| {
-                    let c0 = get_corner(fx, v as f64, u as f64, layer);
-                    let c1 = get_corner(fx, v as f64, (u + w) as f64, layer);
-                    let c2 = get_corner(fx, (v + h) as f64, (u + w) as f64, layer);
-                    let c3 = get_corner(fx, (v + h) as f64, u as f64, layer);
-                    Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
-                });
-
-                // Greedy meshing sur la face Droite (+X) : u=gz, v=gy
-                Self::greedy_mesh_2d(right_grid, |u, v, w, h, color| {
-                    let c0 = get_corner(fx + 1.0, v as f64, (u + w) as f64, layer);
-                    let c1 = get_corner(fx + 1.0, v as f64, u as f64, layer);
-                    let c2 = get_corner(fx + 1.0, (v + h) as f64, u as f64, layer);
-                    let c3 = get_corner(fx + 1.0, (v + h) as f64, (u + w) as f64, layer);
-                    Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
-                });
-            }
-
-            // 5 & 6. Slices verticales Z : Faces Avant (+Z) et Arrière (-Z)
-            for gz in 0..32 {
-                let fz = gz as f64;
-                let mut front_grid: [Option<(u32, [f32; 4])>; 32 * 32] = [None; 32 * 32];
-                let mut back_grid: [Option<(u32, [f32; 4])>; 32 * 32] = [None; 32 * 32];
-
-                for gy in 0..CHUNK_SIZE as i32 {
-                    for gx in 0..32 {
-                        let block = get_voxel(gx, gy, gz);
-                        if block.is_air() {
-                            continue;
-                        }
-                        let is_water = block == BlockId::WATER;
-
-                        // Face Avant (+Z)
+                        // 5. Face Avant (+Z)
                         let neighbor_front = get_voxel(gx, gy, gz + 1);
                         let should_emit_front = if is_water {
                             neighbor_front.is_air()
@@ -512,11 +448,14 @@ impl VoxelMeshBuilder {
                         };
                         if should_emit_front {
                             let color = get_color(gx, gz, block, false);
-                            let key = pack_key(block, false, color);
-                            front_grid[(gy as usize) * 32 + (gx as usize)] = Some((key, color));
+                            let c0 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
+                            let c1 = get_corner(fx, fy, fz + 1.0, layer);
+                            let c2 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
+                            let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                         }
 
-                        // Face Arrière (-Z)
+                        // 6. Face Arrière (-Z)
                         let neighbor_back = get_voxel(gx, gy, gz - 1);
                         let should_emit_back = if is_water {
                             neighbor_back.is_air()
@@ -525,88 +464,19 @@ impl VoxelMeshBuilder {
                         };
                         if should_emit_back {
                             let color = get_color(gx, gz, block, false);
-                            let key = pack_key(block, false, color);
-                            back_grid[(gy as usize) * 32 + (gx as usize)] = Some((key, color));
+                            let c0 = get_corner(fx, fy, fz, layer);
+                            let c1 = get_corner(fx + 1.0, fy, fz, layer);
+                            let c2 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
+                            let c3 = get_corner(fx, fy + 1.0, fz, layer);
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
                         }
                     }
                 }
-
-                // Greedy meshing sur la face Avant (+Z) : u=gx, v=gy
-                Self::greedy_mesh_2d(front_grid, |u, v, w, h, color| {
-                    let c0 = get_corner(u as f64, v as f64, fz + 1.0, layer);
-                    let c1 = get_corner((u + w) as f64, v as f64, fz + 1.0, layer);
-                    let c2 = get_corner((u + w) as f64, (v + h) as f64, fz + 1.0, layer);
-                    let c3 = get_corner(u as f64, (v + h) as f64, fz + 1.0, layer);
-                    Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
-                });
-
-                // Greedy meshing sur la face Arrière (-Z) : u=gx, v=gy
-                Self::greedy_mesh_2d(back_grid, |u, v, w, h, color| {
-                    let c0 = get_corner((u + w) as f64, v as f64, fz, layer);
-                    let c1 = get_corner(u as f64, v as f64, fz, layer);
-                    let c2 = get_corner(u as f64, (v + h) as f64, fz, layer);
-                    let c3 = get_corner((u + w) as f64, (v + h) as f64, fz, layer);
-                    Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color);
-                });
             }
             prev_chunk = Some(center_chunk);
         }
 
         PlanetMesh { vertices, indices }
-    }
-
-    /// Algorithme de Greedy Meshing 2D sur une tranche 32x32 : fusionne les quads coplanaires contigus
-    fn greedy_mesh_2d<F>(
-        mut grid: [Option<(u32, [f32; 4])>; 32 * 32],
-        mut emit_quad: F,
-    ) where
-        F: FnMut(usize, usize, usize, usize, [f32; 4]),
-    {
-        for v in 0..32 {
-            let mut u = 0;
-            while u < 32 {
-                if let Some((cell_key, color)) = grid[v * 32 + u] {
-                    // 1. Extension le long de l'axe U (largeur)
-                    let mut width = 1;
-                    while u + width < 32 {
-                        if let Some((next_key, _)) = grid[v * 32 + u + width] {
-                            if next_key == cell_key {
-                                width += 1;
-                                continue;
-                            }
-                        }
-                        break;
-                    }
-
-                    // 2. Extension le long de l'axe V (hauteur)
-                    let mut height = 1;
-                    'outer: while v + height < 32 {
-                        for k in 0..width {
-                            if let Some((next_key, _)) = grid[(v + height) * 32 + u + k] {
-                                if next_key == cell_key {
-                                    continue;
-                                }
-                            }
-                            break 'outer;
-                        }
-                        height += 1;
-                    }
-
-                    // 3. Effacer les cellules fusionnées
-                    for j in 0..height {
-                        for i in 0..width {
-                            grid[(v + j) * 32 + u + i] = None;
-                        }
-                    }
-
-                    // 4. Émission du quad fusionné
-                    emit_quad(u, v, width, height, color);
-                    u += width;
-                } else {
-                    u += 1;
-                }
-            }
-        }
     }
 
     fn add_quad(
@@ -748,25 +618,26 @@ mod tests {
     }
 
     #[test]
-    fn test_greedy_meshing_quad_reduction() {
-        let mut emitted_quads = 0;
-        let mut grid: [Option<(u32, [f32; 4])>; 32 * 32] = [None; 32 * 32];
-        let color = [0.2, 0.7, 0.3, 1.0];
-        // Remplir une surface plane 32x32 avec le même bloc et couleur
-        for i in 0..(32 * 32) {
-            grid[i] = Some((42, color));
-        }
-
-        VoxelMeshBuilder::greedy_mesh_2d(grid, |u, v, w, h, _| {
-            emitted_quads += 1;
-            assert_eq!(u, 0);
-            assert_eq!(v, 0);
-            assert_eq!(w, 32);
-            assert_eq!(h, 32);
+    fn test_curved_voxel_mesh_integrity() {
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor {
+            seed: 2026,
+            ..Default::default()
         });
-
-        // 1024 cellules fusionnées en exactement 1 seul quad ! (Réduction de 99.9%)
-        assert_eq!(emitted_quads, 1);
+        let mesh = VoxelMeshBuilder::build_incurved_single_chunk_fast(
+            &generator,
+            PlanetFace::PosZ,
+            16,
+            16,
+            25.0,
+            VisualizationFilter::Standard,
+        );
+        assert!(!mesh.vertices.is_empty(), "Curved voxel mesh should have vertices");
+        assert_eq!(mesh.indices.len() % 3, 0, "Indices must form complete triangles");
+        for v in &mesh.vertices {
+            assert!(v.position[0].is_finite());
+            assert!(v.position[1].is_finite());
+            assert!(v.position[2].is_finite());
+        }
     }
 }
 

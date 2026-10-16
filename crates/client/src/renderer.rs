@@ -1,20 +1,9 @@
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use winit::window::Window;
 
 use crate::camera::OrbitCamera;
 use crate::planet_mesh::{PlanetMesh, PlanetVertex};
 use crate::ui::UiState;
-use herocraft_world::QuadNodeKey;
-
-#[derive(Clone, Copy, Debug)]
-pub struct SubAllocSlot {
-    pub vertex_offset: u32,
-    pub vertex_capacity: u32,
-    pub index_offset: u32,
-    pub index_capacity: u32,
-    pub num_indices: u32,
-}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -79,10 +68,6 @@ pub struct State {
     pub index_buffer: wgpu::Buffer,
     pub index_buffer_capacity: usize,
     pub num_indices: u32,
-    pub allocations: HashMap<QuadNodeKey, SubAllocSlot>,
-    pub free_slots: Vec<SubAllocSlot>,
-    pub next_vertex_offset: u32,
-    pub next_index_offset: u32,
 
     // Pipeline Interface Utilisateur 2D
     pub ui_pipeline: wgpu::RenderPipeline,
@@ -459,10 +444,6 @@ impl State {
             index_buffer,
             index_buffer_capacity,
             num_indices: planet_mesh.indices.len() as u32,
-            allocations: HashMap::new(),
-            free_slots: Vec::new(),
-            next_vertex_offset: 0,
-            next_index_offset: 0,
             ui_pipeline,
             ui_texture,
             ui_bind_group,
@@ -629,149 +610,6 @@ impl State {
         self.num_indices = mesh.indices.len() as u32;
     }
 
-    /// Redimensionne les buffers GPU avec copie du contenu existant
-    pub fn grow_gpu_buffers(&mut self, new_vertex_cap: usize, new_index_cap: usize) {
-        let new_vb = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Planet Vertex Buffer (Expanded)"),
-            size: (new_vertex_cap * std::mem::size_of::<PlanetVertex>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let new_ib = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Planet Index Buffer (Expanded)"),
-            size: (new_index_cap * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Buffer Expansion Copy Encoder"),
-        });
-        let vb_copy_size = (self.next_vertex_offset as usize * std::mem::size_of::<PlanetVertex>()) as u64;
-        let old_vb_bytes = (self.vertex_buffer_capacity * std::mem::size_of::<PlanetVertex>()) as u64;
-        if vb_copy_size > 0 && vb_copy_size <= old_vb_bytes {
-            encoder.copy_buffer_to_buffer(&self.vertex_buffer, 0, &new_vb, 0, vb_copy_size);
-        }
-        let ib_copy_size = (self.next_index_offset as usize * std::mem::size_of::<u32>()) as u64;
-        let old_ib_bytes = (self.index_buffer_capacity * std::mem::size_of::<u32>()) as u64;
-        if ib_copy_size > 0 && ib_copy_size <= old_ib_bytes {
-            encoder.copy_buffer_to_buffer(&self.index_buffer, 0, &new_ib, 0, ib_copy_size);
-        }
-        self.queue.submit(std::iter::once(encoder.finish()));
-
-        self.vertex_buffer = new_vb;
-        self.vertex_buffer_capacity = new_vertex_cap;
-        self.index_buffer = new_ib;
-        self.index_buffer_capacity = new_index_cap;
-    }
-
-    /// Synchronisation ultra-rapide par sub-allocations incrémentales :
-    /// Seuls les nœuds modifiés ou nouveaux sont envoyés au GPU, sans recopier les 95% de nœuds inchangés !
-    pub fn sync_suballocations(
-        &mut self,
-        leaves: &[herocraft_world::QuadLeaf],
-        lod_manager: &crate::lod::PlanetLodManager,
-    ) {
-        let current_keys: HashSet<_> = leaves.iter().map(|l| l.key).collect();
-
-        // 1. Recyclage immédiat des slots pour les feuilles qui ne sont plus visibles
-        let removed_keys: Vec<_> = self
-            .allocations
-            .keys()
-            .filter(|k| !current_keys.contains(k))
-            .copied()
-            .collect();
-
-        for key in removed_keys {
-            if let Some(slot) = self.allocations.remove(&key) {
-                self.free_slots.push(slot);
-            }
-        }
-
-        // 2. Mise à jour ou allocation uniquement pour les feuilles nécessaires
-        for leaf in leaves {
-            if let Some(mesh) = lod_manager.get_mesh_or_ancestor(&leaf.key) {
-                let v_len = mesh.vertices.len() as u32;
-                let i_len = mesh.indices.len() as u32;
-                if v_len == 0 || i_len == 0 {
-                    continue;
-                }
-
-                if let Some(existing) = self.allocations.get_mut(&leaf.key) {
-                    if existing.num_indices == i_len {
-                        continue;
-                    }
-                    if v_len <= existing.vertex_capacity && i_len <= existing.index_capacity {
-                        existing.num_indices = i_len;
-                        self.queue.write_buffer(
-                            &self.vertex_buffer,
-                            (existing.vertex_offset as usize * std::mem::size_of::<PlanetVertex>()) as u64,
-                            bytemuck::cast_slice(&mesh.vertices),
-                        );
-                        self.queue.write_buffer(
-                            &self.index_buffer,
-                            (existing.index_offset as usize * std::mem::size_of::<u32>()) as u64,
-                            bytemuck::cast_slice(&mesh.indices),
-                        );
-                        continue;
-                    }
-                    let old_slot = *existing;
-                    self.free_slots.push(old_slot);
-                    self.allocations.remove(&leaf.key);
-                }
-
-                let needed_v = v_len.max(512);
-                let needed_i = i_len.max(1024);
-
-                let reused_idx = self
-                    .free_slots
-                    .iter()
-                    .position(|s| s.vertex_capacity >= v_len && s.index_capacity >= i_len);
-
-                let slot = if let Some(idx) = reused_idx {
-                    let mut s = self.free_slots.swap_remove(idx);
-                    s.num_indices = i_len;
-                    s
-                } else {
-                    let v_off = self.next_vertex_offset;
-                    let i_off = self.next_index_offset;
-                    self.next_vertex_offset += needed_v;
-                    self.next_index_offset += needed_i;
-
-                    if self.next_vertex_offset as usize > self.vertex_buffer_capacity
-                        || self.next_index_offset as usize > self.index_buffer_capacity
-                    {
-                        self.grow_gpu_buffers(
-                            (self.next_vertex_offset as usize * 3 / 2).max(self.vertex_buffer_capacity * 2),
-                            (self.next_index_offset as usize * 3 / 2).max(self.index_buffer_capacity * 2),
-                        );
-                    }
-
-                    SubAllocSlot {
-                        vertex_offset: v_off,
-                        vertex_capacity: needed_v,
-                        index_offset: i_off,
-                        index_capacity: needed_i,
-                        num_indices: i_len,
-                    }
-                };
-
-                self.queue.write_buffer(
-                    &self.vertex_buffer,
-                    (slot.vertex_offset as usize * std::mem::size_of::<PlanetVertex>()) as u64,
-                    bytemuck::cast_slice(&mesh.vertices),
-                );
-                self.queue.write_buffer(
-                    &self.index_buffer,
-                    (slot.index_offset as usize * std::mem::size_of::<u32>()) as u64,
-                    bytemuck::cast_slice(&mesh.indices),
-                );
-
-                self.allocations.insert(leaf.key, slot);
-            }
-        }
-    }
-
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -817,21 +655,7 @@ impl State {
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-            // Rendu ultra-rapide par sub-allocations si disponible
-            if !self.allocations.is_empty() {
-                for slot in self.allocations.values() {
-                    if slot.num_indices > 0 {
-                        render_pass.draw_indexed(
-                            slot.index_offset..(slot.index_offset + slot.num_indices),
-                            slot.vertex_offset as i32,
-                            0..1,
-                        );
-                    }
-                }
-            } else {
-                render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
-            }
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
         // 2. Passe 2D Interface Utilisateur (Alpha Blending, sans test de profondeur)
