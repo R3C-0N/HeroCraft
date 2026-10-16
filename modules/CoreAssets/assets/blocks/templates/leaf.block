@@ -5,6 +5,7 @@
     "template": true,
     "categories": ["wood", "leaf"],
     "attachmentAllowed": false,
+    "translucent": true,
     "hardness": 1,
     "colorSource": "foliage_lut",
     "debrisOnDestroy": false,
