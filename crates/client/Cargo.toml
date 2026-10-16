@@ -21,3 +21,4 @@ wgpu = "23"
 winit = "0.29"
 pollster = "0.3"
 bytemuck = { version = "1.18", features = ["derive"] }
+rayon = "1.10"

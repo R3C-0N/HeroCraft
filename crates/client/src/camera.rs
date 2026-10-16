@@ -296,25 +296,31 @@ impl OrbitCamera {
             self.effective_distance = 0.0;
             self.effective_eye = head;
         } else if self.distance <= 25.0 {
-            // Mode Troisième Personne (TPS) : Spring-Arm avec détection de collision
-            // On teste des points le long du rayon allant de la tête vers la caméra arrière
+            // Mode Troisième Personne (TPS) : Spring-Arm optimisé avec test d'extrémité rapide + dichotomie
             let max_d = self.distance;
             let mut safe_d = max_d;
-            let num_samples = 14;
 
-            for i in 1..=num_samples {
-                let frac = (i as f32) / (num_samples as f32);
-                let test_d = max_d * frac;
-                let test_pos = head - look_dir * test_d;
-                let test_r = test_pos.length();
-                let ground_r = self.ground_radius_at(test_pos, generator);
+            // 1. Test direct de la position finale souhaitée
+            let full_pos = head - look_dir * max_d;
+            let full_r = full_pos.length();
+            let full_ground_r = self.ground_radius_at(full_pos, generator);
 
-                if test_r < ground_r + margin {
-                    // Collision avec le relief : raccourcissement immédiat du bras de caméra
-                    let prev_frac = ((i - 1) as f32) / (num_samples as f32);
-                    safe_d = (max_d * prev_frac - margin * 0.5).max(0.0);
-                    break;
+            if full_r < full_ground_r + margin {
+                // Collision détectée à l'extrémité : recherche dichotomique rapide en 4 itérations
+                let mut low = 0.0_f32;
+                let mut high = max_d;
+                for _ in 0..4 {
+                    let mid = (low + high) * 0.5;
+                    let mid_pos = head - look_dir * mid;
+                    let mid_r = mid_pos.length();
+                    let mid_ground_r = self.ground_radius_at(mid_pos, generator);
+                    if mid_r < mid_ground_r + margin {
+                        high = mid;
+                    } else {
+                        low = mid;
+                    }
                 }
+                safe_d = (low - margin * 0.5).max(0.0);
             }
 
             self.effective_distance = safe_d;
@@ -342,11 +348,13 @@ impl OrbitCamera {
 
             let mut eye = tps_eye.lerp(orbit_eye, t_orbit);
 
-            // Garantie absolue d'altitude au-dessus du relief
-            let ground_r = self.ground_radius_at(eye, generator);
+            // Garantie d'altitude au-dessus du relief uniquement à basse altitude orbitale
             let eye_len = eye.length();
-            if eye_len < ground_r + margin {
-                eye = eye.normalize() * (ground_r + margin);
+            if eye_len < self.base_radius + 0.80 {
+                let ground_r = self.ground_radius_at(eye, generator);
+                if eye_len < ground_r + margin {
+                    eye = eye.normalize() * (ground_r + margin);
+                }
             }
 
             self.effective_distance = self.distance;

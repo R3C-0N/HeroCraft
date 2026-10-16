@@ -52,6 +52,20 @@ impl QuadNodeKey {
         }
     }
 
+    /// Nœud parent (niveau immédiatement supérieur)
+    pub fn parent(&self) -> Option<QuadNodeKey> {
+        if self.level == 0 {
+            None
+        } else {
+            Some(QuadNodeKey::new(
+                self.face,
+                self.level - 1,
+                self.x / 2,
+                self.y / 2,
+            ))
+        }
+    }
+
     /// Les 4 nœuds enfants
     pub fn children(&self) -> [QuadNodeKey; 4] {
         let next_level = self.level + 1;
@@ -63,6 +77,82 @@ impl QuadNodeKey {
             QuadNodeKey::new(self.face, next_level, nx, ny + 1),
             QuadNodeKey::new(self.face, next_level, nx + 1, ny + 1),
         ]
+    }
+}
+
+/// Plan 3D défini par son vecteur normal unitaire et sa distance à l'origine
+#[derive(Debug, Clone, Copy)]
+pub struct FrustumPlane {
+    pub normal: DVec3,
+    pub distance: f64,
+}
+
+impl FrustumPlane {
+    pub fn distance_to_point(&self, p: DVec3) -> f64 {
+        self.normal.dot(p) + self.distance
+    }
+}
+
+/// Frustum de vue à 6 plans pour le culling spatial
+#[derive(Debug, Clone, Copy)]
+pub struct WorldFrustum {
+    pub planes: [FrustumPlane; 6],
+}
+
+impl WorldFrustum {
+    pub fn from_view_projection(vp: glam::Mat4) -> Self {
+        let cols = vp.to_cols_array_2d();
+        let row = |i: usize| -> [f64; 4] {
+            [
+                cols[0][i] as f64,
+                cols[1][i] as f64,
+                cols[2][i] as f64,
+                cols[3][i] as f64,
+            ]
+        };
+
+        let r0 = row(0);
+        let r1 = row(1);
+        let r2 = row(2);
+        let r3 = row(3);
+
+        let make_plane = |nx: f64, ny: f64, nz: f64, d: f64| -> FrustumPlane {
+            let normal = DVec3::new(nx, ny, nz);
+            let len = normal.length();
+            if len > 1e-6 {
+                FrustumPlane {
+                    normal: normal / len,
+                    distance: d / len,
+                }
+            } else {
+                FrustumPlane {
+                    normal: DVec3::ZERO,
+                    distance: 0.0,
+                }
+            }
+        };
+
+        // Méthode de Gribb-Hartmann adaptée à WGPU (profondeur [0, 1])
+        let left = make_plane(r3[0] + r0[0], r3[1] + r0[1], r3[2] + r0[2], r3[3] + r0[3]);
+        let right = make_plane(r3[0] - r0[0], r3[1] - r0[1], r3[2] - r0[2], r3[3] - r0[3]);
+        let bottom = make_plane(r3[0] + r1[0], r3[1] + r1[1], r3[2] + r1[2], r3[3] + r1[3]);
+        let top = make_plane(r3[0] - r1[0], r3[1] - r1[1], r3[2] - r1[2], r3[3] - r1[3]);
+        let near = make_plane(r2[0], r2[1], r2[2], r2[3]);
+        let far = make_plane(r3[0] - r2[0], r3[1] - r2[1], r3[2] - r2[2], r3[3] - r2[3]);
+
+        Self {
+            planes: [left, right, bottom, top, near, far],
+        }
+    }
+
+    /// Teste si une sphère englobante intersecte ou est à l'intérieur du frustum
+    pub fn intersects_sphere(&self, center: DVec3, radius: f64) -> bool {
+        for plane in &self.planes {
+            if plane.distance_to_point(center) < -radius {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -131,13 +221,22 @@ impl PlanetQuadTree {
         camera_pos: DVec3,
         generator: Option<&PlanetWorldGenerator>,
     ) -> Vec<QuadLeaf> {
+        self.evaluate_with_frustum(camera_pos, generator, None)
+    }
+
+    /// Évalue l'arbre en appliquant le Frustum Culling (cône de vue caméra) et l'élévation réelle
+    pub fn evaluate_with_frustum(
+        &self,
+        camera_pos: DVec3,
+        generator: Option<&PlanetWorldGenerator>,
+        frustum: Option<&WorldFrustum>,
+    ) -> Vec<QuadLeaf> {
         let mut leaves = Vec::with_capacity(256);
 
-        // Toutes les 6 faces de la planète sont toujours conservées pour garantir
-        // une planète 3D fermée et complète à 360° sans aucune face manquante.
+        // Toutes les 6 faces de la planète sont toujours initialisées
         for &face in &PlanetFace::ALL {
             let root = QuadNodeKey::new(face, 0, 0, 0);
-            self.subdivide_recursive(root, camera_pos, generator, &mut leaves);
+            self.subdivide_recursive(root, camera_pos, generator, frustum, &mut leaves);
         }
 
         leaves
@@ -148,6 +247,7 @@ impl PlanetQuadTree {
         node: QuadNodeKey,
         camera_pos: DVec3,
         generator: Option<&PlanetWorldGenerator>,
+        frustum: Option<&WorldFrustum>,
         leaves: &mut Vec<QuadLeaf>,
     ) {
         let center_dir = node.center_direction();
@@ -172,7 +272,7 @@ impl PlanetQuadTree {
         let center_pos = center_dir * node_radius;
         let dist_to_node = (camera_pos - center_pos).length();
 
-        // Culling d'horizon planétaire : si le nœud se trouve sur l'hémisphère arrière masqué
+        // 1. Culling d'horizon planétaire : si le nœud se trouve sur l'hémisphère arrière masqué
         // par la courbure de la planète, on ne le subdivise pas au-delà du niveau 1
         let cam_r = camera_pos.length();
         let is_behind_horizon = if cam_r < self.base_radius * 2.2 && node.level >= 1 {
@@ -182,7 +282,17 @@ impl PlanetQuadTree {
             false
         };
 
+        // 2. Frustum Culling (Cône de vision) :
+        // Rayon de la sphère englobant le nœud avec marge de sécurité
+        let bounding_radius = node_radius * (1.85 / (1 << node.level) as f64) + 0.8;
+        let is_outside_frustum = if let Some(frust) = frustum {
+            node.level >= 1 && !frust.intersects_sphere(center_pos, bounding_radius)
+        } else {
+            false
+        };
+
         let should_split = !is_behind_horizon
+            && !is_outside_frustum
             && (node.level < self.min_level
                 || ((node.level as usize) < self.split_distances.len()
                     && node.level < self.max_level
@@ -190,9 +300,13 @@ impl PlanetQuadTree {
 
         if should_split {
             for child in node.children() {
-                self.subdivide_recursive(child, camera_pos, generator, leaves);
+                self.subdivide_recursive(child, camera_pos, generator, frustum, leaves);
             }
         } else {
+            // Nœuds hors du champ de vision : exclus de l'affichage pour économiser le GPU
+            if is_outside_frustum && node.level >= 1 {
+                return;
+            }
             let kind = if node.level == self.max_level {
                 QuadLeafKind::VoxelChunk
             } else {
