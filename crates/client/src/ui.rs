@@ -72,6 +72,27 @@ impl Default for VideoSettings {
     }
 }
 
+/// Mode de rendu des nuages (Comparaison & Split-Screen)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloudRenderMode {
+    SplitScreen = 0, // Mode 0 : Côte à côte (Les 3 tiers à l'écran)
+    ModeA = 1,       // Mode A : Raymarching Volumétrique SDF (Style Complementary Reimagined)
+    ModeB = 2,       // Mode B : Maillage Polyédrique Adouci (Smooth Beveled Mesh)
+    ModeC = 3,       // Mode C : Proxy Mesh Raymarché
+}
+
+impl CloudRenderMode {
+    #[allow(dead_code)]
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::SplitScreen => "Côte à côte (Split)",
+            Self::ModeA => "Mode A (SDF Volumétrique)",
+            Self::ModeB => "Mode B (Mesh Adouci)",
+            Self::ModeC => "Mode C (Proxy)",
+        }
+    }
+}
+
 /// Réglages d'éclairage et d'ambiance céleste ajustables via sliders
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LightingSettings {
@@ -82,6 +103,7 @@ pub struct LightingSettings {
     pub moon_speed: f32,         // Vitesse orbitale de la Lune (défaut: 1.0, [0.0 .. 5.0], 0 = fige la lune)
     pub fog_intensity: f32,      // Multiplicateur brouillard de distance (défaut: 1.0, [0.0 .. 2.0])
     pub cloud_density: f32,      // Densité des nuages volumétriques arrondis (défaut: 1.0, [0.0 .. 2.0])
+    pub cloud_mode: CloudRenderMode, // Mode de rendu des nuages (Split / A / B / C)
 }
 
 impl Default for LightingSettings {
@@ -94,6 +116,7 @@ impl Default for LightingSettings {
             moon_speed: 1.0,
             fog_intensity: 1.0,
             cloud_density: 1.0,
+            cloud_mode: CloudRenderMode::SplitScreen,
         }
     }
 }
@@ -407,6 +430,23 @@ impl UiState {
                                     ui.add(egui::Slider::new(&mut self.lighting_settings.cloud_density, 0.0..=2.0).text("Nuages").show_value(true));
 
                                     ui.add_space(4.0_f32);
+                                    ui.label(egui::RichText::new("Nuages :").size(11.0_f32).color(egui::Color32::from_rgb(240, 215, 120)).strong());
+                                    ui.horizontal_wrapped(|ui| {
+                                        if ui.selectable_label(self.lighting_settings.cloud_mode == CloudRenderMode::SplitScreen, CloudRenderMode::SplitScreen.label()).clicked() {
+                                            self.lighting_settings.cloud_mode = CloudRenderMode::SplitScreen;
+                                        }
+                                        if ui.selectable_label(self.lighting_settings.cloud_mode == CloudRenderMode::ModeA, CloudRenderMode::ModeA.label()).clicked() {
+                                            self.lighting_settings.cloud_mode = CloudRenderMode::ModeA;
+                                        }
+                                        if ui.selectable_label(self.lighting_settings.cloud_mode == CloudRenderMode::ModeB, CloudRenderMode::ModeB.label()).clicked() {
+                                            self.lighting_settings.cloud_mode = CloudRenderMode::ModeB;
+                                        }
+                                        if ui.selectable_label(self.lighting_settings.cloud_mode == CloudRenderMode::ModeC, CloudRenderMode::ModeC.label()).clicked() {
+                                            self.lighting_settings.cloud_mode = CloudRenderMode::ModeC;
+                                        }
+                                    });
+
+                                    ui.add_space(4.0_f32);
                                     if ui.button("↺ Réinitialiser l'éclairage").clicked() {
                                         self.lighting_settings = LightingSettings::default();
                                     }
@@ -453,6 +493,42 @@ impl UiState {
                             });
                         });
                 });
+
+            // 4. Repères et bannières discrètes pour le mode Split-Screen Côte à Côte
+            if self.lighting_settings.cloud_mode == CloudRenderMode::SplitScreen && !self.is_settings_open {
+                let screen_rect = ctx.screen_rect();
+                let col_w = screen_rect.width() / 3.0;
+                let top_y = screen_rect.min.y + 12.0;
+
+                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new("cloud_split_hud")));
+
+                // Fines lignes de repère verticales dorées
+                let line_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgba_premultiplied(212, 175, 55, 75));
+                painter.line_segment([egui::pos2(screen_rect.min.x + col_w, screen_rect.min.y), egui::pos2(screen_rect.min.x + col_w, screen_rect.max.y)], line_stroke);
+                painter.line_segment([egui::pos2(screen_rect.min.x + col_w * 2.0, screen_rect.min.y), egui::pos2(screen_rect.min.x + col_w * 2.0, screen_rect.max.y)], line_stroke);
+
+                let badges = [
+                    (0.5 * col_w, "Mode A : SDF Volumétrique", egui::Color32::from_rgb(120, 200, 255)),
+                    (1.5 * col_w, "Mode B : Mesh Adouci", egui::Color32::from_rgb(255, 215, 120)),
+                    (2.5 * col_w, "Mode C : Proxy Raymarché", egui::Color32::from_rgb(160, 240, 160)),
+                ];
+
+                for (cx, text, color) in badges {
+                    let rect = egui::Rect::from_center_size(
+                        egui::pos2(screen_rect.min.x + cx, top_y + 14.0),
+                        egui::vec2(185.0, 22.0),
+                    );
+                    painter.rect_filled(rect, egui::Rounding::same(4.0), egui::Color32::from_rgba_premultiplied(10, 14, 22, 190));
+                    painter.rect_stroke(rect, egui::Rounding::same(4.0), egui::Stroke::new(1.0_f32, egui::Color32::from_rgba_premultiplied(color.r(), color.g(), color.b(), 130)));
+                    painter.text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        text,
+                        egui::FontId::proportional(11.0),
+                        color,
+                    );
+                }
+            }
 
             // 4. Menu Paramètres Vidéo & Commandes (Modal centré lors de l'appui sur Échap)
             if self.is_settings_open {
@@ -705,13 +781,20 @@ mod tests {
         assert_eq!(settings.moon_speed, 1.0);
         assert_eq!(settings.fog_intensity, 1.0);
         assert_eq!(settings.cloud_density, 1.0);
+        assert_eq!(settings.cloud_mode, CloudRenderMode::SplitScreen);
+        assert_eq!(CloudRenderMode::SplitScreen.label(), "Côte à côte (Split)");
+        assert_eq!(CloudRenderMode::ModeA.label(), "Mode A (SDF Volumétrique)");
+        assert_eq!(CloudRenderMode::ModeB.label(), "Mode B (Mesh Adouci)");
+        assert_eq!(CloudRenderMode::ModeC.label(), "Mode C (Proxy)");
 
         settings.moon_intensity = 2.5;
         settings.moon_speed = 0.0; // Fige la lune
         settings.cloud_density = 1.8;
+        settings.cloud_mode = CloudRenderMode::ModeA;
         assert_eq!(settings.moon_intensity, 2.5);
         assert_eq!(settings.moon_speed, 0.0);
         assert_eq!(settings.cloud_density, 1.8);
+        assert_eq!(settings.cloud_mode, CloudRenderMode::ModeA);
 
         // Réinitialisation
         settings = LightingSettings::default();
@@ -719,5 +802,6 @@ mod tests {
         assert_eq!(settings.night_ambient, 2.10);
         assert_eq!(settings.moon_speed, 1.0);
         assert_eq!(settings.cloud_density, 1.0);
+        assert_eq!(settings.cloud_mode, CloudRenderMode::SplitScreen);
     }
 }

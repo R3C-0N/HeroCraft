@@ -119,7 +119,7 @@ impl CloudMeshGenerator {
                 let conv_nw = ext_w && ext_n;
 
                 // Construction de la liste ordonnée des sommets du polygone (CCW)
-                let mut poly: Vec<[f64; 2]> = Vec::with_capacity(8);
+                let mut poly: Vec<[f64; 2]> = Vec::with_capacity(16);
 
                 // Bord Sud
                 if conv_sw {
@@ -129,6 +129,7 @@ impl CloudMeshGenerator {
                 }
                 if conv_se {
                     poly.push([x1 - r, y0]);
+                    poly.push([x1 - 0.29289 * r, y0 + 0.29289 * r]);
                 } else {
                     poly.push([x1, y0]);
                 }
@@ -139,6 +140,7 @@ impl CloudMeshGenerator {
                 }
                 if conv_ne {
                     poly.push([x1, y1 - r]);
+                    poly.push([x1 - 0.29289 * r, y1 - 0.29289 * r]);
                 } else {
                     poly.push([x1, y1]);
                 }
@@ -149,6 +151,7 @@ impl CloudMeshGenerator {
                 }
                 if conv_nw {
                     poly.push([x0 + r, y1]);
+                    poly.push([x0 + 0.29289 * r, y1 - 0.29289 * r]);
                 } else {
                     poly.push([x0, y1]);
                 }
@@ -159,6 +162,7 @@ impl CloudMeshGenerator {
                 }
                 if conv_sw {
                     poly.push([x0, y0 + r]);
+                    poly.push([x0 + 0.29289 * r, y0 + 0.29289 * r]);
                 }
 
                 // Triangulation en éventail depuis le centre pour le dessus et le dessous
@@ -169,14 +173,16 @@ impl CloudMeshGenerator {
                     Self::add_tri(mesh, face, center, poly[i], poly[next], r_bot, r_top, n_f);
                 }
 
-                // Parois extérieures et biseaux d'angle convexe
+                // Parois extérieures et biseaux d'angle convexe multi-segments
                 if ext_s {
                     let p_start = if conv_sw { [x0 + r, y0] } else { [x0, y0] };
                     let p_end = if conv_se { [x1 - r, y0] } else { [x1, y0] };
                     Self::add_wall(mesh, face, p_start, p_end, r_bot, r_top, n_f);
                 }
                 if conv_se {
-                    Self::add_wall(mesh, face, [x1 - r, y0], [x1, y0 + r], r_bot, r_top, n_f);
+                    let p_mid = [x1 - 0.29289 * r, y0 + 0.29289 * r];
+                    Self::add_wall(mesh, face, [x1 - r, y0], p_mid, r_bot, r_top, n_f);
+                    Self::add_wall(mesh, face, p_mid, [x1, y0 + r], r_bot, r_top, n_f);
                 }
 
                 if ext_e {
@@ -185,7 +191,9 @@ impl CloudMeshGenerator {
                     Self::add_wall(mesh, face, p_start, p_end, r_bot, r_top, n_f);
                 }
                 if conv_ne {
-                    Self::add_wall(mesh, face, [x1, y1 - r], [x1 - r, y1], r_bot, r_top, n_f);
+                    let p_mid = [x1 - 0.29289 * r, y1 - 0.29289 * r];
+                    Self::add_wall(mesh, face, [x1, y1 - r], p_mid, r_bot, r_top, n_f);
+                    Self::add_wall(mesh, face, p_mid, [x1 - r, y1], r_bot, r_top, n_f);
                 }
 
                 if ext_n {
@@ -194,7 +202,9 @@ impl CloudMeshGenerator {
                     Self::add_wall(mesh, face, p_start, p_end, r_bot, r_top, n_f);
                 }
                 if conv_nw {
-                    Self::add_wall(mesh, face, [x0 + r, y1], [x0, y1 - r], r_bot, r_top, n_f);
+                    let p_mid = [x0 + 0.29289 * r, y1 - 0.29289 * r];
+                    Self::add_wall(mesh, face, [x1 - r, y1], p_mid, r_bot, r_top, n_f);
+                    Self::add_wall(mesh, face, p_mid, [x0 + r, y1], r_bot, r_top, n_f);
                 }
 
                 if ext_w {
@@ -203,12 +213,14 @@ impl CloudMeshGenerator {
                     Self::add_wall(mesh, face, p_start, p_end, r_bot, r_top, n_f);
                 }
                 if conv_sw {
-                    Self::add_wall(mesh, face, [x0, y0 + r], [x0 + r, y0], r_bot, r_top, n_f);
+                    let p_mid = [x0 + 0.29289 * r, y0 + 0.29289 * r];
+                    Self::add_wall(mesh, face, [x0, y1 - r], p_mid, r_bot, r_top, n_f);
+                    Self::add_wall(mesh, face, p_mid, [x0 + r, y0], r_bot, r_top, n_f);
                 }
             }
         }
 
-        // 3. Biseaux d'angle intérieur concave (adoucissement des trous et coins intérieurs)
+        // 3. Biseaux d'angle intérieur concave multi-segments (adoucissement des trous et coins intérieurs)
         for y in 0..=n {
             for x in 0..=n {
                 let occ_sw = x > 0 && y > 0 && occupied[y - 1][x - 1];
@@ -221,30 +233,42 @@ impl CloudMeshGenerator {
                 // Coin intérieur tourné vers le Nord-Est (dans la cellule vide NE)
                 if !occ_ne && occ_nw && occ_se {
                     let p_a = [pt[0] + r, pt[1]];
+                    let p_mid = [pt[0] + 0.29289 * r, pt[1] + 0.29289 * r];
                     let p_b = [pt[0], pt[1] + r];
-                    Self::add_wall(mesh, face, p_a, p_b, r_bot, r_top, n_f);
-                    Self::add_tri(mesh, face, pt, p_a, p_b, r_bot, r_top, n_f);
+                    Self::add_wall(mesh, face, p_a, p_mid, r_bot, r_top, n_f);
+                    Self::add_wall(mesh, face, p_mid, p_b, r_bot, r_top, n_f);
+                    Self::add_tri(mesh, face, pt, p_a, p_mid, r_bot, r_top, n_f);
+                    Self::add_tri(mesh, face, pt, p_mid, p_b, r_bot, r_top, n_f);
                 }
                 // Coin intérieur tourné vers le Nord-Ouest (dans la cellule vide NW)
                 if !occ_nw && occ_ne && occ_sw {
                     let p_a = [pt[0], pt[1] + r];
+                    let p_mid = [pt[0] - 0.29289 * r, pt[1] + 0.29289 * r];
                     let p_b = [pt[0] - r, pt[1]];
-                    Self::add_wall(mesh, face, p_a, p_b, r_bot, r_top, n_f);
-                    Self::add_tri(mesh, face, pt, p_a, p_b, r_bot, r_top, n_f);
+                    Self::add_wall(mesh, face, p_a, p_mid, r_bot, r_top, n_f);
+                    Self::add_wall(mesh, face, p_mid, p_b, r_bot, r_top, n_f);
+                    Self::add_tri(mesh, face, pt, p_a, p_mid, r_bot, r_top, n_f);
+                    Self::add_tri(mesh, face, pt, p_mid, p_b, r_bot, r_top, n_f);
                 }
                 // Coin intérieur tourné vers le Sud-Ouest (dans la cellule vide SW)
                 if !occ_sw && occ_nw && occ_se {
                     let p_a = [pt[0] - r, pt[1]];
+                    let p_mid = [pt[0] - 0.29289 * r, pt[1] - 0.29289 * r];
                     let p_b = [pt[0], pt[1] - r];
-                    Self::add_wall(mesh, face, p_a, p_b, r_bot, r_top, n_f);
-                    Self::add_tri(mesh, face, pt, p_a, p_b, r_bot, r_top, n_f);
+                    Self::add_wall(mesh, face, p_a, p_mid, r_bot, r_top, n_f);
+                    Self::add_wall(mesh, face, p_mid, p_b, r_bot, r_top, n_f);
+                    Self::add_tri(mesh, face, pt, p_a, p_mid, r_bot, r_top, n_f);
+                    Self::add_tri(mesh, face, pt, p_mid, p_b, r_bot, r_top, n_f);
                 }
                 // Coin intérieur tourné vers le Sud-Est (dans la cellule vide SE)
                 if !occ_se && occ_ne && occ_sw {
                     let p_a = [pt[0], pt[1] - r];
+                    let p_mid = [pt[0] + 0.29289 * r, pt[1] - 0.29289 * r];
                     let p_b = [pt[0] + r, pt[1]];
-                    Self::add_wall(mesh, face, p_a, p_b, r_bot, r_top, n_f);
-                    Self::add_tri(mesh, face, pt, p_a, p_b, r_bot, r_top, n_f);
+                    Self::add_wall(mesh, face, p_a, p_mid, r_bot, r_top, n_f);
+                    Self::add_wall(mesh, face, p_mid, p_b, r_bot, r_top, n_f);
+                    Self::add_tri(mesh, face, pt, p_a, p_mid, r_bot, r_top, n_f);
+                    Self::add_tri(mesh, face, pt, p_mid, p_b, r_bot, r_top, n_f);
                 }
             }
         }
@@ -261,6 +285,7 @@ impl CloudMeshGenerator {
         (dir * (r as f64)).as_vec3()
     }
 
+    /// Ajoute une paroi latérale avec congés verticaux multi-segments et normales lissées
     fn add_wall(
         mesh: &mut PlanetMesh,
         face: PlanetFace,
@@ -270,48 +295,59 @@ impl CloudMeshGenerator {
         r_top: f32,
         n: f64,
     ) {
-        let pb0 = Self::grid_to_vec3(face, p0[0], p0[1], n, r_bot);
-        let pb1 = Self::grid_to_vec3(face, p1[0], p1[1], n, r_bot);
-        let pt0 = Self::grid_to_vec3(face, p0[0], p0[1], n, r_top);
-        let pt1 = Self::grid_to_vec3(face, p1[0], p1[1], n, r_top);
+        let h_bev = (r_top - r_bot) * 0.22;
+        let r0 = r_bot;
+        let r1 = r_bot + h_bev;
+        let r2 = r_top - h_bev;
+        let r3 = r_top;
 
-        let d_horiz = pb1 - pb0;
-        let d_vert = pt0 - pb0;
-        let normal = d_horiz.cross(d_vert).normalize();
+        let p0_r0 = Self::grid_to_vec3(face, p0[0], p0[1], n, r0);
+        let p1_r0 = Self::grid_to_vec3(face, p1[0], p1[1], n, r0);
+        let p0_r1 = Self::grid_to_vec3(face, p0[0], p0[1], n, r1);
+        let p1_r1 = Self::grid_to_vec3(face, p1[0], p1[1], n, r1);
+        let p0_r2 = Self::grid_to_vec3(face, p0[0], p0[1], n, r2);
+        let p1_r2 = Self::grid_to_vec3(face, p1[0], p1[1], n, r2);
+        let p0_r3 = Self::grid_to_vec3(face, p0[0], p0[1], n, r3);
+        let p1_r3 = Self::grid_to_vec3(face, p1[0], p1[1], n, r3);
 
-        let base_idx = mesh.vertices.len() as u32;
-        let norm_arr = normal.to_array();
+        let d_horiz = p1_r1 - p0_r1;
+        let d_vert = p0_r2 - p0_r1;
+        let norm_wall = d_horiz.cross(d_vert).normalize();
 
-        // 4 sommets du quad de paroi avec coordonnées UV standard
-        mesh.vertices.push(PlanetVertex {
-            position: pb0.to_array(),
-            normal: norm_arr,
-            color: [0.0, 0.0, 0.0, 0.5],
-        });
-        mesh.vertices.push(PlanetVertex {
-            position: pb1.to_array(),
-            normal: norm_arr,
-            color: [1.0, 0.0, 0.0, 0.5],
-        });
-        mesh.vertices.push(PlanetVertex {
-            position: pt1.to_array(),
-            normal: norm_arr,
-            color: [1.0, 1.0, 0.0, 0.5],
-        });
-        mesh.vertices.push(PlanetVertex {
-            position: pt0.to_array(),
-            normal: norm_arr,
-            color: [0.0, 1.0, 0.0, 0.5],
-        });
+        let up0 = p0_r0.normalize();
+        let up1 = p1_r0.normalize();
 
-        mesh.indices.extend_from_slice(&[
-            base_idx,
-            base_idx + 1,
-            base_idx + 2,
-            base_idx,
-            base_idx + 2,
-            base_idx + 3,
-        ]);
+        // Normales lissées avec adoucissement vertical (congés hauts et bas)
+        let n0_bot = (norm_wall - up0 * 0.55).normalize().to_array();
+        let n1_bot = (norm_wall - up1 * 0.55).normalize().to_array();
+        let n0_mid = norm_wall.to_array();
+        let n1_mid = norm_wall.to_array();
+        let n0_top = (norm_wall + up0 * 0.55).normalize().to_array();
+        let n1_top = (norm_wall + up1 * 0.55).normalize().to_array();
+
+        // 1. Bande inférieure de congé (r0 -> r1)
+        let idx0 = mesh.vertices.len() as u32;
+        mesh.vertices.push(PlanetVertex { position: p0_r0.to_array(), normal: n0_bot, color: [0.0, 0.0, 1.0, 0.5] });
+        mesh.vertices.push(PlanetVertex { position: p1_r0.to_array(), normal: n1_bot, color: [1.0, 0.0, 1.0, 0.5] });
+        mesh.vertices.push(PlanetVertex { position: p1_r1.to_array(), normal: n1_mid, color: [1.0, 0.22, 0.0, 0.5] });
+        mesh.vertices.push(PlanetVertex { position: p0_r1.to_array(), normal: n0_mid, color: [0.0, 0.22, 0.0, 0.5] });
+        mesh.indices.extend_from_slice(&[idx0, idx0 + 1, idx0 + 2, idx0, idx0 + 2, idx0 + 3]);
+
+        // 2. Bande centrale verticale (r1 -> r2)
+        let idx1 = mesh.vertices.len() as u32;
+        mesh.vertices.push(PlanetVertex { position: p0_r1.to_array(), normal: n0_mid, color: [0.0, 0.22, 0.0, 0.5] });
+        mesh.vertices.push(PlanetVertex { position: p1_r1.to_array(), normal: n1_mid, color: [1.0, 0.22, 0.0, 0.5] });
+        mesh.vertices.push(PlanetVertex { position: p1_r2.to_array(), normal: n1_mid, color: [1.0, 0.78, 0.0, 0.5] });
+        mesh.vertices.push(PlanetVertex { position: p0_r2.to_array(), normal: n0_mid, color: [0.0, 0.78, 0.0, 0.5] });
+        mesh.indices.extend_from_slice(&[idx1, idx1 + 1, idx1 + 2, idx1, idx1 + 2, idx1 + 3]);
+
+        // 3. Bande supérieure de congé (r2 -> r3)
+        let idx2 = mesh.vertices.len() as u32;
+        mesh.vertices.push(PlanetVertex { position: p0_r2.to_array(), normal: n0_mid, color: [0.0, 0.78, 0.0, 0.5] });
+        mesh.vertices.push(PlanetVertex { position: p1_r2.to_array(), normal: n1_mid, color: [1.0, 0.78, 0.0, 0.5] });
+        mesh.vertices.push(PlanetVertex { position: p1_r3.to_array(), normal: n1_top, color: [1.0, 1.0, 1.0, 0.5] });
+        mesh.vertices.push(PlanetVertex { position: p0_r3.to_array(), normal: n0_top, color: [0.0, 1.0, 1.0, 0.5] });
+        mesh.indices.extend_from_slice(&[idx2, idx2 + 1, idx2 + 2, idx2, idx2 + 2, idx2 + 3]);
     }
 
     fn add_tri(
@@ -324,52 +360,58 @@ impl CloudMeshGenerator {
         r_top: f32,
         n: f64,
     ) {
-        // Face supérieure (Top) à r_top
+        // Face supérieure (Top) à r_top avec normales lissées sur le bord
         let pt0 = Self::grid_to_vec3(face, p0[0], p0[1], n, r_top);
         let pt1 = Self::grid_to_vec3(face, p1[0], p1[1], n, r_top);
         let pt2 = Self::grid_to_vec3(face, p2[0], p2[1], n, r_top);
         let n_top = (pt1 - pt0).cross(pt2 - pt0).normalize();
         let base_top = mesh.vertices.len() as u32;
-        let n_top_arr = n_top.to_array();
+
+        let n_top0 = n_top.to_array();
+        let n_top1 = (n_top + (pt1 - pt0).normalize() * 0.35).normalize().to_array();
+        let n_top2 = (n_top + (pt2 - pt0).normalize() * 0.35).normalize().to_array();
 
         mesh.vertices.push(PlanetVertex {
             position: pt0.to_array(),
-            normal: n_top_arr,
+            normal: n_top0,
             color: [0.0, 0.0, 0.0, 1.0],
         });
         mesh.vertices.push(PlanetVertex {
             position: pt1.to_array(),
-            normal: n_top_arr,
+            normal: n_top1,
             color: [1.0, 0.0, 0.0, 1.0],
         });
         mesh.vertices.push(PlanetVertex {
             position: pt2.to_array(),
-            normal: n_top_arr,
+            normal: n_top2,
             color: [0.0, 1.0, 0.0, 1.0],
         });
         mesh.indices.extend_from_slice(&[base_top, base_top + 1, base_top + 2]);
 
-        // Face inférieure (Bottom) à r_bot
+        // Face inférieure (Bottom) à r_bot avec normales lissées sur le bord
         let pb0 = Self::grid_to_vec3(face, p0[0], p0[1], n, r_bot);
         let pb1 = Self::grid_to_vec3(face, p1[0], p1[1], n, r_bot);
         let pb2 = Self::grid_to_vec3(face, p2[0], p2[1], n, r_bot);
         let n_bot = (pb2 - pb0).cross(pb1 - pb0).normalize();
         let base_bot = mesh.vertices.len() as u32;
-        let n_bot_arr = n_bot.to_array();
+
+        let n_bot0 = n_bot.to_array();
+        let n_bot1 = (n_bot + (pb1 - pb0).normalize() * 0.35).normalize().to_array();
+        let n_bot2 = (n_bot + (pb2 - pb0).normalize() * 0.35).normalize().to_array();
 
         mesh.vertices.push(PlanetVertex {
             position: pb0.to_array(),
-            normal: n_bot_arr,
+            normal: n_bot0,
             color: [0.0, 0.0, 0.0, 0.0],
         });
         mesh.vertices.push(PlanetVertex {
             position: pb2.to_array(),
-            normal: n_bot_arr,
+            normal: n_bot2,
             color: [0.0, 1.0, 0.0, 0.0],
         });
         mesh.vertices.push(PlanetVertex {
             position: pb1.to_array(),
-            normal: n_bot_arr,
+            normal: n_bot1,
             color: [1.0, 0.0, 0.0, 0.0],
         });
         mesh.indices.extend_from_slice(&[base_bot, base_bot + 1, base_bot + 2]);
@@ -469,5 +511,49 @@ mod tests {
         assert!(has_top, "Le maillage doit contenir des faces supérieures");
         assert!(has_bottom, "Le maillage doit contenir des faces inférieures");
         assert!(has_diagonal_bevel, "Le maillage doit contenir des biseaux diagonaux 3D");
+    }
+
+    #[test]
+    fn test_cloud_mesh_multi_segment_fillets_and_smooth_normals() {
+        let mesh = CloudMeshGenerator::generate_cloud_mesh(25.0, 2026);
+
+        let mut has_upward_fillet = false;
+        let mut has_downward_fillet = false;
+        let mut has_horizontal_wall = false;
+
+        for v in &mesh.vertices {
+            let n = Vec3::from(v.normal);
+            let len = n.length();
+            assert!((len - 1.0).abs() < 1e-4, "Normale de nuage non unitaire : len = {len}");
+
+            let pos = Vec3::from(v.position);
+            let up = pos.normalize();
+            let radial_dot = n.dot(up);
+
+            // Sommets de parois (face_type == 0.5)
+            if (v.color[3] - 0.5).abs() < 1e-4 {
+                let uv_y = v.color[1];
+                if uv_y > 0.9 {
+                    // Congé supérieur : normale orientée vers le haut
+                    if radial_dot > 0.15 {
+                        has_upward_fillet = true;
+                    }
+                } else if uv_y < 0.1 {
+                    // Congé inférieur : normale orientée vers le bas
+                    if radial_dot < -0.15 {
+                        has_downward_fillet = true;
+                    }
+                } else if (uv_y - 0.5).abs() < 0.3 {
+                    // Paroi centrale : normale quasi-horizontale
+                    if radial_dot.abs() < 0.10 {
+                        has_horizontal_wall = true;
+                    }
+                }
+            }
+        }
+
+        assert!(has_upward_fillet, "Le maillage doit comporter des congés verticaux supérieurs");
+        assert!(has_downward_fillet, "Le maillage doit comporter des congés verticaux inférieurs");
+        assert!(has_horizontal_wall, "Le maillage doit comporter des parois centrales horizontales");
     }
 }
