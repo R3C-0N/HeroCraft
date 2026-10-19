@@ -81,6 +81,7 @@ pub struct LightingSettings {
     pub day_ambient: f32,        // Multiplicateur clarté ambiante diurne (défaut: 1.0, [0.0 .. 3.0])
     pub moon_speed: f32,         // Vitesse orbitale de la Lune (défaut: 1.0, [0.0 .. 5.0], 0 = fige la lune)
     pub fog_intensity: f32,      // Multiplicateur brouillard de distance (défaut: 1.0, [0.0 .. 2.0])
+    pub cloud_density: f32,      // Densité des nuages volumétriques arrondis (défaut: 1.0, [0.0 .. 2.0])
 }
 
 impl Default for LightingSettings {
@@ -92,6 +93,7 @@ impl Default for LightingSettings {
             day_ambient: 1.0,
             moon_speed: 1.0,
             fog_intensity: 1.0,
+            cloud_density: 1.0,
         }
     }
 }
@@ -400,6 +402,10 @@ impl UiState {
                                     ui.label(egui::RichText::new("Brouillard Atmosphérique :").size(11.0_f32).color(egui::Color32::from_rgb(190, 190, 190)));
                                     ui.add(egui::Slider::new(&mut self.lighting_settings.fog_intensity, 0.0..=2.0).text("Brume").show_value(true));
 
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Nuages Volumétriques (Style Voxel) :").size(11.0_f32).color(egui::Color32::from_rgb(220, 225, 245)));
+                                    ui.add(egui::Slider::new(&mut self.lighting_settings.cloud_density, 0.0..=2.0).text("Nuages").show_value(true));
+
                                     ui.add_space(4.0_f32);
                                     if ui.button("↺ Réinitialiser l'éclairage").clicked() {
                                         self.lighting_settings = LightingSettings::default();
@@ -550,6 +556,11 @@ impl UiState {
                             ui.add(egui::Slider::new(&mut self.lighting_settings.fog_intensity, 0.0..=2.0).show_value(true));
                         });
 
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Nuages Volumétriques (Style Voxel) :").size(12.0_f32).color(egui::Color32::from_rgb(220, 225, 245)));
+                            ui.add(egui::Slider::new(&mut self.lighting_settings.cloud_density, 0.0..=2.0).show_value(true));
+                        });
+
                         ui.add_space(4.0_f32);
                         if ui.button("↺ Réinitialiser l'éclairage par défaut").clicked() {
                             self.lighting_settings = LightingSettings::default();
@@ -693,16 +704,20 @@ mod tests {
         assert_eq!(settings.day_ambient, 1.0);
         assert_eq!(settings.moon_speed, 1.0);
         assert_eq!(settings.fog_intensity, 1.0);
+        assert_eq!(settings.cloud_density, 1.0);
 
         settings.moon_intensity = 2.5;
         settings.moon_speed = 0.0; // Fige la lune
+        settings.cloud_density = 1.8;
         assert_eq!(settings.moon_intensity, 2.5);
         assert_eq!(settings.moon_speed, 0.0);
+        assert_eq!(settings.cloud_density, 1.8);
 
         // Réinitialisation
         settings = LightingSettings::default();
         assert_eq!(settings.moon_intensity, 0.25);
         assert_eq!(settings.night_ambient, 2.10);
         assert_eq!(settings.moon_speed, 1.0);
+        assert_eq!(settings.cloud_density, 1.0);
     }
 }

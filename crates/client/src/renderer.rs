@@ -194,7 +194,7 @@ impl State {
             light_dir: sun_dir.to_array(),
             time: 0.0,
             lighting_params: [0.25, 1.0, 2.10, 1.0],
-            lighting_params2: [1.0, 1.0, 0.0, 0.0],
+            lighting_params2: [1.0, 1.0, 1.0, 0.0],
         };
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -517,7 +517,7 @@ impl State {
             lighting_params2: [
                 lighting.moon_speed,
                 lighting.fog_intensity,
-                0.0,
+                lighting.cloud_density,
                 0.0,
             ],
         };
