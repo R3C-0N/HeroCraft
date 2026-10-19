@@ -194,7 +194,7 @@ impl State {
             light_dir: sun_dir.to_array(),
             time: 0.0,
             lighting_params: [0.25, 1.0, 2.10, 1.0],
-            lighting_params2: [1.0, 1.0, 1.0, 0.0],
+            lighting_params2: [1.0, 1.0, 0.0, 0.0],
         };
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -501,6 +501,15 @@ impl State {
         let inv_view_proj = view_proj.inverse();
         let eye = camera.eye_position();
         let sun_dir = compute_sun_dir(self.simulated_time);
+
+        // En vue satellite (ou lors de la transition sol -> satellite), les nuages disparaissent totalement
+        let cloud_vis = if camera.view_mode() == crate::camera::CameraViewMode::SatelliteOrbit {
+            0.0_f32
+        } else {
+            ((25.0 - camera.effective_distance) / 5.0).clamp(0.0, 1.0)
+        };
+        let effective_cloud_density = lighting.cloud_density * cloud_vis;
+
         let uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
             inv_view_proj: inv_view_proj.to_cols_array_2d(),
@@ -517,8 +526,8 @@ impl State {
             lighting_params2: [
                 lighting.moon_speed,
                 lighting.fog_intensity,
-                lighting.cloud_density,
-                0.0,
+                effective_cloud_density,
+                cloud_vis,
             ],
         };
         self.queue
@@ -775,5 +784,43 @@ mod tests {
         let sun_new_moon_night = compute_sun_dir(13200.0);
         let (_moon_dir_new_moon, phase_new_moon) = compute_moon_data(13200.0, sun_new_moon_night);
         assert!(phase_new_moon < 0.05, "La nuit de nouvelle lune doit approcher 0.0 (obtenu: {phase_new_moon})");
+    }
+
+    #[test]
+    fn test_clouds_disappear_in_satellite_view() {
+        use crate::camera::{CameraViewMode, OrbitCamera};
+        let desc = herocraft_world::PlanetDescriptor::default();
+        let gen = herocraft_world::PlanetWorldGenerator::new(desc);
+
+        // 1. Vue Satellite (distance par défaut = 165.0)
+        let mut cam = OrbitCamera::new(165.0, 25.0, &gen);
+        assert_eq!(cam.view_mode(), CameraViewMode::SatelliteOrbit);
+
+        let cloud_vis_satellite = if cam.view_mode() == CameraViewMode::SatelliteOrbit {
+            0.0_f32
+        } else {
+            ((25.0 - cam.effective_distance) / 5.0).clamp(0.0, 1.0)
+        };
+        assert_eq!(cloud_vis_satellite, 0.0, "Les nuages doivent être totalement invisibles en vue satellite");
+
+        // 2. Vue Sol (FPS: distance = 0.0)
+        cam.effective_distance = 0.0;
+        assert_eq!(cam.view_mode(), CameraViewMode::FirstPerson);
+        let cloud_vis_fps = if cam.view_mode() == CameraViewMode::SatelliteOrbit {
+            0.0_f32
+        } else {
+            ((25.0 - cam.effective_distance) / 5.0).clamp(0.0, 1.0)
+        };
+        assert_eq!(cloud_vis_fps, 1.0, "Les nuages doivent être à 100% visibles au sol en FPS");
+
+        // 3. Vue Sol (TPS: distance = 15.0)
+        cam.effective_distance = 15.0;
+        assert_eq!(cam.view_mode(), CameraViewMode::ThirdPerson);
+        let cloud_vis_tps = if cam.view_mode() == CameraViewMode::SatelliteOrbit {
+            0.0_f32
+        } else {
+            ((25.0 - cam.effective_distance) / 5.0).clamp(0.0, 1.0)
+        };
+        assert_eq!(cloud_vis_tps, 1.0, "Les nuages doivent être à 100% visibles au sol en TPS");
     }
 }

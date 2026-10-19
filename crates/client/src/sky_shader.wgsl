@@ -501,13 +501,14 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         let ground_sky_base = mix(night_sky, day_sky, daylight) + sun_color * sun_disk_tint * sun_visibility + ground_sun_glow * daylight + ground_moon;
 
         // Rendu des nuages volumétriques cubiques arrondis (Style Minecraft / Complementary Reimagined)
+        // Les nuages disparaissent totalement en vue satellite (cloud_slider == 0 et ground_factor == 0)
         let clouds = render_volumetric_clouds(
             ray_dir,
             camera.camera_pos,
             cam_up,
             l,
             camera.time,
-            cloud_slider,
+            cloud_slider * ground_factor,
             sunset_factor,
             daylight,
             moon,
