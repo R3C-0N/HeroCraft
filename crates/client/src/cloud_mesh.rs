@@ -87,234 +87,292 @@ impl CloudMeshGenerator {
             }
         }
 
-        // 2. Génération des voxels 3D pour chaque cellule occupée
+        // 2. Génération des cellules de nuages avec biseaux 3D
+        let r = Self::BEVEL_R;
+        let n_f = n as f64;
+
         for y in 0..n {
             for x in 0..n {
                 if !occupied[y][x] {
                     continue;
                 }
 
-                let u0 = -1.0 + 2.0 * (x as f64) / (n as f64);
-                let u1 = -1.0 + 2.0 * ((x + 1) as f64) / (n as f64);
-                let v0 = -1.0 + 2.0 * (y as f64) / (n as f64);
-                let v1 = -1.0 + 2.0 * ((y + 1) as f64) / (n as f64);
+                let x0 = x as f64;
+                let x1 = (x + 1) as f64;
+                let y0 = y as f64;
+                let y1 = (y + 1) as f64;
 
-                let d00 = face.uv_to_sphere_direction(u0, v0);
-                let d10 = face.uv_to_sphere_direction(u1, v0);
-                let d11 = face.uv_to_sphere_direction(u1, v1);
-                let d01 = face.uv_to_sphere_direction(u0, v1);
+                let has_w = x > 0 && occupied[y][x - 1];
+                let has_e = x + 1 < n && occupied[y][x + 1];
+                let has_s = y > 0 && occupied[y - 1][x];
+                let has_n = y + 1 < n && occupied[y + 1][x];
 
-                let d_center = face
-                    .uv_to_sphere_direction((u0 + u1) * 0.5, (v0 + v1) * 0.5)
-                    .as_vec3()
-                    .normalize();
+                let ext_w = !has_w;
+                let ext_e = !has_e;
+                let ext_s = !has_s;
+                let ext_n = !has_n;
 
-                let pb0 = (d00 * r_bot as f64).as_vec3();
-                let pb1 = (d10 * r_bot as f64).as_vec3();
-                let pb2 = (d11 * r_bot as f64).as_vec3();
-                let pb3 = (d01 * r_bot as f64).as_vec3();
+                // Coins extérieurs convexes
+                let conv_sw = ext_w && ext_s;
+                let conv_se = ext_e && ext_s;
+                let conv_ne = ext_e && ext_n;
+                let conv_nw = ext_w && ext_n;
 
-                let pt0 = (d00 * r_top as f64).as_vec3();
-                let pt1 = (d10 * r_top as f64).as_vec3();
-                let pt2 = (d11 * r_top as f64).as_vec3();
-                let pt3 = (d01 * r_top as f64).as_vec3();
+                // Construction de la liste ordonnée des sommets du polygone (CCW)
+                let mut poly: Vec<[f64; 2]> = Vec::with_capacity(8);
 
-                let has_west = x > 0 && occupied[y][x - 1];
-                let has_east = x + 1 < n && occupied[y][x + 1];
-                let has_south = y > 0 && occupied[y - 1][x];
-                let has_north = y + 1 < n && occupied[y + 1][x];
-
-                let ext_w = !has_west;
-                let ext_e = !has_east;
-                let ext_s = !has_south;
-                let ext_n = !has_north;
-
-                // 2.a. Face inférieure (visible du sol en regardant vers le haut)
-                // Sommets ordonnés : SW (0,0), NW (0,1), NE (1,1), SE (1,0)
-                let bot_mask = ((if ext_w && ext_s { 1 } else { 0 })   // c00 (SW)
-                    | (if ext_e && ext_s { 2 } else { 0 })             // c10 (SE)
-                    | (if ext_e && ext_n { 4 } else { 0 })             // c11 (NE)
-                    | (if ext_w && ext_n { 8 } else { 0 })             // c01 (NW)
-                    | (if ext_w { 16 } else { 0 })                     // edge u=0 (W)
-                    | (if ext_e { 32 } else { 0 })                     // edge u=1 (E)
-                    | (if ext_s { 64 } else { 0 })                     // edge v=0 (S)
-                    | (if ext_n { 128 } else { 0 })) as f32;           // edge v=1 (N)
-
-                Self::add_quad(
-                    mesh,
-                    [
-                        (pb0, [0.0, 0.0]),
-                        (pb3, [0.0, 1.0]),
-                        (pb2, [1.0, 1.0]),
-                        (pb1, [1.0, 0.0]),
-                    ],
-                    -d_center,
-                    bot_mask,
-                    0.0, // bottom
-                );
-
-                // 2.b. Face supérieure (visible d'en haut / depuis l'espace)
-                // Sommets ordonnés : SW (0,0), SE (1,0), NE (1,1), NW (0,1)
-                let top_mask = ((if ext_w && ext_s { 1 } else { 0 })   // c00 (SW)
-                    | (if ext_e && ext_s { 2 } else { 0 })             // c10 (SE)
-                    | (if ext_e && ext_n { 4 } else { 0 })             // c11 (NE)
-                    | (if ext_w && ext_n { 8 } else { 0 })             // c01 (NW)
-                    | (if ext_w { 16 } else { 0 })                     // edge u=0 (W)
-                    | (if ext_e { 32 } else { 0 })                     // edge u=1 (E)
-                    | (if ext_s { 64 } else { 0 })                     // edge v=0 (S)
-                    | (if ext_n { 128 } else { 0 })) as f32;           // edge v=1 (N)
-
-                Self::add_quad(
-                    mesh,
-                    [
-                        (pt0, [0.0, 0.0]),
-                        (pt1, [1.0, 0.0]),
-                        (pt2, [1.0, 1.0]),
-                        (pt3, [0.0, 1.0]),
-                    ],
-                    d_center,
-                    top_mask,
-                    1.0, // top
-                );
-
-                // 2.c. Paroi Ouest (si bordure extérieure)
-                if ext_w {
-                    let n_west = ((pb0 - pb1) + (pb3 - pb2)).normalize();
-                    // u: South -> North, v: Bottom -> Top
-                    let west_mask = ((if ext_s { 1 } else { 0 })       // c00 (South, Bottom)
-                        | (if ext_n { 2 } else { 0 })                 // c10 (North, Bottom)
-                        | (if ext_n { 4 } else { 0 })                 // c11 (North, Top)
-                        | (if ext_s { 8 } else { 0 })                 // c01 (South, Top)
-                        | (if ext_s { 16 } else { 0 })                // edge u=0 (South)
-                        | (if ext_n { 32 } else { 0 })                // edge u=1 (North)
-                        | 64                                          // edge v=0 (Bottom)
-                        | 128) as f32;                                // edge v=1 (Top)
-
-                    Self::add_quad(
-                        mesh,
-                        [
-                            (pb0, [0.0, 0.0]),
-                            (pb3, [1.0, 0.0]),
-                            (pt3, [1.0, 1.0]),
-                            (pt0, [0.0, 1.0]),
-                        ],
-                        n_west,
-                        west_mask,
-                        0.5, // side
-                    );
+                // Bord Sud
+                if conv_sw {
+                    poly.push([x0 + r, y0]);
+                } else {
+                    poly.push([x0, y0]);
+                }
+                if conv_se {
+                    poly.push([x1 - r, y0]);
+                } else {
+                    poly.push([x1, y0]);
                 }
 
-                // 2.d. Paroi Est (si bordure extérieure)
-                if ext_e {
-                    let n_east = ((pb1 - pb0) + (pb2 - pb3)).normalize();
-                    // u: South -> North, v: Bottom -> Top
-                    let east_mask = ((if ext_s { 1 } else { 0 })       // c00 (South, Bottom)
-                        | (if ext_n { 2 } else { 0 })                 // c10 (North, Bottom)
-                        | (if ext_n { 4 } else { 0 })                 // c11 (North, Top)
-                        | (if ext_s { 8 } else { 0 })                 // c01 (South, Top)
-                        | (if ext_s { 16 } else { 0 })                // edge u=0 (South)
-                        | (if ext_n { 32 } else { 0 })                // edge u=1 (North)
-                        | 64                                          // edge v=0 (Bottom)
-                        | 128) as f32;                                // edge v=1 (Top)
-
-                    Self::add_quad(
-                        mesh,
-                        [
-                            (pb1, [0.0, 0.0]),
-                            (pb2, [1.0, 0.0]),
-                            (pt2, [1.0, 1.0]),
-                            (pt1, [0.0, 1.0]),
-                        ],
-                        n_east,
-                        east_mask,
-                        0.5, // side
-                    );
+                // Bord Est
+                if conv_se {
+                    poly.push([x1, y0 + r]);
+                }
+                if conv_ne {
+                    poly.push([x1, y1 - r]);
+                } else {
+                    poly.push([x1, y1]);
                 }
 
-                // 2.e. Paroi Sud (si bordure extérieure)
+                // Bord Nord
+                if conv_ne {
+                    poly.push([x1 - r, y1]);
+                }
+                if conv_nw {
+                    poly.push([x0 + r, y1]);
+                } else {
+                    poly.push([x0, y1]);
+                }
+
+                // Bord Ouest
+                if conv_nw {
+                    poly.push([x0, y1 - r]);
+                }
+                if conv_sw {
+                    poly.push([x0, y0 + r]);
+                }
+
+                // Triangulation en éventail depuis le centre pour le dessus et le dessous
+                let center = [(x0 + x1) * 0.5, (y0 + y1) * 0.5];
+                let k = poly.len();
+                for i in 0..k {
+                    let next = (i + 1) % k;
+                    Self::add_tri(mesh, face, center, poly[i], poly[next], r_bot, r_top, n_f);
+                }
+
+                // Parois extérieures et biseaux d'angle convexe
                 if ext_s {
-                    let n_south = ((pb0 - pb3) + (pb1 - pb2)).normalize();
-                    // u: West -> East, v: Bottom -> Top
-                    let south_mask = ((if ext_w { 1 } else { 0 })      // c00 (West, Bottom)
-                        | (if ext_e { 2 } else { 0 })                 // c10 (East, Bottom)
-                        | (if ext_e { 4 } else { 0 })                 // c11 (East, Top)
-                        | (if ext_w { 8 } else { 0 })                 // c01 (West, Top)
-                        | (if ext_w { 16 } else { 0 })                // edge u=0 (West)
-                        | (if ext_e { 32 } else { 0 })                // edge u=1 (East)
-                        | 64                                          // edge v=0 (Bottom)
-                        | 128) as f32;                                // edge v=1 (Top)
-
-                    Self::add_quad(
-                        mesh,
-                        [
-                            (pb0, [0.0, 0.0]),
-                            (pb1, [1.0, 0.0]),
-                            (pt1, [1.0, 1.0]),
-                            (pt0, [0.0, 1.0]),
-                        ],
-                        n_south,
-                        south_mask,
-                        0.5, // side
-                    );
+                    let p_start = if conv_sw { [x0 + r, y0] } else { [x0, y0] };
+                    let p_end = if conv_se { [x1 - r, y0] } else { [x1, y0] };
+                    Self::add_wall(mesh, face, p_start, p_end, r_bot, r_top, n_f);
+                }
+                if conv_se {
+                    Self::add_wall(mesh, face, [x1 - r, y0], [x1, y0 + r], r_bot, r_top, n_f);
                 }
 
-                // 2.f. Paroi Nord (si bordure extérieure)
-                if ext_n {
-                    let n_north = ((pb3 - pb0) + (pb2 - pb1)).normalize();
-                    // u: West -> East, v: Bottom -> Top
-                    let north_mask = ((if ext_w { 1 } else { 0 })      // c00 (West, Bottom)
-                        | (if ext_e { 2 } else { 0 })                 // c10 (East, Bottom)
-                        | (if ext_e { 4 } else { 0 })                 // c11 (East, Top)
-                        | (if ext_w { 8 } else { 0 })                 // c01 (West, Top)
-                        | (if ext_w { 16 } else { 0 })                // edge u=0 (West)
-                        | (if ext_e { 32 } else { 0 })                // edge u=1 (East)
-                        | 64                                          // edge v=0 (Bottom)
-                        | 128) as f32;                                // edge v=1 (Top)
+                if ext_e {
+                    let p_start = if conv_se { [x1, y0 + r] } else { [x1, y0] };
+                    let p_end = if conv_ne { [x1, y1 - r] } else { [x1, y1] };
+                    Self::add_wall(mesh, face, p_start, p_end, r_bot, r_top, n_f);
+                }
+                if conv_ne {
+                    Self::add_wall(mesh, face, [x1, y1 - r], [x1 - r, y1], r_bot, r_top, n_f);
+                }
 
-                    Self::add_quad(
-                        mesh,
-                        [
-                            (pb3, [0.0, 0.0]),
-                            (pb2, [1.0, 0.0]),
-                            (pt2, [1.0, 1.0]),
-                            (pt3, [0.0, 1.0]),
-                        ],
-                        n_north,
-                        north_mask,
-                        0.5, // side
-                    );
+                if ext_n {
+                    let p_start = if conv_ne { [x1 - r, y1] } else { [x1, y1] };
+                    let p_end = if conv_nw { [x0 + r, y1] } else { [x0, y1] };
+                    Self::add_wall(mesh, face, p_start, p_end, r_bot, r_top, n_f);
+                }
+                if conv_nw {
+                    Self::add_wall(mesh, face, [x0 + r, y1], [x0, y1 - r], r_bot, r_top, n_f);
+                }
+
+                if ext_w {
+                    let p_start = if conv_nw { [x0, y1 - r] } else { [x0, y1] };
+                    let p_end = if conv_sw { [x0, y0 + r] } else { [x0, y0] };
+                    Self::add_wall(mesh, face, p_start, p_end, r_bot, r_top, n_f);
+                }
+                if conv_sw {
+                    Self::add_wall(mesh, face, [x0, y0 + r], [x0 + r, y0], r_bot, r_top, n_f);
+                }
+            }
+        }
+
+        // 3. Biseaux d'angle intérieur concave (adoucissement des trous et coins intérieurs)
+        for y in 0..=n {
+            for x in 0..=n {
+                let occ_sw = x > 0 && y > 0 && occupied[y - 1][x - 1];
+                let occ_se = x < n && y > 0 && occupied[y - 1][x];
+                let occ_nw = x > 0 && y < n && occupied[y][x - 1];
+                let occ_ne = x < n && y < n && occupied[y][x];
+
+                let pt = [x as f64, y as f64];
+
+                // Coin intérieur tourné vers le Nord-Est (dans la cellule vide NE)
+                if !occ_ne && occ_nw && occ_se {
+                    let p_a = [pt[0] + r, pt[1]];
+                    let p_b = [pt[0], pt[1] + r];
+                    Self::add_wall(mesh, face, p_a, p_b, r_bot, r_top, n_f);
+                    Self::add_tri(mesh, face, pt, p_a, p_b, r_bot, r_top, n_f);
+                }
+                // Coin intérieur tourné vers le Nord-Ouest (dans la cellule vide NW)
+                if !occ_nw && occ_ne && occ_sw {
+                    let p_a = [pt[0], pt[1] + r];
+                    let p_b = [pt[0] - r, pt[1]];
+                    Self::add_wall(mesh, face, p_a, p_b, r_bot, r_top, n_f);
+                    Self::add_tri(mesh, face, pt, p_a, p_b, r_bot, r_top, n_f);
+                }
+                // Coin intérieur tourné vers le Sud-Ouest (dans la cellule vide SW)
+                if !occ_sw && occ_nw && occ_se {
+                    let p_a = [pt[0] - r, pt[1]];
+                    let p_b = [pt[0], pt[1] - r];
+                    Self::add_wall(mesh, face, p_a, p_b, r_bot, r_top, n_f);
+                    Self::add_tri(mesh, face, pt, p_a, p_b, r_bot, r_top, n_f);
+                }
+                // Coin intérieur tourné vers le Sud-Est (dans la cellule vide SE)
+                if !occ_se && occ_ne && occ_sw {
+                    let p_a = [pt[0], pt[1] - r];
+                    let p_b = [pt[0] + r, pt[1]];
+                    Self::add_wall(mesh, face, p_a, p_b, r_bot, r_top, n_f);
+                    Self::add_tri(mesh, face, pt, p_a, p_b, r_bot, r_top, n_f);
                 }
             }
         }
     }
 
+    /// Rayon du chanfrein 3D (en fractions de cellule de bloc)
+    pub const BEVEL_R: f64 = 0.22;
+
     #[inline]
-    fn add_quad(
+    fn grid_to_vec3(face: PlanetFace, gx: f64, gy: f64, n: f64, r: f32) -> Vec3 {
+        let u = -1.0 + 2.0 * gx / n;
+        let v = -1.0 + 2.0 * gy / n;
+        let dir = face.uv_to_sphere_direction(u, v);
+        (dir * (r as f64)).as_vec3()
+    }
+
+    fn add_wall(
         mesh: &mut PlanetMesh,
-        pts_with_uv: [(Vec3, [f32; 2]); 4],
-        normal: Vec3,
-        bevel_mask: f32,
-        face_type: f32,
+        face: PlanetFace,
+        p0: [f64; 2],
+        p1: [f64; 2],
+        r_bot: f32,
+        r_top: f32,
+        n: f64,
     ) {
+        let pb0 = Self::grid_to_vec3(face, p0[0], p0[1], n, r_bot);
+        let pb1 = Self::grid_to_vec3(face, p1[0], p1[1], n, r_bot);
+        let pt0 = Self::grid_to_vec3(face, p0[0], p0[1], n, r_top);
+        let pt1 = Self::grid_to_vec3(face, p1[0], p1[1], n, r_top);
+
+        let d_horiz = pb1 - pb0;
+        let d_vert = pt0 - pb0;
+        let normal = d_horiz.cross(d_vert).normalize();
+
         let base_idx = mesh.vertices.len() as u32;
         let norm_arr = normal.to_array();
 
-        for (pos, uv) in pts_with_uv {
-            mesh.vertices.push(PlanetVertex {
-                position: pos.to_array(),
-                normal: norm_arr,
-                color: [uv[0], uv[1], bevel_mask, face_type],
-            });
-        }
+        // 4 sommets du quad de paroi avec coordonnées UV standard
+        mesh.vertices.push(PlanetVertex {
+            position: pb0.to_array(),
+            normal: norm_arr,
+            color: [0.0, 0.0, 0.0, 0.5],
+        });
+        mesh.vertices.push(PlanetVertex {
+            position: pb1.to_array(),
+            normal: norm_arr,
+            color: [1.0, 0.0, 0.0, 0.5],
+        });
+        mesh.vertices.push(PlanetVertex {
+            position: pt1.to_array(),
+            normal: norm_arr,
+            color: [1.0, 1.0, 0.0, 0.5],
+        });
+        mesh.vertices.push(PlanetVertex {
+            position: pt0.to_array(),
+            normal: norm_arr,
+            color: [0.0, 1.0, 0.0, 0.5],
+        });
 
-        // Deux triangles par quad (sens anti-horaire CCW)
-        mesh.indices.push(base_idx);
-        mesh.indices.push(base_idx + 1);
-        mesh.indices.push(base_idx + 2);
+        mesh.indices.extend_from_slice(&[
+            base_idx,
+            base_idx + 1,
+            base_idx + 2,
+            base_idx,
+            base_idx + 2,
+            base_idx + 3,
+        ]);
+    }
 
-        mesh.indices.push(base_idx);
-        mesh.indices.push(base_idx + 2);
-        mesh.indices.push(base_idx + 3);
+    fn add_tri(
+        mesh: &mut PlanetMesh,
+        face: PlanetFace,
+        p0: [f64; 2],
+        p1: [f64; 2],
+        p2: [f64; 2],
+        r_bot: f32,
+        r_top: f32,
+        n: f64,
+    ) {
+        // Face supérieure (Top) à r_top
+        let pt0 = Self::grid_to_vec3(face, p0[0], p0[1], n, r_top);
+        let pt1 = Self::grid_to_vec3(face, p1[0], p1[1], n, r_top);
+        let pt2 = Self::grid_to_vec3(face, p2[0], p2[1], n, r_top);
+        let n_top = (pt1 - pt0).cross(pt2 - pt0).normalize();
+        let base_top = mesh.vertices.len() as u32;
+        let n_top_arr = n_top.to_array();
+
+        mesh.vertices.push(PlanetVertex {
+            position: pt0.to_array(),
+            normal: n_top_arr,
+            color: [0.0, 0.0, 0.0, 1.0],
+        });
+        mesh.vertices.push(PlanetVertex {
+            position: pt1.to_array(),
+            normal: n_top_arr,
+            color: [1.0, 0.0, 0.0, 1.0],
+        });
+        mesh.vertices.push(PlanetVertex {
+            position: pt2.to_array(),
+            normal: n_top_arr,
+            color: [0.0, 1.0, 0.0, 1.0],
+        });
+        mesh.indices.extend_from_slice(&[base_top, base_top + 1, base_top + 2]);
+
+        // Face inférieure (Bottom) à r_bot
+        let pb0 = Self::grid_to_vec3(face, p0[0], p0[1], n, r_bot);
+        let pb1 = Self::grid_to_vec3(face, p1[0], p1[1], n, r_bot);
+        let pb2 = Self::grid_to_vec3(face, p2[0], p2[1], n, r_bot);
+        let n_bot = (pb2 - pb0).cross(pb1 - pb0).normalize();
+        let base_bot = mesh.vertices.len() as u32;
+        let n_bot_arr = n_bot.to_array();
+
+        mesh.vertices.push(PlanetVertex {
+            position: pb0.to_array(),
+            normal: n_bot_arr,
+            color: [0.0, 0.0, 0.0, 0.0],
+        });
+        mesh.vertices.push(PlanetVertex {
+            position: pb2.to_array(),
+            normal: n_bot_arr,
+            color: [0.0, 1.0, 0.0, 0.0],
+        });
+        mesh.vertices.push(PlanetVertex {
+            position: pb1.to_array(),
+            normal: n_bot_arr,
+            color: [1.0, 0.0, 0.0, 0.0],
+        });
+        mesh.indices.extend_from_slice(&[base_bot, base_bot + 1, base_bot + 2]);
     }
 
     fn hash_sector(seed: u64, face: u64, sx: u64, sy: u64) -> u64 {
@@ -377,27 +435,39 @@ mod tests {
     }
 
     #[test]
-    fn test_cloud_mesh_per_quad_corner_and_edge_masks() {
+    fn test_cloud_mesh_3d_bevels_and_inner_corners() {
         let mesh = CloudMeshGenerator::generate_cloud_mesh(25.0, 2026);
 
-        // Vérifie que tous les masques sont des entiers valides dans l'intervalle [0, 255]
-        for v in &mesh.vertices {
-            let mask_f = v.color[2];
-            let mask = mask_f.round() as u32;
-            assert!(
-                (mask_f - mask as f32).abs() < 1e-4,
-                "Le masque de biseau doit être un entier exact encodé en f32 : {}",
-                mask_f
-            );
-            assert!(mask <= 255, "Le masque de biseau doit tenir sur 8 bits : {}", mask);
+        let mut has_wall = false;
+        let mut has_top = false;
+        let mut has_bottom = false;
+        let mut has_diagonal_bevel = false;
 
-            // Vérifie que face_type est 0.0 (bottom), 0.5 (side) ou 1.0 (top)
+        for v in &mesh.vertices {
             let ft = v.color[3];
             assert!(
                 (ft - 0.0).abs() < 1e-4 || (ft - 0.5).abs() < 1e-4 || (ft - 1.0).abs() < 1e-4,
                 "Type de face inconnu : {}",
                 ft
             );
+            if (ft - 0.0).abs() < 1e-4 {
+                has_bottom = true;
+            } else if (ft - 0.5).abs() < 1e-4 {
+                has_wall = true;
+                let n = Vec3::from(v.normal);
+                // Si la normale a deux composantes significatives non nulles dans le plan tangent, c'est un biseau diagonal
+                let proj_sq = n.x * n.x + n.y * n.y + n.z * n.z;
+                if proj_sq > 0.8 {
+                    has_diagonal_bevel = true;
+                }
+            } else if (ft - 1.0).abs() < 1e-4 {
+                has_top = true;
+            }
         }
+
+        assert!(has_wall, "Le maillage doit contenir des parois 3D");
+        assert!(has_top, "Le maillage doit contenir des faces supérieures");
+        assert!(has_bottom, "Le maillage doit contenir des faces inférieures");
+        assert!(has_diagonal_bevel, "Le maillage doit contenir des biseaux diagonaux 3D");
     }
 }

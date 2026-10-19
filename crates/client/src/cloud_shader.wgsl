@@ -96,69 +96,18 @@ fn fs_cloud(in: VertexOutput) -> @location(0) vec4<f32> {
         discard;
     }
 
-    let mask = u32(in.bevel_mask + 0.5);
-    // Bits 0..3: Découpe des coins extérieurs réels du quad (aucun arrondi sur les jonctions intérieures)
-    let c00 = (mask & 1u) != 0u; // Coin (u=0, v=0)
-    let c10 = (mask & 2u) != 0u; // Coin (u=1, v=0)
-    let c11 = (mask & 4u) != 0u; // Coin (u=1, v=1)
-    let c01 = (mask & 8u) != 0u; // Coin (u=0, v=1)
-
-    let uv = in.uv;
-    let r_bevel = 0.14; // Rayon de chanfrein arrondi sur les arêtes et coins extérieurs
-
-    // Découpe chirurgicale des 4 coins extérieurs réels de chaque face
-    if (c00 && uv.x < r_bevel && uv.y < r_bevel) {
-        if (length(vec2<f32>(r_bevel - uv.x, r_bevel - uv.y)) > r_bevel) {
-            discard;
-        }
-    }
-    if (c10 && (1.0 - uv.x) < r_bevel && uv.y < r_bevel) {
-        if (length(vec2<f32>(r_bevel - (1.0 - uv.x), r_bevel - uv.y)) > r_bevel) {
-            discard;
-        }
-    }
-    if (c11 && (1.0 - uv.x) < r_bevel && (1.0 - uv.y) < r_bevel) {
-        if (length(vec2<f32>(r_bevel - (1.0 - uv.x), r_bevel - (1.0 - uv.y))) > r_bevel) {
-            discard;
-        }
-    }
-    if (c01 && uv.x < r_bevel && (1.0 - uv.y) < r_bevel) {
-        if (length(vec2<f32>(r_bevel - uv.x, r_bevel - (1.0 - uv.y))) > r_bevel) {
-            discard;
-        }
-    }
-
-    // Bits 4..7: Lissage des normales sur les bordures extérieures réelles
-    let edge_u_min = (mask & 16u) != 0u; // Bord u=0
-    let edge_u_max = (mask & 32u) != 0u; // Bord u=1
-    let edge_v_min = (mask & 64u) != 0u; // Bord v=0
-    let edge_v_max = (mask & 128u) != 0u; // Bord v=1
-
     var norm = in.normal;
-    var bevel_offset = vec2<f32>(0.0);
-    if (edge_u_min && uv.x < r_bevel) {
-        bevel_offset.x -= (r_bevel - uv.x) / r_bevel;
-    }
-    if (edge_u_max && (1.0 - uv.x) < r_bevel) {
-        bevel_offset.x += (r_bevel - (1.0 - uv.x)) / r_bevel;
-    }
-    if (edge_v_min && uv.y < r_bevel) {
-        bevel_offset.y -= (r_bevel - uv.y) / r_bevel;
-    }
-    if (edge_v_max && (1.0 - uv.y) < r_bevel) {
-        bevel_offset.y += (r_bevel - (1.0 - uv.y)) / r_bevel;
-    }
+    let up = normalize(in.world_pos);
 
-    if (length(bevel_offset) > 0.01) {
-        let dp1 = dpdx(in.world_pos);
-        let dp2 = dpdy(in.world_pos);
-        let duv1 = dpdx(in.uv);
-        let duv2 = dpdy(in.uv);
-        let det = duv1.x * duv2.y - duv1.y * duv2.x;
-        if (abs(det) > 1e-6) {
-            let tan_u = normalize((dp1 * duv2.y - dp2 * duv1.y) / det);
-            let tan_v = normalize((dp2 * duv1.x - dp1 * duv2.x) / det);
-            norm = normalize(norm + (tan_u * bevel_offset.x + tan_v * bevel_offset.y) * 0.50);
+    // Adoucissement doux des rebords horizontaux supérieur et inférieur sur les parois
+    if (abs(in.face_type - 0.5) < 0.1) {
+        let r_y = 0.22;
+        if (in.uv.y > (1.0 - r_y)) {
+            let t = (in.uv.y - (1.0 - r_y)) / r_y;
+            norm = normalize(mix(norm, up, t * 0.40));
+        } else if (in.uv.y < r_y) {
+            let t = (r_y - in.uv.y) / r_y;
+            norm = normalize(mix(norm, -up, t * 0.40));
         }
     }
 
@@ -168,7 +117,6 @@ fn fs_cloud(in: VertexOutput) -> @location(0) vec4<f32> {
     let night_amb_slider = camera.lighting_params.z;
     let day_amb_slider = camera.lighting_params.w;
 
-    let up = normalize(in.world_pos);
     let l_sun = normalize(camera.light_dir);
     let sun_up = dot(l_sun, up);
     let daylight = clamp((sun_up + 0.06) / 0.18, 0.0, 1.0);
