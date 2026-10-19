@@ -126,9 +126,10 @@ fn bayer4x4_sky(coord: vec2<u32>) -> f32 {
     return m[index];
 }
 
-// Générateur pseudo-aléatoire 2D pour la génération de motifs nuageux
+// Générateur pseudo-aléatoire 2D à haute entropie sans singularité en (0,0)
 fn hash21_cloud(p: vec2<f32>) -> f32 {
-    var p3 = fract(vec3<f32>(p.xyx) * 0.1031);
+    let p_off = p + vec2<f32>(157.1, 311.7);
+    var p3 = fract(vec3<f32>(p_off.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
@@ -147,9 +148,9 @@ fn value_noise_cloud(p: vec2<f32>) -> f32 {
 
 // Détermine si une cellule de la grille voxel contient un bloc de nuage solide
 fn is_cell_cloud(cell: vec2<f32>, threshold: f32) -> bool {
-    let n1 = value_noise_cloud(cell * 0.11);
-    let n2 = value_noise_cloud(cell * 0.26 + vec2<f32>(19.4, 53.1));
-    let n_val = n1 * 0.70 + n2 * 0.30;
+    let n1 = value_noise_cloud(cell * 0.16 + vec2<f32>(12.3, 45.7));
+    let n2 = value_noise_cloud(cell * 0.36 + vec2<f32>(73.1, 19.8));
+    let n_val = n1 * 0.65 + n2 * 0.35;
     return n_val > threshold;
 }
 
@@ -166,8 +167,8 @@ fn cloud_solid_sdf(
     cloud_slider: f32
 ) -> f32 {
     let r = length(p);
-    let r_bot = 33.5;
-    let r_top = 36.3;
+    let r_bot = 34.0;
+    let r_top = 35.4;
     if (r < r_bot || r > r_top) {
         return -1.0;
     }
@@ -176,16 +177,21 @@ fn cloud_solid_sdf(
     let x_local = dot(p, east);
     let z_local = dot(p, north);
 
+    // Ancrage géographique sur le globe planétaire (permet de marcher sous les nuages)
+    let lat = asin(clamp(up.y, -0.999, 0.999));
+    let lon = atan2(up.x, up.z);
+    let geo_anchor = vec2<f32>(lon * 34.5 * cos(lat), lat * 34.5);
+
     // Dérive douce du vent dans le ciel
-    let wind = vec2<f32>(time * 0.018, time * 0.006);
-    let cell_size = 2.8;
-    let uv = vec2<f32>(x_local, z_local) / cell_size + wind;
+    let wind = vec2<f32>(time * 0.016, time * 0.005);
+    let cell_size = 2.4;
+    let uv = (vec2<f32>(x_local, z_local) + geo_anchor) / cell_size + wind;
 
     let cell = floor(uv);
     let f = fract(uv);
 
-    // Seuil de densité piloté par le slider
-    let threshold = mix(0.70, 0.40, clamp(cloud_slider * 0.5, 0.0, 1.0));
+    // Seuil de couverture nuageuse équilibré (~35% de couverture, présent au zénith comme à l'horizon)
+    let threshold = mix(0.50, 0.32, clamp(cloud_slider * 0.5, 0.0, 1.0));
 
     if (!is_cell_cloud(cell, threshold)) {
         return -1.0;
@@ -234,7 +240,7 @@ fn cloud_solid_sdf(
     }
 
     // 2. Découpe des arêtes horizontales arrondies (dessus et dessous du nuage)
-    let r_y = 0.10; // Rayon d'arrondi sur les bords horizontaux
+    let r_y = 0.12; // Rayon d'arrondi sur les bords horizontaux
     var d_edge = 1.0;
     if (wall_w) { d_edge = min(d_edge, f.x); }
     if (wall_e) { d_edge = min(d_edge, 1.0 - f.x); }
@@ -308,8 +314,8 @@ fn render_volumetric_clouds(
         return vec4<f32>(0.0);
     }
 
-    let r_bot = 33.5;
-    let r_top = 36.3;
+    let r_bot = 34.0;
+    let r_top = 35.4;
     let r_cam = length(o);
 
     // Calcul de l'intersection du rayon avec les sphères délimitant la couche nuageuse
@@ -389,7 +395,7 @@ fn render_volumetric_clouds(
     let ambient_sunset = vec3<f32>(0.64, 0.48, 0.68);
     let cloud_ambient = mix(ambient_day, ambient_sunset, sunset_factor) * daylight * day_amb_slider;
     let ndotup = dot(norm, up);
-    let ambient_facing = 0.55 + 0.45 * clamp(ndotup * 0.5 + 0.5, 0.0, 1.0);
+    let ambient_facing = 0.72 + 0.28 * clamp(ndotup * 0.5 + 0.5, 0.0, 1.0);
     let ambient_light = cloud_ambient * ambient_facing;
 
     // Éclairage lunaire de nuit
@@ -398,8 +404,8 @@ fn render_volumetric_clouds(
     let moon_light = vec3<f32>(0.70, 0.84, 1.0) * (moon_direct * 0.70);
     let night_ambient = vec3<f32>(0.04, 0.07, 0.15) * night_amb_slider * (1.0 - daylight);
 
-    // Ombrage ambiant (faces inférieures et occlusion)
-    let ao = 0.65 + 0.35 * clamp(ndotup * 0.5 + 0.5, 0.0, 1.0);
+    // Ombrage ambiant doux (faces inférieures bien éclairées par l'ambiance du ciel)
+    let ao = 0.78 + 0.22 * clamp(ndotup * 0.5 + 0.5, 0.0, 1.0);
     let cloud_color = (direct_light + ambient_light + moon_light + night_ambient) * ao;
 
     // Estompage doux à l'extrême horizon uniquement
