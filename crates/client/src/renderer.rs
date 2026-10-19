@@ -678,4 +678,53 @@ mod tests {
                 .unwrap_or_else(|e| panic!("Failed to validate {name}:\n{e}"));
         }
     }
+
+    #[test]
+    fn test_lunar_orbit_mechanics_and_phases() {
+        // Reproduit la fonction WGSL get_moon_data pour vérifier les propriétés mathématiques de l'orbite
+        let compute_moon = |time: f32, light_dir: [f32; 3]| -> (glam::Vec3, f32) {
+            let l_sun = glam::Vec3::from(light_dir).normalize();
+            let up_ref = if l_sun.z.abs() > 0.9 {
+                glam::Vec3::new(0.0, 1.0, 0.0)
+            } else {
+                glam::Vec3::new(0.0, 0.0, 1.0)
+            };
+            let e2 = l_sun.cross(up_ref).normalize();
+            let e3 = l_sun.cross(e2);
+            let tilt = 0.38_f32;
+            let u_orb = l_sun;
+            let v_orb = e2 * tilt.cos() + e3 * tilt.sin();
+            let moon_period = 180.0_f32;
+            let moon_angle = (time / moon_period) * std::f32::consts::TAU + 2.4;
+            let moon_dir = (u_orb * moon_angle.cos() + v_orb * moon_angle.sin()).normalize();
+            let sun_moon_dot = moon_dir.dot(l_sun);
+            let moon_phase = ((-sun_moon_dot + 1.0) * 0.5).clamp(0.0, 1.0);
+            (moon_dir, moon_phase)
+        };
+
+        let light_dir = [0.6, 0.8, 0.5];
+        let mut min_phase = 1.0_f32;
+        let mut max_phase = 0.0_f32;
+
+        for step in 0..180 {
+            let t = step as f32;
+            let (moon_dir, phase) = compute_moon(t, light_dir);
+
+            // Vérifie que le vecteur est toujours unitaire
+            assert!((moon_dir.length() - 1.0).abs() < 1e-5);
+            // Vérifie que la phase est bien bornée [0.0, 1.0]
+            assert!(phase >= 0.0 && phase <= 1.0);
+
+            if phase < min_phase {
+                min_phase = phase;
+            }
+            if phase > max_phase {
+                max_phase = phase;
+            }
+        }
+
+        // Sur un cycle complet de 180s, la Lune doit couvrir de la Nouvelle Lune (~0) à la Pleine Lune (~1)
+        assert!(min_phase < 0.05, "La nouvelle lune doit approcher 0.0 (obtenu: {min_phase})");
+        assert!(max_phase > 0.95, "La pleine lune doit approcher 1.0 (obtenu: {max_phase})");
+    }
 }

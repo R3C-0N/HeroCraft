@@ -56,6 +56,33 @@ fn bayer4x4(pos: vec2<u32>) -> f32 {
     return bayer[y * 4u + x];
 }
 
+// Structure représentant la position et la phase de la Lune
+struct MoonData {
+    dir: vec3<f32>,     // Vecteur unitaire orienté vers la Lune
+    phase: f32,         // 0.0 = Nouvelle Lune, 0.5 = Quartier, 1.0 = Pleine Lune
+};
+
+// Calcule la position orbitale et la phase de la Lune en temps réel (identique au sky shader)
+fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
+    let l_sun = normalize(light_dir);
+    let up_ref = select(vec3<f32>(0.0, 0.0, 1.0), vec3<f32>(0.0, 1.0, 0.0), abs(l_sun.z) > 0.9);
+    let e2 = normalize(cross(l_sun, up_ref));
+    let e3 = cross(l_sun, e2);
+    let tilt_angle = 0.38; // ~21.8°
+    let u_orb = l_sun;
+    let v_orb = e2 * cos(tilt_angle) + e3 * sin(tilt_angle);
+    let moon_period = 180.0;
+    // Déphasage initial (+2.4 rad) pour correspondre au sky shader
+    let moon_angle = (time / moon_period) * 6.2831853 + 2.4;
+    let moon_dir = normalize(u_orb * cos(moon_angle) + v_orb * sin(moon_angle));
+    let sun_moon_dot = dot(moon_dir, l_sun);
+    let moon_phase = clamp((-sun_moon_dot + 1.0) * 0.5, 0.0, 1.0);
+    var data: MoonData;
+    data.dir = moon_dir;
+    data.phase = moon_phase;
+    return data;
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // 1. Transition douce hybride par tramage stochastique (Dithered Cross-Fade)
@@ -127,9 +154,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         base_color = mix(base_color, cliff_colored, cliff_factor * 0.85);
     }
 
-    // 4. Éclairage solaire et nocturne avec teintes chaudes de levé / couché de soleil
+    // 4. Éclairage solaire et nocturne (avec teintes chaudes au coucher et clair de lune dynamique)
     let sun_elevation = dot(n_sphere, l);
     let day_factor = clamp((sun_elevation + 0.08) / 0.24, 0.0, 1.0);
+    let night_factor = 1.0 - day_factor;
 
     // Teinte du soleil selon la hauteur sur l'horizon :
     // - Plein jour (sun_elevation > 0.25) : Blanc solaire chaud naturel
@@ -140,20 +168,40 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let sunset_sun_color = vec3<f32>(1.0, 0.52, 0.18);
     let sun_color = mix(day_sun_color, sunset_sun_color, sunset_factor);
 
-    // Lumière ambiante : ciel bleu le jour, indigo/pourpre au crépuscule, nuit claire étoilée
+    // Données orbitales de la Lune (partagées avec le sky shader)
+    let moon = get_moon_data(camera.time, camera.light_dir);
+    let moon_elevation = dot(n_sphere, moon.dir);
+    let moon_above_horizon = clamp((moon_elevation + 0.04) / 0.18, 0.0, 1.0);
+    // Intensité effective du clair de lune : présent uniquement de nuit lorsque la Lune est levée
+    let moon_intensity = moon_above_horizon * moon.phase * night_factor;
+
+    // Lumière directe lunaire : faisceau directionnel argenté créant du relief et des ombres nocturnes
+    let ndotm = dot(n, moon.dir);
+    let moon_direct = max(ndotm, 0.0);
+    let moon_half_lambert = pow(clamp(ndotm * 0.5 + 0.5, 0.0, 1.0), 1.4);
+    let direct_moon_level = 0.16 * mix(moon_half_lambert, moon_direct, 0.45) * moon_intensity;
+    let moon_direct_color = vec3<f32>(0.72, 0.85, 1.0) * direct_moon_level;
+
+    // Lumière ambiante :
+    // - Jour : ciel bleu azur (0.22)
+    // - Crépuscule : pourpre / violacé
+    // - Nuit sans lune : obscurité stellaire profonde (0.038)
+    // - Nuit de pleine lune : lueur bleutée argentée généreuse (jusqu'à 0.11)
     let day_ambient = vec3<f32>(0.68, 0.78, 0.92);
     let sunset_ambient = vec3<f32>(0.38, 0.26, 0.48); // Teinte d'ombre crépusculaire violacée
-    let night_ambient = vec3<f32>(0.48, 0.58, 0.88); // Lueur stellaire / clair de lune bleuté
-    let ambient_tint = mix(night_ambient, mix(day_ambient, sunset_ambient, sunset_factor), day_factor);
-    let ambient_level = mix(0.09, 0.22, day_factor);
+    let sun_ambient = mix(day_ambient, sunset_ambient, sunset_factor) * mix(0.18, 0.22, day_factor);
+
+    let starlight_ambient = vec3<f32>(0.32, 0.42, 0.70) * 0.038; // Nuit noire sans lune
+    let moonlight_ambient = vec3<f32>(0.48, 0.62, 0.94) * (0.075 * moon_intensity); // Surcroît clair de lune
+    let night_ambient_total = starlight_ambient + moonlight_ambient;
 
     let ndotl = dot(n, l);
     let direct = max(ndotl, 0.0) * day_factor;
     let half_lambert = pow(clamp(ndotl * 0.5 + 0.5, 0.0, 1.0), 1.35) * day_factor;
-    let direct_level = (1.0 - ambient_level) * mix(half_lambert, direct, 0.40);
+    let direct_level = 0.78 * mix(half_lambert, direct, 0.40);
 
-    // Éclairage combiné : surfaces éclairées par le soleil (teinte dorée/rouge au coucher) + ombres bleutées/pourpres
-    let total_light = ambient_tint * ambient_level + sun_color * direct_level;
+    // Éclairage combiné : ambiance (jour / coucher / nuit étoilée / clair de lune) + soleil direct + lune directe
+    let total_light = mix(night_ambient_total, sun_ambient, day_factor) + sun_color * direct_level + moon_direct_color;
 
     // 5. Reflets spéculaires d'eau et de glace
     var specular_light = vec3<f32>(0.0);
@@ -161,19 +209,28 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ndotv = max(dot(n, view_dir), 0.0);
 
     if (is_water) {
-        // Reflet spéculaire Blinn-Phong pour l'océan (fin et intense en vue satellite, doré au coucher, doux reflet stellaire la nuit)
+        // Reflet spéculaire Blinn-Phong pour l'océan
         let spec_power = mix(48.0, 96.0, orbit_factor);
         let sun_spec = pow(ndoth, spec_power) * 1.8;
         // Effet Fresnel rasante
         let fresnel = pow(1.0 - ndotv, 5.0) * 0.45 + 0.05;
         let ocean_spec_color = mix(sun_color, vec3<f32>(1.0, 0.95, 0.85), clamp(sun_elevation * 3.0, 0.0, 1.0));
-        let night_water_glint = vec3<f32>(0.35, 0.50, 0.80) * 0.14;
-        let water_spec = ocean_spec_color * (sun_spec * clamp(ndotl * 2.0, 0.0, 1.0) + fresnel * 0.35) * day_factor + night_water_glint * fresnel * (1.0 - day_factor);
+
+        // Reflet spéculaire lunaire sur l'océan (traînée argentée miroitante sous la Lune la nuit)
+        let h_moon = normalize(moon.dir + view_dir);
+        let ndoth_moon = max(dot(n, h_moon), 0.0);
+        let moon_spec = pow(ndoth_moon, spec_power) * 1.8 * clamp(ndotm * 2.0, 0.0, 1.0) * moon_intensity;
+        let moon_spec_color = vec3<f32>(0.75, 0.88, 1.0);
+        let night_water_glint = vec3<f32>(0.25, 0.35, 0.60) * (0.04 + 0.10 * moon_intensity);
+        let night_water_spec = (moon_spec_color * moon_spec + night_water_glint * fresnel) * night_factor;
+
+        let water_spec = ocean_spec_color * (sun_spec * clamp(ndotl * 2.0, 0.0, 1.0) + fresnel * 0.35) * day_factor + night_water_spec;
         specular_light += water_spec;
     } else if (is_snow) {
-        // Scintillement cristallin diffus sur les névés et glaciers
-        let snow_glint = pow(ndoth, 24.0) * 0.40 * clamp(ndotl * 2.0, 0.0, 1.0);
-        specular_light += vec3<f32>(0.92, 0.95, 1.0) * snow_glint * day_factor;
+        // Scintillement cristallin diffus sur les névés et glaciers (soleil de jour et lune la nuit)
+        let snow_glint = pow(ndoth, 24.0) * 0.40 * clamp(ndotl * 2.0, 0.0, 1.0) * day_factor;
+        let snow_moon_glint = pow(max(dot(n, normalize(moon.dir + view_dir)), 0.0), 20.0) * 0.15 * moon_intensity;
+        specular_light += vec3<f32>(0.92, 0.95, 1.0) * (snow_glint + snow_moon_glint);
     }
 
     // 6. Lueur atmosphérique rasante sur le limbe planétaire en vue orbitale
@@ -197,11 +254,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // Début du brouillard à 2.5 unités (~65 blocs), saturation douce à 8.0 unités
         let fog_factor = clamp((dist - 2.5) / 5.5, 0.0, 1.0) * ground_proximity;
 
-        // Diffusion dorée/ambrée au coucher vers le soleil, pourpre à l'opposé, brume nocturne douce la nuit
+        // Diffusion dorée/ambrée au coucher vers le soleil, pourpre à l'opposé
         let forward_scatter = pow(max(dot(view_dir, -l), 0.0), 3.0);
         let sunset_fog_color = mix(vec3<f32>(0.65, 0.38, 0.50), vec3<f32>(1.0, 0.58, 0.24), forward_scatter);
         let day_fog_color = mix(vec3<f32>(0.72, 0.80, 0.90), vec3<f32>(1.0, 0.85, 0.60), forward_scatter * 0.55);
-        let night_fog = vec3<f32>(0.025, 0.035, 0.065);
+
+        // Brume nocturne : nuit sombre étoilée sans lune, argentée / bleutée en direction de la Lune
+        let moon_scatter = pow(max(dot(view_dir, -moon.dir), 0.0), 3.0) * moon_intensity;
+        let base_night_fog = vec3<f32>(0.018, 0.024, 0.045);
+        let moonlit_fog = vec3<f32>(0.035, 0.050, 0.085) + vec3<f32>(0.05, 0.07, 0.11) * moon_scatter;
+        let night_fog = mix(base_night_fog, moonlit_fog, moon_intensity);
 
         let active_fog = mix(day_fog_color, sunset_fog_color, sunset_factor);
         let fog_color = mix(night_fog, active_fog, day_factor);

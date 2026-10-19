@@ -85,6 +85,36 @@ fn render_starfield(ray_dir: vec3<f32>, time: f32) -> vec3<f32> {
     return stars;
 }
 
+// Structure représentant la position et la phase de la Lune
+struct MoonData {
+    dir: vec3<f32>,     // Vecteur unitaire orienté vers la Lune
+    phase: f32,         // 0.0 = Nouvelle Lune, 0.5 = Quartier, 1.0 = Pleine Lune
+};
+
+// Calcule la position orbitale et la phase de la Lune en temps réel
+// - Orbite inclinée de ~21.8° (0.38 rad) par rapport à l'écliptique
+// - Période orbitale de 180s (3 minutes par cycle complet)
+// - La Lune traverse le ciel indépendamment du Soleil, visible de nuit comme de jour
+fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
+    let l_sun = normalize(light_dir);
+    let up_ref = select(vec3<f32>(0.0, 0.0, 1.0), vec3<f32>(0.0, 1.0, 0.0), abs(l_sun.z) > 0.9);
+    let e2 = normalize(cross(l_sun, up_ref));
+    let e3 = cross(l_sun, e2);
+    let tilt_angle = 0.38; // ~21.8°
+    let u_orb = l_sun;
+    let v_orb = e2 * cos(tilt_angle) + e3 * sin(tilt_angle);
+    let moon_period = 180.0;
+    // Déphasage initial (+2.4 rad) pour avoir une lune gibbeuse/pleine au démarrage
+    let moon_angle = (time / moon_period) * 6.2831853 + 2.4;
+    let moon_dir = normalize(u_orb * cos(moon_angle) + v_orb * sin(moon_angle));
+    let sun_moon_dot = dot(moon_dir, l_sun);
+    let moon_phase = clamp((-sun_moon_dot + 1.0) * 0.5, 0.0, 1.0);
+    var data: MoonData;
+    data.dir = moon_dir;
+    data.phase = moon_phase;
+    return data;
+}
+
 @fragment
 fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     // Calcul de la direction du rayon dans le repère monde depuis la matrice inverse
@@ -95,11 +125,17 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let l = normalize(camera.light_dir);
     let cos_sun = dot(ray_dir, l);
 
+    // Données de la Lune orbitale
+    let moon = get_moon_data(camera.time, camera.light_dir);
+    let cos_moon = dot(ray_dir, moon.dir);
+    let moon_radius_cos = 0.9988; // ~2.8° de diamètre apparent
+    let is_moon_disk = cos_moon > moon_radius_cos;
+
     // 1. Soleil (Disque lumineux + Couronne d'éblouissement)
     var sun_color = vec3<f32>(0.0);
     let sun_radius_cos = 0.9992; // ~2.3° de diamètre apparent
-    if (cos_sun > sun_radius_cos) {
-        // Disque solaire avec assombrissement de limbe
+    if (cos_sun > sun_radius_cos && !is_moon_disk) {
+        // Disque solaire avec assombrissement de limbe (occultable lors d'une éclipse par la Lune)
         let limb = clamp((cos_sun - sun_radius_cos) / (1.0 - sun_radius_cos), 0.0, 1.0);
         let sun_core = mix(vec3<f32>(1.0, 0.85, 0.5), vec3<f32>(1.0, 1.0, 0.95), pow(limb, 0.5));
         sun_color += sun_core * 4.5;
@@ -109,17 +145,56 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let wide_glow = pow(clamp(cos_sun, 0.0, 1.0), 16.0) * 0.35;
     sun_color += vec3<f32>(1.0, 0.82, 0.55) * corona + vec3<f32>(0.8, 0.5, 0.25) * wide_glow;
 
-    // 2. Ciel étoilé dans le vide spatial
+    // 2. Lune (Disque sphérique 3D, phases lumineuses, cratères, mers et lumière cendrée)
+    var moon_disk_color = vec3<f32>(0.0);
+    if (is_moon_disk) {
+        let rho = sqrt(clamp((1.0 - cos_moon) / (1.0 - moon_radius_cos), 0.0, 1.0));
+        let z_local = sqrt(max(1.0 - rho * rho, 0.0));
+        let v_tangent = ray_dir - moon.dir * cos_moon;
+        let len_tangent = length(v_tangent);
+        let d_tangent = select(vec3<f32>(0.0), v_tangent / max(len_tangent, 1e-6), len_tangent > 1e-6);
+
+        // Normale sphérique extérieure de la surface de la Lune
+        let n_moon = normalize(d_tangent * rho - moon.dir * z_local);
+
+        // Éclairage direct par le Soleil sur la surface de la Lune
+        let sun_incidence = dot(n_moon, l);
+        let smooth_terminator = smoothstep(-0.04, 0.08, sun_incidence);
+        let direct_lunar_light = smooth_terminator * pow(clamp(sun_incidence + 0.08, 0.0, 1.0), 0.6);
+
+        // Lumière cendrée (Earthshine) éclairant la face non-ensoleillée de la Lune
+        let earthshine = 0.040 * (1.0 - moon.phase) * (1.0 - smooth_terminator);
+        let lunar_illumination = direct_lunar_light + earthshine;
+
+        // Texture procédurale : Mers lunaires (Maria) et cratères
+        let p_crater = n_moon * 4.2;
+        let h_crater = fract(sin(dot(p_crater, vec3<f32>(12.9898, 78.233, 45.164))) * 43758.5453);
+        let maria = smoothstep(0.30, 0.65, sin(n_moon.x * 2.8 + 0.4) * cos(n_moon.y * 3.2 + 0.3) + sin(n_moon.z * 3.0) * 0.25);
+        let maria_albedo = mix(0.62, 0.98, maria);
+        let crater_albedo = smoothstep(0.72, 0.92, h_crater) * 0.12;
+        let moon_albedo = (maria_albedo + crater_albedo) * vec3<f32>(0.92, 0.95, 1.0);
+
+        let limb_darkening = pow(z_local, 0.25);
+        moon_disk_color = moon_albedo * lunar_illumination * (0.85 + 0.15 * limb_darkening) * 3.0;
+    }
+
+    // Halo / aura argentée autour de la Lune
+    let moon_corona = pow(clamp(cos_moon, 0.0, 1.0), 128.0) * 0.25 * moon.phase;
+    let moon_wide_glow = pow(clamp(cos_moon, 0.0, 1.0), 24.0) * 0.06 * moon.phase;
+    let moon_aura = vec3<f32>(0.70, 0.82, 1.0) * (moon_corona + moon_wide_glow);
+    let moon_space_color = select(vec3<f32>(0.0), moon_disk_color, is_moon_disk) + moon_aura;
+
+    // 3. Ciel étoilé dans le vide spatial (étoiles masquées par le disque opaque de la Lune)
     let stars = render_starfield(ray_dir, camera.time);
-    var space_color = stars + sun_color;
+    let visible_stars = select(stars, vec3<f32>(0.0), is_moon_disk);
+    var space_color = visible_stars + sun_color + moon_space_color;
 
     // Facteur d'altitude : transition fluide entre vue au sol (< 38.0) et orbite spatiale (> 58.0)
-    // Le terrain réel avec relief et mers se situe entre les rayons 28.8 (océan) et 38.5 (hauts sommets)
     let cam_dist = length(camera.camera_pos);
     let ground_factor = clamp((58.0 - cam_dist) / 20.0, 0.0, 1.0);
     let orbit_factor = 1.0 - ground_factor;
 
-    // 3. Halo atmosphérique externe planétaire (vu depuis l'orbite spatiale uniquement)
+    // 4. Halo atmosphérique externe planétaire (vu depuis l'orbite spatiale uniquement)
     if (orbit_factor > 0.001) {
         let r_atm_inner = 28.5; // Surface moyenne océanique / continentale
         let r_atm_outer = 39.5; // Sommet de l'atmosphère visible depuis l'espace
@@ -145,11 +220,12 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         }
     }
 
-    // 4. Diffusion atmosphérique au sol (Dôme céleste bleu azur en journée, crépuscule doré, nuit étoilée)
+    // 5. Diffusion atmosphérique au sol (Dôme céleste bleu azur en journée, crépuscule doré, nuit étoilée)
     if (ground_factor > 0.001) {
         let cam_up = normalize(camera.camera_pos);
         let ray_up = dot(ray_dir, cam_up);
         let sun_up = dot(l, cam_up);
+        let moon_up = dot(moon.dir, cam_up);
 
         // Clarté du jour : transition naturelle vers la nuit noire dès que le soleil passe sous l'horizon
         let daylight = clamp((sun_up + 0.06) / 0.18, 0.0, 1.0);
@@ -192,9 +268,17 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         let sun_visibility = clamp(sun_up * 15.0 + 0.5, 0.0, 1.0);
         let sun_disk_tint = mix(vec3<f32>(1.0, 1.0, 1.0), vec3<f32>(1.0, 0.65, 0.25), sunset_factor);
 
+        // Visibilité de la Lune au sol :
+        // - Occultée par l'horizon planétaire sous les pieds du joueur
+        // - Atténuée en plein jour par la luminosité de l'atmosphère bleue, étincelante la nuit
+        let ray_moon_up = dot(ray_dir, cam_up);
+        let moon_ground_vis = clamp((moon_up + 0.03) / 0.08, 0.0, 1.0) * clamp((ray_moon_up + 0.015) / 0.035, 0.0, 1.0);
+        let daytime_moon_tint = mix(vec3<f32>(1.0), vec3<f32>(0.75, 0.88, 1.0), daylight);
+        let ground_moon = moon_space_color * moon_ground_vis * mix(1.0, 0.40, daylight) * daytime_moon_tint;
+
         // Ciel au sol : nuit étoilée douce et atmosphérique (starlight navy) vs ciel bleu diurne
-        let night_sky = stars + vec3<f32>(0.008, 0.012, 0.024);
-        let ground_sky = mix(night_sky, day_sky, daylight) + sun_color * sun_disk_tint * sun_visibility + ground_sun_glow * daylight;
+        let night_sky = visible_stars + vec3<f32>(0.008, 0.012, 0.024);
+        let ground_sky = mix(night_sky, day_sky, daylight) + sun_color * sun_disk_tint * sun_visibility + ground_sun_glow * daylight + ground_moon;
 
         let final_sky = mix(space_color, ground_sky, ground_factor);
         return vec4<f32>(final_sky, 1.0);
