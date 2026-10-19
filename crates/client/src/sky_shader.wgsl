@@ -145,11 +145,19 @@ fn value_noise_cloud(p: vec2<f32>) -> f32 {
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// Évalue la densité 3D volumétrique de la couche nuageuse en style "Minecraft / Complementary Reimagined" :
-// - Blocs cubiques et rectangulaires arrangés sur une grille horizontale
-// - Bords et coins biseautés et arrondis (rounded cuboids)
-// - Dessus et dessous plats avec transition douce
-fn sample_cloud_density(
+// Détermine si une cellule de la grille voxel contient un bloc de nuage solide
+fn is_cell_cloud(cell: vec2<f32>, threshold: f32) -> bool {
+    let n1 = value_noise_cloud(cell * 0.11);
+    let n2 = value_noise_cloud(cell * 0.26 + vec2<f32>(19.4, 53.1));
+    let n_val = n1 * 0.70 + n2 * 0.30;
+    return n_val > threshold;
+}
+
+// Fonction de distance signée (SDF) 3D d'un nuage solide style Voxel / Minecraft Reimagined :
+// - Blocs solides avec faces planes et arêtes franches
+// - Biseaux arrondis nets sur les coins verticaux et les bords horizontaux (rounded cuboids)
+// - Retourne > 0.0 si le point est à l'intérieur du bloc solide, < 0.0 si dans l'air
+fn cloud_solid_sdf(
     p: vec3<f32>,
     east: vec3<f32>,
     north: vec3<f32>,
@@ -161,43 +169,100 @@ fn sample_cloud_density(
     let r_bot = 33.5;
     let r_top = 36.3;
     if (r < r_bot || r > r_top) {
-        return 0.0;
+        return -1.0;
     }
     let h_norm = (r - r_bot) / (r_top - r_bot);
 
     let x_local = dot(p, east);
     let z_local = dot(p, north);
 
-    // Dérive douce du vent dans le ciel (animation lente et majestueuse)
-    let wind = vec2<f32>(time * 0.020, time * 0.007);
-    let uv = vec2<f32>(x_local, z_local) / 2.8 + wind;
+    // Dérive douce du vent dans le ciel
+    let wind = vec2<f32>(time * 0.018, time * 0.006);
+    let cell_size = 2.8;
+    let uv = vec2<f32>(x_local, z_local) / cell_size + wind;
 
-    // Transformation en coordonnées cubiques arrondies (Style Complementary Reimagined Voxel)
-    let r_bevel = 0.28;
-    let u_frac = fract(uv.x);
-    let v_frac = fract(uv.y);
-    let u_stepped = floor(uv.x) + smoothstep(0.5 - r_bevel, 0.5 + r_bevel, u_frac);
-    let v_stepped = floor(uv.y) + smoothstep(0.5 - r_bevel, 0.5 + r_bevel, v_frac);
-    let p_grid = vec2<f32>(u_stepped, v_stepped);
+    let cell = floor(uv);
+    let f = fract(uv);
 
-    // Combinaison multi-octave produisant des cubes isolés, des bandes et des grappes de blocs
-    let n1 = value_noise_cloud(p_grid * 0.14);
-    let n2 = value_noise_cloud(p_grid * 0.32 + vec2<f32>(17.3, 41.9));
-    let n_val = n1 * 0.70 + n2 * 0.30;
+    // Seuil de densité piloté par le slider
+    let threshold = mix(0.70, 0.40, clamp(cloud_slider * 0.5, 0.0, 1.0));
 
-    // Seuil de couverture nuageuse modulé par le slider
-    let threshold = mix(0.72, 0.38, clamp(cloud_slider * 0.5, 0.0, 1.0));
-    let shape = smoothstep(threshold - 0.04, threshold + 0.06, n_val);
+    if (!is_cell_cloud(cell, threshold)) {
+        return -1.0;
+    }
 
-    // Biseau d'arrondi vertical sur le dessus et le dessous du nuage
-    let r_y = 0.22;
-    let v_profile = smoothstep(0.0, r_y, h_norm) * smoothstep(1.0, 1.0 - r_y, h_norm);
+    // Détection des parois extérieures adjacentes
+    let wall_w = !is_cell_cloud(cell + vec2<f32>(-1.0, 0.0), threshold);
+    let wall_e = !is_cell_cloud(cell + vec2<f32>( 1.0, 0.0), threshold);
+    let wall_s = !is_cell_cloud(cell + vec2<f32>(0.0, -1.0), threshold);
+    let wall_n = !is_cell_cloud(cell + vec2<f32>(0.0,  1.0), threshold);
 
-    return shape * v_profile;
+    let r_bevel = 0.12; // Rayon d'arrondi net et précis sur les arêtes verticales
+
+    // 1. Découpe des 4 coins verticaux arrondis
+    if (wall_w && wall_s) {
+        if (f.x < r_bevel && f.y < r_bevel) {
+            let d = length(vec2<f32>(r_bevel - f.x, r_bevel - f.y));
+            if (d > r_bevel) {
+                return -1.0;
+            }
+        }
+    }
+    if (wall_e && wall_s) {
+        if ((1.0 - f.x) < r_bevel && f.y < r_bevel) {
+            let d = length(vec2<f32>(r_bevel - (1.0 - f.x), r_bevel - f.y));
+            if (d > r_bevel) {
+                return -1.0;
+            }
+        }
+    }
+    if (wall_w && wall_n) {
+        if (f.x < r_bevel && (1.0 - f.y) < r_bevel) {
+            let d = length(vec2<f32>(r_bevel - f.x, r_bevel - (1.0 - f.y)));
+            if (d > r_bevel) {
+                return -1.0;
+            }
+        }
+    }
+    if (wall_e && wall_n) {
+        if ((1.0 - f.x) < r_bevel && (1.0 - f.y) < r_bevel) {
+            let d = length(vec2<f32>(r_bevel - (1.0 - f.x), r_bevel - (1.0 - f.y)));
+            if (d > r_bevel) {
+                return -1.0;
+            }
+        }
+    }
+
+    // 2. Découpe des arêtes horizontales arrondies (dessus et dessous du nuage)
+    let r_y = 0.10; // Rayon d'arrondi sur les bords horizontaux
+    var d_edge = 1.0;
+    if (wall_w) { d_edge = min(d_edge, f.x); }
+    if (wall_e) { d_edge = min(d_edge, 1.0 - f.x); }
+    if (wall_s) { d_edge = min(d_edge, f.y); }
+    if (wall_n) { d_edge = min(d_edge, 1.0 - f.y); }
+
+    if (d_edge < r_y) {
+        // Bord inférieur
+        if (h_norm < r_y) {
+            let d = length(vec2<f32>(r_y - d_edge, r_y - h_norm));
+            if (d > r_y) {
+                return -1.0;
+            }
+        }
+        // Bord supérieur
+        if ((1.0 - h_norm) < r_y) {
+            let d = length(vec2<f32>(r_y - d_edge, r_y - (1.0 - h_norm)));
+            if (d > r_y) {
+                return -1.0;
+            }
+        }
+    }
+
+    return 1.0;
 }
 
-// Calcule la normale extérieure à la surface du nuage par gradient numérique
-fn get_cloud_normal(
+// Calcule la normale extérieure à la surface solide du nuage par gradient numérique
+fn get_solid_cloud_normal(
     p: vec3<f32>,
     east: vec3<f32>,
     north: vec3<f32>,
@@ -205,19 +270,19 @@ fn get_cloud_normal(
     time: f32,
     cloud_slider: f32
 ) -> vec3<f32> {
-    let eps = 0.20;
-    let dx = sample_cloud_density(p + east * eps, east, north, up, time, cloud_slider)
-           - sample_cloud_density(p - east * eps, east, north, up, time, cloud_slider);
-    let dz = sample_cloud_density(p + north * eps, east, north, up, time, cloud_slider)
-           - sample_cloud_density(p - north * eps, east, north, up, time, cloud_slider);
-    let dy = sample_cloud_density(p + up * eps, east, north, up, time, cloud_slider)
-           - sample_cloud_density(p - up * eps, east, north, up, time, cloud_slider);
+    let eps = 0.05;
+    let dx = cloud_solid_sdf(p + east * eps, east, north, up, time, cloud_slider)
+           - cloud_solid_sdf(p - east * eps, east, north, up, time, cloud_slider);
+    let dz = cloud_solid_sdf(p + north * eps, east, north, up, time, cloud_slider)
+           - cloud_solid_sdf(p - north * eps, east, north, up, time, cloud_slider);
+    let dy = cloud_solid_sdf(p + up * eps, east, north, up, time, cloud_slider)
+           - cloud_solid_sdf(p - up * eps, east, north, up, time, cloud_slider);
     let grad = east * dx + north * dz + up * dy;
     let len = length(grad);
     return select(up, -grad / len, len > 1e-4);
 }
 
-// Raymarching volumétrique pour le rendu des nuages cubiques arrondis
+// Raymarching de surface solide pour des nuages cubiques nets et bien définis
 fn render_volumetric_clouds(
     ray_dir: vec3<f32>,
     o: vec3<f32>,
@@ -271,61 +336,77 @@ fn render_volumetric_clouds(
     let east = normalize(cross(up, ref_axis));
     let north = cross(up, east);
 
-    let num_steps = 8u;
+    let num_steps = 22u;
     let dt = (t_exit - t_enter) / f32(num_steps);
     let dither = bayer4x4_sky(screen_coord);
     var t = t_enter + dt * (dither * 0.75 + 0.125);
 
-    var accum_color = vec3<f32>(0.0);
-    var accum_alpha = 0.0;
-
-    // Couleurs d'ambiance et de lumière directe
-    // - En journée : blanc pur doux avec ombrage bleu azur
-    // - Au coucher / lever (comme sur la photo de référence) : reflets or ambré et ombres lavande / mauve crépusculaire
-    let sun_highlight = mix(vec3<f32>(1.0, 0.98, 0.92), vec3<f32>(1.0, 0.82, 0.48), sunset_factor);
-    let ambient_day = vec3<f32>(0.74, 0.84, 0.96);
-    let ambient_sunset = vec3<f32>(0.64, 0.46, 0.68); // Teinte lavande / violet crépusculaire
-    let cloud_ambient = mix(ambient_day, ambient_sunset, sunset_factor) * daylight * day_amb_slider;
-
-    let forward = max(dot(ray_dir, l_sun), 0.0);
-    let mie_glow = pow(forward, 6.0) * (0.80 + 1.20 * sunset_factor);
+    var hit = false;
+    var hit_t = 0.0;
 
     for (var i = 0u; i < num_steps; i = i + 1u) {
         let p = o + ray_dir * t;
-        let d = sample_cloud_density(p, east, north, up, time, cloud_slider);
-
-        if (d > 0.015) {
-            let norm = get_cloud_normal(p, east, north, up, time, cloud_slider);
-            let ndotl = max(dot(norm, l_sun), 0.0);
-            let direct_sun = ndotl * (1.15 + 0.45 * sunset_factor);
-            let direct_light = sun_highlight * (direct_sun + mie_glow * 0.65) * daylight * sun_slider;
-
-            let ndotm = max(dot(norm, moon.dir), 0.0);
-            let moon_direct = ndotm * moon.phase * moon_slider * (1.0 - daylight);
-            let moon_light = vec3<f32>(0.70, 0.84, 1.0) * (moon_direct * 0.70);
-            let night_ambient = vec3<f32>(0.04, 0.07, 0.15) * night_amb_slider * (1.0 - daylight);
-
-            let ndotup = dot(norm, up);
-            let ao = 0.62 + 0.38 * clamp(ndotup * 0.5 + 0.5, 0.0, 1.0);
-            let step_light = (direct_light + cloud_ambient * (0.50 + 0.50 * clamp(ndotup * 0.5 + 0.5, 0.0, 1.0)) + moon_light + night_ambient) * ao;
-
-            let step_alpha = clamp(d * dt * 1.5, 0.0, 1.0);
-            accum_color += step_light * step_alpha * (1.0 - accum_alpha);
-            accum_alpha += step_alpha * (1.0 - accum_alpha);
-
-            if (accum_alpha > 0.96) {
-                break;
+        if (cloud_solid_sdf(p, east, north, up, time, cloud_slider) > 0.0) {
+            // Impact détecté sur la surface solide du nuage !
+            // Raffinement dichotomique précis en 4 sous-étapes pour un contour net et chirurgical
+            var t_a = t - dt;
+            var t_b = t;
+            for (var j = 0u; j < 4u; j = j + 1u) {
+                let t_m = (t_a + t_b) * 0.5;
+                if (cloud_solid_sdf(o + ray_dir * t_m, east, north, up, time, cloud_slider) > 0.0) {
+                    t_b = t_m;
+                } else {
+                    t_a = t_m;
+                }
             }
+            hit_t = t_b;
+            hit = true;
+            break;
         }
-
         t += dt;
     }
 
-    // Estompage doux vers l'horizon (perspective atmosphérique sans coupure brusque)
-    let horizon_fade = smoothstep(0.015, 0.09, ray_up);
-    accum_alpha *= horizon_fade;
+    if (!hit) {
+        return vec4<f32>(0.0);
+    }
 
-    return vec4<f32>(accum_color, accum_alpha);
+    let hit_pos = o + ray_dir * hit_t;
+    let norm = get_solid_cloud_normal(hit_pos, east, north, up, time, cloud_slider);
+
+    // Éclairage direct du soleil sur la surface du bloc solide
+    let ndotl = max(dot(norm, l_sun), 0.0);
+    let direct_sun = ndotl * (1.20 + 0.40 * sunset_factor);
+
+    // Halo d'éblouissement / contre-jour doré sur les arêtes (Mie rim)
+    let forward = max(dot(ray_dir, l_sun), 0.0);
+    let rim = pow(forward, 6.0) * (0.65 + 0.90 * sunset_factor);
+
+    let sun_highlight = mix(vec3<f32>(1.0, 0.98, 0.92), vec3<f32>(1.0, 0.82, 0.48), sunset_factor);
+    let direct_light = sun_highlight * (direct_sun + rim * 0.55) * daylight * sun_slider;
+
+    // Ambiance du ciel sur les faces ombragées (teinte lavande / violet crépusculaire de la photo)
+    let ambient_day = vec3<f32>(0.74, 0.84, 0.96);
+    let ambient_sunset = vec3<f32>(0.64, 0.48, 0.68);
+    let cloud_ambient = mix(ambient_day, ambient_sunset, sunset_factor) * daylight * day_amb_slider;
+    let ndotup = dot(norm, up);
+    let ambient_facing = 0.55 + 0.45 * clamp(ndotup * 0.5 + 0.5, 0.0, 1.0);
+    let ambient_light = cloud_ambient * ambient_facing;
+
+    // Éclairage lunaire de nuit
+    let ndotm = max(dot(norm, moon.dir), 0.0);
+    let moon_direct = ndotm * moon.phase * moon_slider * (1.0 - daylight);
+    let moon_light = vec3<f32>(0.70, 0.84, 1.0) * (moon_direct * 0.70);
+    let night_ambient = vec3<f32>(0.04, 0.07, 0.15) * night_amb_slider * (1.0 - daylight);
+
+    // Ombrage ambiant (faces inférieures et occlusion)
+    let ao = 0.65 + 0.35 * clamp(ndotup * 0.5 + 0.5, 0.0, 1.0);
+    let cloud_color = (direct_light + ambient_light + moon_light + night_ambient) * ao;
+
+    // Estompage doux à l'extrême horizon uniquement
+    let horizon_fade = smoothstep(0.015, 0.08, ray_up);
+
+    // Le nuage est 100% SOLIDE et opaque (alpha = 1.0) !
+    return vec4<f32>(cloud_color, horizon_fade);
 }
 
 @fragment
