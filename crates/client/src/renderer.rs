@@ -55,6 +55,36 @@ pub struct State {
     pub last_uniform_time: std::time::Instant,
 }
 
+/// Calcule la direction unitaire vers le Soleil en temps réel
+/// - Cycle diurne complet (jour / nuit) : 20 minutes (1200 secondes)
+/// - Inclinaison de l'écliptique : ~23.4° (0.409 rad)
+pub fn compute_sun_dir(time: f32) -> glam::Vec3 {
+    let tilt: f32 = 0.409;
+    let u_sun = glam::Vec3::new(tilt.cos(), tilt.sin(), 0.0);
+    let v_sun = glam::Vec3::new(0.0, 0.0, 1.0);
+    let sun_period = 1200.0_f32; // 20 minutes
+    let sun_angle = (time / sun_period) * std::f32::consts::TAU + 0.40;
+    (u_sun * sun_angle.cos() + v_sun * sun_angle.sin()).normalize()
+}
+
+/// Calcule la direction unitaire et la phase de la Lune en temps réel
+/// - Période orbitale : 21 minutes (1260 secondes)
+/// - Inclinaison orbitale lunaire : ~28.5° (0.497 rad)
+/// - Cycle synodique complet (retour à la même phase) : 21 jours de jeu (420 minutes)
+#[allow(dead_code)]
+pub fn compute_moon_data(time: f32, sun_dir: glam::Vec3) -> (glam::Vec3, f32) {
+    let l_sun = sun_dir.normalize();
+    let moon_tilt: f32 = 0.497;
+    let u_moon = glam::Vec3::new(moon_tilt.cos(), moon_tilt.sin(), 0.0);
+    let v_moon = glam::Vec3::new(0.0, 0.0, 1.0);
+    let moon_period = 1260.0_f32; // 21 minutes
+    let moon_angle = (time / moon_period) * std::f32::consts::TAU + 3.69;
+    let moon_dir = (u_moon * moon_angle.cos() + v_moon * moon_angle.sin()).normalize();
+    let sun_moon_dot = moon_dir.dot(l_sun);
+    let moon_phase = ((-sun_moon_dot + 1.0) * 0.5).clamp(0.0, 1.0);
+    (moon_dir, moon_phase)
+}
+
 impl State {
     pub async fn new(window: Arc<Window>, planet_mesh: &PlanetMesh, _ui_state: &UiState) -> Self {
         let size = window.inner_size();
@@ -155,14 +185,15 @@ impl State {
         use wgpu::util::DeviceExt;
 
         // Uniform Camera
+        let sun_dir = compute_sun_dir(0.0);
         let initial_uniform = CameraUniform {
             view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
             inv_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
             camera_pos: [0.0, 0.0, 165.0],
             planet_radius: 25.0,
-            light_dir: [0.6, 0.8, 0.5],
+            light_dir: sun_dir.to_array(),
             time: 0.0,
-            lighting_params: [1.0, 1.0, 1.0, 1.0],
+            lighting_params: [0.25, 1.0, 2.10, 1.0],
             lighting_params2: [1.0, 1.0, 0.0, 0.0],
         };
 
@@ -469,12 +500,13 @@ impl State {
         let view_proj = camera.build_view_projection_matrix();
         let inv_view_proj = view_proj.inverse();
         let eye = camera.eye_position();
+        let sun_dir = compute_sun_dir(self.simulated_time);
         let uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
             inv_view_proj: inv_view_proj.to_cols_array_2d(),
             camera_pos: eye.to_array(),
             planet_radius: camera.base_radius,
-            light_dir: [0.6, 0.8, 0.5],
+            light_dir: sun_dir.to_array(),
             time: self.simulated_time,
             lighting_params: [
                 lighting.moon_intensity,
@@ -704,36 +736,20 @@ mod tests {
 
     #[test]
     fn test_lunar_orbit_mechanics_and_phases() {
-        // Reproduit la fonction WGSL get_moon_data pour vérifier les propriétés mathématiques de l'orbite
-        let compute_moon = |time: f32, light_dir: [f32; 3]| -> (glam::Vec3, f32) {
-            let l_sun = glam::Vec3::from(light_dir).normalize();
-            let up_ref = if l_sun.z.abs() > 0.9 {
-                glam::Vec3::new(0.0, 1.0, 0.0)
-            } else {
-                glam::Vec3::new(0.0, 0.0, 1.0)
-            };
-            let e2 = l_sun.cross(up_ref).normalize();
-            let e3 = l_sun.cross(e2);
-            let tilt = 0.38_f32;
-            let u_orb = l_sun;
-            let v_orb = e2 * tilt.cos() + e3 * tilt.sin();
-            let moon_period = 180.0_f32;
-            let moon_angle = (time / moon_period) * std::f32::consts::TAU + 2.4;
-            let moon_dir = (u_orb * moon_angle.cos() + v_orb * moon_angle.sin()).normalize();
-            let sun_moon_dot = moon_dir.dot(l_sun);
-            let moon_phase = ((-sun_moon_dot + 1.0) * 0.5).clamp(0.0, 1.0);
-            (moon_dir, moon_phase)
-        };
-
-        let light_dir = [0.6, 0.8, 0.5];
         let mut min_phase = 1.0_f32;
         let mut max_phase = 0.0_f32;
 
-        for step in 0..180 {
-            let t = step as f32;
-            let (moon_dir, phase) = compute_moon(t, light_dir);
+        // Période synodique complète : 25200s (21 jours de 1200s, soit 20 révolutions lunaires de 1260s)
+        let synodic_period = 25200.0_f32;
+        let steps = 420; // Échantillonnage toutes les 60 secondes
 
-            // Vérifie que le vecteur est toujours unitaire
+        for step in 0..=steps {
+            let t = (step as f32) * (synodic_period / steps as f32);
+            let sun_dir = compute_sun_dir(t);
+            let (moon_dir, phase) = compute_moon_data(t, sun_dir);
+
+            // Vérifie que les vecteurs sont toujours unitaires
+            assert!((sun_dir.length() - 1.0).abs() < 1e-5);
             assert!((moon_dir.length() - 1.0).abs() < 1e-5);
             // Vérifie que la phase est bien bornée [0.0, 1.0]
             assert!(phase >= 0.0 && phase <= 1.0);
@@ -746,8 +762,18 @@ mod tests {
             }
         }
 
-        // Sur un cycle complet de 180s, la Lune doit couvrir de la Nouvelle Lune (~0) à la Pleine Lune (~1)
+        // Sur un cycle synodique complet de 21 jours, la Lune doit couvrir de la Nouvelle Lune (~0) à la Pleine Lune (~1)
         assert!(min_phase < 0.05, "La nouvelle lune doit approcher 0.0 (obtenu: {min_phase})");
         assert!(max_phase > 0.95, "La pleine lune doit approcher 1.0 (obtenu: {max_phase})");
+
+        // Première nuit (t = 600s, 10 min de jeu) : pleine lune éclatante
+        let sun_first_night = compute_sun_dir(600.0);
+        let (_moon_dir_first_night, phase_first_night) = compute_moon_data(600.0, sun_first_night);
+        assert!(phase_first_night > 0.95, "La première nuit doit avoir une pleine lune éclatante (obtenu: {phase_first_night})");
+
+        // Nuit du 11ème jour (t = 10.5 jours * 1200s + 600s = 13200s) : nouvelle lune (nuit sans lune)
+        let sun_new_moon_night = compute_sun_dir(13200.0);
+        let (_moon_dir_new_moon, phase_new_moon) = compute_moon_data(13200.0, sun_new_moon_night);
+        assert!(phase_new_moon < 0.05, "La nuit de nouvelle lune doit approcher 0.0 (obtenu: {phase_new_moon})");
     }
 }

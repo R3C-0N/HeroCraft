@@ -86,9 +86,9 @@ pub struct LightingSettings {
 impl Default for LightingSettings {
     fn default() -> Self {
         Self {
-            moon_intensity: 1.0,
+            moon_intensity: 0.25,
             sun_intensity: 1.0,
-            night_ambient: 1.0,
+            night_ambient: 2.10,
             day_ambient: 1.0,
             moon_speed: 1.0,
             fog_intensity: 1.0,
@@ -386,14 +386,14 @@ impl UiState {
 
                                     ui.add_space(2.0_f32);
                                     ui.label(egui::RichText::new("Ambiance Nuit (Étoiles) :").size(11.0_f32).color(egui::Color32::from_rgb(140, 160, 220)));
-                                    ui.add(egui::Slider::new(&mut self.lighting_settings.night_ambient, 0.0..=3.0).text("Nuit").show_value(true));
+                                    ui.add(egui::Slider::new(&mut self.lighting_settings.night_ambient, 0.0..=4.0).text("Nuit").show_value(true));
 
                                     ui.add_space(2.0_f32);
                                     ui.label(egui::RichText::new("Ambiance Jour (Ciel) :").size(11.0_f32).color(egui::Color32::from_rgb(160, 210, 240)));
                                     ui.add(egui::Slider::new(&mut self.lighting_settings.day_ambient, 0.0..=3.0).text("Jour").show_value(true));
 
                                     ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Vitesse de la Lune :").size(11.0_f32).color(egui::Color32::from_rgb(200, 200, 200)));
+                                    ui.label(egui::RichText::new("Vitesse Céleste (Jour 20m / Lune 21m) :").size(11.0_f32).color(egui::Color32::from_rgb(200, 200, 200)));
                                     ui.add(egui::Slider::new(&mut self.lighting_settings.moon_speed, 0.0..=5.0).text("Vitesse").show_value(true));
 
                                     ui.add_space(2.0_f32);
@@ -532,7 +532,7 @@ impl UiState {
 
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("Ambiance Nuit (Étoiles) :").size(12.0_f32).color(egui::Color32::from_rgb(140, 160, 220)));
-                            ui.add(egui::Slider::new(&mut self.lighting_settings.night_ambient, 0.0..=3.0).show_value(true));
+                            ui.add(egui::Slider::new(&mut self.lighting_settings.night_ambient, 0.0..=4.0).show_value(true));
                         });
 
                         ui.horizontal(|ui| {
@@ -541,7 +541,7 @@ impl UiState {
                         });
 
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Vitesse de la Lune :").size(12.0_f32).color(egui::Color32::from_rgb(200, 200, 200)));
+                            ui.label(egui::RichText::new("Vitesse Céleste (Jour 20m / Lune 21m) :").size(12.0_f32).color(egui::Color32::from_rgb(200, 200, 200)));
                             ui.add(egui::Slider::new(&mut self.lighting_settings.moon_speed, 0.0..=5.0).show_value(true));
                         });
 
@@ -687,9 +687,9 @@ mod tests {
     #[test]
     fn test_lighting_settings_defaults_and_mutation() {
         let mut settings = LightingSettings::default();
-        assert_eq!(settings.moon_intensity, 1.0);
+        assert_eq!(settings.moon_intensity, 0.25);
         assert_eq!(settings.sun_intensity, 1.0);
-        assert_eq!(settings.night_ambient, 1.0);
+        assert_eq!(settings.night_ambient, 2.10);
         assert_eq!(settings.day_ambient, 1.0);
         assert_eq!(settings.moon_speed, 1.0);
         assert_eq!(settings.fog_intensity, 1.0);
@@ -701,7 +701,8 @@ mod tests {
 
         // Réinitialisation
         settings = LightingSettings::default();
-        assert_eq!(settings.moon_intensity, 1.0);
+        assert_eq!(settings.moon_intensity, 0.25);
+        assert_eq!(settings.night_ambient, 2.10);
         assert_eq!(settings.moon_speed, 1.0);
     }
 }

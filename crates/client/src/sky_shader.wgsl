@@ -94,21 +94,18 @@ struct MoonData {
 };
 
 // Calcule la position orbitale et la phase de la Lune en temps réel
-// - Orbite inclinée de ~21.8° (0.38 rad) par rapport à l'écliptique
-// - Période orbitale de 180s (3 minutes par cycle complet)
-// - La Lune traverse le ciel indépendamment du Soleil, visible de nuit comme de jour
+// - Période orbitale : 21 minutes (1260 secondes)
+// - Inclinaison orbitale lunaire : ~28.5° (0.497 rad)
+// - Cycle synodique complet (retour à la même phase) : 21 jours de jeu (420 minutes)
+// - Déphasage initial (+3.69 rad) pour garantir une pleine lune majestueuse dès la première nuit
 fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
     let l_sun = normalize(light_dir);
-    let up_ref = select(vec3<f32>(0.0, 0.0, 1.0), vec3<f32>(0.0, 1.0, 0.0), abs(l_sun.z) > 0.9);
-    let e2 = normalize(cross(l_sun, up_ref));
-    let e3 = cross(l_sun, e2);
-    let tilt_angle = 0.38; // ~21.8°
-    let u_orb = l_sun;
-    let v_orb = e2 * cos(tilt_angle) + e3 * sin(tilt_angle);
-    let moon_period = 180.0;
-    // Déphasage initial (+2.4 rad) pour avoir une lune gibbeuse/pleine au démarrage
-    let moon_angle = (time / moon_period) * 6.2831853 + 2.4;
-    let moon_dir = normalize(u_orb * cos(moon_angle) + v_orb * sin(moon_angle));
+    let moon_tilt = 0.497;
+    let u_moon = vec3<f32>(cos(moon_tilt), sin(moon_tilt), 0.0);
+    let v_moon = vec3<f32>(0.0, 0.0, 1.0);
+    let moon_period = 1260.0;
+    let moon_angle = (time / moon_period) * 6.2831853 + 3.69;
+    let moon_dir = normalize(u_moon * cos(moon_angle) + v_moon * sin(moon_angle));
     let sun_moon_dot = dot(moon_dir, l_sun);
     let moon_phase = clamp((-sun_moon_dot + 1.0) * 0.5, 0.0, 1.0);
     var data: MoonData;

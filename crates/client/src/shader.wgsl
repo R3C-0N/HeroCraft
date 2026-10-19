@@ -64,19 +64,18 @@ struct MoonData {
     phase: f32,         // 0.0 = Nouvelle Lune, 0.5 = Quartier, 1.0 = Pleine Lune
 };
 
-// Calcule la position orbitale et la phase de la Lune en temps réel (identique au sky shader)
+// Calcule la position orbitale et la phase de la Lune en temps réel (identique au sky shader et renderer.rs)
+// - Période orbitale : 21 minutes (1260 secondes)
+// - Inclinaison orbitale lunaire : ~28.5° (0.497 rad)
+// - Déphasage initial (+3.69 rad) pour garantir une pleine lune majestueuse dès la première nuit
 fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
     let l_sun = normalize(light_dir);
-    let up_ref = select(vec3<f32>(0.0, 0.0, 1.0), vec3<f32>(0.0, 1.0, 0.0), abs(l_sun.z) > 0.9);
-    let e2 = normalize(cross(l_sun, up_ref));
-    let e3 = cross(l_sun, e2);
-    let tilt_angle = 0.38; // ~21.8°
-    let u_orb = l_sun;
-    let v_orb = e2 * cos(tilt_angle) + e3 * sin(tilt_angle);
-    let moon_period = 180.0;
-    // Déphasage initial (+2.4 rad) pour correspondre au sky shader
-    let moon_angle = (time / moon_period) * 6.2831853 + 2.4;
-    let moon_dir = normalize(u_orb * cos(moon_angle) + v_orb * sin(moon_angle));
+    let moon_tilt = 0.497;
+    let u_moon = vec3<f32>(cos(moon_tilt), sin(moon_tilt), 0.0);
+    let v_moon = vec3<f32>(0.0, 0.0, 1.0);
+    let moon_period = 1260.0;
+    let moon_angle = (time / moon_period) * 6.2831853 + 3.69;
+    let moon_dir = normalize(u_moon * cos(moon_angle) + v_moon * sin(moon_angle));
     let sun_moon_dot = dot(moon_dir, l_sun);
     let moon_phase = clamp((-sun_moon_dot + 1.0) * 0.5, 0.0, 1.0);
     var data: MoonData;
