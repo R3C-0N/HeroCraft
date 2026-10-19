@@ -3,7 +3,7 @@ use winit::window::Window;
 
 use crate::camera::OrbitCamera;
 use crate::planet_mesh::{PlanetMesh, PlanetVertex};
-use crate::ui::UiState;
+use crate::ui::{LightingSettings, UiState};
 
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -14,6 +14,8 @@ pub struct CameraUniform {
     pub planet_radius: f32,
     pub light_dir: [f32; 3],
     pub time: f32,
+    pub lighting_params: [f32; 4],
+    pub lighting_params2: [f32; 4],
 }
 
 pub struct State {
@@ -49,7 +51,8 @@ pub struct State {
     // Paramètres Vidéo & Menu
     pub vsync_mode: wgpu::PresentMode,
     pub novsync_mode: wgpu::PresentMode,
-    pub start_time: std::time::Instant,
+    pub simulated_time: f32,
+    pub last_uniform_time: std::time::Instant,
 }
 
 impl State {
@@ -159,6 +162,8 @@ impl State {
             planet_radius: 25.0,
             light_dir: [0.6, 0.8, 0.5],
             time: 0.0,
+            lighting_params: [1.0, 1.0, 1.0, 1.0],
+            lighting_params2: [1.0, 1.0, 0.0, 0.0],
         };
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -364,7 +369,8 @@ impl State {
             egui_renderer,
             vsync_mode,
             novsync_mode,
-            start_time: std::time::Instant::now(),
+            simulated_time: 0.0,
+            last_uniform_time: std::time::Instant::now(),
         }
     }
 
@@ -454,7 +460,12 @@ impl State {
         }
     }
 
-    pub fn update_camera(&mut self, camera: &OrbitCamera) {
+    pub fn update_camera(&mut self, camera: &OrbitCamera, lighting: &LightingSettings) {
+        let now = std::time::Instant::now();
+        let dt = now.duration_since(self.last_uniform_time).as_secs_f32();
+        self.last_uniform_time = now;
+        self.simulated_time += dt * lighting.moon_speed;
+
         let view_proj = camera.build_view_projection_matrix();
         let inv_view_proj = view_proj.inverse();
         let eye = camera.eye_position();
@@ -464,7 +475,19 @@ impl State {
             camera_pos: eye.to_array(),
             planet_radius: camera.base_radius,
             light_dir: [0.6, 0.8, 0.5],
-            time: self.start_time.elapsed().as_secs_f32(),
+            time: self.simulated_time,
+            lighting_params: [
+                lighting.moon_intensity,
+                lighting.sun_intensity,
+                lighting.night_ambient,
+                lighting.day_ambient,
+            ],
+            lighting_params2: [
+                lighting.moon_speed,
+                lighting.fog_intensity,
+                0.0,
+                0.0,
+            ],
         };
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
@@ -652,7 +675,7 @@ mod tests {
 
     #[test]
     fn test_camera_uniform_size_and_alignment() {
-        assert_eq!(std::mem::size_of::<CameraUniform>(), 160);
+        assert_eq!(std::mem::size_of::<CameraUniform>(), 192);
         assert_eq!(std::mem::align_of::<CameraUniform>(), 16);
     }
 

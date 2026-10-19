@@ -72,6 +72,30 @@ impl Default for VideoSettings {
     }
 }
 
+/// Réglages d'éclairage et d'ambiance céleste ajustables via sliders
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LightingSettings {
+    pub moon_intensity: f32,     // Multiplicateur lumière de Lune (défaut: 1.0, [0.0 .. 3.0])
+    pub sun_intensity: f32,      // Multiplicateur lumière du Soleil (défaut: 1.0, [0.0 .. 3.0])
+    pub night_ambient: f32,      // Multiplicateur obscurité nocturne / étoiles (défaut: 1.0, [0.0 .. 3.0])
+    pub day_ambient: f32,        // Multiplicateur clarté ambiante diurne (défaut: 1.0, [0.0 .. 3.0])
+    pub moon_speed: f32,         // Vitesse orbitale de la Lune (défaut: 1.0, [0.0 .. 5.0], 0 = fige la lune)
+    pub fog_intensity: f32,      // Multiplicateur brouillard de distance (défaut: 1.0, [0.0 .. 2.0])
+}
+
+impl Default for LightingSettings {
+    fn default() -> Self {
+        Self {
+            moon_intensity: 1.0,
+            sun_intensity: 1.0,
+            night_ambient: 1.0,
+            day_ambient: 1.0,
+            moon_speed: 1.0,
+            fog_intensity: 1.0,
+        }
+    }
+}
+
 pub struct UiState {
     pub ctx: egui::Context,
     pub raw_input: egui::RawInput,
@@ -84,6 +108,7 @@ pub struct UiState {
     pub current_fps: u32,
     pub is_settings_open: bool,
     pub video_settings: VideoSettings,
+    pub lighting_settings: LightingSettings,
     pub screen_width: f32,
     pub screen_height: f32,
 }
@@ -105,6 +130,7 @@ impl UiState {
             current_fps: 60,
             is_settings_open: false,
             video_settings: VideoSettings::default(),
+            lighting_settings: LightingSettings::default(),
             screen_width: 1280.0_f32,
             screen_height: 720.0_f32,
         }
@@ -338,6 +364,48 @@ impl UiState {
                                 }
                                 action = Some(UiAction::ToggleOceanCurrents);
                             }
+
+                            ui.add_space(4.0_f32);
+                            ui.separator();
+                            ui.add_space(4.0_f32);
+
+                            // Section interactive d'éclairage et d'ambiance céleste
+                            ui.collapsing(
+                                egui::RichText::new("🌙  Éclairage & Ambiance")
+                                    .size(12.0_f32)
+                                    .color(egui::Color32::from_rgb(220, 205, 140))
+                                    .strong(),
+                                |ui| {
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Lumière de Lune :").size(11.0_f32).color(egui::Color32::from_rgb(180, 210, 255)));
+                                    ui.add(egui::Slider::new(&mut self.lighting_settings.moon_intensity, 0.0..=3.0).text("Lune").show_value(true));
+
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Lumière Solaire :").size(11.0_f32).color(egui::Color32::from_rgb(255, 230, 150)));
+                                    ui.add(egui::Slider::new(&mut self.lighting_settings.sun_intensity, 0.0..=3.0).text("Soleil").show_value(true));
+
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Ambiance Nuit (Étoiles) :").size(11.0_f32).color(egui::Color32::from_rgb(140, 160, 220)));
+                                    ui.add(egui::Slider::new(&mut self.lighting_settings.night_ambient, 0.0..=3.0).text("Nuit").show_value(true));
+
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Ambiance Jour (Ciel) :").size(11.0_f32).color(egui::Color32::from_rgb(160, 210, 240)));
+                                    ui.add(egui::Slider::new(&mut self.lighting_settings.day_ambient, 0.0..=3.0).text("Jour").show_value(true));
+
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Vitesse de la Lune :").size(11.0_f32).color(egui::Color32::from_rgb(200, 200, 200)));
+                                    ui.add(egui::Slider::new(&mut self.lighting_settings.moon_speed, 0.0..=5.0).text("Vitesse").show_value(true));
+
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Brouillard Atmosphérique :").size(11.0_f32).color(egui::Color32::from_rgb(190, 190, 190)));
+                                    ui.add(egui::Slider::new(&mut self.lighting_settings.fog_intensity, 0.0..=2.0).text("Brume").show_value(true));
+
+                                    ui.add_space(4.0_f32);
+                                    if ui.button("↺ Réinitialiser l'éclairage").clicked() {
+                                        self.lighting_settings = LightingSettings::default();
+                                    }
+                                },
+                            );
                         });
                 });
 
@@ -439,6 +507,52 @@ impl UiState {
                                 FpsLimitSetting::Unlimited => FpsLimitSetting::Fps60,
                             };
                             action = Some(UiAction::CycleFpsLimit);
+                        }
+
+                        ui.add_space(10.0_f32);
+                        ui.separator();
+                        ui.add_space(6.0_f32);
+
+                        ui.heading(
+                            egui::RichText::new("ÉCLAIRAGE & AMBIANCE DU MONDE")
+                                .size(14.0_f32)
+                                .color(egui::Color32::from_rgb(220, 185, 60)),
+                        );
+                        ui.add_space(4.0_f32);
+
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Lumière de Lune :").size(12.0_f32).color(egui::Color32::from_rgb(180, 210, 255)));
+                            ui.add(egui::Slider::new(&mut self.lighting_settings.moon_intensity, 0.0..=3.0).show_value(true));
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Lumière du Soleil :").size(12.0_f32).color(egui::Color32::from_rgb(255, 230, 150)));
+                            ui.add(egui::Slider::new(&mut self.lighting_settings.sun_intensity, 0.0..=3.0).show_value(true));
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Ambiance Nuit (Étoiles) :").size(12.0_f32).color(egui::Color32::from_rgb(140, 160, 220)));
+                            ui.add(egui::Slider::new(&mut self.lighting_settings.night_ambient, 0.0..=3.0).show_value(true));
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Ambiance Jour (Ciel) :").size(12.0_f32).color(egui::Color32::from_rgb(160, 210, 240)));
+                            ui.add(egui::Slider::new(&mut self.lighting_settings.day_ambient, 0.0..=3.0).show_value(true));
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Vitesse de la Lune :").size(12.0_f32).color(egui::Color32::from_rgb(200, 200, 200)));
+                            ui.add(egui::Slider::new(&mut self.lighting_settings.moon_speed, 0.0..=5.0).show_value(true));
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Brouillard Atmosphérique :").size(12.0_f32).color(egui::Color32::from_rgb(190, 190, 190)));
+                            ui.add(egui::Slider::new(&mut self.lighting_settings.fog_intensity, 0.0..=2.0).show_value(true));
+                        });
+
+                        ui.add_space(4.0_f32);
+                        if ui.button("↺ Réinitialiser l'éclairage par défaut").clicked() {
+                            self.lighting_settings = LightingSettings::default();
                         }
 
                         ui.add_space(10.0_f32);
@@ -568,5 +682,26 @@ mod tests {
         let (output_ground, action_ground) = ui.update_ui(10.0, true);
         assert!(action_ground.is_none());
         assert!(!output_ground.shapes.is_empty());
+    }
+
+    #[test]
+    fn test_lighting_settings_defaults_and_mutation() {
+        let mut settings = LightingSettings::default();
+        assert_eq!(settings.moon_intensity, 1.0);
+        assert_eq!(settings.sun_intensity, 1.0);
+        assert_eq!(settings.night_ambient, 1.0);
+        assert_eq!(settings.day_ambient, 1.0);
+        assert_eq!(settings.moon_speed, 1.0);
+        assert_eq!(settings.fog_intensity, 1.0);
+
+        settings.moon_intensity = 2.5;
+        settings.moon_speed = 0.0; // Fige la lune
+        assert_eq!(settings.moon_intensity, 2.5);
+        assert_eq!(settings.moon_speed, 0.0);
+
+        // Réinitialisation
+        settings = LightingSettings::default();
+        assert_eq!(settings.moon_intensity, 1.0);
+        assert_eq!(settings.moon_speed, 1.0);
     }
 }

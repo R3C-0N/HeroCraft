@@ -301,7 +301,7 @@ fn main() {
                         if !ui_state.is_settings_open {
                             camera.update(dt, &generator);
                         }
-                        state.update_camera(&camera);
+                        state.update_camera(&camera, &ui_state.lighting_settings);
 
                         // Mise à jour adaptative du QuadTree LOD
                         if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, dt, None) {

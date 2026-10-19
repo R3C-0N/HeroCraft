@@ -13,6 +13,8 @@ struct CameraUniform {
     planet_radius: f32,
     light_dir: vec3<f32>,
     time: f32,
+    lighting_params: vec4<f32>,
+    lighting_params2: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -125,6 +127,12 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let l = normalize(camera.light_dir);
     let cos_sun = dot(ray_dir, l);
 
+    // Multiplicateurs d'intensité interactifs pilotés par les sliders de l'interface
+    let moon_slider = camera.lighting_params.x;      // Multiplicateur Lune [0.0 .. 3.0]
+    let sun_slider = camera.lighting_params.y;       // Multiplicateur Soleil [0.0 .. 3.0]
+    let night_amb_slider = camera.lighting_params.z; // Multiplicateur Nuit / Étoiles [0.0 .. 3.0]
+    let day_amb_slider = camera.lighting_params.w;   // Multiplicateur Jour / Ciel [0.0 .. 3.0]
+
     // Données de la Lune orbitale
     let moon = get_moon_data(camera.time, camera.light_dir);
     let cos_moon = dot(ray_dir, moon.dir);
@@ -143,7 +151,7 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     // Couronne solaire chaude et rayonnement externe
     let corona = pow(clamp(cos_sun, 0.0, 1.0), 128.0) * 1.8;
     let wide_glow = pow(clamp(cos_sun, 0.0, 1.0), 16.0) * 0.35;
-    sun_color += vec3<f32>(1.0, 0.82, 0.55) * corona + vec3<f32>(0.8, 0.5, 0.25) * wide_glow;
+    sun_color = (sun_color + vec3<f32>(1.0, 0.82, 0.55) * corona + vec3<f32>(0.8, 0.5, 0.25) * wide_glow) * sun_slider;
 
     // 2. Lune (Disque sphérique 3D, phases lumineuses, cratères, mers et lumière cendrée)
     var moon_disk_color = vec3<f32>(0.0);
@@ -182,10 +190,10 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let moon_corona = pow(clamp(cos_moon, 0.0, 1.0), 128.0) * 0.25 * moon.phase;
     let moon_wide_glow = pow(clamp(cos_moon, 0.0, 1.0), 24.0) * 0.06 * moon.phase;
     let moon_aura = vec3<f32>(0.70, 0.82, 1.0) * (moon_corona + moon_wide_glow);
-    let moon_space_color = select(vec3<f32>(0.0), moon_disk_color, is_moon_disk) + moon_aura;
+    let moon_space_color = (select(vec3<f32>(0.0), moon_disk_color, is_moon_disk) + moon_aura) * moon_slider;
 
     // 3. Ciel étoilé dans le vide spatial (étoiles masquées par le disque opaque de la Lune)
-    let stars = render_starfield(ray_dir, camera.time);
+    let stars = render_starfield(ray_dir, camera.time) * night_amb_slider;
     let visible_stars = select(stars, vec3<f32>(0.0), is_moon_disk);
     var space_color = visible_stars + sun_color + moon_space_color;
 
@@ -256,13 +264,13 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         // Dégradé vertical du dôme céleste (zénith -> horizon)
         let ray_h = max(ray_up, 0.0);
         let horizon_blend = pow(1.0 - ray_h, 2.5);
-        let day_sky = mix(zenith_color, horizon_color, horizon_blend);
+        let day_sky = mix(zenith_color, horizon_color, horizon_blend) * day_amb_slider;
 
         // Éclaircissement et halo solaire diffus au coucher/lever de soleil
         let sunset_glow_color = vec3<f32>(1.0, 0.52, 0.15);
         let day_glow_color = vec3<f32>(0.40, 0.35, 0.22);
         let active_glow_color = mix(day_glow_color, sunset_glow_color, sunset_factor);
-        let ground_sun_glow = pow(clamp(cos_sun, 0.0, 1.0), 6.0) * active_glow_color * (1.0 + sunset_factor * 1.8);
+        let ground_sun_glow = pow(clamp(cos_sun, 0.0, 1.0), 6.0) * active_glow_color * (1.0 + sunset_factor * 1.8) * sun_slider;
 
         // Visibilité du soleil au sol : masqué dès qu'il passe sous l'horizon planétaire
         let sun_visibility = clamp(sun_up * 15.0 + 0.5, 0.0, 1.0);
@@ -277,7 +285,7 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         let ground_moon = moon_space_color * moon_ground_vis * mix(1.0, 0.40, daylight) * daytime_moon_tint;
 
         // Ciel au sol : nuit étoilée douce et atmosphérique (starlight navy) vs ciel bleu diurne
-        let night_sky = visible_stars + vec3<f32>(0.008, 0.012, 0.024);
+        let night_sky = visible_stars + vec3<f32>(0.008, 0.012, 0.024) * night_amb_slider;
         let ground_sky = mix(night_sky, day_sky, daylight) + sun_color * sun_disk_tint * sun_visibility + ground_sun_glow * daylight + ground_moon;
 
         let final_sky = mix(space_color, ground_sky, ground_factor);
