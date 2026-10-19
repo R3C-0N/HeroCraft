@@ -192,8 +192,9 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         let sun_visibility = clamp(sun_up * 15.0 + 0.5, 0.0, 1.0);
         let sun_disk_tint = mix(vec3<f32>(1.0, 1.0, 1.0), vec3<f32>(1.0, 0.65, 0.25), sunset_factor);
 
-        // Ciel au sol : nuit étoilée profonde et sombre vs ciel bleu diurne
-        let ground_sky = mix(stars, day_sky, daylight) + sun_color * sun_disk_tint * sun_visibility + ground_sun_glow * daylight;
+        // Ciel au sol : nuit étoilée douce et atmosphérique (starlight navy) vs ciel bleu diurne
+        let night_sky = stars + vec3<f32>(0.008, 0.012, 0.024);
+        let ground_sky = mix(night_sky, day_sky, daylight) + sun_color * sun_disk_tint * sun_visibility + ground_sun_glow * daylight;
 
         let final_sky = mix(space_color, ground_sky, ground_factor);
         return vec4<f32>(final_sky, 1.0);
