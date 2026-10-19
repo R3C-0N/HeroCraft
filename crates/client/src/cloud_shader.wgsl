@@ -97,57 +97,69 @@ fn fs_cloud(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let mask = u32(in.bevel_mask + 0.5);
-    let has_west = (mask & 1u) != 0u;
-    let has_east = (mask & 2u) != 0u;
-    let has_south = (mask & 4u) != 0u;
-    let has_north = (mask & 8u) != 0u;
+    // Bits 0..3: Découpe des coins extérieurs réels du quad (aucun arrondi sur les jonctions intérieures)
+    let c00 = (mask & 1u) != 0u; // Coin (u=0, v=0)
+    let c10 = (mask & 2u) != 0u; // Coin (u=1, v=0)
+    let c11 = (mask & 4u) != 0u; // Coin (u=1, v=1)
+    let c01 = (mask & 8u) != 0u; // Coin (u=0, v=1)
 
     let uv = in.uv;
     let r_bevel = 0.14; // Rayon de chanfrein arrondi sur les arêtes et coins extérieurs
 
-    // Découpe des 4 coins extérieurs arrondis (arrondi géométrique net de voxel)
-    if (has_west && has_south && uv.x < r_bevel && uv.y < r_bevel) {
+    // Découpe chirurgicale des 4 coins extérieurs réels de chaque face
+    if (c00 && uv.x < r_bevel && uv.y < r_bevel) {
         if (length(vec2<f32>(r_bevel - uv.x, r_bevel - uv.y)) > r_bevel) {
             discard;
         }
     }
-    if (has_east && has_south && (1.0 - uv.x) < r_bevel && uv.y < r_bevel) {
+    if (c10 && (1.0 - uv.x) < r_bevel && uv.y < r_bevel) {
         if (length(vec2<f32>(r_bevel - (1.0 - uv.x), r_bevel - uv.y)) > r_bevel) {
             discard;
         }
     }
-    if (has_west && has_north && uv.x < r_bevel && (1.0 - uv.y) < r_bevel) {
-        if (length(vec2<f32>(r_bevel - uv.x, r_bevel - (1.0 - uv.y))) > r_bevel) {
-            discard;
-        }
-    }
-    if (has_east && has_north && (1.0 - uv.x) < r_bevel && (1.0 - uv.y) < r_bevel) {
+    if (c11 && (1.0 - uv.x) < r_bevel && (1.0 - uv.y) < r_bevel) {
         if (length(vec2<f32>(r_bevel - (1.0 - uv.x), r_bevel - (1.0 - uv.y))) > r_bevel) {
             discard;
         }
     }
+    if (c01 && uv.x < r_bevel && (1.0 - uv.y) < r_bevel) {
+        if (length(vec2<f32>(r_bevel - uv.x, r_bevel - (1.0 - uv.y))) > r_bevel) {
+            discard;
+        }
+    }
 
-    // Calcul de la normale de surface avec lissage biseauté sur les bords
+    // Bits 4..7: Lissage des normales sur les bordures extérieures réelles
+    let edge_u_min = (mask & 16u) != 0u; // Bord u=0
+    let edge_u_max = (mask & 32u) != 0u; // Bord u=1
+    let edge_v_min = (mask & 64u) != 0u; // Bord v=0
+    let edge_v_max = (mask & 128u) != 0u; // Bord v=1
+
     var norm = in.normal;
     var bevel_offset = vec2<f32>(0.0);
-    if (has_west && uv.x < r_bevel) {
+    if (edge_u_min && uv.x < r_bevel) {
         bevel_offset.x -= (r_bevel - uv.x) / r_bevel;
     }
-    if (has_east && (1.0 - uv.x) < r_bevel) {
+    if (edge_u_max && (1.0 - uv.x) < r_bevel) {
         bevel_offset.x += (r_bevel - (1.0 - uv.x)) / r_bevel;
     }
-    if (has_south && uv.y < r_bevel) {
+    if (edge_v_min && uv.y < r_bevel) {
         bevel_offset.y -= (r_bevel - uv.y) / r_bevel;
     }
-    if (has_north && (1.0 - uv.y) < r_bevel) {
+    if (edge_v_max && (1.0 - uv.y) < r_bevel) {
         bevel_offset.y += (r_bevel - (1.0 - uv.y)) / r_bevel;
     }
+
     if (length(bevel_offset) > 0.01) {
-        let dp_u = dpdx(in.world_pos);
-        let dp_v = dpdy(in.world_pos);
-        let tan_u = normalize(dp_u);
-        let tan_v = normalize(dp_v);
-        norm = normalize(norm + (tan_u * bevel_offset.x + tan_v * bevel_offset.y) * 0.45);
+        let dp1 = dpdx(in.world_pos);
+        let dp2 = dpdy(in.world_pos);
+        let duv1 = dpdx(in.uv);
+        let duv2 = dpdy(in.uv);
+        let det = duv1.x * duv2.y - duv1.y * duv2.x;
+        if (abs(det) > 1e-6) {
+            let tan_u = normalize((dp1 * duv2.y - dp2 * duv1.y) / det);
+            let tan_v = normalize((dp2 * duv1.x - dp1 * duv2.x) / det);
+            norm = normalize(norm + (tan_u * bevel_offset.x + tan_v * bevel_offset.y) * 0.50);
+        }
     }
 
     // Paramètres d'éclairage interactifs

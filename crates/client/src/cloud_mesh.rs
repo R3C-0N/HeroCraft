@@ -124,14 +124,22 @@ impl CloudMeshGenerator {
                 let has_south = y > 0 && occupied[y - 1][x];
                 let has_north = y + 1 < n && occupied[y + 1][x];
 
-                // Masque binaire d'arêtes extérieures pour l'arrondi biseauté dans le shader
-                let bevel_mask = (if !has_west { 1.0 } else { 0.0 })
-                    + (if !has_east { 2.0 } else { 0.0 })
-                    + (if !has_south { 4.0 } else { 0.0 })
-                    + (if !has_north { 8.0 } else { 0.0 });
+                let ext_w = !has_west;
+                let ext_e = !has_east;
+                let ext_s = !has_south;
+                let ext_n = !has_north;
 
                 // 2.a. Face inférieure (visible du sol en regardant vers le haut)
-                // Normale orientée vers le bas (vers la planète)
+                // Sommets ordonnés : SW (0,0), NW (0,1), NE (1,1), SE (1,0)
+                let bot_mask = ((if ext_w && ext_s { 1 } else { 0 })   // c00 (SW)
+                    | (if ext_e && ext_s { 2 } else { 0 })             // c10 (SE)
+                    | (if ext_e && ext_n { 4 } else { 0 })             // c11 (NE)
+                    | (if ext_w && ext_n { 8 } else { 0 })             // c01 (NW)
+                    | (if ext_w { 16 } else { 0 })                     // edge u=0 (W)
+                    | (if ext_e { 32 } else { 0 })                     // edge u=1 (E)
+                    | (if ext_s { 64 } else { 0 })                     // edge v=0 (S)
+                    | (if ext_n { 128 } else { 0 })) as f32;           // edge v=1 (N)
+
                 Self::add_quad(
                     mesh,
                     [
@@ -141,12 +149,21 @@ impl CloudMeshGenerator {
                         (pb1, [1.0, 0.0]),
                     ],
                     -d_center,
-                    bevel_mask,
+                    bot_mask,
                     0.0, // bottom
                 );
 
-                // 2.b. Face supérieure (visible d'en haut / depuis l'orbite ou un pic)
-                // Normale orientée vers le haut (vers l'espace)
+                // 2.b. Face supérieure (visible d'en haut / depuis l'espace)
+                // Sommets ordonnés : SW (0,0), SE (1,0), NE (1,1), NW (0,1)
+                let top_mask = ((if ext_w && ext_s { 1 } else { 0 })   // c00 (SW)
+                    | (if ext_e && ext_s { 2 } else { 0 })             // c10 (SE)
+                    | (if ext_e && ext_n { 4 } else { 0 })             // c11 (NE)
+                    | (if ext_w && ext_n { 8 } else { 0 })             // c01 (NW)
+                    | (if ext_w { 16 } else { 0 })                     // edge u=0 (W)
+                    | (if ext_e { 32 } else { 0 })                     // edge u=1 (E)
+                    | (if ext_s { 64 } else { 0 })                     // edge v=0 (S)
+                    | (if ext_n { 128 } else { 0 })) as f32;           // edge v=1 (N)
+
                 Self::add_quad(
                     mesh,
                     [
@@ -156,30 +173,50 @@ impl CloudMeshGenerator {
                         (pt3, [0.0, 1.0]),
                     ],
                     d_center,
-                    bevel_mask,
+                    top_mask,
                     1.0, // top
                 );
 
                 // 2.c. Paroi Ouest (si bordure extérieure)
-                if !has_west {
+                if ext_w {
                     let n_west = ((pb0 - pb1) + (pb3 - pb2)).normalize();
+                    // u: South -> North, v: Bottom -> Top
+                    let west_mask = ((if ext_s { 1 } else { 0 })       // c00 (South, Bottom)
+                        | (if ext_n { 2 } else { 0 })                 // c10 (North, Bottom)
+                        | (if ext_n { 4 } else { 0 })                 // c11 (North, Top)
+                        | (if ext_s { 8 } else { 0 })                 // c01 (South, Top)
+                        | (if ext_s { 16 } else { 0 })                // edge u=0 (South)
+                        | (if ext_n { 32 } else { 0 })                // edge u=1 (North)
+                        | 64                                          // edge v=0 (Bottom)
+                        | 128) as f32;                                // edge v=1 (Top)
+
                     Self::add_quad(
                         mesh,
                         [
                             (pb0, [0.0, 0.0]),
-                            (pt0, [0.0, 1.0]),
-                            (pt3, [1.0, 1.0]),
                             (pb3, [1.0, 0.0]),
+                            (pt3, [1.0, 1.0]),
+                            (pt0, [0.0, 1.0]),
                         ],
                         n_west,
-                        bevel_mask,
+                        west_mask,
                         0.5, // side
                     );
                 }
 
                 // 2.d. Paroi Est (si bordure extérieure)
-                if !has_east {
+                if ext_e {
                     let n_east = ((pb1 - pb0) + (pb2 - pb3)).normalize();
+                    // u: South -> North, v: Bottom -> Top
+                    let east_mask = ((if ext_s { 1 } else { 0 })       // c00 (South, Bottom)
+                        | (if ext_n { 2 } else { 0 })                 // c10 (North, Bottom)
+                        | (if ext_n { 4 } else { 0 })                 // c11 (North, Top)
+                        | (if ext_s { 8 } else { 0 })                 // c01 (South, Top)
+                        | (if ext_s { 16 } else { 0 })                // edge u=0 (South)
+                        | (if ext_n { 32 } else { 0 })                // edge u=1 (North)
+                        | 64                                          // edge v=0 (Bottom)
+                        | 128) as f32;                                // edge v=1 (Top)
+
                     Self::add_quad(
                         mesh,
                         [
@@ -189,14 +226,24 @@ impl CloudMeshGenerator {
                             (pt1, [0.0, 1.0]),
                         ],
                         n_east,
-                        bevel_mask,
+                        east_mask,
                         0.5, // side
                     );
                 }
 
                 // 2.e. Paroi Sud (si bordure extérieure)
-                if !has_south {
+                if ext_s {
                     let n_south = ((pb0 - pb3) + (pb1 - pb2)).normalize();
+                    // u: West -> East, v: Bottom -> Top
+                    let south_mask = ((if ext_w { 1 } else { 0 })      // c00 (West, Bottom)
+                        | (if ext_e { 2 } else { 0 })                 // c10 (East, Bottom)
+                        | (if ext_e { 4 } else { 0 })                 // c11 (East, Top)
+                        | (if ext_w { 8 } else { 0 })                 // c01 (West, Top)
+                        | (if ext_w { 16 } else { 0 })                // edge u=0 (West)
+                        | (if ext_e { 32 } else { 0 })                // edge u=1 (East)
+                        | 64                                          // edge v=0 (Bottom)
+                        | 128) as f32;                                // edge v=1 (Top)
+
                     Self::add_quad(
                         mesh,
                         [
@@ -206,24 +253,34 @@ impl CloudMeshGenerator {
                             (pt0, [0.0, 1.0]),
                         ],
                         n_south,
-                        bevel_mask,
+                        south_mask,
                         0.5, // side
                     );
                 }
 
                 // 2.f. Paroi Nord (si bordure extérieure)
-                if !has_north {
+                if ext_n {
                     let n_north = ((pb3 - pb0) + (pb2 - pb1)).normalize();
+                    // u: West -> East, v: Bottom -> Top
+                    let north_mask = ((if ext_w { 1 } else { 0 })      // c00 (West, Bottom)
+                        | (if ext_e { 2 } else { 0 })                 // c10 (East, Bottom)
+                        | (if ext_e { 4 } else { 0 })                 // c11 (East, Top)
+                        | (if ext_w { 8 } else { 0 })                 // c01 (West, Top)
+                        | (if ext_w { 16 } else { 0 })                // edge u=0 (West)
+                        | (if ext_e { 32 } else { 0 })                // edge u=1 (East)
+                        | 64                                          // edge v=0 (Bottom)
+                        | 128) as f32;                                // edge v=1 (Top)
+
                     Self::add_quad(
                         mesh,
                         [
-                            (pb2, [0.0, 0.0]),
-                            (pb3, [1.0, 0.0]),
-                            (pt3, [1.0, 1.0]),
-                            (pt2, [0.0, 1.0]),
+                            (pb3, [0.0, 0.0]),
+                            (pb2, [1.0, 0.0]),
+                            (pt2, [1.0, 1.0]),
+                            (pt3, [0.0, 1.0]),
                         ],
                         n_north,
-                        bevel_mask,
+                        north_mask,
                         0.5, // side
                     );
                 }
@@ -317,5 +374,30 @@ mod tests {
             quads >= 500 && quads <= 15000,
             "Nombre de quads de nuages ({quads}) doit être raisonnable pour un rendu 3D fluide"
         );
+    }
+
+    #[test]
+    fn test_cloud_mesh_per_quad_corner_and_edge_masks() {
+        let mesh = CloudMeshGenerator::generate_cloud_mesh(25.0, 2026);
+
+        // Vérifie que tous les masques sont des entiers valides dans l'intervalle [0, 255]
+        for v in &mesh.vertices {
+            let mask_f = v.color[2];
+            let mask = mask_f.round() as u32;
+            assert!(
+                (mask_f - mask as f32).abs() < 1e-4,
+                "Le masque de biseau doit être un entier exact encodé en f32 : {}",
+                mask_f
+            );
+            assert!(mask <= 255, "Le masque de biseau doit tenir sur 8 bits : {}", mask);
+
+            // Vérifie que face_type est 0.0 (bottom), 0.5 (side) ou 1.0 (top)
+            let ft = v.color[3];
+            assert!(
+                (ft - 0.0).abs() < 1e-4 || (ft - 0.5).abs() < 1e-4 || (ft - 1.0).abs() < 1e-4,
+                "Type de face inconnu : {}",
+                ft
+            );
+        }
     }
 }
