@@ -30,6 +30,12 @@ pub struct State {
     // Pipeline Ciel & Atmosphère 3D
     pub sky_pipeline: wgpu::RenderPipeline,
 
+    // Pipeline Nuages 3D physiques réels (traversables et visibles à leur altitude)
+    pub cloud_pipeline: wgpu::RenderPipeline,
+    pub cloud_vertex_buffer: wgpu::Buffer,
+    pub cloud_index_buffer: wgpu::Buffer,
+    pub num_cloud_indices: u32,
+
     // Pipeline Planète & Voxels 3D
     pub render_pipeline: wgpu::RenderPipeline,
     pub camera_buffer: wgpu::Buffer,
@@ -366,6 +372,71 @@ impl State {
         }
 
         // -------------------------------------------------------------
+        // Pipeline Nuages 3D physiques réels (traversables et visibles à leur altitude)
+        // -------------------------------------------------------------
+        let cloud_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Cloud Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("cloud_shader.wgsl").into()),
+        });
+
+        let cloud_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Cloud Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &cloud_shader,
+                entry_point: Some("vs_cloud"),
+                buffers: &[PlanetVertex::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &cloud_shader,
+                entry_point: Some("fs_cloud"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None, // Visible des deux côtés pour pouvoir entrer et traverser les nuages
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+
+        let cloud_mesh = crate::cloud_mesh::CloudMeshGenerator::generate_cloud_mesh(25.0, 2026);
+        let cloud_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cloud Vertex Buffer"),
+            contents: bytemuck::cast_slice(&cloud_mesh.vertices),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let cloud_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cloud Index Buffer"),
+            contents: bytemuck::cast_slice(&cloud_mesh.indices),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let num_cloud_indices = cloud_mesh.indices.len() as u32;
+
+        // -------------------------------------------------------------
         // Rendu Interface Utilisateur egui
         // -------------------------------------------------------------
         let egui_renderer = egui_wgpu::Renderer::new(
@@ -384,6 +455,10 @@ impl State {
             config,
             size,
             sky_pipeline,
+            cloud_pipeline,
+            cloud_vertex_buffer,
+            cloud_index_buffer,
+            num_cloud_indices,
             render_pipeline,
             camera_buffer,
             camera_bind_group,
@@ -592,6 +667,22 @@ impl State {
         }
     }
 
+    pub fn update_cloud_mesh(&mut self, base_radius: f32, seed: u64) {
+        use wgpu::util::DeviceExt;
+        let cloud_mesh = crate::cloud_mesh::CloudMeshGenerator::generate_cloud_mesh(base_radius, seed);
+        self.cloud_vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cloud Vertex Buffer"),
+            contents: bytemuck::cast_slice(&cloud_mesh.vertices),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+        self.cloud_index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cloud Index Buffer"),
+            contents: bytemuck::cast_slice(&cloud_mesh.indices),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        });
+        self.num_cloud_indices = cloud_mesh.indices.len() as u32;
+    }
+
     pub fn render(
         &mut self,
         paint_jobs: &[egui::ClippedPrimitive],
@@ -669,6 +760,15 @@ impl State {
                 render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
             }
+
+            // 1.c. Nuages 3D physiques réels (traversables et visibles à leur altitude)
+            if self.num_cloud_indices > 0 {
+                render_pass.set_pipeline(&self.cloud_pipeline);
+                render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.cloud_vertex_buffer.slice(..));
+                render_pass.set_index_buffer(self.cloud_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..self.num_cloud_indices, 0, 0..1);
+            }
         }
 
         // 2. Passe 2D Interface Utilisateur egui (sample_count = 1 sur la swapchain résolue)
@@ -725,11 +825,13 @@ mod tests {
         let sky_shader = include_str!("sky_shader.wgsl");
         let terrain_shader = include_str!("shader.wgsl");
         let ui_shader = include_str!("ui_shader.wgsl");
+        let cloud_shader = include_str!("cloud_shader.wgsl");
 
         for (name, source) in [
             ("sky_shader.wgsl", sky_shader),
             ("shader.wgsl", terrain_shader),
             ("ui_shader.wgsl", ui_shader),
+            ("cloud_shader.wgsl", cloud_shader),
         ] {
             let module = naga::front::wgsl::parse_str(source)
                 .unwrap_or_else(|e| panic!("Failed to parse {name}:\n{e}"));

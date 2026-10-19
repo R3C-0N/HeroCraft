@@ -11,6 +11,7 @@ use winit::{
 };
 
 mod camera;
+mod cloud_mesh;
 mod lod;
 mod planet_mesh;
 mod renderer;
@@ -250,6 +251,7 @@ fn main() {
                                         camera.spawn_on_ground(&generator);
                                         lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
                                         state.update_mesh(&lod_manager.combined_mesh);
+                                        state.update_cloud_mesh(camera.base_radius, current_seed);
                                         ui_state.set_seed(current_seed);
                                         info!("Raccourci [G] : Nouvelle planète générée (Graine: #{})", current_seed);
                                     }
@@ -357,6 +359,7 @@ fn main() {
                                     camera.spawn_on_ground(&generator);
                                     lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
                                     state.update_mesh(&lod_manager.combined_mesh);
+                                    state.update_cloud_mesh(camera.base_radius, current_seed);
                                     ui_state.set_seed(current_seed);
                                     info!("Bouton cliqué : Nouvelle planète générée ! (Graine: #{})", current_seed);
                                 }
