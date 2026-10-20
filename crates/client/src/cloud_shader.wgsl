@@ -1,10 +1,11 @@
 // =========================================================================
 // HeroCraft - 3D Marshmallow Cloud Shader (Boîtes Englobantes + SDF Analytique)
 // - Boîtes englobantes 3D physiques réelles traversables dans le monde
-// - Sphere tracing ultra-rapide (8 à 12 pas) sur SDF analytique exacte
-// - Biseaux 3D arrondis sur TOUTES les arêtes (dessus, dessous, coins verticaux)
+// - Sphere tracing ultra-rapide (8 à 16 pas) sur SDF analytique exacte
+// - Biseaux 3D arrondis sur TOUTES les arêtes (dessus, dessous, coins verticaux, coins sphériques)
 // - Angles concaves intérieurs adoucis par union lisse (op_smooth_union)
-// - Éclairage volumétrique opaque (soleil doré, ciel lavande, sous-face ombrée)
+// - Éclairage hémisphérique doux éliminant toute démarcation sur les parois latérales
+// - Teinte marshmallow ivoire/crème chaleureuse avec reflets dorés et ombres mauves douces
 // - Écriture précise de la profondeur dans le Z-buffer (@builtin(frag_depth))
 // =========================================================================
 
@@ -125,10 +126,11 @@ fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
     return data;
 }
 
-// Distance 2D signée à un rectangle centré
-fn sd_box_2d(p: vec2<f32>, b: vec2<f32>) -> f32 {
-    let d = abs(p) - b;
-    return length(max(d, vec2<f32>(0.0))) + min(max(d.x, d.y), 0.0);
+// Distance 2D signée à un rectangle centré avec coins verticaux arrondis
+fn sd_box_2d_rounded(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
+    let inner_b = max(b - vec2<f32>(r), vec2<f32>(0.0));
+    let q = abs(p) - inner_b;
+    return length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - r;
 }
 
 // Union lisse pour adoucir les angles concaves intérieurs
@@ -137,19 +139,19 @@ fn op_smooth_union(d1: f32, d2: f32, k: f32) -> f32 {
     return mix(d2, d1, h) - k * h * (1.0 - h);
 }
 
-// Distance 2D au nuage voxel (union de 1 ou 2 boîtes avec raccord concave doux)
-fn sd_cloud_2d(p: vec2<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32) -> f32 {
-    let d1 = sd_box_2d(p - b1.xy, b1.zw);
+// Distance 2D au nuage voxel (union de 1 ou 2 boîtes avec coins verticaux arrondis)
+fn sd_cloud_2d(p: vec2<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, r: f32) -> f32 {
+    let d1 = sd_box_2d_rounded(p - b1.xy, b1.zw, r);
     if (num_boxes < 1.5) {
         return d1;
     }
-    let d2 = sd_box_2d(p - b2.xy, b2.zw);
-    return op_smooth_union(d1, d2, 0.40);
+    let d2 = sd_box_2d_rounded(p - b2.xy, b2.zw, r);
+    return op_smooth_union(d1, d2, r * 1.5);
 }
 
-// Distance 3D avec biseau arrondi sur TOUTES les arêtes (dessus, dessous, coins verticaux, coins sphériques)
+// Distance 3D avec biseau arrondi uniforme sur TOUTES les arêtes (dessus, dessous, coins verticaux, coins sphériques)
 fn sd_cloud_3d(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, half_depth: f32, r: f32) -> f32 {
-    let d_2d = sd_cloud_2d(p.xy, b1, b2, num_boxes);
+    let d_2d = sd_cloud_2d(p.xy, b1, b2, num_boxes, r);
     let d_z = abs(p.z) - (half_depth - r);
     let w = vec2<f32>(d_2d + r, d_z);
     return length(max(w, vec2<f32>(0.0))) + min(max(w.x, w.y), 0.0) - r;
@@ -198,7 +200,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         dot(cam_v_world, in.frame_w)
     );
 
-    // Si la caméra est dans la boîte englobante (face arrière visible), on commence à la position caméra
+    // Si la caméra est DANS la boîte englobante (face arrière visible), on commence à la position caméra
     let local_p0 = select(p0_camera, p0_surface, is_front);
 
     let local_ray_dir = normalize(vec3<f32>(
@@ -223,7 +225,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         hit = true;
         hit_local_p = local_p0;
     } else {
-        // Sphere Tracing court et précis (16 pas maximum)
+        // Sphere Tracing précis (16 pas maximum)
         for (var step = 0; step < 16; step = step + 1) {
             let p = local_p0 + local_ray_dir * t;
             let d = sd_cloud_3d(p, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
@@ -233,7 +235,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
                 break;
             }
             t += d;
-            if (t > 12.0) {
+            if (t > 14.0) {
                 break;
             }
         }
@@ -260,7 +262,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let clip_pos = camera.view_proj * vec4<f32>(hit_world_pos, 1.0);
     let frag_depth = clip_pos.z / clip_pos.w;
 
-    // --- Modèle d'éclairage Marshmallow 3D ---
+    // --- Modèle d'éclairage Marshmallow Stylisé ---
     let moon_slider = camera.lighting_params.x;
     let sun_slider = camera.lighting_params.y;
     let night_amb_slider = camera.lighting_params.z;
@@ -269,52 +271,56 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let up_planet = normalize(hit_world_pos);
     let l_sun = normalize(camera.light_dir);
     let sun_up = dot(l_sun, up_planet);
-    let daylight = clamp((sun_up + 0.06) / 0.18, 0.0, 1.0);
+    let daylight = clamp((sun_up + 0.08) / 0.20, 0.0, 1.0);
 
-    let sunset_raw = clamp(1.0 - abs(sun_up - 0.03) / 0.18, 0.0, 1.0);
+    // Facteur coucher de soleil (soleil rasant proche de l'horizon)
+    let sunset_raw = clamp(1.0 - abs(sun_up - 0.03) / 0.16, 0.0, 1.0);
     let sunset_factor = sunset_raw * clamp((sun_up + 0.06) / 0.10, 0.0, 1.0);
 
-    // 1. Soleil direct chaud (Half-Lambert doux)
+    // 1. Éclairage solaire direct (Half-Lambert doux avec teinte dorée/pêche)
     let ndotl = dot(norm_world, l_sun);
-    let wrap = pow(clamp(ndotl * 0.5 + 0.5, 0.0, 1.0), 1.25);
-    let sun_col = mix(vec3<f32>(1.0, 0.96, 0.90), vec3<f32>(1.0, 0.70, 0.44), sunset_factor);
-    let direct_sun = sun_col * wrap * daylight * sun_slider;
+    let wrap = pow(clamp(ndotl * 0.5 + 0.5, 0.0, 1.0), 1.20);
+    let sun_col = mix(vec3<f32>(1.0, 0.98, 0.92), vec3<f32>(1.0, 0.72, 0.46), sunset_factor);
+    let direct_sun = sun_col * (wrap * 0.92) * daylight * sun_slider;
 
-    // 2. Éclairage zénithal supérieur (Ciel lavande / mauve doux)
+    // 2. Éclairage hémisphérique céleste (Ciel zénithal <-> Sol/Sous-face)
+    // Permet d'éclairer harmonieusement les parois latérales sans rupture
     let ndotup = dot(norm_world, up_planet);
-    let top_factor = clamp(ndotup, 0.0, 1.0);
-    let sky_col = mix(vec3<f32>(0.74, 0.84, 0.98), vec3<f32>(0.68, 0.54, 0.78), sunset_factor);
-    let sky_light = sky_col * top_factor * daylight * day_amb_slider * 0.90;
+    let hemi_factor = clamp(ndotup * 0.5 + 0.5, 0.0, 1.0);
 
-    // 3. Ombrage de sous-face (Underside Shadow violacé sombre)
-    let bottom_factor = clamp(-ndotup, 0.0, 1.0);
-    let bottom_shade_col = mix(vec3<f32>(0.35, 0.40, 0.50), vec3<f32>(0.45, 0.28, 0.38), sunset_factor);
-    let bottom_shadow = bottom_shade_col * (bottom_factor * shadow_intensity * 0.65);
+    // Couleur du ciel : bleu doux le jour -> lavande / lilas au couchant
+    let sky_col = mix(vec3<f32>(0.76, 0.86, 0.98), vec3<f32>(0.76, 0.58, 0.82), sunset_factor);
+    // Couleur de sous-face (rebond) : bleu-gris doux le jour -> mauve / prune chaud au couchant
+    let ground_col = mix(vec3<f32>(0.52, 0.58, 0.68), vec3<f32>(0.58, 0.38, 0.48), sunset_factor);
 
-    // 4. Éclat crépusculaire / Rim light (effet doré sur les bords au couchant)
-    let forward_scatter = pow(max(dot(-view_dir, l_sun), 0.0), 3.5);
-    let rim_col = vec3<f32>(1.0, 0.68, 0.42) * (forward_scatter * sunset_factor * sunset_glow_slider * 0.80);
+    // L'ombrage de sous-face atténue le bas sans jamais produire de noirceur terne
+    let ground_intensity = max(0.95 - shadow_intensity * 0.35, 0.25);
+    let ambient_light = mix(ground_col * ground_intensity, sky_col, hemi_factor) * daylight * day_amb_slider * 0.85;
 
-    // 5. Nuit et Lune
+    // 3. Éclat crépusculaire / Rim light (effet doré sur les bords face au couchant)
+    let forward_scatter = pow(max(dot(-view_dir, l_sun), 0.0), 3.2);
+    let rim_col = vec3<f32>(1.0, 0.70, 0.44) * (forward_scatter * (0.35 + 0.65 * sunset_factor) * sunset_glow_slider * daylight * 0.75);
+
+    // 4. Éclairage nocturne et Lune
     let moon = get_moon_data(camera.time, camera.light_dir);
-    let moon_direct = max(dot(norm_world, moon.dir), 0.0) * moon.phase * moon_slider * (1.0 - daylight);
-    let moon_light = vec3<f32>(0.70, 0.84, 1.0) * (moon_direct * 0.65);
-    let night_amb = vec3<f32>(0.04, 0.06, 0.14) * night_amb_slider * (1.0 - daylight);
+    let moon_wrap = pow(clamp(dot(norm_world, moon.dir) * 0.5 + 0.5, 0.0, 1.0), 1.3);
+    let moon_light = vec3<f32>(0.72, 0.85, 1.0) * (moon_wrap * 0.70) * moon.phase * moon_slider * (1.0 - daylight);
+    let night_amb = vec3<f32>(0.06, 0.08, 0.16) * night_amb_slider * (1.0 - daylight);
 
-    // 6. Micro-texture de grain mat (effet argile / marshmallow doux)
+    // 5. Micro-texture de grain mat (aspect argile / chamois / marshmallow tactile)
     var grain = 0.0;
     if (micro_noise_slider > 0.01) {
-        let p_grid = floor(hit_local_p * 14.0);
+        let p_grid = floor(hit_local_p * 18.0);
         let g_hash = fract(sin(dot(p_grid, vec3<f32>(12.9898, 78.233, 45.164))) * 43758.5453);
-        grain = (g_hash - 0.5) * micro_noise_slider * 0.10;
+        grain = (g_hash - 0.5) * micro_noise_slider * 0.06;
     }
-    let base_albedo = vec3<f32>(0.96, 0.94, 0.92) + vec3<f32>(grain);
 
-    // Assemblage final : Volume solide et opaque
-    var total_light = direct_sun + sky_light + rim_col + moon_light + night_amb - bottom_shadow;
-    total_light = max(total_light, night_amb * 0.4);
+    // Teinte marshmallow : blanc ivoire / crème chaud (au lieu de gris ardoise)
+    let marshmallow_base = vec3<f32>(0.99, 0.96, 0.93) + vec3<f32>(grain);
 
-    let final_color = total_light * base_albedo;
+    // Assemblage final : addition harmonieuse des flux lumineux
+    let total_light = direct_sun + ambient_light + rim_col + moon_light + night_amb;
+    let final_color = total_light * marshmallow_base;
     let final_alpha = 1.0 * clamp(cloud_slider, 0.0, 1.0);
 
     var out: FragmentOutput;

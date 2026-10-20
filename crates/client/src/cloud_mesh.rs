@@ -86,12 +86,12 @@ pub struct CloudMeshGenerator;
 
 impl CloudMeshGenerator {
     /// Rayon inférieur de la couche nuageuse
-    pub const CLOUD_ALTITUDE_BOT: f32 = 8.2;
-    /// Rayon supérieur de la couche nuageuse
-    pub const CLOUD_ALTITUDE_TOP: f32 = 9.4;
+    pub const CLOUD_ALTITUDE_BOT: f32 = 8.1;
+    /// Rayon supérieur de la couche nuageuse (épaisseur charnue de 1.4 bloc)
+    pub const CLOUD_ALTITUDE_TOP: f32 = 9.5;
 
-    /// Demi-épaisseur du nuage (1.2 / 2.0 = 0.60)
-    pub const CLOUD_HALF_DEPTH: f32 = 0.60;
+    /// Demi-épaisseur du nuage (1.4 / 2.0 = 0.70)
+    pub const CLOUD_HALF_DEPTH: f32 = 0.70;
 
     /// Génère le maillage complet des boîtes englobantes des nuages autour de la planète.
     pub fn generate_cloud_mesh(base_radius: f32, seed: u64) -> CloudMesh {
@@ -117,14 +117,14 @@ impl CloudMeshGenerator {
         for sy in 0..4 {
             for sx in 0..4 {
                 let sector_hash = Self::hash_sector(seed, face_id, sx as u64, sy as u64);
-                // ~60% de chances d'avoir une formation nuageuse dans ce secteur
-                if sector_hash % 100 >= 60 {
+                // ~62% de chances d'avoir une formation nuageuse dans ce secteur
+                if sector_hash % 100 >= 62 {
                     continue;
                 }
 
                 // Coordonnées de base au centre du secteur dans [-0.85, 0.85]
-                let jitter_u = (((sector_hash >> 4) % 7) as f64 - 3.0) * 0.03;
-                let jitter_v = (((sector_hash >> 8) % 7) as f64 - 3.0) * 0.03;
+                let jitter_u = (((sector_hash >> 4) % 7) as f64 - 3.0) * 0.035;
+                let jitter_v = (((sector_hash >> 8) % 7) as f64 - 3.0) * 0.035;
 
                 let u_c = ((sx as f64 + 0.5) / 2.0 - 1.0) * 0.80 + jitter_u;
                 let v_c = ((sy as f64 + 0.5) / 2.0 - 1.0) * 0.80 + jitter_v;
@@ -144,54 +144,54 @@ impl CloudMeshGenerator {
                 // Centre du nuage dans le monde
                 let cloud_center = w * r_mid;
 
-                // Choix de la morphologie de nuage (style voxel marshmallow de l'image cible)
+                // Choix de la morphologie de nuage (style voxel marshmallow fidèle à la cible)
                 let shape_type = (sector_hash >> 16) % 4;
                 let (box1_bounds, box2_bounds, num_boxes, min_x, max_x, min_y, max_y) = match shape_type {
-                    // Type 0 : Grand nuage en « L » (2 boîtes orthogonales, comme à droite dans l'image 2)
+                    // Type 0 : Grand nuage en « L » (deux branches orthogonales de même largeur, comme à droite dans l'image 2)
                     0 => {
-                        let b1 = [0.0_f32, 0.7_f32, 2.4_f32, 0.95_f32];  // cx1, cy1, hx1, hy1
-                        let b2 = [1.45_f32, -0.65_f32, 0.95_f32, 1.65_f32]; // cx2, cy2, hx2, hy2
-                        let min_x = (-2.4_f32).min(1.45 - 0.95) - 0.35;
-                        let max_x = (2.4_f32).max(1.45 + 0.95) + 0.35;
-                        let min_y = (0.7 - 0.95_f32).min(-0.65 - 1.65) - 0.35;
-                        let max_y = (0.7 + 0.95_f32).max(-0.65 + 1.65) + 0.35;
+                        let b1 = [-0.60_f32, 0.85_f32, 2.30_f32, 1.05_f32];  // cx1, cy1, hx1, hy1
+                        let b2 = [1.25_f32, -0.75_f32, 1.05_f32, 1.95_f32]; // cx2, cy2, hx2, hy2
+                        let min_x = -0.60 - 2.30 - 0.40;
+                        let max_x = 1.25 + 1.05 + 0.40;
+                        let min_y = -0.75 - 1.95 - 0.40;
+                        let max_y = 0.85 + 1.05 + 0.40;
                         (b1, b2, 2.0_f32, min_x, max_x, min_y, max_y)
                     }
-                    // Type 1 : Nuage en marche d'escalier décalée (2 lobes, comme au centre dans l'image 2)
+                    // Type 1 : Nuage en marche d'escalier décalée (style tetris / deux lobes décalés, comme au centre dans l'image 2)
                     1 => {
-                        let b1 = [-0.75_f32, 0.45_f32, 2.0_f32, 0.90_f32];
-                        let b2 = [0.85_f32, -0.45_f32, 2.1_f32, 0.90_f32];
-                        let min_x = (-0.75 - 2.0_f32).min(0.85 - 2.1) - 0.35;
-                        let max_x = (-0.75 + 2.0_f32).max(0.85 + 2.1) + 0.35;
-                        let min_y = (0.45 - 0.90_f32).min(-0.45 - 0.90) - 0.35;
-                        let max_y = (0.45 + 0.90_f32).max(-0.45 + 0.90) + 0.35;
+                        let b1 = [-0.95_f32, 0.55_f32, 2.20_f32, 1.05_f32];
+                        let b2 = [0.85_f32, -0.55_f32, 2.20_f32, 1.05_f32];
+                        let min_x = -0.95 - 2.20 - 0.40;
+                        let max_x = 0.85 + 2.20 + 0.40;
+                        let min_y = -0.55 - 1.05 - 0.40;
+                        let max_y = 0.55 + 1.05 + 0.40;
                         (b1, b2, 2.0_f32, min_x, max_x, min_y, max_y)
                     }
-                    // Type 2 : Grand coussin oblong (1 boîte allongée, comme à gauche dans l'image 2)
+                    // Type 2 : Grand coussin oblong épais (dalle généreuse, comme à gauche dans l'image 2)
                     2 => {
-                        let b1 = [0.0_f32, 0.0_f32, 2.6_f32, 1.25_f32];
+                        let b1 = [0.0_f32, 0.0_f32, 3.10_f32, 1.60_f32];
                         let b2 = [0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32];
-                        let min_x = -2.6 - 0.35;
-                        let max_x = 2.6 + 0.35;
-                        let min_y = -1.25 - 0.35;
-                        let max_y = 1.25 + 0.35;
+                        let min_x = -3.10 - 0.40;
+                        let max_x = 3.10 + 0.40;
+                        let min_y = -1.60 - 0.40;
+                        let max_y = 1.60 + 0.40;
                         (b1, b2, 1.0_f32, min_x, max_x, min_y, max_y)
                     }
-                    // Type 3 : Coussin compact (1 boîte plus courte)
+                    // Type 3 : Coussin moyen compact (dalle épaisse équilibrée)
                     _ => {
-                        let b1 = [0.0_f32, 0.0_f32, 1.6_f32, 1.0_f32];
+                        let b1 = [0.0_f32, 0.0_f32, 2.30_f32, 1.40_f32];
                         let b2 = [0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32];
-                        let min_x = -1.6 - 0.35;
-                        let max_x = 1.6 + 0.35;
-                        let min_y = -1.0 - 0.35;
-                        let max_y = 1.0 + 0.35;
+                        let min_x = -2.30 - 0.40;
+                        let max_x = 2.30 + 0.40;
+                        let min_y = -1.40 - 0.40;
+                        let max_y = 1.40 + 0.40;
                         (b1, b2, 1.0_f32, min_x, max_x, min_y, max_y)
                     }
                 };
 
                 let half_depth = Self::CLOUD_HALF_DEPTH;
-                let min_z = -half_depth - 0.20;
-                let max_z = half_depth + 0.20;
+                let min_z = -half_depth - 0.35;
+                let max_z = half_depth + 0.35;
 
                 let config = [num_boxes, half_depth, (sx * 4 + sy) as f32, 0.0];
 
@@ -221,24 +221,24 @@ impl CloudMeshGenerator {
                     }
                 }
 
-                // 12 triangles (36 indices) avec enroulement CCW externe
+                // 12 triangles (36 indices) avec enroulement CCW externe rigoureusement vérifié
                 // Indexation locale :
                 // 0: (x0, y0, z0), 1: (x1, y0, z0), 2: (x0, y1, z0), 3: (x1, y1, z0)
                 // 4: (x0, y0, z1), 5: (x1, y0, z1), 6: (x0, y1, z1), 7: (x1, y1, z1)
                 #[rustfmt::skip]
                 let box_indices = [
-                    // Face Dessous (-Z)
-                    0, 1, 3,  0, 3, 2,
-                    // Face Dessus (+Z)
-                    4, 6, 7,  4, 7, 5,
-                    // Face Sud (-Y)
-                    0, 4, 5,  0, 5, 1,
-                    // Face Nord (+Y)
-                    2, 3, 7,  2, 7, 6,
-                    // Face Ouest (-X)
-                    0, 2, 6,  0, 6, 4,
-                    // Face Est (+X)
-                    1, 5, 7,  1, 7, 3,
+                    // Face Dessous (-Z, normale vers le bas)
+                    0, 2, 3,  0, 3, 1,
+                    // Face Dessus (+Z, normale vers le haut)
+                    4, 5, 7,  4, 7, 6,
+                    // Face Sud (-Y, normale vers le Sud)
+                    0, 1, 5,  0, 5, 4,
+                    // Face Nord (+Y, normale vers le Nord)
+                    2, 6, 7,  2, 7, 3,
+                    // Face Ouest (-X, normale vers l'Ouest)
+                    0, 4, 6,  0, 6, 2,
+                    // Face Est (+X, normale vers l'Est)
+                    1, 3, 7,  1, 7, 5,
                 ];
 
                 for &idx in &box_indices {
@@ -272,9 +272,9 @@ mod tests {
         assert!(!mesh.indices.is_empty(), "Les indices de nuages ne doivent pas être vides");
         assert_eq!(mesh.indices.len() % 3, 0, "Les indices doivent former des triangles complets");
 
-        // Vérifie les bornes d'altitude : tous les sommets doivent être compris entre r_bot et r_top (+ tolérance marge)
-        let r_bot = 25.0 + CloudMeshGenerator::CLOUD_ALTITUDE_BOT - 0.60;
-        let r_top = 25.0 + CloudMeshGenerator::CLOUD_ALTITUDE_TOP + 0.60;
+        // Vérifie les bornes d'altitude : tous les sommets doivent être compris dans la couche nuageuse (avec marge de boîte tangente)
+        let r_bot = 25.0 + CloudMeshGenerator::CLOUD_ALTITUDE_BOT - 1.0;
+        let r_top = 25.0 + CloudMeshGenerator::CLOUD_ALTITUDE_TOP + 1.0;
 
         for v in &mesh.vertices {
             let pos = Vec3::from(v.position);
