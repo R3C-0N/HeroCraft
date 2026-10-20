@@ -244,7 +244,11 @@ impl PlanetWorldGenerator {
             }
         } else {
             // Terre émergée : continents, collines, montagnes intérieures ET super-chaînes tectoniques
-            let land_ratio = (continental - sea_threshold) / (1.0 - sea_threshold);
+            let seed = self.planet.seed;
+
+            // Pénétration dans les terres : 0 sur le rivage, 1 à l'intérieur du continent.
+            // La valeur continentale plafonne vers 0.40 : la normaliser sur [0, 1] écrasait tout le relief d'un facteur ~5.
+            let inland = smoothstep(0.0, 0.20, continental - sea_threshold);
 
             // Dôme glaciaire naturel sur la terre polaire
             let polar_dome = if is_polar {
@@ -253,24 +257,28 @@ impl PlanetWorldGenerator {
                 0.0
             };
 
-            // 1. Montagnes ordinaires (pouvant apparaître n'importe où sur les terres émergées)
-            let mountain_raw = fbm_3d(dir * 4.5, 4, 2.0, 0.50, self.planet.seed.wrapping_add(10101));
-            let ridge = 1.0 - mountain_raw.abs();
-            let standard_mountains = ridge * ridge * 75.0 * land_ratio.min(1.0);
+            // 1. Massifs montagneux : régions d'altitude basse fréquence (environ un tiers des terres)
+            let massif_noise = fbm_3d(dir * 1.7, 3, 2.0, 0.50, seed.wrapping_add(10203)) / FBM_SPAN;
+            let massif = smoothstep(-0.10, 0.45, massif_noise) * inland;
 
-            // 2. Collines douces
-            let hills = fbm_3d(dir * 10.0, 3, 2.0, 0.50, self.planet.seed.wrapping_add(20202)) * 18.0;
+            // Crêtes : bruit ridged normalisé pour des pics aigus séparés par des vallées
+            let ridge = ridged_fbm(dir * 4.5, 4, seed.wrapping_add(10101));
+            let standard_mountains = ridge * (35.0 + 165.0 * massif) * massif;
+
+            // 2. Plateaux continentaux et collines douces
+            let plateau = inland * 22.0 + massif * 30.0;
+            let hills = fbm_3d(dir * 10.0, 3, 2.0, 0.50, seed.wrapping_add(20202)) / FBM_SPAN * 9.0 * inland;
 
             // 3. SUPER-CHAÎNES TECTONIQUES : Orogenèse colossale le long des collisions de plaques (Himalaya, Andes)
             let super_chain = if tectonic_sample.orogeny_strength > 0.02 {
-                let super_noise = fbm_3d(dir * 8.5, 4, 2.0, 0.50, self.planet.seed.wrapping_add(88888));
-                let super_ridge = (1.0 - super_noise.abs()).powi(2);
-                super_ridge * 135.0 * tectonic_sample.orogeny_strength.min(1.5) * land_ratio.min(1.0)
+                let super_ridge = ridged_fbm(dir * 6.0, 4, seed.wrapping_add(88888));
+                let strength = smoothstep(0.02, 0.6, tectonic_sample.orogeny_strength);
+                (0.35 + super_ridge * 0.65) * 190.0 * strength * inland
             } else {
                 0.0
             };
 
-            (SEA_LEVEL_BLOCKS + land_ratio * 40.0 + standard_mountains + hills + polar_dome + super_chain)
+            (SEA_LEVEL_BLOCKS + 1.0 + plateau + hills + standard_mountains.max(super_chain) + polar_dome)
                 .clamp(SEA_LEVEL_BLOCKS + 1.0, 350.0)
         }
     }
@@ -379,6 +387,35 @@ pub fn gradient_noise_3d(p: DVec3, seed: u64) -> f64 {
         }
     }
     result
+}
+
+/// Amplitude typique d'un `fbm_3d` (valeurs observées quasi toujours dans ±0.35) :
+/// sert à ramener le bruit vers [-1, 1] avant de l'utiliser comme masque ou relief.
+const FBM_SPAN: f64 = 0.35;
+
+fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Bruit "ridged" multifractal dans [0, 1] : crêtes fines et pointues (1.0), larges vallées (0.0)
+fn ridged_fbm(p: DVec3, octaves: usize, seed: u64) -> f64 {
+    let mut sum = 0.0;
+    let mut amp = 1.0;
+    let mut freq = 1.0;
+    let mut max_amp = 0.0;
+    let mut weight = 1.0;
+
+    for i in 0..octaves {
+        let n = gradient_noise_3d(p * freq, seed.wrapping_add((i as u64).wrapping_mul(1013)));
+        let r = (1.0 - (n.abs() / 0.5).min(1.0)).powi(2) * weight;
+        weight = (r * 1.5).clamp(0.0, 1.0);
+        sum += r * amp;
+        max_amp += amp;
+        freq *= 2.0;
+        amp *= 0.5;
+    }
+    sum / max_amp
 }
 
 pub fn fbm_3d(p: DVec3, octaves: usize, lacunarity: f64, gain: f64, seed: u64) -> f64 {
@@ -533,6 +570,46 @@ mod tests {
             diff_ratio > 0.25,
             "Deux graines différentes doivent générer des cartes fondamentalement distinctes (différence constatée : {:.1}%)",
             diff_ratio * 100.0
+        );
+    }
+
+    #[test]
+    fn test_mountains_reach_high_altitude() {
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor::default());
+
+        let sample_count = 20000;
+        let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
+        let mut land = 0;
+        let mut mountains = 0;
+        let mut highest: f64 = 0.0;
+
+        for i in 0..sample_count {
+            let y = 1.0 - (i as f64 / (sample_count - 1) as f64) * 2.0;
+            let radius = (1.0 - y * y).max(0.0).sqrt();
+            let theta = 2.0 * std::f64::consts::PI * (i as f64) / phi;
+            let dir = DVec3::new(radius * theta.cos(), y, radius * theta.sin()).normalize();
+            let (lat, lon) = unit_sphere_to_lat_lon(dir);
+            if lat.abs() > 1.2 {
+                continue;
+            }
+
+            let elevation = generator.sample_elevation(dir, lat, lon);
+            if elevation > SEA_LEVEL_BLOCKS {
+                land += 1;
+                if elevation > 170.0 {
+                    mountains += 1;
+                }
+                highest = highest.max(elevation);
+            }
+        }
+
+        let mountain_ratio = mountains as f64 / land as f64;
+        println!("Relief : sommet={:.0} blocs, terres > 170 = {:.1}%", highest, mountain_ratio * 100.0);
+        assert!(highest > 280.0, "Les plus hauts sommets doivent dépasser 280 blocs (constaté : {:.0})", highest);
+        assert!(
+            mountain_ratio > 0.08,
+            "Au moins 8% des terres doivent être montagneuses (constaté : {:.1}%)",
+            mountain_ratio * 100.0
         );
     }
 
