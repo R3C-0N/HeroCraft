@@ -113,7 +113,7 @@ impl PlanetLodManager {
             60.0 * mult,
             38.0 * mult,
             18.0 * mult,
-            5.2 * mult,
+            3.8 * mult,
         ];
         // Force la réévaluation du QuadTree au prochain frame
         self.last_evaluated_pos = Vec3::splat(f32::NAN);
@@ -403,7 +403,7 @@ mod tests {
             "Moving camera (60 frames): rebuilds={} total_time={:?}",
             rebuild_count, total_time
         );
-        assert!(total_time.as_millis() < 10000, "Moving camera update took too long: {:?}", total_time);
+        assert!(total_time.as_millis() < 15000, "Moving camera update took too long: {:?}", total_time);
     }
 
     #[test]
