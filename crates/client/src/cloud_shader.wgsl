@@ -3,7 +3,7 @@
 // - Boîtes englobantes 3D physiques réelles traversables dans le monde
 // - Sphere tracing ultra-rapide (8 à 16 pas) sur SDF analytique exacte
 // - Biseaux 3D arrondis sur TOUTES les arêtes (dessus, dessous, coins verticaux, coins sphériques)
-// - Angles concaves intérieurs adoucis par union lisse (op_smooth_union)
+// - Angles concaves intérieurs adoucis sans aucune encoche sur les parois partagées
 // - Éclairage hémisphérique doux éliminant toute démarcation sur les parois latérales
 // - Teinte marshmallow ivoire/crème chaleureuse avec reflets dorés et ombres mauves douces
 // - Écriture précise de la profondeur dans le Z-buffer (@builtin(frag_depth))
@@ -126,32 +126,32 @@ fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
     return data;
 }
 
-// Distance 2D signée à un rectangle centré avec coins verticaux arrondis
-fn sd_box_2d_rounded(p: vec2<f32>, b: vec2<f32>, r: f32) -> f32 {
-    let inner_b = max(b - vec2<f32>(r), vec2<f32>(0.0));
-    let q = abs(p) - inner_b;
-    return length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - r;
+// Distance 2D signée exacte à un rectangle orthogonal net (sans pré-arrondi)
+fn sd_box_2d(p: vec2<f32>, b: vec2<f32>) -> f32 {
+    let d = abs(p) - b;
+    return length(max(d, vec2<f32>(0.0))) + min(max(d.x, d.y), 0.0);
 }
 
-// Union lisse pour adoucir les angles concaves intérieurs
+// Union lisse pour adoucir le coin concave intérieur sans créer d'encoche
 fn op_smooth_union(d1: f32, d2: f32, k: f32) -> f32 {
     let h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
     return mix(d2, d1, h) - k * h * (1.0 - h);
 }
 
-// Distance 2D au nuage voxel (union de 1 ou 2 boîtes avec coins verticaux arrondis)
-fn sd_cloud_2d(p: vec2<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, r: f32) -> f32 {
-    let d1 = sd_box_2d_rounded(p - b1.xy, b1.zw, r);
+// Distance 2D au nuage voxel (union nette avec congé concave propre)
+fn sd_cloud_2d(p: vec2<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32) -> f32 {
+    let d1 = sd_box_2d(p - b1.xy, b1.zw);
     if (num_boxes < 1.5) {
         return d1;
     }
-    let d2 = sd_box_2d_rounded(p - b2.xy, b2.zw, r);
-    return op_smooth_union(d1, d2, r * 1.5);
+    let d2 = sd_box_2d(p - b2.xy, b2.zw);
+    // Union lisse sur les boîtes nettes : raccord concave propre à 90°, zéro encoche
+    return op_smooth_union(d1, d2, 0.35);
 }
 
 // Distance 3D avec biseau arrondi uniforme sur TOUTES les arêtes (dessus, dessous, coins verticaux, coins sphériques)
 fn sd_cloud_3d(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, half_depth: f32, r: f32) -> f32 {
-    let d_2d = sd_cloud_2d(p.xy, b1, b2, num_boxes, r);
+    let d_2d = sd_cloud_2d(p.xy, b1, b2, num_boxes);
     let d_z = abs(p.z) - (half_depth - r);
     let w = vec2<f32>(d_2d + r, d_z);
     return length(max(w, vec2<f32>(0.0))) + min(max(w.x, w.y), 0.0) - r;
@@ -209,7 +209,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         dot(ray_dir, in.frame_w)
     ));
 
-    let roundness = clamp(camera.cloud_params.x, 0.05, 0.40);
+    let roundness = clamp(camera.cloud_params.x, 0.05, 0.30);
     let shadow_intensity = camera.cloud_params.y;
     let sunset_glow_slider = camera.cloud_params.z;
     let micro_noise_slider = camera.cloud_params.w;
@@ -277,14 +277,14 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let sunset_raw = clamp(1.0 - abs(sun_up - 0.03) / 0.16, 0.0, 1.0);
     let sunset_factor = sunset_raw * clamp((sun_up + 0.06) / 0.10, 0.0, 1.0);
 
-    // 1. Éclairage solaire direct (Half-Lambert doux avec teinte dorée/pêche)
+    // 1. Éclairage solaire direct (Half-Lambert sculpté avec teinte dorée/pêche)
     let ndotl = dot(norm_world, l_sun);
-    let wrap = pow(clamp(ndotl * 0.5 + 0.5, 0.0, 1.0), 1.20);
+    let wrap = pow(clamp(ndotl * 0.55 + 0.45, 0.0, 1.0), 1.35);
+    // Soleil : blanc ivoire doux le jour -> pêche / abricot chaud au couchant
     let sun_col = mix(vec3<f32>(1.0, 0.98, 0.92), vec3<f32>(1.0, 0.72, 0.46), sunset_factor);
-    let direct_sun = sun_col * (wrap * 0.92) * daylight * sun_slider;
+    let direct_sun = sun_col * (wrap * 0.95) * daylight * sun_slider;
 
     // 2. Éclairage hémisphérique céleste (Ciel zénithal <-> Sol/Sous-face)
-    // Permet d'éclairer harmonieusement les parois latérales sans rupture
     let ndotup = dot(norm_world, up_planet);
     let hemi_factor = clamp(ndotup * 0.5 + 0.5, 0.0, 1.0);
 
@@ -293,9 +293,19 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // Couleur de sous-face (rebond) : bleu-gris doux le jour -> mauve / prune chaud au couchant
     let ground_col = mix(vec3<f32>(0.52, 0.58, 0.68), vec3<f32>(0.58, 0.38, 0.48), sunset_factor);
 
-    // L'ombrage de sous-face atténue le bas sans jamais produire de noirceur terne
+    // Occlusion ambiante douce dans les angles concaves intérieurs
+    var ao_factor = 1.0;
+    if (in.config.x >= 1.5) {
+        let d1_val = abs(sd_box_2d(hit_local_p.xy - in.box1_bounds.xy, in.box1_bounds.zw));
+        let d2_val = abs(sd_box_2d(hit_local_p.xy - in.box2_bounds.xy, in.box2_bounds.zw));
+        let corner_dist = max(d1_val, d2_val);
+        if (corner_dist < 0.35) {
+            ao_factor = 0.88 + 0.12 * (corner_dist / 0.35);
+        }
+    }
+
     let ground_intensity = max(0.95 - shadow_intensity * 0.35, 0.25);
-    let ambient_light = mix(ground_col * ground_intensity, sky_col, hemi_factor) * daylight * day_amb_slider * 0.85;
+    let ambient_light = mix(ground_col * ground_intensity, sky_col, hemi_factor) * daylight * day_amb_slider * 0.85 * ao_factor;
 
     // 3. Éclat crépusculaire / Rim light (effet doré sur les bords face au couchant)
     let forward_scatter = pow(max(dot(-view_dir, l_sun), 0.0), 3.2);
@@ -307,7 +317,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let moon_light = vec3<f32>(0.72, 0.85, 1.0) * (moon_wrap * 0.70) * moon.phase * moon_slider * (1.0 - daylight);
     let night_amb = vec3<f32>(0.06, 0.08, 0.16) * night_amb_slider * (1.0 - daylight);
 
-    // 5. Micro-texture de grain mat (aspect argile / chamois / marshmallow tactile)
+    // 5. Micro-texture de grain mat (aspect chamois / marshmallow tactile)
     var grain = 0.0;
     if (micro_noise_slider > 0.01) {
         let p_grid = floor(hit_local_p * 18.0);
@@ -315,8 +325,8 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         grain = (g_hash - 0.5) * micro_noise_slider * 0.06;
     }
 
-    // Teinte marshmallow : blanc ivoire / crème chaud (au lieu de gris ardoise)
-    let marshmallow_base = vec3<f32>(0.99, 0.96, 0.93) + vec3<f32>(grain);
+    // Teinte marshmallow : blanc ivoire / crème chaud gourmand
+    let marshmallow_base = vec3<f32>(0.99, 0.97, 0.94) + vec3<f32>(grain);
 
     // Assemblage final : addition harmonieuse des flux lumineux
     let total_light = direct_sun + ambient_light + rim_col + moon_light + night_amb;

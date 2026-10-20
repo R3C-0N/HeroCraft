@@ -86,7 +86,7 @@ impl Default for CloudSettings {
     fn default() -> Self {
         Self {
             density: 1.0,
-            roundness: 0.22,
+            roundness: 0.18,
             shadow_intensity: 1.0,
             sunset_glow: 1.0,
             micro_noise: 0.15,
@@ -454,7 +454,7 @@ impl UiState {
 
                                     ui.add_space(2.0_f32);
                                     ui.label(egui::RichText::new("Rondeur des arêtes (Bevel) :").size(11.0_f32).color(egui::Color32::from_rgb(240, 220, 150)));
-                                    ui.add(egui::Slider::new(&mut self.cloud_settings.roundness, 0.05..=0.40).text("Rondeur").show_value(true));
+                                    ui.add(egui::Slider::new(&mut self.cloud_settings.roundness, 0.05..=0.30).text("Rondeur").show_value(true));
 
                                     ui.add_space(2.0_f32);
                                     ui.label(egui::RichText::new("Ombrage de sous-face :").size(11.0_f32).color(egui::Color32::from_rgb(180, 160, 210)));
@@ -788,24 +788,24 @@ mod tests {
     fn test_cloud_settings_defaults_and_mutation() {
         let mut clouds = CloudSettings::default();
         assert_eq!(clouds.density, 1.0);
-        assert_eq!(clouds.roundness, 0.22);
+        assert_eq!(clouds.roundness, 0.18);
         assert_eq!(clouds.shadow_intensity, 1.0);
         assert_eq!(clouds.sunset_glow, 1.0);
         assert_eq!(clouds.micro_noise, 0.15);
 
         clouds.density = 1.5;
-        clouds.roundness = 0.35;
+        clouds.roundness = 0.28;
         clouds.shadow_intensity = 1.8;
         clouds.sunset_glow = 0.8;
         clouds.micro_noise = 0.4;
         assert_eq!(clouds.density, 1.5);
-        assert_eq!(clouds.roundness, 0.35);
+        assert_eq!(clouds.roundness, 0.28);
         assert_eq!(clouds.shadow_intensity, 1.8);
         assert_eq!(clouds.sunset_glow, 0.8);
         assert_eq!(clouds.micro_noise, 0.4);
 
         clouds = CloudSettings::default();
         assert_eq!(clouds.density, 1.0);
-        assert_eq!(clouds.roundness, 0.22);
+        assert_eq!(clouds.roundness, 0.18);
     }
 }
