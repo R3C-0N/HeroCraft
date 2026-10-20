@@ -8,20 +8,7 @@
 // - Dithered Cross-Fade (tramage stochastique Bayer 4x4) pour transitions LOD
 // =========================================================================
 
-struct CameraUniform {
-    view_proj: mat4x4<f32>,
-    inv_view_proj: mat4x4<f32>,
-    camera_pos: vec3<f32>,
-    planet_radius: f32,
-    light_dir: vec3<f32>,
-    time: f32,
-    lighting_params: vec4<f32>,
-    lighting_params2: vec4<f32>,
-    cloud_params: vec4<f32>,
-};
-
-@group(0) @binding(0)
-var<uniform> camera: CameraUniform;
+#import herocraft::common::{camera, get_moon_data}
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -60,30 +47,11 @@ fn bayer4x4(pos: vec2<u32>) -> f32 {
 }
 
 // Structure représentant la position et la phase de la Lune
-struct MoonData {
-    dir: vec3<f32>,     // Vecteur unitaire orienté vers la Lune
-    phase: f32,         // 0.0 = Nouvelle Lune, 0.5 = Quartier, 1.0 = Pleine Lune
-};
 
 // Calcule la position orbitale et la phase de la Lune en temps réel (identique au sky shader et renderer.rs)
 // - Période orbitale : 21 minutes (1260 secondes)
 // - Inclinaison orbitale lunaire : ~28.5° (0.497 rad)
 // - Déphasage initial (+3.69 rad) pour garantir une pleine lune majestueuse dès la première nuit
-fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
-    let l_sun = normalize(light_dir);
-    let moon_tilt = 0.497;
-    let u_moon = vec3<f32>(cos(moon_tilt), sin(moon_tilt), 0.0);
-    let v_moon = vec3<f32>(0.0, 0.0, 1.0);
-    let moon_period = 1260.0;
-    let moon_angle = (time / moon_period) * 6.2831853 + 3.69;
-    let moon_dir = normalize(u_moon * cos(moon_angle) + v_moon * sin(moon_angle));
-    let sun_moon_dot = dot(moon_dir, l_sun);
-    let moon_phase = clamp((-sun_moon_dot + 1.0) * 0.5, 0.0, 1.0);
-    var data: MoonData;
-    data.dir = moon_dir;
-    data.phase = moon_phase;
-    return data;
-}
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -175,7 +143,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let sun_slider = camera.lighting_params.y;       // Multiplicateur Soleil [0.0 .. 3.0]
     let night_amb_slider = camera.lighting_params.z; // Multiplicateur Nuit / Étoiles [0.0 .. 3.0]
     let day_amb_slider = camera.lighting_params.w;   // Multiplicateur Jour / Ciel [0.0 .. 3.0]
-    let fog_slider = camera.lighting_params2.y;      // Multiplicateur Brouillard [0.0 .. 2.0]
+    let fog_slider = camera.lighting_params_ext.y;      // Multiplicateur Brouillard [0.0 .. 2.0]
 
     // Données orbitales de la Lune (partagées avec le sky shader)
     let moon = get_moon_data(camera.time, camera.light_dir);

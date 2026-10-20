@@ -6,20 +6,7 @@
 // - Diffusion atmosphérique au sol (dôme céleste azur et horizon doré)
 // =========================================================================
 
-struct CameraUniform {
-    view_proj: mat4x4<f32>,
-    inv_view_proj: mat4x4<f32>,
-    camera_pos: vec3<f32>,
-    planet_radius: f32,
-    light_dir: vec3<f32>,
-    time: f32,
-    lighting_params: vec4<f32>,
-    lighting_params2: vec4<f32>,
-    cloud_params: vec4<f32>,
-};
-
-@group(0) @binding(0)
-var<uniform> camera: CameraUniform;
+#import herocraft::common::{camera, get_moon_data, sky_factors, sky_dome}
 
 struct SkyVertexOutput {
     @builtin(position) clip_pos: vec4<f32>,
@@ -89,32 +76,12 @@ fn render_starfield(ray_dir: vec3<f32>, time: f32) -> vec3<f32> {
 }
 
 // Structure représentant la position et la phase de la Lune
-struct MoonData {
-    dir: vec3<f32>,     // Vecteur unitaire orienté vers la Lune
-    phase: f32,         // 0.0 = Nouvelle Lune, 0.5 = Quartier, 1.0 = Pleine Lune
-};
 
 // Calcule la position orbitale et la phase de la Lune en temps réel
 // - Période orbitale : 21 minutes (1260 secondes)
 // - Inclinaison orbitale lunaire : ~28.5° (0.497 rad)
 // - Cycle synodique complet (retour à la même phase) : 21 jours de jeu (420 minutes)
 // - Déphasage initial (+3.69 rad) pour garantir une pleine lune majestueuse dès la première nuit
-fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
-    let l_sun = normalize(light_dir);
-    let moon_tilt = 0.497;
-    let u_moon = vec3<f32>(cos(moon_tilt), sin(moon_tilt), 0.0);
-    let v_moon = vec3<f32>(0.0, 0.0, 1.0);
-    let moon_period = 1260.0;
-    let moon_angle = (time / moon_period) * 6.2831853 + 3.69;
-    let moon_dir = normalize(u_moon * cos(moon_angle) + v_moon * sin(moon_angle));
-    let sun_moon_dot = dot(moon_dir, l_sun);
-    let moon_phase = clamp((-sun_moon_dot + 1.0) * 0.5, 0.0, 1.0);
-    var data: MoonData;
-    data.dir = moon_dir;
-    data.phase = moon_phase;
-    return data;
-}
-
 
 @fragment
 fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
@@ -131,7 +98,7 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let sun_slider = camera.lighting_params.y;       // Multiplicateur Soleil [0.0 .. 3.0]
     let night_amb_slider = camera.lighting_params.z; // Multiplicateur Nuit / Étoiles [0.0 .. 3.0]
     let day_amb_slider = camera.lighting_params.w;   // Multiplicateur Jour / Ciel [0.0 .. 3.0]
-    let cloud_slider = camera.lighting_params2.z;    // Multiplicateur Nuages Volumétriques [0.0 .. 2.0]
+    let cloud_slider = camera.lighting_params_ext.z;    // Multiplicateur Nuages Volumétriques [0.0 .. 2.0]
 
     // Données de la Lune orbitale
     let moon = get_moon_data(camera.time, camera.light_dir);
@@ -235,42 +202,11 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         let sun_up = dot(l, cam_up);
         let moon_up = dot(moon.dir, cam_up);
 
-        // Clarté du jour : transition naturelle vers la nuit noire dès que le soleil passe sous l'horizon
-        let daylight = clamp((sun_up + 0.06) / 0.18, 0.0, 1.0);
-
-        // Facteur de crépuscule / coucher de soleil (soleil rasant l'horizon : -0.05 à +0.20)
-        let sunset_raw = clamp(1.0 - abs(sun_up - 0.03) / 0.18, 0.0, 1.0);
-        let sunset_factor = sunset_raw * clamp((sun_up + 0.06) / 0.10, 0.0, 1.0);
-
-        // Dégradé de couleurs du zénith
-        let zenith_day = vec3<f32>(0.15, 0.45, 0.88); // Bleu azur pur éclatant
-        let zenith_sunset = vec3<f32>(0.07, 0.13, 0.38); // Bleu crépusculaire profond / saphir
-        let zenith_color = mix(zenith_day, zenith_sunset, sunset_factor);
-
-        // Dégradé de couleurs de l'horizon
-        let horizon_day = vec3<f32>(0.65, 0.80, 0.96); // Horizon clair estompé en journée
-
-        // Horizon au lever/coucher :
-        // Vers le soleil : or ambré, jaune incandescent et orange flamboyant
-        // À l'opposé du soleil : l'Arche Crépusculaire / Ceinture de Vénus (rose/magenta doux et ombre pourpre)
-        let sun_azimuth = dot(ray_dir, l); // -1.0 à l'opposé, +1.0 face au soleil
-        let forward_sun = clamp(sun_azimuth * 0.5 + 0.5, 0.0, 1.0);
-        let sunset_facing_sun = mix(vec3<f32>(1.0, 0.58, 0.15), vec3<f32>(1.0, 0.82, 0.35), pow(forward_sun, 3.0));
-        let sunset_opposite_sun = vec3<f32>(0.65, 0.32, 0.48); // Ceinture de Vénus rosée/violacée
-        let sunset_horizon = mix(sunset_opposite_sun, sunset_facing_sun, pow(forward_sun, 1.5));
-
-        let horizon_color = mix(horizon_day, sunset_horizon, sunset_factor);
-
-        // Dégradé vertical du dôme céleste (zénith -> horizon)
-        let ray_h = clamp(ray_up, 0.0, 1.0);
-        let horizon_blend = pow(1.0 - ray_h, 2.5);
-        let day_sky = mix(zenith_color, horizon_color, horizon_blend) * day_amb_slider;
-
-        // Éclaircissement et halo solaire diffus au coucher/lever de soleil
-        let sunset_glow_color = vec3<f32>(1.0, 0.52, 0.15);
-        let day_glow_color = vec3<f32>(0.40, 0.35, 0.22);
-        let active_glow_color = mix(day_glow_color, sunset_glow_color, sunset_factor);
-        let ground_sun_glow = pow(clamp(cos_sun, 0.0, 1.0), 6.0) * active_glow_color * (1.0 + sunset_factor * 1.8) * sun_slider;
+        // Clarté du jour, crépuscule et dôme céleste : formules partagées avec les nuages (common.wgsl)
+        let factors = sky_factors(sun_up);
+        let daylight = factors.daylight;
+        let sunset_factor = factors.sunset;
+        let day_sky = sky_dome(ray_dir, cam_up, l, sunset_factor);
 
         // Visibilité du soleil au sol : masqué dès qu'il passe sous l'horizon planétaire
         let sun_visibility = clamp(sun_up * 15.0 + 0.5, 0.0, 1.0);
@@ -286,7 +222,7 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
 
         // Ciel au sol : nuit étoilée douce et atmosphérique (starlight navy) vs ciel bleu diurne
         let night_sky = visible_stars + vec3<f32>(0.008, 0.012, 0.024) * night_amb_slider;
-        let ground_sky_base = mix(night_sky, day_sky, daylight) + sun_color * sun_disk_tint * sun_visibility + ground_sun_glow * daylight + ground_moon;
+        let ground_sky_base = mix(night_sky, day_sky, daylight) + sun_color * sun_disk_tint * sun_visibility + ground_moon;
 
         let final_sky = mix(space_color, ground_sky_base, ground_factor);
         return vec4<f32>(final_sky, 1.0);

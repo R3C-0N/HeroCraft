@@ -10,20 +10,7 @@
 // - Écriture précise de la profondeur dans le Z-buffer (@builtin(frag_depth))
 // =========================================================================
 
-struct CameraUniform {
-    view_proj: mat4x4<f32>,
-    inv_view_proj: mat4x4<f32>,
-    camera_pos: vec3<f32>,
-    planet_radius: f32,
-    light_dir: vec3<f32>,
-    time: f32,
-    lighting_params: vec4<f32>,
-    lighting_params2: vec4<f32>,
-    cloud_params: vec4<f32>,
-};
-
-@group(0) @binding(0)
-var<uniform> camera: CameraUniform;
+#import herocraft::common::{camera, get_moon_data, sky_factors, sky_dome}
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -102,31 +89,6 @@ fn vs_cloud(in: VertexInput) -> VertexOutput {
     return out;
 }
 
-struct MoonData {
-    dir: vec3<f32>,
-    phase: f32,
-};
-
-fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
-    let t_day = 1200.0;
-    let t_moon = 1260.0;
-    let omega_moon = 6.28318530718 / t_moon;
-
-    let moon_tilt: f32 = 0.497;
-    let u_moon = vec3<f32>(cos(moon_tilt), sin(moon_tilt), 0.0);
-    let v_moon = vec3<f32>(0.0, 0.0, 1.0);
-
-    let moon_angle = time * omega_moon + 3.14159265;
-    let moon_dir = normalize(u_moon * cos(moon_angle) + v_moon * sin(moon_angle));
-
-    let sun_moon_dot = dot(normalize(light_dir), moon_dir);
-    let moon_phase = clamp((-sun_moon_dot + 1.0) * 0.5, 0.0, 1.0);
-    var data: MoonData;
-    data.dir = moon_dir;
-    data.phase = moon_phase;
-    return data;
-}
-
 // Distance 2D signée exacte à un rectangle orthogonal net (sans pré-arrondi)
 fn sd_box_2d(p: vec2<f32>, b: vec2<f32>) -> f32 {
     let d = abs(p) - b;
@@ -187,34 +149,6 @@ fn get_cloud_normal(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, 
     return normalize(vec3<f32>(dx, dy, dz));
 }
 
-// Couleur diurne du dôme céleste dans la direction `ray_dir` (sans disque solaire ni étoiles).
-// Doit rester identique à la diffusion au sol de sky_shader.wgsl.
-fn sky_dome(ray_dir: vec3<f32>, cam_up: vec3<f32>, l: vec3<f32>, sunset_factor: f32) -> vec3<f32> {
-    let sun_slider = camera.lighting_params.y;
-    let day_amb_slider = camera.lighting_params.w;
-
-    let zenith_day = vec3<f32>(0.15, 0.45, 0.88);
-    let zenith_sunset = vec3<f32>(0.07, 0.13, 0.38);
-    let zenith_color = mix(zenith_day, zenith_sunset, sunset_factor);
-
-    let horizon_day = vec3<f32>(0.65, 0.80, 0.96);
-    let forward_sun = clamp(dot(ray_dir, l) * 0.5 + 0.5, 0.0, 1.0);
-    let sunset_facing_sun = mix(vec3<f32>(1.0, 0.58, 0.15), vec3<f32>(1.0, 0.82, 0.35), pow(forward_sun, 3.0));
-    let sunset_opposite_sun = vec3<f32>(0.65, 0.32, 0.48);
-    let sunset_horizon = mix(sunset_opposite_sun, sunset_facing_sun, pow(forward_sun, 1.5));
-    let horizon_color = mix(horizon_day, sunset_horizon, sunset_factor);
-
-    // clamp (et non max) : dot(cam_up, cam_up) peut valoir 1.0000001 et pow(négatif) donne NaN (pixels noirs)
-    let ray_h = clamp(dot(ray_dir, cam_up), 0.0, 1.0);
-    let horizon_blend = pow(1.0 - ray_h, 2.5);
-    let day_sky = mix(zenith_color, horizon_color, horizon_blend) * day_amb_slider;
-
-    let active_glow_color = mix(vec3<f32>(0.40, 0.35, 0.22), vec3<f32>(1.0, 0.52, 0.15), sunset_factor);
-    let glow = pow(clamp(dot(ray_dir, l), 0.0, 1.0), 6.0) * active_glow_color * (1.0 + sunset_factor * 1.8) * sun_slider;
-
-    return day_sky + glow;
-}
-
 // Compression douce des hautes lumières au-delà de 0.78 (asymptote à 1.0)
 fn soft_shoulder(c: vec3<f32>) -> vec3<f32> {
     let knee = 0.78;
@@ -231,7 +165,7 @@ struct FragmentOutput {
 @fragment
 fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     // Multiplicateur de densité / visibilité des nuages (0.0 en vue satellite)
-    let cloud_slider = camera.lighting_params2.z;
+    let cloud_slider = camera.lighting_params_ext.z;
     if (cloud_slider < 0.01) {
         discard;
     }
@@ -354,19 +288,21 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let moon_slider = camera.lighting_params.x;
     let sun_slider = camera.lighting_params.y;
     let night_amb_slider = camera.lighting_params.z;
-    let fog_slider = camera.lighting_params2.y;
+    let fog_slider = camera.lighting_params_ext.y;
 
     // Même repère que le ciel vu par le joueur (sky_shader.wgsl) : tous les nuages partagent la teinte du ciel
     let cam_up = normalize(camera.camera_pos);
     let l_sun = normalize(camera.light_dir);
-    let sun_up = dot(l_sun, cam_up);
-    let daylight = clamp((sun_up + 0.06) / 0.18, 0.0, 1.0);
-    let sunset_raw = clamp(1.0 - abs(sun_up - 0.03) / 0.18, 0.0, 1.0);
-    let sunset_factor = sunset_raw * clamp((sun_up + 0.06) / 0.10, 0.0, 1.0);
+    let factors = sky_factors(dot(l_sun, cam_up));
+    let daylight = factors.daylight;
+    let sunset_factor = factors.sunset;
 
     let up_planet = normalize(hit_world_pos);
     let ndotup = dot(norm_world, up_planet);
-    let top = ndotup * 0.5 + 0.5; // 1 = dessus, 0.5 = flanc, 0 = dessous
+    // 1 = dessus, 0 = dessous : mélange de l'orientation de la normale et de la hauteur dans la dalle
+    // (dégradé vertical continu sur les flancs, comme les nuages Complementary)
+    let height01 = clamp((hit_local_p.z + half_depth) / (2.0 * half_depth), 0.0, 1.0);
+    let top = mix(ndotup * 0.5 + 0.5, pow(height01, 0.8), 0.45);
 
     // 1. Ambiance du ciel : horizon dans la direction regardée, mêlé au zénith pour les faces hautes
     let horiz = ray_dir - cam_up * dot(ray_dir, cam_up);
@@ -379,7 +315,12 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let sun_col = mix(vec3<f32>(1.0, 0.97, 0.92), vec3<f32>(1.0, 0.66, 0.46), sunset_factor);
     let sun_wrap = pow(clamp(dot(norm_world, l_sun) * 0.5 + 0.5, 0.0, 1.0), 1.5);
     let silver = pow(clamp(dot(ray_dir, l_sun), 0.0, 1.0), 6.0) * 0.18 * sunset_glow_slider;
-    let sun_light = sun_col * (sun_wrap * 0.55 + silver) * sun_slider;
+    // Auto-ombrage : deux échantillons du SDF en direction du soleil (parties du nuage qui masquent le soleil)
+    let l_local = vec3<f32>(dot(l_sun, in.frame_u), dot(l_sun, in.frame_v), dot(l_sun, in.frame_w));
+    let occ_a = sd_cloud_3d(hit_local_p + l_local * 0.45, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
+    let occ_b = sd_cloud_3d(hit_local_p + l_local * 1.10, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
+    let self_shadow = clamp(-occ_a / 0.30, 0.0, 1.0) * 0.6 + clamp(-occ_b / 0.30, 0.0, 1.0) * 0.4;
+    let sun_light = sun_col * (sun_wrap * 0.55 * (1.0 - 0.45 * self_shadow) + silver) * sun_slider;
 
     // 3. Dessous plus sombre et légèrement mauve (réglé par le curseur Ombre)
     let under_dark = clamp(0.38 * shadow_intensity, 0.0, 0.75);
