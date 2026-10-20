@@ -194,10 +194,8 @@ impl PlanetQuadTree {
         // Level 2 (région)       : split si distance < 38.0
         // Level 3 (zone)         : split si distance < 18.0
         // Level 4 (local)        : split si distance < 3.8 (passage aux voxels 3D Level 5 locaux au sol)
-        // Échelle proportionnelle au rayon de la planète (référence: base_radius = 25.0)
-        // Permet de doubler la taille de la planète (base_radius = 50.0) tout en doublant
-        // la taille spatiale des LODs de façon homogène.
-        let scale = base_radius / 25.0;
+        // Échelle proportionnelle au rayon de la planète par rapport au rayon de référence
+        let scale = base_radius / crate::cubed_sphere::REFERENCE_BASE_RADIUS;
         let split_distances = vec![
             95.0 * scale,
             60.0 * scale,

@@ -66,8 +66,8 @@ fn main() {
     let storage = herocraft_voxel_engine::ChunkStorage::new(&save_dir).ok();
     let mut chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
 
-    // Rayon de base de la planète (50.0 = taille doublée par rapport au prototype initial 25.0)
-    let base_radius = 50.0_f32;
+    // Rayon de base de la planète déterminé par le descripteur (REFERENCE_BASE_RADIUS * scale)
+    let base_radius = generator.base_radius() as f32;
 
     // Initialisation de la caméra multi-échelle unifiée (Sol FPS <-> TPS <-> Satellite)
     let mut camera = OrbitCamera::new(base_radius * 6.6, base_radius, &generator);
@@ -223,7 +223,7 @@ fn main() {
                                 // Actions ponctuelles déclenchées à l'appui
                                 _ if is_pressed => match key_code {
                                     KeyCode::Space => {
-                                        if camera.distance <= 25.0 {
+                                        if camera.distance <= camera.base_radius {
                                             camera.jump_requested = true;
                                         } else {
                                             camera.auto_rotate = !camera.auto_rotate;
@@ -371,7 +371,7 @@ fn main() {
                                     camera.toggle_view(&generator);
                                     info!(
                                         "Bouton cliqué : Transition vers {}",
-                                        if camera.target_distance <= 25.0 { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
+                                        if camera.target_distance <= camera.base_radius { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
                                     );
                                 }
                                 UiAction::ToggleAutoRotate => {

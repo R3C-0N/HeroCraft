@@ -190,11 +190,12 @@ impl State {
 
         // Uniform Camera
         let sun_dir = compute_sun_dir(0.0);
+        let default_radius = (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32;
         let initial_uniform = CameraUniform {
             view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
             inv_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
-            camera_pos: [0.0, 0.0, 330.0],
-            planet_radius: 50.0,
+            camera_pos: [0.0, 0.0, default_radius * 6.6],
+            planet_radius: default_radius,
             light_dir: sun_dir.to_array(),
             time: 0.0,
             lighting_params: [0.25, 1.0, 2.10, 1.0],
@@ -416,7 +417,7 @@ impl State {
             cache: None,
         });
 
-        let cloud_mesh = crate::cloud_mesh::CloudMeshGenerator::generate_cloud_mesh(50.0, 2026);
+        let cloud_mesh = crate::cloud_mesh::CloudMeshGenerator::generate_cloud_mesh(default_radius, 2026);
         let cloud_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Cloud Vertex Buffer"),
             contents: bytemuck::cast_slice(&cloud_mesh.vertices),

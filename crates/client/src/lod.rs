@@ -108,7 +108,7 @@ impl PlanetLodManager {
             crate::ui::LodDistanceSetting::Normale => 1.0,
             crate::ui::LodDistanceSetting::Elevee => 1.25,
         };
-        let scale = self.base_radius as f64 / 25.0;
+        let scale = self.base_radius as f64 / herocraft_world::REFERENCE_BASE_RADIUS;
         self.quadtree.split_distances = vec![
             95.0 * mult * scale,
             60.0 * mult * scale,
@@ -177,7 +177,7 @@ impl PlanetLodManager {
             (camera_pos - self.last_evaluated_pos).length()
         };
 
-        let scale = self.base_radius / 25.0;
+        let scale = (self.base_radius as f64 / herocraft_world::REFERENCE_BASE_RADIUS) as f32;
         // Évaluation QuadTree temporisée : réévalué si déplacement >= 15 cm (adapté à l'échelle) ou toutes les 80 ms si déplacement >= 2 cm
         let should_re_eval = self.last_evaluated_pos.is_nan()
             || moved_dist > 0.15 * scale

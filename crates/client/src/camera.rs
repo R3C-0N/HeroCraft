@@ -108,14 +108,14 @@ impl Default for OrbitCamera {
             auto_rotate: false,
             auto_rotate_speed: 0.2,
 
-            base_radius: 50.0,
+            base_radius: (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32,
         }
     }
 }
 
 impl OrbitCamera {
     pub fn new(distance: f32, base_radius: f32, generator: &PlanetWorldGenerator) -> Self {
-        let scale = base_radius / 25.0;
+        let scale = base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
         let mut cam = Self {
             distance,
             target_distance: distance,
@@ -317,7 +317,7 @@ impl OrbitCamera {
 
     /// Calcule la position de la caméra sans aucune pénétration sous le relief (Spring-Arm anti-collision)
     pub fn update_camera_bounds(&mut self, generator: &PlanetWorldGenerator) {
-        let scale = self.base_radius / 25.0;
+        let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
         let (up, _, _, look_dir) = self.look_vectors();
         let eye_height = 0.065 * scale; // ~1.7 blocs au-dessus des pieds
         let head = self.player_pos + up * eye_height;
@@ -423,7 +423,7 @@ impl OrbitCamera {
         }
 
         let (_up, forward_tangent, right_tangent, _) = self.look_vectors();
-        let scale = self.base_radius / 25.0;
+        let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
 
         // 1. Déplacement horizontal ZQSD / WASD
         let mut move_dir = Vec3::ZERO;
@@ -496,7 +496,7 @@ impl OrbitCamera {
     pub fn build_view_projection_matrix(&self) -> Mat4 {
         let eye = self.effective_eye;
         let (up, _, _, look_dir) = self.look_vectors();
-        let scale = self.base_radius / 25.0;
+        let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
         let eye_height = 0.065 * scale;
         let head = self.player_pos + up * eye_height;
 
@@ -573,7 +573,7 @@ mod tests {
     #[test]
     fn test_matrices_finite_in_all_modes() {
         let mut cam = OrbitCamera::default();
-        let scale = cam.base_radius / 25.0;
+        let scale = cam.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
         let eye_height = 0.065 * scale;
         for &dist in &[0.0, 0.05, 1.0, 10.0, 25.0, 50.0, 165.0, 330.0] {
             cam.distance = dist;
