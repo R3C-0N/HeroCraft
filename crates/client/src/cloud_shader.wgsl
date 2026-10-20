@@ -1,9 +1,11 @@
 // =========================================================================
-// HeroCraft - 3D Cloud Shader (Mode C : Proxy Mesh Raymarché)
-// - Volumes englobants 3D réels avec maillage biseauté galbé
-// - Raymarching interne ultra-rapide haute performance (loi de Beer-Lambert)
-// - Éclairage dynamique : soleil direct doré, crépuscule lavande, nuit lunaire
-// - Deux faces visibles (cull_mode: None) permettant de traverser les nuages
+// HeroCraft - 3D Marshmallow Cloud Shader (Boîtes Englobantes + SDF Analytique)
+// - Boîtes englobantes 3D physiques réelles traversables dans le monde
+// - Sphere tracing ultra-rapide (8 à 12 pas) sur SDF analytique exacte
+// - Biseaux 3D arrondis sur TOUTES les arêtes (dessus, dessous, coins verticaux)
+// - Angles concaves intérieurs adoucis par union lisse (op_smooth_union)
+// - Éclairage volumétrique opaque (soleil doré, ciel lavande, sous-face ombrée)
+// - Écriture précise de la profondeur dans le Z-buffer (@builtin(frag_depth))
 // =========================================================================
 
 struct CameraUniform {
@@ -15,6 +17,7 @@ struct CameraUniform {
     time: f32,
     lighting_params: vec4<f32>,
     lighting_params2: vec4<f32>,
+    cloud_params: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -22,18 +25,25 @@ var<uniform> camera: CameraUniform;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
-    @location(1) normal: vec3<f32>,
-    @location(2) color: vec4<f32>, // x: u, y: v, z: bevel_mask, w: face_type
+    @location(1) frame_u: vec3<f32>,
+    @location(2) frame_v: vec3<f32>,
+    @location(3) frame_w: vec3<f32>,
+    @location(4) cloud_center: vec3<f32>,
+    @location(5) box1_bounds: vec4<f32>,
+    @location(6) box2_bounds: vec4<f32>,
+    @location(7) config: vec4<f32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) world_pos: vec3<f32>,
-    @location(1) normal: vec3<f32>,
-    @location(2) uv: vec2<f32>,
-    @location(3) bevel_mask: f32,
-    @location(4) face_type: f32,
-    @location(5) local_pos: vec3<f32>,
+    @location(1) frame_u: vec3<f32>,
+    @location(2) frame_v: vec3<f32>,
+    @location(3) frame_w: vec3<f32>,
+    @location(4) cloud_center: vec3<f32>,
+    @location(5) @interpolate(flat) box1_bounds: vec4<f32>,
+    @location(6) @interpolate(flat) box2_bounds: vec4<f32>,
+    @location(7) @interpolate(flat) config: vec4<f32>,
 };
 
 @vertex
@@ -52,19 +62,41 @@ fn vs_cloud(in: VertexInput) -> VertexOutput {
         in.position.y,
         in.position.x * sin_a + in.position.z * cos_a
     );
-    let norm_rot = vec3<f32>(
-        in.normal.x * cos_a - in.normal.z * sin_a,
-        in.normal.y,
-        in.normal.x * sin_a + in.normal.z * cos_a
+
+    let center_rot = vec3<f32>(
+        in.cloud_center.x * cos_a - in.cloud_center.z * sin_a,
+        in.cloud_center.y,
+        in.cloud_center.x * sin_a + in.cloud_center.z * cos_a
     );
 
-    out.world_pos = pos_rot;
-    out.normal = normalize(norm_rot);
-    out.uv = in.color.xy;
-    out.bevel_mask = in.color.z;
-    out.face_type = in.color.w;
-    out.local_pos = in.position;
+    let u_rot = vec3<f32>(
+        in.frame_u.x * cos_a - in.frame_u.z * sin_a,
+        in.frame_u.y,
+        in.frame_u.x * sin_a + in.frame_u.z * cos_a
+    );
+
+    let v_rot = vec3<f32>(
+        in.frame_v.x * cos_a - in.frame_v.z * sin_a,
+        in.frame_v.y,
+        in.frame_v.x * sin_a + in.frame_v.z * cos_a
+    );
+
+    let w_rot = vec3<f32>(
+        in.frame_w.x * cos_a - in.frame_w.z * sin_a,
+        in.frame_w.y,
+        in.frame_w.x * sin_a + in.frame_w.z * cos_a
+    );
+
     out.clip_position = camera.view_proj * vec4<f32>(pos_rot, 1.0);
+    out.world_pos = pos_rot;
+    out.frame_u = u_rot;
+    out.frame_v = v_rot;
+    out.frame_w = w_rot;
+    out.cloud_center = center_rot;
+    out.box1_bounds = in.box1_bounds;
+    out.box2_bounds = in.box2_bounds;
+    out.config = in.config;
+
     return out;
 }
 
@@ -74,14 +106,18 @@ struct MoonData {
 };
 
 fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
-    let l_sun = normalize(light_dir);
-    let moon_tilt = 0.497;
+    let t_day = 1200.0;
+    let t_moon = 1260.0;
+    let omega_moon = 6.28318530718 / t_moon;
+
+    let moon_tilt: f32 = 0.497;
     let u_moon = vec3<f32>(cos(moon_tilt), sin(moon_tilt), 0.0);
     let v_moon = vec3<f32>(0.0, 0.0, 1.0);
-    let moon_period = 1260.0;
-    let moon_angle = (time / moon_period) * 6.2831853 + 3.69;
+
+    let moon_angle = time * omega_moon + 3.14159265;
     let moon_dir = normalize(u_moon * cos(moon_angle) + v_moon * sin(moon_angle));
-    let sun_moon_dot = dot(moon_dir, l_sun);
+
+    let sun_moon_dot = dot(normalize(light_dir), moon_dir);
     let moon_phase = clamp((-sun_moon_dot + 1.0) * 0.5, 0.0, 1.0);
     var data: MoonData;
     data.dir = moon_dir;
@@ -89,77 +125,200 @@ fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
     return data;
 }
 
+// Distance 2D signée à un rectangle centré
+fn sd_box_2d(p: vec2<f32>, b: vec2<f32>) -> f32 {
+    let d = abs(p) - b;
+    return length(max(d, vec2<f32>(0.0))) + min(max(d.x, d.y), 0.0);
+}
+
+// Union lisse pour adoucir les angles concaves intérieurs
+fn op_smooth_union(d1: f32, d2: f32, k: f32) -> f32 {
+    let h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
+    return mix(d2, d1, h) - k * h * (1.0 - h);
+}
+
+// Distance 2D au nuage voxel (union de 1 ou 2 boîtes avec raccord concave doux)
+fn sd_cloud_2d(p: vec2<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32) -> f32 {
+    let d1 = sd_box_2d(p - b1.xy, b1.zw);
+    if (num_boxes < 1.5) {
+        return d1;
+    }
+    let d2 = sd_box_2d(p - b2.xy, b2.zw);
+    return op_smooth_union(d1, d2, 0.40);
+}
+
+// Distance 3D avec biseau arrondi sur TOUTES les arêtes (dessus, dessous, coins verticaux, coins sphériques)
+fn sd_cloud_3d(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, half_depth: f32, r: f32) -> f32 {
+    let d_2d = sd_cloud_2d(p.xy, b1, b2, num_boxes);
+    let d_z = abs(p.z) - (half_depth - r);
+    let w = vec2<f32>(d_2d + r, d_z);
+    return length(max(w, vec2<f32>(0.0))) + min(max(w.x, w.y), 0.0) - r;
+}
+
+// Normale par gradient analytique fini
+fn get_cloud_normal(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, half_depth: f32, r: f32) -> vec3<f32> {
+    let eps = 0.005;
+    let dx = sd_cloud_3d(p + vec3<f32>(eps, 0.0, 0.0), b1, b2, num_boxes, half_depth, r)
+           - sd_cloud_3d(p - vec3<f32>(eps, 0.0, 0.0), b1, b2, num_boxes, half_depth, r);
+    let dy = sd_cloud_3d(p + vec3<f32>(0.0, eps, 0.0), b1, b2, num_boxes, half_depth, r)
+           - sd_cloud_3d(p - vec3<f32>(0.0, eps, 0.0), b1, b2, num_boxes, half_depth, r);
+    let dz = sd_cloud_3d(p + vec3<f32>(0.0, 0.0, eps), b1, b2, num_boxes, half_depth, r)
+           - sd_cloud_3d(p - vec3<f32>(0.0, 0.0, eps), b1, b2, num_boxes, half_depth, r);
+    return normalize(vec3<f32>(dx, dy, dz));
+}
+
+struct FragmentOutput {
+    @location(0) color: vec4<f32>,
+    @builtin(frag_depth) depth: f32,
+};
+
 @fragment
-fn fs_cloud(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     // Multiplicateur de densité / visibilité des nuages (0.0 en vue satellite)
     let cloud_slider = camera.lighting_params2.z;
     if (cloud_slider < 0.01) {
         discard;
     }
 
-    // --- Paramètres d'éclairage ---
+    let view_dir = normalize(camera.camera_pos - in.world_pos);
+    let ray_dir = -view_dir;
+
+    // Passage dans le repère local de la boîte englobante
+    let v_world = in.world_pos - in.cloud_center;
+    let p0_surface = vec3<f32>(
+        dot(v_world, in.frame_u),
+        dot(v_world, in.frame_v),
+        dot(v_world, in.frame_w)
+    );
+
+    let cam_v_world = camera.camera_pos - in.cloud_center;
+    let p0_camera = vec3<f32>(
+        dot(cam_v_world, in.frame_u),
+        dot(cam_v_world, in.frame_v),
+        dot(cam_v_world, in.frame_w)
+    );
+
+    // Si la caméra est dans la boîte englobante (face arrière visible), on commence à la position caméra
+    let local_p0 = select(p0_camera, p0_surface, is_front);
+
+    let local_ray_dir = normalize(vec3<f32>(
+        dot(ray_dir, in.frame_u),
+        dot(ray_dir, in.frame_v),
+        dot(ray_dir, in.frame_w)
+    ));
+
+    let roundness = clamp(camera.cloud_params.x, 0.05, 0.40);
+    let shadow_intensity = camera.cloud_params.y;
+    let sunset_glow_slider = camera.cloud_params.z;
+    let micro_noise_slider = camera.cloud_params.w;
+    let half_depth = in.config.y;
+
+    var t = 0.0;
+    var hit = false;
+    var hit_local_p = local_p0;
+
+    // Test si le point de départ est déjà à l'intérieur du nuage
+    let initial_dist = sd_cloud_3d(local_p0, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
+    if (initial_dist <= 0.001) {
+        hit = true;
+        hit_local_p = local_p0;
+    } else {
+        // Sphere Tracing court et précis (16 pas maximum)
+        for (var step = 0; step < 16; step = step + 1) {
+            let p = local_p0 + local_ray_dir * t;
+            let d = sd_cloud_3d(p, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
+            if (d < 0.003) {
+                hit = true;
+                hit_local_p = p;
+                break;
+            }
+            t += d;
+            if (t > 12.0) {
+                break;
+            }
+        }
+    }
+
+    if (!hit) {
+        discard;
+    }
+
+    // Calcul de la normale sur la surface marshmallow
+    let norm_local = get_cloud_normal(hit_local_p, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
+    let norm_world = normalize(
+        norm_local.x * in.frame_u +
+        norm_local.y * in.frame_v +
+        norm_local.z * in.frame_w
+    );
+
+    // Position monde exacte de l'impact pour le Z-Buffer et l'éclairage
+    let hit_world_pos = in.cloud_center +
+        hit_local_p.x * in.frame_u +
+        hit_local_p.y * in.frame_v +
+        hit_local_p.z * in.frame_w;
+
+    let clip_pos = camera.view_proj * vec4<f32>(hit_world_pos, 1.0);
+    let frag_depth = clip_pos.z / clip_pos.w;
+
+    // --- Modèle d'éclairage Marshmallow 3D ---
     let moon_slider = camera.lighting_params.x;
     let sun_slider = camera.lighting_params.y;
     let night_amb_slider = camera.lighting_params.z;
     let day_amb_slider = camera.lighting_params.w;
 
-    let up = normalize(in.world_pos);
+    let up_planet = normalize(hit_world_pos);
     let l_sun = normalize(camera.light_dir);
-    let sun_up = dot(l_sun, up);
+    let sun_up = dot(l_sun, up_planet);
     let daylight = clamp((sun_up + 0.06) / 0.18, 0.0, 1.0);
 
     let sunset_raw = clamp(1.0 - abs(sun_up - 0.03) / 0.18, 0.0, 1.0);
     let sunset_factor = sunset_raw * clamp((sun_up + 0.06) / 0.10, 0.0, 1.0);
 
+    // 1. Soleil direct chaud (Half-Lambert doux)
+    let ndotl = dot(norm_world, l_sun);
+    let wrap = pow(clamp(ndotl * 0.5 + 0.5, 0.0, 1.0), 1.25);
+    let sun_col = mix(vec3<f32>(1.0, 0.96, 0.90), vec3<f32>(1.0, 0.70, 0.44), sunset_factor);
+    let direct_sun = sun_col * wrap * daylight * sun_slider;
+
+    // 2. Éclairage zénithal supérieur (Ciel lavande / mauve doux)
+    let ndotup = dot(norm_world, up_planet);
+    let top_factor = clamp(ndotup, 0.0, 1.0);
+    let sky_col = mix(vec3<f32>(0.74, 0.84, 0.98), vec3<f32>(0.68, 0.54, 0.78), sunset_factor);
+    let sky_light = sky_col * top_factor * daylight * day_amb_slider * 0.90;
+
+    // 3. Ombrage de sous-face (Underside Shadow violacé sombre)
+    let bottom_factor = clamp(-ndotup, 0.0, 1.0);
+    let bottom_shade_col = mix(vec3<f32>(0.35, 0.40, 0.50), vec3<f32>(0.45, 0.28, 0.38), sunset_factor);
+    let bottom_shadow = bottom_shade_col * (bottom_factor * shadow_intensity * 0.65);
+
+    // 4. Éclat crépusculaire / Rim light (effet doré sur les bords au couchant)
+    let forward_scatter = pow(max(dot(-view_dir, l_sun), 0.0), 3.5);
+    let rim_col = vec3<f32>(1.0, 0.68, 0.42) * (forward_scatter * sunset_factor * sunset_glow_slider * 0.80);
+
+    // 5. Nuit et Lune
     let moon = get_moon_data(camera.time, camera.light_dir);
-    let view_dir = normalize(camera.camera_pos - in.world_pos);
-    let ray_dir = -view_dir;
+    let moon_direct = max(dot(norm_world, moon.dir), 0.0) * moon.phase * moon_slider * (1.0 - daylight);
+    let moon_light = vec3<f32>(0.70, 0.84, 1.0) * (moon_direct * 0.65);
+    let night_amb = vec3<f32>(0.04, 0.06, 0.14) * night_amb_slider * (1.0 - daylight);
 
-    let sun_highlight = mix(vec3<f32>(1.0, 0.98, 0.92), vec3<f32>(1.0, 0.72, 0.42), sunset_factor);
-    let ambient_day = vec3<f32>(0.74, 0.84, 0.96);
-    let ambient_sunset = vec3<f32>(0.64, 0.48, 0.68);
-    let cloud_ambient = mix(ambient_day, ambient_sunset, sunset_factor) * daylight * day_amb_slider;
-    let night_ambient = vec3<f32>(0.04, 0.07, 0.15) * night_amb_slider * (1.0 - daylight);
-
-    let wind_speed = 0.0035;
-    let angle = camera.time * wind_speed;
-    let cos_a = cos(angle);
-    let sin_a = sin(angle);
-    let ray_dir_local = vec3<f32>(
-        ray_dir.x * cos_a + ray_dir.z * sin_a,
-        ray_dir.y,
-        -ray_dir.x * sin_a + ray_dir.z * cos_a
-    );
-
-    let r_bot = camera.planet_radius + 8.2;
-    let r_top = camera.planet_radius + 9.4;
-
-    // --- Mode C : Proxy Mesh Raymarché (Boîtes englobantes haute performance) ---
-    let ds_c = 0.32;
-    var trans_c = 1.0;
-    var accum_c = vec3<f32>(0.0);
-
-    let forward_c = pow(max(dot(-view_dir, l_sun), 0.0), 4.0);
-    let rim_c = sun_highlight * forward_c * (0.60 + 0.60 * sunset_factor);
-    let ndotm = max(dot(in.normal, moon.dir), 0.0);
-    let moon_light_c = vec3<f32>(0.70, 0.84, 1.0) * ndotm * moon.phase * moon_slider * (1.0 - daylight);
-
-    for (var k = 0; k < 4; k = k + 1) {
-        let p_c = in.local_pos + ray_dir_local * (f32(k) + 0.5) * ds_c;
-        let r_c = length(p_c);
-        let h_c = clamp((r_c - r_bot) / (r_top - r_bot), 0.0, 1.0);
-        let v_c = 4.0 * h_c * (1.0 - h_c);
-
-        let density_c = v_c * 1.35;
-        let trans_step = exp(-1.7 * density_c * ds_c);
-        trans_c *= trans_step;
-
-        let light_step_c = (sun_highlight * 0.90 * daylight * sun_slider + cloud_ambient + rim_c + moon_light_c) * density_c * ds_c;
-        accum_c += light_step_c * trans_c;
+    // 6. Micro-texture de grain mat (effet argile / marshmallow doux)
+    var grain = 0.0;
+    if (micro_noise_slider > 0.01) {
+        let p_grid = floor(hit_local_p * 14.0);
+        let g_hash = fract(sin(dot(p_grid, vec3<f32>(12.9898, 78.233, 45.164))) * 43758.5453);
+        grain = (g_hash - 0.5) * micro_noise_slider * 0.10;
     }
+    let base_albedo = vec3<f32>(0.96, 0.94, 0.92) + vec3<f32>(grain);
 
-    let final_color = accum_c + night_ambient;
-    let final_alpha = clamp((1.0 - trans_c) * cloud_slider, 0.0, 1.0);
+    // Assemblage final : Volume solide et opaque
+    var total_light = direct_sun + sky_light + rim_col + moon_light + night_amb - bottom_shadow;
+    total_light = max(total_light, night_amb * 0.4);
 
-    return vec4<f32>(final_color, final_alpha);
+    let final_color = total_light * base_albedo;
+    let final_alpha = 1.0 * clamp(cloud_slider, 0.0, 1.0);
+
+    var out: FragmentOutput;
+    out.color = vec4<f32>(final_color, final_alpha);
+    out.depth = frag_depth;
+    return out;
 }

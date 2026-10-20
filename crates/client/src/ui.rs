@@ -72,6 +72,28 @@ impl Default for VideoSettings {
     }
 }
 
+/// Réglages visuels des nuages 3D (Marshmallow SDF)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CloudSettings {
+    pub density: f32,          // Densité / visibilité globale [0.0 .. 2.0] (défaut: 1.0)
+    pub roundness: f32,        // Rayon d'arrondi des arêtes (Bevel) [0.05 .. 0.40] (défaut: 0.22)
+    pub shadow_intensity: f32, // Ombrage de sous-face violacée [0.0 .. 2.0] (défaut: 1.0)
+    pub sunset_glow: f32,      // Éclat chaud au coucher de soleil [0.0 .. 2.0] (défaut: 1.0)
+    pub micro_noise: f32,      // Micro-texture / grain mat [0.0 .. 1.0] (défaut: 0.15)
+}
+
+impl Default for CloudSettings {
+    fn default() -> Self {
+        Self {
+            density: 1.0,
+            roundness: 0.22,
+            shadow_intensity: 1.0,
+            sunset_glow: 1.0,
+            micro_noise: 0.15,
+        }
+    }
+}
+
 /// Réglages d'éclairage et d'ambiance céleste ajustables via sliders
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LightingSettings {
@@ -111,6 +133,7 @@ pub struct UiState {
     pub is_settings_open: bool,
     pub video_settings: VideoSettings,
     pub lighting_settings: LightingSettings,
+    pub cloud_settings: CloudSettings,
     pub screen_width: f32,
     pub screen_height: f32,
 }
@@ -133,6 +156,7 @@ impl UiState {
             is_settings_open: false,
             video_settings: VideoSettings::default(),
             lighting_settings: LightingSettings::default(),
+            cloud_settings: CloudSettings::default(),
             screen_width: 1280.0_f32,
             screen_height: 720.0_f32,
         }
@@ -409,6 +433,45 @@ impl UiState {
                                     ui.add_space(4.0_f32);
                                     if ui.button("↺ Réinitialiser l'éclairage").clicked() {
                                         self.lighting_settings = LightingSettings::default();
+                                    }
+                                },
+                            );
+
+                            ui.add_space(3.0_f32);
+
+                            // Section interactive dédiée aux réglages visuels des Nuages Marshmallow 3D
+                            ui.collapsing(
+                                egui::RichText::new("☁  Rendu des Nuages (Marshmallow SDF)")
+                                    .size(12.0_f32)
+                                    .color(egui::Color32::from_rgb(220, 225, 245))
+                                    .strong(),
+                                |ui| {
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Densité / Visibilité :").size(11.0_f32).color(egui::Color32::from_rgb(210, 215, 230)));
+                                    if ui.add(egui::Slider::new(&mut self.cloud_settings.density, 0.0..=2.0).text("Densité").show_value(true)).changed() {
+                                        self.lighting_settings.cloud_density = self.cloud_settings.density;
+                                    }
+
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Rondeur des arêtes (Bevel) :").size(11.0_f32).color(egui::Color32::from_rgb(240, 220, 150)));
+                                    ui.add(egui::Slider::new(&mut self.cloud_settings.roundness, 0.05..=0.40).text("Rondeur").show_value(true));
+
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Ombrage de sous-face :").size(11.0_f32).color(egui::Color32::from_rgb(180, 160, 210)));
+                                    ui.add(egui::Slider::new(&mut self.cloud_settings.shadow_intensity, 0.0..=2.0).text("Ombre").show_value(true));
+
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Éclat coucher de soleil :").size(11.0_f32).color(egui::Color32::from_rgb(255, 180, 120)));
+                                    ui.add(egui::Slider::new(&mut self.cloud_settings.sunset_glow, 0.0..=2.0).text("Éclat").show_value(true));
+
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Micro-texture (Grain mat) :").size(11.0_f32).color(egui::Color32::from_rgb(190, 210, 210)));
+                                    ui.add(egui::Slider::new(&mut self.cloud_settings.micro_noise, 0.0..=1.0).text("Grain").show_value(true));
+
+                                    ui.add_space(4.0_f32);
+                                    if ui.button("↺ Réinitialiser les nuages").clicked() {
+                                        self.cloud_settings = CloudSettings::default();
+                                        self.lighting_settings.cloud_density = self.cloud_settings.density;
                                     }
                                 },
                             );
@@ -719,5 +782,30 @@ mod tests {
         assert_eq!(settings.night_ambient, 2.10);
         assert_eq!(settings.moon_speed, 1.0);
         assert_eq!(settings.cloud_density, 1.0);
+    }
+
+    #[test]
+    fn test_cloud_settings_defaults_and_mutation() {
+        let mut clouds = CloudSettings::default();
+        assert_eq!(clouds.density, 1.0);
+        assert_eq!(clouds.roundness, 0.22);
+        assert_eq!(clouds.shadow_intensity, 1.0);
+        assert_eq!(clouds.sunset_glow, 1.0);
+        assert_eq!(clouds.micro_noise, 0.15);
+
+        clouds.density = 1.5;
+        clouds.roundness = 0.35;
+        clouds.shadow_intensity = 1.8;
+        clouds.sunset_glow = 0.8;
+        clouds.micro_noise = 0.4;
+        assert_eq!(clouds.density, 1.5);
+        assert_eq!(clouds.roundness, 0.35);
+        assert_eq!(clouds.shadow_intensity, 1.8);
+        assert_eq!(clouds.sunset_glow, 0.8);
+        assert_eq!(clouds.micro_noise, 0.4);
+
+        clouds = CloudSettings::default();
+        assert_eq!(clouds.density, 1.0);
+        assert_eq!(clouds.roundness, 0.22);
     }
 }

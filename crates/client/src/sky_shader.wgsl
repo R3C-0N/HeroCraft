@@ -15,6 +15,7 @@ struct CameraUniform {
     time: f32,
     lighting_params: vec4<f32>,
     lighting_params2: vec4<f32>,
+    cloud_params: vec4<f32>,
 };
 
 @group(0) @binding(0)

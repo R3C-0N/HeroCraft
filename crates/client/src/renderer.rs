@@ -3,7 +3,7 @@ use winit::window::Window;
 
 use crate::camera::OrbitCamera;
 use crate::planet_mesh::{PlanetMesh, PlanetVertex};
-use crate::ui::{LightingSettings, UiState};
+use crate::ui::{CloudSettings, LightingSettings, UiState};
 
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -16,6 +16,7 @@ pub struct CameraUniform {
     pub time: f32,
     pub lighting_params: [f32; 4],
     pub lighting_params2: [f32; 4],
+    pub cloud_params: [f32; 4],
 }
 
 pub struct State {
@@ -201,6 +202,7 @@ impl State {
             time: 0.0,
             lighting_params: [0.25, 1.0, 2.10, 1.0],
             lighting_params2: [1.0, 1.0, 0.0, 0.0],
+            cloud_params: [0.22, 1.0, 1.0, 0.15],
         };
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -385,7 +387,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &cloud_shader,
                 entry_point: Some("vs_cloud"),
-                buffers: &[PlanetVertex::desc()],
+                buffers: &[crate::cloud_mesh::CloudVertex::desc()],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -566,7 +568,7 @@ impl State {
         }
     }
 
-    pub fn update_camera(&mut self, camera: &OrbitCamera, lighting: &LightingSettings) {
+    pub fn update_camera(&mut self, camera: &OrbitCamera, lighting: &LightingSettings, clouds: &CloudSettings) {
         let now = std::time::Instant::now();
         let dt = now.duration_since(self.last_uniform_time).as_secs_f32();
         self.last_uniform_time = now;
@@ -583,7 +585,7 @@ impl State {
         } else {
             ((25.0 - camera.effective_distance) / 5.0).clamp(0.0, 1.0)
         };
-        let effective_cloud_density = lighting.cloud_density * cloud_vis;
+        let effective_cloud_density = clouds.density * cloud_vis;
 
         let uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
@@ -603,6 +605,12 @@ impl State {
                 lighting.fog_intensity,
                 effective_cloud_density,
                 cloud_vis,
+            ],
+            cloud_params: [
+                clouds.roundness,
+                clouds.shadow_intensity,
+                clouds.sunset_glow,
+                clouds.micro_noise,
             ],
         };
         self.queue
@@ -816,7 +824,7 @@ mod tests {
 
     #[test]
     fn test_camera_uniform_size_and_alignment() {
-        assert_eq!(std::mem::size_of::<CameraUniform>(), 192);
+        assert_eq!(std::mem::size_of::<CameraUniform>(), 208);
         assert_eq!(std::mem::align_of::<CameraUniform>(), 16);
     }
 
