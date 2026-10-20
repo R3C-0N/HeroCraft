@@ -602,7 +602,7 @@ impl State {
                 lighting.moon_speed,
                 lighting.fog_intensity,
                 effective_cloud_density,
-                lighting.cloud_mode as u32 as f32,
+                cloud_vis,
             ],
         };
         self.queue
@@ -924,28 +924,5 @@ mod tests {
             ((25.0 - cam.effective_distance) / 5.0).clamp(0.0, 1.0)
         };
         assert_eq!(cloud_vis_tps, 1.0, "Les nuages doivent être à 100% visibles au sol en TPS");
-    }
-
-    #[test]
-    fn test_cloud_modes_uniform_transmission() {
-        use crate::ui::{CloudRenderMode, LightingSettings};
-
-        let mut lighting = LightingSettings::default();
-
-        // 1. Mode Split-Screen par défaut (0.0)
-        assert_eq!(lighting.cloud_mode, CloudRenderMode::SplitScreen);
-        assert_eq!(lighting.cloud_mode as u32 as f32, 0.0);
-
-        // 2. Mode A : SDF Volumétrique (1.0)
-        lighting.cloud_mode = CloudRenderMode::ModeA;
-        assert_eq!(lighting.cloud_mode as u32 as f32, 1.0);
-
-        // 3. Mode B : Mesh Adouci (2.0)
-        lighting.cloud_mode = CloudRenderMode::ModeB;
-        assert_eq!(lighting.cloud_mode as u32 as f32, 2.0);
-
-        // 4. Mode C : Proxy Raymarché (3.0)
-        lighting.cloud_mode = CloudRenderMode::ModeC;
-        assert_eq!(lighting.cloud_mode as u32 as f32, 3.0);
     }
 }
