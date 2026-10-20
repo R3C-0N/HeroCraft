@@ -17,13 +17,15 @@ serde = { workspace = true }
 bincode = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
-wgpu = "23"
+wgpu = { version = "23", features = ["naga-ir"] }
 winit = "0.29"
 pollster = "0.3"
 bytemuck = { version = "1.18", features = ["derive"] }
 rayon = "1.10"
 egui = "0.30"
 egui-wgpu = "0.30"
+naga = "23"
+naga_oil = { version = "0.16", default-features = false }
 
 [dev-dependencies]
 naga = { version = "23", features = ["wgsl-in"] }

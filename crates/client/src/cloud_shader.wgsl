@@ -2,27 +2,15 @@
 // HeroCraft - 3D Marshmallow Cloud Shader (Boîtes Englobantes + SDF Analytique)
 // - Boîtes englobantes 3D physiques réelles traversables dans le monde
 // - Sphere tracing ultra-rapide (8 à 16 pas) sur SDF analytique exacte
-// - Biseaux 3D arrondis sur TOUTES les arêtes (dessus, dessous, coins verticaux, coins sphériques)
-// - Angles concaves intérieurs adoucis sans aucune encoche sur les parois partagées
-// - Éclairage hémisphérique doux éliminant toute démarcation sur les parois latérales
-// - Teinte marshmallow ivoire/crème chaleureuse avec reflets dorés et ombres mauves douces
+// - Forme décrite par un masque d'occupation 11x11 par groupe de nuages (contours découpés, encoches, trous)
+// - Coins convexes arrondis, angles rentrants comblés, arêtes hautes et basses en coussin
+// - Ambiance tirée du dôme céleste (même formule que sky_shader.wgsl) : teinte du ciel partagée
+// - Dessus clair, flancs intermédiaires, dessous plus sombre et légèrement mauve
+// - Perspective atmosphérique vers le ciel et compression douce des hautes lumières
 // - Écriture précise de la profondeur dans le Z-buffer (@builtin(frag_depth))
 // =========================================================================
 
-struct CameraUniform {
-    view_proj: mat4x4<f32>,
-    inv_view_proj: mat4x4<f32>,
-    camera_pos: vec3<f32>,
-    planet_radius: f32,
-    light_dir: vec3<f32>,
-    time: f32,
-    lighting_params: vec4<f32>,
-    lighting_params2: vec4<f32>,
-    cloud_params: vec4<f32>,
-};
-
-@group(0) @binding(0)
-var<uniform> camera: CameraUniform;
+#import herocraft::common::{camera, get_moon_data, sky_factors, sky_dome}
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -30,8 +18,8 @@ struct VertexInput {
     @location(2) frame_v: vec3<f32>,
     @location(3) frame_w: vec3<f32>,
     @location(4) cloud_center: vec3<f32>,
-    @location(5) box1_bounds: vec4<f32>,
-    @location(6) box2_bounds: vec4<f32>,
+    @location(5) bbox: vec4<f32>,
+    @location(6) mask: vec4<u32>,
     @location(7) config: vec4<f32>,
 };
 
@@ -42,8 +30,8 @@ struct VertexOutput {
     @location(2) frame_v: vec3<f32>,
     @location(3) frame_w: vec3<f32>,
     @location(4) cloud_center: vec3<f32>,
-    @location(5) @interpolate(flat) box1_bounds: vec4<f32>,
-    @location(6) @interpolate(flat) box2_bounds: vec4<f32>,
+    @location(5) @interpolate(flat) bbox: vec4<f32>,
+    @location(6) @interpolate(flat) mask: vec4<u32>,
     @location(7) @interpolate(flat) config: vec4<f32>,
 };
 
@@ -94,74 +82,103 @@ fn vs_cloud(in: VertexInput) -> VertexOutput {
     out.frame_v = v_rot;
     out.frame_w = w_rot;
     out.cloud_center = center_rot;
-    out.box1_bounds = in.box1_bounds;
-    out.box2_bounds = in.box2_bounds;
+    out.bbox = in.bbox;
+    out.mask = in.mask;
     out.config = in.config;
 
     return out;
 }
 
-struct MoonData {
-    dir: vec3<f32>,
-    phase: f32,
-};
-
-fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
-    let t_day = 1200.0;
-    let t_moon = 1260.0;
-    let omega_moon = 6.28318530718 / t_moon;
-
-    let moon_tilt: f32 = 0.497;
-    let u_moon = vec3<f32>(cos(moon_tilt), sin(moon_tilt), 0.0);
-    let v_moon = vec3<f32>(0.0, 0.0, 1.0);
-
-    let moon_angle = time * omega_moon + 3.14159265;
-    let moon_dir = normalize(u_moon * cos(moon_angle) + v_moon * sin(moon_angle));
-
-    let sun_moon_dot = dot(normalize(light_dir), moon_dir);
-    let moon_phase = clamp((-sun_moon_dot + 1.0) * 0.5, 0.0, 1.0);
-    var data: MoonData;
-    data.dir = moon_dir;
-    data.phase = moon_phase;
-    return data;
-}
-
-// Distance 2D signée exacte à un rectangle orthogonal net (sans pré-arrondi)
-fn sd_box_2d(p: vec2<f32>, b: vec2<f32>) -> f32 {
-    let d = abs(p) - b;
-    return length(max(d, vec2<f32>(0.0))) + min(max(d.x, d.y), 0.0);
-}
-
-// Distance 3D avec biseau marshmallow uniforme sur TOUTES les arêtes et coins sphériques
-// Utilise l'érosion analytique exacte des sous-boîtes pour garantir une surface 100% lisse
-// sans aucune ride sur les faces planes et sans hernie sur les arêtes extérieures
-fn sd_cloud_3d(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, half_depth: f32, r: f32) -> f32 {
-    let core1 = max(b1.zw - vec2<f32>(r), vec2<f32>(0.001));
-    let d1 = sd_box_2d(p.xy - b1.xy, core1);
-
-    var d_core = d1;
-    if (num_boxes >= 1.5) {
-        let core2 = max(b2.zw - vec2<f32>(r), vec2<f32>(0.001));
-        let d2 = sd_box_2d(p.xy - b2.xy, core2);
-        d_core = min(d1, d2);
+// Cellule (x, y) du masque 11x11 occupée ? (bit = y * 11 + x, sur 4 mots de 32 bits)
+fn cell_on(m: vec4<u32>, x: i32, y: i32) -> bool {
+    if (x < 0 || y < 0 || x > 10 || y > 10) {
+        return false;
     }
+    let bit = u32(y * 11 + x);
+    let word = m[bit / 32u];
+    return ((word >> (bit % 32u)) & 1u) == 1u;
+}
 
-    let d_z = abs(p.z) - (half_depth - r);
+// Distance 2D signée à la forme du masque, coins convexes arrondis et angles rentrants comblés
+// (rayon rh). Exacte à moins d'une cellule de la surface, bornée à une cellule au-delà.
+fn sd_mask_2d(p: vec2<f32>, m: vec4<u32>, cell: f32, rh: f32) -> f32 {
+    let q = p / cell + vec2<f32>(5.5); // Coordonnées de grille (0..11)
+    let c = vec2<i32>(floor(q));
+    let inside = cell_on(m, c.x, c.y);
+
+    // Distance à la cellule de statut opposé la plus proche dans le voisinage 3x3
+    // (dehors : cellule pleine la plus proche ; dedans : cellule vide la plus proche)
+    var d = cell;
+    for (var dy = -1; dy <= 1; dy = dy + 1) {
+        for (var dx = -1; dx <= 1; dx = dx + 1) {
+            let cc = c + vec2<i32>(dx, dy);
+            if (cell_on(m, cc.x, cc.y) != inside) {
+                let e = abs(q - (vec2<f32>(cc) + vec2<f32>(0.5))) - vec2<f32>(0.5);
+                d = min(d, length(max(e, vec2<f32>(0.0))) * cell);
+            }
+        }
+    }
+    var sd = select(d, -d, inside);
+
+    // Sommet de grille le plus proche : arrondi d'un coin convexe (1 cellule pleine sur 4)
+    // ou congé d'un angle rentrant (3 cellules pleines sur 4)
+    let vtx = round(q);
+    let vi = vec2<i32>(vtx);
+    let c00 = cell_on(m, vi.x - 1, vi.y - 1);
+    let c10 = cell_on(m, vi.x, vi.y - 1);
+    let c01 = cell_on(m, vi.x - 1, vi.y);
+    let c11 = cell_on(m, vi.x, vi.y);
+    let count = i32(c00) + i32(c10) + i32(c01) + i32(c11);
+    let w0 = (q - vtx) * cell;
+    if (count == 1) {
+        // Signe vers la cellule pleine
+        let s = vec2<f32>(select(-1.0, 1.0, c10 || c11), select(-1.0, 1.0, c01 || c11));
+        let w = w0 * s;
+        sd = max(sd, length(max(vec2<f32>(rh) - w, vec2<f32>(0.0))) - rh);
+    } else if (count == 3) {
+        // Signe vers la cellule vide
+        let s = vec2<f32>(select(-1.0, 1.0, !c10 || !c11), select(-1.0, 1.0, !c01 || !c11));
+        let w = w0 * s;
+        if (w.x >= 0.0 && w.y >= 0.0 && w.x < rh && w.y < rh) {
+            sd = min(sd, rh - length(w - vec2<f32>(rh)));
+        }
+    }
+    return sd;
+}
+
+// Distance 3D : forme du masque extrudée sur l'épaisseur du nuage, arêtes hautes et basses
+// arrondies (rayon r) par érosion puis dilatation, pour le profil en coussin
+fn sd_cloud_3d(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f32) -> f32 {
+    let rh = clamp(max(r * 1.3, 0.35), 0.0, 0.48 * cell);
+    let d_core = sd_mask_2d(p.xy, m, cell, rh) + r;
+    // Dalle courbée pour suivre la sphère (les grands nuages ne remontent plus aux bords)
+    let curv_r = camera.planet_radius + 8.8;
+    let z = p.z + dot(p.xy, p.xy) / (2.0 * curv_r);
+    let d_z = abs(z) - (half_depth - r);
     let w = max(vec2<f32>(d_core, d_z), vec2<f32>(0.0));
     let inside = min(max(d_core, d_z), 0.0);
-    return length(w) + inside - r;
+    // Facteur 0.9 : marge de sécurité du sphere tracing (courbure et congés non exacts)
+    return (length(w) + inside - r) * 0.9;
 }
 
 // Normale par gradient analytique fini
-fn get_cloud_normal(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, half_depth: f32, r: f32) -> vec3<f32> {
+fn get_cloud_normal(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f32) -> vec3<f32> {
     let eps = 0.004;
-    let dx = sd_cloud_3d(p + vec3<f32>(eps, 0.0, 0.0), b1, b2, num_boxes, half_depth, r)
-           - sd_cloud_3d(p - vec3<f32>(eps, 0.0, 0.0), b1, b2, num_boxes, half_depth, r);
-    let dy = sd_cloud_3d(p + vec3<f32>(0.0, eps, 0.0), b1, b2, num_boxes, half_depth, r)
-           - sd_cloud_3d(p - vec3<f32>(0.0, eps, 0.0), b1, b2, num_boxes, half_depth, r);
-    let dz = sd_cloud_3d(p + vec3<f32>(0.0, 0.0, eps), b1, b2, num_boxes, half_depth, r)
-           - sd_cloud_3d(p - vec3<f32>(0.0, 0.0, eps), b1, b2, num_boxes, half_depth, r);
+    let dx = sd_cloud_3d(p + vec3<f32>(eps, 0.0, 0.0), m, cell, half_depth, r)
+           - sd_cloud_3d(p - vec3<f32>(eps, 0.0, 0.0), m, cell, half_depth, r);
+    let dy = sd_cloud_3d(p + vec3<f32>(0.0, eps, 0.0), m, cell, half_depth, r)
+           - sd_cloud_3d(p - vec3<f32>(0.0, eps, 0.0), m, cell, half_depth, r);
+    let dz = sd_cloud_3d(p + vec3<f32>(0.0, 0.0, eps), m, cell, half_depth, r)
+           - sd_cloud_3d(p - vec3<f32>(0.0, 0.0, eps), m, cell, half_depth, r);
     return normalize(vec3<f32>(dx, dy, dz));
+}
+
+// Compression douce des hautes lumières au-delà de 0.78 (asymptote à 1.0)
+fn soft_shoulder(c: vec3<f32>) -> vec3<f32> {
+    let knee = 0.78;
+    let over = max(c - vec3<f32>(knee), vec3<f32>(0.0));
+    let compressed = vec3<f32>(knee) + (1.0 - knee) * (vec3<f32>(1.0) - exp(-over / (1.0 - knee)));
+    return select(c, compressed, c > vec3<f32>(knee));
 }
 
 struct FragmentOutput {
@@ -172,7 +189,7 @@ struct FragmentOutput {
 @fragment
 fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     // Multiplicateur de densité / visibilité des nuages (0.0 en vue satellite)
-    let cloud_slider = camera.lighting_params2.z;
+    let cloud_slider = camera.lighting_params_ext.z;
     if (cloud_slider < 0.01) {
         discard;
     }
@@ -199,17 +216,10 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let pad_xy = 0.65;
     let pad_z = 0.50;
 
-    var c_min_x = in.box1_bounds.x - in.box1_bounds.z - pad_xy;
-    var c_max_x = in.box1_bounds.x + in.box1_bounds.z + pad_xy;
-    var c_min_y = in.box1_bounds.y - in.box1_bounds.w - pad_xy;
-    var c_max_y = in.box1_bounds.y + in.box1_bounds.w + pad_xy;
-
-    if (in.config.x >= 1.5) {
-        c_min_x = min(c_min_x, in.box2_bounds.x - in.box2_bounds.z - pad_xy);
-        c_max_x = max(c_max_x, in.box2_bounds.x + in.box2_bounds.z + pad_xy);
-        c_min_y = min(c_min_y, in.box2_bounds.y - in.box2_bounds.w - pad_xy);
-        c_max_y = max(c_max_y, in.box2_bounds.y + in.box2_bounds.w + pad_xy);
-    }
+    let c_min_x = in.bbox.x - pad_xy;
+    let c_max_x = in.bbox.z + pad_xy;
+    let c_min_y = in.bbox.y - pad_xy;
+    let c_max_y = in.bbox.w + pad_xy;
 
     let c_min_z = -half_depth - pad_z;
     let c_max_z = half_depth + pad_z;
@@ -232,7 +242,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         dot(ray_dir, in.frame_w)
     ));
 
-    let roundness = clamp(camera.cloud_params.x, 0.05, 0.30);
+    let roundness = clamp(camera.cloud_params.x, 0.05, min(0.55, half_depth - 0.04));
     let shadow_intensity = camera.cloud_params.y;
     let sunset_glow_slider = camera.cloud_params.z;
     let micro_noise_slider = camera.cloud_params.w;
@@ -242,22 +252,29 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     var hit_local_p = local_p0;
 
     // Test si le point de départ est déjà à l'intérieur du nuage
-    let initial_dist = sd_cloud_3d(local_p0, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
+    let initial_dist = sd_cloud_3d(local_p0, in.mask, in.config.x, half_depth, roundness);
     if (initial_dist <= 0.001) {
         hit = true;
         hit_local_p = local_p0;
     } else {
-        // Sphere Tracing précis (24 pas maximum pour les angles rasants)
-        for (var step = 0; step < 24; step = step + 1) {
+        // Sphere tracing borné par la sortie de la boîte englobante (intersection rayon / AABB locale).
+        // Un rayon qui frôle un arrondi avance par pas minuscules : avec peu de pas il abandonnait
+        // avant d'atteindre une autre branche du nuage située derrière (ciel visible à tort).
+        let inv_d = 1.0 / select(local_ray_dir, vec3<f32>(1e-6), abs(local_ray_dir) < vec3<f32>(1e-6));
+        let t0 = (vec3<f32>(c_min_x, c_min_y, c_min_z) - local_p0) * inv_d;
+        let t1 = (vec3<f32>(c_max_x, c_max_y, c_max_z) - local_p0) * inv_d;
+        let t_exit = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+        for (var step = 0; step < 96; step = step + 1) {
             let p = local_p0 + local_ray_dir * t;
-            let d = sd_cloud_3d(p, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
+            let d = sd_cloud_3d(p, in.mask, in.config.x, half_depth, roundness);
             if (d < 0.002) {
                 hit = true;
                 hit_local_p = p;
                 break;
             }
-            t += d;
-            if (t > 14.0) {
+            // Pas minimal pour ne pas s'enliser le long d'une surface rasée
+            t += max(d, 0.01);
+            if (t > t_exit) {
                 break;
             }
         }
@@ -268,7 +285,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     }
 
     // Calcul de la normale sur la surface marshmallow
-    let norm_local = get_cloud_normal(hit_local_p, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
+    let norm_local = get_cloud_normal(hit_local_p, in.mask, in.config.x, half_depth, roundness);
     let norm_world = normalize(
         norm_local.x * in.frame_u +
         norm_local.y * in.frame_v +
@@ -284,65 +301,77 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let clip_pos = camera.view_proj * vec4<f32>(hit_world_pos, 1.0);
     let frag_depth = clip_pos.z / clip_pos.w;
 
-    // --- Modèle d'éclairage Marshmallow Stylisé ---
+    // --- Éclairage : ambiance tirée du ciel, dessus clair, dessous sombre ---
     let moon_slider = camera.lighting_params.x;
     let sun_slider = camera.lighting_params.y;
     let night_amb_slider = camera.lighting_params.z;
-    let day_amb_slider = camera.lighting_params.w;
+    let fog_slider = camera.lighting_params_ext.y;
+
+    // Même repère que le ciel vu par le joueur (sky_shader.wgsl) : tous les nuages partagent la teinte du ciel
+    let cam_up = normalize(camera.camera_pos);
+    let l_sun = normalize(camera.light_dir);
+    let factors = sky_factors(dot(l_sun, cam_up));
+    let daylight = factors.daylight;
+    let sunset_factor = factors.sunset;
 
     let up_planet = normalize(hit_world_pos);
-    let l_sun = normalize(camera.light_dir);
-    let sun_up = dot(l_sun, up_planet);
-    let daylight = clamp((sun_up + 0.08) / 0.20, 0.0, 1.0);
-
-    // Facteur coucher de soleil (soleil rasant proche de l'horizon)
-    let sunset_raw = clamp(1.0 - abs(sun_up - 0.03) / 0.16, 0.0, 1.0);
-    let sunset_factor = sunset_raw * clamp((sun_up + 0.06) / 0.10, 0.0, 1.0);
-
-    // 1. Éclairage solaire direct (Half-Lambert sculpté avec teinte dorée/pêche)
-    let ndotl = dot(norm_world, l_sun);
-    let wrap = pow(clamp(ndotl * 0.55 + 0.45, 0.0, 1.0), 1.35);
-    // Soleil : blanc ivoire doux le jour -> pêche / abricot chaud au couchant
-    let sun_col = mix(vec3<f32>(1.0, 0.98, 0.92), vec3<f32>(1.0, 0.72, 0.46), sunset_factor);
-    let direct_sun = sun_col * (wrap * 0.95) * daylight * sun_slider;
-
-    // 2. Éclairage hémisphérique céleste (Ciel zénithal <-> Sol/Sous-face)
     let ndotup = dot(norm_world, up_planet);
-    let hemi_factor = clamp(ndotup * 0.5 + 0.5, 0.0, 1.0);
+    // 1 = dessus, 0 = dessous : mélange de l'orientation de la normale et de la hauteur dans la dalle
+    // (dégradé vertical continu sur les flancs, comme les nuages Complementary)
+    let hit_z = hit_local_p.z + dot(hit_local_p.xy, hit_local_p.xy) / (2.0 * (camera.planet_radius + 8.8));
+    let height01 = clamp((hit_z + half_depth) / (2.0 * half_depth), 0.0, 1.0);
+    let top = mix(ndotup * 0.5 + 0.5, pow(height01, 0.8), 0.45);
 
-    // Couleur du ciel : bleu doux le jour -> lavande / lilas au couchant
-    let sky_col = mix(vec3<f32>(0.76, 0.86, 0.98), vec3<f32>(0.76, 0.58, 0.82), sunset_factor);
-    // Couleur de sous-face (rebond) : bleu-gris doux le jour -> mauve / prune chaud au couchant
-    let ground_col = mix(vec3<f32>(0.52, 0.58, 0.68), vec3<f32>(0.58, 0.38, 0.48), sunset_factor);
+    // 1. Ambiance du ciel : horizon dans la direction regardée, mêlé au zénith pour les faces hautes
+    let horiz = ray_dir - cam_up * dot(ray_dir, cam_up);
+    let horiz_dir = select(cam_up, normalize(horiz), length(horiz) > 1e-3);
+    let sky_top = sky_dome(cam_up, cam_up, l_sun, sunset_factor);
+    let sky_side = sky_dome(normalize(horiz_dir + cam_up * 0.15), cam_up, l_sun, sunset_factor);
+    let sky_ambient = mix(sky_side, sky_top, 0.30 * top);
 
-    let ground_intensity = max(0.95 - shadow_intensity * 0.35, 0.25);
-    let ambient_light = mix(ground_col * ground_intensity, sky_col, hemi_factor) * daylight * day_amb_slider * 0.85;
+    // 2. Soleil : wrap doux + halo argenté large et discret (pas de dégradé dur sur une même face)
+    let sun_col = mix(vec3<f32>(1.0, 0.97, 0.92), vec3<f32>(1.0, 0.66, 0.46), sunset_factor);
+    let sun_wrap = pow(clamp(dot(norm_world, l_sun) * 0.5 + 0.5, 0.0, 1.0), 1.5);
+    let silver = pow(clamp(dot(ray_dir, l_sun), 0.0, 1.0), 6.0) * 0.18 * sunset_glow_slider;
+    // Auto-ombrage : deux échantillons du SDF en direction du soleil (parties du nuage qui masquent le soleil)
+    let l_local = vec3<f32>(dot(l_sun, in.frame_u), dot(l_sun, in.frame_v), dot(l_sun, in.frame_w));
+    let occ_a = sd_cloud_3d(hit_local_p + l_local * 0.45, in.mask, in.config.x, half_depth, roundness);
+    let occ_b = sd_cloud_3d(hit_local_p + l_local * 1.10, in.mask, in.config.x, half_depth, roundness);
+    let self_shadow = clamp(-occ_a / 0.30, 0.0, 1.0) * 0.6 + clamp(-occ_b / 0.30, 0.0, 1.0) * 0.4;
+    let sun_light = sun_col * (sun_wrap * 0.55 * (1.0 - 0.45 * self_shadow) + silver) * sun_slider;
 
-    // 3. Éclat crépusculaire / Rim light (effet doré sur les bords face au couchant)
-    let forward_scatter = pow(max(dot(-view_dir, l_sun), 0.0), 3.2);
-    let rim_col = vec3<f32>(1.0, 0.70, 0.44) * (forward_scatter * (0.35 + 0.65 * sunset_factor) * sunset_glow_slider * daylight * 0.75);
+    // 3. Dessous plus sombre et légèrement mauve (réglé par le curseur Ombre)
+    let under_dark = clamp(0.38 * shadow_intensity, 0.0, 0.75);
+    let shade = mix(1.0 - under_dark, 1.0, smoothstep(0.0, 1.0, top));
+    let under_tint = mix(vec3<f32>(0.92, 0.86, 0.90), vec3<f32>(1.0), top);
+    let day_col = (sky_ambient * 0.85 + sun_light) * shade * under_tint;
 
-    // 4. Éclairage nocturne et Lune
+    // 4. Nuit : ambiance sombre et clair de lune argenté
     let moon = get_moon_data(camera.time, camera.light_dir);
-    let moon_wrap = pow(clamp(dot(norm_world, moon.dir) * 0.5 + 0.5, 0.0, 1.0), 1.3);
-    let moon_light = vec3<f32>(0.72, 0.85, 1.0) * (moon_wrap * 0.70) * moon.phase * moon_slider * (1.0 - daylight);
-    let night_amb = vec3<f32>(0.06, 0.08, 0.16) * night_amb_slider * (1.0 - daylight);
+    let moon_up = clamp((dot(moon.dir, cam_up) + 0.04) / 0.18, 0.0, 1.0);
+    let moon_wrap = clamp(dot(norm_world, moon.dir) * 0.5 + 0.5, 0.0, 1.0);
+    let moon_light = vec3<f32>(0.62, 0.74, 0.92) * (moon_wrap * 0.20 + 0.04) * moon.phase * moon_up * moon_slider;
+    let night_ambient = vec3<f32>(0.020, 0.028, 0.055) * night_amb_slider * (0.7 + 0.3 * top);
 
-    // 5. Micro-texture de grain mat (aspect chamois / marshmallow tactile)
-    var grain = 0.0;
+    var col = mix(night_ambient + moon_light, day_col, daylight);
+
+    // 5. Micro-texture optionnelle (désactivée par défaut)
     if (micro_noise_slider > 0.01) {
         let p_grid = floor(hit_local_p * 18.0);
         let g_hash = fract(sin(dot(p_grid, vec3<f32>(12.9898, 78.233, 45.164))) * 43758.5453);
-        grain = (g_hash - 0.5) * micro_noise_slider * 0.06;
+        col *= 1.0 + (g_hash - 0.5) * micro_noise_slider * 0.06;
     }
 
-    // Teinte marshmallow : blanc ivoire / crème chaud gourmand
-    let marshmallow_base = vec3<f32>(0.99, 0.97, 0.94) + vec3<f32>(grain);
+    // 6. Perspective atmosphérique : fondu vers la couleur du ciel derrière le nuage
+    let dist = length(camera.camera_pos - hit_world_pos);
+    let night_sky = vec3<f32>(0.008, 0.012, 0.024) * night_amb_slider;
+    let sky_behind = mix(night_sky, sky_dome(ray_dir, cam_up, l_sun, sunset_factor), daylight);
+    let fog = (1.0 - exp(-max(dist - 5.0, 0.0) * 0.06 * fog_slider)) * 0.90;
+    col = mix(col, sky_behind, fog);
 
-    // Assemblage final : addition harmonieuse des flux lumineux
-    let total_light = direct_sun + ambient_light + rim_col + moon_light + night_amb;
-    let final_color = total_light * marshmallow_base;
-    let final_alpha = 1.0 * clamp(cloud_slider, 0.0, 1.0);
+    // 7. Compression douce des hautes lumières (pas de blanc saturé « plastique »)
+    let final_color = soft_shoulder(col);
+    let final_alpha = clamp(cloud_slider, 0.0, 1.0);
 
     var out: FragmentOutput;
     out.color = vec4<f32>(final_color, final_alpha);

@@ -76,20 +76,20 @@ impl Default for VideoSettings {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CloudSettings {
     pub density: f32,          // Densité / visibilité globale [0.0 .. 2.0] (défaut: 1.0)
-    pub roundness: f32,        // Rayon d'arrondi des arêtes (Bevel) [0.05 .. 0.40] (défaut: 0.22)
+    pub roundness: f32,        // Rayon d'arrondi des arêtes (Bevel) [0.05 .. 0.55] (défaut: 0.45)
     pub shadow_intensity: f32, // Ombrage de sous-face violacée [0.0 .. 2.0] (défaut: 1.0)
     pub sunset_glow: f32,      // Éclat chaud au coucher de soleil [0.0 .. 2.0] (défaut: 1.0)
-    pub micro_noise: f32,      // Micro-texture / grain mat [0.0 .. 1.0] (défaut: 0.15)
+    pub micro_noise: f32,      // Micro-texture / grain mat [0.0 .. 1.0] (défaut: 0.0)
 }
 
 impl Default for CloudSettings {
     fn default() -> Self {
         Self {
             density: 1.0,
-            roundness: 0.18,
+            roundness: 0.45,
             shadow_intensity: 1.0,
             sunset_glow: 1.0,
-            micro_noise: 0.15,
+            micro_noise: 0.0,
         }
     }
 }
@@ -454,7 +454,7 @@ impl UiState {
 
                                     ui.add_space(2.0_f32);
                                     ui.label(egui::RichText::new("Rondeur des arêtes (Bevel) :").size(11.0_f32).color(egui::Color32::from_rgb(240, 220, 150)));
-                                    ui.add(egui::Slider::new(&mut self.cloud_settings.roundness, 0.05..=0.30).text("Rondeur").show_value(true));
+                                    ui.add(egui::Slider::new(&mut self.cloud_settings.roundness, 0.05..=0.55).text("Rondeur").show_value(true));
 
                                     ui.add_space(2.0_f32);
                                     ui.label(egui::RichText::new("Ombrage de sous-face :").size(11.0_f32).color(egui::Color32::from_rgb(180, 160, 210)));
@@ -788,10 +788,10 @@ mod tests {
     fn test_cloud_settings_defaults_and_mutation() {
         let mut clouds = CloudSettings::default();
         assert_eq!(clouds.density, 1.0);
-        assert_eq!(clouds.roundness, 0.18);
+        assert_eq!(clouds.roundness, 0.45);
         assert_eq!(clouds.shadow_intensity, 1.0);
         assert_eq!(clouds.sunset_glow, 1.0);
-        assert_eq!(clouds.micro_noise, 0.15);
+        assert_eq!(clouds.micro_noise, 0.0);
 
         clouds.density = 1.5;
         clouds.roundness = 0.28;
@@ -806,6 +806,6 @@ mod tests {
 
         clouds = CloudSettings::default();
         assert_eq!(clouds.density, 1.0);
-        assert_eq!(clouds.roundness, 0.18);
+        assert_eq!(clouds.roundness, 0.45);
     }
 }

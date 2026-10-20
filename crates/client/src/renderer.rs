@@ -184,10 +184,7 @@ impl State {
         surface.configure(&device, &config);
 
         // 6. Shader 3D Planète
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Planet Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-        });
+        let shader = crate::shaders::create_shader_module(&device, "Planet Shader", include_str!("shader.wgsl"), "shader.wgsl");
 
         use wgpu::util::DeviceExt;
 
@@ -202,7 +199,7 @@ impl State {
             time: 0.0,
             lighting_params: [0.25, 1.0, 2.10, 1.0],
             lighting_params2: [1.0, 1.0, 0.0, 0.0],
-            cloud_params: [0.22, 1.0, 1.0, 0.15],
+            cloud_params: [0.45, 1.0, 1.0, 0.0],
         };
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -258,10 +255,7 @@ impl State {
         };
 
         // Pipeline Ciel & Atmosphère 3D (Étoiles, Soleil, Halo spatial, Ciel bleu)
-        let sky_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Sky Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("sky_shader.wgsl").into()),
-        });
+        let sky_shader = crate::shaders::create_shader_module(&device, "Sky Shader", include_str!("sky_shader.wgsl"), "sky_shader.wgsl");
 
         let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Sky Render Pipeline"),
@@ -376,10 +370,7 @@ impl State {
         // -------------------------------------------------------------
         // Pipeline Nuages 3D physiques réels (traversables et visibles à leur altitude)
         // -------------------------------------------------------------
-        let cloud_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Cloud Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("cloud_shader.wgsl").into()),
-        });
+        let cloud_shader = crate::shaders::create_shader_module(&device, "Cloud Shader", include_str!("cloud_shader.wgsl"), "cloud_shader.wgsl");
 
         let cloud_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Cloud Render Pipeline"),
@@ -841,8 +832,12 @@ mod tests {
             ("ui_shader.wgsl", ui_shader),
             ("cloud_shader.wgsl", cloud_shader),
         ] {
-            let module = naga::front::wgsl::parse_str(source)
-                .unwrap_or_else(|e| panic!("Failed to parse {name}:\n{e}"));
+            // Assemblage naga_oil (imports de common.wgsl) puis validation complète
+            let module = if name == "ui_shader.wgsl" {
+                naga::front::wgsl::parse_str(source).unwrap_or_else(|e| panic!("Failed to parse {name}:\n{e}"))
+            } else {
+                crate::shaders::compose(source, name).unwrap_or_else(|e| panic!("Failed to compose {name}:\n{e}"))
+            };
             let mut validator = naga::valid::Validator::new(
                 naga::valid::ValidationFlags::all(),
                 naga::valid::Capabilities::all(),

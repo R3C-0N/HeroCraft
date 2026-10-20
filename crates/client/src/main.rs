@@ -15,6 +15,7 @@ mod cloud_mesh;
 mod lod;
 mod planet_mesh;
 mod renderer;
+mod shaders;
 mod ui;
 mod voxel_mesh;
 
