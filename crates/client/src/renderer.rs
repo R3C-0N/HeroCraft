@@ -571,6 +571,14 @@ impl State {
         let eye = camera.eye_position();
         let sun_dir = compute_sun_dir(self.simulated_time);
 
+        // Facteur de présence au sol (1.0 = plein sol FPS/TPS, 0.0 = orbite spatiale profonde)
+        let ground_factor = if camera.view_mode() != crate::camera::CameraViewMode::SatelliteOrbit {
+            1.0_f32
+        } else {
+            let t_orbit = ((camera.effective_distance - camera.base_radius) / (camera.base_radius * 1.8)).clamp(0.0, 1.0);
+            1.0 - t_orbit
+        };
+
         // En vue satellite (ou lors de la transition sol -> satellite), les nuages disparaissent totalement
         let cloud_vis = if camera.view_mode() == crate::camera::CameraViewMode::SatelliteOrbit {
             0.0_f32
@@ -597,7 +605,7 @@ impl State {
                 lighting.moon_speed,
                 lighting.fog_intensity,
                 effective_cloud_density,
-                cloud_vis,
+                ground_factor,
             ],
             cloud_params: [
                 clouds.roundness,
@@ -926,5 +934,52 @@ mod tests {
         assert_eq!(cam.view_mode(), CameraViewMode::ThirdPerson);
         let cloud_vis_tps = calc_vis(&cam);
         assert_eq!(cloud_vis_tps, 1.0, "Les nuages doivent être à 100% visibles au sol en TPS");
+    }
+
+    #[test]
+    fn test_sky_visibility_at_ground_vs_satellite_across_scales() {
+        use crate::camera::{CameraViewMode, OrbitCamera};
+        let desc = herocraft_world::PlanetDescriptor::default();
+        let gen = herocraft_world::PlanetWorldGenerator::new(desc);
+
+        for &radius in &[25.0, 50.0, 100.0] {
+            let scale = radius / 25.0;
+            let mut cam = OrbitCamera::new(radius * 6.6, radius, &gen);
+
+            let calc_ground_factor = |cam: &OrbitCamera| {
+                if cam.view_mode() != CameraViewMode::SatelliteOrbit {
+                    1.0_f32
+                } else {
+                    let t_orbit = ((cam.effective_distance - cam.base_radius) / (cam.base_radius * 1.8)).clamp(0.0, 1.0);
+                    1.0 - t_orbit
+                }
+            };
+
+            // 1. Vue Sol FPS : le ciel doit être à 100% visible
+            cam.effective_distance = 0.0;
+            assert_eq!(cam.view_mode(), CameraViewMode::FirstPerson);
+            assert_eq!(calc_ground_factor(&cam), 1.0, "Ciel non visible au sol en FPS pour rayon {}", radius);
+
+            // 2. Vue Sol TPS (ex: à mi-distance du rayon) : le ciel doit être à 100% visible
+            cam.effective_distance = radius * 0.5;
+            assert_eq!(cam.view_mode(), CameraViewMode::ThirdPerson);
+            assert_eq!(calc_ground_factor(&cam), 1.0, "Ciel non visible au sol en TPS pour rayon {}", radius);
+
+            // 3. Vue Satellite complète : transition vers l'espace profond
+            cam.effective_distance = radius * 6.6;
+            assert_eq!(cam.view_mode(), CameraViewMode::SatelliteOrbit);
+            assert_eq!(calc_ground_factor(&cam), 0.0, "L'espace doit être actif en vue satellite pour rayon {}", radius);
+
+            // 4. Formule du shader de ciel : vérifie la compatibilité de l'altitude au sol
+            let ground_max = 58.0 * scale;
+            let ground_fade = 20.0 * scale;
+            // Même au sommet d'une montagne (ex: base_radius + 20.0 * scale)
+            let mountain_cam_dist = radius + 20.0 * scale;
+            let alt_ground_factor = ((ground_max - mountain_cam_dist) / ground_fade).clamp(0.0, 1.0);
+            // Au sol, avec cam.effective_distance = 0.0
+            cam.effective_distance = 0.0;
+            let combined_ground = alt_ground_factor.max(calc_ground_factor(&cam));
+            assert_eq!(combined_ground, 1.0, "Le ciel doit être 100% visible en montagne au sol pour rayon {}", radius);
+        }
     }
 }

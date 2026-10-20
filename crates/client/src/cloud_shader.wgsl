@@ -152,7 +152,7 @@ fn sd_cloud_3d(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f32) -
     let rh = clamp(max(r * 1.3, 0.35), 0.0, 0.48 * cell);
     let d_core = sd_mask_2d(p.xy, m, cell, rh) + r;
     // Dalle courbée pour suivre la sphère (les grands nuages ne remontent plus aux bords)
-    let curv_r = camera.planet_radius + 8.8;
+    let curv_r = camera.planet_radius + 8.8 * (camera.planet_radius / 25.0);
     let z = p.z + dot(p.xy, p.xy) / (2.0 * curv_r);
     let d_z = abs(z) - (half_depth - r);
     let w = max(vec2<f32>(d_core, d_z), vec2<f32>(0.0));
@@ -363,10 +363,11 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     }
 
     // 6. Perspective atmosphérique : fondu vers la couleur du ciel derrière le nuage
+    let scale = camera.planet_radius / 25.0;
     let dist = length(camera.camera_pos - hit_world_pos);
     let night_sky = vec3<f32>(0.008, 0.012, 0.024) * night_amb_slider;
     let sky_behind = mix(night_sky, sky_dome(ray_dir, cam_up, l_sun, sunset_factor), daylight);
-    let fog = (1.0 - exp(-max(dist - 5.0, 0.0) * 0.06 * fog_slider)) * 0.90;
+    let fog = (1.0 - exp(-max(dist - 5.0 * scale, 0.0) * (0.06 / scale) * fog_slider)) * 0.90;
     col = mix(col, sky_behind, fog);
 
     // 7. Compression douce des hautes lumières (pas de blanc saturé « plastique »)

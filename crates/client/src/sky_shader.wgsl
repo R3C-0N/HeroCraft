@@ -164,15 +164,21 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let visible_stars = select(stars, vec3<f32>(0.0), is_moon_disk);
     var space_color = visible_stars + sun_color + moon_space_color;
 
-    // Facteur d'altitude : transition fluide entre vue au sol (< 38.0) et orbite spatiale (> 58.0)
+    // Facteur d'altitude : transition fluide entre vue au sol et orbite spatiale
+    let scale = camera.planet_radius / 25.0;
     let cam_dist = length(camera.camera_pos);
-    let ground_factor = clamp((58.0 - cam_dist) / 20.0, 0.0, 1.0);
+    let ground_max = 58.0 * scale;
+    let ground_fade = 20.0 * scale;
+    let alt_ground_factor = clamp((ground_max - cam_dist) / ground_fade, 0.0, 1.0);
+    // Utilise en priorité le ground_factor calculé dynamiquement depuis la caméra (lighting_params_ext.w)
+    // avec repli sur l'altitude de la caméra pour garantir la visibilité du ciel
+    let ground_factor = max(alt_ground_factor, camera.lighting_params_ext.w);
     let orbit_factor = 1.0 - ground_factor;
 
     // 4. Halo atmosphérique externe planétaire (vu depuis l'orbite spatiale uniquement)
     if (orbit_factor > 0.001) {
-        let r_atm_inner = 28.5; // Surface moyenne océanique / continentale
-        let r_atm_outer = 39.5; // Sommet de l'atmosphère visible depuis l'espace
+        let r_atm_inner = 28.5 * scale; // Surface moyenne océanique / continentale
+        let r_atm_outer = 39.5 * scale; // Sommet de l'atmosphère visible depuis l'espace
 
         let o = camera.camera_pos;
         let b = dot(o, ray_dir);
