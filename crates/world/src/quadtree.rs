@@ -258,7 +258,13 @@ impl PlanetQuadTree {
             let (lat, lon) = unit_sphere_to_lat_lon(center_dir);
             let elev = gen.sample_elevation(center_dir, lat, lon);
             let eff_elev = elev.max(SEA_LEVEL_BLOCKS);
-            self.base_radius + eff_elev * altitude_scale
+            let surface_r = self.base_radius + eff_elev * altitude_scale;
+            // Le centre du nœud n'échantillonne qu'un point du relief : debout sur un sommet,
+            // la caméra peut dominer ce point de 150+ blocs et le nœud sous ses pieds ne passait
+            // pas en voxels. Tant que la caméra reste dans la tranche du relief, seule la distance
+            // horizontale compte ; au-dessus de 350 blocs, l'altitude reprend son rôle.
+            let max_relief_r = self.base_radius + 350.0 * altitude_scale;
+            camera_pos.length().clamp(surface_r, max_relief_r.max(surface_r))
         } else {
             let sea_r = self.base_radius + 100.0 * altitude_scale;
             let cam_r = camera_pos.length();

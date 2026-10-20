@@ -282,24 +282,22 @@ impl VoxelMeshBuilder {
         let base_u = -1.0 + (chunk_x as f64) * chunk_span_uv;
         let base_v = -1.0 + (chunk_y as f64) * chunk_span_uv;
 
-        // Détection des limites d'élévation sur la colonne pour optimiser le nombre de couches à mailler
-        let corners = [
-            (0.0, 0.0),
-            (1.0, 0.0),
-            (0.0, 1.0),
-            (1.0, 1.0),
-            (0.5, 0.5),
-        ];
+        // Détection des limites d'élévation sur la colonne pour optimiser le nombre de couches à mailler.
+        // Échantillonnage de chaque colonne du chunk et de la bordure voisine (-1..=32) : avec un relief
+        // montagneux, quelques points d'échantillonnage manquent les vallées internes et les couches
+        // contenant leur surface étaient sautées, laissant un trou traversant la planète.
         let mut min_elev = f64::MAX;
         let mut max_elev = f64::MIN;
-        for &(du, dv) in &corners {
-            let u = base_u + du * chunk_span_uv;
-            let v = base_v + dv * chunk_span_uv;
-            let dir = face.uv_to_sphere_direction(u, v);
-            let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
-            let e = generator.sample_elevation(dir, lat, lon);
-            if e < min_elev { min_elev = e; }
-            if e > max_elev { max_elev = e; }
+        for gz in -1..=CHUNK_SIZE as i32 {
+            for gx in -1..=CHUNK_SIZE as i32 {
+                let u = base_u + (gx as f64) * voxel_span_uv;
+                let v = base_v + (gz as f64) * voxel_span_uv;
+                let dir = face.uv_to_sphere_direction(u, v);
+                let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
+                let e = generator.sample_elevation(dir, lat, lon);
+                if e < min_elev { min_elev = e; }
+                if e > max_elev { max_elev = e; }
+            }
         }
 
         // On inclut le niveau de la mer et une marge de sécurité
