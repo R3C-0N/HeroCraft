@@ -4,8 +4,9 @@
 // - Sphere tracing ultra-rapide (8 à 16 pas) sur SDF analytique exacte
 // - Biseaux 3D arrondis sur TOUTES les arêtes (dessus, dessous, coins verticaux, coins sphériques)
 // - Angles concaves intérieurs adoucis sans aucune encoche sur les parois partagées
-// - Éclairage hémisphérique doux éliminant toute démarcation sur les parois latérales
-// - Teinte marshmallow ivoire/crème chaleureuse avec reflets dorés et ombres mauves douces
+// - Ambiance tirée du dôme céleste (même formule que sky_shader.wgsl) : teinte du ciel partagée
+// - Dessus clair, flancs intermédiaires, dessous plus sombre et légèrement mauve
+// - Perspective atmosphérique vers le ciel et compression douce des hautes lumières
 // - Écriture précise de la profondeur dans le Z-buffer (@builtin(frag_depth))
 // =========================================================================
 
@@ -132,6 +133,12 @@ fn sd_box_2d(p: vec2<f32>, b: vec2<f32>) -> f32 {
     return length(max(d, vec2<f32>(0.0))) + min(max(d.x, d.y), 0.0);
 }
 
+// Minimum lissé polynomial (congé de rayon ~k entre deux distances)
+fn smin(a: f32, b: f32, k: f32) -> f32 {
+    let h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
 // Distance 3D avec biseau marshmallow uniforme sur TOUTES les arêtes et coins sphériques
 // Utilise l'érosion analytique exacte des sous-boîtes pour garantir une surface 100% lisse
 // sans aucune ride sur les faces planes et sans hernie sur les arêtes extérieures
@@ -143,7 +150,8 @@ fn sd_cloud_3d(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, half_
     if (num_boxes >= 1.5) {
         let core2 = max(b2.zw - vec2<f32>(r), vec2<f32>(0.001));
         let d2 = sd_box_2d(p.xy - b2.xy, core2);
-        d_core = min(d1, d2);
+        // Union lissée : arrondit aussi les angles rentrants (L, T) au lieu d'un pli net
+        d_core = smin(d1, d2, r * 1.6);
     }
 
     let d_z = abs(p.z) - (half_depth - r);
@@ -162,6 +170,41 @@ fn get_cloud_normal(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, 
     let dz = sd_cloud_3d(p + vec3<f32>(0.0, 0.0, eps), b1, b2, num_boxes, half_depth, r)
            - sd_cloud_3d(p - vec3<f32>(0.0, 0.0, eps), b1, b2, num_boxes, half_depth, r);
     return normalize(vec3<f32>(dx, dy, dz));
+}
+
+// Couleur diurne du dôme céleste dans la direction `ray_dir` (sans disque solaire ni étoiles).
+// Doit rester identique à la diffusion au sol de sky_shader.wgsl.
+fn sky_dome(ray_dir: vec3<f32>, cam_up: vec3<f32>, l: vec3<f32>, sunset_factor: f32) -> vec3<f32> {
+    let sun_slider = camera.lighting_params.y;
+    let day_amb_slider = camera.lighting_params.w;
+
+    let zenith_day = vec3<f32>(0.15, 0.45, 0.88);
+    let zenith_sunset = vec3<f32>(0.07, 0.13, 0.38);
+    let zenith_color = mix(zenith_day, zenith_sunset, sunset_factor);
+
+    let horizon_day = vec3<f32>(0.65, 0.80, 0.96);
+    let forward_sun = clamp(dot(ray_dir, l) * 0.5 + 0.5, 0.0, 1.0);
+    let sunset_facing_sun = mix(vec3<f32>(1.0, 0.58, 0.15), vec3<f32>(1.0, 0.82, 0.35), pow(forward_sun, 3.0));
+    let sunset_opposite_sun = vec3<f32>(0.65, 0.32, 0.48);
+    let sunset_horizon = mix(sunset_opposite_sun, sunset_facing_sun, pow(forward_sun, 1.5));
+    let horizon_color = mix(horizon_day, sunset_horizon, sunset_factor);
+
+    let ray_h = max(dot(ray_dir, cam_up), 0.0);
+    let horizon_blend = pow(1.0 - ray_h, 2.5);
+    let day_sky = mix(zenith_color, horizon_color, horizon_blend) * day_amb_slider;
+
+    let active_glow_color = mix(vec3<f32>(0.40, 0.35, 0.22), vec3<f32>(1.0, 0.52, 0.15), sunset_factor);
+    let glow = pow(clamp(dot(ray_dir, l), 0.0, 1.0), 6.0) * active_glow_color * (1.0 + sunset_factor * 1.8) * sun_slider;
+
+    return day_sky + glow;
+}
+
+// Compression douce des hautes lumières au-delà de 0.78 (asymptote à 1.0)
+fn soft_shoulder(c: vec3<f32>) -> vec3<f32> {
+    let knee = 0.78;
+    let over = max(c - vec3<f32>(knee), vec3<f32>(0.0));
+    let compressed = vec3<f32>(knee) + (1.0 - knee) * (vec3<f32>(1.0) - exp(-over / (1.0 - knee)));
+    return select(c, compressed, c > vec3<f32>(knee));
 }
 
 struct FragmentOutput {
@@ -232,7 +275,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         dot(ray_dir, in.frame_w)
     ));
 
-    let roundness = clamp(camera.cloud_params.x, 0.05, 0.30);
+    let roundness = clamp(camera.cloud_params.x, 0.05, min(0.55, half_depth - 0.04));
     let shadow_intensity = camera.cloud_params.y;
     let sunset_glow_slider = camera.cloud_params.z;
     let micro_noise_slider = camera.cloud_params.w;
@@ -284,65 +327,69 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let clip_pos = camera.view_proj * vec4<f32>(hit_world_pos, 1.0);
     let frag_depth = clip_pos.z / clip_pos.w;
 
-    // --- Modèle d'éclairage Marshmallow Stylisé ---
+    // --- Éclairage : ambiance tirée du ciel, dessus clair, dessous sombre ---
     let moon_slider = camera.lighting_params.x;
     let sun_slider = camera.lighting_params.y;
     let night_amb_slider = camera.lighting_params.z;
-    let day_amb_slider = camera.lighting_params.w;
+    let fog_slider = camera.lighting_params2.y;
 
-    let up_planet = normalize(hit_world_pos);
+    // Même repère que le ciel vu par le joueur (sky_shader.wgsl) : tous les nuages partagent la teinte du ciel
+    let cam_up = normalize(camera.camera_pos);
     let l_sun = normalize(camera.light_dir);
-    let sun_up = dot(l_sun, up_planet);
-    let daylight = clamp((sun_up + 0.08) / 0.20, 0.0, 1.0);
-
-    // Facteur coucher de soleil (soleil rasant proche de l'horizon)
-    let sunset_raw = clamp(1.0 - abs(sun_up - 0.03) / 0.16, 0.0, 1.0);
+    let sun_up = dot(l_sun, cam_up);
+    let daylight = clamp((sun_up + 0.06) / 0.18, 0.0, 1.0);
+    let sunset_raw = clamp(1.0 - abs(sun_up - 0.03) / 0.18, 0.0, 1.0);
     let sunset_factor = sunset_raw * clamp((sun_up + 0.06) / 0.10, 0.0, 1.0);
 
-    // 1. Éclairage solaire direct (Half-Lambert sculpté avec teinte dorée/pêche)
-    let ndotl = dot(norm_world, l_sun);
-    let wrap = pow(clamp(ndotl * 0.55 + 0.45, 0.0, 1.0), 1.35);
-    // Soleil : blanc ivoire doux le jour -> pêche / abricot chaud au couchant
-    let sun_col = mix(vec3<f32>(1.0, 0.98, 0.92), vec3<f32>(1.0, 0.72, 0.46), sunset_factor);
-    let direct_sun = sun_col * (wrap * 0.95) * daylight * sun_slider;
-
-    // 2. Éclairage hémisphérique céleste (Ciel zénithal <-> Sol/Sous-face)
+    let up_planet = normalize(hit_world_pos);
     let ndotup = dot(norm_world, up_planet);
-    let hemi_factor = clamp(ndotup * 0.5 + 0.5, 0.0, 1.0);
+    let top = ndotup * 0.5 + 0.5; // 1 = dessus, 0.5 = flanc, 0 = dessous
 
-    // Couleur du ciel : bleu doux le jour -> lavande / lilas au couchant
-    let sky_col = mix(vec3<f32>(0.76, 0.86, 0.98), vec3<f32>(0.76, 0.58, 0.82), sunset_factor);
-    // Couleur de sous-face (rebond) : bleu-gris doux le jour -> mauve / prune chaud au couchant
-    let ground_col = mix(vec3<f32>(0.52, 0.58, 0.68), vec3<f32>(0.58, 0.38, 0.48), sunset_factor);
+    // 1. Ambiance du ciel : horizon dans la direction regardée, mêlé au zénith pour les faces hautes
+    let horiz = ray_dir - cam_up * dot(ray_dir, cam_up);
+    let horiz_dir = select(cam_up, normalize(horiz), length(horiz) > 1e-3);
+    let sky_top = sky_dome(cam_up, cam_up, l_sun, sunset_factor);
+    let sky_side = sky_dome(normalize(horiz_dir + cam_up * 0.15), cam_up, l_sun, sunset_factor);
+    let sky_ambient = mix(sky_side, sky_top, 0.30 * top);
 
-    let ground_intensity = max(0.95 - shadow_intensity * 0.35, 0.25);
-    let ambient_light = mix(ground_col * ground_intensity, sky_col, hemi_factor) * daylight * day_amb_slider * 0.85;
+    // 2. Soleil : wrap doux + halo argenté large et discret (pas de dégradé dur sur une même face)
+    let sun_col = mix(vec3<f32>(1.0, 0.97, 0.92), vec3<f32>(1.0, 0.66, 0.46), sunset_factor);
+    let sun_wrap = pow(clamp(dot(norm_world, l_sun) * 0.5 + 0.5, 0.0, 1.0), 1.5);
+    let silver = pow(clamp(dot(ray_dir, l_sun), 0.0, 1.0), 6.0) * 0.18 * sunset_glow_slider;
+    let sun_light = sun_col * (sun_wrap * 0.55 + silver) * sun_slider;
 
-    // 3. Éclat crépusculaire / Rim light (effet doré sur les bords face au couchant)
-    let forward_scatter = pow(max(dot(-view_dir, l_sun), 0.0), 3.2);
-    let rim_col = vec3<f32>(1.0, 0.70, 0.44) * (forward_scatter * (0.35 + 0.65 * sunset_factor) * sunset_glow_slider * daylight * 0.75);
+    // 3. Dessous plus sombre et légèrement mauve (réglé par le curseur Ombre)
+    let under_dark = clamp(0.38 * shadow_intensity, 0.0, 0.75);
+    let shade = mix(1.0 - under_dark, 1.0, smoothstep(0.0, 1.0, top));
+    let under_tint = mix(vec3<f32>(0.92, 0.86, 0.90), vec3<f32>(1.0), top);
+    let day_col = (sky_ambient * 0.85 + sun_light) * shade * under_tint;
 
-    // 4. Éclairage nocturne et Lune
+    // 4. Nuit : ambiance sombre et clair de lune argenté
     let moon = get_moon_data(camera.time, camera.light_dir);
-    let moon_wrap = pow(clamp(dot(norm_world, moon.dir) * 0.5 + 0.5, 0.0, 1.0), 1.3);
-    let moon_light = vec3<f32>(0.72, 0.85, 1.0) * (moon_wrap * 0.70) * moon.phase * moon_slider * (1.0 - daylight);
-    let night_amb = vec3<f32>(0.06, 0.08, 0.16) * night_amb_slider * (1.0 - daylight);
+    let moon_up = clamp((dot(moon.dir, cam_up) + 0.04) / 0.18, 0.0, 1.0);
+    let moon_wrap = clamp(dot(norm_world, moon.dir) * 0.5 + 0.5, 0.0, 1.0);
+    let moon_light = vec3<f32>(0.62, 0.74, 0.92) * (moon_wrap * 0.20 + 0.04) * moon.phase * moon_up * moon_slider;
+    let night_ambient = vec3<f32>(0.020, 0.028, 0.055) * night_amb_slider * (0.7 + 0.3 * top);
 
-    // 5. Micro-texture de grain mat (aspect chamois / marshmallow tactile)
-    var grain = 0.0;
+    var col = mix(night_ambient + moon_light, day_col, daylight);
+
+    // 5. Micro-texture optionnelle (désactivée par défaut)
     if (micro_noise_slider > 0.01) {
         let p_grid = floor(hit_local_p * 18.0);
         let g_hash = fract(sin(dot(p_grid, vec3<f32>(12.9898, 78.233, 45.164))) * 43758.5453);
-        grain = (g_hash - 0.5) * micro_noise_slider * 0.06;
+        col *= 1.0 + (g_hash - 0.5) * micro_noise_slider * 0.06;
     }
 
-    // Teinte marshmallow : blanc ivoire / crème chaud gourmand
-    let marshmallow_base = vec3<f32>(0.99, 0.97, 0.94) + vec3<f32>(grain);
+    // 6. Perspective atmosphérique : fondu vers la couleur du ciel derrière le nuage
+    let dist = length(camera.camera_pos - hit_world_pos);
+    let night_sky = vec3<f32>(0.008, 0.012, 0.024) * night_amb_slider;
+    let sky_behind = mix(night_sky, sky_dome(ray_dir, cam_up, l_sun, sunset_factor), daylight);
+    let fog = (1.0 - exp(-max(dist - 5.0, 0.0) * 0.06 * fog_slider)) * 0.90;
+    col = mix(col, sky_behind, fog);
 
-    // Assemblage final : addition harmonieuse des flux lumineux
-    let total_light = direct_sun + ambient_light + rim_col + moon_light + night_amb;
-    let final_color = total_light * marshmallow_base;
-    let final_alpha = 1.0 * clamp(cloud_slider, 0.0, 1.0);
+    // 7. Compression douce des hautes lumières (pas de blanc saturé « plastique »)
+    let final_color = soft_shoulder(col);
+    let final_alpha = clamp(cloud_slider, 0.0, 1.0);
 
     var out: FragmentOutput;
     out.color = vec4<f32>(final_color, final_alpha);
