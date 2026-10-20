@@ -132,34 +132,29 @@ fn sd_box_2d(p: vec2<f32>, b: vec2<f32>) -> f32 {
     return length(max(d, vec2<f32>(0.0))) + min(max(d.x, d.y), 0.0);
 }
 
-// Union lisse pour adoucir le coin concave intérieur sans créer d'encoche
-fn op_smooth_union(d1: f32, d2: f32, k: f32) -> f32 {
-    let h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
-    return mix(d2, d1, h) - k * h * (1.0 - h);
-}
-
-// Distance 2D au nuage voxel (union nette avec congé concave propre)
-fn sd_cloud_2d(p: vec2<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32) -> f32 {
-    let d1 = sd_box_2d(p - b1.xy, b1.zw);
-    if (num_boxes < 1.5) {
-        return d1;
-    }
-    let d2 = sd_box_2d(p - b2.xy, b2.zw);
-    // Union lisse sur les boîtes nettes : raccord concave propre à 90°, zéro encoche
-    return op_smooth_union(d1, d2, 0.35);
-}
-
-// Distance 3D avec biseau arrondi uniforme sur TOUTES les arêtes (dessus, dessous, coins verticaux, coins sphériques)
+// Distance 3D avec biseau marshmallow uniforme sur TOUTES les arêtes et coins sphériques
+// Utilise l'érosion analytique exacte des sous-boîtes pour garantir une surface 100% lisse
+// sans aucune ride sur les faces planes et sans hernie sur les arêtes extérieures
 fn sd_cloud_3d(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, half_depth: f32, r: f32) -> f32 {
-    let d_2d = sd_cloud_2d(p.xy, b1, b2, num_boxes);
+    let core1 = max(b1.zw - vec2<f32>(r), vec2<f32>(0.001));
+    let d1 = sd_box_2d(p.xy - b1.xy, core1);
+
+    var d_core = d1;
+    if (num_boxes >= 1.5) {
+        let core2 = max(b2.zw - vec2<f32>(r), vec2<f32>(0.001));
+        let d2 = sd_box_2d(p.xy - b2.xy, core2);
+        d_core = min(d1, d2);
+    }
+
     let d_z = abs(p.z) - (half_depth - r);
-    let w = vec2<f32>(d_2d + r, d_z);
-    return length(max(w, vec2<f32>(0.0))) + min(max(w.x, w.y), 0.0) - r;
+    let w = max(vec2<f32>(d_core, d_z), vec2<f32>(0.0));
+    let inside = min(max(d_core, d_z), 0.0);
+    return length(w) + inside - r;
 }
 
 // Normale par gradient analytique fini
 fn get_cloud_normal(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, half_depth: f32, r: f32) -> vec3<f32> {
-    let eps = 0.005;
+    let eps = 0.004;
     let dx = sd_cloud_3d(p + vec3<f32>(eps, 0.0, 0.0), b1, b2, num_boxes, half_depth, r)
            - sd_cloud_3d(p - vec3<f32>(eps, 0.0, 0.0), b1, b2, num_boxes, half_depth, r);
     let dy = sd_cloud_3d(p + vec3<f32>(0.0, eps, 0.0), b1, b2, num_boxes, half_depth, r)
@@ -200,8 +195,36 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         dot(cam_v_world, in.frame_w)
     );
 
-    // Si la caméra est DANS la boîte englobante (face arrière visible), on commence à la position caméra
-    let local_p0 = select(p0_camera, p0_surface, is_front);
+    let half_depth = in.config.y;
+    let pad_xy = 0.65;
+    let pad_z = 0.50;
+
+    var c_min_x = in.box1_bounds.x - in.box1_bounds.z - pad_xy;
+    var c_max_x = in.box1_bounds.x + in.box1_bounds.z + pad_xy;
+    var c_min_y = in.box1_bounds.y - in.box1_bounds.w - pad_xy;
+    var c_max_y = in.box1_bounds.y + in.box1_bounds.w + pad_xy;
+
+    if (in.config.x >= 1.5) {
+        c_min_x = min(c_min_x, in.box2_bounds.x - in.box2_bounds.z - pad_xy);
+        c_max_x = max(c_max_x, in.box2_bounds.x + in.box2_bounds.z + pad_xy);
+        c_min_y = min(c_min_y, in.box2_bounds.y - in.box2_bounds.w - pad_xy);
+        c_max_y = max(c_max_y, in.box2_bounds.y + in.box2_bounds.w + pad_xy);
+    }
+
+    let c_min_z = -half_depth - pad_z;
+    let c_max_z = half_depth + pad_z;
+
+    let cam_in_box = p0_camera.x >= c_min_x && p0_camera.x <= c_max_x &&
+                     p0_camera.y >= c_min_y && p0_camera.y <= c_max_y &&
+                     p0_camera.z >= c_min_z && p0_camera.z <= c_max_z;
+
+    // Si la caméra est en dehors de la boîte, on ne rend que les faces avant (évite tout Z-fighting et découpe prématurée)
+    if (!is_front && !cam_in_box) {
+        discard;
+    }
+
+    // Point de départ du rayon : caméra si on est dans la boîte, surface d'entrée sinon
+    let local_p0 = select(p0_surface, p0_camera, cam_in_box);
 
     let local_ray_dir = normalize(vec3<f32>(
         dot(ray_dir, in.frame_u),
@@ -213,7 +236,6 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let shadow_intensity = camera.cloud_params.y;
     let sunset_glow_slider = camera.cloud_params.z;
     let micro_noise_slider = camera.cloud_params.w;
-    let half_depth = in.config.y;
 
     var t = 0.0;
     var hit = false;
@@ -225,11 +247,11 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         hit = true;
         hit_local_p = local_p0;
     } else {
-        // Sphere Tracing précis (16 pas maximum)
-        for (var step = 0; step < 16; step = step + 1) {
+        // Sphere Tracing précis (24 pas maximum pour les angles rasants)
+        for (var step = 0; step < 24; step = step + 1) {
             let p = local_p0 + local_ray_dir * t;
             let d = sd_cloud_3d(p, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
-            if (d < 0.003) {
+            if (d < 0.002) {
                 hit = true;
                 hit_local_p = p;
                 break;
@@ -293,19 +315,8 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // Couleur de sous-face (rebond) : bleu-gris doux le jour -> mauve / prune chaud au couchant
     let ground_col = mix(vec3<f32>(0.52, 0.58, 0.68), vec3<f32>(0.58, 0.38, 0.48), sunset_factor);
 
-    // Occlusion ambiante douce dans les angles concaves intérieurs
-    var ao_factor = 1.0;
-    if (in.config.x >= 1.5) {
-        let d1_val = abs(sd_box_2d(hit_local_p.xy - in.box1_bounds.xy, in.box1_bounds.zw));
-        let d2_val = abs(sd_box_2d(hit_local_p.xy - in.box2_bounds.xy, in.box2_bounds.zw));
-        let corner_dist = max(d1_val, d2_val);
-        if (corner_dist < 0.35) {
-            ao_factor = 0.88 + 0.12 * (corner_dist / 0.35);
-        }
-    }
-
     let ground_intensity = max(0.95 - shadow_intensity * 0.35, 0.25);
-    let ambient_light = mix(ground_col * ground_intensity, sky_col, hemi_factor) * daylight * day_amb_slider * 0.85 * ao_factor;
+    let ambient_light = mix(ground_col * ground_intensity, sky_col, hemi_factor) * daylight * day_amb_slider * 0.85;
 
     // 3. Éclat crépusculaire / Rim light (effet doré sur les bords face au couchant)
     let forward_scatter = pow(max(dot(-view_dir, l_sun), 0.0), 3.2);

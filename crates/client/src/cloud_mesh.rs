@@ -145,54 +145,60 @@ impl CloudMeshGenerator {
                 let cloud_center = w * r_mid;
 
                 // Morphologies sur grille Voxel stricte (V = 1.6m de largeur de bloc)
-                // Toutes les branches ont la même largeur et s'emboîtent sans décalage ni encoche
+                // Toutes les branches ont la même largeur et se superposent sur les blocs partagés
+                // pour garantir une continuité parfaite sans raccord à fleur ni encoche
                 let shape_type = (sector_hash >> 16) % 4;
+                let pad_xy = 0.65_f32;
                 let (box1_bounds, box2_bounds, num_boxes, min_x, max_x, min_y, max_y) = match shape_type {
-                    // Type 0 : Grand nuage en « L » orthogonal strict (3 blocs horiz x 2 blocs vert)
+                    // Type 0 : Grand nuage en « L » orthogonal strict (5 blocs de 1.6m)
+                    // Branche horizontale (3 blocs) + Branche verticale (3 blocs)
+                    // Chevauchement complet sur le bloc de coin [0.00, 1.60] x [0.00, 1.60]
                     0 => {
                         let b1 = [-0.80_f32, 0.80_f32, 2.40_f32, 0.80_f32];  // X: [-3.20, 1.60], Y: [0.00, 1.60]
-                        let b2 = [0.80_f32, -1.60_f32, 0.80_f32, 1.60_f32];  // X: [0.00, 1.60], Y: [-3.20, 0.00]
-                        let min_x = -3.20 - 0.40;
-                        let max_x = 1.60 + 0.40;
-                        let min_y = -3.20 - 0.40;
-                        let max_y = 1.60 + 0.40;
+                        let b2 = [0.80_f32, -0.80_f32, 0.80_f32, 2.40_f32];  // X: [0.00, 1.60], Y: [-3.20, 1.60]
+                        let min_x = -3.20 - pad_xy;
+                        let max_x = 1.60 + pad_xy;
+                        let min_y = -3.20 - pad_xy;
+                        let max_y = 1.60 + pad_xy;
                         (b1, b2, 2.0_f32, min_x, max_x, min_y, max_y)
                     }
-                    // Type 1 : Nuage en marche d'escalier décalée (deux barres 3x1 décalées d'un bloc)
+                    // Type 1 : Nuage en « T » / Marteau équilibré (5 blocs de 1.6m)
+                    // Barre principale (4 blocs) + lobe perpendiculaire central (2 blocs traversants)
                     1 => {
-                        let b1 = [-0.80_f32, 0.80_f32, 2.40_f32, 0.80_f32];  // X: [-3.20, 1.60], Y: [0.00, 1.60]
-                        let b2 = [0.80_f32, -0.80_f32, 2.40_f32, 0.80_f32];  // X: [-1.60, 3.20], Y: [-1.60, 0.00]
-                        let min_x = -3.20 - 0.40;
-                        let max_x = 3.20 + 0.40;
-                        let min_y = -1.60 - 0.40;
-                        let max_y = 1.60 + 0.40;
+                        let b1 = [0.00_f32, 0.80_f32, 3.20_f32, 0.80_f32];   // X: [-3.20, 3.20], Y: [0.00, 1.60]
+                        let b2 = [0.00_f32, 0.00_f32, 0.80_f32, 1.60_f32];   // X: [-0.80, 0.80], Y: [-1.60, 1.60]
+                        let min_x = -3.20 - pad_xy;
+                        let max_x = 3.20 + pad_xy;
+                        let min_y = -1.60 - pad_xy;
+                        let max_y = 1.60 + pad_xy;
                         (b1, b2, 2.0_f32, min_x, max_x, min_y, max_y)
                     }
                     // Type 2 : Grand coussin oblong (dalle 3x2 blocs unitaire)
                     2 => {
                         let b1 = [0.0_f32, 0.0_f32, 2.40_f32, 1.60_f32];
                         let b2 = [0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32];
-                        let min_x = -2.40 - 0.40;
-                        let max_x = 2.40 + 0.40;
-                        let min_y = -1.60 - 0.40;
-                        let max_y = 1.60 + 0.40;
+                        let min_x = -2.40 - pad_xy;
+                        let max_x = 2.40 + pad_xy;
+                        let min_y = -1.60 - pad_xy;
+                        let max_y = 1.60 + pad_xy;
                         (b1, b2, 1.0_f32, min_x, max_x, min_y, max_y)
                     }
                     // Type 3 : Coussin moyen compact (dalle 2x2 blocs unitaire)
                     _ => {
                         let b1 = [0.0_f32, 0.0_f32, 1.60_f32, 1.60_f32];
                         let b2 = [0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32];
-                        let min_x = -1.60 - 0.40;
-                        let max_x = 1.60 + 0.40;
-                        let min_y = -1.60 - 0.40;
-                        let max_y = 1.60 + 0.40;
+                        let min_x = -1.60 - pad_xy;
+                        let max_x = 1.60 + pad_xy;
+                        let min_y = -1.60 - pad_xy;
+                        let max_y = 1.60 + pad_xy;
                         (b1, b2, 1.0_f32, min_x, max_x, min_y, max_y)
                     }
                 };
 
                 let half_depth = Self::CLOUD_HALF_DEPTH;
-                let min_z = -half_depth - 0.30;
-                let max_z = half_depth + 0.30;
+                let pad_z = 0.50_f32;
+                let min_z = -half_depth - pad_z;
+                let max_z = half_depth + pad_z;
 
                 let config = [num_boxes, half_depth, (sx * 4 + sy) as f32, 0.0];
 
