@@ -262,7 +262,7 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         let horizon_color = mix(horizon_day, sunset_horizon, sunset_factor);
 
         // Dégradé vertical du dôme céleste (zénith -> horizon)
-        let ray_h = max(ray_up, 0.0);
+        let ray_h = clamp(ray_up, 0.0, 1.0);
         let horizon_blend = pow(1.0 - ray_h, 2.5);
         let day_sky = mix(zenith_color, horizon_color, horizon_blend) * day_amb_slider;
 

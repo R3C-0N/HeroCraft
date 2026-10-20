@@ -215,7 +215,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // 5. Reflets spéculaires d'eau et de glace
     var specular_light = vec3<f32>(0.0);
     let ndoth = max(dot(n, h), 0.0);
-    let ndotv = max(dot(n, view_dir), 0.0);
+    let ndotv = clamp(dot(n, view_dir), 0.0, 1.0);
 
     if (is_water) {
         // Reflet spéculaire Blinn-Phong pour l'océan

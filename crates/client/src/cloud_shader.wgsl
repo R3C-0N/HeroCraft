@@ -133,6 +133,16 @@ fn sd_box_2d(p: vec2<f32>, b: vec2<f32>) -> f32 {
     return length(max(d, vec2<f32>(0.0))) + min(max(d.x, d.y), 0.0);
 }
 
+// Direction du gradient de sd_box_2d (normale extérieure de la boîte la plus proche)
+fn sd_box_2d_dir(p: vec2<f32>, b: vec2<f32>) -> vec2<f32> {
+    let d = abs(p) - b;
+    let s = select(vec2<f32>(-1.0), vec2<f32>(1.0), p >= vec2<f32>(0.0));
+    if (max(d.x, d.y) > 0.0) {
+        return normalize(max(d, vec2<f32>(0.0))) * s;
+    }
+    return select(vec2<f32>(0.0, s.y), vec2<f32>(s.x, 0.0), d.x > d.y);
+}
+
 // Minimum lissé polynomial (congé de rayon ~k entre deux distances)
 fn smin(a: f32, b: f32, k: f32) -> f32 {
     let h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
@@ -150,8 +160,13 @@ fn sd_cloud_3d(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, half_
     if (num_boxes >= 1.5) {
         let core2 = max(b2.zw - vec2<f32>(r), vec2<f32>(0.001));
         let d2 = sd_box_2d(p.xy - b2.xy, core2);
-        // Union lissée : arrondit aussi les angles rentrants (L, T) au lieu d'un pli net
-        d_core = smin(d1, d2, r * 1.6);
+        // Union lissée uniquement dans les angles rentrants (normales des deux boîtes divergentes) :
+        // sur les arêtes alignées des L / T, les deux distances sont égales et un smin
+        // uniforme y ferait un bourrelet terminé par une pointe
+        let g1 = sd_box_2d_dir(p.xy - b1.xy, core1);
+        let g2 = sd_box_2d_dir(p.xy - b2.xy, core2);
+        let k = r * 1.6 * clamp(1.0 - dot(g1, g2), 0.0, 1.0);
+        d_core = smin(d1, d2, max(k, 1e-4));
     }
 
     let d_z = abs(p.z) - (half_depth - r);
@@ -189,7 +204,8 @@ fn sky_dome(ray_dir: vec3<f32>, cam_up: vec3<f32>, l: vec3<f32>, sunset_factor: 
     let sunset_horizon = mix(sunset_opposite_sun, sunset_facing_sun, pow(forward_sun, 1.5));
     let horizon_color = mix(horizon_day, sunset_horizon, sunset_factor);
 
-    let ray_h = max(dot(ray_dir, cam_up), 0.0);
+    // clamp (et non max) : dot(cam_up, cam_up) peut valoir 1.0000001 et pow(négatif) donne NaN (pixels noirs)
+    let ray_h = clamp(dot(ray_dir, cam_up), 0.0, 1.0);
     let horizon_blend = pow(1.0 - ray_h, 2.5);
     let day_sky = mix(zenith_color, horizon_color, horizon_blend) * day_amb_slider;
 
@@ -290,8 +306,14 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         hit = true;
         hit_local_p = local_p0;
     } else {
-        // Sphere Tracing précis (24 pas maximum pour les angles rasants)
-        for (var step = 0; step < 24; step = step + 1) {
+        // Sphere tracing borné par la sortie de la boîte englobante (intersection rayon / AABB locale).
+        // Un rayon qui frôle un arrondi avance par pas minuscules : avec peu de pas il abandonnait
+        // avant d'atteindre une autre branche du nuage située derrière (ciel visible à tort).
+        let inv_d = 1.0 / select(local_ray_dir, vec3<f32>(1e-6), abs(local_ray_dir) < vec3<f32>(1e-6));
+        let t0 = (vec3<f32>(c_min_x, c_min_y, c_min_z) - local_p0) * inv_d;
+        let t1 = (vec3<f32>(c_max_x, c_max_y, c_max_z) - local_p0) * inv_d;
+        let t_exit = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+        for (var step = 0; step < 96; step = step + 1) {
             let p = local_p0 + local_ray_dir * t;
             let d = sd_cloud_3d(p, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
             if (d < 0.002) {
@@ -299,8 +321,9 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
                 hit_local_p = p;
                 break;
             }
-            t += d;
-            if (t > 14.0) {
+            // Pas minimal pour ne pas s'enliser le long d'une surface rasée
+            t += max(d, 0.01);
+            if (t > t_exit) {
                 break;
             }
         }
