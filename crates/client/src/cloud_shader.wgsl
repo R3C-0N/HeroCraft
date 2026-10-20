@@ -2,8 +2,8 @@
 // HeroCraft - 3D Marshmallow Cloud Shader (Boîtes Englobantes + SDF Analytique)
 // - Boîtes englobantes 3D physiques réelles traversables dans le monde
 // - Sphere tracing ultra-rapide (8 à 16 pas) sur SDF analytique exacte
-// - Biseaux 3D arrondis sur TOUTES les arêtes (dessus, dessous, coins verticaux, coins sphériques)
-// - Angles concaves intérieurs adoucis sans aucune encoche sur les parois partagées
+// - Forme décrite par un masque d'occupation 11x11 par groupe de nuages (contours découpés, encoches, trous)
+// - Coins convexes arrondis, angles rentrants comblés, arêtes hautes et basses en coussin
 // - Ambiance tirée du dôme céleste (même formule que sky_shader.wgsl) : teinte du ciel partagée
 // - Dessus clair, flancs intermédiaires, dessous plus sombre et légèrement mauve
 // - Perspective atmosphérique vers le ciel et compression douce des hautes lumières
@@ -18,8 +18,8 @@ struct VertexInput {
     @location(2) frame_v: vec3<f32>,
     @location(3) frame_w: vec3<f32>,
     @location(4) cloud_center: vec3<f32>,
-    @location(5) box1_bounds: vec4<f32>,
-    @location(6) box2_bounds: vec4<f32>,
+    @location(5) bbox: vec4<f32>,
+    @location(6) mask: vec4<u32>,
     @location(7) config: vec4<f32>,
 };
 
@@ -30,8 +30,8 @@ struct VertexOutput {
     @location(2) frame_v: vec3<f32>,
     @location(3) frame_w: vec3<f32>,
     @location(4) cloud_center: vec3<f32>,
-    @location(5) @interpolate(flat) box1_bounds: vec4<f32>,
-    @location(6) @interpolate(flat) box2_bounds: vec4<f32>,
+    @location(5) @interpolate(flat) bbox: vec4<f32>,
+    @location(6) @interpolate(flat) mask: vec4<u32>,
     @location(7) @interpolate(flat) config: vec4<f32>,
 };
 
@@ -82,70 +82,94 @@ fn vs_cloud(in: VertexInput) -> VertexOutput {
     out.frame_v = v_rot;
     out.frame_w = w_rot;
     out.cloud_center = center_rot;
-    out.box1_bounds = in.box1_bounds;
-    out.box2_bounds = in.box2_bounds;
+    out.bbox = in.bbox;
+    out.mask = in.mask;
     out.config = in.config;
 
     return out;
 }
 
-// Distance 2D signée exacte à un rectangle orthogonal net (sans pré-arrondi)
-fn sd_box_2d(p: vec2<f32>, b: vec2<f32>) -> f32 {
-    let d = abs(p) - b;
-    return length(max(d, vec2<f32>(0.0))) + min(max(d.x, d.y), 0.0);
-}
-
-// Direction du gradient de sd_box_2d (normale extérieure de la boîte la plus proche)
-fn sd_box_2d_dir(p: vec2<f32>, b: vec2<f32>) -> vec2<f32> {
-    let d = abs(p) - b;
-    let s = select(vec2<f32>(-1.0), vec2<f32>(1.0), p >= vec2<f32>(0.0));
-    if (max(d.x, d.y) > 0.0) {
-        return normalize(max(d, vec2<f32>(0.0))) * s;
+// Cellule (x, y) du masque 11x11 occupée ? (bit = y * 11 + x, sur 4 mots de 32 bits)
+fn cell_on(m: vec4<u32>, x: i32, y: i32) -> bool {
+    if (x < 0 || y < 0 || x > 10 || y > 10) {
+        return false;
     }
-    return select(vec2<f32>(0.0, s.y), vec2<f32>(s.x, 0.0), d.x > d.y);
+    let bit = u32(y * 11 + x);
+    let word = m[bit / 32u];
+    return ((word >> (bit % 32u)) & 1u) == 1u;
 }
 
-// Minimum lissé polynomial (congé de rayon ~k entre deux distances)
-fn smin(a: f32, b: f32, k: f32) -> f32 {
-    let h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-    return mix(b, a, h) - k * h * (1.0 - h);
-}
+// Distance 2D signée à la forme du masque, coins convexes arrondis et angles rentrants comblés
+// (rayon rh). Exacte à moins d'une cellule de la surface, bornée à une cellule au-delà.
+fn sd_mask_2d(p: vec2<f32>, m: vec4<u32>, cell: f32, rh: f32) -> f32 {
+    let q = p / cell + vec2<f32>(5.5); // Coordonnées de grille (0..11)
+    let c = vec2<i32>(floor(q));
+    let inside = cell_on(m, c.x, c.y);
 
-// Distance 3D avec biseau marshmallow uniforme sur TOUTES les arêtes et coins sphériques
-// Utilise l'érosion analytique exacte des sous-boîtes pour garantir une surface 100% lisse
-// sans aucune ride sur les faces planes et sans hernie sur les arêtes extérieures
-fn sd_cloud_3d(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, half_depth: f32, r: f32) -> f32 {
-    let core1 = max(b1.zw - vec2<f32>(r), vec2<f32>(0.001));
-    let d1 = sd_box_2d(p.xy - b1.xy, core1);
-
-    var d_core = d1;
-    if (num_boxes >= 1.5) {
-        let core2 = max(b2.zw - vec2<f32>(r), vec2<f32>(0.001));
-        let d2 = sd_box_2d(p.xy - b2.xy, core2);
-        // Union lissée uniquement dans les angles rentrants (normales des deux boîtes divergentes) :
-        // sur les arêtes alignées des L / T, les deux distances sont égales et un smin
-        // uniforme y ferait un bourrelet terminé par une pointe
-        let g1 = sd_box_2d_dir(p.xy - b1.xy, core1);
-        let g2 = sd_box_2d_dir(p.xy - b2.xy, core2);
-        let k = r * 1.6 * clamp(1.0 - dot(g1, g2), 0.0, 1.0);
-        d_core = smin(d1, d2, max(k, 1e-4));
+    // Distance à la cellule de statut opposé la plus proche dans le voisinage 3x3
+    // (dehors : cellule pleine la plus proche ; dedans : cellule vide la plus proche)
+    var d = cell;
+    for (var dy = -1; dy <= 1; dy = dy + 1) {
+        for (var dx = -1; dx <= 1; dx = dx + 1) {
+            let cc = c + vec2<i32>(dx, dy);
+            if (cell_on(m, cc.x, cc.y) != inside) {
+                let e = abs(q - (vec2<f32>(cc) + vec2<f32>(0.5))) - vec2<f32>(0.5);
+                d = min(d, length(max(e, vec2<f32>(0.0))) * cell);
+            }
+        }
     }
+    var sd = select(d, -d, inside);
 
-    let d_z = abs(p.z) - (half_depth - r);
+    // Sommet de grille le plus proche : arrondi d'un coin convexe (1 cellule pleine sur 4)
+    // ou congé d'un angle rentrant (3 cellules pleines sur 4)
+    let vtx = round(q);
+    let vi = vec2<i32>(vtx);
+    let c00 = cell_on(m, vi.x - 1, vi.y - 1);
+    let c10 = cell_on(m, vi.x, vi.y - 1);
+    let c01 = cell_on(m, vi.x - 1, vi.y);
+    let c11 = cell_on(m, vi.x, vi.y);
+    let count = i32(c00) + i32(c10) + i32(c01) + i32(c11);
+    let w0 = (q - vtx) * cell;
+    if (count == 1) {
+        // Signe vers la cellule pleine
+        let s = vec2<f32>(select(-1.0, 1.0, c10 || c11), select(-1.0, 1.0, c01 || c11));
+        let w = w0 * s;
+        sd = max(sd, length(max(vec2<f32>(rh) - w, vec2<f32>(0.0))) - rh);
+    } else if (count == 3) {
+        // Signe vers la cellule vide
+        let s = vec2<f32>(select(-1.0, 1.0, !c10 || !c11), select(-1.0, 1.0, !c01 || !c11));
+        let w = w0 * s;
+        if (w.x >= 0.0 && w.y >= 0.0 && w.x < rh && w.y < rh) {
+            sd = min(sd, rh - length(w - vec2<f32>(rh)));
+        }
+    }
+    return sd;
+}
+
+// Distance 3D : forme du masque extrudée sur l'épaisseur du nuage, arêtes hautes et basses
+// arrondies (rayon r) par érosion puis dilatation, pour le profil en coussin
+fn sd_cloud_3d(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f32) -> f32 {
+    let rh = clamp(max(r * 1.3, 0.35), 0.0, 0.48 * cell);
+    let d_core = sd_mask_2d(p.xy, m, cell, rh) + r;
+    // Dalle courbée pour suivre la sphère (les grands nuages ne remontent plus aux bords)
+    let curv_r = camera.planet_radius + 8.8;
+    let z = p.z + dot(p.xy, p.xy) / (2.0 * curv_r);
+    let d_z = abs(z) - (half_depth - r);
     let w = max(vec2<f32>(d_core, d_z), vec2<f32>(0.0));
     let inside = min(max(d_core, d_z), 0.0);
-    return length(w) + inside - r;
+    // Facteur 0.9 : marge de sécurité du sphere tracing (courbure et congés non exacts)
+    return (length(w) + inside - r) * 0.9;
 }
 
 // Normale par gradient analytique fini
-fn get_cloud_normal(p: vec3<f32>, b1: vec4<f32>, b2: vec4<f32>, num_boxes: f32, half_depth: f32, r: f32) -> vec3<f32> {
+fn get_cloud_normal(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f32) -> vec3<f32> {
     let eps = 0.004;
-    let dx = sd_cloud_3d(p + vec3<f32>(eps, 0.0, 0.0), b1, b2, num_boxes, half_depth, r)
-           - sd_cloud_3d(p - vec3<f32>(eps, 0.0, 0.0), b1, b2, num_boxes, half_depth, r);
-    let dy = sd_cloud_3d(p + vec3<f32>(0.0, eps, 0.0), b1, b2, num_boxes, half_depth, r)
-           - sd_cloud_3d(p - vec3<f32>(0.0, eps, 0.0), b1, b2, num_boxes, half_depth, r);
-    let dz = sd_cloud_3d(p + vec3<f32>(0.0, 0.0, eps), b1, b2, num_boxes, half_depth, r)
-           - sd_cloud_3d(p - vec3<f32>(0.0, 0.0, eps), b1, b2, num_boxes, half_depth, r);
+    let dx = sd_cloud_3d(p + vec3<f32>(eps, 0.0, 0.0), m, cell, half_depth, r)
+           - sd_cloud_3d(p - vec3<f32>(eps, 0.0, 0.0), m, cell, half_depth, r);
+    let dy = sd_cloud_3d(p + vec3<f32>(0.0, eps, 0.0), m, cell, half_depth, r)
+           - sd_cloud_3d(p - vec3<f32>(0.0, eps, 0.0), m, cell, half_depth, r);
+    let dz = sd_cloud_3d(p + vec3<f32>(0.0, 0.0, eps), m, cell, half_depth, r)
+           - sd_cloud_3d(p - vec3<f32>(0.0, 0.0, eps), m, cell, half_depth, r);
     return normalize(vec3<f32>(dx, dy, dz));
 }
 
@@ -192,17 +216,10 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let pad_xy = 0.65;
     let pad_z = 0.50;
 
-    var c_min_x = in.box1_bounds.x - in.box1_bounds.z - pad_xy;
-    var c_max_x = in.box1_bounds.x + in.box1_bounds.z + pad_xy;
-    var c_min_y = in.box1_bounds.y - in.box1_bounds.w - pad_xy;
-    var c_max_y = in.box1_bounds.y + in.box1_bounds.w + pad_xy;
-
-    if (in.config.x >= 1.5) {
-        c_min_x = min(c_min_x, in.box2_bounds.x - in.box2_bounds.z - pad_xy);
-        c_max_x = max(c_max_x, in.box2_bounds.x + in.box2_bounds.z + pad_xy);
-        c_min_y = min(c_min_y, in.box2_bounds.y - in.box2_bounds.w - pad_xy);
-        c_max_y = max(c_max_y, in.box2_bounds.y + in.box2_bounds.w + pad_xy);
-    }
+    let c_min_x = in.bbox.x - pad_xy;
+    let c_max_x = in.bbox.z + pad_xy;
+    let c_min_y = in.bbox.y - pad_xy;
+    let c_max_y = in.bbox.w + pad_xy;
 
     let c_min_z = -half_depth - pad_z;
     let c_max_z = half_depth + pad_z;
@@ -235,7 +252,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     var hit_local_p = local_p0;
 
     // Test si le point de départ est déjà à l'intérieur du nuage
-    let initial_dist = sd_cloud_3d(local_p0, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
+    let initial_dist = sd_cloud_3d(local_p0, in.mask, in.config.x, half_depth, roundness);
     if (initial_dist <= 0.001) {
         hit = true;
         hit_local_p = local_p0;
@@ -249,7 +266,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         let t_exit = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
         for (var step = 0; step < 96; step = step + 1) {
             let p = local_p0 + local_ray_dir * t;
-            let d = sd_cloud_3d(p, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
+            let d = sd_cloud_3d(p, in.mask, in.config.x, half_depth, roundness);
             if (d < 0.002) {
                 hit = true;
                 hit_local_p = p;
@@ -268,7 +285,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     }
 
     // Calcul de la normale sur la surface marshmallow
-    let norm_local = get_cloud_normal(hit_local_p, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
+    let norm_local = get_cloud_normal(hit_local_p, in.mask, in.config.x, half_depth, roundness);
     let norm_world = normalize(
         norm_local.x * in.frame_u +
         norm_local.y * in.frame_v +
@@ -301,7 +318,8 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let ndotup = dot(norm_world, up_planet);
     // 1 = dessus, 0 = dessous : mélange de l'orientation de la normale et de la hauteur dans la dalle
     // (dégradé vertical continu sur les flancs, comme les nuages Complementary)
-    let height01 = clamp((hit_local_p.z + half_depth) / (2.0 * half_depth), 0.0, 1.0);
+    let hit_z = hit_local_p.z + dot(hit_local_p.xy, hit_local_p.xy) / (2.0 * (camera.planet_radius + 8.8));
+    let height01 = clamp((hit_z + half_depth) / (2.0 * half_depth), 0.0, 1.0);
     let top = mix(ndotup * 0.5 + 0.5, pow(height01, 0.8), 0.45);
 
     // 1. Ambiance du ciel : horizon dans la direction regardée, mêlé au zénith pour les faces hautes
@@ -317,8 +335,8 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let silver = pow(clamp(dot(ray_dir, l_sun), 0.0, 1.0), 6.0) * 0.18 * sunset_glow_slider;
     // Auto-ombrage : deux échantillons du SDF en direction du soleil (parties du nuage qui masquent le soleil)
     let l_local = vec3<f32>(dot(l_sun, in.frame_u), dot(l_sun, in.frame_v), dot(l_sun, in.frame_w));
-    let occ_a = sd_cloud_3d(hit_local_p + l_local * 0.45, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
-    let occ_b = sd_cloud_3d(hit_local_p + l_local * 1.10, in.box1_bounds, in.box2_bounds, in.config.x, half_depth, roundness);
+    let occ_a = sd_cloud_3d(hit_local_p + l_local * 0.45, in.mask, in.config.x, half_depth, roundness);
+    let occ_b = sd_cloud_3d(hit_local_p + l_local * 1.10, in.mask, in.config.x, half_depth, roundness);
     let self_shadow = clamp(-occ_a / 0.30, 0.0, 1.0) * 0.6 + clamp(-occ_b / 0.30, 0.0, 1.0) * 0.4;
     let sun_light = sun_col * (sun_wrap * 0.55 * (1.0 - 0.45 * self_shadow) + silver) * sun_slider;
 
