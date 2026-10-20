@@ -215,6 +215,32 @@ impl TectonicSimulation {
         Self { seed, plates }
     }
 
+    /// Fraction de croûte continentale (0 = océanique, 1 = continentale) en un point, lissée entre plaques.
+    ///
+    /// Contrairement à `sample`, qui tranche net sur la frontière du Voronoi pondéré (des arcs de cercle,
+    /// puisque la métrique theta_i / w_i produit des cercles d'Apollonius), chaque plaque contribue ici
+    /// selon un noyau exponentiel de sa distance pondérée : le passage océan/continent devient un gradient
+    /// large que le bruit continental peut déformer librement, au lieu d'imposer la géométrie des plaques au rivage.
+    pub fn continental_crust(&self, dir: DVec3, softness: f64) -> f64 {
+        let dists: Vec<f64> = self
+            .plates
+            .iter()
+            .map(|p| dir.dot(p.center).clamp(-1.0, 1.0).acos() / p.weight)
+            .collect();
+        let min_dist = dists.iter().cloned().fold(f64::MAX, f64::min);
+
+        let mut total = 0.0;
+        let mut continental = 0.0;
+        for (plate, d) in self.plates.iter().zip(dists) {
+            let w = (-(d - min_dist) / softness).exp();
+            total += w;
+            if !plate.is_oceanic {
+                continental += w;
+            }
+        }
+        continental / total
+    }
+
     /// Échantillonne l'état tectonique pour une direction donnée via Voronoi sphérique pondéré
     pub fn sample(&self, dir: DVec3) -> TectonicSample {
         // Distorsion fractale organique des frontières de plaques
