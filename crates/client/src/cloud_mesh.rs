@@ -104,17 +104,18 @@ impl CloudMeshGenerator {
     pub const MAX_RADIUS: f32 = 7.3;
 
     pub fn generate_cloud_mesh(base_radius: f32, seed: u64) -> CloudMesh {
-        let r_mid = base_radius + (Self::CLOUD_ALTITUDE_BOT + Self::CLOUD_ALTITUDE_TOP) * 0.5;
+        let scale = base_radius / 25.0;
+        let r_mid = base_radius + (Self::CLOUD_ALTITUDE_BOT + Self::CLOUD_ALTITUDE_TOP) * 0.5 * scale;
         let mut mesh = CloudMesh::default();
 
         for &face in &PlanetFace::ALL {
-            Self::generate_face_clouds(&mut mesh, face, r_mid, seed);
+            Self::generate_face_clouds(&mut mesh, face, r_mid, scale, seed);
         }
 
         mesh
     }
 
-    fn generate_face_clouds(mesh: &mut CloudMesh, face: PlanetFace, r_mid: f32, seed: u64) {
+    fn generate_face_clouds(mesh: &mut CloudMesh, face: PlanetFace, r_mid: f32, scale: f32, seed: u64) {
         let face_id = face as u64;
         let sectors = Self::SECTORS_PER_FACE;
 
@@ -153,20 +154,21 @@ impl CloudMeshGenerator {
                 let v = w.cross(u).normalize();
                 let cloud_center = w * r_mid;
 
-                let bbox = Self::mask_bbox(mask);
-                let pad_xy = 0.65_f32;
+                let cell_size = Self::CELL * scale;
+                let bbox = Self::mask_bbox_scaled(mask, cell_size);
+                let pad_xy = 0.65_f32 * scale;
                 let (min_x, min_y, max_x, max_y) = (bbox[0] - pad_xy, bbox[1] - pad_xy, bbox[2] + pad_xy, bbox[3] + pad_xy);
 
-                let half_depth = Self::CLOUD_HALF_DEPTH;
-                let pad_z = 0.50_f32;
+                let half_depth = Self::CLOUD_HALF_DEPTH * scale;
+                let pad_z = 0.50_f32 * scale;
                 // Le shader courbe la dalle pour suivre la sphère : les bords descendent de rho² / 2R
-                let rho_max = Self::mask_radius(mask) + pad_xy;
+                let rho_max = Self::mask_radius(mask) * scale + pad_xy;
                 let sag = rho_max * rho_max / (2.0 * r_mid);
                 let min_z = -half_depth - pad_z - sag;
                 let max_z = half_depth + pad_z;
 
                 let mask_words = [mask as u32, (mask >> 32) as u32, (mask >> 64) as u32, (mask >> 96) as u32];
-                let config = [Self::CELL, half_depth, (sx * sectors + sy) as f32, 0.0];
+                let config = [cell_size, half_depth, (sx * sectors + sy) as f32, 0.0];
 
                 let base_idx = mesh.vertices.len() as u32;
 
@@ -238,8 +240,8 @@ impl CloudMeshGenerator {
         (b[0].abs().max(b[2].abs()).powi(2) + b[1].abs().max(b[3].abs()).powi(2)).sqrt()
     }
 
-    /// Emprise locale (repère centré sur la grille) des cellules occupées
-    fn mask_bbox(mask: CloudMask) -> [f32; 4] {
+    /// Emprise locale (repère centré sur la grille) des cellules occupées à une échelle donnée
+    fn mask_bbox_scaled(mask: CloudMask, cell_size: f32) -> [f32; 4] {
         let g = Self::GRID as i32;
         let (mut x0, mut y0, mut x1, mut y1) = (g, g, -1, -1);
         for y in 0..g {
@@ -254,11 +256,16 @@ impl CloudMeshGenerator {
         }
         let half = g as f32 * 0.5;
         [
-            (x0 as f32 - half) * Self::CELL,
-            (y0 as f32 - half) * Self::CELL,
-            (x1 as f32 + 1.0 - half) * Self::CELL,
-            (y1 as f32 + 1.0 - half) * Self::CELL,
+            (x0 as f32 - half) * cell_size,
+            (y0 as f32 - half) * cell_size,
+            (x1 as f32 + 1.0 - half) * cell_size,
+            (y1 as f32 + 1.0 - half) * cell_size,
         ]
+    }
+
+    /// Emprise locale (repère centré sur la grille) des cellules occupées
+    fn mask_bbox(mask: CloudMask) -> [f32; 4] {
+        Self::mask_bbox_scaled(mask, Self::CELL)
     }
 
     /// Tire un masque 11x11 : un bruit de valeur lissé, modulé par une enveloppe elliptique

@@ -193,8 +193,8 @@ impl State {
         let initial_uniform = CameraUniform {
             view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
             inv_view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
-            camera_pos: [0.0, 0.0, 165.0],
-            planet_radius: 25.0,
+            camera_pos: [0.0, 0.0, 330.0],
+            planet_radius: 50.0,
             light_dir: sun_dir.to_array(),
             time: 0.0,
             lighting_params: [0.25, 1.0, 2.10, 1.0],
@@ -416,7 +416,7 @@ impl State {
             cache: None,
         });
 
-        let cloud_mesh = crate::cloud_mesh::CloudMeshGenerator::generate_cloud_mesh(25.0, 2026);
+        let cloud_mesh = crate::cloud_mesh::CloudMeshGenerator::generate_cloud_mesh(50.0, 2026);
         let cloud_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Cloud Vertex Buffer"),
             contents: bytemuck::cast_slice(&cloud_mesh.vertices),
@@ -574,7 +574,8 @@ impl State {
         let cloud_vis = if camera.view_mode() == crate::camera::CameraViewMode::SatelliteOrbit {
             0.0_f32
         } else {
-            ((25.0 - camera.effective_distance) / 5.0).clamp(0.0, 1.0)
+            let fade_dist = (camera.base_radius * 0.2).max(1.0);
+            ((camera.base_radius - camera.effective_distance) / fade_dist).clamp(0.0, 1.0)
         };
         let effective_cloud_density = clouds.density * cloud_vis;
 
@@ -901,31 +902,28 @@ mod tests {
         let mut cam = OrbitCamera::new(165.0, 25.0, &gen);
         assert_eq!(cam.view_mode(), CameraViewMode::SatelliteOrbit);
 
-        let cloud_vis_satellite = if cam.view_mode() == CameraViewMode::SatelliteOrbit {
-            0.0_f32
-        } else {
-            ((25.0 - cam.effective_distance) / 5.0).clamp(0.0, 1.0)
+        let calc_vis = |cam: &OrbitCamera| {
+            if cam.view_mode() == CameraViewMode::SatelliteOrbit {
+                0.0_f32
+            } else {
+                let fade_dist = (cam.base_radius * 0.2).max(1.0);
+                ((cam.base_radius - cam.effective_distance) / fade_dist).clamp(0.0, 1.0)
+            }
         };
+
+        let cloud_vis_satellite = calc_vis(&cam);
         assert_eq!(cloud_vis_satellite, 0.0, "Les nuages doivent être totalement invisibles en vue satellite");
 
         // 2. Vue Sol (FPS: distance = 0.0)
         cam.effective_distance = 0.0;
         assert_eq!(cam.view_mode(), CameraViewMode::FirstPerson);
-        let cloud_vis_fps = if cam.view_mode() == CameraViewMode::SatelliteOrbit {
-            0.0_f32
-        } else {
-            ((25.0 - cam.effective_distance) / 5.0).clamp(0.0, 1.0)
-        };
+        let cloud_vis_fps = calc_vis(&cam);
         assert_eq!(cloud_vis_fps, 1.0, "Les nuages doivent être à 100% visibles au sol en FPS");
 
         // 3. Vue Sol (TPS: distance = 15.0)
         cam.effective_distance = 15.0;
         assert_eq!(cam.view_mode(), CameraViewMode::ThirdPerson);
-        let cloud_vis_tps = if cam.view_mode() == CameraViewMode::SatelliteOrbit {
-            0.0_f32
-        } else {
-            ((25.0 - cam.effective_distance) / 5.0).clamp(0.0, 1.0)
-        };
+        let cloud_vis_tps = calc_vis(&cam);
         assert_eq!(cloud_vis_tps, 1.0, "Les nuages doivent être à 100% visibles au sol en TPS");
     }
 }

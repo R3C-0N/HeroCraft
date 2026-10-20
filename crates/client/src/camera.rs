@@ -74,7 +74,7 @@ pub struct OrbitCamera {
 impl Default for OrbitCamera {
     fn default() -> Self {
         Self {
-            player_pos: Vec3::new(0.0, 26.0, 0.0),
+            player_pos: Vec3::new(0.0, 52.0, 0.0),
             player_yaw: 0.0,
             player_pitch: 0.0,
             vertical_velocity: 0.0,
@@ -87,12 +87,12 @@ impl Default for OrbitCamera {
             is_sprinting: false,
             jump_requested: false,
 
-            distance: 165.0,
-            target_distance: 165.0,
+            distance: 330.0,
+            target_distance: 330.0,
             min_distance: 0.0,
-            max_distance: 450.0,
-            effective_distance: 165.0,
-            effective_eye: Vec3::new(0.0, 165.0, 0.0),
+            max_distance: 900.0,
+            effective_distance: 330.0,
+            effective_eye: Vec3::new(0.0, 330.0, 0.0),
 
             orbit_yaw: 0.5,
             orbit_pitch: 0.35,
@@ -100,7 +100,7 @@ impl Default for OrbitCamera {
             fov_y: 22.0_f32.to_radians(),
             aspect: 16.0 / 9.0,
             z_near: 0.05,
-            z_far: 2500.0,
+            z_far: 5000.0,
 
             rotate_sensitivity: 0.004,
             zoom_sensitivity: 0.12,
@@ -108,18 +108,21 @@ impl Default for OrbitCamera {
             auto_rotate: false,
             auto_rotate_speed: 0.2,
 
-            base_radius: 25.0,
+            base_radius: 50.0,
         }
     }
 }
 
 impl OrbitCamera {
     pub fn new(distance: f32, base_radius: f32, generator: &PlanetWorldGenerator) -> Self {
+        let scale = base_radius / 25.0;
         let mut cam = Self {
             distance,
             target_distance: distance,
             effective_distance: distance,
             base_radius,
+            max_distance: 450.0 * scale,
+            z_far: 2500.0 * scale,
             ..Default::default()
         };
         cam.spawn_on_ground(generator);
@@ -169,7 +172,7 @@ impl OrbitCamera {
     pub fn view_mode(&self) -> CameraViewMode {
         if self.effective_distance <= 0.05 {
             CameraViewMode::FirstPerson
-        } else if self.effective_distance <= 25.0 {
+        } else if self.effective_distance <= self.base_radius {
             CameraViewMode::ThirdPerson
         } else {
             CameraViewMode::SatelliteOrbit
@@ -239,7 +242,7 @@ impl OrbitCamera {
             }
             CameraViewMode::SatelliteOrbit => {
                 // Rotation orbitale autour du globe
-                let dist_factor = (self.distance / 165.0).clamp(0.20, 1.0);
+                let dist_factor = (self.distance / (self.base_radius * 6.6)).clamp(0.20, 1.0);
                 self.orbit_yaw += dx * self.rotate_sensitivity * dist_factor;
                 self.orbit_pitch -= dy * self.rotate_sensitivity * dist_factor;
                 let limit = 1.52; // ~87 degrés
@@ -294,7 +297,7 @@ impl OrbitCamera {
     /// Déclenche une transition fluide vers la vue satellite orbitale
     pub fn transition_to_orbit(&mut self) {
         self.sync_orbit_to_ground();
-        self.target_distance = 165.0;
+        self.target_distance = self.base_radius * 6.6;
     }
 
     /// Déclenche une transition fluide vers la vue au sol à la première personne (FPS)
@@ -305,7 +308,7 @@ impl OrbitCamera {
 
     /// Bascule de manière fluide entre la vue au sol et la vue satellite orbitale
     pub fn toggle_view(&mut self, generator: &PlanetWorldGenerator) {
-        if self.target_distance <= 25.0 {
+        if self.target_distance <= self.base_radius {
             self.transition_to_orbit();
         } else {
             self.transition_to_ground(generator);
@@ -314,17 +317,18 @@ impl OrbitCamera {
 
     /// Calcule la position de la caméra sans aucune pénétration sous le relief (Spring-Arm anti-collision)
     pub fn update_camera_bounds(&mut self, generator: &PlanetWorldGenerator) {
+        let scale = self.base_radius / 25.0;
         let (up, _, _, look_dir) = self.look_vectors();
-        let eye_height = 0.065; // ~1.7 blocs au-dessus des pieds
+        let eye_height = 0.065 * scale; // ~1.7 blocs au-dessus des pieds
         let head = self.player_pos + up * eye_height;
 
-        let margin = 0.035; // Marge de sécurité stricte au-dessus du sol (~0.9 bloc)
+        let margin = 0.035 * scale; // Marge de sécurité stricte au-dessus du sol (~0.9 bloc)
 
         if self.distance <= 0.05 {
             // Mode Première Personne (FPS) : positionné aux yeux de l'avatar
             self.effective_distance = 0.0;
             self.effective_eye = head;
-        } else if self.distance <= 25.0 {
+        } else if self.distance <= self.base_radius {
             // Mode Troisième Personne (TPS) : Spring-Arm optimisé avec test d'extrémité rapide + dichotomie
             let max_d = self.distance;
             let mut safe_d = max_d;
@@ -368,7 +372,7 @@ impl OrbitCamera {
             }
         } else {
             // Mode Satellite / Orbite globale
-            let t_orbit = ((self.distance - 25.0) / 45.0).clamp(0.0, 1.0);
+            let t_orbit = ((self.distance - self.base_radius) / (self.base_radius * 1.8)).clamp(0.0, 1.0);
             let target = head.lerp(Vec3::ZERO, t_orbit);
 
             let orbit_dir = self.orbit_direction();
@@ -379,7 +383,7 @@ impl OrbitCamera {
 
             // Garantie d'altitude au-dessus du relief uniquement à basse altitude orbitale
             let eye_len = eye.length();
-            if eye_len < self.base_radius + 0.80 {
+            if eye_len < self.base_radius + 0.80 * scale {
                 let ground_r = self.ground_radius_at(eye, generator);
                 if eye_len < ground_r + margin {
                     eye = eye.normalize() * (ground_r + margin);
@@ -394,7 +398,7 @@ impl OrbitCamera {
     /// Mise à jour physique du joueur et de la caméra (déplacement ZQSD, gravité sphérique, détection de relief)
     pub fn update(&mut self, dt: f32, generator: &PlanetWorldGenerator) {
         // 0. Transition fluide et sans à-coups de la distance de zoom (sans téléportation)
-        if self.distance > 25.0 && self.target_distance <= 25.0 {
+        if self.distance > self.base_radius && self.target_distance <= self.base_radius {
             self.sync_ground_to_orbit(generator);
         }
 
@@ -419,6 +423,7 @@ impl OrbitCamera {
         }
 
         let (_up, forward_tangent, right_tangent, _) = self.look_vectors();
+        let scale = self.base_radius / 25.0;
 
         // 1. Déplacement horizontal ZQSD / WASD
         let mut move_dir = Vec3::ZERO;
@@ -430,7 +435,7 @@ impl OrbitCamera {
         if move_dir.length_squared() > 0.001 {
             move_dir = move_dir.normalize();
             // Vitesse adaptée à l'échelle : ~5.2 blocs/s en marche, ~11.7 blocs/s en sprint
-            let speed = if self.is_sprinting { 0.45 } else { 0.20 };
+            let speed = if self.is_sprinting { 0.45 * scale } else { 0.20 * scale };
             self.player_pos += move_dir * speed * dt;
         }
 
@@ -442,7 +447,7 @@ impl OrbitCamera {
 
         // Saut
         if self.jump_requested && self.is_grounded {
-            self.vertical_velocity = 1.2;
+            self.vertical_velocity = 1.2 * scale;
             self.is_grounded = false;
             self.jump_requested = false;
         }
@@ -450,11 +455,11 @@ impl OrbitCamera {
         // Gravité sphérique et franchissement doux des pentes
         if current_radius > ground_radius {
             // Descente douce si la marche au sol franchit une dénivellation légère (< 1.5 bloc)
-            if self.is_grounded && (current_radius - ground_radius) < 0.05 {
+            if self.is_grounded && (current_radius - ground_radius) < 0.05 * scale {
                 current_radius = ground_radius;
                 self.vertical_velocity = 0.0;
             } else {
-                self.vertical_velocity -= 6.0 * dt;
+                self.vertical_velocity -= 6.0 * scale * dt;
                 current_radius += self.vertical_velocity * dt;
                 if current_radius <= ground_radius {
                     current_radius = ground_radius;
@@ -491,20 +496,21 @@ impl OrbitCamera {
     pub fn build_view_projection_matrix(&self) -> Mat4 {
         let eye = self.effective_eye;
         let (up, _, _, look_dir) = self.look_vectors();
-        let eye_height = 0.065;
+        let scale = self.base_radius / 25.0;
+        let eye_height = 0.065 * scale;
         let head = self.player_pos + up * eye_height;
 
         let (target, cam_up, fov, z_near) = if self.effective_distance <= 0.05 {
             // FPS : regard orienté selon le pitch/yaw du joueur
             (eye + look_dir, up, 70.0_f32.to_radians(), 0.01_f32)
-        } else if self.effective_distance <= 25.0 {
+        } else if self.effective_distance <= self.base_radius {
             // TPS : regard centré sur la tête du joueur
-            let t_fov = (self.effective_distance / 25.0).clamp(0.0, 1.0);
+            let t_fov = (self.effective_distance / self.base_radius).clamp(0.0, 1.0);
             let fov = (70.0 * (1.0 - t_fov) + 38.0 * t_fov).to_radians();
             (head, up, fov, 0.05_f32)
         } else {
             // Satellite / Orbite : transition douce de la cible vers le centre du monde (0,0,0)
-            let t_orbit = ((self.effective_distance - 25.0) / 45.0).clamp(0.0, 1.0);
+            let t_orbit = ((self.effective_distance - self.base_radius) / (self.base_radius * 1.8)).clamp(0.0, 1.0);
             let target = head.lerp(Vec3::ZERO, t_orbit);
             let cam_up = up.lerp(Vec3::Y, t_orbit).normalize();
             let fov = (38.0 * (1.0 - t_orbit) + 22.0 * t_orbit).to_radians();
@@ -518,7 +524,7 @@ impl OrbitCamera {
 
     /// Réinitialise la caméra en vue satellite avec transition fluide
     pub fn reset(&mut self) {
-        self.target_distance = 165.0;
+        self.target_distance = self.base_radius * 6.6;
         self.orbit_yaw = 0.5;
         self.orbit_pitch = 0.35;
     }
@@ -540,13 +546,13 @@ mod tests {
         cam.effective_distance = 0.1;
         assert_eq!(cam.view_mode(), CameraViewMode::ThirdPerson);
 
-        cam.effective_distance = 25.0;
+        cam.effective_distance = cam.base_radius;
         assert_eq!(cam.view_mode(), CameraViewMode::ThirdPerson);
 
-        cam.effective_distance = 25.1;
+        cam.effective_distance = cam.base_radius + 0.1;
         assert_eq!(cam.view_mode(), CameraViewMode::SatelliteOrbit);
 
-        cam.effective_distance = 165.0;
+        cam.effective_distance = 330.0;
         assert_eq!(cam.view_mode(), CameraViewMode::SatelliteOrbit);
     }
 
@@ -567,13 +573,15 @@ mod tests {
     #[test]
     fn test_matrices_finite_in_all_modes() {
         let mut cam = OrbitCamera::default();
-        for &dist in &[0.0, 0.05, 1.0, 10.0, 25.0, 50.0, 165.0] {
+        let scale = cam.base_radius / 25.0;
+        let eye_height = 0.065 * scale;
+        for &dist in &[0.0, 0.05, 1.0, 10.0, 25.0, 50.0, 165.0, 330.0] {
             cam.distance = dist;
             cam.effective_distance = dist;
             cam.effective_eye = if dist <= 0.05 {
-                cam.player_pos + Vec3::Y * 0.065
+                cam.player_pos + Vec3::Y * eye_height
             } else {
-                cam.player_pos + Vec3::Y * 0.065 + Vec3::Z * dist
+                cam.player_pos + Vec3::Y * eye_height + Vec3::Z * dist
             };
             let mat = cam.build_view_projection_matrix();
             for col in 0..4 {

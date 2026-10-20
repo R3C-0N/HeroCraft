@@ -318,7 +318,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let ndotup = dot(norm_world, up_planet);
     // 1 = dessus, 0 = dessous : mélange de l'orientation de la normale et de la hauteur dans la dalle
     // (dégradé vertical continu sur les flancs, comme les nuages Complementary)
-    let hit_z = hit_local_p.z + dot(hit_local_p.xy, hit_local_p.xy) / (2.0 * (camera.planet_radius + 8.8));
+    let hit_z = hit_local_p.z + dot(hit_local_p.xy, hit_local_p.xy) / (2.0 * length(in.cloud_center));
     let height01 = clamp((hit_z + half_depth) / (2.0 * half_depth), 0.0, 1.0);
     let top = mix(ndotup * 0.5 + 0.5, pow(height01, 0.8), 0.45);
 
