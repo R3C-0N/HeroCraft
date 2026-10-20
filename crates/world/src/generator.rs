@@ -169,30 +169,24 @@ impl PlanetWorldGenerator {
     pub fn sample_continental_value(&self, dir: DVec3) -> f64 {
         let seed = self.planet.seed;
 
-        // 1. Déformation de domaine douce pour des contours naturels sans micro-trous
-        let warp_x = fbm_3d(dir * 1.1, 2, 2.0, 0.40, seed.wrapping_add(101));
-        let warp_y = fbm_3d(dir * 1.1, 2, 2.0, 0.40, seed.wrapping_add(202));
-        let warp_z = fbm_3d(dir * 1.1, 2, 2.0, 0.40, seed.wrapping_add(303));
-        let warped_dir = (dir + DVec3::new(warp_x, warp_y, warp_z) * 0.22).normalize();
+        // 1. Déformation de domaine multi-échelle : casse la géométrie sphérique des plaques
+        // (grandes baies et péninsules à basse fréquence, découpes plus fines par-dessus)
+        let warp = DVec3::new(
+            fbm_3d(dir * 1.6, 4, 2.1, 0.50, seed.wrapping_add(101)),
+            fbm_3d(dir * 1.6, 4, 2.1, 0.50, seed.wrapping_add(202)),
+            fbm_3d(dir * 1.6, 4, 2.1, 0.50, seed.wrapping_add(303)),
+        );
+        let warped_dir = (dir + warp * 0.45).normalize();
 
-        // 2. Ancrage géologique réaliste sur les plaques tectoniques :
-        // Les plaques continentales portent les continents en leur cœur (terres émergées entourées de marges océaniques).
-        // Les plaques océaniques forment les vastes bassins maritimes.
-        let tec = self.tectonics.sample(warped_dir);
-        let plate = &self.tectonics.plates[tec.plate_id];
+        // 2. Ancrage géologique sur les plaques tectoniques : les plaques continentales portent les continents,
+        // les plaques océaniques forment les bassins. La fraction de croûte est lissée entre plaques pour que
+        // le rivage ne recopie pas la frontière du Voronoi pondéré (arcs de cercle et pointes aux jonctions).
+        let crust = self.tectonics.continental_crust(warped_dir, 0.18);
+        let plate_bias = (crust - 0.55) * 0.50;
 
-        let plate_bias = if !plate.is_oceanic {
-            // Cœur de continent : dist_to_boundary va de 0 (frontière) à 1 (cœur)
-            // Plus on est au centre de la plaque continentale, plus la masse de terre est compacte
-            0.12 + tec.dist_to_boundary * 0.32
-        } else {
-            // Plaque océanique : bassin sous-marin profond
-            -0.22 - (1.0 - tec.dist_to_boundary) * 0.12
-        };
-
-        // Bruit fractal macroscopique combiné à l'ancrage des plaques
-        let macro_noise = fbm_3d(warped_dir * 0.95, 2, 2.0, 0.35, seed);
-        let macro_continent = plate_bias * 0.60 + macro_noise * 0.40;
+        // Bruit fractal continental, de même poids que les plaques : c'est lui qui dessine le trait de côte
+        let macro_noise = fbm_3d(warped_dir * 1.3, 5, 2.0, 0.50, seed);
+        let macro_continent = plate_bias + macro_noise * 1.15;
 
         // 3. Mers intérieures (type Méditerranée ou Mer Baltique) bien délimitées,
         // évitant de percer le cœur des terres
