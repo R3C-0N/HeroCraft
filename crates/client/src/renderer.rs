@@ -27,6 +27,19 @@ struct GpuMesh {
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     last_used_sync: u64,
+    /// Centre de la boîte englobante, pour trier les draws du plus proche au plus lointain
+    center: glam::Vec3,
+}
+
+fn mesh_center(vertices: &[PlanetVertex]) -> glam::Vec3 {
+    let (min, max) = vertices.iter().fold(
+        (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN)),
+        |(lo, hi), v| {
+            let p = glam::Vec3::from(v.position);
+            (lo.min(p), hi.max(p))
+        },
+    );
+    (min + max) * 0.5
 }
 
 /// Nombre de synchronisations après lequel un maillage non affiché est libéré du GPU
@@ -63,6 +76,7 @@ pub struct State {
     lod_gpu_meshes: HashMap<LodMeshId, GpuMesh>,
     /// Maillages à dessiner cette frame, dans l'ordre des feuilles
     lod_draw_list: Vec<LodMeshId>,
+    camera_eye: glam::Vec3,
     lod_sync_count: u64,
 
     // Rendu Interface Utilisateur egui
@@ -342,7 +356,7 @@ impl State {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
@@ -467,6 +481,7 @@ impl State {
             msaa_color_view,
             lod_gpu_meshes: HashMap::new(),
             lod_draw_list: Vec::new(),
+            camera_eye: glam::Vec3::ZERO,
             lod_sync_count: 0,
             egui_renderer,
             vsync_mode,
@@ -578,6 +593,7 @@ impl State {
         let inv_view_proj = view_proj.inverse();
         let eye = camera.eye_position();
         let sun_dir = compute_sun_dir(self.simulated_time);
+        self.camera_eye = eye;
 
         // Facteur de présence au sol (1.0 = plein sol FPS/TPS, 0.0 = orbite spatiale profonde)
         let ground_factor = if camera.view_mode() != crate::camera::CameraViewMode::SatelliteOrbit {
@@ -656,6 +672,7 @@ impl State {
                     }),
                     num_indices: mesh.indices.len() as u32,
                     last_used_sync: sync,
+                    center: mesh_center(&mesh.vertices),
                 }
             });
             gpu_mesh.last_used_sync = sync;
@@ -779,7 +796,12 @@ impl State {
                 render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_SKY);
             }
 
-            // 1.b. Relief planétaire & Voxels
+            // 1.b. Relief planétaire & Voxels, du plus proche au plus lointain : le test de
+            // profondeur précoce élimine les fragments cachés avant d'exécuter le shader
+            let (meshes, eye) = (&self.lod_gpu_meshes, self.camera_eye);
+            self.lod_draw_list.sort_by_cached_key(|id| {
+                meshes.get(id).map_or(u32::MAX, |m| m.center.distance_squared(eye).to_bits())
+            });
             if !self.lod_draw_list.is_empty() {
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
