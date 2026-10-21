@@ -231,6 +231,7 @@ impl PlanetQuadTree {
         generator: Option<&PlanetWorldGenerator>,
         frustum: Option<&WorldFrustum>,
     ) -> Vec<QuadLeaf> {
+        herocraft_common::prof_scope!("world::quadtree::evaluate");
         let mut leaves = Vec::with_capacity(256);
 
         // Toutes les 6 faces de la planète sont toujours initialisées

@@ -19,6 +19,7 @@ impl VoxelMeshBuilder {
         center_y: i32,
         base_radius: f32,
     ) -> PlanetMesh {
+        herocraft_common::prof_scope!("voxel_mesh::build_incurved_grid");
         let mut vertices: Vec<PlanetVertex> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
 
@@ -271,6 +272,7 @@ impl VoxelMeshBuilder {
         base_radius: f32,
         filter: herocraft_world::VisualizationFilter,
     ) -> PlanetMesh {
+        herocraft_common::prof_scope!("voxel_mesh::build_voxel_chunk");
         let mut vertices: Vec<PlanetVertex> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
 
@@ -322,6 +324,7 @@ impl VoxelMeshBuilder {
         // Précalcul des couleurs de colonnes 32x32 pour éviter de répéter l'échantillonnage de bruit sur chaque face
         let mut column_colors = vec![[0.0_f32; 4]; 32 * 32];
         for cz in 0..32 {
+            herocraft_common::prof_scope!("voxel_mesh::column_colors_row");
             for cx in 0..32 {
                 let u = base_u + (cx as f64 + 0.5) * voxel_span_uv;
                 let v = base_v + (cz as f64 + 0.5) * voxel_span_uv;
@@ -381,6 +384,7 @@ impl VoxelMeshBuilder {
                 continue;
             }
 
+            herocraft_common::prof_scope!("voxel_mesh::layer");
             let coord = PlanetChunkCoord::new(face, chunk_x, chunk_y, layer);
             let center_chunk = generator.generate_chunk(&coord);
             let chunk_below = prev_chunk;
@@ -419,6 +423,7 @@ impl VoxelMeshBuilder {
                 }
             };
 
+            herocraft_common::prof_scope!("voxel_mesh::emit_faces");
             // Émission directe des faces de voxels exposées (1x1) sans greedy meshing
             // Sur une planète incurvée (Cubed-Sphere), les quads 1x1 épousent parfaitement la courbure
             // sans aucun décollement, fissure, trou ni artefact diagonal.
@@ -588,6 +593,7 @@ impl VoxelMeshBuilder {
             prev_chunk = Some(center_chunk);
         }
 
+        herocraft_common::prof_value!("voxel_mesh.sommets_par_chunk", vertices.len());
         PlanetMesh { vertices, indices }
     }
 

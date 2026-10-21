@@ -37,6 +37,7 @@ pub struct PlanetLodManager {
 
 impl PlanetLodManager {
     pub fn new(base_radius: f32, current_seed: u64) -> Self {
+        herocraft_common::prof_scope!("lod::PlanetLodManager::new");
         let num_cpus = std::thread::available_parallelism()
             .map(|p| p.get())
             .unwrap_or(4);
@@ -122,6 +123,7 @@ impl PlanetLodManager {
 
     /// Réinitialise les caches (par exemple lors d'un changement de seed avec 'G')
     pub fn clear(&mut self, new_seed: u64) {
+        herocraft_common::prof_scope!("lod::clear");
         self.current_seed = new_seed;
         self.lod_cache.clear();
         self.voxel_cache.clear();
@@ -159,14 +161,21 @@ impl PlanetLodManager {
         dt: f32,
         _frustum: Option<&herocraft_world::WorldFrustum>,
     ) -> bool {
+        herocraft_common::prof_scope!("lod::update");
         // 1. Récupération non-bloquante des chunks voxels calculés par le pool Rayon
         let mut received_new_mesh = false;
+        let mut received_count = 0usize;
         while let Ok(res) = self.result_rx.try_recv() {
+            received_count += 1;
             if res.seed == self.current_seed {
                 self.pending_requests.remove(&res.key);
                 self.voxel_cache.insert(res.key, res.mesh);
                 received_new_mesh = true;
             }
+        }
+
+        if received_count > 0 {
+            herocraft_common::prof_value!("lod.voxels_recus_par_frame", received_count);
         }
 
         self.time_since_eval += dt;
@@ -182,6 +191,7 @@ impl PlanetLodManager {
             || (moved_dist > 0.02 && self.time_since_eval > 0.08);
 
         let (new_leaves, leaves_changed) = if should_re_eval {
+            herocraft_common::prof_scope!("lod::quadtree_eval");
             let cam_dvec = DVec3::new(
                 camera_pos.x as f64,
                 camera_pos.y as f64,
@@ -209,9 +219,13 @@ impl PlanetLodManager {
 
         // 2. Génération parallèle immédiate des patchs polygonaux manquants et requêtes voxels en tâche de fond
         if leaves_changed {
+            herocraft_common::prof_value!("lod.feuilles", self.current_leaves.len());
             let filter = self.active_filter;
             let base_radius = self.base_radius;
-            let gen = generator.clone();
+            let gen = {
+                herocraft_common::prof_scope!("lod::generator_clone");
+                generator.clone()
+            };
 
             // Détection de tous les patchs polygonaux nécessaires non encore en cache
             // (couvre à la fois les feuilles LodPatch et les patchs de secours immédiat des VoxelChunks)
@@ -223,6 +237,8 @@ impl PlanetLodManager {
                 .collect();
 
             if !missing_patch_keys.is_empty() {
+                herocraft_common::prof_scope!("lod::generate_missing_patches");
+                herocraft_common::prof_value!("lod.patchs_manquants_par_maj", missing_patch_keys.len());
                 let new_patches: Vec<(QuadNodeKey, PlanetMesh)> = self.thread_pool.install(|| {
                     missing_patch_keys
                         .into_par_iter()
@@ -252,6 +268,7 @@ impl PlanetLodManager {
             }
 
             // Déclenchement en arrière-plan des maillages de voxels 3D non encore calculés
+            herocraft_common::prof_scope!("lod::spawn_voxel_tasks");
             for leaf in &self.current_leaves {
                 if leaf.kind == QuadLeafKind::VoxelChunk {
                     if !self.voxel_cache.contains_key(&leaf.key) && self.pending_requests.insert(leaf.key) {
@@ -259,7 +276,9 @@ impl PlanetLodManager {
                         let task_gen = generator.clone();
                         let key = leaf.key;
                         let seed = self.current_seed;
+                        let queued_at = std::time::Instant::now();
                         self.thread_pool.spawn(move || {
+                            herocraft_common::prof_value!("lod.attente_file_voxel_us", queued_at.elapsed().as_micros());
                             let mesh = VoxelMeshBuilder::build_incurved_single_chunk_fast(
                                 &task_gen,
                                 key.face,
@@ -276,13 +295,16 @@ impl PlanetLodManager {
         }
 
         // Nettoyage périodique des caches
-        if self.lod_cache.len() > 1500 {
-            let active_keys: HashSet<_> = self.current_leaves.iter().map(|l| l.key).collect();
-            self.lod_cache.retain(|k, _| active_keys.contains(k) || k.level == 0);
-        }
-        if self.voxel_cache.len() > 200 {
-            let active_keys: HashSet<_> = self.current_leaves.iter().map(|l| l.key).collect();
-            self.voxel_cache.retain(|k, _| active_keys.contains(k));
+        {
+            herocraft_common::prof_scope!("lod::cache_cleanup");
+            if self.lod_cache.len() > 1500 {
+                let active_keys: HashSet<_> = self.current_leaves.iter().map(|l| l.key).collect();
+                self.lod_cache.retain(|k, _| active_keys.contains(k) || k.level == 0);
+            }
+            if self.voxel_cache.len() > 200 {
+                let active_keys: HashSet<_> = self.current_leaves.iter().map(|l| l.key).collect();
+                self.voxel_cache.retain(|k, _| active_keys.contains(k));
+            }
         }
 
         // Assemblage immédiat du maillage combiné
@@ -293,6 +315,7 @@ impl PlanetLodManager {
 
     /// Reconstruit le maillage combiné complet par copie mémoire directe sans réallocation
     pub fn rebuild_combined_mesh(&mut self) {
+        herocraft_common::prof_scope!("lod::rebuild_combined_mesh");
         let mut combined = std::mem::take(&mut self.combined_mesh);
         combined.vertices.clear();
         combined.indices.clear();
@@ -314,6 +337,7 @@ impl PlanetLodManager {
                 }
             }
         }
+        herocraft_common::prof_value!("lod.sommets_combines", combined.vertices.len());
         self.combined_mesh = combined;
     }
 }

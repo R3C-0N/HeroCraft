@@ -27,6 +27,10 @@ use ui::{UiAction, UiState};
 fn main() {
     std::env::set_var("RUST_LOG", "info");
     env_logger::init();
+    herocraft_common::profiler::init_main_thread();
+    if herocraft_common::profiler::is_enabled() {
+        info!("PROFILAGE ACTIF : rapport écrit dans ./profiling/ à la fermeture (ou avec [F9]).");
+    }
 
     info!("==========================================================");
     info!("   HeroCraft — Moteur Planétaire QuadTree LOD (Rust / WGPU) ");
@@ -108,6 +112,7 @@ fn main() {
                 match event {
                     WindowEvent::CloseRequested => {
                         let _ = chunk_cache.flush_dirty();
+                        write_profile_report();
                         target.exit();
                     }
 
@@ -235,6 +240,9 @@ fn main() {
                                             if camera.target_distance <= 25.0 { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
                                         );
                                     }
+                                    KeyCode::F9 => {
+                                        write_profile_report();
+                                    }
                                     KeyCode::KeyR => {
                                         camera.reset();
                                         info!("Vue de la caméra réinitialisée.");
@@ -286,6 +294,7 @@ fn main() {
                     }
 
                     WindowEvent::RedrawRequested => {
+                        herocraft_common::prof_scope!("frame" => frame_guard);
                         let now = Instant::now();
                         let dt = now.duration_since(last_frame_time).as_secs_f32();
                         last_frame_time = now;
@@ -302,14 +311,17 @@ fn main() {
 
                         // Mise à jour de la caméra uniquement si le menu n'est pas ouvert
                         if !ui_state.is_settings_open {
+                            herocraft_common::prof_scope!("frame::camera_update");
                             camera.update(dt, &generator);
                         }
                         state.update_camera(&camera, &ui_state.lighting_settings, &ui_state.cloud_settings);
 
                         // Mise à jour adaptative du QuadTree LOD
+                        herocraft_common::prof_scope!("frame::lod_and_upload" => lod_guard);
                         if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, dt, None) {
                             state.update_mesh(&lod_manager.combined_mesh);
                         }
+                        drop(lod_guard);
 
                         // 1. Mise à jour de l'interface egui
                         let is_ground = camera.distance <= 25.0;
@@ -317,6 +329,7 @@ fn main() {
 
                         // 2. Traitement des actions déclenchées par les boutons egui
                         if let Some(action) = maybe_action {
+                            herocraft_common::prof_scope!("frame::ui_action");
                             match action {
                                 UiAction::ResumeGame => {
                                     ui_state.set_settings_open(false);
@@ -325,6 +338,7 @@ fn main() {
                                 UiAction::QuitGame => {
                                     let _ = chunk_cache.flush_dirty();
                                     info!("Bouton cliqué : Sauvegarde des chunks et fermeture du jeu.");
+                                    write_profile_report();
                                     target.exit();
                                 }
                                 UiAction::ToggleVsync => {
@@ -391,7 +405,9 @@ fn main() {
                         }
 
                         // 3. Tessellation egui
+                        herocraft_common::prof_scope!("frame::egui_tessellate" => tess_guard);
                         let paint_jobs = ui_state.ctx.tessellate(full_output.shapes, ui_state.scale_factor);
+                        drop(tess_guard);
                         let screen_descriptor = egui_wgpu::ScreenDescriptor {
                             size_in_pixels: [state.size.width, state.size.height],
                             pixels_per_point: ui_state.scale_factor,
@@ -415,10 +431,14 @@ fn main() {
                             if let Some(target_dur) = min_duration {
                                 let frame_elapsed = last_frame_time.elapsed();
                                 if frame_elapsed < target_dur {
+                                    herocraft_common::prof_scope!("frame::fps_limiter_sleep");
                                     std::thread::sleep(target_dur - frame_elapsed);
                                 }
                             }
                         }
+
+                        drop(frame_guard);
+                        herocraft_common::profiler::frame_mark();
                     }
 
                     _ => {}
@@ -432,4 +452,11 @@ fn main() {
             _ => {}
         }
     }).expect("Erreur dans la boucle d'événements");
+}
+
+/// Écrit le rapport de profilage (no-op sans la feature cargo `profiling`)
+fn write_profile_report() {
+    if let Some(path) = herocraft_common::profiler::write_report() {
+        info!("Rapport de profilage écrit : {}", path.display());
+    }
 }

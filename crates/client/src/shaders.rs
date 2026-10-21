@@ -9,6 +9,7 @@ const COMMON_WGSL: &str = include_str!("common.wgsl");
 
 /// Assemble un shader WGSL et ses imports en un module naga (message d'erreur lisible sinon)
 pub fn compose(source: &str, file_path: &str) -> Result<naga::Module, String> {
+    herocraft_common::prof_scope!("render::shaders::compose");
     let mut composer = Composer::default();
     let result = composer
         .add_composable_module(ComposableModuleDescriptor {

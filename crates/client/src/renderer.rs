@@ -94,6 +94,7 @@ pub fn compute_moon_data(time: f32, sun_dir: glam::Vec3) -> (glam::Vec3, f32) {
 
 impl State {
     pub async fn new(window: Arc<Window>, planet_mesh: &PlanetMesh, _ui_state: &UiState) -> Self {
+        herocraft_common::prof_scope!("render::State::new");
         let size = window.inner_size();
 
         // 1. Instance WGPU
@@ -118,6 +119,11 @@ impl State {
             .expect("Aucun adaptateur GPU compatible trouvé");
 
         log::info!("Adaptateur WGPU sélectionné : {:?}", adapter.get_info().name);
+        let adapter_info = adapter.get_info();
+        herocraft_common::profiler::set_meta(
+            "gpu",
+            format!("{} ({:?}, {:?}, pilote {} {})", adapter_info.name, adapter_info.backend, adapter_info.device_type, adapter_info.driver, adapter_info.driver_info),
+        );
 
         // 4. Device et Queue
         let adapter_limits = adapter.limits();
@@ -170,6 +176,7 @@ impl State {
 
         let present_mode = vsync_mode;
         log::info!("Mode de présentation WGPU initial (V-Sync) : {:?}", present_mode);
+        herocraft_common::profiler::set_meta("present_mode_initial", format!("{:?}", present_mode));
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -247,6 +254,7 @@ impl State {
             1
         };
         log::info!("Anti-Aliasing MSAA 4x : {} (sample_count = {})", sample_count == 4, sample_count);
+        herocraft_common::profiler::set_meta("msaa_sample_count", sample_count.to_string());
 
         let (depth_texture, depth_view) = Self::create_depth_texture(&device, &config, sample_count);
         let (msaa_color_texture, msaa_color_view) = match Self::create_msaa_color_texture(&device, &config, sample_count) {
@@ -526,6 +534,7 @@ impl State {
 
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        herocraft_common::prof_scope!("render::resize");
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
             self.config.width = new_size.width;
@@ -556,10 +565,12 @@ impl State {
             self.config.present_mode = target_mode;
             self.surface.configure(&self.device, &self.config);
             log::info!("Mode de présentation WGPU mis à jour : {:?}", target_mode);
+            herocraft_common::profiler::set_meta("present_mode_final", format!("{:?}", target_mode));
         }
     }
 
     pub fn update_camera(&mut self, camera: &OrbitCamera, lighting: &LightingSettings, clouds: &CloudSettings) {
+        herocraft_common::prof_scope!("render::update_camera");
         let now = std::time::Instant::now();
         let dt = now.duration_since(self.last_uniform_time).as_secs_f32();
         self.last_uniform_time = now;
@@ -610,6 +621,7 @@ impl State {
 
     #[allow(dead_code)]
     pub fn update_mesh(&mut self, mesh: &PlanetMesh) {
+        herocraft_common::prof_scope!("render::update_mesh");
         let max_buf_size = self.device.limits().max_buffer_size;
 
         if mesh.vertices.len() > self.vertex_buffer_capacity {
@@ -631,6 +643,7 @@ impl State {
                 mapped_at_creation: false,
             });
         }
+        herocraft_common::prof_value!("render.upload_octets", mesh.vertices.len() * std::mem::size_of::<PlanetVertex>() + mesh.indices.len() * 4);
         if !mesh.vertices.is_empty() && self.vertex_buffer_capacity > 0 {
             let copy_count = mesh.vertices.len().min(self.vertex_buffer_capacity);
             let vertex_bytes = bytemuck::cast_slice(&mesh.vertices[..copy_count]);
@@ -667,6 +680,7 @@ impl State {
     }
 
     pub fn update_cloud_mesh(&mut self, base_radius: f32, seed: u64) {
+        herocraft_common::prof_scope!("render::update_cloud_mesh");
         use wgpu::util::DeviceExt;
         let cloud_mesh = crate::cloud_mesh::CloudMeshGenerator::generate_cloud_mesh(base_radius, seed);
         self.cloud_vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -688,11 +702,19 @@ impl State {
         screen_descriptor: &egui_wgpu::ScreenDescriptor,
         textures_delta: &egui::TexturesDelta,
     ) -> Result<(), wgpu::SurfaceError> {
-        for (id, delta) in &textures_delta.set {
-            self.egui_renderer.update_texture(&self.device, &self.queue, *id, delta);
+        herocraft_common::prof_scope!("render::render");
+        {
+            herocraft_common::prof_scope!("render::egui_textures");
+            for (id, delta) in &textures_delta.set {
+                self.egui_renderer.update_texture(&self.device, &self.queue, *id, delta);
+            }
         }
 
-        let output = self.surface.get_current_texture()?;
+        // Bloque si le GPU est en retard ou en attente de V-Sync
+        let output = {
+            herocraft_common::prof_scope!("render::acquire_frame");
+            self.surface.get_current_texture()?
+        };
         let swapchain_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -705,6 +727,7 @@ impl State {
 
         // 1. Passe 3D (Ciel étoilé + Soleil + Halo atmosphérique + Planète & Voxels avec MSAA 4x si supporté)
         {
+            herocraft_common::prof_scope!("render::encode_3d_pass");
             let (color_view, resolve_target, store_op) = if self.sample_count > 1 {
                 (
                     self.msaa_color_view.as_ref().unwrap(),
@@ -771,15 +794,19 @@ impl State {
         }
 
         // 2. Passe 2D Interface Utilisateur egui (sample_count = 1 sur la swapchain résolue)
-        self.egui_renderer.update_buffers(
-            &self.device,
-            &self.queue,
-            &mut encoder,
-            paint_jobs,
-            screen_descriptor,
-        );
+        {
+            herocraft_common::prof_scope!("render::egui_update_buffers");
+            self.egui_renderer.update_buffers(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                paint_jobs,
+                screen_descriptor,
+            );
+        }
 
         {
+            herocraft_common::prof_scope!("render::encode_egui_pass");
             let mut ui_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("egui Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -798,8 +825,14 @@ impl State {
             self.egui_renderer.render(&mut ui_pass, paint_jobs, screen_descriptor);
         }
 
-        self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
+        {
+            herocraft_common::prof_scope!("render::submit");
+            self.queue.submit(std::iter::once(encoder.finish()));
+        }
+        {
+            herocraft_common::prof_scope!("render::present");
+            output.present();
+        }
 
         for id in &textures_delta.free {
             self.egui_renderer.free_texture(id);

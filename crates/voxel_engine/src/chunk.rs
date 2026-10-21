@@ -40,6 +40,7 @@ impl ChunkData {
 
     /// Compression RLE (Run-Length Encoding) ultra-rapide pour l'envoi réseau
     pub fn compress_rle(&self) -> Vec<u8> {
+        herocraft_common::prof_scope!("voxel::chunk::compress_rle");
         let mut compressed = Vec::with_capacity(1024);
         let mut current_id = self.voxels[0];
         let mut run_length: u16 = 0;
@@ -61,6 +62,7 @@ impl ChunkData {
 
     /// Décompression RLE
     pub fn decompress_rle(bytes: &[u8]) -> Result<Self, &'static str> {
+        herocraft_common::prof_scope!("voxel::chunk::decompress_rle");
         let mut chunk = Self::new_empty();
         let mut idx = 0;
         let mut byte_cursor = 0;

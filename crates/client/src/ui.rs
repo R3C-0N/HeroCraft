@@ -140,6 +140,7 @@ pub struct UiState {
 
 impl UiState {
     pub fn new(initial_seed: u64) -> Self {
+        herocraft_common::prof_scope!("ui::UiState::new");
         let ctx = egui::Context::default();
         Self::apply_custom_theme(&ctx);
 
@@ -242,6 +243,7 @@ impl UiState {
 
     /// Transmet les événements de fenêtre Winit à egui
     pub fn handle_event(&mut self, _window: &Window, event: &WindowEvent) {
+        herocraft_common::prof_scope!("ui::handle_event");
         let ppp = self.scale_factor.max(0.1_f32);
 
         match event {
@@ -289,6 +291,7 @@ impl UiState {
 
     /// Construit l'interface graphique immédiate pour la frame courante
     pub fn update_ui(&mut self, camera_distance: f32, is_ground: bool) -> (egui::FullOutput, Option<UiAction>) {
+        herocraft_common::prof_scope!("ui::update_ui");
         let mut raw_input = std::mem::take(&mut self.raw_input);
         let ppp = self.scale_factor.max(0.1_f32);
         let logical_width = self.screen_width / ppp;

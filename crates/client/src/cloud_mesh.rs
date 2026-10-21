@@ -104,6 +104,7 @@ impl CloudMeshGenerator {
     pub const MAX_RADIUS: f32 = 7.3;
 
     pub fn generate_cloud_mesh(base_radius: f32, seed: u64) -> CloudMesh {
+        herocraft_common::prof_scope!("clouds::generate_cloud_mesh");
         let r_mid = base_radius + (Self::CLOUD_ALTITUDE_BOT + Self::CLOUD_ALTITUDE_TOP) * 0.5;
         let mut mesh = CloudMesh::default();
 

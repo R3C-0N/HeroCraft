@@ -115,6 +115,7 @@ impl TectonicSimulation {
     /// - 3 Moyennes plaques
     /// - 8 Petites plaques
     pub fn new(seed: u64) -> Self {
+        herocraft_common::prof_scope!("world::TectonicSimulation::new");
         let count = 15;
         let mut plates = Vec::with_capacity(count);
         let mut rng = PlateRng::new(seed);

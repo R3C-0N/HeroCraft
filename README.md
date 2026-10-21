@@ -32,6 +32,12 @@ cargo run --bin herocraft_client
 - **Molette de la souris (Scroll)** : Zoom avant et dézoom arrière dynamique.
 - **Raccourcis clavier** : Touches `[G]` (nouvelle graine), `[Espace]` (auto-rotation), `[R]` (reset caméra), `[Échap]` (quitter).
 
+### Profiler les performances :
+```bash
+cargo run --release --features profiling --bin herocraft_client
+```
+Le rapport est écrit dans `./profiling/` à la fermeture (ou avec `[F9]`). Voir [docs/PROFILAGE.md](docs/PROFILAGE.md).
+
 ### Lancer les tests unitaires :
 ```bash
 cargo test

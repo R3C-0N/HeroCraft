@@ -54,6 +54,7 @@ pub struct PlanetWorldGenerator {
 
 impl PlanetWorldGenerator {
     pub fn new(planet: PlanetDescriptor) -> Self {
+        herocraft_common::prof_scope!("world::PlanetWorldGenerator::new");
         let tectonics = TectonicSimulation::new(planet.seed);
         let ocean_currents = OceanicCurrentSimulation::new(planet.seed);
         Self {
@@ -65,6 +66,7 @@ impl PlanetWorldGenerator {
 
     /// Génère un chunk voxel complet sur une face de la planète
     pub fn generate_chunk(&self, coord: &PlanetChunkCoord) -> ChunkData {
+        herocraft_common::prof_scope!("world::generate_chunk");
         let mut chunk = ChunkData::new_empty();
 
         let face_chunks_count = 32.0;
@@ -167,6 +169,7 @@ impl PlanetWorldGenerator {
     /// Calcule la valeur continentale brute sur la sphère
     /// Continents massifs ancrés au cœur des plaques continentales, entourés de leurs marges océaniques
     pub fn sample_continental_value(&self, dir: DVec3) -> f64 {
+        herocraft_common::prof_scope!("world::sample_continental_value");
         let seed = self.planet.seed;
 
         // 1. Déformation de domaine multi-échelle : casse la géométrie sphérique des plaques
@@ -216,6 +219,7 @@ impl PlanetWorldGenerator {
 
     /// Fonction de relief procédurale planétaire garantissant au moins 40-50% d'océans et mers
     pub fn sample_elevation(&self, dir: DVec3, lat: f64, _lon: f64) -> f64 {
+        herocraft_common::prof_scope!("world::sample_elevation");
         let continental = self.sample_continental_value(dir);
         let sea_threshold = 0.01;
         let tectonic_sample = self.tectonics.sample(dir);
@@ -279,6 +283,7 @@ impl PlanetWorldGenerator {
 
     /// Détermine le biome selon la latitude, l'altitude et la valeur continentale
     pub fn determine_biome(&self, lat: f64, elevation: f64, dir: DVec3) -> BiomeType {
+        herocraft_common::prof_scope!("world::determine_biome");
         // 1. Calottes glaciaires et banquises permanentes aux pôles (Pôle Nord et Pôle Sud)
         // Calibrées à ~73° de latitude pour un équilibre parfait entre vue de profil et vue du dessus
         let polar_noise = fbm_3d(dir * 3.2, 2, 2.0, 0.50, self.planet.seed.wrapping_add(3333)) * 0.08;

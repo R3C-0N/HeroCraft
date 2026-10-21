@@ -272,6 +272,7 @@ impl PlanetMesh {
         grid_resolution: usize,
         filter: herocraft_world::VisualizationFilter,
     ) -> Self {
+        herocraft_common::prof_scope!("mesh::generate_lod_patch");
         let n = grid_resolution.max(2);
         let mut vertices: Vec<PlanetVertex> = Vec::with_capacity(n * n * 8);
         let mut indices: Vec<u32> = Vec::with_capacity(n * n * 12);
@@ -311,11 +312,15 @@ impl PlanetMesh {
 
         // Pré-échantillonnage de la grille n x n
         let mut grid_cells = Vec::with_capacity(n * n);
-        for j in 0..n {
-            for i in 0..n {
-                grid_cells.push(sample_cell(i as i32, j as i32));
+        {
+            herocraft_common::prof_scope!("mesh::lod_patch::sampling");
+            for j in 0..n {
+                for i in 0..n {
+                    grid_cells.push(sample_cell(i as i32, j as i32));
+                }
             }
         }
+        herocraft_common::prof_scope!("mesh::lod_patch::geometry");
 
         // Helper pour ajouter un quad (4 sommets + 2 triangles CCW)
         let add_quad = |verts: &mut Vec<PlanetVertex>, inds: &mut Vec<u32>,
