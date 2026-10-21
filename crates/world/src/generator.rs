@@ -64,6 +64,18 @@ impl PlanetWorldGenerator {
         }
     }
 
+    /// Renvoie le rayon de base effectif de la planète
+    #[inline]
+    pub fn base_radius(&self) -> f64 {
+        self.planet.base_radius()
+    }
+
+    /// Renvoie le facteur d'échelle global de la planète
+    #[inline]
+    pub fn scale(&self) -> f64 {
+        self.planet.scale
+    }
+
     /// Génère un chunk voxel complet sur une face de la planète
     pub fn generate_chunk(&self, coord: &PlanetChunkCoord) -> ChunkData {
         herocraft_common::prof_scope!("world::generate_chunk");

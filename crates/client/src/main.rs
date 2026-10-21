@@ -70,13 +70,16 @@ fn main() {
     let storage = herocraft_voxel_engine::ChunkStorage::new(&save_dir).ok();
     let mut chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
 
+    // Rayon de base de la planète déterminé par le descripteur (REFERENCE_BASE_RADIUS * scale)
+    let base_radius = generator.base_radius() as f32;
+
     // Initialisation de la caméra multi-échelle unifiée (Sol FPS <-> TPS <-> Satellite)
-    let mut camera = OrbitCamera::new(165.0, 25.0, &generator);
+    let mut camera = OrbitCamera::new(base_radius * 6.6, base_radius, &generator);
     let size = window.inner_size();
     camera.aspect = size.width as f32 / size.height.max(1) as f32;
 
     // Initialisation du gestionnaire de LOD QuadTree avec transitions douces hybrides
-    let mut lod_manager = PlanetLodManager::new(25.0, current_seed);
+    let mut lod_manager = PlanetLodManager::new(base_radius, current_seed);
     lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
     lod_manager.rebuild_combined_mesh();
     info!(
@@ -225,7 +228,7 @@ fn main() {
                                 // Actions ponctuelles déclenchées à l'appui
                                 _ if is_pressed => match key_code {
                                     KeyCode::Space => {
-                                        if camera.distance <= 25.0 {
+                                        if camera.distance <= camera.base_radius {
                                             camera.jump_requested = true;
                                         } else {
                                             camera.auto_rotate = !camera.auto_rotate;
@@ -237,7 +240,7 @@ fn main() {
                                         camera.toggle_view(&generator);
                                         info!(
                                             "Raccourci [F] : Transition vers {}",
-                                            if camera.target_distance <= 25.0 { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
+                                            if camera.target_distance <= camera.base_radius { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
                                         );
                                     }
                                     KeyCode::F9 => {
@@ -324,7 +327,7 @@ fn main() {
                         drop(lod_guard);
 
                         // 1. Mise à jour de l'interface egui
-                        let is_ground = camera.distance <= 25.0;
+                        let is_ground = camera.distance <= camera.base_radius;
                         let (full_output, maybe_action) = ui_state.update_ui(camera.distance, is_ground);
 
                         // 2. Traitement des actions déclenchées par les boutons egui
@@ -382,7 +385,7 @@ fn main() {
                                     camera.toggle_view(&generator);
                                     info!(
                                         "Bouton cliqué : Transition vers {}",
-                                        if camera.target_distance <= 25.0 { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
+                                        if camera.target_distance <= camera.base_radius { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
                                     );
                                 }
                                 UiAction::ToggleAutoRotate => {

@@ -75,6 +75,42 @@ impl PlanetFace {
         let v = (v_tan.atan() * inv_pi_4).clamp(-1.0, 1.0);
         (face, u, v)
     }
+
+    /// Projette une direction 3D quelconque sur le plan de cette face et renvoie ses coordonnées (u, v).
+    /// Renvoie `None` si la direction pointe dans le demi-espace arrière opposé à la normale de la face.
+    pub fn project_to_face_uv(&self, dir: DVec3) -> Option<(f64, f64)> {
+        let (u_tan, v_tan) = match self {
+            PlanetFace::PosX => {
+                if dir.x <= 1e-6 { return None; }
+                (-dir.z / dir.x, -dir.y / dir.x)
+            }
+            PlanetFace::NegX => {
+                if dir.x >= -1e-6 { return None; }
+                (-dir.z / dir.x, dir.y / dir.x)
+            }
+            PlanetFace::PosY => {
+                if dir.y <= 1e-6 { return None; }
+                (dir.x / dir.y, dir.z / dir.y)
+            }
+            PlanetFace::NegY => {
+                if dir.y >= -1e-6 { return None; }
+                (-dir.x / dir.y, dir.z / dir.y)
+            }
+            PlanetFace::PosZ => {
+                if dir.z <= 1e-6 { return None; }
+                (dir.x / dir.z, -dir.y / dir.z)
+            }
+            PlanetFace::NegZ => {
+                if dir.z >= -1e-6 { return None; }
+                (dir.x / dir.z, dir.y / dir.z)
+            }
+        };
+
+        let inv_pi_4 = 4.0 / std::f64::consts::PI;
+        let u = u_tan.atan() * inv_pi_4;
+        let v = v_tan.atan() * inv_pi_4;
+        Some((u, v))
+    }
 }
 
 /// Coordonnée d'un chunk sur la planète
@@ -165,6 +201,22 @@ mod tests {
                     let dir = face.uv_to_sphere_direction(u, v);
                     let (rec_face, rec_u, rec_v) = PlanetFace::sphere_direction_to_face_uv(dir);
                     assert_eq!(face, rec_face, "Face mismatch for u={}, v={}", u, v);
+                    assert!((u - rec_u).abs() < 1e-5, "u mismatch: {} vs {}", u, rec_u);
+                    assert!((v - rec_v).abs() < 1e-5, "v mismatch: {} vs {}", v, rec_v);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_project_to_face_uv() {
+        for &face in &PlanetFace::ALL {
+            for &u in &[-0.8, -0.2, 0.0, 0.4, 0.9] {
+                for &v in &[-0.7, -0.1, 0.0, 0.5, 0.85] {
+                    let dir = face.uv_to_sphere_direction(u, v);
+                    let res = face.project_to_face_uv(dir);
+                    assert!(res.is_some());
+                    let (rec_u, rec_v) = res.unwrap();
                     assert!((u - rec_u).abs() < 1e-5, "u mismatch: {} vs {}", u, rec_u);
                     assert!((v - rec_v).abs() < 1e-5, "v mismatch: {} vs {}", v, rec_v);
                 }

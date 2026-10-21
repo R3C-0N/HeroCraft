@@ -87,10 +87,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Normale sphérique continue idéale pour la surface de l'océan
     let n_sphere = normalize(in.world_pos);
 
-    // Facteur d'altitude orbitale : transition fluide entre vue au sol (alt < 3.0) et vue satellite (alt > 15.0)
+    // Facteur d'altitude orbitale : transition fluide entre vue au sol et vue satellite
+    let scale = camera.planet_radius / 25.0;
     let cam_dist = length(camera.camera_pos);
     let cam_alt = cam_dist - camera.planet_radius;
-    let orbit_factor = clamp((cam_alt - 3.0) / 12.0, 0.0, 1.0);
+    let alt_orbit_factor = clamp((cam_alt - 3.0 * scale) / (12.0 * scale), 0.0, 1.0);
+    // Au sol (FPS/TPS), lighting_params_ext.w vaut 1.0, ce qui garantit qu'on n'est pas en orbite
+    let orbit_factor = min(alt_orbit_factor, 1.0 - camera.lighting_params_ext.w);
 
     // Pour l'eau : en vue satellite, on lisse les facettes des polygones en interpolant vers la normale sphérique,
     // garantissant un reflet spéculaire pur, doux et sans polygone visible.
@@ -225,11 +228,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // 7. Brouillard atmosphérique de distance au sol (Ground Distance Fog)
     let dist = length(camera.camera_pos - in.world_pos);
-    let ground_proximity = clamp(1.0 - cam_alt / 8.0, 0.0, 1.0);
+    let ground_proximity = camera.lighting_params_ext.w;
 
     if (ground_proximity > 0.001) {
-        // Début du brouillard à 2.5 unités (~65 blocs), saturation douce à 8.0 unités
-        let fog_factor = clamp((dist - 2.5) / 5.5, 0.0, 1.0) * ground_proximity * fog_slider;
+        // Début du brouillard à 2.5 unités (~65 blocs) à l'échelle, saturation douce à 8.0 unités
+        let fog_factor = clamp((dist - 2.5 * scale) / (5.5 * scale), 0.0, 1.0) * ground_proximity * fog_slider;
 
         // Diffusion dorée/ambrée au coucher vers le soleil, pourpre à l'opposé
         let forward_scatter = pow(max(dot(view_dir, -l), 0.0), 3.0);

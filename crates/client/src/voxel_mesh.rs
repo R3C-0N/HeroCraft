@@ -284,24 +284,52 @@ impl VoxelMeshBuilder {
         let base_u = -1.0 + (chunk_x as f64) * chunk_span_uv;
         let base_v = -1.0 + (chunk_y as f64) * chunk_span_uv;
 
-        // Détection des limites d'élévation sur la colonne pour optimiser le nombre de couches à mailler
-        let corners = [
-            (0.0, 0.0),
-            (1.0, 0.0),
-            (0.0, 1.0),
-            (1.0, 1.0),
-            (0.5, 0.5),
-        ];
+        // Échantillonnage complet des 32x32 colonnes (1024 colonnes) :
+        // 1. Détermine avec une précision absolue les élévations min/max de tout le chunk
+        //    (évite toute troncature de couches sur les hauts pics ou arêtes aiguës)
+        // 2. Précalcule les couleurs de colonnes pour éviter de répéter le calcul du bruit
         let mut min_elev = f64::MAX;
         let mut max_elev = f64::MIN;
-        for &(du, dv) in &corners {
-            let u = base_u + du * chunk_span_uv;
-            let v = base_v + dv * chunk_span_uv;
+
+        // On inclut également les 4 coins extrêmes du chunk
+        for &(cu, cv) in &[(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)] {
+            let u = base_u + cu * chunk_span_uv;
+            let v = base_v + cv * chunk_span_uv;
             let dir = face.uv_to_sphere_direction(u, v);
             let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
             let e = generator.sample_elevation(dir, lat, lon);
             if e < min_elev { min_elev = e; }
             if e > max_elev { max_elev = e; }
+        }
+
+        let mut column_colors = vec![[0.0_f32; 4]; 32 * 32];
+        for cz in 0..32 {
+            herocraft_common::prof_scope!("voxel_mesh::column_colors_row");
+            for cx in 0..32 {
+                let u = base_u + (cx as f64 + 0.5) * voxel_span_uv;
+                let v = base_v + (cz as f64 + 0.5) * voxel_span_uv;
+                let dir = face.uv_to_sphere_direction(u, v);
+                let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
+                let raw_elevation = generator.sample_elevation(dir, lat, lon);
+                if raw_elevation < min_elev { min_elev = raw_elevation; }
+                if raw_elevation > max_elev { max_elev = raw_elevation; }
+
+                let biome = generator.determine_biome(lat, raw_elevation, dir);
+                let mut biome_color = PlanetMesh::relief_biome_color(biome, raw_elevation);
+
+                match filter {
+                    herocraft_world::VisualizationFilter::Standard => {}
+                    herocraft_world::VisualizationFilter::Tectonics => {
+                        let sample = generator.tectonics.sample(dir);
+                        biome_color = PlanetMesh::blend_tectonic_color(biome_color, &sample);
+                    }
+                    herocraft_world::VisualizationFilter::OceanCurrents => {
+                        let continental = generator.sample_continental_value(dir);
+                        biome_color = generator.ocean_currents.sample(dir, false, continental).color;
+                    }
+                }
+                column_colors[cz * 32 + cx] = biome_color;
+            }
         }
 
         // On inclut le niveau de la mer et une marge de sécurité
@@ -320,34 +348,6 @@ impl VoxelMeshBuilder {
             let r = base_radius + (global_y as f32) * altitude_scale;
             Vec3::new(dir.x as f32, dir.y as f32, dir.z as f32) * r
         };
-
-        // Précalcul des couleurs de colonnes 32x32 pour éviter de répéter l'échantillonnage de bruit sur chaque face
-        let mut column_colors = vec![[0.0_f32; 4]; 32 * 32];
-        for cz in 0..32 {
-            herocraft_common::prof_scope!("voxel_mesh::column_colors_row");
-            for cx in 0..32 {
-                let u = base_u + (cx as f64 + 0.5) * voxel_span_uv;
-                let v = base_v + (cz as f64 + 0.5) * voxel_span_uv;
-                let dir = face.uv_to_sphere_direction(u, v);
-                let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
-                let raw_elevation = generator.sample_elevation(dir, lat, lon);
-                let biome = generator.determine_biome(lat, raw_elevation, dir);
-                let mut biome_color = PlanetMesh::relief_biome_color(biome, raw_elevation);
-
-                match filter {
-                    herocraft_world::VisualizationFilter::Standard => {}
-                    herocraft_world::VisualizationFilter::Tectonics => {
-                        let sample = generator.tectonics.sample(dir);
-                        biome_color = PlanetMesh::blend_tectonic_color(biome_color, &sample);
-                    }
-                    herocraft_world::VisualizationFilter::OceanCurrents => {
-                        let continental = generator.sample_continental_value(dir);
-                        biome_color = generator.ocean_currents.sample(dir, false, continental).color;
-                    }
-                }
-                column_colors[cz * 32 + cx] = biome_color;
-            }
-        }
 
         let get_color = |gx: i32, gz: i32, block: BlockId, is_top: bool| -> [f32; 4] {
             let idx = (gz.clamp(0, 31) as usize) * 32 + (gx.clamp(0, 31) as usize);

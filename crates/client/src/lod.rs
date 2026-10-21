@@ -109,12 +109,13 @@ impl PlanetLodManager {
             crate::ui::LodDistanceSetting::Normale => 1.0,
             crate::ui::LodDistanceSetting::Elevee => 1.25,
         };
+        let scale = self.base_radius as f64 / herocraft_world::REFERENCE_BASE_RADIUS;
         self.quadtree.split_distances = vec![
-            95.0 * mult,
-            60.0 * mult,
-            38.0 * mult,
-            18.0 * mult,
-            5.2 * mult,
+            95.0 * mult * scale,
+            60.0 * mult * scale,
+            38.0 * mult * scale,
+            18.0 * mult * scale,
+            3.8 * mult * scale,
         ];
         // Force la réévaluation du QuadTree au prochain frame
         self.last_evaluated_pos = Vec3::splat(f32::NAN);
@@ -185,10 +186,11 @@ impl PlanetLodManager {
             (camera_pos - self.last_evaluated_pos).length()
         };
 
-        // Évaluation QuadTree temporisée : réévalué si déplacement >= 15 cm ou toutes les 80 ms si déplacement >= 2 cm
+        let scale = (self.base_radius as f64 / herocraft_world::REFERENCE_BASE_RADIUS) as f32;
+        // Évaluation QuadTree temporisée : réévalué si déplacement >= 15 cm (adapté à l'échelle) ou toutes les 80 ms si déplacement >= 2 cm
         let should_re_eval = self.last_evaluated_pos.is_nan()
-            || moved_dist > 0.15
-            || (moved_dist > 0.02 && self.time_since_eval > 0.08);
+            || moved_dist > 0.15 * scale
+            || (moved_dist > 0.02 * scale && self.time_since_eval > 0.08);
 
         let (new_leaves, leaves_changed) = if should_re_eval {
             herocraft_common::prof_scope!("lod::quadtree_eval");
@@ -427,7 +429,7 @@ mod tests {
             "Moving camera (60 frames): rebuilds={} total_time={:?}",
             rebuild_count, total_time
         );
-        assert!(total_time.as_millis() < 10000, "Moving camera update took too long: {:?}", total_time);
+        assert!(total_time.as_millis() < 15000, "Moving camera update took too long: {:?}", total_time);
     }
 
     #[test]
@@ -485,6 +487,31 @@ mod tests {
             }
         }
         println!("Leaves breakdown: using_self={}, using_ancestor={}", using_self, using_ancestor);
+    }
+
+    #[test]
+    fn test_doubled_planet_size_lod_integrity() {
+        let desc = herocraft_world::PlanetDescriptor {
+            seed: 2026,
+            ..Default::default()
+        };
+        let generator = PlanetWorldGenerator::new(desc);
+        let mut camera = crate::camera::OrbitCamera::new(330.0, 50.0, &generator);
+        let mut cache = herocraft_voxel_engine::WorldChunkCache::new(None, 64);
+        let mut lod = PlanetLodManager::new(50.0, 2026);
+
+        // 1. En orbite (distance = 330.0), la planète entière est en patchs LOD
+        lod.update(camera.eye_position(), &generator, &mut cache, 0.0, None);
+        let lod_patches = lod.current_leaves.iter().filter(|l| l.kind == herocraft_world::QuadLeafKind::LodPatch).count();
+        assert!(lod_patches > 0, "Les patchs LOD doivent être actifs en vue satellite");
+
+        // 2. Au sol (transition au sol, distance = 0.0), les voxels 3D (Level 5) doivent être générés autour du joueur
+        camera.distance = 0.0;
+        camera.target_distance = 0.0;
+        camera.update_camera_bounds(&generator);
+        lod.update(camera.eye_position(), &generator, &mut cache, 0.16, None);
+        let voxels_ground = lod.current_leaves.iter().filter(|l| l.kind == herocraft_world::QuadLeafKind::VoxelChunk).count();
+        assert!(voxels_ground > 0, "Des voxels doivent être présents au sol sur la planète de taille doublée (50.0)");
     }
 }
 

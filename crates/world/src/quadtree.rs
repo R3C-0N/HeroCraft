@@ -193,13 +193,15 @@ impl PlanetQuadTree {
         // Level 1 (quadrant)     : split si distance < 60.0
         // Level 2 (région)       : split si distance < 38.0
         // Level 3 (zone)         : split si distance < 18.0
-        // Level 4 (local)        : split si distance < 5.2 (passage aux voxels 3D Level 5 locaux)
+        // Level 4 (local)        : split si distance < 3.8 (passage aux voxels 3D Level 5 locaux au sol)
+        // Échelle proportionnelle au rayon de la planète par rapport au rayon de référence
+        let scale = base_radius / crate::cubed_sphere::REFERENCE_BASE_RADIUS;
         let split_distances = vec![
-            95.0,
-            60.0,
-            38.0,
-            18.0,
-            5.2,
+            95.0 * scale,
+            60.0 * scale,
+            38.0 * scale,
+            18.0 * scale,
+            3.8 * scale,
         ];
 
         Self {
@@ -254,15 +256,33 @@ impl PlanetQuadTree {
         let center_dir = node.center_direction();
         let altitude_scale = self.base_radius * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0);
 
-        // Calcule le rayon réel de surface du nœud (tenant compte du relief montagneux ou niveau de la mer)
-        let node_radius = if let Some(gen) = generator {
-            let (lat, lon) = unit_sphere_to_lat_lon(center_dir);
-            let elev = gen.sample_elevation(center_dir, lat, lon);
+        let cam_r = camera_pos.length();
+        let cam_dir = if cam_r > 1e-6 {
+            camera_pos / cam_r
+        } else {
+            DVec3::Y
+        };
+
+        // Calcule le point de surface le plus proche sur le nœud par rapport à la caméra.
+        // Mesurer la distance au point le plus proche (au lieu d'un centre unique) évite
+        // qu'un dénivelé montagneux vertical important (jusqu'à 10 m de rayon supplémentaire)
+        // n'interrompe prématurément la subdivision en niveau 5 voxels et ne crée un trou béant.
+        let (u_min, u_max, v_min, v_max) = node.uv_bounds();
+        let (closest_u, closest_v) = if let Some((cam_u, cam_v)) = node.face.project_to_face_uv(cam_dir) {
+            (cam_u.clamp(u_min, u_max), cam_v.clamp(v_min, v_max))
+        } else {
+            ((u_min + u_max) * 0.5, (v_min + v_max) * 0.5)
+        };
+        let closest_dir = node.face.uv_to_sphere_direction(closest_u, closest_v);
+
+        // Calcule le rayon réel de surface au point le plus proche (tenant compte du relief montagneux ou de la mer)
+        let surface_radius = if let Some(gen) = generator {
+            let (lat, lon) = unit_sphere_to_lat_lon(closest_dir);
+            let elev = gen.sample_elevation(closest_dir, lat, lon);
             let eff_elev = elev.max(SEA_LEVEL_BLOCKS);
             self.base_radius + eff_elev * altitude_scale
         } else {
             let sea_r = self.base_radius + 100.0 * altitude_scale;
-            let cam_r = camera_pos.length();
             if cam_r >= self.base_radius && cam_r <= self.base_radius + 400.0 * altitude_scale {
                 cam_r
             } else {
@@ -270,22 +290,22 @@ impl PlanetQuadTree {
             }
         };
 
-        let center_pos = center_dir * node_radius;
-        let dist_to_node = (camera_pos - center_pos).length();
+        let closest_surface_pos = closest_dir * surface_radius;
+        let dist_to_node = (camera_pos - closest_surface_pos).length();
 
         // 1. Culling d'horizon planétaire : si le nœud se trouve sur l'hémisphère arrière masqué
         // par la courbure de la planète, on ne le subdivise pas au-delà du niveau 1
-        let cam_r = camera_pos.length();
         let is_behind_horizon = if cam_r < self.base_radius * 2.2 && node.level >= 1 {
-            let cam_dir = camera_pos / cam_r;
-            center_dir.dot(cam_dir) < -0.22
+            closest_dir.dot(cam_dir) < -0.22
         } else {
             false
         };
 
         // 2. Frustum Culling (Cône de vision) :
-        // Rayon de la sphère englobant le nœud avec marge de sécurité
-        let bounding_radius = node_radius * (1.85 / (1 << node.level) as f64) + 0.8;
+        // Rayon de la sphère englobant le nœud avec marge pour le relief montagneux maximal
+        let max_mountain_r = self.base_radius + 360.0 * altitude_scale;
+        let center_pos = center_dir * surface_radius;
+        let bounding_radius = max_mountain_r * (1.85 / (1 << node.level) as f64) + 1.5;
         let is_outside_frustum = if let Some(frust) = frustum {
             node.level >= 1 && !frust.intersects_sphere(center_pos, bounding_radius)
         } else {
@@ -423,5 +443,50 @@ mod tests {
         let leaves_gen = qt.evaluate_with_generator(cam_ground, Some(&gen));
         let voxels_gen = leaves_gen.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).count();
         assert!(voxels_gen > 0, "Les voxels doivent être générés au sol avec le générateur planétaire");
+    }
+
+    #[test]
+    fn test_high_mountain_subdivision_without_holes() {
+        let qt = PlanetQuadTree::new(25.0);
+        let desc = crate::PlanetDescriptor::default();
+        let gen = PlanetWorldGenerator::new(desc);
+
+        // Recherche d'un point culminant (haute montagne > 300 blocs)
+        let mut highest_elev = 0.0;
+        let mut peak_dir = DVec3::Z;
+
+        for step_u in -10..=10 {
+            for step_v in -10..=10 {
+                let u = (step_u as f64) * 0.08;
+                let v = (step_v as f64) * 0.08;
+                let dir = PlanetFace::PosZ.uv_to_sphere_direction(u, v);
+                let (lat, lon) = unit_sphere_to_lat_lon(dir);
+                let e = gen.sample_elevation(dir, lat, lon);
+                if e > highest_elev {
+                    highest_elev = e;
+                    peak_dir = dir;
+                }
+            }
+        }
+
+        println!("Highest found elevation on PosZ: {:.1} blocks", highest_elev);
+        let altitude_scale = qt.base_radius * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0);
+        let peak_r = qt.base_radius + highest_elev * altitude_scale;
+        let cam_peak = peak_dir * (peak_r + 0.065);
+
+        let leaves = qt.evaluate_with_generator(cam_peak, Some(&gen));
+        let voxel_leaves: Vec<_> = leaves.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).collect();
+        assert!(!voxel_leaves.is_empty(), "Au sommet de la montagne, des VoxelChunks doivent être présents");
+
+        // Vérifier que le chunk sous les pieds de la caméra est bien un VoxelChunk
+        let (cam_face, cam_u, cam_v) = PlanetFace::sphere_direction_to_face_uv(peak_dir);
+        let found_under_camera = voxel_leaves.iter().any(|l| {
+            if l.key.face != cam_face {
+                return false;
+            }
+            let (u0, u1, v0, v1) = l.key.uv_bounds();
+            cam_u >= u0 && cam_u <= u1 && cam_v >= v0 && cam_v <= v1
+        });
+        assert!(found_under_camera, "Le chunk directement sous le joueur au sommet de la montagne doit être maillé en voxels (pas de trou)");
     }
 }
