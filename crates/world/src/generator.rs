@@ -2,7 +2,7 @@ use crate::cubed_sphere::{base_solar_temperature, unit_sphere_to_lat_lon, Planet
 use crate::ocean_currents::OceanicCurrentSimulation;
 use crate::tectonics::TectonicSimulation;
 use glam::DVec3;
-use herocraft_common::{BlockId, PlanetChunkCoord};
+use herocraft_common::{BlockId, PlanetChunkCoord, PlanetFace};
 use herocraft_voxel_engine::{ChunkData, CHUNK_SIZE};
 
 /// Mode de filtre de visualisation pour la planète
@@ -45,6 +45,15 @@ impl BiomeType {
     }
 }
 
+/// Échantillon de terrain d'une colonne de voxels (indépendant de la couche d'altitude)
+#[derive(Debug, Clone, Copy)]
+pub struct ColumnSample {
+    pub dir: DVec3,
+    pub lat: f64,
+    pub elevation: f64,
+    pub biome: BiomeType,
+}
+
 #[derive(Debug, Clone)]
 pub struct PlanetWorldGenerator {
     pub planet: PlanetDescriptor,
@@ -78,15 +87,45 @@ impl PlanetWorldGenerator {
 
     /// Génère un chunk voxel complet sur une face de la planète
     pub fn generate_chunk(&self, coord: &PlanetChunkCoord) -> ChunkData {
+        let columns = self.sample_chunk_columns(coord.face, coord.x, coord.y, 0);
+        self.generate_chunk_from_columns(coord, &columns, 0)
+    }
+
+    /// Échantillonne l'élévation et le biome d'une colonne de voxels
+    pub fn sample_column(&self, face: PlanetFace, u: f64, v: f64) -> ColumnSample {
+        let dir = face.uv_to_sphere_direction(u, v);
+        let (lat, lon) = unit_sphere_to_lat_lon(dir);
+        let elevation = self.sample_elevation(dir, lat, lon);
+        let biome = self.determine_biome(lat, elevation, dir);
+        ColumnSample { dir, lat, elevation, biome }
+    }
+
+    /// Échantillonne les colonnes d'un chunk avec une bordure de `border` colonnes de chaque côté.
+    /// Grille de côté `CHUNK_SIZE + 2 * border`, indexée par `(z + border) * côté + (x + border)`.
+    /// Ces colonnes sont communes à toutes les couches d'altitude du chunk.
+    pub fn sample_chunk_columns(&self, face: PlanetFace, chunk_x: i32, chunk_y: i32, border: i32) -> Vec<ColumnSample> {
+        herocraft_common::prof_scope!("world::sample_chunk_columns");
+        let chunk_span_uv = 2.0 / 32.0;
+        let voxel_span_uv = chunk_span_uv / (CHUNK_SIZE as f64);
+        let base_u = -1.0 + (chunk_x as f64) * chunk_span_uv;
+        let base_v = -1.0 + (chunk_y as f64) * chunk_span_uv;
+        let side = CHUNK_SIZE as i32 + 2 * border;
+        let mut columns = Vec::with_capacity((side * side) as usize);
+        for z in -border..CHUNK_SIZE as i32 + border {
+            let v = base_v + (z as f64) * voxel_span_uv;
+            for x in -border..CHUNK_SIZE as i32 + border {
+                let u = base_u + (x as f64) * voxel_span_uv;
+                columns.push(self.sample_column(face, u, v));
+            }
+        }
+        columns
+    }
+
+    /// Génère un chunk voxel à partir de colonnes précalculées par `sample_chunk_columns`
+    pub fn generate_chunk_from_columns(&self, coord: &PlanetChunkCoord, columns: &[ColumnSample], border: i32) -> ChunkData {
         herocraft_common::prof_scope!("world::generate_chunk");
         let mut chunk = ChunkData::new_empty();
-
-        let face_chunks_count = 32.0;
-        let chunk_span_uv = 2.0 / face_chunks_count;
-
-        let base_u = -1.0 + (coord.x as f64) * chunk_span_uv;
-        let base_v = -1.0 + (coord.y as f64) * chunk_span_uv;
-        let voxel_span_uv = chunk_span_uv / (CHUNK_SIZE as f64);
+        let side = CHUNK_SIZE + 2 * border as usize;
 
         let layer_base_y = coord.altitude_layer as f64 * CHUNK_SIZE as f64;
 
@@ -94,15 +133,11 @@ impl PlanetWorldGenerator {
             .clamp(0.0, CHUNK_SIZE as f64) as u8;
 
         for z in 0..CHUNK_SIZE as u8 {
-            let v = base_v + (z as f64) * voxel_span_uv;
             for x in 0..CHUNK_SIZE as u8 {
-                let u = base_u + (x as f64) * voxel_span_uv;
-
-                let sphere_dir = coord.face.uv_to_sphere_direction(u, v);
-                let (lat, lon) = unit_sphere_to_lat_lon(sphere_dir);
-
-                let elevation = self.sample_elevation(sphere_dir, lat, lon);
-                let biome = self.determine_biome(lat, elevation, sphere_dir);
+                let column = &columns[(z as usize + border as usize) * side + x as usize + border as usize];
+                let sphere_dir = column.dir;
+                let elevation = column.elevation;
+                let biome = column.biome;
 
                 let ground_y = ((elevation - layer_base_y)
                     .clamp(0.0, CHUNK_SIZE as f64)) as u8;
