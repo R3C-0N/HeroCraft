@@ -52,6 +52,15 @@ macro_rules! prof_value {
     }};
 }
 
+/// Enregistre une durée mesurée hors CPU (timestamps GPU), en nanosecondes, dans le groupe `gpu`.
+#[macro_export]
+macro_rules! prof_gpu {
+    ($name:expr, $ns:expr) => {{
+        static PROF_SITE: $crate::profiler::Site = $crate::profiler::Site::new($name);
+        $crate::profiler::record_gpu_ns(&PROF_SITE, $ns as u64);
+    }};
+}
+
 #[cfg(not(feature = "profiling"))]
 mod imp {
     use super::Site;
@@ -67,6 +76,9 @@ mod imp {
 
     #[inline(always)]
     pub fn record_value(_site: &'static Site, _value: u64) {}
+
+    #[inline(always)]
+    pub fn record_gpu_ns(_site: &'static Site, _ns: u64) {}
 
     pub fn is_enabled() -> bool {
         false
@@ -327,6 +339,36 @@ mod imp {
             s.max_ns = s.max_ns.max(value);
             s.hist[bucket_of(value)] += 1;
         });
+    }
+
+    /// Durées GPU : enregistrées dans un pseudo-thread `gpu` pour apparaître comme un groupe du rapport
+    pub fn record_gpu_ns(site: &'static Site, ns: u64) {
+        static GPU: OnceLock<Arc<Mutex<ThreadData>>> = OnceLock::new();
+        let gpu = GPU.get_or_init(|| {
+            let g = global();
+            let data = Arc::new(Mutex::new(ThreadData {
+                name: "gpu".to_string(),
+                tid: g.next_tid.fetch_add(1, Ordering::Relaxed) as u64,
+                stats: Vec::new(),
+                trace: Vec::new(),
+                trace_dropped: 0,
+                frame_capture: Vec::new(),
+            }));
+            g.threads.lock().unwrap().push(data.clone());
+            data
+        });
+        let id = site_id(site);
+        let mut t = gpu.lock().unwrap();
+        let idx = id as usize;
+        if t.stats.len() <= idx {
+            t.stats.resize_with(idx + 1, || None);
+        }
+        let s = t.stats[idx].get_or_insert_with(SiteStats::new);
+        s.count += 1;
+        s.total_ns += ns;
+        s.self_ns += ns;
+        s.max_ns = s.max_ns.max(ns);
+        s.hist[bucket_of(ns)] += 1;
     }
 
     static VALUE_PREFIX: &str = "#";

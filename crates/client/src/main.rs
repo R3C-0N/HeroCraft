@@ -12,6 +12,7 @@ use winit::{
 
 mod camera;
 mod cloud_mesh;
+mod gpu_timer;
 mod lod;
 mod planet_mesh;
 mod renderer;

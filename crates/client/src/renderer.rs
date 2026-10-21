@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use winit::window::Window;
 
-use crate::camera::OrbitCamera;
+use crate::camera::{CameraViewMode, OrbitCamera};
+use crate::gpu_timer::{self, GpuTimer};
 use crate::planet_mesh::{PlanetMesh, PlanetVertex};
 use crate::ui::{CloudSettings, LightingSettings, UiState};
 
@@ -60,6 +61,10 @@ pub struct State {
     pub novsync_mode: wgpu::PresentMode,
     pub simulated_time: f32,
     pub last_uniform_time: std::time::Instant,
+
+    // Mesure du temps GPU par passe (feature `profiling` uniquement)
+    gpu_timer: Option<GpuTimer>,
+    view_mode: CameraViewMode,
 }
 
 /// Calcule la direction unitaire vers le Soleil en temps réel
@@ -138,7 +143,7 @@ impl State {
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
-                    required_features: wgpu::Features::empty(),
+                    required_features: GpuTimer::wanted_features(adapter.features()),
                     required_limits,
                     label: Some("HeroCraft Device"),
                     memory_hints: Default::default(),
@@ -147,6 +152,7 @@ impl State {
             )
             .await
             .expect("Échec d'obtention du device WGPU");
+        let gpu_timer = GpuTimer::new(&device, &queue);
 
         // 5. Configuration de la surface
         let surface_caps = surface.get_capabilities(&adapter);
@@ -479,6 +485,8 @@ impl State {
             novsync_mode,
             simulated_time: 0.0,
             last_uniform_time: std::time::Instant::now(),
+            gpu_timer,
+            view_mode: CameraViewMode::SatelliteOrbit,
         }
     }
 
@@ -575,6 +583,7 @@ impl State {
         let now = std::time::Instant::now();
         let dt = now.duration_since(self.last_uniform_time).as_secs_f32();
         self.last_uniform_time = now;
+        self.view_mode = camera.view_mode();
         self.simulated_time += dt * lighting.moon_speed;
 
         let view_proj = camera.build_view_projection_matrix();
@@ -735,6 +744,12 @@ impl State {
                 label: Some("Render Encoder"),
             });
 
+        if let Some(timer) = self.gpu_timer.as_mut() {
+            timer.begin_frame(&self.device, self.view_mode);
+        }
+        let timer_queries = self.gpu_timer.as_ref().and_then(|t| t.query_set());
+        let timer_inside_passes = self.gpu_timer.as_ref().is_some_and(|t| t.inside_passes);
+
         // 1. Passe 3D (Ciel étoilé + Soleil + Halo atmosphérique + Planète & Voxels avec MSAA 4x si supporté)
         {
             herocraft_common::prof_scope!("render::encode_3d_pass");
@@ -776,13 +791,20 @@ impl State {
                     stencil_ops: None,
                 }),
                 occlusion_query_set: None,
-                timestamp_writes: None,
+                timestamp_writes: timer_queries.map(|query_set| wgpu::RenderPassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: Some(gpu_timer::TS_3D_BEGIN),
+                    end_of_pass_write_index: Some(gpu_timer::TS_3D_END),
+                }),
             });
 
             // 1.a. Ciel étoilé & Soleil & Halo atmosphérique
             render_pass.set_pipeline(&self.sky_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.draw(0..3, 0..1);
+            if let Some(query_set) = timer_queries.filter(|_| timer_inside_passes) {
+                render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_SKY);
+            }
 
             // 1.b. Relief planétaire & Voxels
             if self.num_indices > 0 {
@@ -791,6 +813,9 @@ impl State {
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+            }
+            if let Some(query_set) = timer_queries.filter(|_| timer_inside_passes) {
+                render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_TERRAIN);
             }
 
             // 1.c. Nuages 3D physiques réels (traversables et visibles à leur altitude)
@@ -829,7 +854,11 @@ impl State {
                 })],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
-                timestamp_writes: None,
+                timestamp_writes: timer_queries.map(|query_set| wgpu::RenderPassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: Some(gpu_timer::TS_UI_BEGIN),
+                    end_of_pass_write_index: Some(gpu_timer::TS_UI_END),
+                }),
             }).forget_lifetime();
 
             self.egui_renderer.render(&mut ui_pass, paint_jobs, screen_descriptor);
@@ -837,7 +866,13 @@ impl State {
 
         {
             herocraft_common::prof_scope!("render::submit");
+            if let Some(timer) = self.gpu_timer.as_ref() {
+                timer.resolve(&mut encoder);
+            }
             self.queue.submit(std::iter::once(encoder.finish()));
+            if let Some(timer) = self.gpu_timer.as_mut() {
+                timer.end_frame();
+            }
         }
         {
             herocraft_common::prof_scope!("render::present");
