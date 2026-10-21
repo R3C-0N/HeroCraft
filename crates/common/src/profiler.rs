@@ -103,6 +103,8 @@ mod imp {
     const FRAME_CAPTURE_MAX_DEPTH: u32 = 4;
     const FRAME_CAPTURE_MIN_NS: u64 = 5_000;
     const WORST_FRAMES_KEPT: usize = 12;
+    /// Nombre max de portées gardées par pire frame (les plus longues)
+    const FRAME_CAPTURE_MAX_ENTRIES: usize = 120;
 
     struct SiteStats {
         count: u64,
@@ -372,6 +374,11 @@ mod imp {
         let mut worst = g.worst_frames.lock().unwrap();
         let min_kept = worst.iter().map(|f| f.dur_ns).min().unwrap_or(0);
         if worst.len() < WORST_FRAMES_KEPT || dur_ns > min_kept {
+            let mut entries = entries;
+            if entries.len() > FRAME_CAPTURE_MAX_ENTRIES {
+                entries.sort_unstable_by(|a, b| b.dur_ns.cmp(&a.dur_ns));
+                entries.truncate(FRAME_CAPTURE_MAX_ENTRIES);
+            }
             worst.push(Frame { index, dur_ns, entries });
             worst.sort_by(|a, b| b.dur_ns.cmp(&a.dur_ns));
             worst.truncate(WORST_FRAMES_KEPT);
@@ -465,7 +472,13 @@ mod imp {
             }
             for (i, s) in t.stats.iter().enumerate() {
                 if let Some(s) = s {
-                    entry.2[i].get_or_insert_with(SiteStats::new).merge(s);
+                    // Plusieurs points de mesure du même nom sont fusionnés sur le premier
+                    let canon = sites
+                        .iter()
+                        .position(|site| site.name == site_name(i as u32))
+                        .map(|p| p + 1)
+                        .unwrap_or(i);
+                    entry.2[canon].get_or_insert_with(SiteStats::new).merge(s);
                 }
             }
         }
