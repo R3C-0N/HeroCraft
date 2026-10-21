@@ -104,15 +104,26 @@ fn cell_on(m: vec4<u32>, x: i32, y: i32) -> bool {
 fn sd_mask_2d(p: vec2<f32>, m: vec4<u32>, cell: f32, rh: f32) -> f32 {
     let q = p / cell + vec2<f32>(5.5); // Coordonnées de grille (0..11)
     let c = vec2<i32>(floor(q));
-    let inside = cell_on(m, c.x, c.y);
+
+    // Voisinage 3x3 lu une seule fois (bit (dy + 1) * 3 + (dx + 1)), réutilisé pour le sommet
+    var nb = 0u;
+    for (var dy = -1; dy <= 1; dy = dy + 1) {
+        for (var dx = -1; dx <= 1; dx = dx + 1) {
+            if (cell_on(m, c.x + dx, c.y + dy)) {
+                nb = nb | (1u << u32((dy + 1) * 3 + dx + 1));
+            }
+        }
+    }
+    let inside = (nb & 16u) != 0u;
 
     // Distance à la cellule de statut opposé la plus proche dans le voisinage 3x3
     // (dehors : cellule pleine la plus proche ; dedans : cellule vide la plus proche)
     var d = cell;
     for (var dy = -1; dy <= 1; dy = dy + 1) {
         for (var dx = -1; dx <= 1; dx = dx + 1) {
-            let cc = c + vec2<i32>(dx, dy);
-            if (cell_on(m, cc.x, cc.y) != inside) {
+            let on = ((nb >> u32((dy + 1) * 3 + dx + 1)) & 1u) == 1u;
+            if (on != inside) {
+                let cc = c + vec2<i32>(dx, dy);
                 let e = abs(q - (vec2<f32>(cc) + vec2<f32>(0.5))) - vec2<f32>(0.5);
                 d = min(d, length(max(e, vec2<f32>(0.0))) * cell);
             }
@@ -121,13 +132,15 @@ fn sd_mask_2d(p: vec2<f32>, m: vec4<u32>, cell: f32, rh: f32) -> f32 {
     var sd = select(d, -d, inside);
 
     // Sommet de grille le plus proche : arrondi d'un coin convexe (1 cellule pleine sur 4)
-    // ou congé d'un angle rentrant (3 cellules pleines sur 4)
+    // ou congé d'un angle rentrant (3 cellules pleines sur 4).
+    // Ses 4 cellules sont dans le voisinage 3x3 (round(q) vaut c ou c + 1 sur chaque axe)
     let vtx = round(q);
-    let vi = vec2<i32>(vtx);
-    let c00 = cell_on(m, vi.x - 1, vi.y - 1);
-    let c10 = cell_on(m, vi.x, vi.y - 1);
-    let c01 = cell_on(m, vi.x - 1, vi.y);
-    let c11 = cell_on(m, vi.x, vi.y);
+    let o = vec2<i32>(vtx) - c;
+    let b = u32(o.y * 3 + o.x);
+    let c00 = ((nb >> b) & 1u) == 1u;
+    let c10 = ((nb >> (b + 1u)) & 1u) == 1u;
+    let c01 = ((nb >> (b + 3u)) & 1u) == 1u;
+    let c11 = ((nb >> (b + 4u)) & 1u) == 1u;
     let count = i32(c00) + i32(c10) + i32(c01) + i32(c11);
     let w0 = (q - vtx) * cell;
     if (count == 1) {
@@ -161,16 +174,29 @@ fn sd_cloud_3d(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f32) -
     return (length(w) + inside - r) * 0.9;
 }
 
-// Normale par gradient analytique fini
+// Normale : gradient de sd_cloud_3d par dérivation en chaîne. Seule la forme 2D du masque
+// passe par des différences finies (4 évaluations au lieu de 6 évaluations du SDF 3D complet),
+// l'épaisseur courbée se dérive analytiquement.
 fn get_cloud_normal(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f32) -> vec3<f32> {
     let eps = 0.004;
-    let dx = sd_cloud_3d(p + vec3<f32>(eps, 0.0, 0.0), m, cell, half_depth, r)
-           - sd_cloud_3d(p - vec3<f32>(eps, 0.0, 0.0), m, cell, half_depth, r);
-    let dy = sd_cloud_3d(p + vec3<f32>(0.0, eps, 0.0), m, cell, half_depth, r)
-           - sd_cloud_3d(p - vec3<f32>(0.0, eps, 0.0), m, cell, half_depth, r);
-    let dz = sd_cloud_3d(p + vec3<f32>(0.0, 0.0, eps), m, cell, half_depth, r)
-           - sd_cloud_3d(p - vec3<f32>(0.0, 0.0, eps), m, cell, half_depth, r);
-    return normalize(vec3<f32>(dx, dy, dz));
+    let rh = clamp(max(r * 1.3, 0.35), 0.0, 0.48 * cell);
+    let gx = sd_mask_2d(p.xy + vec2<f32>(eps, 0.0), m, cell, rh) - sd_mask_2d(p.xy - vec2<f32>(eps, 0.0), m, cell, rh);
+    let gy = sd_mask_2d(p.xy + vec2<f32>(0.0, eps), m, cell, rh) - sd_mask_2d(p.xy - vec2<f32>(0.0, eps), m, cell, rh);
+    let g_core = vec3<f32>(gx, gy, 0.0) / (2.0 * eps);
+    let d_core = sd_mask_2d(p.xy, m, cell, rh) + r;
+
+    let curv_r = camera.planet_radius + 8.8 * (camera.planet_radius / 25.0);
+    let z = p.z + dot(p.xy, p.xy) / (2.0 * curv_r);
+    let d_z = abs(z) - (half_depth - r);
+    let g_z = select(-1.0, 1.0, z >= 0.0) * vec3<f32>(p.xy / curv_r, 1.0);
+
+    let w = max(vec2<f32>(d_core, d_z), vec2<f32>(0.0));
+    let wl = length(w);
+    var g = select(g_z, g_core, d_core > d_z);
+    if (wl > 1e-6) {
+        g = (w.x * g_core + w.y * g_z) / wl;
+    }
+    return normalize(g);
 }
 
 // Compression douce des hautes lumières au-delà de 0.78 (asymptote à 1.0)
@@ -213,15 +239,20 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     );
 
     let half_depth = in.config.y;
-    let pad_xy = 0.65;
-    let pad_z = 0.50;
+    // Mêmes marges que la boîte du maillage (cloud_mesh.rs), à l'échelle de la planète
+    let planet_scale = camera.planet_radius / 25.0;
+    let pad_xy = 0.65 * planet_scale;
+    let pad_z = 0.50 * planet_scale;
 
     let c_min_x = in.bbox.x - pad_xy;
     let c_max_x = in.bbox.z + pad_xy;
     let c_min_y = in.bbox.y - pad_xy;
     let c_max_y = in.bbox.w + pad_xy;
 
-    let c_min_z = -half_depth - pad_z;
+    // Affaissement des bords de la dalle courbée : majoré par le coin de l'emprise
+    let rho_max = length(max(abs(vec2<f32>(c_min_x, c_min_y)), abs(vec2<f32>(c_max_x, c_max_y))));
+    let sag = rho_max * rho_max / (2.0 * length(in.cloud_center));
+    let c_min_z = -half_depth - pad_z - sag;
     let c_max_z = half_depth + pad_z;
 
     let cam_in_box = p0_camera.x >= c_min_x && p0_camera.x <= c_max_x &&
@@ -257,23 +288,40 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         hit = true;
         hit_local_p = local_p0;
     } else {
-        // Sphere tracing borné par la sortie de la boîte englobante (intersection rayon / AABB locale).
+        // Sphere tracing borné à la boîte serrée autour de la forme (emprise des cellules,
+        // épaisseur et affaissement de la dalle courbée) : la marge de la boîte du maillage
+        // ne contient aucune surface, on la saute analytiquement au lieu d'y marcher.
         // Un rayon qui frôle un arrondi avance par pas minuscules : avec peu de pas il abandonnait
         // avant d'atteindre une autre branche du nuage située derrière (ciel visible à tort).
+        let margin = 0.05 * planet_scale;
+        let rho_shape = length(max(abs(in.bbox.xy), abs(in.bbox.zw)));
+        let sag_shape = rho_shape * rho_shape / (2.0 * length(in.cloud_center));
+        let tight_min = vec3<f32>(in.bbox.x, in.bbox.y, -half_depth - sag_shape) - vec3<f32>(margin);
+        let tight_max = vec3<f32>(in.bbox.z, in.bbox.w, half_depth) + vec3<f32>(margin);
         let inv_d = 1.0 / select(local_ray_dir, vec3<f32>(1e-6), abs(local_ray_dir) < vec3<f32>(1e-6));
-        let t0 = (vec3<f32>(c_min_x, c_min_y, c_min_z) - local_p0) * inv_d;
-        let t1 = (vec3<f32>(c_max_x, c_max_y, c_max_z) - local_p0) * inv_d;
+        let t0 = (tight_min - local_p0) * inv_d;
+        let t1 = (tight_max - local_p0) * inv_d;
+        let t_enter = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
         let t_exit = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
-        for (var step = 0; step < 96; step = step + 1) {
+        // Seuil de contact proportionnel à la taille d'un pixel à cette distance : un rayon qui
+        // rase la surface s'arrête dès qu'il en est à moins d'un demi-pixel au lieu de ramper
+        let dist0 = select(length(camera.camera_pos - in.world_pos), 0.0, cam_in_box);
+        let pixel_angle = 0.0006;
+        t = max(t_enter, 0.0);
+        // Rayon qui manque la boîte serrée : aucun pas
+        let steps_max = select(0, 96, t <= t_exit);
+        for (var step = 0; step < steps_max; step = step + 1) {
             let p = local_p0 + local_ray_dir * t;
             let d = sd_cloud_3d(p, in.mask, in.config.x, half_depth, roundness);
-            if (d < 0.002) {
+            let eps = max(0.002, (dist0 + t) * pixel_angle);
+            if (d < eps) {
                 hit = true;
-                hit_local_p = p;
+                // Recalage sur la surface (avancer de d ne peut pas la traverser)
+                hit_local_p = p + local_ray_dir * max(d, 0.0);
                 break;
             }
             // Pas minimal pour ne pas s'enliser le long d'une surface rasée
-            t += max(d, 0.01);
+            t += max(d, max(0.01, eps));
             if (t > t_exit) {
                 break;
             }
