@@ -309,12 +309,11 @@ impl VoxelMeshBuilder {
                 let u = base_u + (cx as f64 + 0.5) * voxel_span_uv;
                 let v = base_v + (cz as f64 + 0.5) * voxel_span_uv;
                 let dir = face.uv_to_sphere_direction(u, v);
-                let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
-                let raw_elevation = generator.sample_elevation(dir, lat, lon);
+                let (lat, _lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
+                let (raw_elevation, biome) = generator.sample_elevation_and_biome(dir, lat);
                 if raw_elevation < min_elev { min_elev = raw_elevation; }
                 if raw_elevation > max_elev { max_elev = raw_elevation; }
 
-                let biome = generator.determine_biome(lat, raw_elevation, dir);
                 let mut biome_color = PlanetMesh::relief_biome_color(biome, raw_elevation);
 
                 match filter {

@@ -94,9 +94,8 @@ impl PlanetWorldGenerator {
     /// Échantillonne l'élévation et le biome d'une colonne de voxels
     pub fn sample_column(&self, face: PlanetFace, u: f64, v: f64) -> ColumnSample {
         let dir = face.uv_to_sphere_direction(u, v);
-        let (lat, lon) = unit_sphere_to_lat_lon(dir);
-        let elevation = self.sample_elevation(dir, lat, lon);
-        let biome = self.determine_biome(lat, elevation, dir);
+        let (lat, _lon) = unit_sphere_to_lat_lon(dir);
+        let (elevation, biome) = self.sample_elevation_and_biome(dir, lat);
         ColumnSample { dir, lat, elevation, biome }
     }
 
@@ -266,6 +265,17 @@ impl PlanetWorldGenerator {
 
     /// Fonction de relief procédurale planétaire garantissant au moins 40-50% d'océans et mers
     pub fn sample_elevation(&self, dir: DVec3, lat: f64, _lon: f64) -> f64 {
+        self.sample_elevation_and_continental(dir, lat).0
+    }
+
+    /// Élévation et biome d'un point, en ne calculant la valeur continentale qu'une seule fois
+    pub fn sample_elevation_and_biome(&self, dir: DVec3, lat: f64) -> (f64, BiomeType) {
+        let (elevation, continental) = self.sample_elevation_and_continental(dir, lat);
+        (elevation, self.determine_biome_with_continental(lat, elevation, dir, || continental))
+    }
+
+    /// Élévation et valeur continentale (réutilisable par `determine_biome`)
+    fn sample_elevation_and_continental(&self, dir: DVec3, lat: f64) -> (f64, f64) {
         herocraft_common::prof_scope!("world::sample_elevation");
         let continental = self.sample_continental_value(dir);
         let sea_threshold = 0.01;
@@ -276,7 +286,7 @@ impl PlanetWorldGenerator {
         let polar_boundary = 1.28 + polar_noise;
         let is_polar = lat.abs() > polar_boundary;
 
-        if continental < sea_threshold {
+        let elevation = if continental < sea_threshold {
             // Zone maritime
             if is_polar {
                 // Banquise affleurante parfaitement alignée sur la sphère océanique
@@ -325,11 +335,23 @@ impl PlanetWorldGenerator {
 
             (SEA_LEVEL_BLOCKS + 1.0 + plateau + hills + standard_mountains.max(super_chain) + polar_dome)
                 .clamp(SEA_LEVEL_BLOCKS + 1.0, 350.0)
-        }
+        };
+        (elevation, continental)
     }
 
     /// Détermine le biome selon la latitude, l'altitude et la valeur continentale
     pub fn determine_biome(&self, lat: f64, elevation: f64, dir: DVec3) -> BiomeType {
+        self.determine_biome_with_continental(lat, elevation, dir, || self.sample_continental_value(dir))
+    }
+
+    /// `determine_biome` avec une valeur continentale fournie (calculée seulement si nécessaire)
+    fn determine_biome_with_continental(
+        &self,
+        lat: f64,
+        elevation: f64,
+        dir: DVec3,
+        continental: impl FnOnce() -> f64,
+    ) -> BiomeType {
         herocraft_common::prof_scope!("world::determine_biome");
         // 1. Calottes glaciaires et banquises permanentes aux pôles (Pôle Nord et Pôle Sud)
         // Calibrées à ~73° de latitude pour un équilibre parfait entre vue de profil et vue du dessus
@@ -341,7 +363,7 @@ impl PlanetWorldGenerator {
             return BiomeType::SnowPeaks;
         }
 
-        let continental = self.sample_continental_value(dir);
+        let continental = continental();
         let sea_threshold = 0.01;
 
         // 2. Biomes maritimes (Océans et Mers)

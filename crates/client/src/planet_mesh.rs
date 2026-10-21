@@ -286,9 +286,8 @@ impl PlanetMesh {
             let u_mid = u_min + ((ci as f64) + 0.5) * du;
             let v_mid = v_min + ((cj as f64) + 0.5) * dv;
             let sphere_dir: DVec3 = key.face.uv_to_sphere_direction(u_mid, v_mid);
-            let (lat, lon) = unit_sphere_to_lat_lon(sphere_dir);
-            let raw_elevation = generator.sample_elevation(sphere_dir, lat, lon);
-            let biome = generator.determine_biome(lat, raw_elevation, sphere_dir);
+            let (lat, _lon) = unit_sphere_to_lat_lon(sphere_dir);
+            let (raw_elevation, biome) = generator.sample_elevation_and_biome(sphere_dir, lat);
             let is_water = biome.is_water();
             let stepped = if is_water {
                 SEA_LEVEL_BLOCKS
