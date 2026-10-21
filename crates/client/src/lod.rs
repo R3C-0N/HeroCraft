@@ -18,6 +18,14 @@ pub struct VoxelBuildResult {
     pub mesh: PlanetMesh,
 }
 
+/// Identité d'un maillage affiché : change dès que son contenu peut changer (nouvelle génération des caches)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LodMeshId {
+    pub generation: u64,
+    pub key: QuadNodeKey,
+    pub voxel: bool,
+}
+
 /// Résolution de la grille d'un patch polygonal selon son niveau
 fn patch_resolution(level: u8) -> usize {
     match level {
@@ -35,7 +43,6 @@ pub struct PlanetLodManager {
     pub lod_cache: HashMap<QuadNodeKey, PlanetMesh>,
     pub voxel_cache: HashMap<QuadNodeKey, PlanetMesh>,
     pub current_leaves: Vec<QuadLeaf>,
-    pub combined_mesh: PlanetMesh,
     pub active_filter: herocraft_world::VisualizationFilter,
     last_camera_pos: Vec3,
     last_evaluated_pos: Vec3,
@@ -81,10 +88,6 @@ impl PlanetLodManager {
             lod_cache: HashMap::new(),
             voxel_cache: HashMap::new(),
             current_leaves: Vec::new(),
-            combined_mesh: PlanetMesh {
-                vertices: Vec::new(),
-                indices: Vec::new(),
-            },
             active_filter: herocraft_world::VisualizationFilter::Standard,
             last_camera_pos: Vec3::splat(f32::NAN),
             last_evaluated_pos: Vec3::splat(f32::NAN),
@@ -373,48 +376,28 @@ impl PlanetLodManager {
             }
         }
 
-        // Assemblage immédiat du maillage combiné
-        self.rebuild_combined_mesh();
-
         true
     }
 
-    /// Reconstruit le maillage combiné complet par copie mémoire directe sans réallocation
-    pub fn rebuild_combined_mesh(&mut self) {
-        herocraft_common::prof_scope!("lod::rebuild_combined_mesh");
-        let mut combined = std::mem::take(&mut self.combined_mesh);
-        combined.vertices.clear();
-        combined.indices.clear();
-
-        for leaf in &self.current_leaves {
-            match leaf.kind {
-                QuadLeafKind::LodPatch => {
-                    if let Some(mesh) = self.lod_cache.get(&leaf.key) {
-                        append_mesh(&mut combined, mesh);
-                    }
+    /// Maillages à afficher pour les feuilles courantes (voxel si prêt, sinon patch polygonal)
+    pub fn visible_meshes(&self) -> Vec<(LodMeshId, &PlanetMesh)> {
+        let generation = self.generation;
+        self.current_leaves
+            .iter()
+            .filter_map(|leaf| {
+                let voxel = (leaf.kind == QuadLeafKind::VoxelChunk)
+                    .then(|| self.voxel_cache.get(&leaf.key))
+                    .flatten();
+                match voxel {
+                    Some(mesh) => Some((LodMeshId { generation, key: leaf.key, voxel: true }, mesh)),
+                    // Voxel chunk encore en calcul : affichage immédiat de son patch dédié sans trou
+                    None => self
+                        .lod_cache
+                        .get(&leaf.key)
+                        .map(|mesh| (LodMeshId { generation, key: leaf.key, voxel: false }, mesh)),
                 }
-                QuadLeafKind::VoxelChunk => {
-                    if let Some(voxel_mesh) = self.voxel_cache.get(&leaf.key) {
-                        append_mesh(&mut combined, voxel_mesh);
-                    } else if let Some(patch) = self.lod_cache.get(&leaf.key) {
-                        // Voxel chunk encore en calcul : affichage immédiat de son patch dédié sans trou
-                        append_mesh(&mut combined, patch);
-                    }
-                }
-            }
-        }
-        herocraft_common::prof_value!("lod.sommets_combines", combined.vertices.len());
-        self.combined_mesh = combined;
-    }
-}
-
-/// Fusionne un maillage source dans le maillage combiné (copie mémoire directe rapide)
-fn append_mesh(combined: &mut PlanetMesh, source: &PlanetMesh) {
-    let base_idx = combined.vertices.len() as u32;
-    combined.vertices.extend_from_slice(&source.vertices);
-    combined.indices.reserve(source.indices.len());
-    for &idx in &source.indices {
-        combined.indices.push(base_idx + idx);
+            })
+            .collect()
     }
 }
 
@@ -538,7 +521,12 @@ mod tests {
             lod.update(camera.eye_position(), &generator, &mut cache, 0.016, None);
         }
         println!("After processing: pending={}, cached_lod={}, cached_voxels={}", lod.pending_requests.len(), lod.lod_cache.len(), lod.voxel_cache.len());
-        println!("Combined mesh: verts={}, indices={}", lod.combined_mesh.vertices.len(), lod.combined_mesh.indices.len());
+        let visible = lod.visible_meshes();
+        println!(
+            "Visible meshes: verts={}, indices={}",
+            visible.iter().map(|(_, m)| m.vertices.len()).sum::<usize>(),
+            visible.iter().map(|(_, m)| m.indices.len()).sum::<usize>()
+        );
 
         // Check if ANY leaf in current_leaves is using an ancestor!
         let mut using_ancestor = 0;

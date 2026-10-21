@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use winit::window::Window;
 
 use crate::camera::{CameraViewMode, OrbitCamera};
 use crate::gpu_timer::{self, GpuTimer};
-use crate::planet_mesh::{PlanetMesh, PlanetVertex};
+use crate::lod::{LodMeshId, PlanetLodManager};
+use crate::planet_mesh::PlanetVertex;
 use crate::ui::{CloudSettings, LightingSettings, UiState};
 
 #[repr(C, align(16))]
@@ -19,6 +21,16 @@ pub struct CameraUniform {
     pub lighting_params2: [f32; 4],
     pub cloud_params: [f32; 4],
 }
+
+struct GpuMesh {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
+    last_used_sync: u64,
+}
+
+/// Nombre de synchronisations après lequel un maillage non affiché est libéré du GPU
+const LOD_GPU_MESH_TTL: u64 = 120;
 
 pub struct State {
     #[allow(dead_code)]
@@ -47,11 +59,11 @@ pub struct State {
     pub sample_count: u32,
     pub msaa_color_texture: Option<wgpu::Texture>,
     pub msaa_color_view: Option<wgpu::TextureView>,
-    pub vertex_buffer: wgpu::Buffer,
-    pub vertex_buffer_capacity: usize,
-    pub index_buffer: wgpu::Buffer,
-    pub index_buffer_capacity: usize,
-    pub num_indices: u32,
+    /// Un couple de buffers par maillage de feuille LOD, envoyé une seule fois au GPU
+    lod_gpu_meshes: HashMap<LodMeshId, GpuMesh>,
+    /// Maillages à dessiner cette frame, dans l'ordre des feuilles
+    lod_draw_list: Vec<LodMeshId>,
+    lod_sync_count: u64,
 
     // Rendu Interface Utilisateur egui
     pub egui_renderer: egui_wgpu::Renderer,
@@ -98,7 +110,7 @@ pub fn compute_moon_data(time: f32, sun_dir: glam::Vec3) -> (glam::Vec3, f32) {
 }
 
 impl State {
-    pub async fn new(window: Arc<Window>, planet_mesh: &PlanetMesh, _ui_state: &UiState) -> Self {
+    pub async fn new(window: Arc<Window>, _ui_state: &UiState) -> Self {
         herocraft_common::prof_scope!("render::State::new");
         let size = window.inner_size();
 
@@ -360,28 +372,6 @@ impl State {
             cache: None,
         });
 
-        let vertex_buffer_capacity = (planet_mesh.vertices.len() * 3 / 2).max(262144);
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Planet Vertex Buffer"),
-            size: (vertex_buffer_capacity * std::mem::size_of::<PlanetVertex>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        if !planet_mesh.vertices.is_empty() {
-            queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&planet_mesh.vertices));
-        }
-
-        let index_buffer_capacity = (planet_mesh.indices.len() * 3 / 2).max(524288);
-        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Planet Index Buffer"),
-            size: (index_buffer_capacity * std::mem::size_of::<u32>()) as u64,
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        if !planet_mesh.indices.is_empty() {
-            queue.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&planet_mesh.indices));
-        }
-
         // -------------------------------------------------------------
         // Pipeline Nuages 3D physiques réels (traversables et visibles à leur altitude)
         // -------------------------------------------------------------
@@ -475,11 +465,9 @@ impl State {
             sample_count,
             msaa_color_texture,
             msaa_color_view,
-            vertex_buffer,
-            vertex_buffer_capacity,
-            index_buffer,
-            index_buffer_capacity,
-            num_indices: planet_mesh.indices.len() as u32,
+            lod_gpu_meshes: HashMap::new(),
+            lod_draw_list: Vec::new(),
+            lod_sync_count: 0,
             egui_renderer,
             vsync_mode,
             novsync_mode,
@@ -638,64 +626,49 @@ impl State {
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
 
-    #[allow(dead_code)]
-    pub fn update_mesh(&mut self, mesh: &PlanetMesh) {
-        herocraft_common::prof_scope!("render::update_mesh");
-        let max_buf_size = self.device.limits().max_buffer_size;
+    /// Synchronise les buffers GPU avec les feuilles LOD affichées : seuls les nouveaux maillages
+    /// sont envoyés, ceux qui ne sont plus affichés sont libérés après `LOD_GPU_MESH_TTL` synchronisations
+    pub fn sync_lod_meshes(&mut self, lod: &PlanetLodManager) {
+        use wgpu::util::DeviceExt;
+        herocraft_common::prof_scope!("render::sync_lod_meshes");
+        self.lod_sync_count += 1;
+        let sync = self.lod_sync_count;
+        let mut uploaded_bytes = 0usize;
+        self.lod_draw_list.clear();
 
-        if mesh.vertices.len() > self.vertex_buffer_capacity {
-            let target_cap = (mesh.vertices.len() * 3 / 2).max(262144);
-            let target_bytes = (target_cap * std::mem::size_of::<PlanetVertex>()) as u64;
-            let (final_cap, final_bytes) = if target_bytes <= max_buf_size {
-                (target_cap, target_bytes)
-            } else {
-                let max_possible = (max_buf_size as usize) / std::mem::size_of::<PlanetVertex>();
-                let clamped_cap = max_possible.min(mesh.vertices.len().max(self.vertex_buffer_capacity));
-                (clamped_cap, (clamped_cap * std::mem::size_of::<PlanetVertex>()) as u64)
-            };
-
-            self.vertex_buffer_capacity = final_cap;
-            self.vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Planet Vertex Buffer"),
-                size: final_bytes,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: false,
+        for (id, mesh) in lod.visible_meshes() {
+            if mesh.indices.is_empty() {
+                continue;
+            }
+            let device = &self.device;
+            let gpu_mesh = self.lod_gpu_meshes.entry(id).or_insert_with(|| {
+                uploaded_bytes += mesh.vertices.len() * std::mem::size_of::<PlanetVertex>() + mesh.indices.len() * 4;
+                GpuMesh {
+                    vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("LOD Vertex Buffer"),
+                        contents: bytemuck::cast_slice(&mesh.vertices),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    }),
+                    index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("LOD Index Buffer"),
+                        contents: bytemuck::cast_slice(&mesh.indices),
+                        usage: wgpu::BufferUsages::INDEX,
+                    }),
+                    num_indices: mesh.indices.len() as u32,
+                    last_used_sync: sync,
+                }
             });
-        }
-        herocraft_common::prof_value!("render.upload_octets", mesh.vertices.len() * std::mem::size_of::<PlanetVertex>() + mesh.indices.len() * 4);
-        if !mesh.vertices.is_empty() && self.vertex_buffer_capacity > 0 {
-            let copy_count = mesh.vertices.len().min(self.vertex_buffer_capacity);
-            let vertex_bytes = bytemuck::cast_slice(&mesh.vertices[..copy_count]);
-            self.queue.write_buffer(&self.vertex_buffer, 0, vertex_bytes);
+            gpu_mesh.last_used_sync = sync;
+            self.lod_draw_list.push(id);
         }
 
-        if mesh.indices.len() > self.index_buffer_capacity {
-            let target_cap = (mesh.indices.len() * 3 / 2).max(524288);
-            let target_bytes = (target_cap * std::mem::size_of::<u32>()) as u64;
-            let (final_cap, final_bytes) = if target_bytes <= max_buf_size {
-                (target_cap, target_bytes)
-            } else {
-                let max_possible = (max_buf_size as usize) / std::mem::size_of::<u32>();
-                let clamped_cap = max_possible.min(mesh.indices.len().max(self.index_buffer_capacity));
-                (clamped_cap, (clamped_cap * std::mem::size_of::<u32>()) as u64)
-            };
-
-            self.index_buffer_capacity = final_cap;
-            self.index_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Planet Index Buffer"),
-                size: final_bytes,
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: false,
-            });
-        }
-        if !mesh.indices.is_empty() && self.index_buffer_capacity > 0 {
-            let copy_count = mesh.indices.len().min(self.index_buffer_capacity);
-            let index_bytes = bytemuck::cast_slice(&mesh.indices[..copy_count]);
-            self.queue.write_buffer(&self.index_buffer, 0, index_bytes);
-            self.num_indices = copy_count as u32;
-        } else {
-            self.num_indices = 0;
-        }
+        let generation = self.lod_draw_list.first().map(|id| id.generation);
+        self.lod_gpu_meshes.retain(|id, m| {
+            Some(id.generation) == generation && sync - m.last_used_sync <= LOD_GPU_MESH_TTL
+        });
+        herocraft_common::prof_value!("render.upload_octets", uploaded_bytes);
+        herocraft_common::prof_value!("render.draws_terrain", self.lod_draw_list.len());
+        herocraft_common::prof_value!("render.maillages_gpu_en_memoire", self.lod_gpu_meshes.len());
     }
 
     pub fn update_cloud_mesh(&mut self, base_radius: f32, seed: u64) {
@@ -807,12 +780,16 @@ impl State {
             }
 
             // 1.b. Relief planétaire & Voxels
-            if self.num_indices > 0 {
+            if !self.lod_draw_list.is_empty() {
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+                for id in &self.lod_draw_list {
+                    if let Some(mesh) = self.lod_gpu_meshes.get(id) {
+                        render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+                        render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                        render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
+                    }
+                }
             }
             if let Some(query_set) = timer_queries.filter(|_| timer_inside_passes) {
                 render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_TERRAIN);
