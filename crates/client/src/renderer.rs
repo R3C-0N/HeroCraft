@@ -7,7 +7,8 @@ use crate::gpu_timer::{self, GpuTimer};
 use crate::lod::{LodMeshId, PlanetLodManager};
 use crate::planet_mesh::PlanetVertex;
 use crate::post::{self, PostProcess};
-use crate::ui::{CloudSettings, LightingSettings, PostSettings, UiState};
+use crate::shadow::Shadows;
+use crate::ui::{CloudSettings, LightingSettings, PostSettings, ShadowSettings, UiState};
 
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -30,9 +31,11 @@ struct GpuMesh {
     last_used_sync: u64,
     /// Centre de la boîte englobante, pour trier les draws du plus proche au plus lointain
     center: glam::Vec3,
+    /// Demi-diagonale de la boîte englobante (tri des maillages par cascade d'ombre)
+    radius: f32,
 }
 
-fn mesh_center(vertices: &[PlanetVertex]) -> glam::Vec3 {
+fn mesh_bounds(vertices: &[PlanetVertex]) -> (glam::Vec3, f32) {
     let (min, max) = vertices.iter().fold(
         (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN)),
         |(lo, hi), v| {
@@ -40,7 +43,7 @@ fn mesh_center(vertices: &[PlanetVertex]) -> glam::Vec3 {
             (lo.min(p), hi.max(p))
         },
     );
-    (min + max) * 0.5
+    ((min + max) * 0.5, (max - min).length() * 0.5)
 }
 
 /// Octets envoyés au GPU au plus par synchronisation (un gros ensemble est étalé sur plusieurs frames)
@@ -77,6 +80,11 @@ pub struct State {
     /// Cible HDR de la passe 3D, bloom et composition vers la swapchain
     post: PostProcess,
     bloom_enabled: bool,
+    /// Ombres portées du relief et des nuages, calculées depuis le soleil avant la passe 3D
+    shadows: Shadows,
+    sun_dir: glam::Vec3,
+    ground_factor: f32,
+    clouds_visible: bool,
     /// Un couple de buffers par maillage de feuille LOD, envoyé une seule fois au GPU
     lod_gpu_meshes: HashMap<LodMeshId, GpuMesh>,
     /// Maillages à dessiner cette frame, dans l'ordre des feuilles
@@ -285,6 +293,15 @@ impl State {
                 push_constant_ranges: &[],
             });
 
+        // Le terrain lit en plus les cartes d'ombre (groupe 1)
+        let shadows = Shadows::new(&device, &camera_bind_group_layout);
+        let terrain_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Terrain Pipeline Layout"),
+                bind_group_layouts: &[&camera_bind_group_layout, &shadows.receiver_layout],
+                push_constant_ranges: &[],
+            });
+
         // Détection du support matériel MSAA 4x sur le format HDR de la passe 3D
         let sample_count = PostProcess::sample_count(&adapter);
         log::info!("Anti-Aliasing MSAA 4x : {} (sample_count = {})", sample_count == 4, sample_count);
@@ -342,7 +359,7 @@ impl State {
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Planet Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
+            layout: Some(&terrain_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
@@ -477,6 +494,10 @@ impl State {
             sample_count,
             post,
             bloom_enabled: true,
+            shadows,
+            sun_dir,
+            ground_factor: 0.0,
+            clouds_visible: false,
             lod_gpu_meshes: HashMap::new(),
             lod_draw_list: Vec::new(),
             camera_eye: glam::Vec3::ZERO,
@@ -578,6 +599,9 @@ impl State {
             ((camera.base_radius - camera.effective_distance) / fade_dist).clamp(0.0, 1.0)
         };
         let effective_cloud_density = clouds.density * cloud_vis;
+        self.sun_dir = sun_dir;
+        self.ground_factor = ground_factor;
+        self.clouds_visible = effective_cloud_density > 0.01;
 
         let uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
@@ -609,6 +633,21 @@ impl State {
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
 
+    /// Cascades centrées sur le joueur, à appeler après `update_camera`
+    pub fn update_shadows(&mut self, camera: &OrbitCamera, settings: &ShadowSettings) {
+        let (_, _, _, forward) = camera.look_vectors();
+        self.shadows.update(
+            &self.queue,
+            settings,
+            camera.player_pos,
+            forward,
+            self.sun_dir,
+            camera.base_radius,
+            self.ground_factor,
+            self.clouds_visible,
+        );
+    }
+
     pub fn update_post(&mut self, settings: &PostSettings) {
         self.bloom_enabled = settings.bloom_enabled && settings.bloom_intensity > 0.0;
         self.post.update(&self.queue, settings);
@@ -637,6 +676,7 @@ impl State {
                 gpu_mesh.last_used_sync = sync;
             } else if uploaded_bytes < budget {
                 uploaded_bytes += mesh.vertices.len() * std::mem::size_of::<PlanetVertex>() + mesh.indices.len() * 4;
+                let (center, radius) = mesh_bounds(&mesh.vertices);
                 let gpu_mesh = GpuMesh {
                     vertex_buffer: self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some("LOD Vertex Buffer"),
@@ -650,7 +690,8 @@ impl State {
                     }),
                     num_indices: mesh.indices.len() as u32,
                     last_used_sync: sync,
-                    center: mesh_center(&mesh.vertices),
+                    center,
+                    radius,
                 };
                 self.lod_gpu_meshes.insert(id, gpu_mesh);
             } else {
@@ -737,6 +778,18 @@ impl State {
         let timer_queries = self.gpu_timer.as_ref().and_then(|t| t.query_set());
         let timer_inside_passes = self.gpu_timer.as_ref().is_some_and(|t| t.inside_passes);
 
+        // 0. Ombres : cascades du relief et carte des nuages, vues depuis le soleil
+        {
+            herocraft_common::prof_scope!("render::encode_shadows");
+            let meshes = self.lod_draw_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).map(|m| {
+                (m.center, m.radius, &m.vertex_buffer, &m.index_buffer, m.num_indices)
+            });
+            let clouds = (self.num_cloud_indices > 0)
+                .then_some((&self.cloud_vertex_buffer, &self.cloud_index_buffer, self.num_cloud_indices));
+            let timestamps = timer_queries.map(|q| (q, gpu_timer::TS_SHADOW_BEGIN, gpu_timer::TS_SHADOW_END));
+            self.shadows.encode(&mut encoder, &self.camera_bind_group, meshes, clouds, timestamps);
+        }
+
         // 1. Passe 3D HDR (Ciel étoilé + Soleil + Halo atmosphérique + Planète & Voxels avec MSAA 4x si supporté)
         {
             herocraft_common::prof_scope!("render::encode_3d_pass");
@@ -792,6 +845,7 @@ impl State {
             if !self.lod_draw_list.is_empty() {
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
                 for id in &self.lod_draw_list {
                     if let Some(mesh) = self.lod_gpu_meshes.get(id) {
                         render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
@@ -897,6 +951,7 @@ mod tests {
         let ui_shader = include_str!("ui_shader.wgsl");
         let cloud_shader = include_str!("cloud_shader.wgsl");
         let post_shader = include_str!("post_shader.wgsl");
+        let shadow_caster = include_str!("shadow_caster.wgsl");
 
         for (name, source) in [
             ("sky_shader.wgsl", sky_shader),
@@ -904,9 +959,10 @@ mod tests {
             ("ui_shader.wgsl", ui_shader),
             ("cloud_shader.wgsl", cloud_shader),
             ("post_shader.wgsl", post_shader),
+            ("shadow_caster.wgsl", shadow_caster),
         ] {
             // Assemblage naga_oil (imports de common.wgsl) puis validation complète
-            let module = if name == "ui_shader.wgsl" || name == "post_shader.wgsl" {
+            let module = if matches!(name, "ui_shader.wgsl" | "post_shader.wgsl" | "shadow_caster.wgsl") {
                 naga::front::wgsl::parse_str(source).unwrap_or_else(|e| panic!("Failed to parse {name}:\n{e}"))
             } else {
                 crate::shaders::compose(source, name).unwrap_or_else(|e| panic!("Failed to compose {name}:\n{e}"))

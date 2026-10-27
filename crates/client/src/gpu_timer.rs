@@ -9,15 +9,17 @@ use std::sync::Arc;
 use crate::camera::CameraViewMode;
 
 /// Points de mesure écrits dans une frame
-pub const TS_3D_BEGIN: u32 = 0;
-pub const TS_AFTER_SKY: u32 = 1;
-pub const TS_AFTER_TERRAIN: u32 = 2;
-pub const TS_3D_END: u32 = 3;
-pub const TS_POST_BEGIN: u32 = 4;
-pub const TS_POST_END: u32 = 5;
-pub const TS_UI_BEGIN: u32 = 6;
-pub const TS_UI_END: u32 = 7;
-const TIMESTAMP_COUNT: u32 = 8;
+pub const TS_SHADOW_BEGIN: u32 = 0;
+pub const TS_SHADOW_END: u32 = 1;
+pub const TS_3D_BEGIN: u32 = 2;
+pub const TS_AFTER_SKY: u32 = 3;
+pub const TS_AFTER_TERRAIN: u32 = 4;
+pub const TS_3D_END: u32 = 5;
+pub const TS_POST_BEGIN: u32 = 6;
+pub const TS_POST_END: u32 = 7;
+pub const TS_UI_BEGIN: u32 = 8;
+pub const TS_UI_END: u32 = 9;
+const TIMESTAMP_COUNT: u32 = 10;
 const SLOT_COUNT: usize = 4;
 const BUFFER_SIZE: u64 = TIMESTAMP_COUNT as u64 * 8;
 
@@ -149,6 +151,7 @@ fn record(ts: &[u64], period_ns: f64, view_mode: CameraViewMode, inside_passes: 
         let (a, b) = (ts[a as usize], ts[b as usize]);
         (b.saturating_sub(a) as f64 * period_ns) as u64
     };
+    herocraft_common::prof_gpu!("gpu::shadows", span(TS_SHADOW_BEGIN, TS_SHADOW_END));
     herocraft_common::prof_gpu!("gpu::pass_3d", span(TS_3D_BEGIN, TS_3D_END));
     if inside_passes {
         herocraft_common::prof_gpu!("gpu::pass_3d::sky", span(TS_3D_BEGIN, TS_AFTER_SKY));
@@ -157,7 +160,7 @@ fn record(ts: &[u64], period_ns: f64, view_mode: CameraViewMode, inside_passes: 
     }
     herocraft_common::prof_gpu!("gpu::post_bloom_tonemap", span(TS_POST_BEGIN, TS_POST_END));
     herocraft_common::prof_gpu!("gpu::pass_egui", span(TS_UI_BEGIN, TS_UI_END));
-    let frame = span(TS_3D_BEGIN, TS_UI_END);
+    let frame = span(TS_SHADOW_BEGIN, TS_UI_END);
     match view_mode {
         CameraViewMode::FirstPerson => herocraft_common::prof_gpu!("gpu::frame [vue FPS]", frame),
         CameraViewMode::ThirdPerson => herocraft_common::prof_gpu!("gpu::frame [vue TPS]", frame),

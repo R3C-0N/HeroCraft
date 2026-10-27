@@ -6,9 +6,77 @@
 // - Lueur atmosphérique rasante sur le limbe planétaire en vue orbitale
 // - Brouillard atmosphérique volumétrique de distance au sol
 // - Dithered Cross-Fade (tramage stochastique Bayer 4x4) pour transitions LOD
+// - Ombres portées du soleil (3 cascades, PCF) et ombres mouvantes des nuages
 // =========================================================================
 
 #import herocraft::common::{camera, get_moon_data, HDR_SKY, HDR_SUN, HORIZON_DAY}
+
+// Ombres : cascades de profondeur et carte d'opacité des nuages vues depuis le soleil (shadow.rs)
+struct ShadowUniform {
+    cascades: array<mat4x4<f32>, 3>,
+    cloud_view_proj: mat4x4<f32>,
+    // xyz : demi-largeur monde de chaque cascade, w : taille d'un texel de cascade en uv
+    extents: vec4<f32>,
+    // x : force des ombres du relief, y : force des ombres des nuages, z : 1 si actives,
+    // w : décalage le long de la normale, en fraction de la demi-largeur de la cascade
+    params: vec4<f32>,
+};
+
+@group(1) @binding(0) var<uniform> shadow: ShadowUniform;
+@group(1) @binding(1) var shadow_maps: texture_depth_2d_array;
+@group(1) @binding(2) var shadow_sampler: sampler_comparison;
+@group(1) @binding(3) var cloud_shadow_map: texture_2d<f32>;
+@group(1) @binding(4) var cloud_sampler: sampler;
+
+fn to_shadow_uv(clip: vec4<f32>) -> vec3<f32> {
+    let ndc = clip.xyz / clip.w;
+    return vec3<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z);
+}
+
+// Part de la lumière du soleil qui atteint le point : 1 = plein soleil, 0 = ombre complète
+fn sun_visibility(world_pos: vec3<f32>, n: vec3<f32>) -> f32 {
+    if (shadow.params.z < 0.5) {
+        return 1.0;
+    }
+
+    // Relief : première cascade qui contient le point (PCF 3x3, comparaisons filtrées)
+    var relief = 1.0;
+    let texel = shadow.extents.w;
+    for (var i = 0; i < 3; i = i + 1) {
+        let offset = n * (shadow.extents[i] * shadow.params.w);
+        let uvz = to_shadow_uv(shadow.cascades[i] * vec4<f32>(world_pos + offset, 1.0));
+        let edge = max(abs(uvz.x - 0.5), abs(uvz.y - 0.5)) * 2.0;
+        if (edge < 0.98 && uvz.z > 0.0 && uvz.z < 1.0) {
+            var sum = 0.0;
+            for (var y = -1; y <= 1; y = y + 1) {
+                for (var x = -1; x <= 1; x = x + 1) {
+                    let uv = uvz.xy + vec2<f32>(f32(x), f32(y)) * texel;
+                    sum += textureSampleCompareLevel(shadow_maps, shadow_sampler, uv, i, uvz.z - 0.0002);
+                }
+            }
+            relief = sum / 9.0;
+            // Fondu au bord de la dernière cascade : pas de limite nette au loin
+            if (i == 2) {
+                relief = mix(relief, 1.0, smoothstep(0.80, 0.98, edge));
+            }
+            break;
+        }
+    }
+
+    // Nuages : opacité filtrée sur 5 points pour des bords doux
+    let cuv = to_shadow_uv(shadow.cloud_view_proj * vec4<f32>(world_pos, 1.0)).xy;
+    var clouds = 0.0;
+    if (all(cuv > vec2<f32>(0.0)) && all(cuv < vec2<f32>(1.0))) {
+        let d = 1.5 / vec2<f32>(textureDimensions(cloud_shadow_map));
+        clouds = textureSampleLevel(cloud_shadow_map, cloud_sampler, cuv, 0.0).r * 0.4;
+        clouds += textureSampleLevel(cloud_shadow_map, cloud_sampler, cuv + vec2<f32>(d.x, d.y), 0.0).r * 0.15;
+        clouds += textureSampleLevel(cloud_shadow_map, cloud_sampler, cuv + vec2<f32>(-d.x, d.y), 0.0).r * 0.15;
+        clouds += textureSampleLevel(cloud_shadow_map, cloud_sampler, cuv + vec2<f32>(d.x, -d.y), 0.0).r * 0.15;
+        clouds += textureSampleLevel(cloud_shadow_map, cloud_sampler, cuv + vec2<f32>(-d.x, -d.y), 0.0).r * 0.15;
+    }
+
+    return mix(1.0, relief, shadow.params.x) * (1.0 - clouds * shadow.params.y);
+}
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -169,7 +237,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // - Nuit sous clair de lune : lueur bleutée argentée généreuse (modulée par moon_slider)
     let day_ambient = vec3<f32>(0.68, 0.78, 0.92);
     let sunset_ambient = vec3<f32>(0.38, 0.26, 0.48); // Teinte d'ombre crépusculaire violacée
-    let sun_ambient = mix(day_ambient, sunset_ambient, sunset_factor) * (mix(0.18, 0.22, day_factor) * day_amb_slider);
+    // Ciel amplifié comme le dôme : les faces à l'ombre restent lisibles et bleutées
+    let sun_ambient = mix(day_ambient, sunset_ambient, sunset_factor) * (mix(0.18, 0.22, day_factor) * day_amb_slider * HDR_SKY);
 
     let starlight_ambient = vec3<f32>(0.32, 0.42, 0.70) * (0.038 * night_amb_slider); // Nuit noire sans lune
     let moonlight_ambient = vec3<f32>(0.48, 0.62, 0.94) * (0.075 * moon_intensity); // Surcroît clair de lune
@@ -181,7 +250,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Lambert majoritaire : en HDR, le contraste soleil / ombre est porté par le tonemapper
     // L'eau renvoie surtout le ciel (reflets plus bas) : peu de diffus pour garder un bleu profond
     let water_diffuse = select(1.0, 0.45, is_water);
-    let direct_level = 0.78 * mix(half_lambert, direct, 0.65) * sun_slider * HDR_SUN * water_diffuse;
+    // Ombres portées : n'atténuent que la lumière directe, le ciel continue d'éclairer
+    let sun_vis = select(1.0, sun_visibility(in.world_pos, n_facet), day_factor > 0.0);
+    let direct_level = 0.78 * mix(half_lambert, direct, 0.65) * sun_slider * HDR_SUN * water_diffuse * sun_vis;
 
     // Éclairage combiné : ambiance (jour / coucher / nuit étoilée / clair de lune) + soleil direct + lune directe
     let total_light = mix(night_ambient_total, sun_ambient, day_factor) + sun_color * direct_level + moon_direct_color;
@@ -194,7 +265,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (is_water) {
         // Reflet spéculaire Blinn-Phong pour l'océan
         let spec_power = mix(48.0, 96.0, orbit_factor);
-        let sun_spec = pow(ndoth, spec_power) * 1.8 * sun_slider * HDR_SUN;
+        let sun_spec = pow(ndoth, spec_power) * 1.8 * sun_slider * HDR_SUN * sun_vis;
         // Effet Fresnel rasante
         let fresnel = pow(1.0 - ndotv, 5.0) * 0.45 + 0.05;
         let ocean_spec_color = mix(sun_color, vec3<f32>(1.0, 0.95, 0.85), clamp(sun_elevation * 3.0, 0.0, 1.0));
@@ -211,7 +282,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         specular_light += water_spec;
     } else if (is_snow) {
         // Scintillement cristallin diffus sur les névés et glaciers (soleil de jour et lune la nuit)
-        let snow_glint = pow(ndoth, 24.0) * 0.40 * clamp(ndotl * 2.0, 0.0, 1.0) * day_factor * sun_slider * HDR_SUN;
+        let snow_glint = pow(ndoth, 24.0) * 0.40 * clamp(ndotl * 2.0, 0.0, 1.0) * day_factor * sun_slider * HDR_SUN * sun_vis;
         let snow_moon_glint = pow(max(dot(n, normalize(moon.dir + view_dir)), 0.0), 20.0) * 0.15 * moon_intensity;
         specular_light += vec3<f32>(0.92, 0.95, 1.0) * (snow_glint + snow_moon_glint);
     }

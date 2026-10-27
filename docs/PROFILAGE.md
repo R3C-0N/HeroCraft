@@ -35,7 +35,7 @@ Un `Ctrl+C` dans le terminal tue le processus **sans** écrire le rapport.
 Si l'adaptateur supporte les *timestamp queries* (ligne `gpu_timestamps` du rapport), le groupe
 `gpu` donne le temps réellement passé par le GPU sur chaque passe : `gpu::pass_3d` (découpé en
 `sky`, `terrain` et `clouds_msaa_resolve` si les timestamps intra-passe sont supportés),
-`gpu::post_bloom_tonemap` (bloom et composition HDR),
+`gpu::shadows` (cascades du relief et carte des nuages), `gpu::post_bloom_tonemap` (bloom et composition HDR),
 `gpu::pass_egui`, et le temps GPU total de la frame par vue (`[vue FPS]`, `[vue TPS]`,
 `[vue orbite]`). Côté CPU, un `render::acquire_frame` élevé signifie que le CPU attend le GPU.
 

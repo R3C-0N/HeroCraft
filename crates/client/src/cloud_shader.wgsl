@@ -35,8 +35,26 @@ struct VertexOutput {
     @location(7) @interpolate(flat) config: vec4<f32>,
 };
 
+// Passe d'ombre des nuages : projection orthographique depuis le soleil (shadow.rs)
+struct ShadowPass {
+    view_proj: mat4x4<f32>,
+};
+
+@group(1) @binding(0)
+var<uniform> shadow_pass: ShadowPass;
+
 @vertex
 fn vs_cloud(in: VertexInput) -> VertexOutput {
+    return cloud_vertex(in, camera.view_proj);
+}
+
+@vertex
+fn vs_cloud_shadow(in: VertexInput) -> VertexOutput {
+    return cloud_vertex(in, shadow_pass.view_proj);
+}
+
+// Dérive du vent appliquée à la boîte et à son repère, projetée par `view_proj`
+fn cloud_vertex(in: VertexInput, view_proj: mat4x4<f32>) -> VertexOutput {
     var out: VertexOutput;
 
     // Dérive douce du vent autour de l'axe planétaire (Y)
@@ -76,7 +94,7 @@ fn vs_cloud(in: VertexInput) -> VertexOutput {
         in.frame_w.x * sin_a + in.frame_w.z * cos_a
     );
 
-    out.clip_position = camera.view_proj * vec4<f32>(pos_rot, 1.0);
+    out.clip_position = view_proj * vec4<f32>(pos_rot, 1.0);
     out.world_pos = pos_rot;
     out.frame_u = u_rot;
     out.frame_v = v_rot;
@@ -420,4 +438,51 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     out.color = vec4<f32>(final_color, final_alpha);
     out.depth = frag_depth;
     return out;
+}
+
+// Ombre portée des nuages : le rayon part de la face de la boîte tournée vers le soleil et suit
+// la lumière. Un impact écrit l'opacité du nuage dans la carte d'ombre (mélange par maximum).
+@fragment
+fn fs_cloud_shadow(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @location(0) vec4<f32> {
+    let cloud_slider = camera.lighting_params_ext.z;
+    if (cloud_slider < 0.01 || !is_front) {
+        discard;
+    }
+
+    let ray_dir = -normalize(camera.light_dir);
+    let v_world = in.world_pos - in.cloud_center;
+    let local_p0 = vec3<f32>(dot(v_world, in.frame_u), dot(v_world, in.frame_v), dot(v_world, in.frame_w));
+    let local_ray_dir = normalize(vec3<f32>(dot(ray_dir, in.frame_u), dot(ray_dir, in.frame_v), dot(ray_dir, in.frame_w)));
+
+    let half_depth = in.config.y;
+    let roundness = clamp(camera.cloud_params.x, 0.05, min(0.55, half_depth - 0.04));
+    let planet_scale = camera.planet_radius / 25.0;
+
+    // Même boîte serrée que fs_cloud : la marge de la boîte du maillage ne contient aucune surface
+    let margin = 0.05 * planet_scale;
+    let rho_shape = length(max(abs(in.bbox.xy), abs(in.bbox.zw)));
+    let sag_shape = rho_shape * rho_shape / (2.0 * length(in.cloud_center));
+    let tight_min = vec3<f32>(in.bbox.x, in.bbox.y, -half_depth - sag_shape) - vec3<f32>(margin);
+    let tight_max = vec3<f32>(in.bbox.z, in.bbox.w, half_depth) + vec3<f32>(margin);
+    let inv_d = 1.0 / select(local_ray_dir, vec3<f32>(1e-6), abs(local_ray_dir) < vec3<f32>(1e-6));
+    let t0 = (tight_min - local_p0) * inv_d;
+    let t1 = (tight_max - local_p0) * inv_d;
+    let t_enter = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z));
+    let t_exit = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+
+    // Une ombre n'a pas besoin de la précision d'une surface vue : seuil de contact large
+    let eps = 0.01 * planet_scale;
+    var t = max(t_enter, 0.0);
+    let steps_max = select(0, 48, t <= t_exit);
+    for (var step = 0; step < steps_max; step = step + 1) {
+        let d = sd_cloud_3d(local_p0 + local_ray_dir * t, in.mask, in.config.x, half_depth, roundness);
+        if (d < eps) {
+            return vec4<f32>(clamp(cloud_slider, 0.0, 1.0), 0.0, 0.0, 0.0);
+        }
+        t += max(d, eps);
+        if (t > t_exit) {
+            break;
+        }
+    }
+    discard;
 }

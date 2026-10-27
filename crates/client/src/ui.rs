@@ -152,6 +152,26 @@ impl Default for PostSettings {
     }
 }
 
+/// Réglages des ombres portées du soleil et des nuages
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShadowSettings {
+    pub enabled: bool,
+    pub strength: f32,       // Part de la lumière directe retirée à l'ombre du relief [0.0 .. 1.0]
+    pub cloud_shadows: bool,
+    pub cloud_strength: f32, // Part de la lumière directe retirée sous un nuage [0.0 .. 1.0]
+}
+
+impl Default for ShadowSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            strength: 1.0,
+            cloud_shadows: true,
+            cloud_strength: 0.7,
+        }
+    }
+}
+
 /// Réglages d'éclairage et d'ambiance céleste ajustables via sliders
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LightingSettings {
@@ -193,6 +213,7 @@ pub struct UiState {
     pub lighting_settings: LightingSettings,
     pub cloud_settings: CloudSettings,
     pub post_settings: PostSettings,
+    pub shadow_settings: ShadowSettings,
     pub screen_width: f32,
     pub screen_height: f32,
 }
@@ -218,6 +239,7 @@ impl UiState {
             lighting_settings: LightingSettings::default(),
             cloud_settings: CloudSettings::default(),
             post_settings: PostSettings::default(),
+            shadow_settings: ShadowSettings::default(),
             screen_width: 1280.0_f32,
             screen_height: 720.0_f32,
         }
@@ -573,6 +595,32 @@ impl UiState {
                                     ui.add_space(4.0_f32);
                                     if ui.button("↺ Réinitialiser le rendu HDR").clicked() {
                                         self.post_settings = PostSettings::default();
+                                    }
+                                },
+                            );
+
+                            ui.add_space(3.0_f32);
+
+                            // Section des ombres portées (relief et nuages)
+                            ui.collapsing(
+                                egui::RichText::new("🌓  Ombres")
+                                    .size(12.0_f32)
+                                    .color(egui::Color32::from_rgb(200, 205, 225))
+                                    .strong(),
+                                |ui| {
+                                    ui.add_space(2.0_f32);
+                                    ui.checkbox(&mut self.shadow_settings.enabled, "Ombres portées du soleil");
+                                    ui.add_enabled_ui(self.shadow_settings.enabled, |ui| {
+                                        ui.add(egui::Slider::new(&mut self.shadow_settings.strength, 0.0..=1.0).text("Relief").show_value(true));
+                                        ui.checkbox(&mut self.shadow_settings.cloud_shadows, "Ombres des nuages au sol");
+                                        ui.add_enabled_ui(self.shadow_settings.cloud_shadows, |ui| {
+                                            ui.add(egui::Slider::new(&mut self.shadow_settings.cloud_strength, 0.0..=1.0).text("Nuages").show_value(true));
+                                        });
+                                    });
+
+                                    ui.add_space(4.0_f32);
+                                    if ui.button("↺ Réinitialiser les ombres").clicked() {
+                                        self.shadow_settings = ShadowSettings::default();
                                     }
                                 },
                             );
