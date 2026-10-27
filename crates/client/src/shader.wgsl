@@ -18,7 +18,7 @@ struct ShadowUniform {
     // xyz : demi-largeur monde de chaque cascade, w : taille d'un texel de cascade en uv
     extents: vec4<f32>,
     // x : force des ombres du relief, y : force des ombres des nuages, z : 1 si actives,
-    // w : décalage le long de la normale, en fraction de la demi-largeur de la cascade
+    // w : décalage maximal le long de la normale (face rasante), en fraction de la demi-largeur de la cascade
     params: vec4<f32>,
 };
 
@@ -33,17 +33,29 @@ fn to_shadow_uv(clip: vec4<f32>) -> vec3<f32> {
     return vec3<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z);
 }
 
-// Part de la lumière du soleil qui atteint le point : 1 = plein soleil, 0 = ombre complète
-fn sun_visibility(world_pos: vec3<f32>, n: vec3<f32>) -> f32 {
+// Part de la lumière du soleil qui atteint le point : 1 = plein soleil, 0 = ombre complète.
+// `n` est la normale géométrique de la facette, `l` la direction du soleil.
+fn sun_visibility(world_pos: vec3<f32>, n: vec3<f32>, l: vec3<f32>) -> f32 {
     if (shadow.params.z < 0.5) {
         return 1.0;
     }
+
+    // Une face tournée à l'opposé du soleil est dans sa propre ombre : la carte n'est pas consultée.
+    // Le décalage le long de la normale l'aurait sinon sortie du bloc, et le haut de la face
+    // (près de l'arête) aurait vu le soleil par-dessus le bloc.
+    let ndotl = dot(n, l);
+    let facing = smoothstep(-0.02, 0.10, ndotl);
+    if (facing <= 0.0) {
+        return 0.0;
+    }
+    // Décalage seulement utile sur les faces rasantes (acné), nul face au soleil
+    let slope = sqrt(clamp(1.0 - ndotl * ndotl, 0.0, 1.0));
 
     // Relief : première cascade qui contient le point (PCF 3x3, comparaisons filtrées)
     var relief = 1.0;
     let texel = shadow.extents.w;
     for (var i = 0; i < 3; i = i + 1) {
-        let offset = n * (shadow.extents[i] * shadow.params.w);
+        let offset = n * (shadow.extents[i] * shadow.params.w * slope);
         let uvz = to_shadow_uv(shadow.cascades[i] * vec4<f32>(world_pos + offset, 1.0));
         let edge = max(abs(uvz.x - 0.5), abs(uvz.y - 0.5)) * 2.0;
         if (edge < 0.98 && uvz.z > 0.0 && uvz.z < 1.0) {
@@ -75,7 +87,7 @@ fn sun_visibility(world_pos: vec3<f32>, n: vec3<f32>) -> f32 {
         clouds += textureSampleLevel(cloud_shadow_map, cloud_sampler, cuv + vec2<f32>(-d.x, -d.y), 0.0).r * 0.15;
     }
 
-    return mix(1.0, relief, shadow.params.x) * (1.0 - clouds * shadow.params.y);
+    return mix(1.0, relief * facing, shadow.params.x) * (1.0 - clouds * shadow.params.y);
 }
 
 struct VertexInput {
@@ -251,7 +263,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // L'eau renvoie surtout le ciel (reflets plus bas) : peu de diffus pour garder un bleu profond
     let water_diffuse = select(1.0, 0.45, is_water);
     // Ombres portées : n'atténuent que la lumière directe, le ciel continue d'éclairer
-    let sun_vis = select(1.0, sun_visibility(in.world_pos, n_facet), day_factor > 0.0);
+    let sun_vis = select(1.0, sun_visibility(in.world_pos, n_facet, l), day_factor > 0.0);
     let direct_level = 0.78 * mix(half_lambert, direct, 0.65) * sun_slider * HDR_SUN * water_diffuse * sun_vis;
 
     // Éclairage combiné : ambiance (jour / coucher / nuit étoilée / clair de lune) + soleil direct + lune directe

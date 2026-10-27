@@ -22,8 +22,9 @@ const CLOUD_EXTENT: f32 = 10.0;
 /// les sommets du relief et la couche de nuages (8.8 au-dessus du rayon)
 const LIGHT_DISTANCE: f32 = 14.0;
 const LIGHT_DEPTH: f32 = 28.0;
-/// Décalage le long de la normale à la lecture, en fraction de la demi-largeur (1.5 texel)
-const NORMAL_OFFSET: f32 = 1.5 * 2.0 / CASCADE_SIZE as f32;
+/// Décalage maximal le long de la normale à la lecture (faces rasantes), en fraction de la
+/// demi-largeur : 1 texel. Plus grand, il sortait le haut des faces à l'ombre de leur bloc.
+const NORMAL_OFFSET: f32 = 2.0 / CASCADE_SIZE as f32;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
