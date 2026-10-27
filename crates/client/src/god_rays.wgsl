@@ -176,8 +176,10 @@ fn upsample(pixel: vec2<f32>, depth: f32, size: vec2<f32>) -> vec4<f32> {
         for (var x = -1; x <= 1; x = x + 1) {
             let t = clamp(base + vec2<i32>(x, y), vec2<i32>(0), half_size - 1);
             let s = textureLoad(half_rays, t, 0);
-            let off = vec2<f32>(t) - h;
-            let w_space = exp(-dot(off, off) * 0.8);
+            // Poids en tente (bilinéaire élargi au voisinage 3x3)
+            let off = abs(vec2<f32>(t) - h);
+            let tent = max(vec2<f32>(1.5) - off, vec2<f32>(0.0));
+            let w_space = tent.x * tent.y;
             let rel = abs(s.a - dist) / max(dist, 1e-3);
             let w_depth = 1.0 / (1e-4 + rel * rel * 400.0);
             let w = w_space * w_depth;

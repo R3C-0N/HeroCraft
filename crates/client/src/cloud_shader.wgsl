@@ -118,13 +118,14 @@ fn cell_on(m: vec4<u32>, x: i32, y: i32) -> bool {
     return ((word >> (bit % 32u)) & 1u) == 1u;
 }
 
-// Distance 2D signée à la forme du masque, coins convexes arrondis et angles rentrants comblés
-// (rayon rh). Exacte et continue à moins d'une cellule de la surface, bornée à une cellule au-delà.
-fn sd_mask_2d(p: vec2<f32>, m: vec4<u32>, cell: f32, rh: f32) -> f32 {
-    let q = p / cell + vec2<f32>(5.5); // Coordonnées de grille (0..11)
-    let c = vec2<i32>(floor(q));
+// Cellule du masque qui contient le point (coordonnées de grille 0..11)
+fn mask_cell(p: vec2<f32>, cell: f32) -> vec2<i32> {
+    return vec2<i32>(floor(p / cell + vec2<f32>(5.5)));
+}
 
-    // Voisinage 3x3 lu une seule fois (bit (dy + 1) * 3 + (dx + 1)), réutilisé pour le sommet
+// Voisinage 3x3 de la cellule `c` (bit (dy + 1) * 3 + (dx + 1)). Il ne change qu'en passant
+// d'une cellule à l'autre : les marches le gardent d'un pas au suivant.
+fn mask_neighborhood(m: vec4<u32>, c: vec2<i32>) -> u32 {
     var nb = 0u;
     for (var dy = -1; dy <= 1; dy = dy + 1) {
         for (var dx = -1; dx <= 1; dx = dx + 1) {
@@ -133,6 +134,15 @@ fn sd_mask_2d(p: vec2<f32>, m: vec4<u32>, cell: f32, rh: f32) -> f32 {
             }
         }
     }
+    return nb;
+}
+
+// Distance 2D signée à la forme du masque, coins convexes arrondis et angles rentrants comblés
+// (rayon rh). Exacte et continue à moins d'une cellule de la surface, bornée à une cellule au-delà.
+// `nb` : voisinage 3x3 de la cellule du point (mask_neighborhood).
+fn sd_mask_2d_nb(p: vec2<f32>, nb: u32, cell: f32, rh: f32) -> f32 {
+    let q = p / cell + vec2<f32>(5.5); // Coordonnées de grille (0..11)
+    let c = vec2<i32>(floor(q));
     let inside = (nb & 16u) != 0u;
 
     // Sommet de grille le plus proche : arrondi d'un coin convexe (1 cellule pleine sur 4)
@@ -192,8 +202,13 @@ fn sd_mask_2d(p: vec2<f32>, m: vec4<u32>, cell: f32, rh: f32) -> f32 {
 // Distance 3D : forme du masque extrudée sur l'épaisseur du nuage, arêtes hautes et basses
 // arrondies (rayon r) par érosion puis dilatation, pour le profil en coussin
 fn sd_cloud_3d(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f32) -> f32 {
+    return sd_cloud_3d_nb(p, mask_neighborhood(m, mask_cell(p.xy, cell)), cell, half_depth, r);
+}
+
+// Même distance, voisinage 3x3 de la cellule du point déjà lu (mask_neighborhood)
+fn sd_cloud_3d_nb(p: vec3<f32>, nb: u32, cell: f32, half_depth: f32, r: f32) -> f32 {
     let rh = clamp(max(r * 1.3, 0.35), 0.0, 0.48 * cell);
-    let d_core = sd_mask_2d(p.xy, m, cell, rh) + r;
+    let d_core = sd_mask_2d_nb(p.xy, nb, cell, rh) + r;
     // Dalle courbée pour suivre la sphère (les grands nuages ne remontent plus aux bords)
     let curv_r = camera.planet_radius + 8.8 * (camera.planet_radius / 25.0);
     let z = p.z + dot(p.xy, p.xy) / (2.0 * curv_r);
@@ -204,16 +219,29 @@ fn sd_cloud_3d(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f32) -
     return (length(w) + inside - r) * 0.9;
 }
 
+// sd_mask_2d_nb d'un point voisin : réutilise le voisinage `nb0` de la cellule `c0` s'il y est
+fn sd_mask_2d_near(p: vec2<f32>, m: vec4<u32>, c0: vec2<i32>, nb0: u32, cell: f32, rh: f32) -> f32 {
+    let c = mask_cell(p, cell);
+    var nb = nb0;
+    if (any(c != c0)) {
+        nb = mask_neighborhood(m, c);
+    }
+    return sd_mask_2d_nb(p, nb, cell, rh);
+}
+
 // Normale : gradient de sd_cloud_3d par dérivation en chaîne. Seule la forme 2D du masque
 // passe par des différences finies (4 évaluations au lieu de 6 évaluations du SDF 3D complet),
 // l'épaisseur courbée se dérive analytiquement.
 fn get_cloud_normal(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f32) -> vec3<f32> {
     let eps = 0.004;
     let rh = clamp(max(r * 1.3, 0.35), 0.0, 0.48 * cell);
-    let gx = sd_mask_2d(p.xy + vec2<f32>(eps, 0.0), m, cell, rh) - sd_mask_2d(p.xy - vec2<f32>(eps, 0.0), m, cell, rh);
-    let gy = sd_mask_2d(p.xy + vec2<f32>(0.0, eps), m, cell, rh) - sd_mask_2d(p.xy - vec2<f32>(0.0, eps), m, cell, rh);
+    // Les 5 points sont presque toujours dans la même cellule : un seul voisinage lu
+    let c0 = mask_cell(p.xy, cell);
+    let nb0 = mask_neighborhood(m, c0);
+    let gx = sd_mask_2d_near(p.xy + vec2<f32>(eps, 0.0), m, c0, nb0, cell, rh) - sd_mask_2d_near(p.xy - vec2<f32>(eps, 0.0), m, c0, nb0, cell, rh);
+    let gy = sd_mask_2d_near(p.xy + vec2<f32>(0.0, eps), m, c0, nb0, cell, rh) - sd_mask_2d_near(p.xy - vec2<f32>(0.0, eps), m, c0, nb0, cell, rh);
     let g_core = vec3<f32>(gx, gy, 0.0) / (2.0 * eps);
-    let d_core = sd_mask_2d(p.xy, m, cell, rh) + r;
+    let d_core = sd_mask_2d_nb(p.xy, nb0, cell, rh) + r;
 
     let curv_r = camera.planet_radius + 8.8 * (camera.planet_radius / 25.0);
     let z = p.z + dot(p.xy, p.xy) / (2.0 * curv_r);
@@ -332,9 +360,17 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         t = max(t_enter, 0.0);
         // Rayon qui manque la boîte serrée : aucun pas
         let steps_max = select(0, 96, t <= t_exit);
+        // Voisinage du masque relu seulement au changement de cellule
+        var nb_cell = vec2<i32>(-100);
+        var nb = 0u;
         for (var step = 0; step < steps_max; step = step + 1) {
             let p = local_p0 + local_ray_dir * t;
-            let d = sd_cloud_3d(p, in.mask, in.config.x, half_depth, roundness);
+            let c = mask_cell(p.xy, in.config.x);
+            if (any(c != nb_cell)) {
+                nb_cell = c;
+                nb = mask_neighborhood(in.mask, c);
+            }
+            let d = sd_cloud_3d_nb(p, nb, in.config.x, half_depth, roundness);
             let eps = max(0.002, (dist0 + t) * pixel_angle);
             if (d < eps) {
                 hit = true;
@@ -482,8 +518,16 @@ fn fs_cloud_shadow(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @
     let eps = 0.01 * planet_scale;
     var t = max(t_enter, 0.0);
     let steps_max = select(0, 48, t <= t_exit);
+    var nb_cell = vec2<i32>(-100);
+    var nb = 0u;
     for (var step = 0; step < steps_max; step = step + 1) {
-        let d = sd_cloud_3d(local_p0 + local_ray_dir * t, in.mask, in.config.x, half_depth, roundness);
+        let p = local_p0 + local_ray_dir * t;
+        let c = mask_cell(p.xy, in.config.x);
+        if (any(c != nb_cell)) {
+            nb_cell = c;
+            nb = mask_neighborhood(in.mask, c);
+        }
+        let d = sd_cloud_3d_nb(p, nb, in.config.x, half_depth, roundness);
         if (d < eps) {
             return vec4<f32>(clamp(cloud_slider, 0.0, 1.0), 0.0, 0.0, 0.0);
         }
