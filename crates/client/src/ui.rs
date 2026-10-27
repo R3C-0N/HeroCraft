@@ -94,6 +94,64 @@ impl Default for CloudSettings {
     }
 }
 
+/// Courbe de conversion HDR -> écran appliquée par la passe de composition
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tonemapper {
+    /// Ancien rendu : valeurs écrêtées à 1.0
+    Clip,
+    /// Identique à l'ancien rendu dans les tons moyens, hautes lumières compressées
+    SoftShoulder,
+    Aces,
+    AgX,
+}
+
+impl Tonemapper {
+    pub const ALL: [Tonemapper; 4] = [Tonemapper::Clip, Tonemapper::SoftShoulder, Tonemapper::Aces, Tonemapper::AgX];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Tonemapper::Clip => "Écrêtage (ancien rendu)",
+            Tonemapper::SoftShoulder => "Épaule douce",
+            Tonemapper::Aces => "ACES",
+            Tonemapper::AgX => "AgX",
+        }
+    }
+
+    /// Valeur de `post.mode.x` dans post_shader.wgsl
+    pub fn shader_index(self) -> u32 {
+        match self {
+            Tonemapper::Clip => 0,
+            Tonemapper::SoftShoulder => 1,
+            Tonemapper::Aces => 2,
+            Tonemapper::AgX => 3,
+        }
+    }
+}
+
+/// Réglages du post-traitement HDR (exposition, tonemapper, bloom)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PostSettings {
+    pub exposure_ev: f32,     // Exposition en EV [-3.0 .. 3.0] (0 = neutre)
+    pub tonemapper: Tonemapper,
+    pub bloom_enabled: bool,
+    pub bloom_intensity: f32, // Part du halo ajoutée à l'image [0.0 .. 1.0]
+    pub bloom_threshold: f32, // Luminance à partir de laquelle un pixel diffuse [0.0 .. 4.0]
+    pub bloom_knee: f32,      // Largeur de la transition douce autour du seuil [0.0 .. 1.0]
+}
+
+impl Default for PostSettings {
+    fn default() -> Self {
+        Self {
+            exposure_ev: 0.0,
+            tonemapper: Tonemapper::SoftShoulder,
+            bloom_enabled: true,
+            bloom_intensity: 0.35,
+            bloom_threshold: 1.1,
+            bloom_knee: 0.3,
+        }
+    }
+}
+
 /// Réglages d'éclairage et d'ambiance céleste ajustables via sliders
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LightingSettings {
@@ -134,6 +192,7 @@ pub struct UiState {
     pub video_settings: VideoSettings,
     pub lighting_settings: LightingSettings,
     pub cloud_settings: CloudSettings,
+    pub post_settings: PostSettings,
     pub screen_width: f32,
     pub screen_height: f32,
 }
@@ -158,6 +217,7 @@ impl UiState {
             video_settings: VideoSettings::default(),
             lighting_settings: LightingSettings::default(),
             cloud_settings: CloudSettings::default(),
+            post_settings: PostSettings::default(),
             screen_width: 1280.0_f32,
             screen_height: 720.0_f32,
         }
@@ -475,6 +535,44 @@ impl UiState {
                                     if ui.button("↺ Réinitialiser les nuages").clicked() {
                                         self.cloud_settings = CloudSettings::default();
                                         self.lighting_settings.cloud_density = self.cloud_settings.density;
+                                    }
+                                },
+                            );
+
+                            ui.add_space(3.0_f32);
+
+                            // Section du post-traitement HDR : exposition, tonemapper et bloom
+                            ui.collapsing(
+                                egui::RichText::new("✨  Rendu HDR & Bloom")
+                                    .size(12.0_f32)
+                                    .color(egui::Color32::from_rgb(255, 215, 160))
+                                    .strong(),
+                                |ui| {
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Exposition (EV) :").size(11.0_f32).color(egui::Color32::from_rgb(230, 220, 190)));
+                                    ui.add(egui::Slider::new(&mut self.post_settings.exposure_ev, -3.0..=3.0).text("EV").show_value(true));
+
+                                    ui.add_space(2.0_f32);
+                                    ui.label(egui::RichText::new("Tonemapper :").size(11.0_f32).color(egui::Color32::from_rgb(230, 220, 190)));
+                                    egui::ComboBox::from_id_salt("tonemapper")
+                                        .selected_text(self.post_settings.tonemapper.label())
+                                        .show_ui(ui, |ui| {
+                                            for t in Tonemapper::ALL {
+                                                ui.selectable_value(&mut self.post_settings.tonemapper, t, t.label());
+                                            }
+                                        });
+
+                                    ui.add_space(2.0_f32);
+                                    ui.checkbox(&mut self.post_settings.bloom_enabled, "Bloom (halo lumineux)");
+                                    ui.add_enabled_ui(self.post_settings.bloom_enabled, |ui| {
+                                        ui.add(egui::Slider::new(&mut self.post_settings.bloom_intensity, 0.0..=1.0).text("Intensité").show_value(true));
+                                        ui.add(egui::Slider::new(&mut self.post_settings.bloom_threshold, 0.0..=4.0).text("Seuil").show_value(true));
+                                        ui.add(egui::Slider::new(&mut self.post_settings.bloom_knee, 0.0..=1.0).text("Douceur").show_value(true));
+                                    });
+
+                                    ui.add_space(4.0_f32);
+                                    if ui.button("↺ Réinitialiser le rendu HDR").clicked() {
+                                        self.post_settings = PostSettings::default();
                                     }
                                 },
                             );

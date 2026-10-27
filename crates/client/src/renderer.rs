@@ -6,7 +6,8 @@ use crate::camera::{CameraViewMode, OrbitCamera};
 use crate::gpu_timer::{self, GpuTimer};
 use crate::lod::{LodMeshId, PlanetLodManager};
 use crate::planet_mesh::PlanetVertex;
-use crate::ui::{CloudSettings, LightingSettings, UiState};
+use crate::post::{self, PostProcess};
+use crate::ui::{CloudSettings, LightingSettings, PostSettings, UiState};
 
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -73,8 +74,9 @@ pub struct State {
     pub depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
     pub sample_count: u32,
-    pub msaa_color_texture: Option<wgpu::Texture>,
-    pub msaa_color_view: Option<wgpu::TextureView>,
+    /// Cible HDR de la passe 3D, bloom et composition vers la swapchain
+    post: PostProcess,
+    bloom_enabled: bool,
     /// Un couple de buffers par maillage de feuille LOD, envoyé une seule fois au GPU
     lod_gpu_meshes: HashMap<LodMeshId, GpuMesh>,
     /// Maillages à dessiner cette frame, dans l'ordre des feuilles
@@ -283,21 +285,13 @@ impl State {
                 push_constant_ranges: &[],
             });
 
-        // Détection du support matériel MSAA 4x
-        let msaa_flags = adapter.get_texture_format_features(config.format).flags;
-        let sample_count = if msaa_flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X4) {
-            4
-        } else {
-            1
-        };
+        // Détection du support matériel MSAA 4x sur le format HDR de la passe 3D
+        let sample_count = PostProcess::sample_count(&adapter);
         log::info!("Anti-Aliasing MSAA 4x : {} (sample_count = {})", sample_count == 4, sample_count);
         herocraft_common::profiler::set_meta("msaa_sample_count", sample_count.to_string());
 
         let (depth_texture, depth_view) = Self::create_depth_texture(&device, &config, sample_count);
-        let (msaa_color_texture, msaa_color_view) = match Self::create_msaa_color_texture(&device, &config, sample_count) {
-            Some((t, v)) => (Some(t), Some(v)),
-            None => (None, None),
-        };
+        let post = PostProcess::new(&device, &config, sample_count);
 
         // Pipeline Ciel & Atmosphère 3D (Étoiles, Soleil, Halo spatial, Ciel bleu)
         let sky_shader = crate::shaders::create_shader_module(&device, "Sky Shader", include_str!("sky_shader.wgsl"), "sky_shader.wgsl");
@@ -315,7 +309,7 @@ impl State {
                 module: &sky_shader,
                 entry_point: Some("fs_sky"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: post::HDR_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -359,7 +353,7 @@ impl State {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: post::HDR_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -408,7 +402,7 @@ impl State {
                 module: &cloud_shader,
                 entry_point: Some("fs_cloud"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: post::HDR_FORMAT,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -481,8 +475,8 @@ impl State {
             depth_texture,
             depth_view,
             sample_count,
-            msaa_color_texture,
-            msaa_color_view,
+            post,
+            bloom_enabled: true,
             lod_gpu_meshes: HashMap::new(),
             lod_draw_list: Vec::new(),
             camera_eye: glam::Vec3::ZERO,
@@ -523,33 +517,6 @@ impl State {
         (texture, view)
     }
 
-    fn create_msaa_color_texture(
-        device: &wgpu::Device,
-        config: &wgpu::SurfaceConfiguration,
-        sample_count: u32,
-    ) -> Option<(wgpu::Texture, wgpu::TextureView)> {
-        if sample_count <= 1 {
-            return None;
-        }
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("MSAA Color Texture"),
-            size: wgpu::Extent3d {
-                width: config.width.max(1),
-                height: config.height.max(1),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count,
-            dimension: wgpu::TextureDimension::D2,
-            format: config.format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        Some((texture, view))
-    }
-
-
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         herocraft_common::prof_scope!("render::resize");
         if new_size.width > 0 && new_size.height > 0 {
@@ -563,12 +530,7 @@ impl State {
             self.depth_texture = depth_texture;
             self.depth_view = depth_view;
 
-            let (msaa_texture, msaa_view) = match Self::create_msaa_color_texture(&self.device, &self.config, self.sample_count) {
-                Some((t, v)) => (Some(t), Some(v)),
-                None => (None, None),
-            };
-            self.msaa_color_texture = msaa_texture;
-            self.msaa_color_view = msaa_view;
+            self.post.resize(&self.device, &self.config);
         }
     }
 
@@ -645,6 +607,11 @@ impl State {
         };
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
+    }
+
+    pub fn update_post(&mut self, settings: &PostSettings) {
+        self.bloom_enabled = settings.bloom_enabled && settings.bloom_intensity > 0.0;
+        self.post.update(&self.queue, settings);
     }
 
     /// Synchronise les buffers GPU avec les feuilles LOD affichées : seuls les nouveaux maillages
@@ -770,22 +737,12 @@ impl State {
         let timer_queries = self.gpu_timer.as_ref().and_then(|t| t.query_set());
         let timer_inside_passes = self.gpu_timer.as_ref().is_some_and(|t| t.inside_passes);
 
-        // 1. Passe 3D (Ciel étoilé + Soleil + Halo atmosphérique + Planète & Voxels avec MSAA 4x si supporté)
+        // 1. Passe 3D HDR (Ciel étoilé + Soleil + Halo atmosphérique + Planète & Voxels avec MSAA 4x si supporté)
         {
             herocraft_common::prof_scope!("render::encode_3d_pass");
-            let (color_view, resolve_target, store_op) = if self.sample_count > 1 {
-                (
-                    self.msaa_color_view.as_ref().unwrap(),
-                    Some(&swapchain_view),
-                    wgpu::StoreOp::Discard, // La cible résolue reçoit l'image antialiadée finale
-                )
-            } else {
-                (
-                    &swapchain_view,
-                    None,
-                    wgpu::StoreOp::Store,
-                )
-            };
+            let (color_view, resolve_target) = self.post.scene_attachment();
+            // Avec MSAA, seule la cible HDR résolue est relue par le post-traitement
+            let store_op = if resolve_target.is_some() { wgpu::StoreOp::Discard } else { wgpu::StoreOp::Store };
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("3D World Render Pass"),
@@ -857,7 +814,14 @@ impl State {
             }
         }
 
-        // 2. Passe 2D Interface Utilisateur egui (sample_count = 1 sur la swapchain résolue)
+        // 2. Bloom puis composition HDR (exposition + tonemapper) vers la swapchain
+        {
+            herocraft_common::prof_scope!("render::encode_post");
+            let timestamps = timer_queries.map(|q| (q, gpu_timer::TS_POST_BEGIN, gpu_timer::TS_POST_END));
+            self.post.encode(&mut encoder, &swapchain_view, self.bloom_enabled, timestamps);
+        }
+
+        // 3. Passe 2D Interface Utilisateur egui (sample_count = 1 sur la swapchain)
         {
             herocraft_common::prof_scope!("render::egui_update_buffers");
             self.egui_renderer.update_buffers(
@@ -932,15 +896,17 @@ mod tests {
         let terrain_shader = include_str!("shader.wgsl");
         let ui_shader = include_str!("ui_shader.wgsl");
         let cloud_shader = include_str!("cloud_shader.wgsl");
+        let post_shader = include_str!("post_shader.wgsl");
 
         for (name, source) in [
             ("sky_shader.wgsl", sky_shader),
             ("shader.wgsl", terrain_shader),
             ("ui_shader.wgsl", ui_shader),
             ("cloud_shader.wgsl", cloud_shader),
+            ("post_shader.wgsl", post_shader),
         ] {
             // Assemblage naga_oil (imports de common.wgsl) puis validation complète
-            let module = if name == "ui_shader.wgsl" {
+            let module = if name == "ui_shader.wgsl" || name == "post_shader.wgsl" {
                 naga::front::wgsl::parse_str(source).unwrap_or_else(|e| panic!("Failed to parse {name}:\n{e}"))
             } else {
                 crate::shaders::compose(source, name).unwrap_or_else(|e| panic!("Failed to compose {name}:\n{e}"))

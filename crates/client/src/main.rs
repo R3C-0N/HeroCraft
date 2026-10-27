@@ -15,6 +15,7 @@ mod cloud_mesh;
 mod gpu_timer;
 mod lod;
 mod planet_mesh;
+mod post;
 mod renderer;
 mod shaders;
 mod ui;
@@ -320,6 +321,7 @@ fn main() {
                             camera.update(dt, &generator);
                         }
                         state.update_camera(&camera, &ui_state.lighting_settings, &ui_state.cloud_settings);
+                        state.update_post(&ui_state.post_settings);
 
                         // Mise à jour adaptative du QuadTree LOD
                         herocraft_common::prof_scope!("frame::lod_and_upload" => lod_guard);

@@ -13,9 +13,11 @@ pub const TS_3D_BEGIN: u32 = 0;
 pub const TS_AFTER_SKY: u32 = 1;
 pub const TS_AFTER_TERRAIN: u32 = 2;
 pub const TS_3D_END: u32 = 3;
-pub const TS_UI_BEGIN: u32 = 4;
-pub const TS_UI_END: u32 = 5;
-const TIMESTAMP_COUNT: u32 = 6;
+pub const TS_POST_BEGIN: u32 = 4;
+pub const TS_POST_END: u32 = 5;
+pub const TS_UI_BEGIN: u32 = 6;
+pub const TS_UI_END: u32 = 7;
+const TIMESTAMP_COUNT: u32 = 8;
 const SLOT_COUNT: usize = 4;
 const BUFFER_SIZE: u64 = TIMESTAMP_COUNT as u64 * 8;
 
@@ -153,6 +155,7 @@ fn record(ts: &[u64], period_ns: f64, view_mode: CameraViewMode, inside_passes: 
         herocraft_common::prof_gpu!("gpu::pass_3d::terrain", span(TS_AFTER_SKY, TS_AFTER_TERRAIN));
         herocraft_common::prof_gpu!("gpu::pass_3d::clouds_msaa_resolve", span(TS_AFTER_TERRAIN, TS_3D_END));
     }
+    herocraft_common::prof_gpu!("gpu::post_bloom_tonemap", span(TS_POST_BEGIN, TS_POST_END));
     herocraft_common::prof_gpu!("gpu::pass_egui", span(TS_UI_BEGIN, TS_UI_END));
     let frame = span(TS_3D_BEGIN, TS_UI_END);
     match view_mode {
