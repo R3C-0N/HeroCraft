@@ -8,7 +8,6 @@
 // - Dessus clair, flancs intermédiaires, dessous plus sombre et légèrement mauve
 // - Perspective atmosphérique vers le ciel et compression douce des hautes lumières
 // - Écriture précise de la profondeur dans le Z-buffer (@builtin(frag_depth))
-// - Calcul en demi-résolution, recomposé en pleine résolution (cloud_composite.wgsl)
 // =========================================================================
 
 #import herocraft::common::{camera, get_moon_data, sky_factors, sky_dome}
@@ -208,11 +207,8 @@ fn soft_shoulder(c: vec3<f32>) -> vec3<f32> {
     return select(c, compressed, c > vec3<f32>(knee));
 }
 
-// Rendu en demi-résolution : couleur prémultipliée et profondeur de l'impact (cible R32Float),
-// recomposées en pleine résolution par cloud_composite.wgsl
 struct FragmentOutput {
     @location(0) color: vec4<f32>,
-    @location(1) hit_depth: f32,
     @builtin(frag_depth) depth: f32,
 };
 
@@ -427,8 +423,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let final_alpha = clamp(cloud_slider, 0.0, 1.0);
 
     var out: FragmentOutput;
-    out.color = vec4<f32>(final_color * final_alpha, final_alpha);
-    out.hit_depth = frag_depth;
+    out.color = vec4<f32>(final_color, final_alpha);
     out.depth = frag_depth;
     return out;
 }

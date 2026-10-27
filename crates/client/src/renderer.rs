@@ -42,64 +42,6 @@ fn mesh_center(vertices: &[PlanetVertex]) -> glam::Vec3 {
     (min + max) * 0.5
 }
 
-/// Cibles de la passe des nuages en demi-résolution
-struct CloudTargets {
-    color_view: wgpu::TextureView,
-    hit_depth_view: wgpu::TextureView,
-    depth_view: wgpu::TextureView,
-    composite_bind_group: wgpu::BindGroup,
-}
-
-const CLOUD_COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-const CLOUD_HIT_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Float;
-
-impl CloudTargets {
-    fn new(
-        device: &wgpu::Device,
-        config: &wgpu::SurfaceConfiguration,
-        layout: &wgpu::BindGroupLayout,
-        sampler: &wgpu::Sampler,
-    ) -> Self {
-        let size = wgpu::Extent3d {
-            width: config.width.div_ceil(2).max(1),
-            height: config.height.div_ceil(2).max(1),
-            depth_or_array_layers: 1,
-        };
-        let make = |label: &str, format: wgpu::TextureFormat, usage: wgpu::TextureUsages| {
-            device
-                .create_texture(&wgpu::TextureDescriptor {
-                    label: Some(label),
-                    size,
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format,
-                    usage,
-                    view_formats: &[],
-                })
-                .create_view(&wgpu::TextureViewDescriptor::default())
-        };
-        let sampled = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
-        let color_view = make("Cloud Color (demi-résolution)", CLOUD_COLOR_FORMAT, sampled);
-        let hit_depth_view = make("Cloud Hit Depth (demi-résolution)", CLOUD_HIT_DEPTH_FORMAT, sampled);
-        let depth_view = make(
-            "Cloud Depth (demi-résolution)",
-            wgpu::TextureFormat::Depth32Float,
-            wgpu::TextureUsages::RENDER_ATTACHMENT,
-        );
-        let composite_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("cloud_composite_bind_group"),
-            layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&color_view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&hit_depth_view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(sampler) },
-            ],
-        });
-        Self { color_view, hit_depth_view, depth_view, composite_bind_group }
-    }
-}
-
 /// Octets envoyés au GPU au plus par synchronisation (un gros ensemble est étalé sur plusieurs frames)
 const LOD_UPLOAD_BUDGET: usize = 6 * 1024 * 1024;
 
@@ -123,13 +65,6 @@ pub struct State {
     pub cloud_vertex_buffer: wgpu::Buffer,
     pub cloud_index_buffer: wgpu::Buffer,
     pub num_cloud_indices: u32,
-    /// Nuages calculés en demi-résolution puis recomposés dans la passe 3D
-    cloud_composite_pipeline: wgpu::RenderPipeline,
-    cloud_composite_layout: wgpu::BindGroupLayout,
-    cloud_sampler: wgpu::Sampler,
-    cloud_targets: CloudTargets,
-    /// Densité effective non nulle (nuages masqués en vue satellite)
-    clouds_visible: bool,
 
     // Pipeline Planète & Voxels 3D
     pub render_pipeline: wgpu::RenderPipeline,
@@ -472,18 +407,11 @@ impl State {
             fragment: Some(wgpu::FragmentState {
                 module: &cloud_shader,
                 entry_point: Some("fs_cloud"),
-                targets: &[
-                    Some(wgpu::ColorTargetState {
-                        format: CLOUD_COLOR_FORMAT,
-                        blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }),
-                    Some(wgpu::ColorTargetState {
-                        format: CLOUD_HIT_DEPTH_FORMAT,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }),
-                ],
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
                 compilation_options: Default::default(),
             }),
             primitive: wgpu::PrimitiveState {
@@ -503,93 +431,6 @@ impl State {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState {
-                count: 1, // Passe dédiée en demi-résolution, sans MSAA
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            cache: None,
-        });
-
-        // Composition des nuages demi-résolution dans la passe 3D (après le relief)
-        let cloud_composite_shader = crate::shaders::create_shader_module(
-            &device,
-            "Cloud Composite Shader",
-            include_str!("cloud_composite.wgsl"),
-            "cloud_composite.wgsl",
-        );
-        let cloud_composite_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("cloud_composite_bind_group_layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-        let cloud_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("Cloud Composite Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-        let cloud_composite_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Cloud Composite Pipeline Layout"),
-            bind_group_layouts: &[&cloud_composite_layout],
-            push_constant_ranges: &[],
-        });
-        let cloud_composite_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Cloud Composite Pipeline"),
-            layout: Some(&cloud_composite_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &cloud_composite_shader,
-                entry_point: Some("vs_composite"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &cloud_composite_shader,
-                entry_point: Some("fs_composite"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
                 count: sample_count,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
@@ -597,7 +438,6 @@ impl State {
             multiview: None,
             cache: None,
         });
-        let cloud_targets = CloudTargets::new(&device, &config, &cloud_composite_layout, &cloud_sampler);
 
         let cloud_mesh = crate::cloud_mesh::CloudMeshGenerator::generate_cloud_mesh(default_radius, 2026);
         let cloud_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -635,11 +475,6 @@ impl State {
             cloud_vertex_buffer,
             cloud_index_buffer,
             num_cloud_indices,
-            cloud_composite_pipeline,
-            cloud_composite_layout,
-            cloud_sampler,
-            cloud_targets,
-            clouds_visible: false,
             render_pipeline,
             camera_buffer,
             camera_bind_group,
@@ -734,9 +569,6 @@ impl State {
             };
             self.msaa_color_texture = msaa_texture;
             self.msaa_color_view = msaa_view;
-
-            self.cloud_targets =
-                CloudTargets::new(&self.device, &self.config, &self.cloud_composite_layout, &self.cloud_sampler);
         }
     }
 
@@ -784,7 +616,6 @@ impl State {
             ((camera.base_radius - camera.effective_distance) / fade_dist).clamp(0.0, 1.0)
         };
         let effective_cloud_density = clouds.density * cloud_vis;
-        self.clouds_visible = effective_cloud_density >= 0.01 && self.num_cloud_indices > 0;
 
         let uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
@@ -939,54 +770,6 @@ impl State {
         let timer_queries = self.gpu_timer.as_ref().and_then(|t| t.query_set());
         let timer_inside_passes = self.gpu_timer.as_ref().is_some_and(|t| t.inside_passes);
 
-        // 0. Nuages en demi-résolution (sphere tracing coûteux : 4 fois moins de pixels)
-        {
-            herocraft_common::prof_scope!("render::encode_cloud_pass");
-            let targets = &self.cloud_targets;
-            let mut cloud_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Cloud Half-Res Pass"),
-                color_attachments: &[
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &targets.color_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                    Some(wgpu::RenderPassColorAttachment {
-                        view: &targets.hit_depth_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color { r: 1.0, g: 0.0, b: 0.0, a: 0.0 }),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    }),
-                ],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &targets.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Discard,
-                    }),
-                    stencil_ops: None,
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: timer_queries.map(|query_set| wgpu::RenderPassTimestampWrites {
-                    query_set,
-                    beginning_of_pass_write_index: Some(gpu_timer::TS_CLOUDS_BEGIN),
-                    end_of_pass_write_index: Some(gpu_timer::TS_CLOUDS_END),
-                }),
-            });
-            if self.clouds_visible {
-                cloud_pass.set_pipeline(&self.cloud_pipeline);
-                cloud_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-                cloud_pass.set_vertex_buffer(0, self.cloud_vertex_buffer.slice(..));
-                cloud_pass.set_index_buffer(self.cloud_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                cloud_pass.draw_indexed(0..self.num_cloud_indices, 0, 0..1);
-            }
-        }
-
         // 1. Passe 3D (Ciel étoilé + Soleil + Halo atmosphérique + Planète & Voxels avec MSAA 4x si supporté)
         {
             herocraft_common::prof_scope!("render::encode_3d_pass");
@@ -1064,12 +847,13 @@ impl State {
                 render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_TERRAIN);
             }
 
-            // 1.c. Nuages 3D physiques réels, calculés en demi-résolution (passe 0) et recomposés
-            // ici avec leur profondeur : le relief les masque correctement
-            if self.clouds_visible {
-                render_pass.set_pipeline(&self.cloud_composite_pipeline);
-                render_pass.set_bind_group(0, &self.cloud_targets.composite_bind_group, &[]);
-                render_pass.draw(0..3, 0..1);
+            // 1.c. Nuages 3D physiques réels (traversables et visibles à leur altitude)
+            if self.num_cloud_indices > 0 {
+                render_pass.set_pipeline(&self.cloud_pipeline);
+                render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.cloud_vertex_buffer.slice(..));
+                render_pass.set_index_buffer(self.cloud_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..self.num_cloud_indices, 0, 0..1);
             }
         }
 
