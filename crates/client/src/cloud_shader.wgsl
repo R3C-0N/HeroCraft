@@ -378,8 +378,15 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let height01 = clamp((hit_z + half_depth) / (2.0 * half_depth), 0.0, 1.0);
     let top = mix(ndotup * 0.5 + 0.5, pow(height01, 0.8), 0.45);
 
-    // 1. Ambiance : irradiance du ciel reçue par la surface du nuage à son altitude
-    let sky_ambient = sky_light(hit_world_pos, norm_world, l_sun);
+    // 1. Ambiance : irradiance du ciel à l'altitude du nuage, du flanc (moyenne des côtés soleil
+    // et opposé) au dessus selon `top`. Elle ne suit pas l'orientation horizontale de la normale :
+    // au crépuscule, l'écart entre flanc éclairé et flanc opposé faisait ressortir les congés
+    // des angles rentrants, où la normale tourne vite.
+    let across_sun = cross(up_planet, l_sun);
+    let side_dir = select(normalize(across_sun), normalize(cross(up_planet, vec3<f32>(1.0, 0.0, 0.0))), length(across_sun) < 1e-3);
+    let sky_side = sky_light(hit_world_pos, side_dir, l_sun);
+    let sky_top = sky_light(hit_world_pos, up_planet, l_sun);
+    let sky_ambient = mix(sky_side, sky_top, top);
 
     // 2. Soleil arrivé à l'altitude du nuage à travers l'atmosphère : wrap doux + halo argenté
     // large et discret (pas de dégradé dur sur une même face)
