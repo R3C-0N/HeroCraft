@@ -177,14 +177,19 @@ impl PlanetLodManager {
         };
         let generator = PlanetWorldGenerator::new(desc);
         let (base_radius, filter) = (self.base_radius, self.active_filter);
-        let roots: Vec<(QuadNodeKey, PlanetMesh)> = self.thread_pool.install(|| {
-            herocraft_common::PlanetFace::ALL
-                .par_iter()
+        // Un thread par face : les pools peuvent être occupés par des chunks de l'ancienne planète
+        let roots: Vec<(QuadNodeKey, PlanetMesh)> = std::thread::scope(|scope| {
+            let handles: Vec<_> = herocraft_common::PlanetFace::ALL
+                .iter()
                 .map(|&face| {
-                    let key = QuadNodeKey::new(face, 0, 0, 0);
-                    (key, PlanetMesh::generate_lod_patch(&generator, &key, base_radius, 24, filter))
+                    let generator = &generator;
+                    scope.spawn(move || {
+                        let key = QuadNodeKey::new(face, 0, 0, 0);
+                        (key, PlanetMesh::generate_lod_patch(generator, &key, base_radius, 24, filter))
+                    })
                 })
-                .collect()
+                .collect();
+            handles.into_iter().map(|h| h.join().expect("génération d'un patch racine")).collect()
         });
         // Les 6 faces grossières s'affichent tout de suite : les feuilles détaillées de la nouvelle
         // planète sont générées en tâche de fond au lieu de geler la frame (~0,5 s)
@@ -388,6 +393,11 @@ impl PlanetLodManager {
         }
 
         true
+    }
+
+    /// Génération courante (incrémentée à chaque nouvelle planète)
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// Maillages à afficher pour les feuilles courantes (voxel si prêt, sinon patch polygonal)

@@ -100,6 +100,9 @@ impl CloudTargets {
     }
 }
 
+/// Octets envoyés au GPU au plus par synchronisation (un gros ensemble est étalé sur plusieurs frames)
+const LOD_UPLOAD_BUDGET: usize = 6 * 1024 * 1024;
+
 /// Nombre de synchronisations après lequel un maillage non affiché est libéré du GPU
 const LOD_GPU_MESH_TTL: u64 = 120;
 
@@ -143,6 +146,7 @@ pub struct State {
     lod_draw_list: Vec<LodMeshId>,
     camera_eye: glam::Vec3,
     lod_sync_count: u64,
+    lod_uploads_pending: bool,
 
     // Rendu Interface Utilisateur egui
     pub egui_renderer: egui_wgpu::Renderer,
@@ -648,6 +652,7 @@ impl State {
             lod_draw_list: Vec::new(),
             camera_eye: glam::Vec3::ZERO,
             lod_sync_count: 0,
+            lod_uploads_pending: false,
             egui_renderer,
             vsync_mode,
             novsync_mode,
@@ -812,29 +817,35 @@ impl State {
     }
 
     /// Synchronise les buffers GPU avec les feuilles LOD affichées : seuls les nouveaux maillages
-    /// sont envoyés, ceux qui ne sont plus affichés sont libérés après `LOD_GPU_MESH_TTL` synchronisations
+    /// sont envoyés, ceux qui ne sont plus affichés sont libérés après `LOD_GPU_MESH_TTL` synchronisations.
+    /// Les envois sont limités à `LOD_UPLOAD_BUDGET` octets par appel : tant que le nouvel ensemble
+    /// n'est pas entièrement sur le GPU, l'ancien reste affiché (voir `has_pending_lod_uploads`).
     pub fn sync_lod_meshes(&mut self, lod: &PlanetLodManager) {
         use wgpu::util::DeviceExt;
         herocraft_common::prof_scope!("render::sync_lod_meshes");
         self.lod_sync_count += 1;
         let sync = self.lod_sync_count;
         let mut uploaded_bytes = 0usize;
-        self.lod_draw_list.clear();
+        // Premier affichage : rien à garder à l'écran, tout est envoyé d'un coup
+        let budget = if self.lod_draw_list.is_empty() { usize::MAX } else { LOD_UPLOAD_BUDGET };
+        let mut new_list = Vec::new();
+        let mut complete = true;
 
         for (id, mesh) in lod.visible_meshes() {
             if mesh.indices.is_empty() {
                 continue;
             }
-            let device = &self.device;
-            let gpu_mesh = self.lod_gpu_meshes.entry(id).or_insert_with(|| {
+            if let Some(gpu_mesh) = self.lod_gpu_meshes.get_mut(&id) {
+                gpu_mesh.last_used_sync = sync;
+            } else if uploaded_bytes < budget {
                 uploaded_bytes += mesh.vertices.len() * std::mem::size_of::<PlanetVertex>() + mesh.indices.len() * 4;
-                GpuMesh {
-                    vertex_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                let gpu_mesh = GpuMesh {
+                    vertex_buffer: self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some("LOD Vertex Buffer"),
                         contents: bytemuck::cast_slice(&mesh.vertices),
                         usage: wgpu::BufferUsages::VERTEX,
                     }),
-                    index_buffer: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    index_buffer: self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some("LOD Index Buffer"),
                         contents: bytemuck::cast_slice(&mesh.indices),
                         usage: wgpu::BufferUsages::INDEX,
@@ -842,19 +853,38 @@ impl State {
                     num_indices: mesh.indices.len() as u32,
                     last_used_sync: sync,
                     center: mesh_center(&mesh.vertices),
-                }
-            });
-            gpu_mesh.last_used_sync = sync;
-            self.lod_draw_list.push(id);
+                };
+                self.lod_gpu_meshes.insert(id, gpu_mesh);
+            } else {
+                complete = false;
+            }
+            new_list.push(id);
         }
 
-        let generation = self.lod_draw_list.first().map(|id| id.generation);
+        if complete {
+            self.lod_draw_list = new_list;
+        } else {
+            // Ensemble incomplet : l'ancien reste affiché, ses maillages sont protégés
+            for id in &self.lod_draw_list {
+                if let Some(m) = self.lod_gpu_meshes.get_mut(id) {
+                    m.last_used_sync = sync;
+                }
+            }
+        }
+        self.lod_uploads_pending = !complete;
+
+        let generation = lod.generation();
         self.lod_gpu_meshes.retain(|id, m| {
-            Some(id.generation) == generation && sync - m.last_used_sync <= LOD_GPU_MESH_TTL
+            (id.generation == generation || m.last_used_sync == sync) && sync - m.last_used_sync <= LOD_GPU_MESH_TTL
         });
         herocraft_common::prof_value!("render.upload_octets", uploaded_bytes);
         herocraft_common::prof_value!("render.draws_terrain", self.lod_draw_list.len());
         herocraft_common::prof_value!("render.maillages_gpu_en_memoire", self.lod_gpu_meshes.len());
+    }
+
+    /// Des maillages LOD restent à envoyer : appeler `sync_lod_meshes` à la prochaine frame
+    pub fn has_pending_lod_uploads(&self) -> bool {
+        self.lod_uploads_pending
     }
 
     pub fn update_cloud_mesh(&mut self, base_radius: f32, seed: u64) {

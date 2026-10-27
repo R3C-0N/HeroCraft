@@ -323,7 +323,9 @@ fn main() {
 
                         // Mise à jour adaptative du QuadTree LOD
                         herocraft_common::prof_scope!("frame::lod_and_upload" => lod_guard);
-                        if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, dt, None) {
+                        if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, dt, None)
+                            || state.has_pending_lod_uploads()
+                        {
                             state.sync_lod_meshes(&lod_manager);
                         }
                         drop(lod_guard);
