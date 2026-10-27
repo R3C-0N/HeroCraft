@@ -35,6 +35,7 @@ impl ChunkStorage {
 
     /// Sauvegarde un chunk sur le disque au format compressé RLE
     pub fn save_chunk(&self, coord: &PlanetChunkCoord, chunk: &ChunkData) -> io::Result<()> {
+        herocraft_common::prof_scope!("voxel::storage::save_chunk");
         let path = self.chunk_path(coord);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -47,6 +48,7 @@ impl ChunkStorage {
 
     /// Charge et décompresse un chunk depuis le disque
     pub fn load_chunk(&self, coord: &PlanetChunkCoord) -> io::Result<Option<ChunkData>> {
+        herocraft_common::prof_scope!("voxel::storage::load_chunk");
         let path = self.chunk_path(coord);
         if !path.exists() {
             return Ok(None);

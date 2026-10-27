@@ -272,6 +272,7 @@ impl PlanetMesh {
         grid_resolution: usize,
         filter: herocraft_world::VisualizationFilter,
     ) -> Self {
+        herocraft_common::prof_scope!("mesh::generate_lod_patch");
         let n = grid_resolution.max(2);
         let mut vertices: Vec<PlanetVertex> = Vec::with_capacity(n * n * 8);
         let mut indices: Vec<u32> = Vec::with_capacity(n * n * 12);
@@ -285,9 +286,8 @@ impl PlanetMesh {
             let u_mid = u_min + ((ci as f64) + 0.5) * du;
             let v_mid = v_min + ((cj as f64) + 0.5) * dv;
             let sphere_dir: DVec3 = key.face.uv_to_sphere_direction(u_mid, v_mid);
-            let (lat, lon) = unit_sphere_to_lat_lon(sphere_dir);
-            let raw_elevation = generator.sample_elevation(sphere_dir, lat, lon);
-            let biome = generator.determine_biome(lat, raw_elevation, sphere_dir);
+            let (lat, _lon) = unit_sphere_to_lat_lon(sphere_dir);
+            let (raw_elevation, biome) = generator.sample_elevation_and_biome(sphere_dir, lat);
             let is_water = biome.is_water();
             let stepped = if is_water {
                 SEA_LEVEL_BLOCKS
@@ -311,11 +311,15 @@ impl PlanetMesh {
 
         // Pré-échantillonnage de la grille n x n
         let mut grid_cells = Vec::with_capacity(n * n);
-        for j in 0..n {
-            for i in 0..n {
-                grid_cells.push(sample_cell(i as i32, j as i32));
+        {
+            herocraft_common::prof_scope!("mesh::lod_patch::sampling");
+            for j in 0..n {
+                for i in 0..n {
+                    grid_cells.push(sample_cell(i as i32, j as i32));
+                }
             }
         }
+        herocraft_common::prof_scope!("mesh::lod_patch::geometry");
 
         // Helper pour ajouter un quad (4 sommets + 2 triangles CCW)
         let add_quad = |verts: &mut Vec<PlanetVertex>, inds: &mut Vec<u32>,

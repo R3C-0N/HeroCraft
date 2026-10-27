@@ -12,6 +12,7 @@ use winit::{
 
 mod camera;
 mod cloud_mesh;
+mod gpu_timer;
 mod lod;
 mod planet_mesh;
 mod renderer;
@@ -27,6 +28,10 @@ use ui::{UiAction, UiState};
 fn main() {
     std::env::set_var("RUST_LOG", "info");
     env_logger::init();
+    herocraft_common::profiler::init_main_thread();
+    if herocraft_common::profiler::is_enabled() {
+        info!("PROFILAGE ACTIF : rapport écrit dans ./profiling/ à la fermeture (ou avec [F9]).");
+    }
 
     info!("==========================================================");
     info!("   HeroCraft — Moteur Planétaire QuadTree LOD (Rust / WGPU) ");
@@ -77,11 +82,11 @@ fn main() {
     // Initialisation du gestionnaire de LOD QuadTree avec transitions douces hybrides
     let mut lod_manager = PlanetLodManager::new(base_radius, current_seed);
     lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-    lod_manager.rebuild_combined_mesh();
+    let visible_meshes = lod_manager.visible_meshes();
     info!(
         "QuadTree initialisé : {} sommets, {} polygones ({} feuilles actives).",
-        lod_manager.combined_mesh.vertices.len(),
-        lod_manager.combined_mesh.indices.len() / 3,
+        visible_meshes.iter().map(|(_, m)| m.vertices.len()).sum::<usize>(),
+        visible_meshes.iter().map(|(_, m)| m.indices.len()).sum::<usize>() / 3,
         lod_manager.current_leaves.len()
     );
 
@@ -91,7 +96,8 @@ fn main() {
     ui_state.set_screen_size(size.width as f32, size.height as f32);
 
     // Initialisation du moteur WGPU
-    let mut state = pollster::block_on(State::new(window.clone(), &lod_manager.combined_mesh, &ui_state));
+    let mut state = pollster::block_on(State::new(window.clone(), &ui_state));
+    state.sync_lod_meshes(&lod_manager);
 
     // Gestion des entrées souris
     let mut is_dragging = false;
@@ -111,6 +117,7 @@ fn main() {
                 match event {
                     WindowEvent::CloseRequested => {
                         let _ = chunk_cache.flush_dirty();
+                        write_profile_report();
                         target.exit();
                     }
 
@@ -238,6 +245,9 @@ fn main() {
                                             if camera.target_distance <= camera.base_radius { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
                                         );
                                     }
+                                    KeyCode::F9 => {
+                                        write_profile_report();
+                                    }
                                     KeyCode::KeyR => {
                                         camera.reset();
                                         info!("Vue de la caméra réinitialisée.");
@@ -254,7 +264,7 @@ fn main() {
                                         lod_manager.clear(current_seed);
                                         camera.spawn_on_ground(&generator);
                                         lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                        state.update_mesh(&lod_manager.combined_mesh);
+                                        state.sync_lod_meshes(&lod_manager);
                                         state.update_cloud_mesh(camera.base_radius, current_seed);
                                         ui_state.set_seed(current_seed);
                                         info!("Raccourci [G] : Nouvelle planète générée (Graine: #{})", current_seed);
@@ -267,7 +277,7 @@ fn main() {
                                         let filter = ui_state.active_filter();
                                         lod_manager.set_filter(filter);
                                         lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                        state.update_mesh(&lod_manager.combined_mesh);
+                                        state.sync_lod_meshes(&lod_manager);
                                         info!("Raccourci [T] : Filtre plaques tectoniques = {}", ui_state.show_tectonics);
                                     }
                                     KeyCode::KeyC => {
@@ -278,7 +288,7 @@ fn main() {
                                         let filter = ui_state.active_filter();
                                         lod_manager.set_filter(filter);
                                         lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                        state.update_mesh(&lod_manager.combined_mesh);
+                                        state.sync_lod_meshes(&lod_manager);
                                         info!("Raccourci [C] : Filtre courants marins = {}", ui_state.show_ocean_currents);
                                     }
                                     _ => {}
@@ -289,6 +299,7 @@ fn main() {
                     }
 
                     WindowEvent::RedrawRequested => {
+                        herocraft_common::prof_scope!("frame" => frame_guard);
                         let now = Instant::now();
                         let dt = now.duration_since(last_frame_time).as_secs_f32();
                         last_frame_time = now;
@@ -305,14 +316,19 @@ fn main() {
 
                         // Mise à jour de la caméra uniquement si le menu n'est pas ouvert
                         if !ui_state.is_settings_open {
+                            herocraft_common::prof_scope!("frame::camera_update");
                             camera.update(dt, &generator);
                         }
                         state.update_camera(&camera, &ui_state.lighting_settings, &ui_state.cloud_settings);
 
                         // Mise à jour adaptative du QuadTree LOD
-                        if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, dt, None) {
-                            state.update_mesh(&lod_manager.combined_mesh);
+                        herocraft_common::prof_scope!("frame::lod_and_upload" => lod_guard);
+                        if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, dt, None)
+                            || state.has_pending_lod_uploads()
+                        {
+                            state.sync_lod_meshes(&lod_manager);
                         }
+                        drop(lod_guard);
 
                         // 1. Mise à jour de l'interface egui
                         let is_ground = camera.distance <= camera.base_radius;
@@ -320,6 +336,7 @@ fn main() {
 
                         // 2. Traitement des actions déclenchées par les boutons egui
                         if let Some(action) = maybe_action {
+                            herocraft_common::prof_scope!("frame::ui_action");
                             match action {
                                 UiAction::ResumeGame => {
                                     ui_state.set_settings_open(false);
@@ -328,6 +345,7 @@ fn main() {
                                 UiAction::QuitGame => {
                                     let _ = chunk_cache.flush_dirty();
                                     info!("Bouton cliqué : Sauvegarde des chunks et fermeture du jeu.");
+                                    write_profile_report();
                                     target.exit();
                                 }
                                 UiAction::ToggleVsync => {
@@ -362,7 +380,7 @@ fn main() {
                                     lod_manager.clear(current_seed);
                                     camera.spawn_on_ground(&generator);
                                     lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                    state.update_mesh(&lod_manager.combined_mesh);
+                                    state.sync_lod_meshes(&lod_manager);
                                     state.update_cloud_mesh(camera.base_radius, current_seed);
                                     ui_state.set_seed(current_seed);
                                     info!("Bouton cliqué : Nouvelle planète générée ! (Graine: #{})", current_seed);
@@ -387,14 +405,16 @@ fn main() {
                                     let filter = ui_state.active_filter();
                                     lod_manager.set_filter(filter);
                                     lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                    state.update_mesh(&lod_manager.combined_mesh);
+                                    state.sync_lod_meshes(&lod_manager);
                                     info!("Filtre de visualisation sélectionné : {:?}", filter);
                                 }
                             }
                         }
 
                         // 3. Tessellation egui
+                        herocraft_common::prof_scope!("frame::egui_tessellate" => tess_guard);
                         let paint_jobs = ui_state.ctx.tessellate(full_output.shapes, ui_state.scale_factor);
+                        drop(tess_guard);
                         let screen_descriptor = egui_wgpu::ScreenDescriptor {
                             size_in_pixels: [state.size.width, state.size.height],
                             pixels_per_point: ui_state.scale_factor,
@@ -418,10 +438,14 @@ fn main() {
                             if let Some(target_dur) = min_duration {
                                 let frame_elapsed = last_frame_time.elapsed();
                                 if frame_elapsed < target_dur {
+                                    herocraft_common::prof_scope!("frame::fps_limiter_sleep");
                                     std::thread::sleep(target_dur - frame_elapsed);
                                 }
                             }
                         }
+
+                        drop(frame_guard);
+                        herocraft_common::profiler::frame_mark();
                     }
 
                     _ => {}
@@ -435,4 +459,11 @@ fn main() {
             _ => {}
         }
     }).expect("Erreur dans la boucle d'événements");
+}
+
+/// Écrit le rapport de profilage (no-op sans la feature cargo `profiling`)
+fn write_profile_report() {
+    if let Some(path) = herocraft_common::profiler::write_report() {
+        info!("Rapport de profilage écrit : {}", path.display());
+    }
 }

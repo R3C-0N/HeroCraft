@@ -19,6 +19,7 @@ impl VoxelMeshBuilder {
         center_y: i32,
         base_radius: f32,
     ) -> PlanetMesh {
+        herocraft_common::prof_scope!("voxel_mesh::build_incurved_grid");
         let mut vertices: Vec<PlanetVertex> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
 
@@ -271,6 +272,7 @@ impl VoxelMeshBuilder {
         base_radius: f32,
         filter: herocraft_world::VisualizationFilter,
     ) -> PlanetMesh {
+        herocraft_common::prof_scope!("voxel_mesh::build_voxel_chunk");
         let mut vertices: Vec<PlanetVertex> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
 
@@ -302,16 +304,16 @@ impl VoxelMeshBuilder {
 
         let mut column_colors = vec![[0.0_f32; 4]; 32 * 32];
         for cz in 0..32 {
+            herocraft_common::prof_scope!("voxel_mesh::column_colors_row");
             for cx in 0..32 {
                 let u = base_u + (cx as f64 + 0.5) * voxel_span_uv;
                 let v = base_v + (cz as f64 + 0.5) * voxel_span_uv;
                 let dir = face.uv_to_sphere_direction(u, v);
-                let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
-                let raw_elevation = generator.sample_elevation(dir, lat, lon);
+                let (lat, _lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
+                let (raw_elevation, biome) = generator.sample_elevation_and_biome(dir, lat);
                 if raw_elevation < min_elev { min_elev = raw_elevation; }
                 if raw_elevation > max_elev { max_elev = raw_elevation; }
 
-                let biome = generator.determine_biome(lat, raw_elevation, dir);
                 let mut biome_color = PlanetMesh::relief_biome_color(biome, raw_elevation);
 
                 match filter {
@@ -365,6 +367,12 @@ impl VoxelMeshBuilder {
             }
         };
 
+        // Colonnes du chunk + bordure d'une colonne (voisins des faces et de l'AO), échantillonnées
+        // une seule fois et partagées par toutes les couches d'altitude
+        const COLUMN_BORDER: i32 = 1;
+        const COLUMN_SIDE: i32 = CHUNK_SIZE as i32 + 2 * COLUMN_BORDER;
+        let columns = generator.sample_chunk_columns(face, chunk_x, chunk_y, COLUMN_BORDER);
+
         let mut prev_chunk: Option<herocraft_voxel_engine::ChunkData> = None;
 
         for layer in min_layer..=max_layer {
@@ -381,8 +389,9 @@ impl VoxelMeshBuilder {
                 continue;
             }
 
+            herocraft_common::prof_scope!("voxel_mesh::layer");
             let coord = PlanetChunkCoord::new(face, chunk_x, chunk_y, layer);
-            let center_chunk = generator.generate_chunk(&coord);
+            let center_chunk = generator.generate_chunk_from_columns(&coord, &columns, COLUMN_BORDER);
             let chunk_below = prev_chunk;
 
             let get_voxel = |gx: i32, gy: i32, gz: i32| -> BlockId {
@@ -398,17 +407,24 @@ impl VoxelMeshBuilder {
                     }
                 }
                 let global_y = (layer as f64) * 32.0 + (gy as f64);
-                let u = base_u + (gx as f64) * voxel_span_uv;
-                let v = base_v + (gz as f64) * voxel_span_uv;
-                let dir = face.uv_to_sphere_direction(u, v);
-                let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
-                let col_elevation = generator.sample_elevation(dir, lat, lon);
+                let (col_elevation, biome) = if (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&gx)
+                    && (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&gz)
+                {
+                    let c = &columns[((gz + COLUMN_BORDER) * COLUMN_SIDE + gx + COLUMN_BORDER) as usize];
+                    (c.elevation, c.biome)
+                } else {
+                    let c = generator.sample_column(
+                        face,
+                        base_u + (gx as f64) * voxel_span_uv,
+                        base_v + (gz as f64) * voxel_span_uv,
+                    );
+                    (c.elevation, c.biome)
+                };
 
                 let elev_floor = col_elevation.floor();
                 if global_y < elev_floor {
                     BlockId::STONE
                 } else if global_y < sea {
-                    let biome = generator.determine_biome(lat, col_elevation, dir);
                     if biome == herocraft_world::BiomeType::SnowPeaks {
                         BlockId::SNOW
                     } else {
@@ -419,6 +435,7 @@ impl VoxelMeshBuilder {
                 }
             };
 
+            herocraft_common::prof_scope!("voxel_mesh::emit_faces");
             // Émission directe des faces de voxels exposées (1x1) sans greedy meshing
             // Sur une planète incurvée (Cubed-Sphere), les quads 1x1 épousent parfaitement la courbure
             // sans aucun décollement, fissure, trou ni artefact diagonal.
@@ -588,6 +605,7 @@ impl VoxelMeshBuilder {
             prev_chunk = Some(center_chunk);
         }
 
+        herocraft_common::prof_value!("voxel_mesh.sommets_par_chunk", vertices.len());
         PlanetMesh { vertices, indices }
     }
 

@@ -24,6 +24,7 @@ impl VoxelMesh {
 
     /// Génère le maillage du chunk avec masquage des faces internes (Culled Meshing)
     pub fn build_from_chunk(chunk: &ChunkData) -> Self {
+        herocraft_common::prof_scope!("voxel::mesh::build_from_chunk");
         let mut mesh = Self::default();
 
         for y in 0..CHUNK_SIZE as u8 {

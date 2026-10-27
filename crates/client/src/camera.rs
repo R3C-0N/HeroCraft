@@ -134,6 +134,7 @@ impl OrbitCamera {
 
     /// Place le joueur directement sur la terre ferme au-dessus de la mer
     pub fn spawn_on_ground(&mut self, generator: &PlanetWorldGenerator) {
+        herocraft_common::prof_scope!("camera::spawn_on_ground");
         let candidates = [
             Vec3::new(1.0, 0.2, 0.2).normalize(),
             Vec3::new(-1.0, 0.3, 0.1).normalize(),
@@ -219,6 +220,7 @@ impl OrbitCamera {
 
     /// Calcule le rayon minimum de sécurité du sol sous une direction donnée
     pub fn ground_radius_at(&self, dir: Vec3, generator: &PlanetWorldGenerator) -> f32 {
+        herocraft_common::prof_scope!("camera::ground_radius_at");
         let dir_norm = dir.normalize();
         let dir_dvec = DVec3::new(dir_norm.x as f64, dir_norm.y as f64, dir_norm.z as f64);
         let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir_dvec);
@@ -317,6 +319,7 @@ impl OrbitCamera {
 
     /// Calcule la position de la caméra sans aucune pénétration sous le relief (Spring-Arm anti-collision)
     pub fn update_camera_bounds(&mut self, generator: &PlanetWorldGenerator) {
+        herocraft_common::prof_scope!("camera::update_camera_bounds");
         let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
         let (up, _, _, look_dir) = self.look_vectors();
         let eye_height = 0.065 * scale; // ~1.7 blocs au-dessus des pieds
@@ -397,6 +400,7 @@ impl OrbitCamera {
 
     /// Mise à jour physique du joueur et de la caméra (déplacement ZQSD, gravité sphérique, détection de relief)
     pub fn update(&mut self, dt: f32, generator: &PlanetWorldGenerator) {
+        herocraft_common::prof_scope!("camera::update");
         // 0. Transition fluide et sans à-coups de la distance de zoom (sans téléportation)
         if self.distance > self.base_radius && self.target_distance <= self.base_radius {
             self.sync_ground_to_orbit(generator);

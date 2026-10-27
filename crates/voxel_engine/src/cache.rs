@@ -66,6 +66,7 @@ impl WorldChunkCache {
     where
         F: FnOnce() -> ChunkData,
     {
+        herocraft_common::prof_scope!("voxel::cache::get_or_load");
         self.access_counter = self.access_counter.wrapping_add(1);
         let counter = self.access_counter;
 
@@ -129,6 +130,7 @@ impl WorldChunkCache {
 
     /// Sauvegarde tous les chunks modifiés (`dirty == true`) sur disque
     pub fn flush_dirty(&mut self) -> io::Result<usize> {
+        herocraft_common::prof_scope!("voxel::cache::flush_dirty");
         let storage = match self.storage {
             Some(ref s) => s,
             None => return Ok(0),
@@ -152,6 +154,7 @@ impl WorldChunkCache {
 
     /// Évince le chunk le moins récemment accédé (LRU), en le sauvegardant si dirty
     fn evict_oldest(&mut self) {
+        herocraft_common::prof_scope!("voxel::cache::evict_oldest");
         if self.chunks.is_empty() {
             return;
         }

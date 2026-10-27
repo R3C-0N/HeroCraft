@@ -20,11 +20,13 @@ pub struct OceanicCurrentSimulation {
 
 impl OceanicCurrentSimulation {
     pub fn new(seed: u64) -> Self {
+        herocraft_common::prof_scope!("world::OceanicCurrentSimulation::new");
         Self { seed }
     }
 
     /// Évalue le vecteur et la température du courant marin en un point de la sphère
     pub fn sample(&self, dir: DVec3, is_water: bool, continental_value: f64) -> OceanCurrentSample {
+        herocraft_common::prof_scope!("world::ocean_currents::sample");
         if !is_water {
             // Sur la terre ferme : teinte neutre sépia sombre pour mettre en valeur les océans
             return OceanCurrentSample {

@@ -10,10 +10,29 @@ use crate::voxel_mesh::VoxelMeshBuilder;
 
 use rayon::prelude::*;
 
+/// Maillage calculé en tâche de fond (chunk voxel ou patch polygonal)
 pub struct VoxelBuildResult {
-    pub seed: u64,
+    /// Génération des caches au lancement de la tâche (incrémentée par `clear`) : un résultat périmé est ignoré
+    pub generation: u64,
     pub key: QuadNodeKey,
     pub mesh: PlanetMesh,
+}
+
+/// Identité d'un maillage affiché : change dès que son contenu peut changer (nouvelle génération des caches)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LodMeshId {
+    pub generation: u64,
+    pub key: QuadNodeKey,
+    pub voxel: bool,
+}
+
+/// Résolution de la grille d'un patch polygonal selon son niveau
+fn patch_resolution(level: u8) -> usize {
+    match level {
+        0 => 32,
+        1 => 24,
+        _ => 16,
+    }
 }
 
 /// Gestionnaire de LOD planétaire piloté par QuadTree Cubed-Sphere avec transitions douces hybrides
@@ -24,7 +43,6 @@ pub struct PlanetLodManager {
     pub lod_cache: HashMap<QuadNodeKey, PlanetMesh>,
     pub voxel_cache: HashMap<QuadNodeKey, PlanetMesh>,
     pub current_leaves: Vec<QuadLeaf>,
-    pub combined_mesh: PlanetMesh,
     pub active_filter: herocraft_world::VisualizationFilter,
     last_camera_pos: Vec3,
     last_evaluated_pos: Vec3,
@@ -33,10 +51,19 @@ pub struct PlanetLodManager {
     result_tx: std::sync::mpsc::Sender<VoxelBuildResult>,
     result_rx: std::sync::mpsc::Receiver<VoxelBuildResult>,
     pending_requests: HashSet<QuadNodeKey>,
+    /// Pool dédié aux patchs polygonaux, pour qu'ils ne fassent pas la queue derrière les chunks voxels
+    patch_pool: rayon::ThreadPool,
+    patch_tx: std::sync::mpsc::Sender<VoxelBuildResult>,
+    patch_rx: std::sync::mpsc::Receiver<VoxelBuildResult>,
+    pending_patches: HashSet<QuadNodeKey>,
+    /// Nouvelles feuilles en attente de leurs patchs : les feuilles courantes restent affichées jusque-là
+    pending_leaves: Option<Vec<QuadLeaf>>,
+    generation: u64,
 }
 
 impl PlanetLodManager {
     pub fn new(base_radius: f32, current_seed: u64) -> Self {
+        herocraft_common::prof_scope!("lod::PlanetLodManager::new");
         let num_cpus = std::thread::available_parallelism()
             .map(|p| p.get())
             .unwrap_or(4);
@@ -47,6 +74,12 @@ impl PlanetLodManager {
             .expect("Échec d'initialisation du pool de workers Rayon");
 
         let (result_tx, result_rx) = std::sync::mpsc::channel::<VoxelBuildResult>();
+        let patch_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads((num_cpus / 3).clamp(2, 4))
+            .thread_name(|idx| format!("herocraft-patch-{}", idx))
+            .build()
+            .expect("Échec d'initialisation du pool de patchs Rayon");
+        let (patch_tx, patch_rx) = std::sync::mpsc::channel::<VoxelBuildResult>();
 
         let mut mgr = Self {
             quadtree: PlanetQuadTree::new(base_radius as f64),
@@ -55,10 +88,6 @@ impl PlanetLodManager {
             lod_cache: HashMap::new(),
             voxel_cache: HashMap::new(),
             current_leaves: Vec::new(),
-            combined_mesh: PlanetMesh {
-                vertices: Vec::new(),
-                indices: Vec::new(),
-            },
             active_filter: herocraft_world::VisualizationFilter::Standard,
             last_camera_pos: Vec3::splat(f32::NAN),
             last_evaluated_pos: Vec3::splat(f32::NAN),
@@ -67,6 +96,12 @@ impl PlanetLodManager {
             result_tx,
             result_rx,
             pending_requests: HashSet::new(),
+            patch_pool,
+            patch_tx,
+            patch_rx,
+            pending_patches: HashSet::new(),
+            pending_leaves: None,
+            generation: 0,
         };
 
         // Pré-génération synchrone des 6 faces racines (LOD 0)
@@ -123,11 +158,15 @@ impl PlanetLodManager {
 
     /// Réinitialise les caches (par exemple lors d'un changement de seed avec 'G')
     pub fn clear(&mut self, new_seed: u64) {
+        herocraft_common::prof_scope!("lod::clear");
         self.current_seed = new_seed;
         self.lod_cache.clear();
         self.voxel_cache.clear();
         self.current_leaves.clear();
         self.pending_requests.clear();
+        self.pending_patches.clear();
+        self.pending_leaves = None;
+        self.generation += 1;
         self.last_camera_pos = Vec3::splat(f32::NAN);
         self.last_evaluated_pos = Vec3::splat(f32::NAN);
         self.time_since_eval = 0.0;
@@ -137,9 +176,25 @@ impl PlanetLodManager {
             ..Default::default()
         };
         let generator = PlanetWorldGenerator::new(desc);
-        for &face in &herocraft_common::PlanetFace::ALL {
-            let key = QuadNodeKey::new(face, 0, 0, 0);
-            let patch = PlanetMesh::generate_lod_patch(&generator, &key, self.base_radius, 24, self.active_filter);
+        let (base_radius, filter) = (self.base_radius, self.active_filter);
+        // Un thread par face : les pools peuvent être occupés par des chunks de l'ancienne planète
+        let roots: Vec<(QuadNodeKey, PlanetMesh)> = std::thread::scope(|scope| {
+            let handles: Vec<_> = herocraft_common::PlanetFace::ALL
+                .iter()
+                .map(|&face| {
+                    let generator = &generator;
+                    scope.spawn(move || {
+                        let key = QuadNodeKey::new(face, 0, 0, 0);
+                        (key, PlanetMesh::generate_lod_patch(generator, &key, base_radius, 24, filter))
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().expect("génération d'un patch racine")).collect()
+        });
+        // Les 6 faces grossières s'affichent tout de suite : les feuilles détaillées de la nouvelle
+        // planète sont générées en tâche de fond au lieu de geler la frame (~0,5 s)
+        for (key, patch) in roots {
+            self.current_leaves.push(QuadLeaf { key, kind: QuadLeafKind::LodPatch });
             self.lod_cache.insert(key, patch);
         }
     }
@@ -160,14 +215,27 @@ impl PlanetLodManager {
         dt: f32,
         _frustum: Option<&herocraft_world::WorldFrustum>,
     ) -> bool {
-        // 1. Récupération non-bloquante des chunks voxels calculés par le pool Rayon
+        herocraft_common::prof_scope!("lod::update");
+        // 1. Récupération non-bloquante des maillages calculés en tâche de fond
         let mut received_new_mesh = false;
+        let mut received_count = 0usize;
         while let Ok(res) = self.result_rx.try_recv() {
-            if res.seed == self.current_seed {
+            received_count += 1;
+            if res.generation == self.generation {
                 self.pending_requests.remove(&res.key);
                 self.voxel_cache.insert(res.key, res.mesh);
                 received_new_mesh = true;
             }
+        }
+        while let Ok(res) = self.patch_rx.try_recv() {
+            if res.generation == self.generation {
+                self.pending_patches.remove(&res.key);
+                self.lod_cache.insert(res.key, res.mesh);
+            }
+        }
+
+        if received_count > 0 {
+            herocraft_common::prof_value!("lod.voxels_recus_par_frame", received_count);
         }
 
         self.time_since_eval += dt;
@@ -183,64 +251,54 @@ impl PlanetLodManager {
             || moved_dist > 0.15 * scale
             || (moved_dist > 0.02 * scale && self.time_since_eval > 0.08);
 
-        let (new_leaves, leaves_changed) = if should_re_eval {
+        let changed_leaves = if should_re_eval {
+            herocraft_common::prof_scope!("lod::quadtree_eval");
             let cam_dvec = DVec3::new(
                 camera_pos.x as f64,
                 camera_pos.y as f64,
                 camera_pos.z as f64,
             );
             let leaves = self.quadtree.evaluate_with_generator(cam_dvec, Some(generator));
-            let changed = leaves.len() != self.current_leaves.len()
-                || leaves
-                    .iter()
-                    .zip(&self.current_leaves)
-                    .any(|(a, b)| a.key != b.key);
+            // Comparaison avec le dernier ensemble demandé (en attente ou affiché)
+            let target = self.pending_leaves.as_ref().unwrap_or(&self.current_leaves);
+            let changed = leaves.len() != target.len()
+                || leaves.iter().zip(target).any(|(a, b)| a.key != b.key);
             self.last_evaluated_pos = camera_pos;
             self.time_since_eval = 0.0;
-            (leaves, changed)
+            changed.then_some(leaves)
         } else {
-            (self.current_leaves.clone(), false)
+            None
         };
 
-        if !leaves_changed && !received_new_mesh && !self.last_camera_pos.is_nan() {
-            return false;
-        }
-
-        self.current_leaves = new_leaves;
-        self.last_camera_pos = camera_pos;
-
-        // 2. Génération parallèle immédiate des patchs polygonaux manquants et requêtes voxels en tâche de fond
-        if leaves_changed {
+        // 2. Demande des patchs polygonaux manquants et des maillages voxels pour les nouvelles feuilles
+        if let Some(new_leaves) = changed_leaves {
+            herocraft_common::prof_value!("lod.feuilles", new_leaves.len());
             let filter = self.active_filter;
             let base_radius = self.base_radius;
-            let gen = generator.clone();
+            let generation = self.generation;
 
-            // Détection de tous les patchs polygonaux nécessaires non encore en cache
+            // Patchs nécessaires non encore en cache
             // (couvre à la fois les feuilles LodPatch et les patchs de secours immédiat des VoxelChunks)
-            let missing_patch_keys: Vec<QuadNodeKey> = self
-                .current_leaves
+            let missing_patch_keys: Vec<QuadNodeKey> = new_leaves
                 .iter()
                 .filter(|l| !self.lod_cache.contains_key(&l.key))
                 .map(|l| l.key)
                 .collect();
 
-            if !missing_patch_keys.is_empty() {
+            if !missing_patch_keys.is_empty() && self.current_leaves.is_empty() {
+                // Rien n'est encore affiché (démarrage, nouvelle planète) : génération bloquante
+                herocraft_common::prof_scope!("lod::generate_missing_patches");
+                herocraft_common::prof_value!("lod.patchs_manquants_par_maj", missing_patch_keys.len());
+                let gen = generator.clone();
                 let new_patches: Vec<(QuadNodeKey, PlanetMesh)> = self.thread_pool.install(|| {
                     missing_patch_keys
                         .into_par_iter()
                         .map(|key| {
-                            let resolution = match key.level {
-                                0 => 32,
-                                1 => 24,
-                                2 => 16,
-                                3 => 16,
-                                _ => 16,
-                            };
                             let patch = PlanetMesh::generate_lod_patch(
                                 &gen,
                                 &key,
                                 base_radius,
-                                resolution,
+                                patch_resolution(key.level),
                                 filter,
                             );
                             (key, patch)
@@ -251,17 +309,39 @@ impl PlanetLodManager {
                 for (key, patch) in new_patches {
                     self.lod_cache.insert(key, patch);
                 }
+            } else if !missing_patch_keys.is_empty() {
+                // Génération en tâche de fond : les feuilles actuelles restent affichées en attendant
+                herocraft_common::prof_scope!("lod::spawn_patch_tasks");
+                herocraft_common::prof_value!("lod.patchs_manquants_par_maj", missing_patch_keys.len());
+                for key in missing_patch_keys {
+                    if self.pending_patches.insert(key) {
+                        let tx = self.patch_tx.clone();
+                        let task_gen = generator.clone();
+                        self.patch_pool.spawn(move || {
+                            let mesh = PlanetMesh::generate_lod_patch(
+                                &task_gen,
+                                &key,
+                                base_radius,
+                                patch_resolution(key.level),
+                                filter,
+                            );
+                            let _ = tx.send(VoxelBuildResult { generation, key, mesh });
+                        });
+                    }
+                }
             }
 
             // Déclenchement en arrière-plan des maillages de voxels 3D non encore calculés
-            for leaf in &self.current_leaves {
+            herocraft_common::prof_scope!("lod::spawn_voxel_tasks");
+            for leaf in &new_leaves {
                 if leaf.kind == QuadLeafKind::VoxelChunk {
                     if !self.voxel_cache.contains_key(&leaf.key) && self.pending_requests.insert(leaf.key) {
                         let tx = self.result_tx.clone();
                         let task_gen = generator.clone();
                         let key = leaf.key;
-                        let seed = self.current_seed;
+                        let queued_at = std::time::Instant::now();
                         self.thread_pool.spawn(move || {
+                            herocraft_common::prof_value!("lod.attente_file_voxel_us", queued_at.elapsed().as_micros());
                             let mesh = VoxelMeshBuilder::build_incurved_single_chunk_fast(
                                 &task_gen,
                                 key.face,
@@ -270,63 +350,75 @@ impl PlanetLodManager {
                                 base_radius,
                                 filter,
                             );
-                            let _ = tx.send(VoxelBuildResult { seed, key, mesh });
+                            let _ = tx.send(VoxelBuildResult { generation, key, mesh });
                         });
                     }
                 }
             }
+
+            self.pending_leaves = Some(new_leaves);
         }
 
-        // Nettoyage périodique des caches
-        if self.lod_cache.len() > 1500 {
-            let active_keys: HashSet<_> = self.current_leaves.iter().map(|l| l.key).collect();
-            self.lod_cache.retain(|k, _| active_keys.contains(k) || k.level == 0);
-        }
-        if self.voxel_cache.len() > 200 {
-            let active_keys: HashSet<_> = self.current_leaves.iter().map(|l| l.key).collect();
-            self.voxel_cache.retain(|k, _| active_keys.contains(k));
+        // 3. Bascule vers les nouvelles feuilles dès que tous leurs patchs sont prêts
+        let mut leaves_switched = false;
+        if let Some(pending) = &self.pending_leaves {
+            if pending.iter().all(|l| self.lod_cache.contains_key(&l.key)) {
+                self.current_leaves = self.pending_leaves.take().unwrap_or_default();
+                leaves_switched = true;
+            }
         }
 
-        // Assemblage immédiat du maillage combiné
-        self.rebuild_combined_mesh();
+        if !leaves_switched && !received_new_mesh && !self.last_camera_pos.is_nan() {
+            return false;
+        }
+        self.last_camera_pos = camera_pos;
+
+        // Nettoyage périodique des caches (les feuilles en attente restent protégées)
+        {
+            herocraft_common::prof_scope!("lod::cache_cleanup");
+            if self.lod_cache.len() > 1500 || self.voxel_cache.len() > 200 {
+                let active_keys: HashSet<_> = self
+                    .current_leaves
+                    .iter()
+                    .chain(self.pending_leaves.iter().flatten())
+                    .map(|l| l.key)
+                    .collect();
+                if self.lod_cache.len() > 1500 {
+                    self.lod_cache.retain(|k, _| active_keys.contains(k) || k.level == 0);
+                }
+                if self.voxel_cache.len() > 200 {
+                    self.voxel_cache.retain(|k, _| active_keys.contains(k));
+                }
+            }
+        }
 
         true
     }
 
-    /// Reconstruit le maillage combiné complet par copie mémoire directe sans réallocation
-    pub fn rebuild_combined_mesh(&mut self) {
-        let mut combined = std::mem::take(&mut self.combined_mesh);
-        combined.vertices.clear();
-        combined.indices.clear();
-
-        for leaf in &self.current_leaves {
-            match leaf.kind {
-                QuadLeafKind::LodPatch => {
-                    if let Some(mesh) = self.lod_cache.get(&leaf.key) {
-                        append_mesh(&mut combined, mesh);
-                    }
-                }
-                QuadLeafKind::VoxelChunk => {
-                    if let Some(voxel_mesh) = self.voxel_cache.get(&leaf.key) {
-                        append_mesh(&mut combined, voxel_mesh);
-                    } else if let Some(patch) = self.lod_cache.get(&leaf.key) {
-                        // Voxel chunk encore en calcul : affichage immédiat de son patch dédié sans trou
-                        append_mesh(&mut combined, patch);
-                    }
-                }
-            }
-        }
-        self.combined_mesh = combined;
+    /// Génération courante (incrémentée à chaque nouvelle planète)
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
-}
 
-/// Fusionne un maillage source dans le maillage combiné (copie mémoire directe rapide)
-fn append_mesh(combined: &mut PlanetMesh, source: &PlanetMesh) {
-    let base_idx = combined.vertices.len() as u32;
-    combined.vertices.extend_from_slice(&source.vertices);
-    combined.indices.reserve(source.indices.len());
-    for &idx in &source.indices {
-        combined.indices.push(base_idx + idx);
+    /// Maillages à afficher pour les feuilles courantes (voxel si prêt, sinon patch polygonal)
+    pub fn visible_meshes(&self) -> Vec<(LodMeshId, &PlanetMesh)> {
+        let generation = self.generation;
+        self.current_leaves
+            .iter()
+            .filter_map(|leaf| {
+                let voxel = (leaf.kind == QuadLeafKind::VoxelChunk)
+                    .then(|| self.voxel_cache.get(&leaf.key))
+                    .flatten();
+                match voxel {
+                    Some(mesh) => Some((LodMeshId { generation, key: leaf.key, voxel: true }, mesh)),
+                    // Voxel chunk encore en calcul : affichage immédiat de son patch dédié sans trou
+                    None => self
+                        .lod_cache
+                        .get(&leaf.key)
+                        .map(|mesh| (LodMeshId { generation, key: leaf.key, voxel: false }, mesh)),
+                }
+            })
+            .collect()
     }
 }
 
@@ -450,7 +542,12 @@ mod tests {
             lod.update(camera.eye_position(), &generator, &mut cache, 0.016, None);
         }
         println!("After processing: pending={}, cached_lod={}, cached_voxels={}", lod.pending_requests.len(), lod.lod_cache.len(), lod.voxel_cache.len());
-        println!("Combined mesh: verts={}, indices={}", lod.combined_mesh.vertices.len(), lod.combined_mesh.indices.len());
+        let visible = lod.visible_meshes();
+        println!(
+            "Visible meshes: verts={}, indices={}",
+            visible.iter().map(|(_, m)| m.vertices.len()).sum::<usize>(),
+            visible.iter().map(|(_, m)| m.indices.len()).sum::<usize>()
+        );
 
         // Check if ANY leaf in current_leaves is using an ancestor!
         let mut using_ancestor = 0;
@@ -486,6 +583,12 @@ mod tests {
         camera.target_distance = 0.0;
         camera.update_camera_bounds(&generator);
         lod.update(camera.eye_position(), &generator, &mut cache, 0.16, None);
+        // Les patchs des nouvelles feuilles sont générés en tâche de fond : bascule après quelques frames
+        let start = std::time::Instant::now();
+        while lod.pending_leaves.is_some() && start.elapsed().as_secs() < 30 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            lod.update(camera.eye_position(), &generator, &mut cache, 0.016, None);
+        }
         let voxels_ground = lod.current_leaves.iter().filter(|l| l.kind == herocraft_world::QuadLeafKind::VoxelChunk).count();
         assert!(voxels_ground > 0, "Des voxels doivent être présents au sol sur la planète de taille doublée (50.0)");
     }

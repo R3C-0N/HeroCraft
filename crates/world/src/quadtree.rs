@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use glam::DVec3;
 use herocraft_common::{PlanetChunkCoord, PlanetFace};
 use serde::{Deserialize, Serialize};
@@ -178,6 +181,18 @@ pub struct PlanetQuadTree {
     pub max_level: u8,
     /// Seuils de distance caméra pour subdiviser chaque niveau (index = level 0..max_level)
     pub split_distances: Vec<f64>,
+    /// Élévations déjà échantillonnées, par cellule de la grille voxel de chaque face
+    elevation_cache: Mutex<ElevationCache>,
+}
+
+/// Résolution de la grille de cache d'élévation (une cellule par colonne de voxels)
+const ELEVATION_CACHE_GRID: f64 = 1024.0;
+const ELEVATION_CACHE_MAX_ENTRIES: usize = 1 << 18;
+
+#[derive(Default)]
+struct ElevationCache {
+    seed: Option<u64>,
+    values: HashMap<(PlanetFace, i32, i32), f64>,
 }
 
 impl PlanetQuadTree {
@@ -209,7 +224,27 @@ impl PlanetQuadTree {
             min_level,
             max_level,
             split_distances,
+            elevation_cache: Mutex::new(ElevationCache::default()),
         }
+    }
+
+    /// Élévation du relief au point (u, v) d'une face, arrondie à la colonne de voxels la plus proche.
+    /// Le relief étant déterministe, chaque colonne n'est échantillonnée qu'une fois entre deux évaluations.
+    fn cached_elevation(&self, gen: &PlanetWorldGenerator, face: PlanetFace, u: f64, v: f64) -> f64 {
+        let iu = ((u + 1.0) * 0.5 * ELEVATION_CACHE_GRID).round() as i32;
+        let iv = ((v + 1.0) * 0.5 * ELEVATION_CACHE_GRID).round() as i32;
+        let mut cache = self.elevation_cache.lock().unwrap();
+        if cache.seed != Some(gen.planet.seed) || cache.values.len() > ELEVATION_CACHE_MAX_ENTRIES {
+            cache.seed = Some(gen.planet.seed);
+            cache.values.clear();
+        }
+        *cache.values.entry((face, iu, iv)).or_insert_with(|| {
+            let snapped_u = iu as f64 / ELEVATION_CACHE_GRID * 2.0 - 1.0;
+            let snapped_v = iv as f64 / ELEVATION_CACHE_GRID * 2.0 - 1.0;
+            let dir = face.uv_to_sphere_direction(snapped_u, snapped_v);
+            let (lat, lon) = unit_sphere_to_lat_lon(dir);
+            gen.sample_elevation(dir, lat, lon)
+        })
     }
 
     /// Évalue l'arbre complet depuis la position de la caméra et renvoie la liste des feuilles visibles
@@ -233,6 +268,7 @@ impl PlanetQuadTree {
         generator: Option<&PlanetWorldGenerator>,
         frustum: Option<&WorldFrustum>,
     ) -> Vec<QuadLeaf> {
+        herocraft_common::prof_scope!("world::quadtree::evaluate");
         let mut leaves = Vec::with_capacity(256);
 
         // Toutes les 6 faces de la planète sont toujours initialisées
@@ -276,8 +312,7 @@ impl PlanetQuadTree {
 
         // Calcule le rayon réel de surface au point le plus proche (tenant compte du relief montagneux ou de la mer)
         let surface_radius = if let Some(gen) = generator {
-            let (lat, lon) = unit_sphere_to_lat_lon(closest_dir);
-            let elev = gen.sample_elevation(closest_dir, lat, lon);
+            let elev = self.cached_elevation(gen, node.face, closest_u, closest_v);
             let eff_elev = elev.max(SEA_LEVEL_BLOCKS);
             self.base_radius + eff_elev * altitude_scale
         } else {
