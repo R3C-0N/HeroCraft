@@ -119,7 +119,7 @@ fn cell_on(m: vec4<u32>, x: i32, y: i32) -> bool {
 }
 
 // Distance 2D signée à la forme du masque, coins convexes arrondis et angles rentrants comblés
-// (rayon rh). Exacte à moins d'une cellule de la surface, bornée à une cellule au-delà.
+// (rayon rh). Exacte et continue à moins d'une cellule de la surface, bornée à une cellule au-delà.
 fn sd_mask_2d(p: vec2<f32>, m: vec4<u32>, cell: f32, rh: f32) -> f32 {
     let q = p / cell + vec2<f32>(5.5); // Coordonnées de grille (0..11)
     let c = vec2<i32>(floor(q));
@@ -135,21 +135,6 @@ fn sd_mask_2d(p: vec2<f32>, m: vec4<u32>, cell: f32, rh: f32) -> f32 {
     }
     let inside = (nb & 16u) != 0u;
 
-    // Distance à la cellule de statut opposé la plus proche dans le voisinage 3x3
-    // (dehors : cellule pleine la plus proche ; dedans : cellule vide la plus proche)
-    var d = cell;
-    for (var dy = -1; dy <= 1; dy = dy + 1) {
-        for (var dx = -1; dx <= 1; dx = dx + 1) {
-            let on = ((nb >> u32((dy + 1) * 3 + dx + 1)) & 1u) == 1u;
-            if (on != inside) {
-                let cc = c + vec2<i32>(dx, dy);
-                let e = abs(q - (vec2<f32>(cc) + vec2<f32>(0.5))) - vec2<f32>(0.5);
-                d = min(d, length(max(e, vec2<f32>(0.0))) * cell);
-            }
-        }
-    }
-    var sd = select(d, -d, inside);
-
     // Sommet de grille le plus proche : arrondi d'un coin convexe (1 cellule pleine sur 4)
     // ou congé d'un angle rentrant (3 cellules pleines sur 4).
     // Ses 4 cellules sont dans le voisinage 3x3 (round(q) vaut c ou c + 1 sur chaque axe)
@@ -162,18 +147,44 @@ fn sd_mask_2d(p: vec2<f32>, m: vec4<u32>, cell: f32, rh: f32) -> f32 {
     let c11 = ((nb >> (b + 4u)) & 1u) == 1u;
     let count = i32(c00) + i32(c10) + i32(c01) + i32(c11);
     let w0 = (q - vtx) * cell;
+
+    // Angle rentrant : la cellule vide du sommet est remplacée par son quart de plan au coin
+    // arrondi (distance exacte), des deux côtés de la surface. Sans cela le congé ne valait que
+    // dans la cellule vide : distance discontinue au ras des parois (encoches et arêtes visibles)
+    let s3 = vec2<f32>(select(-1.0, 1.0, !c10 || !c11), select(-1.0, 1.0, !c01 || !c11));
+    var skip = vec2<i32>(99);
+    if (count == 3) {
+        skip = o + vec2<i32>(select(-1, 0, s3.x > 0.0), select(-1, 0, s3.y > 0.0));
+    }
+
+    // Distance à la cellule de statut opposé la plus proche dans le voisinage 3x3
+    // (dehors : cellule pleine la plus proche ; dedans : cellule vide la plus proche)
+    var d = cell;
+    for (var dy = -1; dy <= 1; dy = dy + 1) {
+        for (var dx = -1; dx <= 1; dx = dx + 1) {
+            let on = ((nb >> u32((dy + 1) * 3 + dx + 1)) & 1u) == 1u;
+            if (on != inside && !(dx == skip.x && dy == skip.y)) {
+                let cc = c + vec2<i32>(dx, dy);
+                let e = abs(q - (vec2<f32>(cc) + vec2<f32>(0.5))) - vec2<f32>(0.5);
+                d = min(d, length(max(e, vec2<f32>(0.0))) * cell);
+            }
+        }
+    }
+    if (count == 3) {
+        // Distance signée au quart de plan vide arrondi (négative dedans)
+        let e = vec2<f32>(rh) - w0 * s3;
+        let sd_e = length(max(e, vec2<f32>(0.0))) + min(max(e.x, e.y), 0.0) - rh;
+        d = min(d, select(-sd_e, sd_e, inside));
+    }
+    var sd = select(d, -d, inside);
+
     if (count == 1) {
         // Signe vers la cellule pleine
         let s = vec2<f32>(select(-1.0, 1.0, c10 || c11), select(-1.0, 1.0, c01 || c11));
-        let w = w0 * s;
-        sd = max(sd, length(max(vec2<f32>(rh) - w, vec2<f32>(0.0))) - rh);
-    } else if (count == 3) {
-        // Signe vers la cellule vide
-        let s = vec2<f32>(select(-1.0, 1.0, !c10 || !c11), select(-1.0, 1.0, !c01 || !c11));
-        let w = w0 * s;
-        if (w.x >= 0.0 && w.y >= 0.0 && w.x < rh && w.y < rh) {
-            sd = min(sd, rh - length(w - vec2<f32>(rh)));
-        }
+        // Quart de plan plein au coin arrondi, distance exacte aussi en profondeur (sinon un
+        // palier à -rh, discontinu au milieu de la cellule)
+        let e = vec2<f32>(rh) - w0 * s;
+        sd = max(sd, length(max(e, vec2<f32>(0.0))) + min(max(e.x, e.y), 0.0) - rh);
     }
     return sd;
 }
