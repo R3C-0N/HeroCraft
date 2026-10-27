@@ -176,9 +176,20 @@ impl PlanetLodManager {
             ..Default::default()
         };
         let generator = PlanetWorldGenerator::new(desc);
-        for &face in &herocraft_common::PlanetFace::ALL {
-            let key = QuadNodeKey::new(face, 0, 0, 0);
-            let patch = PlanetMesh::generate_lod_patch(&generator, &key, self.base_radius, 24, self.active_filter);
+        let (base_radius, filter) = (self.base_radius, self.active_filter);
+        let roots: Vec<(QuadNodeKey, PlanetMesh)> = self.thread_pool.install(|| {
+            herocraft_common::PlanetFace::ALL
+                .par_iter()
+                .map(|&face| {
+                    let key = QuadNodeKey::new(face, 0, 0, 0);
+                    (key, PlanetMesh::generate_lod_patch(&generator, &key, base_radius, 24, filter))
+                })
+                .collect()
+        });
+        // Les 6 faces grossières s'affichent tout de suite : les feuilles détaillées de la nouvelle
+        // planète sont générées en tâche de fond au lieu de geler la frame (~0,5 s)
+        for (key, patch) in roots {
+            self.current_leaves.push(QuadLeaf { key, kind: QuadLeafKind::LodPatch });
             self.lod_cache.insert(key, patch);
         }
     }
