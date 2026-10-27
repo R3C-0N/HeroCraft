@@ -162,7 +162,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dpx = dpdx(in.world_pos);
     let dpy = dpdy(in.world_pos);
     let cross_norm = normalize(cross(dpx, dpy));
-    let n_facet = select(cross_norm, -cross_norm, dot(cross_norm, in.normal) < 0.0);
+    // Orientée vers la caméra : la face visible d'un solide regarde toujours l'observateur. La normale
+    // de sommet n'est pas fiable sur les contremarches (parfois inversée, la face s'éclairait alors
+    // côté opposé au soleil). L'eau garde la normale de sommet pour rester orientée vers le ciel.
+    let facing_ref = select(camera.camera_pos - in.world_pos, in.normal, is_water);
+    let n_facet = select(cross_norm, -cross_norm, dot(cross_norm, facing_ref) < 0.0);
 
     // Normale sphérique continue idéale pour la surface de l'océan
     let n_sphere = normalize(in.world_pos);
