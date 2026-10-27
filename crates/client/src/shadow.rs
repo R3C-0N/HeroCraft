@@ -309,6 +309,11 @@ impl Shadows {
         }
     }
 
+    /// Ombres calculées cette frame (au sol, réglage actif, soleil levé)
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
+
     /// Place les cascades autour du joueur (décalées vers l'avant du regard) et met à jour
     /// les matrices. `ground_factor` vaut 0 en orbite, où les ombres sont coupées.
     pub fn update(

@@ -1,24 +1,33 @@
-//! Assemblage des shaders WGSL avec naga_oil : `common.wgsl` est un module importable
-//! (`#import herocraft::common::{...}`) partagé par le ciel, le terrain et les nuages.
+//! Assemblage des shaders WGSL avec naga_oil : `common.wgsl`, `atmosphere.wgsl` et
+//! `shadow_common.wgsl` sont des modules importables (`#import herocraft::common::{...}`)
+//! partagés par le ciel, le terrain, les nuages et les passes de l'atmosphère.
 
 use std::borrow::Cow;
 
 use naga_oil::compose::{ComposableModuleDescriptor, Composer, ComposerError, NagaModuleDescriptor, ShaderLanguage, ShaderType};
 
-const COMMON_WGSL: &str = include_str!("common.wgsl");
+const MODULES: [(&str, &str); 3] = [
+    (include_str!("common.wgsl"), "common.wgsl"),
+    (include_str!("atmosphere.wgsl"), "atmosphere.wgsl"),
+    (include_str!("shadow_common.wgsl"), "shadow_common.wgsl"),
+];
 
 /// Assemble un shader WGSL et ses imports en un module naga (message d'erreur lisible sinon)
 pub fn compose(source: &str, file_path: &str) -> Result<naga::Module, String> {
     herocraft_common::prof_scope!("render::shaders::compose");
     let mut composer = Composer::default();
-    let result = composer
-        .add_composable_module(ComposableModuleDescriptor {
-            source: COMMON_WGSL,
-            file_path: "common.wgsl",
-            language: ShaderLanguage::Wgsl,
-            ..Default::default()
+    let result = MODULES
+        .iter()
+        .try_for_each(|&(source, file_path)| {
+            composer
+                .add_composable_module(ComposableModuleDescriptor {
+                    source,
+                    file_path,
+                    language: ShaderLanguage::Wgsl,
+                    ..Default::default()
+                })
+                .map(|_| ())
         })
-        .map(|_| ())
         .and_then(|_| {
             composer.make_naga_module(NagaModuleDescriptor {
                 source,

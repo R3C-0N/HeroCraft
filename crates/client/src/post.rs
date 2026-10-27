@@ -303,6 +303,11 @@ impl PostProcess {
         }
     }
 
+    /// Cible HDR résolue (relue par le bloom et la composition)
+    pub fn hdr_view(&self) -> &wgpu::TextureView {
+        &self.targets.hdr_view
+    }
+
     pub fn update(&self, queue: &wgpu::Queue, settings: &PostSettings) {
         let bloom = if settings.bloom_enabled { settings.bloom_intensity } else { 0.0 };
         let uniform = PostUniform {

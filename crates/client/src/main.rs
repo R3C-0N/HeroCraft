@@ -10,6 +10,7 @@ use winit::{
     window::WindowBuilder,
 };
 
+mod atmosphere;
 mod camera;
 mod cloud_mesh;
 mod gpu_timer;
@@ -324,6 +325,7 @@ fn main() {
                         state.update_camera(&camera, &ui_state.lighting_settings, &ui_state.cloud_settings);
                         state.update_post(&ui_state.post_settings);
                         state.update_shadows(&camera, &ui_state.shadow_settings);
+                        state.update_atmosphere(&camera, &ui_state.atmosphere_settings, &ui_state.lighting_settings);
 
                         // Mise à jour adaptative du QuadTree LOD
                         herocraft_common::prof_scope!("frame::lod_and_upload" => lod_guard);

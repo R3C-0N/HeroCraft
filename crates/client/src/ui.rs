@@ -172,6 +172,27 @@ impl Default for ShadowSettings {
     }
 }
 
+/// Réglages de l'atmosphère physique et des rayons crépusculaires (la brume est réglée par
+/// le curseur Brume de l'éclairage)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AtmosphereSettings {
+    pub air_density: f32,        // Densité de l'air (diffusion de Rayleigh) [0.2 .. 3.0]
+    pub sun_halo: f32,           // Anisotropie de la brume (g de Mie) : halo resserré autour du soleil [0.0 .. 0.95]
+    pub god_rays: bool,
+    pub god_rays_intensity: f32, // Accentuation de l'ombre de l'air (1 = physique) [0.0 .. 4.0]
+}
+
+impl Default for AtmosphereSettings {
+    fn default() -> Self {
+        Self {
+            air_density: 1.0,
+            sun_halo: 0.8,
+            god_rays: true,
+            god_rays_intensity: 2.5,
+        }
+    }
+}
+
 /// Réglages d'éclairage et d'ambiance céleste ajustables via sliders
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LightingSettings {
@@ -214,6 +235,7 @@ pub struct UiState {
     pub cloud_settings: CloudSettings,
     pub post_settings: PostSettings,
     pub shadow_settings: ShadowSettings,
+    pub atmosphere_settings: AtmosphereSettings,
     pub screen_width: f32,
     pub screen_height: f32,
 }
@@ -240,6 +262,7 @@ impl UiState {
             cloud_settings: CloudSettings::default(),
             post_settings: PostSettings::default(),
             shadow_settings: ShadowSettings::default(),
+            atmosphere_settings: AtmosphereSettings::default(),
             screen_width: 1280.0_f32,
             screen_height: 720.0_f32,
         }
@@ -507,9 +530,6 @@ impl UiState {
                                     ui.label(egui::RichText::new("Vitesse Céleste (Jour 20m / Lune 21m) :").size(11.0_f32).color(egui::Color32::from_rgb(200, 200, 200)));
                                     ui.add(egui::Slider::new(&mut self.lighting_settings.moon_speed, 0.0..=5.0).text("Vitesse").show_value(true));
 
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Brouillard Atmosphérique :").size(11.0_f32).color(egui::Color32::from_rgb(190, 190, 190)));
-                                    ui.add(egui::Slider::new(&mut self.lighting_settings.fog_intensity, 0.0..=2.0).text("Brume").show_value(true));
 
                                     ui.add_space(2.0_f32);
                                     ui.label(egui::RichText::new("Nuages Volumétriques (Style Voxel) :").size(11.0_f32).color(egui::Color32::from_rgb(220, 225, 245)));
@@ -621,6 +641,37 @@ impl UiState {
                                     ui.add_space(4.0_f32);
                                     if ui.button("↺ Réinitialiser les ombres").clicked() {
                                         self.shadow_settings = ShadowSettings::default();
+                                    }
+                                },
+                            );
+
+                            ui.add_space(3.0_f32);
+
+                            // Section de l'atmosphère physique et des rayons crépusculaires
+                            ui.collapsing(
+                                egui::RichText::new("🌅  Atmosphère & rayons")
+                                    .size(12.0_f32)
+                                    .color(egui::Color32::from_rgb(255, 190, 140))
+                                    .strong(),
+                                |ui| {
+                                    ui.add_space(2.0_f32);
+                                    ui.add(egui::Slider::new(&mut self.atmosphere_settings.air_density, 0.2..=3.0).text("Densité de l'air").show_value(true));
+                                    ui.add(egui::Slider::new(&mut self.atmosphere_settings.sun_halo, 0.0..=0.95).text("Halo solaire").show_value(true));
+                                    ui.add(egui::Slider::new(&mut self.lighting_settings.fog_intensity, 0.0..=2.0).text("Brume").show_value(true));
+                                    ui.add_space(2.0_f32);
+                                    ui.checkbox(&mut self.atmosphere_settings.god_rays, "Rayons crépusculaires");
+                                    ui.add_enabled_ui(self.atmosphere_settings.god_rays, |ui| {
+                                        ui.add(egui::Slider::new(&mut self.atmosphere_settings.god_rays_intensity, 0.0..=4.0).text("Intensité").show_value(true));
+                                    });
+                                    ui.label(
+                                        egui::RichText::new("Les rayons suivent les ombres du relief et des nuages.")
+                                            .size(10.0_f32)
+                                            .color(egui::Color32::from_rgb(170, 170, 170)),
+                                    );
+
+                                    ui.add_space(4.0_f32);
+                                    if ui.button("↺ Réinitialiser l'atmosphère").clicked() {
+                                        self.atmosphere_settings = AtmosphereSettings::default();
                                     }
                                 },
                             );

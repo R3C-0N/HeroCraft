@@ -3,35 +3,15 @@
 // - Éclairage Half-Lambert & normales géométriques nettes
 // - Interpolation douce des couleurs et de l'Ambient Occlusion (AO)
 // - Reflets spéculaires intenses de l'eau (Blinn-Phong + Fresnel) et scintillement de neige
-// - Lueur atmosphérique rasante sur le limbe planétaire en vue orbitale
-// - Brouillard atmosphérique volumétrique de distance au sol
+// - Lumière du soleil et du ciel tirées de l'atmosphère physique (atmosphere.wgsl)
+// - Perspective aérienne : diffusion et extinction de l'air entre la caméra et la surface
 // - Dithered Cross-Fade (tramage stochastique Bayer 4x4) pour transitions LOD
 // - Ombres portées du soleil (3 cascades, PCF) et ombres mouvantes des nuages
 // =========================================================================
 
-#import herocraft::common::{camera, get_moon_data, HDR_SKY, HDR_SUN, HORIZON_DAY}
-
-// Ombres : cascades de profondeur et carte d'opacité des nuages vues depuis le soleil (shadow.rs)
-struct ShadowUniform {
-    cascades: array<mat4x4<f32>, 3>,
-    cloud_view_proj: mat4x4<f32>,
-    // xyz : demi-largeur monde de chaque cascade, w : taille d'un texel de cascade en uv
-    extents: vec4<f32>,
-    // x : force des ombres du relief, y : force des ombres des nuages, z : 1 si actives,
-    // w : décalage maximal le long de la normale (face rasante), en fraction de la demi-largeur de la cascade
-    params: vec4<f32>,
-};
-
-@group(1) @binding(0) var<uniform> shadow: ShadowUniform;
-@group(1) @binding(1) var shadow_maps: texture_depth_2d_array;
-@group(1) @binding(2) var shadow_sampler: sampler_comparison;
-@group(1) @binding(3) var cloud_shadow_map: texture_2d<f32>;
-@group(1) @binding(4) var cloud_sampler: sampler;
-
-fn to_shadow_uv(clip: vec4<f32>) -> vec3<f32> {
-    let ndc = clip.xyz / clip.w;
-    return vec3<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z);
-}
+#import herocraft::common::{camera, get_moon_data}
+#import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective, apply_aerial_perspective}
+#import herocraft::shadow::{shadow, shadow_maps, shadow_sampler, cloud_shadow_map, cloud_sampler, to_shadow_uv}
 
 // Part de la lumière du soleil qui atteint le point : 1 = plein soleil, 0 = ombre complète.
 // `n` est la normale géométrique de la facette, `l` la direction du soleil.
@@ -216,21 +196,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let day_factor = clamp((sun_elevation + 0.08) / 0.24, 0.0, 1.0);
     let night_factor = 1.0 - day_factor;
 
-    // Teinte du soleil selon la hauteur sur l'horizon :
-    // - Plein jour (sun_elevation > 0.25) : Blanc solaire chaud naturel
-    // - Heure dorée / crépuscule (sun_elevation ~ 0.04..0.18) : Or ambré éclatant
-    // - Rasante au coucher/lever (sun_elevation ~ 0.0) : Orange flamboyant / cuivré
-    let sunset_factor = clamp(1.0 - abs(sun_elevation - 0.04) / 0.18, 0.0, 1.0) * day_factor;
-    let day_sun_color = vec3<f32>(1.0, 0.96, 0.88);
-    let sunset_sun_color = vec3<f32>(1.0, 0.52, 0.18);
-    let sun_color = mix(day_sun_color, sunset_sun_color, sunset_factor);
+    // Lumière du soleil arrivée au point à travers l'atmosphère : blanche à midi, dorée puis
+    // orangée quand le trajet dans l'air s'allonge, nulle sous l'horizon
+    let sun_color = sun_light_at(in.world_pos, l);
 
     // Multiplicateurs d'intensité interactifs pilotés par les sliders de l'interface
     let moon_slider = camera.lighting_params.x;      // Multiplicateur Lune [0.0 .. 3.0]
-    let sun_slider = camera.lighting_params.y;       // Multiplicateur Soleil [0.0 .. 3.0]
     let night_amb_slider = camera.lighting_params.z; // Multiplicateur Nuit / Étoiles [0.0 .. 3.0]
-    let day_amb_slider = camera.lighting_params.w;   // Multiplicateur Jour / Ciel [0.0 .. 3.0]
-    let fog_slider = camera.lighting_params_ext.y;      // Multiplicateur Brouillard [0.0 .. 2.0]
 
     // Données orbitales de la Lune (partagées avec le sky shader)
     let moon = get_moon_data(camera.time, camera.light_dir);
@@ -247,31 +219,30 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let moon_direct_color = vec3<f32>(0.72, 0.85, 1.0) * direct_moon_level;
 
     // Lumière ambiante :
-    // - Jour : ciel bleu azur (modulé par day_amb_slider)
-    // - Crépuscule : pourpre / violacé
+    // - Jour et crépuscule : irradiance du ciel calculée par l'atmosphère, plus bleue sur le
+    //   dessus, plus chaude sur les flancs tournés vers le soleil couchant
     // - Nuit sans lune : obscurité stellaire (modulé par night_amb_slider)
     // - Nuit sous clair de lune : lueur bleutée argentée généreuse (modulée par moon_slider)
-    let day_ambient = vec3<f32>(0.68, 0.78, 0.92);
-    let sunset_ambient = vec3<f32>(0.38, 0.26, 0.48); // Teinte d'ombre crépusculaire violacée
-    // Ciel amplifié comme le dôme : les faces à l'ombre restent lisibles et bleutées
-    let sun_ambient = mix(day_ambient, sunset_ambient, sunset_factor) * (mix(0.18, 0.22, day_factor) * day_amb_slider * HDR_SKY);
+    // Le relief voxel masque une bonne part du ciel (marches, falaises voisines) : seule une
+    // fraction de l'irradiance d'un plan dégagé atteint les faces
+    let sun_ambient = sky_light(in.world_pos, n, l) * 0.6;
 
     let starlight_ambient = vec3<f32>(0.32, 0.42, 0.70) * (0.038 * night_amb_slider); // Nuit noire sans lune
     let moonlight_ambient = vec3<f32>(0.48, 0.62, 0.94) * (0.075 * moon_intensity); // Surcroît clair de lune
     let night_ambient_total = starlight_ambient + moonlight_ambient;
 
     let ndotl = dot(n, l);
-    let direct = max(ndotl, 0.0) * day_factor;
-    let half_lambert = pow(clamp(ndotl * 0.5 + 0.5, 0.0, 1.0), 1.35) * day_factor;
+    let direct = max(ndotl, 0.0);
+    let half_lambert = pow(clamp(ndotl * 0.5 + 0.5, 0.0, 1.0), 1.35);
     // Lambert majoritaire : en HDR, le contraste soleil / ombre est porté par le tonemapper
     // L'eau renvoie surtout le ciel (reflets plus bas) : peu de diffus pour garder un bleu profond
     let water_diffuse = select(1.0, 0.45, is_water);
     // Ombres portées : n'atténuent que la lumière directe, le ciel continue d'éclairer
     let sun_vis = select(1.0, sun_visibility(in.world_pos, n_facet, l), day_factor > 0.0);
-    let direct_level = 0.78 * mix(half_lambert, direct, 0.65) * sun_slider * HDR_SUN * water_diffuse * sun_vis;
+    let direct_level = mix(half_lambert, direct, 0.65) * water_diffuse * sun_vis;
 
-    // Éclairage combiné : ambiance (jour / coucher / nuit étoilée / clair de lune) + soleil direct + lune directe
-    let total_light = mix(night_ambient_total, sun_ambient, day_factor) + sun_color * direct_level + moon_direct_color;
+    // Éclairage combiné : ambiance (ciel / nuit étoilée / clair de lune) + soleil direct + lune directe
+    let total_light = night_ambient_total * night_factor + sun_ambient + sun_color * direct_level + moon_direct_color;
 
     // 5. Reflets spéculaires d'eau et de glace
     var specular_light = vec3<f32>(0.0);
@@ -281,10 +252,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (is_water) {
         // Reflet spéculaire Blinn-Phong pour l'océan
         let spec_power = mix(48.0, 96.0, orbit_factor);
-        let sun_spec = pow(ndoth, spec_power) * 1.8 * sun_slider * HDR_SUN * sun_vis;
+        let sun_spec = pow(ndoth, spec_power) * 1.8 * sun_vis;
         // Effet Fresnel rasante
         let fresnel = pow(1.0 - ndotv, 5.0) * 0.45 + 0.05;
-        let ocean_spec_color = mix(sun_color, vec3<f32>(1.0, 0.95, 0.85), clamp(sun_elevation * 3.0, 0.0, 1.0));
+        // Reflet du ciel : sa lumière moyenne (irradiance d'une surface horizontale)
+        let sky_reflection = sky_light(in.world_pos, n_sphere, l);
 
         // Reflet spéculaire lunaire sur l'océan (traînée argentée miroitante sous la Lune la nuit)
         let h_moon = normalize(moon.dir + view_dir);
@@ -294,52 +266,33 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let night_water_glint = vec3<f32>(0.25, 0.35, 0.60) * (0.04 * night_amb_slider + 0.10 * moon_intensity);
         let night_water_spec = (moon_spec_color * moon_spec + night_water_glint * fresnel) * night_factor;
 
-        let water_spec = ocean_spec_color * (sun_spec * clamp(ndotl * 2.0, 0.0, 1.0) + fresnel * 0.35 * HDR_SKY) * day_factor + night_water_spec;
+        let water_spec = sun_color * sun_spec * clamp(ndotl * 2.0, 0.0, 1.0) + sky_reflection * fresnel + night_water_spec;
         specular_light += water_spec;
     } else if (is_snow) {
         // Scintillement cristallin diffus sur les névés et glaciers (soleil de jour et lune la nuit)
-        let snow_glint = pow(ndoth, 24.0) * 0.40 * clamp(ndotl * 2.0, 0.0, 1.0) * day_factor * sun_slider * HDR_SUN * sun_vis;
+        let snow_glint = pow(ndoth, 24.0) * 0.40 * clamp(ndotl * 2.0, 0.0, 1.0) * sun_vis;
         let snow_moon_glint = pow(max(dot(n, normalize(moon.dir + view_dir)), 0.0), 20.0) * 0.15 * moon_intensity;
-        specular_light += vec3<f32>(0.92, 0.95, 1.0) * (snow_glint + snow_moon_glint);
+        specular_light += sun_color * snow_glint + vec3<f32>(0.92, 0.95, 1.0) * snow_moon_glint;
     }
-
-    // 6. Lueur atmosphérique rasante sur le limbe planétaire en vue orbitale
-    // Utilise la normale sphérique planétaire (n_sphere) et non la facette du bloc (n_facet),
-    // afin que le halo atmosphérique soit strictement restreint au contour extérieur du disque planétaire contre l'espace,
-    // sans jamais illuminer les contremarches, falaises ou blocs à 90° à l'intérieur des terres.
-    let sphere_view = clamp(dot(n_sphere, view_dir), 0.0, 1.0);
-    let rim = 1.0 - sphere_view;
-    let sun_side = clamp(sun_elevation * 0.5 + 0.5, 0.0, 1.0);
-    let rim_light = pow(rim, 8.0) * 0.35 * sun_side * orbit_factor * sun_slider * HDR_SKY;
-    let atmosphere_color = vec3<f32>(0.25, 0.65, 1.0);
 
     // Couleur éclairée de base avec Ambient Occlusion (AO) per-vertex interpolé
-    var lit_rgb = base_color * total_light + specular_light + atmosphere_color * rim_light;
+    var lit_rgb = base_color * total_light + specular_light;
 
-    // 7. Brouillard atmosphérique de distance au sol (Ground Distance Fog)
+    // 6. Perspective aérienne : l'air entre la caméra et la surface diffuse la lumière du soleil
+    // et du ciel (bleu au loin, doré face au soleil couchant) et atténue la surface. Le même
+    // calcul donne la couleur du ciel à l'horizon : le relief lointain s'y fond.
     let dist = length(camera.camera_pos - in.world_pos);
-    let ground_proximity = camera.lighting_params_ext.w;
+    let aerial = aerial_perspective(camera.camera_pos, -view_dir, dist, l, 12);
+    lit_rgb = apply_aerial_perspective(lit_rgb, aerial);
 
-    if (ground_proximity > 0.001) {
-        // Début du brouillard à 2.5 unités (~65 blocs) à l'échelle, saturation douce à 8.0 unités
-        let fog_factor = clamp((dist - 2.5 * scale) / (5.5 * scale), 0.0, 1.0) * ground_proximity * fog_slider;
-
-        // Diffusion dorée/ambrée au coucher vers le soleil, pourpre à l'opposé
-        let forward_scatter = pow(max(dot(view_dir, -l), 0.0), 3.0);
-        let sunset_fog_color = mix(vec3<f32>(0.65, 0.38, 0.50), vec3<f32>(1.0, 0.58, 0.24), forward_scatter);
-        let day_fog_color = mix(HORIZON_DAY * 0.75, vec3<f32>(1.6, 1.36, 0.96), forward_scatter * 0.55);
-
-        // Brume nocturne : nuit sombre étoilée sans lune, argentée / bleutée en direction de la Lune
-        let moon_scatter = pow(max(dot(view_dir, -moon.dir), 0.0), 3.0) * moon_intensity;
-        let base_night_fog = vec3<f32>(0.018, 0.024, 0.045) * night_amb_slider;
-        let moonlit_fog = vec3<f32>(0.035, 0.050, 0.085) + vec3<f32>(0.05, 0.07, 0.11) * moon_scatter;
-        let night_fog = mix(base_night_fog, moonlit_fog, clamp(moon_intensity, 0.0, 1.0));
-
-        let active_fog = mix(day_fog_color, sunset_fog_color, sunset_factor) * HDR_SKY;
-        let fog_color = mix(night_fog, active_fog, day_factor);
-
-        lit_rgb = mix(lit_rgb, fog_color, fog_factor * 0.75);
-    }
+    // Brume nocturne : l'air n'est plus éclairé par le soleil, une lueur bleutée argentée
+    // (vers la Lune) remplace la diffusion là où l'air atténue la surface
+    let haze = 1.0 - dot(aerial.transmittance, vec3<f32>(1.0 / 3.0));
+    let moon_scatter = pow(max(dot(view_dir, -moon.dir), 0.0), 3.0) * moon_intensity;
+    let base_night_fog = vec3<f32>(0.018, 0.024, 0.045) * night_amb_slider;
+    let moonlit_fog = vec3<f32>(0.035, 0.050, 0.085) + vec3<f32>(0.05, 0.07, 0.11) * moon_scatter;
+    let night_fog = mix(base_night_fog, moonlit_fog, clamp(moon_intensity, 0.0, 1.0));
+    lit_rgb += night_fog * haze * night_factor;
 
     return vec4<f32>(lit_rgb, 1.0);
 }

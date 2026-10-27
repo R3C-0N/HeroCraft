@@ -4,13 +4,14 @@
 // - Sphere tracing ultra-rapide (8 à 16 pas) sur SDF analytique exacte
 // - Forme décrite par un masque d'occupation 11x11 par groupe de nuages (contours découpés, encoches, trous)
 // - Coins convexes arrondis, angles rentrants comblés, arêtes hautes et basses en coussin
-// - Ambiance tirée du dôme céleste (même formule que sky_shader.wgsl) : teinte du ciel partagée
+// - Soleil et ambiance du ciel tirés de l'atmosphère physique (atmosphere.wgsl)
 // - Dessus clair, flancs intermédiaires, dessous plus sombre et légèrement mauve
-// - Perspective atmosphérique vers le ciel (hautes lumières compressées par le tonemapper)
+// - Perspective aérienne : même diffusion de l'air que le ciel et le relief
 // - Écriture précise de la profondeur dans le Z-buffer (@builtin(frag_depth))
 // =========================================================================
 
-#import herocraft::common::{camera, get_moon_data, sky_factors, sky_dome, HDR_SUN}
+#import herocraft::common::{camera, get_moon_data, sky_factors}
+#import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective, apply_aerial_perspective}
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -361,16 +362,13 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     // --- Éclairage : ambiance tirée du ciel, dessus clair, dessous sombre ---
     let moon_slider = camera.lighting_params.x;
-    let sun_slider = camera.lighting_params.y;
     let night_amb_slider = camera.lighting_params.z;
-    let fog_slider = camera.lighting_params_ext.y;
 
     // Même repère que le ciel vu par le joueur (sky_shader.wgsl) : tous les nuages partagent la teinte du ciel
     let cam_up = normalize(camera.camera_pos);
     let l_sun = normalize(camera.light_dir);
     let factors = sky_factors(dot(l_sun, cam_up));
     let daylight = factors.daylight;
-    let sunset_factor = factors.sunset;
 
     let up_planet = normalize(hit_world_pos);
     let ndotup = dot(norm_world, up_planet);
@@ -380,17 +378,12 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let height01 = clamp((hit_z + half_depth) / (2.0 * half_depth), 0.0, 1.0);
     let top = mix(ndotup * 0.5 + 0.5, pow(height01, 0.8), 0.45);
 
-    // 1. Ambiance du ciel : horizon dans la direction regardée, mêlé au zénith pour les faces hautes
-    let horiz = ray_dir - cam_up * dot(ray_dir, cam_up);
-    let horiz_dir = select(cam_up, normalize(horiz), length(horiz) > 1e-3);
-    let sky_top = sky_dome(cam_up, cam_up, l_sun, sunset_factor);
-    let sky_side = sky_dome(normalize(horiz_dir + cam_up * 0.15), cam_up, l_sun, sunset_factor);
-    // Le ciel saturé réglé pour AgX bleuirait les nuages : seule une partie de sa teinte est gardée
-    let sky_mix = mix(sky_side, sky_top, 0.30 * top);
-    let sky_ambient = mix(vec3<f32>(dot(sky_mix, vec3<f32>(0.2126, 0.7152, 0.0722))), sky_mix, 0.45);
+    // 1. Ambiance : irradiance du ciel reçue par la surface du nuage à son altitude
+    let sky_ambient = sky_light(hit_world_pos, norm_world, l_sun);
 
-    // 2. Soleil : wrap doux + halo argenté large et discret (pas de dégradé dur sur une même face)
-    let sun_col = mix(vec3<f32>(1.0, 0.97, 0.92), vec3<f32>(1.0, 0.66, 0.46), sunset_factor);
+    // 2. Soleil arrivé à l'altitude du nuage à travers l'atmosphère : wrap doux + halo argenté
+    // large et discret (pas de dégradé dur sur une même face)
+    let sun_col = sun_light_at(hit_world_pos, l_sun);
     let sun_wrap = pow(clamp(dot(norm_world, l_sun) * 0.5 + 0.5, 0.0, 1.0), 1.5);
     let silver = pow(clamp(dot(ray_dir, l_sun), 0.0, 1.0), 6.0) * 0.18 * sunset_glow_slider;
     // Auto-ombrage : deux échantillons du SDF en direction du soleil (parties du nuage qui masquent le soleil)
@@ -398,7 +391,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let occ_a = sd_cloud_3d(hit_local_p + l_local * 0.45, in.mask, in.config.x, half_depth, roundness);
     let occ_b = sd_cloud_3d(hit_local_p + l_local * 1.10, in.mask, in.config.x, half_depth, roundness);
     let self_shadow = clamp(-occ_a / 0.30, 0.0, 1.0) * 0.6 + clamp(-occ_b / 0.30, 0.0, 1.0) * 0.4;
-    let sun_light = sun_col * (sun_wrap * 0.55 * (1.0 - 0.45 * self_shadow) + silver) * sun_slider * HDR_SUN;
+    let sun_light = sun_col * (sun_wrap * 0.7 * (1.0 - 0.45 * self_shadow) + silver * 1.28);
 
     // 3. Dessous plus sombre et légèrement mauve (réglé par le curseur Ombre)
     let under_dark = clamp(0.38 * shadow_intensity, 0.0, 0.75);
@@ -413,7 +406,8 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let moon_light = vec3<f32>(0.62, 0.74, 0.92) * (moon_wrap * 0.20 + 0.04) * moon.phase * moon_up * moon_slider;
     let night_ambient = vec3<f32>(0.020, 0.028, 0.055) * night_amb_slider * (0.7 + 0.3 * top);
 
-    var col = mix(night_ambient + moon_light, day_col, daylight);
+    // Le jour s'éteint de lui-même avec l'atmosphère : la nuit s'y ajoute quand il disparaît
+    var col = (night_ambient + moon_light) * (1.0 - daylight) + day_col;
 
     // 5. Micro-texture optionnelle (désactivée par défaut)
     if (micro_noise_slider > 0.01) {
@@ -422,13 +416,9 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         col *= 1.0 + (g_hash - 0.5) * micro_noise_slider * 0.06;
     }
 
-    // 6. Perspective atmosphérique : fondu vers la couleur du ciel derrière le nuage
-    let scale = camera.planet_radius / 25.0;
+    // 6. Perspective aérienne : diffusion et extinction de l'air entre la caméra et le nuage
     let dist = length(camera.camera_pos - hit_world_pos);
-    let night_sky = vec3<f32>(0.008, 0.012, 0.024) * night_amb_slider;
-    let sky_behind = mix(night_sky, sky_dome(ray_dir, cam_up, l_sun, sunset_factor), daylight);
-    let fog = (1.0 - exp(-max(dist - 5.0 * scale, 0.0) * (0.06 / scale) * fog_slider)) * 0.90;
-    col = mix(col, sky_behind, fog);
+    col = apply_aerial_perspective(col, aerial_perspective(camera.camera_pos, ray_dir, dist, l_sun, 10));
 
     // 7. Les hautes lumières sont compressées par le tonemapper de la passe de composition
     let final_color = col;

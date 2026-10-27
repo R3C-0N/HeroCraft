@@ -2,13 +2,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use winit::window::Window;
 
+use crate::atmosphere::Atmosphere;
 use crate::camera::{CameraViewMode, OrbitCamera};
 use crate::gpu_timer::{self, GpuTimer};
 use crate::lod::{LodMeshId, PlanetLodManager};
 use crate::planet_mesh::PlanetVertex;
 use crate::post::{self, PostProcess};
 use crate::shadow::Shadows;
-use crate::ui::{CloudSettings, LightingSettings, PostSettings, ShadowSettings, UiState};
+use crate::ui::{AtmosphereSettings, CloudSettings, LightingSettings, PostSettings, ShadowSettings, UiState};
 
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -82,6 +83,8 @@ pub struct State {
     bloom_enabled: bool,
     /// Ombres portées du relief et des nuages, calculées depuis le soleil avant la passe 3D
     shadows: Shadows,
+    /// Atmosphère physique (tables précalculées) et rayons crépusculaires
+    atmosphere: Atmosphere,
     sun_dir: glam::Vec3,
     ground_factor: f32,
     clouds_visible: bool,
@@ -286,22 +289,6 @@ impl State {
             label: Some("camera_bind_group"),
         });
 
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-        // Le terrain lit en plus les cartes d'ombre (groupe 1)
-        let shadows = Shadows::new(&device, &camera_bind_group_layout);
-        let terrain_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Terrain Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &shadows.receiver_layout],
-                push_constant_ranges: &[],
-            });
-
         // Détection du support matériel MSAA 4x sur le format HDR de la passe 3D
         let sample_count = PostProcess::sample_count(&adapter);
         log::info!("Anti-Aliasing MSAA 4x : {} (sample_count = {})", sample_count == 4, sample_count);
@@ -309,6 +296,23 @@ impl State {
 
         let (depth_texture, depth_view) = Self::create_depth_texture(&device, &config, sample_count);
         let post = PostProcess::new(&device, &config, sample_count);
+
+        // Groupe 0 du ciel, du terrain et des nuages : caméra et tables de l'atmosphère.
+        // Le terrain lit en plus les cartes d'ombre (groupe 1).
+        let shadows = Shadows::new(&device, &camera_bind_group_layout);
+        let atmosphere = Atmosphere::new(&device, &camera_buffer, &shadows.receiver_layout, &depth_view, sample_count);
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[&atmosphere.scene_layout],
+                push_constant_ranges: &[],
+            });
+        let terrain_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Terrain Pipeline Layout"),
+                bind_group_layouts: &[&atmosphere.scene_layout, &shadows.receiver_layout],
+                push_constant_ranges: &[],
+            });
 
         // Pipeline Ciel & Atmosphère 3D (Étoiles, Soleil, Halo spatial, Ciel bleu)
         let sky_shader = crate::shaders::create_shader_module(&device, "Sky Shader", include_str!("sky_shader.wgsl"), "sky_shader.wgsl");
@@ -341,10 +345,12 @@ impl State {
                 unclipped_depth: false,
                 conservative: false,
             },
+            // Dessiné après le terrain, seulement sur les pixels restés à la profondeur du fond :
+            // la marche dans l'atmosphère n'est pas calculée sous le relief
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -495,6 +501,7 @@ impl State {
             post,
             bloom_enabled: true,
             shadows,
+            atmosphere,
             sun_dir,
             ground_factor: 0.0,
             clouds_visible: false,
@@ -552,6 +559,7 @@ impl State {
             self.depth_view = depth_view;
 
             self.post.resize(&self.device, &self.config);
+            self.atmosphere.resize(&self.device, &self.depth_view);
         }
     }
 
@@ -646,6 +654,11 @@ impl State {
             self.ground_factor,
             self.clouds_visible,
         );
+    }
+
+    /// Paramètres de l'atmosphère, à appeler après `update_shadows` (les rayons suivent les ombres)
+    pub fn update_atmosphere(&mut self, camera: &OrbitCamera, settings: &AtmosphereSettings, lighting: &LightingSettings) {
+        self.atmosphere.update(&self.queue, settings, lighting, camera.base_radius, self.shadows.is_active());
     }
 
     pub fn update_post(&mut self, settings: &PostSettings) {
@@ -778,7 +791,9 @@ impl State {
         let timer_queries = self.gpu_timer.as_ref().and_then(|t| t.query_set());
         let timer_inside_passes = self.gpu_timer.as_ref().is_some_and(|t| t.inside_passes);
 
-        // 0. Ombres : cascades du relief et carte des nuages, vues depuis le soleil
+        // 0. Tables de l'atmosphère (seulement si la planète ou les réglages ont changé), puis
+        // ombres : cascades du relief et carte des nuages, vues depuis le soleil
+        self.atmosphere.encode_luts(&mut encoder);
         {
             herocraft_common::prof_scope!("render::encode_shadows");
             let meshes = self.lod_draw_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).map(|m| {
@@ -828,15 +843,7 @@ impl State {
                 }),
             });
 
-            // 1.a. Ciel étoilé & Soleil & Halo atmosphérique
-            render_pass.set_pipeline(&self.sky_pipeline);
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.draw(0..3, 0..1);
-            if let Some(query_set) = timer_queries.filter(|_| timer_inside_passes) {
-                render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_SKY);
-            }
-
-            // 1.b. Relief planétaire & Voxels, du plus proche au plus lointain : le test de
+            // 1.a. Relief planétaire & Voxels, du plus proche au plus lointain : le test de
             // profondeur précoce élimine les fragments cachés avant d'exécuter le shader
             let (meshes, eye) = (&self.lod_gpu_meshes, self.camera_eye);
             self.lod_draw_list.sort_by_cached_key(|id| {
@@ -844,7 +851,7 @@ impl State {
             });
             if !self.lod_draw_list.is_empty() {
                 render_pass.set_pipeline(&self.render_pipeline);
-                render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
                 render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
                 for id in &self.lod_draw_list {
                     if let Some(mesh) = self.lod_gpu_meshes.get(id) {
@@ -858,14 +865,29 @@ impl State {
                 render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_TERRAIN);
             }
 
+            // 1.b. Ciel : atmosphère, Soleil, Lune et étoiles sur les pixels non couverts
+            render_pass.set_pipeline(&self.sky_pipeline);
+            render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
+            render_pass.draw(0..3, 0..1);
+            if let Some(query_set) = timer_queries.filter(|_| timer_inside_passes) {
+                render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_SKY);
+            }
+
             // 1.c. Nuages 3D physiques réels (traversables et visibles à leur altitude)
             if self.num_cloud_indices > 0 {
                 render_pass.set_pipeline(&self.cloud_pipeline);
-                render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.cloud_vertex_buffer.slice(..));
                 render_pass.set_index_buffer(self.cloud_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.draw_indexed(0..self.num_cloud_indices, 0, 0..1);
             }
+        }
+
+        // 1.d. Rayons crépusculaires : l'air à l'ombre du relief et des nuages ne diffuse pas le soleil
+        {
+            herocraft_common::prof_scope!("render::encode_god_rays");
+            let timestamps = timer_queries.map(|q| (q, gpu_timer::TS_GOD_RAYS_BEGIN, gpu_timer::TS_GOD_RAYS_END));
+            self.atmosphere.encode_god_rays(&mut encoder, self.post.hdr_view(), &self.shadows.receiver_bind_group, timestamps);
         }
 
         // 2. Bloom puis composition HDR (exposition + tonemapper) vers la swapchain
@@ -952,6 +974,8 @@ mod tests {
         let cloud_shader = include_str!("cloud_shader.wgsl");
         let post_shader = include_str!("post_shader.wgsl");
         let shadow_caster = include_str!("shadow_caster.wgsl");
+        let atmosphere_lut = include_str!("atmosphere_lut.wgsl");
+        let god_rays = include_str!("god_rays.wgsl");
 
         for (name, source) in [
             ("sky_shader.wgsl", sky_shader),
@@ -960,6 +984,8 @@ mod tests {
             ("cloud_shader.wgsl", cloud_shader),
             ("post_shader.wgsl", post_shader),
             ("shadow_caster.wgsl", shadow_caster),
+            ("atmosphere_lut.wgsl", atmosphere_lut),
+            ("god_rays.wgsl", god_rays),
         ] {
             // Assemblage naga_oil (imports de common.wgsl) puis validation complète
             let module = if matches!(name, "ui_shader.wgsl" | "post_shader.wgsl" | "shadow_caster.wgsl") {
