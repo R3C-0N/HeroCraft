@@ -135,19 +135,19 @@ pub struct PostSettings {
     pub tonemapper: Tonemapper,
     pub bloom_enabled: bool,
     pub bloom_intensity: f32, // Part du halo ajoutée à l'image [0.0 .. 1.0]
-    pub bloom_threshold: f32, // Luminance à partir de laquelle un pixel diffuse [0.0 .. 4.0]
-    pub bloom_knee: f32,      // Largeur de la transition douce autour du seuil [0.0 .. 1.0]
+    pub bloom_threshold: f32, // Luminance HDR à partir de laquelle un pixel diffuse [0.0 .. 8.0]
+    pub bloom_knee: f32,      // Largeur de la transition douce autour du seuil [0.0 .. 3.0]
 }
 
 impl Default for PostSettings {
     fn default() -> Self {
         Self {
-            exposure_ev: 0.0,
-            tonemapper: Tonemapper::SoftShoulder,
+            exposure_ev: -0.3,
+            tonemapper: Tonemapper::AgX,
             bloom_enabled: true,
-            bloom_intensity: 0.35,
-            bloom_threshold: 1.1,
-            bloom_knee: 0.3,
+            bloom_intensity: 0.25,
+            bloom_threshold: 6.0,
+            bloom_knee: 2.0,
         }
     }
 }
@@ -566,8 +566,8 @@ impl UiState {
                                     ui.checkbox(&mut self.post_settings.bloom_enabled, "Bloom (halo lumineux)");
                                     ui.add_enabled_ui(self.post_settings.bloom_enabled, |ui| {
                                         ui.add(egui::Slider::new(&mut self.post_settings.bloom_intensity, 0.0..=1.0).text("Intensité").show_value(true));
-                                        ui.add(egui::Slider::new(&mut self.post_settings.bloom_threshold, 0.0..=4.0).text("Seuil").show_value(true));
-                                        ui.add(egui::Slider::new(&mut self.post_settings.bloom_knee, 0.0..=1.0).text("Douceur").show_value(true));
+                                        ui.add(egui::Slider::new(&mut self.post_settings.bloom_threshold, 0.0..=8.0).text("Seuil").show_value(true));
+                                        ui.add(egui::Slider::new(&mut self.post_settings.bloom_knee, 0.0..=3.0).text("Douceur").show_value(true));
                                     });
 
                                     ui.add_space(4.0_f32);

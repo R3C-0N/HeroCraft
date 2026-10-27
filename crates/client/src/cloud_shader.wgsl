@@ -6,11 +6,11 @@
 // - Coins convexes arrondis, angles rentrants comblés, arêtes hautes et basses en coussin
 // - Ambiance tirée du dôme céleste (même formule que sky_shader.wgsl) : teinte du ciel partagée
 // - Dessus clair, flancs intermédiaires, dessous plus sombre et légèrement mauve
-// - Perspective atmosphérique vers le ciel et compression douce des hautes lumières
+// - Perspective atmosphérique vers le ciel (hautes lumières compressées par le tonemapper)
 // - Écriture précise de la profondeur dans le Z-buffer (@builtin(frag_depth))
 // =========================================================================
 
-#import herocraft::common::{camera, get_moon_data, sky_factors, sky_dome}
+#import herocraft::common::{camera, get_moon_data, sky_factors, sky_dome, HDR_SUN}
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -199,14 +199,6 @@ fn get_cloud_normal(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f
     return normalize(g);
 }
 
-// Compression douce des hautes lumières au-delà de 0.78 (asymptote à 1.0)
-fn soft_shoulder(c: vec3<f32>) -> vec3<f32> {
-    let knee = 0.78;
-    let over = max(c - vec3<f32>(knee), vec3<f32>(0.0));
-    let compressed = vec3<f32>(knee) + (1.0 - knee) * (vec3<f32>(1.0) - exp(-over / (1.0 - knee)));
-    return select(c, compressed, c > vec3<f32>(knee));
-}
-
 struct FragmentOutput {
     @location(0) color: vec4<f32>,
     @builtin(frag_depth) depth: f32,
@@ -375,7 +367,9 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let horiz_dir = select(cam_up, normalize(horiz), length(horiz) > 1e-3);
     let sky_top = sky_dome(cam_up, cam_up, l_sun, sunset_factor);
     let sky_side = sky_dome(normalize(horiz_dir + cam_up * 0.15), cam_up, l_sun, sunset_factor);
-    let sky_ambient = mix(sky_side, sky_top, 0.30 * top);
+    // Le ciel saturé réglé pour AgX bleuirait les nuages : seule une partie de sa teinte est gardée
+    let sky_mix = mix(sky_side, sky_top, 0.30 * top);
+    let sky_ambient = mix(vec3<f32>(dot(sky_mix, vec3<f32>(0.2126, 0.7152, 0.0722))), sky_mix, 0.45);
 
     // 2. Soleil : wrap doux + halo argenté large et discret (pas de dégradé dur sur une même face)
     let sun_col = mix(vec3<f32>(1.0, 0.97, 0.92), vec3<f32>(1.0, 0.66, 0.46), sunset_factor);
@@ -386,7 +380,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let occ_a = sd_cloud_3d(hit_local_p + l_local * 0.45, in.mask, in.config.x, half_depth, roundness);
     let occ_b = sd_cloud_3d(hit_local_p + l_local * 1.10, in.mask, in.config.x, half_depth, roundness);
     let self_shadow = clamp(-occ_a / 0.30, 0.0, 1.0) * 0.6 + clamp(-occ_b / 0.30, 0.0, 1.0) * 0.4;
-    let sun_light = sun_col * (sun_wrap * 0.55 * (1.0 - 0.45 * self_shadow) + silver) * sun_slider;
+    let sun_light = sun_col * (sun_wrap * 0.55 * (1.0 - 0.45 * self_shadow) + silver) * sun_slider * HDR_SUN;
 
     // 3. Dessous plus sombre et légèrement mauve (réglé par le curseur Ombre)
     let under_dark = clamp(0.38 * shadow_intensity, 0.0, 0.75);
@@ -418,8 +412,8 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let fog = (1.0 - exp(-max(dist - 5.0 * scale, 0.0) * (0.06 / scale) * fog_slider)) * 0.90;
     col = mix(col, sky_behind, fog);
 
-    // 7. Compression douce des hautes lumières (pas de blanc saturé « plastique »)
-    let final_color = soft_shoulder(col);
+    // 7. Les hautes lumières sont compressées par le tonemapper de la passe de composition
+    let final_color = col;
     let final_alpha = clamp(cloud_slider, 0.0, 1.0);
 
     var out: FragmentOutput;

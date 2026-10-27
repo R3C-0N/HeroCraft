@@ -6,7 +6,7 @@
 // - Diffusion atmosphérique au sol (dôme céleste azur et horizon doré)
 // =========================================================================
 
-#import herocraft::common::{camera, get_moon_data, sky_factors, sky_dome}
+#import herocraft::common::{camera, get_moon_data, sky_factors, sky_dome, HDR_SKY, HDR_SUN_DISK}
 
 struct SkyVertexOutput {
     @builtin(position) clip_pos: vec4<f32>,
@@ -118,7 +118,7 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     // Couronne solaire chaude et rayonnement externe
     let corona = pow(clamp(cos_sun, 0.0, 1.0), 128.0) * 1.8;
     let wide_glow = pow(clamp(cos_sun, 0.0, 1.0), 16.0) * 0.35;
-    sun_color = (sun_color + vec3<f32>(1.0, 0.82, 0.55) * corona + vec3<f32>(0.8, 0.5, 0.25) * wide_glow) * sun_slider;
+    sun_color = (sun_color + vec3<f32>(1.0, 0.82, 0.55) * corona + vec3<f32>(0.8, 0.5, 0.25) * wide_glow) * sun_slider * HDR_SUN_DISK;
 
     // 2. Lune (Disque sphérique 3D, phases lumineuses, cratères, mers et lumière cendrée)
     var moon_disk_color = vec3<f32>(0.0);
@@ -194,7 +194,7 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
                 let terminator = clamp(1.0 - abs(dot(p_limb, l)) * 2.5, 0.0, 1.0);
 
                 let atm_hue = mix(vec3<f32>(0.22, 0.65, 1.0), vec3<f32>(1.0, 0.55, 0.22), terminator * 0.85);
-                let limb_glow = atm_hue * (density * limb_sun * 2.5);
+                let limb_glow = atm_hue * (density * limb_sun * 2.5 * HDR_SKY);
 
                 space_color += limb_glow * orbit_factor;
             }

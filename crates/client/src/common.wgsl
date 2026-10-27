@@ -20,6 +20,19 @@ struct CameraUniform {
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
+// Échelle HDR de l'éclairage : la scène est rendue en Rgba16Float puis convertie par le tonemapper
+// (AgX par défaut), les valeurs peuvent donc dépasser 1.0. Le rapport soleil / ciel fixe le contraste
+// entre faces éclairées et faces à l'ombre.
+const HDR_SUN: f32 = 3.2;       // Lumière directe du soleil sur le relief et les nuages
+const HDR_SKY: f32 = 1.6;       // Dôme céleste, ambiance diffuse et brouillard (doivent rester assortis)
+const HDR_SUN_DISK: f32 = 6.0;  // Disque solaire et couronne : seule source assez intense pour un bloom marqué
+
+// Ciel diurne réglé pour AgX, qui désature et assombrit les bleus : zénith profond et horizon
+// lumineux mais saturés (avant HDR_SKY). Partagé avec le brouillard du terrain pour que le relief
+// lointain se fonde dans la même teinte que l'horizon.
+const ZENITH_DAY: vec3<f32> = vec3<f32>(0.07, 0.25, 0.83);
+const HORIZON_DAY: vec3<f32> = vec3<f32>(0.59, 1.05, 2.12);
+
 struct MoonData {
     dir: vec3<f32>,
     phase: f32,
@@ -63,13 +76,13 @@ fn sky_dome(ray_dir: vec3<f32>, cam_up: vec3<f32>, l: vec3<f32>, sunset_factor: 
     let day_amb_slider = camera.lighting_params.w;
 
     // Dégradé de couleurs du zénith : azur le jour, saphir profond au crépuscule
-    let zenith_day = vec3<f32>(0.15, 0.45, 0.88);
+    let zenith_day = ZENITH_DAY;
     let zenith_sunset = vec3<f32>(0.07, 0.13, 0.38);
     let zenith_color = mix(zenith_day, zenith_sunset, sunset_factor);
 
     // Horizon : clair le jour ; au crépuscule, or ambré vers le soleil
     // et Ceinture de Vénus rosée/violacée à l'opposé
-    let horizon_day = vec3<f32>(0.65, 0.80, 0.96);
+    let horizon_day = HORIZON_DAY;
     let forward_sun = clamp(dot(ray_dir, l) * 0.5 + 0.5, 0.0, 1.0);
     let sunset_facing_sun = mix(vec3<f32>(1.0, 0.58, 0.15), vec3<f32>(1.0, 0.82, 0.35), pow(forward_sun, 3.0));
     let sunset_opposite_sun = vec3<f32>(0.65, 0.32, 0.48);
@@ -86,5 +99,5 @@ fn sky_dome(ray_dir: vec3<f32>, cam_up: vec3<f32>, l: vec3<f32>, sunset_factor: 
     let active_glow_color = mix(vec3<f32>(0.40, 0.35, 0.22), vec3<f32>(1.0, 0.52, 0.15), sunset_factor);
     let glow = pow(clamp(dot(ray_dir, l), 0.0, 1.0), 6.0) * active_glow_color * (1.0 + sunset_factor * 1.8) * sun_slider;
 
-    return day_sky + glow;
+    return (day_sky + glow) * HDR_SKY;
 }

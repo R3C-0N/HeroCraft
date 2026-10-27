@@ -181,7 +181,8 @@ fn tonemap_agx(c: vec3<f32>) -> vec3<f32> {
     v = clamp(log2(v), vec3<f32>(min_ev), vec3<f32>(max_ev));
     v = (v - min_ev) / (max_ev - min_ev);
     v = agx_contrast(v);
-    // Look « punchy » : saturation légèrement relevée
+    // Look « punchy » de Blender : contraste (puissance 1.35) puis saturation 1.4
+    v = pow(max(v, vec3<f32>(0.0)), vec3<f32>(1.35));
     let luma = luminance(v);
     v = luma + 1.4 * (v - luma);
     v = agx_mat_inv * v;
