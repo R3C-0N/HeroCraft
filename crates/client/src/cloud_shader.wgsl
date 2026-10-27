@@ -11,7 +11,7 @@
 // =========================================================================
 
 #import herocraft::common::{camera, get_moon_data, sky_factors}
-#import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective, apply_aerial_perspective}
+#import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective}
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -436,7 +436,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     // 6. Perspective aérienne : diffusion et extinction de l'air entre la caméra et le nuage
     let dist = length(camera.camera_pos - hit_world_pos);
-    col = apply_aerial_perspective(col, aerial_perspective(camera.camera_pos, ray_dir, dist, l_sun, 10));
+    col = apply_aerial_perspective(col, aerial_perspective_screen(camera.camera_pos, ray_dir, clip_pos.xy / clip_pos.w, dist, l_sun, 10));
 
     // 7. Les hautes lumières sont compressées par le tonemapper de la passe de composition
     let final_color = col;

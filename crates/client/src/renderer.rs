@@ -300,7 +300,7 @@ impl State {
         // Groupe 0 du ciel, du terrain et des nuages : caméra et tables de l'atmosphère.
         // Le terrain lit en plus les cartes d'ombre (groupe 1).
         let shadows = Shadows::new(&device, &camera_bind_group_layout);
-        let atmosphere = Atmosphere::new(&device, &camera_buffer, &shadows.receiver_layout, &depth_view, sample_count);
+        let atmosphere = Atmosphere::new(&device, &camera_buffer, &shadows.receiver_layout, &depth_view, sample_count, (config.width, config.height));
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -559,7 +559,7 @@ impl State {
             self.depth_view = depth_view;
 
             self.post.resize(&self.device, &self.config);
-            self.atmosphere.resize(&self.device, &self.depth_view);
+            self.atmosphere.resize(&self.device, &self.depth_view, (self.config.width, self.config.height));
         }
     }
 

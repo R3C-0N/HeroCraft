@@ -5,6 +5,8 @@
 // jusqu'à la surface vue, lit les cartes d'ombre du relief et des nuages, et retire la lumière
 // que l'air à l'ombre n'a pas pu diffuser (mélange soustractif sur la cible HDR).
 // Les traînées claires et sombres qui en résultent sont les rayons crépusculaires.
+// La marche se fait à demi-résolution (4 fois moins de pixels), puis une remontée bilatérale
+// guidée par la profondeur ramène le résultat en pleine résolution sans baver sur les bords.
 // =========================================================================
 
 #import herocraft::common::camera
@@ -16,6 +18,11 @@
 
 @group(2) @binding(0) var scene_depth_ms: texture_depth_multisampled_2d;
 @group(2) @binding(1) var scene_depth: texture_depth_2d;
+// Lumière perdue (rgb) et distance de la surface (a), à demi-résolution
+@group(3) @binding(0) var half_rays: texture_2d<f32>;
+
+// Distance stockée pour le ciel (sous le maximum d'un flottant 16 bits)
+const SKY_DISTANCE: f32 = 60000.0;
 
 struct FullscreenOutput {
     @builtin(position) position: vec4<f32>,
@@ -35,7 +42,19 @@ fn interleaved_gradient_noise(pixel: vec2<f32>) -> f32 {
     return fract(52.9829189 * fract(dot(pixel, vec2<f32>(0.06711056, 0.00583715))));
 }
 
-fn god_rays(pixel: vec2<f32>, depth: f32, size: vec2<f32>) -> vec4<f32> {
+// Distance caméra-surface d'un pixel (SKY_DISTANCE pour le ciel)
+fn view_distance(pixel: vec2<f32>, depth: f32, size: vec2<f32>) -> f32 {
+    if (depth >= 1.0) {
+        return SKY_DISTANCE;
+    }
+    let uv = pixel / size;
+    let ndc = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    let world_h = camera.inv_view_proj * vec4<f32>(ndc, depth, 1.0);
+    return min(length(world_h.xyz / world_h.w - camera.camera_pos), SKY_DISTANCE);
+}
+
+// `pixel` : position en pleine résolution, `noise_pixel` : pixel qui choisit le décalage du bruit
+fn god_rays(pixel: vec2<f32>, noise_pixel: vec2<f32>, depth: f32, size: vec2<f32>) -> vec4<f32> {
     let uv = pixel / size;
     let ndc = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
     let world_h = camera.inv_view_proj * vec4<f32>(ndc, depth, 1.0);
@@ -64,9 +83,9 @@ fn god_rays(pixel: vec2<f32>, depth: f32, size: vec2<f32>) -> vec4<f32> {
     // Surfaces : même densité réduite que leur perspective aérienne (atmosphere.wgsl)
     let density = select(atmosphere.sky.z, 1.0, depth >= 1.0);
 
-    let steps = 40;
+    let steps = 28;
     let dt = (t_end - t_start) / f32(steps);
-    let jitter = interleaved_gradient_noise(pixel);
+    let jitter = interleaved_gradient_noise(noise_pixel);
     var trans = vec3<f32>(1.0);
     var lost = vec3<f32>(0.0);
     var lit = vec3<f32>(0.0);
@@ -101,16 +120,82 @@ fn god_rays(pixel: vec2<f32>, depth: f32, size: vec2<f32>) -> vec4<f32> {
     return vec4<f32>(max(loss, vec3<f32>(0.0)), 0.0);
 }
 
-@fragment
-fn fs_god_rays_ms(in: FullscreenOutput) -> @location(0) vec4<f32> {
-    let pixel = vec2<i32>(in.position.xy);
-    let depth = textureLoad(scene_depth_ms, pixel, 0);
-    return god_rays(in.position.xy, depth, vec2<f32>(textureDimensions(scene_depth_ms)));
+// Demi-résolution : chaque texel couvre 2x2 pixels. Il prend la profondeur la plus proche ou
+// la plus lointaine du bloc, en damier, pour que les deux côtés d'un bord aient des texels.
+fn trace_half(half_pixel: vec2<i32>, d: vec4<f32>, size: vec2<f32>) -> vec4<f32> {
+    let near = min(min(d.x, d.y), min(d.z, d.w));
+    let far = max(max(d.x, d.y), max(d.z, d.w));
+    let depth = select(near, far, ((half_pixel.x + half_pixel.y) & 1) == 1);
+    let pixel = vec2<f32>(half_pixel * 2) + vec2<f32>(1.0);
+    let loss = god_rays(pixel, vec2<f32>(half_pixel), depth, size);
+    return vec4<f32>(loss.rgb, view_distance(pixel, depth, size));
 }
 
 @fragment
-fn fs_god_rays(in: FullscreenOutput) -> @location(0) vec4<f32> {
+fn fs_trace_ms(in: FullscreenOutput) -> @location(0) vec4<f32> {
+    let h = vec2<i32>(in.position.xy);
+    let size = vec2<i32>(textureDimensions(scene_depth_ms));
+    let p = min(h * 2, size - 1);
+    let q = min(h * 2 + 1, size - 1);
+    let d = vec4<f32>(
+        textureLoad(scene_depth_ms, p, 0),
+        textureLoad(scene_depth_ms, vec2<i32>(q.x, p.y), 0),
+        textureLoad(scene_depth_ms, vec2<i32>(p.x, q.y), 0),
+        textureLoad(scene_depth_ms, q, 0),
+    );
+    return trace_half(h, d, vec2<f32>(size));
+}
+
+@fragment
+fn fs_trace(in: FullscreenOutput) -> @location(0) vec4<f32> {
+    let h = vec2<i32>(in.position.xy);
+    let size = vec2<i32>(textureDimensions(scene_depth));
+    let p = min(h * 2, size - 1);
+    let q = min(h * 2 + 1, size - 1);
+    let d = vec4<f32>(
+        textureLoad(scene_depth, p, 0),
+        textureLoad(scene_depth, vec2<i32>(q.x, p.y), 0),
+        textureLoad(scene_depth, vec2<i32>(p.x, q.y), 0),
+        textureLoad(scene_depth, q, 0),
+    );
+    return trace_half(h, d, vec2<f32>(size));
+}
+
+// Remontée bilatérale : 3x3 texels autour du pixel, pondérés par la distance à l'écran et par
+// l'écart de profondeur (un texel d'une autre surface ne compte presque pas). Le flou 3x3
+// lisse aussi le grain du bruit de départ de la marche.
+fn upsample(pixel: vec2<f32>, depth: f32, size: vec2<f32>) -> vec4<f32> {
+    let dist = view_distance(pixel, depth, size);
+    let half_size = vec2<i32>(textureDimensions(half_rays));
+    // Le texel i est centré sur le pixel plein 2i + 1
+    let h = (pixel - vec2<f32>(1.0)) * 0.5;
+    let base = vec2<i32>(round(h));
+    var sum = vec3<f32>(0.0);
+    var weight = 0.0;
+    for (var y = -1; y <= 1; y = y + 1) {
+        for (var x = -1; x <= 1; x = x + 1) {
+            let t = clamp(base + vec2<i32>(x, y), vec2<i32>(0), half_size - 1);
+            let s = textureLoad(half_rays, t, 0);
+            let off = vec2<f32>(t) - h;
+            let w_space = exp(-dot(off, off) * 0.8);
+            let rel = abs(s.a - dist) / max(dist, 1e-3);
+            let w_depth = 1.0 / (1e-4 + rel * rel * 400.0);
+            let w = w_space * w_depth;
+            sum += s.rgb * w;
+            weight += w;
+        }
+    }
+    return vec4<f32>(sum / max(weight, 1e-12), 0.0);
+}
+
+@fragment
+fn fs_upsample_ms(in: FullscreenOutput) -> @location(0) vec4<f32> {
     let pixel = vec2<i32>(in.position.xy);
-    let depth = textureLoad(scene_depth, pixel, 0);
-    return god_rays(in.position.xy, depth, vec2<f32>(textureDimensions(scene_depth)));
+    return upsample(in.position.xy, textureLoad(scene_depth_ms, pixel, 0), vec2<f32>(textureDimensions(scene_depth_ms)));
+}
+
+@fragment
+fn fs_upsample(in: FullscreenOutput) -> @location(0) vec4<f32> {
+    let pixel = vec2<i32>(in.position.xy);
+    return upsample(in.position.xy, textureLoad(scene_depth, pixel, 0), vec2<f32>(textureDimensions(scene_depth)));
 }

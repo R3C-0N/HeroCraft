@@ -48,6 +48,8 @@ struct CasterPass {
     view: wgpu::TextureView,
     center: Vec3,
     extent: f32,
+    /// Redessinée cette frame (sinon la carte et sa matrice de la frame précédente restent)
+    refresh: bool,
 }
 
 pub struct Shadows {
@@ -62,6 +64,9 @@ pub struct Shadows {
     active: bool,
     clouds_active: bool,
     light_dir: Vec3,
+    /// Matrices des cartes telles qu'elles ont été dessinées (cascades lointaines en alternance)
+    uniform: ShadowUniform,
+    frame: u64,
 }
 
 /// Repère orthonormé de la caméra soleil (`right`, `up`, direction vers le soleil)
@@ -133,7 +138,7 @@ impl Shadows {
                 layout: &pass_layout,
                 entries: &[wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }],
             });
-            CasterPass { buffer, bind_group, view, center: Vec3::ZERO, extent }
+            CasterPass { buffer, bind_group, view, center: Vec3::ZERO, extent, refresh: true }
         };
         let cascades = (0..CASCADE_COUNT)
             .map(|i| {
@@ -306,6 +311,8 @@ impl Shadows {
             active: false,
             clouds_active: false,
             light_dir: Vec3::Y,
+            uniform: ShadowUniform::zeroed_disabled(),
+            frame: 0,
         }
     }
 
@@ -331,32 +338,49 @@ impl Shadows {
         let up = focus.normalize_or_zero();
         let sun_up = sun_dir.dot(up);
         self.light_dir = sun_dir.normalize();
+        let was_active = self.active;
+        let clouds_were_active = self.clouds_active;
         self.active = settings.enabled && ground_factor > 0.0 && sun_up > -0.1;
         self.clouds_active = self.active && settings.cloud_shadows && clouds_visible;
         if !self.active {
-            let uniform = ShadowUniform::zeroed_disabled();
-            queue.write_buffer(&self.receiver_buffer, 0, bytemuck::cast_slice(&[uniform]));
+            self.uniform = ShadowUniform::zeroed_disabled();
+            queue.write_buffer(&self.receiver_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
             return;
         }
 
+        // La cascade proche est redessinée à chaque frame, les deux lointaines et la carte des
+        // nuages une frame sur deux (en alternance) : leurs texels couvrent assez de terrain pour
+        // qu'un retard d'une frame ne se voie pas. Tout est redessiné à l'activation.
+        self.frame = self.frame.wrapping_add(1);
+        let even = self.frame % 2 == 0;
+        let refresh_all = !was_active;
+        let refresh = [true, even || refresh_all, !even || refresh_all];
+
         // Regard projeté sur le sol : la moitié de chaque cascade sert devant le joueur
         let flat_forward = (forward - up * forward.dot(up)).normalize_or_zero();
-        let mut uniform = ShadowUniform::zeroed_disabled();
         for (i, pass) in self.cascades.iter_mut().enumerate() {
+            pass.refresh = refresh[i];
+            if !pass.refresh {
+                continue;
+            }
             let extent = CASCADE_EXTENTS[i] * scale;
             pass.extent = extent;
             pass.center = focus + flat_forward * extent * 0.5;
             let vp = light_view_proj(pass.center, self.light_dir, extent, CASCADE_SIZE, scale);
             queue.write_buffer(&pass.buffer, 0, bytemuck::cast_slice(&[ShadowPassUniform { view_proj: vp.to_cols_array_2d() }]));
-            uniform.cascades[i] = vp.to_cols_array_2d();
-            uniform.extents[i] = extent;
+            self.uniform.cascades[i] = vp.to_cols_array_2d();
+            self.uniform.extents[i] = extent;
         }
-        let cloud_extent = CLOUD_EXTENT * scale;
-        self.cloud.extent = cloud_extent;
-        self.cloud.center = focus;
-        let cloud_vp = light_view_proj(focus, self.light_dir, cloud_extent, CLOUD_MAP_SIZE, scale);
-        queue.write_buffer(&self.cloud.buffer, 0, bytemuck::cast_slice(&[ShadowPassUniform { view_proj: cloud_vp.to_cols_array_2d() }]));
-        uniform.cloud_view_proj = cloud_vp.to_cols_array_2d();
+        self.cloud.refresh = even || refresh_all || !clouds_were_active;
+        if self.cloud.refresh {
+            let cloud_extent = CLOUD_EXTENT * scale;
+            self.cloud.extent = cloud_extent;
+            self.cloud.center = focus;
+            let cloud_vp = light_view_proj(focus, self.light_dir, cloud_extent, CLOUD_MAP_SIZE, scale);
+            queue.write_buffer(&self.cloud.buffer, 0, bytemuck::cast_slice(&[ShadowPassUniform { view_proj: cloud_vp.to_cols_array_2d() }]));
+            self.uniform.cloud_view_proj = cloud_vp.to_cols_array_2d();
+        }
+        let uniform = &mut self.uniform;
         uniform.extents[3] = 1.0 / CASCADE_SIZE as f32;
         uniform.params = [
             settings.strength,
@@ -364,7 +388,7 @@ impl Shadows {
             1.0,
             NORMAL_OFFSET,
         ];
-        queue.write_buffer(&self.receiver_buffer, 0, bytemuck::cast_slice(&[uniform]));
+        queue.write_buffer(&self.receiver_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
     }
 
     /// Encode les passes depuis le soleil. `meshes` donne (centre, rayon, buffers, indices) des
@@ -390,7 +414,8 @@ impl Shadows {
 
         if self.active {
             let (right, up) = light_basis(self.light_dir);
-            for (i, pass) in self.cascades.iter().enumerate() {
+            // La cascade 0, toujours redessinée, porte le timestamp de début
+            for (i, pass) in self.cascades.iter().enumerate().filter(|(_, pass)| pass.refresh) {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Shadow Cascade Pass"),
                     color_attachments: &[],
@@ -418,13 +443,16 @@ impl Shadows {
             }
         }
 
-        // La carte des nuages est toujours effacée : sa passe porte aussi le timestamp de fin
+        // La passe de la carte des nuages a toujours lieu : elle porte le timestamp de fin. Sans
+        // nouveau dessin, la carte de la frame précédente est gardée.
+        let redraw_clouds = !self.active || self.cloud.refresh;
+        let load = if redraw_clouds { wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT) } else { wgpu::LoadOp::Load };
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Cloud Shadow Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &self.cloud.view,
                 resolve_target: None,
-                ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },
             })],
             depth_stencil_attachment: None,
             occlusion_query_set: None,
@@ -436,7 +464,7 @@ impl Shadows {
                 writes
             }),
         });
-        if let Some((vertex_buffer, index_buffer, num_indices)) = clouds.filter(|_| self.clouds_active) {
+        if let Some((vertex_buffer, index_buffer, num_indices)) = clouds.filter(|_| self.clouds_active && redraw_clouds) {
             render_pass.set_pipeline(&self.cloud_pipeline);
             render_pass.set_bind_group(0, camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.cloud.bind_group, &[]);

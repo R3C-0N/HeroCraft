@@ -1,12 +1,16 @@
 // =========================================================================
 // HeroCraft - Précalcul des tables de l'atmosphère (atmosphere.rs)
 // Recalculées seulement quand la planète ou les réglages de l'atmosphère changent.
+// Les tables de la caméra (vue du ciel, perspective aérienne) sont recalculées à chaque image.
 // =========================================================================
 
+#import herocraft::common::camera
 #import herocraft::atmosphere::{
     atmosphere, sample_medium, ray_sphere, transmittance_params, transmittance_to_top, planet_shadow,
     texel_to_unit, lut_bottom, lut_top, thickness, multiscatter_at, rayleigh_phase, mie_phase,
-    PI, TRANSMITTANCE_LUT_SIZE, MULTISCATTER_LUT_SIZE, IRRADIANCE_LUT_SIZE
+    integrate_scattering_unit, integrate_scattering_segment, sky_view_direction, aerial_slice_distance,
+    PI, TRANSMITTANCE_LUT_SIZE, MULTISCATTER_LUT_SIZE, IRRADIANCE_LUT_SIZE, SKY_VIEW_LUT_SIZE,
+    AERIAL_LUT_SIZE
 }
 
 // Les tables sont calculées sur la planète virtuelle (lut_bottom, lut_top, voir atmosphere.wgsl) :
@@ -183,3 +187,43 @@ fn fs_irradiance(in: FullscreenOutput) -> @location(0) vec4<f32> {
     }
     return vec4<f32>(irradiance * (4.0 * PI / f32(dir_count)), 1.0);
 }
+
+// --- Tables de la caméra, recalculées à chaque image ---
+
+struct CameraLutOutput {
+    @location(0) inscatter: vec4<f32>,
+    @location(1) transmittance: vec4<f32>,
+};
+
+// Vue du ciel depuis la caméra, dans un repère local (haut = y, soleil dans le plan xy) :
+// seules l'altitude et la hauteur du soleil comptent
+@fragment
+fn fs_sky_view(in: FullscreenOutput) -> CameraLutOutput {
+    let r = clamp(length(camera.camera_pos), atmosphere.bottom_radius + 1e-4, atmosphere.top_radius - 1e-4);
+    let mu_s = dot(normalize(camera.camera_pos), normalize(camera.light_dir));
+    let sun_dir = vec3<f32>(sqrt(max(1.0 - mu_s * mu_s, 0.0)), mu_s, 0.0);
+    let dir = sky_view_direction(in.position.xy / SKY_VIEW_LUT_SIZE, r);
+    let s = integrate_scattering_unit(vec3<f32>(0.0, r, 0.0), dir, 1e9, sun_dir, 32, 1.0);
+    var out: CameraLutOutput;
+    out.inscatter = vec4<f32>(s.inscatter, 1.0);
+    out.transmittance = vec4<f32>(s.transmittance, 1.0);
+    return out;
+}
+
+// Volume de perspective aérienne : texel (direction de l'écran, tranche de distance), densité
+// d'air réduite des surfaces. Les tranches sont rangées côte à côte.
+@fragment
+fn fs_aerial(in: FullscreenOutput) -> CameraLutOutput {
+    let slice = floor(in.position.x / AERIAL_LUT_SIZE.x);
+    let uv = vec2<f32>(in.position.x - slice * AERIAL_LUT_SIZE.x, in.position.y) / AERIAL_LUT_SIZE;
+    let ndc = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    let far_h = camera.inv_view_proj * vec4<f32>(ndc, 1.0, 1.0);
+    let dir = normalize(far_h.xyz / far_h.w - camera.camera_pos);
+    let dist = aerial_slice_distance(camera.camera_pos, slice);
+    let s = integrate_scattering_segment(camera.camera_pos, dir, dist, normalize(camera.light_dir), 12, atmosphere.sky.z, false);
+    var out: CameraLutOutput;
+    out.inscatter = vec4<f32>(s.inscatter, 1.0);
+    out.transmittance = vec4<f32>(s.transmittance, 1.0);
+    return out;
+}
+

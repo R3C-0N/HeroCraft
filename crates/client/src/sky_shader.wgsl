@@ -7,7 +7,7 @@
 // =========================================================================
 
 #import herocraft::common::{camera, get_moon_data, HDR_SUN_DISK}
-#import herocraft::atmosphere::{atmosphere, integrate_scattering, ray_sphere, SUN_REFERENCE}
+#import herocraft::atmosphere::{atmosphere, sky_scattering, ray_sphere, SUN_REFERENCE}
 
 struct SkyVertexOutput {
     @builtin(position) clip_pos: vec4<f32>,
@@ -157,8 +157,9 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let moon_aura = vec3<f32>(0.70, 0.82, 1.0) * (moon_corona + moon_wide_glow);
     let moon_color = (select(vec3<f32>(0.0), moon_disk_color, is_moon_disk) + moon_aura) * moon_slider;
 
-    // 3. Atmosphère : lumière diffusée le long du rayon et transmittance vers l'espace
-    let scattering = integrate_scattering(camera.camera_pos, ray_dir, 1e9, l, 32);
+    // 3. Atmosphère : lumière diffusée le long du rayon et transmittance vers l'espace (vue du
+    // ciel précalculée pour la caméra dans l'atmosphère, marche depuis l'orbite)
+    let scattering = sky_scattering(camera.camera_pos, ray_dir, l, 32);
     // Ce qui est derrière l'atmosphère (soleil, Lune, étoiles) est caché par la planète
     let hits_planet = ray_sphere(camera.camera_pos, ray_dir, atmosphere.bottom_radius).x > 0.0;
     let behind = select(scattering.transmittance, vec3<f32>(0.0), hits_planet);

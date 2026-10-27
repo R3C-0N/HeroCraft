@@ -1,7 +1,9 @@
 //! Atmosphère physique (Hillaire 2020) : diffusion de Rayleigh, de Mie et absorption de l'ozone,
 //! à l'échelle de la planète. Trois tables sont précalculées quand la planète ou les réglages
 //! changent (transmittance, diffusion multiple, irradiance du ciel), puis le ciel, le terrain et
-//! les nuages les lisent au groupe 0 (`atmosphere.wgsl`). La passe des rayons crépusculaires
+//! les nuages les lisent au groupe 0 (`atmosphere.wgsl`). Deux tables de plus suivent la caméra et
+//! sont recalculées à chaque image : la vue du ciel et le volume de perspective aérienne, lus par
+//! le ciel, le terrain et les nuages au lieu d'une marche par pixel. La passe des rayons crépusculaires
 //! retire ensuite la lumière que l'air à l'ombre du relief et des nuages n'a pas diffusée.
 
 use wgpu::util::DeviceExt;
@@ -13,6 +15,10 @@ const TRANSMITTANCE_SIZE: (u32, u32) = (256, 64);
 const MULTISCATTER_SIZE: u32 = 32;
 /// Trois orientations de normale côte à côte (dessus, flanc vers le soleil, flanc opposé)
 const IRRADIANCE_SIZE: (u32, u32) = (3 * 32, 32);
+/// Vue du ciel depuis la caméra (azimut par rapport au soleil, angle zénithal)
+const SKY_VIEW_SIZE: (u32, u32) = (192, 108);
+/// Volume de perspective aérienne : 32 tranches de distance de 32x32 directions, côte à côte
+const AERIAL_SIZE: (u32, u32) = (32 * 32, 32);
 
 /// Dimensions sur une planète de rayon 25, multipliées par l'échelle. Le bas de l'atmosphère est
 /// le niveau de la mer ; les nuages flottent à 5 au-dessus, les plus hauts sommets à 9.6.
@@ -126,20 +132,35 @@ struct Lut {
     bind_group: wgpu::BindGroup,
 }
 
+/// Table de la caméra, recalculée à chaque image : lumière diffusée et transmittance
+struct CameraLut {
+    inscatter: wgpu::TextureView,
+    transmittance: wgpu::TextureView,
+    pipeline: wgpu::RenderPipeline,
+}
+
 pub struct Atmosphere {
     uniform_buffer: wgpu::Buffer,
     transmittance: Lut,
     multiscatter: Lut,
     irradiance: Lut,
+    sky_view: CameraLut,
+    aerial: CameraLut,
+    camera_lut_bind_group: wgpu::BindGroup,
     /// Paramètres des tables actuelles (None : jamais calculées) et paramètres voulus
     lut_key: Option<AtmosphereUniform>,
     wanted_key: AtmosphereUniform,
     /// Groupe 0 du ciel, du terrain, des nuages et des rayons : caméra + atmosphère
     pub scene_layout: wgpu::BindGroupLayout,
     pub scene_bind_group: wgpu::BindGroup,
-    god_rays_pipeline: wgpu::RenderPipeline,
+    god_rays_trace_pipeline: wgpu::RenderPipeline,
+    god_rays_upsample_pipeline: wgpu::RenderPipeline,
     depth_layout: wgpu::BindGroupLayout,
     depth_bind_group: wgpu::BindGroup,
+    /// Rayons à demi-résolution : lumière perdue + distance, relue par la remontée bilatérale
+    half_layout: wgpu::BindGroupLayout,
+    half_view: wgpu::TextureView,
+    half_bind_group: wgpu::BindGroup,
     multisampled: bool,
     god_rays_active: bool,
 }
@@ -186,6 +207,7 @@ impl Atmosphere {
         shadow_layout: &wgpu::BindGroupLayout,
         depth_view: &wgpu::TextureView,
         sample_count: u32,
+        size: (u32, u32),
     ) -> Self {
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Atmosphere Uniform Buffer"),
@@ -276,9 +298,73 @@ impl Atmosphere {
             &[(2, &transmittance.view), (3, &multiscatter.view)],
         );
 
+        // Tables de la caméra : caméra, atmosphère, transmittance et diffusion multiple
+        let camera_lut_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Atmosphere Camera LUT Layout"),
+            entries: &[uniform_entry(0), uniform_entry(1), texture_entry(2), texture_entry(3), sampler_entry(5)],
+        });
+        let camera_lut_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Atmosphere Camera LUT Bind Group"),
+            layout: &camera_lut_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: camera_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: uniform_buffer.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&transmittance.view) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&multiscatter.view) },
+                wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&sampler) },
+            ],
+        });
+        let camera_lut_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Atmosphere Camera LUT Pipeline Layout"),
+            bind_group_layouts: &[&camera_lut_layout],
+            push_constant_ranges: &[],
+        });
+        let make_camera_lut = |label: &str, entry_point: &str, size: (u32, u32)| {
+            let target = Some(wgpu::ColorTargetState { format: LUT_FORMAT, blend: None, write_mask: wgpu::ColorWrites::ALL });
+            let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&camera_lut_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &lut_shader,
+                    entry_point: Some("vs_fullscreen"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &lut_shader,
+                    entry_point: Some(entry_point),
+                    targets: &[target.clone(), target],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+            CameraLut {
+                inscatter: create_view(&format!("{label} Inscatter"), size),
+                transmittance: create_view(&format!("{label} Transmittance"), size),
+                pipeline,
+            }
+        };
+        let sky_view = make_camera_lut("Atmosphere Sky View LUT", "fs_sky_view", SKY_VIEW_SIZE);
+        let aerial = make_camera_lut("Atmosphere Aerial Perspective LUT", "fs_aerial", AERIAL_SIZE);
+
         let scene_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Scene Bind Group Layout"),
-            entries: &[uniform_entry(0), uniform_entry(1), texture_entry(2), texture_entry(3), texture_entry(4), sampler_entry(5)],
+            entries: &[
+                uniform_entry(0),
+                uniform_entry(1),
+                texture_entry(2),
+                texture_entry(3),
+                texture_entry(4),
+                sampler_entry(5),
+                texture_entry(6),
+                texture_entry(7),
+                texture_entry(8),
+                texture_entry(9),
+            ],
         });
         let scene_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Scene Bind Group"),
@@ -290,6 +376,10 @@ impl Atmosphere {
                 wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&multiscatter.view) },
                 wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&irradiance.view) },
                 wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&sampler) },
+                wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::TextureView(&sky_view.inscatter) },
+                wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(&sky_view.transmittance) },
+                wgpu::BindGroupEntry { binding: 8, resource: wgpu::BindingResource::TextureView(&aerial.inscatter) },
+                wgpu::BindGroupEntry { binding: 9, resource: wgpu::BindingResource::TextureView(&aerial.transmittance) },
             ],
         });
 
@@ -310,61 +400,87 @@ impl Atmosphere {
         });
         let depth_bind_group = Self::create_depth_bind_group(device, &depth_layout, depth_view, multisampled);
         let god_rays_shader = crate::shaders::create_shader_module(device, "God Rays Shader", include_str!("god_rays.wgsl"), "god_rays.wgsl");
-        let god_rays_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("God Rays Pipeline Layout"),
-            bind_group_layouts: &[&scene_layout, shadow_layout, &depth_layout],
-            push_constant_ranges: &[],
+        let half_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("God Rays Half Layout"),
+            entries: &[texture_entry(0)],
         });
-        let god_rays_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("God Rays Pipeline"),
-            layout: Some(&god_rays_layout),
-            vertex: wgpu::VertexState {
-                module: &god_rays_shader,
-                entry_point: Some("vs_fullscreen"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &god_rays_shader,
-                entry_point: Some(if multisampled { "fs_god_rays_ms" } else { "fs_god_rays" }),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: crate::post::HDR_FORMAT,
-                    // Image - lumière perdue dans l'air à l'ombre
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::One,
-                            operation: wgpu::BlendOperation::ReverseSubtract,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::Zero,
-                            dst_factor: wgpu::BlendFactor::One,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: wgpu::ColorWrites::COLOR,
-                })],
-                compilation_options: Default::default(),
+        let (half_view, half_bind_group) = Self::create_half_target(device, &half_layout, size);
+        let fullscreen_pipeline = |label: &str, layouts: &[&wgpu::BindGroupLayout], entry_point: &str, blend: Option<wgpu::BlendState>| {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some(label),
+                bind_group_layouts: layouts,
+                push_constant_ranges: &[],
+            });
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &god_rays_shader,
+                    entry_point: Some("vs_fullscreen"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &god_rays_shader,
+                    entry_point: Some(entry_point),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: crate::post::HDR_FORMAT,
+                        blend,
+                        write_mask: if blend.is_some() { wgpu::ColorWrites::COLOR } else { wgpu::ColorWrites::ALL },
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            })
+        };
+        let god_rays_trace_pipeline = fullscreen_pipeline(
+            "God Rays Trace Pipeline",
+            &[&scene_layout, shadow_layout, &depth_layout],
+            if multisampled { "fs_trace_ms" } else { "fs_trace" },
+            None,
+        );
+        // Image - lumière perdue dans l'air à l'ombre
+        let god_rays_upsample_pipeline = fullscreen_pipeline(
+            "God Rays Upsample Pipeline",
+            &[&scene_layout, shadow_layout, &depth_layout, &half_layout],
+            if multisampled { "fs_upsample_ms" } else { "fs_upsample" },
+            Some(wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::ReverseSubtract,
+                },
+                alpha: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::Zero,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Add,
+                },
             }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        );
 
         Self {
             uniform_buffer,
             transmittance,
             multiscatter,
             irradiance,
+            sky_view,
+            aerial,
+            camera_lut_bind_group,
             lut_key: None,
             wanted_key: AtmosphereUniform::new(50.0, &AtmosphereSettings::default(), &LightingSettings::default(), false).lut_key(),
             scene_layout,
             scene_bind_group,
-            god_rays_pipeline,
+            god_rays_trace_pipeline,
+            god_rays_upsample_pipeline,
             depth_layout,
             depth_bind_group,
+            half_layout,
+            half_view,
+            half_bind_group,
             multisampled,
             god_rays_active: false,
         }
@@ -386,9 +502,32 @@ impl Atmosphere {
         })
     }
 
-    /// La texture de profondeur est recréée au redimensionnement
-    pub fn resize(&mut self, device: &wgpu::Device, depth_view: &wgpu::TextureView) {
+    /// Cible des rayons à demi-résolution (arrondie au-dessus)
+    fn create_half_target(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, (width, height): (u32, u32)) -> (wgpu::TextureView, wgpu::BindGroup) {
+        let view = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("God Rays Half Target"),
+                size: wgpu::Extent3d { width: width.div_ceil(2).max(1), height: height.div_ceil(2).max(1), depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: crate::post::HDR_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("God Rays Half Bind Group"),
+            layout,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) }],
+        });
+        (view, bind_group)
+    }
+
+    /// La texture de profondeur et la cible des rayons sont recréées au redimensionnement
+    pub fn resize(&mut self, device: &wgpu::Device, depth_view: &wgpu::TextureView, size: (u32, u32)) {
         self.depth_bind_group = Self::create_depth_bind_group(device, &self.depth_layout, depth_view, self.multisampled);
+        (self.half_view, self.half_bind_group) = Self::create_half_target(device, &self.half_layout, size);
     }
 
     /// `god_rays` : rayons demandés et ombres du soleil calculées cette frame
@@ -406,12 +545,35 @@ impl Atmosphere {
         self.wanted_key = uniform.lut_key();
     }
 
-    /// Recalcule les tables si la planète ou les réglages ont changé (à encoder avant la passe 3D)
+    /// Recalcule les tables si la planète ou les réglages ont changé, puis les tables de la
+    /// caméra (à encoder avant la passe 3D, après la mise à jour de la caméra)
     pub fn encode_luts(&mut self, encoder: &mut wgpu::CommandEncoder) {
-        if self.lut_key == Some(self.wanted_key) {
-            return;
+        if self.lut_key != Some(self.wanted_key) {
+            self.lut_key = Some(self.wanted_key);
+            self.encode_static_luts(encoder);
         }
-        self.lut_key = Some(self.wanted_key);
+        for lut in [&self.sky_view, &self.aerial] {
+            let attachment = |view| {
+                Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                })
+            };
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Atmosphere Camera LUT Pass"),
+                color_attachments: &[attachment(&lut.inscatter), attachment(&lut.transmittance)],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&lut.pipeline);
+            pass.set_bind_group(0, &self.camera_lut_bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
+    }
+
+    fn encode_static_luts(&self, encoder: &mut wgpu::CommandEncoder) {
         for lut in [&self.transmittance, &self.multiscatter, &self.irradiance] {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Atmosphere LUT Pass"),
@@ -430,7 +592,8 @@ impl Atmosphere {
         }
     }
 
-    /// Rayons crépusculaires sur la cible HDR résolue, après la passe 3D
+    /// Rayons crépusculaires sur la cible HDR résolue, après la passe 3D : marche à
+    /// demi-résolution, puis remontée bilatérale soustraite de l'image
     pub fn encode_god_rays(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -438,8 +601,31 @@ impl Atmosphere {
         shadow_bind_group: &wgpu::BindGroup,
         timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
     ) {
+        // Début du chronométrage sur la marche, fin sur la remontée
+        if self.god_rays_active {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("God Rays Trace Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.half_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: timestamps.map(|(query_set, begin, _)| wgpu::RenderPassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: Some(begin),
+                    end_of_pass_write_index: None,
+                }),
+            });
+            pass.set_pipeline(&self.god_rays_trace_pipeline);
+            pass.set_bind_group(0, &self.scene_bind_group, &[]);
+            pass.set_bind_group(1, shadow_bind_group, &[]);
+            pass.set_bind_group(2, &self.depth_bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("God Rays Pass"),
+            label: Some("God Rays Upsample Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: hdr_view,
                 resolve_target: None,
@@ -449,16 +635,17 @@ impl Atmosphere {
             occlusion_query_set: None,
             timestamp_writes: timestamps.map(|(query_set, begin, end)| wgpu::RenderPassTimestampWrites {
                 query_set,
-                beginning_of_pass_write_index: Some(begin),
+                beginning_of_pass_write_index: if self.god_rays_active { None } else { Some(begin) },
                 end_of_pass_write_index: Some(end),
             }),
         });
         // Passe vide sans rayons : les timestamps restent valides
         if self.god_rays_active {
-            pass.set_pipeline(&self.god_rays_pipeline);
+            pass.set_pipeline(&self.god_rays_upsample_pipeline);
             pass.set_bind_group(0, &self.scene_bind_group, &[]);
             pass.set_bind_group(1, shadow_bind_group, &[]);
             pass.set_bind_group(2, &self.depth_bind_group, &[]);
+            pass.set_bind_group(3, &self.half_bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
     }

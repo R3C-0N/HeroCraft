@@ -10,7 +10,7 @@
 // =========================================================================
 
 #import herocraft::common::{camera, get_moon_data}
-#import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective, apply_aerial_perspective}
+#import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective}
 #import herocraft::shadow::{shadow, shadow_maps, shadow_sampler, cloud_shadow_map, cloud_sampler, to_shadow_uv}
 
 // Part de la lumière du soleil qui atteint le point : 1 = plein soleil, 0 = ombre complète.
@@ -280,9 +280,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // 6. Perspective aérienne : l'air entre la caméra et la surface diffuse la lumière du soleil
     // et du ciel (bleu au loin, doré face au soleil couchant) et atténue la surface. Le même
-    // calcul donne la couleur du ciel à l'horizon : le relief lointain s'y fond.
+    // calcul donne la couleur du ciel à l'horizon : le relief lointain s'y fond. Dans
+    // l'atmosphère, elle est lue dans le volume précalculé pour la caméra.
     let dist = length(camera.camera_pos - in.world_pos);
-    let aerial = aerial_perspective(camera.camera_pos, -view_dir, dist, l, 12);
+    let surface_clip = camera.view_proj * vec4<f32>(in.world_pos, 1.0);
+    let aerial = aerial_perspective_screen(camera.camera_pos, -view_dir, surface_clip.xy / surface_clip.w, dist, l, 12);
     lit_rgb = apply_aerial_perspective(lit_rgb, aerial);
 
     // Brume nocturne : l'air n'est plus éclairé par le soleil, une lueur bleutée argentée
