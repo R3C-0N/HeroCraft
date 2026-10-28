@@ -199,8 +199,8 @@ fn main() {
                         let is_pressed = *key_state == ElementState::Pressed;
 
                         if *key_code == KeyCode::Escape && is_pressed {
-                            // Touche Échap : Ouvre ou ferme le Menu des Paramètres Vidéo
-                            let new_open = ui_state.toggle_settings();
+                            // Touche Échap : ouvre le menu de pause, remonte d'un sous-menu ou referme le menu
+                            let new_open = ui_state.handle_escape();
 
                             // Réinitialise les touches de déplacement pour éviter tout glissement fantôme
                             camera.move_forward = false;
@@ -209,7 +209,7 @@ fn main() {
                             camera.move_right = false;
                             camera.is_sprinting = false;
 
-                            info!("Touche [Échap] : Menu Paramètres {}", if new_open { "OUVERT" } else { "FERMÉ" });
+                            info!("Touche [Échap] : Menu de pause {} ({:?})", if new_open { "OUVERT" } else { "FERMÉ" }, ui_state.menu_page);
                         } else if !ui_state.is_settings_open {
                             // En jeu normal (menu fermé) : traitement des commandes de déplacement et raccourcis
                             match key_code {
@@ -367,11 +367,11 @@ fn main() {
                                     }
                                     info!("Paramètre Plein Écran mis à jour : {}", if is_fs { "ACTIVÉ" } else { "DÉSACTIVÉ" });
                                 }
-                                UiAction::CycleLodDistance => {
+                                UiAction::SetLodDistance => {
                                     lod_manager.set_distance_preset(ui_state.video_settings.lod_distance);
                                     info!("Paramètre Distance LOD mis à jour : {:?}", ui_state.video_settings.lod_distance);
                                 }
-                                UiAction::CycleFpsLimit => {
+                                UiAction::SetFpsLimit => {
                                     info!("Paramètre Limite FPS mis à jour : {:?}", ui_state.video_settings.fps_limit);
                                 }
                                 UiAction::GenerateNewPlanet => {
