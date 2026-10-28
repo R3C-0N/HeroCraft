@@ -592,6 +592,19 @@ impl OrbitCamera {
         self.orbit_yaw = 0.5;
         self.orbit_pitch = 0.35;
     }
+
+    /// Rayon de visée du centre de l'écran (réticule) en jeu : origine à l'œil, direction du regard,
+    /// et distance de l'œil à la tête du joueur (non nulle en troisième personne). `None` en vue
+    /// satellite, où rien n'est visé.
+    pub fn view_ray(&self) -> Option<(Vec3, Vec3, f32)> {
+        if self.view_mode() == CameraViewMode::SatelliteOrbit {
+            return None;
+        }
+        let (up, _, _, look_dir) = self.look_vectors();
+        let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
+        let head = self.player_pos + up * 0.065 * scale;
+        Some((self.effective_eye, look_dir, (self.effective_eye - head).length()))
+    }
 }
 
 #[cfg(test)]

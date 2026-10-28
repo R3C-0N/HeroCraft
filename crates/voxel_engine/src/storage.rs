@@ -2,7 +2,7 @@ use std::fs;
 use std::io::{self, Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
-use herocraft_common::PlanetChunkCoord;
+use herocraft_common::{PlanetChunkCoord, PlanetFace};
 
 use crate::chunk::ChunkData;
 
@@ -61,6 +61,37 @@ impl ChunkStorage {
         Ok(Some(chunk))
     }
 
+    /// Liste les chunks enregistrés sur le disque (ceux qu'un joueur a modifiés)
+    pub fn list_chunks(&self) -> io::Result<Vec<PlanetChunkCoord>> {
+        let mut coords = Vec::new();
+        for face in PlanetFace::ALL {
+            let face_dir = self.root_dir.join("chunks").join(format!("{:?}", face));
+            let entries = match fs::read_dir(&face_dir) {
+                Ok(entries) => entries,
+                Err(e) if e.kind() == ErrorKind::NotFound => continue,
+                Err(e) => return Err(e),
+            };
+            for entry in entries {
+                let name = entry?.file_name();
+                let parsed = name
+                    .to_str()
+                    .and_then(|n| n.strip_prefix("c_"))
+                    .and_then(|n| n.strip_suffix(".rle"))
+                    .and_then(|n| {
+                        let mut parts = n.split('_').map(|p| p.parse::<i32>());
+                        match (parts.next(), parts.next(), parts.next(), parts.next()) {
+                            (Some(Ok(x)), Some(Ok(y)), Some(Ok(alt)), None) => Some((x, y, alt)),
+                            _ => None,
+                        }
+                    });
+                if let Some((x, y, alt)) = parsed {
+                    coords.push(PlanetChunkCoord::new(face, x, y, alt));
+                }
+            }
+        }
+        Ok(coords)
+    }
+
     /// Supprime un chunk du disque si nécessaire
     pub fn delete_chunk(&self, coord: &PlanetChunkCoord) -> io::Result<bool> {
         let path = self.chunk_path(coord);
@@ -76,7 +107,7 @@ impl ChunkStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use herocraft_common::{BlockId, PlanetFace};
+    use herocraft_common::BlockId;
 
     #[test]
     fn test_chunk_storage_save_load_roundtrip() {
@@ -101,6 +132,7 @@ mod tests {
         assert_eq!(loaded.get_voxel(5, 11, 15), BlockId::GRASS);
         assert_eq!(loaded.get_voxel(2, 3, 4), BlockId::WATER);
         assert_eq!(loaded.get_voxel(0, 0, 0), BlockId::AIR);
+        assert_eq!(storage.list_chunks().unwrap(), vec![coord]);
 
         let deleted = storage.delete_chunk(&coord).expect("Échec de suppression");
         assert!(deleted);
