@@ -405,7 +405,7 @@ fn main() {
                             herocraft_common::prof_scope!("reseau");
                             client.send_move(&camera);
                             let mut lost = None;
-                            for event in client.poll(dt) {
+                            for event in client.poll() {
                                 match event {
                                     NetEvent::BlockChanged(pos, block) => {
                                         if lod_manager.set_block(&generator, pos, block) {

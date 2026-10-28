@@ -23,8 +23,8 @@ use log::{info, warn};
 
 /// Ticks de simulation par seconde
 pub const TICK_RATE: u32 = 60;
-/// Les positions des joueurs sont diffusées tous les N ticks (20 fois par seconde)
-const STATE_BROADCAST_TICKS: u64 = 3;
+/// Les positions des joueurs sont diffusées tous les N ticks (30 fois par seconde)
+const STATE_BROADCAST_TICKS: u64 = 2;
 /// Les statistiques RPG sont envoyées tous les N ticks (une fois par seconde)
 const STATS_TICKS: u64 = TICK_RATE as u64;
 /// Les blocs modifiés sont enregistrés tous les N ticks (toutes les 5 secondes)
