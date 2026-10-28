@@ -1,5 +1,5 @@
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::keyboard::KeyCode;
+use winit::keyboard::{Key, KeyCode, NamedKey};
 
 use crate::input::{is_reserved_key, Action, Controls, ACTION_GROUPS};
 
@@ -616,6 +616,31 @@ impl UiState {
                         pressed,
                         modifiers: egui::Modifiers::default(),
                     });
+                }
+            }
+
+            // Clavier : saisie dans les champs de texte (nom du joueur, adresse du serveur)
+            WindowEvent::ModifiersChanged(modifiers) => {
+                let state = modifiers.state();
+                self.raw_input.modifiers = egui::Modifiers {
+                    alt: state.alt_key(),
+                    ctrl: state.control_key(),
+                    shift: state.shift_key(),
+                    mac_cmd: false,
+                    command: state.control_key(),
+                };
+            }
+
+            WindowEvent::KeyboardInput { event, .. } => {
+                let pressed = event.state == ElementState::Pressed;
+                let modifiers = self.raw_input.modifiers;
+                if let Some(key) = egui_key(&event.logical_key) {
+                    self.raw_input.events.push(egui::Event::Key { key, physical_key: None, pressed, repeat: event.repeat, modifiers });
+                }
+                if pressed && !modifiers.ctrl {
+                    if let Some(text) = event.text.as_ref().filter(|t| t.chars().all(|c| !c.is_control())) {
+                        self.raw_input.events.push(egui::Event::Text(text.to_string()));
+                    }
                 }
             }
 
@@ -1362,6 +1387,24 @@ impl UiState {
             });
         });
     }
+}
+
+/// Touches d'édition transmises à egui (le texte tapé passe à part, en `Event::Text`)
+fn egui_key(key: &Key) -> Option<egui::Key> {
+    Some(match key {
+        Key::Named(NamedKey::Backspace) => egui::Key::Backspace,
+        Key::Named(NamedKey::Delete) => egui::Key::Delete,
+        Key::Named(NamedKey::Enter) => egui::Key::Enter,
+        Key::Named(NamedKey::Tab) => egui::Key::Tab,
+        Key::Named(NamedKey::ArrowLeft) => egui::Key::ArrowLeft,
+        Key::Named(NamedKey::ArrowRight) => egui::Key::ArrowRight,
+        Key::Named(NamedKey::ArrowUp) => egui::Key::ArrowUp,
+        Key::Named(NamedKey::ArrowDown) => egui::Key::ArrowDown,
+        Key::Named(NamedKey::Home) => egui::Key::Home,
+        Key::Named(NamedKey::End) => egui::Key::End,
+        Key::Character(c) if c.eq_ignore_ascii_case("a") => egui::Key::A,
+        _ => return None,
+    })
 }
 
 /// Cadre commun des panneaux du HUD
