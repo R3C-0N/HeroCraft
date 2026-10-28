@@ -5,7 +5,7 @@
 //! dès le lancement avec `HEROCRAFT_SERVER` / `--connect`. Le même menu ouvre la partie solo au
 //! réseau local en lançant un serveur dans le jeu.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -25,10 +25,16 @@ use crate::camera::{CameraViewMode, OrbitCamera, PLAYER_HALF_WIDTH};
 
 /// Délai de connexion et d'accueil (graine et chunks modifiés)
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-/// Intervalle minimal entre deux envois de position (20 par seconde)
-const MOVE_SEND_INTERVAL: Duration = Duration::from_millis(50);
-/// Vitesse de rattrapage de la position affichée d'un autre joueur vers la dernière reçue (1/s)
-const REMOTE_SMOOTHING: f32 = 15.0;
+/// Intervalle minimal entre deux envois de position (30 par seconde)
+const MOVE_SEND_INTERVAL: Duration = Duration::from_millis(33);
+/// Les autres joueurs sont affichés avec ce retard sur leurs positions reçues : il y a presque
+/// toujours deux positions encadrant l'instant affiché, entre lesquelles le mouvement est
+/// interpolé (deux intervalles d'envoi du serveur)
+const INTERPOLATION_DELAY: Duration = Duration::from_millis(70);
+/// Sans position récente, le mouvement est prolongé au plus de cette durée, puis s'arrête
+const MAX_EXTRAPOLATION: Duration = Duration::from_millis(150);
+/// Positions gardées par joueur
+const MAX_SNAPSHOTS: usize = 32;
 /// Hauteur de la silhouette d'un autre joueur, en blocs
 const REMOTE_PLAYER_HEIGHT: f64 = 1.8;
 /// Au-delà de cette distance (en blocs), le nom d'un autre joueur n'est plus affiché
@@ -179,7 +185,7 @@ pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
             },
             other => {
                 // Rien d'autre n'est attendu avant la fin des chunks, mais un paquet reste un paquet
-                client.handle(other);
+                client.handle(Instant::now(), other);
             }
         }
     }
@@ -190,9 +196,60 @@ pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
 /// Un autre joueur, tel qu'affiché
 pub struct RemotePlayer {
     pub name: String,
-    /// Pieds affichés, qui rattrapent en douceur la dernière position reçue
+    /// Pieds affichés, recalculés à chaque frame par `poll`
     pub position: Option<Vec3>,
-    target: Option<Vec3>,
+    /// Positions des pieds reçues, datées à leur arrivée, de la plus ancienne à la plus récente
+    snapshots: VecDeque<(Instant, Vec3)>,
+}
+
+impl RemotePlayer {
+    fn new(name: String) -> Self {
+        Self { name, position: None, snapshots: VecDeque::new() }
+    }
+
+    fn push(&mut self, at: Instant, position: Vec3) {
+        if self.snapshots.back().is_some_and(|&(last, _)| at < last) {
+            return;
+        }
+        self.snapshots.push_back((at, position));
+        while self.snapshots.len() > MAX_SNAPSHOTS {
+            self.snapshots.pop_front();
+        }
+    }
+
+    /// Pieds à afficher à l'instant `now` : interpolés entre les deux positions qui encadrent
+    /// `now - INTERPOLATION_DELAY`, ou prolongés un court instant au-delà de la dernière.
+    /// Calculé sur l'horloge, pas image par image : une fenêtre qui dessine peu d'images (en
+    /// arrière-plan) montre quand même le joueur là où il est.
+    fn position_at(&self, now: Instant) -> Option<Vec3> {
+        let render = now.checked_sub(INTERPOLATION_DELAY).unwrap_or(now);
+        let &(first_t, first_p) = self.snapshots.front()?;
+        if render <= first_t {
+            return Some(first_p);
+        }
+        let mut previous = (first_t, first_p);
+        for &(t, p) in self.snapshots.iter().skip(1) {
+            if render <= t {
+                let span = (t - previous.0).as_secs_f32();
+                let k = if span > 0.0 { (render - previous.0).as_secs_f32() / span } else { 1.0 };
+                return Some(previous.1.lerp(p, k));
+            }
+            previous = (t, p);
+        }
+        // Au-delà de la dernière position : on prolonge la dernière vitesse, brièvement
+        let (last_t, last_p) = previous;
+        let n = self.snapshots.len();
+        if n < 2 {
+            return Some(last_p);
+        }
+        let (prev_t, prev_p) = self.snapshots[n - 2];
+        let span = (last_t - prev_t).as_secs_f32();
+        if span <= 0.0 {
+            return Some(last_p);
+        }
+        let ahead = (render - last_t).min(MAX_EXTRAPOLATION).as_secs_f32();
+        Some(last_p + (last_p - prev_p) * (ahead / span))
+    }
 }
 
 /// Ce qui arrive du serveur et que la boucle de jeu applique
@@ -235,11 +292,11 @@ impl NetClient {
     }
 
     /// Relève les paquets reçus depuis la dernière frame et fait avancer l'affichage des autres
-    pub fn poll(&mut self, dt: f32) -> Vec<NetEvent> {
+    pub fn poll(&mut self) -> Vec<NetEvent> {
         let mut events = Vec::new();
         loop {
-            match self.connection.try_recv() {
-                Ok(Some(packet)) => events.extend(self.handle(packet)),
+            match self.connection.try_recv_timed() {
+                Ok(Some((at, packet))) => events.extend(self.handle(at, packet)),
                 Ok(None) => break,
                 Err(reason) => {
                     events.push(NetEvent::Disconnected(reason));
@@ -247,22 +304,18 @@ impl NetClient {
                 }
             }
         }
-        let t = 1.0 - (-REMOTE_SMOOTHING * dt).exp();
+        let now = Instant::now();
         for player in self.players.values_mut() {
-            player.position = match (player.position, player.target) {
-                // Saut de plus de 50 unités (téléportation, nouvelle apparition) : pas de glissade
-                (Some(shown), Some(target)) if shown.distance(target) < 50.0 => Some(shown.lerp(target, t)),
-                (_, target) => target,
-            };
+            player.position = player.position_at(now);
         }
         events
     }
 
-    fn handle(&mut self, packet: ServerPacket) -> Option<NetEvent> {
+    fn handle(&mut self, at: Instant, packet: ServerPacket) -> Option<NetEvent> {
         match packet {
             ServerPacket::VoxelUpdate { block, block_id } => return Some(NetEvent::BlockChanged(block.into(), BlockId(block_id))),
             ServerPacket::PlayerJoined { player_id, name } if player_id != self.player_id => {
-                self.players.insert(player_id, RemotePlayer { name, position: None, target: None });
+                self.players.insert(player_id, RemotePlayer::new(name));
             }
             ServerPacket::PlayerLeft { player_id } => {
                 self.players.remove(&player_id);
@@ -270,7 +323,7 @@ impl NetClient {
             ServerPacket::PlayerStates(states) => {
                 for state in states {
                     if let Some(player) = self.players.get_mut(&state.player_id) {
-                        player.target = Some(state.position);
+                        player.push(at, state.position);
                     }
                 }
             }
@@ -368,6 +421,26 @@ mod tests {
         drop(world);
         drop(host);
         let _ = std::fs::remove_dir_all(save_dir);
+    }
+
+    #[test]
+    fn test_remote_player_is_interpolated_on_the_clock() {
+        let mut player = RemotePlayer::new("Bob".into());
+        let t0 = Instant::now();
+        let step = Duration::from_millis(33);
+        for i in 0..4 {
+            player.push(t0 + step * i, Vec3::new(i as f32, 0.0, 0.0));
+        }
+        // Entre deux positions reçues : interpolé
+        let p = player.position_at(t0 + step + step / 2 + INTERPOLATION_DELAY).unwrap();
+        assert!((p.x - 1.5).abs() < 1e-3, "{p}");
+        // Juste après la dernière : prolongé à la même vitesse
+        let p = player.position_at(t0 + step * 3 + step + INTERPOLATION_DELAY).unwrap();
+        assert!((p.x - 4.0).abs() < 1e-3, "{p}");
+        // Longtemps après : arrêté au bout de MAX_EXTRAPOLATION
+        let p = player.position_at(t0 + step * 3 + Duration::from_secs(5)).unwrap();
+        let max = 3.0 + MAX_EXTRAPOLATION.as_secs_f32() / step.as_secs_f32();
+        assert!((p.x - max).abs() < 1e-2, "{p}");
     }
 
     #[test]

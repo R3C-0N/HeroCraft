@@ -10,7 +10,7 @@ use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -46,7 +46,8 @@ pub struct Connection<Out, In> {
     stream: TcpStream,
     peer: SocketAddr,
     outgoing: Sender<Vec<u8>>,
-    incoming: Receiver<In>,
+    /// Paquets reçus, datés à leur arrivée par le fil de lecture
+    incoming: Receiver<(Instant, In)>,
     /// Raison de la fermeture, écrite par le fil de lecture ou d'écriture qui l'a constatée
     closed: Arc<Mutex<Option<String>>>,
     _out: PhantomData<fn(Out)>,
@@ -82,7 +83,7 @@ impl<Out: Serialize, In: DeserializeOwned + Send + 'static> Connection<Out, In> 
             let reason = loop {
                 match read_frame::<_, In>(&mut reader) {
                     Ok(packet) => {
-                        if in_tx.send(packet).is_err() {
+                        if in_tx.send((Instant::now(), packet)).is_err() {
                             break "connexion abandonnée".to_string();
                         }
                     }
@@ -138,6 +139,12 @@ impl<Out: Serialize, In: DeserializeOwned + Send + 'static> Connection<Out, In> 
 
     /// Paquet reçu suivant sans attendre : `Ok(None)` si aucun, `Err(raison)` si la connexion est fermée
     pub fn try_recv(&self) -> Result<Option<In>, String> {
+        Ok(self.try_recv_timed()?.map(|(_, packet)| packet))
+    }
+
+    /// Comme `try_recv`, avec l'instant d'arrivée du paquet : il reste exact même si le fil de jeu
+    /// relève ses paquets avec retard (fenêtre en arrière-plan qui dessine peu d'images)
+    pub fn try_recv_timed(&self) -> Result<Option<(Instant, In)>, String> {
         match self.incoming.try_recv() {
             Ok(packet) => Ok(Some(packet)),
             Err(TryRecvError::Empty) => match self.closed_reason() {
@@ -152,7 +159,7 @@ impl<Out: Serialize, In: DeserializeOwned + Send + 'static> Connection<Out, In> 
     /// Attend le paquet suivant au plus `timeout`
     pub fn recv_timeout(&self, timeout: Duration) -> Result<In, String> {
         match self.incoming.recv_timeout(timeout) {
-            Ok(packet) => Ok(packet),
+            Ok((_, packet)) => Ok(packet),
             Err(RecvTimeoutError::Timeout) => Err("délai d'attente dépassé".into()),
             Err(RecvTimeoutError::Disconnected) => Err(self.closed_reason().unwrap_or_else(|| "connexion fermée".into())),
         }
