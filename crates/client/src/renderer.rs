@@ -2,11 +2,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use winit::window::Window;
 
+use crate::atmosphere::Atmosphere;
 use crate::camera::{CameraViewMode, OrbitCamera};
 use crate::gpu_timer::{self, GpuTimer};
 use crate::lod::{LodMeshId, PlanetLodManager};
 use crate::planet_mesh::PlanetVertex;
-use crate::ui::{CloudSettings, LightingSettings, UiState};
+use crate::post::{self, PostProcess};
+use crate::shadow::Shadows;
+use crate::ui::{AtmosphereSettings, CloudSettings, LightingSettings, PostSettings, ShadowSettings, UiState};
 
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -29,9 +32,11 @@ struct GpuMesh {
     last_used_sync: u64,
     /// Centre de la boîte englobante, pour trier les draws du plus proche au plus lointain
     center: glam::Vec3,
+    /// Demi-diagonale de la boîte englobante (tri des maillages par cascade d'ombre)
+    radius: f32,
 }
 
-fn mesh_center(vertices: &[PlanetVertex]) -> glam::Vec3 {
+fn mesh_bounds(vertices: &[PlanetVertex]) -> (glam::Vec3, f32) {
     let (min, max) = vertices.iter().fold(
         (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN)),
         |(lo, hi), v| {
@@ -39,7 +44,7 @@ fn mesh_center(vertices: &[PlanetVertex]) -> glam::Vec3 {
             (lo.min(p), hi.max(p))
         },
     );
-    (min + max) * 0.5
+    ((min + max) * 0.5, (max - min).length() * 0.5)
 }
 
 /// Octets envoyés au GPU au plus par synchronisation (un gros ensemble est étalé sur plusieurs frames)
@@ -73,8 +78,16 @@ pub struct State {
     pub depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
     pub sample_count: u32,
-    pub msaa_color_texture: Option<wgpu::Texture>,
-    pub msaa_color_view: Option<wgpu::TextureView>,
+    /// Cible HDR de la passe 3D, bloom et composition vers la swapchain
+    post: PostProcess,
+    bloom_enabled: bool,
+    /// Ombres portées du relief et des nuages, calculées depuis le soleil avant la passe 3D
+    shadows: Shadows,
+    /// Atmosphère physique (tables précalculées) et rayons crépusculaires
+    atmosphere: Atmosphere,
+    sun_dir: glam::Vec3,
+    ground_factor: f32,
+    clouds_visible: bool,
     /// Un couple de buffers par maillage de feuille LOD, envoyé une seule fois au GPU
     lod_gpu_meshes: HashMap<LodMeshId, GpuMesh>,
     /// Maillages à dessiner cette frame, dans l'ordre des feuilles
@@ -276,28 +289,30 @@ impl State {
             label: Some("camera_bind_group"),
         });
 
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-        // Détection du support matériel MSAA 4x
-        let msaa_flags = adapter.get_texture_format_features(config.format).flags;
-        let sample_count = if msaa_flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X4) {
-            4
-        } else {
-            1
-        };
+        // Détection du support matériel MSAA 4x sur le format HDR de la passe 3D
+        let sample_count = PostProcess::sample_count(&adapter);
         log::info!("Anti-Aliasing MSAA 4x : {} (sample_count = {})", sample_count == 4, sample_count);
         herocraft_common::profiler::set_meta("msaa_sample_count", sample_count.to_string());
 
         let (depth_texture, depth_view) = Self::create_depth_texture(&device, &config, sample_count);
-        let (msaa_color_texture, msaa_color_view) = match Self::create_msaa_color_texture(&device, &config, sample_count) {
-            Some((t, v)) => (Some(t), Some(v)),
-            None => (None, None),
-        };
+        let post = PostProcess::new(&device, &config, sample_count);
+
+        // Groupe 0 du ciel, du terrain et des nuages : caméra et tables de l'atmosphère.
+        // Le terrain lit en plus les cartes d'ombre (groupe 1).
+        let shadows = Shadows::new(&device, &camera_bind_group_layout);
+        let atmosphere = Atmosphere::new(&device, &camera_buffer, &shadows.receiver_layout, &depth_view, sample_count, (config.width, config.height));
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[&atmosphere.scene_layout],
+                push_constant_ranges: &[],
+            });
+        let terrain_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Terrain Pipeline Layout"),
+                bind_group_layouts: &[&atmosphere.scene_layout, &shadows.receiver_layout],
+                push_constant_ranges: &[],
+            });
 
         // Pipeline Ciel & Atmosphère 3D (Étoiles, Soleil, Halo spatial, Ciel bleu)
         let sky_shader = crate::shaders::create_shader_module(&device, "Sky Shader", include_str!("sky_shader.wgsl"), "sky_shader.wgsl");
@@ -315,7 +330,7 @@ impl State {
                 module: &sky_shader,
                 entry_point: Some("fs_sky"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: post::HDR_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -330,10 +345,12 @@ impl State {
                 unclipped_depth: false,
                 conservative: false,
             },
+            // Dessiné après le terrain, seulement sur les pixels restés à la profondeur du fond :
+            // la marche dans l'atmosphère n'est pas calculée sous le relief
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_compare: wgpu::CompareFunction::LessEqual,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -348,7 +365,7 @@ impl State {
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Planet Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
+            layout: Some(&terrain_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
@@ -359,7 +376,7 @@ impl State {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: post::HDR_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -408,7 +425,7 @@ impl State {
                 module: &cloud_shader,
                 entry_point: Some("fs_cloud"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: post::HDR_FORMAT,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -481,8 +498,13 @@ impl State {
             depth_texture,
             depth_view,
             sample_count,
-            msaa_color_texture,
-            msaa_color_view,
+            post,
+            bloom_enabled: true,
+            shadows,
+            atmosphere,
+            sun_dir,
+            ground_factor: 0.0,
+            clouds_visible: false,
             lod_gpu_meshes: HashMap::new(),
             lod_draw_list: Vec::new(),
             camera_eye: glam::Vec3::ZERO,
@@ -523,33 +545,6 @@ impl State {
         (texture, view)
     }
 
-    fn create_msaa_color_texture(
-        device: &wgpu::Device,
-        config: &wgpu::SurfaceConfiguration,
-        sample_count: u32,
-    ) -> Option<(wgpu::Texture, wgpu::TextureView)> {
-        if sample_count <= 1 {
-            return None;
-        }
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("MSAA Color Texture"),
-            size: wgpu::Extent3d {
-                width: config.width.max(1),
-                height: config.height.max(1),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count,
-            dimension: wgpu::TextureDimension::D2,
-            format: config.format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        Some((texture, view))
-    }
-
-
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         herocraft_common::prof_scope!("render::resize");
         if new_size.width > 0 && new_size.height > 0 {
@@ -563,12 +558,8 @@ impl State {
             self.depth_texture = depth_texture;
             self.depth_view = depth_view;
 
-            let (msaa_texture, msaa_view) = match Self::create_msaa_color_texture(&self.device, &self.config, self.sample_count) {
-                Some((t, v)) => (Some(t), Some(v)),
-                None => (None, None),
-            };
-            self.msaa_color_texture = msaa_texture;
-            self.msaa_color_view = msaa_view;
+            self.post.resize(&self.device, &self.config);
+            self.atmosphere.resize(&self.device, &self.depth_view, (self.config.width, self.config.height));
         }
     }
 
@@ -616,6 +607,9 @@ impl State {
             ((camera.base_radius - camera.effective_distance) / fade_dist).clamp(0.0, 1.0)
         };
         let effective_cloud_density = clouds.density * cloud_vis;
+        self.sun_dir = sun_dir;
+        self.ground_factor = ground_factor;
+        self.clouds_visible = effective_cloud_density > 0.01;
 
         let uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
@@ -647,6 +641,31 @@ impl State {
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
 
+    /// Cascades centrées sur le joueur, à appeler après `update_camera`
+    pub fn update_shadows(&mut self, camera: &OrbitCamera, settings: &ShadowSettings) {
+        let (_, _, _, forward) = camera.look_vectors();
+        self.shadows.update(
+            &self.queue,
+            settings,
+            camera.player_pos,
+            forward,
+            self.sun_dir,
+            camera.base_radius,
+            self.ground_factor,
+            self.clouds_visible,
+        );
+    }
+
+    /// Paramètres de l'atmosphère, à appeler après `update_shadows` (les rayons suivent les ombres)
+    pub fn update_atmosphere(&mut self, camera: &OrbitCamera, settings: &AtmosphereSettings, lighting: &LightingSettings) {
+        self.atmosphere.update(&self.queue, settings, lighting, camera.base_radius, self.shadows.is_active());
+    }
+
+    pub fn update_post(&mut self, settings: &PostSettings) {
+        self.bloom_enabled = settings.bloom_enabled && settings.bloom_intensity > 0.0;
+        self.post.update(&self.queue, settings);
+    }
+
     /// Synchronise les buffers GPU avec les feuilles LOD affichées : seuls les nouveaux maillages
     /// sont envoyés, ceux qui ne sont plus affichés sont libérés après `LOD_GPU_MESH_TTL` synchronisations.
     /// Les envois sont limités à `LOD_UPLOAD_BUDGET` octets par appel : tant que le nouvel ensemble
@@ -670,6 +689,7 @@ impl State {
                 gpu_mesh.last_used_sync = sync;
             } else if uploaded_bytes < budget {
                 uploaded_bytes += mesh.vertices.len() * std::mem::size_of::<PlanetVertex>() + mesh.indices.len() * 4;
+                let (center, radius) = mesh_bounds(&mesh.vertices);
                 let gpu_mesh = GpuMesh {
                     vertex_buffer: self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some("LOD Vertex Buffer"),
@@ -683,7 +703,8 @@ impl State {
                     }),
                     num_indices: mesh.indices.len() as u32,
                     last_used_sync: sync,
-                    center: mesh_center(&mesh.vertices),
+                    center,
+                    radius,
                 };
                 self.lod_gpu_meshes.insert(id, gpu_mesh);
             } else {
@@ -770,22 +791,26 @@ impl State {
         let timer_queries = self.gpu_timer.as_ref().and_then(|t| t.query_set());
         let timer_inside_passes = self.gpu_timer.as_ref().is_some_and(|t| t.inside_passes);
 
-        // 1. Passe 3D (Ciel étoilé + Soleil + Halo atmosphérique + Planète & Voxels avec MSAA 4x si supporté)
+        // 0. Tables de l'atmosphère (seulement si la planète ou les réglages ont changé), puis
+        // ombres : cascades du relief et carte des nuages, vues depuis le soleil
+        self.atmosphere.encode_luts(&mut encoder);
+        {
+            herocraft_common::prof_scope!("render::encode_shadows");
+            let meshes = self.lod_draw_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).map(|m| {
+                (m.center, m.radius, &m.vertex_buffer, &m.index_buffer, m.num_indices)
+            });
+            let clouds = (self.num_cloud_indices > 0)
+                .then_some((&self.cloud_vertex_buffer, &self.cloud_index_buffer, self.num_cloud_indices));
+            let timestamps = timer_queries.map(|q| (q, gpu_timer::TS_SHADOW_BEGIN, gpu_timer::TS_SHADOW_END));
+            self.shadows.encode(&mut encoder, &self.camera_bind_group, meshes, clouds, timestamps);
+        }
+
+        // 1. Passe 3D HDR (Ciel étoilé + Soleil + Halo atmosphérique + Planète & Voxels avec MSAA 4x si supporté)
         {
             herocraft_common::prof_scope!("render::encode_3d_pass");
-            let (color_view, resolve_target, store_op) = if self.sample_count > 1 {
-                (
-                    self.msaa_color_view.as_ref().unwrap(),
-                    Some(&swapchain_view),
-                    wgpu::StoreOp::Discard, // La cible résolue reçoit l'image antialiadée finale
-                )
-            } else {
-                (
-                    &swapchain_view,
-                    None,
-                    wgpu::StoreOp::Store,
-                )
-            };
+            let (color_view, resolve_target) = self.post.scene_attachment();
+            // Avec MSAA, seule la cible HDR résolue est relue par le post-traitement
+            let store_op = if resolve_target.is_some() { wgpu::StoreOp::Discard } else { wgpu::StoreOp::Store };
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("3D World Render Pass"),
@@ -818,15 +843,7 @@ impl State {
                 }),
             });
 
-            // 1.a. Ciel étoilé & Soleil & Halo atmosphérique
-            render_pass.set_pipeline(&self.sky_pipeline);
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.draw(0..3, 0..1);
-            if let Some(query_set) = timer_queries.filter(|_| timer_inside_passes) {
-                render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_SKY);
-            }
-
-            // 1.b. Relief planétaire & Voxels, du plus proche au plus lointain : le test de
+            // 1.a. Relief planétaire & Voxels, du plus proche au plus lointain : le test de
             // profondeur précoce élimine les fragments cachés avant d'exécuter le shader
             let (meshes, eye) = (&self.lod_gpu_meshes, self.camera_eye);
             self.lod_draw_list.sort_by_cached_key(|id| {
@@ -834,7 +851,8 @@ impl State {
             });
             if !self.lod_draw_list.is_empty() {
                 render_pass.set_pipeline(&self.render_pipeline);
-                render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
+                render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
                 for id in &self.lod_draw_list {
                     if let Some(mesh) = self.lod_gpu_meshes.get(id) {
                         render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
@@ -847,17 +865,39 @@ impl State {
                 render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_TERRAIN);
             }
 
+            // 1.b. Ciel : atmosphère, Soleil, Lune et étoiles sur les pixels non couverts
+            render_pass.set_pipeline(&self.sky_pipeline);
+            render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
+            render_pass.draw(0..3, 0..1);
+            if let Some(query_set) = timer_queries.filter(|_| timer_inside_passes) {
+                render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_SKY);
+            }
+
             // 1.c. Nuages 3D physiques réels (traversables et visibles à leur altitude)
             if self.num_cloud_indices > 0 {
                 render_pass.set_pipeline(&self.cloud_pipeline);
-                render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.cloud_vertex_buffer.slice(..));
                 render_pass.set_index_buffer(self.cloud_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.draw_indexed(0..self.num_cloud_indices, 0, 0..1);
             }
         }
 
-        // 2. Passe 2D Interface Utilisateur egui (sample_count = 1 sur la swapchain résolue)
+        // 1.d. Rayons crépusculaires : l'air à l'ombre du relief et des nuages ne diffuse pas le soleil
+        {
+            herocraft_common::prof_scope!("render::encode_god_rays");
+            let timestamps = timer_queries.map(|q| (q, gpu_timer::TS_GOD_RAYS_BEGIN, gpu_timer::TS_GOD_RAYS_END));
+            self.atmosphere.encode_god_rays(&mut encoder, self.post.hdr_view(), &self.shadows.receiver_bind_group, timestamps);
+        }
+
+        // 2. Bloom puis composition HDR (exposition + tonemapper) vers la swapchain
+        {
+            herocraft_common::prof_scope!("render::encode_post");
+            let timestamps = timer_queries.map(|q| (q, gpu_timer::TS_POST_BEGIN, gpu_timer::TS_POST_END));
+            self.post.encode(&mut encoder, &swapchain_view, self.bloom_enabled, timestamps);
+        }
+
+        // 3. Passe 2D Interface Utilisateur egui (sample_count = 1 sur la swapchain)
         {
             herocraft_common::prof_scope!("render::egui_update_buffers");
             self.egui_renderer.update_buffers(
@@ -932,15 +972,23 @@ mod tests {
         let terrain_shader = include_str!("shader.wgsl");
         let ui_shader = include_str!("ui_shader.wgsl");
         let cloud_shader = include_str!("cloud_shader.wgsl");
+        let post_shader = include_str!("post_shader.wgsl");
+        let shadow_caster = include_str!("shadow_caster.wgsl");
+        let atmosphere_lut = include_str!("atmosphere_lut.wgsl");
+        let god_rays = include_str!("god_rays.wgsl");
 
         for (name, source) in [
             ("sky_shader.wgsl", sky_shader),
             ("shader.wgsl", terrain_shader),
             ("ui_shader.wgsl", ui_shader),
             ("cloud_shader.wgsl", cloud_shader),
+            ("post_shader.wgsl", post_shader),
+            ("shadow_caster.wgsl", shadow_caster),
+            ("atmosphere_lut.wgsl", atmosphere_lut),
+            ("god_rays.wgsl", god_rays),
         ] {
             // Assemblage naga_oil (imports de common.wgsl) puis validation complète
-            let module = if name == "ui_shader.wgsl" {
+            let module = if matches!(name, "ui_shader.wgsl" | "post_shader.wgsl" | "shadow_caster.wgsl") {
                 naga::front::wgsl::parse_str(source).unwrap_or_else(|e| panic!("Failed to parse {name}:\n{e}"))
             } else {
                 crate::shaders::compose(source, name).unwrap_or_else(|e| panic!("Failed to compose {name}:\n{e}"))

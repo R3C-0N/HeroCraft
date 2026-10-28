@@ -2,11 +2,12 @@
 // HeroCraft - Sky & Space Atmosphere Shader (WGSL)
 // - Ciel étoilé 3D procédural avec scintillement temporel
 // - Soleil éclatant avec disque solaire, assombrissement de limbe et couronne
-// - Halo atmosphérique externe planétaire (limbe spatial)
-// - Diffusion atmosphérique au sol (dôme céleste azur et horizon doré)
+// - Atmosphère physique (atmosphere.wgsl) : même calcul au sol et depuis l'orbite, le bleu du
+//   jour, le coucher de soleil et le limbe de la planète en découlent
 // =========================================================================
 
-#import herocraft::common::{camera, get_moon_data, sky_factors, sky_dome}
+#import herocraft::common::{camera, get_moon_data, HDR_SUN_DISK}
+#import herocraft::atmosphere::{atmosphere, sky_scattering, ray_sphere, SUN_REFERENCE}
 
 struct SkyVertexOutput {
     @builtin(position) clip_pos: vec4<f32>,
@@ -95,10 +96,7 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
 
     // Multiplicateurs d'intensité interactifs pilotés par les sliders de l'interface
     let moon_slider = camera.lighting_params.x;      // Multiplicateur Lune [0.0 .. 3.0]
-    let sun_slider = camera.lighting_params.y;       // Multiplicateur Soleil [0.0 .. 3.0]
     let night_amb_slider = camera.lighting_params.z; // Multiplicateur Nuit / Étoiles [0.0 .. 3.0]
-    let day_amb_slider = camera.lighting_params.w;   // Multiplicateur Jour / Ciel [0.0 .. 3.0]
-    let cloud_slider = camera.lighting_params_ext.z;    // Multiplicateur Nuages Volumétriques [0.0 .. 2.0]
 
     // Données de la Lune orbitale
     let moon = get_moon_data(camera.time, camera.light_dir);
@@ -106,7 +104,8 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let moon_radius_cos = 0.9988; // ~2.8° de diamètre apparent
     let is_moon_disk = cos_moon > moon_radius_cos;
 
-    // 1. Soleil (Disque lumineux + Couronne d'éblouissement)
+    // 1. Soleil (disque avec assombrissement du limbe et couronne). Le halo large autour du
+    // disque vient de la diffusion de Mie de l'atmosphère.
     var sun_color = vec3<f32>(0.0);
     let sun_radius_cos = 0.9992; // ~2.3° de diamètre apparent
     if (cos_sun > sun_radius_cos && !is_moon_disk) {
@@ -115,10 +114,9 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         let sun_core = mix(vec3<f32>(1.0, 0.85, 0.5), vec3<f32>(1.0, 1.0, 0.95), pow(limb, 0.5));
         sun_color += sun_core * 4.5;
     }
-    // Couronne solaire chaude et rayonnement externe
     let corona = pow(clamp(cos_sun, 0.0, 1.0), 128.0) * 1.8;
-    let wide_glow = pow(clamp(cos_sun, 0.0, 1.0), 16.0) * 0.35;
-    sun_color = (sun_color + vec3<f32>(1.0, 0.82, 0.55) * corona + vec3<f32>(0.8, 0.5, 0.25) * wide_glow) * sun_slider;
+    // Éclairement hors atmosphère : le disque est blanc à midi et rougit avec la transmittance
+    sun_color = (sun_color + vec3<f32>(1.0, 0.82, 0.55) * corona) * (atmosphere.sun_illuminance / SUN_REFERENCE) * HDR_SUN_DISK;
 
     // 2. Lune (Disque sphérique 3D, phases lumineuses, cratères, mers et lumière cendrée)
     var moon_disk_color = vec3<f32>(0.0);
@@ -157,82 +155,24 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let moon_corona = pow(clamp(cos_moon, 0.0, 1.0), 128.0) * 0.25 * moon.phase;
     let moon_wide_glow = pow(clamp(cos_moon, 0.0, 1.0), 24.0) * 0.06 * moon.phase;
     let moon_aura = vec3<f32>(0.70, 0.82, 1.0) * (moon_corona + moon_wide_glow);
-    let moon_space_color = (select(vec3<f32>(0.0), moon_disk_color, is_moon_disk) + moon_aura) * moon_slider;
+    let moon_color = (select(vec3<f32>(0.0), moon_disk_color, is_moon_disk) + moon_aura) * moon_slider;
 
-    // 3. Ciel étoilé dans le vide spatial (étoiles masquées par le disque opaque de la Lune)
-    let stars = render_starfield(ray_dir, camera.time) * night_amb_slider;
+    // 3. Atmosphère : lumière diffusée le long du rayon et transmittance vers l'espace (vue du
+    // ciel précalculée pour la caméra dans l'atmosphère, marche depuis l'orbite)
+    let scattering = sky_scattering(camera.camera_pos, ray_dir, l, 32);
+    // Ce qui est derrière l'atmosphère (soleil, Lune, étoiles) est caché par la planète
+    let hits_planet = ray_sphere(camera.camera_pos, ray_dir, atmosphere.bottom_radius).x > 0.0;
+    let behind = select(scattering.transmittance, vec3<f32>(0.0), hits_planet);
+
+    // 4. Étoiles : noyées par un ciel lumineux, comme l'œil qui ne les distingue plus de jour
+    let sky_luma = dot(scattering.inscatter, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let stars = render_starfield(ray_dir, camera.time) * night_amb_slider * exp(-sky_luma * 12.0);
     let visible_stars = select(stars, vec3<f32>(0.0), is_moon_disk);
-    var space_color = visible_stars + sun_color + moon_space_color;
 
-    // Facteur d'altitude : transition fluide entre vue au sol et orbite spatiale
-    let scale = camera.planet_radius / 25.0;
-    let cam_dist = length(camera.camera_pos);
-    let ground_max = 58.0 * scale;
-    let ground_fade = 20.0 * scale;
-    let alt_ground_factor = clamp((ground_max - cam_dist) / ground_fade, 0.0, 1.0);
-    // Utilise en priorité le ground_factor calculé dynamiquement depuis la caméra (lighting_params_ext.w)
-    // avec repli sur l'altitude de la caméra pour garantir la visibilité du ciel
-    let ground_factor = max(alt_ground_factor, camera.lighting_params_ext.w);
-    let orbit_factor = 1.0 - ground_factor;
+    // 5. Lueur nocturne de l'air (bleu nuit), proportionnelle à l'épaisseur d'air traversée
+    let air_path = clamp((1.0 - scattering.transmittance.b) * 2.5, 0.0, 1.0);
+    let night_glow = vec3<f32>(0.008, 0.012, 0.024) * night_amb_slider * air_path;
 
-    // 4. Halo atmosphérique externe planétaire (vu depuis l'orbite spatiale uniquement)
-    if (orbit_factor > 0.001) {
-        let r_atm_inner = 28.5 * scale; // Surface moyenne océanique / continentale
-        let r_atm_outer = 39.5 * scale; // Sommet de l'atmosphère visible depuis l'espace
-
-        let o = camera.camera_pos;
-        let b = dot(o, ray_dir);
-
-        if (b < 0.0) { // Le rayon se dirige vers la planète
-            let closest_dist = length(o - ray_dir * b);
-            if (closest_dist > r_atm_inner && closest_dist < r_atm_outer) {
-                let t_atm = (closest_dist - r_atm_inner) / (r_atm_outer - r_atm_inner);
-                let density = pow(1.0 - t_atm, 2.2);
-
-                let p_limb = normalize(o - ray_dir * b);
-                let limb_sun = clamp(dot(p_limb, l) * 1.5 + 0.3, 0.0, 1.0);
-                let terminator = clamp(1.0 - abs(dot(p_limb, l)) * 2.5, 0.0, 1.0);
-
-                let atm_hue = mix(vec3<f32>(0.22, 0.65, 1.0), vec3<f32>(1.0, 0.55, 0.22), terminator * 0.85);
-                let limb_glow = atm_hue * (density * limb_sun * 2.5);
-
-                space_color += limb_glow * orbit_factor;
-            }
-        }
-    }
-
-    // 5. Diffusion atmosphérique au sol (Dôme céleste bleu azur en journée, crépuscule doré, nuit étoilée)
-    if (ground_factor > 0.001) {
-        let cam_up = normalize(camera.camera_pos);
-        let ray_up = dot(ray_dir, cam_up);
-        let sun_up = dot(l, cam_up);
-        let moon_up = dot(moon.dir, cam_up);
-
-        // Clarté du jour, crépuscule et dôme céleste : formules partagées avec les nuages (common.wgsl)
-        let factors = sky_factors(sun_up);
-        let daylight = factors.daylight;
-        let sunset_factor = factors.sunset;
-        let day_sky = sky_dome(ray_dir, cam_up, l, sunset_factor);
-
-        // Visibilité du soleil au sol : masqué dès qu'il passe sous l'horizon planétaire
-        let sun_visibility = clamp(sun_up * 15.0 + 0.5, 0.0, 1.0);
-        let sun_disk_tint = mix(vec3<f32>(1.0, 1.0, 1.0), vec3<f32>(1.0, 0.65, 0.25), sunset_factor);
-
-        // Visibilité de la Lune au sol :
-        // - Occultée par l'horizon planétaire sous les pieds du joueur
-        // - Atténuée en plein jour par la luminosité de l'atmosphère bleue, étincelante la nuit
-        let ray_moon_up = dot(ray_dir, cam_up);
-        let moon_ground_vis = clamp((moon_up + 0.03) / 0.08, 0.0, 1.0) * clamp((ray_moon_up + 0.015) / 0.035, 0.0, 1.0);
-        let daytime_moon_tint = mix(vec3<f32>(1.0), vec3<f32>(0.75, 0.88, 1.0), daylight);
-        let ground_moon = moon_space_color * moon_ground_vis * mix(1.0, 0.40, daylight) * daytime_moon_tint;
-
-        // Ciel au sol : nuit étoilée douce et atmosphérique (starlight navy) vs ciel bleu diurne
-        let night_sky = visible_stars + vec3<f32>(0.008, 0.012, 0.024) * night_amb_slider;
-        let ground_sky_base = mix(night_sky, day_sky, daylight) + sun_color * sun_disk_tint * sun_visibility + ground_moon;
-
-        let final_sky = mix(space_color, ground_sky_base, ground_factor);
-        return vec4<f32>(final_sky, 1.0);
-    }
-
-    return vec4<f32>(space_color, 1.0);
+    let sky = scattering.inscatter + night_glow + (sun_color + moon_color + visible_stars) * behind;
+    return vec4<f32>(sky, 1.0);
 }
