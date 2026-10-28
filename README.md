@@ -16,8 +16,15 @@ Le projet est structuré sous forme de **Cargo Workspace** modulaire :
 
 ### Lancer le serveur dédié :
 ```bash
-cargo run --bin herocraft_server
+cargo run --release --bin herocraft_server -- [--port 7777] [--seed 2026]
 ```
+Le serveur écoute en TCP (port 7777 par défaut) à 60 TPS. Il fait autorité sur les blocs : il valide chaque bloc cassé ou posé (portée, contenu), l'enregistre dans `saves/serveur_monde_<graine>/` et le diffuse à tous les joueurs. Il relaie aussi leurs positions. Tapez `stop` dans sa console pour l'arrêter en enregistrant le monde.
+
+### Rejoindre une partie en ligne :
+```bash
+cargo run --release --bin herocraft_client -- --connect 127.0.0.1:7777 --name Mat
+```
+Ou bien `HEROCRAFT_SERVER` et `HEROCRAFT_PSEUDO` dans `.env`. À la connexion, le serveur envoie la graine de sa planète et les chunks déjà modifiés : chaque client génère le reste lui-même. Les autres joueurs apparaissent comme des silhouettes dorées surmontées de leur nom. En ligne, rien n'est enregistré en local et `G` (nouvelle planète) est désactivé. Si le serveur est injoignable, le client démarre en solo.
 
 ### Lancer le prototype client interactif :
 ```bash

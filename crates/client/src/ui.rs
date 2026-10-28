@@ -336,6 +336,8 @@ pub struct UiState {
     pub pointer_captured: bool,
     pub screen_width: f32,
     pub screen_height: f32,
+    /// Noms des autres joueurs (en ligne), avec leur position à l'écran en pixels physiques
+    pub name_tags: Vec<(egui::Pos2, String)>,
 }
 
 impl UiState {
@@ -370,6 +372,7 @@ impl UiState {
             pointer_captured: false,
             screen_width: 1280.0_f32,
             screen_height: 720.0_f32,
+            name_tags: Vec::new(),
         }
     }
 
@@ -600,6 +603,18 @@ impl UiState {
                 painter.line_segment([center - egui::vec2(6.0_f32, 0.0_f32), center + egui::vec2(6.0_f32, 0.0_f32)], stroke);
                 painter.line_segment([center - egui::vec2(0.0_f32, 6.0_f32), center + egui::vec2(0.0_f32, 6.0_f32)], stroke);
                 painter.circle_filled(center, 1.2_f32, egui::Color32::from_rgb(255, 215, 0));
+            }
+
+            // Noms des autres joueurs au-dessus de leur tête
+            if !self.is_settings_open && !self.name_tags.is_empty() {
+                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("name_tags")));
+                for (pos, name) in &self.name_tags {
+                    let pos = egui::pos2(pos.x / ppp, pos.y / ppp);
+                    let galley = painter.layout_no_wrap(name.clone(), egui::FontId::proportional(14.0_f32), egui::Color32::WHITE);
+                    let rect = egui::Rect::from_center_size(pos, galley.size()).expand(3.0_f32);
+                    painter.rect_filled(rect, 3.0_f32, egui::Color32::from_black_alpha(140));
+                    painter.galley(rect.min + egui::vec2(3.0_f32, 3.0_f32), galley, egui::Color32::WHITE);
+                }
             }
 
             // 2. Panneau HUD supérieur gauche (planète, actions, filtres), masqué sous le menu

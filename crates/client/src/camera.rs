@@ -7,7 +7,7 @@ use herocraft_world::TerrainEdits;
 use crate::collision::VoxelCollider;
 
 /// Demi-largeur du joueur, en blocs (0.6 bloc de large)
-const PLAYER_HALF_WIDTH: f32 = 0.3;
+pub const PLAYER_HALF_WIDTH: f32 = 0.3;
 /// Hauteur du corps testée contre les murs et plafonds, en blocs (le joueur mesure 1.8 bloc)
 pub const PLAYER_HEIGHT: f32 = 1.75;
 /// Plus haute marche franchie sans sauter, en blocs
@@ -666,7 +666,7 @@ impl OrbitCamera {
 }
 
 /// Axes est et nord du plan tangent à la sphère sous la direction `up`
-fn tangent_frame(up: Vec3) -> (Vec3, Vec3) {
+pub fn tangent_frame(up: Vec3) -> (Vec3, Vec3) {
     if up.y.abs() < 0.999 {
         let north = (Vec3::Y - up * up.y).normalize();
         (north.cross(up).normalize(), north)

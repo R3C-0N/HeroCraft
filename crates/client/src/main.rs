@@ -20,6 +20,7 @@ mod gpu_timer;
 mod input;
 mod lod;
 mod monitor;
+mod network;
 mod planet_mesh;
 mod post;
 mod renderer;
@@ -32,6 +33,7 @@ use block_interaction::BlockInteraction;
 use camera::OrbitCamera;
 use input::Action;
 use lod::PlanetLodManager;
+use network::NetEvent;
 use renderer::State;
 use ui::{UiAction, UiState};
 
@@ -74,26 +76,55 @@ fn main() {
 
     let window = Arc::new(window);
 
+    // Partie en ligne si un serveur est demandé : sa planète remplace celle du solo
+    let mut joined = network::requested_server().and_then(|(addr, name)| {
+        info!("Connexion au serveur {} en tant que « {} »...", addr, name);
+        match network::join(&addr, &name) {
+            Ok(world) => {
+                window.set_title(&format!("HeroCraft — en ligne sur {} ({})", addr, name));
+                Some(world)
+            }
+            Err(e) => {
+                warn!("Partie en ligne impossible ({}) : lancement en solo.", e);
+                None
+            }
+        }
+    });
+
     // Initialisation du générateur procédural planétaire
-    let mut current_seed = 2026_u64;
+    let mut current_seed = joined.as_ref().map_or(2026_u64, |world| world.seed);
     let mut planet_desc = herocraft_world::PlanetDescriptor::default();
     planet_desc.seed = current_seed;
 
     info!("Initialisation de la planète et du gestionnaire QuadTree...");
     let mut generator = herocraft_world::PlanetWorldGenerator::new(planet_desc);
 
-    // Initialisation du stockage et du cache de chunks voxels
-    let save_dir = format!("saves/monde_{}", current_seed);
-    let storage = herocraft_voxel_engine::ChunkStorage::new(&save_dir).ok();
-    // Blocs détruits ou posés par le joueur, enregistrés dans la même sauvegarde
-    let terrain_edits = Arc::new(herocraft_world::TerrainEdits::new(storage.clone()));
-    let mut chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
+    // Initialisation du stockage et du cache de chunks voxels. En ligne, le monde est enregistré
+    // par le serveur : rien n'est écrit en local, les chunks modifiés viennent de lui.
+    let terrain_edits;
+    let mut chunk_cache;
+    if let Some(world) = joined.as_mut() {
+        terrain_edits = Arc::new(herocraft_world::TerrainEdits::from_chunks(std::mem::take(&mut world.edited_chunks)));
+        chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(None, 256);
+    } else {
+        let save_dir = format!("saves/monde_{}", current_seed);
+        let storage = herocraft_voxel_engine::ChunkStorage::new(&save_dir).ok();
+        // Blocs détruits ou posés par le joueur, enregistrés dans la même sauvegarde
+        terrain_edits = Arc::new(herocraft_world::TerrainEdits::new(storage.clone()));
+        chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
+    }
 
     // Rayon de base de la planète déterminé par le descripteur (REFERENCE_BASE_RADIUS * scale)
     let base_radius = generator.base_radius() as f32;
 
     // Initialisation de la caméra multi-échelle unifiée (Sol FPS <-> TPS <-> Satellite)
     let mut camera = OrbitCamera::new(base_radius * 6.6, base_radius, &generator);
+    // De retour sur un serveur : là où le joueur l'avait quitté
+    if let Some(spawn) = joined.as_ref().and_then(|world| world.spawn_position) {
+        camera.player_pos = spawn;
+        camera.sync_orbit_to_ground();
+    }
+    let mut net = joined.map(|world| world.client);
     let size = window.inner_size();
     camera.aspect = size.width as f32 / size.height.max(1) as f32;
 
@@ -152,6 +183,9 @@ fn main() {
 
                 match event {
                     WindowEvent::CloseRequested => {
+                        if let Some(client) = net.as_mut() {
+                            client.disconnect();
+                        }
                         let _ = chunk_cache.flush_dirty();
                         save_terrain_edits(&lod_manager);
                         write_profile_report();
@@ -195,8 +229,11 @@ fn main() {
                             let pressed = *btn_state == ElementState::Pressed;
                             if let Some(action) = block_interaction.on_mouse_button(*button, pressed) {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
-                                if block_interaction.apply(action, &camera, &generator, &mut lod_manager) {
+                                if let Some((pos, block)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager) {
                                     state.sync_lod_meshes(&lod_manager);
+                                    if let Some(client) = net.as_mut() {
+                                        client.send_block_change(pos, block);
+                                    }
                                 }
                             }
                         }
@@ -364,10 +401,43 @@ fn main() {
                             let edits = lod_manager.terrain_edits().clone();
                             block_interaction.update_target(&camera, &generator, &edits);
                             if let Some(action) = block_interaction.tick(dt) {
-                                terrain_edited = block_interaction.apply(action, &camera, &generator, &mut lod_manager);
+                                if let Some((pos, block)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager) {
+                                    terrain_edited = true;
+                                    if let Some(client) = net.as_mut() {
+                                        client.send_block_change(pos, block);
+                                    }
+                                }
                             }
                         } else {
                             block_interaction.reset();
+                        }
+
+                        // Partie en ligne : position envoyée, blocs des autres appliqués, autres joueurs affichés
+                        if let Some(client) = net.as_mut() {
+                            herocraft_common::prof_scope!("reseau");
+                            client.send_move(&camera);
+                            let mut lost = None;
+                            for event in client.poll(dt) {
+                                match event {
+                                    NetEvent::BlockChanged(pos, block) => {
+                                        if lod_manager.set_block(&generator, pos, block) {
+                                            terrain_edited = true;
+                                            block_interaction.invalidate();
+                                        }
+                                    }
+                                    NetEvent::Disconnected(reason) => lost = Some(reason),
+                                }
+                            }
+                            if let Some(reason) = lost {
+                                warn!("Déconnecté du serveur ({}) : la partie continue hors ligne, sans sauvegarde.", reason);
+                                window.set_title("HeroCraft — hors ligne (déconnecté du serveur)");
+                                net = None;
+                                state.set_player_outlines(&[]);
+                                ui_state.name_tags.clear();
+                            } else {
+                                state.set_player_outlines(&client.remote_player_boxes(camera.base_radius));
+                                ui_state.name_tags = client.name_tags(&camera, state.size.width as f32, state.size.height as f32);
+                            }
                         }
                         {
                             herocraft_common::prof_scope!("blocs::contour");
@@ -402,6 +472,9 @@ fn main() {
                                     info!("Bouton cliqué : Reprise de la partie.");
                                 }
                                 UiAction::QuitGame => {
+                                    if let Some(client) = net.as_mut() {
+                                        client.disconnect();
+                                    }
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
                                     info!("Bouton cliqué : Sauvegarde des chunks et fermeture du jeu.");
@@ -427,6 +500,9 @@ fn main() {
                                 }
                                 UiAction::SetFpsLimit => {
                                     info!("Paramètre Limite FPS mis à jour : {:?}", ui_state.video_settings.fps_limit);
+                                }
+                                UiAction::GenerateNewPlanet if net.is_some() => {
+                                    info!("Nouvelle planète impossible en ligne : la planète est celle du serveur.");
                                 }
                                 UiAction::GenerateNewPlanet => {
                                     let _ = chunk_cache.flush_dirty();

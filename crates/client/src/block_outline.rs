@@ -1,5 +1,5 @@
 //! Contour en surbrillance du bloc visé : 12 rubans le long de ses arêtes, reconstruits à chaque
-//! frame face à la caméra.
+//! frame face à la caméra. Le même tracé dessine la silhouette des autres joueurs en ligne.
 
 use glam::Vec3;
 
@@ -29,14 +29,27 @@ struct OutlineVertex {
 pub struct BlockOutline {
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
-    visible: bool,
+    max_boxes: usize,
+    /// Boîtes dessinées
+    count: usize,
     /// Contenu actuel du tampon : il n'est réécrit que s'il change
-    uploaded: Option<([Vec3; 8], Vec3)>,
+    uploaded: Option<(Vec<[Vec3; 8]>, Vec3)>,
 }
 
 impl BlockOutline {
-    /// `layout` : celui du ciel et des nuages (groupe 0 = scène, dont la caméra)
+    /// Contour du bloc visé (une boîte, blanche)
     pub fn new(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32) -> Self {
+        Self::with_style(device, layout, sample_count, "fs_outline", 1)
+    }
+
+    /// Silhouettes des autres joueurs (jusqu'à `max_boxes`, dorées)
+    pub fn players(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32, max_boxes: usize) -> Self {
+        Self::with_style(device, layout, sample_count, "fs_player", max_boxes)
+    }
+
+    /// `layout` : celui du ciel et des nuages (groupe 0 = scène, dont la caméra) ; `fragment` :
+    /// point d'entrée de couleur dans `block_outline.wgsl`
+    fn with_style(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32, fragment: &str, max_boxes: usize) -> Self {
         let shader = crate::shaders::create_shader_module(device, "Block Outline Shader", include_str!("block_outline.wgsl"), "block_outline.wgsl");
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Block Outline Pipeline"),
@@ -53,7 +66,7 @@ impl BlockOutline {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: Some("fs_outline"),
+                entry_point: Some(fragment),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: post::HDR_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
@@ -83,35 +96,34 @@ impl BlockOutline {
         });
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Block Outline Vertex Buffer"),
-            size: (VERTICES * std::mem::size_of::<OutlineVertex>()) as wgpu::BufferAddress,
+            size: (max_boxes * VERTICES * std::mem::size_of::<OutlineVertex>()) as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self { pipeline, vertex_buffer, visible: false, uploaded: None }
+        Self { pipeline, vertex_buffer, max_boxes, count: 0, uploaded: None }
     }
 
-    /// Contour du bloc de coins `corners` vu de `eye`, ou rien
-    pub fn update(&mut self, queue: &wgpu::Queue, corners: Option<[Vec3; 8]>, eye: Vec3) {
-        self.visible = corners.is_some();
-        if let Some(corners) = corners {
-            if self.uploaded == Some((corners, eye)) {
-                return;
-            }
-            self.uploaded = Some((corners, eye));
-            let vertices = ribbons(&corners, eye);
-            queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+    /// Contour des boîtes de coins `boxes` vues de `eye` (aucune : rien n'est dessiné)
+    pub fn update(&mut self, queue: &wgpu::Queue, boxes: &[[Vec3; 8]], eye: Vec3) {
+        let boxes = &boxes[..boxes.len().min(self.max_boxes)];
+        self.count = boxes.len();
+        if boxes.is_empty() || self.uploaded.as_ref().is_some_and(|(b, e)| b == boxes && *e == eye) {
+            return;
         }
+        self.uploaded = Some((boxes.to_vec(), eye));
+        let vertices: Vec<OutlineVertex> = boxes.iter().flat_map(|corners| ribbons(corners, eye)).collect();
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
     }
 
     /// À appeler dans la passe 3D, après le relief (dont il lit la profondeur)
     pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, scene_bind_group: &wgpu::BindGroup) {
-        if !self.visible {
+        if self.count == 0 {
             return;
         }
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, scene_bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.draw(0..VERTICES as u32, 0..1);
+        pass.draw(0..(self.count * VERTICES) as u32, 0..1);
     }
 }
 

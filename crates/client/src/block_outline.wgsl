@@ -18,3 +18,9 @@ fn vs_outline(@location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> 
 fn fs_outline() -> @location(0) vec4<f32> {
     return vec4<f32>(2.2, 2.2, 2.0, 1.0);
 }
+
+// Silhouette d'un autre joueur en ligne : dorée, au-delà du blanc elle aussi
+@fragment
+fn fs_player() -> @location(0) vec4<f32> {
+    return vec4<f32>(2.4, 1.7, 0.4, 1.0);
+}
