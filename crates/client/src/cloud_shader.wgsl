@@ -10,7 +10,7 @@
 // - Écriture précise de la profondeur dans le Z-buffer (@builtin(frag_depth))
 // =========================================================================
 
-#import herocraft::common::{camera, get_moon_data, sky_factors}
+#import herocraft::common::{camera, get_moon_data, sky_factors, flatten_point, rotate_by}
 #import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective}
 
 struct VertexInput {
@@ -34,6 +34,10 @@ struct VertexOutput {
     @location(5) @interpolate(flat) bbox: vec4<f32>,
     @location(6) @interpolate(flat) mask: vec4<u32>,
     @location(7) @interpolate(flat) config: vec4<f32>,
+    // Planète aplatie (common.wgsl) : le nuage y est déplacé d'un bloc, centre dessiné et rotation
+    // du repère vrai vers le repère dessiné. Le reste de la sortie est dans la vraie géométrie.
+    @location(8) @interpolate(flat) flat_center: vec3<f32>,
+    @location(9) @interpolate(flat) flat_rot: vec3<f32>,
 };
 
 // Passe d'ombre des nuages : projection orthographique depuis le soleil (shadow.rs)
@@ -46,16 +50,17 @@ var<uniform> shadow_pass: ShadowPass;
 
 @vertex
 fn vs_cloud(in: VertexInput) -> VertexOutput {
-    return cloud_vertex(in, camera.view_proj);
+    return cloud_vertex(in, camera.view_proj, true);
 }
 
 @vertex
 fn vs_cloud_shadow(in: VertexInput) -> VertexOutput {
-    return cloud_vertex(in, shadow_pass.view_proj);
+    return cloud_vertex(in, shadow_pass.view_proj, false);
 }
 
-// Dérive du vent appliquée à la boîte et à son repère, projetée par `view_proj`
-fn cloud_vertex(in: VertexInput, view_proj: mat4x4<f32>) -> VertexOutput {
+// Dérive du vent appliquée à la boîte et à son repère, projetée par `view_proj` (sur la planète
+// aplatie si `flatten`, tout le nuage suivant son centre)
+fn cloud_vertex(in: VertexInput, view_proj: mat4x4<f32>, flatten: bool) -> VertexOutput {
     var out: VertexOutput;
 
     // Dérive douce du vent autour de l'axe planétaire (Y)
@@ -95,7 +100,16 @@ fn cloud_vertex(in: VertexInput, view_proj: mat4x4<f32>) -> VertexOutput {
         in.frame_w.x * sin_a + in.frame_w.z * cos_a
     );
 
-    out.clip_position = view_proj * vec4<f32>(pos_rot, 1.0);
+    var drawn = pos_rot;
+    out.flat_center = center_rot;
+    out.flat_rot = vec3<f32>(0.0);
+    if (flatten) {
+        let flat = flatten_point(center_rot);
+        out.flat_center = flat.pos;
+        out.flat_rot = flat.rot;
+        drawn = flat.pos + rotate_by(pos_rot - center_rot, flat.rot);
+    }
+    out.clip_position = view_proj * vec4<f32>(drawn, 1.0);
     out.world_pos = pos_rot;
     out.frame_u = u_rot;
     out.frame_v = v_rot;
@@ -270,7 +284,9 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         discard;
     }
 
-    let view_dir = normalize(camera.camera_pos - in.world_pos);
+    // Caméra ramenée dans la vraie géométrie du nuage (planète aplatie)
+    let eye = in.cloud_center + rotate_by(camera.camera_pos - in.flat_center, -in.flat_rot);
+    let view_dir = normalize(eye - in.world_pos);
     let ray_dir = -view_dir;
 
     // Passage dans le repère local de la boîte englobante
@@ -281,7 +297,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         dot(v_world, in.frame_w)
     );
 
-    let cam_v_world = camera.camera_pos - in.cloud_center;
+    let cam_v_world = eye - in.cloud_center;
     let p0_camera = vec3<f32>(
         dot(cam_v_world, in.frame_u),
         dot(cam_v_world, in.frame_v),
@@ -355,7 +371,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         let t_exit = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
         // Seuil de contact proportionnel à la taille d'un pixel à cette distance : un rayon qui
         // rase la surface s'arrête dès qu'il en est à moins d'un demi-pixel au lieu de ramper
-        let dist0 = select(length(camera.camera_pos - in.world_pos), 0.0, cam_in_box);
+        let dist0 = select(length(eye - in.world_pos), 0.0, cam_in_box);
         let pixel_angle = 0.0006;
         t = max(t_enter, 0.0);
         // Rayon qui manque la boîte serrée : aucun pas
@@ -404,7 +420,8 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
         hit_local_p.y * in.frame_v +
         hit_local_p.z * in.frame_w;
 
-    let clip_pos = camera.view_proj * vec4<f32>(hit_world_pos, 1.0);
+    let hit_drawn = in.flat_center + rotate_by(hit_world_pos - in.cloud_center, in.flat_rot);
+    let clip_pos = camera.view_proj * vec4<f32>(hit_drawn, 1.0);
     let frag_depth = clip_pos.z / clip_pos.w;
 
     // --- Éclairage : ambiance tirée du ciel, dessus clair, dessous sombre ---
@@ -413,8 +430,9 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     // Même repère que le ciel vu par le joueur (sky_shader.wgsl) : tous les nuages partagent la teinte du ciel
     let cam_up = normalize(camera.camera_pos);
-    let l_sun = normalize(camera.light_dir);
-    let factors = sky_factors(dot(l_sun, cam_up));
+    let factors = sky_factors(dot(normalize(camera.light_dir), cam_up));
+    // Soleil vu du nuage comme sur la planète aplatie (repère vrai du nuage)
+    let l_sun = rotate_by(normalize(camera.light_dir), -in.flat_rot);
     let daylight = factors.daylight;
 
     let up_planet = normalize(hit_world_pos);
@@ -454,9 +472,9 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let day_col = (sky_ambient * 0.85 + sun_light) * shade * under_tint;
 
     // 4. Nuit : ambiance sombre et clair de lune argenté
-    let moon = get_moon_data(camera.time, camera.light_dir);
+    var moon = get_moon_data(camera.time, camera.light_dir);
     let moon_up = clamp((dot(moon.dir, cam_up) + 0.04) / 0.18, 0.0, 1.0);
-    let moon_wrap = clamp(dot(norm_world, moon.dir) * 0.5 + 0.5, 0.0, 1.0);
+    let moon_wrap = clamp(dot(norm_world, rotate_by(moon.dir, -in.flat_rot)) * 0.5 + 0.5, 0.0, 1.0);
     let moon_light = vec3<f32>(0.62, 0.74, 0.92) * (moon_wrap * 0.20 + 0.04) * moon.phase * moon_up * moon_slider;
     let night_ambient = vec3<f32>(0.020, 0.028, 0.055) * night_amb_slider * (0.7 + 0.3 * top);
 
@@ -471,8 +489,9 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     }
 
     // 6. Perspective aérienne : diffusion et extinction de l'air entre la caméra et le nuage
-    let dist = length(camera.camera_pos - hit_world_pos);
-    col = apply_aerial_perspective(col, aerial_perspective_screen(camera.camera_pos, ray_dir, clip_pos.xy / clip_pos.w, dist, l_sun, 10));
+    let dist = length(eye - hit_world_pos);
+    let screen_dir = rotate_by(ray_dir, in.flat_rot);
+    col = apply_aerial_perspective(col, aerial_perspective_screen(camera.camera_pos, screen_dir, clip_pos.xy / clip_pos.w, dist, normalize(camera.light_dir), 10));
 
     // 7. Les hautes lumières sont compressées par le tonemapper de la passe de composition
     let final_color = col;

@@ -9,7 +9,7 @@
 // - Ombres portées du soleil (3 cascades, PCF) et ombres mouvantes des nuages
 // =========================================================================
 
-#import herocraft::common::{camera, get_moon_data}
+#import herocraft::common::{camera, get_moon_data, flatten_point, rotate_by}
 #import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective}
 #import herocraft::shadow::{shadow, shadow_maps, shadow_sampler, cloud_shadow_map, cloud_sampler, to_shadow_uv}
 
@@ -81,15 +81,26 @@ struct VertexOutput {
     @location(0) normal: vec3<f32>,
     @location(1) color: vec4<f32>, // Interpolation douce pour l'AO per-vertex
     @location(2) world_pos: vec3<f32>,
+    // Du point vers la caméra, dans le repère vrai du point (planète aplatie : common.wgsl)
+    @location(3) to_eye: vec3<f32>,
+    // Position à l'écran (clip) où le point est dessiné
+    @location(4) screen_clip: vec4<f32>,
+    // Rotation du repère vrai du point vers son repère dessiné (planète aplatie)
+    @location(5) flat_rot: vec3<f32>,
 };
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
+    // Éclairage et ombres dans la vraie géométrie, dessin sur la planète aplatie
+    let flat = flatten_point(in.position);
     out.world_pos = in.position;
     out.normal = in.normal;
     out.color = in.color;
-    out.clip_position = camera.view_proj * vec4<f32>(in.position, 1.0);
+    out.to_eye = rotate_by(camera.camera_pos - flat.pos, -flat.rot);
+    out.clip_position = camera.view_proj * vec4<f32>(flat.pos, 1.0);
+    out.screen_clip = out.clip_position;
+    out.flat_rot = flat.rot;
     return out;
 }
 
@@ -145,7 +156,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Orientée vers la caméra : la face visible d'un solide regarde toujours l'observateur. La normale
     // de sommet n'est pas fiable sur les contremarches (parfois inversée, la face s'éclairait alors
     // côté opposé au soleil). L'eau garde la normale de sommet pour rester orientée vers le ciel.
-    let facing_ref = select(camera.camera_pos - in.world_pos, in.normal, is_water);
+    let facing_ref = select(in.to_eye, in.normal, is_water);
     let n_facet = select(cross_norm, -cross_norm, dot(cross_norm, facing_ref) < 0.0);
 
     // Normale sphérique continue idéale pour la surface de l'océan
@@ -165,8 +176,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let water_normal = normalize(mix(n_facet, n_sphere, orbit_factor));
     let n = select(n_facet, water_normal, is_water);
 
-    let l = normalize(camera.light_dir);
-    let view_dir = normalize(camera.camera_pos - in.world_pos);
+    // Soleil et Lune vus du point comme sur la planète aplatie : le relief lointain est éclairé
+    // comme celui d'un monde presque plat, pas comme l'autre côté d'une petite planète
+    let l = rotate_by(normalize(camera.light_dir), -in.flat_rot);
+    let view_dir = normalize(in.to_eye);
     let h = normalize(l + view_dir);
 
     // 3. Détection des falaises et contremarches entre terrasses étagées (Approche B)
@@ -205,7 +218,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let night_amb_slider = camera.lighting_params.z; // Multiplicateur Nuit / Étoiles [0.0 .. 3.0]
 
     // Données orbitales de la Lune (partagées avec le sky shader)
-    let moon = get_moon_data(camera.time, camera.light_dir);
+    var moon = get_moon_data(camera.time, camera.light_dir);
+    moon.dir = rotate_by(moon.dir, -in.flat_rot);
     let moon_elevation = dot(n_sphere, moon.dir);
     let moon_above_horizon = clamp((moon_elevation + 0.04) / 0.18, 0.0, 1.0);
     // Intensité effective du clair de lune : présent uniquement de nuit lorsque la Lune est levée
@@ -282,9 +296,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // et du ciel (bleu au loin, doré face au soleil couchant) et atténue la surface. Le même
     // calcul donne la couleur du ciel à l'horizon : le relief lointain s'y fond. Dans
     // l'atmosphère, elle est lue dans le volume précalculé pour la caméra.
-    let dist = length(camera.camera_pos - in.world_pos);
-    let surface_clip = camera.view_proj * vec4<f32>(in.world_pos, 1.0);
-    let aerial = aerial_perspective_screen(camera.camera_pos, -view_dir, surface_clip.xy / surface_clip.w, dist, l, 12);
+    let dist = length(in.to_eye);
+    // Air vu depuis la caméra : dans son propre repère, sans rotation
+    let aerial = aerial_perspective_screen(camera.camera_pos, -view_dir, in.screen_clip.xy / in.screen_clip.w, dist, normalize(camera.light_dir), 12);
     lit_rgb = apply_aerial_perspective(lit_rgb, aerial);
 
     // Brume nocturne : l'air n'est plus éclairé par le soleil, une lueur bleutée argentée
