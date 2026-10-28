@@ -2,8 +2,11 @@
 //! gauche le détruit, le clic droit pose un bloc de pierre contre la face visée. Un bouton gardé
 //! enfoncé répète l'action. La modification est appliquée et remaillée dans la frame même.
 
+use std::collections::HashMap;
+
 use glam::Vec3;
-use herocraft_common::BlockId;
+use herocraft_common::{BlockId, PlanetFace};
+use herocraft_world::generator::ColumnSample;
 use herocraft_world::{raycast_blocks, BlockGeometry, BlockPos, PlanetWorldGenerator, RayHit, TerrainEdits, TerrainQuery};
 use winit::event::MouseButton;
 
@@ -16,6 +19,8 @@ pub const REACH_BLOCKS: f64 = 6.0;
 pub const PLACED_BLOCK: BlockId = BlockId::STONE;
 /// Délai entre deux actions tant que le bouton reste enfoncé
 const REPEAT_DELAY: f32 = 0.25;
+/// Au-delà, le cache de colonnes de la visée est vidé
+const MAX_CACHED_COLUMNS: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockAction {
@@ -23,11 +28,24 @@ pub enum BlockAction {
     Place,
 }
 
+/// Rayon de la dernière visée et terrain visé : identiques, la visée n'est pas refaite
+#[derive(Clone, Copy, PartialEq)]
+struct AimKey {
+    eye: Vec3,
+    dir: Vec3,
+    reach: f64,
+    terrain: usize,
+}
+
 #[derive(Default)]
 pub struct BlockInteraction {
     target: Option<RayHit>,
     held: Option<BlockAction>,
     repeat_in: f32,
+    last_aim: Option<AimKey>,
+    /// Colonnes du générateur déjà échantillonnées, gardées d'une frame à l'autre : en tournant la
+    /// vue, le rayon repasse sur les mêmes colonnes et le bruit du relief n'est pas recalculé
+    columns: HashMap<(PlanetFace, i32, i32), ColumnSample>,
 }
 
 impl BlockInteraction {
@@ -64,6 +82,7 @@ impl BlockInteraction {
     pub fn reset(&mut self) {
         self.target = None;
         self.held = None;
+        self.last_aim = None;
     }
 
     /// Répétition de l'action tant que son bouton reste enfoncé
@@ -80,12 +99,25 @@ impl BlockInteraction {
     /// Vise le premier bloc solide sous le réticule, à portée de la tête du joueur
     pub fn update_target(&mut self, camera: &OrbitCamera, generator: &PlanetWorldGenerator, edits: &TerrainEdits) {
         herocraft_common::prof_scope!("blocs::visee");
-        self.target = camera.view_ray().and_then(|(eye, dir, arm)| {
-            let geometry = BlockGeometry::new(camera.base_radius as f64);
-            let mut query = TerrainQuery::new(generator, edits);
-            let reach = arm as f64 + REACH_BLOCKS * geometry.block_height;
-            raycast_blocks(&geometry, eye.as_dvec3(), dir.as_dvec3(), reach, |pos| is_targetable(query.block(pos)))
-        });
+        let Some((eye, dir, arm)) = camera.view_ray() else {
+            self.target = None;
+            self.last_aim = None;
+            return;
+        };
+        let geometry = BlockGeometry::new(camera.base_radius as f64);
+        let reach = arm as f64 + REACH_BLOCKS * geometry.block_height;
+        let aim = AimKey { eye, dir, reach, terrain: edits as *const TerrainEdits as usize };
+        if self.last_aim == Some(aim) {
+            return;
+        }
+        if self.last_aim.is_some_and(|last| last.terrain != aim.terrain) || self.columns.len() > MAX_CACHED_COLUMNS {
+            // Autre planète (autre générateur) ou cache trop gros
+            self.columns.clear();
+        }
+        self.last_aim = Some(aim);
+        let mut query = TerrainQuery::with_columns(generator, edits, std::mem::take(&mut self.columns));
+        self.target = raycast_blocks(&geometry, eye.as_dvec3(), dir.as_dvec3(), reach, |pos| is_targetable(query.block(pos)));
+        self.columns = query.into_columns();
     }
 
     /// Applique l'action au bloc visé, puis vise à nouveau. Renvoie `true` si le terrain a changé
@@ -104,6 +136,7 @@ impl BlockInteraction {
         };
         if changed {
             let edits = lod.terrain_edits().clone();
+            self.last_aim = None;
             self.update_target(camera, generator, &edits);
         }
         changed

@@ -134,6 +134,11 @@ fn main() {
 
         match event {
             Event::WindowEvent { window_id, ref event } if window_id == window.id() => {
+                // Hors image : le temps passé à traiter les événements de la fenêtre apparaît au rapport
+                let _event_guard = (!matches!(event, WindowEvent::RedrawRequested)).then(|| {
+                    herocraft_common::prof_scope!("boucle::evenement_fenetre" => guard);
+                    guard
+                });
                 // Transmettre les événements de fenêtre à egui
                 ui_state.handle_event(event);
 
@@ -356,7 +361,10 @@ fn main() {
                         } else {
                             block_interaction.reset();
                         }
-                        state.set_block_outline(block_interaction.outline(&camera));
+                        {
+                            herocraft_common::prof_scope!("blocs::contour");
+                            state.set_block_outline(block_interaction.outline(&camera));
+                        }
                         if last_autosave.elapsed().as_secs() >= 30 {
                             save_terrain_edits(&lod_manager);
                             last_autosave = Instant::now();
@@ -503,6 +511,7 @@ fn main() {
 
             // Mouvement brut de la souris : oriente le regard quand le curseur est capturé
             Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
+                herocraft_common::prof_scope!("boucle::mouvement_souris");
                 if cursor_captured {
                     let controls = &ui_state.controls;
                     let step = input::LOOK_RADIANS_PER_COUNT * controls.mouse_sensitivity;

@@ -30,6 +30,8 @@ pub struct BlockOutline {
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     visible: bool,
+    /// Contenu actuel du tampon : il n'est réécrit que s'il change
+    uploaded: Option<([Vec3; 8], Vec3)>,
 }
 
 impl BlockOutline {
@@ -85,13 +87,17 @@ impl BlockOutline {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self { pipeline, vertex_buffer, visible: false }
+        Self { pipeline, vertex_buffer, visible: false, uploaded: None }
     }
 
     /// Contour du bloc de coins `corners` vu de `eye`, ou rien
     pub fn update(&mut self, queue: &wgpu::Queue, corners: Option<[Vec3; 8]>, eye: Vec3) {
         self.visible = corners.is_some();
         if let Some(corners) = corners {
+            if self.uploaded == Some((corners, eye)) {
+                return;
+            }
+            self.uploaded = Some((corners, eye));
             let vertices = ribbons(&corners, eye);
             queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
         }
