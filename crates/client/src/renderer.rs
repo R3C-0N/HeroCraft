@@ -36,22 +36,37 @@ const FLATTEN_MOUNTAIN_BLOCKS: f32 = 150.0;
 /// Distance au sol (en blocs) sur laquelle l'aplatissement passe de rien à complet
 const FLATTEN_BLEND_BLOCKS: f32 = 16.0;
 
+/// Altitudes de l'œil au-dessus de la mer (en blocs) entre lesquelles l'aplatissement s'efface :
+/// complet en dessous, vraie courbure au-dessus. Vue de haut, la planète entière est visible et
+/// n'a plus besoin d'être aplatie : le dézoom vers l'orbite la ramène doucement à sa forme.
+const FLATTEN_FADE_BLOCKS: (f32, f32) = (40.0, 400.0);
+
+/// Recul de la caméra en troisième personne (en blocs) pris en compte dans la zone laissée
+/// intacte autour d'elle : au-delà, la zone grandirait avec le recul et l'aplatissement, alors
+/// déjà fort à son bord, s'y ferait d'un coup (relief étiré en traînées)
+const FLATTEN_ARM_BLOCKS: f32 = 4.0;
+
 /// Rayon apparent de la planète vue du sol, en multiple de son vrai rayon (k >= 1).
 ///
 /// Le relief est redessiné sur un globe k fois plus grand, tangent à la vraie planète sous la
 /// caméra : l'horizon recule de √k. Toute la planète tient alors dans une calotte de ce grand
 /// globe, dont le bord (les antipodes) ne doit jamais se voir : la distance de l'horizon depuis
 /// l'œil, plus celle d'où l'on voit encore un sommet au-delà, reste sous 0,9 demi-tour de la vraie
-/// planète. k décroît donc avec l'altitude et revient à 1 bien avant l'orbite. `strength` (0..1)
-/// va de la vraie courbure (0) à ce maximum (1), en progression géométrique.
+/// planète. k décroît donc avec l'altitude, et s'efface tout à fait entre 40 et 400 blocs
+/// au-dessus de la mer (`FLATTEN_FADE_BLOCKS`). `strength` (0..1) va de la vraie courbure (0) à
+/// ce maximum (1), en progression géométrique.
 pub fn planet_flattening(eye_radius: f32, base_radius: f32, strength: f32) -> f32 {
     let block = base_radius * std::f32::consts::FRAC_PI_4 * (2.0 / 1024.0);
     let sea_radius = base_radius + herocraft_world::SEA_LEVEL_BLOCKS as f32 * block;
-    let h = (eye_radius - sea_radius).max(0.0);
+    // Au moins la hauteur des yeux : k varierait sinon très vite au ras de l'eau
+    let h = (eye_radius - sea_radius).max(2.0 * block);
     let reach = h.sqrt() + (FLATTEN_MOUNTAIN_BLOCKS * block).sqrt();
     // (0,9 π)² / 2 ≈ 4 : √(2 k R h) + √(2 k R H) <= 0,9 π R
     let k_max = (4.0 * sea_radius / (reach * reach)).max(1.0);
-    k_max.powf(strength.clamp(0.0, 1.0))
+    let (fade_low, fade_high) = FLATTEN_FADE_BLOCKS;
+    let t = ((h / block - fade_low) / (fade_high - fade_low)).clamp(0.0, 1.0);
+    let fade = 1.0 - t * t * (3.0 - 2.0 * t);
+    k_max.powf(strength.clamp(0.0, 1.0) * fade)
 }
 
 struct GpuMesh {
@@ -651,7 +666,8 @@ impl State {
         let sea_radius = camera.base_radius + herocraft_world::SEA_LEVEL_BLOCKS as f32 * block;
         // Rien n'est déplacé à portée de visée, comptée depuis la tête du joueur (la caméra est
         // derrière elle en troisième personne)
-        let flatten_start = (crate::block_interaction::REACH_BLOCKS as f32 + 2.0) * block + camera.effective_distance;
+        let flatten_start = (crate::block_interaction::REACH_BLOCKS as f32 + 2.0) * block
+            + camera.effective_distance.min(FLATTEN_ARM_BLOCKS * block);
 
         let uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
@@ -1020,10 +1036,18 @@ mod tests {
         // Au sol : le globe apparent est bien plus grand, l'horizon recule d'au moins 3 fois
         let k_ground = planet_flattening(sea + 1.7 * block, r, 1.0);
         assert!(k_ground > 9.0, "k au sol = {k_ground}");
-        // Décroît avec l'altitude et revient à 1 en orbite
+        // Décroît avec l'altitude et revient à 1 bien avant l'orbite
         let k_high = planet_flattening(sea + 100.0 * block, r, 1.0);
         assert!(k_high > 1.0 && k_high < k_ground);
+        assert_eq!(planet_flattening(sea + 400.0 * block, r, 1.0), 1.0);
         assert_eq!(planet_flattening(r * 6.6, r, 1.0), 1.0);
+        // Sans saut pendant le dézoom
+        let mut last = planet_flattening(sea, r, 1.0);
+        for i in 0..=800 {
+            let k = planet_flattening(sea + i as f32 * 0.5 * block, r, 1.0);
+            assert!(k <= last + 1e-3 && last / k < 1.05, "saut de k à {} blocs : {last} -> {k}", i as f32 * 0.5);
+            last = k;
+        }
         // Les antipodes restent cachées : horizon + portée d'un sommet sous 0,9 demi-tour
         for h_blocks in [0.0_f32, 2.0, 30.0, 300.0] {
             let k = planet_flattening(sea + h_blocks * block, r, 1.0);

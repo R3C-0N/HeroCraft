@@ -58,6 +58,13 @@ fn flatten_point(p: vec3<f32>) -> FlatPoint {
     let t = side / s;
     let theta = atan2(s, c);
     let rho = r + extra;
+    // Autour des antipodes, que le grand globe ne laisse jamais voir, les grands triangles du
+    // relief lointain se retourneraient : ils sont rabattus au centre du grand globe, sous sa
+    // surface
+    if (theta > 0.8 * 3.14159265) {
+        out.pos = -up * extra;
+        return out;
+    }
     let theta2 = theta * r / rho;
     // Centre du grand globe en -extra le long de `up` : ρ cos θ' - extra = r - 2ρ sin²(θ'/2),
     // écrit sans soustraire deux grands nombres
