@@ -10,11 +10,11 @@ pub enum UiAction {
     ResetCamera,
     ToggleTectonics,
     ToggleOceanCurrents,
-    // Actions Menu Paramètres Vidéo
+    // Actions du sous-menu Options > Affichage
     ToggleVsync,
-    CycleLodDistance,
+    SetLodDistance,
     ToggleFullscreen,
-    CycleFpsLimit,
+    SetFpsLimit,
     ResumeGame,
     QuitGame,
 }
@@ -219,6 +219,87 @@ impl Default for LightingSettings {
     }
 }
 
+/// Page affichée dans le menu de pause (Échap)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MenuPage {
+    /// Accueil : reprendre, options, commandes, quitter
+    Main,
+    /// Sous-menu des réglages, rangés par onglets
+    Options,
+    /// Aide-mémoire des touches
+    Controls,
+}
+
+/// Onglets du sous-menu Options
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OptionsTab {
+    Display,
+    Lighting,
+    Clouds,
+    Hdr,
+    Shadows,
+    Atmosphere,
+}
+
+impl OptionsTab {
+    pub const ALL: [OptionsTab; 6] = [
+        OptionsTab::Display,
+        OptionsTab::Lighting,
+        OptionsTab::Clouds,
+        OptionsTab::Hdr,
+        OptionsTab::Shadows,
+        OptionsTab::Atmosphere,
+    ];
+
+    pub fn icon(self) -> &'static str {
+        match self {
+            OptionsTab::Display => "🖥",
+            OptionsTab::Lighting => "🌙",
+            OptionsTab::Clouds => "☁",
+            OptionsTab::Hdr => "✨",
+            OptionsTab::Shadows => "🌓",
+            OptionsTab::Atmosphere => "🌅",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            OptionsTab::Display => "Affichage",
+            OptionsTab::Lighting => "Éclairage",
+            OptionsTab::Clouds => "Nuages",
+            OptionsTab::Hdr => "Rendu HDR",
+            OptionsTab::Shadows => "Ombres",
+            OptionsTab::Atmosphere => "Atmosphère",
+        }
+    }
+
+    pub fn subtitle(self) -> &'static str {
+        match self {
+            OptionsTab::Display => "Fenêtre, synchronisation et distance de détail",
+            OptionsTab::Lighting => "Intensité du Soleil, de la Lune et du ciel",
+            OptionsTab::Clouds => "Forme et teinte des nuages voxel",
+            OptionsTab::Hdr => "Exposition, courbe de tons et halo lumineux",
+            OptionsTab::Shadows => "Ombres portées du relief et des nuages",
+            OptionsTab::Atmosphere => "Diffusion de l'air, brume et rayons crépusculaires",
+        }
+    }
+}
+
+// Palette obsidienne et or partagée par le HUD et le menu
+const GOLD: egui::Color32 = egui::Color32::from_rgb(212, 175, 55);
+const GOLD_BRIGHT: egui::Color32 = egui::Color32::from_rgb(240, 200, 60);
+const TEXT_DIM: egui::Color32 = egui::Color32::from_rgb(150, 165, 185);
+const TEXT_SOFT: egui::Color32 = egui::Color32::from_rgb(200, 210, 225);
+const DANGER: egui::Color32 = egui::Color32::from_rgb(245, 110, 110);
+
+/// Marge minimale entre un panneau et le bord de l'écran (points logiques)
+const SCREEN_MARGIN: f32 = 16.0;
+/// Marge intérieure du cadre du menu de pause
+const MENU_PADDING: f32 = 18.0;
+/// En dessous de cette largeur, les onglets des options passent au-dessus du contenu
+const OPTIONS_SIDEBAR_MIN_WIDTH: f32 = 560.0;
+const OPTIONS_SIDEBAR_WIDTH: f32 = 150.0;
+
 pub struct UiState {
     pub ctx: egui::Context,
     pub raw_input: egui::RawInput,
@@ -230,6 +311,10 @@ pub struct UiState {
     pub show_ocean_currents: bool,
     pub current_fps: u32,
     pub is_settings_open: bool,
+    pub menu_page: MenuPage,
+    pub options_tab: OptionsTab,
+    /// Le bouton Quitter attend une confirmation
+    pub confirm_quit: bool,
     pub video_settings: VideoSettings,
     pub lighting_settings: LightingSettings,
     pub cloud_settings: CloudSettings,
@@ -257,6 +342,9 @@ impl UiState {
             show_ocean_currents: false,
             current_fps: 60,
             is_settings_open: false,
+            menu_page: MenuPage::Main,
+            options_tab: OptionsTab::Display,
+            confirm_quit: false,
             video_settings: VideoSettings::default(),
             lighting_settings: LightingSettings::default(),
             cloud_settings: CloudSettings::default(),
@@ -274,26 +362,33 @@ impl UiState {
 
         visuals.window_rounding = egui::Rounding::same(8.0_f32);
         visuals.window_fill = egui::Color32::from_rgba_premultiplied(14, 18, 28, 240);
-        visuals.window_stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(212, 175, 55));
+        visuals.window_stroke = egui::Stroke::new(1.5_f32, GOLD);
         visuals.panel_fill = egui::Color32::from_rgba_premultiplied(10, 14, 22, 210);
 
         // Boutons inactifs
         visuals.widgets.inactive.bg_fill = egui::Color32::from_rgba_premultiplied(24, 32, 46, 220);
+        visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgba_premultiplied(24, 32, 46, 220);
         visuals.widgets.inactive.rounding = egui::Rounding::same(5.0_f32);
         visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(55, 70, 95));
         visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(220, 225, 235));
 
         // Boutons survolés
         visuals.widgets.hovered.bg_fill = egui::Color32::from_rgba_premultiplied(42, 54, 78, 235);
+        visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgba_premultiplied(42, 54, 78, 235);
         visuals.widgets.hovered.rounding = egui::Rounding::same(5.0_f32);
-        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(212, 175, 55));
+        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.5_f32, GOLD);
         visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
 
         // Boutons cliqués / actifs
         visuals.widgets.active.bg_fill = egui::Color32::from_rgba_premultiplied(65, 85, 125, 245);
+        visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgba_premultiplied(65, 85, 125, 245);
         visuals.widgets.active.rounding = egui::Rounding::same(5.0_f32);
         visuals.widgets.active.bg_stroke = egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(255, 215, 0));
         visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
+
+        // Onglets et choix sélectionnés : fond or sombre, liseré or
+        visuals.selection.bg_fill = egui::Color32::from_rgb(92, 74, 24);
+        visuals.selection.stroke = egui::Stroke::new(1.0_f32, GOLD_BRIGHT);
 
         // Menu & fenêtres
         visuals.override_text_color = Some(egui::Color32::from_rgb(235, 240, 248));
@@ -302,6 +397,8 @@ impl UiState {
         style.visuals = visuals;
         style.spacing.item_spacing = egui::vec2(8.0_f32, 8.0_f32);
         style.spacing.button_padding = egui::vec2(12.0_f32, 6.0_f32);
+        // Barres de défilement fines qui s'élargissent au survol
+        style.spacing.scroll = egui::style::ScrollStyle::thin();
 
         ctx.set_style(style);
     }
@@ -329,10 +426,35 @@ impl UiState {
 
     pub fn set_settings_open(&mut self, is_open: bool) {
         self.is_settings_open = is_open;
+        self.confirm_quit = false;
+        if is_open {
+            self.menu_page = MenuPage::Main;
+        }
     }
 
     pub fn toggle_settings(&mut self) -> bool {
-        self.is_settings_open = !self.is_settings_open;
+        self.set_settings_open(!self.is_settings_open);
+        self.is_settings_open
+    }
+
+    /// Ouvre le menu de pause directement sur une page
+    pub fn open_menu_at(&mut self, page: MenuPage) {
+        self.set_settings_open(true);
+        self.menu_page = page;
+    }
+
+    /// Touche Échap : ouvre le menu, remonte d'un sous-menu vers l'accueil, ou referme le menu
+    /// depuis l'accueil. Renvoie l'état d'ouverture du menu.
+    pub fn handle_escape(&mut self) -> bool {
+        if !self.is_settings_open {
+            self.set_settings_open(true);
+        } else if self.confirm_quit {
+            self.confirm_quit = false;
+        } else if self.menu_page != MenuPage::Main {
+            self.menu_page = MenuPage::Main;
+        } else {
+            self.set_settings_open(false);
+        }
         self.is_settings_open
     }
 
@@ -410,7 +532,9 @@ impl UiState {
 
         let mut action: Option<UiAction> = None;
 
-        let full_output = self.ctx.run(raw_input, |ctx| {
+        // Le contexte egui est un Arc : le cloner libère `self` pour les méthodes de dessin
+        let egui_ctx = self.ctx.clone();
+        let full_output = egui_ctx.run(raw_input, |ctx| {
             // 1. Réticule de visée en mode FPS (quand le menu est fermé)
             if is_ground && !self.is_settings_open {
                 let center = ctx.screen_rect().center();
@@ -421,473 +545,749 @@ impl UiState {
                 painter.circle_filled(center, 1.2_f32, egui::Color32::from_rgb(255, 215, 0));
             }
 
-            // 2. Panneau HUD supérieur gauche (Planète, actions, filtres)
-            egui::Area::new(egui::Id::new("top_left_hud"))
-                .fixed_pos(egui::pos2(16.0_f32, 16.0_f32))
-                .show(ctx, |ui| {
-                    egui::Frame::none()
-                        .fill(egui::Color32::from_rgba_premultiplied(12, 16, 24, 215))
-                        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(180, 140, 45)))
-                        .rounding(egui::Rounding::same(6.0_f32))
-                        .inner_margin(egui::Margin::same(12.0_f32))
-                        .show(ui, |ui| {
-                            ui.set_width(260.0_f32);
-
-                            // Titre & Graine du monde
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new("HEROCRAFT")
-                                        .strong()
-                                        .color(egui::Color32::from_rgb(240, 200, 60))
-                                        .size(16.0_f32),
-                                );
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    ui.label(
-                                        egui::RichText::new(format!("#{}", self.current_seed))
-                                            .monospace()
-                                            .color(egui::Color32::from_rgb(150, 165, 185))
-                                            .size(11.0_f32),
-                                    );
-                                });
-                            });
-
-                            ui.add_space(4.0_f32);
-                            ui.separator();
-                            ui.add_space(4.0_f32);
-
-                            // Boutons d'actions du monde
-                            if ui.button("🎲  Nouvelle planète [G]").clicked() {
-                                action = Some(UiAction::GenerateNewPlanet);
-                            }
-
-                            let view_label = if is_ground { "🛰  Vue Satellite [F]" } else { "🚶  Vue Sol (FPS) [F]" };
-                            if ui.button(view_label).clicked() {
-                                action = Some(UiAction::ToggleGroundCamera);
-                            }
-
-                            let rot_label = if self.auto_rotate { "⏸  Arrêter rotation [Espace]" } else { "▶  Auto-rotation [Espace]" };
-                            if ui.button(rot_label).clicked() {
-                                action = Some(UiAction::ToggleAutoRotate);
-                            }
-
-                            if ui.button("🔄  Réinitialiser vue [R]").clicked() {
-                                action = Some(UiAction::ResetCamera);
-                            }
-
-                            ui.add_space(4.0_f32);
-                            ui.separator();
-                            ui.add_space(4.0_f32);
-
-                            // Filtres cartographiques
-                            ui.label(
-                                egui::RichText::new("Filtres cartographiques :")
-                                    .size(12.0_f32)
-                                    .color(egui::Color32::from_rgb(180, 185, 200)),
-                            );
-
-                            if ui.checkbox(&mut self.show_tectonics, "Plaques tectoniques [T]").changed() {
-                                if self.show_tectonics {
-                                    self.show_ocean_currents = false;
-                                }
-                                action = Some(UiAction::ToggleTectonics);
-                            }
-
-                            if ui.checkbox(&mut self.show_ocean_currents, "Courants marins [C]").changed() {
-                                if self.show_ocean_currents {
-                                    self.show_tectonics = false;
-                                }
-                                action = Some(UiAction::ToggleOceanCurrents);
-                            }
-
-                            ui.add_space(4.0_f32);
-                            ui.separator();
-                            ui.add_space(4.0_f32);
-
-                            // Section interactive d'éclairage et d'ambiance céleste
-                            ui.collapsing(
-                                egui::RichText::new("🌙  Éclairage & Ambiance")
-                                    .size(12.0_f32)
-                                    .color(egui::Color32::from_rgb(220, 205, 140))
-                                    .strong(),
-                                |ui| {
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Lumière de Lune :").size(11.0_f32).color(egui::Color32::from_rgb(180, 210, 255)));
-                                    ui.add(egui::Slider::new(&mut self.lighting_settings.moon_intensity, 0.0..=3.0).text("Lune").show_value(true));
-
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Lumière Solaire :").size(11.0_f32).color(egui::Color32::from_rgb(255, 230, 150)));
-                                    ui.add(egui::Slider::new(&mut self.lighting_settings.sun_intensity, 0.0..=3.0).text("Soleil").show_value(true));
-
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Ambiance Nuit (Étoiles) :").size(11.0_f32).color(egui::Color32::from_rgb(140, 160, 220)));
-                                    ui.add(egui::Slider::new(&mut self.lighting_settings.night_ambient, 0.0..=4.0).text("Nuit").show_value(true));
-
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Ambiance Jour (Ciel) :").size(11.0_f32).color(egui::Color32::from_rgb(160, 210, 240)));
-                                    ui.add(egui::Slider::new(&mut self.lighting_settings.day_ambient, 0.0..=3.0).text("Jour").show_value(true));
-
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Vitesse Céleste (Jour 20m / Lune 21m) :").size(11.0_f32).color(egui::Color32::from_rgb(200, 200, 200)));
-                                    ui.add(egui::Slider::new(&mut self.lighting_settings.moon_speed, 0.0..=5.0).text("Vitesse").show_value(true));
-
-
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Nuages Volumétriques (Style Voxel) :").size(11.0_f32).color(egui::Color32::from_rgb(220, 225, 245)));
-                                    ui.add(egui::Slider::new(&mut self.lighting_settings.cloud_density, 0.0..=2.0).text("Nuages").show_value(true));
-
-                                    ui.add_space(4.0_f32);
-                                    if ui.button("↺ Réinitialiser l'éclairage").clicked() {
-                                        self.lighting_settings = LightingSettings::default();
-                                    }
-                                },
-                            );
-
-                            ui.add_space(3.0_f32);
-
-                            // Section interactive dédiée aux réglages visuels des Nuages Marshmallow 3D
-                            ui.collapsing(
-                                egui::RichText::new("☁  Rendu des Nuages (Marshmallow SDF)")
-                                    .size(12.0_f32)
-                                    .color(egui::Color32::from_rgb(220, 225, 245))
-                                    .strong(),
-                                |ui| {
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Densité / Visibilité :").size(11.0_f32).color(egui::Color32::from_rgb(210, 215, 230)));
-                                    if ui.add(egui::Slider::new(&mut self.cloud_settings.density, 0.0..=2.0).text("Densité").show_value(true)).changed() {
-                                        self.lighting_settings.cloud_density = self.cloud_settings.density;
-                                    }
-
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Rondeur des arêtes (Bevel) :").size(11.0_f32).color(egui::Color32::from_rgb(240, 220, 150)));
-                                    ui.add(egui::Slider::new(&mut self.cloud_settings.roundness, 0.05..=0.55).text("Rondeur").show_value(true));
-
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Ombrage de sous-face :").size(11.0_f32).color(egui::Color32::from_rgb(180, 160, 210)));
-                                    ui.add(egui::Slider::new(&mut self.cloud_settings.shadow_intensity, 0.0..=2.0).text("Ombre").show_value(true));
-
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Éclat coucher de soleil :").size(11.0_f32).color(egui::Color32::from_rgb(255, 180, 120)));
-                                    ui.add(egui::Slider::new(&mut self.cloud_settings.sunset_glow, 0.0..=2.0).text("Éclat").show_value(true));
-
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Micro-texture (Grain mat) :").size(11.0_f32).color(egui::Color32::from_rgb(190, 210, 210)));
-                                    ui.add(egui::Slider::new(&mut self.cloud_settings.micro_noise, 0.0..=1.0).text("Grain").show_value(true));
-
-                                    ui.add_space(4.0_f32);
-                                    if ui.button("↺ Réinitialiser les nuages").clicked() {
-                                        self.cloud_settings = CloudSettings::default();
-                                        self.lighting_settings.cloud_density = self.cloud_settings.density;
-                                    }
-                                },
-                            );
-
-                            ui.add_space(3.0_f32);
-
-                            // Section du post-traitement HDR : exposition, tonemapper et bloom
-                            ui.collapsing(
-                                egui::RichText::new("✨  Rendu HDR & Bloom")
-                                    .size(12.0_f32)
-                                    .color(egui::Color32::from_rgb(255, 215, 160))
-                                    .strong(),
-                                |ui| {
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Exposition (EV) :").size(11.0_f32).color(egui::Color32::from_rgb(230, 220, 190)));
-                                    ui.add(egui::Slider::new(&mut self.post_settings.exposure_ev, -3.0..=3.0).text("EV").show_value(true));
-
-                                    ui.add_space(2.0_f32);
-                                    ui.label(egui::RichText::new("Tonemapper :").size(11.0_f32).color(egui::Color32::from_rgb(230, 220, 190)));
-                                    egui::ComboBox::from_id_salt("tonemapper")
-                                        .selected_text(self.post_settings.tonemapper.label())
-                                        .show_ui(ui, |ui| {
-                                            for t in Tonemapper::ALL {
-                                                ui.selectable_value(&mut self.post_settings.tonemapper, t, t.label());
-                                            }
-                                        });
-
-                                    ui.add_space(2.0_f32);
-                                    ui.checkbox(&mut self.post_settings.bloom_enabled, "Bloom (halo lumineux)");
-                                    ui.add_enabled_ui(self.post_settings.bloom_enabled, |ui| {
-                                        ui.add(egui::Slider::new(&mut self.post_settings.bloom_intensity, 0.0..=1.0).text("Intensité").show_value(true));
-                                        ui.add(egui::Slider::new(&mut self.post_settings.bloom_threshold, 0.0..=8.0).text("Seuil").show_value(true));
-                                        ui.add(egui::Slider::new(&mut self.post_settings.bloom_knee, 0.0..=3.0).text("Douceur").show_value(true));
-                                    });
-
-                                    ui.add_space(4.0_f32);
-                                    if ui.button("↺ Réinitialiser le rendu HDR").clicked() {
-                                        self.post_settings = PostSettings::default();
-                                    }
-                                },
-                            );
-
-                            ui.add_space(3.0_f32);
-
-                            // Section des ombres portées (relief et nuages)
-                            ui.collapsing(
-                                egui::RichText::new("🌓  Ombres")
-                                    .size(12.0_f32)
-                                    .color(egui::Color32::from_rgb(200, 205, 225))
-                                    .strong(),
-                                |ui| {
-                                    ui.add_space(2.0_f32);
-                                    ui.checkbox(&mut self.shadow_settings.enabled, "Ombres portées du soleil");
-                                    ui.add_enabled_ui(self.shadow_settings.enabled, |ui| {
-                                        ui.add(egui::Slider::new(&mut self.shadow_settings.strength, 0.0..=1.0).text("Relief").show_value(true));
-                                        ui.checkbox(&mut self.shadow_settings.cloud_shadows, "Ombres des nuages au sol");
-                                        ui.add_enabled_ui(self.shadow_settings.cloud_shadows, |ui| {
-                                            ui.add(egui::Slider::new(&mut self.shadow_settings.cloud_strength, 0.0..=1.0).text("Nuages").show_value(true));
-                                        });
-                                    });
-
-                                    ui.add_space(4.0_f32);
-                                    if ui.button("↺ Réinitialiser les ombres").clicked() {
-                                        self.shadow_settings = ShadowSettings::default();
-                                    }
-                                },
-                            );
-
-                            ui.add_space(3.0_f32);
-
-                            // Section de l'atmosphère physique et des rayons crépusculaires
-                            ui.collapsing(
-                                egui::RichText::new("🌅  Atmosphère & rayons")
-                                    .size(12.0_f32)
-                                    .color(egui::Color32::from_rgb(255, 190, 140))
-                                    .strong(),
-                                |ui| {
-                                    ui.add_space(2.0_f32);
-                                    ui.add(egui::Slider::new(&mut self.atmosphere_settings.air_density, 0.2..=3.0).text("Densité de l'air").show_value(true));
-                                    ui.add(egui::Slider::new(&mut self.atmosphere_settings.sun_halo, 0.0..=0.95).text("Halo solaire").show_value(true));
-                                    ui.add(egui::Slider::new(&mut self.lighting_settings.fog_intensity, 0.0..=2.0).text("Brume").show_value(true));
-                                    ui.add_space(2.0_f32);
-                                    ui.checkbox(&mut self.atmosphere_settings.god_rays, "Rayons crépusculaires");
-                                    ui.add_enabled_ui(self.atmosphere_settings.god_rays, |ui| {
-                                        ui.add(egui::Slider::new(&mut self.atmosphere_settings.god_rays_intensity, 0.0..=4.0).text("Intensité").show_value(true));
-                                    });
-                                    ui.label(
-                                        egui::RichText::new("Les rayons suivent les ombres du relief et des nuages.")
-                                            .size(10.0_f32)
-                                            .color(egui::Color32::from_rgb(170, 170, 170)),
-                                    );
-
-                                    ui.add_space(4.0_f32);
-                                    if ui.button("↺ Réinitialiser l'atmosphère").clicked() {
-                                        self.atmosphere_settings = AtmosphereSettings::default();
-                                    }
-                                },
-                            );
-                        });
-                });
+            // 2. Panneau HUD supérieur gauche (planète, actions, filtres), masqué sous le menu
+            if !self.is_settings_open {
+                self.draw_world_hud(ctx, is_ground, &mut action);
+            }
 
             // 3. Panneau HUD supérieur droit (FPS, altitude, raccourci menu)
-            egui::Area::new(egui::Id::new("top_right_hud"))
-                .pivot(egui::Align2::RIGHT_TOP)
-                .fixed_pos(egui::pos2(logical_width - 16.0_f32, 16.0_f32))
-                .show(ctx, |ui| {
-                    egui::Frame::none()
-                        .fill(egui::Color32::from_rgba_premultiplied(12, 16, 24, 215))
-                        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(180, 140, 45)))
-                        .rounding(egui::Rounding::same(6.0_f32))
-                        .inner_margin(egui::Margin::same(10.0_f32))
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                let fps_color = if self.current_fps >= 55 {
-                                    egui::Color32::from_rgb(80, 220, 100)
-                                } else if self.current_fps >= 30 {
-                                    egui::Color32::from_rgb(240, 190, 50)
-                                } else {
-                                    egui::Color32::from_rgb(240, 80, 80)
-                                };
-                                ui.label(egui::RichText::new(format!("{} FPS", self.current_fps)).strong().color(fps_color));
+            self.draw_status_hud(ctx, camera_distance, is_ground);
 
-                                ui.separator();
-
-                                let dist_label = if is_ground {
-                                    "Sol (FPS)".to_string()
-                                } else {
-                                    format!("{:.0} m", camera_distance)
-                                };
-                                ui.label(egui::RichText::new(dist_label).color(egui::Color32::from_rgb(180, 205, 240)));
-
-                                ui.separator();
-
-                                if ui.button("⚙ Menu [Échap]").clicked() {
-                                    self.is_settings_open = !self.is_settings_open;
-                                }
-                            });
-                        });
-                });
-
-            // 4. Menu Paramètres Vidéo & Commandes (Modal centré lors de l'appui sur Échap)
-            if self.is_settings_open {
-                // Fond assombrissant l'arrière-plan 3D
-                let screen_rect = ctx.screen_rect();
+            // 4. Menu de pause (Échap) : voile en fondu puis panneau centré
+            let fade = ctx.animate_bool_with_time(egui::Id::new("pause_backdrop"), self.is_settings_open, 0.15_f32);
+            if fade > 0.0_f32 {
                 ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("backdrop")))
-                    .rect_filled(screen_rect, 0.0_f32, egui::Color32::from_rgba_premultiplied(0, 0, 0, 160));
-
-                egui::Window::new("⚙  PARAMÈTRES — HEROCRAFT")
-                    .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0_f32, 0.0_f32))
-                    .collapsible(false)
-                    .resizable(false)
-                    .default_width(400.0_f32)
-                    .frame(
-                        egui::Frame::window(&ctx.style())
-                            .fill(egui::Color32::from_rgba_premultiplied(14, 18, 28, 252))
-                            .stroke(egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(212, 175, 55)))
-                            .rounding(egui::Rounding::same(8.0_f32))
-                            .inner_margin(egui::Margin::same(18.0_f32)),
-                    )
-                    .show(ctx, |ui| {
-                        ui.heading(
-                            egui::RichText::new("OPTIONS GRAPHIQUES")
-                                .size(14.0_f32)
-                                .color(egui::Color32::from_rgb(220, 185, 60)),
-                        );
-                        ui.add_space(4.0_f32);
-
-                        // Synchronisation verticale
-                        let vsync_text = if self.video_settings.vsync { "Activée" } else { "Désactivée" };
-                        if ui.button(format!("Synchronisation Verticale (V-Sync) : {}", vsync_text)).clicked() {
-                            self.video_settings.vsync = !self.video_settings.vsync;
-                            action = Some(UiAction::ToggleVsync);
-                        }
-
-                        // Plein écran
-                        let fs_text = if self.video_settings.fullscreen { "Plein Écran" } else { "Fenêtré" };
-                        if ui.button(format!("Mode d'affichage : {}", fs_text)).clicked() {
-                            self.video_settings.fullscreen = !self.video_settings.fullscreen;
-                            action = Some(UiAction::ToggleFullscreen);
-                        }
-
-                        // Distance LOD
-                        if ui.button(format!("Distance LOD : {}", self.video_settings.lod_distance.label())).clicked() {
-                            self.video_settings.lod_distance = match self.video_settings.lod_distance {
-                                LodDistanceSetting::Courte => LodDistanceSetting::Normale,
-                                LodDistanceSetting::Normale => LodDistanceSetting::Elevee,
-                                LodDistanceSetting::Elevee => LodDistanceSetting::Courte,
-                            };
-                            action = Some(UiAction::CycleLodDistance);
-                        }
-
-                        // Limite FPS
-                        if ui.button(format!("Limite FPS : {}", self.video_settings.fps_limit.label())).clicked() {
-                            self.video_settings.fps_limit = match self.video_settings.fps_limit {
-                                FpsLimitSetting::Fps60 => FpsLimitSetting::Fps120,
-                                FpsLimitSetting::Fps120 => FpsLimitSetting::Unlimited,
-                                FpsLimitSetting::Unlimited => FpsLimitSetting::Fps60,
-                            };
-                            action = Some(UiAction::CycleFpsLimit);
-                        }
-
-                        ui.add_space(10.0_f32);
-                        ui.separator();
-                        ui.add_space(6.0_f32);
-
-                        ui.heading(
-                            egui::RichText::new("ÉCLAIRAGE & AMBIANCE DU MONDE")
-                                .size(14.0_f32)
-                                .color(egui::Color32::from_rgb(220, 185, 60)),
-                        );
-                        ui.add_space(4.0_f32);
-
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Lumière de Lune :").size(12.0_f32).color(egui::Color32::from_rgb(180, 210, 255)));
-                            ui.add(egui::Slider::new(&mut self.lighting_settings.moon_intensity, 0.0..=3.0).show_value(true));
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Lumière du Soleil :").size(12.0_f32).color(egui::Color32::from_rgb(255, 230, 150)));
-                            ui.add(egui::Slider::new(&mut self.lighting_settings.sun_intensity, 0.0..=3.0).show_value(true));
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Ambiance Nuit (Étoiles) :").size(12.0_f32).color(egui::Color32::from_rgb(140, 160, 220)));
-                            ui.add(egui::Slider::new(&mut self.lighting_settings.night_ambient, 0.0..=4.0).show_value(true));
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Ambiance Jour (Ciel) :").size(12.0_f32).color(egui::Color32::from_rgb(160, 210, 240)));
-                            ui.add(egui::Slider::new(&mut self.lighting_settings.day_ambient, 0.0..=3.0).show_value(true));
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Vitesse Céleste (Jour 20m / Lune 21m) :").size(12.0_f32).color(egui::Color32::from_rgb(200, 200, 200)));
-                            ui.add(egui::Slider::new(&mut self.lighting_settings.moon_speed, 0.0..=5.0).show_value(true));
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Brouillard Atmosphérique :").size(12.0_f32).color(egui::Color32::from_rgb(190, 190, 190)));
-                            ui.add(egui::Slider::new(&mut self.lighting_settings.fog_intensity, 0.0..=2.0).show_value(true));
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Nuages Volumétriques (Style Voxel) :").size(12.0_f32).color(egui::Color32::from_rgb(220, 225, 245)));
-                            ui.add(egui::Slider::new(&mut self.lighting_settings.cloud_density, 0.0..=2.0).show_value(true));
-                        });
-
-                        ui.add_space(4.0_f32);
-                        if ui.button("↺ Réinitialiser l'éclairage par défaut").clicked() {
-                            self.lighting_settings = LightingSettings::default();
-                        }
-
-                        ui.add_space(10.0_f32);
-                        ui.separator();
-                        ui.add_space(6.0_f32);
-
-                        ui.heading(
-                            egui::RichText::new("GUIDE DES CONTRÔLES")
-                                .size(14.0_f32)
-                                .color(egui::Color32::from_rgb(220, 185, 60)),
-                        );
-                        ui.add_space(4.0_f32);
-
-                        egui::Grid::new("controls_grid")
-                            .num_columns(2)
-                            .spacing([14.0_f32, 5.0_f32])
-                            .show(ui, |ui| {
-                                ui.label(egui::RichText::new("[Z,Q,S,D] / [W,A,S,D]").monospace().color(egui::Color32::from_rgb(200, 215, 235)));
-                                ui.label("Marcher sur les voxels (gravité sphérique)");
-                                ui.end_row();
-
-                                ui.label(egui::RichText::new("[SHIFT]").monospace().color(egui::Color32::from_rgb(200, 215, 235)));
-                                ui.label("Courir / Sprinter");
-                                ui.end_row();
-
-                                ui.label(egui::RichText::new("[ESPACE]").monospace().color(egui::Color32::from_rgb(200, 215, 235)));
-                                ui.label("Sauter (au sol) / Auto-rotation (orbite)");
-                                ui.end_row();
-
-                                ui.label(egui::RichText::new("[F]").monospace().color(egui::Color32::from_rgb(200, 215, 235)));
-                                ui.label("Basculer Vue Sol (FPS) <-> Orbite");
-                                ui.end_row();
-
-                                ui.label(egui::RichText::new("Molette Souris").monospace().color(egui::Color32::from_rgb(200, 215, 235)));
-                                ui.label("Zoom continu FPS -> TPS -> Orbite");
-                                ui.end_row();
-
-                                ui.label(egui::RichText::new("Clic Droit / Gauche").monospace().color(egui::Color32::from_rgb(200, 215, 235)));
-                                ui.label("Orienter la vue / Tourner la planète");
-                                ui.end_row();
-                            });
-
-                        ui.add_space(12.0_f32);
-                        ui.separator();
-                        ui.add_space(8.0_f32);
-
-                        ui.horizontal(|ui| {
-                            if ui.button(egui::RichText::new("▶  Reprendre la partie [Échap]").strong()).clicked() {
-                                self.is_settings_open = false;
-                                action = Some(UiAction::ResumeGame);
-                            }
-                            if ui.button(egui::RichText::new("🚪  Quitter le jeu").color(egui::Color32::from_rgb(245, 110, 110))).clicked() {
-                                action = Some(UiAction::QuitGame);
-                            }
-                        });
-                    });
+                    .rect_filled(ctx.screen_rect(), 0.0_f32, egui::Color32::from_black_alpha((170.0_f32 * fade) as u8));
+            }
+            if self.is_settings_open {
+                self.draw_pause_menu(ctx, &mut action);
             }
         });
 
         (full_output, action)
     }
+
+    /// HUD du monde : graine, actions rapides et filtres cartographiques
+    fn draw_world_hud(&mut self, ctx: &egui::Context, is_ground: bool, action: &mut Option<UiAction>) {
+        let screen = ctx.screen_rect();
+        let max_height = (screen.height() - 2.0_f32 * SCREEN_MARGIN - 24.0_f32).max(80.0_f32);
+
+        egui::Area::new(egui::Id::new("top_left_hud"))
+            .fixed_pos(egui::pos2(SCREEN_MARGIN, SCREEN_MARGIN))
+            .show(ctx, |ui| {
+                hud_frame().inner_margin(egui::Margin::same(12.0_f32)).show(ui, |ui| {
+                    ui.set_width(240.0_f32);
+
+                    // Titre & Graine du monde
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("HEROCRAFT").strong().color(GOLD_BRIGHT).size(16.0_f32));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(egui::RichText::new(format!("#{}", self.current_seed)).monospace().color(TEXT_DIM).size(11.0_f32));
+                        });
+                    });
+
+                    ui.add_space(2.0_f32);
+                    ui.separator();
+
+                    // Le contenu défile si la fenêtre est trop basse pour l'afficher en entier
+                    egui::ScrollArea::vertical()
+                        .id_salt("world_hud_scroll")
+                        .max_height(max_height - 40.0_f32)
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            let full = egui::vec2(ui.available_width(), 0.0_f32);
+
+                            if ui.add(egui::Button::new("🎲  Nouvelle planète  [G]").min_size(full)).clicked() {
+                                *action = Some(UiAction::GenerateNewPlanet);
+                            }
+
+                            let view_label = if is_ground { "🌍  Vue satellite  [F]" } else { "🚶  Vue au sol  [F]" };
+                            if ui.add(egui::Button::new(view_label).min_size(full)).clicked() {
+                                *action = Some(UiAction::ToggleGroundCamera);
+                            }
+
+                            let rot_label = if self.auto_rotate { "⏸  Arrêter la rotation  [Espace]" } else { "▶  Auto-rotation  [Espace]" };
+                            if ui.add(egui::Button::new(rot_label).min_size(full)).clicked() {
+                                *action = Some(UiAction::ToggleAutoRotate);
+                            }
+
+                            if ui.add(egui::Button::new("🔄  Réinitialiser la vue  [R]").min_size(full)).clicked() {
+                                *action = Some(UiAction::ResetCamera);
+                            }
+
+                            ui.add_space(2.0_f32);
+                            caption(ui, "FILTRES CARTOGRAPHIQUES");
+
+                            if ui.checkbox(&mut self.show_tectonics, "Plaques tectoniques  [T]").changed() {
+                                if self.show_tectonics {
+                                    self.show_ocean_currents = false;
+                                }
+                                *action = Some(UiAction::ToggleTectonics);
+                            }
+
+                            if ui.checkbox(&mut self.show_ocean_currents, "Courants marins  [C]").changed() {
+                                if self.show_ocean_currents {
+                                    self.show_tectonics = false;
+                                }
+                                *action = Some(UiAction::ToggleOceanCurrents);
+                            }
+
+                            ui.add_space(2.0_f32);
+                            ui.separator();
+
+                            // Les réglages de rendu vivent dans le sous-menu Options
+                            if ui
+                                .add(egui::Button::new(egui::RichText::new("🎨  Réglages graphiques…").color(GOLD_BRIGHT)).min_size(full))
+                                .on_hover_text("Ouvre le menu Options (aussi accessible par Échap)")
+                                .clicked()
+                            {
+                                self.open_menu_at(MenuPage::Options);
+                                if self.options_tab == OptionsTab::Display {
+                                    self.options_tab = OptionsTab::Lighting;
+                                }
+                            }
+                        });
+                });
+            });
+    }
+
+    /// HUD d'état : compteur FPS, altitude et accès au menu
+    fn draw_status_hud(&mut self, ctx: &egui::Context, camera_distance: f32, is_ground: bool) {
+        let screen = ctx.screen_rect();
+        egui::Area::new(egui::Id::new("top_right_hud"))
+            .pivot(egui::Align2::RIGHT_TOP)
+            .fixed_pos(egui::pos2(screen.right() - SCREEN_MARGIN, SCREEN_MARGIN))
+            .show(ctx, |ui| {
+                hud_frame().inner_margin(egui::Margin::same(10.0_f32)).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let fps_color = if self.current_fps >= 55 {
+                            egui::Color32::from_rgb(80, 220, 100)
+                        } else if self.current_fps >= 30 {
+                            egui::Color32::from_rgb(240, 190, 50)
+                        } else {
+                            egui::Color32::from_rgb(240, 80, 80)
+                        };
+                        ui.label(egui::RichText::new(format!("{} FPS", self.current_fps)).strong().color(fps_color));
+
+                        ui.separator();
+
+                        let dist_label = if is_ground {
+                            "Sol (FPS)".to_string()
+                        } else {
+                            format!("{:.0} m", camera_distance)
+                        };
+                        ui.label(egui::RichText::new(dist_label).color(egui::Color32::from_rgb(180, 205, 240)));
+
+                        ui.separator();
+
+                        let menu_label = if self.is_settings_open { "✖ Fermer [Échap]" } else { "⚙ Menu [Échap]" };
+                        if ui.button(menu_label).clicked() {
+                            self.toggle_settings();
+                        }
+                    });
+                });
+            });
+    }
+
+    /// Menu de pause : panneau centré, borné à l'écran, dont le corps défile au besoin
+    fn draw_pause_menu(&mut self, ctx: &egui::Context, action: &mut Option<UiAction>) {
+        let screen = ctx.screen_rect();
+        let page = self.menu_page;
+        let target_width = match page {
+            MenuPage::Main => 340.0_f32,
+            MenuPage::Options => 680.0_f32,
+            MenuPage::Controls => 540.0_f32,
+        };
+        let width = target_width.min(screen.width() - 2.0_f32 * SCREEN_MARGIN).max(200.0_f32);
+        let max_height = (screen.height() - 2.0_f32 * SCREEN_MARGIN).max(160.0_f32);
+        let inner_width = width - 2.0_f32 * MENU_PADDING;
+        let inner_max_height = max_height - 2.0_f32 * MENU_PADDING;
+        // Hauteur du pied de page mesurée à la frame précédente, pour réserver sa place
+        let footer_id = egui::Id::new(("pause_menu_footer", page));
+        let footer_height = ctx.data(|d| d.get_temp::<f32>(footer_id)).unwrap_or(48.0_f32);
+
+        egui::Area::new(egui::Id::new(("pause_menu", page)))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                egui::Frame::none()
+                    .fill(egui::Color32::from_rgba_premultiplied(14, 18, 28, 250))
+                    .stroke(egui::Stroke::new(1.5_f32, GOLD))
+                    .rounding(egui::Rounding::same(10.0_f32))
+                    .inner_margin(egui::Margin::same(MENU_PADDING))
+                    .shadow(egui::epaint::Shadow {
+                        offset: egui::vec2(0.0_f32, 10.0_f32),
+                        blur: 30.0_f32,
+                        spread: 0.0_f32,
+                        color: egui::Color32::from_black_alpha(140),
+                    })
+                    .show(ui, |ui| {
+                        ui.set_width(inner_width);
+                        ui.set_max_width(inner_width);
+
+                        let top = ui.cursor().top();
+                        self.draw_menu_header(ui, inner_width);
+                        let header_height = ui.cursor().top() - top;
+                        let spacing = ui.spacing().item_spacing.y;
+                        let body_height = (inner_max_height - header_height - footer_height - spacing).max(60.0_f32);
+
+                        match page {
+                            MenuPage::Main => self.draw_main_page(ui, body_height, action),
+                            MenuPage::Options => self.draw_options_page(ui, inner_width, body_height, action),
+                            MenuPage::Controls => draw_controls_page(ui, body_height),
+                        }
+
+                        let footer_top = ui.cursor().top();
+                        self.draw_menu_footer(ui, page, action);
+                        let measured = ui.min_rect().bottom() - footer_top;
+                        ui.ctx().data_mut(|d| d.insert_temp(footer_id, measured));
+                    });
+            });
+    }
+
+    /// En-tête : titre doré sur l'accueil, fil d'Ariane et retour dans les sous-menus
+    fn draw_menu_header(&mut self, ui: &mut egui::Ui, inner_width: f32) {
+        match self.menu_page {
+            MenuPage::Main => {
+                ui.vertical_centered(|ui| {
+                    ui.label(egui::RichText::new("HEROCRAFT").size(26.0_f32).strong().color(GOLD_BRIGHT));
+                    ui.add_space(-6.0_f32);
+                    ui.label(egui::RichText::new("— PAUSE —").size(11.0_f32).color(TEXT_DIM));
+                });
+                ui.add_space(4.0_f32);
+                ornament(ui, inner_width);
+            }
+            page => {
+                let title = if page == MenuPage::Options { "⚙  Options" } else { "⌨  Commandes" };
+                ui.horizontal(|ui| {
+                    if ui.button("⬅ Retour").on_hover_text("Revenir au menu (Échap)").clicked() {
+                        self.menu_page = MenuPage::Main;
+                    }
+                    ui.add_space(4.0_f32);
+                    ui.label(egui::RichText::new("Pause  ›").size(13.0_f32).color(TEXT_DIM));
+                    ui.label(egui::RichText::new(title).size(17.0_f32).strong().color(GOLD_BRIGHT));
+                });
+                ornament(ui, inner_width);
+            }
+        }
+    }
+
+    /// Accueil du menu : grandes entrées de navigation
+    fn draw_main_page(&mut self, ui: &mut egui::Ui, body_height: f32, action: &mut Option<UiAction>) {
+        egui::ScrollArea::vertical()
+            .id_salt("pause_main_scroll")
+            .max_height(body_height)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                let size = egui::vec2(ui.available_width(), 40.0_f32);
+
+                if menu_entry(ui, size, "▶   Reprendre la partie", None).clicked() {
+                    self.set_settings_open(false);
+                    *action = Some(UiAction::ResumeGame);
+                }
+                if menu_entry(ui, size, "⚙   Options", Some("Affichage, éclairage, nuages, rendu…")).clicked() {
+                    self.menu_page = MenuPage::Options;
+                }
+                if menu_entry(ui, size, "⌨   Commandes", Some("Rappel des touches et de la souris")).clicked() {
+                    self.menu_page = MenuPage::Controls;
+                }
+
+                ui.add_space(2.0_f32);
+                ui.separator();
+                ui.add_space(2.0_f32);
+
+                if self.confirm_quit {
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new("Sauvegarder le monde et quitter ?").color(TEXT_SOFT));
+                    });
+                    ui.columns(2, |cols| {
+                        let half = egui::vec2(cols[0].available_width(), 36.0_f32);
+                        if cols[0]
+                            .add(egui::Button::new(egui::RichText::new("🚪  Quitter").strong().color(DANGER)).min_size(half))
+                            .clicked()
+                        {
+                            *action = Some(UiAction::QuitGame);
+                        }
+                        if cols[1].add(egui::Button::new("Annuler").min_size(half)).clicked() {
+                            self.confirm_quit = false;
+                        }
+                    });
+                } else if ui
+                    .add(egui::Button::new(egui::RichText::new("🚪   Quitter le jeu").size(15.0_f32).color(DANGER)).min_size(size))
+                    .clicked()
+                {
+                    self.confirm_quit = true;
+                }
+            });
+    }
+
+    /// Sous-menu Options : onglets latéraux (ou en bandeau sur écran étroit) et réglages défilants
+    fn draw_options_page(&mut self, ui: &mut egui::Ui, inner_width: f32, body_height: f32, action: &mut Option<UiAction>) {
+        let wide = inner_width >= OPTIONS_SIDEBAR_MIN_WIDTH;
+
+        if wide {
+            let row = ui.horizontal_top(|ui| {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(OPTIONS_SIDEBAR_WIDTH, body_height),
+                    egui::Layout::top_down_justified(egui::Align::LEFT),
+                    |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt("options_tabs_scroll")
+                            .max_height(body_height)
+                            .auto_shrink([false, true])
+                            .show(ui, |ui| {
+                                ui.spacing_mut().item_spacing.y = 4.0_f32;
+                                for tab in OptionsTab::ALL {
+                                    let text = egui::RichText::new(format!("{}  {}", tab.icon(), tab.label())).size(14.0_f32);
+                                    let response = ui.add_sized(
+                                        egui::vec2(ui.available_width(), 32.0_f32),
+                                        egui::SelectableLabel::new(self.options_tab == tab, text),
+                                    );
+                                    if response.on_hover_text(tab.subtitle()).clicked() {
+                                        self.options_tab = tab;
+                                    }
+                                }
+                            });
+                    },
+                );
+                // Espace pour le filet vertical, tracé après coup à la hauteur exacte de la rangée
+                // (un Separator vertical prendrait toute la hauteur disponible et ferait grandir le menu)
+                ui.add_space(12.0_f32);
+                let content_width = ui.available_width();
+                ui.vertical(|ui| {
+                    ui.set_width(content_width);
+                    self.draw_options_content(ui, content_width, body_height, action);
+                });
+            });
+            let x = row.response.rect.left() + OPTIONS_SIDEBAR_WIDTH + 2.0_f32 + ui.spacing().item_spacing.x;
+            ui.painter().vline(x, row.response.rect.y_range(), egui::Stroke::new(1.0_f32, GOLD.gamma_multiply(0.35_f32)));
+        } else {
+            let top = ui.cursor().top();
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+                for tab in OptionsTab::ALL {
+                    let selected = self.options_tab == tab;
+                    let text = if selected { format!("{} {}", tab.icon(), tab.label()) } else { tab.icon().to_string() };
+                    if ui.selectable_label(selected, text).on_hover_text(tab.label()).clicked() {
+                        self.options_tab = tab;
+                    }
+                }
+            });
+            ui.separator();
+            let remaining = (body_height - (ui.cursor().top() - top)).max(60.0_f32);
+            self.draw_options_content(ui, inner_width, remaining, action);
+        }
+    }
+
+    /// Réglages de l'onglet courant, dans une zone défilante
+    fn draw_options_content(&mut self, ui: &mut egui::Ui, width: f32, height: f32, action: &mut Option<UiAction>) {
+        let tab = self.options_tab;
+        let top = ui.cursor().top();
+        ui.label(egui::RichText::new(format!("{}  {}", tab.icon(), tab.label())).size(16.0_f32).strong().color(GOLD_BRIGHT));
+        ui.add_space(-6.0_f32);
+        ui.label(egui::RichText::new(tab.subtitle()).size(11.0_f32).color(TEXT_DIM));
+        ui.add_space(2.0_f32);
+
+        let scroll_height = (height - (ui.cursor().top() - top)).max(60.0_f32);
+        egui::ScrollArea::vertical()
+            .id_salt(("options_content_scroll", tab))
+            .max_height(scroll_height)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                // Curseurs aussi larges que possible sans déborder (libellés ~45 %, valeur ~60 pt)
+                ui.spacing_mut().slider_width = (width * 0.55_f32 - 70.0_f32).clamp(80.0_f32, 240.0_f32);
+                ui.add_space(4.0_f32);
+                match tab {
+                    OptionsTab::Display => self.draw_display_tab(ui, action),
+                    OptionsTab::Lighting => self.draw_lighting_tab(ui),
+                    OptionsTab::Clouds => self.draw_clouds_tab(ui),
+                    OptionsTab::Hdr => self.draw_hdr_tab(ui),
+                    OptionsTab::Shadows => self.draw_shadows_tab(ui),
+                    OptionsTab::Atmosphere => self.draw_atmosphere_tab(ui),
+                }
+                ui.add_space(6.0_f32);
+            });
+    }
+
+    fn draw_display_tab(&mut self, ui: &mut egui::Ui, action: &mut Option<UiAction>) {
+        settings_grid(ui, "display_grid", |ui| {
+            row_label(ui, "Synchronisation verticale", "Aligne les images sur l'écran pour éviter les déchirures");
+            if toggle_switch(ui, &mut self.video_settings.vsync).changed() {
+                *action = Some(UiAction::ToggleVsync);
+            }
+            ui.end_row();
+
+            row_label(ui, "Plein écran", "Plein écran sans bordure sur le moniteur courant");
+            if toggle_switch(ui, &mut self.video_settings.fullscreen).changed() {
+                *action = Some(UiAction::ToggleFullscreen);
+            }
+            ui.end_row();
+
+            row_label(ui, "Distance de détail (LOD)", "Distance à laquelle le terrain garde sa pleine résolution");
+            let lod_choices = [
+                (LodDistanceSetting::Courte, "Courte"),
+                (LodDistanceSetting::Normale, "Normale"),
+                (LodDistanceSetting::Elevee, "Élevée"),
+            ];
+            if choice_row(ui, &mut self.video_settings.lod_distance, &lod_choices) {
+                *action = Some(UiAction::SetLodDistance);
+            }
+            ui.end_row();
+
+            row_label(ui, "Limite d'images", "Plafond d'images par seconde (s'ajoute à la V-Sync)");
+            let fps_choices = [FpsLimitSetting::Fps60, FpsLimitSetting::Fps120, FpsLimitSetting::Unlimited].map(|f| (f, f.label()));
+            if choice_row(ui, &mut self.video_settings.fps_limit, &fps_choices) {
+                *action = Some(UiAction::SetFpsLimit);
+            }
+            ui.end_row();
+        });
+        ui.add_space(4.0_f32);
+        ui.label(egui::RichText::new(format!("Détail actuel : {}", self.video_settings.lod_distance.label())).size(11.0_f32).color(TEXT_DIM));
+    }
+
+    fn draw_lighting_tab(&mut self, ui: &mut egui::Ui) {
+        let l = &mut self.lighting_settings;
+        settings_grid(ui, "lighting_grid", |ui| {
+            slider_row(ui, "Lumière du Soleil", &mut l.sun_intensity, 0.0..=3.0, "Multiplicateur de la lumière directe du Soleil");
+            slider_row(ui, "Lumière de la Lune", &mut l.moon_intensity, 0.0..=3.0, "Clarté bleutée des nuits de pleine lune");
+            slider_row(ui, "Ambiance de jour", &mut l.day_ambient, 0.0..=3.0, "Lumière diffuse du ciel en journée");
+            slider_row(ui, "Ambiance de nuit", &mut l.night_ambient, 0.0..=4.0, "Obscurité nocturne et éclat des étoiles");
+            slider_row(ui, "Vitesse céleste", &mut l.moon_speed, 0.0..=5.0, "Jour de 20 min, Lune de 21 min à 1.0 ; 0 fige le ciel");
+        });
+        if reset_button(ui, "Réinitialiser l'éclairage") {
+            let fog = self.lighting_settings.fog_intensity;
+            let clouds = self.lighting_settings.cloud_density;
+            self.lighting_settings = LightingSettings::default();
+            // La brume (onglet Atmosphère) et la densité des nuages ont leur propre onglet
+            self.lighting_settings.fog_intensity = fog;
+            self.lighting_settings.cloud_density = clouds;
+        }
+    }
+
+    fn draw_clouds_tab(&mut self, ui: &mut egui::Ui) {
+        let c = &mut self.cloud_settings;
+        let mut density_changed = false;
+        settings_grid(ui, "clouds_grid", |ui| {
+            density_changed = slider_row(ui, "Densité", &mut c.density, 0.0..=2.0, "Couverture nuageuse ; 0 retire les nuages").changed();
+            slider_row(ui, "Rondeur des arêtes", &mut c.roundness, 0.05..=0.55, "Arrondi des cubes de nuage (style marshmallow)");
+            slider_row(ui, "Ombrage de sous-face", &mut c.shadow_intensity, 0.0..=2.0, "Teinte violacée sous les nuages");
+            slider_row(ui, "Éclat au couchant", &mut c.sunset_glow, 0.0..=2.0, "Lueur chaude quand le Soleil est bas");
+            slider_row(ui, "Grain mat", &mut c.micro_noise, 0.0..=1.0, "Micro-texture de surface");
+        });
+        if density_changed {
+            self.lighting_settings.cloud_density = self.cloud_settings.density;
+        }
+        if reset_button(ui, "Réinitialiser les nuages") {
+            self.cloud_settings = CloudSettings::default();
+            self.lighting_settings.cloud_density = self.cloud_settings.density;
+        }
+    }
+
+    fn draw_hdr_tab(&mut self, ui: &mut egui::Ui) {
+        let p = &mut self.post_settings;
+        settings_grid(ui, "hdr_grid", |ui| {
+            slider_row(ui, "Exposition (EV)", &mut p.exposure_ev, -3.0..=3.0, "Éclaircit ou assombrit toute l'image");
+
+            row_label(ui, "Courbe de tons", "Conversion des lumières HDR vers l'écran");
+            egui::ComboBox::from_id_salt("tonemapper")
+                .selected_text(p.tonemapper.label())
+                .show_ui(ui, |ui| {
+                    for t in Tonemapper::ALL {
+                        ui.selectable_value(&mut p.tonemapper, t, t.label());
+                    }
+                });
+            ui.end_row();
+
+            row_label(ui, "Bloom", "Halo lumineux autour des sources très vives");
+            toggle_switch(ui, &mut p.bloom_enabled);
+            ui.end_row();
+
+            let enabled = p.bloom_enabled;
+            slider_row_enabled(ui, enabled, "   Intensité", &mut p.bloom_intensity, 0.0..=1.0, "Part du halo ajoutée à l'image");
+            slider_row_enabled(ui, enabled, "   Seuil", &mut p.bloom_threshold, 0.0..=8.0, "Luminance à partir de laquelle un pixel diffuse");
+            slider_row_enabled(ui, enabled, "   Douceur", &mut p.bloom_knee, 0.0..=3.0, "Largeur de la transition autour du seuil");
+        });
+        if reset_button(ui, "Réinitialiser le rendu HDR") {
+            self.post_settings = PostSettings::default();
+        }
+    }
+
+    fn draw_shadows_tab(&mut self, ui: &mut egui::Ui) {
+        let s = &mut self.shadow_settings;
+        settings_grid(ui, "shadows_grid", |ui| {
+            row_label(ui, "Ombres du soleil", "Ombres portées du relief");
+            toggle_switch(ui, &mut s.enabled);
+            ui.end_row();
+
+            slider_row_enabled(ui, s.enabled, "   Force du relief", &mut s.strength, 0.0..=1.0, "Part de la lumière directe retirée à l'ombre");
+
+            row_label(ui, "Ombres des nuages", "Les nuages assombrissent le sol");
+            ui.add_enabled_ui(s.enabled, |ui| toggle_switch(ui, &mut s.cloud_shadows));
+            ui.end_row();
+
+            let clouds_on = s.enabled && s.cloud_shadows;
+            slider_row_enabled(ui, clouds_on, "   Force sous les nuages", &mut s.cloud_strength, 0.0..=1.0, "Part de la lumière directe retirée sous un nuage");
+        });
+        if reset_button(ui, "Réinitialiser les ombres") {
+            self.shadow_settings = ShadowSettings::default();
+        }
+    }
+
+    fn draw_atmosphere_tab(&mut self, ui: &mut egui::Ui) {
+        let a = &mut self.atmosphere_settings;
+        let fog = &mut self.lighting_settings.fog_intensity;
+        settings_grid(ui, "atmosphere_grid", |ui| {
+            slider_row(ui, "Densité de l'air", &mut a.air_density, 0.2..=3.0, "Diffusion de Rayleigh : bleu du ciel, rougeoiement du couchant");
+            slider_row(ui, "Halo solaire", &mut a.sun_halo, 0.0..=0.95, "Resserre la brume lumineuse autour du Soleil");
+            slider_row(ui, "Brume", fog, 0.0..=2.0, "Voile de distance sur le relief lointain");
+
+            row_label(ui, "Rayons crépusculaires", "Puits de lumière découpés par le relief et les nuages");
+            toggle_switch(ui, &mut a.god_rays);
+            ui.end_row();
+
+            slider_row_enabled(ui, a.god_rays, "   Intensité", &mut a.god_rays_intensity, 0.0..=4.0, "1 = physique ; au-delà, rayons accentués");
+        });
+        if reset_button(ui, "Réinitialiser l'atmosphère") {
+            self.atmosphere_settings = AtmosphereSettings::default();
+            self.lighting_settings.fog_intensity = LightingSettings::default().fog_intensity;
+        }
+    }
+
+    /// Pied de page : rappel de la touche Échap et action globale de la page
+    fn draw_menu_footer(&mut self, ui: &mut egui::Ui, page: MenuPage, action: &mut Option<UiAction>) {
+        ui.add_space(2.0_f32);
+        ui.separator();
+        ui.horizontal(|ui| {
+            let hint = if page == MenuPage::Main { "reprendre" } else { "retour" };
+            keycap(ui, "Échap");
+            ui.label(egui::RichText::new(hint).size(11.0_f32).color(TEXT_DIM));
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| match page {
+                MenuPage::Main => {
+                    ui.label(egui::RichText::new(format!("Monde #{}", self.current_seed)).monospace().size(11.0_f32).color(TEXT_DIM));
+                }
+                MenuPage::Options => {
+                    if ui
+                        .small_button("↺ Tout le rendu par défaut")
+                        .on_hover_text("Éclairage, nuages, HDR, ombres et atmosphère (l'affichage est conservé)")
+                        .clicked()
+                    {
+                        self.lighting_settings = LightingSettings::default();
+                        self.cloud_settings = CloudSettings::default();
+                        self.post_settings = PostSettings::default();
+                        self.shadow_settings = ShadowSettings::default();
+                        self.atmosphere_settings = AtmosphereSettings::default();
+                    }
+                }
+                MenuPage::Controls => {
+                    if ui.small_button("▶ Reprendre").clicked() {
+                        self.set_settings_open(false);
+                        *action = Some(UiAction::ResumeGame);
+                    }
+                }
+            });
+        });
+    }
+}
+
+/// Cadre commun des panneaux du HUD
+fn hud_frame() -> egui::Frame {
+    egui::Frame::none()
+        .fill(egui::Color32::from_rgba_premultiplied(12, 16, 24, 215))
+        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(180, 140, 45)))
+        .rounding(egui::Rounding::same(6.0_f32))
+}
+
+/// Petit intitulé de section en capitales
+fn caption(ui: &mut egui::Ui, text: &str) {
+    ui.label(egui::RichText::new(text).size(10.5_f32).strong().color(TEXT_DIM));
+}
+
+/// Filet doré orné d'un losange central, sous les titres du menu
+fn ornament(ui: &mut egui::Ui, width: f32) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 10.0_f32), egui::Sense::hover());
+    let painter = ui.painter();
+    let y = rect.center().y;
+    let c = rect.center().x;
+    let line = egui::Stroke::new(1.0_f32, GOLD.gamma_multiply(0.6_f32));
+    painter.line_segment([egui::pos2(rect.left(), y), egui::pos2(c - 8.0_f32, y)], line);
+    painter.line_segment([egui::pos2(c + 8.0_f32, y), egui::pos2(rect.right(), y)], line);
+    let d = 4.0_f32;
+    painter.add(egui::Shape::convex_polygon(
+        vec![egui::pos2(c, y - d), egui::pos2(c + d, y), egui::pos2(c, y + d), egui::pos2(c - d, y)],
+        GOLD_BRIGHT,
+        egui::Stroke::NONE,
+    ));
+}
+
+/// Grande entrée du menu d'accueil, avec une ligne d'explication au survol
+fn menu_entry(ui: &mut egui::Ui, size: egui::Vec2, text: &str, hint: Option<&str>) -> egui::Response {
+    let button = egui::Button::new(egui::RichText::new(text).size(15.0_f32)).min_size(size);
+    let response = ui.add(button);
+    match hint {
+        Some(hint) => response.on_hover_text(hint),
+        None => response,
+    }
+}
+
+/// Touche dessinée comme un capuchon de clavier
+fn keycap(ui: &mut egui::Ui, key: &str) {
+    egui::Frame::none()
+        .fill(egui::Color32::from_rgb(30, 38, 54))
+        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(90, 105, 130)))
+        .rounding(egui::Rounding::same(4.0_f32))
+        .inner_margin(egui::Margin::symmetric(6.0_f32, 1.0_f32))
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new(key).monospace().size(11.5_f32).strong().color(egui::Color32::from_rgb(225, 230, 240)));
+        });
+}
+
+/// Grille à deux colonnes (libellé, réglage) commune aux onglets d'options
+fn settings_grid(ui: &mut egui::Ui, id: &str, add_rows: impl FnOnce(&mut egui::Ui)) {
+    egui::Grid::new(id)
+        .num_columns(2)
+        .spacing([16.0_f32, 10.0_f32])
+        .min_col_width(110.0_f32)
+        .show(ui, add_rows);
+}
+
+fn row_label(ui: &mut egui::Ui, text: &str, hint: &str) {
+    ui.label(egui::RichText::new(text).color(TEXT_SOFT)).on_hover_text(hint);
+}
+
+fn slider_row(ui: &mut egui::Ui, label: &str, value: &mut f32, range: std::ops::RangeInclusive<f32>, hint: &str) -> egui::Response {
+    row_label(ui, label, hint);
+    let response = ui.add(egui::Slider::new(value, range).fixed_decimals(2)).on_hover_text(hint);
+    ui.end_row();
+    response
+}
+
+fn slider_row_enabled(ui: &mut egui::Ui, enabled: bool, label: &str, value: &mut f32, range: std::ops::RangeInclusive<f32>, hint: &str) {
+    ui.add_enabled_ui(enabled, |ui| row_label(ui, label, hint));
+    ui.add_enabled(enabled, egui::Slider::new(value, range).fixed_decimals(2)).on_hover_text(hint);
+    ui.end_row();
+}
+
+/// Choix exclusif présenté comme un sélecteur segmenté ; renvoie vrai si la valeur a changé
+fn choice_row<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, choices: &[(T, &str)]) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0_f32;
+        for (choice, label) in choices {
+            if ui.selectable_label(*value == *choice, *label).clicked() && *value != *choice {
+                *value = *choice;
+                changed = true;
+            }
+        }
+    });
+    changed
+}
+
+/// Interrupteur animé or/obsidienne
+fn toggle_switch(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
+    let size = egui::vec2(40.0_f32, 20.0_f32);
+    let (rect, mut response) = ui.allocate_exact_size(size, egui::Sense::click());
+    if response.clicked() {
+        *on = !*on;
+        response.mark_changed();
+    }
+    if ui.is_rect_visible(rect) {
+        let t = ui.ctx().animate_bool(response.id, *on);
+        let off_fill = egui::Color32::from_rgb(36, 44, 60);
+        let on_fill = egui::Color32::from_rgb(150, 118, 30);
+        let mut fill = lerp_color(off_fill, on_fill, t);
+        let mut knob = lerp_color(egui::Color32::from_rgb(150, 160, 178), GOLD_BRIGHT, t);
+        if !ui.is_enabled() {
+            fill = fill.gamma_multiply(0.5_f32);
+            knob = knob.gamma_multiply(0.5_f32);
+        }
+        let stroke_color = if response.hovered() { GOLD } else { egui::Color32::from_rgb(70, 85, 110) };
+        let radius = 0.5_f32 * rect.height();
+        ui.painter().rect(rect, radius, fill, egui::Stroke::new(1.0_f32, stroke_color));
+        let x = egui::lerp((rect.left() + radius)..=(rect.right() - radius), t);
+        ui.painter().circle_filled(egui::pos2(x, rect.center().y), radius - 3.0_f32, knob);
+    }
+    response
+}
+
+fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let mix = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
+    egui::Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
+}
+
+/// Bouton discret de remise à zéro en bas d'un onglet ; renvoie vrai au clic
+fn reset_button(ui: &mut egui::Ui, text: &str) -> bool {
+    ui.add_space(8.0_f32);
+    ui.small_button(egui::RichText::new(format!("↺  {}", text)).color(TEXT_DIM)).clicked()
+}
+
+/// Section de l'aide-mémoire : titre puis lignes (touches, description)
+type ControlGroup = (&'static str, &'static [(&'static [&'static str], &'static str)]);
+
+/// Aide-mémoire des commandes, groupées par usage
+fn draw_controls_page(ui: &mut egui::Ui, body_height: f32) {
+    const GROUPS: [ControlGroup; 4] = [
+        (
+            "DÉPLACEMENT",
+            &[
+                (&["Z", "Q", "S", "D"], "Marcher (ou W A S D)"),
+                (&["Maj"], "Courir"),
+                (&["Espace"], "Sauter au sol, auto-rotation en orbite"),
+            ],
+        ),
+        (
+            "CAMÉRA",
+            &[
+                (&["F"], "Basculer vue au sol / orbite"),
+                (&["Molette"], "Zoom continu, du sol à l'orbite"),
+                (&["Clic", "glisser"], "Orienter la vue / tourner la planète"),
+                (&["R"], "Réinitialiser la vue"),
+            ],
+        ),
+        (
+            "MONDE",
+            &[
+                (&["G"], "Générer une nouvelle planète"),
+                (&["T"], "Filtre plaques tectoniques"),
+                (&["C"], "Filtre courants marins"),
+            ],
+        ),
+        (
+            "SYSTÈME",
+            &[
+                (&["Échap"], "Menu de pause / revenir en arrière"),
+                (&["F9"], "Écrire le rapport de profilage"),
+            ],
+        ),
+    ];
+
+    egui::ScrollArea::vertical()
+        .id_salt("controls_scroll")
+        .max_height(body_height)
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            for (title, rows) in GROUPS {
+                ui.add_space(2.0_f32);
+                caption(ui, title);
+                egui::Grid::new(("controls_grid", title))
+                    .num_columns(2)
+                    .spacing([16.0_f32, 6.0_f32])
+                    .min_col_width(130.0_f32)
+                    .show(ui, |ui| {
+                        for (keys, description) in rows.iter() {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 3.0_f32;
+                                for key in keys.iter() {
+                                    keycap(ui, key);
+                                }
+                            });
+                            ui.label(egui::RichText::new(*description).color(TEXT_SOFT));
+                            ui.end_row();
+                        }
+                    });
+                ui.add_space(4.0_f32);
+            }
+        });
 }
 
 #[cfg(test)]
@@ -956,6 +1356,107 @@ mod tests {
         let (output_ground, action_ground) = ui.update_ui(10.0, true);
         assert!(action_ground.is_none());
         assert!(!output_ground.shapes.is_empty());
+    }
+
+    #[test]
+    fn test_escape_navigates_menu_levels() {
+        let mut ui = UiState::new(7);
+
+        // Échap ouvre le menu sur l'accueil
+        assert!(ui.handle_escape());
+        assert_eq!(ui.menu_page, MenuPage::Main);
+
+        // Depuis un sous-menu, Échap revient à l'accueil sans fermer
+        ui.menu_page = MenuPage::Options;
+        assert!(ui.handle_escape());
+        assert_eq!(ui.menu_page, MenuPage::Main);
+
+        // Une confirmation de sortie en cours est annulée d'abord
+        ui.confirm_quit = true;
+        assert!(ui.handle_escape());
+        assert!(!ui.confirm_quit);
+
+        // Depuis l'accueil, Échap referme
+        assert!(!ui.handle_escape());
+
+        // Le menu se rouvre toujours sur l'accueil, sans confirmation en attente
+        ui.open_menu_at(MenuPage::Controls);
+        ui.confirm_quit = true;
+        ui.set_settings_open(false);
+        assert!(ui.handle_escape());
+        assert_eq!(ui.menu_page, MenuPage::Main);
+        assert!(!ui.confirm_quit);
+    }
+
+    /// Chaque page et chaque onglet du menu tient dans l'écran, y compris sur de petites fenêtres
+    #[test]
+    fn test_pause_menu_fits_screen() {
+        let pages = [
+            (MenuPage::Main, None),
+            (MenuPage::Controls, None),
+        ]
+        .into_iter()
+        .chain(OptionsTab::ALL.into_iter().map(|t| (MenuPage::Options, Some(t))));
+
+        for (page, tab) in pages {
+            for (w, h, scale) in [(1920.0, 1080.0, 1.0), (1280.0, 720.0, 1.0), (800.0, 450.0, 1.0), (1280.0, 720.0, 2.0), (480.0, 320.0, 1.0)] {
+                let mut ui = UiState::new(1);
+                ui.set_screen_size(w, h);
+                ui.set_scale_factor(scale);
+                ui.open_menu_at(page);
+                if let Some(tab) = tab {
+                    ui.options_tab = tab;
+                }
+                // Plusieurs frames : egui mesure les zones à la première, et la taille doit rester stable
+                for _ in 0..6 {
+                    ui.update_ui(10.0, true);
+                }
+
+                let rect = ui
+                    .ctx
+                    .memory(|m| m.area_rect(egui::Id::new(("pause_menu", page))))
+                    .expect("menu de pause dessiné");
+                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w / scale, h / scale));
+                assert!(
+                    screen.expand(0.5).contains_rect(rect),
+                    "{:?}/{:?} dépasse l'écran {}x{}@{} : {:?}",
+                    page,
+                    tab,
+                    w,
+                    h,
+                    scale,
+                    rect
+                );
+            }
+        }
+    }
+
+    /// Le HUD du monde défile au lieu de dépasser sur une fenêtre très basse
+    #[test]
+    fn test_world_hud_fits_screen() {
+        for (w, h) in [(1280.0, 720.0), (800.0, 300.0)] {
+            let mut ui = UiState::new(1);
+            ui.set_screen_size(w, h);
+            for _ in 0..4 {
+                ui.update_ui(200.0, false);
+            }
+            let rect = ui.ctx.memory(|m| m.area_rect(egui::Id::new("top_left_hud"))).expect("HUD dessiné");
+            assert!(rect.bottom() <= h + 0.5, "HUD de {}x{} : {:?}", w, h, rect);
+        }
+    }
+
+    /// Les pictogrammes du menu existent dans les polices embarquées d'egui
+    #[test]
+    fn test_menu_icons_have_glyphs() {
+        let mut ui = UiState::new(1);
+        ui.update_ui(10.0, true);
+        let font = egui::FontId::proportional(14.0);
+        let icons = ["▶", "⚙", "⌨", "🚪", "⬅", "↺", "🎨", "🎲", "🌍", "🚶", "⏸", "🔄", "✖", "›", "—"]
+            .into_iter()
+            .chain(OptionsTab::ALL.iter().map(|t| t.icon()));
+        for icon in icons {
+            assert!(ui.ctx.fonts(|f| f.has_glyphs(&font, icon)), "glyphe manquant : {}", icon);
+        }
     }
 
     #[test]
