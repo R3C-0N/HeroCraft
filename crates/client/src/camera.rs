@@ -1,5 +1,19 @@
+use std::sync::Arc;
+
 use glam::{DVec3, Mat4, Vec3};
 use herocraft_world::generator::PlanetWorldGenerator;
+use herocraft_world::TerrainEdits;
+
+use crate::collision::VoxelCollider;
+
+/// Demi-largeur du joueur, en blocs (0.6 bloc de large)
+const PLAYER_HALF_WIDTH: f32 = 0.3;
+/// Hauteur du corps testée contre les murs et plafonds, en blocs (le joueur mesure 1.8 bloc)
+pub const PLAYER_HEIGHT: f32 = 1.75;
+/// Plus haute marche franchie sans sauter, en blocs
+const STEP_HEIGHT: f32 = 1.05;
+/// Tolérance de contact avec le sol en l'air, en blocs
+const AIR_STEP: f32 = 0.05;
 
 /// Mode de vue actif selon le continuum de distance de zoom
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +88,9 @@ pub struct OrbitCamera {
 
     /// Rayon de base de la planète
     pub base_radius: f32,
+
+    /// Collisions par blocs avec le terrain modifiable (sans lui : relief lisse du générateur)
+    pub collider: Option<VoxelCollider>,
 }
 
 impl Default for OrbitCamera {
@@ -118,6 +135,8 @@ impl Default for OrbitCamera {
             auto_rotate_speed: 0.2,
 
             base_radius: (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32,
+
+            collider: None,
         }
     }
 }
@@ -141,6 +160,11 @@ impl OrbitCamera {
         cam
     }
 
+    /// Active les collisions par blocs avec ce terrain (à refaire à chaque nouvelle planète)
+    pub fn set_terrain(&mut self, edits: Arc<TerrainEdits>) {
+        self.collider = Some(VoxelCollider::new(edits, self.base_radius));
+    }
+
     /// Place le joueur directement sur la terre ferme au-dessus de la mer
     pub fn spawn_on_ground(&mut self, generator: &PlanetWorldGenerator) {
         herocraft_common::prof_scope!("camera::spawn_on_ground");
@@ -162,8 +186,7 @@ impl OrbitCamera {
             let elev = generator.sample_elevation(dir_dvec, lat, lon);
             let sea = herocraft_world::generator::SEA_LEVEL_BLOCKS;
             if elev > sea + 2.0 {
-                let altitude_scale = (self.base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0)) as f32;
-                spawn_ground_r = self.base_radius + (elev as f32) * altitude_scale;
+                spawn_ground_r = self.ground_radius_at(dir, generator);
                 spawn_dir = dir;
                 break;
             }
@@ -194,18 +217,7 @@ impl OrbitCamera {
     pub fn local_frame(&self) -> (Vec3, Vec3, Vec3) {
         let player_len = self.player_pos.length().max(1.0);
         let up = self.player_pos / player_len;
-
-        let (north, east) = if up.y.abs() < 0.999 {
-            let n = (Vec3::Y - up * up.y).normalize();
-            let e = n.cross(up).normalize();
-            (n, e)
-        } else {
-            let sign = if up.y >= 0.0 { 1.0 } else { -1.0 };
-            let n = Vec3::new(0.0, 0.0, -sign);
-            let e = Vec3::new(1.0, 0.0, 0.0);
-            (n, e)
-        };
-
+        let (east, north) = tangent_frame(up);
         (up, east, north)
     }
 
@@ -228,9 +240,18 @@ impl OrbitCamera {
         .normalize()
     }
 
-    /// Calcule le rayon minimum de sécurité du sol sous une direction donnée
+    /// Calcule le rayon minimum de sécurité du sol sous une direction donnée. Avec les collisions par
+    /// blocs, une direction unitaire donne le dessus de toute la colonne, un point de l'espace le sol
+    /// sous ce point (ou le dessus des blocs qui le contiennent).
     pub fn ground_radius_at(&self, dir: Vec3, generator: &PlanetWorldGenerator) -> f32 {
         herocraft_common::prof_scope!("camera::ground_radius_at");
+        if let Some(collider) = &self.collider {
+            return if dir.length() < self.base_radius * 0.5 {
+                collider.column_top_radius(generator, dir)
+            } else {
+                collider.point_ground_radius(generator, dir)
+            };
+        }
         let dir_norm = dir.normalize();
         let dir_dvec = DVec3::new(dir_norm.x as f64, dir_norm.y as f64, dir_norm.z as f64);
         let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir_dvec);
@@ -486,14 +507,36 @@ impl OrbitCamera {
                 (true, false) => 0.50,
                 (true, true) => 1.10,
             } * scale;
-            self.player_pos += move_dir * speed * dt;
+            let delta = move_dir * speed * dt;
+            match &self.collider {
+                // Les murs arrêtent le joueur, qui glisse le long d'eux (axe est puis axe nord)
+                Some(collider) => {
+                    let step = if self.is_grounded { STEP_HEIGHT } else { AIR_STEP };
+                    let (_, east, north) = self.local_frame();
+                    let start = self.player_pos;
+                    let trapped = body_blocked(collider, generator, start, step);
+                    let moved = [delta, east * delta.dot(east), north * delta.dot(north)].into_iter().find_map(|d| {
+                        let candidate = (start + d).normalize() * start.length();
+                        (trapped || !body_blocked(collider, generator, candidate, step)).then_some(candidate)
+                    });
+                    if let Some(pos) = moved {
+                        self.player_pos = pos;
+                    }
+                }
+                None => self.player_pos += delta,
+            }
         }
 
         // 2. Gravité sphérique et hauteur du relief sous les pieds
         let new_up = self.player_pos.normalize();
-        let ground_radius = self.ground_radius_at(new_up, generator);
+        let ground_radius = match &self.collider {
+            // Dessus des blocs sous l'empreinte du joueur, une marche plus haut au plus quand il marche
+            Some(collider) => footprint_ground(collider, generator, self.player_pos, if self.is_grounded { STEP_HEIGHT } else { AIR_STEP }),
+            None => self.ground_radius_at(new_up, generator),
+        };
 
-        let mut current_radius = self.player_pos.length();
+        let previous_radius = self.player_pos.length();
+        let mut current_radius = previous_radius;
 
         if self.is_flying {
             // Vol : vitesse verticale pilotée directement (~10 blocs/s), sans gravité
@@ -536,6 +579,21 @@ impl OrbitCamera {
                     self.is_grounded = true;
                 } else {
                     self.is_grounded = false;
+                }
+            }
+        }
+
+        // Plafond : la tête qui monte dans un bloc s'y arrête
+        if current_radius > previous_radius {
+            if let Some(collider) = &self.collider {
+                let h = collider.block_height();
+                let head = new_up * (current_radius + PLAYER_HEIGHT * h);
+                if collider.any_solid(generator, &footprint(head, h)) {
+                    // Arrêt contre le dessous du bloc touché par la tête
+                    let ceiling_altitude = ((head.length() - self.base_radius) / h).floor();
+                    let ceiling_radius = self.base_radius + ceiling_altitude * h;
+                    current_radius = (ceiling_radius - (PLAYER_HEIGHT + 0.01) * h).clamp(previous_radius, current_radius);
+                    self.vertical_velocity = 0.0;
                 }
             }
         }
@@ -605,6 +663,44 @@ impl OrbitCamera {
         let head = self.player_pos + up * 0.065 * scale;
         Some((self.effective_eye, look_dir, (self.effective_eye - head).length()))
     }
+}
+
+/// Axes est et nord du plan tangent à la sphère sous la direction `up`
+fn tangent_frame(up: Vec3) -> (Vec3, Vec3) {
+    if up.y.abs() < 0.999 {
+        let north = (Vec3::Y - up * up.y).normalize();
+        (north.cross(up).normalize(), north)
+    } else {
+        let sign = if up.y >= 0.0 { 1.0 } else { -1.0 };
+        (Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 0.0, -sign))
+    }
+}
+
+/// Le centre et les 4 coins de l'empreinte carrée du joueur autour du point `p`
+pub fn footprint(p: Vec3, block_height: f32) -> [Vec3; 5] {
+    let (east, north) = tangent_frame(p.normalize());
+    let (e, n) = (east * PLAYER_HALF_WIDTH * block_height, north * PLAYER_HALF_WIDTH * block_height);
+    [p, p + e + n, p + e - n, p - e + n, p - e - n]
+}
+
+/// Rayon du sol sous l'empreinte du joueur : le plus haut des sols de ses coins
+fn footprint_ground(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3, step: f32) -> f32 {
+    footprint(feet, collider.block_height())
+        .iter()
+        .map(|&p| collider.ground_radius(generator, p, step))
+        .fold(f32::MIN, f32::max)
+}
+
+/// Le corps du joueur, posé sur le sol qu'il trouverait aux pieds `feet`, entre dans un bloc solide
+fn body_blocked(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3, step: f32) -> bool {
+    let h = collider.block_height();
+    let up = feet.normalize();
+    let base = feet.length().max(footprint_ground(collider, generator, feet, step));
+    let points: Vec<Vec3> = [AIR_STEP, 0.6, 1.2, PLAYER_HEIGHT]
+        .iter()
+        .flat_map(|&height| footprint(up * (base + height * h), h))
+        .collect();
+    collider.any_solid(generator, &points)
 }
 
 #[cfg(test)]
@@ -787,6 +883,118 @@ mod tests {
             cam.update(0.016, &gen);
         }
         assert!(!cam.is_flying, "se poser doit terminer le vol");
+        assert!(cam.is_grounded);
+    }
+
+    /// Joueur sur une aire plate de 9×9 blocs taillée autour de ses pieds, collisions par blocs actives.
+    /// Renvoie aussi l'altitude (en blocs) du dessus de l'aire.
+    fn voxel_test_camera() -> (OrbitCamera, PlanetWorldGenerator, Arc<TerrainEdits>, i32) {
+        let gen = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 2026, ..Default::default() });
+        let mut cam = OrbitCamera::new(165.0, 25.0, &gen);
+        let edits = Arc::new(TerrainEdits::new(None));
+        cam.set_terrain(edits.clone());
+        cam.spawn_on_ground(&gen);
+        let geometry = herocraft_world::BlockGeometry::new(cam.base_radius as f64);
+        let floor = ((cam.player_pos.length() as f64 - geometry.base_radius) / geometry.block_height).round() as i32;
+        for (dx, dz) in (-4..=4).flat_map(|i| (-4..=4).map(move |j| (i as f32, j as f32))) {
+            let column = cell_at(&cam, dx, dz, 0);
+            for y in floor - 3..floor {
+                edits.set_block(&gen, herocraft_world::BlockPos { y, ..column }, herocraft_common::BlockId::STONE);
+            }
+            for y in floor..floor + 6 {
+                edits.set_block(&gen, herocraft_world::BlockPos { y, ..column }, herocraft_common::BlockId::AIR);
+            }
+        }
+        for _ in 0..30 {
+            cam.update(0.016, &gen);
+        }
+        (cam, gen, edits, floor)
+    }
+
+    /// Bloc décalé de (avant, droite) blocs des pieds du joueur, à l'altitude `y`
+    fn cell_at(cam: &OrbitCamera, forward: f32, right: f32, y: i32) -> herocraft_world::BlockPos {
+        let geometry = herocraft_world::BlockGeometry::new(cam.base_radius as f64);
+        let (_, f, r, _) = cam.look_vectors();
+        let h = geometry.block_height as f32;
+        let p = cam.player_pos + (f * forward + r * right) * h;
+        herocraft_world::BlockPos { y, ..geometry.block_at_point(p.as_dvec3()).unwrap() }
+    }
+
+    fn altitude_blocks(cam: &OrbitCamera) -> f32 {
+        let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
+        (cam.player_pos.length() - cam.base_radius) / h
+    }
+
+    fn fill(cam: &OrbitCamera, gen: &PlanetWorldGenerator, edits: &TerrainEdits, forwards: &[f32], ys: &[i32], block: herocraft_common::BlockId) {
+        for &f in forwards {
+            for r in [-1.0, 0.0, 1.0] {
+                for &y in ys {
+                    edits.set_block(gen, cell_at(cam, f, r, y), block);
+                }
+            }
+        }
+    }
+
+    fn walk(cam: &mut OrbitCamera, gen: &PlanetWorldGenerator, seconds: f32) {
+        cam.move_forward = true;
+        for _ in 0..(seconds / 0.016) as usize {
+            cam.update(0.016, gen);
+        }
+        cam.move_forward = false;
+        for _ in 0..60 {
+            cam.update(0.016, gen);
+        }
+    }
+
+    #[test]
+    fn test_voxel_player_stands_on_block_tops() {
+        let (cam, _, _, floor) = voxel_test_camera();
+        assert!(cam.is_grounded);
+        assert!((altitude_blocks(&cam) - floor as f32).abs() < 1e-2, "pieds à {} au lieu de {}", altitude_blocks(&cam), floor);
+    }
+
+    #[test]
+    fn test_voxel_player_falls_into_a_dug_hole() {
+        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        fill(&cam, &gen, &edits, &[-1.0, 0.0, 1.0], &[floor - 1, floor - 2], herocraft_common::BlockId::AIR);
+        for _ in 0..60 {
+            cam.update(0.016, &gen);
+        }
+        assert!(cam.is_grounded);
+        assert!((altitude_blocks(&cam) - (floor - 2) as f32).abs() < 1e-2, "pieds à {}", altitude_blocks(&cam));
+    }
+
+    #[test]
+    fn test_voxel_player_climbs_a_one_block_step() {
+        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        fill(&cam, &gen, &edits, &[1.5, 2.5, 3.5], &[floor], herocraft_common::BlockId::STONE);
+        walk(&mut cam, &gen, 0.5);
+        assert!((altitude_blocks(&cam) - (floor + 1) as f32).abs() < 1e-2, "pieds à {}", altitude_blocks(&cam));
+    }
+
+    #[test]
+    fn test_voxel_wall_stops_the_player() {
+        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        let start = cam.player_pos;
+        fill(&cam, &gen, &edits, &[1.5], &[floor, floor + 1], herocraft_common::BlockId::STONE);
+        walk(&mut cam, &gen, 1.0);
+        let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
+        let travelled = (cam.player_pos.normalize() - start.normalize()).length() * cam.base_radius / h;
+        assert!(travelled > 0.3 && travelled < 1.5, "le mur doit arrêter le joueur ({} blocs parcourus)", travelled);
+        assert!((altitude_blocks(&cam) - floor as f32).abs() < 1e-2, "pieds à {}", altitude_blocks(&cam));
+    }
+
+    #[test]
+    fn test_voxel_ceiling_stops_a_jump() {
+        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        fill(&cam, &gen, &edits, &[-1.0, 0.0, 1.0], &[floor + 2], herocraft_common::BlockId::STONE);
+        cam.jump_requested = true;
+        let mut peak = 0.0_f32;
+        for _ in 0..120 {
+            cam.update(0.016, &gen);
+            peak = peak.max(altitude_blocks(&cam));
+        }
+        assert!(peak > floor as f32 + 0.05 && peak < floor as f32 + 0.5, "pic du saut à {} sous un plafond à {}", peak, floor + 2);
         assert!(cam.is_grounded);
     }
 

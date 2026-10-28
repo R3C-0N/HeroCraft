@@ -15,6 +15,7 @@ mod block_interaction;
 mod block_outline;
 mod camera;
 mod cloud_mesh;
+mod collision;
 mod gpu_timer;
 mod input;
 mod lod;
@@ -90,6 +91,7 @@ fn main() {
 
     // Initialisation du gestionnaire de LOD QuadTree avec transitions douces hybrides
     let mut lod_manager = PlanetLodManager::new(base_radius, current_seed);
+    camera.set_terrain(terrain_edits.clone());
     lod_manager.set_terrain_edits(terrain_edits);
     lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
     let visible_meshes = lod_manager.visible_meshes();
@@ -422,7 +424,9 @@ fn main() {
                                     let new_edits = herocraft_world::TerrainEdits::new(new_storage.clone());
                                     chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
                                     lod_manager.clear(current_seed);
-                                    lod_manager.set_terrain_edits(Arc::new(new_edits));
+                                    let new_edits = Arc::new(new_edits);
+                                    camera.set_terrain(new_edits.clone());
+                                    lod_manager.set_terrain_edits(new_edits);
                                     camera.spawn_on_ground(&generator);
                                     lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
                                     state.sync_lod_meshes(&lod_manager);

@@ -7,7 +7,7 @@ use herocraft_common::BlockId;
 use herocraft_world::{raycast_blocks, BlockGeometry, BlockPos, PlanetWorldGenerator, RayHit, TerrainEdits, TerrainQuery};
 use winit::event::MouseButton;
 
-use crate::camera::OrbitCamera;
+use crate::camera::{footprint, OrbitCamera, PLAYER_HEIGHT};
 use crate::lod::PlanetLodManager;
 
 /// Portée de la visée, en blocs depuis la tête du joueur
@@ -122,12 +122,14 @@ fn is_targetable(block: BlockId) -> bool {
     !block.is_air() && block != BlockId::WATER
 }
 
-/// Le bloc occuperait la place du joueur (des pieds à la tête)
+/// Le bloc occuperait la place du joueur (des pieds à la tête, sur toute sa largeur)
 fn overlaps_player(camera: &OrbitCamera, pos: BlockPos) -> bool {
     let geometry = BlockGeometry::new(camera.base_radius as f64);
-    let feet = camera.player_pos.as_dvec3();
-    let up = feet.normalize();
-    [0.05, 0.9, 1.75].iter().any(|&h| geometry.block_at_point(feet + up * h * geometry.block_height) == Some(pos))
+    let h = geometry.block_height as f32;
+    let up = camera.player_pos.normalize();
+    [0.05, 0.9, PLAYER_HEIGHT].iter().any(|&height| {
+        footprint(camera.player_pos + up * height * h, h).iter().any(|p| geometry.block_at_point(p.as_dvec3()) == Some(pos))
+    })
 }
 
 #[cfg(test)]
@@ -193,6 +195,7 @@ mod tests {
         assert!(overlaps_player(&camera, at_feet));
         assert!(overlaps_player(&camera, BlockPos { y: at_feet.y + 1, ..at_feet }));
         assert!(!overlaps_player(&camera, BlockPos { y: at_feet.y + 3, ..at_feet }));
-        assert!(!overlaps_player(&camera, BlockPos { x: at_feet.x + 1, ..at_feet }));
+        // Le joueur fait 0.6 bloc de large : il peut déborder sur le bloc voisin, jamais sur le suivant
+        assert!(!overlaps_player(&camera, BlockPos { x: at_feet.x + 2, ..at_feet }));
     }
 }

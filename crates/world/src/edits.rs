@@ -208,17 +208,59 @@ impl<'a> TerrainQuery<'a> {
         Self { generator, edits, columns: HashMap::new() }
     }
 
+    /// Reprend des colonnes déjà échantillonnées (cache gardé d'une image à l'autre)
+    pub fn with_columns(
+        generator: &'a PlanetWorldGenerator,
+        edits: &'a TerrainEdits,
+        columns: HashMap<(PlanetFace, i32, i32), ColumnSample>,
+    ) -> Self {
+        Self { generator, edits, columns }
+    }
+
+    pub fn into_columns(self) -> HashMap<(PlanetFace, i32, i32), ColumnSample> {
+        self.columns
+    }
+
+    fn column(&mut self, face: PlanetFace, x: i32, z: i32) -> &ColumnSample {
+        let generator = self.generator;
+        self.columns.entry((face, x, z)).or_insert_with(|| generator.sample_block_column(face, x, z))
+    }
+
     pub fn block(&mut self, pos: BlockPos) -> BlockId {
         if let Some(chunk) = self.edits.chunk(&pos.chunk_coord()) {
             let (x, y, z) = pos.local();
             return chunk.get_voxel(x, y, z);
         }
         let generator = self.generator;
-        let column = self
-            .columns
-            .entry((pos.face, pos.x, pos.z))
-            .or_insert_with(|| generator.sample_block_column(pos.face, pos.x, pos.z));
-        generator.column_block(column, pos.y)
+        generator.column_block(self.column(pos.face, pos.x, pos.z), pos.y)
+    }
+
+    /// Altitude (en blocs) du dessus du plus haut bloc porteur de la colonne (x, z) parmi les blocs
+    /// d'altitude ≤ `from_y`. Tout bloc non vide porte, l'eau comprise : on marche sur la mer.
+    /// Les couches jamais modifiées sont sautées d'un coup, la recherche ne descend bloc par bloc
+    /// que dans les chunks modifiés.
+    pub fn support_top(&mut self, face: PlanetFace, x: i32, z: i32, from_y: i32) -> i32 {
+        let column = self.column(face, x, z);
+        let natural_top = (column.elevation.floor() as i32).max(crate::generator::SEA_LEVEL_BLOCKS.ceil() as i32);
+        let mut y = from_y.min(WORLD_HEIGHT - 1);
+        while y >= 0 {
+            let pos = BlockPos::new(face, x, y, z);
+            if let Some(chunk) = self.edits.chunk(&pos.chunk_coord()) {
+                let (lx, ly, lz) = pos.local();
+                if !chunk.get_voxel(lx, ly, lz).is_air() {
+                    return y + 1;
+                }
+                y -= 1;
+            } else if y < natural_top {
+                return y + 1;
+            } else {
+                // Couche intacte et vide au-dessus du relief : passage au plus haut bloc utile en dessous
+                let layer_base = y.div_euclid(CHUNK_SIZE as i32) * CHUNK_SIZE as i32;
+                y = (natural_top - 1).max(layer_base - 1);
+            }
+        }
+        // Sous l'altitude 0, tout est roche
+        0
     }
 }
 
@@ -382,6 +424,27 @@ mod tests {
         assert_eq!(edits.len(), 1);
         assert_eq!(edits.block(&generator, pos), BlockId::STONE);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn support_top_matches_a_block_by_block_scan() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (face, x, z) = (PlanetFace::PosZ, 430, 610);
+        let naive = |edits: &TerrainEdits, from_y: i32| {
+            (0..=from_y.min(WORLD_HEIGHT - 1)).rev().find(|&y| !edits.block(&generator, BlockPos::new(face, x, y, z)).is_air()).map_or(0, |y| y + 1)
+        };
+        let surface = TerrainQuery::new(&generator, &edits).support_top(face, x, z, WORLD_HEIGHT - 1);
+        // Un trou de 3 blocs, un bloc flottant au-dessus et un autre en couche haute
+        for dy in 1..=3 {
+            edits.set_block(&generator, BlockPos::new(face, x, surface - dy, z), BlockId::AIR);
+        }
+        edits.set_block(&generator, BlockPos::new(face, x, surface + 4, z), BlockId::STONE);
+        edits.set_block(&generator, BlockPos::new(face, x, 400, z), BlockId::STONE);
+        let mut query = TerrainQuery::new(&generator, &edits);
+        for from_y in [WORLD_HEIGHT - 1, 399, surface + 10, surface + 4, surface + 3, surface, surface - 2, surface - 4, 20, 0, -3] {
+            assert_eq!(query.support_top(face, x, z, from_y), naive(&edits, from_y), "depuis {}", from_y);
+        }
     }
 
     #[test]
