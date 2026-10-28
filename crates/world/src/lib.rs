@@ -1,3 +1,4 @@
+pub mod caves;
 pub mod cubed_sphere;
 pub mod edits;
 pub mod generator;
@@ -5,6 +6,7 @@ pub mod ocean_currents;
 pub mod quadtree;
 pub mod tectonics;
 
+pub use caves::{carvable_range, CaveField, CAVE_DEPTH};
 pub use cubed_sphere::*;
 pub use edits::*;
 pub use generator::*;

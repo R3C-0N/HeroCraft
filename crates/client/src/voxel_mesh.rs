@@ -6,7 +6,7 @@ use herocraft_common::{BlockId, PlanetChunkCoord, PlanetFace};
 use herocraft_voxel_engine::cache::WorldChunkCache;
 use herocraft_voxel_engine::chunk::{ChunkData, CHUNK_SIZE};
 use herocraft_world::generator::{ColumnSample, PlanetWorldGenerator};
-use herocraft_world::{TerrainEdits, ALTITUDE_LAYERS, FACE_CHUNKS};
+use herocraft_world::{carvable_range, TerrainEdits, ALTITUDE_LAYERS, FACE_CHUNKS};
 
 use crate::planet_mesh::{PlanetMesh, PlanetVertex};
 
@@ -22,6 +22,8 @@ pub struct VoxelColumnSource {
     pub base_radius: f32,
     min_elev: f64,
     max_elev: f64,
+    /// Plus basse altitude où les grottes de la colonne ou de sa bordure peuvent creuser
+    cave_bottom: Option<i32>,
     /// Couleur du biome de chaque colonne de blocs (32x32)
     column_colors: Vec<[f32; 4]>,
     /// Colonnes du générateur avec une bordure de `COLUMN_BORDER`
@@ -436,8 +438,9 @@ impl VoxelMeshBuilder {
         // Colonnes du chunk + bordure d'une colonne (voisins des faces et de l'AO), échantillonnées
         // une seule fois et partagées par toutes les couches d'altitude
         let columns = generator.sample_chunk_columns(face, chunk_x, chunk_y, COLUMN_BORDER);
+        let cave_bottom = columns.iter().map(carvable_range).filter(|r| !r.is_empty()).map(|r| r.start).min();
 
-        VoxelColumnSource { face, chunk_x, chunk_y, base_radius, min_elev, max_elev, column_colors, columns }
+        VoxelColumnSource { face, chunk_x, chunk_y, base_radius, min_elev, max_elev, cave_bottom, column_colors, columns }
     }
 
     /// Couches d'altitude à mailler : celles que le relief et la mer occupent, plus celles que le
@@ -447,7 +450,9 @@ impl VoxelMeshBuilder {
         // On inclut le niveau de la mer et une marge de sécurité
         let sea = herocraft_world::generator::SEA_LEVEL_BLOCKS;
         let (min_elev, max_elev) = (source.min_elev, source.max_elev);
-        let lowest = (min_elev.min(sea) - 6.0).max(0.0);
+        // Sous le relief, seules les couches que les grottes atteignent ont quelque chose à montrer
+        let cave_bottom = source.cave_bottom.map_or(f64::MAX, |y| y as f64);
+        let lowest = (min_elev.min(sea).min(cave_bottom) - 6.0).max(0.0);
         let highest = (max_elev.max(sea) + 6.0).min(528.0);
 
         let min_layer = ((lowest / 32.0).floor() as i32).clamp(0, 16);
@@ -466,8 +471,9 @@ impl VoxelMeshBuilder {
             .filter(|&layer| {
                 let layer_base = (layer * 32) as f64;
                 let layer_top = layer_base + 32.0;
-                // Optimisation : saut des chunks 100% souterrains ou 100% dans le ciel
-                let buried = min_elev >= layer_top && sea < layer_base;
+                // Optimisation : saut des chunks 100% souterrains ou 100% dans le ciel. Une couche
+                // dont le bloc du dessus touche une grotte de la couche au-dessus garde ses faces.
+                let buried = min_elev >= layer_top && sea < layer_base && cave_bottom > layer_top;
                 let empty_sky = max_elev < layer_base && sea < layer_base;
                 !(buried || empty_sky) || touched(layer)
             })
@@ -555,7 +561,10 @@ impl VoxelMeshBuilder {
         };
 
         let coord = PlanetChunkCoord::new(face, chunk_x, chunk_y, layer);
-        let generated = generator.generate_chunk_from_columns(&coord, columns, COLUMN_BORDER);
+        // Grottes du chunk et de sa bordure d'un bloc : celles des voisins décident de leurs faces
+        let caves = generator.chunk_cave_field(&coord, columns, COLUMN_BORDER);
+        let generated = generator.generate_chunk_with_caves(&coord, columns, COLUMN_BORDER, caves.as_ref());
+        let (block_x0, block_z0) = (chunk_x * CHUNK_SIZE as i32, chunk_y * CHUNK_SIZE as i32);
         // Chunks modifiés du voisinage 3x3x3 (index (dy+1)*9 + (dz+1)*3 + dx+1), lus une fois par couche
         let neighbours: [Option<Arc<ChunkData>>; 27] = std::array::from_fn(|i| {
             let (dx, dy, dz) = ((i % 3) as i32 - 1, (i / 9) as i32 - 1, ((i / 3) % 3) as i32 - 1);
@@ -582,25 +591,29 @@ impl VoxelMeshBuilder {
             }
             // Voisin non modifié : le générateur, réduit à ce que le maillage en lit (solide, eau ou air)
             let global_y = (layer as f64) * 32.0 + (gy as f64);
-            let (col_elevation, biome) = if (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&gx)
-                && (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&gz)
-            {
-                let c = &columns[((gz + COLUMN_BORDER) * COLUMN_SIDE + gx + COLUMN_BORDER) as usize];
-                (c.elevation, c.biome)
+            let sampled;
+            let column = if (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&gx) && (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&gz) {
+                &columns[((gz + COLUMN_BORDER) * COLUMN_SIDE + gx + COLUMN_BORDER) as usize]
             } else {
-                let c = generator.sample_column(
-                    face,
-                    base_u + (gx as f64) * voxel_span_uv,
-                    base_v + (gz as f64) * voxel_span_uv,
-                );
-                (c.elevation, c.biome)
+                sampled = generator.sample_column(face, base_u + (gx as f64) * voxel_span_uv, base_v + (gz as f64) * voxel_span_uv);
+                &sampled
             };
 
-            let elev_floor = col_elevation.floor();
+            let elev_floor = column.elevation.floor();
             if global_y < elev_floor {
-                BlockId::STONE
+                let (bx, by, bz) = (block_x0 + gx, layer * 32 + gy, block_z0 + gz);
+                let carved = match &caves {
+                    Some(caves) => caves.carved(column, bx, by, bz),
+                    // Sans champ, aucune colonne de la bordure n'a de grotte à ces altitudes
+                    None => false,
+                };
+                if carved {
+                    BlockId::AIR
+                } else {
+                    BlockId::STONE
+                }
             } else if global_y < sea {
-                if biome == herocraft_world::BiomeType::SnowPeaks {
+                if column.biome == herocraft_world::BiomeType::SnowPeaks {
                     BlockId::SNOW
                 } else {
                     BlockId::WATER
@@ -610,9 +623,25 @@ impl VoxelMeshBuilder {
             }
         };
 
-        let get_color = |gx: i32, gy: i32, gz: i32, block: BlockId, is_top: bool| -> [f32; 4] {
+        // Le bloc (x, y, z), voisin d'une face visible, est l'air d'une grotte du générateur (un
+        // trou creusé par le joueur n'en est pas une)
+        let cave_air = |gx: i32, gy: i32, gz: i32| -> bool {
+            let column = &columns[((gz + COLUMN_BORDER) * COLUMN_SIDE + gx + COLUMN_BORDER) as usize];
+            let y = layer * 32 + gy;
+            (y as f64) < column.elevation.floor()
+                && caves.as_ref().is_some_and(|caves| caves.carved(column, block_x0 + gx, y, block_z0 + gz))
+        };
+        // `toward` : le voisin vers lequel la face regarde
+        let get_color = |gx: i32, gy: i32, gz: i32, block: BlockId, is_top: bool, toward: (i32, i32, i32)| -> [f32; 4] {
             let idx = (gz.clamp(0, 31) as usize) * 32 + (gx.clamp(0, 31) as usize);
             let biome_color = column_colors[idx];
+            // Paroi de grotte : la couleur de sa matière, comme un trou creusé par le joueur, et non
+            // celle du biome qui est celle de la surface (l'ombre du relief l'assombrit déjà)
+            if block != BlockId::WATER && cave_air(gx + toward.0, gy + toward.1, gz + toward.2) {
+                let c = Self::block_color(block, false);
+                let shade = if is_top { 1.0 } else { 0.78 };
+                return [c[0] * shade, c[1] * shade, c[2] * shade, 1.0];
+            }
             // Dans un chunk modifié, un bloc posé par le joueur ou découvert sous la surface prend la
             // couleur de sa matière : la couleur du biome est celle de la surface naturelle
             if edited.is_some() && block != BlockId::WATER {
@@ -666,7 +695,7 @@ impl VoxelMeshBuilder {
                         neighbor_top.is_air() || neighbor_top == BlockId::WATER
                     };
                     if should_emit_top {
-                        let color = get_color(gx, gy, gz, block, true);
+                        let color = get_color(gx, gy, gz, block, true, (0, 1, 0));
                         let c0 = get_corner(fx, fy + 1.0, fz, layer);
                         let c1 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
@@ -688,7 +717,7 @@ impl VoxelMeshBuilder {
                     if !is_water {
                         let neighbor_bottom = get_voxel(gx, gy - 1, gz);
                         if neighbor_bottom.is_air() {
-                            let color = get_color(gx, gy, gz, block, false);
+                            let color = get_color(gx, gy, gz, block, false, (0, -1, 0));
                             let c0 = get_corner(fx, fy, fz, layer);
                             let c1 = get_corner(fx + 1.0, fy, fz, layer);
                             let c2 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
@@ -711,7 +740,7 @@ impl VoxelMeshBuilder {
                         neighbor_left.is_air() || neighbor_left == BlockId::WATER
                     };
                     if should_emit_left {
-                        let color = get_color(gx, gy, gz, block, false);
+                        let color = get_color(gx, gy, gz, block, false, (-1, 0, 0));
                         let c0 = get_corner(fx, fy, fz, layer);
                         let c1 = get_corner(fx, fy, fz + 1.0, layer);
                         let c2 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
@@ -737,7 +766,7 @@ impl VoxelMeshBuilder {
                         neighbor_right.is_air() || neighbor_right == BlockId::WATER
                     };
                     if should_emit_right {
-                        let color = get_color(gx, gy, gz, block, false);
+                        let color = get_color(gx, gy, gz, block, false, (1, 0, 0));
                         let c0 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
                         let c1 = get_corner(fx + 1.0, fy, fz, layer);
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
@@ -763,7 +792,7 @@ impl VoxelMeshBuilder {
                         neighbor_front.is_air() || neighbor_front == BlockId::WATER
                     };
                     if should_emit_front {
-                        let color = get_color(gx, gy, gz, block, false);
+                        let color = get_color(gx, gy, gz, block, false, (0, 0, 1));
                         let c0 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
                         let c1 = get_corner(fx, fy, fz + 1.0, layer);
                         let c2 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
@@ -789,7 +818,7 @@ impl VoxelMeshBuilder {
                         neighbor_back.is_air() || neighbor_back == BlockId::WATER
                     };
                     if should_emit_back {
-                        let color = get_color(gx, gy, gz, block, false);
+                        let color = get_color(gx, gy, gz, block, false, (0, 0, -1));
                         let c0 = get_corner(fx, fy, fz, layer);
                         let c1 = get_corner(fx + 1.0, fy, fz, layer);
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
@@ -1022,8 +1051,9 @@ mod tests {
         let mut column = VoxelMeshBuilder::build_column(&generator, &edits, source.clone());
         let before = column.mesh.vertices.len();
 
-        // Surface de la colonne (x=5, z=7) : le premier bloc d'air en montant
-        let surface = (0..528).find(|&y| generator.block_at(face, cx * 32 + 5, y, cy * 32 + 7).is_air()).unwrap();
+        // Surface de la colonne (x=5, z=7) : au-dessus du plus haut bloc non vide (une grotte peut
+        // ouvrir de l'air plus bas)
+        let surface = (0..528).rev().find(|&y| !generator.block_at(face, cx * 32 + 5, y, cy * 32 + 7).is_air()).unwrap() + 1;
         let dug = BlockPos::new(face, cx * 32 + 5, surface - 1, cy * 32 + 7);
         let placed = BlockPos::new(face, cx * 32 + 20, 500, cy * 32 + 31);
         for (pos, block) in [(dug, BlockId::AIR), (placed, BlockId::STONE)] {
@@ -1051,6 +1081,34 @@ mod tests {
     }
 
     #[test]
+    fn test_cave_walls_are_meshed_below_the_surface() {
+        // Collines de la face -Z (graine 42) percées de tunnels : leurs parois sont maillées, couleur
+        // de la roche et non du biome, jusque dans les couches entièrement sous le relief
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor::default());
+        let edits = TerrainEdits::new(None);
+        let cave_stone = VoxelMeshBuilder::block_color(BlockId::STONE, false);
+        let mut cave_vertices = 0;
+        let mut below_relief = false;
+        for (cx, cy) in [(20, 5), (21, 5), (22, 6), (24, 7)] {
+            let source = Arc::new(VoxelMeshBuilder::sample_column_source(&generator, PlanetFace::NegZ, cx, cy, 50.0, VisualizationFilter::Standard));
+            let column = VoxelMeshBuilder::build_column(&generator, &edits, source.clone());
+            // La couleur porte l'occlusion ambiante : on compare la teinte, pas la valeur exacte
+            cave_vertices += column
+                .mesh
+                .vertices
+                .iter()
+                .filter(|v| {
+                    let k = v.color[0] / cave_stone[0];
+                    k > 0.3 && k <= 1.0001 && (v.color[1] - cave_stone[1] * k).abs() < 1e-4 && (v.color[2] - cave_stone[2] * k).abs() < 1e-4
+                })
+                .count();
+            below_relief |= column.layers.iter().any(|r| ((r.layer + 1) * 32) as f64 <= source.min_elev);
+        }
+        assert!(cave_vertices > 100, "{} sommets de parois de grottes", cave_vertices);
+        assert!(below_relief, "une couche entièrement sous le relief est maillée pour ses grottes");
+    }
+
+    #[test]
     fn test_layer_rebuild_is_fast() {
         use herocraft_world::BlockPos;
         let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
@@ -1062,7 +1120,7 @@ mod tests {
         let t = std::time::Instant::now();
         let mut column = VoxelMeshBuilder::build_column(&generator, &edits, source);
         let t_build = t.elapsed();
-        let surface = (0..528).find(|&y| generator.block_at(face, cx * 32 + 9, y, cy * 32 + 9).is_air()).unwrap();
+        let surface = (0..528).rev().find(|&y| !generator.block_at(face, cx * 32 + 9, y, cy * 32 + 9).is_air()).unwrap() + 1;
         let t = std::time::Instant::now();
         let source = column.source.clone();
         edits.set_block_with(BlockPos::new(face, cx * 32 + 9, surface - 1, cy * 32 + 9), BlockId::AIR, |coord| {

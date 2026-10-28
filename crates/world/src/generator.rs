@@ -1,3 +1,4 @@
+use crate::caves::{block_carved, carvable_range, CaveField};
 use crate::cubed_sphere::{base_solar_temperature, unit_sphere_to_lat_lon, PlanetDescriptor};
 use crate::ocean_currents::OceanicCurrentSimulation;
 use crate::tectonics::TectonicSimulation;
@@ -17,7 +18,7 @@ pub enum VisualizationFilter {
 /// Niveau de la mer de référence en blocs
 pub const SEA_LEVEL_BLOCKS: f64 = 100.0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BiomeType {
     /// Plaines et fosses océaniques abyssales
     DeepOcean,
@@ -37,6 +38,14 @@ pub enum BiomeType {
     Mountains,
     /// Sommets enneigés, glaciers et calottes polaires
     SnowPeaks,
+    /// Toundra : plaines froides et rases des hautes latitudes
+    Tundra,
+    /// Taïga : forêts de conifères des régions froides et humides
+    Taiga,
+    /// Savane : herbes sèches des régions chaudes
+    Savanna,
+    /// Jungle : forêts tropicales chaudes et très humides
+    Jungle,
 }
 
 impl BiomeType {
@@ -169,16 +178,20 @@ impl PlanetWorldGenerator {
         }
     }
 
-    /// Bloc généré à l'altitude `global_y` d'une colonne : exactement celui que pose
+    /// Bloc généré en (x, y, z) d'une face, `column` étant sa colonne : exactement celui que pose
     /// `generate_chunk_from_columns`, sans générer le chunk entier
-    pub fn column_block(&self, column: &ColumnSample, global_y: i32) -> BlockId {
-        if global_y < 0 {
+    pub fn column_block(&self, column: &ColumnSample, face: PlanetFace, x: i32, y: i32, z: i32) -> BlockId {
+        if y < 0 {
             return BlockId::STONE;
         }
-        let global_y = global_y as f64;
+        let global_y = y as f64;
         let elev_floor = column.elevation.floor();
         if global_y < elev_floor {
-            self.solid_block(column.dir, column.biome, global_y, elev_floor)
+            if block_carved(self.planet.seed, face, column, x, y, z) {
+                BlockId::AIR
+            } else {
+                self.solid_block(column.dir, column.biome, global_y, elev_floor)
+            }
         } else if global_y < SEA_LEVEL_BLOCKS {
             if column.biome == BiomeType::SnowPeaks {
                 BlockId::SNOW
@@ -190,9 +203,43 @@ impl PlanetWorldGenerator {
         }
     }
 
+    /// Le bloc plein (x, y, z) d'une face est creusé par une grotte (`column` étant sa colonne)
+    pub fn is_cave(&self, column: &ColumnSample, face: PlanetFace, x: i32, y: i32, z: i32) -> bool {
+        block_carved(self.planet.seed, face, column, x, y, z)
+    }
+
     /// Bloc généré en (x, y, z) d'une face : x le long de u, z le long de v (0..1024), y l'altitude
     pub fn block_at(&self, face: PlanetFace, x: i32, y: i32, z: i32) -> BlockId {
-        self.column_block(&self.sample_block_column(face, x, z), y)
+        self.column_block(&self.sample_block_column(face, x, z), face, x, y, z)
+    }
+
+    /// Champ de grottes d'un chunk et de `border` blocs autour (colonnes de `sample_chunk_columns`
+    /// avec la même bordure), réduit aux altitudes où ses colonnes peuvent en avoir. `None` si la
+    /// couche n'en a aucune.
+    pub fn chunk_cave_field(&self, coord: &PlanetChunkCoord, columns: &[ColumnSample], border: i32) -> Option<CaveField> {
+        let layer_base = coord.altitude_layer * CHUNK_SIZE as i32;
+        let (mut low, mut high) = (i32::MAX, i32::MIN);
+        for column in columns {
+            let range = carvable_range(column);
+            if !range.is_empty() {
+                low = low.min(range.start);
+                high = high.max(range.end);
+            }
+        }
+        let low = low.max(layer_base - border);
+        let high = high.min(layer_base + CHUNK_SIZE as i32 + border);
+        if low >= high {
+            return None;
+        }
+        let size = CHUNK_SIZE as i32;
+        let (x0, z0) = (coord.x * size, coord.y * size);
+        Some(CaveField::new(
+            self.planet.seed,
+            coord.face,
+            x0 - border..x0 + size + border,
+            low..high,
+            z0 - border..z0 + size + border,
+        ))
     }
 
     /// Colonne de la grille voxel (x, z) d'une face, échantillonnée au même point que `sample_chunk_columns`
@@ -203,6 +250,18 @@ impl PlanetWorldGenerator {
 
     /// Génère un chunk voxel à partir de colonnes précalculées par `sample_chunk_columns`
     pub fn generate_chunk_from_columns(&self, coord: &PlanetChunkCoord, columns: &[ColumnSample], border: i32) -> ChunkData {
+        let caves = self.chunk_cave_field(coord, columns, border);
+        self.generate_chunk_with_caves(coord, columns, border, caves.as_ref())
+    }
+
+    /// `generate_chunk_from_columns` avec le champ de grottes déjà calculé par `chunk_cave_field`
+    pub fn generate_chunk_with_caves(
+        &self,
+        coord: &PlanetChunkCoord,
+        columns: &[ColumnSample],
+        border: i32,
+        caves: Option<&CaveField>,
+    ) -> ChunkData {
         herocraft_common::prof_scope!("world::generate_chunk");
         let mut chunk = ChunkData::new_empty();
         let side = CHUNK_SIZE + 2 * border as usize;
@@ -222,11 +281,19 @@ impl PlanetWorldGenerator {
                 let ground_y = ((elevation - layer_base_y)
                     .clamp(0.0, CHUNK_SIZE as f64)) as u8;
 
-                // 1. Remplissage du sol solide
+                // 1. Remplissage du sol solide, sauf les blocs creusés par les grottes
                 let elev_floor = elevation.floor();
+                let block_x = coord.x * CHUNK_SIZE as i32 + x as i32;
+                let block_z = coord.y * CHUNK_SIZE as i32 + z as i32;
                 for y in 0..ground_y {
                     let global_y = layer_base_y + y as f64;
                     chunk.set_voxel(x, y, z, self.solid_block(sphere_dir, biome, global_y, elev_floor));
+                }
+                if let Some(caves) = caves {
+                    let base = layer_base_y as i32;
+                    caves.for_each_carved(column, block_x, block_z, base..base + ground_y as i32, |y| {
+                        chunk.set_voxel(x, (y - base) as u8, z, BlockId::AIR);
+                    });
                 }
 
                 // 2. Remplissage de l'eau jusqu'au niveau de la mer si sous l'eau
@@ -418,18 +485,37 @@ impl PlanetWorldGenerator {
             let altitude_cooling = (elevation - SEA_LEVEL_BLOCKS) / 250.0;
             let temp = (solar_temp - altitude_cooling).clamp(0.0, 1.0);
 
-            // Humidité procédurale
-            let moisture = fbm_3d(dir * 2.2, 3, 2.0, 0.50, self.planet.seed.wrapping_add(77777)) * 0.5 + 0.5;
+            // Humidité procédurale, ramenée sur [0, 1] (le bruit brut reste dans ±FBM_SPAN)
+            let moisture_noise = fbm_3d(dir * 2.2, 3, 2.0, 0.50, self.planet.seed.wrapping_add(77777));
+            let moisture = ((moisture_noise / FBM_SPAN).clamp(-1.0, 1.0) * 0.5 + 0.5).clamp(0.0, 1.0);
 
             // Enneigement strict au-dessus de 300 blocs
             if elevation >= 300.0 {
                 BiomeType::SnowPeaks // Sommets enneigés et neiges éternelles
             } else if elevation > 170.0 {
                 BiomeType::Mountains // Versants et massifs montagneux
-            } else if temp > 0.65 && moisture < 0.38 {
-                BiomeType::Desert // Déserts chauds
-            } else if moisture > 0.52 {
-                BiomeType::Forest // Forêts
+            } else if temp < 0.50 {
+                // Régions froides : forêts de conifères si l'air est humide, toundra rase sinon
+                if moisture > 0.52 {
+                    BiomeType::Taiga
+                } else {
+                    BiomeType::Tundra
+                }
+            } else if temp > 0.78 {
+                // Régions chaudes, des déserts aux jungles selon l'humidité
+                if moisture < 0.30 {
+                    BiomeType::Desert
+                } else if moisture < 0.47 {
+                    BiomeType::Savanna
+                } else if moisture > 0.60 {
+                    BiomeType::Jungle
+                } else {
+                    BiomeType::Forest
+                }
+            } else if moisture < 0.24 && temp > 0.65 {
+                BiomeType::Desert // Déserts continentaux
+            } else if moisture > 0.56 {
+                BiomeType::Forest // Forêts tempérées
             } else {
                 BiomeType::Plains // Plaines et prairies
             }
@@ -714,6 +800,46 @@ mod tests {
             "Au moins 8% des terres doivent être montagneuses (constaté : {:.1}%)",
             mountain_ratio * 100.0
         );
+    }
+
+    #[test]
+    fn test_climate_biomes_all_present() {
+        // Toundra et taïga dans le froid, savane et jungle dans le chaud, sans écraser les biomes d'origine
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor::default());
+        let sample_count = 20000;
+        let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
+        let mut counts = std::collections::HashMap::new();
+        let mut land = 0;
+        for i in 0..sample_count {
+            let y = 1.0 - (i as f64 / (sample_count - 1) as f64) * 2.0;
+            let radius = (1.0 - y * y).max(0.0).sqrt();
+            let theta = 2.0 * std::f64::consts::PI * (i as f64) / phi;
+            let dir = DVec3::new(radius * theta.cos(), y, radius * theta.sin()).normalize();
+            let (lat, _) = unit_sphere_to_lat_lon(dir);
+            let (_, biome) = generator.sample_elevation_and_biome(dir, lat);
+            if !biome.is_water() {
+                land += 1;
+                *counts.entry(biome).or_insert(0usize) += 1;
+                if biome == BiomeType::Tundra || biome == BiomeType::Taiga {
+                    assert!(lat.abs() > 0.5, "biome froid à {:.0}° de latitude", lat.to_degrees());
+                }
+                if biome == BiomeType::Jungle || biome == BiomeType::Savanna {
+                    assert!(lat.abs() < 0.75, "biome chaud à {:.0}° de latitude", lat.to_degrees());
+                }
+            }
+        }
+        for biome in [
+            BiomeType::Plains,
+            BiomeType::Forest,
+            BiomeType::Desert,
+            BiomeType::Tundra,
+            BiomeType::Taiga,
+            BiomeType::Savanna,
+            BiomeType::Jungle,
+        ] {
+            let share = *counts.get(&biome).unwrap_or(&0) as f64 / land as f64;
+            assert!(share > 0.015, "{:?} ne couvre que {:.1}% des terres", biome, share * 100.0);
+        }
     }
 
     #[test]

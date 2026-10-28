@@ -225,6 +225,22 @@ impl PlanetMesh {
                         ]
                     }
                 }
+                BiomeType::Tundra | BiomeType::Taiga | BiomeType::Savanna | BiomeType::Jungle => {
+                    // Piémont : même transition douce vers la roche que les plaines et les forêts
+                    let base = Self::biome_color(biome);
+                    if raw_elevation > 140.0 {
+                        let k = ((raw_elevation - 140.0) / 30.0).clamp(0.0, 1.0) as f32;
+                        let rock = [0.34, 0.38, 0.28, 1.0];
+                        [
+                            base[0] * (1.0 - k) + rock[0] * k,
+                            base[1] * (1.0 - k) + rock[1] * k,
+                            base[2] * (1.0 - k) + rock[2] * k,
+                            1.0,
+                        ]
+                    } else {
+                        base
+                    }
+                }
                 _ => Self::biome_color(biome),
             }
         }
@@ -244,6 +260,10 @@ impl PlanetMesh {
             BiomeType::Desert => [0.90, 0.72, 0.38, 1.0],     // Dunes et déserts chauds
             BiomeType::Mountains => [0.52, 0.50, 0.48, 1.0],  // Roches grises des massifs
             BiomeType::SnowPeaks => [0.96, 0.97, 1.00, 1.0],  // Sommets enneigés et calottes polaires
+            BiomeType::Tundra => [0.56, 0.60, 0.48, 1.0],     // Toundra rase, vert-de-gris givré
+            BiomeType::Taiga => [0.12, 0.33, 0.22, 1.0],      // Conifères vert sombre bleuté
+            BiomeType::Savanna => [0.68, 0.62, 0.30, 1.0],    // Herbes sèches jaune paille
+            BiomeType::Jungle => [0.04, 0.47, 0.20, 1.0],     // Canopée tropicale vert émeraude
         }
     }
 

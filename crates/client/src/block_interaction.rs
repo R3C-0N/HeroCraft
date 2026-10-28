@@ -193,7 +193,7 @@ mod tests {
         // Les pieds posés sur le dessus des blocs de leur colonne (la physique suit le relief lissé)
         let geometry = BlockGeometry::new(50.0);
         let column = geometry.block_at_point(camera.player_pos.as_dvec3()).unwrap();
-        let top = (0..528).find(|&y| generator.block_at(column.face, column.x, y, column.z).is_air()).unwrap();
+        let top = (0..528).rev().find(|&y| !generator.block_at(column.face, column.x, y, column.z).is_air()).unwrap() + 1;
         let centre = geometry.block_corners(BlockPos { y: top, ..column }).iter().sum::<glam::DVec3>() / 8.0;
         camera.player_pos = (centre.normalize() * (geometry.base_radius + (top as f64 + 0.01) * geometry.block_height)).as_vec3();
         camera.update_camera_bounds(&generator);
