@@ -11,8 +11,11 @@ use winit::{
 };
 
 mod atmosphere;
+mod block_interaction;
+mod block_outline;
 mod camera;
 mod cloud_mesh;
+mod collision;
 mod gpu_timer;
 mod input;
 mod lod;
@@ -24,6 +27,7 @@ mod shadow;
 mod ui;
 mod voxel_mesh;
 
+use block_interaction::BlockInteraction;
 use camera::OrbitCamera;
 use input::Action;
 use lod::PlanetLodManager;
@@ -43,6 +47,7 @@ fn main() {
     info!("==========================================================");
     info!("Contrôles (modifiables dans Échap > Commandes) :");
     info!(" • Souris                             : Regarder autour (curseur capturé en jeu)");
+    info!(" • Clic gauche / Clic droit           : Détruire le bloc visé / Poser un bloc de pierre");
     info!(" • [Z,Q,S,D] (AZERTY) / [W,A,S,D]     : Se déplacer");
     info!(" • [ESPACE] / double [ESPACE]         : Sauter / S'envoler (monter en vol)");
     info!(" • [MAJ] / [CTRL]                     : Descendre en vol / Sprinter");
@@ -72,6 +77,8 @@ fn main() {
     // Initialisation du stockage et du cache de chunks voxels
     let save_dir = format!("saves/monde_{}", current_seed);
     let storage = herocraft_voxel_engine::ChunkStorage::new(&save_dir).ok();
+    // Blocs détruits ou posés par le joueur, enregistrés dans la même sauvegarde
+    let terrain_edits = Arc::new(herocraft_world::TerrainEdits::new(storage.clone()));
     let mut chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
 
     // Rayon de base de la planète déterminé par le descripteur (REFERENCE_BASE_RADIUS * scale)
@@ -84,6 +91,8 @@ fn main() {
 
     // Initialisation du gestionnaire de LOD QuadTree avec transitions douces hybrides
     let mut lod_manager = PlanetLodManager::new(base_radius, current_seed);
+    camera.set_terrain(terrain_edits.clone());
+    lod_manager.set_terrain_edits(terrain_edits);
     lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
     let visible_meshes = lod_manager.visible_meshes();
     info!(
@@ -112,6 +121,9 @@ fn main() {
     // Actions du clavier rejouées comme les boutons du HUD, au moment du rendu
     let mut pending_actions: Vec<UiAction> = Vec::new();
     let mut is_dragging = false;
+    // Destruction (clic gauche) et pose (clic droit) du bloc visé par le réticule
+    let mut block_interaction = BlockInteraction::new();
+    let mut last_autosave = Instant::now();
     let mut last_mouse_pos = (0.0_f64, 0.0_f64);
     let mut last_frame_time = Instant::now();
     let mut fps_timer = Instant::now();
@@ -122,12 +134,18 @@ fn main() {
 
         match event {
             Event::WindowEvent { window_id, ref event } if window_id == window.id() => {
+                // Hors image : le temps passé à traiter les événements de la fenêtre apparaît au rapport
+                let _event_guard = (!matches!(event, WindowEvent::RedrawRequested)).then(|| {
+                    herocraft_common::prof_scope!("boucle::evenement_fenetre" => guard);
+                    guard
+                });
                 // Transmettre les événements de fenêtre à egui
                 ui_state.handle_event(event);
 
                 match event {
                     WindowEvent::CloseRequested => {
                         let _ = chunk_cache.flush_dirty();
+                        save_terrain_edits(&lod_manager);
                         write_profile_report();
                         target.exit();
                     }
@@ -164,6 +182,16 @@ fn main() {
                     // Clic souris : glisser pour tourner la planète en vue satellite (curseur visible).
                     // Souris capturée, les clics restent libres pour l'interaction avec les blocs.
                     WindowEvent::MouseInput { state: btn_state, button, .. } => {
+                        if cursor_captured {
+                            // Appliqué et remaillé sur-le-champ : le bloc change dans la frame qui suit le clic
+                            let pressed = *btn_state == ElementState::Pressed;
+                            if let Some(action) = block_interaction.on_mouse_button(*button, pressed) {
+                                block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
+                                if block_interaction.apply(action, &camera, &generator, &mut lod_manager) {
+                                    state.sync_lod_meshes(&lod_manager);
+                                }
+                            }
+                        }
                         if !cursor_captured && matches!(button, MouseButton::Left | MouseButton::Right) {
                             let is_over_ui = ui_state.is_settings_open
                                 || ui_state.ctx.is_pointer_over_area()
@@ -322,9 +350,30 @@ fn main() {
                         state.update_shadows(&camera, &ui_state.shadow_settings);
                         state.update_atmosphere(&camera, &ui_state.atmosphere_settings, &ui_state.lighting_settings);
 
+                        // Bloc visé par le réticule (souris capturée seulement) et bouton tenu enfoncé
+                        let mut terrain_edited = false;
+                        if cursor_captured {
+                            let edits = lod_manager.terrain_edits().clone();
+                            block_interaction.update_target(&camera, &generator, &edits);
+                            if let Some(action) = block_interaction.tick(dt) {
+                                terrain_edited = block_interaction.apply(action, &camera, &generator, &mut lod_manager);
+                            }
+                        } else {
+                            block_interaction.reset();
+                        }
+                        {
+                            herocraft_common::prof_scope!("blocs::contour");
+                            state.set_block_outline(block_interaction.outline(&camera));
+                        }
+                        if last_autosave.elapsed().as_secs() >= 30 {
+                            save_terrain_edits(&lod_manager);
+                            last_autosave = Instant::now();
+                        }
+
                         // Mise à jour adaptative du QuadTree LOD
                         herocraft_common::prof_scope!("frame::lod_and_upload" => lod_guard);
                         if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, dt, None)
+                            || terrain_edited
                             || state.has_pending_lod_uploads()
                         {
                             state.sync_lod_meshes(&lod_manager);
@@ -346,6 +395,7 @@ fn main() {
                                 }
                                 UiAction::QuitGame => {
                                     let _ = chunk_cache.flush_dirty();
+                                    save_terrain_edits(&lod_manager);
                                     info!("Bouton cliqué : Sauvegarde des chunks et fermeture du jeu.");
                                     write_profile_report();
                                     target.exit();
@@ -372,14 +422,19 @@ fn main() {
                                 }
                                 UiAction::GenerateNewPlanet => {
                                     let _ = chunk_cache.flush_dirty();
+                                    save_terrain_edits(&lod_manager);
                                     current_seed = current_seed.wrapping_add(1337);
                                     let mut new_desc = herocraft_world::PlanetDescriptor::default();
                                     new_desc.seed = current_seed;
                                     generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
                                     let new_save_dir = format!("saves/monde_{}", current_seed);
                                     let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
+                                    let new_edits = herocraft_world::TerrainEdits::new(new_storage.clone());
                                     chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
                                     lod_manager.clear(current_seed);
+                                    let new_edits = Arc::new(new_edits);
+                                    camera.set_terrain(new_edits.clone());
+                                    lod_manager.set_terrain_edits(new_edits);
                                     camera.spawn_on_ground(&generator);
                                     lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
                                     state.sync_lod_meshes(&lod_manager);
@@ -456,6 +511,7 @@ fn main() {
 
             // Mouvement brut de la souris : oriente le regard quand le curseur est capturé
             Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
+                herocraft_common::prof_scope!("boucle::mouvement_souris");
                 if cursor_captured {
                     let controls = &ui_state.controls;
                     let step = input::LOOK_RADIANS_PER_COUNT * controls.mouse_sensitivity;
@@ -490,6 +546,15 @@ fn set_cursor_captured(window: &Window, captured: bool) {
         let size = window.inner_size();
         let _ = window.set_cursor_position(PhysicalPosition::new(size.width as f64 / 2.0, size.height as f64 / 2.0));
         window.set_cursor_visible(true);
+    }
+}
+
+/// Enregistre les chunks modifiés par le joueur depuis le dernier enregistrement
+fn save_terrain_edits(lod: &PlanetLodManager) {
+    match lod.terrain_edits().flush() {
+        Ok(0) => {}
+        Ok(n) => info!("{} chunks modifiés enregistrés.", n),
+        Err(e) => log::warn!("Échec de l'enregistrement des blocs modifiés : {}", e),
     }
 }
 

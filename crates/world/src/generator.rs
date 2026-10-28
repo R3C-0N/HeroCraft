@@ -120,6 +120,87 @@ impl PlanetWorldGenerator {
         columns
     }
 
+    /// Bloc d'une cellule solide (sous le sol) : surface selon le biome, couche de terre, roche
+    fn solid_block(&self, sphere_dir: DVec3, biome: BiomeType, global_y: f64, elev_floor: f64) -> BlockId {
+        let is_surface = global_y + 1.0 >= elev_floor;
+        if is_surface {
+            // Enneigement strict au-dessus de 300 blocs
+            if global_y >= 300.0 {
+                BlockId::SNOW
+            } else {
+                match biome {
+                    BiomeType::DeepOcean | BiomeType::Ocean | BiomeType::Sea => BlockId::SAND,
+                    BiomeType::Beach | BiomeType::Desert => BlockId::SAND,
+                    BiomeType::SnowPeaks => BlockId::SNOW,
+                    BiomeType::Mountains => {
+                        // Versants rocailleux des montagnes :
+                        // - Au-dessus de 220 : crêtes et parois de roche massive (BlockId::STONE)
+                        // - Entre 170 et 220 : alternance réaliste d'affleurements rocheux et d'alpages
+                        let rock_noise = fbm_3d(sphere_dir * 16.0, 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
+                        if global_y > 220.0 || rock_noise > -0.05 {
+                            BlockId::STONE
+                        } else {
+                            BlockId::GRASS
+                        }
+                    }
+                    _ => BlockId::GRASS,
+                }
+            }
+        } else if global_y >= 295.0 {
+            // Socle rocheux sous les neiges d'altitude
+            BlockId::STONE
+        } else if global_y + 4.0 >= elev_floor {
+            if biome == BiomeType::Mountains {
+                let rock_noise = fbm_3d(sphere_dir * 16.0, 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
+                if global_y > 215.0 || rock_noise > -0.05 {
+                    BlockId::STONE
+                } else {
+                    BlockId::DIRT
+                }
+            } else if biome == BiomeType::SnowPeaks {
+                BlockId::STONE
+            } else if biome == BiomeType::Desert || biome == BiomeType::Beach {
+                BlockId::SAND
+            } else {
+                BlockId::DIRT
+            }
+        } else {
+            BlockId::STONE
+        }
+    }
+
+    /// Bloc généré à l'altitude `global_y` d'une colonne : exactement celui que pose
+    /// `generate_chunk_from_columns`, sans générer le chunk entier
+    pub fn column_block(&self, column: &ColumnSample, global_y: i32) -> BlockId {
+        if global_y < 0 {
+            return BlockId::STONE;
+        }
+        let global_y = global_y as f64;
+        let elev_floor = column.elevation.floor();
+        if global_y < elev_floor {
+            self.solid_block(column.dir, column.biome, global_y, elev_floor)
+        } else if global_y < SEA_LEVEL_BLOCKS {
+            if column.biome == BiomeType::SnowPeaks {
+                BlockId::SNOW
+            } else {
+                BlockId::WATER
+            }
+        } else {
+            BlockId::AIR
+        }
+    }
+
+    /// Bloc généré en (x, y, z) d'une face : x le long de u, z le long de v (0..1024), y l'altitude
+    pub fn block_at(&self, face: PlanetFace, x: i32, y: i32, z: i32) -> BlockId {
+        self.column_block(&self.sample_block_column(face, x, z), y)
+    }
+
+    /// Colonne de la grille voxel (x, z) d'une face, échantillonnée au même point que `sample_chunk_columns`
+    pub fn sample_block_column(&self, face: PlanetFace, x: i32, z: i32) -> ColumnSample {
+        let voxel_span_uv = 2.0 / (32.0 * CHUNK_SIZE as f64);
+        self.sample_column(face, -1.0 + x as f64 * voxel_span_uv, -1.0 + z as f64 * voxel_span_uv)
+    }
+
     /// Génère un chunk voxel à partir de colonnes précalculées par `sample_chunk_columns`
     pub fn generate_chunk_from_columns(&self, coord: &PlanetChunkCoord, columns: &[ColumnSample], border: i32) -> ChunkData {
         herocraft_common::prof_scope!("world::generate_chunk");
@@ -145,53 +226,7 @@ impl PlanetWorldGenerator {
                 let elev_floor = elevation.floor();
                 for y in 0..ground_y {
                     let global_y = layer_base_y + y as f64;
-                    let is_surface = global_y + 1.0 >= elev_floor;
-
-                    let block = if is_surface {
-                        // Enneigement strict au-dessus de 300 blocs
-                        if global_y >= 300.0 {
-                            BlockId::SNOW
-                        } else {
-                            match biome {
-                                BiomeType::DeepOcean | BiomeType::Ocean | BiomeType::Sea => BlockId::SAND,
-                                BiomeType::Beach | BiomeType::Desert => BlockId::SAND,
-                                BiomeType::SnowPeaks => BlockId::SNOW,
-                                BiomeType::Mountains => {
-                                    // Versants rocailleux des montagnes :
-                                    // - Au-dessus de 220 : crêtes et parois de roche massive (BlockId::STONE)
-                                    // - Entre 170 et 220 : alternance réaliste d'affleurements rocheux et d'alpages
-                                    let rock_noise = fbm_3d(sphere_dir * 16.0, 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
-                                    if global_y > 220.0 || rock_noise > -0.05 {
-                                        BlockId::STONE
-                                    } else {
-                                        BlockId::GRASS
-                                    }
-                                }
-                                _ => BlockId::GRASS,
-                            }
-                        }
-                    } else if global_y >= 295.0 {
-                        // Socle rocheux sous les neiges d'altitude
-                        BlockId::STONE
-                    } else if global_y + 4.0 >= elev_floor {
-                        if biome == BiomeType::Mountains {
-                            let rock_noise = fbm_3d(sphere_dir * 16.0, 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
-                            if global_y > 215.0 || rock_noise > -0.05 {
-                                BlockId::STONE
-                            } else {
-                                BlockId::DIRT
-                            }
-                        } else if biome == BiomeType::SnowPeaks {
-                            BlockId::STONE
-                        } else if biome == BiomeType::Desert || biome == BiomeType::Beach {
-                            BlockId::SAND
-                        } else {
-                            BlockId::DIRT
-                        }
-                    } else {
-                        BlockId::STONE
-                    };
-                    chunk.set_voxel(x, y, z, block);
+                    chunk.set_voxel(x, y, z, self.solid_block(sphere_dir, biome, global_y, elev_floor));
                 }
 
                 // 2. Remplissage de l'eau jusqu'au niveau de la mer si sous l'eau

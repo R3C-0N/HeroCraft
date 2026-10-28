@@ -3,6 +3,7 @@ use std::sync::Arc;
 use winit::window::Window;
 
 use crate::atmosphere::Atmosphere;
+use crate::block_outline::BlockOutline;
 use crate::camera::{CameraViewMode, OrbitCamera};
 use crate::gpu_timer::{self, GpuTimer};
 use crate::lod::{LodMeshId, PlanetLodManager};
@@ -95,6 +96,8 @@ pub struct State {
     camera_eye: glam::Vec3,
     lod_sync_count: u64,
     lod_uploads_pending: bool,
+    /// Contour du bloc visé
+    block_outline: BlockOutline,
 
     // Rendu Interface Utilisateur egui
     pub egui_renderer: egui_wgpu::Renderer,
@@ -472,6 +475,8 @@ impl State {
         // -------------------------------------------------------------
         // Rendu Interface Utilisateur egui
         // -------------------------------------------------------------
+        let block_outline = BlockOutline::new(&device, &render_pipeline_layout, sample_count);
+
         let egui_renderer = egui_wgpu::Renderer::new(
             &device,
             config.format,
@@ -510,6 +515,7 @@ impl State {
             camera_eye: glam::Vec3::ZERO,
             lod_sync_count: 0,
             lod_uploads_pending: false,
+            block_outline,
             egui_renderer,
             vsync_mode,
             novsync_mode,
@@ -734,6 +740,11 @@ impl State {
         herocraft_common::prof_value!("render.maillages_gpu_en_memoire", self.lod_gpu_meshes.len());
     }
 
+    /// Coins du bloc visé à cerner (ou rien), à appeler après `update_camera`
+    pub fn set_block_outline(&mut self, corners: Option<[glam::Vec3; 8]>) {
+        self.block_outline.update(&self.queue, corners, self.camera_eye);
+    }
+
     /// Des maillages LOD restent à envoyer : appeler `sync_lod_meshes` à la prochaine frame
     pub fn has_pending_lod_uploads(&self) -> bool {
         self.lod_uploads_pending
@@ -861,6 +872,8 @@ impl State {
                     }
                 }
             }
+            // Contour du bloc visé, sur la profondeur du relief
+            self.block_outline.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
             if let Some(query_set) = timer_queries.filter(|_| timer_inside_passes) {
                 render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_TERRAIN);
             }
@@ -976,6 +989,7 @@ mod tests {
         let shadow_caster = include_str!("shadow_caster.wgsl");
         let atmosphere_lut = include_str!("atmosphere_lut.wgsl");
         let god_rays = include_str!("god_rays.wgsl");
+        let block_outline = include_str!("block_outline.wgsl");
 
         for (name, source) in [
             ("sky_shader.wgsl", sky_shader),
@@ -986,6 +1000,7 @@ mod tests {
             ("shadow_caster.wgsl", shadow_caster),
             ("atmosphere_lut.wgsl", atmosphere_lut),
             ("god_rays.wgsl", god_rays),
+            ("block_outline.wgsl", block_outline),
         ] {
             // Assemblage naga_oil (imports de common.wgsl) puis validation complète
             let module = if matches!(name, "ui_shader.wgsl" | "post_shader.wgsl" | "shadow_caster.wgsl") {

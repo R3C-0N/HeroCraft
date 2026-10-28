@@ -29,6 +29,7 @@ Toutes les touches se changent dans `Échap > Commandes` (clic sur une touche, p
 - **Souris** : en jeu au sol, le curseur est capturé et la souris oriente le regard. Le menu Échap et la vue satellite le font réapparaître.
 - **`Z Q S D`** (AZERTY, `W A S D` en QWERTY) : se déplacer. **`Ctrl`** : sprinter.
 - **`Espace`** : sauter. **Double `Espace`** : s'envoler ou se poser ; en vol, `Espace` monte et **`Maj`** descend (se poser au sol termine le vol).
+- **Clic gauche** : détruire le bloc visé par le réticule (son contour est surligné). **Clic droit** : poser un bloc de pierre contre la face visée. Garder le bouton enfoncé répète l'action. Les blocs modifiés sont enregistrés dans `saves/monde_<graine>/chunks/`.
 - **`Alt` + molette** : zoom continu de la vue, du sol à l'orbite. En vue satellite, la molette seule suffit et clic + glisser tourne la planète.
 - **`F`** : vue au sol / satellite. **`R`** : réinitialiser la vue. **`G`** : nouvelle planète. **`T` / `C`** : filtres plaques tectoniques / courants marins.
 - **`Échap`** : menu de pause. **`F9`** : rapport de profilage.
