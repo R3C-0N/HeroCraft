@@ -22,16 +22,16 @@ log = "0.4"
 env_logger = "0.11"
 rand = "0.8"
 
-# Désactivation de la compilation incrémentale pour éviter les erreurs de verrouillage
-# sur les systèmes de fichiers réseau / partages WSL (\\wsl.localhost\...)
-[profile.dev]
-incremental = false
+# La compilation incrémentale reste active (défaut de Cargo). Pour compiler depuis
+# Windows sur un partage WSL (\\wsl.localhost\...), où elle provoque des erreurs de
+# verrouillage, la désactiver côté Windows seulement : voir le README.
 
-[profile.test]
-incremental = false
-
+# Dépendances optimisées (le jeu reste fluide en debug), sans infos de débogage :
+# elles alourdissaient la compilation à froid et le dossier target sans servir
+# au débogage du code du projet.
 [profile.dev.package."*"]
 opt-level = 3
+debug = false
 
 [profile.release]
 opt-level = 3
