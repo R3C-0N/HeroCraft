@@ -45,15 +45,18 @@ pub const MAX_REMOTE_PLAYERS: usize = 32;
 type ServerConnection = Connection<ClientPacket, ServerPacket>;
 
 /// Serveur demandé au lancement (`--connect ADRESSE`, sinon `HEROCRAFT_SERVER`, `--solo` pour
-/// l'ignorer) et nom du joueur (`--name NOM`, sinon `HEROCRAFT_PSEUDO`, sinon le nom de session)
+/// l'ignorer), nom du joueur (`--name NOM`, sinon `HEROCRAFT_PSEUDO`, sinon le nom de session) et
+/// graine imposée à la planète solo (`--seed GRAINE`, sinon `HEROCRAFT_SEED`, sinon tirée au hasard)
 pub struct LaunchOptions {
     pub server: Option<String>,
     pub pseudo: String,
+    pub seed: Option<u64>,
 }
 
 pub fn launch_options() -> LaunchOptions {
     let mut server = std::env::var("HEROCRAFT_SERVER").ok().filter(|s| !s.trim().is_empty());
     let mut pseudo = std::env::var("HEROCRAFT_PSEUDO").ok().filter(|s| !s.trim().is_empty());
+    let mut seed = std::env::var("HEROCRAFT_SEED").ok();
     let mut solo = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -61,6 +64,7 @@ pub fn launch_options() -> LaunchOptions {
             "--connect" => server = args.next(),
             "--name" => pseudo = args.next(),
             "--solo" => solo = true,
+            "--seed" => seed = args.next(),
             _ => {}
         }
     }
@@ -68,7 +72,14 @@ pub fn launch_options() -> LaunchOptions {
         .or_else(|| std::env::var("USERNAME").ok())
         .or_else(|| std::env::var("USER").ok())
         .unwrap_or_else(|| "Héros".to_string());
-    LaunchOptions { server: server.filter(|_| !solo).map(|s| server_address(&s)), pseudo }
+    let seed = seed.and_then(|s| {
+        let parsed = s.trim().parse().ok();
+        if parsed.is_none() {
+            warn!("Graine « {s} » invalide (nombre entier attendu), graine aléatoire utilisée.");
+        }
+        parsed
+    });
+    LaunchOptions { server: server.filter(|_| !solo).map(|s| server_address(&s)), pseudo, seed }
 }
 
 /// Adresse saisie, complétée du port par défaut s'il manque

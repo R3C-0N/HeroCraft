@@ -11,6 +11,16 @@ pub const REFERENCE_BASE_RADIUS: f64 = 25.0;
 /// les nuages et la physique du joueur.
 pub const DEFAULT_PLANET_SCALE: f64 = 2.0;
 
+/// Graine tirée au hasard pour une nouvelle planète : entropie du système (clés aléatoires de
+/// `RandomState`) mélangée à l'horloge, bornée à 10 chiffres pour rester facile à recopier
+pub fn random_seed() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    hasher.write_u128(nanos);
+    hasher.finish() % 10_000_000_000
+}
+
 /// Paramètres physiques d'une planète voxel
 #[derive(Debug, Clone)]
 pub struct PlanetDescriptor {
@@ -66,6 +76,13 @@ pub fn base_solar_temperature(latitude_radians: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_random_seed_varie() {
+        let seeds: std::collections::HashSet<u64> = (0..64).map(|_| random_seed()).collect();
+        assert!(seeds.len() > 60, "graines trop souvent identiques : {seeds:?}");
+        assert!(seeds.iter().all(|&s| s < 10_000_000_000));
+    }
 
     #[test]
     fn test_planet_lat_lon() {

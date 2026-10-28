@@ -77,8 +77,11 @@ fn main() {
 
     let window = Arc::new(window);
 
-    // Initialisation du générateur procédural planétaire
-    let mut current_seed = 2026_u64;
+    // Initialisation du générateur procédural planétaire : graine imposée au lancement, sinon une
+    // nouvelle planète à chaque partie
+    let launch = network::launch_options();
+    let mut current_seed = launch.seed.unwrap_or_else(herocraft_world::random_seed);
+    info!("Planète de graine #{current_seed} (relancer avec --seed {current_seed} pour la retrouver).");
     let mut planet_desc = herocraft_world::PlanetDescriptor::default();
     planet_desc.seed = current_seed;
 
@@ -119,7 +122,6 @@ fn main() {
 
     // Partie en ligne : connexion en cours, connexion établie, partie ouverte au réseau local par
     // ce jeu, recherche des parties du réseau local (page Multijoueur ouverte)
-    let launch = network::launch_options();
     ui_state.multiplayer.pseudo = launch.pseudo.clone();
     let mut pending_join = launch.server.map(|addr| {
         info!("Connexion au serveur {} en tant que « {} »...", addr, launch.pseudo);
@@ -618,7 +620,7 @@ fn main() {
                                 UiAction::GenerateNewPlanet => {
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
-                                    current_seed = current_seed.wrapping_add(1337);
+                                    current_seed = herocraft_world::random_seed();
                                     let (storage, edits) = solo_terrain(current_seed);
                                     switch_planet(current_seed, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
                                     info!("Nouvelle planète générée ! (Graine: #{})", current_seed);

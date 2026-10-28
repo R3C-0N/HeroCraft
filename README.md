@@ -34,6 +34,7 @@ Le serveur écoute en TCP (port 7777 par défaut) à 60 TPS et s'annonce sur le 
 cargo run --bin herocraft_client
 ```
 Pour rejoindre directement un serveur au lancement : `-- --connect 127.0.0.1:7777 --name Mat` (ou `HEROCRAFT_SERVER` et `HEROCRAFT_PSEUDO` dans `.env`).
+Chaque partie solo, comme chaque appui sur « Nouvelle planète » (`G`), tire une graine au hasard, affichée dans le HUD et la console. Pour retrouver une planète précise : `-- --seed 1234567890` (ou `HEROCRAFT_SEED` dans `.env`).
 
 #### Configuration locale (`.env`) :
 Copier `.env.example` en `.env` (non versionné). Les variables déjà définies dans l'environnement restent prioritaires.
