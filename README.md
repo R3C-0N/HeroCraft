@@ -48,3 +48,12 @@ Le rapport est écrit dans `./profiling/` à la fermeture (ou avec `[F9]`). Voir
 ```bash
 cargo test
 ```
+
+### Compilation rapide :
+La compilation incrémentale est active : après une modification, `cargo build` ne recompile que ce qui a changé (environ 1,5 s au lieu de 5 s). Garder Rust à jour (`rustup update`) : depuis Rust 1.90, l'éditeur de liens `rust-lld`, bien plus rapide, est utilisé par défaut sous Linux et WSL.
+
+**Compilation depuis Windows sur un partage WSL** (`\\wsl.localhost\...`, par exemple depuis un IDE Windows) : ce système de fichiers ne supporte pas les verrous de la compilation incrémentale. La désactiver côté Windows seulement, une fois pour toutes, dans PowerShell :
+```powershell
+setx CARGO_INCREMENTAL 0
+```
+Cette variable n'est pas transmise à WSL, où la compilation incrémentale reste active. Compiler depuis un terminal WSL reste le plus rapide.
