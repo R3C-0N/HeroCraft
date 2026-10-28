@@ -19,6 +19,62 @@ pub enum UiAction {
     SetFpsLimit,
     ResumeGame,
     QuitGame,
+    // Actions de la page Multijoueur
+    /// Ouvrir la partie solo au réseau local
+    OpenToLan,
+    /// Rejoindre la partie de `MultiplayerUi::join_target`
+    JoinServer,
+    /// Quitter la partie en ligne (ou la fermer si elle est ouverte ici) et revenir au solo
+    LeaveServer,
+}
+
+/// État de la partie en ligne, affiché dans la page Multijoueur
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NetStatus {
+    Solo,
+    /// Connexion en cours à cette adresse
+    Connecting(String),
+    /// Partie solo ouverte au réseau local sur ce port
+    Hosting { port: u16 },
+    /// Connecté à cette adresse
+    Online(String),
+}
+
+/// Partie trouvée sur le réseau local
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LanEntry {
+    pub name: String,
+    pub addr: String,
+    pub players: u32,
+}
+
+/// Page Multijoueur : nom du joueur, parties du réseau local, adresse saisie
+pub struct MultiplayerUi {
+    pub pseudo: String,
+    /// Adresse saisie à la main
+    pub address: String,
+    /// Adresse à rejoindre quand `UiAction::JoinServer` est émise
+    pub join_target: String,
+    pub status: NetStatus,
+    pub lan_servers: Vec<LanEntry>,
+    /// La recherche sur le réseau local fonctionne (port d'écoute disponible)
+    pub lan_search_ok: bool,
+    /// Dernier message (erreur de connexion, déconnexion…)
+    pub notice: Option<String>,
+}
+
+impl Default for MultiplayerUi {
+    fn default() -> Self {
+        Self {
+            pseudo: "Héros".into(),
+            address: String::new(),
+            join_target: String::new(),
+            status: NetStatus::Solo,
+            lan_servers: Vec::new(),
+            lan_search_ok: true,
+            notice: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -234,6 +290,8 @@ pub enum MenuPage {
     Options,
     /// Touches modifiables et réglages de la souris
     Controls,
+    /// Ouvrir sa partie au réseau local, rejoindre une partie
+    Multiplayer,
 }
 
 /// Onglets du sous-menu Options
@@ -338,6 +396,7 @@ pub struct UiState {
     pub screen_height: f32,
     /// Noms des autres joueurs (en ligne), avec leur position à l'écran en pixels physiques
     pub name_tags: Vec<(egui::Pos2, String)>,
+    pub multiplayer: MultiplayerUi,
 }
 
 impl UiState {
@@ -373,6 +432,7 @@ impl UiState {
             screen_width: 1280.0_f32,
             screen_height: 720.0_f32,
             name_tags: Vec::new(),
+            multiplayer: MultiplayerUi::default(),
         }
     }
 
@@ -781,6 +841,7 @@ impl UiState {
             MenuPage::Main => 340.0_f32,
             MenuPage::Options => 680.0_f32,
             MenuPage::Controls => 540.0_f32,
+            MenuPage::Multiplayer => 520.0_f32,
         };
         let width = target_width.min(screen.width() - 2.0_f32 * SCREEN_MARGIN).max(200.0_f32);
         let max_height = (screen.height() - 2.0_f32 * SCREEN_MARGIN).max(160.0_f32);
@@ -819,6 +880,7 @@ impl UiState {
                             MenuPage::Main => self.draw_main_page(ui, body_height, action),
                             MenuPage::Options => self.draw_options_page(ui, inner_width, body_height, action),
                             MenuPage::Controls => self.draw_controls_page(ui, body_height),
+                            MenuPage::Multiplayer => self.draw_multiplayer_page(ui, body_height, action),
                         }
 
                         let footer_top = ui.cursor().top();
@@ -842,7 +904,11 @@ impl UiState {
                 ornament(ui, inner_width);
             }
             page => {
-                let title = if page == MenuPage::Options { "⚙  Options" } else { "⌨  Commandes" };
+                let title = match page {
+                    MenuPage::Options => "⚙  Options",
+                    MenuPage::Multiplayer => "🌍  Multijoueur",
+                    _ => "⌨  Commandes",
+                };
                 ui.horizontal(|ui| {
                     if ui.button("⬅ Retour").on_hover_text("Revenir au menu (Échap)").clicked() {
                         self.menu_page = MenuPage::Main;
@@ -868,6 +934,9 @@ impl UiState {
                 if menu_entry(ui, size, "▶   Reprendre la partie", None).clicked() {
                     self.set_settings_open(false);
                     *action = Some(UiAction::ResumeGame);
+                }
+                if menu_entry(ui, size, "🌍   Multijoueur", Some("Ouvrir sa partie au réseau local, rejoindre une partie")).clicked() {
+                    self.menu_page = MenuPage::Multiplayer;
                 }
                 if menu_entry(ui, size, "⚙   Options", Some("Affichage, éclairage, nuages, rendu…")).clicked() {
                     self.menu_page = MenuPage::Options;
@@ -901,6 +970,116 @@ impl UiState {
                     .clicked()
                 {
                     self.confirm_quit = true;
+                }
+            });
+    }
+
+    /// Page Multijoueur : état de la partie, nom du joueur, ouverture au réseau local, parties
+    /// trouvées sur le réseau local et connexion par adresse
+    fn draw_multiplayer_page(&mut self, ui: &mut egui::Ui, body_height: f32, action: &mut Option<UiAction>) {
+        egui::ScrollArea::vertical()
+            .id_salt("multiplayer_scroll")
+            .max_height(body_height)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                let mp = &mut self.multiplayer;
+                let size = egui::vec2(ui.available_width(), 36.0_f32);
+
+                // État de la partie
+                let (status, color) = match &mp.status {
+                    NetStatus::Solo => ("Partie solo".to_string(), TEXT_SOFT),
+                    NetStatus::Connecting(addr) => (format!("Connexion à {addr}…"), GOLD_BRIGHT),
+                    NetStatus::Hosting { port } => (format!("Partie ouverte au réseau local (port {port})"), GOLD_BRIGHT),
+                    NetStatus::Online(addr) => (format!("En ligne sur {addr}"), GOLD_BRIGHT),
+                };
+                ui.horizontal(|ui| {
+                    if matches!(mp.status, NetStatus::Connecting(_)) {
+                        ui.spinner();
+                    }
+                    ui.label(egui::RichText::new(status).size(15.0_f32).strong().color(color));
+                });
+                if let NetStatus::Hosting { .. } = mp.status {
+                    ui.label(
+                        egui::RichText::new("Les joueurs du réseau local la voient dans leur page Multijoueur.").size(11.5_f32).color(TEXT_DIM),
+                    );
+                }
+                if let Some(notice) = &mp.notice {
+                    ui.label(egui::RichText::new(notice).size(12.0_f32).color(DANGER));
+                }
+                ui.add_space(4.0_f32);
+
+                match mp.status {
+                    NetStatus::Solo => {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Votre nom").color(TEXT_SOFT));
+                            ui.add(egui::TextEdit::singleline(&mut mp.pseudo).char_limit(24).desired_width(180.0_f32));
+                        });
+                        ui.add_space(4.0_f32);
+                        let can_play = !mp.pseudo.trim().is_empty();
+                        let open = ui
+                            .add_enabled(can_play, egui::Button::new(egui::RichText::new("🌍   Ouvrir au réseau local").size(15.0_f32)).min_size(size))
+                            .on_hover_text("Lance un serveur sur ce monde : les joueurs du réseau local peuvent vous rejoindre");
+                        if open.clicked() {
+                            *action = Some(UiAction::OpenToLan);
+                        }
+
+                        ui.add_space(6.0_f32);
+                        caption(ui, "PARTIES SUR LE RÉSEAU LOCAL");
+                        if !mp.lan_search_ok {
+                            ui.label(egui::RichText::new("Recherche impossible : le port 7778 est déjà utilisé sur cette machine.").size(12.0_f32).color(TEXT_DIM));
+                        } else if mp.lan_servers.is_empty() {
+                            ui.horizontal(|ui| {
+                                ui.spinner();
+                                ui.label(egui::RichText::new("Recherche de parties…").size(12.0_f32).color(TEXT_DIM));
+                            });
+                        }
+                        for server in &mp.lan_servers {
+                            ui.horizontal(|ui| {
+                                ui.vertical(|ui| {
+                                    ui.label(egui::RichText::new(&server.name).strong().color(TEXT_SOFT));
+                                    let players = if server.players == 1 { "1 joueur".to_string() } else { format!("{} joueurs", server.players) };
+                                    ui.label(egui::RichText::new(format!("{}  ·  {players}", server.addr)).monospace().size(11.0_f32).color(TEXT_DIM));
+                                });
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.add_enabled(can_play, egui::Button::new("▶ Rejoindre")).clicked() {
+                                        mp.join_target = server.addr.clone();
+                                        *action = Some(UiAction::JoinServer);
+                                    }
+                                });
+                            });
+                            ui.separator();
+                        }
+
+                        ui.add_space(6.0_f32);
+                        caption(ui, "REJOINDRE PAR ADRESSE");
+                        ui.horizontal(|ui| {
+                            let field = ui.add(
+                                egui::TextEdit::singleline(&mut mp.address)
+                                    .hint_text(format!("ip:{}", herocraft_common::DEFAULT_PORT))
+                                    .desired_width(220.0_f32),
+                            );
+                            let submit = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                            let can_join = can_play && !mp.address.trim().is_empty();
+                            if (ui.add_enabled(can_join, egui::Button::new("▶ Se connecter")).clicked() || submit) && can_join {
+                                mp.join_target = mp.address.trim().to_string();
+                                *action = Some(UiAction::JoinServer);
+                            }
+                        });
+                    }
+                    NetStatus::Connecting(_) => {}
+                    NetStatus::Hosting { .. } | NetStatus::Online(_) => {
+                        let label = if matches!(mp.status, NetStatus::Hosting { .. }) {
+                            "✖   Fermer la partie au réseau local"
+                        } else {
+                            "🚪   Se déconnecter"
+                        };
+                        let leave = ui
+                            .add(egui::Button::new(egui::RichText::new(label).size(15.0_f32).color(DANGER)).min_size(size))
+                            .on_hover_text("Revient à la partie solo");
+                        if leave.clicked() {
+                            *action = Some(UiAction::LeaveServer);
+                        }
+                    }
                 }
             });
     }
@@ -1170,6 +1349,9 @@ impl UiState {
                         self.shadow_settings = ShadowSettings::default();
                         self.atmosphere_settings = AtmosphereSettings::default();
                     }
+                }
+                MenuPage::Multiplayer => {
+                    ui.label(egui::RichText::new(format!("Monde #{}", self.current_seed)).monospace().size(11.0_f32).color(TEXT_DIM));
                 }
                 MenuPage::Controls => {
                     if ui.small_button("▶ Reprendre").clicked() {
@@ -1578,6 +1760,7 @@ mod tests {
         let pages = [
             (MenuPage::Main, None),
             (MenuPage::Controls, None),
+            (MenuPage::Multiplayer, None),
         ]
         .into_iter()
         .chain(OptionsTab::ALL.into_iter().map(|t| (MenuPage::Options, Some(t))));

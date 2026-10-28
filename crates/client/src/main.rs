@@ -33,9 +33,10 @@ use block_interaction::BlockInteraction;
 use camera::OrbitCamera;
 use input::Action;
 use lod::PlanetLodManager;
-use network::NetEvent;
+use network::{HostedServer, NetClient, NetEvent, PendingJoin};
+use herocraft_common::lan::LanBrowser;
 use renderer::State;
-use ui::{UiAction, UiState};
+use ui::{MenuPage, NetStatus, UiAction, UiState};
 
 fn main() {
     // Variables du fichier `.env` (sans écraser celles déjà définies dans l'environnement)
@@ -65,7 +66,7 @@ fn main() {
     let wanted_monitor = monitor::requested();
     let event_loop = monitor::build_event_loop(wanted_monitor.is_some());
     let window = WindowBuilder::new()
-        .with_title("HeroCraft — Planète QuadTree LOD (Rust / WGPU)")
+        .with_title(WINDOW_TITLE)
         .with_inner_size(LogicalSize::new(1280, 720))
         .build(&event_loop)
         .expect("Échec de création de la fenêtre Winit");
@@ -76,55 +77,24 @@ fn main() {
 
     let window = Arc::new(window);
 
-    // Partie en ligne si un serveur est demandé : sa planète remplace celle du solo
-    let mut joined = network::requested_server().and_then(|(addr, name)| {
-        info!("Connexion au serveur {} en tant que « {} »...", addr, name);
-        match network::join(&addr, &name) {
-            Ok(world) => {
-                window.set_title(&format!("HeroCraft — en ligne sur {} ({})", addr, name));
-                Some(world)
-            }
-            Err(e) => {
-                warn!("Partie en ligne impossible ({}) : lancement en solo.", e);
-                None
-            }
-        }
-    });
-
     // Initialisation du générateur procédural planétaire
-    let mut current_seed = joined.as_ref().map_or(2026_u64, |world| world.seed);
+    let mut current_seed = 2026_u64;
     let mut planet_desc = herocraft_world::PlanetDescriptor::default();
     planet_desc.seed = current_seed;
 
     info!("Initialisation de la planète et du gestionnaire QuadTree...");
     let mut generator = herocraft_world::PlanetWorldGenerator::new(planet_desc);
 
-    // Initialisation du stockage et du cache de chunks voxels. En ligne, le monde est enregistré
-    // par le serveur : rien n'est écrit en local, les chunks modifiés viennent de lui.
-    let terrain_edits;
-    let mut chunk_cache;
-    if let Some(world) = joined.as_mut() {
-        terrain_edits = Arc::new(herocraft_world::TerrainEdits::from_chunks(std::mem::take(&mut world.edited_chunks)));
-        chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(None, 256);
-    } else {
-        let save_dir = format!("saves/monde_{}", current_seed);
-        let storage = herocraft_voxel_engine::ChunkStorage::new(&save_dir).ok();
-        // Blocs détruits ou posés par le joueur, enregistrés dans la même sauvegarde
-        terrain_edits = Arc::new(herocraft_world::TerrainEdits::new(storage.clone()));
-        chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
-    }
+    // Initialisation du stockage et du cache de chunks voxels, et des blocs détruits ou posés par
+    // le joueur, enregistrés dans la même sauvegarde
+    let (storage, terrain_edits) = solo_terrain(current_seed);
+    let mut chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
 
     // Rayon de base de la planète déterminé par le descripteur (REFERENCE_BASE_RADIUS * scale)
     let base_radius = generator.base_radius() as f32;
 
     // Initialisation de la caméra multi-échelle unifiée (Sol FPS <-> TPS <-> Satellite)
     let mut camera = OrbitCamera::new(base_radius * 6.6, base_radius, &generator);
-    // De retour sur un serveur : là où le joueur l'avait quitté
-    if let Some(spawn) = joined.as_ref().and_then(|world| world.spawn_position) {
-        camera.player_pos = spawn;
-        camera.sync_orbit_to_ground();
-    }
-    let mut net = joined.map(|world| world.client);
     let size = window.inner_size();
     camera.aspect = size.width as f32 / size.height.max(1) as f32;
 
@@ -146,6 +116,22 @@ fn main() {
     ui_state.set_scale_factor(window.scale_factor() as f32);
     ui_state.set_screen_size(size.width as f32, size.height as f32);
     ui_state.controls = input::Controls::load_or_default(input::CONTROLS_FILE);
+
+    // Partie en ligne : connexion en cours, connexion établie, partie ouverte au réseau local par
+    // ce jeu, recherche des parties du réseau local (page Multijoueur ouverte)
+    let launch = network::launch_options();
+    ui_state.multiplayer.pseudo = launch.pseudo.clone();
+    let mut pending_join = launch.server.map(|addr| {
+        info!("Connexion au serveur {} en tant que « {} »...", addr, launch.pseudo);
+        ui_state.multiplayer.status = NetStatus::Connecting(addr.clone());
+        PendingJoin::start(addr, launch.pseudo.clone())
+    });
+    let mut net: Option<NetClient> = None;
+    let mut hosted: Option<HostedServer> = None;
+    let mut lan_browser: Option<LanBrowser> = None;
+    let mut lan_retry_at = Instant::now();
+    // Planète de la partie solo, retrouvée en quittant une partie en ligne
+    let mut solo_seed = current_seed;
 
     // Initialisation du moteur WGPU
     let mut state = pollster::block_on(State::new(window.clone(), &ui_state));
@@ -186,6 +172,8 @@ fn main() {
                         if let Some(client) = net.as_mut() {
                             client.disconnect();
                         }
+                        // Le serveur ouvert ici prévient ses joueurs et enregistre le monde
+                        hosted = None;
                         let _ = chunk_cache.flush_dirty();
                         save_terrain_edits(&lod_manager);
                         write_profile_report();
@@ -429,15 +417,80 @@ fn main() {
                                 }
                             }
                             if let Some(reason) = lost {
-                                warn!("Déconnecté du serveur ({}) : la partie continue hors ligne, sans sauvegarde.", reason);
-                                window.set_title("HeroCraft — hors ligne (déconnecté du serveur)");
-                                net = None;
-                                state.set_player_outlines(&[]);
-                                ui_state.name_tags.clear();
+                                warn!("Déconnecté du serveur ({}) : retour à la partie solo.", reason);
+                                ui_state.multiplayer.notice = Some(format!("Déconnecté : {}", reason));
+                                pending_actions.push(UiAction::LeaveServer);
                             } else {
                                 state.set_player_outlines(&client.remote_player_boxes(camera.base_radius));
                                 ui_state.name_tags = client.name_tags(&camera, state.size.width as f32, state.size.height as f32);
                             }
+                        }
+
+                        // Connexion menée en tâche de fond : à son terme, la planète du serveur
+                        // remplace la partie solo
+                        if let Some(result) = pending_join.as_ref().and_then(|p| p.poll()) {
+                            let addr = pending_join.take().map(|p| p.addr).unwrap_or_default();
+                            match result {
+                                Ok(world) => {
+                                    let edits = Arc::new(herocraft_world::TerrainEdits::from_chunks(world.edited_chunks));
+                                    if let Some(host) = hosted.as_ref().filter(|_| world.seed == current_seed) {
+                                        // Notre propre partie : même planète et mêmes blocs, la vue et le
+                                        // joueur restent en place, seuls les blocs passent par le serveur
+                                        camera.set_terrain(edits.clone());
+                                        lod_manager.set_terrain_edits(edits);
+                                        chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(None, 256);
+                                        ui_state.multiplayer.status = NetStatus::Hosting { port: host.port };
+                                        window.set_title(&format!("HeroCraft — partie ouverte au réseau local (port {})", host.port));
+                                    } else {
+                                        current_seed = world.seed;
+                                        switch_planet(current_seed, edits, None, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                        // De retour sur ce serveur : là où le joueur l'avait quitté
+                                        if let Some(spawn) = world.spawn_position {
+                                            camera.player_pos = spawn;
+                                            camera.sync_orbit_to_ground();
+                                        }
+                                        ui_state.multiplayer.status = NetStatus::Online(addr.clone());
+                                        window.set_title(&format!("HeroCraft — en ligne sur {}", addr));
+                                    }
+                                    ui_state.multiplayer.notice = None;
+                                    block_interaction.invalidate();
+                                    terrain_edited = true;
+                                    net = Some(world.client);
+                                }
+                                Err(e) => {
+                                    warn!("Connexion à {} impossible : {}", addr, e);
+                                    ui_state.multiplayer.notice = Some(format!("Connexion impossible : {}", e));
+                                    ui_state.multiplayer.status = NetStatus::Solo;
+                                    hosted = None;
+                                }
+                            }
+                        }
+
+                        // Page Multijoueur ouverte en solo : écoute des parties annoncées sur le réseau local
+                        let browsing = ui_state.is_settings_open
+                            && ui_state.menu_page == MenuPage::Multiplayer
+                            && ui_state.multiplayer.status == NetStatus::Solo;
+                        if browsing {
+                            if lan_browser.is_none() && now >= lan_retry_at {
+                                match LanBrowser::new() {
+                                    Ok(browser) => lan_browser = Some(browser),
+                                    Err(e) => {
+                                        log::debug!("Recherche des parties du réseau local impossible : {}", e);
+                                        lan_retry_at = now + std::time::Duration::from_secs(2);
+                                    }
+                                }
+                                ui_state.multiplayer.lan_search_ok = lan_browser.is_some();
+                            }
+                            if let Some(browser) = lan_browser.as_mut() {
+                                ui_state.multiplayer.lan_servers = browser
+                                    .poll()
+                                    .iter()
+                                    .map(|s| ui::LanEntry { name: s.name.clone(), addr: s.addr.to_string(), players: s.players })
+                                    .collect();
+                            }
+                        } else if lan_browser.is_some() {
+                            lan_browser = None;
+                            ui_state.multiplayer.lan_servers.clear();
                         }
                         {
                             herocraft_common::prof_scope!("blocs::contour");
@@ -475,6 +528,7 @@ fn main() {
                                     if let Some(client) = net.as_mut() {
                                         client.disconnect();
                                     }
+                                    hosted = None;
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
                                     info!("Bouton cliqué : Sauvegarde des chunks et fermeture du jeu.");
@@ -501,29 +555,72 @@ fn main() {
                                 UiAction::SetFpsLimit => {
                                     info!("Paramètre Limite FPS mis à jour : {:?}", ui_state.video_settings.fps_limit);
                                 }
-                                UiAction::GenerateNewPlanet if net.is_some() => {
+                                UiAction::GenerateNewPlanet if ui_state.multiplayer.status != NetStatus::Solo => {
                                     info!("Nouvelle planète impossible en ligne : la planète est celle du serveur.");
+                                }
+                                UiAction::OpenToLan | UiAction::JoinServer if ui_state.multiplayer.status != NetStatus::Solo => {}
+                                UiAction::OpenToLan => {
+                                    // Le serveur reprend la sauvegarde du monde : elle est d'abord mise à jour
+                                    let _ = chunk_cache.flush_dirty();
+                                    save_terrain_edits(&lod_manager);
+                                    solo_seed = current_seed;
+                                    let pseudo = ui_state.multiplayer.pseudo.trim().to_string();
+                                    let save_dir = std::path::PathBuf::from(solo_save_dir(current_seed));
+                                    match HostedServer::start(current_seed, save_dir, &pseudo) {
+                                        Ok(host) => {
+                                            let addr = format!("127.0.0.1:{}", host.port);
+                                            ui_state.multiplayer.status = NetStatus::Connecting(addr.clone());
+                                            ui_state.multiplayer.notice = None;
+                                            pending_join = Some(PendingJoin::start(addr, pseudo));
+                                            hosted = Some(host);
+                                        }
+                                        Err(e) => {
+                                            warn!("{}", e);
+                                            ui_state.multiplayer.notice = Some(e);
+                                        }
+                                    }
+                                }
+                                UiAction::JoinServer => {
+                                    let _ = chunk_cache.flush_dirty();
+                                    save_terrain_edits(&lod_manager);
+                                    solo_seed = current_seed;
+                                    let addr = network::server_address(&ui_state.multiplayer.join_target);
+                                    let pseudo = ui_state.multiplayer.pseudo.trim().to_string();
+                                    info!("Connexion au serveur {} en tant que « {} »...", addr, pseudo);
+                                    ui_state.multiplayer.status = NetStatus::Connecting(addr.clone());
+                                    ui_state.multiplayer.notice = None;
+                                    pending_join = Some(PendingJoin::start(addr, pseudo));
+                                }
+                                UiAction::LeaveServer => {
+                                    if let Some(mut client) = net.take() {
+                                        client.disconnect();
+                                    }
+                                    pending_join = None;
+                                    // Le serveur ouvert ici s'arrête en enregistrant le monde solo
+                                    let was_hosting = hosted.take().is_some();
+                                    state.set_player_outlines(&[]);
+                                    ui_state.name_tags.clear();
+                                    let (storage, edits) = solo_terrain(solo_seed);
+                                    if was_hosting && current_seed == solo_seed {
+                                        // Même planète : le joueur reste où il est, avec les blocs des autres
+                                        chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
+                                        camera.set_terrain(edits.clone());
+                                        lod_manager.set_terrain_edits(edits);
+                                    } else {
+                                        current_seed = solo_seed;
+                                        switch_planet(current_seed, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                    }
+                                    block_interaction.invalidate();
+                                    ui_state.multiplayer.status = NetStatus::Solo;
+                                    window.set_title(WINDOW_TITLE);
+                                    info!("Retour à la partie solo (planète #{}).", current_seed);
                                 }
                                 UiAction::GenerateNewPlanet => {
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
                                     current_seed = current_seed.wrapping_add(1337);
-                                    let mut new_desc = herocraft_world::PlanetDescriptor::default();
-                                    new_desc.seed = current_seed;
-                                    generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
-                                    let new_save_dir = format!("saves/monde_{}", current_seed);
-                                    let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
-                                    let new_edits = herocraft_world::TerrainEdits::new(new_storage.clone());
-                                    chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
-                                    lod_manager.clear(current_seed);
-                                    let new_edits = Arc::new(new_edits);
-                                    camera.set_terrain(new_edits.clone());
-                                    lod_manager.set_terrain_edits(new_edits);
-                                    camera.spawn_on_ground(&generator);
-                                    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                    state.sync_lod_meshes(&lod_manager);
-                                    state.update_cloud_mesh(camera.base_radius, current_seed);
-                                    ui_state.set_seed(current_seed);
+                                    let (storage, edits) = solo_terrain(current_seed);
+                                    switch_planet(current_seed, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
                                     info!("Nouvelle planète générée ! (Graine: #{})", current_seed);
                                 }
                                 UiAction::ToggleGroundCamera => {
@@ -611,6 +708,48 @@ fn main() {
             _ => {}
         }
     }).expect("Erreur dans la boucle d'événements");
+}
+
+/// Titre de la fenêtre en solo
+const WINDOW_TITLE: &str = "HeroCraft — Planète QuadTree LOD (Rust / WGPU)";
+
+/// Dossier de sauvegarde d'un monde solo (aussi celui du serveur qui l'ouvre au réseau local)
+fn solo_save_dir(seed: u64) -> String {
+    format!("saves/monde_{}", seed)
+}
+
+/// Stockage d'un monde solo et ses blocs modifiés, repris de la sauvegarde
+fn solo_terrain(seed: u64) -> (Option<herocraft_voxel_engine::ChunkStorage>, Arc<herocraft_world::TerrainEdits>) {
+    let storage = herocraft_voxel_engine::ChunkStorage::new(solo_save_dir(seed)).ok();
+    let edits = Arc::new(herocraft_world::TerrainEdits::new(storage.clone()));
+    (storage, edits)
+}
+
+/// Remplace la planète affichée (nouvelle graine, partie en ligne ou retour au solo) : générateur,
+/// blocs modifiés, caches, maillages et nuages, puis pose le joueur au sol
+#[allow(clippy::too_many_arguments)]
+fn switch_planet(
+    seed: u64,
+    edits: Arc<herocraft_world::TerrainEdits>,
+    storage: Option<herocraft_voxel_engine::ChunkStorage>,
+    generator: &mut herocraft_world::PlanetWorldGenerator,
+    chunk_cache: &mut herocraft_voxel_engine::WorldChunkCache,
+    lod_manager: &mut PlanetLodManager,
+    camera: &mut OrbitCamera,
+    state: &mut State,
+    ui_state: &mut UiState,
+) {
+    let desc = herocraft_world::PlanetDescriptor { seed, ..Default::default() };
+    *generator = herocraft_world::PlanetWorldGenerator::new(desc);
+    *chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
+    lod_manager.clear(seed);
+    camera.set_terrain(edits.clone());
+    lod_manager.set_terrain_edits(edits);
+    camera.spawn_on_ground(generator);
+    lod_manager.update(camera.eye_position(), generator, chunk_cache, 0.0, None);
+    state.sync_lod_meshes(lod_manager);
+    state.update_cloud_mesh(camera.base_radius, seed);
+    ui_state.set_seed(seed);
 }
 
 /// Capture la souris (cachée, bloquée dans la fenêtre) ou la libère au centre de la fenêtre

@@ -1,4 +1,5 @@
 pub mod character;
+pub mod lan;
 pub mod math;
 pub mod net;
 pub mod profiler;

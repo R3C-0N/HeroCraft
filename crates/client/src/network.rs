@@ -1,13 +1,21 @@
 //! Partie en ligne : connexion au serveur dédié, envoi de la position et des blocs modifiés,
 //! réception des blocs des autres et de leurs positions.
 //!
-//! Sans serveur configuré (`HEROCRAFT_SERVER` ou `--connect`), le client joue en solo comme avant.
+//! La partie se rejoint depuis le menu Multijoueur (parties du réseau local ou adresse saisie), ou
+//! dès le lancement avec `HEROCRAFT_SERVER` / `--connect`. Le même menu ouvre la partie solo au
+//! réseau local en lançant un serveur dans le jeu.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use herocraft_common::net::Connection;
+use herocraft_server::{Server, ServerConfig};
 use herocraft_common::{BlockId, BlockInteractionAction, ClientPacket, PlanetChunkCoord, ServerPacket, PROTOCOL_VERSION};
 use herocraft_voxel_engine::ChunkData;
 use herocraft_world::{BlockGeometry, BlockPos};
@@ -30,29 +38,108 @@ pub const MAX_REMOTE_PLAYERS: usize = 32;
 
 type ServerConnection = Connection<ClientPacket, ServerPacket>;
 
-/// Serveur et nom de joueur demandés : `--connect ADRESSE` et `--name NOM` sur la ligne de
-/// commande, sinon `HEROCRAFT_SERVER` et `HEROCRAFT_PSEUDO` (dans `.env` par exemple)
-pub fn requested_server() -> Option<(String, String)> {
+/// Serveur demandé au lancement (`--connect ADRESSE`, sinon `HEROCRAFT_SERVER`, `--solo` pour
+/// l'ignorer) et nom du joueur (`--name NOM`, sinon `HEROCRAFT_PSEUDO`, sinon le nom de session)
+pub struct LaunchOptions {
+    pub server: Option<String>,
+    pub pseudo: String,
+}
+
+pub fn launch_options() -> LaunchOptions {
     let mut server = std::env::var("HEROCRAFT_SERVER").ok().filter(|s| !s.trim().is_empty());
-    let mut name = std::env::var("HEROCRAFT_PSEUDO").ok().filter(|s| !s.trim().is_empty());
+    let mut pseudo = std::env::var("HEROCRAFT_PSEUDO").ok().filter(|s| !s.trim().is_empty());
+    let mut solo = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--connect" => server = args.next(),
-            "--name" => name = args.next(),
-            "--solo" => return None,
+            "--name" => pseudo = args.next(),
+            "--solo" => solo = true,
             _ => {}
         }
     }
-    let mut server = server?.trim().to_string();
-    if !server.contains(':') {
-        server = format!("{server}:{}", herocraft_common::DEFAULT_PORT);
-    }
-    let name = name
+    let pseudo = pseudo
         .or_else(|| std::env::var("USERNAME").ok())
         .or_else(|| std::env::var("USER").ok())
         .unwrap_or_else(|| "Héros".to_string());
-    Some((server, name))
+    LaunchOptions { server: server.filter(|_| !solo).map(|s| server_address(&s)), pseudo }
+}
+
+/// Adresse saisie, complétée du port par défaut s'il manque
+pub fn server_address(input: &str) -> String {
+    let input = input.trim();
+    if input.contains(':') {
+        input.to_string()
+    } else {
+        format!("{input}:{}", herocraft_common::DEFAULT_PORT)
+    }
+}
+
+/// Connexion menée en tâche de fond : le jeu continue de s'afficher pendant l'accueil
+pub struct PendingJoin {
+    pub addr: String,
+    result: Receiver<Result<JoinedWorld, String>>,
+}
+
+impl PendingJoin {
+    pub fn start(addr: String, name: String) -> Self {
+        let (tx, result) = mpsc::channel();
+        let thread_addr = addr.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(join(&thread_addr, &name));
+        });
+        Self { addr, result }
+    }
+
+    /// Le résultat, une fois la connexion aboutie ou échouée
+    pub fn poll(&self) -> Option<Result<JoinedWorld, String>> {
+        match self.result.try_recv() {
+            Ok(result) => Some(result),
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => Some(Err("connexion interrompue".into())),
+        }
+    }
+}
+
+/// Serveur lancé dans le jeu pour ouvrir la partie solo au réseau local : il reprend la
+/// sauvegarde du monde solo et l'enregistre au même endroit
+pub struct HostedServer {
+    pub port: u16,
+    running: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl HostedServer {
+    pub fn start(seed: u64, save_dir: PathBuf, pseudo: &str) -> Result<Self, String> {
+        let config = |bind: String| ServerConfig { bind, seed, save_dir: Some(save_dir.clone()) };
+        // Port habituel s'il est libre, sinon un port choisi par le système
+        let mut server = Server::bind(config(format!("0.0.0.0:{}", herocraft_common::DEFAULT_PORT)))
+            .or_else(|_| Server::bind(config("0.0.0.0:0".into())))
+            .map_err(|e| format!("impossible d'ouvrir la partie : {e}"))?;
+        let port = server.local_addr().map_err(|e| e.to_string())?.port();
+        if let Err(e) = server.enable_lan(format!("Monde de {pseudo}")) {
+            warn!("Annonce de la partie sur le réseau local impossible : {e}");
+        }
+        let running = Arc::new(AtomicBool::new(true));
+        let thread_running = running.clone();
+        let thread = std::thread::Builder::new()
+            .name("serveur-integre".into())
+            .spawn(move || server.run(&thread_running))
+            .map_err(|e| e.to_string())?;
+        info!("Partie ouverte au réseau local sur le port {port}.");
+        Ok(Self { port, running, thread: Some(thread) })
+    }
+}
+
+impl Drop for HostedServer {
+    /// Arrête le serveur, qui prévient ses joueurs et enregistre le monde
+    fn drop(&mut self) {
+        self.running.store(false, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+        info!("Partie fermée au réseau local.");
+    }
 }
 
 /// Ce que le serveur envoie à la connexion
@@ -63,7 +150,7 @@ pub struct JoinedWorld {
     pub edited_chunks: Vec<(PlanetChunkCoord, ChunkData)>,
 }
 
-/// Se connecte et attend l'accueil du serveur (bloquant, au lancement)
+/// Se connecte et attend l'accueil du serveur (bloquant)
 pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
     let connection = ServerConnection::connect(addr, CONNECT_TIMEOUT).map_err(|e| format!("connexion à {addr} impossible : {e}"))?;
     connection.send(&ClientPacket::Connect { player_name: name.to_string(), protocol_version: PROTOCOL_VERSION });
@@ -260,6 +347,28 @@ fn player_box(feet: Vec3, block: f32) -> [Vec3; 8] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Ouvrir sa partie au réseau local : le serveur intégré démarre sur la sauvegarde du monde et
+    /// le joueur s'y connecte en tâche de fond
+    #[test]
+    fn test_hosted_server_accepts_its_player() {
+        let save_dir = std::env::temp_dir().join(format!("herocraft_test_heberge_{}", std::process::id()));
+        let host = HostedServer::start(4242, save_dir.clone(), "Mat").unwrap();
+        let pending = PendingJoin::start(format!("127.0.0.1:{}", host.port), "Mat".into());
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let world = loop {
+            if let Some(result) = pending.poll() {
+                break result.unwrap();
+            }
+            assert!(Instant::now() < deadline, "connexion trop longue");
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert_eq!(world.seed, 4242);
+        assert!(world.edited_chunks.is_empty());
+        drop(world);
+        drop(host);
+        let _ = std::fs::remove_dir_all(save_dir);
+    }
 
     #[test]
     fn test_player_box_stands_on_the_feet() {

@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
+use herocraft_common::lan::{LanAnnounce, LanAnnouncer};
 use herocraft_common::net::{encode_frame, Connection};
 use herocraft_common::{
     BlockId, BlockInteractionAction, CharacterStats, ClientPacket, PlayerClass, PlayerState, ServerPacket, PROTOCOL_VERSION,
@@ -28,6 +29,8 @@ const STATE_BROADCAST_TICKS: u64 = 3;
 const STATS_TICKS: u64 = TICK_RATE as u64;
 /// Les blocs modifiés sont enregistrés tous les N ticks (toutes les 5 secondes)
 const AUTOSAVE_TICKS: u64 = 5 * TICK_RATE as u64;
+/// La partie est annoncée sur le réseau local tous les N ticks (toutes les secondes)
+const LAN_ANNOUNCE_TICKS: u64 = TICK_RATE as u64;
 /// Délai pour envoyer `Connect` après l'ouverture de la connexion
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Distance maximale entre les pieds d'un joueur et le centre d'un bloc qu'il modifie, en blocs
@@ -83,6 +86,10 @@ pub struct Server {
     last_positions: HashMap<String, Vec3>,
     next_player_id: u64,
     tick_counter: u64,
+    /// Annonce de la partie sur le réseau local, avec son nom
+    lan: Option<(LanAnnouncer, String)>,
+    /// Identifiant de cette partie dans les annonces
+    instance: u64,
 }
 
 impl Server {
@@ -110,11 +117,25 @@ impl Server {
             last_positions: HashMap::new(),
             next_player_id: 1,
             tick_counter: 0,
+            lan: None,
+            instance: random_instance(),
         })
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.listener.local_addr()
+    }
+
+    /// Annonce la partie sous ce nom aux clients du réseau local qui cherchent des parties
+    pub fn enable_lan(&mut self, name: impl Into<String>) -> io::Result<()> {
+        self.lan = Some((LanAnnouncer::new()?, name.into()));
+        self.announce_lan();
+        Ok(())
+    }
+
+    fn announce_lan(&self) {
+        let (Some((announcer, name)), Ok(addr)) = (&self.lan, self.listener.local_addr()) else { return };
+        announcer.announce(&LanAnnounce::new(self.instance, name.clone(), addr.port(), self.players.len() as u32, self.seed));
     }
 
     pub fn seed(&self) -> u64 {
@@ -163,6 +184,9 @@ impl Server {
 
         if self.tick_counter % STATE_BROADCAST_TICKS == 0 {
             self.broadcast_player_states();
+        }
+        if self.tick_counter % LAN_ANNOUNCE_TICKS == 0 {
+            self.announce_lan();
         }
         if self.tick_counter % STATS_TICKS == 0 {
             for player in self.players.values() {
@@ -419,4 +443,12 @@ impl Server {
 fn reject(connection: &ClientConnection, reason: &str) {
     warn!("Connexion de {} refusée : {reason}", connection.peer_addr());
     connection.send(&ServerPacket::Disconnect(reason.to_string()));
+}
+
+/// Identifiant de partie tiré au hasard (clés aléatoires de `RandomState`)
+fn random_instance() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    hasher.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos()));
+    hasher.finish()
 }

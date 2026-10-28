@@ -14,22 +14,26 @@ Le projet est structuré sous forme de **Cargo Workspace** modulaire :
 
 ## Compilation et Lancement
 
+### Jouer à plusieurs :
+Tout passe par **`Échap > Multijoueur`** :
+- **Ouvrir au réseau local** : un serveur démarre dans le jeu sur le monde en cours (il reprend et enregistre sa sauvegarde `saves/monde_<graine>/`), et vous y restez connecté. Les autres joueurs du réseau local voient la partie dans leur liste.
+- **Parties sur le réseau local** : les parties ouvertes (ou les serveurs dédiés) du réseau local s'affichent d'elles-mêmes (annonces UDP sur le port 7778). Un clic sur `Rejoindre` suffit.
+- **Rejoindre par adresse** : `ip` ou `ip:port` (port 7777 par défaut).
+- **Se déconnecter** / **Fermer la partie** : retour au monde solo.
+
+À la connexion, le serveur envoie la graine de sa planète et les chunks déjà modifiés : chaque client génère le reste lui-même. Les autres joueurs apparaissent comme des silhouettes dorées surmontées de leur nom. En ligne, `G` (nouvelle planète) est désactivé.
+
 ### Lancer le serveur dédié :
 ```bash
-cargo run --release --bin herocraft_server -- [--port 7777] [--seed 2026]
+cargo run --release --bin herocraft_server -- [--port 7777] [--seed 2026] [--name "Mon serveur"] [--no-lan]
 ```
-Le serveur écoute en TCP (port 7777 par défaut) à 60 TPS. Il fait autorité sur les blocs : il valide chaque bloc cassé ou posé (portée, contenu), l'enregistre dans `saves/serveur_monde_<graine>/` et le diffuse à tous les joueurs. Il relaie aussi leurs positions. Tapez `stop` dans sa console pour l'arrêter en enregistrant le monde.
-
-### Rejoindre une partie en ligne :
-```bash
-cargo run --release --bin herocraft_client -- --connect 127.0.0.1:7777 --name Mat
-```
-Ou bien `HEROCRAFT_SERVER` et `HEROCRAFT_PSEUDO` dans `.env`. À la connexion, le serveur envoie la graine de sa planète et les chunks déjà modifiés : chaque client génère le reste lui-même. Les autres joueurs apparaissent comme des silhouettes dorées surmontées de leur nom. En ligne, rien n'est enregistré en local et `G` (nouvelle planète) est désactivé. Si le serveur est injoignable, le client démarre en solo.
+Le serveur écoute en TCP (port 7777 par défaut) à 60 TPS et s'annonce sur le réseau local (sauf `--no-lan`). Il fait autorité sur les blocs : il valide chaque bloc cassé ou posé (portée, contenu), l'enregistre dans `saves/serveur_monde_<graine>/` et le diffuse à tous les joueurs. Il relaie aussi leurs positions. Tapez `stop` dans sa console pour l'arrêter en enregistrant le monde.
 
 ### Lancer le prototype client interactif :
 ```bash
 cargo run --bin herocraft_client
 ```
+Pour rejoindre directement un serveur au lancement : `-- --connect 127.0.0.1:7777 --name Mat` (ou `HEROCRAFT_SERVER` et `HEROCRAFT_PSEUDO` dans `.env`).
 
 #### Configuration locale (`.env`) :
 Copier `.env.example` en `.env` (non versionné). Les variables déjà définies dans l'environnement restent prioritaires.
