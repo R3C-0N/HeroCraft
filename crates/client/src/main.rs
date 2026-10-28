@@ -345,7 +345,7 @@ fn main() {
                             herocraft_common::prof_scope!("frame::camera_update");
                             camera.update(dt, &generator);
                         }
-                        state.update_camera(&camera, &ui_state.lighting_settings, &ui_state.cloud_settings);
+                        state.update_camera(&camera, &ui_state.lighting_settings, &ui_state.cloud_settings, ui_state.video_settings.flattening);
                         state.update_post(&ui_state.post_settings);
                         state.update_shadows(&camera, &ui_state.shadow_settings);
                         state.update_atmosphere(&camera, &ui_state.atmosphere_settings, &ui_state.lighting_settings);

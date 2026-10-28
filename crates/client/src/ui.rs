@@ -55,12 +55,15 @@ impl FpsLimitSetting {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VideoSettings {
     pub vsync: bool,
     pub fullscreen: bool,
     pub lod_distance: LodDistanceSetting,
     pub fps_limit: FpsLimitSetting,
+    /// Aplatissement de la planète vue du sol : 0 = vraie courbure, 1 = horizon le plus lointain
+    /// possible sans voir les antipodes (renderer.rs, `planet_flattening`)
+    pub flattening: f32,
 }
 
 impl Default for VideoSettings {
@@ -70,6 +73,7 @@ impl Default for VideoSettings {
             fullscreen: false,
             lod_distance: LodDistanceSetting::Normale,
             fps_limit: FpsLimitSetting::Fps60,
+            flattening: 1.0,
         }
     }
 }
@@ -1005,6 +1009,14 @@ impl UiState {
                 *action = Some(UiAction::SetFpsLimit);
             }
             ui.end_row();
+
+            slider_row(
+                ui,
+                "Aplatissement de l'horizon",
+                &mut self.video_settings.flattening,
+                0.0..=1.0,
+                "Vue au sol : la planète est dessinée moins courbe pour voir plus loin (0 = vraie courbure)",
+            );
         });
         ui.add_space(4.0_f32);
         ui.label(egui::RichText::new(format!("Détail actuel : {}", self.video_settings.lod_distance.label())).size(11.0_f32).color(TEXT_DIM));

@@ -6,11 +6,12 @@
 // le tonemapper la rend blanche et le bloom la fait légèrement briller.
 // =========================================================================
 
-#import herocraft::common::camera
+#import herocraft::common::{camera, flatten_point}
 
 @vertex
 fn vs_outline(@location(0) position: vec3<f32>) -> @builtin(position) vec4<f32> {
-    return camera.view_proj * vec4<f32>(position, 1.0);
+    // Même aplatissement que le relief : le contour reste collé au bloc
+    return camera.view_proj * vec4<f32>(flatten_point(position).pos, 1.0);
 }
 
 @fragment
