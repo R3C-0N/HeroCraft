@@ -35,6 +35,11 @@ pub struct OrbitCamera {
     pub is_sprinting: bool,
     pub jump_requested: bool,
 
+    /// Vol libre (double appui sur Saut) : pas de gravité, Saut monte et Descendre descend
+    pub is_flying: bool,
+    pub ascend_held: bool,
+    pub descend_held: bool,
+
     /// Distance actuelle de la caméra (interpolée avec fluidité vers target_distance)
     pub distance: f32,
     /// Distance cible souhaitée de la caméra (définie par la molette, touches ou boutons)
@@ -86,6 +91,10 @@ impl Default for OrbitCamera {
             move_right: false,
             is_sprinting: false,
             jump_requested: false,
+
+            is_flying: false,
+            ascend_held: false,
+            descend_held: false,
 
             distance: 330.0,
             target_distance: 330.0,
@@ -163,6 +172,7 @@ impl OrbitCamera {
         self.player_pos = spawn_dir * spawn_ground_r;
         self.vertical_velocity = 0.0;
         self.is_grounded = true;
+        self.is_flying = false;
         self.sync_orbit_to_ground();
         self.distance = 0.0;
         self.target_distance = 0.0;
@@ -253,6 +263,35 @@ impl OrbitCamera {
         }
     }
 
+    /// Oriente le regard du joueur (souris capturée). `yaw` et `pitch` sont en radians ;
+    /// un pitch positif lève le regard.
+    pub fn look(&mut self, yaw: f32, pitch: f32) {
+        self.player_yaw += yaw;
+        self.player_pitch = (self.player_pitch + pitch).clamp(-1.48, 1.48); // ~85 degrés
+        self.sync_orbit_to_ground();
+    }
+
+    /// Relâche toutes les entrées de déplacement maintenues (menu ouvert, perte du focus)
+    pub fn release_inputs(&mut self) {
+        self.move_forward = false;
+        self.move_backward = false;
+        self.move_left = false;
+        self.move_right = false;
+        self.is_sprinting = false;
+        self.ascend_held = false;
+        self.descend_held = false;
+    }
+
+    /// Décolle ou cesse de voler
+    pub fn toggle_flight(&mut self) {
+        self.is_flying = !self.is_flying;
+        self.vertical_velocity = 0.0;
+        self.jump_requested = false;
+        if self.is_flying {
+            self.is_grounded = false;
+        }
+    }
+
     /// Synchronise la position au sol du joueur avec la vue orbitale satellite
     pub fn sync_ground_to_orbit(&mut self, generator: &PlanetWorldGenerator) {
         let dir = self.orbit_direction();
@@ -261,6 +300,7 @@ impl OrbitCamera {
         self.player_pos = dir * ground_radius;
         self.vertical_velocity = 0.0;
         self.is_grounded = true;
+        self.is_flying = false;
         self.update_camera_bounds(generator);
     }
 
@@ -438,8 +478,14 @@ impl OrbitCamera {
 
         if move_dir.length_squared() > 0.001 {
             move_dir = move_dir.normalize();
-            // Vitesse adaptée à l'échelle : ~5.2 blocs/s en marche, ~11.7 blocs/s en sprint
-            let speed = if self.is_sprinting { 0.45 * scale } else { 0.20 * scale };
+            // Vitesse adaptée à l'échelle : ~5.2 blocs/s en marche, ~11.7 blocs/s en sprint,
+            // ~13 blocs/s en vol et ~29 blocs/s en vol sprinté
+            let speed = match (self.is_flying, self.is_sprinting) {
+                (false, false) => 0.20,
+                (false, true) => 0.45,
+                (true, false) => 0.50,
+                (true, true) => 1.10,
+            } * scale;
             self.player_pos += move_dir * speed * dt;
         }
 
@@ -449,20 +495,39 @@ impl OrbitCamera {
 
         let mut current_radius = self.player_pos.length();
 
-        // Saut
-        if self.jump_requested && self.is_grounded {
-            self.vertical_velocity = 1.2 * scale;
-            self.is_grounded = false;
+        if self.is_flying {
+            // Vol : vitesse verticale pilotée directement (~10 blocs/s), sans gravité
+            let mut climb = 0.0;
+            if self.ascend_held { climb += 0.40 * scale; }
+            if self.descend_held { climb -= 0.40 * scale; }
+            self.vertical_velocity = climb;
             self.jump_requested = false;
-        }
+            current_radius += climb * dt;
+            if current_radius <= ground_radius {
+                current_radius = ground_radius;
+                self.vertical_velocity = 0.0;
+                self.is_grounded = true;
+                // Se poser en descendant met fin au vol
+                if climb < 0.0 {
+                    self.is_flying = false;
+                }
+            } else {
+                self.is_grounded = false;
+            }
+        } else {
+            // Saut
+            if self.jump_requested && self.is_grounded {
+                self.vertical_velocity = 1.2 * scale;
+                self.is_grounded = false;
+                self.jump_requested = false;
+            }
 
-        // Gravité sphérique et franchissement doux des pentes
-        if current_radius > ground_radius {
-            // Descente douce si la marche au sol franchit une dénivellation légère (< 1.5 bloc)
-            if self.is_grounded && (current_radius - ground_radius) < 0.05 * scale {
+            if self.is_grounded && current_radius <= ground_radius + 0.05 * scale {
+                // Au sol : suit le relief, montée directe et descente douce des marches (< 1.5 bloc)
                 current_radius = ground_radius;
                 self.vertical_velocity = 0.0;
             } else {
+                // En l'air : gravité sphérique jusqu'au contact du relief
                 self.vertical_velocity -= 6.0 * scale * dt;
                 current_radius += self.vertical_velocity * dt;
                 if current_radius <= ground_radius {
@@ -473,11 +538,6 @@ impl OrbitCamera {
                     self.is_grounded = false;
                 }
             }
-        } else {
-            // Montée sur relief / contact direct
-            current_radius = ground_radius;
-            self.vertical_velocity = 0.0;
-            self.is_grounded = true;
         }
 
         self.player_pos = new_up * current_radius;
@@ -655,5 +715,75 @@ mod tests {
         assert!(intermediate_distances[30] < intermediate_distances[10]);
         let final_d = intermediate_distances.last().copied().unwrap();
         assert!(final_d < 5.0, "Camera should have approached ground: final_d={}", final_d);
+    }
+
+    fn ground_test_camera() -> (OrbitCamera, PlanetWorldGenerator) {
+        let desc = herocraft_world::PlanetDescriptor {
+            seed: 2026,
+            ..Default::default()
+        };
+        let gen = PlanetWorldGenerator::new(desc);
+        let mut cam = OrbitCamera::new(165.0, 25.0, &gen);
+        cam.spawn_on_ground(&gen);
+        cam.update(0.016, &gen);
+        (cam, gen)
+    }
+
+    #[test]
+    fn test_jump_leaves_ground_and_lands() {
+        let (mut cam, gen) = ground_test_camera();
+        let ground = cam.player_pos.length();
+        assert!(cam.is_grounded);
+
+        cam.jump_requested = true;
+        let mut peak = ground;
+        for _ in 0..120 {
+            cam.update(0.016, &gen);
+            peak = peak.max(cam.player_pos.length());
+        }
+        assert!(peak > ground + 0.01, "le saut doit décoller du sol (pic {} sol {})", peak, ground);
+        assert!(cam.is_grounded, "le joueur doit être retombé");
+    }
+
+    #[test]
+    fn test_flight_climbs_hovers_and_lands() {
+        let (mut cam, gen) = ground_test_camera();
+        let ground = cam.player_pos.length();
+
+        cam.toggle_flight();
+        assert!(cam.is_flying);
+
+        // Saut maintenu : montée sans gravité
+        cam.ascend_held = true;
+        for _ in 0..30 {
+            cam.update(0.016, &gen);
+        }
+        cam.ascend_held = false;
+        let altitude = cam.player_pos.length();
+        assert!(altitude > ground + 0.05, "le vol doit monter");
+
+        // Rien de maintenu : le joueur plane
+        for _ in 0..30 {
+            cam.update(0.016, &gen);
+        }
+        assert!((cam.player_pos.length() - altitude).abs() < 1e-3, "le vol ne doit pas retomber");
+
+        // Descendre jusqu'au sol met fin au vol
+        cam.descend_held = true;
+        for _ in 0..300 {
+            cam.update(0.016, &gen);
+        }
+        assert!(!cam.is_flying, "se poser doit terminer le vol");
+        assert!(cam.is_grounded);
+    }
+
+    #[test]
+    fn test_look_clamps_pitch() {
+        let mut cam = OrbitCamera::default();
+        cam.look(0.5, 10.0);
+        assert!((cam.player_yaw - 0.5).abs() < 1e-6);
+        assert!((cam.player_pitch - 1.48).abs() < 1e-6);
+        cam.look(0.0, -10.0);
+        assert!((cam.player_pitch + 1.48).abs() < 1e-6);
     }
 }

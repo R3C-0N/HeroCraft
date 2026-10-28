@@ -1,5 +1,7 @@
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::window::Window;
+use winit::keyboard::KeyCode;
+
+use crate::input::{is_reserved_key, Action, Controls, ACTION_GROUPS};
 
 /// Actions déclenchées par l'interface utilisateur
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -226,7 +228,7 @@ pub enum MenuPage {
     Main,
     /// Sous-menu des réglages, rangés par onglets
     Options,
-    /// Aide-mémoire des touches
+    /// Touches modifiables et réglages de la souris
     Controls,
 }
 
@@ -321,6 +323,13 @@ pub struct UiState {
     pub post_settings: PostSettings,
     pub shadow_settings: ShadowSettings,
     pub atmosphere_settings: AtmosphereSettings,
+    pub controls: Controls,
+    /// Action en attente d'une nouvelle touche dans la page Commandes
+    pub rebinding: Option<Action>,
+    /// Message affiché après un échange de touches entre deux actions
+    pub rebind_notice: Option<String>,
+    /// Curseur capturé par le jeu : egui ne reçoit plus la souris
+    pub pointer_captured: bool,
     pub screen_width: f32,
     pub screen_height: f32,
 }
@@ -351,6 +360,10 @@ impl UiState {
             post_settings: PostSettings::default(),
             shadow_settings: ShadowSettings::default(),
             atmosphere_settings: AtmosphereSettings::default(),
+            controls: Controls::default(),
+            rebinding: None,
+            rebind_notice: None,
+            pointer_captured: false,
             screen_width: 1280.0_f32,
             screen_height: 720.0_f32,
         }
@@ -427,6 +440,7 @@ impl UiState {
     pub fn set_settings_open(&mut self, is_open: bool) {
         self.is_settings_open = is_open;
         self.confirm_quit = false;
+        self.rebinding = None;
         if is_open {
             self.menu_page = MenuPage::Main;
         }
@@ -448,6 +462,8 @@ impl UiState {
     pub fn handle_escape(&mut self) -> bool {
         if !self.is_settings_open {
             self.set_settings_open(true);
+        } else if self.rebinding.is_some() {
+            self.rebinding = None;
         } else if self.confirm_quit {
             self.confirm_quit = false;
         } else if self.menu_page != MenuPage::Main {
@@ -456,6 +472,38 @@ impl UiState {
             self.set_settings_open(false);
         }
         self.is_settings_open
+    }
+
+    /// Attribue la touche pressée à l'action en attente de la page Commandes et enregistre
+    pub fn finish_rebind(&mut self, key: KeyCode) {
+        let Some(action) = self.rebinding else { return };
+        if is_reserved_key(key) {
+            return;
+        }
+        self.rebinding = None;
+        let swapped = self.controls.rebind(action, key);
+        self.rebind_notice = swapped.map(|other| {
+            format!(
+                "{} était utilisée par « {} », qui passe sur {}.",
+                self.controls.key_label(key),
+                other.label(),
+                self.controls.action_key_label(other)
+            )
+        });
+        self.controls.save();
+    }
+
+    /// Libellé court de la touche d'une action, pour les boutons du HUD
+    fn key_hint(&self, action: Action) -> String {
+        format!("[{}]", self.controls.action_key_label(action))
+    }
+
+    /// Capture ou libère le pointeur. À la capture, egui oublie le survol en cours.
+    pub fn set_pointer_captured(&mut self, captured: bool) {
+        if captured && !self.pointer_captured {
+            self.raw_input.events.push(egui::Event::PointerGone);
+        }
+        self.pointer_captured = captured;
     }
 
     pub fn active_filter(&self) -> herocraft_world::VisualizationFilter {
@@ -469,9 +517,14 @@ impl UiState {
     }
 
     /// Transmet les événements de fenêtre Winit à egui
-    pub fn handle_event(&mut self, _window: &Window, event: &WindowEvent) {
+    pub fn handle_event(&mut self, event: &WindowEvent) {
         herocraft_common::prof_scope!("ui::handle_event");
         let ppp = self.scale_factor.max(0.1_f32);
+
+        // Souris capturée par le jeu : le curseur est caché et ne doit rien survoler ni cliquer
+        if self.pointer_captured {
+            return;
+        }
 
         match event {
             WindowEvent::CursorMoved { position, .. } => {
@@ -597,35 +650,47 @@ impl UiState {
                         .show(ui, |ui| {
                             let full = egui::vec2(ui.available_width(), 0.0_f32);
 
-                            if ui.add(egui::Button::new("🎲  Nouvelle planète  [G]").min_size(full)).clicked() {
+                            let new_planet = format!("🎲  Nouvelle planète  {}", self.key_hint(Action::NewPlanet));
+                            if ui.add(egui::Button::new(new_planet).min_size(full)).clicked() {
                                 *action = Some(UiAction::GenerateNewPlanet);
                             }
 
-                            let view_label = if is_ground { "🌍  Vue satellite  [F]" } else { "🚶  Vue au sol  [F]" };
+                            let view_label = format!(
+                                "{}  {}",
+                                if is_ground { "🌍  Vue satellite" } else { "🚶  Vue au sol" },
+                                self.key_hint(Action::ToggleView)
+                            );
                             if ui.add(egui::Button::new(view_label).min_size(full)).clicked() {
                                 *action = Some(UiAction::ToggleGroundCamera);
                             }
 
-                            let rot_label = if self.auto_rotate { "⏸  Arrêter la rotation  [Espace]" } else { "▶  Auto-rotation  [Espace]" };
+                            let rot_label = format!(
+                                "{}  {}",
+                                if self.auto_rotate { "⏸  Arrêter la rotation" } else { "▶  Auto-rotation" },
+                                self.key_hint(Action::Jump)
+                            );
                             if ui.add(egui::Button::new(rot_label).min_size(full)).clicked() {
                                 *action = Some(UiAction::ToggleAutoRotate);
                             }
 
-                            if ui.add(egui::Button::new("🔄  Réinitialiser la vue  [R]").min_size(full)).clicked() {
+                            let reset_label = format!("🔄  Réinitialiser la vue  {}", self.key_hint(Action::ResetView));
+                            if ui.add(egui::Button::new(reset_label).min_size(full)).clicked() {
                                 *action = Some(UiAction::ResetCamera);
                             }
 
                             ui.add_space(2.0_f32);
                             caption(ui, "FILTRES CARTOGRAPHIQUES");
 
-                            if ui.checkbox(&mut self.show_tectonics, "Plaques tectoniques  [T]").changed() {
+                            let tectonics_label = format!("Plaques tectoniques  {}", self.key_hint(Action::ToggleTectonics));
+                            if ui.checkbox(&mut self.show_tectonics, tectonics_label).changed() {
                                 if self.show_tectonics {
                                     self.show_ocean_currents = false;
                                 }
                                 *action = Some(UiAction::ToggleTectonics);
                             }
 
-                            if ui.checkbox(&mut self.show_ocean_currents, "Courants marins  [C]").changed() {
+                            let currents_label = format!("Courants marins  {}", self.key_hint(Action::ToggleOceanCurrents));
+                            if ui.checkbox(&mut self.show_ocean_currents, currents_label).changed() {
                                 if self.show_ocean_currents {
                                     self.show_tectonics = false;
                                 }
@@ -734,7 +799,7 @@ impl UiState {
                         match page {
                             MenuPage::Main => self.draw_main_page(ui, body_height, action),
                             MenuPage::Options => self.draw_options_page(ui, inner_width, body_height, action),
-                            MenuPage::Controls => draw_controls_page(ui, body_height),
+                            MenuPage::Controls => self.draw_controls_page(ui, body_height),
                         }
 
                         let footer_top = ui.cursor().top();
@@ -788,7 +853,7 @@ impl UiState {
                 if menu_entry(ui, size, "⚙   Options", Some("Affichage, éclairage, nuages, rendu…")).clicked() {
                     self.menu_page = MenuPage::Options;
                 }
-                if menu_entry(ui, size, "⌨   Commandes", Some("Rappel des touches et de la souris")).clicked() {
+                if menu_entry(ui, size, "⌨   Commandes", Some("Touches modifiables et sensibilité de la souris")).clicked() {
                     self.menu_page = MenuPage::Controls;
                 }
 
@@ -1221,73 +1286,118 @@ fn reset_button(ui: &mut egui::Ui, text: &str) -> bool {
     ui.small_button(egui::RichText::new(format!("↺  {}", text)).color(TEXT_DIM)).clicked()
 }
 
-/// Section de l'aide-mémoire : titre puis lignes (touches, description)
-type ControlGroup = (&'static str, &'static [(&'static [&'static str], &'static str)]);
+/// Bouton en forme de capuchon de clavier, doré quand il attend une touche
+fn keycap_button(ui: &mut egui::Ui, text: &str, listening: bool) -> egui::Response {
+    let (fill, stroke, color) = if listening {
+        (egui::Color32::from_rgb(70, 56, 18), GOLD_BRIGHT, GOLD_BRIGHT)
+    } else {
+        (egui::Color32::from_rgb(30, 38, 54), egui::Color32::from_rgb(90, 105, 130), egui::Color32::from_rgb(225, 230, 240))
+    };
+    ui.add(
+        egui::Button::new(egui::RichText::new(text).monospace().size(11.5_f32).strong().color(color))
+            .fill(fill)
+            .stroke(egui::Stroke::new(1.0_f32, stroke))
+            .rounding(egui::Rounding::same(4.0_f32))
+            .min_size(egui::vec2(96.0_f32, 0.0_f32)),
+    )
+}
 
-/// Aide-mémoire des commandes, groupées par usage
-fn draw_controls_page(ui: &mut egui::Ui, body_height: f32) {
-    const GROUPS: [ControlGroup; 4] = [
-        (
-            "DÉPLACEMENT",
-            &[
-                (&["Z", "Q", "S", "D"], "Marcher (ou W A S D)"),
-                (&["Maj"], "Courir"),
-                (&["Espace"], "Sauter au sol, auto-rotation en orbite"),
-            ],
-        ),
-        (
-            "CAMÉRA",
-            &[
-                (&["F"], "Basculer vue au sol / orbite"),
-                (&["Molette"], "Zoom continu, du sol à l'orbite"),
-                (&["Clic", "glisser"], "Orienter la vue / tourner la planète"),
-                (&["R"], "Réinitialiser la vue"),
-            ],
-        ),
-        (
-            "MONDE",
-            &[
-                (&["G"], "Générer une nouvelle planète"),
-                (&["T"], "Filtre plaques tectoniques"),
-                (&["C"], "Filtre courants marins"),
-            ],
-        ),
-        (
-            "SYSTÈME",
-            &[
-                (&["Échap"], "Menu de pause / revenir en arrière"),
-                (&["F9"], "Écrire le rapport de profilage"),
-            ],
-        ),
-    ];
+/// Intitulé de section sur toute une ligne de la grille des commandes
+fn section_row(ui: &mut egui::Ui, title: &str) {
+    ui.vertical(|ui| {
+        ui.add_space(6.0_f32);
+        caption(ui, title);
+    });
+    ui.end_row();
+}
 
-    egui::ScrollArea::vertical()
-        .id_salt("controls_scroll")
-        .max_height(body_height)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            for (title, rows) in GROUPS {
-                ui.add_space(2.0_f32);
-                caption(ui, title);
-                egui::Grid::new(("controls_grid", title))
+/// Ligne fixe de la page Commandes : touches non modifiables puis description
+fn fixed_control_row(ui: &mut egui::Ui, keys: &[&str], description: &str) {
+    ui.label(egui::RichText::new(description).color(TEXT_SOFT));
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 3.0_f32;
+        for key in keys {
+            keycap(ui, key);
+        }
+    });
+    ui.end_row();
+}
+
+impl UiState {
+    /// Page Commandes : touches modifiables par clic, réglages de la souris et raccourcis fixes
+    fn draw_controls_page(&mut self, ui: &mut egui::Ui, body_height: f32) {
+        egui::ScrollArea::vertical()
+            .id_salt("controls_scroll")
+            .max_height(body_height)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new("Cliquez sur une touche puis appuyez sur la nouvelle (Échap pour annuler).")
+                        .size(11.5_f32)
+                        .color(TEXT_DIM),
+                );
+                if let Some(notice) = &self.rebind_notice {
+                    ui.label(egui::RichText::new(notice).size(11.5_f32).color(GOLD));
+                }
+
+                // Une seule grille pour toutes les sections : la colonne des touches reste alignée
+                let zoom_key = self.controls.action_key_label(Action::ZoomModifier);
+                let mut save = false;
+                egui::Grid::new("controls_grid")
                     .num_columns(2)
-                    .spacing([16.0_f32, 6.0_f32])
+                    .spacing([24.0_f32, 6.0_f32])
                     .min_col_width(130.0_f32)
                     .show(ui, |ui| {
-                        for (keys, description) in rows.iter() {
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 3.0_f32;
-                                for key in keys.iter() {
-                                    keycap(ui, key);
+                        for (title, actions) in ACTION_GROUPS {
+                            section_row(ui, title);
+                            for &action in actions {
+                                ui.label(egui::RichText::new(action.label()).color(TEXT_SOFT));
+                                let listening = self.rebinding == Some(action);
+                                let text = if listening { "…".to_string() } else { self.controls.action_key_label(action) };
+                                let response = keycap_button(ui, &text, listening)
+                                    .on_hover_text(if listening { "Appuyez sur la nouvelle touche" } else { "Changer la touche" });
+                                if response.clicked() {
+                                    self.rebinding = if listening { None } else { Some(action) };
+                                    self.rebind_notice = None;
                                 }
-                            });
-                            ui.label(egui::RichText::new(*description).color(TEXT_SOFT));
-                            ui.end_row();
+                                ui.end_row();
+                            }
                         }
+
+                        section_row(ui, "SOURIS");
+                        fixed_control_row(ui, &["Souris"], "Regarder autour (au sol)");
+                        fixed_control_row(ui, &[zoom_key.as_str(), "Molette"], "Zoom, du sol à l'orbite");
+                        fixed_control_row(ui, &["Clic", "glisser"], "Tourner la planète (vue satellite)");
+
+                        row_label(ui, "Sensibilité", "Vitesse de rotation de la vue à la souris");
+                        let sensitivity = ui.add(egui::Slider::new(&mut self.controls.mouse_sensitivity, 0.1..=5.0).fixed_decimals(2));
+                        ui.end_row();
+
+                        row_label(ui, "Inverser l'axe vertical", "Pousser la souris vers l'avant baisse le regard");
+                        let invert = toggle_switch(ui, &mut self.controls.invert_y);
+                        ui.end_row();
+
+                        // Le curseur n'enregistre qu'au relâchement, pas à chaque image du glisser
+                        save = sensitivity.drag_stopped() || (sensitivity.changed() && !sensitivity.dragged()) || invert.changed();
+
+                        section_row(ui, "SYSTÈME");
+                        fixed_control_row(ui, &["Échap"], "Menu de pause / revenir en arrière");
+                        fixed_control_row(ui, &["F9"], "Écrire le rapport de profilage");
                     });
-                ui.add_space(4.0_f32);
-            }
-        });
+                if save {
+                    self.controls.save();
+                }
+
+                if reset_button(ui, "Touches et souris par défaut") {
+                    self.controls.reset_bindings();
+                    self.controls.mouse_sensitivity = 1.0;
+                    self.controls.invert_y = false;
+                    self.rebinding = None;
+                    self.rebind_notice = None;
+                    self.controls.save();
+                }
+            });
+    }
 }
 
 #[cfg(test)]
@@ -1386,6 +1496,53 @@ mod tests {
         assert!(ui.handle_escape());
         assert_eq!(ui.menu_page, MenuPage::Main);
         assert!(!ui.confirm_quit);
+    }
+
+    #[test]
+    fn test_rebinding_from_controls_page() {
+        let mut ui = UiState::new(1);
+        ui.open_menu_at(MenuPage::Controls);
+
+        // Échap annule la saisie sans quitter la page
+        ui.rebinding = Some(Action::Sprint);
+        assert!(ui.handle_escape());
+        assert_eq!(ui.rebinding, None);
+        assert_eq!(ui.menu_page, MenuPage::Controls);
+
+        // Touche déjà prise : échange et message
+        ui.rebinding = Some(Action::Sprint);
+        ui.finish_rebind(KeyCode::KeyW);
+        assert_eq!(ui.rebinding, None);
+        assert_eq!(ui.controls.key(Action::Sprint), KeyCode::KeyW);
+        assert_eq!(ui.controls.key(Action::MoveForward), KeyCode::ControlLeft);
+        assert!(ui.rebind_notice.is_some());
+
+        // Touche réservée ignorée : la saisie continue
+        ui.rebinding = Some(Action::Jump);
+        ui.finish_rebind(KeyCode::F9);
+        assert_eq!(ui.rebinding, Some(Action::Jump));
+
+        // Fermer le menu abandonne la saisie
+        ui.set_settings_open(false);
+        assert_eq!(ui.rebinding, None);
+    }
+
+    #[test]
+    fn test_captured_pointer_is_hidden_from_egui() {
+        let mut ui = UiState::new(1);
+        ui.set_pointer_captured(true);
+        ui.raw_input.events.clear();
+        let window_event = WindowEvent::MouseWheel {
+            device_id: unsafe { winit::event::DeviceId::dummy() },
+            delta: MouseScrollDelta::LineDelta(0.0, 1.0),
+            phase: winit::event::TouchPhase::Moved,
+        };
+        ui.handle_event(&window_event);
+        assert!(ui.raw_input.events.is_empty());
+
+        ui.set_pointer_captured(false);
+        ui.handle_event(&window_event);
+        assert_eq!(ui.raw_input.events.len(), 1);
     }
 
     /// Chaque page et chaque onglet du menu tient dans l'écran, y compris sur de petites fenêtres

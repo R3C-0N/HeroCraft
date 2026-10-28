@@ -1,19 +1,20 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use log::info;
+use log::{info, warn};
 use winit::{
-    dpi::LogicalSize,
-    event::{ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
+    dpi::{LogicalSize, PhysicalPosition},
+    event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    keyboard::{KeyCode, PhysicalKey},
-    window::WindowBuilder,
+    keyboard::{KeyCode, ModifiersState, PhysicalKey},
+    window::{CursorGrabMode, Window, WindowBuilder},
 };
 
 mod atmosphere;
 mod camera;
 mod cloud_mesh;
 mod gpu_timer;
+mod input;
 mod lod;
 mod planet_mesh;
 mod post;
@@ -24,6 +25,7 @@ mod ui;
 mod voxel_mesh;
 
 use camera::OrbitCamera;
+use input::Action;
 use lod::PlanetLodManager;
 use renderer::State;
 use ui::{UiAction, UiState};
@@ -39,17 +41,15 @@ fn main() {
     info!("==========================================================");
     info!("   HeroCraft — Moteur Planétaire QuadTree LOD (Rust / WGPU) ");
     info!("==========================================================");
-    info!("Contrôles :");
-    info!(" • [Z,Q,S,D] / [W,A,S,D]            : Marcher au sol sur les blocs (gravité sphérique)");
-    info!(" • [SHIFT]                            : Courir / Sprinter");
-    info!(" • [ESPACE]                           : Sauter (au sol) / Auto-rotation (en orbite)");
-    info!(" • [F] ou Bouton HUD                  : Basculer instantanément Vue Sol (FPS) <-> Satellite");
-    info!(" • Molette de la souris (Scroll)      : Zoom continu FPS (0m) -> TPS (1-25m) -> Satellite");
-    info!(" • Clic Gauche / Droit (Drag & Drop)   : Orienter le regard (sol) / Tourner la planète (orbite)");
-    info!(" • [R] ou Bouton HUD                  : Réinitialiser la vue en orbite");
-    info!(" • [G] ou Bouton HUD                  : Générer une nouvelle planète procédurale");
-    info!(" • [T] / [C]                          : Filtres plaques tectoniques / courants marins");
-    info!(" • [ÉCHAP]                            : Quitter");
+    info!("Contrôles (modifiables dans Échap > Commandes) :");
+    info!(" • Souris                             : Regarder autour (curseur capturé en jeu)");
+    info!(" • [Z,Q,S,D] (AZERTY) / [W,A,S,D]     : Se déplacer");
+    info!(" • [ESPACE] / double [ESPACE]         : Sauter / S'envoler (monter en vol)");
+    info!(" • [MAJ] / [CTRL]                     : Descendre en vol / Sprinter");
+    info!(" • [ALT] + Molette                    : Zoom FPS (0m) -> TPS (1-25m) -> Satellite");
+    info!(" • [F] / [R]                          : Vue sol <-> satellite / Réinitialiser la vue");
+    info!(" • [G] / [T] / [C]                    : Nouvelle planète / Filtres tectonique, courants");
+    info!(" • [ÉCHAP]                            : Menu de pause (libère la souris)");
     info!("==========================================================");
 
     let event_loop = EventLoop::new().expect("Échec d'initialisation de l'EventLoop Winit");
@@ -97,12 +97,20 @@ fn main() {
     let mut ui_state = UiState::new(current_seed);
     ui_state.set_scale_factor(window.scale_factor() as f32);
     ui_state.set_screen_size(size.width as f32, size.height as f32);
+    ui_state.controls = input::Controls::load_or_default(input::CONTROLS_FILE);
 
     // Initialisation du moteur WGPU
     let mut state = pollster::block_on(State::new(window.clone(), &ui_state));
     state.sync_lod_meshes(&lod_manager);
 
-    // Gestion des entrées souris
+    // Gestion des entrées : souris capturée en jeu, glisser en vue satellite
+    let mut cursor_captured = false;
+    let mut window_focused = true;
+    let mut modifiers = ModifiersState::empty();
+    let mut zoom_modifier_held = false;
+    let mut jump_tap = input::DoubleTap::default();
+    // Actions du clavier rejouées comme les boutons du HUD, au moment du rendu
+    let mut pending_actions: Vec<UiAction> = Vec::new();
     let mut is_dragging = false;
     let mut last_mouse_pos = (0.0_f64, 0.0_f64);
     let mut last_frame_time = Instant::now();
@@ -115,7 +123,7 @@ fn main() {
         match event {
             Event::WindowEvent { window_id, ref event } if window_id == window.id() => {
                 // Transmettre les événements de fenêtre à egui
-                ui_state.handle_event(&window, event);
+                ui_state.handle_event(event);
 
                 match event {
                     WindowEvent::CloseRequested => {
@@ -139,32 +147,34 @@ fn main() {
                         camera.aspect = physical_size.width as f32 / physical_size.height.max(1) as f32;
                     }
 
-                    // Clic souris (Bouton UI ou Drag & Drop planète)
-                    WindowEvent::MouseInput { state: btn_state, button, .. } => {
-                        let is_over_ui = ui_state.is_settings_open
-                            || ui_state.ctx.is_pointer_over_area()
-                            || ui_state.ctx.wants_pointer_input();
+                    WindowEvent::Focused(focused) => {
+                        window_focused = *focused;
+                        if !focused {
+                            // Alt+Tab : les relâchements de touches n'arriveront pas
+                            camera.release_inputs();
+                            zoom_modifier_held = false;
+                            is_dragging = false;
+                        }
+                    }
 
-                        if *button == MouseButton::Left {
-                            if *btn_state == ElementState::Pressed {
-                                if !is_over_ui {
-                                    is_dragging = true;
-                                }
-                            } else {
-                                is_dragging = false;
-                            }
-                        } else if *button == MouseButton::Right {
+                    WindowEvent::ModifiersChanged(new_modifiers) => {
+                        modifiers = new_modifiers.state();
+                    }
+
+                    // Clic souris : glisser pour tourner la planète en vue satellite (curseur visible).
+                    // Souris capturée, les clics restent libres pour l'interaction avec les blocs.
+                    WindowEvent::MouseInput { state: btn_state, button, .. } => {
+                        if !cursor_captured && matches!(button, MouseButton::Left | MouseButton::Right) {
+                            let is_over_ui = ui_state.is_settings_open
+                                || ui_state.ctx.is_pointer_over_area()
+                                || ui_state.ctx.wants_pointer_input();
                             is_dragging = *btn_state == ElementState::Pressed && !is_over_ui;
                         }
                     }
 
-                    // Déplacement curseur (Survol des boutons UI et rotation de la vue)
+                    // Déplacement curseur visible (survol des boutons UI et rotation de la planète)
                     WindowEvent::CursorMoved { position, .. } => {
-                        let is_over_ui = ui_state.is_settings_open
-                            || ui_state.ctx.is_pointer_over_area()
-                            || ui_state.ctx.wants_pointer_input();
-
-                        if is_dragging && !is_over_ui {
+                        if is_dragging && !cursor_captured && !ui_state.is_settings_open {
                             let dx = (position.x - last_mouse_pos.0) as f32;
                             let dy = (position.y - last_mouse_pos.1) as f32;
                             camera.orbit(dx, dy);
@@ -172,13 +182,16 @@ fn main() {
                         last_mouse_pos = (position.x, position.y);
                     }
 
-                    // Molette de souris (Dézoom / Zoom continu FPS <-> TPS <-> Orbite)
+                    // Molette : zoom continu FPS <-> TPS <-> Orbite avec la touche de zoom (Alt) maintenue.
+                    // En vue satellite, la molette seule zoome aussi.
                     WindowEvent::MouseWheel { delta, .. } => {
-                        let is_over_ui = ui_state.is_settings_open
-                            || ui_state.ctx.is_pointer_over_area()
-                            || ui_state.ctx.wants_pointer_input();
+                        let wants_zoom = if cursor_captured {
+                            zoom_modifier_held
+                        } else {
+                            !(ui_state.is_settings_open || ui_state.ctx.is_pointer_over_area() || ui_state.ctx.wants_pointer_input())
+                        };
 
-                        if !is_over_ui {
+                        if wants_zoom {
                             let zoom_delta = match delta {
                                 MouseScrollDelta::LineDelta(_x, y) => *y,
                                 MouseScrollDelta::PixelDelta(pos) => (pos.y as f32) * 0.04,
@@ -187,115 +200,85 @@ fn main() {
                         }
                     }
 
-                    // Touches clavier (Déplacements ZQSD/WASD, Saut, Sprint, Mode caméra)
+                    // Touches clavier : actions attribuées dans Échap > Commandes
                     WindowEvent::KeyboardInput {
                         event: KeyEvent {
                             state: key_state,
                             physical_key: PhysicalKey::Code(key_code),
+                            logical_key,
+                            repeat,
                             ..
                         },
                         ..
                     } => {
                         let is_pressed = *key_state == ElementState::Pressed;
+                        let key_code = *key_code;
 
-                        if *key_code == KeyCode::Escape && is_pressed {
-                            // Touche Échap : ouvre le menu de pause, remonte d'un sous-menu ou referme le menu
+                        // Apprend le caractère de la touche selon la disposition du clavier (AZERTY…)
+                        if is_pressed && !modifiers.intersects(ModifiersState::SHIFT | ModifiersState::CONTROL | ModifiersState::ALT) {
+                            ui_state.controls.learn_label(key_code, logical_key);
+                        }
+
+                        if key_code == KeyCode::Escape && is_pressed {
+                            // Touche Échap : annule une saisie de touche, ouvre le menu de pause,
+                            // remonte d'un sous-menu ou referme le menu
                             let new_open = ui_state.handle_escape();
 
                             // Réinitialise les touches de déplacement pour éviter tout glissement fantôme
-                            camera.move_forward = false;
-                            camera.move_backward = false;
-                            camera.move_left = false;
-                            camera.move_right = false;
-                            camera.is_sprinting = false;
+                            camera.release_inputs();
+                            zoom_modifier_held = false;
 
                             info!("Touche [Échap] : Menu de pause {} ({:?})", if new_open { "OUVERT" } else { "FERMÉ" }, ui_state.menu_page);
+                        } else if ui_state.rebinding.is_some() {
+                            // Page Commandes : la touche pressée remplace celle de l'action choisie
+                            if is_pressed {
+                                ui_state.finish_rebind(key_code);
+                            }
+                        } else if key_code == KeyCode::F9 && is_pressed {
+                            write_profile_report();
                         } else if !ui_state.is_settings_open {
-                            // En jeu normal (menu fermé) : traitement des commandes de déplacement et raccourcis
-                            match key_code {
-                                // Déplacements au sol (Support ZQSD et WASD)
-                                KeyCode::KeyW | KeyCode::KeyZ => {
-                                    camera.move_forward = is_pressed;
-                                }
-                                KeyCode::KeyS => {
-                                    camera.move_backward = is_pressed;
-                                }
-                                KeyCode::KeyA | KeyCode::KeyQ => {
-                                    camera.move_left = is_pressed;
-                                }
-                                KeyCode::KeyD => {
-                                    camera.move_right = is_pressed;
-                                }
-                                KeyCode::ShiftLeft | KeyCode::ShiftRight => {
-                                    camera.is_sprinting = is_pressed;
-                                }
-
-                                // Actions ponctuelles déclenchées à l'appui
-                                _ if is_pressed => match key_code {
-                                    KeyCode::Space => {
-                                        if camera.distance <= camera.base_radius {
-                                            camera.jump_requested = true;
+                            // En jeu normal (menu fermé) : déplacements et raccourcis selon les touches attribuées
+                            let Some(action) = ui_state.controls.action_for(key_code) else { return };
+                            let is_ground_view = camera.target_distance <= camera.base_radius;
+                            let first_press = is_pressed && !*repeat;
+                            match action {
+                                Action::MoveForward => camera.move_forward = is_pressed,
+                                Action::MoveBackward => camera.move_backward = is_pressed,
+                                Action::MoveLeft => camera.move_left = is_pressed,
+                                Action::MoveRight => camera.move_right = is_pressed,
+                                Action::Sprint => camera.is_sprinting = is_pressed,
+                                Action::Descend => camera.descend_held = is_pressed,
+                                Action::ZoomModifier => zoom_modifier_held = is_pressed,
+                                Action::Jump => {
+                                    camera.ascend_held = is_pressed;
+                                    if first_press {
+                                        if !is_ground_view {
+                                            pending_actions.push(UiAction::ToggleAutoRotate);
+                                        } else if jump_tap.press(Instant::now()) {
+                                            camera.toggle_flight();
+                                            info!("Double [Saut] : vol {}", if camera.is_flying { "ACTIVÉ" } else { "DÉSACTIVÉ" });
                                         } else {
-                                            camera.auto_rotate = !camera.auto_rotate;
-                                            ui_state.set_auto_rotate(camera.auto_rotate);
-                                            info!("Auto-rotation de la planète : {}", if camera.auto_rotate { "ACTIVÉE" } else { "DÉSACTIVÉE" });
+                                            camera.jump_requested = true;
                                         }
                                     }
-                                    KeyCode::KeyF => {
-                                        camera.toggle_view(&generator);
-                                        info!(
-                                            "Raccourci [F] : Transition vers {}",
-                                            if camera.target_distance <= camera.base_radius { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
-                                        );
+                                }
+                                Action::ToggleView if first_press => pending_actions.push(UiAction::ToggleGroundCamera),
+                                Action::ResetView if first_press => pending_actions.push(UiAction::ResetCamera),
+                                Action::NewPlanet if first_press => pending_actions.push(UiAction::GenerateNewPlanet),
+                                Action::ToggleTectonics if first_press => {
+                                    ui_state.show_tectonics = !ui_state.show_tectonics;
+                                    if ui_state.show_tectonics {
+                                        ui_state.show_ocean_currents = false;
                                     }
-                                    KeyCode::F9 => {
-                                        write_profile_report();
+                                    pending_actions.push(UiAction::ToggleTectonics);
+                                }
+                                Action::ToggleOceanCurrents if first_press => {
+                                    ui_state.show_ocean_currents = !ui_state.show_ocean_currents;
+                                    if ui_state.show_ocean_currents {
+                                        ui_state.show_tectonics = false;
                                     }
-                                    KeyCode::KeyR => {
-                                        camera.reset();
-                                        info!("Vue de la caméra réinitialisée.");
-                                    }
-                                    KeyCode::KeyG => {
-                                        let _ = chunk_cache.flush_dirty();
-                                        current_seed = current_seed.wrapping_add(1337);
-                                        let mut new_desc = herocraft_world::PlanetDescriptor::default();
-                                        new_desc.seed = current_seed;
-                                        generator = herocraft_world::PlanetWorldGenerator::new(new_desc);
-                                        let new_save_dir = format!("saves/monde_{}", current_seed);
-                                        let new_storage = herocraft_voxel_engine::ChunkStorage::new(&new_save_dir).ok();
-                                        chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(new_storage, 256);
-                                        lod_manager.clear(current_seed);
-                                        camera.spawn_on_ground(&generator);
-                                        lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                        state.sync_lod_meshes(&lod_manager);
-                                        state.update_cloud_mesh(camera.base_radius, current_seed);
-                                        ui_state.set_seed(current_seed);
-                                        info!("Raccourci [G] : Nouvelle planète générée (Graine: #{})", current_seed);
-                                    }
-                                    KeyCode::KeyT => {
-                                        ui_state.show_tectonics = !ui_state.show_tectonics;
-                                        if ui_state.show_tectonics {
-                                            ui_state.show_ocean_currents = false;
-                                        }
-                                        let filter = ui_state.active_filter();
-                                        lod_manager.set_filter(filter);
-                                        lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                        state.sync_lod_meshes(&lod_manager);
-                                        info!("Raccourci [T] : Filtre plaques tectoniques = {}", ui_state.show_tectonics);
-                                    }
-                                    KeyCode::KeyC => {
-                                        ui_state.show_ocean_currents = !ui_state.show_ocean_currents;
-                                        if ui_state.show_ocean_currents {
-                                            ui_state.show_tectonics = false;
-                                        }
-                                        let filter = ui_state.active_filter();
-                                        lod_manager.set_filter(filter);
-                                        lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
-                                        state.sync_lod_meshes(&lod_manager);
-                                        info!("Raccourci [C] : Filtre courants marins = {}", ui_state.show_ocean_currents);
-                                    }
-                                    _ => {}
-                                },
+                                    pending_actions.push(UiAction::ToggleOceanCurrents);
+                                }
                                 _ => {}
                             }
                         }
@@ -315,6 +298,18 @@ fn main() {
                             ui_state.set_fps(current_fps);
                             fps_frame_count = 0;
                             fps_timer = now;
+                        }
+
+                        // Souris capturée en jeu (au sol ou en 3e personne) ; le menu, la vue satellite
+                        // et la perte du focus la libèrent
+                        let want_capture = window_focused
+                            && !ui_state.is_settings_open
+                            && camera.target_distance <= camera.base_radius;
+                        if want_capture != cursor_captured {
+                            cursor_captured = want_capture;
+                            set_cursor_captured(&window, want_capture);
+                            ui_state.set_pointer_captured(want_capture);
+                            is_dragging = false;
                         }
 
                         // Mise à jour de la caméra uniquement si le menu n'est pas ouvert
@@ -340,8 +335,9 @@ fn main() {
                         let is_ground = camera.distance <= camera.base_radius;
                         let (full_output, maybe_action) = ui_state.update_ui(camera.distance, is_ground);
 
-                        // 2. Traitement des actions déclenchées par les boutons egui
-                        if let Some(action) = maybe_action {
+                        // 2. Traitement des actions déclenchées par les boutons egui et le clavier
+                        pending_actions.extend(maybe_action);
+                        for action in pending_actions.drain(..) {
                             herocraft_common::prof_scope!("frame::ui_action");
                             match action {
                                 UiAction::ResumeGame => {
@@ -389,7 +385,7 @@ fn main() {
                                     state.sync_lod_meshes(&lod_manager);
                                     state.update_cloud_mesh(camera.base_radius, current_seed);
                                     ui_state.set_seed(current_seed);
-                                    info!("Bouton cliqué : Nouvelle planète générée ! (Graine: #{})", current_seed);
+                                    info!("Nouvelle planète générée ! (Graine: #{})", current_seed);
                                 }
                                 UiAction::ToggleGroundCamera => {
                                     camera.toggle_view(&generator);
@@ -401,11 +397,11 @@ fn main() {
                                 UiAction::ToggleAutoRotate => {
                                     camera.auto_rotate = !camera.auto_rotate;
                                     ui_state.set_auto_rotate(camera.auto_rotate);
-                                    info!("Bouton cliqué : Auto-rotation = {}", camera.auto_rotate);
+                                    info!("Auto-rotation = {}", camera.auto_rotate);
                                 }
                                 UiAction::ResetCamera => {
                                     camera.reset();
-                                    info!("Bouton cliqué : Vue réinitialisée.");
+                                    info!("Vue réinitialisée.");
                                 }
                                 UiAction::ToggleTectonics | UiAction::ToggleOceanCurrents => {
                                     let filter = ui_state.active_filter();
@@ -458,6 +454,16 @@ fn main() {
                 }
             }
 
+            // Mouvement brut de la souris : oriente le regard quand le curseur est capturé
+            Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
+                if cursor_captured {
+                    let controls = &ui_state.controls;
+                    let step = input::LOOK_RADIANS_PER_COUNT * controls.mouse_sensitivity;
+                    let pitch_sign = if controls.invert_y { 1.0 } else { -1.0 };
+                    camera.look(delta.0 as f32 * step, delta.1 as f32 * step * pitch_sign);
+                }
+            }
+
             Event::AboutToWait => {
                 window.request_redraw();
             }
@@ -465,6 +471,26 @@ fn main() {
             _ => {}
         }
     }).expect("Erreur dans la boucle d'événements");
+}
+
+/// Capture la souris (cachée, bloquée dans la fenêtre) ou la libère au centre de la fenêtre
+fn set_cursor_captured(window: &Window, captured: bool) {
+    if captured {
+        // Locked n'existe pas partout (Windows, X11) : Confined garde le curseur dans la fenêtre,
+        // et la vue lit de toute façon le mouvement brut de la souris
+        let grab = window
+            .set_cursor_grab(CursorGrabMode::Locked)
+            .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined));
+        if let Err(e) = grab {
+            warn!("Capture de la souris impossible : {}", e);
+        }
+        window.set_cursor_visible(false);
+    } else {
+        let _ = window.set_cursor_grab(CursorGrabMode::None);
+        let size = window.inner_size();
+        let _ = window.set_cursor_position(PhysicalPosition::new(size.width as f64 / 2.0, size.height as f64 / 2.0));
+        window.set_cursor_visible(true);
+    }
 }
 
 /// Écrit le rapport de profilage (no-op sans la feature cargo `profiling`)
