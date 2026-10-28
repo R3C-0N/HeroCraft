@@ -10,10 +10,8 @@ use crate::collision::VoxelCollider;
 const PLAYER_HALF_WIDTH: f32 = 0.3;
 /// Hauteur du corps testée contre les murs et plafonds, en blocs (le joueur mesure 1.8 bloc)
 pub const PLAYER_HEIGHT: f32 = 1.75;
-/// Plus haute marche franchie sans sauter, en blocs
-const STEP_HEIGHT: f32 = 1.05;
-/// Tolérance de contact avec le sol en l'air, en blocs
-const AIR_STEP: f32 = 0.05;
+/// Tolérance de contact avec le sol, en blocs : aucune marche n'est montée sans sauter
+const GROUND_TOLERANCE: f32 = 0.05;
 
 /// Mode de vue actif selon le continuum de distance de zoom
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -511,13 +509,12 @@ impl OrbitCamera {
             match &self.collider {
                 // Les murs arrêtent le joueur, qui glisse le long d'eux (axe est puis axe nord)
                 Some(collider) => {
-                    let step = if self.is_grounded { STEP_HEIGHT } else { AIR_STEP };
                     let (_, east, north) = self.local_frame();
                     let start = self.player_pos;
-                    let trapped = body_blocked(collider, generator, start, step);
+                    let trapped = body_blocked(collider, generator, start);
                     let moved = [delta, east * delta.dot(east), north * delta.dot(north)].into_iter().find_map(|d| {
                         let candidate = (start + d).normalize() * start.length();
-                        (trapped || !body_blocked(collider, generator, candidate, step)).then_some(candidate)
+                        (trapped || !body_blocked(collider, generator, candidate)).then_some(candidate)
                     });
                     if let Some(pos) = moved {
                         self.player_pos = pos;
@@ -530,8 +527,8 @@ impl OrbitCamera {
         // 2. Gravité sphérique et hauteur du relief sous les pieds
         let new_up = self.player_pos.normalize();
         let ground_radius = match &self.collider {
-            // Dessus des blocs sous l'empreinte du joueur, une marche plus haut au plus quand il marche
-            Some(collider) => footprint_ground(collider, generator, self.player_pos, if self.is_grounded { STEP_HEIGHT } else { AIR_STEP }),
+            // Dessus des blocs sous l'empreinte du joueur, jamais plus haut que ses pieds
+            Some(collider) => footprint_ground(collider, generator, self.player_pos),
             None => self.ground_radius_at(new_up, generator),
         };
 
@@ -566,7 +563,7 @@ impl OrbitCamera {
             }
 
             if self.is_grounded && current_radius <= ground_radius + 0.05 * scale {
-                // Au sol : suit le relief, montée directe et descente douce des marches (< 1.5 bloc)
+                // Au sol : suit le relief et descend directement les marches (< 1.5 bloc)
                 current_radius = ground_radius;
                 self.vertical_velocity = 0.0;
             } else {
@@ -684,19 +681,19 @@ pub fn footprint(p: Vec3, block_height: f32) -> [Vec3; 5] {
 }
 
 /// Rayon du sol sous l'empreinte du joueur : le plus haut des sols de ses coins
-fn footprint_ground(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3, step: f32) -> f32 {
+fn footprint_ground(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3) -> f32 {
     footprint(feet, collider.block_height())
         .iter()
-        .map(|&p| collider.ground_radius(generator, p, step))
+        .map(|&p| collider.ground_radius(generator, p, GROUND_TOLERANCE))
         .fold(f32::MIN, f32::max)
 }
 
 /// Le corps du joueur, posé sur le sol qu'il trouverait aux pieds `feet`, entre dans un bloc solide
-fn body_blocked(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3, step: f32) -> bool {
+fn body_blocked(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3) -> bool {
     let h = collider.block_height();
     let up = feet.normalize();
-    let base = feet.length().max(footprint_ground(collider, generator, feet, step));
-    let points: Vec<Vec3> = [AIR_STEP, 0.6, 1.2, PLAYER_HEIGHT]
+    let base = feet.length().max(footprint_ground(collider, generator, feet));
+    let points: Vec<Vec3> = [GROUND_TOLERANCE, 0.6, 1.2, PLAYER_HEIGHT]
         .iter()
         .flat_map(|&height| footprint(up * (base + height * h), h))
         .collect();
@@ -965,11 +962,54 @@ mod tests {
     }
 
     #[test]
-    fn test_voxel_player_climbs_a_one_block_step() {
+    fn test_voxel_one_block_step_needs_a_jump() {
         let (mut cam, gen, edits, floor) = voxel_test_camera();
         fill(&cam, &gen, &edits, &[1.5, 2.5, 3.5], &[floor], herocraft_common::BlockId::STONE);
-        walk(&mut cam, &gen, 0.5);
+        let start = cam.player_pos;
+        walk(&mut cam, &gen, 1.0);
+        let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
+        let travelled = (cam.player_pos.normalize() - start.normalize()).length() * cam.base_radius / h;
+        assert!(travelled < 1.5, "la marche doit arrêter le joueur ({} blocs parcourus)", travelled);
+        assert!((altitude_blocks(&cam) - floor as f32).abs() < 1e-2, "pas de montée automatique : pieds à {}", altitude_blocks(&cam));
+    }
+
+    #[test]
+    fn test_voxel_jump_while_walking_climbs_a_step() {
+        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        fill(&cam, &gen, &edits, &[1.5, 2.5, 3.5], &[floor], herocraft_common::BlockId::STONE);
+        // Avance jusqu'à toucher la marche, puis saute sans lâcher la touche d'avance
+        cam.move_forward = true;
+        for _ in 0..60 {
+            cam.update(0.016, &gen);
+        }
+        cam.jump_requested = true;
+        let mut peak = 0.0_f32;
+        for frame in 0..60 {
+            // Lâche l'avance une fois au-dessus de la marche pour rester dessus
+            cam.move_forward = frame < 20;
+            cam.update(0.016, &gen);
+            peak = peak.max(altitude_blocks(&cam));
+        }
+        assert!(peak > floor as f32 + 1.5, "le saut en marchant doit décoller (pic à {})", peak);
         assert!((altitude_blocks(&cam) - (floor + 1) as f32).abs() < 1e-2, "pieds à {}", altitude_blocks(&cam));
+    }
+
+    #[test]
+    fn test_voxel_jump_while_walking_on_flat_ground() {
+        let (mut cam, gen, _, floor) = voxel_test_camera();
+        cam.move_forward = true;
+        cam.update(0.016, &gen);
+        let start = cam.player_pos;
+        cam.jump_requested = true;
+        let mut peak = 0.0_f32;
+        for _ in 0..20 {
+            cam.update(0.016, &gen);
+            peak = peak.max(altitude_blocks(&cam));
+        }
+        let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
+        let travelled = (cam.player_pos.normalize() - start.normalize()).length() * cam.base_radius / h;
+        assert!(peak > floor as f32 + 1.0, "le saut doit décoller (pic à {})", peak);
+        assert!(travelled > 0.8, "le joueur doit avancer pendant le saut ({} blocs)", travelled);
     }
 
     #[test]
