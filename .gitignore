@@ -17,3 +17,6 @@ Thumbs.db
 
 # Rapports de profilage (feature `profiling`)
 /profiling/
+
+# Configuration locale (voir .env.example)
+/.env

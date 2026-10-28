@@ -5,7 +5,7 @@ use log::{info, warn};
 use winit::{
     dpi::{LogicalSize, PhysicalPosition},
     event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::ControlFlow,
     keyboard::{KeyCode, ModifiersState, PhysicalKey},
     window::{CursorGrabMode, Window, WindowBuilder},
 };
@@ -19,6 +19,7 @@ mod collision;
 mod gpu_timer;
 mod input;
 mod lod;
+mod monitor;
 mod planet_mesh;
 mod post;
 mod renderer;
@@ -35,6 +36,8 @@ use renderer::State;
 use ui::{UiAction, UiState};
 
 fn main() {
+    // Variables du fichier `.env` (sans écraser celles déjà définies dans l'environnement)
+    let _ = dotenvy::dotenv();
     std::env::set_var("RUST_LOG", "info");
     env_logger::init();
     herocraft_common::profiler::init_main_thread();
@@ -57,12 +60,17 @@ fn main() {
     info!(" • [ÉCHAP]                            : Menu de pause (libère la souris)");
     info!("==========================================================");
 
-    let event_loop = EventLoop::new().expect("Échec d'initialisation de l'EventLoop Winit");
+    let wanted_monitor = monitor::requested();
+    let event_loop = monitor::build_event_loop(wanted_monitor.is_some());
     let window = WindowBuilder::new()
         .with_title("HeroCraft — Planète QuadTree LOD (Rust / WGPU)")
         .with_inner_size(LogicalSize::new(1280, 720))
         .build(&event_loop)
         .expect("Échec de création de la fenêtre Winit");
+    if let Some(m) = wanted_monitor.as_deref().and_then(|name| monitor::find(&event_loop, name)) {
+        window.set_outer_position(monitor::centered_position(&m, window.outer_size()));
+        info!("Fenêtre ouverte sur l'écran {:?}.", m.name());
+    }
 
     let window = Arc::new(window);
 

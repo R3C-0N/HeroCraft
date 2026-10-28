@@ -21,6 +21,7 @@ env_logger = { workspace = true }
 wgpu = { version = "23", features = ["naga-ir"] }
 winit = { version = "0.29", features = ["serde"] }
 pollster = "0.3"
+dotenvy = "0.15"
 bytemuck = { version = "1.18", features = ["derive"] }
 rayon = "1.10"
 egui = "0.30"
