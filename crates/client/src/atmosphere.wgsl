@@ -11,7 +11,9 @@
 // Courbure virtuelle : sur une planète aussi petite, le trajet rasant de la lumière du soleil
 // couchant serait trop court pour rougir. Les tables sont donc calculées pour une planète plus
 // grande (même atmosphère, rayon `sky.y`) et lues selon l'altitude et l'angle local du soleil.
-// Les rayons de vue suivent, eux, la vraie courbure (limbe correct depuis l'orbite).
+// Les rayons de vue suivent, eux, la courbure de la planète dessinée : la vraie depuis l'orbite
+// (limbe correct), celle du globe agrandi quand la vue au sol aplatit la planète (common.wgsl,
+// `flatten_point`), pour que l'horizon du ciel et la brume suivent l'horizon du relief.
 //
 // Deux tables de plus sont recalculées à chaque image pour la position de la caméra, quand elle
 // est dans l'atmosphère (Hillaire §5.3 et §5.4) : la vue du ciel (192x108 directions) et le
@@ -22,6 +24,8 @@
 // par un soleil d'éclairement E vaut E. Une radiance physique L y vaut donc π L.
 // =========================================================================
 #define_import_path herocraft::atmosphere
+
+#import herocraft::common::camera
 
 struct Atmosphere {
     rayleigh_scattering: vec3<f32>,
@@ -70,6 +74,18 @@ const SKY_VIEW_LUT_SIZE: vec2<f32> = vec2<f32>(192.0, 108.0);
 // Volume de perspective aérienne : tranches de distance côte à côte dans une texture 2D
 const AERIAL_LUT_SIZE: vec2<f32> = vec2<f32>(32.0, 32.0);
 const AERIAL_SLICES: f32 = 32.0;
+
+// Surcroît de rayon du globe dessiné (planète aplatie vue du sol, 0 sinon). Ce globe touche la
+// vraie planète sous la caméra : vu de la caméra, son centre est à `view_extra()` plus bas le
+// long de la verticale, et ses rayons du sol et du haut de l'atmosphère sont augmentés d'autant.
+fn view_extra() -> f32 {
+    return max(camera.flatten.x, 0.0);
+}
+
+// Point vu de la caméra, exprimé par rapport au centre du globe dessiné
+fn view_origin(origin: vec3<f32>) -> vec3<f32> {
+    return origin + normalize(origin) * view_extra();
+}
 
 fn thickness() -> f32 {
     return atmosphere.top_radius - atmosphere.bottom_radius;
@@ -241,9 +257,9 @@ struct Scattering {
     transmittance: vec3<f32>,
 };
 
-// Diffusion simple du soleil et diffusion multiple (table) entre `origin` et
-// `origin + dir * t_max` dans la vraie géométrie, coupée par l'atmosphère et le niveau de la
-// mer, pour un éclairement solaire unitaire (radiance physique). `density` multiplie la densité
+// Diffusion simple du soleil et diffusion multiple (table) entre `origin` (la caméra) et
+// `origin + dir * t_max` dans la géométrie de la planète dessinée, coupée par l'atmosphère et
+// le niveau de la mer, pour un éclairement solaire unitaire (radiance physique). `density` multiplie la densité
 // de l'air. Pas plus serrés près de l'observateur (répartition quadratique), où la densité
 // varie le plus vite.
 fn integrate_scattering_unit(origin: vec3<f32>, dir: vec3<f32>, t_max: f32, sun_dir: vec3<f32>, steps: i32, density: f32) -> Scattering {
@@ -257,13 +273,16 @@ fn integrate_scattering_segment(origin: vec3<f32>, dir: vec3<f32>, t_max: f32, s
     result.inscatter = vec3<f32>(0.0);
     result.transmittance = vec3<f32>(1.0);
 
-    let top = ray_sphere(origin, dir, atmosphere.top_radius);
+    let extra = view_extra();
+    let o = view_origin(origin);
+    let bottom = atmosphere.bottom_radius + extra;
+    let top = ray_sphere(o, dir, atmosphere.top_radius + extra);
     if (top.y <= 0.0) {
         return result;
     }
     let t_start = max(top.x, 0.0);
     var t_end = min(top.y, t_max);
-    let ground = ray_sphere(origin, dir, atmosphere.bottom_radius);
+    let ground = ray_sphere(o, dir, bottom);
     if (clip_ground && ground.x > 0.0) {
         t_end = min(t_end, ground.x);
     }
@@ -282,11 +301,11 @@ fn integrate_scattering_segment(origin: vec3<f32>, dir: vec3<f32>, t_max: f32, s
         let x1 = (f32(i) + 1.0) / n;
         let t_next = x1 * x1 * length_total;
         let dt = t_next - t_prev;
-        let p = origin + dir * (t_start + (t_prev + t_next) * 0.5);
+        let p = o + dir * (t_start + (t_prev + t_next) * 0.5);
         t_prev = t_next;
 
         let r = length(p);
-        let h = r - atmosphere.bottom_radius;
+        let h = r - bottom;
         let mu_s = dot(p / r, sun_dir);
         let medium = sample_medium(h);
         let sun_t = transmittance_to_top(h, mu_s) * planet_shadow(h, mu_s);
@@ -343,8 +362,11 @@ struct SkyViewFrame {
     beta: f32,
 };
 
-fn sky_view_frame(r: f32) -> SkyViewFrame {
-    let v_horizon = sqrt(max(r * r - atmosphere.bottom_radius * atmosphere.bottom_radius, 0.0));
+// `r` : distance de la caméra au centre de la vraie planète (horizon du globe dessiné)
+fn sky_view_frame(r_true: f32) -> SkyViewFrame {
+    let r = r_true + view_extra();
+    let rb = atmosphere.bottom_radius + view_extra();
+    let v_horizon = sqrt(max(r * r - rb * rb, 0.0));
     var f: SkyViewFrame;
     f.beta = acos(clamp(v_horizon / r, -1.0, 1.0));
     f.zenith_horizon = PI - f.beta;
@@ -403,11 +425,12 @@ fn sky_scattering(origin: vec3<f32>, dir: vec3<f32>, sun_dir: vec3<f32>, steps: 
 }
 
 // Portée du volume de perspective aérienne : horizon de la mer vu de la caméra, plus la
-// distance qui sépare cet horizon du haut de l'atmosphère (rien de visible au-delà)
+// distance qui sépare cet horizon du haut de l'atmosphère (rien de visible au-delà), sur le
+// globe dessiné
 fn aerial_max_distance(origin: vec3<f32>) -> f32 {
-    let rb = atmosphere.bottom_radius;
-    let r = max(length(origin), rb);
-    let rt = atmosphere.top_radius;
+    let rb = atmosphere.bottom_radius + view_extra();
+    let r = max(length(origin) + view_extra(), rb);
+    let rt = atmosphere.top_radius + view_extra();
     return sqrt(r * r - rb * rb) + sqrt(rt * rt - rb * rb);
 }
 
