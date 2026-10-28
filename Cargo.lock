@@ -856,6 +856,7 @@ dependencies = [
  "env_logger",
  "glam",
  "herocraft_common",
+ "herocraft_server",
  "herocraft_voxel_engine",
  "herocraft_world",
  "log",

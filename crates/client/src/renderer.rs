@@ -141,6 +141,8 @@ pub struct State {
     lod_uploads_pending: bool,
     /// Contour du bloc visé
     block_outline: BlockOutline,
+    /// Silhouettes des autres joueurs en ligne
+    player_outlines: BlockOutline,
 
     // Rendu Interface Utilisateur egui
     pub egui_renderer: egui_wgpu::Renderer,
@@ -520,6 +522,8 @@ impl State {
         // Rendu Interface Utilisateur egui
         // -------------------------------------------------------------
         let block_outline = BlockOutline::new(&device, &render_pipeline_layout, sample_count);
+        let player_outlines =
+            BlockOutline::players(&device, &render_pipeline_layout, sample_count, crate::network::MAX_REMOTE_PLAYERS);
 
         let egui_renderer = egui_wgpu::Renderer::new(
             &device,
@@ -560,6 +564,7 @@ impl State {
             lod_sync_count: 0,
             lod_uploads_pending: false,
             block_outline,
+            player_outlines,
             egui_renderer,
             vsync_mode,
             novsync_mode,
@@ -795,7 +800,12 @@ impl State {
 
     /// Coins du bloc visé à cerner (ou rien), à appeler après `update_camera`
     pub fn set_block_outline(&mut self, corners: Option<[glam::Vec3; 8]>) {
-        self.block_outline.update(&self.queue, corners, self.camera_eye);
+        self.block_outline.update(&self.queue, corners.as_slice(), self.camera_eye);
+    }
+
+    /// Silhouettes des autres joueurs (8 coins chacune), à appeler après `update_camera`
+    pub fn set_player_outlines(&mut self, boxes: &[[glam::Vec3; 8]]) {
+        self.player_outlines.update(&self.queue, boxes, self.camera_eye);
     }
 
     /// Des maillages LOD restent à envoyer : appeler `sync_lod_meshes` à la prochaine frame
@@ -927,6 +937,7 @@ impl State {
             }
             // Contour du bloc visé, sur la profondeur du relief
             self.block_outline.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
+            self.player_outlines.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
             if let Some(query_set) = timer_queries.filter(|_| timer_inside_passes) {
                 render_pass.write_timestamp(query_set, gpu_timer::TS_AFTER_TERRAIN);
             }

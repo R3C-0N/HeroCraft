@@ -10,7 +10,7 @@ use std::io;
 use std::sync::{Arc, RwLock};
 
 use glam::DVec3;
-use herocraft_common::{BlockId, PlanetChunkCoord, PlanetFace};
+use herocraft_common::{BlockAddress, BlockId, PlanetChunkCoord, PlanetFace};
 use herocraft_voxel_engine::{ChunkData, ChunkStorage, CHUNK_SIZE};
 
 use crate::generator::{ColumnSample, PlanetWorldGenerator};
@@ -56,6 +56,18 @@ impl BlockPos {
     }
 }
 
+impl From<BlockPos> for BlockAddress {
+    fn from(pos: BlockPos) -> Self {
+        BlockAddress { face: pos.face, x: pos.x, y: pos.y, z: pos.z }
+    }
+}
+
+impl From<BlockAddress> for BlockPos {
+    fn from(addr: BlockAddress) -> Self {
+        BlockPos::new(addr.face, addr.x, addr.y, addr.z)
+    }
+}
+
 #[derive(Default)]
 struct EditsInner {
     chunks: HashMap<PlanetChunkCoord, Arc<ChunkData>>,
@@ -98,6 +110,22 @@ impl TerrainEdits {
             }
         }
         Self { inner: RwLock::new(inner), storage }
+    }
+
+    /// Chunks modifiés reçus d'ailleurs (le serveur, en multijoueur), sans sauvegarde locale
+    pub fn from_chunks(chunks: impl IntoIterator<Item = (PlanetChunkCoord, ChunkData)>) -> Self {
+        let mut inner = EditsInner::default();
+        for (coord, chunk) in chunks {
+            inner.layers.entry((coord.face, coord.x, coord.y)).or_default().insert(coord.altitude_layer);
+            inner.chunks.insert(coord, Arc::new(chunk));
+        }
+        Self { inner: RwLock::new(inner), storage: None }
+    }
+
+    /// Tous les chunks modifiés (pour les envoyer à un joueur qui se connecte)
+    pub fn snapshot(&self) -> Vec<(PlanetChunkCoord, Arc<ChunkData>)> {
+        let inner = self.inner.read().unwrap();
+        inner.chunks.iter().map(|(coord, chunk)| (*coord, chunk.clone())).collect()
     }
 
     /// Nombre de chunks modifiés

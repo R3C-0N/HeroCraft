@@ -120,26 +120,37 @@ impl BlockInteraction {
         self.columns = query.into_columns();
     }
 
-    /// Applique l'action au bloc visé, puis vise à nouveau. Renvoie `true` si le terrain a changé
-    /// (les maillages touchés sont déjà refaits : il reste à les envoyer au GPU).
-    pub fn apply(&mut self, action: BlockAction, camera: &OrbitCamera, generator: &PlanetWorldGenerator, lod: &mut PlanetLodManager) -> bool {
+    /// Applique l'action au bloc visé, puis vise à nouveau. Renvoie le bloc changé et son nouveau
+    /// contenu si le terrain a changé (les maillages touchés sont déjà refaits : il reste à les
+    /// envoyer au GPU).
+    pub fn apply(
+        &mut self,
+        action: BlockAction,
+        camera: &OrbitCamera,
+        generator: &PlanetWorldGenerator,
+        lod: &mut PlanetLodManager,
+    ) -> Option<(BlockPos, BlockId)> {
         herocraft_common::prof_scope!("blocs::modification");
-        let Some(hit) = self.target else {
-            return false;
-        };
-        let changed = match action {
-            BlockAction::Break => lod.set_block(generator, hit.block, BlockId::AIR),
+        let hit = self.target?;
+        let (pos, block) = match action {
+            BlockAction::Break => (hit.block, BlockId::AIR),
             BlockAction::Place => match hit.before {
-                Some(pos) if !overlaps_player(camera, pos) => lod.set_block(generator, pos, PLACED_BLOCK),
-                _ => false,
+                Some(pos) if !overlaps_player(camera, pos) => (pos, PLACED_BLOCK),
+                _ => return None,
             },
         };
-        if changed {
-            let edits = lod.terrain_edits().clone();
-            self.last_aim = None;
-            self.update_target(camera, generator, &edits);
+        if !lod.set_block(generator, pos, block) {
+            return None;
         }
-        changed
+        let edits = lod.terrain_edits().clone();
+        self.last_aim = None;
+        self.update_target(camera, generator, &edits);
+        Some((pos, block))
+    }
+
+    /// Le terrain a changé ailleurs (un autre joueur) : la visée est refaite à la prochaine frame
+    pub fn invalidate(&mut self) {
+        self.last_aim = None;
     }
 
     /// Coins du bloc visé, pour son contour
@@ -205,14 +216,14 @@ mod tests {
         assert!(first.before.is_some());
         assert!(interaction.outline(&camera).is_some());
 
-        assert!(interaction.apply(BlockAction::Break, &camera, &generator, &mut lod));
+        assert!(interaction.apply(BlockAction::Break, &camera, &generator, &mut lod).is_some());
         assert_eq!(lod.terrain_edits().block(&generator, first.block), BlockId::AIR);
         let second = interaction.target().copied().expect("le bloc suivant est visé");
         assert_ne!(second.block, first.block);
 
         // Poser contre la face visée remet un bloc de pierre là où était l'air
         let before = second.before.expect("une face libre est visée");
-        assert!(interaction.apply(BlockAction::Place, &camera, &generator, &mut lod));
+        assert!(interaction.apply(BlockAction::Place, &camera, &generator, &mut lod).is_some());
         assert_eq!(lod.terrain_edits().block(&generator, before), PLACED_BLOCK);
         assert_eq!(interaction.target().map(|t| t.block), Some(before));
     }

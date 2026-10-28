@@ -1,107 +1,85 @@
-use herocraft_common::{CharacterStats, PlanetChunkCoord, PlanetFace, PlayerClass};
-use herocraft_world::{PlanetDescriptor, PlanetWorldGenerator};
-use log::info;
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::io::BufRead;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
-pub struct ConnectedPlayer {
-    pub id: u64,
-    pub name: String,
-    pub stats: CharacterStats,
-    pub position: glam::Vec3,
-}
+use herocraft_common::DEFAULT_PORT;
+use herocraft_server::{Server, ServerConfig, TICK_RATE};
+use log::{error, info, warn};
 
-pub struct ServerWorldState {
-    pub generator: PlanetWorldGenerator,
-    pub loaded_chunks: HashMap<PlanetChunkCoord, herocraft_voxel_engine::ChunkData>,
-    pub players: HashMap<u64, ConnectedPlayer>,
-    pub tick_counter: u64,
-}
-
-impl ServerWorldState {
-    pub fn new(seed: u64) -> Self {
-        let mut planet = PlanetDescriptor::default();
-        planet.seed = seed;
-        let generator = PlanetWorldGenerator::new(planet);
-
-        Self {
-            generator,
-            loaded_chunks: HashMap::new(),
-            players: HashMap::new(),
-            tick_counter: 0,
-        }
-    }
-
-    pub fn preload_spawn_area(&mut self) {
-        info!("Préchargement des chunks de spawn sur la face PosZ...");
-        for y in -1..=1 {
-            for x in -1..=1 {
-                let coord = PlanetChunkCoord::new(PlanetFace::PosZ, x, y, 0);
-                let chunk = self.generator.generate_chunk(&coord);
-                self.loaded_chunks.insert(coord, chunk);
-            }
-        }
-        info!("Spawn prêt avec {} chunks chargés en mémoire.", self.loaded_chunks.len());
-    }
-
-    pub fn tick(&mut self, dt: f32) {
-        self.tick_counter += 1;
-
-        // Mise à jour de la régénération des stats des joueurs
-        for player in self.players.values_mut() {
-            // Régénération naturelle de stamina (+10 par sec) et de mana (+2 par sec)
-            player.stats.stamina = (player.stats.stamina + 10.0 * dt).min(player.stats.max_stamina);
-            player.stats.mana = (player.stats.mana + 2.0 * dt).min(player.stats.max_mana);
-        }
-
-        if self.tick_counter % 300 == 0 {
-            info!(
-                "Tick #{}: {} joueur(s) en ligne, {} chunks actifs.",
-                self.tick_counter,
-                self.players.len(),
-                self.loaded_chunks.len()
-            );
-        }
-    }
-}
+const USAGE: &str = "Usage : herocraft_server [--bind ADRESSE:PORT] [--port PORT] [--seed GRAINE] [--name NOM] [--no-lan]";
 
 fn main() {
-    std::env::set_var("RUST_LOG", "info");
+    if std::env::var_os("RUST_LOG").is_none() {
+        std::env::set_var("RUST_LOG", "info");
+    }
     env_logger::init();
+
+    let mut bind = format!("0.0.0.0:{DEFAULT_PORT}");
+    let mut seed = 2026_u64;
+    let mut name = "Serveur HeroCraft".to_string();
+    let mut lan = true;
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        let mut value = || args.next().unwrap_or_else(|| exit_with_usage(&format!("valeur manquante après {arg}")));
+        match arg.as_str() {
+            "--bind" => bind = value(),
+            "--port" => {
+                let port: u16 = value().parse().unwrap_or_else(|_| exit_with_usage("port invalide"));
+                bind = format!("0.0.0.0:{port}");
+            }
+            "--seed" => seed = value().parse().unwrap_or_else(|_| exit_with_usage("graine invalide")),
+            "--name" => name = value(),
+            "--no-lan" => lan = false,
+            "-h" | "--help" => {
+                println!("{USAGE}");
+                return;
+            }
+            other => exit_with_usage(&format!("argument inconnu : {other}")),
+        }
+    }
 
     info!("==========================================");
     info!("   HeroCraft - Serveur Dédié Voxel RPG    ");
     info!("==========================================");
 
-    let mut server = ServerWorldState::new(2026);
-    server.preload_spawn_area();
-
-    // Ajout d'un joueur test pour la simulation
-    let test_player = ConnectedPlayer {
-        id: 1,
-        name: "HérosTesteur".to_string(),
-        stats: CharacterStats::new(PlayerClass::Warrior),
-        position: glam::Vec3::new(0.0, 30.0, 0.0),
+    let mut server = match Server::bind(ServerConfig::new(&bind, seed)) {
+        Ok(server) => server,
+        Err(e) => {
+            error!("Impossible d'écouter sur {bind} : {e}");
+            std::process::exit(1);
+        }
     };
-    server.players.insert(test_player.id, test_player);
-
-    info!("Démarrage de la boucle de jeu autoritaire à 60 TPS...");
-    let tick_rate = Duration::from_micros(1_000_000 / 60);
-
-    // Boucle de simulation (effectue quelques ticks d'initialisation en démo)
-    let start_time = Instant::now();
-    for _ in 0..120 {
-        let tick_start = Instant::now();
-        server.tick(1.0 / 60.0);
-
-        let elapsed = tick_start.elapsed();
-        if elapsed < tick_rate {
-            std::thread::sleep(tick_rate - elapsed);
+    if lan {
+        match server.enable_lan(name.as_str()) {
+            Ok(()) => info!("Partie « {name} » annoncée sur le réseau local."),
+            Err(e) => warn!("Annonce sur le réseau local impossible : {e}"),
         }
     }
+    info!("Planète de graine #{seed}, sauvegarde dans saves/serveur_monde_{seed}/.");
+    info!("En écoute sur {} à {TICK_RATE} TPS. Tapez « stop » pour arrêter le serveur proprement.", server.local_addr().map(|a| a.to_string()).unwrap_or(bind));
 
-    info!(
-        "Simulation de démarrage réussie (120 ticks en {:.2}s). Serveur prêt à recevoir des connexions !",
-        start_time.elapsed().as_secs_f32()
-    );
+    // Console : « stop » arrête la boucle, qui enregistre le monde avant de rendre la main
+    let running = Arc::new(AtomicBool::new(true));
+    let console_running = running.clone();
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lock().lines() {
+            let Ok(line) = line else { break };
+            match line.trim() {
+                "stop" | "quit" | "exit" => {
+                    console_running.store(false, Ordering::Relaxed);
+                    break;
+                }
+                "" => {}
+                other => info!("Commande inconnue : {other} (commandes : stop)"),
+            }
+        }
+    });
+
+    server.run(&running);
+    info!("Serveur arrêté, monde enregistré.");
+}
+
+fn exit_with_usage(message: &str) -> ! {
+    eprintln!("{message}\n{USAGE}");
+    std::process::exit(2);
 }
