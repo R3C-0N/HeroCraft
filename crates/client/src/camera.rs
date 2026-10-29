@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use glam::{DVec3, Mat4, Vec3};
+use herocraft_common::BlockId;
 use herocraft_world::generator::PlanetWorldGenerator;
 use herocraft_world::TerrainEdits;
 
@@ -604,6 +605,25 @@ impl OrbitCamera {
 
         // Calcul anti-collision garanti au-dessus du relief
         self.update_camera_bounds(generator);
+    }
+
+    /// Bloc qui porte le joueur (sa matière donne le son des pas), ou l'eau quand il y a les pieds
+    pub fn surface_block(&self, generator: &PlanetWorldGenerator) -> Option<BlockId> {
+        let collider = self.collider.as_ref()?;
+        let h = collider.block_height();
+        let up = self.player_pos.normalize();
+        let feet = collider.block_at(generator, self.player_pos + up * 0.3 * h);
+        if feet == BlockId::WATER {
+            return Some(feet);
+        }
+        Some(collider.block_at(generator, self.player_pos - up * 0.3 * h))
+    }
+
+    /// Un bloc au-dessus de la tête bouche le ciel (grotte, abri)
+    pub fn sky_covered(&self, generator: &PlanetWorldGenerator) -> bool {
+        let Some(collider) = &self.collider else { return false };
+        let head = self.player_pos.length() + PLAYER_HEIGHT * collider.block_height();
+        collider.column_top_radius(generator, self.player_pos) > head
     }
 
     /// Position 3D de l'œil de la caméra dans l'espace monde (garantie strictement au-dessus du sol)

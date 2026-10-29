@@ -1,6 +1,7 @@
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{Key, KeyCode, NamedKey};
 
+use crate::audio::AudioSettings;
 use crate::input::{is_reserved_key, Action, Controls, ACTION_GROUPS};
 
 /// Actions déclenchées par l'interface utilisateur
@@ -26,6 +27,8 @@ pub enum UiAction {
     JoinServer,
     /// Quitter la partie en ligne (ou la fermer si elle est ouverte ici) et revenir au solo
     LeaveServer,
+    /// Options > Son : un volume vient d'être réglé, un son d'essai le fait entendre
+    PreviewSound,
 }
 
 /// État de la partie en ligne, affiché dans la page Multijoueur
@@ -303,16 +306,18 @@ pub enum OptionsTab {
     Hdr,
     Shadows,
     Atmosphere,
+    Audio,
 }
 
 impl OptionsTab {
-    pub const ALL: [OptionsTab; 6] = [
+    pub const ALL: [OptionsTab; 7] = [
         OptionsTab::Display,
         OptionsTab::Lighting,
         OptionsTab::Clouds,
         OptionsTab::Hdr,
         OptionsTab::Shadows,
         OptionsTab::Atmosphere,
+        OptionsTab::Audio,
     ];
 
     pub fn icon(self) -> &'static str {
@@ -323,6 +328,7 @@ impl OptionsTab {
             OptionsTab::Hdr => "✨",
             OptionsTab::Shadows => "🌓",
             OptionsTab::Atmosphere => "🌅",
+            OptionsTab::Audio => "🔊",
         }
     }
 
@@ -334,6 +340,7 @@ impl OptionsTab {
             OptionsTab::Hdr => "Rendu HDR",
             OptionsTab::Shadows => "Ombres",
             OptionsTab::Atmosphere => "Atmosphère",
+            OptionsTab::Audio => "Son",
         }
     }
 
@@ -345,6 +352,7 @@ impl OptionsTab {
             OptionsTab::Hdr => "Exposition, courbe de tons et halo lumineux",
             OptionsTab::Shadows => "Ombres portées du relief et des nuages",
             OptionsTab::Atmosphere => "Diffusion de l'air, brume et rayons crépusculaires",
+            OptionsTab::Audio => "Volume général, bruitages et ambiance",
         }
     }
 }
@@ -385,6 +393,7 @@ pub struct UiState {
     pub post_settings: PostSettings,
     pub shadow_settings: ShadowSettings,
     pub atmosphere_settings: AtmosphereSettings,
+    pub audio_settings: AudioSettings,
     pub controls: Controls,
     /// Action en attente d'une nouvelle touche dans la page Commandes
     pub rebinding: Option<Action>,
@@ -425,6 +434,7 @@ impl UiState {
             post_settings: PostSettings::default(),
             shadow_settings: ShadowSettings::default(),
             atmosphere_settings: AtmosphereSettings::default(),
+            audio_settings: AudioSettings::default(),
             controls: Controls::default(),
             rebinding: None,
             rebind_notice: None,
@@ -1192,6 +1202,7 @@ impl UiState {
                     OptionsTab::Hdr => self.draw_hdr_tab(ui),
                     OptionsTab::Shadows => self.draw_shadows_tab(ui),
                     OptionsTab::Atmosphere => self.draw_atmosphere_tab(ui),
+                    OptionsTab::Audio => self.draw_audio_tab(ui, action),
                 }
                 ui.add_space(6.0_f32);
             });
@@ -1349,6 +1360,29 @@ impl UiState {
         }
     }
 
+    fn draw_audio_tab(&mut self, ui: &mut egui::Ui, action: &mut Option<UiAction>) {
+        let a = &mut self.audio_settings;
+        let mut changed = false;
+        settings_grid(ui, "audio_grid", |ui| {
+            row_label(ui, "Couper le son", "Silence complet, les volumes sont gardés");
+            changed |= toggle_switch(ui, &mut a.muted).changed();
+            ui.end_row();
+
+            let enabled = !a.muted;
+            changed |= volume_row(ui, enabled, "Volume général", &mut a.master, "Volume de tous les sons du jeu");
+            changed |= volume_row(ui, enabled, "   Bruitages", &mut a.effects, "Pas, sauts, blocs cassés et posés");
+            changed |= volume_row(ui, enabled, "   Ambiance", &mut a.ambience, "Vent, oiseaux le jour, grillons la nuit");
+        });
+        if reset_button(ui, "Réinitialiser le son") {
+            self.audio_settings.reset();
+            changed = true;
+        }
+        if changed {
+            self.audio_settings.save();
+            *action = Some(UiAction::PreviewSound);
+        }
+    }
+
     /// Pied de page : rappel de la touche Échap et action globale de la page
     fn draw_menu_footer(&mut self, ui: &mut egui::Ui, page: MenuPage, action: &mut Option<UiAction>) {
         ui.add_space(2.0_f32);
@@ -1483,6 +1517,18 @@ fn slider_row_enabled(ui: &mut egui::Ui, enabled: bool, label: &str, value: &mut
     ui.add_enabled_ui(enabled, |ui| row_label(ui, label, hint));
     ui.add_enabled(enabled, egui::Slider::new(value, range).fixed_decimals(2)).on_hover_text(hint);
     ui.end_row();
+}
+
+/// Curseur de volume en pour cent. Vrai quand un réglage est terminé (curseur relâché ou clic) :
+/// c'est le moment de l'enregistrer et de faire entendre le nouveau volume.
+fn volume_row(ui: &mut egui::Ui, enabled: bool, label: &str, value: &mut f32, hint: &str) -> bool {
+    ui.add_enabled_ui(enabled, |ui| row_label(ui, label, hint));
+    let slider = egui::Slider::new(value, 0.0..=1.0).custom_formatter(|v, _| format!("{:.0} %", v * 100.0)).custom_parser(|text| {
+        text.trim().trim_end_matches('%').trim().parse::<f64>().ok().map(|v| v / 100.0)
+    });
+    let response = ui.add_enabled(enabled, slider).on_hover_text(hint);
+    ui.end_row();
+    response.drag_stopped() || (response.changed() && !response.dragged())
 }
 
 /// Choix exclusif présenté comme un sélecteur segmenté ; renvoie vrai si la valeur a changé

@@ -50,6 +50,15 @@ Toutes les touches se changent dans `Échap > Commandes` (clic sur une touche, p
 - **`F`** : vue au sol / satellite. **`R`** : réinitialiser la vue. **`G`** : nouvelle planète. **`T` / `C`** : filtres plaques tectoniques / courants marins.
 - **`Échap`** : menu de pause. **`F9`** : rapport de profilage.
 
+#### Son :
+Pas (selon le bloc sous les pieds : herbe, terre, pierre, sable, neige, bois, eau), saut, réception, blocs cassés et posés (aussi ceux des autres joueurs proches), et ambiance : vent qui forcit en altitude, oiseaux le jour, grillons la nuit, étouffés sous un plafond. Les sons sont synthétisés au lancement, sans fichier audio. Les volumes (général, bruitages, ambiance) se règlent dans `Échap > Options > Son` et sont enregistrés dans `config/audio.json`. Sans sortie audio, le jeu tourne en silence.
+
+Sous Linux et WSL, la compilation demande les en-têtes ALSA, une fois pour toutes :
+```bash
+sudo apt install libasound2-dev pkg-config
+```
+Le son passe par PulseAudio (ou PipeWire), ce que WSLg fournit d'office. Pour écouter tous les sons hors du jeu : `cargo test -p herocraft_client ecouter_les_sons -- --ignored --nocapture` (ou `exporter_les_sons` pour les écrire en WAV dans `target/sons/`).
+
 ### Profiler les performances :
 ```bash
 cargo run --release --features profiling --bin herocraft_client
