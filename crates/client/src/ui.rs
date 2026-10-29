@@ -2,6 +2,7 @@ use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{Key, KeyCode, NamedKey};
 
 use crate::input::{is_reserved_key, Action, Controls, ACTION_GROUPS};
+use crate::player_stats::PlayerStats;
 
 /// Actions déclenchées par l'interface utilisateur
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -358,6 +359,10 @@ const DANGER: egui::Color32 = egui::Color32::from_rgb(245, 110, 110);
 
 /// Marge minimale entre un panneau et le bord de l'écran (points logiques)
 const SCREEN_MARGIN: f32 = 16.0;
+/// Largeur d'une jauge du HUD (vie, mana, endurance)
+const GAUGE_WIDTH: f32 = 150.0;
+/// Durée du voile rouge après une blessure, en secondes
+const HURT_FLASH_SECS: f32 = 0.6;
 /// Marge intérieure du cadre du menu de pause
 const MENU_PADDING: f32 = 18.0;
 /// En dessous de cette largeur, les onglets des options passent au-dessus du contenu
@@ -397,6 +402,8 @@ pub struct UiState {
     /// Noms des autres joueurs (en ligne), avec leur position à l'écran en pixels physiques
     pub name_tags: Vec<(egui::Pos2, String)>,
     pub multiplayer: MultiplayerUi,
+    /// Jauges, classe et niveau du joueur
+    pub player: PlayerStats,
 }
 
 impl UiState {
@@ -433,6 +440,7 @@ impl UiState {
             screen_height: 720.0_f32,
             name_tags: Vec::new(),
             multiplayer: MultiplayerUi::default(),
+            player: PlayerStats::default(),
         }
     }
 
@@ -707,6 +715,11 @@ impl UiState {
                 self.draw_world_hud(ctx, is_ground, &mut action);
             }
 
+            // Jauges du joueur en bas de l'écran, au sol, et voile rouge après une blessure
+            if is_ground && !self.is_settings_open {
+                self.draw_vitals_hud(ctx);
+            }
+
             // 3. Panneau HUD supérieur droit (FPS, altitude, raccourci menu)
             self.draw_status_hud(ctx, camera_distance, is_ground);
 
@@ -816,6 +829,50 @@ impl UiState {
                                 }
                             }
                         });
+                });
+            });
+    }
+
+    /// HUD du personnage : classe, niveau, expérience et jauges de vie, de mana et d'endurance
+    fn draw_vitals_hud(&mut self, ctx: &egui::Context) {
+        let stats = &self.player.stats;
+        if let Some(hurt) = self.player.hurt_at {
+            let t = hurt.elapsed().as_secs_f32() / HURT_FLASH_SECS;
+            if t < 1.0_f32 {
+                ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("hurt_flash")))
+                    .rect_filled(ctx.screen_rect(), 0.0_f32, egui::Color32::from_rgba_unmultiplied(200, 20, 20, (110.0_f32 * (1.0_f32 - t)) as u8));
+            }
+        }
+
+        let screen = ctx.screen_rect();
+        egui::Area::new(egui::Id::new("vitals_hud"))
+            .pivot(egui::Align2::CENTER_BOTTOM)
+            .fixed_pos(egui::pos2(screen.center().x, screen.bottom() - SCREEN_MARGIN))
+            .interactable(false)
+            .show(ctx, |ui| {
+                hud_frame().inner_margin(egui::Margin::same(8.0_f32)).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(8.0_f32, 5.0_f32);
+                    ui.set_width(3.0_f32 * GAUGE_WIDTH + 2.0_f32 * 8.0_f32);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(stats.class.label()).strong().color(GOLD_BRIGHT));
+                        ui.label(egui::RichText::new(format!("Niv. {}", stats.level)).color(TEXT_SOFT));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let next = stats.exp_for_next_level();
+                            ui.label(egui::RichText::new(format!("{} / {} XP", stats.experience, next)).size(11.0_f32).color(TEXT_DIM));
+                            gauge(ui, 90.0_f32, 6.0_f32, stats.experience as f32 / next.max(1) as f32, GOLD, None);
+                        });
+                    });
+                    ui.horizontal(|ui| {
+                        let gauges = [
+                            ("Vie", stats.hp, stats.max_hp, egui::Color32::from_rgb(200, 45, 45)),
+                            ("Mana", stats.mana, stats.max_mana, egui::Color32::from_rgb(55, 105, 220)),
+                            ("Endurance", stats.stamina, stats.max_stamina, egui::Color32::from_rgb(70, 175, 70)),
+                        ];
+                        for (name, value, max, color) in gauges {
+                            let text = format!("{name}  {:.0} / {:.0}", value.max(0.0_f32).ceil(), max);
+                            gauge(ui, GAUGE_WIDTH, 16.0_f32, value / max.max(1.0_f32), color, Some(&text));
+                        }
+                    });
                 });
             });
     }
@@ -1407,6 +1464,25 @@ fn egui_key(key: &Key) -> Option<egui::Key> {
     })
 }
 
+/// Jauge horizontale remplie à `fraction`, avec son texte centré
+fn gauge(ui: &mut egui::Ui, width: f32, height: f32, fraction: f32, color: egui::Color32, text: Option<&str>) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let painter = ui.painter();
+    let rounding = egui::Rounding::same(3.0_f32);
+    painter.rect_filled(rect, rounding, egui::Color32::from_rgba_premultiplied(0, 0, 0, 160));
+    let fraction = if fraction.is_finite() { fraction.clamp(0.0_f32, 1.0_f32) } else { 0.0_f32 };
+    if fraction > 0.0_f32 {
+        let filled = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width() * fraction, rect.height()));
+        painter.rect_filled(filled, rounding, color);
+    }
+    painter.rect_stroke(rect, rounding, egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(40)));
+    if let Some(text) = text {
+        let font = egui::FontId::proportional(11.5_f32);
+        painter.text(rect.center() + egui::vec2(1.0_f32, 1.0_f32), egui::Align2::CENTER_CENTER, text, font.clone(), egui::Color32::from_black_alpha(200));
+        painter.text(rect.center(), egui::Align2::CENTER_CENTER, text, font, egui::Color32::WHITE);
+    }
+}
+
 /// Cadre commun des panneaux du HUD
 fn hud_frame() -> egui::Frame {
     egui::Frame::none()
@@ -1839,6 +1915,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Les jauges du joueur s'affichent au sol, en bas de l'écran, et pas en vue satellite
+    #[test]
+    fn test_vitals_hud_shown_on_ground_only() {
+        let mut ui = UiState::new(1);
+        ui.set_screen_size(1280.0, 720.0);
+        ui.player.stats.hp = 0.5 * ui.player.stats.max_hp;
+        for _ in 0..3 {
+            ui.update_ui(0.0, true);
+        }
+        let rect = ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).expect("jauges dessinées");
+        assert!(rect.bottom() <= 720.0 && rect.top() > 360.0, "{:?}", rect);
+        assert!(rect.width() < 640.0, "{:?}", rect);
+
+        let mut ui = UiState::new(1);
+        for _ in 0..3 {
+            ui.update_ui(200.0, false);
+        }
+        assert!(ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).is_none());
     }
 
     /// Le HUD du monde défile au lieu de dépasser sur une fenêtre très basse

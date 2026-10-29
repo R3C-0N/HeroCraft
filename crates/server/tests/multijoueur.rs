@@ -87,7 +87,7 @@ fn deux_joueurs_partagent_les_blocs_et_les_positions() {
     assert_ne!(restored, 0);
 
     // Posée sur la colonne, Alice casse le bloc sous ses pieds : les deux joueurs le voient
-    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.3, pitch: -0.2 });
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.3, pitch: -0.2, sprinting: false });
     alice.send(&ClientPacket::InteractBlock { block: surface.into(), action: BlockInteractionAction::Break });
     for client in [&alice, &bob] {
         let id = wait_for(client, |p| match p {
@@ -106,7 +106,7 @@ fn deux_joueurs_partagent_les_blocs_et_les_positions() {
 
     // Un bloc hors de portée (en plein ciel, loin de Bob) est refusé
     let far = BlockPos::new(face, (x + 200) % 1024, WORLD_HEIGHT - 1, z);
-    bob.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0 });
+    bob.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false });
     bob.send(&ClientPacket::InteractBlock { block: far.into(), action: BlockInteractionAction::Place(1) });
     let id = wait_for(&bob, |p| match p {
         ServerPacket::VoxelUpdate { block, block_id } if block == far.into() => Some(block_id),
@@ -117,6 +117,16 @@ fn deux_joueurs_partagent_les_blocs_et_les_positions() {
     // Un nouveau venu reçoit le chunk modifié
     let (_carol, _, chunks) = connect(&addr, "Carol");
     assert_eq!(chunks, 1);
+
+    // Une chute blesse Alice, qui reçoit aussitôt ses jauges ; une chute mortelle la ranime
+    alice.send(&ClientPacket::Fall { blocks: herocraft_common::SAFE_FALL_BLOCKS + 3.0 });
+    let stats = wait_for(&alice, |p| match p {
+        ServerPacket::StatsUpdate(stats) if stats.hp < stats.max_hp - 10.0 => Some(stats),
+        _ => None,
+    });
+    assert!(stats.hp > 0.0);
+    alice.send(&ClientPacket::Fall { blocks: 1000.0 });
+    wait_for(&bob, |p| matches!(p, ServerPacket::ChatMessage { ref message, .. } if message == "Alice s'est écrasé au sol").then_some(()));
 
     // Alice part : Bob est prévenu
     alice.send(&ClientPacket::Disconnect);
