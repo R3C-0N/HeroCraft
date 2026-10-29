@@ -388,6 +388,7 @@ impl Server {
             }
             ClientPacket::Fall { blocks } => self.fall(id, blocks),
             ClientPacket::InteractBlock { block, action } => self.interact_block(id, block.into(), action),
+            ClientPacket::HitCreature { creature_id } => self.hit_creature(id, creature_id),
             ClientPacket::ChatMessage(text) => {
                 let text: String = text.trim().chars().filter(|c| !c.is_control()).take(MAX_CHAT_CHARS).collect();
                 if text.is_empty() {
@@ -454,6 +455,16 @@ impl Server {
             _ => {
                 player.connection.send(&ServerPacket::VoxelUpdate { block: pos.into(), block_id: current.0 });
             }
+        }
+    }
+
+    /// Coup d'un joueur sur une créature à sa portée : la simulation en tire dégâts, recul et fuite,
+    /// que les joueurs voient avec les prochaines positions
+    fn hit_creature(&mut self, id: u64, creature_id: u64) {
+        let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
+        let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
+        if self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
+            self.creatures.hit(creature_id, feet);
         }
     }
 

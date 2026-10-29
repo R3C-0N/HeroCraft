@@ -54,7 +54,6 @@ impl BlockInteraction {
     }
 
     /// Bloc visé à la dernière mise à jour
-    #[allow(dead_code)]
     pub fn target(&self) -> Option<&RayHit> {
         self.target.as_ref()
     }
