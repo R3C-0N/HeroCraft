@@ -12,6 +12,7 @@ use winit::{
 
 mod atmosphere;
 mod audio;
+mod block_cracks;
 mod block_interaction;
 mod block_outline;
 mod camera;
@@ -398,7 +399,9 @@ fn main() {
                         if ui_state.inventory_open && camera.target_distance > camera.base_radius {
                             ui_state.set_inventory_open(false);
                         }
+                        // Mort : la souris est libérée pour le bouton de réapparition
                         let want_capture = window_focused
+                            && !ui_state.player.is_dead()
                             && !ui_state.is_settings_open
                             && !ui_state.inventory_open
                             && camera.target_distance <= camera.base_radius;
@@ -418,15 +421,21 @@ fn main() {
                             herocraft_common::prof_scope!("frame::camera_update");
                             camera.update(dt, &generator);
                             // Jauges du joueur, chute terminée : dommages (signalés au serveur en
-                            // ligne) et, si elle tue, retour au point d'apparition
+                            // ligne), vue secouée et, si elle tue, écran de mort
                             ui_state.player.tick(dt, &mut camera);
                             if let Some(blocks) = camera.take_landing() {
                                 if let Some(client) = net.as_mut() {
                                     client.send_fall(blocks);
                                 }
-                                if ui_state.player.fall(blocks) {
-                                    info!("Mort après une chute de {:.0} blocs : retour au point d'apparition.", blocks);
-                                    camera.spawn_on_ground(&generator);
+                                let hurt = ui_state.player.fall(blocks);
+                                if hurt > 0.0 {
+                                    camera.hurt(hurt);
+                                    audio.player_hurt(hurt, &ui_state.audio_settings);
+                                }
+                                if ui_state.player.is_dead() && !camera.is_dead {
+                                    info!("Mort après une chute de {:.0} blocs.", blocks);
+                                    camera.is_dead = true;
+                                    ui_state.set_inventory_open(false);
                                 }
                             }
                         }
@@ -444,7 +453,11 @@ fn main() {
                         if cursor_captured {
                             let edits = lod_manager.terrain_edits().clone();
                             block_interaction.update_target(&camera, &generator, &edits);
-                            if let Some(action) = block_interaction.tick(dt) {
+                            let action = block_interaction.tick(dt);
+                            if let Some(block) = block_interaction.take_hit() {
+                                audio.block_hit(audio::synth::Material::of(block), &ui_state.audio_settings);
+                            }
+                            if let Some(action) = action {
                                 if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
                                     block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
                                     drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
@@ -601,6 +614,7 @@ fn main() {
                         {
                             herocraft_common::prof_scope!("blocs::contour");
                             state.set_block_outline(block_interaction.outline(&camera));
+                            state.set_block_cracks(block_interaction.cracks(&camera));
                         }
                         if last_autosave.elapsed().as_secs() >= 30 {
                             save_terrain_edits(&lod_manager);
@@ -628,6 +642,12 @@ fn main() {
                             herocraft_common::prof_scope!("frame::ui_action");
                             match action {
                                 UiAction::PreviewSound => audio.preview(&ui_state.audio_settings),
+                                UiAction::Respawn => {
+                                    ui_state.player.respawn();
+                                    camera.spawn_on_ground(&generator);
+                                    audio.reset_player();
+                                    info!("Réapparition au point d'apparition.");
+                                }
                                 UiAction::ResumeGame => {
                                     ui_state.set_settings_open(false);
                                     info!("Bouton cliqué : Reprise de la partie.");
@@ -934,6 +954,9 @@ fn switch_planet(
     camera.set_terrain(edits.clone());
     lod_manager.set_terrain_edits(edits);
     camera.spawn_on_ground(generator);
+    if ui_state.player.is_dead() {
+        ui_state.player.respawn();
+    }
     lod_manager.update(camera.eye_position(), generator, chunk_cache, 0.0, None);
     state.sync_lod_meshes(lod_manager);
     state.update_cloud_mesh(camera.base_radius, seed);
@@ -956,6 +979,13 @@ fn game_key(
     zoom_modifier_held: &mut bool,
 ) {
     let is_ground_view = camera.target_distance <= camera.base_radius;
+    if ui_state.player.is_dead() {
+        // Mort : seul Saut sert, à réapparaître une fois l'écran de mort passé
+        if action == Action::Jump && first_press && ui_state.player.respawn_in() == Some(0.0) {
+            pending_actions.push(UiAction::Respawn);
+        }
+        return;
+    }
     match action {
         Action::MoveForward => camera.move_forward = is_pressed,
         Action::MoveBackward => camera.move_backward = is_pressed,

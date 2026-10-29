@@ -3,6 +3,7 @@ use std::sync::Arc;
 use winit::window::Window;
 
 use crate::atmosphere::Atmosphere;
+use crate::block_cracks::BlockCracks;
 use crate::block_outline::BlockOutline;
 use crate::camera::{CameraViewMode, OrbitCamera};
 use crate::creature_render::CreatureRenderer;
@@ -142,6 +143,8 @@ pub struct State {
     lod_uploads_pending: bool,
     /// Contour du bloc visé
     block_outline: BlockOutline,
+    /// Fissures du bloc en train de casser
+    block_cracks: BlockCracks,
     /// Silhouettes des autres joueurs en ligne
     player_outlines: BlockOutline,
     /// Créatures : maillage refait à chaque image, textures des espèces
@@ -528,6 +531,7 @@ impl State {
         // Rendu Interface Utilisateur egui
         // -------------------------------------------------------------
         let block_outline = BlockOutline::new(&device, &render_pipeline_layout, sample_count);
+        let block_cracks = BlockCracks::new(&device, &render_pipeline_layout, sample_count);
         let dropped_items = GrowableMesh::new(&device, "Dropped Items");
         let player_outlines =
             BlockOutline::players(&device, &render_pipeline_layout, sample_count, crate::network::MAX_REMOTE_PLAYERS);
@@ -571,6 +575,7 @@ impl State {
             lod_sync_count: 0,
             lod_uploads_pending: false,
             block_outline,
+            block_cracks,
             player_outlines,
             creatures,
             dropped_items,
@@ -812,6 +817,11 @@ impl State {
         self.block_outline.update(&self.queue, corners.as_slice(), self.camera_eye);
     }
 
+    /// Bloc en train de casser (ses coins et l'avancement de 0 à 1), à appeler après `update_camera`
+    pub fn set_block_cracks(&mut self, cracks: Option<([glam::Vec3; 8], f32)>) {
+        self.block_cracks.update(&self.queue, cracks, self.camera_eye);
+    }
+
     /// Silhouettes des autres joueurs (8 coins chacune), à appeler après `update_camera`
     pub fn set_player_outlines(&mut self, boxes: &[[glam::Vec3; 8]]) {
         self.player_outlines.update(&self.queue, boxes, self.camera_eye);
@@ -979,7 +989,8 @@ impl State {
                 render_pass.set_index_buffer(self.dropped_items.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.draw_indexed(0..self.dropped_items.num_indices, 0, 0..1);
             }
-            // Contour du bloc visé, sur la profondeur du relief
+            // Fissures puis contour du bloc visé, sur la profondeur du relief
+            self.block_cracks.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
             self.block_outline.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
             self.player_outlines.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
             if let Some(query_set) = timer_queries.filter(|_| timer_inside_passes) {
@@ -1176,6 +1187,7 @@ mod tests {
         let atmosphere_lut = include_str!("atmosphere_lut.wgsl");
         let god_rays = include_str!("god_rays.wgsl");
         let block_outline = include_str!("block_outline.wgsl");
+        let block_cracks = include_str!("block_cracks.wgsl");
         let creature = include_str!("creature.wgsl");
 
         for (name, source) in [
@@ -1188,6 +1200,7 @@ mod tests {
             ("atmosphere_lut.wgsl", atmosphere_lut),
             ("god_rays.wgsl", god_rays),
             ("block_outline.wgsl", block_outline),
+            ("block_cracks.wgsl", block_cracks),
             ("creature.wgsl", creature),
         ] {
             // Assemblage naga_oil (imports de common.wgsl) puis validation complète

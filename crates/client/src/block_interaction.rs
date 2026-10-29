@@ -1,7 +1,8 @@
-//! Destruction et pose de blocs : le bloc sous le réticule est visé à chaque frame, le clic
-//! gauche le détruit (il tombe au sol, à ramasser), le clic droit pose contre la face visée le
-//! bloc de la case choisie de la barre d'objets. Un bouton gardé enfoncé répète l'action. La
-//! modification est appliquée et remaillée dans la frame même.
+//! Destruction et pose de blocs : le bloc sous le réticule est visé à chaque frame. Le clic
+//! gauche gardé enfoncé le casse peu à peu (plus ou moins vite selon sa matière) ; il tombe
+//! alors au sol, à ramasser. Le clic droit pose contre la face visée le bloc de la case choisie
+//! de la barre d'objets, et répète la pose tant qu'il reste enfoncé. La modification est
+//! appliquée et remaillée dans la frame même.
 
 use std::collections::HashMap;
 
@@ -17,8 +18,12 @@ use crate::lod::PlanetLodManager;
 
 /// Portée de la visée, en blocs depuis la tête du joueur
 pub const REACH_BLOCKS: f64 = 6.0;
-/// Délai entre deux actions tant que le bouton reste enfoncé
+/// Délai entre deux poses tant que le bouton reste enfoncé
 const REPEAT_DELAY: f32 = 0.25;
+/// Pause entre un bloc cassé et le début du suivant, bouton toujours enfoncé
+const BREAK_COOLDOWN: f32 = 0.15;
+/// Intervalle entre deux coups entendus pendant qu'un bloc se casse
+const HIT_INTERVAL: f32 = 0.25;
 /// Au-delà, le cache de colonnes de la visée est vidé
 const MAX_CACHED_COLUMNS: usize = 4096;
 
@@ -26,6 +31,16 @@ const MAX_CACHED_COLUMNS: usize = 4096;
 pub enum BlockAction {
     Break,
     Place,
+}
+
+/// Bloc en train d'être cassé
+#[derive(Clone, Copy)]
+struct Mining {
+    pos: BlockPos,
+    /// Avancement, de 0 (intact) à 1 (cassé)
+    progress: f32,
+    /// Secondes avant le prochain coup entendu
+    hit_in: f32,
 }
 
 /// Rayon de la dernière visée et terrain visé : identiques, la visée n'est pas refaite
@@ -40,8 +55,13 @@ struct AimKey {
 #[derive(Default)]
 pub struct BlockInteraction {
     target: Option<RayHit>,
+    /// Contenu du bloc visé
+    target_block: BlockId,
     held: Option<BlockAction>,
     repeat_in: f32,
+    mining: Option<Mining>,
+    /// Coup porté au bloc en train de casser, pas encore entendu
+    hit: Option<BlockId>,
     last_aim: Option<AimKey>,
     /// Colonnes du générateur déjà échantillonnées, gardées d'une frame à l'autre : en tournant la
     /// vue, le rayon repasse sur les mêmes colonnes et le bruit du relief n'est pas recalculé
@@ -59,7 +79,8 @@ impl BlockInteraction {
         self.target.as_ref()
     }
 
-    /// Bouton de souris (souris capturée) : renvoie l'action à appliquer tout de suite
+    /// Bouton de souris (souris capturée) : renvoie l'action à appliquer tout de suite (la pose ;
+    /// la casse, elle, avance à chaque `tick` tant que le bouton reste enfoncé)
     pub fn on_mouse_button(&mut self, button: MouseButton, pressed: bool) -> Option<BlockAction> {
         let action = match button {
             MouseButton::Left => BlockAction::Break,
@@ -68,11 +89,21 @@ impl BlockInteraction {
         };
         if pressed {
             self.held = Some(action);
-            self.repeat_in = REPEAT_DELAY;
-            Some(action)
+            self.mining = None;
+            match action {
+                BlockAction::Break => {
+                    self.repeat_in = 0.0;
+                    None
+                }
+                BlockAction::Place => {
+                    self.repeat_in = REPEAT_DELAY;
+                    Some(action)
+                }
+            }
         } else {
             if self.held == Some(action) {
                 self.held = None;
+                self.mining = None;
             }
             None
         }
@@ -82,18 +113,62 @@ impl BlockInteraction {
     pub fn reset(&mut self) {
         self.target = None;
         self.held = None;
+        self.mining = None;
         self.last_aim = None;
     }
 
-    /// Répétition de l'action tant que son bouton reste enfoncé
+    /// Avance l'action dont le bouton reste enfoncé : renvoie `Break` quand le bloc visé finit de
+    /// casser, `Place` à chaque répétition de la pose
     pub fn tick(&mut self, dt: f32) -> Option<BlockAction> {
         let action = self.held?;
         self.repeat_in -= dt;
         if self.repeat_in > 0.0 {
             return None;
         }
-        self.repeat_in = REPEAT_DELAY;
-        Some(action)
+        match action {
+            BlockAction::Break => self.tick_break(dt),
+            BlockAction::Place => {
+                self.repeat_in = REPEAT_DELAY;
+                Some(action)
+            }
+        }
+    }
+
+    /// Casse peu à peu le bloc visé ; viser un autre bloc reprend de zéro
+    fn tick_break(&mut self, dt: f32) -> Option<BlockAction> {
+        let Some(hit) = self.target else {
+            self.mining = None;
+            return None;
+        };
+        let mut mining = match self.mining {
+            Some(mining) if mining.pos == hit.block => mining,
+            _ => Mining { pos: hit.block, progress: 0.0, hit_in: 0.0 },
+        };
+        if mining.hit_in <= 0.0 {
+            self.hit = Some(self.target_block);
+            mining.hit_in = HIT_INTERVAL;
+        }
+        mining.hit_in -= dt;
+        mining.progress += dt / self.target_block.break_seconds().max(0.05);
+        if mining.progress >= 1.0 {
+            self.mining = None;
+            self.repeat_in = BREAK_COOLDOWN;
+            return Some(BlockAction::Break);
+        }
+        self.mining = Some(mining);
+        None
+    }
+
+    /// Coup porté depuis le dernier appel au bloc en train de casser : son contenu, pour le bruit
+    pub fn take_hit(&mut self) -> Option<BlockId> {
+        self.hit.take()
+    }
+
+    /// Coins du bloc en train de casser et son avancement (0 à 1), pour ses fissures
+    pub fn cracks(&self, camera: &OrbitCamera) -> Option<([Vec3; 8], f32)> {
+        let mining = self.mining.filter(|m| self.target.is_some_and(|t| t.block == m.pos))?;
+        let geometry = BlockGeometry::new(camera.base_radius as f64);
+        Some((geometry.block_corners(mining.pos).map(|c| c.as_vec3()), mining.progress))
     }
 
     /// Vise le premier bloc solide sous le réticule, à portée de la tête du joueur
@@ -117,6 +192,7 @@ impl BlockInteraction {
         self.last_aim = Some(aim);
         let mut query = TerrainQuery::with_columns(generator, edits, std::mem::take(&mut self.columns));
         self.target = raycast_blocks(&geometry, eye.as_dvec3(), dir.as_dvec3(), reach, |pos| is_targetable(query.block(pos)));
+        self.target_block = self.target.map_or(BlockId::AIR, |hit| query.block(hit.block));
         self.columns = query.into_columns();
     }
 
@@ -196,14 +272,17 @@ mod tests {
     #[test]
     fn test_button_press_acts_once_then_repeats_while_held() {
         let mut interaction = BlockInteraction::new();
-        assert_eq!(interaction.on_mouse_button(MouseButton::Left, true), Some(BlockAction::Break));
+        assert_eq!(interaction.on_mouse_button(MouseButton::Right, true), Some(BlockAction::Place));
         assert_eq!(interaction.tick(0.1), None);
-        assert_eq!(interaction.tick(0.2), Some(BlockAction::Break));
-        assert_eq!(interaction.on_mouse_button(MouseButton::Right, false), None);
-        assert_eq!(interaction.tick(0.3), Some(BlockAction::Break), "relâcher l'autre bouton ne change rien");
+        assert_eq!(interaction.tick(0.2), Some(BlockAction::Place));
         assert_eq!(interaction.on_mouse_button(MouseButton::Left, false), None);
+        assert_eq!(interaction.tick(0.3), Some(BlockAction::Place), "relâcher l'autre bouton ne change rien");
+        assert_eq!(interaction.on_mouse_button(MouseButton::Right, false), None);
         assert_eq!(interaction.tick(1.0), None);
         assert_eq!(interaction.on_mouse_button(MouseButton::Middle, true), None);
+        // Le clic gauche ne casse rien tout de suite, et rien sans bloc visé
+        assert_eq!(interaction.on_mouse_button(MouseButton::Left, true), None);
+        assert_eq!(interaction.tick(10.0), None);
     }
 
     #[test]
@@ -248,6 +327,48 @@ mod tests {
         assert_eq!(lod.terrain_edits().block(&generator, before), gained);
         assert_eq!(interaction.target().map(|t| t.block), Some(before));
         assert_eq!(inventory.selected_block(), None);
+    }
+
+    #[test]
+    fn test_held_left_button_breaks_the_block_over_time() {
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
+        let mut camera = OrbitCamera::new(165.0, 50.0, &generator);
+        camera.distance = 0.0;
+        camera.target_distance = 0.0;
+        camera.player_pitch = -0.6;
+        camera.update_camera_bounds(&generator);
+        let edits = TerrainEdits::new(None);
+        let mut interaction = BlockInteraction::new();
+        interaction.update_target(&camera, &generator, &edits);
+        let target = interaction.target().copied().expect("le sol devant le joueur est visé");
+        let seconds = TerrainQuery::new(&generator, &edits).block(target.block).break_seconds();
+
+        assert_eq!(interaction.on_mouse_button(MouseButton::Left, true), None);
+        let mut elapsed = 0.0;
+        let mut hits = 0;
+        let mut last_progress = 0.0;
+        loop {
+            let action = interaction.tick(0.01);
+            elapsed += 0.01;
+            hits += usize::from(interaction.take_hit().is_some());
+            if action == Some(BlockAction::Break) {
+                break;
+            }
+            let (_, progress) = interaction.cracks(&camera).expect("le bloc se fissure");
+            assert!(progress > last_progress, "les fissures progressent");
+            last_progress = progress;
+            assert!(elapsed < seconds + 0.1, "le bloc devait casser en {seconds} s");
+        }
+        assert!(elapsed > seconds - 0.05, "cassé en {elapsed} s au lieu de {seconds} s");
+        assert!(hits >= 2, "des coups s'entendent pendant la casse ({hits})");
+        assert!(interaction.cracks(&camera).is_none());
+
+        // Relâcher le bouton oublie l'avancement
+        interaction.tick(BREAK_COOLDOWN);
+        interaction.tick(0.2);
+        assert!(interaction.cracks(&camera).is_some());
+        interaction.on_mouse_button(MouseButton::Left, false);
+        assert!(interaction.cracks(&camera).is_none());
     }
 
     #[test]

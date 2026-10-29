@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 /// Identifiant unique d'un type de bloc (sur 16 bits = 65 536 types possibles)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// (par défaut : l'air)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockId(pub u16);
 
 impl BlockId {
@@ -23,6 +24,22 @@ impl BlockId {
     #[inline(always)]
     pub fn is_air(&self) -> bool {
         self.0 == 0
+    }
+
+    /// Temps pour casser le bloc à mains nues, en secondes
+    pub fn break_seconds(&self) -> f32 {
+        match *self {
+            BlockId::LEAVES | BlockId::SNOW => 0.3,
+            BlockId::SAND | BlockId::LAVA => 0.45,
+            BlockId::DIRT => 0.5,
+            BlockId::GRASS => 0.6,
+            BlockId::CRYSTAL => 0.9,
+            BlockId::WOOD => 1.2,
+            BlockId::STONE => 1.5,
+            BlockId::IRON_ORE | BlockId::GOLD_ORE => 2.2,
+            BlockId::OBSIDIAN => 5.0,
+            _ => 0.6,
+        }
     }
 
     #[inline(always)]
@@ -82,5 +99,7 @@ mod tests {
         assert!(!BlockId::WATER.is_solid());
         assert!(BlockId::STONE.is_opaque());
         assert!(!BlockId::WATER.is_opaque());
+        assert!(BlockId::DIRT.break_seconds() < BlockId::STONE.break_seconds());
+        assert!(BlockId::STONE.break_seconds() < BlockId::OBSIDIAN.break_seconds());
     }
 }

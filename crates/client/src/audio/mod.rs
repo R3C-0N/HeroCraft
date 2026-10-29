@@ -117,6 +117,7 @@ struct SoundBank {
     places: Vec<Vec<SamplesBuffer>>,
     jumps: Vec<SamplesBuffer>,
     landings: Vec<SamplesBuffer>,
+    hurts: Vec<SamplesBuffer>,
     birds: Vec<SamplesBuffer>,
     crickets: Vec<SamplesBuffer>,
 }
@@ -141,6 +142,7 @@ impl SoundBank {
             places: per_material(synth::block_place),
             jumps: variants(synth::jump_whoosh),
             landings: variants(synth::landing_thud),
+            hurts: variants(synth::hurt_grunt),
             birds: (0..8).map(|seed| buffer(synth::bird_song(seed))).collect(),
             crickets: variants(synth::cricket_chirps),
         }
@@ -247,6 +249,19 @@ impl Audio {
     pub fn block_broken(&mut self, material: Material, distance_blocks: f32, settings: &AudioSettings) {
         let m = material_index(material);
         self.play(|b| &b.breaks[m], settings.effects_gain() * 0.7 * attenuation(distance_blocks), 0.1);
+    }
+
+    /// Le joueur se blesse, avec une force de 0 à 1
+    pub fn player_hurt(&mut self, strength: f32, settings: &AudioSettings) {
+        let gain = settings.effects_gain();
+        self.play(|b| &b.hurts, gain * (0.45 + 0.35 * strength), 0.06);
+        self.play(|b| &b.landings, gain * 0.6 * strength, 0.08);
+    }
+
+    /// Coup porté au bloc que le joueur est en train de casser
+    pub fn block_hit(&mut self, material: Material, settings: &AudioSettings) {
+        let m = material_index(material);
+        self.play(|b| &b.places[m], settings.effects_gain() * 0.3, 0.12);
     }
 
     /// Bloc posé, à `distance_blocks` du joueur (0 pour les siens)
