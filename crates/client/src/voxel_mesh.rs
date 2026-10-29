@@ -923,7 +923,7 @@ impl VoxelMeshBuilder {
     }
 
     /// Palette de couleurs fidèle aux blocs HeroCraft
-    fn block_color(block: BlockId, is_top: bool) -> [f32; 4] {
+    pub(crate) fn block_color(block: BlockId, is_top: bool) -> [f32; 4] {
         match block {
             BlockId::GRASS => {
                 if is_top {

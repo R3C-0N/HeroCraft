@@ -2,6 +2,7 @@ use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{Key, KeyCode, NamedKey};
 
 use crate::input::{is_reserved_key, Action, Controls, ACTION_GROUPS};
+use crate::inventory::{block_name, Inventory, ItemStack, HOTBAR_SLOTS, TOTAL_SLOTS};
 
 /// Actions déclenchées par l'interface utilisateur
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -397,6 +398,10 @@ pub struct UiState {
     /// Noms des autres joueurs (en ligne), avec leur position à l'écran en pixels physiques
     pub name_tags: Vec<(egui::Pos2, String)>,
     pub multiplayer: MultiplayerUi,
+    /// Blocs du joueur : barre d'objets en bas de l'écran, sac dans l'écran d'inventaire
+    pub inventory: Inventory,
+    /// Écran d'inventaire ouvert (la souris est libérée pour déplacer les piles)
+    pub inventory_open: bool,
 }
 
 impl UiState {
@@ -433,6 +438,8 @@ impl UiState {
             screen_height: 720.0_f32,
             name_tags: Vec::new(),
             multiplayer: MultiplayerUi::default(),
+            inventory: Inventory::default(),
+            inventory_open: false,
         }
     }
 
@@ -510,7 +517,17 @@ impl UiState {
         self.rebinding = None;
         if is_open {
             self.menu_page = MenuPage::Main;
+            self.set_inventory_open(false);
         }
+    }
+
+    /// Ouvre ou referme l'écran d'inventaire. Refermé, la pile tenue à la souris retourne dans
+    /// l'inventaire.
+    pub fn set_inventory_open(&mut self, open: bool) {
+        if !open {
+            self.inventory.return_held();
+        }
+        self.inventory_open = open;
     }
 
     pub fn toggle_settings(&mut self) -> bool {
@@ -527,7 +544,9 @@ impl UiState {
     /// Touche Échap : ouvre le menu, remonte d'un sous-menu vers l'accueil, ou referme le menu
     /// depuis l'accueil. Renvoie l'état d'ouverture du menu.
     pub fn handle_escape(&mut self) -> bool {
-        if !self.is_settings_open {
+        if self.inventory_open {
+            self.set_inventory_open(false);
+        } else if !self.is_settings_open {
             self.set_settings_open(true);
         } else if self.rebinding.is_some() {
             self.rebinding = None;
@@ -681,7 +700,7 @@ impl UiState {
         let egui_ctx = self.ctx.clone();
         let full_output = egui_ctx.run(raw_input, |ctx| {
             // 1. Réticule de visée en mode FPS (quand le menu est fermé)
-            if is_ground && !self.is_settings_open {
+            if is_ground && !self.is_settings_open && !self.inventory_open {
                 let center = ctx.screen_rect().center();
                 let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("crosshair")));
                 let stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_white_alpha(180));
@@ -703,8 +722,18 @@ impl UiState {
             }
 
             // 2. Panneau HUD supérieur gauche (planète, actions, filtres), masqué sous le menu
-            if !self.is_settings_open {
+            // et l'inventaire
+            if !self.is_settings_open && !self.inventory_open {
                 self.draw_world_hud(ctx, is_ground, &mut action);
+            }
+
+            // Barre d'objets au sol, écran d'inventaire par-dessus le jeu
+            if is_ground && !self.is_settings_open {
+                if self.inventory_open {
+                    self.draw_inventory_screen(ctx);
+                } else {
+                    self.draw_hotbar(ctx);
+                }
             }
 
             // 3. Panneau HUD supérieur droit (FPS, altitude, raccourci menu)
@@ -722,6 +751,123 @@ impl UiState {
         });
 
         (full_output, action)
+    }
+
+    /// Barre d'objets en bas de l'écran : la case choisie est cerclée d'or, le nom de son bloc
+    /// s'affiche au-dessus
+    fn draw_hotbar(&self, ctx: &egui::Context) {
+        let screen = ctx.screen_rect();
+        egui::Area::new(egui::Id::new("hotbar"))
+            .order(egui::Order::Background)
+            .pivot(egui::Align2::CENTER_BOTTOM)
+            .fixed_pos(egui::pos2(screen.center().x, screen.bottom() - SCREEN_MARGIN))
+            .interactable(false)
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    let selected = self.inventory.slot(self.inventory.selected());
+                    let name = selected.map(|s| block_name(s.block)).unwrap_or("Main vide");
+                    // Sur un fond clair (sable, neige), le nom reste lisible sur sa pastille sombre
+                    let galley = ui.painter().layout_no_wrap(name.to_string(), egui::FontId::proportional(12.5_f32), TEXT_SOFT);
+                    let (rect, _) = ui.allocate_exact_size(galley.size() + egui::vec2(16.0_f32, 4.0_f32), egui::Sense::hover());
+                    ui.painter().rect_filled(rect, 4.0_f32, egui::Color32::from_black_alpha(150));
+                    ui.painter().galley(rect.min + egui::vec2(8.0_f32, 2.0_f32), galley, TEXT_SOFT);
+                    hud_frame().inner_margin(egui::Margin::same(4.0_f32)).show(ui, |ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(3.0_f32, 0.0_f32);
+                        ui.horizontal(|ui| {
+                            for i in 0..HOTBAR_SLOTS {
+                                let (rect, _) = ui.allocate_exact_size(egui::vec2(HOTBAR_SLOT_SIZE, HOTBAR_SLOT_SIZE), egui::Sense::hover());
+                                paint_slot(ui.painter(), rect, self.inventory.slot(i), i == self.inventory.selected(), false);
+                                ui.painter().text(
+                                    rect.left_top() + egui::vec2(4.0_f32, 2.0_f32),
+                                    egui::Align2::LEFT_TOP,
+                                    (i + 1).to_string(),
+                                    egui::FontId::proportional(9.5_f32),
+                                    TEXT_DIM,
+                                );
+                            }
+                        });
+                    });
+                });
+            });
+    }
+
+    /// Écran d'inventaire : sac de 27 cases au-dessus de la barre d'objets. Clic gauche : prendre,
+    /// poser, fusionner ou échanger une pile ; clic droit : prendre la moitié ou poser un bloc.
+    fn draw_inventory_screen(&mut self, ctx: &egui::Context) {
+        let open_key = self.controls.action_key_label(Action::OpenInventory);
+        let mut clicked: Option<(usize, bool)> = None;
+        let mut hovered: Option<usize> = None;
+        egui::Area::new(egui::Id::new("inventory_screen"))
+            .order(egui::Order::Middle)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                egui::Frame::none()
+                    .fill(egui::Color32::from_rgba_premultiplied(14, 18, 28, 245))
+                    .stroke(egui::Stroke::new(1.5_f32, GOLD))
+                    .rounding(egui::Rounding::same(10.0_f32))
+                    .inner_margin(egui::Margin::same(MENU_PADDING))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("INVENTAIRE").strong().size(16.0_f32).color(GOLD_BRIGHT));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.label(egui::RichText::new(format!("[{}] ou [Échap] pour fermer", open_key)).size(11.0_f32).color(TEXT_DIM));
+                            });
+                        });
+                        ui.add_space(4.0_f32);
+                        let mut slot_row = |ui: &mut egui::Ui, range: std::ops::Range<usize>| {
+                            ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+                            ui.horizontal(|ui| {
+                                for i in range {
+                                    let size = egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE);
+                                    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+                                    let selected = i == self.inventory.selected();
+                                    paint_slot(ui.painter(), rect, self.inventory.slot(i), selected, response.hovered());
+                                    if response.hovered() {
+                                        hovered = Some(i);
+                                    }
+                                    if response.clicked() {
+                                        clicked = Some((i, false));
+                                    } else if response.secondary_clicked() {
+                                        clicked = Some((i, true));
+                                    }
+                                }
+                            });
+                        };
+                        caption(ui, "SAC");
+                        for row in 0..TOTAL_SLOTS / HOTBAR_SLOTS - 1 {
+                            let start = HOTBAR_SLOTS + row * HOTBAR_SLOTS;
+                            slot_row(ui, start..start + HOTBAR_SLOTS);
+                        }
+                        ui.add_space(6.0_f32);
+                        caption(ui, "BARRE D'OBJETS");
+                        slot_row(ui, 0..HOTBAR_SLOTS);
+                        ui.add_space(2.0_f32);
+                        ui.label(
+                            egui::RichText::new("Clic gauche : prendre / poser une pile · Clic droit : moitié / un seul bloc")
+                                .size(11.0_f32)
+                                .color(TEXT_DIM),
+                        );
+                    });
+            });
+
+        match clicked {
+            Some((i, false)) => self.inventory.click(i),
+            Some((i, true)) => self.inventory.click_secondary(i),
+            None => {}
+        }
+
+        // Pile tenue sous le curseur, sinon nom du bloc survolé
+        if let Some(held) = self.inventory.held() {
+            if let Some(pos) = ctx.pointer_latest_pos() {
+                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("held_stack")));
+                let rect = egui::Rect::from_center_size(pos, egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE));
+                paint_stack(&painter, rect, held);
+            }
+        } else if let Some(stack) = hovered.and_then(|i| self.inventory.slot(i)) {
+            egui::show_tooltip_at_pointer(ctx, egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("inventory_tip")), egui::Id::new("inventory_tip"), |ui| {
+                ui.label(format!("{} × {}", block_name(stack.block), stack.count));
+            });
+        }
     }
 
     /// HUD du monde : graine, actions rapides et filtres cartographiques
@@ -1407,6 +1553,73 @@ fn egui_key(key: &Key) -> Option<egui::Key> {
     })
 }
 
+/// Côté d'une case de la barre d'objets et de l'écran d'inventaire (points logiques)
+const HOTBAR_SLOT_SIZE: f32 = 40.0;
+const INVENTORY_SLOT_SIZE: f32 = 44.0;
+
+/// Case d'inventaire : fond, liseré (or si choisie) et pile éventuelle
+fn paint_slot(painter: &egui::Painter, rect: egui::Rect, stack: Option<ItemStack>, selected: bool, hovered: bool) {
+    let fill = if hovered { egui::Color32::from_rgb(42, 54, 78) } else { egui::Color32::from_rgba_premultiplied(22, 28, 40, 230) };
+    painter.rect_filled(rect, 4.0_f32, fill);
+    let stroke = if selected {
+        egui::Stroke::new(2.0_f32, GOLD_BRIGHT)
+    } else {
+        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(55, 70, 95))
+    };
+    painter.rect_stroke(rect, 4.0_f32, stroke);
+    if let Some(stack) = stack {
+        paint_stack(painter, rect, stack);
+    }
+}
+
+/// Teintes du dessus et des côtés de l'icône d'un bloc : celles du terrain, et pour les blocs
+/// que le terrain peint encore en gris neutre, une teinte qui les distingue
+fn icon_colors(block: herocraft_common::BlockId) -> ([f32; 4], [f32; 4]) {
+    use herocraft_common::BlockId;
+    let tint = match block {
+        BlockId::IRON_ORE => Some([0.66, 0.52, 0.44, 1.0]),
+        BlockId::GOLD_ORE => Some([0.86, 0.70, 0.24, 1.0]),
+        BlockId::CRYSTAL => Some([0.62, 0.86, 0.95, 1.0]),
+        BlockId::OBSIDIAN => Some([0.20, 0.14, 0.30, 1.0]),
+        _ => None,
+    };
+    match tint {
+        Some(color) => (color, color),
+        None => (
+            crate::voxel_mesh::VoxelMeshBuilder::block_color(block, true),
+            crate::voxel_mesh::VoxelMeshBuilder::block_color(block, false),
+        ),
+    }
+}
+
+/// Pile de blocs : petit cube isométrique aux couleurs du bloc et nombre en bas à droite
+fn paint_stack(painter: &egui::Painter, rect: egui::Rect, stack: ItemStack) {
+    let to_color = |c: [f32; 4], shade: f32| {
+        egui::Color32::from_rgb((c[0] * shade * 255.0) as u8, (c[1] * shade * 255.0) as u8, (c[2] * shade * 255.0) as u8)
+    };
+    let (top, side) = icon_colors(stack.block);
+    let c = rect.center();
+    let s = rect.width() * 0.62_f32;
+    let (hx, hy) = (s * 0.43_f32, s * 0.25_f32);
+    let p = |dx: f32, dy: f32| egui::pos2(c.x + dx, c.y + dy);
+    let outline = egui::Stroke::new(0.5_f32, egui::Color32::from_black_alpha(120));
+    let faces = [
+        (vec![p(0.0, -2.0 * hy), p(hx, -hy), p(0.0, 0.0), p(-hx, -hy)], to_color(top, 1.05)),
+        (vec![p(-hx, -hy), p(0.0, 0.0), p(0.0, 2.0 * hy), p(-hx, hy)], to_color(side, 0.82)),
+        (vec![p(0.0, 0.0), p(hx, -hy), p(hx, hy), p(0.0, 2.0 * hy)], to_color(side, 0.64)),
+    ];
+    for (points, fill) in faces {
+        painter.add(egui::Shape::convex_polygon(points, fill, outline));
+    }
+    if stack.count > 1 {
+        let pos = rect.right_bottom() - egui::vec2(3.0_f32, 1.0_f32);
+        let font = egui::FontId::proportional(12.0_f32);
+        let text = stack.count.to_string();
+        painter.text(pos + egui::vec2(1.0_f32, 1.0_f32), egui::Align2::RIGHT_BOTTOM, &text, font.clone(), egui::Color32::BLACK);
+        painter.text(pos, egui::Align2::RIGHT_BOTTOM, text, font, egui::Color32::WHITE);
+    }
+}
+
 /// Cadre commun des panneaux du HUD
 fn hud_frame() -> egui::Frame {
     egui::Frame::none()
@@ -1616,8 +1829,14 @@ impl UiState {
                             }
                         }
 
+                        section_row(ui, "BARRE D'OBJETS");
+                        fixed_control_row(ui, &["1", "…", "9"], "Choisir une case");
+                        fixed_control_row(ui, &["Molette"], "Case précédente / suivante");
+
                         section_row(ui, "SOURIS");
                         fixed_control_row(ui, &["Souris"], "Regarder autour (au sol)");
+                        fixed_control_row(ui, &["Clic gauche"], "Casser le bloc visé (il va dans l'inventaire)");
+                        fixed_control_row(ui, &["Clic droit"], "Poser le bloc de la case choisie");
                         fixed_control_row(ui, &[zoom_key.as_str(), "Molette"], "Zoom, du sol à l'orbite");
                         fixed_control_row(ui, &["Clic", "glisser"], "Tourner la planète (vue satellite)");
 
@@ -1839,6 +2058,46 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Échap referme d'abord l'inventaire, sans ouvrir le menu ; ouvrir le menu referme l'inventaire
+    #[test]
+    fn test_escape_and_menu_close_inventory() {
+        let mut ui = UiState::new(1);
+        ui.inventory.add(herocraft_common::BlockId::STONE);
+        ui.set_inventory_open(true);
+        ui.inventory.click(0);
+        assert!(ui.inventory.held().is_some());
+        assert!(!ui.handle_escape(), "Échap ferme l'inventaire sans ouvrir le menu");
+        assert!(!ui.inventory_open);
+        assert_eq!(ui.inventory.held(), None, "la pile tenue retourne dans l'inventaire");
+        assert_eq!(ui.inventory.count(herocraft_common::BlockId::STONE), 1);
+
+        ui.set_inventory_open(true);
+        ui.toggle_settings();
+        assert!(ui.is_settings_open && !ui.inventory_open);
+    }
+
+    /// Barre d'objets et écran d'inventaire tiennent dans la fenêtre
+    #[test]
+    fn test_hotbar_and_inventory_fit_screen() {
+        let mut ui = UiState::new(1);
+        ui.set_screen_size(1280.0, 720.0);
+        for _ in 0..3 {
+            ui.inventory.add(herocraft_common::BlockId::DIRT);
+        }
+        for _ in 0..3 {
+            ui.update_ui(0.0, true);
+        }
+        let hotbar = ui.ctx.memory(|m| m.area_rect(egui::Id::new("hotbar"))).expect("barre d'objets dessinée");
+        assert!(hotbar.bottom() <= 720.0 && hotbar.left() >= 0.0 && hotbar.right() <= 1280.0, "{:?}", hotbar);
+
+        ui.set_inventory_open(true);
+        for _ in 0..3 {
+            ui.update_ui(0.0, true);
+        }
+        let screen = ui.ctx.memory(|m| m.area_rect(egui::Id::new("inventory_screen"))).expect("inventaire dessiné");
+        assert!(screen.top() >= 0.0 && screen.bottom() <= 720.0 && screen.left() >= 0.0 && screen.right() <= 1280.0, "{:?}", screen);
     }
 
     /// Le HUD du monde défile au lieu de dépasser sur une fenêtre très basse

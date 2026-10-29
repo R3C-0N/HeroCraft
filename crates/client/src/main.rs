@@ -18,6 +18,7 @@ mod cloud_mesh;
 mod collision;
 mod gpu_timer;
 mod input;
+mod inventory;
 mod keyboard_hook;
 mod lod;
 mod monitor;
@@ -54,7 +55,8 @@ fn main() {
     info!("==========================================================");
     info!("Contrôles (modifiables dans Échap > Commandes) :");
     info!(" • Souris                             : Regarder autour (curseur capturé en jeu)");
-    info!(" • Clic gauche / Clic droit           : Détruire le bloc visé / Poser un bloc de pierre");
+    info!(" • Clic gauche / Clic droit           : Casser le bloc visé (vers l'inventaire) / Poser le bloc choisi");
+    info!(" • [1-9] / Molette / [E]              : Choisir la case de la barre d'objets / Inventaire");
     info!(" • [Z,Q,S,D] (AZERTY) / [W,A,S,D]     : Se déplacer");
     info!(" • [ESPACE] / double [ESPACE]         : Sauter / S'envoler (monter en vol)");
     info!(" • [MAJ] / [CTRL]                     : Descendre en vol / Sprinter");
@@ -120,6 +122,7 @@ fn main() {
     ui_state.set_scale_factor(window.scale_factor() as f32);
     ui_state.set_screen_size(size.width as f32, size.height as f32);
     ui_state.controls = input::Controls::load_or_default(input::CONTROLS_FILE);
+    ui_state.inventory = inventory::Inventory::load_or_default(inventory_file(current_seed, false));
 
     // Partie en ligne : connexion en cours, connexion établie, partie ouverte au réseau local par
     // ce jeu, recherche des parties du réseau local (page Multijoueur ouverte)
@@ -146,6 +149,8 @@ fn main() {
     let mut window_focused = true;
     let mut modifiers = ModifiersState::empty();
     let mut zoom_modifier_held = false;
+    // Molette du pavé tactile (en pixels) cumulée jusqu'à un cran de la barre d'objets
+    let mut hotbar_scroll = 0.0_f32;
     let mut jump_tap = input::DoubleTap::default();
     // Actions du clavier rejouées comme les boutons du HUD, au moment du rendu
     let mut pending_actions: Vec<UiAction> = Vec::new();
@@ -180,6 +185,8 @@ fn main() {
                         hosted = None;
                         let _ = chunk_cache.flush_dirty();
                         save_terrain_edits(&lod_manager);
+                        ui_state.set_inventory_open(false);
+                        ui_state.inventory.save();
                         write_profile_report();
                         target.exit();
                     }
@@ -222,7 +229,7 @@ fn main() {
                             let pressed = *btn_state == ElementState::Pressed;
                             if let Some(action) = block_interaction.on_mouse_button(*button, pressed) {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
-                                if let Some((pos, block)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager) {
+                                if let Some((pos, block)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
                                     state.sync_lod_meshes(&lod_manager);
                                     if let Some(client) = net.as_mut() {
                                         client.send_block_change(pos, block);
@@ -240,7 +247,7 @@ fn main() {
 
                     // Déplacement curseur visible (survol des boutons UI et rotation de la planète)
                     WindowEvent::CursorMoved { position, .. } => {
-                        if is_dragging && !cursor_captured && !ui_state.is_settings_open {
+                        if is_dragging && !cursor_captured && !ui_state.is_settings_open && !ui_state.inventory_open {
                             let dx = (position.x - last_mouse_pos.0) as f32;
                             let dy = (position.y - last_mouse_pos.1) as f32;
                             camera.orbit(dx, dy);
@@ -248,16 +255,30 @@ fn main() {
                         last_mouse_pos = (position.x, position.y);
                     }
 
-                    // Molette : zoom continu FPS <-> TPS <-> Orbite avec la touche de zoom (Alt) maintenue.
-                    // En vue satellite, la molette seule zoome aussi.
+                    // Molette : zoom continu FPS <-> TPS <-> Orbite avec la touche de zoom (Alt) maintenue,
+                    // sinon case de la barre d'objets. En vue satellite, la molette seule zoome.
                     WindowEvent::MouseWheel { delta, .. } => {
                         let wants_zoom = if cursor_captured {
                             zoom_modifier_held
                         } else {
-                            !(ui_state.is_settings_open || ui_state.ctx.is_pointer_over_area() || ui_state.ctx.wants_pointer_input())
+                            !(ui_state.is_settings_open
+                                || ui_state.inventory_open
+                                || ui_state.ctx.is_pointer_over_area()
+                                || ui_state.ctx.wants_pointer_input())
                         };
 
-                        if wants_zoom {
+                        if cursor_captured && !zoom_modifier_held {
+                            // Molette vers le haut : case précédente (vers la gauche)
+                            hotbar_scroll -= match delta {
+                                MouseScrollDelta::LineDelta(_x, y) => *y,
+                                MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 40.0,
+                            };
+                            let steps = hotbar_scroll.trunc();
+                            if steps != 0.0 {
+                                ui_state.inventory.scroll(steps as i32);
+                                hotbar_scroll -= steps;
+                            }
+                        } else if wants_zoom {
                             let zoom_delta = match delta {
                                 MouseScrollDelta::LineDelta(_x, y) => *y,
                                 MouseScrollDelta::PixelDelta(pos) => (pos.y as f32) * 0.04,
@@ -302,8 +323,20 @@ fn main() {
                             }
                         } else if key_code == KeyCode::F9 && is_pressed {
                             write_profile_report();
+                        } else if ui_state.inventory_open {
+                            // Écran d'inventaire : seule sa touche le referme
+                            if is_pressed && !*repeat && ui_state.controls.action_for(key_code) == Some(Action::OpenInventory) {
+                                ui_state.set_inventory_open(false);
+                            }
                         } else if !ui_state.is_settings_open {
-                            // En jeu normal (menu fermé) : déplacements et raccourcis selon les touches attribuées
+                            // En jeu normal (menu fermé) : barre d'objets (1 à 9), déplacements et
+                            // raccourcis selon les touches attribuées
+                            if let Some(slot) = input::hotbar_slot_for(key_code) {
+                                if is_pressed {
+                                    ui_state.inventory.select(slot);
+                                }
+                                return;
+                            }
                             let Some(action) = ui_state.controls.action_for(key_code) else { return };
                             game_key(action, is_pressed, is_pressed && !*repeat, &mut camera, &mut ui_state, &mut pending_actions, &mut jump_tap, &mut zoom_modifier_held);
                         }
@@ -327,7 +360,8 @@ fn main() {
 
                         // Touches prises aux autres programmes par le crochet clavier depuis l'image précédente
                         for hooked in keyboard_hook::drain() {
-                            if let (false, Some(action)) = (ui_state.is_settings_open, ui_state.controls.action_for(hooked.key)) {
+                            let in_game = !ui_state.is_settings_open && !ui_state.inventory_open;
+                            if let (true, Some(action)) = (in_game, ui_state.controls.action_for(hooked.key)) {
                                 let first_press = hooked.pressed && !hooked.repeat;
                                 game_key(action, hooked.pressed, first_press, &mut camera, &mut ui_state, &mut pending_actions, &mut jump_tap, &mut zoom_modifier_held);
                             }
@@ -335,8 +369,13 @@ fn main() {
 
                         // Souris capturée en jeu (au sol ou en 3e personne) ; le menu, la vue satellite
                         // et la perte du focus la libèrent
+                        // L'inventaire ne s'ouvre qu'au sol
+                        if ui_state.inventory_open && camera.target_distance > camera.base_radius {
+                            ui_state.set_inventory_open(false);
+                        }
                         let want_capture = window_focused
                             && !ui_state.is_settings_open
+                            && !ui_state.inventory_open
                             && camera.target_distance <= camera.base_radius;
                         if want_capture != cursor_captured {
                             cursor_captured = want_capture;
@@ -365,7 +404,7 @@ fn main() {
                             let edits = lod_manager.terrain_edits().clone();
                             block_interaction.update_target(&camera, &generator, &edits);
                             if let Some(action) = block_interaction.tick(dt) {
-                                if let Some((pos, block)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager) {
+                                if let Some((pos, block)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
                                     terrain_edited = true;
                                     if let Some(client) = net.as_mut() {
                                         client.send_block_change(pos, block);
@@ -419,7 +458,7 @@ fn main() {
                                         window.set_title(&format!("HeroCraft — partie ouverte au réseau local (port {})", host.port));
                                     } else {
                                         current_seed = world.seed;
-                                        switch_planet(current_seed, edits, None, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                        switch_planet(current_seed, true, edits, None, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
                                         // De retour sur ce serveur : là où le joueur l'avait quitté
                                         if let Some(spawn) = world.spawn_position {
                                             camera.player_pos = spawn;
@@ -474,6 +513,7 @@ fn main() {
                         }
                         if last_autosave.elapsed().as_secs() >= 30 {
                             save_terrain_edits(&lod_manager);
+                            ui_state.inventory.save();
                             last_autosave = Instant::now();
                         }
 
@@ -507,6 +547,7 @@ fn main() {
                                     hosted = None;
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
+                                    ui_state.inventory.save();
                                     info!("Bouton cliqué : Sauvegarde des chunks et fermeture du jeu.");
                                     write_profile_report();
                                     target.exit();
@@ -584,7 +625,7 @@ fn main() {
                                         lod_manager.set_terrain_edits(edits);
                                     } else {
                                         current_seed = solo_seed;
-                                        switch_planet(current_seed, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                        switch_planet(current_seed, false, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
                                     }
                                     block_interaction.invalidate();
                                     ui_state.multiplayer.status = NetStatus::Solo;
@@ -596,7 +637,7 @@ fn main() {
                                     save_terrain_edits(&lod_manager);
                                     current_seed = herocraft_world::random_seed();
                                     let (storage, edits) = solo_terrain(current_seed);
-                                    switch_planet(current_seed, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                    switch_planet(current_seed, false, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
                                     info!("Nouvelle planète générée ! (Graine: #{})", current_seed);
                                 }
                                 UiAction::ToggleGroundCamera => {
@@ -694,6 +735,13 @@ fn solo_save_dir(seed: u64) -> String {
     format!("saves/monde_{}", seed)
 }
 
+/// Inventaire du joueur sur une planète : celui du monde solo, ou un inventaire à part pour la
+/// planète d'un serveur rejoint
+fn inventory_file(seed: u64, online: bool) -> std::path::PathBuf {
+    let dir = if online { format!("saves/en_ligne_{}", seed) } else { solo_save_dir(seed) };
+    std::path::Path::new(&dir).join("inventaire.json")
+}
+
 /// Stockage d'un monde solo et ses blocs modifiés, repris de la sauvegarde
 fn solo_terrain(seed: u64) -> (Option<herocraft_voxel_engine::ChunkStorage>, Arc<herocraft_world::TerrainEdits>) {
     let storage = herocraft_voxel_engine::ChunkStorage::new(solo_save_dir(seed)).ok();
@@ -702,10 +750,11 @@ fn solo_terrain(seed: u64) -> (Option<herocraft_voxel_engine::ChunkStorage>, Arc
 }
 
 /// Remplace la planète affichée (nouvelle graine, partie en ligne ou retour au solo) : générateur,
-/// blocs modifiés, caches, maillages et nuages, puis pose le joueur au sol
+/// blocs modifiés, caches, maillages, nuages et inventaire, puis pose le joueur au sol
 #[allow(clippy::too_many_arguments)]
 fn switch_planet(
     seed: u64,
+    online: bool,
     edits: Arc<herocraft_world::TerrainEdits>,
     storage: Option<herocraft_voxel_engine::ChunkStorage>,
     generator: &mut herocraft_world::PlanetWorldGenerator,
@@ -726,6 +775,9 @@ fn switch_planet(
     state.sync_lod_meshes(lod_manager);
     state.update_cloud_mesh(camera.base_radius, seed);
     ui_state.set_seed(seed);
+    ui_state.set_inventory_open(false);
+    ui_state.inventory.save();
+    ui_state.inventory = inventory::Inventory::load_or_default(inventory_file(seed, online));
 }
 
 /// Touche attribuée à une action, en jeu (menu fermé) : lue par la fenêtre ou par le crochet clavier
@@ -761,6 +813,10 @@ fn game_key(
                     camera.jump_requested = true;
                 }
             }
+        }
+        Action::OpenInventory if first_press && is_ground_view => {
+            camera.release_inputs();
+            ui_state.set_inventory_open(true);
         }
         Action::ToggleView if first_press => pending_actions.push(UiAction::ToggleGroundCamera),
         Action::ResetView if first_press => pending_actions.push(UiAction::ResetCamera),

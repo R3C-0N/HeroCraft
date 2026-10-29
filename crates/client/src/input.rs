@@ -30,10 +30,11 @@ pub enum Action {
     NewPlanet,
     ToggleTectonics,
     ToggleOceanCurrents,
+    OpenInventory,
 }
 
 /// Groupes d'actions, dans l'ordre d'affichage de la page Commandes
-pub const ACTION_GROUPS: [(&str, &[Action]); 3] = [
+pub const ACTION_GROUPS: [(&str, &[Action]); 4] = [
     (
         "DÉPLACEMENT",
         &[
@@ -46,12 +47,13 @@ pub const ACTION_GROUPS: [(&str, &[Action]); 3] = [
             Action::Sprint,
         ],
     ),
+    ("OBJETS", &[Action::OpenInventory]),
     ("CAMÉRA", &[Action::ZoomModifier, Action::ToggleView, Action::ResetView]),
     ("MONDE", &[Action::NewPlanet, Action::ToggleTectonics, Action::ToggleOceanCurrents]),
 ];
 
 impl Action {
-    pub const ALL: [Action; 13] = [
+    pub const ALL: [Action; 14] = [
         Action::MoveForward,
         Action::MoveBackward,
         Action::MoveLeft,
@@ -65,6 +67,7 @@ impl Action {
         Action::NewPlanet,
         Action::ToggleTectonics,
         Action::ToggleOceanCurrents,
+        Action::OpenInventory,
     ];
 
     pub fn label(self) -> &'static str {
@@ -82,6 +85,7 @@ impl Action {
             Action::NewPlanet => "Générer une nouvelle planète",
             Action::ToggleTectonics => "Filtre plaques tectoniques",
             Action::ToggleOceanCurrents => "Filtre courants marins",
+            Action::OpenInventory => "Ouvrir l'inventaire",
         }
     }
 
@@ -101,13 +105,41 @@ impl Action {
             Action::NewPlanet => KeyCode::KeyG,
             Action::ToggleTectonics => KeyCode::KeyT,
             Action::ToggleOceanCurrents => KeyCode::KeyC,
+            Action::OpenInventory => KeyCode::KeyE,
         }
     }
 }
 
-/// Touches réservées au système, jamais attribuables
+/// Touches réservées au système et à la barre d'objets, jamais attribuables
 pub fn is_reserved_key(key: KeyCode) -> bool {
-    matches!(key, KeyCode::Escape | KeyCode::F9)
+    matches!(key, KeyCode::Escape | KeyCode::F9) || hotbar_slot_for(key).is_some()
+}
+
+/// Case de la barre d'objets choisie par une touche de 1 à 9 (rangée des chiffres ou pavé numérique)
+pub fn hotbar_slot_for(key: KeyCode) -> Option<usize> {
+    const ROW: [KeyCode; 9] = [
+        KeyCode::Digit1,
+        KeyCode::Digit2,
+        KeyCode::Digit3,
+        KeyCode::Digit4,
+        KeyCode::Digit5,
+        KeyCode::Digit6,
+        KeyCode::Digit7,
+        KeyCode::Digit8,
+        KeyCode::Digit9,
+    ];
+    const PAD: [KeyCode; 9] = [
+        KeyCode::Numpad1,
+        KeyCode::Numpad2,
+        KeyCode::Numpad3,
+        KeyCode::Numpad4,
+        KeyCode::Numpad5,
+        KeyCode::Numpad6,
+        KeyCode::Numpad7,
+        KeyCode::Numpad8,
+        KeyCode::Numpad9,
+    ];
+    ROW.iter().position(|&k| k == key).or_else(|| PAD.iter().position(|&k| k == key))
 }
 
 /// Contrôles du joueur : touches, libellés selon la disposition du clavier, souris.
@@ -322,6 +354,7 @@ mod tests {
 
         // Touches réservées refusées
         assert_eq!(controls.rebind(Action::Jump, KeyCode::Escape), None);
+        assert_eq!(controls.rebind(Action::Jump, KeyCode::Digit3), None, "les chiffres choisissent la case de la barre");
         assert_eq!(controls.key(Action::Jump), KeyCode::Space);
 
         controls.reset_bindings();
