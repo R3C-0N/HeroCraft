@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -27,11 +27,17 @@ pub enum ClientPacket {
         player_name: String,
         protocol_version: u32,
     },
-    /// Position des pieds du joueur (repère du centre de la planète) et orientation du regard
+    /// Position des pieds du joueur (repère du centre de la planète), orientation du regard et
+    /// sprint en cours (il consomme l'endurance)
     PlayerMove {
         position: Vec3,
         yaw: f32,
         pitch: f32,
+        sprinting: bool,
+    },
+    /// Le joueur vient de retomber au sol après une chute de `blocks` blocs
+    Fall {
+        blocks: f32,
     },
     /// Action de minage ou de pose d'un bloc
     InteractBlock {
@@ -103,7 +109,7 @@ pub enum ServerPacket {
     CreaturesDespawned(Vec<u64>),
     /// Positions des créatures du voisinage, envoyées à intervalle régulier
     CreatureStates(Vec<CreatureState>),
-    /// Mise à jour des statistiques RPG du joueur
+    /// Mise à jour des statistiques RPG du joueur (chaque seconde, et aussitôt après une chute)
     StatsUpdate(CharacterStats),
     /// Message de chat ou notification système
     ChatMessage {

@@ -46,6 +46,8 @@ pub struct OrbitCamera {
     pub move_left: bool,
     pub move_right: bool,
     pub is_sprinting: bool,
+    /// Endurance épuisée : le sprint au sol est impossible
+    pub sprint_exhausted: bool,
     pub jump_requested: bool,
 
     /// Vol libre (double appui sur Saut) : pas de gravité, Saut monte et Descendre descend
@@ -90,6 +92,11 @@ pub struct OrbitCamera {
 
     /// Collisions par blocs avec le terrain modifiable (sans lui : relief lisse du générateur)
     pub collider: Option<VoxelCollider>,
+
+    /// Rayon le plus haut atteint depuis que le joueur a quitté le sol (hors vol)
+    fall_peak: Option<f32>,
+    /// Hauteur en blocs de la dernière chute terminée, en attente de `take_landing`
+    landed_fall: Option<f32>,
 }
 
 impl Default for OrbitCamera {
@@ -106,6 +113,7 @@ impl Default for OrbitCamera {
             move_left: false,
             move_right: false,
             is_sprinting: false,
+            sprint_exhausted: false,
             jump_requested: false,
 
             is_flying: false,
@@ -136,6 +144,9 @@ impl Default for OrbitCamera {
             base_radius: (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32,
 
             collider: None,
+
+            fall_peak: None,
+            landed_fall: None,
         }
     }
 }
@@ -195,6 +206,7 @@ impl OrbitCamera {
         self.vertical_velocity = 0.0;
         self.is_grounded = true;
         self.is_flying = false;
+        self.cancel_fall();
         self.sync_orbit_to_ground();
         self.distance = 0.0;
         self.target_distance = 0.0;
@@ -307,9 +319,31 @@ impl OrbitCamera {
         self.is_flying = !self.is_flying;
         self.vertical_velocity = 0.0;
         self.jump_requested = false;
+        // Une chute se compte depuis l'arrêt du vol, pas depuis le saut qui l'a précédé
+        self.fall_peak = None;
         if self.is_flying {
             self.is_grounded = false;
         }
+    }
+
+    /// Oublie la chute en cours (téléportation, apparition)
+    pub fn cancel_fall(&mut self) {
+        self.fall_peak = None;
+        self.landed_fall = None;
+    }
+
+    /// Hauteur en blocs de la chute qui vient de se terminer au sol, une seule fois
+    pub fn take_landing(&mut self) -> Option<f32> {
+        self.landed_fall.take()
+    }
+
+    /// Le joueur sprinte à pied (ce qui consomme son endurance)
+    pub fn is_running(&self) -> bool {
+        self.is_sprinting
+            && !self.sprint_exhausted
+            && !self.is_flying
+            && (self.move_forward || self.move_backward || self.move_left || self.move_right)
+            && self.view_mode() != CameraViewMode::SatelliteOrbit
     }
 
     /// Synchronise la position au sol du joueur avec la vue orbitale satellite
@@ -321,6 +355,7 @@ impl OrbitCamera {
         self.vertical_velocity = 0.0;
         self.is_grounded = true;
         self.is_flying = false;
+        self.cancel_fall();
         self.update_camera_bounds(generator);
     }
 
@@ -500,7 +535,8 @@ impl OrbitCamera {
             move_dir = move_dir.normalize();
             // Vitesse adaptée à l'échelle : ~5.2 blocs/s en marche, ~11.7 blocs/s en sprint,
             // ~13 blocs/s en vol et ~29 blocs/s en vol sprinté
-            let speed = match (self.is_flying, self.is_sprinting) {
+            let sprinting = self.is_sprinting && (self.is_flying || !self.sprint_exhausted);
+            let speed = match (self.is_flying, sprinting) {
                 (false, false) => 0.20,
                 (false, true) => 0.45,
                 (true, false) => 0.50,
@@ -597,6 +633,25 @@ impl OrbitCamera {
         }
 
         self.player_pos = new_up * current_radius;
+
+        // Chute : du point le plus haut atteint en l'air jusqu'au contact du sol
+        if self.is_flying {
+            self.fall_peak = None;
+        } else if self.is_grounded {
+            if let Some(peak) = self.fall_peak.take() {
+                let block = match &self.collider {
+                    Some(collider) => collider.block_height(),
+                    None => herocraft_world::BlockGeometry::new(self.base_radius as f64).block_height as f32,
+                };
+                let blocks = (peak - current_radius) / block;
+                if blocks > 0.0 {
+                    self.landed_fall = Some(blocks);
+                }
+            }
+        } else {
+            let peak = self.fall_peak.unwrap_or(previous_radius);
+            self.fall_peak = Some(peak.max(current_radius));
+        }
 
         // En mode sol, garder l'orbite alignée pour un dézoom fluide
         if self.view_mode() != CameraViewMode::SatelliteOrbit {
@@ -839,6 +894,44 @@ mod tests {
         }
         assert!(peak > ground + 0.01, "le saut doit décoller du sol (pic {} sol {})", peak, ground);
         assert!(cam.is_grounded, "le joueur doit être retombé");
+    }
+
+    #[test]
+    fn test_fall_is_measured_from_the_peak() {
+        let (mut cam, gen) = ground_test_camera();
+        let block = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
+        // Un saut sur place ne blesse pas
+        cam.jump_requested = true;
+        for _ in 0..240 {
+            cam.update(0.016, &gen);
+        }
+        let jump = cam.take_landing().expect("le saut retombe au sol");
+        assert!(jump < herocraft_common::SAFE_FALL_BLOCKS, "saut de {jump} blocs");
+        assert_eq!(cam.take_landing(), None);
+
+        // Lâché 12 blocs au-dessus du sol : chute d'environ 12 blocs
+        let up = cam.player_pos.normalize();
+        cam.player_pos += up * 12.0 * block;
+        cam.is_grounded = false;
+        for _ in 0..240 {
+            cam.update(0.016, &gen);
+        }
+        let fall = cam.take_landing().expect("la chute se termine au sol");
+        assert!((fall - 12.0).abs() < 0.5, "chute de {fall} blocs");
+
+        // En vol, se poser n'est pas une chute
+        cam.toggle_flight();
+        cam.ascend_held = true;
+        for _ in 0..60 {
+            cam.update(0.016, &gen);
+        }
+        cam.ascend_held = false;
+        cam.descend_held = true;
+        for _ in 0..600 {
+            cam.update(0.016, &gen);
+        }
+        assert!(cam.is_grounded && !cam.is_flying);
+        assert_eq!(cam.take_landing(), None);
     }
 
     #[test]

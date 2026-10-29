@@ -16,8 +16,8 @@ use glam::Vec3;
 use herocraft_common::lan::{LanAnnounce, LanAnnouncer};
 use herocraft_common::net::{encode_frame, Connection};
 use herocraft_common::{
-    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureKind, CreatureState, PlayerClass, PlayerState, ServerPacket,
-    PROTOCOL_VERSION,
+    fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureKind, CreatureState, PlayerClass, PlayerState,
+    ServerPacket, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
 use herocraft_world::{BlockGeometry, BlockPos, CreatureWorld, PlanetDescriptor, PlanetWorldGenerator, TerrainEdits, CREATURE_RANGE_BLOCKS};
@@ -70,6 +70,8 @@ pub struct ConnectedPlayer {
     pub position: Option<Vec3>,
     pub yaw: f32,
     pub pitch: f32,
+    /// Sprint en cours, d'après le dernier `PlayerMove`
+    pub sprinting: bool,
     /// Créatures que son client affiche (celles qui lui ont été annoncées)
     known_creatures: HashSet<u64>,
     connection: ClientConnection,
@@ -198,9 +200,7 @@ impl Server {
         self.process_players();
 
         for player in self.players.values_mut() {
-            // Régénération naturelle de stamina (+10 par sec) et de mana (+2 par sec)
-            player.stats.stamina = (player.stats.stamina + 10.0 * dt).min(player.stats.max_stamina);
-            player.stats.mana = (player.stats.mana + 2.0 * dt).min(player.stats.max_mana);
+            player.stats.regenerate(dt, player.sprinting);
         }
 
         let positions: Vec<Vec3> = self.players.values().filter_map(|p| p.position).collect();
@@ -345,6 +345,7 @@ impl Server {
                 position: None,
                 yaw: 0.0,
                 pitch: 0.0,
+                sprinting: false,
                 known_creatures: HashSet::new(),
                 connection,
             },
@@ -371,7 +372,7 @@ impl Server {
     fn handle_packet(&mut self, id: u64, packet: ClientPacket) {
         match packet {
             ClientPacket::Connect { .. } => {}
-            ClientPacket::PlayerMove { position, yaw, pitch } => {
+            ClientPacket::PlayerMove { position, yaw, pitch, sprinting } => {
                 if !(position.is_finite() && yaw.is_finite() && pitch.is_finite()) {
                     return;
                 }
@@ -379,8 +380,10 @@ impl Server {
                     player.position = Some(position);
                     player.yaw = yaw;
                     player.pitch = pitch;
+                    player.sprinting = sprinting;
                 }
             }
+            ClientPacket::Fall { blocks } => self.fall(id, blocks),
             ClientPacket::InteractBlock { block, action } => self.interact_block(id, block.into(), action),
             ClientPacket::ChatMessage(text) => {
                 let text: String = text.trim().chars().filter(|c| !c.is_control()).take(MAX_CHAT_CHARS).collect();
@@ -393,6 +396,26 @@ impl Server {
                 self.broadcast(&ServerPacket::ChatMessage { sender, message: text });
             }
             ClientPacket::Disconnect => self.leave(id, "déconnexion"),
+        }
+    }
+
+    /// Dommages d'une chute ; le joueur tué revient à la vie (son client le replace au point
+    /// d'apparition). Ses nouvelles jauges lui sont envoyées aussitôt.
+    fn fall(&mut self, id: u64, blocks: f32) {
+        let damage = fall_damage(blocks);
+        let Some(player) = self.players.get_mut(&id) else { return };
+        if damage <= 0.0 {
+            return;
+        }
+        let died = player.stats.take_damage(damage);
+        if died {
+            player.stats.revive();
+        }
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+        if died {
+            let name = player.name.clone();
+            info!("{name} est mort d'une chute de {blocks:.0} blocs.");
+            self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{name} s'est écrasé au sol") });
         }
     }
 

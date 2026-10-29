@@ -16,7 +16,9 @@ use std::time::{Duration, Instant};
 use glam::Vec3;
 use herocraft_common::net::Connection;
 use herocraft_server::{Server, ServerConfig};
-use herocraft_common::{BlockId, BlockInteractionAction, ClientPacket, CreatureKind, PlanetChunkCoord, ServerPacket, PROTOCOL_VERSION};
+use herocraft_common::{
+    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureKind, PlanetChunkCoord, ServerPacket, PROTOCOL_VERSION,
+};
 use herocraft_voxel_engine::ChunkData;
 use herocraft_world::{BlockGeometry, BlockPos};
 use log::{info, warn};
@@ -286,6 +288,8 @@ pub struct RemoteCreature {
 pub enum NetEvent {
     /// Bloc changé (par un autre joueur, ou correction d'une de nos actions refusée)
     BlockChanged(BlockPos, BlockId),
+    /// Statistiques RPG du joueur, qui font foi
+    Stats(CharacterStats),
     /// Connexion perdue ou fermée par le serveur
     Disconnected(String),
 }
@@ -296,19 +300,24 @@ pub struct NetClient {
     players: HashMap<u64, RemotePlayer>,
     creatures: HashMap<u64, RemoteCreature>,
     last_move_sent: Option<Instant>,
-    last_move: Option<(Vec3, f32, f32)>,
+    last_move: Option<(Vec3, f32, f32, bool)>,
 }
 
 impl NetClient {
     /// Envoie la position du joueur (au plus 20 fois par seconde, et seulement si elle a changé)
     pub fn send_move(&mut self, camera: &OrbitCamera) {
-        let state = (camera.player_pos, camera.player_yaw, camera.player_pitch);
+        let state = (camera.player_pos, camera.player_yaw, camera.player_pitch, camera.is_running());
         if self.last_move == Some(state) || self.last_move_sent.is_some_and(|t| t.elapsed() < MOVE_SEND_INTERVAL) {
             return;
         }
         self.last_move = Some(state);
         self.last_move_sent = Some(Instant::now());
-        self.connection.send(&ClientPacket::PlayerMove { position: state.0, yaw: state.1, pitch: state.2 });
+        self.connection.send(&ClientPacket::PlayerMove { position: state.0, yaw: state.1, pitch: state.2, sprinting: state.3 });
+    }
+
+    /// Signale au serveur une chute de `blocks` blocs, qui en tire les dommages
+    pub fn send_fall(&mut self, blocks: f32) {
+        self.connection.send(&ClientPacket::Fall { blocks });
     }
 
     /// Signale au serveur un bloc changé par le joueur (déjà appliqué localement)
@@ -387,7 +396,8 @@ impl NetClient {
             }
             ServerPacket::Disconnect(reason) => return Some(NetEvent::Disconnected(reason)),
             ServerPacket::ChunkData { coord, .. } => warn!("Chunk {coord:?} reçu hors de la connexion, ignoré."),
-            ServerPacket::StatsUpdate(_) | ServerPacket::ConnectAck { .. } | ServerPacket::PlayerJoined { .. } => {}
+            ServerPacket::StatsUpdate(stats) => return Some(NetEvent::Stats(stats)),
+            ServerPacket::ConnectAck { .. } | ServerPacket::PlayerJoined { .. } => {}
         }
         None
     }
