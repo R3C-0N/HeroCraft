@@ -31,6 +31,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 | `name`, `description` | Nom affiché et description. |
 | `body` | Volume utilisé pour les déplacements, en blocs : `half_width` (demi-largeur), `half_length` (demi-longueur, de la tête à la queue) et `height`. La créature ne passe que là où ce corps tient. |
 | `walk_speed` | Vitesse de promenade, en blocs par seconde. À 0, la créature ne bouge pas. |
+| `health` | Points de vie (10 par défaut). Un coup de joueur en retire 2,5 : la bête rougit, recule, puis s'enfuit ; à 0 elle bascule sur le flanc et disparaît. |
 | `min_group`, `max_group` | Taille d'un groupe qui apparaît ensemble (1 par défaut). |
 | `spawn` | Les biomes où l'espèce apparaît d'elle-même (voir ci-dessous). Sans ce champ, elle n'apparaît jamais seule : c'est le cas des créatures des profondeurs, des mondes démoniaques et des bois féeriques, qui attendent leur monde. |
 | `model` | Le modèle 3D (voir ci-dessous). |

@@ -74,7 +74,6 @@ impl BlockInteraction {
     }
 
     /// Bloc visé à la dernière mise à jour
-    #[allow(dead_code)]
     pub fn target(&self) -> Option<&RayHit> {
         self.target.as_ref()
     }
@@ -157,6 +156,16 @@ impl BlockInteraction {
         }
         self.mining = Some(mining);
         None
+    }
+
+    /// Le clic gauche est tenu enfoncé (casse en cours, ou coup porté à une bête)
+    pub fn is_breaking_held(&self) -> bool {
+        self.held == Some(BlockAction::Break)
+    }
+
+    /// Oublie l'avancement de la casse (le clic gauche frappe autre chose que le bloc)
+    pub fn pause_mining(&mut self) {
+        self.mining = None;
     }
 
     /// Coup porté depuis le dernier appel au bloc en train de casser : son contenu, pour le bruit

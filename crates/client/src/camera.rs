@@ -1214,6 +1214,28 @@ mod tests {
     }
 
     #[test]
+    fn test_fall_accelerates_then_reaches_terminal_speed() {
+        let (mut cam, gen) = ground_test_camera();
+        let block = cam.block_height();
+        let up = cam.player_pos.normalize();
+        cam.player_pos += up * 200.0 * block;
+        cam.is_grounded = false;
+        let mut speeds = Vec::new();
+        for _ in 0..150 {
+            cam.update(0.016, &gen);
+            speeds.push(-cam.vertical_velocity / block);
+        }
+        // La chute part de l'arrêt et accélère de `GRAVITY` blocs/s chaque seconde…
+        assert!(speeds[0] < 1.0, "départ à {} blocs/s", speeds[0]);
+        let gained = (speeds[30] - speeds[0]) / (30.0 * 0.016);
+        assert!((gained - GRAVITY).abs() < 0.5, "accélération de {gained} blocs/s²");
+        assert!(speeds.windows(2).take(90).all(|w| w[1] > w[0]), "la vitesse croît tant que la limite n'est pas atteinte");
+        // …jusqu'à sa vitesse limite, qu'elle ne dépasse jamais
+        assert!(speeds.iter().all(|&v| v <= TERMINAL_FALL_SPEED + 1e-3));
+        assert!((speeds[149] - TERMINAL_FALL_SPEED).abs() < 1e-3, "vitesse finale {} blocs/s", speeds[149]);
+    }
+
+    #[test]
     fn test_hurt_shakes_then_death_lays_the_view_down() {
         let (mut cam, gen) = ground_test_camera();
         assert_eq!(cam.view_roll(), 0.0);

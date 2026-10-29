@@ -158,6 +158,10 @@ fn main() {
     let mut creatures_seed = current_seed;
     let mut creature_animator = creatures::CreatureAnimator::default();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
+    // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
+    // prochain coup qu'on peut leur porter
+    let mut creature_views: Vec<creatures::CreatureView> = Vec::new();
+    let mut attack_cooldown = 0.0_f32;
 
     // Initialisation du moteur WGPU
     let mut state = pollster::block_on(State::new(window.clone(), &ui_state));
@@ -249,7 +253,8 @@ fn main() {
                     // Souris capturée, les clics restent libres pour l'interaction avec les blocs.
                     WindowEvent::MouseInput { state: btn_state, button, .. } => {
                         if cursor_captured {
-                            // Appliqué et remaillé sur-le-champ : le bloc change dans la frame qui suit le clic
+                            // Pose appliquée et remaillée sur-le-champ : le bloc change dans la frame qui
+                            // suit le clic. Le clic gauche (casse, coup à une bête) avance à chaque frame.
                             let pressed = *btn_state == ElementState::Pressed;
                             if let Some(action) = block_interaction.on_mouse_button(*button, pressed) {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
@@ -450,10 +455,20 @@ fn main() {
 
                         // Bloc visé par le réticule (souris capturée seulement) et bouton tenu enfoncé
                         let mut terrain_edited = false;
+                        attack_cooldown = (attack_cooldown - dt).max(0.0);
+                        let mut aimed = None;
                         if cursor_captured {
                             let edits = lod_manager.terrain_edits().clone();
                             block_interaction.update_target(&camera, &generator, &edits);
-                            let action = block_interaction.tick(dt);
+                            aimed = aimed_creature(&camera, &block_interaction, &creature_views, &creature_registry);
+                            // Une bête devant le bloc visé : c'est elle qu'on frappe, au rythme des
+                            // coups, et le bloc derrière elle ne se fissure pas
+                            let striking = aimed.filter(|_| block_interaction.is_breaking_held());
+                            if let Some(id) = striking {
+                                block_interaction.pause_mining();
+                                hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut audio, &ui_state.audio_settings);
+                            }
+                            let action = if striking.is_some() { None } else { block_interaction.tick(dt) };
                             if let Some(block) = block_interaction.take_hit() {
                                 audio.block_hit(audio::synth::Material::of(block), &ui_state.audio_settings);
                             }
@@ -508,7 +523,7 @@ fn main() {
                         // en pause avec le menu. Dessinées d'après le modèle de leur espèce.
                         {
                             herocraft_common::prof_scope!("creatures");
-                            let views: Vec<creatures::CreatureView> = match net.as_ref() {
+                            creature_views = match net.as_ref() {
                                 Some(client) => client.creature_views(&creature_registry),
                                 None => {
                                     if creatures_seed != current_seed {
@@ -521,14 +536,14 @@ fn main() {
                                     solo_creatures
                                         .creatures()
                                         .iter()
-                                        .map(|c| creatures::CreatureView { id: c.id, species: Some(c.species), feet: c.position, yaw: c.yaw })
+                                        .map(|c| creatures::CreatureView::new(Some(c.species), &c.state()))
                                         .collect()
                                 }
                             };
                             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
                             let anim_dt = if ui_state.is_settings_open { 0.0 } else { dt };
-                            creature_animator.update(&views, &creature_registry, &creature_models, anim_dt, block);
-                            let frame = creatures::build_frame(&views, &creature_registry, &creature_models, &creature_animator, block);
+                            creature_animator.update(&creature_views, &creature_registry, &creature_models, anim_dt, block);
+                            let frame = creatures::build_frame(&creature_views, &creature_registry, &creature_models, &creature_animator, block);
                             state.set_creature_frame(&frame);
                         }
 
@@ -613,8 +628,9 @@ fn main() {
                         }
                         {
                             herocraft_common::prof_scope!("blocs::contour");
-                            state.set_block_outline(block_interaction.outline(&camera));
-                            state.set_block_cracks(block_interaction.cracks(&camera));
+                            // Une bête visée cache le contour et les fissures du bloc derrière elle
+                            state.set_block_outline(block_interaction.outline(&camera).filter(|_| aimed.is_none()));
+                            state.set_block_cracks(block_interaction.cracks(&camera).filter(|_| aimed.is_none()));
                         }
                         if last_autosave.elapsed().as_secs() >= 30 {
                             save_terrain_edits(&lod_manager);
@@ -1050,6 +1066,42 @@ fn set_cursor_captured(window: &Window, captured: bool) {
         let _ = window.set_cursor_position(PhysicalPosition::new(size.width as f64 / 2.0, size.height as f64 / 2.0));
         window.set_cursor_visible(true);
     }
+}
+
+/// Délai entre deux coups portés à une créature, en secondes
+const ATTACK_COOLDOWN: f32 = 0.4;
+
+/// Créature vivante sous le réticule, à portée et devant le bloc visé
+fn aimed_creature(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<u64> {
+    let (eye, dir, arm) = camera.view_ray()?;
+    let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+    let reach = interaction.target().map_or(arm + block_interaction::REACH_BLOCKS as f32 * block, |hit| hit.distance as f32);
+    creatures::aimed_creature(views, registry, eye, dir, reach, block).map(|(id, _)| id)
+}
+
+/// Frappe la créature `id` (la simulation solo, ou le serveur en ligne, en tire dégâts, recul et
+/// fuite), sauf si le coup précédent est trop récent
+fn hit_creature(
+    id: u64,
+    cooldown: &mut f32,
+    camera: &OrbitCamera,
+    net: Option<&mut NetClient>,
+    solo: &mut herocraft_world::CreatureWorld,
+    audio: &mut audio::Audio,
+    settings: &audio::AudioSettings,
+) {
+    if *cooldown > 0.0 {
+        return;
+    }
+    *cooldown = ATTACK_COOLDOWN;
+    match net {
+        Some(client) => client.send_hit_creature(id),
+        None => {
+            solo.hit(id, camera.player_pos);
+        }
+    }
+    // Coup sourd
+    audio.block_placed(audio::synth::Material::Dirt, 0.0, settings);
 }
 
 /// Le bloc cassé tombe au sol (s'il se ramasse : ni eau, ni lave)

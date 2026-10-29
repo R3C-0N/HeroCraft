@@ -5,13 +5,16 @@
 //! partie solo du client. Elle lit le terrain bloc par bloc (générateur + modifications) : une
 //! créature marche sur les blocs posés, tombe dans les trous creusés, contourne les murs et l'eau.
 //! Corps, allure et biomes de chaque espèce viennent de sa description (`CreatureRegistry`).
+//!
+//! Une créature se tourne peu à peu vers son nouveau cap, saute pour monter sur un bloc, et, frappée
+//! par un joueur, rougit, recule, puis s'enfuit ; sans vie, elle bascule sur le flanc et disparaît.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
-use herocraft_common::{tangent_frame, BlockId, CreatureRegistry, CreatureSpecies, CreatureState, PlanetFace};
+use herocraft_common::{tangent_frame, BlockId, CreatureRegistry, CreatureSpecies, CreatureState, PlanetFace, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, PLAYER_HIT_DAMAGE};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -32,8 +35,22 @@ const SPAWN_MAX_BLOCKS: f32 = 56.0;
 const SPAWN_INTERVAL: f32 = 1.0;
 /// Chute, en blocs par seconde²
 const GRAVITY: f32 = 20.0;
-/// Hauteur de marche franchie d'un coup, en blocs
+/// Hauteur de marche franchie d'un saut, en blocs
 const STEP_BLOCKS: f32 = 1.0;
+/// Élan d'un saut, en blocs par seconde : de quoi monter un peu plus haut qu'une marche
+const JUMP_SPEED: f32 = 7.2;
+/// Vitesse à laquelle une créature se tourne, en radians par seconde
+const TURN_SPEED: f32 = 4.0;
+/// Écart au cap visé sous lequel elle le considère atteint, en radians
+const FACING_TOLERANCE: f32 = 0.1;
+/// Recul d'un coup : vitesse dans le plan, en blocs par seconde, et petit bond
+const KNOCKBACK_SPEED: f32 = 6.0;
+const KNOCKBACK_HOP: f32 = 4.5;
+/// Freinage du recul, par seconde
+const KNOCKBACK_DAMPING: f32 = 5.0;
+/// Fuite après un coup : durée, en secondes, et allure par rapport à la marche
+const PANIC_TIME: f32 = 4.0;
+const PANIC_SPEED: f32 = 1.8;
 /// Une créature ne descend pas volontairement plus bas que ça, en blocs
 const MAX_DROP_BLOCKS: f32 = 3.0;
 /// Pas de simulation le plus long, en secondes
@@ -49,16 +66,37 @@ pub struct Creature {
     pub position: Vec3,
     /// Cap dans le plan tangent (0 = nord, π/2 = est)
     pub yaw: f32,
-    /// Vitesse de chute, en blocs par seconde
-    fall_speed: f32,
+    /// Cap vers lequel elle se tourne
+    target_yaw: f32,
+    /// Vitesse verticale, en blocs par seconde (positive vers le haut)
+    vertical_speed: f32,
+    /// Recul d'un coup reçu, dans le plan tangent, en blocs par seconde
+    push: Vec3,
     walking: bool,
     /// Temps restant avant de changer d'humeur (s'arrêter, repartir), en secondes
     timer: f32,
+    health: f32,
+    /// Temps restant de la teinte rouge d'un coup, en secondes
+    hurt: f32,
+    /// Temps restant de fuite après un coup, en secondes
+    panic: f32,
+    /// Temps écoulé depuis sa mort (`None` : vivante), en secondes
+    dead_for: Option<f32>,
 }
 
 impl Creature {
     pub fn state(&self) -> CreatureState {
-        CreatureState { creature_id: self.id, position: self.position, yaw: self.yaw }
+        CreatureState {
+            creature_id: self.id,
+            position: self.position,
+            yaw: self.yaw,
+            hurt: (self.hurt / CREATURE_HURT_TIME).clamp(0.0, 1.0),
+            death: self.dead_for.map_or(0.0, |t| (t / CREATURE_DEATH_TIME).clamp(1e-3, 1.0)),
+        }
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.dead_for.is_none()
     }
 }
 
@@ -122,8 +160,48 @@ impl CreatureWorld {
         self.next_id += 1;
         let yaw = self.rng.gen_range(0.0..TAU);
         let timer = self.rng.gen_range(0.5..3.0);
-        self.creatures.push(Creature { id, species, position: feet, yaw, fall_speed: 0.0, walking: false, timer });
+        let health = self.registry.get(species).map_or(1.0, |s| s.health);
+        self.creatures.push(Creature {
+            id,
+            species,
+            position: feet,
+            yaw,
+            target_yaw: yaw,
+            vertical_speed: 0.0,
+            push: Vec3::ZERO,
+            walking: false,
+            timer,
+            health,
+            hurt: 0.0,
+            panic: 0.0,
+            dead_for: None,
+        });
         id
+    }
+
+    /// Un joueur dont la tête est en `from` frappe la créature `id` : elle perd de la vie, est
+    /// repoussée à l'opposé, puis s'enfuit. Renvoie faux si elle n'existe pas ou est déjà morte.
+    pub fn hit(&mut self, id: u64, from: Vec3) -> bool {
+        let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) else { return false };
+        let up = c.position.normalize_or_zero();
+        let (east, north) = tangent_frame(up);
+        let away = c.position - from;
+        let away = (away - up * away.dot(up)).normalize_or_zero();
+        // Frappée d'aplomb : elle recule droit devant elle
+        let away = if away == Vec3::ZERO { north * c.yaw.cos() + east * c.yaw.sin() } else { away };
+        c.push = away * KNOCKBACK_SPEED;
+        c.vertical_speed = c.vertical_speed.max(KNOCKBACK_HOP);
+        c.hurt = CREATURE_HURT_TIME;
+        c.health -= PLAYER_HIT_DAMAGE;
+        if c.health <= 0.0 {
+            c.dead_for = Some(0.0);
+            c.walking = false;
+        } else {
+            c.panic = PANIC_TIME;
+            c.walking = true;
+            c.target_yaw = away.dot(east).atan2(away.dot(north)).rem_euclid(TAU);
+        }
+        true
     }
 
     /// Avance la simulation de `dt` secondes autour des joueurs dont les pieds sont `players`
@@ -131,7 +209,7 @@ impl CreatureWorld {
         // Une image très longue (fenêtre en arrière-plan) ne fait pas traverser les murs
         let dt = dt.min(MAX_STEP);
         let range = CREATURE_RANGE_BLOCKS * self.geometry.block_height as f32;
-        self.creatures.retain(|c| players.iter().any(|p| p.distance(c.position) <= range));
+        self.creatures.retain(|c| c.dead_for.is_none_or(|t| t < CREATURE_DEATH_TIME) && players.iter().any(|p| p.distance(c.position) <= range));
 
         let columns = std::mem::take(&mut self.columns);
         let mut query = TerrainQuery::with_columns(generator, edits, columns);
@@ -252,14 +330,17 @@ impl Walker<'_, '_> {
         Some((BlockPos { y: top, ..column }, top as f32))
     }
 
-    /// Le corps tient debout sur ce sol : rien de solide sur sa hauteur, et le sol n'est pas liquide
+    /// Le corps tient debout sur ce sol : il y a la place, et le sol n'est pas liquide
     fn can_stand(&mut self, ground: BlockPos, height: f32) -> bool {
         let below = self.query.block(BlockPos { y: ground.y - 1, ..ground });
-        if below == BlockId::WATER || below == BlockId::LAVA {
-            return false;
-        }
-        (0..height.ceil() as i32).all(|dy| {
-            let pos = BlockPos { y: ground.y + dy, ..ground };
+        below != BlockId::WATER && below != BlockId::LAVA && self.fits(ground, ground.y as f32, height)
+    }
+
+    /// Rien de solide dans la colonne `column` entre les altitudes `altitude` et `altitude + height`
+    fn fits(&mut self, column: BlockPos, altitude: f32, height: f32) -> bool {
+        let (bottom, top) = ((altitude + 1e-3).floor() as i32, (altitude + height - 1e-3).floor() as i32);
+        (bottom..=top).all(|y| {
+            let pos = BlockPos { y, ..column };
             !pos.is_valid() || !self.query.block(pos).is_solid()
         })
     }
@@ -269,61 +350,119 @@ impl Walker<'_, '_> {
         let base_radius = self.geometry.base_radius as f32;
         let radius_of = move |altitude: f32| base_radius + altitude * block;
 
-        // Humeur : marcher un moment dans une direction, puis s'arrêter brouter
-        c.timer -= dt;
-        if c.timer <= 0.0 {
-            if c.walking || rng.gen_bool(0.4) {
+        c.hurt = (c.hurt - dt).max(0.0);
+        if let Some(t) = c.dead_for.as_mut() {
+            *t += dt;
+        } else if c.panic > 0.0 {
+            // Fuite : elle court droit devant, jusqu'à se calmer
+            c.panic -= dt;
+            if c.panic <= 0.0 {
                 c.walking = false;
                 c.timer = rng.gen_range(2.0..6.0);
-                if rng.gen_bool(0.5) {
-                    c.yaw += rng.gen_range(-1.0..1.0);
-                }
-            } else {
-                c.walking = true;
-                c.timer = rng.gen_range(1.0..4.0);
-                c.yaw += rng.gen_range(-PI / 2.0..PI / 2.0);
             }
-            c.yaw = c.yaw.rem_euclid(TAU);
+        } else {
+            // Humeur : marcher un moment dans une direction, puis s'arrêter brouter
+            c.timer -= dt;
+            if c.timer <= 0.0 {
+                if c.walking || rng.gen_bool(0.4) {
+                    c.walking = false;
+                    c.timer = rng.gen_range(2.0..6.0);
+                    if rng.gen_bool(0.5) {
+                        c.target_yaw = c.yaw + rng.gen_range(-1.0..1.0);
+                    }
+                } else {
+                    c.walking = true;
+                    c.timer = rng.gen_range(1.0..4.0);
+                    c.target_yaw = c.yaw + rng.gen_range(-PI / 2.0..PI / 2.0);
+                }
+                c.target_yaw = c.target_yaw.rem_euclid(TAU);
+            }
         }
 
-        // Pesanteur : posée sur le sol, poussée dessus si un bloc l'a recouverte, sinon elle tombe
+        // Elle se tourne peu à peu vers le cap visé, par le plus court
+        let turn = angle_between(c.yaw, c.target_yaw);
+        let max_turn = TURN_SPEED * dt;
+        c.yaw = (c.yaw + turn.clamp(-max_turn, max_turn)).rem_euclid(TAU);
+        let turn = angle_between(c.yaw, c.target_yaw);
+
+        // Pesanteur : posée sur le sol, poussée dessus si un bloc l'a recouverte, sinon elle saute ou tombe
         let up = c.position.normalize_or_zero();
         let mut altitude = self.altitude(c.position);
-        let Some((_, ground)) = self.ground(c.position, altitude) else { return };
-        if ground >= altitude {
+        let Some((column, ground)) = self.ground(c.position, altitude) else { return };
+        if altitude <= ground + 1e-4 && c.vertical_speed <= 0.0 {
             altitude = ground;
-            c.fall_speed = 0.0;
+            c.vertical_speed = 0.0;
         } else {
-            c.fall_speed += GRAVITY * dt;
-            altitude = (altitude - c.fall_speed * dt).max(ground);
+            c.vertical_speed -= GRAVITY * dt;
+            let next = altitude + c.vertical_speed * dt;
+            if c.vertical_speed > 0.0 && !self.fits(column, next, species.body.height) {
+                // La tête cogne un plafond
+                c.vertical_speed = 0.0;
+            } else {
+                altitude = next.max(ground);
+            }
             if altitude <= ground {
-                c.fall_speed = 0.0;
+                c.vertical_speed = 0.0;
             }
         }
         c.position = up * radius_of(altitude);
-        if !c.walking || c.fall_speed > 0.0 {
-            return;
-        }
+        let on_ground = altitude <= ground + 1e-4 && c.vertical_speed <= 0.0;
 
-        // Marche : la colonne devant le museau décide si la voie est libre
+        // Déplacement dans le plan : recul d'un coup, et marche (ralentie le temps de se tourner)
         let (east, north) = tangent_frame(up);
-        let heading = north * c.yaw.cos() + east * c.yaw.sin();
-        let distance = species.walk_speed * dt * block;
-        let probe = c.position + heading * (distance + species.body.half_length * block);
-        let blocked = match self.ground(probe, altitude) {
-            Some((column, ahead)) => ahead < altitude - MAX_DROP_BLOCKS || !self.can_stand(column, species.body.height),
-            None => true,
-        };
-        if blocked {
-            // Demi-tour, un peu de travers
-            c.yaw = (c.yaw + PI + rng.gen_range(-0.8..0.8)).rem_euclid(TAU);
+        c.push = (c.push - up * c.push.dot(up)) * (-KNOCKBACK_DAMPING * dt).exp();
+        if c.push.length_squared() < 1e-4 {
+            c.push = Vec3::ZERO;
+        }
+        let mut velocity = c.push;
+        let speed = species.walk_speed * if c.panic > 0.0 { PANIC_SPEED } else { 1.0 } * turn.cos().max(0.0);
+        if c.walking && c.dead_for.is_none() && speed > 0.0 {
+            // La colonne devant le museau décide si la voie est libre
+            let heading = north * c.yaw.cos() + east * c.yaw.sin();
+            let probe = c.position + heading * (speed * dt + species.body.half_length) * block;
+            let ahead = match self.ground(probe, altitude) {
+                Some((column, ahead)) if ahead >= altitude - MAX_DROP_BLOCKS && self.can_stand(column, species.body.height) => Some(ahead),
+                _ => None,
+            };
+            match ahead {
+                Some(ahead) => {
+                    // Une marche devant : elle saute dessus
+                    if on_ground && ahead > altitude + 1e-3 {
+                        c.vertical_speed = JUMP_SPEED;
+                    }
+                    velocity += heading * speed;
+                }
+                // Voie barrée, une fois tournée vers son cap : demi-tour, un peu de travers
+                None if turn.abs() < FACING_TOLERANCE => {
+                    c.target_yaw = (c.yaw + PI + rng.gen_range(-0.8..0.8)).rem_euclid(TAU);
+                }
+                None => {}
+            }
+        }
+        if velocity == Vec3::ZERO {
             return;
         }
-        let dir = (c.position + heading * distance).normalize_or_zero();
-        // Une marche devant : elle saute dessus
-        let ahead = self.ground(dir * radius_of(altitude), altitude).map_or(altitude, |(_, g)| g);
-        c.position = dir * radius_of(altitude.max(ahead));
+        // Elle n'entre dans une colonne que si son corps y passe à son altitude : une marche se
+        // franchit en sautant par-dessus
+        let target = (c.position + velocity * dt * block).normalize_or_zero() * radius_of(altitude);
+        let free = match self.ground(target, altitude) {
+            Some((column, ground)) => {
+                let below = self.query.block(BlockPos { y: column.y - 1, ..column });
+                ground <= altitude + 1e-3 && below != BlockId::WATER && below != BlockId::LAVA && self.fits(column, altitude, species.body.height)
+            }
+            None => false,
+        };
+        if free {
+            c.position = target;
+        } else {
+            c.push = Vec3::ZERO;
+        }
     }
+}
+
+/// Angle signé pour aller du cap `from` au cap `to` par le plus court, dans [-π, π]
+fn angle_between(from: f32, to: f32) -> f32 {
+    (to - from + PI).rem_euclid(TAU) - PI
 }
 
 #[cfg(test)]
@@ -441,5 +580,114 @@ mod tests {
         }
         let alt = altitude(&geometry, world.creatures()[0].position);
         assert!((alt - (ground.y - 1) as f32).abs() < 1e-2, "altitude {alt} au lieu de {}", ground.y - 1);
+    }
+
+    /// Cap qui mène du centre de la colonne `from` vers celui de `to`
+    fn yaw_towards(geometry: &BlockGeometry, from: Vec3, to: BlockPos) -> f32 {
+        let target = geometry.corner(to.face, to.x as f64 + 0.5, to.y as f64, to.z as f64 + 0.5).as_vec3();
+        let up = from.normalize();
+        let (east, north) = tangent_frame(up);
+        let d = target - from;
+        d.dot(east).atan2(d.dot(north)).rem_euclid(TAU)
+    }
+
+    #[test]
+    fn a_creature_turns_progressively() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 5, registry());
+        let cow = world.registry().find("vache").unwrap();
+        world.spawn(cow, feet);
+        let c = &mut world.creatures[0];
+        (c.yaw, c.target_yaw, c.timer) = (0.2, 0.2 + PI * 0.9, 100.0);
+
+        let mut yaws = vec![0.2];
+        for _ in 0..30 {
+            world.tick(0.05, &generator, &edits, &[feet]);
+            yaws.push(world.creatures()[0].yaw);
+        }
+        for pair in yaws.windows(2) {
+            let turn = angle_between(pair[0], pair[1]);
+            assert!((0.0..=TURN_SPEED * 0.05 + 1e-4).contains(&turn), "demi-tour d'un coup : {turn} rad en une image");
+        }
+        assert!(angle_between(*yaws.last().unwrap(), 0.2 + PI * 0.9).abs() < 1e-3, "cap jamais atteint");
+    }
+
+    #[test]
+    fn a_creature_jumps_onto_a_step() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let (ground, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 9, registry());
+        let boar = world.registry().find("sanglier").unwrap();
+        world.spawn(boar, feet);
+        // Une marche d'un bloc devant, et un mur de deux blocs derrière elle pour qu'il s'y arrête
+        let step = BlockPos { x: ground.x + 1, ..ground };
+        assert!(edits.set_block(&generator, step, BlockId::STONE));
+        for dz in -2..=2 {
+            for dy in 0..3 {
+                edits.set_block(&generator, BlockPos { x: ground.x + 2, y: ground.y + dy, z: ground.z + dz, ..ground }, BlockId::STONE);
+            }
+        }
+        let c = &mut world.creatures[0];
+        c.yaw = yaw_towards(&geometry, feet, step);
+        (c.target_yaw, c.walking, c.timer) = (c.yaw, true, 100.0);
+
+        let base = ground.y as f32;
+        let (mut highest, mut midair, mut on_step) = (base, 0, false);
+        for _ in 0..80 {
+            world.tick(0.05, &generator, &edits, &[feet]);
+            let position = world.creatures()[0].position;
+            let alt = altitude(&geometry, position);
+            highest = highest.max(alt);
+            if alt > base + 0.05 && (alt - base - 1.0).abs() > 0.05 {
+                midair += 1;
+            }
+            let column = geometry.block_at_point(position.as_dvec3()).unwrap();
+            on_step |= (column.x, column.z) == (step.x, step.z) && (alt - (base + 1.0)).abs() < 1e-2;
+        }
+        assert!(on_step, "il n'est pas monté sur la marche");
+        assert!(highest > base + 1.05, "pas de saut au-dessus de la marche ({highest})");
+        assert!(midair >= 3, "montée d'un coup, sans saut ({midair} images en l'air)");
+    }
+
+    #[test]
+    fn a_hit_hurts_pushes_and_finally_kills() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 11, registry());
+        let rabbit = world.registry().find("lapin").unwrap();
+        let id = world.spawn(rabbit, feet);
+        assert!(!world.hit(id + 1, feet), "pas de créature à toucher");
+
+        // Frappée depuis l'ouest : elle rougit et part vers l'est
+        let (east, _) = tangent_frame(feet.normalize());
+        let attacker = feet - east * 2.0 * geometry.block_height as f32;
+        assert!(world.hit(id, attacker));
+        assert_eq!(world.creatures()[0].state().hurt, 1.0);
+        for _ in 0..10 {
+            world.tick(0.05, &generator, &edits, &[feet]);
+        }
+        let c = &world.creatures()[0];
+        let moved = (c.position - feet).dot(east) / geometry.block_height as f32;
+        assert!(moved > 0.5, "recul de {moved} bloc seulement");
+        assert!(c.state().hurt < 1.0 && c.state().death == 0.0);
+
+        // Assez de coups : elle bascule, puis disparaît
+        let health = world.registry().get(rabbit).unwrap().health;
+        let hits = (health / PLAYER_HIT_DAMAGE).ceil() as usize;
+        for _ in 1..hits {
+            assert!(world.hit(id, attacker));
+        }
+        assert!(world.creatures()[0].state().death > 0.0);
+        assert!(!world.hit(id, attacker), "une bête morte ne se frappe plus");
+        for _ in 0..((CREATURE_DEATH_TIME / 0.05) as usize + 2) {
+            world.tick(0.05, &generator, &edits, &[feet]);
+        }
+        assert!(world.creatures().is_empty());
     }
 }

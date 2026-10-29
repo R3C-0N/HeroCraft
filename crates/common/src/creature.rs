@@ -14,6 +14,12 @@ use serde::{Deserialize, Serialize};
 
 /// Dossier des descriptions d'espèces, depuis le dossier de lancement
 pub const CREATURES_DIR: &str = "assets/creatures";
+/// Points de vie retirés à une créature par un coup de joueur
+pub const PLAYER_HIT_DAMAGE: f32 = 2.5;
+/// Durée de la teinte rouge d'une créature frappée, en secondes
+pub const CREATURE_HURT_TIME: f32 = 0.4;
+/// Durée de la chute sur le flanc d'une créature morte, avant qu'elle disparaisse, en secondes
+pub const CREATURE_DEATH_TIME: f32 = 0.8;
 
 /// Une espèce de créature, telle que décrite par son fichier
 #[derive(Debug, Clone, Deserialize)]
@@ -30,6 +36,9 @@ pub struct CreatureSpecies {
     pub body: CreatureBody,
     /// Vitesse de marche, en blocs par seconde
     pub walk_speed: f32,
+    /// Points de vie : chaque coup d'un joueur en retire `PLAYER_HIT_DAMAGE`
+    #[serde(default = "default_health")]
+    pub health: f32,
     /// Taille d'un groupe qui apparaît ensemble : au moins `min_group`, au plus `max_group`
     #[serde(default = "one")]
     pub min_group: u32,
@@ -84,6 +93,10 @@ pub struct CreatureModel {
 
 fn walk_animation() -> String {
     "repos".into()
+}
+
+fn default_health() -> f32 {
+    10.0
 }
 
 fn one() -> u32 {
@@ -184,8 +197,8 @@ impl CreatureSpecies {
         let mut species: CreatureSpecies = serde_json::from_str(json).map_err(|e| e.to_string())?;
         species.id = id.to_string();
         let body = species.body;
-        if !(body.half_width > 0.0 && body.half_length > 0.0 && body.height > 0.0 && species.walk_speed >= 0.0) {
-            return Err("corps ou vitesse invalides (tailles positives attendues)".into());
+        if !(body.half_width > 0.0 && body.half_length > 0.0 && body.height > 0.0 && species.walk_speed >= 0.0 && species.health > 0.0) {
+            return Err("corps, vitesse ou vie invalides (valeurs positives attendues)".into());
         }
         if species.min_group == 0 || species.max_group < species.min_group {
             return Err("taille de groupe invalide (1 ≤ min_group ≤ max_group)".into());
@@ -205,6 +218,10 @@ pub struct CreatureState {
     pub position: Vec3,
     /// Cap dans le plan tangent (0 = nord, π/2 = est, comme `tangent_frame`)
     pub yaw: f32,
+    /// Coup reçu à l'instant : 1 juste après, 0 une fois passé (la bête rougit)
+    pub hurt: f32,
+    /// Mort : 0 vivante, puis de 0 à 1 pendant qu'elle bascule sur le flanc avant de disparaître
+    pub death: f32,
 }
 
 #[cfg(test)]
@@ -234,6 +251,7 @@ mod tests {
         assert_eq!((cube.min_group, cube.max_group), (1, 1));
         assert_eq!(cube.spawn[0].chance, 1.0);
         assert_eq!(cube.model.walk_animation, "repos");
+        assert_eq!(cube.health, 10.0);
 
         let typo = ok.replace("walk_speed", "walk_sped");
         assert!(CreatureSpecies::parse("cube", &typo).unwrap_err().contains("walk_sped"));
