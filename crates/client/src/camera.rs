@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use glam::{DVec3, Mat4, Vec3};
+pub use herocraft_common::tangent_frame;
 use herocraft_world::generator::PlanetWorldGenerator;
 use herocraft_world::TerrainEdits;
 
@@ -659,17 +660,6 @@ impl OrbitCamera {
         let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
         let head = self.player_pos + up * 0.065 * scale;
         Some((self.effective_eye, look_dir, (self.effective_eye - head).length()))
-    }
-}
-
-/// Axes est et nord du plan tangent à la sphère sous la direction `up`
-pub fn tangent_frame(up: Vec3) -> (Vec3, Vec3) {
-    if up.y.abs() < 0.999 {
-        let north = (Vec3::Y - up * up.y).normalize();
-        (north.cross(up).normalize(), north)
-    } else {
-        let sign = if up.y >= 0.0 { 1.0 } else { -1.0 };
-        (Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 0.0, -sign))
     }
 }
 

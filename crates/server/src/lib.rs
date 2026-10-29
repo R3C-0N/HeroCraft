@@ -1,10 +1,11 @@
 //! Serveur de jeu dédié : il écoute les connexions TCP, fait autorité sur les blocs de la planète
-//! (validés, appliqués, enregistrés puis diffusés à tous) et relaie les positions des joueurs.
+//! (validés, appliqués, enregistrés puis diffusés à tous) et sur les créatures (qu'il fait vivre et
+//! montre à chaque joueur proche), et relaie les positions des joueurs.
 //!
 //! Le terrain est procédural : le serveur n'envoie que la graine et les chunks modifiés, chaque
 //! client génère le reste lui-même.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
@@ -15,16 +16,20 @@ use glam::Vec3;
 use herocraft_common::lan::{LanAnnounce, LanAnnouncer};
 use herocraft_common::net::{encode_frame, Connection};
 use herocraft_common::{
-    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, PlayerClass, PlayerState, ServerPacket, PROTOCOL_VERSION,
+    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureKind, CreatureState, PlayerClass, PlayerState, ServerPacket,
+    PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
-use herocraft_world::{BlockGeometry, BlockPos, PlanetDescriptor, PlanetWorldGenerator, TerrainEdits};
+use herocraft_world::{BlockGeometry, BlockPos, CreatureWorld, PlanetDescriptor, PlanetWorldGenerator, TerrainEdits, CREATURE_RANGE_BLOCKS};
 use log::{info, warn};
 
 /// Ticks de simulation par seconde
 pub const TICK_RATE: u32 = 60;
 /// Les positions des joueurs sont diffusées tous les N ticks (30 fois par seconde)
 const STATE_BROADCAST_TICKS: u64 = 2;
+/// Les positions des créatures sont diffusées tous les N ticks (10 fois par seconde : elles vont
+/// au pas, le client interpole entre deux positions)
+const CREATURE_BROADCAST_TICKS: u64 = 6;
 /// Les statistiques RPG sont envoyées tous les N ticks (une fois par seconde)
 const STATS_TICKS: u64 = TICK_RATE as u64;
 /// Les blocs modifiés sont enregistrés tous les N ticks (toutes les 5 secondes)
@@ -65,6 +70,8 @@ pub struct ConnectedPlayer {
     pub position: Option<Vec3>,
     pub yaw: f32,
     pub pitch: f32,
+    /// Créatures que son client affiche (celles qui lui ont été annoncées)
+    known_creatures: HashSet<u64>,
     connection: ClientConnection,
 }
 
@@ -80,6 +87,7 @@ pub struct Server {
     generator: PlanetWorldGenerator,
     geometry: BlockGeometry,
     edits: TerrainEdits,
+    creatures: CreatureWorld,
     pending: Vec<PendingClient>,
     players: HashMap<u64, ConnectedPlayer>,
     /// Dernière position connue de chaque joueur passé sur le serveur (par nom), pour le replacer
@@ -105,6 +113,8 @@ impl Server {
             None => None,
         };
         let edits = TerrainEdits::new(storage);
+        let instance = random_instance();
+        let creatures = CreatureWorld::new(generator.base_radius(), config.seed ^ instance);
 
         Ok(Self {
             listener,
@@ -112,13 +122,14 @@ impl Server {
             generator,
             geometry,
             edits,
+            creatures,
             pending: Vec::new(),
             players: HashMap::new(),
             last_positions: HashMap::new(),
             next_player_id: 1,
             tick_counter: 0,
             lan: None,
-            instance: random_instance(),
+            instance,
         })
     }
 
@@ -144,6 +155,16 @@ impl Server {
 
     pub fn players(&self) -> impl Iterator<Item = &ConnectedPlayer> {
         self.players.values()
+    }
+
+    /// Les créatures en vie
+    pub fn creatures(&self) -> &CreatureWorld {
+        &self.creatures
+    }
+
+    /// Fait apparaître une créature aux pieds `feet` (elle disparaîtra si aucun joueur n'est près)
+    pub fn spawn_creature(&mut self, kind: CreatureKind, feet: Vec3) -> u64 {
+        self.creatures.spawn(kind, feet)
     }
 
     /// Le bloc à cette position, modifications des joueurs comprises
@@ -182,8 +203,14 @@ impl Server {
             player.stats.mana = (player.stats.mana + 2.0 * dt).min(player.stats.max_mana);
         }
 
+        let positions: Vec<Vec3> = self.players.values().filter_map(|p| p.position).collect();
+        self.creatures.tick(dt, &self.generator, &self.edits, &positions);
+
         if self.tick_counter % STATE_BROADCAST_TICKS == 0 {
             self.broadcast_player_states();
+        }
+        if self.tick_counter % CREATURE_BROADCAST_TICKS == 0 {
+            self.send_creatures();
         }
         if self.tick_counter % LAN_ANNOUNCE_TICKS == 0 {
             self.announce_lan();
@@ -197,7 +224,13 @@ impl Server {
             self.save();
         }
         if self.tick_counter % (TICK_RATE as u64 * 60) == 0 {
-            info!("Tick #{} : {} joueur(s) en ligne, {} chunks modifiés.", self.tick_counter, self.players.len(), self.edits.len());
+            info!(
+                "Tick #{} : {} joueur(s) en ligne, {} créature(s), {} chunks modifiés.",
+                self.tick_counter,
+                self.players.len(),
+                self.creatures.creatures().len(),
+                self.edits.len()
+            );
         }
     }
 
@@ -312,6 +345,7 @@ impl Server {
                 position: None,
                 yaw: 0.0,
                 pitch: 0.0,
+                known_creatures: HashSet::new(),
                 connection,
             },
         );
@@ -428,6 +462,34 @@ impl Server {
             if !others.is_empty() {
                 player.connection.send(&ServerPacket::PlayerStates(others));
             }
+        }
+    }
+
+    /// Montre à chaque joueur les créatures de son voisinage : celles qui y entrent sont annoncées,
+    /// celles qui en sortent (ou ont disparu) retirées, les autres ont leur position à jour
+    fn send_creatures(&mut self) {
+        let range = CREATURE_RANGE_BLOCKS * self.geometry.block_height as f32;
+        let creatures = self.creatures.creatures();
+        for player in self.players.values_mut() {
+            let Some(feet) = player.position else { continue };
+            let mut visible = HashSet::new();
+            let mut states: Vec<CreatureState> = Vec::new();
+            for creature in creatures.iter().filter(|c| c.position.distance(feet) <= range) {
+                visible.insert(creature.id);
+                if player.known_creatures.contains(&creature.id) {
+                    states.push(creature.state());
+                } else {
+                    player.connection.send(&ServerPacket::CreatureSpawned { kind: creature.kind, state: creature.state() });
+                }
+            }
+            let gone: Vec<u64> = player.known_creatures.difference(&visible).copied().collect();
+            if !gone.is_empty() {
+                player.connection.send(&ServerPacket::CreaturesDespawned(gone));
+            }
+            if !states.is_empty() {
+                player.connection.send(&ServerPacket::CreatureStates(states));
+            }
+            player.known_creatures = visible;
         }
     }
 

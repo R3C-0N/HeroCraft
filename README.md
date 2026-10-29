@@ -21,7 +21,7 @@ Tout passe par **`Échap > Multijoueur`** :
 - **Rejoindre par adresse** : `ip` ou `ip:port` (port 7777 par défaut).
 - **Se déconnecter** / **Fermer la partie** : retour au monde solo.
 
-À la connexion, le serveur envoie la graine de sa planète et les chunks déjà modifiés : chaque client génère le reste lui-même. Les autres joueurs apparaissent comme des silhouettes dorées surmontées de leur nom. En ligne, `G` (nouvelle planète) est désactivé.
+À la connexion, le serveur envoie la graine de sa planète et les chunks déjà modifiés : chaque client génère le reste lui-même. Les autres joueurs apparaissent comme des silhouettes dorées surmontées de leur nom. Le serveur fait vivre les créatures et montre à chacun celles de son voisinage. En ligne, `G` (nouvelle planète) est désactivé.
 
 ### Lancer le serveur dédié :
 ```bash
@@ -39,6 +39,9 @@ Chaque partie solo, comme chaque appui sur « Nouvelle planète » (`G`), tire u
 #### Configuration locale (`.env`) :
 Copier `.env.example` en `.env` (non versionné). Les variables déjà définies dans l'environnement restent prioritaires.
 - **`HEROCRAFT_MONITOR`** : écran où s'ouvre la fenêtre, par son nom Windows (`DISPLAY1`, `DISPLAY2`, `DISPLAY3`…). Sous WSLg, la correspondance avec l'écran Windows est retrouvée via `powershell.exe`, et la fenêtre passe par X11, car Wayland ne permet pas de la placer.
+
+#### Créatures :
+Des lapins, moutons et sangliers apparaissent sur l'herbe, la terre, le sable ou la neige, entre 24 et 56 blocs autour du joueur, selon le biome (moutons des plaines et des montagnes, sangliers des forêts, de la savane et de la jungle, lapins presque partout). Ils se promènent au hasard, franchissent les marches d'un bloc, évitent l'eau, les murs et les à-pics, et tombent dans les trous creusés sous eux. Ils disparaissent à plus de 96 blocs de tout joueur (64 au plus en tout). Pour l'instant, ce sont des silhouettes colorées (blanc pour le mouton, beige pour le lapin, brun pour le sanglier). En solo, ils vivent dans le jeu et s'arrêtent avec le menu ; en ligne, c'est le serveur qui les fait vivre.
 
 #### Contrôles du prototype :
 Toutes les touches se changent dans `Échap > Commandes` (clic sur une touche, puis appui sur la nouvelle). Elles sont enregistrées dans `config/controles.json`.

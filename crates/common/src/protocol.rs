@@ -1,10 +1,11 @@
 use crate::character::CharacterStats;
+use crate::creature::{CreatureKind, CreatureState};
 use crate::math::{PlanetChunkCoord, PlanetFace};
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -93,6 +94,15 @@ pub enum ServerPacket {
     },
     /// Positions des autres joueurs, envoyées à intervalle régulier
     PlayerStates(Vec<PlayerState>),
+    /// Une créature entre dans le voisinage du joueur (elle vient d'apparaître, ou il s'en approche)
+    CreatureSpawned {
+        kind: CreatureKind,
+        state: CreatureState,
+    },
+    /// Créatures sorties du voisinage du joueur, ou disparues
+    CreaturesDespawned(Vec<u64>),
+    /// Positions des créatures du voisinage, envoyées à intervalle régulier
+    CreatureStates(Vec<CreatureState>),
     /// Mise à jour des statistiques RPG du joueur
     StatsUpdate(CharacterStats),
     /// Message de chat ou notification système

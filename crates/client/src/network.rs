@@ -1,5 +1,5 @@
 //! Partie en ligne : connexion au serveur dédié, envoi de la position et des blocs modifiés,
-//! réception des blocs des autres et de leurs positions.
+//! réception des blocs des autres, de leurs positions et des créatures proches.
 //!
 //! La partie se rejoint depuis le menu Multijoueur (parties du réseau local ou adresse saisie), ou
 //! dès le lancement avec `HEROCRAFT_SERVER` / `--connect`. Le même menu ouvre la partie solo au
@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use glam::Vec3;
 use herocraft_common::net::Connection;
 use herocraft_server::{Server, ServerConfig};
-use herocraft_common::{BlockId, BlockInteractionAction, ClientPacket, PlanetChunkCoord, ServerPacket, PROTOCOL_VERSION};
+use herocraft_common::{BlockId, BlockInteractionAction, ClientPacket, CreatureKind, PlanetChunkCoord, ServerPacket, PROTOCOL_VERSION};
 use herocraft_voxel_engine::ChunkData;
 use herocraft_world::{BlockGeometry, BlockPos};
 use log::{info, warn};
@@ -31,6 +31,8 @@ const MOVE_SEND_INTERVAL: Duration = Duration::from_millis(33);
 /// toujours deux positions encadrant l'instant affiché, entre lesquelles le mouvement est
 /// interpolé (deux intervalles d'envoi du serveur)
 const INTERPOLATION_DELAY: Duration = Duration::from_millis(70);
+/// Retard d'affichage des créatures, dont les positions arrivent moins souvent (10 par seconde)
+const CREATURE_INTERPOLATION_DELAY: Duration = Duration::from_millis(220);
 /// Sans position récente, le mouvement est prolongé au plus de cette durée, puis s'arrête
 const MAX_EXTRAPOLATION: Duration = Duration::from_millis(150);
 /// Positions gardées par joueur
@@ -184,6 +186,7 @@ pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
         connection,
         player_id,
         players: HashMap::new(),
+        creatures: HashMap::new(),
         last_move_sent: None,
         last_move: None,
     };
@@ -204,63 +207,79 @@ pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
     Ok(JoinedWorld { client, seed, spawn_position, edited_chunks })
 }
 
-/// Un autre joueur, tel qu'affiché
-pub struct RemotePlayer {
-    pub name: String,
-    /// Pieds affichés, recalculés à chaque frame par `poll`
-    pub position: Option<Vec3>,
-    /// Positions des pieds reçues, datées à leur arrivée, de la plus ancienne à la plus récente
-    snapshots: VecDeque<(Instant, Vec3)>,
+/// Positions reçues d'un joueur ou d'une créature (pieds et cap), datées à leur arrivée, de la plus
+/// ancienne à la plus récente
+#[derive(Default)]
+struct Track {
+    snapshots: VecDeque<(Instant, Vec3, f32)>,
 }
 
-impl RemotePlayer {
-    fn new(name: String) -> Self {
-        Self { name, position: None, snapshots: VecDeque::new() }
-    }
-
-    fn push(&mut self, at: Instant, position: Vec3) {
-        if self.snapshots.back().is_some_and(|&(last, _)| at < last) {
+impl Track {
+    fn push(&mut self, at: Instant, position: Vec3, yaw: f32) {
+        if self.snapshots.back().is_some_and(|&(last, _, _)| at < last) {
             return;
         }
-        self.snapshots.push_back((at, position));
+        self.snapshots.push_back((at, position, yaw));
         while self.snapshots.len() > MAX_SNAPSHOTS {
             self.snapshots.pop_front();
         }
     }
 
-    /// Pieds à afficher à l'instant `now` : interpolés entre les deux positions qui encadrent
-    /// `now - INTERPOLATION_DELAY`, ou prolongés un court instant au-delà de la dernière.
+    /// Pieds et cap à afficher à l'instant `now` : interpolés entre les deux positions qui encadrent
+    /// `now - delay`, ou prolongés un court instant au-delà de la dernière.
     /// Calculé sur l'horloge, pas image par image : une fenêtre qui dessine peu d'images (en
     /// arrière-plan) montre quand même le joueur là où il est.
-    fn position_at(&self, now: Instant) -> Option<Vec3> {
-        let render = now.checked_sub(INTERPOLATION_DELAY).unwrap_or(now);
-        let &(first_t, first_p) = self.snapshots.front()?;
+    fn sample(&self, now: Instant, delay: Duration) -> Option<(Vec3, f32)> {
+        let render = now.checked_sub(delay).unwrap_or(now);
+        let &(first_t, first_p, first_yaw) = self.snapshots.front()?;
         if render <= first_t {
-            return Some(first_p);
+            return Some((first_p, first_yaw));
         }
         let mut previous = (first_t, first_p);
-        for &(t, p) in self.snapshots.iter().skip(1) {
+        for &(t, p, yaw) in self.snapshots.iter().skip(1) {
             if render <= t {
                 let span = (t - previous.0).as_secs_f32();
                 let k = if span > 0.0 { (render - previous.0).as_secs_f32() / span } else { 1.0 };
-                return Some(previous.1.lerp(p, k));
+                return Some((previous.1.lerp(p, k), yaw));
             }
             previous = (t, p);
         }
         // Au-delà de la dernière position : on prolonge la dernière vitesse, brièvement
-        let (last_t, last_p) = previous;
+        let &(last_t, last_p, last_yaw) = self.snapshots.back()?;
         let n = self.snapshots.len();
         if n < 2 {
-            return Some(last_p);
+            return Some((last_p, last_yaw));
         }
-        let (prev_t, prev_p) = self.snapshots[n - 2];
+        let (prev_t, prev_p, _) = self.snapshots[n - 2];
         let span = (last_t - prev_t).as_secs_f32();
         if span <= 0.0 {
-            return Some(last_p);
+            return Some((last_p, last_yaw));
         }
         let ahead = (render - last_t).min(MAX_EXTRAPOLATION).as_secs_f32();
-        Some(last_p + (last_p - prev_p) * (ahead / span))
+        Some((last_p + (last_p - prev_p) * (ahead / span), last_yaw))
     }
+}
+
+/// Un autre joueur, tel qu'affiché
+pub struct RemotePlayer {
+    pub name: String,
+    /// Pieds affichés, recalculés à chaque frame par `poll`
+    pub position: Option<Vec3>,
+    track: Track,
+}
+
+impl RemotePlayer {
+    fn new(name: String) -> Self {
+        Self { name, position: None, track: Track::default() }
+    }
+}
+
+/// Une créature du voisinage, telle qu'affichée
+pub struct RemoteCreature {
+    pub kind: CreatureKind,
+    /// Pieds et cap affichés, recalculés à chaque frame par `poll`
+    pub position: Option<(Vec3, f32)>,
+    track: Track,
 }
 
 /// Ce qui arrive du serveur et que la boucle de jeu applique
@@ -275,6 +294,7 @@ pub struct NetClient {
     connection: ServerConnection,
     player_id: u64,
     players: HashMap<u64, RemotePlayer>,
+    creatures: HashMap<u64, RemoteCreature>,
     last_move_sent: Option<Instant>,
     last_move: Option<(Vec3, f32, f32)>,
 }
@@ -317,7 +337,10 @@ impl NetClient {
         }
         let now = Instant::now();
         for player in self.players.values_mut() {
-            player.position = player.position_at(now);
+            player.position = player.track.sample(now, INTERPOLATION_DELAY).map(|(p, _)| p);
+        }
+        for creature in self.creatures.values_mut() {
+            creature.position = creature.track.sample(now, CREATURE_INTERPOLATION_DELAY);
         }
         events
     }
@@ -334,7 +357,24 @@ impl NetClient {
             ServerPacket::PlayerStates(states) => {
                 for state in states {
                     if let Some(player) = self.players.get_mut(&state.player_id) {
-                        player.push(at, state.position);
+                        player.track.push(at, state.position, state.yaw);
+                    }
+                }
+            }
+            ServerPacket::CreatureSpawned { kind, state } => {
+                let mut track = Track::default();
+                track.push(at, state.position, state.yaw);
+                self.creatures.insert(state.creature_id, RemoteCreature { kind, position: None, track });
+            }
+            ServerPacket::CreaturesDespawned(ids) => {
+                for id in ids {
+                    self.creatures.remove(&id);
+                }
+            }
+            ServerPacket::CreatureStates(states) => {
+                for state in states {
+                    if let Some(creature) = self.creatures.get_mut(&state.creature_id) {
+                        creature.track.push(at, state.position, state.yaw);
                     }
                 }
             }
@@ -393,6 +433,11 @@ impl NetClient {
             .map(|feet| player_box(feet, block))
             .collect()
     }
+
+    /// Silhouettes des créatures du voisinage, avec leur couleur
+    pub fn creature_boxes(&self, base_radius: f32) -> Vec<crate::block_outline::ColoredBox> {
+        crate::creatures::boxes(self.creatures.values().filter_map(|c| c.position.map(|(p, yaw)| (c.kind, p, yaw))), base_radius)
+    }
 }
 
 /// Coins de la silhouette d'un joueur debout aux pieds `feet` : bit 0 = est, bit 1 = haut, bit 2 = nord
@@ -436,20 +481,21 @@ mod tests {
 
     #[test]
     fn test_remote_player_is_interpolated_on_the_clock() {
-        let mut player = RemotePlayer::new("Bob".into());
+        let mut player = Track::default();
         let t0 = Instant::now();
         let step = Duration::from_millis(33);
         for i in 0..4 {
-            player.push(t0 + step * i, Vec3::new(i as f32, 0.0, 0.0));
+            player.push(t0 + step * i, Vec3::new(i as f32, 0.0, 0.0), 0.0);
         }
+        let position_at = |t: Instant| player.sample(t, INTERPOLATION_DELAY).map(|(p, _)| p);
         // Entre deux positions reçues : interpolé
-        let p = player.position_at(t0 + step + step / 2 + INTERPOLATION_DELAY).unwrap();
+        let p = position_at(t0 + step + step / 2 + INTERPOLATION_DELAY).unwrap();
         assert!((p.x - 1.5).abs() < 1e-3, "{p}");
         // Juste après la dernière : prolongé à la même vitesse
-        let p = player.position_at(t0 + step * 3 + step + INTERPOLATION_DELAY).unwrap();
+        let p = position_at(t0 + step * 3 + step + INTERPOLATION_DELAY).unwrap();
         assert!((p.x - 4.0).abs() < 1e-3, "{p}");
         // Longtemps après : arrêté au bout de MAX_EXTRAPOLATION
-        let p = player.position_at(t0 + step * 3 + Duration::from_secs(5)).unwrap();
+        let p = position_at(t0 + step * 3 + Duration::from_secs(5)).unwrap();
         let max = 3.0 + MAX_EXTRAPOLATION.as_secs_f32() / step.as_secs_f32();
         assert!((p.x - max).abs() < 1e-2, "{p}");
     }

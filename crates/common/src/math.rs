@@ -1,5 +1,17 @@
-use glam::DVec3;
+use glam::{DVec3, Vec3};
 use serde::{Deserialize, Serialize};
+
+/// Axes est et nord du plan tangent à la sphère sous la direction `up`. Un cap `yaw` (en radians,
+/// 0 = nord, π/2 = est) y donne la direction `nord · cos(yaw) + est · sin(yaw)`.
+pub fn tangent_frame(up: Vec3) -> (Vec3, Vec3) {
+    if up.y.abs() < 0.999 {
+        let north = (Vec3::Y - up * up.y).normalize();
+        (north.cross(up).normalize(), north)
+    } else {
+        let sign = if up.y >= 0.0 { 1.0 } else { -1.0 };
+        (Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 0.0, -sign))
+    }
+}
 
 /// Les 6 faces du cube projeté sur la sphère planétaire
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

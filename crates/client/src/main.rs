@@ -16,6 +16,7 @@ mod block_outline;
 mod camera;
 mod cloud_mesh;
 mod collision;
+mod creatures;
 mod gpu_timer;
 mod input;
 mod keyboard_hook;
@@ -135,6 +136,10 @@ fn main() {
     let mut lan_retry_at = Instant::now();
     // Planète de la partie solo, retrouvée en quittant une partie en ligne
     let mut solo_seed = current_seed;
+    // Créatures de la partie solo, simulées ici (en ligne, c'est le serveur qui les fait vivre), et
+    // la planète où elles vivent
+    let mut solo_creatures = herocraft_world::CreatureWorld::new(base_radius as f64, current_seed);
+    let mut creatures_seed = current_seed;
 
     // Initialisation du moteur WGPU
     let mut state = pollster::block_on(State::new(window.clone(), &ui_state));
@@ -401,6 +406,27 @@ fn main() {
                                 ui_state.name_tags = client.name_tags(&camera, state.size.width as f32, state.size.height as f32);
                             }
                         }
+
+                        // Créatures : celles que le serveur montre en ligne, sinon celles de la partie solo,
+                        // en pause avec le menu
+                        let creature_boxes = match net.as_ref() {
+                            Some(client) => client.creature_boxes(camera.base_radius),
+                            None => {
+                                herocraft_common::prof_scope!("creatures");
+                                if creatures_seed != current_seed {
+                                    solo_creatures = herocraft_world::CreatureWorld::new(camera.base_radius as f64, current_seed);
+                                    creatures_seed = current_seed;
+                                }
+                                if !ui_state.is_settings_open {
+                                    solo_creatures.tick(dt, &generator, lod_manager.terrain_edits(), &[camera.player_pos]);
+                                }
+                                creatures::boxes(
+                                    solo_creatures.creatures().iter().map(|c| (c.kind, c.position, c.yaw)),
+                                    camera.base_radius,
+                                )
+                            }
+                        };
+                        state.set_creature_outlines(&creature_boxes);
 
                         // Connexion menée en tâche de fond : à son terme, la planète du serveur
                         // remplace la partie solo
