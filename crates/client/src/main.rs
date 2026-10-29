@@ -11,6 +11,7 @@ use winit::{
 };
 
 mod atmosphere;
+mod audio;
 mod block_interaction;
 mod block_outline;
 mod camera;
@@ -18,8 +19,10 @@ mod cloud_mesh;
 mod collision;
 mod creature_render;
 mod creatures;
+mod dropped_items;
 mod gpu_timer;
 mod input;
+mod inventory;
 mod keyboard_hook;
 mod lod;
 mod monitor;
@@ -58,7 +61,8 @@ fn main() {
     info!("==========================================================");
     info!("Contrôles (modifiables dans Échap > Commandes) :");
     info!(" • Souris                             : Regarder autour (curseur capturé en jeu)");
-    info!(" • Clic gauche / Clic droit           : Détruire le bloc visé / Poser un bloc de pierre");
+    info!(" • Clic gauche / Clic droit           : Casser le bloc visé (il tombe, à ramasser) / Poser le bloc choisi");
+    info!(" • [1-9] / Molette / [E]              : Choisir la case de la barre d'objets / Inventaire");
     info!(" • [Z,Q,S,D] (AZERTY) / [W,A,S,D]     : Se déplacer");
     info!(" • [ESPACE] / double [ESPACE]         : Sauter / S'envoler (monter en vol)");
     info!(" • [MAJ] / [CTRL]                     : Descendre en vol / Sprinter");
@@ -124,6 +128,13 @@ fn main() {
     ui_state.set_scale_factor(window.scale_factor() as f32);
     ui_state.set_screen_size(size.width as f32, size.height as f32);
     ui_state.controls = input::Controls::load_or_default(input::CONTROLS_FILE);
+    ui_state.inventory = inventory::Inventory::load_or_default(inventory_file(current_seed, false));
+    ui_state.audio_settings = audio::AudioSettings::load_or_default(audio::AUDIO_FILE);
+    // Son : bruitages du joueur et des blocs, ambiance (muet sans carte son)
+    let mut audio = audio::Audio::new();
+    // Le ciel au-dessus du joueur (grotte ou plein air) n'est relu que de temps en temps
+    let mut sky_check_in = 0.0_f32;
+    let mut sky_covered = false;
 
     // Partie en ligne : connexion en cours, connexion établie, partie ouverte au réseau local par
     // ce jeu, recherche des parties du réseau local (page Multijoueur ouverte)
@@ -158,12 +169,17 @@ fn main() {
     let mut window_focused = true;
     let mut modifiers = ModifiersState::empty();
     let mut zoom_modifier_held = false;
+    // Molette du pavé tactile (en pixels) cumulée jusqu'à un cran de la barre d'objets
+    let mut hotbar_scroll = 0.0_f32;
     let mut jump_tap = input::DoubleTap::default();
     // Actions du clavier rejouées comme les boutons du HUD, au moment du rendu
     let mut pending_actions: Vec<UiAction> = Vec::new();
     let mut is_dragging = false;
     // Destruction (clic gauche) et pose (clic droit) du bloc visé par le réticule
     let mut block_interaction = BlockInteraction::new();
+    // Blocs cassés tombés au sol, ramassés en passant à proximité
+    let mut dropped_items = dropped_items::DroppedItems::new();
+    let game_start = Instant::now();
     let mut last_autosave = Instant::now();
     let mut last_mouse_pos = (0.0_f64, 0.0_f64);
     let mut last_frame_time = Instant::now();
@@ -192,6 +208,8 @@ fn main() {
                         hosted = None;
                         let _ = chunk_cache.flush_dirty();
                         save_terrain_edits(&lod_manager);
+                        ui_state.set_inventory_open(false);
+                        ui_state.inventory.save();
                         write_profile_report();
                         target.exit();
                     }
@@ -234,7 +252,9 @@ fn main() {
                             let pressed = *btn_state == ElementState::Pressed;
                             if let Some(action) = block_interaction.on_mouse_button(*button, pressed) {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
-                                if let Some((pos, block)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager) {
+                                if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
+                                    block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
+                                    drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
                                     state.sync_lod_meshes(&lod_manager);
                                     if let Some(client) = net.as_mut() {
                                         client.send_block_change(pos, block);
@@ -252,7 +272,7 @@ fn main() {
 
                     // Déplacement curseur visible (survol des boutons UI et rotation de la planète)
                     WindowEvent::CursorMoved { position, .. } => {
-                        if is_dragging && !cursor_captured && !ui_state.is_settings_open {
+                        if is_dragging && !cursor_captured && !ui_state.is_settings_open && !ui_state.inventory_open {
                             let dx = (position.x - last_mouse_pos.0) as f32;
                             let dy = (position.y - last_mouse_pos.1) as f32;
                             camera.orbit(dx, dy);
@@ -260,16 +280,30 @@ fn main() {
                         last_mouse_pos = (position.x, position.y);
                     }
 
-                    // Molette : zoom continu FPS <-> TPS <-> Orbite avec la touche de zoom (Alt) maintenue.
-                    // En vue satellite, la molette seule zoome aussi.
+                    // Molette : zoom continu FPS <-> TPS <-> Orbite avec la touche de zoom (Alt) maintenue,
+                    // sinon case de la barre d'objets. En vue satellite, la molette seule zoome.
                     WindowEvent::MouseWheel { delta, .. } => {
                         let wants_zoom = if cursor_captured {
                             zoom_modifier_held
                         } else {
-                            !(ui_state.is_settings_open || ui_state.ctx.is_pointer_over_area() || ui_state.ctx.wants_pointer_input())
+                            !(ui_state.is_settings_open
+                                || ui_state.inventory_open
+                                || ui_state.ctx.is_pointer_over_area()
+                                || ui_state.ctx.wants_pointer_input())
                         };
 
-                        if wants_zoom {
+                        if cursor_captured && !zoom_modifier_held {
+                            // Molette vers le haut : case précédente (vers la gauche)
+                            hotbar_scroll -= match delta {
+                                MouseScrollDelta::LineDelta(_x, y) => *y,
+                                MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 40.0,
+                            };
+                            let steps = hotbar_scroll.trunc();
+                            if steps != 0.0 {
+                                ui_state.inventory.scroll(steps as i32);
+                                hotbar_scroll -= steps;
+                            }
+                        } else if wants_zoom {
                             let zoom_delta = match delta {
                                 MouseScrollDelta::LineDelta(_x, y) => *y,
                                 MouseScrollDelta::PixelDelta(pos) => (pos.y as f32) * 0.04,
@@ -314,8 +348,20 @@ fn main() {
                             }
                         } else if key_code == KeyCode::F9 && is_pressed {
                             write_profile_report();
+                        } else if ui_state.inventory_open {
+                            // Écran d'inventaire : seule sa touche le referme
+                            if is_pressed && !*repeat && ui_state.controls.action_for(key_code) == Some(Action::OpenInventory) {
+                                ui_state.set_inventory_open(false);
+                            }
                         } else if !ui_state.is_settings_open {
-                            // En jeu normal (menu fermé) : déplacements et raccourcis selon les touches attribuées
+                            // En jeu normal (menu fermé) : barre d'objets (1 à 9), déplacements et
+                            // raccourcis selon les touches attribuées
+                            if let Some(slot) = input::hotbar_slot_for(key_code) {
+                                if is_pressed {
+                                    ui_state.inventory.select(slot);
+                                }
+                                return;
+                            }
                             let Some(action) = ui_state.controls.action_for(key_code) else { return };
                             game_key(action, is_pressed, is_pressed && !*repeat, &mut camera, &mut ui_state, &mut pending_actions, &mut jump_tap, &mut zoom_modifier_held);
                         }
@@ -339,7 +385,8 @@ fn main() {
 
                         // Touches prises aux autres programmes par le crochet clavier depuis l'image précédente
                         for hooked in keyboard_hook::drain() {
-                            if let (false, Some(action)) = (ui_state.is_settings_open, ui_state.controls.action_for(hooked.key)) {
+                            let in_game = !ui_state.is_settings_open && !ui_state.inventory_open;
+                            if let (true, Some(action)) = (in_game, ui_state.controls.action_for(hooked.key)) {
                                 let first_press = hooked.pressed && !hooked.repeat;
                                 game_key(action, hooked.pressed, first_press, &mut camera, &mut ui_state, &mut pending_actions, &mut jump_tap, &mut zoom_modifier_held);
                             }
@@ -347,8 +394,13 @@ fn main() {
 
                         // Souris capturée en jeu (au sol ou en 3e personne) ; le menu, la vue satellite
                         // et la perte du focus la libèrent
+                        // L'inventaire ne s'ouvre qu'au sol
+                        if ui_state.inventory_open && camera.target_distance > camera.base_radius {
+                            ui_state.set_inventory_open(false);
+                        }
                         let want_capture = window_focused
                             && !ui_state.is_settings_open
+                            && !ui_state.inventory_open
                             && camera.target_distance <= camera.base_radius;
                         if want_capture != cursor_captured {
                             cursor_captured = want_capture;
@@ -378,6 +430,10 @@ fn main() {
                                 }
                             }
                         }
+                        {
+                            herocraft_common::prof_scope!("son");
+                            update_sound(&mut audio, &camera, &generator, &state, &ui_state, dt, &mut sky_check_in, &mut sky_covered);
+                        }
                         state.update_camera(&camera, &ui_state.lighting_settings, &ui_state.cloud_settings, ui_state.video_settings.flattening);
                         state.update_post(&ui_state.post_settings);
                         state.update_shadows(&camera, &ui_state.shadow_settings);
@@ -389,7 +445,9 @@ fn main() {
                             let edits = lod_manager.terrain_edits().clone();
                             block_interaction.update_target(&camera, &generator, &edits);
                             if let Some(action) = block_interaction.tick(dt) {
-                                if let Some((pos, block)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager) {
+                                if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
+                                    block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
+                                    drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
                                     terrain_edited = true;
                                     if let Some(client) = net.as_mut() {
                                         client.send_block_change(pos, block);
@@ -408,7 +466,13 @@ fn main() {
                             for event in client.poll() {
                                 match event {
                                     NetEvent::BlockChanged(pos, block) => {
+                                        let previous = lod_manager.terrain_edits().block(&generator, pos);
                                         if lod_manager.set_block(&generator, pos, block) {
+                                            // Bloc changé par un autre joueur : entendu s'il est proche
+                                            let geometry = herocraft_world::BlockGeometry::new(camera.base_radius as f64);
+                                            let centre = geometry.block_corners(pos).iter().sum::<glam::DVec3>() / 8.0;
+                                            let distance = (centre.as_vec3() - camera.player_pos).length() / geometry.block_height as f32;
+                                            block_sound(&mut audio, Some(previous), block, distance, &ui_state.audio_settings);
                                             terrain_edited = true;
                                             block_interaction.invalidate();
                                         }
@@ -472,7 +536,8 @@ fn main() {
                                         window.set_title(&format!("HeroCraft — partie ouverte au réseau local (port {})", host.port));
                                     } else {
                                         current_seed = world.seed;
-                                        switch_planet(current_seed, edits, None, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                        switch_planet(current_seed, true, edits, None, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                        dropped_items.clear();
                                         // De retour sur ce serveur : là où le joueur l'avait quitté
                                         if let Some(spawn) = world.spawn_position {
                                             camera.player_pos = spawn;
@@ -521,12 +586,25 @@ fn main() {
                             lan_browser = None;
                             ui_state.multiplayer.lan_servers.clear();
                         }
+                        // Blocs tombés au sol : chute, ramassage par le joueur au sol (menu fermé), dessin
+                        if let Some(collider) = camera.collider.as_ref() {
+                            let h = collider.block_height();
+                            if !ui_state.is_settings_open {
+                                let on_ground = camera.target_distance <= camera.base_radius;
+                                let body = on_ground.then(|| camera.player_pos + camera.player_pos.normalize_or_zero() * 0.9 * h);
+                                dropped_items.update(dt, &generator, collider, body, &mut ui_state.inventory);
+                            }
+                            if let Some(mesh) = dropped_items.take_mesh(h, game_start.elapsed().as_secs_f32()) {
+                                state.set_dropped_items(&mesh);
+                            }
+                        }
                         {
                             herocraft_common::prof_scope!("blocs::contour");
                             state.set_block_outline(block_interaction.outline(&camera));
                         }
                         if last_autosave.elapsed().as_secs() >= 30 {
                             save_terrain_edits(&lod_manager);
+                            ui_state.inventory.save();
                             last_autosave = Instant::now();
                         }
 
@@ -542,13 +620,14 @@ fn main() {
 
                         // 1. Mise à jour de l'interface egui
                         let is_ground = camera.distance <= camera.base_radius;
-                        let (full_output, maybe_action) = ui_state.update_ui(camera.distance, is_ground);
+                        let (full_output, maybe_action) = ui_state.update_ui(is_ground);
 
                         // 2. Traitement des actions déclenchées par les boutons egui et le clavier
                         pending_actions.extend(maybe_action);
                         for action in pending_actions.drain(..) {
                             herocraft_common::prof_scope!("frame::ui_action");
                             match action {
+                                UiAction::PreviewSound => audio.preview(&ui_state.audio_settings),
                                 UiAction::ResumeGame => {
                                     ui_state.set_settings_open(false);
                                     info!("Bouton cliqué : Reprise de la partie.");
@@ -560,6 +639,7 @@ fn main() {
                                     hosted = None;
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
+                                    ui_state.inventory.save();
                                     info!("Bouton cliqué : Sauvegarde des chunks et fermeture du jeu.");
                                     write_profile_report();
                                     target.exit();
@@ -637,7 +717,8 @@ fn main() {
                                         lod_manager.set_terrain_edits(edits);
                                     } else {
                                         current_seed = solo_seed;
-                                        switch_planet(current_seed, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                        switch_planet(current_seed, false, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                        dropped_items.clear();
                                     }
                                     block_interaction.invalidate();
                                     ui_state.multiplayer.status = NetStatus::Solo;
@@ -649,7 +730,8 @@ fn main() {
                                     save_terrain_edits(&lod_manager);
                                     current_seed = herocraft_world::random_seed();
                                     let (storage, edits) = solo_terrain(current_seed);
-                                    switch_planet(current_seed, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                    switch_planet(current_seed, false, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                    dropped_items.clear();
                                     info!("Nouvelle planète générée ! (Graine: #{})", current_seed);
                                 }
                                 UiAction::ToggleGroundCamera => {
@@ -742,9 +824,85 @@ fn main() {
 /// Titre de la fenêtre en solo
 const WINDOW_TITLE: &str = "HeroCraft — Planète QuadTree LOD (Rust / WGPU)";
 
+/// Son d'un bloc qui change : casse du bloc d'avant s'il devient de l'air, pose du nouveau sinon
+fn block_sound(
+    audio: &mut audio::Audio,
+    previous: Option<herocraft_common::BlockId>,
+    block: herocraft_common::BlockId,
+    distance_blocks: f32,
+    settings: &audio::AudioSettings,
+) {
+    use audio::synth::Material;
+    if block.is_air() {
+        if let Some(previous) = previous.filter(|b| !b.is_air()) {
+            audio.block_broken(Material::of(previous), distance_blocks, settings);
+        }
+    } else {
+        audio.block_placed(Material::of(block), distance_blocks, settings);
+    }
+}
+
+/// Pas, saut et réception du joueur au sol, puis ambiance (vent, oiseaux, grillons)
+#[allow(clippy::too_many_arguments)]
+fn update_sound(
+    audio: &mut audio::Audio,
+    camera: &OrbitCamera,
+    generator: &herocraft_world::PlanetWorldGenerator,
+    state: &State,
+    ui_state: &UiState,
+    dt: f32,
+    sky_check_in: &mut f32,
+    sky_covered: &mut bool,
+) {
+    let settings = &ui_state.audio_settings;
+    let ground_view = camera.distance <= camera.base_radius;
+    let block_height = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+    if ground_view && !ui_state.is_settings_open {
+        let surface = camera.surface_block(generator).map_or(audio::synth::Material::Grass, audio::synth::Material::of);
+        let player = audio::events::PlayerState {
+            position: camera.player_pos,
+            grounded: camera.is_grounded,
+            flying: camera.is_flying,
+            sprinting: camera.is_sprinting,
+            vertical_speed: camera.vertical_velocity / block_height,
+            block_height,
+        };
+        audio.update_player(player, surface, settings);
+    } else {
+        audio.reset_player();
+    }
+
+    *sky_check_in -= dt;
+    if *sky_check_in <= 0.0 {
+        *sky_check_in = 0.5;
+        *sky_covered = ground_view && camera.sky_covered(generator);
+    }
+    let up = camera.player_pos.normalize_or_zero();
+    let height_blocks = if ground_view && camera.is_flying {
+        ((camera.player_pos.length() - camera.ground_radius_at(up, generator)) / block_height).max(0.0)
+    } else {
+        0.0
+    };
+    let input = audio::AmbienceInput {
+        ground_view,
+        paused: ui_state.is_settings_open,
+        height_blocks,
+        covered: *sky_covered,
+        is_day: state.sun_dir().dot(up) > -0.05,
+    };
+    audio.update_ambience(dt, input, settings);
+}
+
 /// Dossier de sauvegarde d'un monde solo (aussi celui du serveur qui l'ouvre au réseau local)
 fn solo_save_dir(seed: u64) -> String {
     format!("saves/monde_{}", seed)
+}
+
+/// Inventaire du joueur sur une planète : celui du monde solo, ou un inventaire à part pour la
+/// planète d'un serveur rejoint
+fn inventory_file(seed: u64, online: bool) -> std::path::PathBuf {
+    let dir = if online { format!("saves/en_ligne_{}", seed) } else { solo_save_dir(seed) };
+    std::path::Path::new(&dir).join("inventaire.json")
 }
 
 /// Stockage d'un monde solo et ses blocs modifiés, repris de la sauvegarde
@@ -755,10 +913,11 @@ fn solo_terrain(seed: u64) -> (Option<herocraft_voxel_engine::ChunkStorage>, Arc
 }
 
 /// Remplace la planète affichée (nouvelle graine, partie en ligne ou retour au solo) : générateur,
-/// blocs modifiés, caches, maillages et nuages, puis pose le joueur au sol
+/// blocs modifiés, caches, maillages, nuages et inventaire, puis pose le joueur au sol
 #[allow(clippy::too_many_arguments)]
 fn switch_planet(
     seed: u64,
+    online: bool,
     edits: Arc<herocraft_world::TerrainEdits>,
     storage: Option<herocraft_voxel_engine::ChunkStorage>,
     generator: &mut herocraft_world::PlanetWorldGenerator,
@@ -779,6 +938,9 @@ fn switch_planet(
     state.sync_lod_meshes(lod_manager);
     state.update_cloud_mesh(camera.base_radius, seed);
     ui_state.set_seed(seed);
+    ui_state.set_inventory_open(false);
+    ui_state.inventory.save();
+    ui_state.inventory = inventory::Inventory::load_or_default(inventory_file(seed, online));
 }
 
 /// Touche attribuée à une action, en jeu (menu fermé) : lue par la fenêtre ou par le crochet clavier
@@ -814,6 +976,10 @@ fn game_key(
                     camera.jump_requested = true;
                 }
             }
+        }
+        Action::OpenInventory if first_press && is_ground_view => {
+            camera.release_inputs();
+            ui_state.set_inventory_open(true);
         }
         Action::ToggleView if first_press => pending_actions.push(UiAction::ToggleGroundCamera),
         Action::ResetView if first_press => pending_actions.push(UiAction::ResetCamera),
@@ -854,6 +1020,13 @@ fn set_cursor_captured(window: &Window, captured: bool) {
         let _ = window.set_cursor_position(PhysicalPosition::new(size.width as f64 / 2.0, size.height as f64 / 2.0));
         window.set_cursor_visible(true);
     }
+}
+
+/// Le bloc cassé tombe au sol (s'il se ramasse : ni eau, ni lave)
+fn drop_broken_block(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, pos: herocraft_world::BlockPos, block: herocraft_common::BlockId, previous: herocraft_common::BlockId) {
+    let Some(item) = inventory::drop_for(previous).filter(|_| block.is_air()) else { return };
+    let height = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+    dropped.spawn(item, BlockInteraction::block_center(camera, pos), height);
 }
 
 /// Enregistre les chunks modifiés par le joueur depuis le dernier enregistrement

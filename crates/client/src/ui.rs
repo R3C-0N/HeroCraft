@@ -1,7 +1,9 @@
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{Key, KeyCode, NamedKey};
 
+use crate::audio::AudioSettings;
 use crate::input::{is_reserved_key, Action, Controls, ACTION_GROUPS};
+use crate::inventory::{block_name, Inventory, ItemStack, HOTBAR_SLOTS, TOTAL_SLOTS};
 use crate::player_stats::PlayerStats;
 
 /// Actions déclenchées par l'interface utilisateur
@@ -27,6 +29,8 @@ pub enum UiAction {
     JoinServer,
     /// Quitter la partie en ligne (ou la fermer si elle est ouverte ici) et revenir au solo
     LeaveServer,
+    /// Options > Son : un volume vient d'être réglé, un son d'essai le fait entendre
+    PreviewSound,
 }
 
 /// État de la partie en ligne, affiché dans la page Multijoueur
@@ -304,16 +308,18 @@ pub enum OptionsTab {
     Hdr,
     Shadows,
     Atmosphere,
+    Audio,
 }
 
 impl OptionsTab {
-    pub const ALL: [OptionsTab; 6] = [
+    pub const ALL: [OptionsTab; 7] = [
         OptionsTab::Display,
         OptionsTab::Lighting,
         OptionsTab::Clouds,
         OptionsTab::Hdr,
         OptionsTab::Shadows,
         OptionsTab::Atmosphere,
+        OptionsTab::Audio,
     ];
 
     pub fn icon(self) -> &'static str {
@@ -324,6 +330,7 @@ impl OptionsTab {
             OptionsTab::Hdr => "✨",
             OptionsTab::Shadows => "🌓",
             OptionsTab::Atmosphere => "🌅",
+            OptionsTab::Audio => "🔊",
         }
     }
 
@@ -335,6 +342,7 @@ impl OptionsTab {
             OptionsTab::Hdr => "Rendu HDR",
             OptionsTab::Shadows => "Ombres",
             OptionsTab::Atmosphere => "Atmosphère",
+            OptionsTab::Audio => "Son",
         }
     }
 
@@ -346,6 +354,7 @@ impl OptionsTab {
             OptionsTab::Hdr => "Exposition, courbe de tons et halo lumineux",
             OptionsTab::Shadows => "Ombres portées du relief et des nuages",
             OptionsTab::Atmosphere => "Diffusion de l'air, brume et rayons crépusculaires",
+            OptionsTab::Audio => "Volume général, bruitages et ambiance",
         }
     }
 }
@@ -390,6 +399,7 @@ pub struct UiState {
     pub post_settings: PostSettings,
     pub shadow_settings: ShadowSettings,
     pub atmosphere_settings: AtmosphereSettings,
+    pub audio_settings: AudioSettings,
     pub controls: Controls,
     /// Action en attente d'une nouvelle touche dans la page Commandes
     pub rebinding: Option<Action>,
@@ -402,6 +412,10 @@ pub struct UiState {
     /// Noms des autres joueurs (en ligne), avec leur position à l'écran en pixels physiques
     pub name_tags: Vec<(egui::Pos2, String)>,
     pub multiplayer: MultiplayerUi,
+    /// Blocs du joueur : barre d'objets en bas de l'écran, sac dans l'écran d'inventaire
+    pub inventory: Inventory,
+    /// Écran d'inventaire ouvert (la souris est libérée pour déplacer les piles)
+    pub inventory_open: bool,
     /// Jauges, classe et niveau du joueur
     pub player: PlayerStats,
 }
@@ -432,6 +446,7 @@ impl UiState {
             post_settings: PostSettings::default(),
             shadow_settings: ShadowSettings::default(),
             atmosphere_settings: AtmosphereSettings::default(),
+            audio_settings: AudioSettings::default(),
             controls: Controls::default(),
             rebinding: None,
             rebind_notice: None,
@@ -440,6 +455,8 @@ impl UiState {
             screen_height: 720.0_f32,
             name_tags: Vec::new(),
             multiplayer: MultiplayerUi::default(),
+            inventory: Inventory::default(),
+            inventory_open: false,
             player: PlayerStats::default(),
         }
     }
@@ -518,15 +535,27 @@ impl UiState {
         self.rebinding = None;
         if is_open {
             self.menu_page = MenuPage::Main;
+            self.set_inventory_open(false);
         }
     }
 
+    /// Ouvre ou referme l'écran d'inventaire. Refermé, la pile tenue à la souris retourne dans
+    /// l'inventaire.
+    pub fn set_inventory_open(&mut self, open: bool) {
+        if !open {
+            self.inventory.return_held();
+        }
+        self.inventory_open = open;
+    }
+
+    #[cfg(test)]
     pub fn toggle_settings(&mut self) -> bool {
         self.set_settings_open(!self.is_settings_open);
         self.is_settings_open
     }
 
     /// Ouvre le menu de pause directement sur une page
+    #[cfg(test)]
     pub fn open_menu_at(&mut self, page: MenuPage) {
         self.set_settings_open(true);
         self.menu_page = page;
@@ -535,7 +564,9 @@ impl UiState {
     /// Touche Échap : ouvre le menu, remonte d'un sous-menu vers l'accueil, ou referme le menu
     /// depuis l'accueil. Renvoie l'état d'ouverture du menu.
     pub fn handle_escape(&mut self) -> bool {
-        if !self.is_settings_open {
+        if self.inventory_open {
+            self.set_inventory_open(false);
+        } else if !self.is_settings_open {
             self.set_settings_open(true);
         } else if self.rebinding.is_some() {
             self.rebinding = None;
@@ -566,11 +597,6 @@ impl UiState {
             )
         });
         self.controls.save();
-    }
-
-    /// Libellé court de la touche d'une action, pour les boutons du HUD
-    fn key_hint(&self, action: Action) -> String {
-        format!("[{}]", self.controls.action_key_label(action))
     }
 
     /// Capture ou libère le pointeur. À la capture, egui oublie le survol en cours.
@@ -670,7 +696,7 @@ impl UiState {
     }
 
     /// Construit l'interface graphique immédiate pour la frame courante
-    pub fn update_ui(&mut self, camera_distance: f32, is_ground: bool) -> (egui::FullOutput, Option<UiAction>) {
+    pub fn update_ui(&mut self, is_ground: bool) -> (egui::FullOutput, Option<UiAction>) {
         herocraft_common::prof_scope!("ui::update_ui");
         let mut raw_input = std::mem::take(&mut self.raw_input);
         let ppp = self.scale_factor.max(0.1_f32);
@@ -689,7 +715,7 @@ impl UiState {
         let egui_ctx = self.ctx.clone();
         let full_output = egui_ctx.run(raw_input, |ctx| {
             // 1. Réticule de visée en mode FPS (quand le menu est fermé)
-            if is_ground && !self.is_settings_open {
+            if is_ground && !self.is_settings_open && !self.inventory_open {
                 let center = ctx.screen_rect().center();
                 let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("crosshair")));
                 let stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_white_alpha(180));
@@ -710,18 +736,19 @@ impl UiState {
                 }
             }
 
-            // 2. Panneau HUD supérieur gauche (planète, actions, filtres), masqué sous le menu
-            if !self.is_settings_open {
-                self.draw_world_hud(ctx, is_ground, &mut action);
-            }
-
-            // Jauges du joueur en bas de l'écran, au sol, et voile rouge après une blessure
+            // Au sol : classe en bas à gauche, jauges en bas à droite, voile rouge après une
+            // blessure, barre d'objets au centre et écran d'inventaire par-dessus le jeu
             if is_ground && !self.is_settings_open {
                 self.draw_vitals_hud(ctx);
+                if self.inventory_open {
+                    self.draw_inventory_screen(ctx);
+                } else {
+                    self.draw_hotbar(ctx);
+                }
             }
 
-            // 3. Panneau HUD supérieur droit (FPS, altitude, raccourci menu)
-            self.draw_status_hud(ctx, camera_distance, is_ground);
+            // 3. Compteur FPS en haut à droite
+            self.draw_status_hud(ctx);
 
             // 4. Menu de pause (Échap) : voile en fondu puis panneau centré
             let fade = ctx.animate_bool_with_time(egui::Id::new("pause_backdrop"), self.is_settings_open, 0.15_f32);
@@ -737,100 +764,122 @@ impl UiState {
         (full_output, action)
     }
 
-    /// HUD du monde : graine, actions rapides et filtres cartographiques
-    fn draw_world_hud(&mut self, ctx: &egui::Context, is_ground: bool, action: &mut Option<UiAction>) {
+    /// Barre d'objets en bas de l'écran : la case choisie est cerclée d'or, le nom de son bloc
+    /// s'affiche au-dessus
+    fn draw_hotbar(&self, ctx: &egui::Context) {
         let screen = ctx.screen_rect();
-        let max_height = (screen.height() - 2.0_f32 * SCREEN_MARGIN - 24.0_f32).max(80.0_f32);
-
-        egui::Area::new(egui::Id::new("top_left_hud"))
-            .fixed_pos(egui::pos2(SCREEN_MARGIN, SCREEN_MARGIN))
+        let bottom = screen.bottom() - SCREEN_MARGIN;
+        egui::Area::new(egui::Id::new("hotbar"))
+            .order(egui::Order::Background)
+            .pivot(egui::Align2::CENTER_BOTTOM)
+            .fixed_pos(egui::pos2(screen.center().x, bottom))
+            .interactable(false)
             .show(ctx, |ui| {
-                hud_frame().inner_margin(egui::Margin::same(12.0_f32)).show(ui, |ui| {
-                    ui.set_width(240.0_f32);
-
-                    // Titre & Graine du monde
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("HEROCRAFT").strong().color(GOLD_BRIGHT).size(16.0_f32));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(egui::RichText::new(format!("#{}", self.current_seed)).monospace().color(TEXT_DIM).size(11.0_f32));
+                ui.vertical_centered(|ui| {
+                    let selected = self.inventory.slot(self.inventory.selected());
+                    let name = selected.map(|s| block_name(s.block)).unwrap_or("Main vide");
+                    // Sur un fond clair (sable, neige), le nom reste lisible sur sa pastille sombre
+                    let galley = ui.painter().layout_no_wrap(name.to_string(), egui::FontId::proportional(12.5_f32), TEXT_SOFT);
+                    let (rect, _) = ui.allocate_exact_size(galley.size() + egui::vec2(16.0_f32, 4.0_f32), egui::Sense::hover());
+                    ui.painter().rect_filled(rect, 4.0_f32, egui::Color32::from_black_alpha(150));
+                    ui.painter().galley(rect.min + egui::vec2(8.0_f32, 2.0_f32), galley, TEXT_SOFT);
+                    hud_frame().inner_margin(egui::Margin::same(4.0_f32)).show(ui, |ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(3.0_f32, 0.0_f32);
+                        ui.horizontal(|ui| {
+                            for i in 0..HOTBAR_SLOTS {
+                                let (rect, _) = ui.allocate_exact_size(egui::vec2(HOTBAR_SLOT_SIZE, HOTBAR_SLOT_SIZE), egui::Sense::hover());
+                                paint_slot(ui.painter(), rect, self.inventory.slot(i), i == self.inventory.selected(), false);
+                                ui.painter().text(
+                                    rect.left_top() + egui::vec2(4.0_f32, 2.0_f32),
+                                    egui::Align2::LEFT_TOP,
+                                    (i + 1).to_string(),
+                                    egui::FontId::proportional(9.5_f32),
+                                    TEXT_DIM,
+                                );
+                            }
                         });
                     });
-
-                    ui.add_space(2.0_f32);
-                    ui.separator();
-
-                    // Le contenu défile si la fenêtre est trop basse pour l'afficher en entier
-                    egui::ScrollArea::vertical()
-                        .id_salt("world_hud_scroll")
-                        .max_height(max_height - 40.0_f32)
-                        .auto_shrink([false, true])
-                        .show(ui, |ui| {
-                            let full = egui::vec2(ui.available_width(), 0.0_f32);
-
-                            let new_planet = format!("🎲  Nouvelle planète  {}", self.key_hint(Action::NewPlanet));
-                            if ui.add(egui::Button::new(new_planet).min_size(full)).clicked() {
-                                *action = Some(UiAction::GenerateNewPlanet);
-                            }
-
-                            let view_label = format!(
-                                "{}  {}",
-                                if is_ground { "🌍  Vue satellite" } else { "🚶  Vue au sol" },
-                                self.key_hint(Action::ToggleView)
-                            );
-                            if ui.add(egui::Button::new(view_label).min_size(full)).clicked() {
-                                *action = Some(UiAction::ToggleGroundCamera);
-                            }
-
-                            let rot_label = format!(
-                                "{}  {}",
-                                if self.auto_rotate { "⏸  Arrêter la rotation" } else { "▶  Auto-rotation" },
-                                self.key_hint(Action::Jump)
-                            );
-                            if ui.add(egui::Button::new(rot_label).min_size(full)).clicked() {
-                                *action = Some(UiAction::ToggleAutoRotate);
-                            }
-
-                            let reset_label = format!("🔄  Réinitialiser la vue  {}", self.key_hint(Action::ResetView));
-                            if ui.add(egui::Button::new(reset_label).min_size(full)).clicked() {
-                                *action = Some(UiAction::ResetCamera);
-                            }
-
-                            ui.add_space(2.0_f32);
-                            caption(ui, "FILTRES CARTOGRAPHIQUES");
-
-                            let tectonics_label = format!("Plaques tectoniques  {}", self.key_hint(Action::ToggleTectonics));
-                            if ui.checkbox(&mut self.show_tectonics, tectonics_label).changed() {
-                                if self.show_tectonics {
-                                    self.show_ocean_currents = false;
-                                }
-                                *action = Some(UiAction::ToggleTectonics);
-                            }
-
-                            let currents_label = format!("Courants marins  {}", self.key_hint(Action::ToggleOceanCurrents));
-                            if ui.checkbox(&mut self.show_ocean_currents, currents_label).changed() {
-                                if self.show_ocean_currents {
-                                    self.show_tectonics = false;
-                                }
-                                *action = Some(UiAction::ToggleOceanCurrents);
-                            }
-
-                            ui.add_space(2.0_f32);
-                            ui.separator();
-
-                            // Les réglages de rendu vivent dans le sous-menu Options
-                            if ui
-                                .add(egui::Button::new(egui::RichText::new("🎨  Réglages graphiques…").color(GOLD_BRIGHT)).min_size(full))
-                                .on_hover_text("Ouvre le menu Options (aussi accessible par Échap)")
-                                .clicked()
-                            {
-                                self.open_menu_at(MenuPage::Options);
-                                if self.options_tab == OptionsTab::Display {
-                                    self.options_tab = OptionsTab::Lighting;
-                                }
-                            }
-                        });
                 });
             });
+    }
+
+    /// Écran d'inventaire : sac de 27 cases au-dessus de la barre d'objets. Clic gauche : prendre,
+    /// poser, fusionner ou échanger une pile ; clic droit : prendre la moitié ou poser un bloc.
+    fn draw_inventory_screen(&mut self, ctx: &egui::Context) {
+        let open_key = self.controls.action_key_label(Action::OpenInventory);
+        let mut clicked: Option<(usize, bool)> = None;
+        let mut hovered: Option<usize> = None;
+        egui::Area::new(egui::Id::new("inventory_screen"))
+            .order(egui::Order::Middle)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                egui::Frame::none()
+                    .fill(egui::Color32::from_rgba_premultiplied(14, 18, 28, 245))
+                    .stroke(egui::Stroke::new(1.5_f32, GOLD))
+                    .rounding(egui::Rounding::same(10.0_f32))
+                    .inner_margin(egui::Margin::same(MENU_PADDING))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("INVENTAIRE").strong().size(16.0_f32).color(GOLD_BRIGHT));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.label(egui::RichText::new(format!("[{}] ou [Échap] pour fermer", open_key)).size(11.0_f32).color(TEXT_DIM));
+                            });
+                        });
+                        ui.add_space(4.0_f32);
+                        let mut slot_row = |ui: &mut egui::Ui, range: std::ops::Range<usize>| {
+                            ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+                            ui.horizontal(|ui| {
+                                for i in range {
+                                    let size = egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE);
+                                    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+                                    let selected = i == self.inventory.selected();
+                                    paint_slot(ui.painter(), rect, self.inventory.slot(i), selected, response.hovered());
+                                    if response.hovered() {
+                                        hovered = Some(i);
+                                    }
+                                    if response.clicked() {
+                                        clicked = Some((i, false));
+                                    } else if response.secondary_clicked() {
+                                        clicked = Some((i, true));
+                                    }
+                                }
+                            });
+                        };
+                        caption(ui, "SAC");
+                        for row in 0..TOTAL_SLOTS / HOTBAR_SLOTS - 1 {
+                            let start = HOTBAR_SLOTS + row * HOTBAR_SLOTS;
+                            slot_row(ui, start..start + HOTBAR_SLOTS);
+                        }
+                        ui.add_space(6.0_f32);
+                        caption(ui, "BARRE D'OBJETS");
+                        slot_row(ui, 0..HOTBAR_SLOTS);
+                        ui.add_space(2.0_f32);
+                        ui.label(
+                            egui::RichText::new("Clic gauche : prendre / poser une pile · Clic droit : moitié / un seul bloc")
+                                .size(11.0_f32)
+                                .color(TEXT_DIM),
+                        );
+                    });
+            });
+
+        match clicked {
+            Some((i, false)) => self.inventory.click(i),
+            Some((i, true)) => self.inventory.click_secondary(i),
+            None => {}
+        }
+
+        // Pile tenue sous le curseur, sinon nom du bloc survolé
+        if let Some(held) = self.inventory.held() {
+            if let Some(pos) = ctx.pointer_latest_pos() {
+                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("held_stack")));
+                let rect = egui::Rect::from_center_size(pos, egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE));
+                paint_stack(&painter, rect, held);
+            }
+        } else if let Some(stack) = hovered.and_then(|i| self.inventory.slot(i)) {
+            egui::show_tooltip_at_pointer(ctx, egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("inventory_tip")), egui::Id::new("inventory_tip"), |ui| {
+                ui.label(format!("{} × {}", block_name(stack.block), stack.count));
+            });
+        }
     }
 
     /// HUD du personnage : classe, niveau, expérience et jauges de vie, de mana et d'endurance
@@ -845,72 +894,62 @@ impl UiState {
         }
 
         let screen = ctx.screen_rect();
-        egui::Area::new(egui::Id::new("vitals_hud"))
-            .pivot(egui::Align2::CENTER_BOTTOM)
-            .fixed_pos(egui::pos2(screen.center().x, screen.bottom() - SCREEN_MARGIN))
+        // Classe, niveau et expérience en bas à gauche
+        egui::Area::new(egui::Id::new("class_hud"))
+            .order(egui::Order::Background)
+            .pivot(egui::Align2::LEFT_BOTTOM)
+            .fixed_pos(egui::pos2(SCREEN_MARGIN, screen.bottom() - SCREEN_MARGIN))
             .interactable(false)
             .show(ctx, |ui| {
-                hud_frame().inner_margin(egui::Margin::same(8.0_f32)).show(ui, |ui| {
-                    ui.spacing_mut().item_spacing = egui::vec2(8.0_f32, 5.0_f32);
-                    ui.set_width(3.0_f32 * GAUGE_WIDTH + 2.0_f32 * 8.0_f32);
+                hud_frame().inner_margin(egui::Margin::symmetric(10.0_f32, 6.0_f32)).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(8.0_f32, 4.0_f32);
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(stats.class.label()).strong().color(GOLD_BRIGHT));
                         ui.label(egui::RichText::new(format!("Niv. {}", stats.level)).color(TEXT_SOFT));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let next = stats.exp_for_next_level();
-                            ui.label(egui::RichText::new(format!("{} / {} XP", stats.experience, next)).size(11.0_f32).color(TEXT_DIM));
-                            gauge(ui, 90.0_f32, 6.0_f32, stats.experience as f32 / next.max(1) as f32, GOLD, None);
-                        });
                     });
-                    ui.horizontal(|ui| {
-                        let gauges = [
-                            ("Vie", stats.hp, stats.max_hp, egui::Color32::from_rgb(200, 45, 45)),
-                            ("Mana", stats.mana, stats.max_mana, egui::Color32::from_rgb(55, 105, 220)),
-                            ("Endurance", stats.stamina, stats.max_stamina, egui::Color32::from_rgb(70, 175, 70)),
-                        ];
-                        for (name, value, max, color) in gauges {
-                            let text = format!("{name}  {:.0} / {:.0}", value.max(0.0_f32).ceil(), max);
-                            gauge(ui, GAUGE_WIDTH, 16.0_f32, value / max.max(1.0_f32), color, Some(&text));
-                        }
-                    });
+                    let next = stats.exp_for_next_level();
+                    gauge(ui, 120.0_f32, 6.0_f32, stats.experience as f32 / next.max(1) as f32, GOLD, None);
+                    ui.label(egui::RichText::new(format!("{} / {} XP", stats.experience, next)).size(11.0_f32).color(TEXT_DIM));
                 });
+            });
+
+        // Vie, mana et endurance empilées en bas à droite, sans cadre
+        egui::Area::new(egui::Id::new("vitals_hud"))
+            .order(egui::Order::Background)
+            .pivot(egui::Align2::RIGHT_BOTTOM)
+            .fixed_pos(egui::pos2(screen.right() - SCREEN_MARGIN, screen.bottom() - SCREEN_MARGIN))
+            .interactable(false)
+            .show(ctx, |ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(0.0_f32, 5.0_f32);
+                let gauges = [
+                    ("Vie", stats.hp, stats.max_hp, egui::Color32::from_rgb(200, 45, 45)),
+                    ("Mana", stats.mana, stats.max_mana, egui::Color32::from_rgb(55, 105, 220)),
+                    ("Endurance", stats.stamina, stats.max_stamina, egui::Color32::from_rgb(70, 175, 70)),
+                ];
+                for (name, value, max, color) in gauges {
+                    let text = format!("{name}  {:.0} / {:.0}", value.max(0.0_f32).ceil(), max);
+                    gauge(ui, GAUGE_WIDTH, 16.0_f32, value / max.max(1.0_f32), color, Some(&text));
+                }
             });
     }
 
-    /// HUD d'état : compteur FPS, altitude et accès au menu
-    fn draw_status_hud(&mut self, ctx: &egui::Context, camera_distance: f32, is_ground: bool) {
+    /// Compteur FPS en haut à droite, seul élément permanent de l'écran
+    fn draw_status_hud(&self, ctx: &egui::Context) {
         let screen = ctx.screen_rect();
         egui::Area::new(egui::Id::new("top_right_hud"))
             .pivot(egui::Align2::RIGHT_TOP)
             .fixed_pos(egui::pos2(screen.right() - SCREEN_MARGIN, SCREEN_MARGIN))
+            .interactable(false)
             .show(ctx, |ui| {
-                hud_frame().inner_margin(egui::Margin::same(10.0_f32)).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let fps_color = if self.current_fps >= 55 {
-                            egui::Color32::from_rgb(80, 220, 100)
-                        } else if self.current_fps >= 30 {
-                            egui::Color32::from_rgb(240, 190, 50)
-                        } else {
-                            egui::Color32::from_rgb(240, 80, 80)
-                        };
-                        ui.label(egui::RichText::new(format!("{} FPS", self.current_fps)).strong().color(fps_color));
-
-                        ui.separator();
-
-                        let dist_label = if is_ground {
-                            "Sol (FPS)".to_string()
-                        } else {
-                            format!("{:.0} m", camera_distance)
-                        };
-                        ui.label(egui::RichText::new(dist_label).color(egui::Color32::from_rgb(180, 205, 240)));
-
-                        ui.separator();
-
-                        let menu_label = if self.is_settings_open { "✖ Fermer [Échap]" } else { "⚙ Menu [Échap]" };
-                        if ui.button(menu_label).clicked() {
-                            self.toggle_settings();
-                        }
-                    });
+                hud_frame().inner_margin(egui::Margin::symmetric(10.0_f32, 6.0_f32)).show(ui, |ui| {
+                    let fps_color = if self.current_fps >= 55 {
+                        egui::Color32::from_rgb(80, 220, 100)
+                    } else if self.current_fps >= 30 {
+                        egui::Color32::from_rgb(240, 190, 50)
+                    } else {
+                        egui::Color32::from_rgb(240, 80, 80)
+                    };
+                    ui.label(egui::RichText::new(format!("{} FPS", self.current_fps)).strong().color(fps_color));
                 });
             });
     }
@@ -1249,6 +1288,7 @@ impl UiState {
                     OptionsTab::Hdr => self.draw_hdr_tab(ui),
                     OptionsTab::Shadows => self.draw_shadows_tab(ui),
                     OptionsTab::Atmosphere => self.draw_atmosphere_tab(ui),
+                    OptionsTab::Audio => self.draw_audio_tab(ui, action),
                 }
                 ui.add_space(6.0_f32);
             });
@@ -1406,6 +1446,29 @@ impl UiState {
         }
     }
 
+    fn draw_audio_tab(&mut self, ui: &mut egui::Ui, action: &mut Option<UiAction>) {
+        let a = &mut self.audio_settings;
+        let mut changed = false;
+        settings_grid(ui, "audio_grid", |ui| {
+            row_label(ui, "Couper le son", "Silence complet, les volumes sont gardés");
+            changed |= toggle_switch(ui, &mut a.muted).changed();
+            ui.end_row();
+
+            let enabled = !a.muted;
+            changed |= volume_row(ui, enabled, "Volume général", &mut a.master, "Volume de tous les sons du jeu");
+            changed |= volume_row(ui, enabled, "   Bruitages", &mut a.effects, "Pas, sauts, blocs cassés et posés");
+            changed |= volume_row(ui, enabled, "   Ambiance", &mut a.ambience, "Vent, oiseaux le jour, grillons la nuit");
+        });
+        if reset_button(ui, "Réinitialiser le son") {
+            self.audio_settings.reset();
+            changed = true;
+        }
+        if changed {
+            self.audio_settings.save();
+            *action = Some(UiAction::PreviewSound);
+        }
+    }
+
     /// Pied de page : rappel de la touche Échap et action globale de la page
     fn draw_menu_footer(&mut self, ui: &mut egui::Ui, page: MenuPage, action: &mut Option<UiAction>) {
         ui.add_space(2.0_f32);
@@ -1462,6 +1525,53 @@ fn egui_key(key: &Key) -> Option<egui::Key> {
         Key::Character(c) if c.eq_ignore_ascii_case("a") => egui::Key::A,
         _ => return None,
     })
+}
+
+/// Côté d'une case de la barre d'objets et de l'écran d'inventaire (points logiques)
+const HOTBAR_SLOT_SIZE: f32 = 40.0;
+const INVENTORY_SLOT_SIZE: f32 = 44.0;
+
+/// Case d'inventaire : fond, liseré (or si choisie) et pile éventuelle
+fn paint_slot(painter: &egui::Painter, rect: egui::Rect, stack: Option<ItemStack>, selected: bool, hovered: bool) {
+    let fill = if hovered { egui::Color32::from_rgb(42, 54, 78) } else { egui::Color32::from_rgba_premultiplied(22, 28, 40, 230) };
+    painter.rect_filled(rect, 4.0_f32, fill);
+    let stroke = if selected {
+        egui::Stroke::new(2.0_f32, GOLD_BRIGHT)
+    } else {
+        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(55, 70, 95))
+    };
+    painter.rect_stroke(rect, 4.0_f32, stroke);
+    if let Some(stack) = stack {
+        paint_stack(painter, rect, stack);
+    }
+}
+
+/// Pile de blocs : petit cube isométrique aux couleurs du bloc et nombre en bas à droite
+fn paint_stack(painter: &egui::Painter, rect: egui::Rect, stack: ItemStack) {
+    let to_color = |c: [f32; 4], shade: f32| {
+        egui::Color32::from_rgb((c[0] * shade * 255.0) as u8, (c[1] * shade * 255.0) as u8, (c[2] * shade * 255.0) as u8)
+    };
+    let (top, side) = crate::inventory::item_colors(stack.block);
+    let c = rect.center();
+    let s = rect.width() * 0.62_f32;
+    let (hx, hy) = (s * 0.43_f32, s * 0.25_f32);
+    let p = |dx: f32, dy: f32| egui::pos2(c.x + dx, c.y + dy);
+    let outline = egui::Stroke::new(0.5_f32, egui::Color32::from_black_alpha(120));
+    let faces = [
+        (vec![p(0.0, -2.0 * hy), p(hx, -hy), p(0.0, 0.0), p(-hx, -hy)], to_color(top, 1.05)),
+        (vec![p(-hx, -hy), p(0.0, 0.0), p(0.0, 2.0 * hy), p(-hx, hy)], to_color(side, 0.82)),
+        (vec![p(0.0, 0.0), p(hx, -hy), p(hx, hy), p(0.0, 2.0 * hy)], to_color(side, 0.64)),
+    ];
+    for (points, fill) in faces {
+        painter.add(egui::Shape::convex_polygon(points, fill, outline));
+    }
+    if stack.count > 1 {
+        let pos = rect.right_bottom() - egui::vec2(3.0_f32, 1.0_f32);
+        let font = egui::FontId::proportional(12.0_f32);
+        let text = stack.count.to_string();
+        painter.text(pos + egui::vec2(1.0_f32, 1.0_f32), egui::Align2::RIGHT_BOTTOM, &text, font.clone(), egui::Color32::BLACK);
+        painter.text(pos, egui::Align2::RIGHT_BOTTOM, text, font, egui::Color32::WHITE);
+    }
 }
 
 /// Jauge horizontale remplie à `fraction`, avec son texte centré
@@ -1559,6 +1669,18 @@ fn slider_row_enabled(ui: &mut egui::Ui, enabled: bool, label: &str, value: &mut
     ui.add_enabled_ui(enabled, |ui| row_label(ui, label, hint));
     ui.add_enabled(enabled, egui::Slider::new(value, range).fixed_decimals(2)).on_hover_text(hint);
     ui.end_row();
+}
+
+/// Curseur de volume en pour cent. Vrai quand un réglage est terminé (curseur relâché ou clic) :
+/// c'est le moment de l'enregistrer et de faire entendre le nouveau volume.
+fn volume_row(ui: &mut egui::Ui, enabled: bool, label: &str, value: &mut f32, hint: &str) -> bool {
+    ui.add_enabled_ui(enabled, |ui| row_label(ui, label, hint));
+    let slider = egui::Slider::new(value, 0.0..=1.0).custom_formatter(|v, _| format!("{:.0} %", v * 100.0)).custom_parser(|text| {
+        text.trim().trim_end_matches('%').trim().parse::<f64>().ok().map(|v| v / 100.0)
+    });
+    let response = ui.add_enabled(enabled, slider).on_hover_text(hint);
+    ui.end_row();
+    response.drag_stopped() || (response.changed() && !response.dragged())
 }
 
 /// Choix exclusif présenté comme un sélecteur segmenté ; renvoie vrai si la valeur a changé
@@ -1692,8 +1814,14 @@ impl UiState {
                             }
                         }
 
+                        section_row(ui, "BARRE D'OBJETS");
+                        fixed_control_row(ui, &["1", "…", "9"], "Choisir une case");
+                        fixed_control_row(ui, &["Molette"], "Case précédente / suivante");
+
                         section_row(ui, "SOURIS");
                         fixed_control_row(ui, &["Souris"], "Regarder autour (au sol)");
+                        fixed_control_row(ui, &["Clic gauche"], "Casser le bloc visé (il tombe, à ramasser)");
+                        fixed_control_row(ui, &["Clic droit"], "Poser le bloc de la case choisie");
                         fixed_control_row(ui, &[zoom_key.as_str(), "Molette"], "Zoom, du sol à l'orbite");
                         fixed_control_row(ui, &["Clic", "glisser"], "Tourner la planète (vue satellite)");
 
@@ -1785,13 +1913,13 @@ mod tests {
         ui.set_screen_size(1280.0, 720.0);
 
         // Vue orbite
-        let (output_orbit, action_orbit) = ui.update_ui(200.0, false);
+        let (output_orbit, action_orbit) = ui.update_ui(false);
         assert!(action_orbit.is_none());
         assert!(!output_orbit.shapes.is_empty());
 
         // Vue sol avec menu paramètres ouvert
         ui.set_settings_open(true);
-        let (output_ground, action_ground) = ui.update_ui(10.0, true);
+        let (output_ground, action_ground) = ui.update_ui(true);
         assert!(action_ground.is_none());
         assert!(!output_ground.shapes.is_empty());
     }
@@ -1895,7 +2023,7 @@ mod tests {
                 }
                 // Plusieurs frames : egui mesure les zones à la première, et la taille doit rester stable
                 for _ in 0..6 {
-                    ui.update_ui(10.0, true);
+                    ui.update_ui(true);
                 }
 
                 let rect = ui
@@ -1917,6 +2045,52 @@ mod tests {
         }
     }
 
+    /// Échap referme d'abord l'inventaire, sans ouvrir le menu ; ouvrir le menu referme l'inventaire
+    #[test]
+    fn test_escape_and_menu_close_inventory() {
+        let mut ui = UiState::new(1);
+        ui.inventory.add(herocraft_common::BlockId::STONE);
+        ui.set_inventory_open(true);
+        ui.inventory.click(0);
+        assert!(ui.inventory.held().is_some());
+        assert!(!ui.handle_escape(), "Échap ferme l'inventaire sans ouvrir le menu");
+        assert!(!ui.inventory_open);
+        assert_eq!(ui.inventory.held(), None, "la pile tenue retourne dans l'inventaire");
+        assert_eq!(ui.inventory.count(herocraft_common::BlockId::STONE), 1);
+
+        ui.set_inventory_open(true);
+        ui.toggle_settings();
+        assert!(ui.is_settings_open && !ui.inventory_open);
+    }
+
+    /// Barre d'objets et écran d'inventaire tiennent dans la fenêtre
+    #[test]
+    fn test_hotbar_and_inventory_fit_screen() {
+        let mut ui = UiState::new(1);
+        ui.set_screen_size(1280.0, 720.0);
+        for _ in 0..3 {
+            ui.inventory.add(herocraft_common::BlockId::DIRT);
+        }
+        for _ in 0..3 {
+            ui.update_ui(true);
+        }
+        let hotbar = ui.ctx.memory(|m| m.area_rect(egui::Id::new("hotbar"))).expect("barre d'objets dessinée");
+        assert!(hotbar.bottom() <= 720.0 && hotbar.left() >= 0.0 && hotbar.right() <= 1280.0, "{:?}", hotbar);
+        // Ni les jauges (à droite) ni la classe (à gauche) ne chevauchent la barre d'objets
+        for id in ["vitals_hud", "class_hud"] {
+            let other = ui.ctx.memory(|m| m.area_rect(egui::Id::new(id))).expect("HUD du joueur dessiné");
+            assert!(!other.intersects(hotbar), "{id} chevauche la barre d'objets : {:?} / {:?}", other, hotbar);
+        }
+        assert!(hotbar.top() > 360.0, "{:?}", hotbar);
+
+        ui.set_inventory_open(true);
+        for _ in 0..3 {
+            ui.update_ui(true);
+        }
+        let screen = ui.ctx.memory(|m| m.area_rect(egui::Id::new("inventory_screen"))).expect("inventaire dessiné");
+        assert!(screen.top() >= 0.0 && screen.bottom() <= 720.0 && screen.left() >= 0.0 && screen.right() <= 1280.0, "{:?}", screen);
+    }
+
     /// Les jauges du joueur s'affichent au sol, en bas de l'écran, et pas en vue satellite
     #[test]
     fn test_vitals_hud_shown_on_ground_only() {
@@ -1924,38 +2098,29 @@ mod tests {
         ui.set_screen_size(1280.0, 720.0);
         ui.player.stats.hp = 0.5 * ui.player.stats.max_hp;
         for _ in 0..3 {
-            ui.update_ui(0.0, true);
+            ui.update_ui(true);
         }
         let rect = ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).expect("jauges dessinées");
         assert!(rect.bottom() <= 720.0 && rect.top() > 360.0, "{:?}", rect);
         assert!(rect.width() < 640.0, "{:?}", rect);
+        assert!(rect.left() > 640.0, "jauges à droite : {:?}", rect);
+        let class = ui.ctx.memory(|m| m.area_rect(egui::Id::new("class_hud"))).expect("classe dessinée");
+        assert!(class.right() < 640.0 && class.bottom() <= 720.0, "classe à gauche : {:?}", class);
+        // Plus de panneau en haut à gauche
+        assert!(ui.ctx.memory(|m| m.area_rect(egui::Id::new("top_left_hud"))).is_none());
 
         let mut ui = UiState::new(1);
         for _ in 0..3 {
-            ui.update_ui(200.0, false);
+            ui.update_ui(false);
         }
         assert!(ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).is_none());
-    }
-
-    /// Le HUD du monde défile au lieu de dépasser sur une fenêtre très basse
-    #[test]
-    fn test_world_hud_fits_screen() {
-        for (w, h) in [(1280.0, 720.0), (800.0, 300.0)] {
-            let mut ui = UiState::new(1);
-            ui.set_screen_size(w, h);
-            for _ in 0..4 {
-                ui.update_ui(200.0, false);
-            }
-            let rect = ui.ctx.memory(|m| m.area_rect(egui::Id::new("top_left_hud"))).expect("HUD dessiné");
-            assert!(rect.bottom() <= h + 0.5, "HUD de {}x{} : {:?}", w, h, rect);
-        }
     }
 
     /// Les pictogrammes du menu existent dans les polices embarquées d'egui
     #[test]
     fn test_menu_icons_have_glyphs() {
         let mut ui = UiState::new(1);
-        ui.update_ui(10.0, true);
+        ui.update_ui(true);
         let font = egui::FontId::proportional(14.0);
         let icons = ["▶", "⚙", "⌨", "🚪", "⬅", "↺", "🎨", "🎲", "🌍", "🚶", "⏸", "🔄", "✖", "›", "—"]
             .into_iter()
