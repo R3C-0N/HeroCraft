@@ -16,6 +16,7 @@ mod block_outline;
 mod camera;
 mod cloud_mesh;
 mod collision;
+mod dropped_items;
 mod gpu_timer;
 mod input;
 mod inventory;
@@ -55,7 +56,7 @@ fn main() {
     info!("==========================================================");
     info!("Contrôles (modifiables dans Échap > Commandes) :");
     info!(" • Souris                             : Regarder autour (curseur capturé en jeu)");
-    info!(" • Clic gauche / Clic droit           : Casser le bloc visé (vers l'inventaire) / Poser le bloc choisi");
+    info!(" • Clic gauche / Clic droit           : Casser le bloc visé (il tombe, à ramasser) / Poser le bloc choisi");
     info!(" • [1-9] / Molette / [E]              : Choisir la case de la barre d'objets / Inventaire");
     info!(" • [Z,Q,S,D] (AZERTY) / [W,A,S,D]     : Se déplacer");
     info!(" • [ESPACE] / double [ESPACE]         : Sauter / S'envoler (monter en vol)");
@@ -157,6 +158,9 @@ fn main() {
     let mut is_dragging = false;
     // Destruction (clic gauche) et pose (clic droit) du bloc visé par le réticule
     let mut block_interaction = BlockInteraction::new();
+    // Blocs cassés tombés au sol, ramassés en passant à proximité
+    let mut dropped_items = dropped_items::DroppedItems::new();
+    let game_start = Instant::now();
     let mut last_autosave = Instant::now();
     let mut last_mouse_pos = (0.0_f64, 0.0_f64);
     let mut last_frame_time = Instant::now();
@@ -229,7 +233,8 @@ fn main() {
                             let pressed = *btn_state == ElementState::Pressed;
                             if let Some(action) = block_interaction.on_mouse_button(*button, pressed) {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
-                                if let Some((pos, block)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
+                                if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
+                                    drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
                                     state.sync_lod_meshes(&lod_manager);
                                     if let Some(client) = net.as_mut() {
                                         client.send_block_change(pos, block);
@@ -404,7 +409,8 @@ fn main() {
                             let edits = lod_manager.terrain_edits().clone();
                             block_interaction.update_target(&camera, &generator, &edits);
                             if let Some(action) = block_interaction.tick(dt) {
-                                if let Some((pos, block)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
+                                if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
+                                    drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
                                     terrain_edited = true;
                                     if let Some(client) = net.as_mut() {
                                         client.send_block_change(pos, block);
@@ -459,6 +465,7 @@ fn main() {
                                     } else {
                                         current_seed = world.seed;
                                         switch_planet(current_seed, true, edits, None, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                        dropped_items.clear();
                                         // De retour sur ce serveur : là où le joueur l'avait quitté
                                         if let Some(spawn) = world.spawn_position {
                                             camera.player_pos = spawn;
@@ -506,6 +513,18 @@ fn main() {
                         } else if lan_browser.is_some() {
                             lan_browser = None;
                             ui_state.multiplayer.lan_servers.clear();
+                        }
+                        // Blocs tombés au sol : chute, ramassage par le joueur au sol (menu fermé), dessin
+                        if let Some(collider) = camera.collider.as_ref() {
+                            let h = collider.block_height();
+                            if !ui_state.is_settings_open {
+                                let on_ground = camera.target_distance <= camera.base_radius;
+                                let body = on_ground.then(|| camera.player_pos + camera.player_pos.normalize_or_zero() * 0.9 * h);
+                                dropped_items.update(dt, &generator, collider, body, &mut ui_state.inventory);
+                            }
+                            if let Some(mesh) = dropped_items.take_mesh(h, game_start.elapsed().as_secs_f32()) {
+                                state.set_dropped_items(&mesh);
+                            }
                         }
                         {
                             herocraft_common::prof_scope!("blocs::contour");
@@ -626,6 +645,7 @@ fn main() {
                                     } else {
                                         current_seed = solo_seed;
                                         switch_planet(current_seed, false, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                        dropped_items.clear();
                                     }
                                     block_interaction.invalidate();
                                     ui_state.multiplayer.status = NetStatus::Solo;
@@ -638,6 +658,7 @@ fn main() {
                                     current_seed = herocraft_world::random_seed();
                                     let (storage, edits) = solo_terrain(current_seed);
                                     switch_planet(current_seed, false, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                    dropped_items.clear();
                                     info!("Nouvelle planète générée ! (Graine: #{})", current_seed);
                                 }
                                 UiAction::ToggleGroundCamera => {
@@ -857,6 +878,13 @@ fn set_cursor_captured(window: &Window, captured: bool) {
         let _ = window.set_cursor_position(PhysicalPosition::new(size.width as f64 / 2.0, size.height as f64 / 2.0));
         window.set_cursor_visible(true);
     }
+}
+
+/// Le bloc cassé tombe au sol (s'il se ramasse : ni eau, ni lave)
+fn drop_broken_block(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, pos: herocraft_world::BlockPos, block: herocraft_common::BlockId, previous: herocraft_common::BlockId) {
+    let Some(item) = inventory::drop_for(previous).filter(|_| block.is_air()) else { return };
+    let height = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+    dropped.spawn(item, BlockInteraction::block_center(camera, pos), height);
 }
 
 /// Enregistre les chunks modifiés par le joueur depuis le dernier enregistrement

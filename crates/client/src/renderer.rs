@@ -143,6 +143,8 @@ pub struct State {
     block_outline: BlockOutline,
     /// Silhouettes des autres joueurs en ligne
     player_outlines: BlockOutline,
+    /// Blocs tombés au sol : petits cubes dessinés avec le relief, refaits à chaque frame
+    dropped_items: GrowableMesh,
 
     // Rendu Interface Utilisateur egui
     pub egui_renderer: egui_wgpu::Renderer,
@@ -522,6 +524,7 @@ impl State {
         // Rendu Interface Utilisateur egui
         // -------------------------------------------------------------
         let block_outline = BlockOutline::new(&device, &render_pipeline_layout, sample_count);
+        let dropped_items = GrowableMesh::new(&device, "Dropped Items");
         let player_outlines =
             BlockOutline::players(&device, &render_pipeline_layout, sample_count, crate::network::MAX_REMOTE_PLAYERS);
 
@@ -565,6 +568,7 @@ impl State {
             lod_uploads_pending: false,
             block_outline,
             player_outlines,
+            dropped_items,
             egui_renderer,
             vsync_mode,
             novsync_mode,
@@ -808,6 +812,11 @@ impl State {
         self.player_outlines.update(&self.queue, boxes, self.camera_eye);
     }
 
+    /// Cubes des blocs tombés au sol, dans le format du relief
+    pub fn set_dropped_items(&mut self, mesh: &crate::planet_mesh::PlanetMesh) {
+        self.dropped_items.upload(&self.device, &self.queue, mesh);
+    }
+
     /// Des maillages LOD restent à envoyer : appeler `sync_lod_meshes` à la prochaine frame
     pub fn has_pending_lod_uploads(&self) -> bool {
         self.lod_uploads_pending
@@ -935,6 +944,15 @@ impl State {
                     }
                 }
             }
+            // Blocs tombés au sol : même pipeline que le relief (éclairage, ombres reçues)
+            if self.dropped_items.num_indices > 0 {
+                render_pass.set_pipeline(&self.render_pipeline);
+                render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
+                render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.dropped_items.vertex_buffer.slice(..));
+                render_pass.set_index_buffer(self.dropped_items.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..self.dropped_items.num_indices, 0, 0..1);
+            }
             // Contour du bloc visé, sur la profondeur du relief
             self.block_outline.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
             self.player_outlines.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
@@ -1030,6 +1048,53 @@ impl State {
         }
 
         Ok(())
+    }
+}
+
+/// Petit maillage réécrit souvent (blocs tombés au sol) : ses buffers ne sont recréés que s'il
+/// grossit au-delà de leur taille
+struct GrowableMesh {
+    label: &'static str,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    /// Sommets et indices que les buffers peuvent contenir
+    capacity: (usize, usize),
+    num_indices: u32,
+}
+
+impl GrowableMesh {
+    fn new(device: &wgpu::Device, label: &'static str) -> Self {
+        let (vertex_buffer, index_buffer) = Self::buffers(device, label, (1, 1));
+        Self { label, vertex_buffer, index_buffer, capacity: (1, 1), num_indices: 0 }
+    }
+
+    fn buffers(device: &wgpu::Device, label: &str, capacity: (usize, usize)) -> (wgpu::Buffer, wgpu::Buffer) {
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: (capacity.0 * std::mem::size_of::<PlanetVertex>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: (capacity.1 * std::mem::size_of::<u32>()) as wgpu::BufferAddress,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        (vertex_buffer, index_buffer)
+    }
+
+    fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, mesh: &crate::planet_mesh::PlanetMesh) {
+        self.num_indices = mesh.indices.len() as u32;
+        if mesh.indices.is_empty() {
+            return;
+        }
+        if mesh.vertices.len() > self.capacity.0 || mesh.indices.len() > self.capacity.1 {
+            self.capacity = (mesh.vertices.len().next_power_of_two(), mesh.indices.len().next_power_of_two());
+            (self.vertex_buffer, self.index_buffer) = Self::buffers(device, self.label, self.capacity);
+        }
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&mesh.vertices));
+        queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&mesh.indices));
     }
 }
 

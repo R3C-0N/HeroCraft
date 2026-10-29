@@ -1572,32 +1572,12 @@ fn paint_slot(painter: &egui::Painter, rect: egui::Rect, stack: Option<ItemStack
     }
 }
 
-/// Teintes du dessus et des côtés de l'icône d'un bloc : celles du terrain, et pour les blocs
-/// que le terrain peint encore en gris neutre, une teinte qui les distingue
-fn icon_colors(block: herocraft_common::BlockId) -> ([f32; 4], [f32; 4]) {
-    use herocraft_common::BlockId;
-    let tint = match block {
-        BlockId::IRON_ORE => Some([0.66, 0.52, 0.44, 1.0]),
-        BlockId::GOLD_ORE => Some([0.86, 0.70, 0.24, 1.0]),
-        BlockId::CRYSTAL => Some([0.62, 0.86, 0.95, 1.0]),
-        BlockId::OBSIDIAN => Some([0.20, 0.14, 0.30, 1.0]),
-        _ => None,
-    };
-    match tint {
-        Some(color) => (color, color),
-        None => (
-            crate::voxel_mesh::VoxelMeshBuilder::block_color(block, true),
-            crate::voxel_mesh::VoxelMeshBuilder::block_color(block, false),
-        ),
-    }
-}
-
 /// Pile de blocs : petit cube isométrique aux couleurs du bloc et nombre en bas à droite
 fn paint_stack(painter: &egui::Painter, rect: egui::Rect, stack: ItemStack) {
     let to_color = |c: [f32; 4], shade: f32| {
         egui::Color32::from_rgb((c[0] * shade * 255.0) as u8, (c[1] * shade * 255.0) as u8, (c[2] * shade * 255.0) as u8)
     };
-    let (top, side) = icon_colors(stack.block);
+    let (top, side) = crate::inventory::item_colors(stack.block);
     let c = rect.center();
     let s = rect.width() * 0.62_f32;
     let (hx, hy) = (s * 0.43_f32, s * 0.25_f32);
@@ -1835,7 +1815,7 @@ impl UiState {
 
                         section_row(ui, "SOURIS");
                         fixed_control_row(ui, &["Souris"], "Regarder autour (au sol)");
-                        fixed_control_row(ui, &["Clic gauche"], "Casser le bloc visé (il va dans l'inventaire)");
+                        fixed_control_row(ui, &["Clic gauche"], "Casser le bloc visé (il tombe, à ramasser)");
                         fixed_control_row(ui, &["Clic droit"], "Poser le bloc de la case choisie");
                         fixed_control_row(ui, &[zoom_key.as_str(), "Molette"], "Zoom, du sol à l'orbite");
                         fixed_control_row(ui, &["Clic", "glisser"], "Tourner la planète (vue satellite)");

@@ -1,5 +1,5 @@
 //! Destruction et pose de blocs : le bloc sous le réticule est visé à chaque frame, le clic
-//! gauche le détruit et le range dans l'inventaire, le clic droit pose contre la face visée le
+//! gauche le détruit (il tombe au sol, à ramasser), le clic droit pose contre la face visée le
 //! bloc de la case choisie de la barre d'objets. Un bouton gardé enfoncé répète l'action. La
 //! modification est appliquée et remaillée dans la frame même.
 
@@ -12,7 +12,7 @@ use herocraft_world::{raycast_blocks, BlockGeometry, BlockPos, PlanetWorldGenera
 use winit::event::MouseButton;
 
 use crate::camera::{footprint, OrbitCamera, PLAYER_HEIGHT};
-use crate::inventory::{drop_for, Inventory};
+use crate::inventory::Inventory;
 use crate::lod::PlanetLodManager;
 
 /// Portée de la visée, en blocs depuis la tête du joueur
@@ -120,10 +120,10 @@ impl BlockInteraction {
         self.columns = query.into_columns();
     }
 
-    /// Applique l'action au bloc visé, puis vise à nouveau. Le bloc cassé entre dans l'inventaire
-    /// (perdu s'il est plein), le bloc posé est pris dans la case choisie de la barre d'objets.
-    /// Renvoie le bloc changé et son nouveau contenu si le terrain a changé (les maillages touchés
-    /// sont déjà refaits : il reste à les envoyer au GPU).
+    /// Applique l'action au bloc visé, puis vise à nouveau. Le bloc posé est pris dans la case
+    /// choisie de la barre d'objets. Renvoie le bloc changé, son nouveau contenu et l'ancien (le
+    /// bloc cassé, à faire tomber au sol) si le terrain a changé (les maillages touchés sont déjà
+    /// refaits : il reste à les envoyer au GPU).
     pub fn apply(
         &mut self,
         action: BlockAction,
@@ -131,7 +131,7 @@ impl BlockInteraction {
         generator: &PlanetWorldGenerator,
         lod: &mut PlanetLodManager,
         inventory: &mut Inventory,
-    ) -> Option<(BlockPos, BlockId)> {
+    ) -> Option<(BlockPos, BlockId, BlockId)> {
         herocraft_common::prof_scope!("blocs::modification");
         let hit = self.target?;
         let (pos, block) = match action {
@@ -145,22 +145,19 @@ impl BlockInteraction {
         if !lod.set_block(generator, pos, block) {
             return None;
         }
-        match action {
-            BlockAction::Break => {
-                if let Some(drop) = drop_for(previous) {
-                    if !inventory.add(drop) {
-                        log::info!("Inventaire plein : le bloc cassé est perdu.");
-                    }
-                }
-            }
-            BlockAction::Place => {
-                inventory.take_selected();
-            }
+        if action == BlockAction::Place {
+            inventory.take_selected();
         }
         let edits = lod.terrain_edits().clone();
         self.last_aim = None;
         self.update_target(camera, generator, &edits);
-        Some((pos, block))
+        Some((pos, block, previous))
+    }
+
+    /// Centre d'un bloc dans le repère du monde (là où tombe le bloc cassé)
+    pub fn block_center(camera: &OrbitCamera, pos: BlockPos) -> Vec3 {
+        let geometry = BlockGeometry::new(camera.base_radius as f64);
+        (geometry.block_corners(pos).iter().sum::<glam::DVec3>() / 8.0).as_vec3()
     }
 
     /// Le terrain a changé ailleurs (un autre joueur) : la visée est refaite à la prochaine frame
@@ -236,10 +233,12 @@ mod tests {
         assert!(interaction.apply(BlockAction::Place, &camera, &generator, &mut lod, &mut inventory).is_none());
 
         let broken = lod.terrain_edits().block(&generator, first.block);
-        assert!(interaction.apply(BlockAction::Break, &camera, &generator, &mut lod, &mut inventory).is_some());
+        let (_, air, previous) = interaction.apply(BlockAction::Break, &camera, &generator, &mut lod, &mut inventory).unwrap();
+        assert_eq!((air, previous), (BlockId::AIR, broken), "le bloc cassé est renvoyé pour tomber au sol");
         assert_eq!(lod.terrain_edits().block(&generator, first.block), BlockId::AIR);
-        let gained = drop_for(broken).expect("un bloc solide se ramasse");
-        assert_eq!(inventory.selected_block(), Some(gained), "le bloc cassé entre dans la barre d'objets");
+        assert_eq!(inventory.selected_block(), None, "il n'entre pas directement dans l'inventaire");
+        let gained = crate::inventory::drop_for(broken).expect("un bloc solide se ramasse");
+        inventory.add(gained);
         let second = interaction.target().copied().expect("le bloc suivant est visé");
         assert_ne!(second.block, first.block);
 

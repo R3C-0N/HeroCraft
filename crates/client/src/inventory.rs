@@ -1,5 +1,5 @@
 //! Inventaire du joueur : 9 cases de barre d'objets (touches 1 à 9, molette) et 27 cases de sac.
-//! Les blocs cassés y entrent, le bloc posé au clic droit est pris dans la case choisie de la
+//! Les blocs ramassés au sol y entrent, le bloc posé au clic droit est pris dans la case choisie de la
 //! barre. Enregistré en JSON avec le monde.
 
 use std::path::{Path, PathBuf};
@@ -139,6 +139,11 @@ impl Inventory {
         }
     }
 
+    /// Un bloc de plus trouverait sa place
+    pub fn has_room_for(&self, block: BlockId) -> bool {
+        self.slots.iter().any(|s| s.is_none_or(|s| s.block == block && s.count < MAX_STACK))
+    }
+
     /// Nombre total d'un bloc dans l'inventaire
     #[allow(dead_code)]
     pub fn count(&self, block: BlockId) -> u32 {
@@ -236,6 +241,25 @@ pub fn drop_for(block: BlockId) -> Option<BlockId> {
         BlockId::AIR | BlockId::WATER | BlockId::LAVA => None,
         BlockId::GRASS => Some(BlockId::DIRT),
         other => Some(other),
+    }
+}
+
+/// Teintes du dessus et des côtés d'un objet (icône, bloc tombé au sol) : celles du terrain, et
+/// pour les blocs que le terrain peint encore en gris neutre, une teinte qui les distingue
+pub fn item_colors(block: BlockId) -> ([f32; 4], [f32; 4]) {
+    let tint = match block {
+        BlockId::IRON_ORE => Some([0.66, 0.52, 0.44, 1.0]),
+        BlockId::GOLD_ORE => Some([0.86, 0.70, 0.24, 1.0]),
+        BlockId::CRYSTAL => Some([0.62, 0.86, 0.95, 1.0]),
+        BlockId::OBSIDIAN => Some([0.20, 0.14, 0.30, 1.0]),
+        _ => None,
+    };
+    match tint {
+        Some(color) => (color, color),
+        None => (
+            crate::voxel_mesh::VoxelMeshBuilder::block_color(block, true),
+            crate::voxel_mesh::VoxelMeshBuilder::block_color(block, false),
+        ),
     }
 }
 
