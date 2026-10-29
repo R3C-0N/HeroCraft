@@ -29,6 +29,12 @@ egui = "0.30"
 egui-wgpu = "0.30"
 naga = "23"
 naga_oil = { version = "0.16", default-features = false }
+# Son : mixage et sortie audio (les sons sont synthétisés par le jeu, aucun décodeur requis)
+rodio = { version = "0.23", default-features = false, features = ["playback"] }
+
+# Son sous Linux : PulseAudio (et PipeWire) d'abord, ALSA en secours. WSLg n'expose que PulseAudio.
+[target.'cfg(target_os = "linux")'.dependencies]
+cpal = { version = "0.18", features = ["pulseaudio"] }
 
 # Crochet clavier : les touches du jeu passent avant PowerToys et les autres programmes
 [target.'cfg(windows)'.dependencies]

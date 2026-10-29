@@ -11,6 +11,7 @@ use winit::{
 };
 
 mod atmosphere;
+mod audio;
 mod block_interaction;
 mod block_outline;
 mod camera;
@@ -25,6 +26,7 @@ mod lod;
 mod monitor;
 mod network;
 mod planet_mesh;
+mod player_stats;
 mod post;
 mod renderer;
 mod shaders;
@@ -124,6 +126,12 @@ fn main() {
     ui_state.set_screen_size(size.width as f32, size.height as f32);
     ui_state.controls = input::Controls::load_or_default(input::CONTROLS_FILE);
     ui_state.inventory = inventory::Inventory::load_or_default(inventory_file(current_seed, false));
+    ui_state.audio_settings = audio::AudioSettings::load_or_default(audio::AUDIO_FILE);
+    // Son : bruitages du joueur et des blocs, ambiance (muet sans carte son)
+    let mut audio = audio::Audio::new();
+    // Le ciel au-dessus du joueur (grotte ou plein air) n'est relu que de temps en temps
+    let mut sky_check_in = 0.0_f32;
+    let mut sky_covered = false;
 
     // Partie en ligne : connexion en cours, connexion établie, partie ouverte au réseau local par
     // ce jeu, recherche des parties du réseau local (page Multijoueur ouverte)
@@ -234,6 +242,7 @@ fn main() {
                             if let Some(action) = block_interaction.on_mouse_button(*button, pressed) {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
                                 if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
+                                    block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
                                     drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
                                     state.sync_lod_meshes(&lod_manager);
                                     if let Some(client) = net.as_mut() {
@@ -397,6 +406,22 @@ fn main() {
                         if !ui_state.is_settings_open {
                             herocraft_common::prof_scope!("frame::camera_update");
                             camera.update(dt, &generator);
+                            // Jauges du joueur, chute terminée : dommages (signalés au serveur en
+                            // ligne) et, si elle tue, retour au point d'apparition
+                            ui_state.player.tick(dt, &mut camera);
+                            if let Some(blocks) = camera.take_landing() {
+                                if let Some(client) = net.as_mut() {
+                                    client.send_fall(blocks);
+                                }
+                                if ui_state.player.fall(blocks) {
+                                    info!("Mort après une chute de {:.0} blocs : retour au point d'apparition.", blocks);
+                                    camera.spawn_on_ground(&generator);
+                                }
+                            }
+                        }
+                        {
+                            herocraft_common::prof_scope!("son");
+                            update_sound(&mut audio, &camera, &generator, &state, &ui_state, dt, &mut sky_check_in, &mut sky_covered);
                         }
                         state.update_camera(&camera, &ui_state.lighting_settings, &ui_state.cloud_settings, ui_state.video_settings.flattening);
                         state.update_post(&ui_state.post_settings);
@@ -410,6 +435,7 @@ fn main() {
                             block_interaction.update_target(&camera, &generator, &edits);
                             if let Some(action) = block_interaction.tick(dt) {
                                 if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
+                                    block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
                                     drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
                                     terrain_edited = true;
                                     if let Some(client) = net.as_mut() {
@@ -429,11 +455,18 @@ fn main() {
                             for event in client.poll() {
                                 match event {
                                     NetEvent::BlockChanged(pos, block) => {
+                                        let previous = lod_manager.terrain_edits().block(&generator, pos);
                                         if lod_manager.set_block(&generator, pos, block) {
+                                            // Bloc changé par un autre joueur : entendu s'il est proche
+                                            let geometry = herocraft_world::BlockGeometry::new(camera.base_radius as f64);
+                                            let centre = geometry.block_corners(pos).iter().sum::<glam::DVec3>() / 8.0;
+                                            let distance = (centre.as_vec3() - camera.player_pos).length() / geometry.block_height as f32;
+                                            block_sound(&mut audio, Some(previous), block, distance, &ui_state.audio_settings);
                                             terrain_edited = true;
                                             block_interaction.invalidate();
                                         }
                                     }
+                                    NetEvent::Stats(stats) => ui_state.player.sync(stats, &mut camera),
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
                                 }
                             }
@@ -555,6 +588,7 @@ fn main() {
                         for action in pending_actions.drain(..) {
                             herocraft_common::prof_scope!("frame::ui_action");
                             match action {
+                                UiAction::PreviewSound => audio.preview(&ui_state.audio_settings),
                                 UiAction::ResumeGame => {
                                     ui_state.set_settings_open(false);
                                     info!("Bouton cliqué : Reprise de la partie.");
@@ -750,6 +784,75 @@ fn main() {
 
 /// Titre de la fenêtre en solo
 const WINDOW_TITLE: &str = "HeroCraft — Planète QuadTree LOD (Rust / WGPU)";
+
+/// Son d'un bloc qui change : casse du bloc d'avant s'il devient de l'air, pose du nouveau sinon
+fn block_sound(
+    audio: &mut audio::Audio,
+    previous: Option<herocraft_common::BlockId>,
+    block: herocraft_common::BlockId,
+    distance_blocks: f32,
+    settings: &audio::AudioSettings,
+) {
+    use audio::synth::Material;
+    if block.is_air() {
+        if let Some(previous) = previous.filter(|b| !b.is_air()) {
+            audio.block_broken(Material::of(previous), distance_blocks, settings);
+        }
+    } else {
+        audio.block_placed(Material::of(block), distance_blocks, settings);
+    }
+}
+
+/// Pas, saut et réception du joueur au sol, puis ambiance (vent, oiseaux, grillons)
+#[allow(clippy::too_many_arguments)]
+fn update_sound(
+    audio: &mut audio::Audio,
+    camera: &OrbitCamera,
+    generator: &herocraft_world::PlanetWorldGenerator,
+    state: &State,
+    ui_state: &UiState,
+    dt: f32,
+    sky_check_in: &mut f32,
+    sky_covered: &mut bool,
+) {
+    let settings = &ui_state.audio_settings;
+    let ground_view = camera.distance <= camera.base_radius;
+    let block_height = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+    if ground_view && !ui_state.is_settings_open {
+        let surface = camera.surface_block(generator).map_or(audio::synth::Material::Grass, audio::synth::Material::of);
+        let player = audio::events::PlayerState {
+            position: camera.player_pos,
+            grounded: camera.is_grounded,
+            flying: camera.is_flying,
+            sprinting: camera.is_sprinting,
+            vertical_speed: camera.vertical_velocity / block_height,
+            block_height,
+        };
+        audio.update_player(player, surface, settings);
+    } else {
+        audio.reset_player();
+    }
+
+    *sky_check_in -= dt;
+    if *sky_check_in <= 0.0 {
+        *sky_check_in = 0.5;
+        *sky_covered = ground_view && camera.sky_covered(generator);
+    }
+    let up = camera.player_pos.normalize_or_zero();
+    let height_blocks = if ground_view && camera.is_flying {
+        ((camera.player_pos.length() - camera.ground_radius_at(up, generator)) / block_height).max(0.0)
+    } else {
+        0.0
+    };
+    let input = audio::AmbienceInput {
+        ground_view,
+        paused: ui_state.is_settings_open,
+        height_blocks,
+        covered: *sky_covered,
+        is_day: state.sun_dir().dot(up) > -0.05,
+    };
+    audio.update_ambience(dt, input, settings);
+}
 
 /// Dossier de sauvegarde d'un monde solo (aussi celui du serveur qui l'ouvre au réseau local)
 fn solo_save_dir(seed: u64) -> String {

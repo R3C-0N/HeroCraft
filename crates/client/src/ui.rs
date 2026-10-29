@@ -1,8 +1,10 @@
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{Key, KeyCode, NamedKey};
 
+use crate::audio::AudioSettings;
 use crate::input::{is_reserved_key, Action, Controls, ACTION_GROUPS};
 use crate::inventory::{block_name, Inventory, ItemStack, HOTBAR_SLOTS, TOTAL_SLOTS};
+use crate::player_stats::PlayerStats;
 
 /// Actions déclenchées par l'interface utilisateur
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +29,8 @@ pub enum UiAction {
     JoinServer,
     /// Quitter la partie en ligne (ou la fermer si elle est ouverte ici) et revenir au solo
     LeaveServer,
+    /// Options > Son : un volume vient d'être réglé, un son d'essai le fait entendre
+    PreviewSound,
 }
 
 /// État de la partie en ligne, affiché dans la page Multijoueur
@@ -304,16 +308,18 @@ pub enum OptionsTab {
     Hdr,
     Shadows,
     Atmosphere,
+    Audio,
 }
 
 impl OptionsTab {
-    pub const ALL: [OptionsTab; 6] = [
+    pub const ALL: [OptionsTab; 7] = [
         OptionsTab::Display,
         OptionsTab::Lighting,
         OptionsTab::Clouds,
         OptionsTab::Hdr,
         OptionsTab::Shadows,
         OptionsTab::Atmosphere,
+        OptionsTab::Audio,
     ];
 
     pub fn icon(self) -> &'static str {
@@ -324,6 +330,7 @@ impl OptionsTab {
             OptionsTab::Hdr => "✨",
             OptionsTab::Shadows => "🌓",
             OptionsTab::Atmosphere => "🌅",
+            OptionsTab::Audio => "🔊",
         }
     }
 
@@ -335,6 +342,7 @@ impl OptionsTab {
             OptionsTab::Hdr => "Rendu HDR",
             OptionsTab::Shadows => "Ombres",
             OptionsTab::Atmosphere => "Atmosphère",
+            OptionsTab::Audio => "Son",
         }
     }
 
@@ -346,6 +354,7 @@ impl OptionsTab {
             OptionsTab::Hdr => "Exposition, courbe de tons et halo lumineux",
             OptionsTab::Shadows => "Ombres portées du relief et des nuages",
             OptionsTab::Atmosphere => "Diffusion de l'air, brume et rayons crépusculaires",
+            OptionsTab::Audio => "Volume général, bruitages et ambiance",
         }
     }
 }
@@ -359,6 +368,10 @@ const DANGER: egui::Color32 = egui::Color32::from_rgb(245, 110, 110);
 
 /// Marge minimale entre un panneau et le bord de l'écran (points logiques)
 const SCREEN_MARGIN: f32 = 16.0;
+/// Largeur d'une jauge du HUD (vie, mana, endurance)
+const GAUGE_WIDTH: f32 = 150.0;
+/// Durée du voile rouge après une blessure, en secondes
+const HURT_FLASH_SECS: f32 = 0.6;
 /// Marge intérieure du cadre du menu de pause
 const MENU_PADDING: f32 = 18.0;
 /// En dessous de cette largeur, les onglets des options passent au-dessus du contenu
@@ -386,6 +399,7 @@ pub struct UiState {
     pub post_settings: PostSettings,
     pub shadow_settings: ShadowSettings,
     pub atmosphere_settings: AtmosphereSettings,
+    pub audio_settings: AudioSettings,
     pub controls: Controls,
     /// Action en attente d'une nouvelle touche dans la page Commandes
     pub rebinding: Option<Action>,
@@ -402,6 +416,8 @@ pub struct UiState {
     pub inventory: Inventory,
     /// Écran d'inventaire ouvert (la souris est libérée pour déplacer les piles)
     pub inventory_open: bool,
+    /// Jauges, classe et niveau du joueur
+    pub player: PlayerStats,
 }
 
 impl UiState {
@@ -430,6 +446,7 @@ impl UiState {
             post_settings: PostSettings::default(),
             shadow_settings: ShadowSettings::default(),
             atmosphere_settings: AtmosphereSettings::default(),
+            audio_settings: AudioSettings::default(),
             controls: Controls::default(),
             rebinding: None,
             rebind_notice: None,
@@ -440,6 +457,7 @@ impl UiState {
             multiplayer: MultiplayerUi::default(),
             inventory: Inventory::default(),
             inventory_open: false,
+            player: PlayerStats::default(),
         }
     }
 
@@ -727,8 +745,10 @@ impl UiState {
                 self.draw_world_hud(ctx, is_ground, &mut action);
             }
 
-            // Barre d'objets au sol, écran d'inventaire par-dessus le jeu
+            // Jauges du joueur en bas de l'écran, au sol, et voile rouge après une blessure ;
+            // barre d'objets juste au-dessus, écran d'inventaire par-dessus le jeu
             if is_ground && !self.is_settings_open {
+                self.draw_vitals_hud(ctx);
                 if self.inventory_open {
                     self.draw_inventory_screen(ctx);
                 } else {
@@ -757,10 +777,14 @@ impl UiState {
     /// s'affiche au-dessus
     fn draw_hotbar(&self, ctx: &egui::Context) {
         let screen = ctx.screen_rect();
+        // Au-dessus des jauges du joueur quand elles sont affichées
+        let bottom = ctx
+            .memory(|m| m.area_rect(egui::Id::new("vitals_hud")))
+            .map_or(screen.bottom() - SCREEN_MARGIN, |vitals| vitals.top() - 6.0_f32);
         egui::Area::new(egui::Id::new("hotbar"))
             .order(egui::Order::Background)
             .pivot(egui::Align2::CENTER_BOTTOM)
-            .fixed_pos(egui::pos2(screen.center().x, screen.bottom() - SCREEN_MARGIN))
+            .fixed_pos(egui::pos2(screen.center().x, bottom))
             .interactable(false)
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
@@ -962,6 +986,50 @@ impl UiState {
                                 }
                             }
                         });
+                });
+            });
+    }
+
+    /// HUD du personnage : classe, niveau, expérience et jauges de vie, de mana et d'endurance
+    fn draw_vitals_hud(&mut self, ctx: &egui::Context) {
+        let stats = &self.player.stats;
+        if let Some(hurt) = self.player.hurt_at {
+            let t = hurt.elapsed().as_secs_f32() / HURT_FLASH_SECS;
+            if t < 1.0_f32 {
+                ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("hurt_flash")))
+                    .rect_filled(ctx.screen_rect(), 0.0_f32, egui::Color32::from_rgba_unmultiplied(200, 20, 20, (110.0_f32 * (1.0_f32 - t)) as u8));
+            }
+        }
+
+        let screen = ctx.screen_rect();
+        egui::Area::new(egui::Id::new("vitals_hud"))
+            .pivot(egui::Align2::CENTER_BOTTOM)
+            .fixed_pos(egui::pos2(screen.center().x, screen.bottom() - SCREEN_MARGIN))
+            .interactable(false)
+            .show(ctx, |ui| {
+                hud_frame().inner_margin(egui::Margin::same(8.0_f32)).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(8.0_f32, 5.0_f32);
+                    ui.set_width(3.0_f32 * GAUGE_WIDTH + 2.0_f32 * 8.0_f32);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(stats.class.label()).strong().color(GOLD_BRIGHT));
+                        ui.label(egui::RichText::new(format!("Niv. {}", stats.level)).color(TEXT_SOFT));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let next = stats.exp_for_next_level();
+                            ui.label(egui::RichText::new(format!("{} / {} XP", stats.experience, next)).size(11.0_f32).color(TEXT_DIM));
+                            gauge(ui, 90.0_f32, 6.0_f32, stats.experience as f32 / next.max(1) as f32, GOLD, None);
+                        });
+                    });
+                    ui.horizontal(|ui| {
+                        let gauges = [
+                            ("Vie", stats.hp, stats.max_hp, egui::Color32::from_rgb(200, 45, 45)),
+                            ("Mana", stats.mana, stats.max_mana, egui::Color32::from_rgb(55, 105, 220)),
+                            ("Endurance", stats.stamina, stats.max_stamina, egui::Color32::from_rgb(70, 175, 70)),
+                        ];
+                        for (name, value, max, color) in gauges {
+                            let text = format!("{name}  {:.0} / {:.0}", value.max(0.0_f32).ceil(), max);
+                            gauge(ui, GAUGE_WIDTH, 16.0_f32, value / max.max(1.0_f32), color, Some(&text));
+                        }
+                    });
                 });
             });
     }
@@ -1338,6 +1406,7 @@ impl UiState {
                     OptionsTab::Hdr => self.draw_hdr_tab(ui),
                     OptionsTab::Shadows => self.draw_shadows_tab(ui),
                     OptionsTab::Atmosphere => self.draw_atmosphere_tab(ui),
+                    OptionsTab::Audio => self.draw_audio_tab(ui, action),
                 }
                 ui.add_space(6.0_f32);
             });
@@ -1495,6 +1564,29 @@ impl UiState {
         }
     }
 
+    fn draw_audio_tab(&mut self, ui: &mut egui::Ui, action: &mut Option<UiAction>) {
+        let a = &mut self.audio_settings;
+        let mut changed = false;
+        settings_grid(ui, "audio_grid", |ui| {
+            row_label(ui, "Couper le son", "Silence complet, les volumes sont gardés");
+            changed |= toggle_switch(ui, &mut a.muted).changed();
+            ui.end_row();
+
+            let enabled = !a.muted;
+            changed |= volume_row(ui, enabled, "Volume général", &mut a.master, "Volume de tous les sons du jeu");
+            changed |= volume_row(ui, enabled, "   Bruitages", &mut a.effects, "Pas, sauts, blocs cassés et posés");
+            changed |= volume_row(ui, enabled, "   Ambiance", &mut a.ambience, "Vent, oiseaux le jour, grillons la nuit");
+        });
+        if reset_button(ui, "Réinitialiser le son") {
+            self.audio_settings.reset();
+            changed = true;
+        }
+        if changed {
+            self.audio_settings.save();
+            *action = Some(UiAction::PreviewSound);
+        }
+    }
+
     /// Pied de page : rappel de la touche Échap et action globale de la page
     fn draw_menu_footer(&mut self, ui: &mut egui::Ui, page: MenuPage, action: &mut Option<UiAction>) {
         ui.add_space(2.0_f32);
@@ -1600,6 +1692,25 @@ fn paint_stack(painter: &egui::Painter, rect: egui::Rect, stack: ItemStack) {
     }
 }
 
+/// Jauge horizontale remplie à `fraction`, avec son texte centré
+fn gauge(ui: &mut egui::Ui, width: f32, height: f32, fraction: f32, color: egui::Color32, text: Option<&str>) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let painter = ui.painter();
+    let rounding = egui::Rounding::same(3.0_f32);
+    painter.rect_filled(rect, rounding, egui::Color32::from_rgba_premultiplied(0, 0, 0, 160));
+    let fraction = if fraction.is_finite() { fraction.clamp(0.0_f32, 1.0_f32) } else { 0.0_f32 };
+    if fraction > 0.0_f32 {
+        let filled = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width() * fraction, rect.height()));
+        painter.rect_filled(filled, rounding, color);
+    }
+    painter.rect_stroke(rect, rounding, egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(40)));
+    if let Some(text) = text {
+        let font = egui::FontId::proportional(11.5_f32);
+        painter.text(rect.center() + egui::vec2(1.0_f32, 1.0_f32), egui::Align2::CENTER_CENTER, text, font.clone(), egui::Color32::from_black_alpha(200));
+        painter.text(rect.center(), egui::Align2::CENTER_CENTER, text, font, egui::Color32::WHITE);
+    }
+}
+
 /// Cadre commun des panneaux du HUD
 fn hud_frame() -> egui::Frame {
     egui::Frame::none()
@@ -1676,6 +1787,18 @@ fn slider_row_enabled(ui: &mut egui::Ui, enabled: bool, label: &str, value: &mut
     ui.add_enabled_ui(enabled, |ui| row_label(ui, label, hint));
     ui.add_enabled(enabled, egui::Slider::new(value, range).fixed_decimals(2)).on_hover_text(hint);
     ui.end_row();
+}
+
+/// Curseur de volume en pour cent. Vrai quand un réglage est terminé (curseur relâché ou clic) :
+/// c'est le moment de l'enregistrer et de faire entendre le nouveau volume.
+fn volume_row(ui: &mut egui::Ui, enabled: bool, label: &str, value: &mut f32, hint: &str) -> bool {
+    ui.add_enabled_ui(enabled, |ui| row_label(ui, label, hint));
+    let slider = egui::Slider::new(value, 0.0..=1.0).custom_formatter(|v, _| format!("{:.0} %", v * 100.0)).custom_parser(|text| {
+        text.trim().trim_end_matches('%').trim().parse::<f64>().ok().map(|v| v / 100.0)
+    });
+    let response = ui.add_enabled(enabled, slider).on_hover_text(hint);
+    ui.end_row();
+    response.drag_stopped() || (response.changed() && !response.dragged())
 }
 
 /// Choix exclusif présenté comme un sélecteur segmenté ; renvoie vrai si la valeur a changé
@@ -2071,6 +2194,9 @@ mod tests {
         }
         let hotbar = ui.ctx.memory(|m| m.area_rect(egui::Id::new("hotbar"))).expect("barre d'objets dessinée");
         assert!(hotbar.bottom() <= 720.0 && hotbar.left() >= 0.0 && hotbar.right() <= 1280.0, "{:?}", hotbar);
+        let vitals = ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).expect("jauges dessinées");
+        assert!(hotbar.bottom() <= vitals.top(), "la barre d'objets passe au-dessus des jauges : {:?} / {:?}", hotbar, vitals);
+        assert!(hotbar.top() > 360.0, "{:?}", hotbar);
 
         ui.set_inventory_open(true);
         for _ in 0..3 {
@@ -2078,6 +2204,26 @@ mod tests {
         }
         let screen = ui.ctx.memory(|m| m.area_rect(egui::Id::new("inventory_screen"))).expect("inventaire dessiné");
         assert!(screen.top() >= 0.0 && screen.bottom() <= 720.0 && screen.left() >= 0.0 && screen.right() <= 1280.0, "{:?}", screen);
+    }
+
+    /// Les jauges du joueur s'affichent au sol, en bas de l'écran, et pas en vue satellite
+    #[test]
+    fn test_vitals_hud_shown_on_ground_only() {
+        let mut ui = UiState::new(1);
+        ui.set_screen_size(1280.0, 720.0);
+        ui.player.stats.hp = 0.5 * ui.player.stats.max_hp;
+        for _ in 0..3 {
+            ui.update_ui(0.0, true);
+        }
+        let rect = ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).expect("jauges dessinées");
+        assert!(rect.bottom() <= 720.0 && rect.top() > 360.0, "{:?}", rect);
+        assert!(rect.width() < 640.0, "{:?}", rect);
+
+        let mut ui = UiState::new(1);
+        for _ in 0..3 {
+            ui.update_ui(200.0, false);
+        }
+        assert!(ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).is_none());
     }
 
     /// Le HUD du monde défile au lieu de dépasser sur une fenêtre très basse

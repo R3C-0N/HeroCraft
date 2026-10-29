@@ -52,6 +52,7 @@ impl DroppedItems {
         Self::default()
     }
 
+    #[allow(dead_code)]
     pub fn items(&self) -> &[DroppedItem] {
         &self.items
     }
