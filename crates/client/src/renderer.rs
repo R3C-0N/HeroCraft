@@ -5,6 +5,7 @@ use winit::window::Window;
 use crate::atmosphere::Atmosphere;
 use crate::block_outline::BlockOutline;
 use crate::camera::{CameraViewMode, OrbitCamera};
+use crate::creature_render::CreatureRenderer;
 use crate::gpu_timer::{self, GpuTimer};
 use crate::lod::{LodMeshId, PlanetLodManager};
 use crate::planet_mesh::PlanetVertex;
@@ -91,47 +92,6 @@ fn mesh_bounds(vertices: &[PlanetVertex]) -> (glam::Vec3, f32) {
     ((min + max) * 0.5, (max - min).length() * 0.5)
 }
 
-/// Maillage des créatures : des tampons réécrits à chaque image, agrandis au besoin
-#[derive(Default)]
-struct CreatureMeshBuffers {
-    buffers: Option<(wgpu::Buffer, wgpu::Buffer)>,
-    /// Sommets et indices que les tampons peuvent contenir
-    capacity: (usize, usize),
-    num_indices: u32,
-    center: glam::Vec3,
-    radius: f32,
-}
-
-impl CreatureMeshBuffers {
-    fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, vertices: &[PlanetVertex], indices: &[u32]) {
-        self.num_indices = indices.len() as u32;
-        if indices.is_empty() {
-            return;
-        }
-        if self.buffers.is_none() || vertices.len() > self.capacity.0 || indices.len() > self.capacity.1 {
-            self.capacity = (vertices.len().next_power_of_two().max(1024), indices.len().next_power_of_two().max(1536));
-            let buffer = |label, size, usage| {
-                device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size, usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false })
-            };
-            self.buffers = Some((
-                buffer("Creature Vertex Buffer", (self.capacity.0 * std::mem::size_of::<PlanetVertex>()) as u64, wgpu::BufferUsages::VERTEX),
-                buffer("Creature Index Buffer", (self.capacity.1 * 4) as u64, wgpu::BufferUsages::INDEX),
-            ));
-        }
-        if let Some((vertex_buffer, index_buffer)) = &self.buffers {
-            queue.write_buffer(vertex_buffer, 0, bytemuck::cast_slice(vertices));
-            queue.write_buffer(index_buffer, 0, bytemuck::cast_slice(indices));
-        }
-        (self.center, self.radius) = mesh_bounds(vertices);
-    }
-
-    /// (centre, rayon, sommets, indices, nombre d'indices), s'il y a quelque chose à dessiner
-    fn drawable(&self) -> Option<(glam::Vec3, f32, &wgpu::Buffer, &wgpu::Buffer, u32)> {
-        let (vertex_buffer, index_buffer) = self.buffers.as_ref().filter(|_| self.num_indices > 0)?;
-        Some((self.center, self.radius, vertex_buffer, index_buffer, self.num_indices))
-    }
-}
-
 /// Octets envoyés au GPU au plus par synchronisation (un gros ensemble est étalé sur plusieurs frames)
 const LOD_UPLOAD_BUDGET: usize = 6 * 1024 * 1024;
 
@@ -184,8 +144,8 @@ pub struct State {
     block_outline: BlockOutline,
     /// Silhouettes des autres joueurs en ligne
     player_outlines: BlockOutline,
-    /// Maillage des créatures, refait à chaque image
-    creature_mesh: CreatureMeshBuffers,
+    /// Créatures : maillage refait à chaque image, textures des espèces
+    creatures: CreatureRenderer,
 
     // Rendu Interface Utilisateur egui
     pub egui_renderer: egui_wgpu::Renderer,
@@ -399,6 +359,7 @@ impl State {
                 bind_group_layouts: &[&atmosphere.scene_layout],
                 push_constant_ranges: &[],
             });
+        let creatures = CreatureRenderer::new(&device, &queue, &atmosphere.scene_layout, &shadows.receiver_layout, sample_count);
         let terrain_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Terrain Pipeline Layout"),
@@ -608,7 +569,7 @@ impl State {
             lod_uploads_pending: false,
             block_outline,
             player_outlines,
-            creature_mesh: CreatureMeshBuffers::default(),
+            creatures,
             egui_renderer,
             vsync_mode,
             novsync_mode,
@@ -852,9 +813,14 @@ impl State {
         self.player_outlines.update(&self.queue, boxes, self.camera_eye);
     }
 
-    /// Maillage des créatures (`creatures::build_mesh`), dessiné comme le relief
-    pub fn set_creature_mesh(&mut self, vertices: &[PlanetVertex], indices: &[u32]) {
-        self.creature_mesh.upload(&self.device, &self.queue, vertices, indices);
+    /// Textures des espèces de créatures, dans l'ordre du registre
+    pub fn set_creature_textures(&mut self, textures: &[Option<crate::skinned_model::Texture>]) {
+        self.creatures.set_textures(&self.device, &self.queue, textures);
+    }
+
+    /// Maillage des créatures de l'image (`creatures::build_frame`)
+    pub fn set_creature_frame(&mut self, frame: &crate::creatures::CreatureFrame) {
+        self.creatures.upload(&self.device, &self.queue, frame);
     }
 
     /// Des maillages LOD restent à envoyer : appeler `sync_lod_meshes` à la prochaine frame
@@ -925,7 +891,7 @@ impl State {
                 .iter()
                 .filter_map(|id| self.lod_gpu_meshes.get(id))
                 .map(|m| (m.center, m.radius, &m.vertex_buffer, &m.index_buffer, m.num_indices))
-                .chain(self.creature_mesh.drawable());
+                .chain(self.creatures.shadow_caster());
             let clouds = (self.num_cloud_indices > 0)
                 .then_some((&self.cloud_vertex_buffer, &self.cloud_index_buffer, self.num_cloud_indices));
             let timestamps = timer_queries.map(|q| (q, gpu_timer::TS_SHADOW_BEGIN, gpu_timer::TS_SHADOW_END));
@@ -988,15 +954,8 @@ impl State {
                     }
                 }
             }
-            // Créatures : mêmes pipeline et éclairage que le relief
-            if let Some((_, _, vertex_buffer, index_buffer, num_indices)) = self.creature_mesh.drawable() {
-                render_pass.set_pipeline(&self.render_pipeline);
-                render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
-                render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..num_indices, 0, 0..1);
-            }
+            // Créatures, éclairées comme le relief
+            self.creatures.draw(&mut render_pass, &self.atmosphere.scene_bind_group, &self.shadows.receiver_bind_group);
             // Contour du bloc visé, sur la profondeur du relief
             self.block_outline.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
             self.player_outlines.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
@@ -1147,6 +1106,7 @@ mod tests {
         let atmosphere_lut = include_str!("atmosphere_lut.wgsl");
         let god_rays = include_str!("god_rays.wgsl");
         let block_outline = include_str!("block_outline.wgsl");
+        let creature = include_str!("creature.wgsl");
 
         for (name, source) in [
             ("sky_shader.wgsl", sky_shader),
@@ -1158,6 +1118,7 @@ mod tests {
             ("atmosphere_lut.wgsl", atmosphere_lut),
             ("god_rays.wgsl", god_rays),
             ("block_outline.wgsl", block_outline),
+            ("creature.wgsl", creature),
         ] {
             // Assemblage naga_oil (imports de common.wgsl) puis validation complète
             let module = if matches!(name, "ui_shader.wgsl" | "post_shader.wgsl" | "shadow_caster.wgsl") {

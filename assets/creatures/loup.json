@@ -1,0 +1,15 @@
+{
+  "name": "Loup",
+  "description": "Chasse en meute à la lisière des forêts et attaque quand il se sent en nombre.",
+  "body": {"half_width": 0.225, "half_length": 0.8614, "height": 1.0125},
+  "walk_speed": 1.7,
+  "min_group": 3,
+  "max_group": 4,
+  "spawn": [
+    {"biome": "Forest", "weight": 0.6},
+    {"biome": "Tundra", "weight": 0.6},
+    {"biome": "SnowPeaks", "weight": 0.6},
+    {"biome": "Taiga", "weight": 0.6}
+  ],
+  "model": {"mesh": "modeles/loup.gltf", "texture": "modeles/loup.png", "walk_animation": "repos"}
+}

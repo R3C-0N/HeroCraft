@@ -1,0 +1,10 @@
+{
+  "name": "Brute cornue",
+  "description": "Charge cornes en avant et renverse les boucliers levés.",
+  "body": {"half_width": 1.0778, "half_length": 0.7541, "height": 2.8224},
+  "walk_speed": 1.1,
+  "min_group": 1,
+  "max_group": 1,
+  "spawn": [],
+  "model": {"mesh": "modeles/brute.gltf", "texture": "modeles/brute.png", "walk_animation": "repos"}
+}

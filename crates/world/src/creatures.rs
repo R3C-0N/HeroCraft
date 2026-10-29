@@ -63,7 +63,7 @@ impl Creature {
 }
 
 /// Espèce candidate dans un biome : rang, poids, chance d'apparaître vraiment
-type SpawnCandidate = (usize, u32, f32);
+type SpawnCandidate = (usize, f32, f32);
 
 pub struct CreatureWorld {
     registry: Arc<CreatureRegistry>,
@@ -84,7 +84,7 @@ impl CreatureWorld {
         for (index, species) in registry.iter().enumerate() {
             for rule in &species.spawn {
                 match BiomeType::from_name(&rule.biome) {
-                    Some(biome) if rule.weight > 0 => spawn_table.entry(biome).or_default().push((index, rule.weight, rule.chance)),
+                    Some(biome) if rule.weight > 0.0 => spawn_table.entry(biome).or_default().push((index, rule.weight, rule.chance)),
                     Some(_) => {}
                     None => log::warn!("Créature {} : biome « {} » inconnu.", species.id, rule.biome),
                 }
@@ -176,9 +176,9 @@ impl CreatureWorld {
         let biome = query.column_sample(column.face, column.x, column.z).biome;
         let Some(candidates) = self.spawn_table.get(&biome) else { return };
         let Some(species) = pick_species(candidates, &mut self.rng) else { return };
-        let Some(max_group) = self.registry.get(species).map(|s| s.max_group) else { return };
+        let Some((min_group, max_group)) = self.registry.get(species).map(|s| (s.min_group, s.max_group)) else { return };
 
-        let group = self.rng.gen_range(1..=max_group);
+        let group = self.rng.gen_range(min_group..=max_group);
         for _ in 0..group {
             if self.creatures.len() >= MAX_CREATURES {
                 break;
@@ -211,11 +211,11 @@ fn surface_feet(geometry: &BlockGeometry, query: &mut TerrainQuery, face: Planet
 
 /// Espèce tirée au poids parmi les candidates d'un biome, ou aucune si elle n'a pas eu sa chance
 fn pick_species(candidates: &[SpawnCandidate], rng: &mut StdRng) -> Option<usize> {
-    let total: u32 = candidates.iter().map(|&(_, weight, _)| weight).sum();
-    if total == 0 {
+    let total: f32 = candidates.iter().map(|&(_, weight, _)| weight).sum();
+    if total <= 0.0 {
         return None;
     }
-    let mut roll = rng.gen_range(0..total);
+    let mut roll = rng.gen_range(0.0..total);
     let &(species, _, chance) = candidates.iter().find(|&&(_, weight, _)| {
         if roll < weight {
             true
@@ -404,7 +404,7 @@ mod tests {
         let edits = TerrainEdits::new(None);
         let (_, feet) = grass_column(&generator, &edits);
         let mut world = CreatureWorld::new(generator.base_radius(), 1, registry());
-        let sheep = world.registry().find("mouton").unwrap();
+        let sheep = world.registry().find("vache").unwrap();
         world.spawn(sheep, feet);
         world.tick(0.05, &generator, &edits, &[feet]);
         assert_eq!(world.creatures().len(), 1);

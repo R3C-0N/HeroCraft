@@ -1,0 +1,12 @@
+{
+  "name": "Vache",
+  "description": "Se trait avec un seau et suit quiconque tient une gerbe de blé.",
+  "body": {"half_width": 0.3375, "half_length": 0.81, "height": 1.4258},
+  "walk_speed": 0.8,
+  "min_group": 3,
+  "max_group": 5,
+  "spawn": [
+    {"biome": "Plains", "weight": 1.0}
+  ],
+  "model": {"mesh": "modeles/vache.gltf", "texture": "modeles/vache.png", "walk_animation": "repos"}
+}

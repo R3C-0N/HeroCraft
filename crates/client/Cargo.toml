@@ -29,6 +29,8 @@ egui = "0.30"
 egui-wgpu = "0.30"
 naga = "23"
 naga_oil = { version = "0.16", default-features = false }
+png = "0.17"
+base64 = "0.22"
 
 # Crochet clavier : les touches du jeu passent avant PowerToys et les autres programmes
 [target.'cfg(windows)'.dependencies]

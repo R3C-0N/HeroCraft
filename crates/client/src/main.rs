@@ -16,6 +16,7 @@ mod block_outline;
 mod camera;
 mod cloud_mesh;
 mod collision;
+mod creature_render;
 mod creatures;
 mod gpu_timer;
 mod input;
@@ -29,6 +30,7 @@ mod post;
 mod renderer;
 mod shaders;
 mod shadow;
+mod skinned_model;
 mod ui;
 mod voxel_mesh;
 
@@ -143,9 +145,11 @@ fn main() {
     let mut solo_creatures = herocraft_world::CreatureWorld::new(base_radius as f64, current_seed, creature_registry.clone());
     let mut creatures_seed = current_seed;
     let mut creature_animator = creatures::CreatureAnimator::default();
+    let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
 
     // Initialisation du moteur WGPU
     let mut state = pollster::block_on(State::new(window.clone(), &ui_state));
+    state.set_creature_textures(&creature_textures);
     state.sync_lod_meshes(&lod_manager);
 
     // Gestion des entrées : souris capturée en jeu, glisser en vue satellite
@@ -445,9 +449,10 @@ fn main() {
                                 }
                             };
                             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
-                            creature_animator.update(&views, &creature_registry, if ui_state.is_settings_open { 0.0 } else { dt }, block);
-                            let (vertices, indices) = creatures::build_mesh(&views, &creature_registry, &creature_animator, block);
-                            state.set_creature_mesh(&vertices, &indices);
+                            let anim_dt = if ui_state.is_settings_open { 0.0 } else { dt };
+                            creature_animator.update(&views, &creature_registry, &creature_models, anim_dt, block);
+                            let frame = creatures::build_frame(&views, &creature_registry, &creature_models, &creature_animator, block);
+                            state.set_creature_frame(&frame);
                         }
 
                         // Connexion menée en tâche de fond : à son terme, la planète du serveur

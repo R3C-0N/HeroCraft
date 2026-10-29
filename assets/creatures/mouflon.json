@@ -1,0 +1,12 @@
+{
+  "name": "Mouflon laineux",
+  "description": "Vit sur les pentes rocheuses ; se tond pour sa laine au retour de l'été.",
+  "body": {"half_width": 0.2812, "half_length": 0.5625, "height": 1.0125},
+  "walk_speed": 1.4,
+  "min_group": 4,
+  "max_group": 7,
+  "spawn": [
+    {"biome": "Mountains", "weight": 1.0}
+  ],
+  "model": {"mesh": "modeles/mouflon.gltf", "texture": "modeles/mouflon.png", "walk_animation": "repos"}
+}

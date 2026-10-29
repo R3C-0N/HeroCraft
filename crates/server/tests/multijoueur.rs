@@ -181,20 +181,20 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
         std::thread::sleep(Duration::from_millis(2));
     }
 
-    // Un mouton à ses pieds : il lui est annoncé, puis sa position suit
-    let sheep = server.spawn_creature("mouton", feet).expect("espèce mouton");
+    // Une vache à ses pieds : il lui est annoncé, puis sa position suit
+    let sheep = server.spawn_creature("vache", feet).expect("espèce vache");
     let (species, state) = pump(&mut server, &alice, |p| match p {
         ServerPacket::CreatureSpawned { species, state } if state.creature_id == sheep => Some((species, state)),
         _ => None,
     });
-    assert_eq!(species, "mouton");
+    assert_eq!(species, "vache");
     assert!(state.position.distance(feet) < 1e-3);
     pump(&mut server, &alice, |p| match p {
         ServerPacket::CreatureStates(states) => states.into_iter().find(|s| s.creature_id == sheep),
         _ => None,
     });
 
-    // Alice part à l'autre bout de la planète : le mouton, seul, disparaît de son affichage
+    // Alice part à l'autre bout de la planète : la vache, seule, disparaît de son affichage
     alice.send(&ClientPacket::PlayerMove { position: -feet, yaw: 0.0, pitch: 0.0, sprinting: false });
     pump(&mut server, &alice, |p| match p {
         ServerPacket::CreaturesDespawned(ids) => ids.contains(&sheep).then_some(()),

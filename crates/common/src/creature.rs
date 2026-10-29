@@ -1,6 +1,6 @@
 //! Créatures de la planète : les espèces, décrites chacune par un fichier JSON du dossier
-//! `assets/creatures/` (corps, allure, biomes où elles apparaissent, modèle 3D), et l'état d'une
-//! créature tel que le serveur le diffuse.
+//! `assets/creatures/` (corps, allure, biomes où elles apparaissent, modèle 3D glTF et sa texture),
+//! et l'état d'une créature tel que le serveur le diffuse.
 //!
 //! Ajouter une bête, c'est ajouter un fichier : la simulation (`herocraft_world::creatures`) et le
 //! rendu du client lisent tout dans ces descriptions. Le format est décrit dans
@@ -24,11 +24,15 @@ pub struct CreatureSpecies {
     pub id: String,
     /// Nom affiché
     pub name: String,
+    #[serde(default)]
+    pub description: String,
     /// Volume du corps pour les déplacements
     pub body: CreatureBody,
     /// Vitesse de marche, en blocs par seconde
     pub walk_speed: f32,
-    /// Taille maximale d'un groupe qui apparaît ensemble
+    /// Taille d'un groupe qui apparaît ensemble : au moins `min_group`, au plus `max_group`
+    #[serde(default = "one")]
+    pub min_group: u32,
     #[serde(default = "one")]
     pub max_group: u32,
     /// Biomes où l'espèce apparaît (aucun : elle n'apparaît pas d'elle-même)
@@ -56,77 +60,30 @@ pub struct SpawnRule {
     /// Nom du biome (`Plains`, `Forest`, `Desert`… : ceux de `herocraft_world::BiomeType`)
     pub biome: String,
     /// Poids face aux autres espèces du même biome
-    pub weight: u32,
+    pub weight: f32,
     /// Chance que le groupe tiré apparaisse vraiment (1 : toujours), pour une espèce rare
     #[serde(default = "always")]
     pub chance: f32,
 }
 
-/// Modèle 3D : des pavés colorés, posés dans le repère de la créature. L'origine est sous ses
-/// pieds, au centre ; x va vers sa gauche, y vers le haut, z vers l'avant (la tête). Les mesures
-/// sont en unités de `units_per_block` par bloc (16 par défaut, comme dans Blockbench).
+/// Modèle 3D : un maillage glTF à squelette et sa texture, chemins depuis `assets/creatures/`.
+/// Le modèle est en blocs, y vers le haut, la tête vers +z ; le point le plus bas de sa pose de repos
+/// est posé sur les pieds de la créature.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreatureModel {
-    #[serde(default = "sixteen")]
-    pub units_per_block: f32,
-    pub parts: Vec<ModelPart>,
+    /// Fichier `.gltf` (données embarquées), un seul maillage à squelette
+    pub mesh: String,
+    /// Texture PNG, lue au plus proche texel
+    pub texture: String,
+    /// Animation jouée pendant la marche, d'autant plus vite que la créature va vite, et figée à
+    /// l'arrêt
+    #[serde(default = "walk_animation")]
+    pub walk_animation: String,
 }
 
-/// Un pavé du modèle
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ModelPart {
-    /// Nom de la pièce (pour s'y retrouver dans le fichier)
-    pub name: String,
-    /// Coin minimal et coin maximal
-    pub from: [f32; 3],
-    pub to: [f32; 3],
-    pub color: Color,
-    /// Point autour duquel la pièce pivote quand elle s'anime (par défaut : le haut de son centre)
-    #[serde(default)]
-    pub pivot: Option<[f32; 3]>,
-    /// Balancement pendant la marche (pattes, tête, queue)
-    #[serde(default)]
-    pub swing: Option<Swing>,
-}
-
-impl ModelPart {
-    /// Point de pivot, en unités du modèle
-    pub fn pivot_point(&self) -> [f32; 3] {
-        self.pivot.unwrap_or([
-            0.5 * (self.from[0] + self.to[0]),
-            self.from[1].max(self.to[1]),
-            0.5 * (self.from[2] + self.to[2]),
-        ])
-    }
-}
-
-/// Balancement d'avant en arrière (rotation autour de l'axe gauche-droite), rythmé par le pas
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Swing {
-    /// Angle maximal, en degrés
-    pub amplitude: f32,
-    /// Décalage dans le cycle du pas, en fraction de cycle (0.5 : à contretemps)
-    #[serde(default)]
-    pub phase: f32,
-}
-
-/// Couleur `#rrggbb`, lue en composantes de 0 à 1
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
-#[serde(try_from = "String")]
-pub struct Color(pub [f32; 3]);
-
-impl TryFrom<String> for Color {
-    type Error = String;
-
-    fn try_from(text: String) -> Result<Self, String> {
-        let hex = text.strip_prefix('#').unwrap_or(&text);
-        let value = (hex.len() == 6).then(|| u32::from_str_radix(hex, 16).ok()).flatten();
-        let Some(value) = value else { return Err(format!("couleur « {text} » invalide (attendu : #rrggbb)")) };
-        Ok(Color([(value >> 16) as f32 / 255.0, ((value >> 8) & 0xff) as f32 / 255.0, (value & 0xff) as f32 / 255.0]))
-    }
+fn walk_animation() -> String {
+    "repos".into()
 }
 
 fn one() -> u32 {
@@ -137,14 +94,12 @@ fn always() -> f32 {
     1.0
 }
 
-fn sixteen() -> f32 {
-    16.0
-}
-
 /// Toutes les espèces connues, rangées par identifiant (le même ordre sur le serveur et le client)
 #[derive(Debug, Clone, Default)]
 pub struct CreatureRegistry {
     species: Vec<CreatureSpecies>,
+    /// Dossier des descriptions, d'où partent les chemins des modèles
+    dir: PathBuf,
 }
 
 impl CreatureRegistry {
@@ -173,7 +128,7 @@ impl CreatureRegistry {
 
     /// Lit chaque fichier `*.json` du dossier. Renvoie les espèces valides et les erreurs des autres.
     pub fn load_dir(dir: &Path) -> io::Result<(Self, Vec<String>)> {
-        let mut registry = Self::default();
+        let mut registry = Self { species: Vec::new(), dir: dir.to_path_buf() };
         let mut errors = Vec::new();
         for entry in std::fs::read_dir(dir)? {
             let path = entry?.path();
@@ -191,9 +146,14 @@ impl CreatureRegistry {
         Ok((registry, errors))
     }
 
-    pub fn from_species(mut species: Vec<CreatureSpecies>) -> Self {
+    pub fn from_species(mut species: Vec<CreatureSpecies>, dir: PathBuf) -> Self {
         species.sort_by(|a, b| a.id.cmp(&b.id));
-        Self { species }
+        Self { species, dir }
+    }
+
+    /// Chemin d'un fichier cité par une description (modèle, texture)
+    pub fn asset_path(&self, relative: &str) -> PathBuf {
+        self.dir.join(relative)
     }
 
     pub fn len(&self) -> usize {
@@ -227,11 +187,11 @@ impl CreatureSpecies {
         if !(body.half_width > 0.0 && body.half_length > 0.0 && body.height > 0.0 && species.walk_speed >= 0.0) {
             return Err("corps ou vitesse invalides (tailles positives attendues)".into());
         }
-        if species.model.parts.is_empty() || species.model.units_per_block <= 0.0 {
-            return Err("modèle vide".into());
+        if species.min_group == 0 || species.max_group < species.min_group {
+            return Err("taille de groupe invalide (1 ≤ min_group ≤ max_group)".into());
         }
-        if species.max_group == 0 {
-            return Err("max_group doit valoir au moins 1".into());
+        if species.spawn.iter().any(|rule| !(rule.weight >= 0.0 && (0.0..=1.0).contains(&rule.chance))) {
+            return Err("apparition invalide (poids positif, chance entre 0 et 1)".into());
         }
         Ok(species)
     }
@@ -253,28 +213,33 @@ mod tests {
 
     #[test]
     fn test_bundled_species_load() {
-        let (registry, errors) = CreatureRegistry::load_dir(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(CREATURES_DIR)).unwrap();
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(CREATURES_DIR);
+        let (registry, errors) = CreatureRegistry::load_dir(&dir).unwrap();
         assert!(errors.is_empty(), "{errors:?}");
-        for id in ["lapin", "mouton", "sanglier"] {
+        for id in ["lapin", "sanglier", "vache", "loup"] {
             let species = registry.get(registry.find(id).unwrap_or_else(|| panic!("{id} manquant"))).unwrap();
             assert!(!species.spawn.is_empty());
+        }
+        for species in registry.iter() {
+            assert!(registry.asset_path(&species.model.mesh).is_file(), "{} : modèle manquant", species.id);
+            assert!(registry.asset_path(&species.model.texture).is_file(), "{} : texture manquante", species.id);
         }
     }
 
     #[test]
     fn test_invalid_descriptions_are_explained() {
-        let model = r##""model": { "parts": [ { "name": "corps", "from": [0, 0, 0], "to": [1, 1, 1], "color": "#ff8000" } ] }"##;
-        let ok = format!(r#"{{ "name": "Cube", "body": {{ "half_width": 0.5, "half_length": 0.5, "height": 1 }}, "walk_speed": 1, {model} }}"#);
-        let cube = CreatureSpecies::parse("cube", &ok).unwrap();
-        assert_eq!(cube.max_group, 1);
-        assert_eq!(cube.model.units_per_block, 16.0);
-        assert_eq!(cube.model.parts[0].color, Color([1.0, 128.0 / 255.0, 0.0]));
+        let ok = r#"{ "name": "Cube", "body": { "half_width": 0.5, "half_length": 0.5, "height": 1 }, "walk_speed": 1,
+            "spawn": [ { "biome": "Plains", "weight": 0.5 } ], "model": { "mesh": "cube.gltf", "texture": "cube.png" } }"#;
+        let cube = CreatureSpecies::parse("cube", ok).unwrap();
+        assert_eq!((cube.min_group, cube.max_group), (1, 1));
+        assert_eq!(cube.spawn[0].chance, 1.0);
+        assert_eq!(cube.model.walk_animation, "repos");
 
-        let bad_color = ok.replace("#ff8000", "orange");
-        assert!(CreatureSpecies::parse("cube", &bad_color).unwrap_err().contains("orange"));
         let typo = ok.replace("walk_speed", "walk_sped");
         assert!(CreatureSpecies::parse("cube", &typo).unwrap_err().contains("walk_sped"));
         let flat = ok.replace(r#""height": 1"#, r#""height": 0"#);
         assert!(CreatureSpecies::parse("cube", &flat).is_err());
+        let groups = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "min_group": 3, "max_group": 2,"#);
+        assert!(CreatureSpecies::parse("cube", &groups).is_err());
     }
 }

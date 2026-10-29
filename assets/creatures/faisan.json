@@ -1,0 +1,13 @@
+{
+  "name": "Faisan",
+  "description": "S’envole bruyamment des hautes herbes quand on s’en approche.",
+  "body": {"half_width": 0.1968, "half_length": 0.7082, "height": 0.9185},
+  "walk_speed": 1.0,
+  "min_group": 1,
+  "max_group": 2,
+  "spawn": [
+    {"biome": "Forest", "weight": 0.8},
+    {"biome": "Plains", "weight": 0.8}
+  ],
+  "model": {"mesh": "modeles/faisan.gltf", "texture": "modeles/faisan.png", "walk_animation": "repos"}
+}

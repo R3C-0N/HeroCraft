@@ -1,0 +1,10 @@
+{
+  "name": "Gorgone florale",
+  "description": "Son regard change la chair en bois ; son pollen endort ceux qui approchent.",
+  "body": {"half_width": 0.6956, "half_length": 0.5424, "height": 2.219},
+  "walk_speed": 0.8,
+  "min_group": 1,
+  "max_group": 1,
+  "spawn": [],
+  "model": {"mesh": "modeles/gorgone.gltf", "texture": "modeles/gorgone.png", "walk_animation": "repos"}
+}
