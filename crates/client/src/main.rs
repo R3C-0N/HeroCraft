@@ -581,7 +581,7 @@ fn main() {
 
                         // 1. Mise à jour de l'interface egui
                         let is_ground = camera.distance <= camera.base_radius;
-                        let (full_output, maybe_action) = ui_state.update_ui(camera.distance, is_ground);
+                        let (full_output, maybe_action) = ui_state.update_ui(is_ground);
 
                         // 2. Traitement des actions déclenchées par les boutons egui et le clavier
                         pending_actions.extend(maybe_action);

@@ -548,12 +548,14 @@ impl UiState {
         self.inventory_open = open;
     }
 
+    #[cfg(test)]
     pub fn toggle_settings(&mut self) -> bool {
         self.set_settings_open(!self.is_settings_open);
         self.is_settings_open
     }
 
     /// Ouvre le menu de pause directement sur une page
+    #[cfg(test)]
     pub fn open_menu_at(&mut self, page: MenuPage) {
         self.set_settings_open(true);
         self.menu_page = page;
@@ -595,11 +597,6 @@ impl UiState {
             )
         });
         self.controls.save();
-    }
-
-    /// Libellé court de la touche d'une action, pour les boutons du HUD
-    fn key_hint(&self, action: Action) -> String {
-        format!("[{}]", self.controls.action_key_label(action))
     }
 
     /// Capture ou libère le pointeur. À la capture, egui oublie le survol en cours.
@@ -699,7 +696,7 @@ impl UiState {
     }
 
     /// Construit l'interface graphique immédiate pour la frame courante
-    pub fn update_ui(&mut self, camera_distance: f32, is_ground: bool) -> (egui::FullOutput, Option<UiAction>) {
+    pub fn update_ui(&mut self, is_ground: bool) -> (egui::FullOutput, Option<UiAction>) {
         herocraft_common::prof_scope!("ui::update_ui");
         let mut raw_input = std::mem::take(&mut self.raw_input);
         let ppp = self.scale_factor.max(0.1_f32);
@@ -739,12 +736,6 @@ impl UiState {
                 }
             }
 
-            // 2. Panneau HUD supérieur gauche (planète, actions, filtres), en vue satellite seulement :
-            // au sol, ses actions restent au clavier et dans le menu Échap
-            if !is_ground && !self.is_settings_open && !self.inventory_open {
-                self.draw_world_hud(ctx, is_ground, &mut action);
-            }
-
             // Au sol : classe en bas à gauche, jauges en bas à droite, voile rouge après une
             // blessure, barre d'objets au centre et écran d'inventaire par-dessus le jeu
             if is_ground && !self.is_settings_open {
@@ -756,8 +747,8 @@ impl UiState {
                 }
             }
 
-            // 3. Panneau HUD supérieur droit (FPS, altitude, raccourci menu)
-            self.draw_status_hud(ctx, camera_distance, is_ground);
+            // 3. Compteur FPS en haut à droite
+            self.draw_status_hud(ctx);
 
             // 4. Menu de pause (Échap) : voile en fondu puis panneau centré
             let fade = ctx.animate_bool_with_time(egui::Id::new("pause_backdrop"), self.is_settings_open, 0.15_f32);
@@ -891,102 +882,6 @@ impl UiState {
         }
     }
 
-    /// HUD du monde : graine, actions rapides et filtres cartographiques
-    fn draw_world_hud(&mut self, ctx: &egui::Context, is_ground: bool, action: &mut Option<UiAction>) {
-        let screen = ctx.screen_rect();
-        let max_height = (screen.height() - 2.0_f32 * SCREEN_MARGIN - 24.0_f32).max(80.0_f32);
-
-        egui::Area::new(egui::Id::new("top_left_hud"))
-            .fixed_pos(egui::pos2(SCREEN_MARGIN, SCREEN_MARGIN))
-            .show(ctx, |ui| {
-                hud_frame().inner_margin(egui::Margin::same(12.0_f32)).show(ui, |ui| {
-                    ui.set_width(240.0_f32);
-
-                    // Titre & Graine du monde
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("HEROCRAFT").strong().color(GOLD_BRIGHT).size(16.0_f32));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(egui::RichText::new(format!("#{}", self.current_seed)).monospace().color(TEXT_DIM).size(11.0_f32));
-                        });
-                    });
-
-                    ui.add_space(2.0_f32);
-                    ui.separator();
-
-                    // Le contenu défile si la fenêtre est trop basse pour l'afficher en entier
-                    egui::ScrollArea::vertical()
-                        .id_salt("world_hud_scroll")
-                        .max_height(max_height - 40.0_f32)
-                        .auto_shrink([false, true])
-                        .show(ui, |ui| {
-                            let full = egui::vec2(ui.available_width(), 0.0_f32);
-
-                            let new_planet = format!("🎲  Nouvelle planète  {}", self.key_hint(Action::NewPlanet));
-                            if ui.add(egui::Button::new(new_planet).min_size(full)).clicked() {
-                                *action = Some(UiAction::GenerateNewPlanet);
-                            }
-
-                            let view_label = format!(
-                                "{}  {}",
-                                if is_ground { "🌍  Vue satellite" } else { "🚶  Vue au sol" },
-                                self.key_hint(Action::ToggleView)
-                            );
-                            if ui.add(egui::Button::new(view_label).min_size(full)).clicked() {
-                                *action = Some(UiAction::ToggleGroundCamera);
-                            }
-
-                            let rot_label = format!(
-                                "{}  {}",
-                                if self.auto_rotate { "⏸  Arrêter la rotation" } else { "▶  Auto-rotation" },
-                                self.key_hint(Action::Jump)
-                            );
-                            if ui.add(egui::Button::new(rot_label).min_size(full)).clicked() {
-                                *action = Some(UiAction::ToggleAutoRotate);
-                            }
-
-                            let reset_label = format!("🔄  Réinitialiser la vue  {}", self.key_hint(Action::ResetView));
-                            if ui.add(egui::Button::new(reset_label).min_size(full)).clicked() {
-                                *action = Some(UiAction::ResetCamera);
-                            }
-
-                            ui.add_space(2.0_f32);
-                            caption(ui, "FILTRES CARTOGRAPHIQUES");
-
-                            let tectonics_label = format!("Plaques tectoniques  {}", self.key_hint(Action::ToggleTectonics));
-                            if ui.checkbox(&mut self.show_tectonics, tectonics_label).changed() {
-                                if self.show_tectonics {
-                                    self.show_ocean_currents = false;
-                                }
-                                *action = Some(UiAction::ToggleTectonics);
-                            }
-
-                            let currents_label = format!("Courants marins  {}", self.key_hint(Action::ToggleOceanCurrents));
-                            if ui.checkbox(&mut self.show_ocean_currents, currents_label).changed() {
-                                if self.show_ocean_currents {
-                                    self.show_tectonics = false;
-                                }
-                                *action = Some(UiAction::ToggleOceanCurrents);
-                            }
-
-                            ui.add_space(2.0_f32);
-                            ui.separator();
-
-                            // Les réglages de rendu vivent dans le sous-menu Options
-                            if ui
-                                .add(egui::Button::new(egui::RichText::new("🎨  Réglages graphiques…").color(GOLD_BRIGHT)).min_size(full))
-                                .on_hover_text("Ouvre le menu Options (aussi accessible par Échap)")
-                                .clicked()
-                            {
-                                self.open_menu_at(MenuPage::Options);
-                                if self.options_tab == OptionsTab::Display {
-                                    self.options_tab = OptionsTab::Lighting;
-                                }
-                            }
-                        });
-                });
-            });
-    }
-
     /// HUD du personnage : classe, niveau, expérience et jauges de vie, de mana et d'endurance
     fn draw_vitals_hud(&mut self, ctx: &egui::Context) {
         let stats = &self.player.stats;
@@ -1038,40 +933,23 @@ impl UiState {
             });
     }
 
-    /// HUD d'état : compteur FPS, altitude et accès au menu
-    fn draw_status_hud(&mut self, ctx: &egui::Context, camera_distance: f32, is_ground: bool) {
+    /// Compteur FPS en haut à droite, seul élément permanent de l'écran
+    fn draw_status_hud(&self, ctx: &egui::Context) {
         let screen = ctx.screen_rect();
         egui::Area::new(egui::Id::new("top_right_hud"))
             .pivot(egui::Align2::RIGHT_TOP)
             .fixed_pos(egui::pos2(screen.right() - SCREEN_MARGIN, SCREEN_MARGIN))
+            .interactable(false)
             .show(ctx, |ui| {
-                hud_frame().inner_margin(egui::Margin::same(10.0_f32)).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let fps_color = if self.current_fps >= 55 {
-                            egui::Color32::from_rgb(80, 220, 100)
-                        } else if self.current_fps >= 30 {
-                            egui::Color32::from_rgb(240, 190, 50)
-                        } else {
-                            egui::Color32::from_rgb(240, 80, 80)
-                        };
-                        ui.label(egui::RichText::new(format!("{} FPS", self.current_fps)).strong().color(fps_color));
-
-                        ui.separator();
-
-                        let dist_label = if is_ground {
-                            "Sol (FPS)".to_string()
-                        } else {
-                            format!("{:.0} m", camera_distance)
-                        };
-                        ui.label(egui::RichText::new(dist_label).color(egui::Color32::from_rgb(180, 205, 240)));
-
-                        ui.separator();
-
-                        let menu_label = if self.is_settings_open { "✖ Fermer [Échap]" } else { "⚙ Menu [Échap]" };
-                        if ui.button(menu_label).clicked() {
-                            self.toggle_settings();
-                        }
-                    });
+                hud_frame().inner_margin(egui::Margin::symmetric(10.0_f32, 6.0_f32)).show(ui, |ui| {
+                    let fps_color = if self.current_fps >= 55 {
+                        egui::Color32::from_rgb(80, 220, 100)
+                    } else if self.current_fps >= 30 {
+                        egui::Color32::from_rgb(240, 190, 50)
+                    } else {
+                        egui::Color32::from_rgb(240, 80, 80)
+                    };
+                    ui.label(egui::RichText::new(format!("{} FPS", self.current_fps)).strong().color(fps_color));
                 });
             });
     }
@@ -2035,13 +1913,13 @@ mod tests {
         ui.set_screen_size(1280.0, 720.0);
 
         // Vue orbite
-        let (output_orbit, action_orbit) = ui.update_ui(200.0, false);
+        let (output_orbit, action_orbit) = ui.update_ui(false);
         assert!(action_orbit.is_none());
         assert!(!output_orbit.shapes.is_empty());
 
         // Vue sol avec menu paramètres ouvert
         ui.set_settings_open(true);
-        let (output_ground, action_ground) = ui.update_ui(10.0, true);
+        let (output_ground, action_ground) = ui.update_ui(true);
         assert!(action_ground.is_none());
         assert!(!output_ground.shapes.is_empty());
     }
@@ -2145,7 +2023,7 @@ mod tests {
                 }
                 // Plusieurs frames : egui mesure les zones à la première, et la taille doit rester stable
                 for _ in 0..6 {
-                    ui.update_ui(10.0, true);
+                    ui.update_ui(true);
                 }
 
                 let rect = ui
@@ -2194,7 +2072,7 @@ mod tests {
             ui.inventory.add(herocraft_common::BlockId::DIRT);
         }
         for _ in 0..3 {
-            ui.update_ui(0.0, true);
+            ui.update_ui(true);
         }
         let hotbar = ui.ctx.memory(|m| m.area_rect(egui::Id::new("hotbar"))).expect("barre d'objets dessinée");
         assert!(hotbar.bottom() <= 720.0 && hotbar.left() >= 0.0 && hotbar.right() <= 1280.0, "{:?}", hotbar);
@@ -2207,7 +2085,7 @@ mod tests {
 
         ui.set_inventory_open(true);
         for _ in 0..3 {
-            ui.update_ui(0.0, true);
+            ui.update_ui(true);
         }
         let screen = ui.ctx.memory(|m| m.area_rect(egui::Id::new("inventory_screen"))).expect("inventaire dessiné");
         assert!(screen.top() >= 0.0 && screen.bottom() <= 720.0 && screen.left() >= 0.0 && screen.right() <= 1280.0, "{:?}", screen);
@@ -2220,7 +2098,7 @@ mod tests {
         ui.set_screen_size(1280.0, 720.0);
         ui.player.stats.hp = 0.5 * ui.player.stats.max_hp;
         for _ in 0..3 {
-            ui.update_ui(0.0, true);
+            ui.update_ui(true);
         }
         let rect = ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).expect("jauges dessinées");
         assert!(rect.bottom() <= 720.0 && rect.top() > 360.0, "{:?}", rect);
@@ -2228,35 +2106,21 @@ mod tests {
         assert!(rect.left() > 640.0, "jauges à droite : {:?}", rect);
         let class = ui.ctx.memory(|m| m.area_rect(egui::Id::new("class_hud"))).expect("classe dessinée");
         assert!(class.right() < 640.0 && class.bottom() <= 720.0, "classe à gauche : {:?}", class);
-        // Au sol, plus de panneau en haut à gauche
+        // Plus de panneau en haut à gauche
         assert!(ui.ctx.memory(|m| m.area_rect(egui::Id::new("top_left_hud"))).is_none());
 
         let mut ui = UiState::new(1);
         for _ in 0..3 {
-            ui.update_ui(200.0, false);
+            ui.update_ui(false);
         }
         assert!(ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).is_none());
-    }
-
-    /// Le HUD du monde défile au lieu de dépasser sur une fenêtre très basse
-    #[test]
-    fn test_world_hud_fits_screen() {
-        for (w, h) in [(1280.0, 720.0), (800.0, 300.0)] {
-            let mut ui = UiState::new(1);
-            ui.set_screen_size(w, h);
-            for _ in 0..4 {
-                ui.update_ui(200.0, false);
-            }
-            let rect = ui.ctx.memory(|m| m.area_rect(egui::Id::new("top_left_hud"))).expect("HUD dessiné");
-            assert!(rect.bottom() <= h + 0.5, "HUD de {}x{} : {:?}", w, h, rect);
-        }
     }
 
     /// Les pictogrammes du menu existent dans les polices embarquées d'egui
     #[test]
     fn test_menu_icons_have_glyphs() {
         let mut ui = UiState::new(1);
-        ui.update_ui(10.0, true);
+        ui.update_ui(true);
         let font = egui::FontId::proportional(14.0);
         let icons = ["▶", "⚙", "⌨", "🚪", "⬅", "↺", "🎨", "🎲", "🌍", "🚶", "⏸", "🔄", "✖", "›", "—"]
             .into_iter()
