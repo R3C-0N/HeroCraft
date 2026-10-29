@@ -255,6 +255,11 @@ impl<'a> TerrainQuery<'a> {
         self.columns.entry((face, x, z)).or_insert_with(|| generator.sample_block_column(face, x, z))
     }
 
+    /// Échantillon du générateur pour la colonne (x, z) : relief, biome
+    pub fn column_sample(&mut self, face: PlanetFace, x: i32, z: i32) -> ColumnSample {
+        *self.column(face, x, z)
+    }
+
     pub fn block(&mut self, pos: BlockPos) -> BlockId {
         if let Some(chunk) = self.edits.chunk(&pos.chunk_coord()) {
             let (x, y, z) = pos.local();

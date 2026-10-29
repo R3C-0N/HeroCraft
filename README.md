@@ -21,7 +21,7 @@ Tout passe par **`Échap > Multijoueur`** :
 - **Rejoindre par adresse** : `ip` ou `ip:port` (port 7777 par défaut).
 - **Se déconnecter** / **Fermer la partie** : retour au monde solo.
 
-À la connexion, le serveur envoie la graine de sa planète et les chunks déjà modifiés : chaque client génère le reste lui-même. Les autres joueurs apparaissent comme des silhouettes dorées surmontées de leur nom. En ligne, `G` (nouvelle planète) est désactivé.
+À la connexion, le serveur envoie la graine de sa planète et les chunks déjà modifiés : chaque client génère le reste lui-même. Les autres joueurs apparaissent comme des silhouettes dorées surmontées de leur nom. Le serveur fait vivre les créatures et montre à chacun celles de son voisinage. En ligne, `G` (nouvelle planète) est désactivé.
 
 ### Lancer le serveur dédié :
 ```bash
@@ -39,6 +39,9 @@ Chaque partie solo, comme chaque appui sur « Nouvelle planète » (`G`), tire u
 #### Configuration locale (`.env`) :
 Copier `.env.example` en `.env` (non versionné). Les variables déjà définies dans l'environnement restent prioritaires.
 - **`HEROCRAFT_MONITOR`** : écran où s'ouvre la fenêtre, par son nom Windows (`DISPLAY1`, `DISPLAY2`, `DISPLAY3`…). Sous WSLg, la correspondance avec l'écran Windows est retrouvée via `powershell.exe`, et la fenêtre passe par X11, car Wayland ne permet pas de la placer.
+
+#### Créatures :
+Les 19 créatures du bestiaire (reprises du module `HeroBestiary` de la branche `develop`) sont dessinées avec leurs modèles glTF animés et leurs textures. Lapins, faisans, cerfs, loups, ours, sangliers, vaches et mouflons apparaissent selon le biome, entre 24 et 56 blocs autour du joueur, sur l'herbe, la terre, le sable ou la neige. Les créatures des profondeurs et des mondes démoniaques n'apparaissent pas encore d'elles-mêmes. Toutes se promènent au hasard : elles franchissent les marches d'un bloc, évitent l'eau, les murs et les à-pics, et tombent dans les trous creusés sous elles. Leurs pattes bougent à la vitesse où elles avancent. Elles disparaissent à plus de 96 blocs de tout joueur (64 au plus en tout). En solo, elles vivent dans le jeu et s'arrêtent avec le menu ; en ligne, c'est le serveur qui les fait vivre. Chaque espèce est décrite par un fichier de `assets/creatures/` : ajouter une bête, c'est ajouter un fichier et son modèle. Voir [assets/creatures/README.md](assets/creatures/README.md).
 
 #### Contrôles du prototype :
 Toutes les touches se changent dans `Échap > Commandes` (clic sur une touche, puis appui sur la nouvelle). Elles sont enregistrées dans `config/controles.json`.

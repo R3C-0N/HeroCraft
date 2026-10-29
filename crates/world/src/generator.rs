@@ -49,6 +49,27 @@ pub enum BiomeType {
 }
 
 impl BiomeType {
+    pub const ALL: [BiomeType; 13] = [
+        BiomeType::DeepOcean,
+        BiomeType::Ocean,
+        BiomeType::Sea,
+        BiomeType::Beach,
+        BiomeType::Plains,
+        BiomeType::Forest,
+        BiomeType::Desert,
+        BiomeType::Mountains,
+        BiomeType::SnowPeaks,
+        BiomeType::Tundra,
+        BiomeType::Taiga,
+        BiomeType::Savanna,
+        BiomeType::Jungle,
+    ];
+
+    /// Le biome nommé `name` (`Plains`, `Forest`… : le nom de la variante)
+    pub fn from_name(name: &str) -> Option<BiomeType> {
+        BiomeType::ALL.into_iter().find(|b| format!("{b:?}") == name)
+    }
+
     pub fn is_water(&self) -> bool {
         matches!(self, BiomeType::DeepOcean | BiomeType::Ocean | BiomeType::Sea)
     }

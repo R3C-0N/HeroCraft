@@ -1,10 +1,12 @@
-//! Deux clients sur un vrai serveur TCP local : accueil, blocs diffusés, actions refusées, positions.
+//! Clients sur un vrai serveur TCP local : accueil, blocs diffusés, actions refusées, positions,
+//! créatures montrées aux joueurs proches.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use herocraft_common::net::Connection;
+use glam::Vec3;
 use herocraft_common::{BlockId, BlockInteractionAction, ClientPacket, PlanetFace, ServerPacket, PROTOCOL_VERSION};
 use herocraft_server::{Server, ServerConfig};
 use herocraft_world::{BlockGeometry, BlockPos, WORLD_HEIGHT};
@@ -37,14 +39,14 @@ fn wait_for<T>(client: &Client, mut pick: impl FnMut(ServerPacket) -> Option<T>)
     }
 }
 
-#[test]
-fn deux_joueurs_partagent_les_blocs_et_les_positions() {
+fn test_server() -> Server {
     let mut config = ServerConfig::new("127.0.0.1:0", 4242);
     config.save_dir = None;
-    let server = Server::bind(config).unwrap();
-    let addr = server.local_addr().unwrap().to_string();
+    Server::bind(config).unwrap()
+}
 
-    // Bloc de surface d'une colonne de terre ferme, et les pieds d'un joueur posé dessus
+/// Bloc de surface d'une colonne de terre ferme, et les pieds d'un joueur posé dessus
+fn land(server: &Server) -> (BlockPos, Vec3) {
     let face = PlanetFace::PosZ;
     let (x, z, top) = (0..1024)
         .step_by(37)
@@ -57,6 +59,15 @@ fn deux_joueurs_partagent_les_blocs_et_les_positions() {
     let surface = BlockPos::new(face, x, top, z);
     let geometry = BlockGeometry::new(herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 4242, ..Default::default() }).base_radius());
     let feet = geometry.corner(face, x as f64 + 0.5, (top + 1) as f64, z as f64 + 0.5).as_vec3();
+    (surface, feet)
+}
+
+#[test]
+fn deux_joueurs_partagent_les_blocs_et_les_positions() {
+    let server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let (surface, feet) = land(&server);
+    let (face, x, z) = (surface.face, surface.x, surface.z);
 
     let running = Arc::new(AtomicBool::new(true));
     let server_running = running.clone();
@@ -136,4 +147,58 @@ fn deux_joueurs_partagent_les_blocs_et_les_positions() {
     server_thread.join().unwrap();
     // Le serveur prévient les joueurs restants de son arrêt
     wait_for(&bob, |p| matches!(p, ServerPacket::Disconnect(_)).then_some(()));
+}
+
+/// Fait tourner le serveur à la main jusqu'à ce qu'un paquet reçu par `client` satisfasse `pick`
+fn pump<T>(server: &mut Server, client: &Client, mut pick: impl FnMut(ServerPacket) -> Option<T>) -> T {
+    let deadline = Instant::now() + WAIT;
+    loop {
+        server.tick(1.0 / 60.0);
+        while let Some(packet) = client.try_recv().expect("connexion fermée") {
+            if let Some(found) = pick(packet) {
+                return found;
+            }
+        }
+        assert!(Instant::now() < deadline, "paquet attendu non reçu");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+#[test]
+fn les_creatures_proches_sont_montrees_au_joueur() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let (_, feet) = land(&server);
+
+    let alice = Client::connect(&addr, WAIT).unwrap();
+    alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
+    pump(&mut server, &alice, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false });
+    let deadline = Instant::now() + WAIT;
+    while server.players().all(|p| p.position.is_none()) {
+        assert!(Instant::now() < deadline, "position d'Alice non reçue");
+        server.tick(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+
+    // Une vache à ses pieds : il lui est annoncé, puis sa position suit
+    let sheep = server.spawn_creature("vache", feet).expect("espèce vache");
+    let (species, state) = pump(&mut server, &alice, |p| match p {
+        ServerPacket::CreatureSpawned { species, state } if state.creature_id == sheep => Some((species, state)),
+        _ => None,
+    });
+    assert_eq!(species, "vache");
+    assert!(state.position.distance(feet) < 1e-3);
+    pump(&mut server, &alice, |p| match p {
+        ServerPacket::CreatureStates(states) => states.into_iter().find(|s| s.creature_id == sheep),
+        _ => None,
+    });
+
+    // Alice part à l'autre bout de la planète : la vache, seule, disparaît de son affichage
+    alice.send(&ClientPacket::PlayerMove { position: -feet, yaw: 0.0, pitch: 0.0, sprinting: false });
+    pump(&mut server, &alice, |p| match p {
+        ServerPacket::CreaturesDespawned(ids) => ids.contains(&sheep).then_some(()),
+        _ => None,
+    });
+    assert!(server.creatures().creatures().iter().all(|c| c.id != sheep));
 }

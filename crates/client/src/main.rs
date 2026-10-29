@@ -17,6 +17,8 @@ mod block_outline;
 mod camera;
 mod cloud_mesh;
 mod collision;
+mod creature_render;
+mod creatures;
 mod dropped_items;
 mod gpu_timer;
 mod input;
@@ -31,6 +33,7 @@ mod post;
 mod renderer;
 mod shaders;
 mod shadow;
+mod skinned_model;
 mod ui;
 mod voxel_mesh;
 
@@ -147,9 +150,17 @@ fn main() {
     let mut lan_retry_at = Instant::now();
     // Planète de la partie solo, retrouvée en quittant une partie en ligne
     let mut solo_seed = current_seed;
+    // Créatures de la partie solo, simulées ici (en ligne, c'est le serveur qui les fait vivre), et
+    // la planète où elles vivent. Les espèces sont décrites dans assets/creatures/.
+    let creature_registry = Arc::new(herocraft_common::CreatureRegistry::load_default());
+    let mut solo_creatures = herocraft_world::CreatureWorld::new(base_radius as f64, current_seed, creature_registry.clone());
+    let mut creatures_seed = current_seed;
+    let mut creature_animator = creatures::CreatureAnimator::default();
+    let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
 
     // Initialisation du moteur WGPU
     let mut state = pollster::block_on(State::new(window.clone(), &ui_state));
+    state.set_creature_textures(&creature_textures);
     state.sync_lod_meshes(&lod_manager);
 
     // Gestion des entrées : souris capturée en jeu, glisser en vue satellite
@@ -478,6 +489,34 @@ fn main() {
                                 state.set_player_outlines(&client.remote_player_boxes(camera.base_radius));
                                 ui_state.name_tags = client.name_tags(&camera, state.size.width as f32, state.size.height as f32);
                             }
+                        }
+
+                        // Créatures : celles que le serveur montre en ligne, sinon celles de la partie solo,
+                        // en pause avec le menu. Dessinées d'après le modèle de leur espèce.
+                        {
+                            herocraft_common::prof_scope!("creatures");
+                            let views: Vec<creatures::CreatureView> = match net.as_ref() {
+                                Some(client) => client.creature_views(&creature_registry),
+                                None => {
+                                    if creatures_seed != current_seed {
+                                        solo_creatures = herocraft_world::CreatureWorld::new(camera.base_radius as f64, current_seed, creature_registry.clone());
+                                        creatures_seed = current_seed;
+                                    }
+                                    if !ui_state.is_settings_open {
+                                        solo_creatures.tick(dt, &generator, lod_manager.terrain_edits(), &[camera.player_pos]);
+                                    }
+                                    solo_creatures
+                                        .creatures()
+                                        .iter()
+                                        .map(|c| creatures::CreatureView { id: c.id, species: Some(c.species), feet: c.position, yaw: c.yaw })
+                                        .collect()
+                                }
+                            };
+                            let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+                            let anim_dt = if ui_state.is_settings_open { 0.0 } else { dt };
+                            creature_animator.update(&views, &creature_registry, &creature_models, anim_dt, block);
+                            let frame = creatures::build_frame(&views, &creature_registry, &creature_models, &creature_animator, block);
+                            state.set_creature_frame(&frame);
                         }
 
                         // Connexion menée en tâche de fond : à son terme, la planète du serveur

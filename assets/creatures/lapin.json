@@ -1,0 +1,13 @@
+{
+  "name": "Lapin",
+  "description": "Détale en zigzag et se nourrit de trèfle au bord des champs.",
+  "body": {"half_width": 0.1688, "half_length": 0.3515, "height": 0.7909},
+  "walk_speed": 1.1,
+  "min_group": 1,
+  "max_group": 2,
+  "spawn": [
+    {"biome": "Plains", "weight": 1.2},
+    {"biome": "Forest", "weight": 1.2}
+  ],
+  "model": {"mesh": "modeles/lapin.gltf", "texture": "modeles/lapin.png", "walk_animation": "repos"}
+}

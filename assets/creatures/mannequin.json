@@ -1,0 +1,10 @@
+{
+  "name": "Mannequin d'entraînement",
+  "description": "",
+  "body": {"half_width": 0.675, "half_length": 0.3375, "height": 2.025},
+  "walk_speed": 0.0,
+  "min_group": 1,
+  "max_group": 1,
+  "spawn": [],
+  "model": {"mesh": "modeles/mannequin.gltf", "texture": "modeles/mannequin.png", "walk_animation": "repos"}
+}

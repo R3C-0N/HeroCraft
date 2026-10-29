@@ -1,0 +1,13 @@
+{
+  "name": "Sanglier",
+  "description": "Charge en ligne droite, tête baissée, sur tout ce qui bouge près de sa bauge.",
+  "body": {"half_width": 0.3094, "half_length": 0.7973, "height": 0.9381},
+  "walk_speed": 1.2,
+  "min_group": 1,
+  "max_group": 2,
+  "spawn": [
+    {"biome": "Plains", "weight": 0.5},
+    {"biome": "Forest", "weight": 0.5}
+  ],
+  "model": {"mesh": "modeles/sanglier.gltf", "texture": "modeles/sanglier.png", "walk_animation": "repos"}
+}

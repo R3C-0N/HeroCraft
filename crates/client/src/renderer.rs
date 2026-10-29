@@ -5,6 +5,7 @@ use winit::window::Window;
 use crate::atmosphere::Atmosphere;
 use crate::block_outline::BlockOutline;
 use crate::camera::{CameraViewMode, OrbitCamera};
+use crate::creature_render::CreatureRenderer;
 use crate::gpu_timer::{self, GpuTimer};
 use crate::lod::{LodMeshId, PlanetLodManager};
 use crate::planet_mesh::PlanetVertex;
@@ -143,6 +144,8 @@ pub struct State {
     block_outline: BlockOutline,
     /// Silhouettes des autres joueurs en ligne
     player_outlines: BlockOutline,
+    /// Créatures : maillage refait à chaque image, textures des espèces
+    creatures: CreatureRenderer,
     /// Blocs tombés au sol : petits cubes dessinés avec le relief, refaits à chaque frame
     dropped_items: GrowableMesh,
 
@@ -358,6 +361,7 @@ impl State {
                 bind_group_layouts: &[&atmosphere.scene_layout],
                 push_constant_ranges: &[],
             });
+        let creatures = CreatureRenderer::new(&device, &queue, &atmosphere.scene_layout, &shadows.receiver_layout, sample_count);
         let terrain_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Terrain Pipeline Layout"),
@@ -568,6 +572,7 @@ impl State {
             lod_uploads_pending: false,
             block_outline,
             player_outlines,
+            creatures,
             dropped_items,
             egui_renderer,
             vsync_mode,
@@ -812,6 +817,16 @@ impl State {
         self.player_outlines.update(&self.queue, boxes, self.camera_eye);
     }
 
+    /// Textures des espèces de créatures, dans l'ordre du registre
+    pub fn set_creature_textures(&mut self, textures: &[Option<crate::skinned_model::Texture>]) {
+        self.creatures.set_textures(&self.device, &self.queue, textures);
+    }
+
+    /// Maillage des créatures de l'image (`creatures::build_frame`)
+    pub fn set_creature_frame(&mut self, frame: &crate::creatures::CreatureFrame) {
+        self.creatures.upload(&self.device, &self.queue, frame);
+    }
+
     /// Cubes des blocs tombés au sol, dans le format du relief
     pub fn set_dropped_items(&mut self, mesh: &crate::planet_mesh::PlanetMesh) {
         self.dropped_items.upload(&self.device, &self.queue, mesh);
@@ -884,9 +899,13 @@ impl State {
         self.atmosphere.encode_luts(&mut encoder);
         {
             herocraft_common::prof_scope!("render::encode_shadows");
-            let meshes = self.lod_draw_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).map(|m| {
-                (m.center, m.radius, &m.vertex_buffer, &m.index_buffer, m.num_indices)
-            });
+            // Les créatures portent leur ombre comme le relief
+            let meshes = self
+                .lod_draw_list
+                .iter()
+                .filter_map(|id| self.lod_gpu_meshes.get(id))
+                .map(|m| (m.center, m.radius, &m.vertex_buffer, &m.index_buffer, m.num_indices))
+                .chain(self.creatures.shadow_caster());
             let clouds = (self.num_cloud_indices > 0)
                 .then_some((&self.cloud_vertex_buffer, &self.cloud_index_buffer, self.num_cloud_indices));
             let timestamps = timer_queries.map(|q| (q, gpu_timer::TS_SHADOW_BEGIN, gpu_timer::TS_SHADOW_END));
@@ -949,6 +968,8 @@ impl State {
                     }
                 }
             }
+            // Créatures, éclairées comme le relief
+            self.creatures.draw(&mut render_pass, &self.atmosphere.scene_bind_group, &self.shadows.receiver_bind_group);
             // Blocs tombés au sol : même pipeline que le relief (éclairage, ombres reçues)
             if self.dropped_items.num_indices > 0 {
                 render_pass.set_pipeline(&self.render_pipeline);
@@ -1155,6 +1176,7 @@ mod tests {
         let atmosphere_lut = include_str!("atmosphere_lut.wgsl");
         let god_rays = include_str!("god_rays.wgsl");
         let block_outline = include_str!("block_outline.wgsl");
+        let creature = include_str!("creature.wgsl");
 
         for (name, source) in [
             ("sky_shader.wgsl", sky_shader),
@@ -1166,6 +1188,7 @@ mod tests {
             ("atmosphere_lut.wgsl", atmosphere_lut),
             ("god_rays.wgsl", god_rays),
             ("block_outline.wgsl", block_outline),
+            ("creature.wgsl", creature),
         ] {
             // Assemblage naga_oil (imports de common.wgsl) puis validation complète
             let module = if matches!(name, "ui_shader.wgsl" | "post_shader.wgsl" | "shadow_caster.wgsl") {

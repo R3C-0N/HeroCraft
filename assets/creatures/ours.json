@@ -1,0 +1,14 @@
+{
+  "name": "Ours",
+  "description": "Lent à s’énerver, redoutable une fois dressé sur ses pattes arrière.",
+  "body": {"half_width": 0.3937, "half_length": 0.9141, "height": 1.35},
+  "walk_speed": 0.9,
+  "min_group": 1,
+  "max_group": 1,
+  "spawn": [
+    {"biome": "Forest", "weight": 0.2},
+    {"biome": "Mountains", "weight": 0.2},
+    {"biome": "Taiga", "weight": 0.2}
+  ],
+  "model": {"mesh": "modeles/ours.gltf", "texture": "modeles/ours.png", "walk_animation": "repos"}
+}
