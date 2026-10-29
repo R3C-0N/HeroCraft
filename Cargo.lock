@@ -867,6 +867,7 @@ dependencies = [
  "serde",
  "serde_json",
  "wgpu",
+ "windows-sys 0.48.0",
  "winit",
 ]
 

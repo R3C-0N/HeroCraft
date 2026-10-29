@@ -30,6 +30,10 @@ egui-wgpu = "0.30"
 naga = "23"
 naga_oil = { version = "0.16", default-features = false }
 
+# Crochet clavier : les touches du jeu passent avant PowerToys et les autres programmes
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.48", features = ["Win32_Foundation", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging"] }
+
 [features]
 # cargo run --release --features profiling --bin herocraft_client
 profiling = ["herocraft_common/profiling"]
