@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16901,
+  "name": "Totem : mouflon laineux",
+  "description": "Posé au sol, fait apparaître un mouflon laineux.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/mouflonTotem.png"
+}

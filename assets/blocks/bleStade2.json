@@ -1,0 +1,11 @@
+{
+  "numeric_id": 57,
+  "name": "Blé — jeune pousse",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#519d2b"},
+  "textures": {"side": "textures/BleStade2.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16522,
+  "name": "Carreau d'orichalque",
+  "category": "Armes",
+  "max_stack": 99,
+  "icon": "icones/orichalcumBolt.png",
+  "stats": {"Dégâts": 15}
+}

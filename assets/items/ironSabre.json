@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16497,
+  "name": "Sabre de fer",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/ironSabre.png",
+  "stats": {"Dégâts": 10, "Durabilité": 900}
+}

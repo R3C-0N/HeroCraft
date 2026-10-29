@@ -1,0 +1,9 @@
+{
+  "numeric_id": 8,
+  "name": "Tronc de chêne",
+  "category": "Arbres",
+  "hardness": 10,
+  "color": {"side": "#6b4729"},
+  "textures": {"top": "textures/OakTrunkTopBottom.png", "side": "textures/OakTrunkSides.png", "bottom": "textures/OakTrunkTopBottom.png"},
+  "sound": "wood"
+}

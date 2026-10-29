@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16771,
+  "name": "Viande cuite de faisan",
+  "description": "Se mange au clic droit. Rassasie de 15.",
+  "category": "Nourriture",
+  "max_stack": 99,
+  "icon": "icones/viandeCuiteFaisan.png",
+  "stats": {"Satiété": 15}
+}

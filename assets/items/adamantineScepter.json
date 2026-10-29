@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16392,
+  "name": "Sceptre d'adamantine",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/adamantineScepter.png",
+  "stats": {"Dégâts": 10, "Durabilité": 3000}
+}

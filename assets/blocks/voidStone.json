@@ -1,0 +1,8 @@
+{
+  "numeric_id": 129,
+  "name": "Pierre du néant",
+  "category": "Minéraux",
+  "hardness": 40,
+  "color": {"side": "#311f3d"},
+  "textures": {"side": "textures/VoidStone.png"}
+}

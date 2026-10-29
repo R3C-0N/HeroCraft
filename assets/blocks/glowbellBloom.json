@@ -1,0 +1,12 @@
+{
+  "numeric_id": 105,
+  "name": "Clochelueur en fleur",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#90b398"},
+  "textures": {"side": "textures/GlowbellBloom.png"},
+  "shape": "plant",
+  "solid": false,
+  "light": 6,
+  "sound": "grass"
+}

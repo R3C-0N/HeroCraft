@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16588,
+  "name": "Bottes de bronze",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/bronzeScaleBoots.png",
+  "stats": {"Protection": 5, "Durabilité": 500}
+}

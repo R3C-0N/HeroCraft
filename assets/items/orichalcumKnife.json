@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16829,
+  "name": "Couteau en orichalque",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/orichalcumKnife.png",
+  "stats": {"Dégâts": 7, "Durabilité": 3000}
+}

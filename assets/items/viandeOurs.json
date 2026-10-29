@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16731,
+  "name": "Viande crue d'ours",
+  "description": "Se mange au clic droit. Rassasie de 18, de 45 une fois cuite au fourneau.",
+  "category": "Butin",
+  "max_stack": 64,
+  "icon": "icones/viandeOurs.png",
+  "stats": {"Satiété": 18}
+}

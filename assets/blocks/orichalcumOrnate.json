@@ -1,0 +1,8 @@
+{
+  "numeric_id": 49,
+  "name": "Orichalque ouvragé",
+  "category": "Construction",
+  "hardness": 45,
+  "color": {"side": "#a5832f"},
+  "textures": {"side": "textures/OrichalcumOrnate.png"}
+}

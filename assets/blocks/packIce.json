@@ -1,0 +1,9 @@
+{
+  "numeric_id": 89,
+  "name": "Pack Ice",
+  "category": "Divers",
+  "hardness": 1,
+  "color": {"side": "#d0e3ebb3"},
+  "textures": {"side": "textures/PackIce.png"},
+  "opaque": false
+}

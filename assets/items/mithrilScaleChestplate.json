@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16669,
+  "name": "Brigandine de mithril",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/mithrilScaleChestplate.png",
+  "stats": {"Protection": 25, "Durabilité": 3000}
+}

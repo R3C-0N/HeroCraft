@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16633,
+  "name": "Cuirasse d'étherium (orichalque)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumPlateChestplate.png",
+  "stats": {"Protection": 38, "Durabilité": 5000}
+}

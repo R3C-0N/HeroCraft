@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16621,
+  "name": "Cuirasse d'étherium (mithril)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilPlateChestplate.png",
+  "stats": {"Protection": 38, "Durabilité": 5000}
+}

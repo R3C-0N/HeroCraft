@@ -1,0 +1,9 @@
+{
+  "numeric_id": 21,
+  "name": "Tour de lapidaire",
+  "category": "Ateliers",
+  "hardness": 10,
+  "color": {"top": "#8b8f9a", "side": "#64646e"},
+  "textures": {"top": "textures/LapidaryTowerTop.png", "side": "textures/LapidaryTower.png"},
+  "sound": "wood"
+}

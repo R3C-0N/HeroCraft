@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16792,
+  "name": "Hache en cuivre",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/copperAxe.png",
+  "stats": {"Dégâts": 3, "Durabilité": 300}
+}

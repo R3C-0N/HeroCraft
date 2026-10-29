@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16583,
+  "name": "Braies de bronze",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/bronzeMailLeggings.png",
+  "stats": {"Protection": 7, "Durabilité": 500}
+}

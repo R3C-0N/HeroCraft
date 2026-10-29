@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16589,
+  "name": "Brigandine de bronze",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/bronzeScaleChestplate.png",
+  "stats": {"Protection": 12, "Durabilité": 500}
+}

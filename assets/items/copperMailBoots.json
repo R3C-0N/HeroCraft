@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16592,
+  "name": "Bottines de cuivre",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/copperMailBoots.png",
+  "stats": {"Protection": 3, "Durabilité": 300}
+}

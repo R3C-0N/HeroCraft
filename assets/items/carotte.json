@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16883,
+  "name": "Carotte",
+  "description": "Se mange au clic droit. Rassasie de 4.",
+  "category": "Récoltes",
+  "max_stack": 99,
+  "icon": "icones/carotte.png",
+  "stats": {"Satiété": 4}
+}

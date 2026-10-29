@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16453,
+  "name": "Sceptre d'étherium (mithril)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilScepter.png",
+  "stats": {"Dégâts": 15, "Durabilité": 5000}
+}

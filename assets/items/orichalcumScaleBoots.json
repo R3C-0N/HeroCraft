@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16680,
+  "name": "Bottes d'orichalque",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/orichalcumScaleBoots.png",
+  "stats": {"Protection": 11, "Durabilité": 3000}
+}

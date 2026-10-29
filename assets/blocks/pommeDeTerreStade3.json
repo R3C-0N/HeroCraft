@@ -1,0 +1,11 @@
+{
+  "numeric_id": 74,
+  "name": "Pomme de terre — plant",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#3e8129"},
+  "textures": {"side": "textures/PommeDeTerreStade3.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

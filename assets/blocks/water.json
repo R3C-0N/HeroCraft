@@ -1,0 +1,12 @@
+{
+  "numeric_id": 6,
+  "name": "Eau",
+  "category": "Liquides",
+  "hardness": 0,
+  "color": {"side": "#1a8ad1e6"},
+  "textures": {"side": "textures/Water.png"},
+  "liquid": true,
+  "opaque": false,
+  "sound": "water",
+  "drop": null
+}

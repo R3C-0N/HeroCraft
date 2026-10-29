@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16438,
+  "name": "Sceptre d'étherium (adamantine)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumAdamantineScepter.png",
+  "stats": {"Dégâts": 15, "Durabilité": 5000}
+}

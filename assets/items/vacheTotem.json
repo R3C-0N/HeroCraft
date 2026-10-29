@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16906,
+  "name": "Totem : vache",
+  "description": "Posé au sol, fait apparaître une vache.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/vacheTotem.png"
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 126,
+  "name": "Pierre du manteau",
+  "category": "Minéraux",
+  "hardness": 0,
+  "color": {"side": "#4e5e66"},
+  "textures": {"side": "textures/MantleStone.png"}
+}

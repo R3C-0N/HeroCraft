@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16634,
+  "name": "Heaume d'étherium (orichalque)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumPlateHelmet.png",
+  "stats": {"Protection": 21, "Durabilité": 5000}
+}

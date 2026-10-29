@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16406,
+  "name": "Sabre de bronze",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/bronzeSabre.png",
+  "stats": {"Dégâts": 8, "Durabilité": 500}
+}

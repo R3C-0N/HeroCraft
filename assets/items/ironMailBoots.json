@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16644,
+  "name": "Bottines de fer",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/ironMailBoots.png",
+  "stats": {"Protection": 5, "Durabilité": 900}
+}

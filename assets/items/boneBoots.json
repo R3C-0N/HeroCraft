@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16572,
+  "name": "Solerets d'os",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/boneBoots.png",
+  "stats": {"Protection": 3, "Durabilité": 150}
+}

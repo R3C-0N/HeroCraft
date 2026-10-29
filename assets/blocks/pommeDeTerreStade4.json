@@ -1,0 +1,11 @@
+{
+  "numeric_id": 75,
+  "name": "Pomme de terre — mûr",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#6f823f"},
+  "textures": {"side": "textures/PommeDeTerreStade4.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

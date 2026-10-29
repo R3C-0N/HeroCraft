@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16393,
+  "name": "Bouclier d'adamantine",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/adamantineShield.png",
+  "stats": {"Dégâts": 9, "Durabilité": 3000}
+}

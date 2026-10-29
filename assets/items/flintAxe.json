@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16812,
+  "name": "Hache en silex",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/flintAxe.png",
+  "stats": {"Dégâts": 2, "Durabilité": 150}
+}

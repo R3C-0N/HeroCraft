@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16397,
+  "name": "Trousse d'adamantine",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/adamantineTinkerKit.png",
+  "stats": {"Dégâts": 8, "Durabilité": 3000}
+}

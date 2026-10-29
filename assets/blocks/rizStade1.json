@@ -1,0 +1,11 @@
+{
+  "numeric_id": 76,
+  "name": "Riz — semis",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#448061"},
+  "textures": {"side": "textures/RizStade1.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

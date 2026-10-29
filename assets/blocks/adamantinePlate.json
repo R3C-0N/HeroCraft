@@ -1,0 +1,8 @@
+{
+  "numeric_id": 25,
+  "name": "Plaques de adamantine",
+  "category": "Construction",
+  "hardness": 45,
+  "color": {"side": "#373142"},
+  "textures": {"side": "textures/AdamantinePlate.png"}
+}

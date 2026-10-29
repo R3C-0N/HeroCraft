@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16868,
+  "name": "Riz sauté au lézard",
+  "description": "Se mange au clic droit. Rassasie de 36.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/rizSauteAuLezard.png",
+  "stats": {"Satiété": 36}
+}

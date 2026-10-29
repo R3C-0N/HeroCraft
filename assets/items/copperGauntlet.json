@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16419,
+  "name": "Gantelet runique de cuivre",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/copperGauntlet.png",
+  "stats": {"Dégâts": 6, "Durabilité": 300}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16596,
+  "name": "Solerets de cuivre",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/copperPlateBoots.png",
+  "stats": {"Protection": 5, "Durabilité": 300}
+}

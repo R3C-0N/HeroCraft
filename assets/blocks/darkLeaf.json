@@ -1,0 +1,11 @@
+{
+  "numeric_id": 15,
+  "name": "Feuilles sombres",
+  "category": "Arbres",
+  "hardness": 1,
+  "color": {"side": "#1c4710"},
+  "textures": {"side": "textures/DarkGreenLeaf.png"},
+  "texture_tint": "#73c754",
+  "opaque": false,
+  "sound": "grass"
+}

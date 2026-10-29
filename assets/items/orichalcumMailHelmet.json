@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16674,
+  "name": "Capuche d'orichalque",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/orichalcumMailHelmet.png",
+  "stats": {"Protection": 13, "Durabilité": 3000}
+}

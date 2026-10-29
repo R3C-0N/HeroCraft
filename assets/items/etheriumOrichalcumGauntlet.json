@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16464,
+  "name": "Gantelet runique d'étherium (orichalque)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumGauntlet.png",
+  "stats": {"Dégâts": 23, "Durabilité": 5000}
+}

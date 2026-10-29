@@ -1,0 +1,11 @@
+{
+  "numeric_id": 109,
+  "name": "Fleur rouge",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#7e744d"},
+  "textures": {"side": "textures/RedFlower.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

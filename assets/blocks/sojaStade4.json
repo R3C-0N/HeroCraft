@@ -1,0 +1,11 @@
+{
+  "numeric_id": 83,
+  "name": "Soja — mûr",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#626d25"},
+  "textures": {"side": "textures/SojaStade4.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

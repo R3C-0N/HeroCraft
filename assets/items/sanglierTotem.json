@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16904,
+  "name": "Totem : sanglier",
+  "description": "Posé au sol, fait apparaître un sanglier.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/sanglierTotem.png"
+}

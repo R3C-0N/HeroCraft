@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16788,
+  "name": "Houe en bronze",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/bronzeHoe.png",
+  "stats": {"Dégâts": 3, "Durabilité": 500}
+}

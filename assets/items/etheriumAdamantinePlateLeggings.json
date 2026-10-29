@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16611,
+  "name": "Grèves d'étherium (adamantine)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumAdamantinePlateLeggings.png",
+  "stats": {"Protection": 28, "Durabilité": 5000}
+}

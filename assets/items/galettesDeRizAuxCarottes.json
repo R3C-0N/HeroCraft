@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16852,
+  "name": "Galettes de riz aux carottes",
+  "description": "Se mange au clic droit. Rassasie de 24.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/galettesDeRizAuxCarottes.png",
+  "stats": {"Satiété": 24}
+}

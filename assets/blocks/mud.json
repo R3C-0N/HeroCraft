@@ -1,0 +1,9 @@
+{
+  "numeric_id": 133,
+  "name": "Terre",
+  "category": "Sols",
+  "hardness": 9,
+  "color": {"side": "#897351"},
+  "textures": {"side": "textures/Mud.png"},
+  "sound": "dirt"
+}

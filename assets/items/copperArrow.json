@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16415,
+  "name": "Flèche de cuivre",
+  "category": "Armes",
+  "max_stack": 99,
+  "icon": "icones/copperArrow.png",
+  "stats": {"Dégâts": 5}
+}

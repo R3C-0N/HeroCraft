@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16730,
+  "name": "Viande crue de mouflon",
+  "description": "Se mange au clic droit. Rassasie de 10, de 25 une fois cuite au fourneau.",
+  "category": "Butin",
+  "max_stack": 64,
+  "icon": "icones/viandeMouflon.png",
+  "stats": {"Satiété": 10}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16817,
+  "name": "Hache en fer",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/ironAxe.png",
+  "stats": {"Dégâts": 5, "Durabilité": 900}
+}

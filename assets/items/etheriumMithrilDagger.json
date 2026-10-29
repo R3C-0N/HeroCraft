@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16448,
+  "name": "Dague d'étherium (mithril)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilDagger.png",
+  "stats": {"Dégâts": 22, "Durabilité": 5000}
+}

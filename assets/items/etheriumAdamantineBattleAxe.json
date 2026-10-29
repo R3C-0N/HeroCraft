@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16431,
+  "name": "Hache de guerre en étherium (adamantine)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumAdamantineBattleAxe.png",
+  "stats": {"Dégâts": 27, "Durabilité": 5000}
+}

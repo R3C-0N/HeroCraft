@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16599,
+  "name": "Grèves de cuivre",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/copperPlateLeggings.png",
+  "stats": {"Protection": 8, "Durabilité": 300}
+}

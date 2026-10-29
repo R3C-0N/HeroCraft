@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16892,
+  "name": "Totem : champion démon",
+  "description": "Posé au sol, fait apparaître un champion démon.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/championTotem.png"
+}

@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16774,
+  "name": "Viande cuite de loup",
+  "description": "Se mange au clic droit. Rassasie de 25.",
+  "category": "Nourriture",
+  "max_stack": 99,
+  "icon": "icones/viandeCuiteLoup.png",
+  "stats": {"Satiété": 25}
+}

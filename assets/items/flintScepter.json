@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16482,
+  "name": "Sceptre de silex",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/flintScepter.png",
+  "stats": {"Dégâts": 2, "Durabilité": 150}
+}

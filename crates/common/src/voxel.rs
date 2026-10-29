@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-/// Identifiant unique d'un type de bloc (sur 16 bits = 65 536 types possibles)
-/// (par défaut : l'air)
+/// Numéro d'un type de bloc, celui de sa fiche (`assets/blocks/`). Les constantes sont les blocs
+/// que pose le générateur de terrain ; leurs propriétés sont dans `blocks.rs`. Par défaut : l'air.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockId(pub u16);
 
@@ -21,12 +21,8 @@ impl BlockId {
     pub const CRYSTAL: BlockId = BlockId(12);
     pub const OBSIDIAN: BlockId = BlockId(13);
 
-    #[inline(always)]
-    pub fn is_air(&self) -> bool {
-        self.0 == 0
-    }
-
-    /// Temps pour casser le bloc à mains nues, en secondes
+    /// Temps pour casser le bloc à mains nues, en secondes. Les autres blocs le tirent de la
+    /// dureté de leur fiche (1 pour une fleur : 0,1 s ; 14 pour une roche : 1,4 s).
     pub fn break_seconds(&self) -> f32 {
         match *self {
             BlockId::LEAVES | BlockId::SNOW => 0.3,
@@ -38,51 +34,7 @@ impl BlockId {
             BlockId::STONE => 1.5,
             BlockId::IRON_ORE | BlockId::GOLD_ORE => 2.2,
             BlockId::OBSIDIAN => 5.0,
-            _ => 0.6,
-        }
-    }
-
-    #[inline(always)]
-    pub fn is_opaque(&self) -> bool {
-        match self.0 {
-            0 => false, // Air
-            6 => false, // Water
-            9 => false, // Leaves (semi-transparent)
-            _ => true,
-        }
-    }
-
-    #[inline(always)]
-    pub fn is_solid(&self) -> bool {
-        match self.0 {
-            0 => false, // Air
-            6 => false, // Water
-            7 => false, // Lava
-            _ => true,
-        }
-    }
-}
-
-/// Définition détaillée d'un bloc avec ses propriétés physiques et RPG
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlockDefinition {
-    pub id: BlockId,
-    pub name: String,
-    pub hardness: f32,
-    pub blast_resistance: f32,
-    pub light_emission: u8,
-    pub required_tool_tier: u8,
-}
-
-impl BlockDefinition {
-    pub fn standard(id: BlockId, name: &str, hardness: f32) -> Self {
-        Self {
-            id,
-            name: name.to_string(),
-            hardness,
-            blast_resistance: hardness * 1.5,
-            light_emission: 0,
-            required_tool_tier: 0,
+            other => crate::blocks::blocks().get(other).map_or(0.6, |sheet| (sheet.hardness * 0.1).clamp(0.1, 5.0)),
         }
     }
 }
@@ -92,14 +44,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_block_properties() {
-        assert!(BlockId::AIR.is_air());
-        assert!(!BlockId::STONE.is_air());
-        assert!(BlockId::STONE.is_solid());
-        assert!(!BlockId::WATER.is_solid());
-        assert!(BlockId::STONE.is_opaque());
-        assert!(!BlockId::WATER.is_opaque());
+    fn test_break_seconds() {
         assert!(BlockId::DIRT.break_seconds() < BlockId::STONE.break_seconds());
         assert!(BlockId::STONE.break_seconds() < BlockId::OBSIDIAN.break_seconds());
+        let flower = crate::blocks::blocks().find("dandelion").unwrap();
+        let brick = crate::blocks::blocks().find("brick").unwrap();
+        assert!(flower.break_seconds() < brick.break_seconds());
     }
 }

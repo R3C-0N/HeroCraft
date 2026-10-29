@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16781,
+  "name": "Houe en adamantine",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/adamantineHoe.png",
+  "stats": {"Dégâts": 6, "Durabilité": 3000}
+}

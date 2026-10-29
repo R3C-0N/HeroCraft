@@ -432,9 +432,12 @@ impl Server {
         }
         let current = self.edits.block(&self.generator, pos);
         let target = match action {
-            BlockInteractionAction::Break if !current.is_air() && current != BlockId::WATER => Some(BlockId::AIR),
+            BlockInteractionAction::Break if current.is_targetable() => Some(BlockId::AIR),
+            // Seul un bloc décrit par une fiche se pose, à la place de l'air ou d'un liquide
             BlockInteractionAction::Place(block)
-                if block != BlockId::AIR.0 && (current.is_air() || current == BlockId::WATER) && !self.overlaps_other_player(id, pos) =>
+                if herocraft_common::blocks().is_known(BlockId(block))
+                    && current.is_replaceable()
+                    && (!BlockId(block).is_solid() || !self.overlaps_other_player(id, pos)) =>
             {
                 Some(BlockId(block))
             }

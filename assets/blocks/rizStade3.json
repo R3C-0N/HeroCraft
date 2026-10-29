@@ -1,0 +1,11 @@
+{
+  "numeric_id": 78,
+  "name": "Riz — plant",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#34713a"},
+  "textures": {"side": "textures/RizStade3.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

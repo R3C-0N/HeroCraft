@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16858,
+  "name": "Oignons confits",
+  "description": "Se mange au clic droit. Rassasie de 8.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/oignonsConfits.png",
+  "stats": {"Satiété": 8}
+}

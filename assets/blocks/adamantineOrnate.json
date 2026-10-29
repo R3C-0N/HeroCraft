@@ -1,0 +1,8 @@
+{
+  "numeric_id": 24,
+  "name": "Adamantine ouvragé",
+  "category": "Construction",
+  "hardness": 45,
+  "color": {"side": "#302b39"},
+  "textures": {"side": "textures/AdamantineOrnate.png"}
+}

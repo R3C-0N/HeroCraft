@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16479,
+  "name": "Gantelet runique en silex",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/flintGauntlet.png",
+  "stats": {"Dégâts": 4, "Durabilité": 150}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16682,
+  "name": "Camail d'orichalque",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/orichalcumScaleHelmet.png",
+  "stats": {"Protection": 16, "Durabilité": 3000}
+}

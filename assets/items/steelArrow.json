@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16537,
+  "name": "Flèche d'acier",
+  "category": "Armes",
+  "max_stack": 99,
+  "icon": "icones/steelArrow.png",
+  "stats": {"Dégâts": 9}
+}

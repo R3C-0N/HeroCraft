@@ -1,0 +1,11 @@
+{
+  "numeric_id": 94,
+  "name": "Champignon brun",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#9f846b"},
+  "textures": {"side": "textures/BrownShroom.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

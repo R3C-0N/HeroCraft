@@ -1,10 +1,10 @@
 //! Inventaire du joueur : 9 cases de barre d'objets (touches 1 à 9, molette) et 27 cases de sac.
-//! Les blocs ramassés au sol y entrent, le bloc posé au clic droit est pris dans la case choisie de la
-//! barre. Enregistré en JSON avec le monde.
+//! Les blocs ramassés au sol y entrent, comme les objets pris au catalogue ; le bloc posé au clic
+//! droit est pris dans la case choisie de la barre. Enregistré en JSON avec le monde.
 
 use std::path::{Path, PathBuf};
 
-use herocraft_common::BlockId;
+use herocraft_common::{blocks, BlockId, ItemId};
 use serde::{Deserialize, Serialize};
 
 /// Cases de la barre d'objets, en bas de l'écran
@@ -12,13 +12,12 @@ pub const HOTBAR_SLOTS: usize = 9;
 /// Cases du sac, visibles dans l'écran d'inventaire
 pub const BAG_SLOTS: usize = 27;
 pub const TOTAL_SLOTS: usize = HOTBAR_SLOTS + BAG_SLOTS;
-/// Blocs au plus par case
-pub const MAX_STACK: u16 = 64;
-
-/// Pile de blocs identiques dans une case
+/// Pile de blocs ou d'objets identiques dans une case
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemStack {
-    pub block: BlockId,
+    /// `block` dans les inventaires enregistrés avant les objets : les numéros sont les mêmes
+    #[serde(alias = "block")]
+    pub item: ItemId,
     pub count: u16,
 }
 
@@ -63,10 +62,10 @@ impl Inventory {
     fn repair(&mut self) {
         self.slots.resize(TOTAL_SLOTS, None);
         for slot in &mut self.slots {
-            if slot.is_some_and(|s| s.count == 0 || drop_for(s.block) != Some(s.block)) {
+            if slot.is_some_and(|s| s.count == 0 || !can_hold(s.item)) {
                 *slot = None;
             } else if let Some(stack) = slot {
-                stack.count = stack.count.min(MAX_STACK);
+                stack.count = stack.count.min(stack.item.max_stack());
             }
         }
         self.selected = self.selected.min(HOTBAR_SLOTS - 1);
@@ -105,16 +104,16 @@ impl Inventory {
         self.selected = (self.selected as i32 + steps).rem_euclid(HOTBAR_SLOTS as i32) as usize;
     }
 
-    /// Bloc de la case choisie, à poser au clic droit
+    /// Bloc de la case choisie, à poser au clic droit (aucun si elle tient un objet)
     pub fn selected_block(&self) -> Option<BlockId> {
-        self.slot(self.selected).map(|s| s.block)
+        self.slot(self.selected).and_then(|s| s.item.block())
     }
 
     /// Retire un bloc de la case choisie (bloc posé)
     pub fn take_selected(&mut self) -> Option<BlockId> {
         let slot = &mut self.slots[self.selected];
         let stack = slot.as_mut()?;
-        let block = stack.block;
+        let block = stack.item.block()?;
         stack.count -= 1;
         if stack.count == 0 {
             *slot = None;
@@ -122,32 +121,41 @@ impl Inventory {
         Some(block)
     }
 
-    /// Range un bloc : d'abord sur une pile du même bloc, sinon dans la première case vide (barre
-    /// d'objets puis sac). Renvoie faux si l'inventaire est plein.
-    pub fn add(&mut self, block: BlockId) -> bool {
-        let stackable = self.slots.iter().position(|s| s.is_some_and(|s| s.block == block && s.count < MAX_STACK));
+    /// Range un bloc ou un objet : d'abord sur une pile du même, sinon dans la première case vide
+    /// (barre d'objets puis sac). Renvoie faux si l'inventaire est plein.
+    pub fn add(&mut self, item: impl Into<ItemId>) -> bool {
+        let item = item.into();
+        let stackable = self.slots.iter().position(|s| s.is_some_and(|s| s.item == item && s.count < item.max_stack()));
         if let Some(stack) = stackable.and_then(|i| self.slots[i].as_mut()) {
             stack.count += 1;
             return true;
         }
         match self.slots.iter().position(Option::is_none) {
             Some(i) => {
-                self.slots[i] = Some(ItemStack { block, count: 1 });
+                self.slots[i] = Some(ItemStack { item, count: 1 });
                 true
             }
             None => false,
         }
     }
 
-    /// Un bloc de plus trouverait sa place
-    pub fn has_room_for(&self, block: BlockId) -> bool {
-        self.slots.iter().any(|s| s.is_none_or(|s| s.block == block && s.count < MAX_STACK))
+    /// Range jusqu'à `count` exemplaires. Renvoie le nombre rangé.
+    pub fn add_many(&mut self, item: impl Into<ItemId>, count: u16) -> u16 {
+        let item = item.into();
+        (0..count).take_while(|_| self.add(item)).count() as u16
     }
 
-    /// Nombre total d'un bloc dans l'inventaire
+    /// Un exemplaire de plus trouverait sa place
+    pub fn has_room_for(&self, item: impl Into<ItemId>) -> bool {
+        let item = item.into();
+        self.slots.iter().any(|s| s.is_none_or(|s| s.item == item && s.count < item.max_stack()))
+    }
+
+    /// Nombre total d'un bloc ou d'un objet dans l'inventaire
     #[allow(dead_code)]
-    pub fn count(&self, block: BlockId) -> u32 {
-        self.slots.iter().flatten().filter(|s| s.block == block).map(|s| s.count as u32).sum()
+    pub fn count(&self, item: impl Into<ItemId>) -> u32 {
+        let item = item.into();
+        self.slots.iter().flatten().filter(|s| s.item == item).map(|s| s.count as u32).sum()
     }
 
     /// Pile tenue à la souris dans l'écran d'inventaire
@@ -156,7 +164,7 @@ impl Inventory {
     }
 
     /// Clic gauche sur une case de l'écran d'inventaire : prend la pile, la pose dans une case
-    /// vide, la fusionne avec une pile du même bloc ou l'échange avec la pile qui s'y trouve
+    /// vide, la fusionne avec une pile du même objet ou l'échange avec la pile qui s'y trouve
     pub fn click(&mut self, index: usize) {
         if index >= TOTAL_SLOTS {
             return;
@@ -167,8 +175,8 @@ impl Inventory {
         };
         match self.slots[index].as_mut() {
             None => self.slots[index] = Some(held),
-            Some(stack) if stack.block == held.block => {
-                let moved = held.count.min(MAX_STACK - stack.count);
+            Some(stack) if stack.item == held.item => {
+                let moved = held.count.min(held.item.max_stack().saturating_sub(stack.count));
                 stack.count += moved;
                 held.count -= moved;
                 if held.count > 0 {
@@ -182,7 +190,7 @@ impl Inventory {
         }
     }
 
-    /// Clic droit : prend la moitié d'une pile, ou pose un seul bloc de la pile tenue
+    /// Clic droit : prend la moitié d'une pile, ou pose un seul exemplaire de la pile tenue
     pub fn click_secondary(&mut self, index: usize) {
         if index >= TOTAL_SLOTS {
             return;
@@ -191,15 +199,15 @@ impl Inventory {
             (None, Some(stack)) => {
                 let half = stack.count.div_ceil(2);
                 stack.count -= half;
-                self.held = Some((ItemStack { block: stack.block, count: half }, index));
+                self.held = Some((ItemStack { item: stack.item, count: half }, index));
                 if stack.count == 0 {
                     self.slots[index] = None;
                 }
             }
             (Some((held, _)), slot) => {
                 match slot {
-                    None => self.slots[index] = Some(ItemStack { block: held.block, count: 1 }),
-                    Some(stack) if stack.block == held.block && stack.count < MAX_STACK => stack.count += 1,
+                    None => self.slots[index] = Some(ItemStack { item: held.item, count: 1 }),
+                    Some(stack) if stack.item == held.item && stack.count < held.item.max_stack() => stack.count += 1,
                     Some(_) => return,
                 }
                 held.count -= 1;
@@ -216,8 +224,8 @@ impl Inventory {
     pub fn return_held(&mut self) {
         let Some((held, origin)) = self.held.take() else { return };
         let mut remaining = held.count;
-        if let Some(stack) = self.slots[origin].as_mut().filter(|s| s.block == held.block) {
-            let moved = remaining.min(MAX_STACK - stack.count);
+        if let Some(stack) = self.slots[origin].as_mut().filter(|s| s.item == held.item) {
+            let moved = remaining.min(held.item.max_stack().saturating_sub(stack.count));
             stack.count += moved;
             remaining -= moved;
         } else if self.slots[origin].is_none() {
@@ -225,8 +233,8 @@ impl Inventory {
             remaining = 0;
         }
         while remaining > 0 {
-            if !self.add(held.block) {
-                log::warn!("Inventaire plein : {} × {} perdus.", remaining, block_name(held.block));
+            if !self.add(held.item) {
+                log::warn!("Inventaire plein : {} × {} perdus.", remaining, held.item.name());
                 break;
             }
             remaining -= 1;
@@ -234,59 +242,32 @@ impl Inventory {
     }
 }
 
-/// Bloc gagné en cassant `block` (l'herbe donne de la terre, comme dans Minecraft). Les liquides
-/// ne se ramassent pas.
+/// Bloc gagné en cassant `block`, selon sa fiche (l'herbe donne de la terre, comme dans
+/// Minecraft ; les liquides ne se ramassent pas)
 pub fn drop_for(block: BlockId) -> Option<BlockId> {
-    match block {
-        BlockId::AIR | BlockId::WATER | BlockId::LAVA => None,
-        BlockId::GRASS => Some(BlockId::DIRT),
-        other => Some(other),
+    blocks().drop_of(block)
+}
+
+/// Ce qu'une case peut garder : un objet connu, ou un bloc qui se ramasse tel quel
+pub fn can_hold(item: ItemId) -> bool {
+    match item.block() {
+        Some(block) => drop_for(block) == Some(block),
+        None => item.is_known(),
     }
 }
 
-/// Teintes du dessus et des côtés d'un objet (icône, bloc tombé au sol) : celles du terrain, et
-/// pour les blocs que le terrain peint encore en gris neutre, une teinte qui les distingue
+/// Teintes du dessus et des côtés d'un bloc (icône, bloc tombé au sol), celles de sa fiche
 pub fn item_colors(block: BlockId) -> ([f32; 4], [f32; 4]) {
-    let tint = match block {
-        BlockId::IRON_ORE => Some([0.66, 0.52, 0.44, 1.0]),
-        BlockId::GOLD_ORE => Some([0.86, 0.70, 0.24, 1.0]),
-        BlockId::CRYSTAL => Some([0.62, 0.86, 0.95, 1.0]),
-        BlockId::OBSIDIAN => Some([0.20, 0.14, 0.30, 1.0]),
-        _ => None,
-    };
-    match tint {
-        Some(color) => (color, color),
-        None => (
-            crate::voxel_mesh::VoxelMeshBuilder::block_color(block, true),
-            crate::voxel_mesh::VoxelMeshBuilder::block_color(block, false),
-        ),
-    }
-}
-
-/// Nom affiché d'un bloc
-pub fn block_name(block: BlockId) -> &'static str {
-    match block {
-        BlockId::AIR => "Air",
-        BlockId::STONE => "Pierre",
-        BlockId::DIRT => "Terre",
-        BlockId::GRASS => "Herbe",
-        BlockId::SAND => "Sable",
-        BlockId::SNOW => "Neige",
-        BlockId::WATER => "Eau",
-        BlockId::LAVA => "Lave",
-        BlockId::WOOD => "Bois",
-        BlockId::LEAVES => "Feuilles",
-        BlockId::IRON_ORE => "Minerai de fer",
-        BlockId::GOLD_ORE => "Minerai d'or",
-        BlockId::CRYSTAL => "Cristal",
-        BlockId::OBSIDIAN => "Obsidienne",
-        _ => "Bloc inconnu",
+    match blocks().get(block) {
+        Some(sheet) => (sheet.top_color(), sheet.side_color()),
+        None => ([0.6, 0.6, 0.6, 1.0], [0.6, 0.6, 0.6, 1.0]),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use herocraft_common::BLOCK_STACK as MAX_STACK;
 
     #[test]
     fn test_add_stacks_then_fills_hotbar_then_bag() {
@@ -294,10 +275,10 @@ mod tests {
         for _ in 0..MAX_STACK + 1 {
             assert!(inv.add(BlockId::STONE));
         }
-        assert_eq!(inv.slot(0), Some(ItemStack { block: BlockId::STONE, count: MAX_STACK }));
-        assert_eq!(inv.slot(1), Some(ItemStack { block: BlockId::STONE, count: 1 }));
+        assert_eq!(inv.slot(0), Some(ItemStack { item: BlockId::STONE.into(), count: MAX_STACK }));
+        assert_eq!(inv.slot(1), Some(ItemStack { item: BlockId::STONE.into(), count: 1 }));
         assert!(inv.add(BlockId::DIRT));
-        assert_eq!(inv.slot(2).map(|s| s.block), Some(BlockId::DIRT));
+        assert_eq!(inv.slot(2).and_then(|s| s.item.block()), Some(BlockId::DIRT));
         assert_eq!(inv.count(BlockId::STONE), MAX_STACK as u32 + 1);
 
         // Toutes les cases prises par des piles pleines : plus rien n'entre
@@ -344,16 +325,16 @@ mod tests {
         inv.add(BlockId::DIRT);
         // Prendre la pierre et la poser dans le sac
         inv.click(0);
-        assert_eq!(inv.held().map(|s| s.block), Some(BlockId::STONE));
+        assert_eq!(inv.held().and_then(|s| s.item.block()), Some(BlockId::STONE));
         assert_eq!(inv.slot(0), None);
         inv.click(20);
-        assert_eq!(inv.slot(20).map(|s| s.block), Some(BlockId::STONE));
+        assert_eq!(inv.slot(20).and_then(|s| s.item.block()), Some(BlockId::STONE));
         assert_eq!(inv.held(), None);
         // Échange : la terre prend la place de la pierre, qui reste en main
         inv.click(1);
         inv.click(20);
-        assert_eq!(inv.slot(20).map(|s| s.block), Some(BlockId::DIRT));
-        assert_eq!(inv.held().map(|s| s.block), Some(BlockId::STONE));
+        assert_eq!(inv.slot(20).and_then(|s| s.item.block()), Some(BlockId::DIRT));
+        assert_eq!(inv.held().and_then(|s| s.item.block()), Some(BlockId::STONE));
         // Refermer l'écran remet la pile tenue dans l'inventaire
         inv.return_held();
         assert_eq!(inv.held(), None);
@@ -394,7 +375,7 @@ mod tests {
         inv.save();
 
         let loaded = Inventory::load_or_default(&path);
-        assert_eq!(loaded.slot(0), Some(ItemStack { block: BlockId::SAND, count: 2 }));
+        assert_eq!(loaded.slot(0), Some(ItemStack { item: BlockId::SAND.into(), count: 2 }));
         assert_eq!(loaded.selected(), 4);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -408,5 +389,26 @@ mod tests {
         assert_eq!(inv.slot(1).map(|s| s.count), Some(MAX_STACK));
         assert_eq!(inv.selected(), HOTBAR_SLOTS - 1);
         assert_eq!(inv.slots.len(), TOTAL_SLOTS);
+    }
+
+    #[test]
+    fn test_objects_stack_by_their_sheet_and_are_not_placed() {
+        let sword = herocraft_common::items().find("flintSword").unwrap();
+        let bread = herocraft_common::items().find("pain").unwrap();
+        let mut inv = Inventory::default();
+        assert_eq!(inv.add_many(sword, 2), 2);
+        assert_eq!(inv.slot(1).map(|s| s.count), Some(1), "une épée par case");
+        assert_eq!(inv.selected_block(), None);
+        assert_eq!(inv.take_selected(), None, "un objet ne se pose pas");
+        assert_eq!(inv.count(sword), 2);
+        assert_eq!(inv.add_many(bread, 99), 99);
+        assert_eq!(inv.slot(2).map(|s| s.count), Some(99));
+
+        // Un objet inconnu (fiche retirée) disparaît au chargement
+        let json = format!(r#"{{ "slots": [ {{ "item": {}, "count": 1 }}, {{ "item": 65000, "count": 1 }} ] }}"#, sword.0);
+        let mut loaded: Inventory = serde_json::from_str(&json).unwrap();
+        loaded.repair();
+        assert_eq!(loaded.slot(0).map(|s| s.item), Some(sword));
+        assert_eq!(loaded.slot(1), None);
     }
 }

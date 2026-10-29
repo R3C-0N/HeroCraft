@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16681,
+  "name": "Brigandine d'orichalque",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/orichalcumScaleChestplate.png",
+  "stats": {"Protection": 29, "Durabilité": 3000}
+}

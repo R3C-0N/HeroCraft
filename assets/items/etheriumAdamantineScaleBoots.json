@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16612,
+  "name": "Bottes d'étherium (adamantine)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumAdamantineScaleBoots.png",
+  "stats": {"Protection": 13, "Durabilité": 5000}
+}

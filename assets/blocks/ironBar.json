@@ -1,0 +1,8 @@
+{
+  "numeric_id": 44,
+  "name": "Bloc de fer",
+  "category": "Construction",
+  "hardness": 22,
+  "color": {"side": "#b9b6ac"},
+  "textures": {"side": "textures/IronBar.png"}
+}

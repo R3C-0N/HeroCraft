@@ -1,0 +1,11 @@
+{
+  "numeric_id": 56,
+  "name": "Blé — semis",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#549f2e"},
+  "textures": {"side": "textures/BleStade1.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

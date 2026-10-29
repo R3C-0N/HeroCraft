@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16855,
+  "name": "Hachis d'ours",
+  "description": "Se mange au clic droit. Rassasie de 65.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/hachisDOurs.png",
+  "stats": {"Satiété": 65}
+}

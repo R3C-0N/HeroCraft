@@ -24,6 +24,7 @@ mod dropped_items;
 mod gpu_timer;
 mod input;
 mod inventory;
+mod item_icons;
 mod keyboard_hook;
 mod lod;
 mod monitor;
@@ -355,8 +356,10 @@ fn main() {
                         } else if key_code == KeyCode::F9 && is_pressed {
                             write_profile_report();
                         } else if ui_state.inventory_open {
-                            // Écran d'inventaire : seule sa touche le referme
-                            if is_pressed && !*repeat && ui_state.controls.action_for(key_code) == Some(Action::OpenInventory) {
+                            // Écran d'inventaire : seule sa touche le referme, sauf pendant la saisie
+                            // d'une recherche dans le catalogue
+                            let typing = ui_state.ctx.wants_keyboard_input();
+                            if is_pressed && !*repeat && !typing && ui_state.controls.action_for(key_code) == Some(Action::OpenInventory) {
                                 ui_state.set_inventory_open(false);
                             }
                         } else if !ui_state.is_settings_open {

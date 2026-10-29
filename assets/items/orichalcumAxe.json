@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16827,
+  "name": "Hache en orichalque",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/orichalcumAxe.png",
+  "stats": {"Dégâts": 7, "Durabilité": 3000}
+}

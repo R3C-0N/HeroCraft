@@ -1,0 +1,9 @@
+{
+  "numeric_id": 22,
+  "name": "Forge astrale ultime",
+  "category": "Ateliers",
+  "hardness": 10,
+  "color": {"top": "#7b6286", "side": "#665172"},
+  "textures": {"top": "textures/UltimateAstralForgeTop.png", "side": "textures/UltimateAstralForge.png"},
+  "sound": "wood"
+}

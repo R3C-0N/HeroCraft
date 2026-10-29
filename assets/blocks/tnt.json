@@ -1,0 +1,8 @@
+{
+  "numeric_id": 91,
+  "name": "TNT",
+  "category": "Divers",
+  "hardness": 1,
+  "color": {"top": "#9b8466", "side": "#9e8668"},
+  "textures": {"top": "textures/TntTop.png", "side": "textures/Tnt.png", "bottom": "textures/TntBottom.png"}
+}

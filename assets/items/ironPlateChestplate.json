@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16649,
+  "name": "Cuirasse de fer",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/ironPlateChestplate.png",
+  "stats": {"Protection": 19, "Durabilité": 900}
+}

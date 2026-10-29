@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16502,
+  "name": "Épée de fer",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/ironSword.png",
+  "stats": {"Dégâts": 10, "Durabilité": 900}
+}

@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16845,
+  "name": "Brochette de tofu",
+  "description": "Se mange au clic droit. Rassasie de 40.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/brochetteDeTofu.png",
+  "stats": {"Satiété": 40}
+}

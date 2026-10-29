@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16886,
+  "name": "Pomme de terre",
+  "description": "Se mange au clic droit. Rassasie de 3.",
+  "category": "Récoltes",
+  "max_stack": 99,
+  "icon": "icones/pommeDeTerre.png",
+  "stats": {"Satiété": 3}
+}

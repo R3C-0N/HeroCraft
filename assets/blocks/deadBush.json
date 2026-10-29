@@ -1,0 +1,11 @@
+{
+  "numeric_id": 103,
+  "name": "Buisson mort",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#8f7b5c"},
+  "textures": {"side": "textures/DeadBush.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

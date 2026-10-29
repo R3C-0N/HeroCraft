@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16595,
+  "name": "Braies de cuivre",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/copperMailLeggings.png",
+  "stats": {"Protection": 5, "Durabilité": 300}
+}

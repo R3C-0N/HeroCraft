@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16529,
+  "name": "Bouclier d'orichalque",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/orichalcumShield.png",
+  "stats": {"Dégâts": 7, "Durabilité": 3000}
+}

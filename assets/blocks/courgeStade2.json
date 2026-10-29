@@ -1,0 +1,11 @@
+{
+  "numeric_id": 65,
+  "name": "Courge — jeune pousse",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#3b7527"},
+  "textures": {"side": "textures/CourgeStade2.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16576,
+  "name": "Bottes de silex",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/boneStuddedBoots.png",
+  "stats": {"Protection": 2, "Durabilité": 220}
+}

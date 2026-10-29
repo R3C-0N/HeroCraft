@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16642,
+  "name": "Capuche de cuir",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/hideHelmet.png",
+  "stats": {"Protection": 2, "Durabilité": 80}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16461,
+  "name": "Hache de guerre en étherium (orichalque)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumBattleAxe.png",
+  "stats": {"Dégâts": 27, "Durabilité": 5000}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16620,
+  "name": "Solerets d'étherium (mithril)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilPlateBoots.png",
+  "stats": {"Protection": 14, "Durabilité": 5000}
+}

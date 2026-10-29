@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16896,
+  "name": "Totem : lapin",
+  "description": "Posé au sol, fait apparaître un lapin.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/lapinTotem.png"
+}

@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16733,
+  "name": "Viande crue de sanglier",
+  "description": "Se mange au clic droit. Rassasie de 12, de 30 une fois cuite au fourneau.",
+  "category": "Butin",
+  "max_stack": 64,
+  "icon": "icones/viandeSanglier.png",
+  "stats": {"Satiété": 12}
+}

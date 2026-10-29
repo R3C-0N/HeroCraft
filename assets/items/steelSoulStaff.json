@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16547,
+  "name": "Bâton d'âmes d'acier",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/steelSoulStaff.png",
+  "stats": {"Dégâts": 12, "Durabilité": 2000}
+}

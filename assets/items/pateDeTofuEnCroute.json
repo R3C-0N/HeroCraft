@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16862,
+  "name": "Pâté de tofu en croûte",
+  "description": "Se mange au clic droit. Rassasie de 42.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/pateDeTofuEnCroute.png",
+  "stats": {"Satiété": 42}
+}

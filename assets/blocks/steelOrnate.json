@@ -1,0 +1,8 @@
+{
+  "numeric_id": 53,
+  "name": "Acier ouvragé",
+  "category": "Construction",
+  "hardness": 36,
+  "color": {"side": "#8d969a"},
+  "textures": {"side": "textures/SteelOrnate.png"}
+}

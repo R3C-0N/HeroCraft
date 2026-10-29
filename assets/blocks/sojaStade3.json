@@ -1,0 +1,11 @@
+{
+  "numeric_id": 82,
+  "name": "Soja — plant",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#407731"},
+  "textures": {"side": "textures/SojaStade3.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16437,
+  "name": "Sabre d'étherium (adamantine)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumAdamantineSabre.png",
+  "stats": {"Dégâts": 22, "Durabilité": 5000}
+}

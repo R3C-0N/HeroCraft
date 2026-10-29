@@ -1,0 +1,11 @@
+{
+  "numeric_id": 72,
+  "name": "Pomme de terre — semis",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#58a330"},
+  "textures": {"side": "textures/PommeDeTerreStade1.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

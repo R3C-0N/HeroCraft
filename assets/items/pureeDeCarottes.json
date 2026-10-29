@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16864,
+  "name": "Purée de carottes",
+  "description": "Se mange au clic droit. Rassasie de 24.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/pureeDeCarottes.png",
+  "stats": {"Satiété": 24}
+}

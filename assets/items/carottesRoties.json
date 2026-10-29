@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16846,
+  "name": "Carottes rôties",
+  "description": "Se mange au clic droit. Rassasie de 10.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/carottesRoties.png",
+  "stats": {"Satiété": 10}
+}

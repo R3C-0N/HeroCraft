@@ -1,0 +1,11 @@
+{
+  "numeric_id": 115,
+  "name": "Fleur jaune",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#848e4f"},
+  "textures": {"side": "textures/YellowFlower.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

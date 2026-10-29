@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16626,
+  "name": "Camail d'étherium (mithril)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilScaleHelmet.png",
+  "stats": {"Protection": 19, "Durabilité": 5000}
+}

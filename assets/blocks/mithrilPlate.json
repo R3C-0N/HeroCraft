@@ -1,0 +1,8 @@
+{
+  "numeric_id": 48,
+  "name": "Plaques de mithril",
+  "category": "Construction",
+  "hardness": 45,
+  "color": {"side": "#c7d3df"},
+  "textures": {"side": "textures/MithrilPlate.png"}
+}

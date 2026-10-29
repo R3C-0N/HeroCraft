@@ -1,0 +1,11 @@
+{
+  "numeric_id": 63,
+  "name": "Carotte — mûr",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#5f7923"},
+  "textures": {"side": "textures/CarotteStade4.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16856,
+  "name": "Hachis de tofu",
+  "description": "Se mange au clic droit. Rassasie de 65.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/hachisDeTofu.png",
+  "stats": {"Satiété": 65}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16830,
+  "name": "Pioche en orichalque",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/orichalcumPickaxe.png",
+  "stats": {"Dégâts": 7, "Durabilité": 3000}
+}

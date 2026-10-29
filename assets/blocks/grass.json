@@ -1,0 +1,11 @@
+{
+  "numeric_id": 3,
+  "name": "Herbe",
+  "category": "Sols",
+  "hardness": 9,
+  "color": {"top": "#47a638", "side": "#75542e"},
+  "textures": {"top": "textures/Grass.png", "side": "textures/GrassSides.png", "bottom": "textures/GrassBottom.png"},
+  "texture_tint": "#73c754",
+  "sound": "grass",
+  "drop": "dirt"
+}

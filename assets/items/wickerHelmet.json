@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16702,
+  "name": "Casque en osier",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/wickerHelmet.png",
+  "stats": {"Protection": 1, "Durabilité": 80}
+}

@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16775,
+  "name": "Viande cuite de mouflon",
+  "description": "Se mange au clic droit. Rassasie de 25.",
+  "category": "Nourriture",
+  "max_stack": 99,
+  "icon": "icones/viandeCuiteMouflon.png",
+  "stats": {"Satiété": 25}
+}

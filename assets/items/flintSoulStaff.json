@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16484,
+  "name": "Bâton d'âmes à pointe de silex",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/flintSoulStaff.png",
+  "stats": {"Dégâts": 3, "Durabilité": 150}
+}

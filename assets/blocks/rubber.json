@@ -1,0 +1,8 @@
+{
+  "numeric_id": 52,
+  "name": "Rubber",
+  "category": "Construction",
+  "hardness": 14,
+  "color": {"side": "#976952"},
+  "textures": {"side": "textures/Rubber.png"}
+}

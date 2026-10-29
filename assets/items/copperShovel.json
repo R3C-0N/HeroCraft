@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16796,
+  "name": "Pelle en cuivre",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/copperShovel.png",
+  "stats": {"Dégâts": 3, "Durabilité": 300}
+}

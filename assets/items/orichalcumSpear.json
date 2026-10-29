@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16531,
+  "name": "Lance d'orichalque",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/orichalcumSpear.png",
+  "stats": {"Dégâts": 25, "Durabilité": 3000}
+}

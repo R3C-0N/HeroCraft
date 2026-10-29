@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16732,
+  "name": "Viande pure de cerf de cristal",
+  "description": "Se mange au clic droit. Rassasie de 14, de 35 une fois cuite au fourneau.",
+  "category": "Butin",
+  "max_stack": 64,
+  "icon": "icones/viandePure.png",
+  "stats": {"Satiété": 14}
+}

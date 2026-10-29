@@ -1,0 +1,11 @@
+{
+  "numeric_id": 18,
+  "name": "Feuilles rouges",
+  "category": "Arbres",
+  "hardness": 1,
+  "color": {"side": "#433d11"},
+  "textures": {"side": "textures/RedLeaf.png"},
+  "texture_tint": "#73c754",
+  "opaque": false,
+  "sound": "grass"
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16449,
+  "name": "Gantelet runique d'étherium (mithril)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilGauntlet.png",
+  "stats": {"Dégâts": 23, "Durabilité": 5000}
+}

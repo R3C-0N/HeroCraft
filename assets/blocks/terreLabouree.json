@@ -1,0 +1,9 @@
+{
+  "numeric_id": 84,
+  "name": "Terre labourée",
+  "category": "Cultures",
+  "hardness": 9,
+  "color": {"top": "#684425", "side": "#997c58"},
+  "textures": {"top": "textures/TerreLabouree.png", "side": "textures/Dirt.png"},
+  "sound": "dirt"
+}

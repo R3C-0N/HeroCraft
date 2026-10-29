@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16872,
+  "name": "Soupe miso",
+  "description": "Se mange au clic droit. Rassasie de 34.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/soupeMiso.png",
+  "stats": {"Satiété": 34}
+}

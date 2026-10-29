@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16635,
+  "name": "Grèves d'étherium (orichalque)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumPlateLeggings.png",
+  "stats": {"Protection": 28, "Durabilité": 5000}
+}

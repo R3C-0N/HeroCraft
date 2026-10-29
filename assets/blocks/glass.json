@@ -1,0 +1,9 @@
+{
+  "numeric_id": 41,
+  "name": "Verre",
+  "category": "Construction",
+  "hardness": 1,
+  "color": {"side": "#dee6eab3"},
+  "textures": {"side": "textures/Glass.png"},
+  "opaque": false
+}

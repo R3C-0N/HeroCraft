@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16657,
+  "name": "Plastron en rondins",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/logChestplate.png",
+  "stats": {"Protection": 5, "Durabilité": 80}
+}

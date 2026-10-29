@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16476,
+  "name": "Hache de guerre en silex",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/flintBattleAxe.png",
+  "stats": {"Dégâts": 6, "Durabilité": 150}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16510,
+  "name": "Masse de mithril",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/mithrilMace.png",
+  "stats": {"Dégâts": 18, "Durabilité": 3000}
+}

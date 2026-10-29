@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16643,
+  "name": "Braies de cuir",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/hideLeggings.png",
+  "stats": {"Protection": 2, "Durabilité": 80}
+}

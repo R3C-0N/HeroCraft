@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16581,
+  "name": "Pourpoint de bronze",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/bronzeMailChestplate.png",
+  "stats": {"Protection": 10, "Durabilité": 500}
+}

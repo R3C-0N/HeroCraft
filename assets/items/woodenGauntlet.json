@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16554,
+  "name": "Gantelet d'apprenti",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/woodenGauntlet.png",
+  "stats": {"Dégâts": 2, "Durabilité": 80}
+}

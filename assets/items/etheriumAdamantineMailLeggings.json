@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16607,
+  "name": "Braies d'étherium (adamantine)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumAdamantineMailLeggings.png",
+  "stats": {"Protection": 24, "Durabilité": 5000}
+}

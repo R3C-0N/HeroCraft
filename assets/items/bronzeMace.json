@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16404,
+  "name": "Masse de bronze",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/bronzeMace.png",
+  "stats": {"Dégâts": 10, "Durabilité": 500}
+}

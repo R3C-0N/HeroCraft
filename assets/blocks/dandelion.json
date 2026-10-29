@@ -1,0 +1,11 @@
+{
+  "numeric_id": 102,
+  "name": "Pissenlit",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#8b9553"},
+  "textures": {"side": "textures/Dandelion.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

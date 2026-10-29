@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16549,
+  "name": "Épée d'acier",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/steelSword.png",
+  "stats": {"Dégâts": 13, "Durabilité": 2000}
+}

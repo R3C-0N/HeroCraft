@@ -1,0 +1,9 @@
+{
+  "numeric_id": 88,
+  "name": "Échelle",
+  "category": "Divers",
+  "hardness": 3,
+  "color": {"side": "#9c7e58b3"},
+  "textures": {"side": "textures/Ladder.png"},
+  "opaque": false
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 10,
+  "name": "Minerai de fer",
+  "category": "Minéraux",
+  "hardness": 18,
+  "color": {"side": "#a88570"},
+  "textures": {"side": "textures/IronOre.png"}
+}

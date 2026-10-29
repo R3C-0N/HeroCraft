@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16619,
+  "name": "Braies d'étherium (mithril)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilMailLeggings.png",
+  "stats": {"Protection": 24, "Durabilité": 5000}
+}

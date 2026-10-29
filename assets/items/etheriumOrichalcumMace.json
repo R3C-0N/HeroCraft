@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16465,
+  "name": "Masse d'étherium (orichalque)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumMace.png",
+  "stats": {"Dégâts": 28, "Durabilité": 5000}
+}

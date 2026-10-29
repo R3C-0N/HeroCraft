@@ -1,0 +1,9 @@
+{
+  "numeric_id": 55,
+  "name": "Lambris",
+  "category": "Construction",
+  "hardness": 10,
+  "color": {"side": "#af8f66"},
+  "textures": {"side": "textures/WoodPanel.png"},
+  "sound": "wood"
+}

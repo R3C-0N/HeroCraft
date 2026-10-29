@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16561,
+  "name": "Pourpoint d'adamantine",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/adamantineMailChestplate.png",
+  "stats": {"Protection": 22, "Durabilité": 3000}
+}

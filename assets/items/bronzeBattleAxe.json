@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16400,
+  "name": "Hache de guerre en bronze",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/bronzeBattleAxe.png",
+  "stats": {"Dégâts": 11, "Durabilité": 500}
+}

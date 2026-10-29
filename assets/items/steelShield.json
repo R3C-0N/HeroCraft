@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16546,
+  "name": "Bouclier d'acier",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/steelShield.png",
+  "stats": {"Dégâts": 5, "Durabilité": 2000}
+}

@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16857,
+  "name": "Lapin aux carottes",
+  "description": "Se mange au clic droit. Rassasie de 30.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/lapinAuxCarottes.png",
+  "stats": {"Satiété": 30}
+}

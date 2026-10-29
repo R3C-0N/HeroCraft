@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16847,
+  "name": "Courge farcie",
+  "description": "Se mange au clic droit. Rassasie de 68.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/courgeFarcie.png",
+  "stats": {"Satiété": 68}
+}

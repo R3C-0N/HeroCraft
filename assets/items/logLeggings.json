@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16659,
+  "name": "Jambières en rondins",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/logLeggings.png",
+  "stats": {"Protection": 4, "Durabilité": 80}
+}

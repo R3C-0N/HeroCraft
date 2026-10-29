@@ -1,0 +1,9 @@
+{
+  "numeric_id": 87,
+  "name": "Glace",
+  "category": "Divers",
+  "hardness": 1,
+  "color": {"side": "#d0e6f0b3"},
+  "textures": {"side": "textures/Ice.png"},
+  "opaque": false
+}

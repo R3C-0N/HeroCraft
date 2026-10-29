@@ -1,0 +1,8 @@
+{
+  "numeric_id": 45,
+  "name": "Fer ouvragé",
+  "category": "Construction",
+  "hardness": 30,
+  "color": {"side": "#72757a"},
+  "textures": {"side": "textures/IronOrnate.png"}
+}

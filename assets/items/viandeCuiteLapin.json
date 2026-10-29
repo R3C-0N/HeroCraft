@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16772,
+  "name": "Viande cuite de lapin",
+  "description": "Se mange au clic droit. Rassasie de 15.",
+  "category": "Nourriture",
+  "max_stack": 99,
+  "icon": "icones/viandeCuiteLapin.png",
+  "stats": {"Satiété": 15}
+}

@@ -1,0 +1,11 @@
+{
+  "numeric_id": 62,
+  "name": "Carotte — plant",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#498024"},
+  "textures": {"side": "textures/CarotteStade3.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

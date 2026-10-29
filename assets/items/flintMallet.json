@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16480,
+  "name": "Maillet à tête de silex",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/flintMallet.png",
+  "stats": {"Dégâts": 5, "Durabilité": 150}
+}

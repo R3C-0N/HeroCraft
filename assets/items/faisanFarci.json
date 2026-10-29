@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16851,
+  "name": "Faisan farci",
+  "description": "Se mange au clic droit. Rassasie de 40.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/faisanFarci.png",
+  "stats": {"Satiété": 40}
+}

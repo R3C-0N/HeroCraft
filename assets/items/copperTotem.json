@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16429,
+  "name": "Totem de cuivre",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/copperTotem.png",
+  "stats": {"Dégâts": 6, "Durabilité": 300}
+}

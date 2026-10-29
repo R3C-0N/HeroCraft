@@ -1,0 +1,8 @@
+{
+  "numeric_id": 47,
+  "name": "Mithril ouvragé",
+  "category": "Construction",
+  "hardness": 45,
+  "color": {"side": "#9ea3a8"},
+  "textures": {"side": "textures/MithrilOrnate.png"}
+}

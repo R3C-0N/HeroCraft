@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16618,
+  "name": "Capuche d'étherium (mithril)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilMailHelmet.png",
+  "stats": {"Protection": 18, "Durabilité": 5000}
+}

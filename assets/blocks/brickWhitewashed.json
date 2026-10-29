@@ -1,0 +1,8 @@
+{
+  "numeric_id": 27,
+  "name": "BrickWhitewashed",
+  "category": "Construction",
+  "hardness": 14,
+  "color": {"side": "#d9d2c3"},
+  "textures": {"side": "textures/BrickWhitewashed.png"}
+}

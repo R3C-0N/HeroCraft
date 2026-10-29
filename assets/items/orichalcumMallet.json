@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16526,
+  "name": "Marteau d'orichalque",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/orichalcumMallet.png",
+  "stats": {"Dégâts": 20, "Durabilité": 3000}
+}

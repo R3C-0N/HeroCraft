@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16727,
+  "name": "Viande crue de lapin",
+  "description": "Se mange au clic droit. Rassasie de 6, de 15 une fois cuite au fourneau.",
+  "category": "Butin",
+  "max_stack": 64,
+  "icon": "icones/viandeLapin.png",
+  "stats": {"Satiété": 6}
+}
