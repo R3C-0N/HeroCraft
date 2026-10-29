@@ -34,7 +34,7 @@ Le serveur écoute en TCP (port 7777 par défaut) à 60 TPS et s'annonce sur le 
 cargo run --bin herocraft_client
 ```
 Pour rejoindre directement un serveur au lancement : `-- --connect 127.0.0.1:7777 --name Mat` (ou `HEROCRAFT_SERVER` et `HEROCRAFT_PSEUDO` dans `.env`).
-Chaque partie solo, comme chaque appui sur « Nouvelle planète » (`G`), tire une graine au hasard, affichée dans le HUD et la console. Pour retrouver une planète précise : `-- --seed 1234567890` (ou `HEROCRAFT_SEED` dans `.env`).
+Chaque partie solo, comme chaque appui sur « Nouvelle planète » (`G`), tire une graine au hasard, affichée dans la console. Pour retrouver une planète précise : `-- --seed 1234567890` (ou `HEROCRAFT_SEED` dans `.env`).
 
 #### Configuration locale (`.env`) :
 Copier `.env.example` en `.env` (non versionné). Les variables déjà définies dans l'environnement restent prioritaires.
@@ -45,7 +45,8 @@ Toutes les touches se changent dans `Échap > Commandes` (clic sur une touche, p
 - **Souris** : en jeu au sol, le curseur est capturé et la souris oriente le regard. Le menu Échap et la vue satellite le font réapparaître.
 - **`Z Q S D`** (AZERTY, `W A S D` en QWERTY) : se déplacer. **`Ctrl`** : sprinter.
 - **`Espace`** : sauter. **Double `Espace`** : s'envoler ou se poser ; en vol, `Espace` monte et **`Maj`** descend (se poser au sol termine le vol).
-- **Clic gauche** : détruire le bloc visé par le réticule (son contour est surligné). **Clic droit** : poser un bloc de pierre contre la face visée. Garder le bouton enfoncé répète l'action. Les blocs modifiés sont enregistrés dans `saves/monde_<graine>/chunks/`.
+- **Clic gauche** : détruire le bloc visé par le réticule (son contour est surligné) ; il tombe au sol en petit cube, attiré puis ramassé dans l'inventaire quand on passe à moins de 2,5 blocs (l'herbe donne de la terre, l'eau et la lave ne se ramassent pas ; un objet oublié disparaît au bout de 5 minutes, et un inventaire plein le laisse au sol). **Clic droit** : poser contre la face visée le bloc de la case choisie de la barre d'objets. Garder le bouton enfoncé répète l'action. Les blocs modifiés sont enregistrés dans `saves/monde_<graine>/chunks/`.
+- **Barre d'objets** (en bas de l'écran) : **`1`** à **`9`** ou la **molette** choisissent la case. **`E`** ouvre l'inventaire (27 cases de sac + la barre, piles de 64) : clic gauche pour prendre, poser, fusionner ou échanger une pile, clic droit pour en prendre la moitié ou poser un seul bloc. L'inventaire est enregistré avec le monde (`saves/monde_<graine>/inventaire.json`) ; en ligne, un inventaire à part est gardé pour la planète du serveur (`saves/en_ligne_<graine>/`).
 - **`Alt` + molette** : zoom continu de la vue, du sol à l'orbite. En vue satellite, la molette seule suffit et clic + glisser tourne la planète.
 - **`F`** : vue au sol / satellite. **`R`** : réinitialiser la vue. **`G`** : nouvelle planète. **`T` / `C`** : filtres plaques tectoniques / courants marins.
 - **`Échap`** : menu de pause. **`F9`** : rapport de profilage.
