@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use glam::{DVec3, Vec3};
-use herocraft_common::PlanetFace;
+use herocraft_common::{BlockId, PlanetFace};
 use herocraft_world::generator::ColumnSample;
 use herocraft_world::{BlockGeometry, PlanetWorldGenerator, TerrainEdits, TerrainQuery, WORLD_HEIGHT};
 
@@ -81,6 +81,14 @@ impl VoxelCollider {
             q.support_top(pos.face, pos.x, pos.z, y)
         });
         self.radius_of_altitude(top)
+    }
+
+    /// Bloc qui contient le point `p` (l'air hors de la grille)
+    pub fn block_at(&self, generator: &PlanetWorldGenerator, p: Vec3) -> BlockId {
+        match self.geometry.block_at_point(p.as_dvec3()) {
+            Some(pos) if pos.is_valid() => self.with_query(generator, |q| q.block(pos)),
+            _ => BlockId::AIR,
+        }
     }
 
     /// Un des points est dans un bloc qui arrête le corps (ni air, ni eau)

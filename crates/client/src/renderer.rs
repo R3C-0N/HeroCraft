@@ -813,6 +813,11 @@ impl State {
         self.lod_uploads_pending
     }
 
+    /// Direction du Soleil à la dernière image (jour ou nuit pour l'ambiance sonore)
+    pub fn sun_dir(&self) -> glam::Vec3 {
+        self.sun_dir
+    }
+
     pub fn update_cloud_mesh(&mut self, base_radius: f32, seed: u64) {
         herocraft_common::prof_scope!("render::update_cloud_mesh");
         use wgpu::util::DeviceExt;
