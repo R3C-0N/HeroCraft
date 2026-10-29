@@ -1,5 +1,5 @@
 //! Clients sur un vrai serveur TCP local : accueil, blocs diffusés, actions refusées, positions,
-//! créatures montrées aux joueurs proches.
+//! créatures montrées aux joueurs proches et frappées.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -191,6 +191,18 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
     assert!(state.position.distance(feet) < 1e-3);
     pump(&mut server, &alice, |p| match p {
         ServerPacket::CreatureStates(states) => states.into_iter().find(|s| s.creature_id == sheep),
+        _ => None,
+    });
+
+    // Alice la frappe : la vache rougit et recule
+    alice.send(&ClientPacket::HitCreature { creature_id: sheep });
+    let hurt = pump(&mut server, &alice, |p| match p {
+        ServerPacket::CreatureStates(states) => states.into_iter().find(|s| s.creature_id == sheep && s.hurt > 0.0),
+        _ => None,
+    });
+    assert_eq!(hurt.death, 0.0);
+    pump(&mut server, &alice, |p| match p {
+        ServerPacket::CreatureStates(states) => states.into_iter().find(|s| s.creature_id == sheep && s.position.distance(feet) > 0.1),
         _ => None,
     });
 

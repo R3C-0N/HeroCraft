@@ -17,7 +17,7 @@ use glam::Vec3;
 use herocraft_common::net::Connection;
 use herocraft_server::{Server, ServerConfig};
 use herocraft_common::{
-    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, PlanetChunkCoord, ServerPacket, PROTOCOL_VERSION,
+    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, PlanetChunkCoord, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, ServerPacket, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkData;
 use herocraft_world::{BlockGeometry, BlockPos};
@@ -238,14 +238,16 @@ impl Track {
         if render <= first_t {
             return Some((first_p, first_yaw));
         }
-        let mut previous = (first_t, first_p);
+        let mut previous = (first_t, first_p, first_yaw);
         for &(t, p, yaw) in self.snapshots.iter().skip(1) {
             if render <= t {
                 let span = (t - previous.0).as_secs_f32();
                 let k = if span > 0.0 { (render - previous.0).as_secs_f32() / span } else { 1.0 };
-                return Some((previous.1.lerp(p, k), yaw));
+                // Le cap tourne par le plus court, sans à-coup d'une position à l'autre
+                let turn = (yaw - previous.2 + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+                return Some((previous.1.lerp(p, k), previous.2 + turn * k));
             }
-            previous = (t, p);
+            previous = (t, p, yaw);
         }
         // Au-delà de la dernière position : on prolonge la dernière vitesse, brièvement
         let &(last_t, last_p, last_yaw) = self.snapshots.back()?;
@@ -283,7 +285,36 @@ pub struct RemoteCreature {
     pub species: String,
     /// Pieds et cap affichés, recalculés à chaque frame par `poll`
     pub position: Option<(Vec3, f32)>,
+    /// Coup reçu et mort affichés (`CreatureState::hurt`, `death`), recalculés avec la position
+    pub hurt: f32,
+    pub death: f32,
     track: Track,
+    /// Derniers coups et morts reçus, avec leur instant, pour les montrer au rythme des positions
+    effects: VecDeque<(Instant, f32, f32)>,
+}
+
+impl RemoteCreature {
+    fn new(species: String) -> Self {
+        Self { species, position: None, hurt: 0.0, death: 0.0, track: Track::default(), effects: VecDeque::new() }
+    }
+
+    fn push(&mut self, at: Instant, state: &CreatureState) {
+        self.track.push(at, state.position, state.yaw);
+        self.effects.push_back((at, state.hurt, state.death));
+        while self.effects.len() > MAX_SNAPSHOTS {
+            self.effects.pop_front();
+        }
+    }
+
+    /// Coup et mort à l'instant `now - delay` : le dernier état reçu avant, avancé du temps passé
+    /// depuis (la rougeur s'efface, la bête morte continue de basculer)
+    fn sample_effects(&self, now: Instant, delay: Duration) -> (f32, f32) {
+        let render = now.checked_sub(delay).unwrap_or(now);
+        let Some(&(at, hurt, death)) = self.effects.iter().rev().find(|(at, _, _)| *at <= render) else { return (0.0, 0.0) };
+        let elapsed = (render - at).as_secs_f32();
+        let death = if death > 0.0 { (death + elapsed / CREATURE_DEATH_TIME).min(1.0) } else { 0.0 };
+        ((hurt - elapsed / CREATURE_HURT_TIME).max(0.0), death)
+    }
 }
 
 /// Ce qui arrive du serveur et que la boucle de jeu applique
@@ -328,6 +359,11 @@ impl NetClient {
         self.connection.send(&ClientPacket::InteractBlock { block: pos.into(), action });
     }
 
+    /// Signale au serveur un coup porté à une créature
+    pub fn send_hit_creature(&mut self, creature_id: u64) {
+        self.connection.send(&ClientPacket::HitCreature { creature_id });
+    }
+
     /// Prévient le serveur du départ du joueur
     pub fn disconnect(&mut self) {
         self.connection.send(&ClientPacket::Disconnect);
@@ -352,6 +388,7 @@ impl NetClient {
         }
         for creature in self.creatures.values_mut() {
             creature.position = creature.track.sample(now, CREATURE_INTERPOLATION_DELAY);
+            (creature.hurt, creature.death) = creature.sample_effects(now, CREATURE_INTERPOLATION_DELAY);
         }
         events
     }
@@ -373,9 +410,9 @@ impl NetClient {
                 }
             }
             ServerPacket::CreatureSpawned { species, state } => {
-                let mut track = Track::default();
-                track.push(at, state.position, state.yaw);
-                self.creatures.insert(state.creature_id, RemoteCreature { species, position: None, track });
+                let mut creature = RemoteCreature::new(species);
+                creature.push(at, &state);
+                self.creatures.insert(state.creature_id, creature);
             }
             ServerPacket::CreaturesDespawned(ids) => {
                 for id in ids {
@@ -385,7 +422,7 @@ impl NetClient {
             ServerPacket::CreatureStates(states) => {
                 for state in states {
                     if let Some(creature) = self.creatures.get_mut(&state.creature_id) {
-                        creature.track.push(at, state.position, state.yaw);
+                        creature.push(at, &state);
                     }
                 }
             }
@@ -452,7 +489,7 @@ impl NetClient {
             .iter()
             .filter_map(|(&id, c)| {
                 let (feet, yaw) = c.position?;
-                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw })
+                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw, hurt: c.hurt, death: c.death })
             })
             .collect()
     }
