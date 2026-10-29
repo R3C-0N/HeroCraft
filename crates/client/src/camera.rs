@@ -14,6 +14,19 @@ pub const PLAYER_HALF_WIDTH: f32 = 0.3;
 pub const PLAYER_HEIGHT: f32 = 1.75;
 /// Tolérance de contact avec le sol, en blocs : aucune marche n'est montée sans sauter
 const GROUND_TOLERANCE: f32 = 0.05;
+/// Hauteur d'un saut sur place, en blocs : de quoi franchir une marche d'un bloc, pas deux
+const JUMP_HEIGHT: f32 = 1.3;
+/// Gravité, en blocs par seconde au carré : un saut reste en l'air ~0,65 s
+const GRAVITY: f32 = 25.0;
+/// Vitesse de chute maximale, en blocs par seconde (atteinte après ~30 blocs de chute)
+const TERMINAL_FALL_SPEED: f32 = 40.0;
+/// Coup reçu : la vue penche de côté puis se redresse, en tant de secondes
+const HURT_SHAKE_SECS: f32 = 0.4;
+/// Inclinaison de la vue au plus fort d'une blessure maximale, en radians (~9°)
+const HURT_ROLL: f32 = 0.16;
+/// Mort : la vue s'effondre au sol en tant de secondes, couchée sur le côté
+const DEATH_FALL_SECS: f32 = 0.7;
+const DEATH_ROLL: f32 = 1.25;
 
 /// Mode de vue actif selon le continuum de distance de zoom
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +111,14 @@ pub struct OrbitCamera {
     fall_peak: Option<f32>,
     /// Hauteur en blocs de la dernière chute terminée, en attente de `take_landing`
     landed_fall: Option<f32>,
+
+    /// Secondes restantes de la secousse de la dernière blessure, et sa force (0 à 1)
+    hurt_shake: f32,
+    hurt_strength: f32,
+    /// Joueur mort : plus aucune entrée de déplacement, la vue s'effondre au sol
+    pub is_dead: bool,
+    /// Avancement de cet effondrement, de 0 (debout) à 1 (couché)
+    death_fall: f32,
 }
 
 impl Default for OrbitCamera {
@@ -148,6 +169,11 @@ impl Default for OrbitCamera {
 
             fall_peak: None,
             landed_fall: None,
+
+            hurt_shake: 0.0,
+            hurt_strength: 0.0,
+            is_dead: false,
+            death_fall: 0.0,
         }
     }
 }
@@ -208,6 +234,10 @@ impl OrbitCamera {
         self.is_grounded = true;
         self.is_flying = false;
         self.cancel_fall();
+        // (Ré)apparition : debout, la vue droite
+        self.is_dead = false;
+        self.death_fall = 0.0;
+        self.hurt_shake = 0.0;
         self.sync_orbit_to_ground();
         self.distance = 0.0;
         self.target_distance = 0.0;
@@ -325,6 +355,28 @@ impl OrbitCamera {
         if self.is_flying {
             self.is_grounded = false;
         }
+    }
+
+    /// Hauteur d'un bloc dans le repère du monde
+    fn block_height(&self) -> f32 {
+        match &self.collider {
+            Some(collider) => collider.block_height(),
+            None => herocraft_world::BlockGeometry::new(self.base_radius as f64).block_height as f32,
+        }
+    }
+
+    /// Blessure de force `strength` (0 à 1) : la vue penche brièvement
+    pub fn hurt(&mut self, strength: f32) {
+        self.hurt_shake = HURT_SHAKE_SECS;
+        self.hurt_strength = strength.clamp(0.0, 1.0);
+    }
+
+    /// Inclinaison de la vue autour du regard : secousse d'une blessure, joueur mort couché
+    fn view_roll(&self) -> f32 {
+        let t = 1.0 - self.hurt_shake / HURT_SHAKE_SECS;
+        let shake = if self.hurt_shake > 0.0 { HURT_ROLL * self.hurt_strength * (std::f32::consts::PI * t).sin() } else { 0.0 };
+        let fall = self.death_fall * self.death_fall * (3.0 - 2.0 * self.death_fall);
+        shake + DEATH_ROLL * fall
     }
 
     /// Oublie la chute en cours (téléportation, apparition)
@@ -522,6 +574,17 @@ impl OrbitCamera {
             self.orbit_yaw += self.auto_rotate_speed * dt;
         }
 
+        self.hurt_shake = (self.hurt_shake - dt).max(0.0);
+        if self.is_dead {
+            // Mort : plus de déplacement ni de vol, la vue s'effondre
+            self.release_inputs();
+            self.jump_requested = false;
+            self.is_flying = false;
+            self.death_fall = (self.death_fall + dt / DEATH_FALL_SECS).min(1.0);
+        } else {
+            self.death_fall = 0.0;
+        }
+
         let (_up, forward_tangent, right_tangent, _) = self.look_vectors();
         let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
 
@@ -593,9 +656,10 @@ impl OrbitCamera {
                 self.is_grounded = false;
             }
         } else {
-            // Saut
+            let block = self.block_height();
+            // Saut : vitesse qui monte d'exactement `JUMP_HEIGHT` sous `GRAVITY`
             if self.jump_requested && self.is_grounded {
-                self.vertical_velocity = 1.2 * scale;
+                self.vertical_velocity = (2.0 * GRAVITY * JUMP_HEIGHT).sqrt() * block;
                 self.is_grounded = false;
                 self.jump_requested = false;
             }
@@ -605,8 +669,8 @@ impl OrbitCamera {
                 current_radius = ground_radius;
                 self.vertical_velocity = 0.0;
             } else {
-                // En l'air : gravité sphérique jusqu'au contact du relief
-                self.vertical_velocity -= 6.0 * scale * dt;
+                // En l'air : gravité sphérique jusqu'au contact du relief, freinée par l'air
+                self.vertical_velocity = (self.vertical_velocity - GRAVITY * block * dt).max(-TERMINAL_FALL_SPEED * block);
                 current_radius += self.vertical_velocity * dt;
                 if current_radius <= ground_radius {
                     current_radius = ground_radius;
@@ -640,11 +704,7 @@ impl OrbitCamera {
             self.fall_peak = None;
         } else if self.is_grounded {
             if let Some(peak) = self.fall_peak.take() {
-                let block = match &self.collider {
-                    Some(collider) => collider.block_height(),
-                    None => herocraft_world::BlockGeometry::new(self.base_radius as f64).block_height as f32,
-                };
-                let blocks = (peak - current_radius) / block;
+                let blocks = (peak - current_radius) / self.block_height();
                 if blocks > 0.0 {
                     self.landed_fall = Some(blocks);
                 }
@@ -695,14 +755,19 @@ impl OrbitCamera {
         let eye_height = 0.065 * scale;
         let head = self.player_pos + up * eye_height;
 
+        // Secousse d'une blessure et joueur mort couché : la vue tourne autour du regard
+        let rolled_up = glam::Quat::from_axis_angle(look_dir, self.view_roll()) * up;
+        let mut eye = eye;
         let (target, cam_up, fov, z_near) = if self.effective_distance <= 0.05 {
-            // FPS : regard orienté selon le pitch/yaw du joueur
-            (eye + look_dir, up, 70.0_f32.to_radians(), 0.01_f32)
+            // FPS : regard orienté selon le pitch/yaw du joueur ; mort, les yeux tombent au ras du sol
+            let fall = self.death_fall * self.death_fall * (3.0 - 2.0 * self.death_fall);
+            eye -= up * eye_height * 0.8 * fall;
+            (eye + look_dir, rolled_up, 70.0_f32.to_radians(), 0.01_f32)
         } else if self.effective_distance <= self.base_radius {
             // TPS : regard centré sur la tête du joueur
             let t_fov = (self.effective_distance / self.base_radius).clamp(0.0, 1.0);
             let fov = (70.0 * (1.0 - t_fov) + 38.0 * t_fov).to_radians();
-            (head, up, fov, 0.05_f32)
+            (head, rolled_up, fov, 0.05_f32)
         } else {
             // Satellite / Orbite : transition douce de la cible vers le centre du monde (0,0,0)
             let t_orbit = ((self.effective_distance - self.base_radius) / (self.base_radius * 1.8)).clamp(0.0, 1.0);
@@ -908,12 +973,19 @@ mod tests {
 
         cam.jump_requested = true;
         let mut peak = ground;
+        let mut airborne = 0;
         for _ in 0..120 {
             cam.update(0.016, &gen);
             peak = peak.max(cam.player_pos.length());
+            airborne += usize::from(!cam.is_grounded);
         }
         assert!(peak > ground + 0.01, "le saut doit décoller du sol (pic {} sol {})", peak, ground);
         assert!(cam.is_grounded, "le joueur doit être retombé");
+        // Un saut franchit un bloc sans en franchir deux, et dure un peu plus d'une demi-seconde
+        let height = (peak - ground) / cam.block_height();
+        assert!((1.1..1.6).contains(&height), "saut de {height} blocs");
+        let seconds = airborne as f32 * 0.016;
+        assert!((0.5..0.85).contains(&seconds), "{seconds} s en l'air");
     }
 
     #[test]
@@ -1093,7 +1165,7 @@ mod tests {
             cam.update(0.016, &gen);
             peak = peak.max(altitude_blocks(&cam));
         }
-        assert!(peak > floor as f32 + 1.5, "le saut en marchant doit décoller (pic à {})", peak);
+        assert!(peak > floor as f32 + 1.2, "le saut en marchant doit décoller (pic à {})", peak);
         assert!((altitude_blocks(&cam) - (floor + 1) as f32).abs() < 1e-2, "pieds à {}", altitude_blocks(&cam));
     }
 
@@ -1139,6 +1211,56 @@ mod tests {
         }
         assert!(peak > floor as f32 + 0.05 && peak < floor as f32 + 0.5, "pic du saut à {} sous un plafond à {}", peak, floor + 2);
         assert!(cam.is_grounded);
+    }
+
+    #[test]
+    fn test_fall_accelerates_then_reaches_terminal_speed() {
+        let (mut cam, gen) = ground_test_camera();
+        let block = cam.block_height();
+        let up = cam.player_pos.normalize();
+        cam.player_pos += up * 200.0 * block;
+        cam.is_grounded = false;
+        let mut speeds = Vec::new();
+        for _ in 0..150 {
+            cam.update(0.016, &gen);
+            speeds.push(-cam.vertical_velocity / block);
+        }
+        // La chute part de l'arrêt et accélère de `GRAVITY` blocs/s chaque seconde…
+        assert!(speeds[0] < 1.0, "départ à {} blocs/s", speeds[0]);
+        let gained = (speeds[30] - speeds[0]) / (30.0 * 0.016);
+        assert!((gained - GRAVITY).abs() < 0.5, "accélération de {gained} blocs/s²");
+        assert!(speeds.windows(2).take(90).all(|w| w[1] > w[0]), "la vitesse croît tant que la limite n'est pas atteinte");
+        // …jusqu'à sa vitesse limite, qu'elle ne dépasse jamais
+        assert!(speeds.iter().all(|&v| v <= TERMINAL_FALL_SPEED + 1e-3));
+        assert!((speeds[149] - TERMINAL_FALL_SPEED).abs() < 1e-3, "vitesse finale {} blocs/s", speeds[149]);
+    }
+
+    #[test]
+    fn test_hurt_shakes_then_death_lays_the_view_down() {
+        let (mut cam, gen) = ground_test_camera();
+        assert_eq!(cam.view_roll(), 0.0);
+        cam.hurt(1.0);
+        cam.update(HURT_SHAKE_SECS * 0.5, &gen);
+        assert!(cam.view_roll() > 0.5 * HURT_ROLL, "la vue penche ({})", cam.view_roll());
+        cam.update(HURT_SHAKE_SECS, &gen);
+        assert_eq!(cam.view_roll(), 0.0, "puis se redresse");
+
+        // Mort : les entrées sont ignorées, la vue se couche
+        let start = cam.player_pos;
+        cam.is_dead = true;
+        for _ in 0..60 {
+            cam.move_forward = true;
+            cam.jump_requested = true;
+            cam.update(0.016, &gen);
+        }
+        assert!((cam.player_pos - start).length() < 1e-4, "un mort ne bouge plus");
+        assert!((cam.view_roll() - DEATH_ROLL).abs() < 1e-3);
+        assert!(cam.build_view_projection_matrix().is_finite());
+
+        // Réapparition : debout
+        cam.spawn_on_ground(&gen);
+        assert!(!cam.is_dead);
+        assert_eq!(cam.view_roll(), 0.0);
     }
 
     #[test]

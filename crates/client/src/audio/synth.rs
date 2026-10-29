@@ -272,6 +272,32 @@ pub fn landing_thud(seed: u32) -> Vec<f32> {
     normalize(out, 0.9)
 }
 
+/// Souffle coupé d'une blessure (« oumpf ») : voix grave qui retombe, à travers deux formants
+pub fn hurt_grunt(seed: u32) -> Vec<f32> {
+    let mut rng = Noise::new(seed ^ 0x4E27);
+    let length = 0.3;
+    let n = samples(length);
+    let mut out = vec![0.0; n];
+    let mut low_formant = BandPass::new();
+    let mut high_formant = BandPass::new();
+    let mut breath = BandPass::new();
+    let f0 = 150.0 * (0.9 + 0.2 * rng.unit());
+    let mut phase = 0.0_f32;
+    for (i, s) in out.iter_mut().enumerate() {
+        let t = i as f32 / SAMPLE_RATE as f32;
+        // La voix retombe d'un tiers en quelques dixièmes de seconde
+        let f = f0 * (1.0 - 0.3 * (t / length));
+        phase = (phase + f / SAMPLE_RATE as f32).fract();
+        let saw = 2.0 * phase - 1.0;
+        let env = envelope(t, 0.012, 0.09);
+        let voice = low_formant.process(saw, 650.0, 2.0) + 0.6 * high_formant.process(saw, 1100.0, 3.0);
+        let air = breath.process(rng.next(), 1400.0, 0.8) * 0.25;
+        *s = (voice + air) * env;
+    }
+    fade_tail(&mut out, 0.03);
+    normalize(out, 0.75)
+}
+
 /// Vent en boucle : bruit filtré dont le timbre et le volume ondulent en rafales.
 /// La fin se fond dans le début : la boucle n'a pas de raccord audible.
 pub fn wind_loop(seconds: f32, seed: u32) -> Vec<f32> {

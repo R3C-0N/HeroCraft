@@ -31,6 +31,8 @@ pub enum UiAction {
     LeaveServer,
     /// Options > Son : un volume vient d'être réglé, un son d'essai le fait entendre
     PreviewSound,
+    /// Écran de mort : revenir à la vie au point d'apparition
+    Respawn,
 }
 
 /// État de la partie en ligne, affiché dans la page Multijoueur
@@ -371,7 +373,9 @@ const SCREEN_MARGIN: f32 = 16.0;
 /// Largeur d'une jauge du HUD (vie, mana, endurance)
 const GAUGE_WIDTH: f32 = 150.0;
 /// Durée du voile rouge après une blessure, en secondes
-const HURT_FLASH_SECS: f32 = 0.6;
+const HURT_FLASH_SECS: f32 = 0.9;
+/// Sous cette fraction de la vie, le bord de l'écran rougit et bat comme un cœur
+const LOW_HP_FRACTION: f32 = 0.3;
 /// Marge intérieure du cadre du menu de pause
 const MENU_PADDING: f32 = 18.0;
 /// En dessous de cette largeur, les onglets des options passent au-dessus du contenu
@@ -715,7 +719,7 @@ impl UiState {
         let egui_ctx = self.ctx.clone();
         let full_output = egui_ctx.run(raw_input, |ctx| {
             // 1. Réticule de visée en mode FPS (quand le menu est fermé)
-            if is_ground && !self.is_settings_open && !self.inventory_open {
+            if is_ground && !self.is_settings_open && !self.inventory_open && !self.player.is_dead() {
                 let center = ctx.screen_rect().center();
                 let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("crosshair")));
                 let stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_white_alpha(180));
@@ -740,7 +744,9 @@ impl UiState {
             // blessure, barre d'objets au centre et écran d'inventaire par-dessus le jeu
             if is_ground && !self.is_settings_open {
                 self.draw_vitals_hud(ctx);
-                if self.inventory_open {
+                if self.player.is_dead() {
+                    self.draw_death_screen(ctx, &mut action);
+                } else if self.inventory_open {
                     self.draw_inventory_screen(ctx);
                 } else {
                     self.draw_hotbar(ctx);
@@ -882,15 +888,58 @@ impl UiState {
         }
     }
 
+    /// Écran de mort : voile sombre et rouge, cause de la mort, puis bouton de réapparition une
+    /// fois le délai passé (Saut fait de même)
+    fn draw_death_screen(&mut self, ctx: &egui::Context, action: &mut Option<UiAction>) {
+        let Some(death) = self.player.death.clone() else { return };
+        let fade = (death.at.elapsed().as_secs_f32() / 0.8_f32).min(1.0_f32);
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("death_backdrop")))
+            .rect_filled(ctx.screen_rect(), 0.0_f32, egui::Color32::from_rgba_unmultiplied(60, 0, 0, (170.0_f32 * fade) as u8));
+        let wait = self.player.respawn_in().unwrap_or(0.0_f32);
+        egui::Area::new(egui::Id::new("death_screen"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0_f32, -30.0_f32))
+            .show(ctx, |ui| {
+                ui.set_opacity(fade);
+                ui.vertical_centered(|ui| {
+                    ui.label(egui::RichText::new("Vous êtes mort").size(42.0_f32).strong().color(DANGER));
+                    ui.add_space(4.0_f32);
+                    ui.label(egui::RichText::new(&death.cause).size(16.0_f32).color(TEXT_SOFT));
+                    ui.add_space(24.0_f32);
+                    let label = if wait > 0.0_f32 { format!("Réapparaître ({:.0})", wait.ceil()) } else { "Réapparaître".to_string() };
+                    let button = egui::Button::new(egui::RichText::new(label).size(17.0_f32).strong().color(GOLD_BRIGHT))
+                        .min_size(egui::vec2(220.0_f32, 42.0_f32))
+                        .stroke(egui::Stroke::new(1.5_f32, GOLD));
+                    if ui.add_enabled(wait <= 0.0_f32, button).clicked() {
+                        *action = Some(UiAction::Respawn);
+                    }
+                });
+            });
+    }
+
     /// HUD du personnage : classe, niveau, expérience et jauges de vie, de mana et d'endurance
     fn draw_vitals_hud(&mut self, ctx: &egui::Context) {
         let stats = &self.player.stats;
+        // Blessure : éclair rouge sur tout l'écran et bords rougis qui s'estompent
+        let mut flash = 0.0_f32;
         if let Some(hurt) = self.player.hurt_at {
             let t = hurt.elapsed().as_secs_f32() / HURT_FLASH_SECS;
             if t < 1.0_f32 {
-                ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("hurt_flash")))
-                    .rect_filled(ctx.screen_rect(), 0.0_f32, egui::Color32::from_rgba_unmultiplied(200, 20, 20, (110.0_f32 * (1.0_f32 - t)) as u8));
+                flash = (1.0_f32 - t).powf(1.5_f32) * (0.5_f32 + 0.5_f32 * self.player.hurt_strength);
             }
+        }
+        // Vie basse : les bords battent comme un cœur
+        let hp_fraction = stats.hp / stats.max_hp.max(1.0_f32);
+        let mut pulse = 0.0_f32;
+        if hp_fraction < LOW_HP_FRACTION && !self.player.is_dead() {
+            let beat = 0.6_f32 + 0.4_f32 * (ctx.input(|i| i.time) as f32 * 5.0_f32).sin();
+            pulse = (1.0_f32 - hp_fraction / LOW_HP_FRACTION) * 0.7_f32 * beat;
+        }
+        let vignette = flash.max(pulse);
+        if vignette > 0.0_f32 {
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("hurt_flash")));
+            painter.rect_filled(ctx.screen_rect(), 0.0_f32, egui::Color32::from_rgba_unmultiplied(200, 20, 20, (70.0_f32 * flash) as u8));
+            painter.add(red_vignette(ctx.screen_rect(), (220.0_f32 * vignette) as u8));
         }
 
         let screen = ctx.screen_rect();
@@ -1591,6 +1640,33 @@ fn gauge(ui: &mut egui::Ui, width: f32, height: f32, fraction: f32, color: egui:
         painter.text(rect.center() + egui::vec2(1.0_f32, 1.0_f32), egui::Align2::CENTER_CENTER, text, font.clone(), egui::Color32::from_black_alpha(200));
         painter.text(rect.center(), egui::Align2::CENTER_CENTER, text, font, egui::Color32::WHITE);
     }
+}
+
+/// Bords de l'écran rougis (opacité `alpha` au bord, nulle vers le centre)
+fn red_vignette(screen: egui::Rect, alpha: u8) -> egui::Shape {
+    let edge = egui::Color32::from_rgba_unmultiplied(170, 0, 0, alpha);
+    let clear = egui::Color32::from_rgba_unmultiplied(170, 0, 0, 0);
+    let inner = screen.shrink2(screen.size() * 0.3_f32);
+    let mut mesh = egui::Mesh::default();
+    for (pos, color) in [
+        (screen.left_top(), edge),
+        (screen.right_top(), edge),
+        (screen.right_bottom(), edge),
+        (screen.left_bottom(), edge),
+        (inner.left_top(), clear),
+        (inner.right_top(), clear),
+        (inner.right_bottom(), clear),
+        (inner.left_bottom(), clear),
+    ] {
+        mesh.colored_vertex(pos, color);
+    }
+    // Un trapèze par bord, entre le cadre de l'écran et le rectangle intérieur transparent
+    for k in 0..4_u32 {
+        let next = (k + 1) % 4;
+        mesh.add_triangle(k, next, 4 + next);
+        mesh.add_triangle(k, 4 + next, 4 + k);
+    }
+    egui::Shape::mesh(mesh)
 }
 
 /// Cadre commun des panneaux du HUD
