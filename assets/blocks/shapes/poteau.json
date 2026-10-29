@@ -1,0 +1,5 @@
+{
+  "name": "Poteau",
+  "description": "Un poteau carré au centre du bloc (clôtures).",
+  "boxes": [[6, 0, 6, 10, 16, 10]]
+}

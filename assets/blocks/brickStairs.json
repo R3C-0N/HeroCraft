@@ -1,0 +1,11 @@
+{
+  "numeric_id": 141,
+  "name": "Escalier de briques",
+  "description": "Se tourne vers le joueur qui le pose ; ses marches se montent sans sauter.",
+  "category": "Construction",
+  "hardness": 14,
+  "color": {"side": "#c4937d"},
+  "textures": {"side": "textures/Brick.png"},
+  "shape": "escalier",
+  "rotation": "horizontal"
+}

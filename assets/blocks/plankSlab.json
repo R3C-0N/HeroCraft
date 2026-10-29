@@ -1,0 +1,11 @@
+{
+  "numeric_id": 136,
+  "name": "Dalle de planches",
+  "description": "La moitié d'un bloc : se monte sans sauter.",
+  "category": "Construction",
+  "hardness": 10,
+  "color": {"side": "#c19e71"},
+  "textures": {"side": "textures/Plank.png"},
+  "shape": "dalle",
+  "sound": "wood"
+}

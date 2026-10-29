@@ -8,7 +8,7 @@ use std::sync::Arc;
 use glam::{DVec3, Vec3};
 use herocraft_common::{BlockId, PlanetFace};
 use herocraft_world::generator::ColumnSample;
-use herocraft_world::{BlockGeometry, PlanetWorldGenerator, TerrainEdits, TerrainQuery, WORLD_HEIGHT};
+use herocraft_world::{BlockGeometry, BlockPos, PlanetWorldGenerator, TerrainEdits, TerrainQuery, WORLD_HEIGHT};
 
 /// Au-delà, le cache de colonnes est vidé (le joueur ne touche qu'une poignée de colonnes par image)
 const MAX_CACHED_COLUMNS: usize = 4096;
@@ -47,15 +47,35 @@ impl VoxelCollider {
     }
 
     /// Rayon du sol sous le point `p` : dessus du plus haut bloc porteur de sa colonne qui ne dépasse
-    /// pas les pieds de plus de `step` blocs (une marche franchissable).
+    /// pas les pieds de plus de `step` blocs (une marche franchissable). Une dalle, un escalier
+    /// portent au dessus de leur pavé sous le point ; là où leurs pavés laissent un vide, le sol est
+    /// plus bas.
     pub fn ground_radius(&self, generator: &PlanetWorldGenerator, p: Vec3, step: f32) -> f32 {
-        let Some(pos) = self.geometry.block_at_point(p.as_dvec3()) else {
+        let Some((pos, local)) = self.geometry.locate(p.as_dvec3()) else {
             return self.geometry.base_radius as f32;
         };
         let altitude = (p.length() as f64 - self.geometry.base_radius) / self.geometry.block_height;
-        let from_y = (altitude + step as f64).floor() as i32 - 1;
-        let top = self.with_query(generator, |q| q.support_top(pos.face, pos.x, pos.z, from_y));
-        self.radius_of_altitude(top)
+        let limit = altitude + step as f64;
+        let top = self.with_query(generator, |q| {
+            let mut from_y = limit.floor() as i32;
+            loop {
+                let top = q.support_top(pos.face, pos.x, pos.z, from_y);
+                if top <= 0 {
+                    return 0.0;
+                }
+                let y = top - 1;
+                let block = q.block(BlockPos { y, ..pos });
+                let height = match block.shape() {
+                    Some(shape) => shape.top_at(block.rotation(), local[0], local[2], limit - y as f64),
+                    None => Some(1.0),
+                };
+                match height {
+                    Some(h) if y as f64 + h <= limit + 1e-9 => return y as f64 + h,
+                    _ => from_y = y - 1,
+                }
+            }
+        });
+        (self.geometry.base_radius + top * self.geometry.block_height) as f32
     }
 
     /// Rayon du dessus de la colonne entière sous une direction (plus haut bloc porteur du monde)
@@ -91,13 +111,15 @@ impl VoxelCollider {
         }
     }
 
-    /// Un des points est dans un bloc qui arrête le corps (ni air, ni eau)
+    /// Un des points est dans la matière d'un bloc qui arrête le corps (ni air, ni eau ; les
+    /// pavés seuls d'une dalle ou d'un escalier)
     pub fn any_solid(&self, generator: &PlanetWorldGenerator, points: &[Vec3]) -> bool {
         self.with_query(generator, |q| {
             points.iter().any(|p| {
-                self.geometry
-                    .block_at_point(DVec3::new(p.x as f64, p.y as f64, p.z as f64))
-                    .is_some_and(|pos| pos.is_valid() && q.block(pos).is_solid())
+                self.geometry.locate(DVec3::new(p.x as f64, p.y as f64, p.z as f64)).is_some_and(|(pos, local)| {
+                    let block = if pos.is_valid() { q.block(pos) } else { BlockId::AIR };
+                    block.is_solid() && block.contains(local)
+                })
             })
         })
     }

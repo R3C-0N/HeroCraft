@@ -1,0 +1,5 @@
+{
+  "name": "Panneau",
+  "description": "Une plaque mince collée au fond du bloc (échelle) : orientée, elle s'appuie contre le mur visé.",
+  "boxes": [[0, 0, 14, 16, 16, 16]]
+}

@@ -2,13 +2,49 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use glam::Vec3;
-use herocraft_common::{BlockId, PlanetChunkCoord, PlanetFace};
+use herocraft_common::{blocks, opposite_face, BlockId, PlanetChunkCoord, PlanetFace, ShapeBox, ShapeTexture, FACE_DIRS};
 use herocraft_voxel_engine::cache::WorldChunkCache;
 use herocraft_voxel_engine::chunk::{ChunkData, CHUNK_SIZE};
 use herocraft_world::generator::{ColumnSample, PlanetWorldGenerator};
 use herocraft_world::{carvable_range, TerrainEdits, ALTITUDE_LAYERS, FACE_CHUNKS};
 
+use crate::block_textures::{block_textures, face_uv};
 use crate::planet_mesh::{PlanetMesh, PlanetVertex};
+
+/// Une face de cube : ses coins (cycliques) et, pour l'occlusion ambiante de chacun, ses deux
+/// voisins de côté et son voisin de coin
+struct CubeFace {
+    corners: [(u8, u8, u8); 4],
+    ao: [[(i32, i32, i32); 3]; 4],
+}
+
+/// Les six faces, dans l'ordre de `FACE_DIRS` (+X, -X, +Y, -Y, +Z, -Z)
+const CUBE_FACES: [CubeFace; 6] = [
+    CubeFace {
+        corners: [(1, 0, 1), (1, 0, 0), (1, 1, 0), (1, 1, 1)],
+        ao: [[(1, -1, 0), (1, 0, 1), (1, -1, 1)], [(1, -1, 0), (1, 0, -1), (1, -1, -1)], [(1, 1, 0), (1, 0, -1), (1, 1, -1)], [(1, 1, 0), (1, 0, 1), (1, 1, 1)]],
+    },
+    CubeFace {
+        corners: [(0, 0, 0), (0, 0, 1), (0, 1, 1), (0, 1, 0)],
+        ao: [[(-1, -1, 0), (-1, 0, -1), (-1, -1, -1)], [(-1, -1, 0), (-1, 0, 1), (-1, -1, 1)], [(-1, 1, 0), (-1, 0, 1), (-1, 1, 1)], [(-1, 1, 0), (-1, 0, -1), (-1, 1, -1)]],
+    },
+    CubeFace {
+        corners: [(0, 1, 0), (0, 1, 1), (1, 1, 1), (1, 1, 0)],
+        ao: [[(-1, 1, 0), (0, 1, -1), (-1, 1, -1)], [(-1, 1, 0), (0, 1, 1), (-1, 1, 1)], [(1, 1, 0), (0, 1, 1), (1, 1, 1)], [(1, 1, 0), (0, 1, -1), (1, 1, -1)]],
+    },
+    CubeFace {
+        corners: [(0, 0, 0), (1, 0, 0), (1, 0, 1), (0, 0, 1)],
+        ao: [[(-1, -1, 0), (0, -1, -1), (-1, -1, -1)], [(1, -1, 0), (0, -1, -1), (1, -1, -1)], [(1, -1, 0), (0, -1, 1), (1, -1, 1)], [(-1, -1, 0), (0, -1, 1), (-1, -1, 1)]],
+    },
+    CubeFace {
+        corners: [(1, 0, 1), (0, 0, 1), (0, 1, 1), (1, 1, 1)],
+        ao: [[(1, 0, 1), (0, -1, 1), (1, -1, 1)], [(-1, 0, 1), (0, -1, 1), (-1, -1, 1)], [(-1, 0, 1), (0, 1, 1), (-1, 1, 1)], [(1, 0, 1), (0, 1, 1), (1, 1, 1)]],
+    },
+    CubeFace {
+        corners: [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)],
+        ao: [[(-1, 0, -1), (0, -1, -1), (-1, -1, -1)], [(1, 0, -1), (0, -1, -1), (1, -1, -1)], [(1, 0, -1), (0, 1, -1), (1, 1, -1)], [(-1, 0, -1), (0, 1, -1), (-1, 1, -1)]],
+    },
+];
 
 /// Colonnes de bordure échantillonnées autour d'un chunk (voisins des faces et de l'AO)
 const COLUMN_BORDER: i32 = 1;
@@ -199,7 +235,7 @@ impl VoxelMeshBuilder {
                         let c1 = get_corner(fx, fy + 1.0, fz + 1.0);
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0);
                         let c3 = get_corner(fx + 1.0, fy + 1.0, fz);
-                        let color = Self::block_color(block, true);
+                        let color = Self::block_color(block, 2);
                         let ao = if is_water {
                             [1.0, 1.0, 1.0, 1.0]
                         } else {
@@ -210,7 +246,7 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx, gy + 1, gz - 1), (gx + 1, gy + 1, gz - 1)),
                             ]
                         };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [PlanetVertex::UNTEXTURED; 4]);
                     }
 
                     // 2. Face Bas (-Y) - uniquement pour blocs solides au-dessus d'une caverne d'air
@@ -221,14 +257,14 @@ impl VoxelMeshBuilder {
                             let c1 = get_corner(fx + 1.0, fy, fz);
                             let c2 = get_corner(fx + 1.0, fy, fz + 1.0);
                             let c3 = get_corner(fx, fy, fz + 1.0);
-                            let color = Self::block_color(block, false);
+                            let color = Self::block_color(block, 0);
                             let ao = [
                                 Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx, gy - 1, gz - 1), (gx - 1, gy - 1, gz - 1)),
                                 Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx, gy - 1, gz - 1), (gx + 1, gy - 1, gz - 1)),
                                 Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx, gy - 1, gz + 1), (gx + 1, gy - 1, gz + 1)),
                                 Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx, gy - 1, gz + 1), (gx - 1, gy - 1, gz + 1)),
                             ];
-                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [PlanetVertex::UNTEXTURED; 4]);
                         }
                     }
 
@@ -244,7 +280,7 @@ impl VoxelMeshBuilder {
                         let c1 = get_corner(fx, fy, fz + 1.0);
                         let c2 = get_corner(fx, fy + 1.0, fz + 1.0);
                         let c3 = get_corner(fx, fy + 1.0, fz);
-                        let color = Self::block_color(block, false);
+                        let color = Self::block_color(block, 0);
                         let ao = if is_water {
                             [1.0, 1.0, 1.0, 1.0]
                         } else {
@@ -255,7 +291,7 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx - 1, gy, gz - 1), (gx - 1, gy + 1, gz - 1)),
                             ]
                         };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [PlanetVertex::UNTEXTURED; 4]);
                     }
 
                     // 4. Face Droite (+X)
@@ -270,7 +306,7 @@ impl VoxelMeshBuilder {
                         let c1 = get_corner(fx + 1.0, fy, fz);
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz);
                         let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0);
-                        let color = Self::block_color(block, false);
+                        let color = Self::block_color(block, 0);
                         let ao = if is_water {
                             [1.0, 1.0, 1.0, 1.0]
                         } else {
@@ -281,7 +317,7 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx + 1, gy, gz + 1), (gx + 1, gy + 1, gz + 1)),
                             ]
                         };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [PlanetVertex::UNTEXTURED; 4]);
                     }
 
                     // 5. Face Avant (+Z)
@@ -296,7 +332,7 @@ impl VoxelMeshBuilder {
                         let c1 = get_corner(fx, fy, fz + 1.0);
                         let c2 = get_corner(fx, fy + 1.0, fz + 1.0);
                         let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0);
-                        let color = Self::block_color(block, false);
+                        let color = Self::block_color(block, 0);
                         let ao = if is_water {
                             [1.0, 1.0, 1.0, 1.0]
                         } else {
@@ -307,7 +343,7 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz + 1), (gx, gy + 1, gz + 1), (gx + 1, gy + 1, gz + 1)),
                             ]
                         };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [PlanetVertex::UNTEXTURED; 4]);
                     }
 
                     // 6. Face Arrière (-Z)
@@ -322,7 +358,7 @@ impl VoxelMeshBuilder {
                         let c1 = get_corner(fx + 1.0, fy, fz);
                         let c2 = get_corner(fx + 1.0, fy + 1.0, fz);
                         let c3 = get_corner(fx, fy + 1.0, fz);
-                        let color = Self::block_color(block, false);
+                        let color = Self::block_color(block, 0);
                         let ao = if is_water {
                             [1.0, 1.0, 1.0, 1.0]
                         } else {
@@ -333,7 +369,7 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz - 1), (gx, gy + 1, gz - 1), (gx - 1, gy + 1, gz - 1)),
                             ]
                         };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [PlanetVertex::UNTEXTURED; 4]);
                     }
                 }
             }
@@ -632,15 +668,21 @@ impl VoxelMeshBuilder {
                 && caves.as_ref().is_some_and(|caves| caves.carved(column, block_x0 + gx, y, block_z0 + gz))
         };
         // `toward` : le voisin vers lequel la face regarde
-        let get_color = |gx: i32, gy: i32, gz: i32, block: BlockId, is_top: bool, toward: (i32, i32, i32)| -> [f32; 4] {
+        let get_color = |gx: i32, gy: i32, gz: i32, block: BlockId, dir: usize| -> [f32; 4] {
+            let toward = FACE_DIRS[dir];
+            let is_top = dir == 2;
             let idx = (gz.clamp(0, 31) as usize) * 32 + (gx.clamp(0, 31) as usize);
             let biome_color = column_colors[idx];
+            let own_color = |shade: f32| {
+                let c = Self::block_color(block, dir);
+                [c[0] * shade, c[1] * shade, c[2] * shade, c[3]]
+            };
+            let side_shade = if is_top { 1.0 } else { 0.78 };
             // Paroi de grotte : la couleur de sa matière, comme un trou creusé par le joueur, et non
             // celle du biome qui est celle de la surface (l'ombre du relief l'assombrit déjà)
             if block != BlockId::WATER && cave_air(gx + toward.0, gy + toward.1, gz + toward.2) {
-                let c = Self::block_color(block, false);
-                let shade = if is_top { 1.0 } else { 0.78 };
-                return [c[0] * shade, c[1] * shade, c[2] * shade, 1.0];
+                let c = own_color(side_shade);
+                return [c[0], c[1], c[2], 1.0];
             }
             // Dans un chunk modifié, un bloc posé par le joueur ou découvert sous la surface prend la
             // couleur de sa matière : la couleur du biome est celle de la surface naturelle
@@ -650,9 +692,8 @@ impl VoxelMeshBuilder {
                 let global_y = (layer * 32 + gy) as f64;
                 let natural = generated.get_voxel(x, y, z) == block;
                 if !natural || global_y + 1.0 < column.elevation.floor() {
-                    let c = Self::block_color(block, is_top);
-                    let shade = if is_top { 1.0 } else { 0.78 };
-                    return [c[0] * shade, c[1] * shade, c[2] * shade, 1.0];
+                    let c = own_color(side_shade);
+                    return [c[0], c[1], c[2], 1.0];
                 }
             }
             if block == BlockId::WATER {
@@ -660,7 +701,12 @@ impl VoxelMeshBuilder {
                 c[3] = 0.90; // Translucidité de l'eau
                 c
             } else if is_top {
+                // Dessus du relief naturel : la texture teintée par le biome, comme le relief lointain
                 biome_color
+            } else if block_textures().face_color(block, dir).is_some() {
+                // Flancs du relief naturel : la matière telle quelle (terre sous l'herbe, roche)
+                let c = own_color(side_shade);
+                [c[0], c[1], c[2], 1.0]
             } else {
                 [
                     biome_color[0] * 0.78,
@@ -669,6 +715,14 @@ impl VoxelMeshBuilder {
                     1.0,
                 ]
             }
+        };
+        // Texture d'une face : coordonnées de chaque coin, depuis sa place dans le bloc (seizièmes)
+        let face_texture = |block: BlockId, dir: usize, corners: [[u8; 3]; 4]| -> [u32; 4] {
+            let layer = blocks().face_texture(block, dir);
+            corners.map(|c| {
+                let (u, v) = face_uv(dir, c);
+                PlanetVertex::pack_texture(layer, u, v)
+            })
         };
 
         herocraft_common::prof_scope!("voxel_mesh::emit_faces");
@@ -687,145 +741,79 @@ impl VoxelMeshBuilder {
                     }
                     if block.is_plant() {
                         // Fleurs, herbes, pousses : deux panneaux croisés en diagonale du bloc, vus des deux côtés
-                        let color = get_color(gx, gy, gz, block, true, (0, 1, 0));
+                        let color = get_color(gx, gy, gz, block, 2);
+                        let tex_layer = blocks().face_texture(block, 0);
+                        let tex = |u: u8, v: u8| PlanetVertex::pack_texture(tex_layer, u, v);
                         let corner = |dx: f64, dy: f64, dz: f64| get_corner(fx + dx, fy + dy, fz + dz, layer);
                         for (a, b) in [((0.0, 0.0), (1.0, 1.0)), ((1.0, 0.0), (0.0, 1.0))] {
                             let (c0, c1) = (corner(a.0, 0.0, a.1), corner(b.0, 0.0, b.1));
                             let (c2, c3) = (corner(b.0, 1.0, b.1), corner(a.0, 1.0, a.1));
-                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, [1.0; 4]);
-                            Self::add_quad(&mut vertices, &mut indices, c1, c0, c3, c2, color, [1.0; 4]);
+                            let front = [tex(0, 16), tex(16, 16), tex(16, 0), tex(0, 0)];
+                            let back = [tex(16, 16), tex(0, 16), tex(0, 0), tex(16, 0)];
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, [1.0; 4], front);
+                            Self::add_quad(&mut vertices, &mut indices, c1, c0, c3, c2, color, [1.0; 4], back);
+                        }
+                        continue;
+                    }
+                    if let Some(shape) = block.shape() {
+                        // Dalle, escalier, échelle : les faces de chaque pavé que rien ne couvre
+                        let boxes = shape.boxes(block.rotation());
+                        for (i, b) in boxes.iter().enumerate() {
+                            for (dir, face) in CUBE_FACES.iter().enumerate() {
+                                let axis = dir / 2;
+                                let on_side = if dir % 2 == 0 { b[axis + 3] == 16 } else { b[axis] == 0 };
+                                if on_side {
+                                    // Contre la case voisine : cachée par un voisin qui couvre toute la face
+                                    let d = FACE_DIRS[dir];
+                                    if get_voxel(gx + d.0, gy + d.1, gz + d.2).hides_face(opposite_face(dir)) {
+                                        continue;
+                                    }
+                                } else if Self::box_face_covered(boxes, i, dir) {
+                                    continue;
+                                }
+                                let local: [[u8; 3]; 4] = face.corners.map(|o| {
+                                    [if o.0 > 0 { b[3] } else { b[0] }, if o.1 > 0 { b[4] } else { b[1] }, if o.2 > 0 { b[5] } else { b[2] }]
+                                });
+                                let [c0, c1, c2, c3] = local.map(|c| {
+                                    get_corner(fx + c[0] as f64 / 16.0, fy + c[1] as f64 / 16.0, fz + c[2] as f64 / 16.0, layer)
+                                });
+                                let color = get_color(gx, gy, gz, block, dir);
+                                // Texture étirée : chaque face du pavé la montre en entier
+                                let uv_corners = match shape.texture {
+                                    ShapeTexture::Crop => local,
+                                    ShapeTexture::Stretch => local.map(|c| std::array::from_fn(|k| ((c[k] - b[k]) as u32 * 16 / (b[k + 3] - b[k]) as u32) as u8)),
+                                };
+                                let tex = face_texture(block, dir, uv_corners);
+                                Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, [1.0; 4], tex);
+                            }
                         }
                         continue;
                     }
                     let is_water = block == BlockId::WATER;
-
-                    // 1. Face Haut (+Y)
-                    let neighbor_top = get_voxel(gx, gy + 1, gz);
-                    let should_emit_top = Self::shows_face(block, neighbor_top);
-                    if should_emit_top {
-                        let color = get_color(gx, gy, gz, block, true, (0, 1, 0));
-                        let c0 = get_corner(fx, fy + 1.0, fz, layer);
-                        let c1 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
-                        let c2 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
-                        let c3 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
-                        let ao = if is_water {
-                            [1.0, 1.0, 1.0, 1.0]
-                        } else {
-                            [
-                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx, gy + 1, gz - 1), (gx - 1, gy + 1, gz - 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx, gy + 1, gz + 1), (gx - 1, gy + 1, gz + 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx, gy + 1, gz + 1), (gx + 1, gy + 1, gz + 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx, gy + 1, gz - 1), (gx + 1, gy + 1, gz - 1)),
-                            ]
-                        };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
-                    }
-
-                    // 2. Face Bas (-Y)
-                    if !is_water {
-                        let neighbor_bottom = get_voxel(gx, gy - 1, gz);
-                        if Self::shows_face(block, neighbor_bottom) && !neighbor_bottom.is_liquid() {
-                            let color = get_color(gx, gy, gz, block, false, (0, -1, 0));
-                            let c0 = get_corner(fx, fy, fz, layer);
-                            let c1 = get_corner(fx + 1.0, fy, fz, layer);
-                            let c2 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
-                            let c3 = get_corner(fx, fy, fz + 1.0, layer);
-                            let ao = [
-                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx, gy - 1, gz - 1), (gx - 1, gy - 1, gz - 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx, gy - 1, gz - 1), (gx + 1, gy - 1, gz - 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx, gy - 1, gz + 1), (gx + 1, gy - 1, gz + 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx, gy - 1, gz + 1), (gx - 1, gy - 1, gz + 1)),
-                            ];
-                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
+                    // Dessus, dessous, puis les quatre côtés
+                    for dir in [2, 3, 1, 0, 4, 5] {
+                        // L'eau ne montre pas son dessous
+                        if is_water && dir == 3 {
+                            continue;
                         }
-                    }
-
-                    // 3. Face Gauche (-X)
-                    let neighbor_left = get_voxel(gx - 1, gy, gz);
-                    let should_emit_left = Self::shows_face(block, neighbor_left);
-                    if should_emit_left {
-                        let color = get_color(gx, gy, gz, block, false, (-1, 0, 0));
-                        let c0 = get_corner(fx, fy, fz, layer);
-                        let c1 = get_corner(fx, fy, fz + 1.0, layer);
-                        let c2 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
-                        let c3 = get_corner(fx, fy + 1.0, fz, layer);
-                        let ao = if is_water {
-                            [1.0, 1.0, 1.0, 1.0]
+                        let d = FACE_DIRS[dir];
+                        let neighbor = get_voxel(gx + d.0, gy + d.1, gz + d.2);
+                        if !Self::shows_face(block, neighbor, dir) || (dir == 3 && neighbor.is_liquid()) {
+                            continue;
+                        }
+                        let face = &CUBE_FACES[dir];
+                        let color = get_color(gx, gy, gz, block, dir);
+                        let [c0, c1, c2, c3] = face.corners.map(|o| get_corner(fx + o.0 as f64, fy + o.1 as f64, fz + o.2 as f64, layer));
+                        let ao = if is_water && dir != 3 {
+                            [1.0; 4]
                         } else {
-                            [
-                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx - 1, gy, gz - 1), (gx - 1, gy - 1, gz - 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx - 1, gy, gz + 1), (gx - 1, gy - 1, gz + 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx - 1, gy, gz + 1), (gx - 1, gy + 1, gz + 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx - 1, gy, gz - 1), (gx - 1, gy + 1, gz - 1)),
-                            ]
+                            face.ao.map(|[s1, s2, c]| {
+                                let at = |o: (i32, i32, i32)| (gx + o.0, gy + o.1, gz + o.2);
+                                Self::calc_corner_ao(&get_voxel, at(s1), at(s2), at(c))
+                            })
                         };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
-                    }
-
-                    // 4. Face Droite (+X)
-                    let neighbor_right = get_voxel(gx + 1, gy, gz);
-                    let should_emit_right = Self::shows_face(block, neighbor_right);
-                    if should_emit_right {
-                        let color = get_color(gx, gy, gz, block, false, (1, 0, 0));
-                        let c0 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
-                        let c1 = get_corner(fx + 1.0, fy, fz, layer);
-                        let c2 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
-                        let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
-                        let ao = if is_water {
-                            [1.0, 1.0, 1.0, 1.0]
-                        } else {
-                            [
-                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx + 1, gy, gz + 1), (gx + 1, gy - 1, gz + 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx + 1, gy, gz - 1), (gx + 1, gy - 1, gz - 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx + 1, gy, gz - 1), (gx + 1, gy + 1, gz - 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx + 1, gy, gz + 1), (gx + 1, gy + 1, gz + 1)),
-                            ]
-                        };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
-                    }
-
-                    // 5. Face Avant (+Z)
-                    let neighbor_front = get_voxel(gx, gy, gz + 1);
-                    let should_emit_front = Self::shows_face(block, neighbor_front);
-                    if should_emit_front {
-                        let color = get_color(gx, gy, gz, block, false, (0, 0, 1));
-                        let c0 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
-                        let c1 = get_corner(fx, fy, fz + 1.0, layer);
-                        let c2 = get_corner(fx, fy + 1.0, fz + 1.0, layer);
-                        let c3 = get_corner(fx + 1.0, fy + 1.0, fz + 1.0, layer);
-                        let ao = if is_water {
-                            [1.0, 1.0, 1.0, 1.0]
-                        } else {
-                            [
-                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz + 1), (gx, gy - 1, gz + 1), (gx + 1, gy - 1, gz + 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz + 1), (gx, gy - 1, gz + 1), (gx - 1, gy - 1, gz + 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz + 1), (gx, gy + 1, gz + 1), (gx - 1, gy + 1, gz + 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz + 1), (gx, gy + 1, gz + 1), (gx + 1, gy + 1, gz + 1)),
-                            ]
-                        };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
-                    }
-
-                    // 6. Face Arrière (-Z)
-                    let neighbor_back = get_voxel(gx, gy, gz - 1);
-                    let should_emit_back = Self::shows_face(block, neighbor_back);
-                    if should_emit_back {
-                        let color = get_color(gx, gy, gz, block, false, (0, 0, -1));
-                        let c0 = get_corner(fx, fy, fz, layer);
-                        let c1 = get_corner(fx + 1.0, fy, fz, layer);
-                        let c2 = get_corner(fx + 1.0, fy + 1.0, fz, layer);
-                        let c3 = get_corner(fx, fy + 1.0, fz, layer);
-                        let ao = if is_water {
-                            [1.0, 1.0, 1.0, 1.0]
-                        } else {
-                            [
-                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz - 1), (gx, gy - 1, gz - 1), (gx - 1, gy - 1, gz - 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz - 1), (gx, gy - 1, gz - 1), (gx + 1, gy - 1, gz - 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz - 1), (gx, gy + 1, gz - 1), (gx + 1, gy + 1, gz - 1)),
-                                Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz - 1), (gx, gy + 1, gz - 1), (gx - 1, gy + 1, gz - 1)),
-                            ]
-                        };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao);
+                        let tex = face_texture(block, dir, face.corners.map(|o| [o.0 * 16, o.1 * 16, o.2 * 16]));
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, tex);
                     }
                 }
             }
@@ -836,15 +824,27 @@ impl VoxelMeshBuilder {
 
     #[inline(always)]
     fn is_solid_for_ao(block: BlockId) -> bool {
-        !block.is_air() && !block.is_liquid() && !block.is_plant()
+        !block.is_air() && !block.is_liquid() && !block.is_plant() && block.shape().is_none()
     }
 
-    /// La face de `block` tournée vers `neighbor` se voit : le voisin laisse voir à travers (air,
-    /// eau, verre, feuillage, plante) et n'est pas de la même matière (l'eau contre l'eau, le verre
-    /// contre le verre ne montrent pas de paroi)
+    /// La face `dir` du pavé `i` est collée à un autre pavé de la même forme qui la couvre
+    fn box_face_covered(boxes: &[ShapeBox], i: usize, dir: usize) -> bool {
+        let b = boxes[i];
+        let axis = dir / 2;
+        let plane = if dir % 2 == 0 { b[axis + 3] } else { b[axis] };
+        let (a1, a2) = ((axis + 1) % 3, (axis + 2) % 3);
+        boxes.iter().enumerate().any(|(j, o)| {
+            let touching = if dir % 2 == 0 { o[axis] == plane } else { o[axis + 3] == plane };
+            j != i && touching && o[a1] <= b[a1] && o[a1 + 3] >= b[a1 + 3] && o[a2] <= b[a2] && o[a2 + 3] >= b[a2 + 3]
+        })
+    }
+
+    /// La face `dir` de `block`, tournée vers `neighbor`, se voit : le voisin laisse voir à travers
+    /// (air, eau, verre, feuillage, plante, forme qui ne couvre pas cette face) et n'est pas de la
+    /// même matière (l'eau contre l'eau, le verre contre le verre ne montrent pas de paroi)
     #[inline(always)]
-    fn shows_face(block: BlockId, neighbor: BlockId) -> bool {
-        !neighbor.is_opaque() && neighbor != block
+    fn shows_face(block: BlockId, neighbor: BlockId, dir: usize) -> bool {
+        !neighbor.hides_face(opposite_face(dir)) && neighbor != block
     }
 
     fn calc_corner_ao<F>(get_voxel: &F, s1: (i32, i32, i32), s2: (i32, i32, i32), c: (i32, i32, i32)) -> f32
@@ -876,6 +876,7 @@ impl VoxelMeshBuilder {
         c3: Vec3,
         color: [f32; 4],
         ao: [f32; 4],
+        texture: [u32; 4],
     ) {
         let base_idx = vertices.len() as u32;
 
@@ -884,7 +885,7 @@ impl VoxelMeshBuilder {
         let e2 = c2 - c0;
         let normal = e1.cross(e2).normalize_or_zero().to_array();
 
-        let make_vert = |pos: Vec3, ao_factor: f32| PlanetVertex {
+        let make_vert = |pos: Vec3, ao_factor: f32, texture: u32| PlanetVertex {
             position: pos.to_array(),
             normal,
             color: [
@@ -893,12 +894,13 @@ impl VoxelMeshBuilder {
                 color[2] * ao_factor,
                 color[3],
             ],
+            texture,
         };
 
-        vertices.push(make_vert(c0, ao[0]));
-        vertices.push(make_vert(c1, ao[1]));
-        vertices.push(make_vert(c2, ao[2]));
-        vertices.push(make_vert(c3, ao[3]));
+        vertices.push(make_vert(c0, ao[0], texture[0]));
+        vertices.push(make_vert(c1, ao[1], texture[1]));
+        vertices.push(make_vert(c2, ao[2], texture[2]));
+        vertices.push(make_vert(c3, ao[3], texture[3]));
 
         // Inversion de diagonale selon la direction du gradient AO (élimine le pli d'anisotropie)
         if ao[0] + ao[2] > ao[1] + ao[3] {
@@ -923,9 +925,14 @@ impl VoxelMeshBuilder {
     }
 
     /// Couleur d'une face, celle de la fiche du bloc
-    pub(crate) fn block_color(block: BlockId, is_top: bool) -> [f32; 4] {
+    /// Couleur d'une face (`FACE_DIRS`) qui montre sa matière : la moyenne de sa texture (que le
+    /// rendu montre alors telle quelle), sinon la couleur de la fiche
+    pub(crate) fn block_color(block: BlockId, dir: usize) -> [f32; 4] {
+        if let Some(color) = block_textures().face_color(block, dir) {
+            return color;
+        }
         match herocraft_common::blocks().get(block) {
-            Some(sheet) if is_top => sheet.top_color(),
+            Some(sheet) if dir == 2 => sheet.top_color(),
             Some(sheet) => sheet.side_color(),
             None => [0.60, 0.60, 0.60, 1.0],
         }
@@ -1069,12 +1076,42 @@ mod tests {
     }
 
     #[test]
+    fn test_shaped_blocks_are_meshed_box_by_box() {
+        use herocraft_world::BlockPos;
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
+        let (face, cx, cy) = (PlanetFace::PosX, 16, 16);
+        let source = Arc::new(VoxelMeshBuilder::sample_column_source(&generator, face, cx, cy, 50.0, VisualizationFilter::Standard));
+        let edits = TerrainEdits::new(None);
+        let sky_layer = |block: BlockId| {
+            edits.set_block(&generator, BlockPos::new(face, cx * 32 + 20, 500, cy * 32 + 10), block);
+            let column = VoxelMeshBuilder::build_column(&generator, &edits, source.clone());
+            let range = column.layers.iter().find(|r| r.layer == 15).unwrap().vertices.clone();
+            column.mesh.vertices[range].to_vec()
+        };
+        // Dalle seule dans le ciel : 6 faces ; ses côtés montrent la moitié basse de la texture
+        let slab = blocks().find("plankSlab").unwrap();
+        let vertices = sky_layer(slab);
+        assert_eq!(vertices.len(), 24);
+        let plank = blocks().face_texture(slab, 0) as u32;
+        assert!(vertices.iter().all(|v| v.texture & 0xFFFF == plank));
+        let vs: Vec<u32> = vertices.iter().map(|v| v.texture >> 24).collect();
+        assert!(vs.contains(&8) && vs.contains(&16) && !vs.iter().any(|&v| v > 0 && v < 8));
+        // Escalier : la marche haute pose sur la basse, sa face du dessous n'est pas dessinée
+        let stairs = blocks().find("plankStairs").unwrap();
+        assert_eq!(sky_layer(stairs.with_rotation(1)).len(), 11 * 4);
+        // Un cube plein montre toute sa texture, du coin (0, 0) au coin (16, 16)
+        let stone = sky_layer(BlockId::STONE);
+        assert_eq!(stone.len(), 24);
+        assert!(stone.iter().any(|v| v.texture >> 16 == 0) && stone.iter().any(|v| v.texture >> 16 == 16 | 16 << 8));
+    }
+
+    #[test]
     fn test_cave_walls_are_meshed_below_the_surface() {
         // Collines de la face -Z (graine 42) percées de tunnels : leurs parois sont maillées, couleur
         // de la roche et non du biome, jusque dans les couches entièrement sous le relief
         let generator = PlanetWorldGenerator::new(PlanetDescriptor::default());
         let edits = TerrainEdits::new(None);
-        let cave_stone = VoxelMeshBuilder::block_color(BlockId::STONE, false);
+        let cave_stone = VoxelMeshBuilder::block_color(BlockId::STONE, 0);
         let mut cave_vertices = 0;
         let mut below_relief = false;
         for (cx, cy) in [(20, 5), (21, 5), (22, 6), (24, 7)] {

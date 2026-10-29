@@ -1,0 +1,6 @@
+{
+  "name": "Torche",
+  "description": "Un bâton fin, la texture entière étirée sur chaque face.",
+  "boxes": [[7, 0, 7, 9, 10, 9]],
+  "texture": "stretch"
+}

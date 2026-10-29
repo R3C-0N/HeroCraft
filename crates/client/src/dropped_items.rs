@@ -3,9 +3,10 @@
 //! inventaire (s'il y a de la place). Un objet oublié disparaît au bout de quelques minutes.
 
 use glam::{Quat, Vec3};
-use herocraft_common::BlockId;
+use herocraft_common::{blocks, BlockId};
 use herocraft_world::PlanetWorldGenerator;
 
+use crate::block_textures::{block_textures, face_uv};
 use crate::collision::VoxelCollider;
 use crate::inventory::{item_colors, Inventory};
 use crate::planet_mesh::{PlanetMesh, PlanetVertex};
@@ -162,23 +163,34 @@ impl DroppedItems {
             // Léger flottement au-dessus du sol, comme un objet à ramasser
             let bob = (0.5 + 0.5 * (item.phase + time * 2.5).sin()) * 0.12 * block_height;
             let center = item.position + up * bob;
-            let (top, side) = item_colors(item.block);
-            push_cube(&mut mesh, center, [ax * half, up * half, az * half], top, side);
+            push_cube(&mut mesh, center, [ax * half, up * half, az * half], item.block);
         }
         Some(mesh)
     }
 }
 
-/// Cube centré en `center`, de demi-axes `axes` (le deuxième est le haut)
-fn push_cube(mesh: &mut PlanetMesh, center: Vec3, axes: [Vec3; 3], top: [f32; 4], side: [f32; 4]) {
-    for (axis, sign) in [(0, 1.0), (0, -1.0), (1, 1.0), (1, -1.0), (2, 1.0), (2, -1.0)] {
+/// Cube du bloc `block` centré en `center`, de demi-axes `axes` (le deuxième est le haut),
+/// couvert de ses textures comme dans le terrain
+fn push_cube(mesh: &mut PlanetMesh, center: Vec3, axes: [Vec3; 3], block: BlockId) {
+    let (top, side) = item_colors(block);
+    // Faces dans l'ordre de `FACE_DIRS` : +X, -X, +Y, -Y, +Z, -Z
+    for (dir, (axis, sign)) in [(0, 1.0), (0, -1.0), (1, 1.0), (1, -1.0), (2, 1.0), (2, -1.0)].into_iter().enumerate() {
         let normal = axes[axis].normalize_or_zero() * sign;
         let (u, v) = (axes[(axis + 1) % 3], axes[(axis + 2) % 3]);
         let face = center + axes[axis] * sign;
-        let color = if axis == 1 && sign > 0.0 { top } else { side };
+        let color = block_textures().face_color(block, dir).unwrap_or(if dir == 2 { top } else { side });
+        let layer = blocks().face_texture(block, dir);
         let base = mesh.vertices.len() as u32;
-        for corner in [face - u - v, face + u - v, face + u + v, face - u + v] {
-            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: normal.to_array(), color: [color[0], color[1], color[2], 1.0] });
+        for (su, sv) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            let corner = face + u * su + v * sv;
+            // Place du coin dans le bloc (0 ou 16 sur chaque axe), d'où ses coordonnées de texture
+            let mut local = [0u8; 3];
+            for (k, s) in [(axis, sign), ((axis + 1) % 3, su), ((axis + 2) % 3, sv)] {
+                local[k] = if s > 0.0 { 16 } else { 0 };
+            }
+            let (tu, tv) = face_uv(dir, local);
+            let texture = PlanetVertex::pack_texture(layer, tu, tv);
+            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: normal.to_array(), color: [color[0], color[1], color[2], 1.0], texture });
         }
         mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }

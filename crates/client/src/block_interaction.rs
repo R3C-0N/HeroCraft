@@ -200,7 +200,7 @@ impl BlockInteraction {
         }
         self.last_aim = Some(aim);
         let mut query = TerrainQuery::with_columns(generator, edits, std::mem::take(&mut self.columns));
-        self.target = raycast_blocks(&geometry, eye.as_dvec3(), dir.as_dvec3(), reach, |pos| is_targetable(query.block(pos)));
+        self.target = raycast_blocks(&geometry, eye.as_dvec3(), dir.as_dvec3(), reach, |pos| Some(query.block(pos)).filter(|&b| is_targetable(b)));
         self.target_block = self.target.map_or(BlockId::AIR, |hit| query.block(hit.block));
         self.columns = query.into_columns();
     }
@@ -223,7 +223,9 @@ impl BlockInteraction {
             BlockAction::Break => (hit.block, BlockId::AIR),
             BlockAction::Place => match (hit.before, inventory.selected_block()) {
                 // Une plante se pose même là où se tient le joueur : on la traverse
-                (Some(pos), Some(block)) if !block.is_solid() || !overlaps_player(camera, pos) => (pos, block),
+                (Some(pos), Some(block)) if !block.is_solid() || !overlaps_player(camera, pos) => {
+                    (pos, block.with_rotation(facing_rotation(camera, pos)))
+                }
                 _ => return None,
             },
         };
@@ -251,11 +253,39 @@ impl BlockInteraction {
         self.last_aim = None;
     }
 
-    /// Coins du bloc visé, pour son contour
+    /// Coins du bloc visé, pour son contour : la boîte qui englobe ses pavés s'il a une forme
     pub fn outline(&self, camera: &OrbitCamera) -> Option<[Vec3; 8]> {
         let hit = self.target?;
         let geometry = BlockGeometry::new(camera.base_radius as f64);
-        Some(geometry.block_corners(hit.block).map(|c| c.as_vec3()))
+        let pos = hit.block;
+        let Some(shape) = self.target_block.shape() else {
+            return Some(geometry.block_corners(pos).map(|c| c.as_vec3()));
+        };
+        let b = shape.bounds(self.target_block.rotation()).map(|v| v as f64 / 16.0);
+        Some(std::array::from_fn(|i| {
+            let pick = |bit: usize, axis: usize| if (i >> bit) & 1 == 1 { b[axis + 3] } else { b[axis] };
+            geometry.corner(pos.face, pos.x as f64 + pick(0, 0), pos.y as f64 + pick(1, 1), pos.z as f64 + pick(2, 2)).as_vec3()
+        }))
+    }
+}
+
+/// Quarts de tour d'un bloc posé en `pos` pour que l'avant de sa forme (son côté z = 0) regarde le
+/// joueur : selon l'axe de la grille le plus proche de la direction du regard
+fn facing_rotation(camera: &OrbitCamera, pos: BlockPos) -> u8 {
+    let Some((_, look, _)) = camera.view_ray() else {
+        return 0;
+    };
+    let geometry = BlockGeometry::new(camera.base_radius as f64);
+    let origin = geometry.corner(pos.face, pos.x as f64, pos.y as f64, pos.z as f64);
+    let axis_x = (geometry.corner(pos.face, pos.x as f64 + 1.0, pos.y as f64, pos.z as f64) - origin).normalize();
+    let axis_z = (geometry.corner(pos.face, pos.x as f64, pos.y as f64, pos.z as f64 + 1.0) - origin).normalize();
+    let (x, z) = (look.as_dvec3().dot(axis_x), look.as_dvec3().dot(axis_z));
+    if z.abs() >= x.abs() {
+        if z > 0.0 { 0 } else { 2 }
+    } else if x < 0.0 {
+        1
+    } else {
+        3
     }
 }
 

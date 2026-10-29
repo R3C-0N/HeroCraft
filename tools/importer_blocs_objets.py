@@ -37,6 +37,12 @@ OBJETS = RACINE / "assets/items"
 PREMIER_OBJET = 0x4000
 
 # Blocs du générateur de terrain (`BlockId::STONE`…) : numéro et couleurs (dessus, côtés) actuels
+# Formes des fichiers .shape de develop -> formes en pavés de assets/blocks/shapes/
+FORMES = {
+    "engine:verticalOffsetPlane": "panneau",
+    "CoreAssets:cactus": "colonne",
+}
+
 BLOCS_DU_TERRAIN = {
     "stone": (1, "#85807a", "#85807a"),
     "dirt": (2, "#75542e", "#75542e"),
@@ -216,7 +222,10 @@ def importer_blocs(modules):
             continue
 
         liquide = bool(d.get("liquid"))
-        plante = d.get("shape") == "engine:billboard" or nom == "Torch"
+        plante = d.get("shape") == "engine:billboard"
+        # Formes de develop reprises en pavés (assets/blocks/shapes/) : la torche a les siennes
+        # par face (murale, posée), réduites ici à la torche posée
+        forme = "torche" if nom == "Torch" else FORMES.get(d.get("shape"))
         # Herbe et feuillages : texture grise, teintée par le biome dans le jeu d'origine
         teinte = [0.45, 0.78, 0.33] if d.get("colorSource") in ("color_lut", "foliage_lut") else None
         textures = {}
@@ -253,6 +262,10 @@ def importer_blocs(modules):
             fiche["texture_tint"] = hexa([v * 255 for v in teinte])
         if plante:
             fiche["shape"] = "plant"
+        elif forme:
+            fiche["shape"] = forme
+            if d.get("family") == "horizontal":
+                fiche["rotation"] = "horizontal"
         if liquide:
             fiche["liquid"] = True
         elif d.get("penetrable") or plante:

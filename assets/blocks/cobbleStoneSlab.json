@@ -1,0 +1,10 @@
+{
+  "numeric_id": 138,
+  "name": "Dalle de pavés",
+  "description": "La moitié d'un bloc : se monte sans sauter.",
+  "category": "Construction",
+  "hardness": 14,
+  "color": {"side": "#a9a69d"},
+  "textures": {"side": "textures/CobbleStone.png"},
+  "shape": "dalle"
+}

@@ -1,0 +1,5 @@
+{
+  "name": "Colonne",
+  "description": "Un bloc aminci d'un seizième de chaque côté (cactus).",
+  "boxes": [[1, 0, 1, 15, 16, 15]]
+}

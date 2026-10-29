@@ -24,7 +24,7 @@ impl BlockId {
     /// Temps pour casser le bloc à mains nues, en secondes. Les autres blocs le tirent de la
     /// dureté de leur fiche (1 pour une fleur : 0,1 s ; 14 pour une roche : 1,4 s).
     pub fn break_seconds(&self) -> f32 {
-        match *self {
+        match self.kind() {
             BlockId::LEAVES | BlockId::SNOW => 0.3,
             BlockId::SAND | BlockId::LAVA => 0.45,
             BlockId::DIRT => 0.5,

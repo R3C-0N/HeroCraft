@@ -9,6 +9,7 @@ use crate::camera::{CameraViewMode, OrbitCamera};
 use crate::creature_render::CreatureRenderer;
 use crate::gpu_timer::{self, GpuTimer};
 use crate::lod::{LodMeshId, PlanetLodManager};
+use crate::block_textures::BlockTextureBinding;
 use crate::planet_mesh::PlanetVertex;
 use crate::post::{self, PostProcess};
 use crate::shadow::Shadows;
@@ -151,6 +152,8 @@ pub struct State {
     creatures: CreatureRenderer,
     /// Blocs tombés au sol : petits cubes dessinés avec le relief, refaits à chaque frame
     dropped_items: GrowableMesh,
+    /// Textures des blocs, lues par le shader du terrain (groupe 2)
+    block_textures: BlockTextureBinding,
 
     // Rendu Interface Utilisateur egui
     pub egui_renderer: egui_wgpu::Renderer,
@@ -365,10 +368,12 @@ impl State {
                 push_constant_ranges: &[],
             });
         let creatures = CreatureRenderer::new(&device, &queue, &atmosphere.scene_layout, &shadows.receiver_layout, sample_count);
+        // Le terrain lit aussi les textures des blocs (groupe 2)
+        let block_textures = crate::block_textures::block_textures().upload(&device, &queue);
         let terrain_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Terrain Pipeline Layout"),
-                bind_group_layouts: &[&atmosphere.scene_layout, &shadows.receiver_layout],
+                bind_group_layouts: &[&atmosphere.scene_layout, &shadows.receiver_layout, &block_textures.layout],
                 push_constant_ranges: &[],
             });
 
@@ -579,6 +584,7 @@ impl State {
             player_outlines,
             creatures,
             dropped_items,
+            block_textures,
             egui_renderer,
             vsync_mode,
             novsync_mode,
@@ -970,6 +976,7 @@ impl State {
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
                 render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
+                render_pass.set_bind_group(2, &self.block_textures.bind_group, &[]);
                 for id in &self.lod_draw_list {
                     if let Some(mesh) = self.lod_gpu_meshes.get(id) {
                         render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
@@ -985,6 +992,7 @@ impl State {
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
                 render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
+                render_pass.set_bind_group(2, &self.block_textures.bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.dropped_items.vertex_buffer.slice(..));
                 render_pass.set_index_buffer(self.dropped_items.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.draw_indexed(0..self.dropped_items.num_indices, 0, 0..1);
