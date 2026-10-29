@@ -1,6 +1,5 @@
 //! Contour en surbrillance du bloc visé : 12 rubans le long de ses arêtes, reconstruits à chaque
-//! frame face à la caméra. Le même tracé dessine la silhouette des autres joueurs en ligne et celle
-//! des créatures, chaque boîte de sa couleur.
+//! frame face à la caméra. Le même tracé dessine la silhouette des autres joueurs en ligne.
 
 use glam::Vec3;
 
@@ -25,49 +24,32 @@ const TOWARD_EYE: f32 = 0.04;
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct OutlineVertex {
     position: [f32; 3],
-    /// Couleur dans la scène HDR (au-delà de 1 : le bloom la fait briller)
-    color: [f32; 3],
 }
-
-/// Boîte à cerner : ses 8 coins et sa couleur
-pub type ColoredBox = ([Vec3; 8], [f32; 3]);
-
-/// Contour du bloc visé : blanc
-const OUTLINE_COLOR: [f32; 3] = [2.2, 2.2, 2.0];
-/// Silhouette des autres joueurs : dorée
-const PLAYER_COLOR: [f32; 3] = [2.4, 1.7, 0.4];
 
 pub struct BlockOutline {
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     max_boxes: usize,
-    /// Couleur des boîtes passées sans couleur à `update`
-    color: [f32; 3],
     /// Boîtes dessinées
     count: usize,
     /// Contenu actuel du tampon : il n'est réécrit que s'il change
-    uploaded: Option<(Vec<ColoredBox>, Vec3)>,
+    uploaded: Option<(Vec<[Vec3; 8]>, Vec3)>,
 }
 
 impl BlockOutline {
     /// Contour du bloc visé (une boîte, blanche)
     pub fn new(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32) -> Self {
-        Self::with_style(device, layout, sample_count, OUTLINE_COLOR, 1)
+        Self::with_style(device, layout, sample_count, "fs_outline", 1)
     }
 
     /// Silhouettes des autres joueurs (jusqu'à `max_boxes`, dorées)
     pub fn players(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32, max_boxes: usize) -> Self {
-        Self::with_style(device, layout, sample_count, PLAYER_COLOR, max_boxes)
+        Self::with_style(device, layout, sample_count, "fs_player", max_boxes)
     }
 
-    /// Silhouettes des créatures (jusqu'à `max_boxes`, de la couleur de leur espèce)
-    pub fn creatures(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32, max_boxes: usize) -> Self {
-        Self::with_style(device, layout, sample_count, PLAYER_COLOR, max_boxes)
-    }
-
-    /// `layout` : celui du ciel et des nuages (groupe 0 = scène, dont la caméra) ; `color` : celle
-    /// des boîtes passées sans couleur
-    fn with_style(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32, color: [f32; 3], max_boxes: usize) -> Self {
+    /// `layout` : celui du ciel et des nuages (groupe 0 = scène, dont la caméra) ; `fragment` :
+    /// point d'entrée de couleur dans `block_outline.wgsl`
+    fn with_style(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32, fragment: &str, max_boxes: usize) -> Self {
         let shader = crate::shaders::create_shader_module(device, "Block Outline Shader", include_str!("block_outline.wgsl"), "block_outline.wgsl");
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Block Outline Pipeline"),
@@ -78,13 +60,13 @@ impl BlockOutline {
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<OutlineVertex>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3],
                 }],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: Some("fs_outline"),
+                entry_point: Some(fragment),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: post::HDR_FORMAT,
                     blend: Some(wgpu::BlendState::REPLACE),
@@ -118,25 +100,18 @@ impl BlockOutline {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self { pipeline, vertex_buffer, max_boxes, color, count: 0, uploaded: None }
+        Self { pipeline, vertex_buffer, max_boxes, count: 0, uploaded: None }
     }
 
-    /// Contour des boîtes de coins `boxes` vues de `eye`, de la couleur du style (aucune : rien n'est
-    /// dessiné)
+    /// Contour des boîtes de coins `boxes` vues de `eye` (aucune : rien n'est dessiné)
     pub fn update(&mut self, queue: &wgpu::Queue, boxes: &[[Vec3; 8]], eye: Vec3) {
-        let colored: Vec<ColoredBox> = boxes.iter().map(|&corners| (corners, self.color)).collect();
-        self.update_colored(queue, &colored, eye);
-    }
-
-    /// Contour des boîtes `(coins, couleur)` vues de `eye`
-    pub fn update_colored(&mut self, queue: &wgpu::Queue, boxes: &[ColoredBox], eye: Vec3) {
         let boxes = &boxes[..boxes.len().min(self.max_boxes)];
         self.count = boxes.len();
         if boxes.is_empty() || self.uploaded.as_ref().is_some_and(|(b, e)| b == boxes && *e == eye) {
             return;
         }
         self.uploaded = Some((boxes.to_vec(), eye));
-        let vertices: Vec<OutlineVertex> = boxes.iter().flat_map(|(corners, color)| ribbons(corners, *color, eye)).collect();
+        let vertices: Vec<OutlineVertex> = boxes.iter().flat_map(|corners| ribbons(corners, eye)).collect();
         queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertices));
     }
 
@@ -153,9 +128,9 @@ impl BlockOutline {
 }
 
 /// Deux triangles par arête, larges perpendiculairement à l'arête et au regard
-fn ribbons(corners: &[Vec3; 8], color: [f32; 3], eye: Vec3) -> [OutlineVertex; VERTICES] {
+fn ribbons(corners: &[Vec3; 8], eye: Vec3) -> [OutlineVertex; VERTICES] {
     let block_size = corners[0].distance(corners[1]);
-    let mut out = [OutlineVertex { position: [0.0; 3], color }; VERTICES];
+    let mut out = [OutlineVertex { position: [0.0; 3] }; VERTICES];
     for (i, &(a, b)) in EDGES.iter().enumerate() {
         let (a, b) = (corners[a], corners[b]);
         let along = (b - a).normalize_or_zero();
@@ -168,7 +143,7 @@ fn ribbons(corners: &[Vec3; 8], color: [f32; 3], eye: Vec3) -> [OutlineVertex; V
         for (j, &p) in quad.iter().enumerate() {
             let to_eye = eye - p;
             let p = p + to_eye.normalize_or_zero() * (TOWARD_EYE * block_size).min(0.5 * to_eye.length());
-            out[i * 6 + j] = OutlineVertex { position: p.to_array(), color };
+            out[i * 6 + j] = OutlineVertex { position: p.to_array() };
         }
     }
     out
@@ -182,7 +157,7 @@ mod tests {
     fn test_ribbons_follow_every_edge_and_face_the_eye() {
         let corners: [Vec3; 8] = std::array::from_fn(|i| Vec3::new((i & 1) as f32, ((i >> 1) & 1) as f32, ((i >> 2) & 1) as f32));
         let eye = Vec3::new(3.0, 4.0, 5.0);
-        let vertices = ribbons(&corners, OUTLINE_COLOR, eye);
+        let vertices = ribbons(&corners, eye);
         for (i, &(a, b)) in EDGES.iter().enumerate() {
             let quad: Vec<Vec3> = vertices[i * 6..i * 6 + 6].iter().map(|v| Vec3::from(v.position)).collect();
             let mid = quad.iter().copied().sum::<Vec3>() / 6.0;

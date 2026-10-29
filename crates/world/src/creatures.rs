@@ -4,12 +4,14 @@
 //! La même simulation tourne sur le serveur, qui fait autorité et diffuse les positions, et dans la
 //! partie solo du client. Elle lit le terrain bloc par bloc (générateur + modifications) : une
 //! créature marche sur les blocs posés, tombe dans les trous creusés, contourne les murs et l'eau.
+//! Corps, allure et biomes de chaque espèce viennent de sa description (`CreatureRegistry`).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
-use herocraft_common::{tangent_frame, BlockId, CreatureKind, CreatureState, PlanetFace};
+use herocraft_common::{tangent_frame, BlockId, CreatureRegistry, CreatureSpecies, CreatureState, PlanetFace};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -41,7 +43,8 @@ const MAX_CACHED_COLUMNS: usize = 4096;
 
 pub struct Creature {
     pub id: u64,
-    pub kind: CreatureKind,
+    /// Rang de son espèce dans le registre
+    pub species: usize,
     /// Pieds (repère du centre de la planète)
     pub position: Vec3,
     /// Cap dans le plan tangent (0 = nord, π/2 = est)
@@ -59,7 +62,13 @@ impl Creature {
     }
 }
 
+/// Espèce candidate dans un biome : rang, poids, chance d'apparaître vraiment
+type SpawnCandidate = (usize, u32, f32);
+
 pub struct CreatureWorld {
+    registry: Arc<CreatureRegistry>,
+    /// Espèces qui apparaissent dans chaque biome
+    spawn_table: HashMap<BiomeType, Vec<SpawnCandidate>>,
     geometry: BlockGeometry,
     creatures: Vec<Creature>,
     next_id: u64,
@@ -70,8 +79,20 @@ pub struct CreatureWorld {
 }
 
 impl CreatureWorld {
-    pub fn new(base_radius: f64, seed: u64) -> Self {
+    pub fn new(base_radius: f64, seed: u64, registry: Arc<CreatureRegistry>) -> Self {
+        let mut spawn_table: HashMap<BiomeType, Vec<SpawnCandidate>> = HashMap::new();
+        for (index, species) in registry.iter().enumerate() {
+            for rule in &species.spawn {
+                match BiomeType::from_name(&rule.biome) {
+                    Some(biome) if rule.weight > 0 => spawn_table.entry(biome).or_default().push((index, rule.weight, rule.chance)),
+                    Some(_) => {}
+                    None => log::warn!("Créature {} : biome « {} » inconnu.", species.id, rule.biome),
+                }
+            }
+        }
         Self {
+            registry,
+            spawn_table,
             geometry: BlockGeometry::new(base_radius),
             creatures: Vec::new(),
             next_id: 1,
@@ -79,6 +100,10 @@ impl CreatureWorld {
             spawn_timer: 0.0,
             columns: HashMap::new(),
         }
+    }
+
+    pub fn registry(&self) -> &Arc<CreatureRegistry> {
+        &self.registry
     }
 
     pub fn creatures(&self) -> &[Creature] {
@@ -90,13 +115,14 @@ impl CreatureWorld {
         self.columns.clear();
     }
 
-    /// Fait apparaître une créature aux pieds `feet`, et renvoie son identifiant
-    pub fn spawn(&mut self, kind: CreatureKind, feet: Vec3) -> u64 {
+    /// Fait apparaître une créature de l'espèce de rang `species` aux pieds `feet`, et renvoie son
+    /// identifiant
+    pub fn spawn(&mut self, species: usize, feet: Vec3) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         let yaw = self.rng.gen_range(0.0..TAU);
         let timer = self.rng.gen_range(0.5..3.0);
-        self.creatures.push(Creature { id, kind, position: feet, yaw, fall_speed: 0.0, walking: false, timer });
+        self.creatures.push(Creature { id, species, position: feet, yaw, fall_speed: 0.0, walking: false, timer });
         id
     }
 
@@ -111,7 +137,9 @@ impl CreatureWorld {
         let mut query = TerrainQuery::with_columns(generator, edits, columns);
         let mut walker = Walker { geometry: self.geometry, query: &mut query };
         for creature in &mut self.creatures {
-            walker.step(creature, &mut self.rng, dt);
+            if let Some(species) = self.registry.get(creature.species) {
+                walker.step(creature, species, &mut self.rng, dt);
+            }
         }
 
         self.spawn_timer -= dt;
@@ -146,9 +174,11 @@ impl CreatureWorld {
             return;
         }
         let biome = query.column_sample(column.face, column.x, column.z).biome;
-        let Some(kind) = pick_kind(biome, &mut self.rng) else { return };
+        let Some(candidates) = self.spawn_table.get(&biome) else { return };
+        let Some(species) = pick_species(candidates, &mut self.rng) else { return };
+        let Some(max_group) = self.registry.get(species).map(|s| s.max_group) else { return };
 
-        let group = self.rng.gen_range(1..=kind.max_group());
+        let group = self.rng.gen_range(1..=max_group);
         for _ in 0..group {
             if self.creatures.len() >= MAX_CREATURES {
                 break;
@@ -159,7 +189,7 @@ impl CreatureWorld {
                 continue;
             }
             if let Some(feet) = surface_feet(&self.geometry, query, pos.face, pos.x, pos.z) {
-                self.spawn(kind, feet);
+                self.spawn(species, feet);
             }
         }
     }
@@ -179,33 +209,22 @@ fn surface_feet(geometry: &BlockGeometry, query: &mut TerrainQuery, face: Planet
     Some(geometry.corner(face, x as f64 + 0.5, top as f64, z as f64 + 0.5).as_vec3())
 }
 
-/// Espèce tirée selon le biome, ou aucune (biome inhabité, ou désert la plupart du temps)
-fn pick_kind(biome: BiomeType, rng: &mut StdRng) -> Option<CreatureKind> {
-    use CreatureKind::*;
-    let table: &[(CreatureKind, u32)] = match biome {
-        BiomeType::Plains => &[(Sheep, 5), (Rabbit, 4), (Boar, 1)],
-        BiomeType::Forest => &[(Boar, 4), (Rabbit, 4), (Sheep, 2)],
-        BiomeType::Taiga => &[(Boar, 1), (Rabbit, 1)],
-        BiomeType::Tundra | BiomeType::SnowPeaks => &[(Rabbit, 1)],
-        BiomeType::Mountains => &[(Sheep, 7), (Rabbit, 3)],
-        BiomeType::Savanna => &[(Boar, 5), (Rabbit, 3), (Sheep, 2)],
-        BiomeType::Jungle => &[(Boar, 7), (Rabbit, 3)],
-        BiomeType::Desert if rng.gen_bool(0.3) => &[(Rabbit, 1)],
-        _ => &[],
-    };
-    let total: u32 = table.iter().map(|(_, w)| w).sum();
+/// Espèce tirée au poids parmi les candidates d'un biome, ou aucune si elle n'a pas eu sa chance
+fn pick_species(candidates: &[SpawnCandidate], rng: &mut StdRng) -> Option<usize> {
+    let total: u32 = candidates.iter().map(|&(_, weight, _)| weight).sum();
     if total == 0 {
         return None;
     }
     let mut roll = rng.gen_range(0..total);
-    table.iter().find_map(|&(kind, weight)| {
+    let &(species, _, chance) = candidates.iter().find(|&&(_, weight, _)| {
         if roll < weight {
-            Some(kind)
+            true
         } else {
             roll -= weight;
-            None
+            false
         }
-    })
+    })?;
+    (chance >= 1.0 || rng.gen_bool(chance.clamp(0.0, 1.0) as f64)).then_some(species)
 }
 
 /// Déplacement d'une créature sur le terrain
@@ -245,7 +264,7 @@ impl Walker<'_, '_> {
         })
     }
 
-    fn step(&mut self, c: &mut Creature, rng: &mut StdRng, dt: f32) {
+    fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, rng: &mut StdRng, dt: f32) {
         let block = self.block();
         let base_radius = self.geometry.base_radius as f32;
         let radius_of = move |altitude: f32| base_radius + altitude * block;
@@ -289,10 +308,10 @@ impl Walker<'_, '_> {
         // Marche : la colonne devant le museau décide si la voie est libre
         let (east, north) = tangent_frame(up);
         let heading = north * c.yaw.cos() + east * c.yaw.sin();
-        let distance = c.kind.walk_speed() * dt * block;
-        let probe = c.position + heading * (distance + c.kind.half_length() * block);
+        let distance = species.walk_speed * dt * block;
+        let probe = c.position + heading * (distance + species.body.half_length * block);
         let blocked = match self.ground(probe, altitude) {
-            Some((column, ahead)) => ahead < altitude - MAX_DROP_BLOCKS || !self.can_stand(column, c.kind.height()),
+            Some((column, ahead)) => ahead < altitude - MAX_DROP_BLOCKS || !self.can_stand(column, species.body.height),
             None => true,
         };
         if blocked {
@@ -312,6 +331,10 @@ mod tests {
     use super::*;
     use crate::cubed_sphere::PlanetDescriptor;
     use crate::edits::FACE_BLOCKS;
+
+    fn registry() -> Arc<CreatureRegistry> {
+        Arc::new(CreatureRegistry::load_default())
+    }
 
     fn generator() -> PlanetWorldGenerator {
         PlanetWorldGenerator::new(PlanetDescriptor { seed: 4242, ..Default::default() })
@@ -346,7 +369,7 @@ mod tests {
         let edits = TerrainEdits::new(None);
         let geometry = BlockGeometry::new(generator.base_radius());
         let (_, player) = grass_column(&generator, &edits);
-        let mut world = CreatureWorld::new(generator.base_radius(), 7);
+        let mut world = CreatureWorld::new(generator.base_radius(), 7, registry());
         // Une minute de jeu à 20 images par seconde
         let mut starts = HashMap::new();
         for _ in 0..1200 {
@@ -361,13 +384,13 @@ mod tests {
         let mut moved = 0;
         for c in world.creatures() {
             let block = c.position.distance(player) / geometry.block_height as f32;
-            assert!(block <= CREATURE_RANGE_BLOCKS, "{} à {block} blocs", c.kind.name());
+            assert!(block <= CREATURE_RANGE_BLOCKS, "{} à {block} blocs", c.species);
             // Debout sur le sol de sa colonne (ou en train d'y tomber), jamais dedans
             let column = geometry.block_at_point(c.position.as_dvec3()).unwrap();
             let alt = altitude(&geometry, c.position);
             let ground = query.support_top(column.face, column.x, column.z, (alt + 1.0).floor() as i32 - 1) as f32;
-            assert!(alt >= ground - 1e-3, "{} enfoncée dans le sol ({alt} < {ground})", c.kind.name());
-            assert!(!query.block(BlockPos { y: (alt + 1e-2).floor() as i32, ..column }).is_solid(), "{} dans un bloc ({alt})", c.kind.name());
+            assert!(alt >= ground - 1e-3, "{} enfoncée dans le sol ({alt} < {ground})", c.species);
+            assert!(!query.block(BlockPos { y: (alt + 1e-2).floor() as i32, ..column }).is_solid(), "{} dans un bloc ({alt})", c.species);
             if starts[&c.id].distance(c.position) > geometry.block_height as f32 {
                 moved += 1;
             }
@@ -380,8 +403,9 @@ mod tests {
         let generator = generator();
         let edits = TerrainEdits::new(None);
         let (_, feet) = grass_column(&generator, &edits);
-        let mut world = CreatureWorld::new(generator.base_radius(), 1);
-        world.spawn(CreatureKind::Sheep, feet);
+        let mut world = CreatureWorld::new(generator.base_radius(), 1, registry());
+        let sheep = world.registry().find("mouton").unwrap();
+        world.spawn(sheep, feet);
         world.tick(0.05, &generator, &edits, &[feet]);
         assert_eq!(world.creatures().len(), 1);
         world.tick(0.05, &generator, &edits, &[-feet]);
@@ -394,8 +418,9 @@ mod tests {
         let edits = TerrainEdits::new(None);
         let geometry = BlockGeometry::new(generator.base_radius());
         let (ground, feet) = grass_column(&generator, &edits);
-        let mut world = CreatureWorld::new(generator.base_radius(), 3);
-        world.spawn(CreatureKind::Boar, feet);
+        let mut world = CreatureWorld::new(generator.base_radius(), 3, registry());
+        let boar = world.registry().find("sanglier").unwrap();
+        world.spawn(boar, feet);
 
         // Mur de deux blocs tout autour : le sanglier ne passe pas, quel que soit son cap
         for (dx, dz) in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)] {

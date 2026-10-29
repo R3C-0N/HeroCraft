@@ -10,13 +10,14 @@ use std::io;
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use herocraft_common::lan::{LanAnnounce, LanAnnouncer};
 use herocraft_common::net::{encode_frame, Connection};
 use herocraft_common::{
-    fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureKind, CreatureState, PlayerClass, PlayerState,
+    fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, PlayerClass, PlayerState,
     ServerPacket, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
@@ -116,7 +117,7 @@ impl Server {
         };
         let edits = TerrainEdits::new(storage);
         let instance = random_instance();
-        let creatures = CreatureWorld::new(generator.base_radius(), config.seed ^ instance);
+        let creatures = CreatureWorld::new(generator.base_radius(), config.seed ^ instance, Arc::new(CreatureRegistry::load_default()));
 
         Ok(Self {
             listener,
@@ -164,9 +165,11 @@ impl Server {
         &self.creatures
     }
 
-    /// Fait apparaître une créature aux pieds `feet` (elle disparaîtra si aucun joueur n'est près)
-    pub fn spawn_creature(&mut self, kind: CreatureKind, feet: Vec3) -> u64 {
-        self.creatures.spawn(kind, feet)
+    /// Fait apparaître une créature de l'espèce `species` (nom de son fichier) aux pieds `feet` ;
+    /// elle disparaîtra si aucun joueur n'est près. `None` si l'espèce est inconnue.
+    pub fn spawn_creature(&mut self, species: &str, feet: Vec3) -> Option<u64> {
+        let species = self.creatures.registry().find(species)?;
+        Some(self.creatures.spawn(species, feet))
     }
 
     /// Le bloc à cette position, modifications des joueurs comprises
@@ -492,7 +495,7 @@ impl Server {
     /// celles qui en sortent (ou ont disparu) retirées, les autres ont leur position à jour
     fn send_creatures(&mut self) {
         let range = CREATURE_RANGE_BLOCKS * self.geometry.block_height as f32;
-        let creatures = self.creatures.creatures();
+        let (creatures, registry) = (self.creatures.creatures(), self.creatures.registry());
         for player in self.players.values_mut() {
             let Some(feet) = player.position else { continue };
             let mut visible = HashSet::new();
@@ -502,7 +505,8 @@ impl Server {
                 if player.known_creatures.contains(&creature.id) {
                     states.push(creature.state());
                 } else {
-                    player.connection.send(&ServerPacket::CreatureSpawned { kind: creature.kind, state: creature.state() });
+                    let species = registry.get(creature.species).map(|s| s.id.clone()).unwrap_or_default();
+                    player.connection.send(&ServerPacket::CreatureSpawned { species, state: creature.state() });
                 }
             }
             let gone: Vec<u64> = player.known_creatures.difference(&visible).copied().collect();

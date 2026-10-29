@@ -1,5 +1,5 @@
 use crate::character::CharacterStats;
-use crate::creature::{CreatureKind, CreatureState};
+use crate::creature::CreatureState;
 use crate::math::{PlanetChunkCoord, PlanetFace};
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
@@ -102,7 +102,8 @@ pub enum ServerPacket {
     PlayerStates(Vec<PlayerState>),
     /// Une créature entre dans le voisinage du joueur (elle vient d'apparaître, ou il s'en approche)
     CreatureSpawned {
-        kind: CreatureKind,
+        /// Identifiant de l'espèce (nom de son fichier dans `assets/creatures/`)
+        species: String,
         state: CreatureState,
     },
     /// Créatures sorties du voisinage du joueur, ou disparues

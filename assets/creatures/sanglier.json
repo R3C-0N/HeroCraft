@@ -1,0 +1,30 @@
+{
+  "name": "Sanglier",
+  "body": {"half_width": 0.35, "half_length": 0.6, "height": 0.9},
+  "walk_speed": 1.4,
+  "max_group": 3,
+  "spawn": [
+    {"biome": "Plains", "weight": 1},
+    {"biome": "Forest", "weight": 4},
+    {"biome": "Taiga", "weight": 1},
+    {"biome": "Savanna", "weight": 5},
+    {"biome": "Jungle", "weight": 7}
+  ],
+  "model": {
+    "parts": [
+      {"name": "corps", "from": [-5, 5, -9], "to": [5, 13, 7], "color": "#5a4130"},
+      {"name": "criniere", "from": [-2, 13, -6], "to": [2, 15, 5], "color": "#3a2a1e"},
+      {"name": "tete", "from": [-3.5, 5, 6], "to": [3.5, 12, 12], "color": "#4d3727", "pivot": [0, 10, 7], "swing": {"amplitude": 6, "phase": 0.25}},
+      {"name": "groin", "from": [-2, 5.5, 12], "to": [2, 8.5, 14], "color": "#c49a84", "pivot": [0, 10, 7], "swing": {"amplitude": 6, "phase": 0.25}},
+      {"name": "defense gauche", "from": [2, 7, 12], "to": [2.8, 9.5, 13], "color": "#efe6d2", "pivot": [0, 10, 7], "swing": {"amplitude": 6, "phase": 0.25}},
+      {"name": "defense droite", "from": [-2.8, 7, 12], "to": [-2, 9.5, 13], "color": "#efe6d2", "pivot": [0, 10, 7], "swing": {"amplitude": 6, "phase": 0.25}},
+      {"name": "oreille gauche", "from": [2, 12, 7], "to": [3.5, 14, 8.5], "color": "#3a2a1e", "pivot": [0, 10, 7], "swing": {"amplitude": 6, "phase": 0.25}},
+      {"name": "oreille droite", "from": [-3.5, 12, 7], "to": [-2, 14, 8.5], "color": "#3a2a1e", "pivot": [0, 10, 7], "swing": {"amplitude": 6, "phase": 0.25}},
+      {"name": "queue", "from": [-0.5, 10, -10], "to": [0.5, 12, -9], "color": "#3a2a1e", "pivot": [0, 12, -9.5], "swing": {"amplitude": 20, "phase": 0}},
+      {"name": "patte avant gauche", "from": [1.5, 0, 2.5], "to": [4, 5, 5], "color": "#3a2a1e", "swing": {"amplitude": 30, "phase": 0}},
+      {"name": "patte avant droite", "from": [-4, 0, 2.5], "to": [-1.5, 5, 5], "color": "#3a2a1e", "swing": {"amplitude": 30, "phase": 0.5}},
+      {"name": "patte arriere gauche", "from": [1.5, 0, -7], "to": [4, 5, -4.5], "color": "#3a2a1e", "swing": {"amplitude": 30, "phase": 0.5}},
+      {"name": "patte arriere droite", "from": [-4, 0, -7], "to": [-1.5, 5, -4.5], "color": "#3a2a1e", "swing": {"amplitude": 30, "phase": 0}}
+    ]
+  }
+}

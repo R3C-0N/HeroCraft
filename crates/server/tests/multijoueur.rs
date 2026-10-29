@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use herocraft_common::net::Connection;
 use glam::Vec3;
-use herocraft_common::{BlockId, BlockInteractionAction, ClientPacket, CreatureKind, PlanetFace, ServerPacket, PROTOCOL_VERSION};
+use herocraft_common::{BlockId, BlockInteractionAction, ClientPacket, PlanetFace, ServerPacket, PROTOCOL_VERSION};
 use herocraft_server::{Server, ServerConfig};
 use herocraft_world::{BlockGeometry, BlockPos, WORLD_HEIGHT};
 
@@ -182,12 +182,12 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
     }
 
     // Un mouton à ses pieds : il lui est annoncé, puis sa position suit
-    let sheep = server.spawn_creature(CreatureKind::Sheep, feet);
-    let (kind, state) = pump(&mut server, &alice, |p| match p {
-        ServerPacket::CreatureSpawned { kind, state } if state.creature_id == sheep => Some((kind, state)),
+    let sheep = server.spawn_creature("mouton", feet).expect("espèce mouton");
+    let (species, state) = pump(&mut server, &alice, |p| match p {
+        ServerPacket::CreatureSpawned { species, state } if state.creature_id == sheep => Some((species, state)),
         _ => None,
     });
-    assert_eq!(kind, CreatureKind::Sheep);
+    assert_eq!(species, "mouton");
     assert!(state.position.distance(feet) < 1e-3);
     pump(&mut server, &alice, |p| match p {
         ServerPacket::CreatureStates(states) => states.into_iter().find(|s| s.creature_id == sheep),

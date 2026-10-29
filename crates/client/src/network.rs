@@ -17,13 +17,14 @@ use glam::Vec3;
 use herocraft_common::net::Connection;
 use herocraft_server::{Server, ServerConfig};
 use herocraft_common::{
-    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureKind, PlanetChunkCoord, ServerPacket, PROTOCOL_VERSION,
+    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, PlanetChunkCoord, ServerPacket, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkData;
 use herocraft_world::{BlockGeometry, BlockPos};
 use log::{info, warn};
 
 use crate::camera::{CameraViewMode, OrbitCamera, PLAYER_HALF_WIDTH};
+use crate::creatures::CreatureView;
 
 /// Délai de connexion et d'accueil (graine et chunks modifiés)
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -278,7 +279,8 @@ impl RemotePlayer {
 
 /// Une créature du voisinage, telle qu'affichée
 pub struct RemoteCreature {
-    pub kind: CreatureKind,
+    /// Identifiant de son espèce (nom de son fichier)
+    pub species: String,
     /// Pieds et cap affichés, recalculés à chaque frame par `poll`
     pub position: Option<(Vec3, f32)>,
     track: Track,
@@ -370,10 +372,10 @@ impl NetClient {
                     }
                 }
             }
-            ServerPacket::CreatureSpawned { kind, state } => {
+            ServerPacket::CreatureSpawned { species, state } => {
                 let mut track = Track::default();
                 track.push(at, state.position, state.yaw);
-                self.creatures.insert(state.creature_id, RemoteCreature { kind, position: None, track });
+                self.creatures.insert(state.creature_id, RemoteCreature { species, position: None, track });
             }
             ServerPacket::CreaturesDespawned(ids) => {
                 for id in ids {
@@ -444,9 +446,15 @@ impl NetClient {
             .collect()
     }
 
-    /// Silhouettes des créatures du voisinage, avec leur couleur
-    pub fn creature_boxes(&self, base_radius: f32) -> Vec<crate::block_outline::ColoredBox> {
-        crate::creatures::boxes(self.creatures.values().filter_map(|c| c.position.map(|(p, yaw)| (c.kind, p, yaw))), base_radius)
+    /// Créatures du voisinage à dessiner, leur espèce cherchée dans `registry`
+    pub fn creature_views(&self, registry: &CreatureRegistry) -> Vec<CreatureView> {
+        self.creatures
+            .iter()
+            .filter_map(|(&id, c)| {
+                let (feet, yaw) = c.position?;
+                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw })
+            })
+            .collect()
     }
 }
 
