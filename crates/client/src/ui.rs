@@ -739,14 +739,14 @@ impl UiState {
                 }
             }
 
-            // 2. Panneau HUD supérieur gauche (planète, actions, filtres), masqué sous le menu
-            // et l'inventaire
-            if !self.is_settings_open && !self.inventory_open {
+            // 2. Panneau HUD supérieur gauche (planète, actions, filtres), en vue satellite seulement :
+            // au sol, ses actions restent au clavier et dans le menu Échap
+            if !is_ground && !self.is_settings_open && !self.inventory_open {
                 self.draw_world_hud(ctx, is_ground, &mut action);
             }
 
-            // Jauges du joueur en bas de l'écran, au sol, et voile rouge après une blessure ;
-            // barre d'objets juste au-dessus, écran d'inventaire par-dessus le jeu
+            // Au sol : classe en bas à gauche, jauges en bas à droite, voile rouge après une
+            // blessure, barre d'objets au centre et écran d'inventaire par-dessus le jeu
             if is_ground && !self.is_settings_open {
                 self.draw_vitals_hud(ctx);
                 if self.inventory_open {
@@ -777,10 +777,7 @@ impl UiState {
     /// s'affiche au-dessus
     fn draw_hotbar(&self, ctx: &egui::Context) {
         let screen = ctx.screen_rect();
-        // Au-dessus des jauges du joueur quand elles sont affichées
-        let bottom = ctx
-            .memory(|m| m.area_rect(egui::Id::new("vitals_hud")))
-            .map_or(screen.bottom() - SCREEN_MARGIN, |vitals| vitals.top() - 6.0_f32);
+        let bottom = screen.bottom() - SCREEN_MARGIN;
         egui::Area::new(egui::Id::new("hotbar"))
             .order(egui::Order::Background)
             .pivot(egui::Align2::CENTER_BOTTOM)
@@ -1002,35 +999,42 @@ impl UiState {
         }
 
         let screen = ctx.screen_rect();
-        egui::Area::new(egui::Id::new("vitals_hud"))
-            .pivot(egui::Align2::CENTER_BOTTOM)
-            .fixed_pos(egui::pos2(screen.center().x, screen.bottom() - SCREEN_MARGIN))
+        // Classe, niveau et expérience en bas à gauche
+        egui::Area::new(egui::Id::new("class_hud"))
+            .order(egui::Order::Background)
+            .pivot(egui::Align2::LEFT_BOTTOM)
+            .fixed_pos(egui::pos2(SCREEN_MARGIN, screen.bottom() - SCREEN_MARGIN))
             .interactable(false)
             .show(ctx, |ui| {
-                hud_frame().inner_margin(egui::Margin::same(8.0_f32)).show(ui, |ui| {
-                    ui.spacing_mut().item_spacing = egui::vec2(8.0_f32, 5.0_f32);
-                    ui.set_width(3.0_f32 * GAUGE_WIDTH + 2.0_f32 * 8.0_f32);
+                hud_frame().inner_margin(egui::Margin::symmetric(10.0_f32, 6.0_f32)).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(8.0_f32, 4.0_f32);
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(stats.class.label()).strong().color(GOLD_BRIGHT));
                         ui.label(egui::RichText::new(format!("Niv. {}", stats.level)).color(TEXT_SOFT));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let next = stats.exp_for_next_level();
-                            ui.label(egui::RichText::new(format!("{} / {} XP", stats.experience, next)).size(11.0_f32).color(TEXT_DIM));
-                            gauge(ui, 90.0_f32, 6.0_f32, stats.experience as f32 / next.max(1) as f32, GOLD, None);
-                        });
                     });
-                    ui.horizontal(|ui| {
-                        let gauges = [
-                            ("Vie", stats.hp, stats.max_hp, egui::Color32::from_rgb(200, 45, 45)),
-                            ("Mana", stats.mana, stats.max_mana, egui::Color32::from_rgb(55, 105, 220)),
-                            ("Endurance", stats.stamina, stats.max_stamina, egui::Color32::from_rgb(70, 175, 70)),
-                        ];
-                        for (name, value, max, color) in gauges {
-                            let text = format!("{name}  {:.0} / {:.0}", value.max(0.0_f32).ceil(), max);
-                            gauge(ui, GAUGE_WIDTH, 16.0_f32, value / max.max(1.0_f32), color, Some(&text));
-                        }
-                    });
+                    let next = stats.exp_for_next_level();
+                    gauge(ui, 120.0_f32, 6.0_f32, stats.experience as f32 / next.max(1) as f32, GOLD, None);
+                    ui.label(egui::RichText::new(format!("{} / {} XP", stats.experience, next)).size(11.0_f32).color(TEXT_DIM));
                 });
+            });
+
+        // Vie, mana et endurance empilées en bas à droite, sans cadre
+        egui::Area::new(egui::Id::new("vitals_hud"))
+            .order(egui::Order::Background)
+            .pivot(egui::Align2::RIGHT_BOTTOM)
+            .fixed_pos(egui::pos2(screen.right() - SCREEN_MARGIN, screen.bottom() - SCREEN_MARGIN))
+            .interactable(false)
+            .show(ctx, |ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(0.0_f32, 5.0_f32);
+                let gauges = [
+                    ("Vie", stats.hp, stats.max_hp, egui::Color32::from_rgb(200, 45, 45)),
+                    ("Mana", stats.mana, stats.max_mana, egui::Color32::from_rgb(55, 105, 220)),
+                    ("Endurance", stats.stamina, stats.max_stamina, egui::Color32::from_rgb(70, 175, 70)),
+                ];
+                for (name, value, max, color) in gauges {
+                    let text = format!("{name}  {:.0} / {:.0}", value.max(0.0_f32).ceil(), max);
+                    gauge(ui, GAUGE_WIDTH, 16.0_f32, value / max.max(1.0_f32), color, Some(&text));
+                }
             });
     }
 
@@ -2194,8 +2198,11 @@ mod tests {
         }
         let hotbar = ui.ctx.memory(|m| m.area_rect(egui::Id::new("hotbar"))).expect("barre d'objets dessinée");
         assert!(hotbar.bottom() <= 720.0 && hotbar.left() >= 0.0 && hotbar.right() <= 1280.0, "{:?}", hotbar);
-        let vitals = ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).expect("jauges dessinées");
-        assert!(hotbar.bottom() <= vitals.top(), "la barre d'objets passe au-dessus des jauges : {:?} / {:?}", hotbar, vitals);
+        // Ni les jauges (à droite) ni la classe (à gauche) ne chevauchent la barre d'objets
+        for id in ["vitals_hud", "class_hud"] {
+            let other = ui.ctx.memory(|m| m.area_rect(egui::Id::new(id))).expect("HUD du joueur dessiné");
+            assert!(!other.intersects(hotbar), "{id} chevauche la barre d'objets : {:?} / {:?}", other, hotbar);
+        }
         assert!(hotbar.top() > 360.0, "{:?}", hotbar);
 
         ui.set_inventory_open(true);
@@ -2218,6 +2225,11 @@ mod tests {
         let rect = ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).expect("jauges dessinées");
         assert!(rect.bottom() <= 720.0 && rect.top() > 360.0, "{:?}", rect);
         assert!(rect.width() < 640.0, "{:?}", rect);
+        assert!(rect.left() > 640.0, "jauges à droite : {:?}", rect);
+        let class = ui.ctx.memory(|m| m.area_rect(egui::Id::new("class_hud"))).expect("classe dessinée");
+        assert!(class.right() < 640.0 && class.bottom() <= 720.0, "classe à gauche : {:?}", class);
+        // Au sol, plus de panneau en haut à gauche
+        assert!(ui.ctx.memory(|m| m.area_rect(egui::Id::new("top_left_hud"))).is_none());
 
         let mut ui = UiState::new(1);
         for _ in 0..3 {
