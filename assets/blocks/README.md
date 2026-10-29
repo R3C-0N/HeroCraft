@@ -29,7 +29,7 @@ Les 135 blocs actuels viennent des modules de la branche `develop` (`CoreAssets`
 | `numeric_id` | Numéro du bloc dans les chunks, le réseau et les sauvegardes, de 1 à 16383 (0 est l'air). **Ne plus le changer** une fois des mondes enregistrés : un bloc posé y est noté par ce numéro. Les numéros 1 à 13 sont ceux que pose le générateur de terrain (pierre, terre, herbe, sable, neige, eau, lave, tronc, feuilles, minerais de fer et d'or, cristal, obsidienne). |
 | `name`, `description` | Nom affiché et description (bulle de l'inventaire). |
 | `category` | Rubrique du catalogue (`Minéraux`, `Sols`, `Flore`, `Construction`…). |
-| `hardness` | Dureté, celle des modules d'origine (1 pour une fleur, 14 pour la pierre). Pas encore utilisée : tout se casse d'un clic. |
+| `hardness` | Dureté, celle des modules d'origine (1 pour une fleur, 14 pour la pierre). Le bloc se casse en un dixième de seconde par point de dureté (les blocs du terrain ont leurs propres temps). |
 | `color` | Couleur des faces dans le terrain : `side` pour les côtés et le dessous, `top` pour le dessus (celle des côtés à défaut). `#rrggbb`, ou `#rrggbbaa` pour une face translucide. |
 | `textures` | Textures PNG des faces, chemins depuis ce dossier : `side`, et au besoin `top` et `bottom`. Elles dessinent l'icône de l'inventaire ; le terrain n'utilise encore que les couleurs. |
 | `texture_tint` | Teinte appliquée aux textures grises (herbe, feuillages), `#rrggbb`. |

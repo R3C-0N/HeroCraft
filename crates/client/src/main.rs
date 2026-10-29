@@ -12,6 +12,7 @@ use winit::{
 
 mod atmosphere;
 mod audio;
+mod block_cracks;
 mod block_interaction;
 mod block_outline;
 mod camera;
@@ -38,7 +39,7 @@ mod skinned_model;
 mod ui;
 mod voxel_mesh;
 
-use block_interaction::{BlockAction, BlockInteraction};
+use block_interaction::BlockInteraction;
 use camera::OrbitCamera;
 use input::Action;
 use lod::PlanetLodManager;
@@ -253,15 +254,12 @@ fn main() {
                     // Souris capturée, les clics restent libres pour l'interaction avec les blocs.
                     WindowEvent::MouseInput { state: btn_state, button, .. } => {
                         if cursor_captured {
-                            // Appliqué et remaillé sur-le-champ : le bloc change dans la frame qui suit le clic
+                            // Pose appliquée et remaillée sur-le-champ : le bloc change dans la frame qui
+                            // suit le clic. Le clic gauche (casse, coup à une bête) avance à chaque frame.
                             let pressed = *btn_state == ElementState::Pressed;
                             if let Some(action) = block_interaction.on_mouse_button(*button, pressed) {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
-                                // Une bête devant le bloc visé : c'est elle qu'on frappe
-                                let aimed = aimed_creature(&camera, &block_interaction, &creature_views, &creature_registry).filter(|_| action == BlockAction::Break);
-                                if let Some(id) = aimed {
-                                    hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut audio, &ui_state.audio_settings);
-                                } else if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
+                                if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
                                     block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
                                     drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
                                     state.sync_lod_meshes(&lod_manager);
@@ -409,7 +407,9 @@ fn main() {
                         if ui_state.inventory_open && camera.target_distance > camera.base_radius {
                             ui_state.set_inventory_open(false);
                         }
+                        // Mort : la souris est libérée pour le bouton de réapparition
                         let want_capture = window_focused
+                            && !ui_state.player.is_dead()
                             && !ui_state.is_settings_open
                             && !ui_state.inventory_open
                             && camera.target_distance <= camera.base_radius;
@@ -429,15 +429,21 @@ fn main() {
                             herocraft_common::prof_scope!("frame::camera_update");
                             camera.update(dt, &generator);
                             // Jauges du joueur, chute terminée : dommages (signalés au serveur en
-                            // ligne) et, si elle tue, retour au point d'apparition
+                            // ligne), vue secouée et, si elle tue, écran de mort
                             ui_state.player.tick(dt, &mut camera);
                             if let Some(blocks) = camera.take_landing() {
                                 if let Some(client) = net.as_mut() {
                                     client.send_fall(blocks);
                                 }
-                                if ui_state.player.fall(blocks) {
-                                    info!("Mort après une chute de {:.0} blocs : retour au point d'apparition.", blocks);
-                                    camera.spawn_on_ground(&generator);
+                                let hurt = ui_state.player.fall(blocks);
+                                if hurt > 0.0 {
+                                    camera.hurt(hurt);
+                                    audio.player_hurt(hurt, &ui_state.audio_settings);
+                                }
+                                if ui_state.player.is_dead() && !camera.is_dead {
+                                    info!("Mort après une chute de {:.0} blocs.", blocks);
+                                    camera.is_dead = true;
+                                    ui_state.set_inventory_open(false);
                                 }
                             }
                         }
@@ -458,10 +464,19 @@ fn main() {
                             let edits = lod_manager.terrain_edits().clone();
                             block_interaction.update_target(&camera, &generator, &edits);
                             aimed = aimed_creature(&camera, &block_interaction, &creature_views, &creature_registry);
-                            if let Some(action) = block_interaction.tick(dt) {
-                                if let Some(id) = aimed.filter(|_| action == BlockAction::Break) {
-                                    hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut audio, &ui_state.audio_settings);
-                                } else if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
+                            // Une bête devant le bloc visé : c'est elle qu'on frappe, au rythme des
+                            // coups, et le bloc derrière elle ne se fissure pas
+                            let striking = aimed.filter(|_| block_interaction.is_breaking_held());
+                            if let Some(id) = striking {
+                                block_interaction.pause_mining();
+                                hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut audio, &ui_state.audio_settings);
+                            }
+                            let action = if striking.is_some() { None } else { block_interaction.tick(dt) };
+                            if let Some(block) = block_interaction.take_hit() {
+                                audio.block_hit(audio::synth::Material::of(block), &ui_state.audio_settings);
+                            }
+                            if let Some(action) = action {
+                                if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
                                     block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
                                     drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
                                     terrain_edited = true;
@@ -616,8 +631,9 @@ fn main() {
                         }
                         {
                             herocraft_common::prof_scope!("blocs::contour");
-                            // Une bête visée cache le contour du bloc derrière elle
+                            // Une bête visée cache le contour et les fissures du bloc derrière elle
                             state.set_block_outline(block_interaction.outline(&camera).filter(|_| aimed.is_none()));
+                            state.set_block_cracks(block_interaction.cracks(&camera).filter(|_| aimed.is_none()));
                         }
                         if last_autosave.elapsed().as_secs() >= 30 {
                             save_terrain_edits(&lod_manager);
@@ -645,6 +661,12 @@ fn main() {
                             herocraft_common::prof_scope!("frame::ui_action");
                             match action {
                                 UiAction::PreviewSound => audio.preview(&ui_state.audio_settings),
+                                UiAction::Respawn => {
+                                    ui_state.player.respawn();
+                                    camera.spawn_on_ground(&generator);
+                                    audio.reset_player();
+                                    info!("Réapparition au point d'apparition.");
+                                }
                                 UiAction::ResumeGame => {
                                     ui_state.set_settings_open(false);
                                     info!("Bouton cliqué : Reprise de la partie.");
@@ -951,6 +973,9 @@ fn switch_planet(
     camera.set_terrain(edits.clone());
     lod_manager.set_terrain_edits(edits);
     camera.spawn_on_ground(generator);
+    if ui_state.player.is_dead() {
+        ui_state.player.respawn();
+    }
     lod_manager.update(camera.eye_position(), generator, chunk_cache, 0.0, None);
     state.sync_lod_meshes(lod_manager);
     state.update_cloud_mesh(camera.base_radius, seed);
@@ -973,6 +998,13 @@ fn game_key(
     zoom_modifier_held: &mut bool,
 ) {
     let is_ground_view = camera.target_distance <= camera.base_radius;
+    if ui_state.player.is_dead() {
+        // Mort : seul Saut sert, à réapparaître une fois l'écran de mort passé
+        if action == Action::Jump && first_press && ui_state.player.respawn_in() == Some(0.0) {
+            pending_actions.push(UiAction::Respawn);
+        }
+        return;
+    }
     match action {
         Action::MoveForward => camera.move_forward = is_pressed,
         Action::MoveBackward => camera.move_backward = is_pressed,
