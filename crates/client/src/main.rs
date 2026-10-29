@@ -18,6 +18,7 @@ mod cloud_mesh;
 mod collision;
 mod gpu_timer;
 mod input;
+mod keyboard_hook;
 mod lod;
 mod monitor;
 mod network;
@@ -141,6 +142,7 @@ fn main() {
 
     // Gestion des entrées : souris capturée en jeu, glisser en vue satellite
     let mut cursor_captured = false;
+    keyboard_hook::install(&window);
     let mut window_focused = true;
     let mut modifiers = ModifiersState::empty();
     let mut zoom_modifier_held = false;
@@ -201,6 +203,7 @@ fn main() {
                         window_focused = *focused;
                         if !focused {
                             // Alt+Tab : les relâchements de touches n'arriveront pas
+                            keyboard_hook::set_capture(None);
                             camera.release_inputs();
                             zoom_modifier_held = false;
                             is_dragging = false;
@@ -302,48 +305,7 @@ fn main() {
                         } else if !ui_state.is_settings_open {
                             // En jeu normal (menu fermé) : déplacements et raccourcis selon les touches attribuées
                             let Some(action) = ui_state.controls.action_for(key_code) else { return };
-                            let is_ground_view = camera.target_distance <= camera.base_radius;
-                            let first_press = is_pressed && !*repeat;
-                            match action {
-                                Action::MoveForward => camera.move_forward = is_pressed,
-                                Action::MoveBackward => camera.move_backward = is_pressed,
-                                Action::MoveLeft => camera.move_left = is_pressed,
-                                Action::MoveRight => camera.move_right = is_pressed,
-                                Action::Sprint => camera.is_sprinting = is_pressed,
-                                Action::Descend => camera.descend_held = is_pressed,
-                                Action::ZoomModifier => zoom_modifier_held = is_pressed,
-                                Action::Jump => {
-                                    camera.ascend_held = is_pressed;
-                                    if first_press {
-                                        if !is_ground_view {
-                                            pending_actions.push(UiAction::ToggleAutoRotate);
-                                        } else if jump_tap.press(Instant::now()) {
-                                            camera.toggle_flight();
-                                            info!("Double [Saut] : vol {}", if camera.is_flying { "ACTIVÉ" } else { "DÉSACTIVÉ" });
-                                        } else {
-                                            camera.jump_requested = true;
-                                        }
-                                    }
-                                }
-                                Action::ToggleView if first_press => pending_actions.push(UiAction::ToggleGroundCamera),
-                                Action::ResetView if first_press => pending_actions.push(UiAction::ResetCamera),
-                                Action::NewPlanet if first_press => pending_actions.push(UiAction::GenerateNewPlanet),
-                                Action::ToggleTectonics if first_press => {
-                                    ui_state.show_tectonics = !ui_state.show_tectonics;
-                                    if ui_state.show_tectonics {
-                                        ui_state.show_ocean_currents = false;
-                                    }
-                                    pending_actions.push(UiAction::ToggleTectonics);
-                                }
-                                Action::ToggleOceanCurrents if first_press => {
-                                    ui_state.show_ocean_currents = !ui_state.show_ocean_currents;
-                                    if ui_state.show_ocean_currents {
-                                        ui_state.show_tectonics = false;
-                                    }
-                                    pending_actions.push(UiAction::ToggleOceanCurrents);
-                                }
-                                _ => {}
-                            }
+                            game_key(action, is_pressed, is_pressed && !*repeat, &mut camera, &mut ui_state, &mut pending_actions, &mut jump_tap, &mut zoom_modifier_held);
                         }
                     }
 
@@ -363,6 +325,14 @@ fn main() {
                             fps_timer = now;
                         }
 
+                        // Touches prises aux autres programmes par le crochet clavier depuis l'image précédente
+                        for hooked in keyboard_hook::drain() {
+                            if let (false, Some(action)) = (ui_state.is_settings_open, ui_state.controls.action_for(hooked.key)) {
+                                let first_press = hooked.pressed && !hooked.repeat;
+                                game_key(action, hooked.pressed, first_press, &mut camera, &mut ui_state, &mut pending_actions, &mut jump_tap, &mut zoom_modifier_held);
+                            }
+                        }
+
                         // Souris capturée en jeu (au sol ou en 3e personne) ; le menu, la vue satellite
                         // et la perte du focus la libèrent
                         let want_capture = window_focused
@@ -371,6 +341,10 @@ fn main() {
                         if want_capture != cursor_captured {
                             cursor_captured = want_capture;
                             set_cursor_captured(&window, want_capture);
+                            let controls = &ui_state.controls;
+                            keyboard_hook::set_capture(
+                                want_capture.then(|| keyboard_hook::interceptable(Action::ALL.map(|a| controls.key(a)))),
+                            );
                             ui_state.set_pointer_captured(want_capture);
                             is_dragging = false;
                         }
@@ -752,6 +726,61 @@ fn switch_planet(
     state.sync_lod_meshes(lod_manager);
     state.update_cloud_mesh(camera.base_radius, seed);
     ui_state.set_seed(seed);
+}
+
+/// Touche attribuée à une action, en jeu (menu fermé) : lue par la fenêtre ou par le crochet clavier
+#[allow(clippy::too_many_arguments)]
+fn game_key(
+    action: Action,
+    is_pressed: bool,
+    first_press: bool,
+    camera: &mut OrbitCamera,
+    ui_state: &mut UiState,
+    pending_actions: &mut Vec<UiAction>,
+    jump_tap: &mut input::DoubleTap,
+    zoom_modifier_held: &mut bool,
+) {
+    let is_ground_view = camera.target_distance <= camera.base_radius;
+    match action {
+        Action::MoveForward => camera.move_forward = is_pressed,
+        Action::MoveBackward => camera.move_backward = is_pressed,
+        Action::MoveLeft => camera.move_left = is_pressed,
+        Action::MoveRight => camera.move_right = is_pressed,
+        Action::Sprint => camera.is_sprinting = is_pressed,
+        Action::Descend => camera.descend_held = is_pressed,
+        Action::ZoomModifier => *zoom_modifier_held = is_pressed,
+        Action::Jump => {
+            camera.ascend_held = is_pressed;
+            if first_press {
+                if !is_ground_view {
+                    pending_actions.push(UiAction::ToggleAutoRotate);
+                } else if jump_tap.press(Instant::now()) {
+                    camera.toggle_flight();
+                    info!("Double [Saut] : vol {}", if camera.is_flying { "ACTIVÉ" } else { "DÉSACTIVÉ" });
+                } else {
+                    camera.jump_requested = true;
+                }
+            }
+        }
+        Action::ToggleView if first_press => pending_actions.push(UiAction::ToggleGroundCamera),
+        Action::ResetView if first_press => pending_actions.push(UiAction::ResetCamera),
+        Action::NewPlanet if first_press => pending_actions.push(UiAction::GenerateNewPlanet),
+        Action::ToggleTectonics if first_press => {
+            ui_state.show_tectonics = !ui_state.show_tectonics;
+            if ui_state.show_tectonics {
+                ui_state.show_ocean_currents = false;
+            }
+            pending_actions.push(UiAction::ToggleTectonics);
+        }
+        Action::ToggleOceanCurrents if first_press => {
+            ui_state.show_ocean_currents = !ui_state.show_ocean_currents;
+            if ui_state.show_ocean_currents {
+                ui_state.show_tectonics = false;
+            }
+            pending_actions.push(UiAction::ToggleOceanCurrents);
+        }
+        _ => {}
+    }
 }
 
 /// Capture la souris (cachée, bloquée dans la fenêtre) ou la libère au centre de la fenêtre
