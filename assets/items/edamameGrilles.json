@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16850,
+  "name": "Edamame grillés",
+  "description": "Se mange au clic droit. Rassasie de 10.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/edamameGrilles.png",
+  "stats": {"Satiété": 10}
+}

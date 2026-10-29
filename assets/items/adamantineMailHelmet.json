@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16562,
+  "name": "Capuche d'adamantine",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/adamantineMailHelmet.png",
+  "stats": {"Protection": 12, "Durabilité": 3000}
+}

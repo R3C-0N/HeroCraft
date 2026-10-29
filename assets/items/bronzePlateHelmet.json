@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16586,
+  "name": "Heaume de bronze",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/bronzePlateHelmet.png",
+  "stats": {"Protection": 8, "Durabilité": 500}
+}

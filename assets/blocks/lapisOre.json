@@ -1,0 +1,8 @@
+{
+  "numeric_id": 125,
+  "name": "Minerai de lapis-lazuli",
+  "category": "Minéraux",
+  "hardness": 24,
+  "color": {"side": "#a19fa2"},
+  "textures": {"side": "textures/LapisOre.png"}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16460,
+  "name": "Flèche d'étherium (orichalque)",
+  "category": "Armes",
+  "max_stack": 99,
+  "icon": "icones/etheriumOrichalcumArrow.png",
+  "stats": {"Dégâts": 18}
+}

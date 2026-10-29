@@ -1,0 +1,9 @@
+{
+  "numeric_id": 14,
+  "name": "Tronc de bouleau",
+  "category": "Arbres",
+  "hardness": 10,
+  "color": {"top": "#c8baa2", "side": "#d9d3c5"},
+  "textures": {"top": "textures/BirchTrunkTopBottom.png", "side": "textures/BirchTrunkSides.png", "bottom": "textures/BirchTrunkTopBottom.png"},
+  "sound": "wood"
+}

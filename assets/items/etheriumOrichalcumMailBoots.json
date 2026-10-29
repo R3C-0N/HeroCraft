@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16628,
+  "name": "Bottines d'étherium (orichalque)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumMailBoots.png",
+  "stats": {"Protection": 12, "Durabilité": 5000}
+}

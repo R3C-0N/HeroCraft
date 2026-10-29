@@ -1,0 +1,9 @@
+{
+  "numeric_id": 19,
+  "name": "Forge astrale",
+  "category": "Ateliers",
+  "hardness": 10,
+  "color": {"top": "#3e414f", "side": "#2b303e"},
+  "textures": {"top": "textures/AstralForgeTop.png", "side": "textures/AstralForge.png"},
+  "sound": "wood"
+}

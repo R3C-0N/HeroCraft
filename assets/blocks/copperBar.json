@@ -1,0 +1,8 @@
+{
+  "numeric_id": 30,
+  "name": "Bloc de cuivre",
+  "category": "Construction",
+  "hardness": 22,
+  "color": {"side": "#c88c64"},
+  "textures": {"side": "textures/CopperBar.png"}
+}

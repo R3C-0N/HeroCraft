@@ -1,0 +1,9 @@
+{
+  "numeric_id": 134,
+  "name": "Peat",
+  "category": "Sols",
+  "hardness": 9,
+  "color": {"side": "#79624b"},
+  "textures": {"side": "textures/Peat.png"},
+  "sound": "dirt"
+}

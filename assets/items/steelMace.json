@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16542,
+  "name": "Masse d'acier",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/steelMace.png",
+  "stats": {"Dégâts": 15, "Durabilité": 2000}
+}

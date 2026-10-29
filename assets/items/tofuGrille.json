@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16877,
+  "name": "Tofu grillé",
+  "description": "Se mange au clic droit. Rassasie de 30.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/tofuGrille.png",
+  "stats": {"Satiété": 30}
+}

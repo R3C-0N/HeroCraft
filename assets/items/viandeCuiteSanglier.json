@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16778,
+  "name": "Viande cuite de sanglier",
+  "description": "Se mange au clic droit. Rassasie de 30.",
+  "category": "Nourriture",
+  "max_stack": 99,
+  "icon": "icones/viandeCuiteSanglier.png",
+  "stats": {"Satiété": 30}
+}

@@ -1,0 +1,11 @@
+{
+  "numeric_id": 61,
+  "name": "Carotte — jeune pousse",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#438d26"},
+  "textures": {"side": "textures/CarotteStade2.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

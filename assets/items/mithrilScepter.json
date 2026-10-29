@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16513,
+  "name": "Sceptre de mithril",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/mithrilScepter.png",
+  "stats": {"Dégâts": 11, "Durabilité": 3000}
+}

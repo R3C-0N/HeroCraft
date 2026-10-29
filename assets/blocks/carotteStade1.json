@@ -1,0 +1,11 @@
+{
+  "numeric_id": 60,
+  "name": "Carotte — semis",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#4e9d28"},
+  "textures": {"side": "textures/CarotteStade1.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

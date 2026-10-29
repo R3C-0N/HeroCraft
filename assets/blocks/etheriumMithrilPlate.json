@@ -1,0 +1,8 @@
+{
+  "numeric_id": 37,
+  "name": "Plaques de étherium (mithril)",
+  "category": "Construction",
+  "hardness": 55,
+  "color": {"side": "#94d7e5"},
+  "textures": {"side": "textures/EtheriumMithrilPlate.png"}
+}

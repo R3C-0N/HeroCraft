@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16687,
+  "name": "Jambières en planches",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/plankLeggings.png",
+  "stats": {"Protection": 2, "Durabilité": 80}
+}

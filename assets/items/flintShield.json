@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16483,
+  "name": "Bouclier renforcé de silex",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/flintShield.png",
+  "stats": {"Dégâts": 2, "Durabilité": 150}
+}

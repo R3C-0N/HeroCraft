@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16824,
+  "name": "Couteau en mithril",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/mithrilKnife.png",
+  "stats": {"Dégâts": 8, "Durabilité": 3000}
+}

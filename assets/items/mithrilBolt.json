@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16507,
+  "name": "Carreau de mithril",
+  "category": "Armes",
+  "max_stack": 99,
+  "icon": "icones/mithrilBolt.png",
+  "stats": {"Dégâts": 11}
+}

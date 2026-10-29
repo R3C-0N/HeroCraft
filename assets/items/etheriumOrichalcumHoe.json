@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16808,
+  "name": "Houe en étherium (orichalque)",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumHoe.png",
+  "stats": {"Dégâts": 7, "Durabilité": 5000}
+}

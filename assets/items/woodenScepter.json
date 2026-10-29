@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16556,
+  "name": "Sceptre de bois",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/woodenScepter.png",
+  "stats": {"Dégâts": 1, "Durabilité": 80}
+}

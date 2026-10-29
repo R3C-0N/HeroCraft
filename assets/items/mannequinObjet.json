@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16899,
+  "name": "Mannequin d'entraînement",
+  "description": "Se pose au sol comme un bloc et se ramasse à la main.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/mannequinObjet.png"
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16390,
+  "name": "Marteau d'adamantine",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/adamantineMallet.png",
+  "stats": {"Dégâts": 24, "Durabilité": 3000}
+}

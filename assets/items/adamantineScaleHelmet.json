@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16570,
+  "name": "Camail d'adamantine",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/adamantineScaleHelmet.png",
+  "stats": {"Protection": 15, "Durabilité": 3000}
+}

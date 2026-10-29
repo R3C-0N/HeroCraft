@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16485,
+  "name": "Lance en silex",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/flintSpear.png",
+  "stats": {"Dégâts": 7, "Durabilité": 150}
+}

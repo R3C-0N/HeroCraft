@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16895,
+  "name": "Totem : gorgone florale",
+  "description": "Posé au sol, fait apparaître une gorgone florale.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/gorgoneTotem.png"
+}

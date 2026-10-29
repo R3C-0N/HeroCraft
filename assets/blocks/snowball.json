@@ -1,0 +1,9 @@
+{
+  "numeric_id": 135,
+  "name": "Snowball",
+  "category": "Sols",
+  "hardness": 9,
+  "color": {"side": "#f5f6f8"},
+  "textures": {"side": "textures/Snow.png"},
+  "sound": "snow"
+}

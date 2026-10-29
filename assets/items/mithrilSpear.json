@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16516,
+  "name": "Lance de mithril",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/mithrilSpear.png",
+  "stats": {"Dégâts": 20, "Durabilité": 3000}
+}

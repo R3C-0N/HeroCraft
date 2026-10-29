@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16900,
+  "name": "Totem : mille-pattes géant",
+  "description": "Posé au sol, fait apparaître un mille-pattes géant.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/millepattesTotem.png"
+}

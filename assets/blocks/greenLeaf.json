@@ -1,0 +1,11 @@
+{
+  "numeric_id": 9,
+  "name": "Feuilles",
+  "category": "Arbres",
+  "hardness": 1,
+  "color": {"side": "#247029"},
+  "textures": {"side": "textures/GreenLeaf.png"},
+  "texture_tint": "#73c754",
+  "opaque": false,
+  "sound": "grass"
+}

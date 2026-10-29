@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16567,
+  "name": "Grèves d'adamantine",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/adamantinePlateLeggings.png",
+  "stats": {"Protection": 24, "Durabilité": 3000}
+}

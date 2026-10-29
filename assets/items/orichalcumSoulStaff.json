@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16530,
+  "name": "Bâton d'âmes d'orichalque",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/orichalcumSoulStaff.png",
+  "stats": {"Dégâts": 17, "Durabilité": 3000}
+}

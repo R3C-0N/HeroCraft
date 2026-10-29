@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16816,
+  "name": "Gooey's Fist",
+  "category": "Outils",
+  "max_stack": 64,
+  "icon": "icones/gooeysFist.png",
+  "stats": {"Dégâts": 9001}
+}

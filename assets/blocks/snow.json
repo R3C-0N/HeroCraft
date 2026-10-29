@@ -1,0 +1,9 @@
+{
+  "numeric_id": 5,
+  "name": "Neige",
+  "category": "Sols",
+  "hardness": 9,
+  "color": {"side": "#f5f7ff"},
+  "textures": {"top": "textures/Snow.png", "side": "textures/SnowSides.png", "bottom": "textures/Dirt.png"},
+  "sound": "snow"
+}

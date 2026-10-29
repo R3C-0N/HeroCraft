@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16481,
+  "name": "Sabre serti de silex",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/flintSabre.png",
+  "stats": {"Dégâts": 4, "Durabilité": 150}
+}

@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16865,
+  "name": "Ragoût de tofu",
+  "description": "Se mange au clic droit. Rassasie de 72.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/ragoutDeTofu.png",
+  "stats": {"Satiété": 72}
+}

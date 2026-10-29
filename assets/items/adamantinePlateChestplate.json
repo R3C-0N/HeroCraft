@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16565,
+  "name": "Cuirasse d'adamantine",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/adamantinePlateChestplate.png",
+  "stats": {"Protection": 33, "Durabilité": 3000}
+}

@@ -1,0 +1,11 @@
+{
+  "numeric_id": 99,
+  "name": "Coton (en boutons)",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#738c5b"},
+  "textures": {"side": "textures/Cotton4.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

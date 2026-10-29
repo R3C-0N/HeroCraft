@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16451,
+  "name": "Marteau d'étherium (mithril)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilMallet.png",
+  "stats": {"Dégâts": 27, "Durabilité": 5000}
+}

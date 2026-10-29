@@ -1,0 +1,11 @@
+{
+  "numeric_id": 108,
+  "name": "Trèfle rouge",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#7d7c5c"},
+  "textures": {"side": "textures/RedClover.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

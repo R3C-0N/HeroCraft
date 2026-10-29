@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16805,
+  "name": "Pioche en étherium (mithril)",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilPickaxe.png",
+  "stats": {"Dégâts": 11, "Durabilité": 5000}
+}

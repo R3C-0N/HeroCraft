@@ -1,0 +1,9 @@
+{
+  "numeric_id": 123,
+  "name": "Gravier",
+  "category": "Minéraux",
+  "hardness": 9,
+  "color": {"side": "#a7a49b"},
+  "textures": {"side": "textures/Gravel.png"},
+  "sound": "dirt"
+}

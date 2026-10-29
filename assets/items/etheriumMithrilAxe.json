@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16802,
+  "name": "Hache en étherium (mithril)",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilAxe.png",
+  "stats": {"Dégâts": 11, "Durabilité": 5000}
+}

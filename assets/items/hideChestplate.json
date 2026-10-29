@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16641,
+  "name": "Pourpoint de cuir",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/hideChestplate.png",
+  "stats": {"Protection": 3, "Durabilité": 80}
+}

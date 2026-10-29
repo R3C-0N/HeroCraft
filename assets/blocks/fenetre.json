@@ -1,0 +1,11 @@
+{
+  "numeric_id": 86,
+  "name": "Fenêtre sur le passé",
+  "category": "Divers",
+  "hardness": 0,
+  "color": {"side": "#86c9ffb3"},
+  "textures": {"side": "textures/Fenetre.png"},
+  "solid": false,
+  "opaque": false,
+  "light": 10
+}

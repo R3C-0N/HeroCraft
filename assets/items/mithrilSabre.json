@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16512,
+  "name": "Sabre de mithril",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/mithrilSabre.png",
+  "stats": {"Dégâts": 16, "Durabilité": 3000}
+}

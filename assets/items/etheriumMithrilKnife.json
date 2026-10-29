@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16804,
+  "name": "Couteau en étherium (mithril)",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilKnife.png",
+  "stats": {"Dégâts": 11, "Durabilité": 5000}
+}

@@ -3,7 +3,9 @@ use winit::keyboard::{Key, KeyCode, NamedKey};
 
 use crate::audio::AudioSettings;
 use crate::input::{is_reserved_key, Action, Controls, ACTION_GROUPS};
-use crate::inventory::{block_name, Inventory, ItemStack, HOTBAR_SLOTS, TOTAL_SLOTS};
+use crate::inventory::{can_hold, Inventory, ItemStack, HOTBAR_SLOTS, TOTAL_SLOTS};
+use crate::item_icons::ItemIcons;
+use herocraft_common::{blocks, items, ItemId};
 use crate::player_stats::PlayerStats;
 
 /// Actions déclenchées par l'interface utilisateur
@@ -412,8 +414,12 @@ pub struct UiState {
     /// Noms des autres joueurs (en ligne), avec leur position à l'écran en pixels physiques
     pub name_tags: Vec<(egui::Pos2, String)>,
     pub multiplayer: MultiplayerUi,
-    /// Blocs du joueur : barre d'objets en bas de l'écran, sac dans l'écran d'inventaire
+    /// Blocs et objets du joueur : barre d'objets en bas de l'écran, sac dans l'écran d'inventaire
     pub inventory: Inventory,
+    /// Tous les blocs et objets, à prendre dans l'écran d'inventaire
+    pub catalog: Catalog,
+    /// Icônes des blocs et des objets
+    pub icons: ItemIcons,
     /// Écran d'inventaire ouvert (la souris est libérée pour déplacer les piles)
     pub inventory_open: bool,
     /// Jauges, classe et niveau du joueur
@@ -456,6 +462,8 @@ impl UiState {
             name_tags: Vec::new(),
             multiplayer: MultiplayerUi::default(),
             inventory: Inventory::default(),
+            catalog: Catalog::default(),
+            icons: ItemIcons::default(),
             inventory_open: false,
             player: PlayerStats::default(),
         }
@@ -777,7 +785,7 @@ impl UiState {
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
                     let selected = self.inventory.slot(self.inventory.selected());
-                    let name = selected.map(|s| block_name(s.block)).unwrap_or("Main vide");
+                    let name = selected.map(|s| s.item.name()).unwrap_or("Main vide");
                     // Sur un fond clair (sable, neige), le nom reste lisible sur sa pastille sombre
                     let galley = ui.painter().layout_no_wrap(name.to_string(), egui::FontId::proportional(12.5_f32), TEXT_SOFT);
                     let (rect, _) = ui.allocate_exact_size(galley.size() + egui::vec2(16.0_f32, 4.0_f32), egui::Sense::hover());
@@ -788,7 +796,7 @@ impl UiState {
                         ui.horizontal(|ui| {
                             for i in 0..HOTBAR_SLOTS {
                                 let (rect, _) = ui.allocate_exact_size(egui::vec2(HOTBAR_SLOT_SIZE, HOTBAR_SLOT_SIZE), egui::Sense::hover());
-                                paint_slot(ui.painter(), rect, self.inventory.slot(i), i == self.inventory.selected(), false);
+                                paint_slot(ui.painter(), &self.icons, rect, self.inventory.slot(i), i == self.inventory.selected(), false);
                                 ui.painter().text(
                                     rect.left_top() + egui::vec2(4.0_f32, 2.0_f32),
                                     egui::Align2::LEFT_TOP,
@@ -803,12 +811,15 @@ impl UiState {
             });
     }
 
-    /// Écran d'inventaire : sac de 27 cases au-dessus de la barre d'objets. Clic gauche : prendre,
-    /// poser, fusionner ou échanger une pile ; clic droit : prendre la moitié ou poser un bloc.
+    /// Écran d'inventaire : sac de 27 cases au-dessus de la barre d'objets, et à côté le catalogue
+    /// de tous les blocs et objets. Clic gauche : prendre, poser, fusionner ou échanger une pile ;
+    /// clic droit : prendre la moitié ou poser un exemplaire. Dans le catalogue, clic gauche : une
+    /// pile entière, clic droit : un seul.
     fn draw_inventory_screen(&mut self, ctx: &egui::Context) {
         let open_key = self.controls.action_key_label(Action::OpenInventory);
         let mut clicked: Option<(usize, bool)> = None;
-        let mut hovered: Option<usize> = None;
+        let mut taken: Option<(ItemId, bool)> = None;
+        let mut hovered: Option<(ItemId, Option<u16>)> = None;
         egui::Area::new(egui::Id::new("inventory_screen"))
             .order(egui::Order::Middle)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
@@ -826,39 +837,49 @@ impl UiState {
                             });
                         });
                         ui.add_space(4.0_f32);
-                        let mut slot_row = |ui: &mut egui::Ui, range: std::ops::Range<usize>| {
-                            ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
-                            ui.horizontal(|ui| {
-                                for i in range {
-                                    let size = egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE);
-                                    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-                                    let selected = i == self.inventory.selected();
-                                    paint_slot(ui.painter(), rect, self.inventory.slot(i), selected, response.hovered());
-                                    if response.hovered() {
-                                        hovered = Some(i);
-                                    }
-                                    if response.clicked() {
-                                        clicked = Some((i, false));
-                                    } else if response.secondary_clicked() {
-                                        clicked = Some((i, true));
-                                    }
+                        ui.horizontal_top(|ui| {
+                            ui.vertical(|ui| {
+                                let mut slot_row = |ui: &mut egui::Ui, range: std::ops::Range<usize>| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+                                    ui.horizontal(|ui| {
+                                        for i in range {
+                                            let size = egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE);
+                                            let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+                                            let selected = i == self.inventory.selected();
+                                            let stack = self.inventory.slot(i);
+                                            paint_slot(ui.painter(), &self.icons, rect, stack, selected, response.hovered());
+                                            if response.hovered() {
+                                                hovered = stack.map(|s| (s.item, Some(s.count)));
+                                            }
+                                            if response.clicked() {
+                                                clicked = Some((i, false));
+                                            } else if response.secondary_clicked() {
+                                                clicked = Some((i, true));
+                                            }
+                                        }
+                                    });
+                                };
+                                caption(ui, "SAC");
+                                for row in 0..TOTAL_SLOTS / HOTBAR_SLOTS - 1 {
+                                    let start = HOTBAR_SLOTS + row * HOTBAR_SLOTS;
+                                    slot_row(ui, start..start + HOTBAR_SLOTS);
                                 }
+                                ui.add_space(6.0_f32);
+                                caption(ui, "BARRE D'OBJETS");
+                                slot_row(ui, 0..HOTBAR_SLOTS);
+                                ui.add_space(2.0_f32);
+                                ui.label(
+                                    egui::RichText::new("Clic gauche : prendre / poser une pile · Clic droit : moitié / un seul")
+                                        .size(11.0_f32)
+                                        .color(TEXT_DIM),
+                                );
                             });
-                        };
-                        caption(ui, "SAC");
-                        for row in 0..TOTAL_SLOTS / HOTBAR_SLOTS - 1 {
-                            let start = HOTBAR_SLOTS + row * HOTBAR_SLOTS;
-                            slot_row(ui, start..start + HOTBAR_SLOTS);
-                        }
-                        ui.add_space(6.0_f32);
-                        caption(ui, "BARRE D'OBJETS");
-                        slot_row(ui, 0..HOTBAR_SLOTS);
-                        ui.add_space(2.0_f32);
-                        ui.label(
-                            egui::RichText::new("Clic gauche : prendre / poser une pile · Clic droit : moitié / un seul bloc")
-                                .size(11.0_f32)
-                                .color(TEXT_DIM),
-                        );
+                            ui.add_space(10.0_f32);
+                            ui.vertical(|ui| {
+                                caption(ui, "CATALOGUE");
+                                self.catalog.draw(ui, &self.icons, &mut taken, &mut hovered);
+                            });
+                        });
                     });
             });
 
@@ -867,17 +888,20 @@ impl UiState {
             Some((i, true)) => self.inventory.click_secondary(i),
             None => {}
         }
+        if let Some((item, one)) = taken {
+            self.inventory.add_many(item, if one { 1 } else { item.max_stack() });
+        }
 
-        // Pile tenue sous le curseur, sinon nom du bloc survolé
+        // Pile tenue sous le curseur, sinon fiche de l'objet survolé
         if let Some(held) = self.inventory.held() {
             if let Some(pos) = ctx.pointer_latest_pos() {
                 let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("held_stack")));
                 let rect = egui::Rect::from_center_size(pos, egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE));
-                paint_stack(&painter, rect, held);
+                paint_stack(&painter, &self.icons, rect, held);
             }
-        } else if let Some(stack) = hovered.and_then(|i| self.inventory.slot(i)) {
+        } else if let Some((item, count)) = hovered {
             egui::show_tooltip_at_pointer(ctx, egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("inventory_tip")), egui::Id::new("inventory_tip"), |ui| {
-                ui.label(format!("{} × {}", block_name(stack.block), stack.count));
+                item_tooltip(ui, item, count);
             });
         }
     }
@@ -1532,7 +1556,7 @@ const HOTBAR_SLOT_SIZE: f32 = 40.0;
 const INVENTORY_SLOT_SIZE: f32 = 44.0;
 
 /// Case d'inventaire : fond, liseré (or si choisie) et pile éventuelle
-fn paint_slot(painter: &egui::Painter, rect: egui::Rect, stack: Option<ItemStack>, selected: bool, hovered: bool) {
+fn paint_slot(painter: &egui::Painter, icons: &ItemIcons, rect: egui::Rect, stack: Option<ItemStack>, selected: bool, hovered: bool) {
     let fill = if hovered { egui::Color32::from_rgb(42, 54, 78) } else { egui::Color32::from_rgba_premultiplied(22, 28, 40, 230) };
     painter.rect_filled(rect, 4.0_f32, fill);
     let stroke = if selected {
@@ -1542,35 +1566,149 @@ fn paint_slot(painter: &egui::Painter, rect: egui::Rect, stack: Option<ItemStack
     };
     painter.rect_stroke(rect, 4.0_f32, stroke);
     if let Some(stack) = stack {
-        paint_stack(painter, rect, stack);
+        paint_stack(painter, icons, rect, stack);
     }
 }
 
-/// Pile de blocs : petit cube isométrique aux couleurs du bloc et nombre en bas à droite
-fn paint_stack(painter: &egui::Painter, rect: egui::Rect, stack: ItemStack) {
-    let to_color = |c: [f32; 4], shade: f32| {
-        egui::Color32::from_rgb((c[0] * shade * 255.0) as u8, (c[1] * shade * 255.0) as u8, (c[2] * shade * 255.0) as u8)
-    };
-    let (top, side) = crate::inventory::item_colors(stack.block);
-    let c = rect.center();
-    let s = rect.width() * 0.62_f32;
-    let (hx, hy) = (s * 0.43_f32, s * 0.25_f32);
-    let p = |dx: f32, dy: f32| egui::pos2(c.x + dx, c.y + dy);
-    let outline = egui::Stroke::new(0.5_f32, egui::Color32::from_black_alpha(120));
-    let faces = [
-        (vec![p(0.0, -2.0 * hy), p(hx, -hy), p(0.0, 0.0), p(-hx, -hy)], to_color(top, 1.05)),
-        (vec![p(-hx, -hy), p(0.0, 0.0), p(0.0, 2.0 * hy), p(-hx, hy)], to_color(side, 0.82)),
-        (vec![p(0.0, 0.0), p(hx, -hy), p(hx, hy), p(0.0, 2.0 * hy)], to_color(side, 0.64)),
-    ];
-    for (points, fill) in faces {
-        painter.add(egui::Shape::convex_polygon(points, fill, outline));
-    }
+/// Pile : icône du bloc ou de l'objet et nombre en bas à droite
+fn paint_stack(painter: &egui::Painter, icons: &ItemIcons, rect: egui::Rect, stack: ItemStack) {
+    icons.paint(painter, rect, stack.item);
     if stack.count > 1 {
         let pos = rect.right_bottom() - egui::vec2(3.0_f32, 1.0_f32);
         let font = egui::FontId::proportional(12.0_f32);
         let text = stack.count.to_string();
         painter.text(pos + egui::vec2(1.0_f32, 1.0_f32), egui::Align2::RIGHT_BOTTOM, &text, font.clone(), egui::Color32::BLACK);
         painter.text(pos, egui::Align2::RIGHT_BOTTOM, text, font, egui::Color32::WHITE);
+    }
+}
+
+/// Fiche d'un bloc ou d'un objet survolé : nom (et nombre), rubrique, description, caractéristiques
+fn item_tooltip(ui: &mut egui::Ui, item: ItemId, count: Option<u16>) {
+    ui.set_min_width(180.0_f32);
+    let title = match count {
+        Some(count) => format!("{} × {}", item.name(), count),
+        None => item.name().to_string(),
+    };
+    ui.label(egui::RichText::new(title).strong().color(GOLD_BRIGHT));
+    let (category, description, stats) = match item.block() {
+        Some(block) => match blocks().get(block) {
+            Some(sheet) => (sheet.category.as_str(), sheet.description.as_str(), None),
+            None => ("", "", None),
+        },
+        None => match items().get(item) {
+            Some(sheet) => (sheet.category.as_str(), sheet.description.as_str(), Some(&sheet.stats)),
+            None => ("", "", None),
+        },
+    };
+    if !category.is_empty() {
+        ui.label(egui::RichText::new(category).size(11.0_f32).color(TEXT_DIM));
+    }
+    if !description.is_empty() {
+        ui.label(description);
+    }
+    for (name, value) in stats.into_iter().flatten() {
+        ui.label(egui::RichText::new(format!("{name} : {value}")).size(12.0_f32).color(TEXT_SOFT));
+    }
+}
+
+/// Une rubrique du catalogue
+struct CatalogCategory {
+    label: String,
+    items: Vec<ItemId>,
+}
+
+/// Catalogue de l'écran d'inventaire : les blocs qui se ramassent et tous les objets, rangés par
+/// rubrique (celle de leur fiche), avec une recherche par nom
+pub struct Catalog {
+    categories: Vec<CatalogCategory>,
+    /// Rubrique montrée (`None` : toutes)
+    pub category: Option<usize>,
+    pub search: String,
+}
+
+/// Cases du catalogue par ligne
+const CATALOG_COLUMNS: usize = 8;
+const CATALOG_SLOT_SIZE: f32 = 36.0;
+
+impl Default for Catalog {
+    fn default() -> Self {
+        let mut categories: Vec<CatalogCategory> = Vec::new();
+        let mut add = |prefix: &str, category: &str, item: ItemId| {
+            let label = format!("{prefix} · {}", if category.is_empty() { "Divers" } else { category });
+            match categories.iter_mut().find(|c| c.label == label) {
+                Some(c) => c.items.push(item),
+                None => categories.push(CatalogCategory { label, items: vec![item] }),
+            }
+        };
+        for sheet in blocks().iter() {
+            let item = ItemId::from(herocraft_common::BlockId(sheet.numeric_id));
+            if can_hold(item) {
+                add("Blocs", &sheet.category, item);
+            }
+        }
+        for sheet in items().iter() {
+            add("Objets", &sheet.category, sheet.item());
+        }
+        for category in &mut categories {
+            category.items.sort_by_key(|item| item.name());
+        }
+        Self { categories, category: None, search: String::new() }
+    }
+}
+
+impl Catalog {
+    /// Ce que montre le catalogue : la rubrique choisie, filtrée par la recherche
+    pub fn visible(&self) -> Vec<ItemId> {
+        let search = self.search.trim().to_lowercase();
+        self.categories
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| self.category.is_none_or(|c| c == *i))
+            .flat_map(|(_, c)| c.items.iter().copied())
+            .filter(|item| search.is_empty() || item.name().to_lowercase().contains(&search))
+            .collect()
+    }
+
+    fn draw(&mut self, ui: &mut egui::Ui, icons: &ItemIcons, taken: &mut Option<(ItemId, bool)>, hovered: &mut Option<(ItemId, Option<u16>)>) {
+        let width = CATALOG_COLUMNS as f32 * (CATALOG_SLOT_SIZE + 4.0_f32) - 4.0_f32;
+        ui.horizontal(|ui| {
+            let label = self.category.map_or("Tout", |i| self.categories[i].label.as_str()).to_string();
+            egui::ComboBox::from_id_salt("catalog_category").width(150.0_f32).selected_text(label).show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.category, None, "Tout");
+                for (i, category) in self.categories.iter().enumerate() {
+                    ui.selectable_value(&mut self.category, Some(i), category.label.as_str());
+                }
+            });
+            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Rechercher…").desired_width(width - 160.0_f32));
+        });
+        ui.add_space(2.0_f32);
+        let visible = self.visible();
+        // Hauteur fixe : l'écran ne change pas de taille au fil de la recherche
+        let height = 4.0_f32 * (INVENTORY_SLOT_SIZE + 4.0_f32) + 28.0_f32;
+        egui::ScrollArea::vertical().id_salt("catalog").max_height(height).show(ui, |ui| {
+            ui.set_width(width);
+            ui.set_min_height(height);
+            ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+            for row in visible.chunks(CATALOG_COLUMNS) {
+                ui.horizontal(|ui| {
+                    for &item in row {
+                        let (rect, response) = ui.allocate_exact_size(egui::vec2(CATALOG_SLOT_SIZE, CATALOG_SLOT_SIZE), egui::Sense::click());
+                        paint_slot(ui.painter(), icons, rect, Some(ItemStack { item, count: 1 }), false, response.hovered());
+                        if response.hovered() {
+                            *hovered = Some((item, None));
+                        }
+                        if response.clicked() {
+                            *taken = Some((item, false));
+                        } else if response.secondary_clicked() {
+                            *taken = Some((item, true));
+                        }
+                    }
+                });
+            }
+            if visible.is_empty() {
+                ui.label(egui::RichText::new("Rien ne correspond.").color(TEXT_DIM));
+            }
+        });
     }
 }
 

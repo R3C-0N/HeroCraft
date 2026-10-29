@@ -1,0 +1,11 @@
+{
+  "numeric_id": 16,
+  "name": "Feuilles claires",
+  "category": "Arbres",
+  "hardness": 1,
+  "color": {"side": "#387a1b"},
+  "textures": {"side": "textures/LightGreenLeaf.png"},
+  "texture_tint": "#73c754",
+  "opaque": false,
+  "sound": "grass"
+}

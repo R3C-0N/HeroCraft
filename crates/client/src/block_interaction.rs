@@ -137,7 +137,8 @@ impl BlockInteraction {
         let (pos, block) = match action {
             BlockAction::Break => (hit.block, BlockId::AIR),
             BlockAction::Place => match (hit.before, inventory.selected_block()) {
-                (Some(pos), Some(block)) if !overlaps_player(camera, pos) => (pos, block),
+                // Une plante se pose même là où se tient le joueur : on la traverse
+                (Some(pos), Some(block)) if !block.is_solid() || !overlaps_player(camera, pos) => (pos, block),
                 _ => return None,
             },
         };
@@ -173,9 +174,9 @@ impl BlockInteraction {
     }
 }
 
-/// Ce que vise le réticule : tout bloc sauf l'air et l'eau (on vise à travers l'eau)
+/// Ce que vise le réticule : tout bloc sauf l'air et les liquides (on vise à travers l'eau)
 fn is_targetable(block: BlockId) -> bool {
-    !block.is_air() && block != BlockId::WATER
+    block.is_targetable()
 }
 
 /// Le bloc occuperait la place du joueur (des pieds à la tête, sur toute sa largeur)

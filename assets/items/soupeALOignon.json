@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16870,
+  "name": "Soupe à l'oignon",
+  "description": "Se mange au clic droit. Rassasie de 26.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/soupeALOignon.png",
+  "stats": {"Satiété": 26}
+}

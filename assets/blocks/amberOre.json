@@ -1,0 +1,8 @@
+{
+  "numeric_id": 116,
+  "name": "Minerai d'ambre",
+  "category": "Minéraux",
+  "hardness": 24,
+  "color": {"side": "#b4a58f"},
+  "textures": {"side": "textures/AmberOre.png"}
+}

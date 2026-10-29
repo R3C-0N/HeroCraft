@@ -1,0 +1,9 @@
+{
+  "numeric_id": 23,
+  "name": "Établi",
+  "category": "Ateliers",
+  "hardness": 10,
+  "color": {"top": "#aa875d", "side": "#67553c"},
+  "textures": {"top": "textures/WorkbenchTop.png", "side": "textures/Workbench.png"},
+  "sound": "wood"
+}

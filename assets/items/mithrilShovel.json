@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16826,
+  "name": "Pelle en mithril",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/mithrilShovel.png",
+  "stats": {"Dégâts": 8, "Durabilité": 3000}
+}

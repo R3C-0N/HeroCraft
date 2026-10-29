@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16891,
+  "name": "Totem : cerf",
+  "description": "Posé au sol, fait apparaître un cerf.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/cerfTotem.png"
+}

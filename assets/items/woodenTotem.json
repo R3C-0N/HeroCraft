@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16559,
+  "name": "Totem de bois",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/woodenTotem.png",
+  "stats": {"Dégâts": 2, "Durabilité": 80}
+}

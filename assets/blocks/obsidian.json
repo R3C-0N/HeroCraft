@@ -1,0 +1,8 @@
+{
+  "numeric_id": 13,
+  "name": "Obsidienne",
+  "category": "Minéraux",
+  "hardness": 1200,
+  "color": {"side": "#33244c"},
+  "textures": {"side": "textures/Obsidian.png"}
+}

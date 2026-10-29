@@ -1,0 +1,11 @@
+{
+  "numeric_id": 110,
+  "name": "Champignon rouge",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#c79280"},
+  "textures": {"side": "textures/RedShroom.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

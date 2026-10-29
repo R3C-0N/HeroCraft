@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16519,
+  "name": "Totem de mithril",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/mithrilTotem.png",
+  "stats": {"Dégâts": 17, "Durabilité": 3000}
+}

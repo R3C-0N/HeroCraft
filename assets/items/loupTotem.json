@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16898,
+  "name": "Totem : loup",
+  "description": "Posé au sol, fait apparaître un loup.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/loupTotem.png"
+}

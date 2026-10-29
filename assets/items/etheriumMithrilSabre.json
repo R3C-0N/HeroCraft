@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16452,
+  "name": "Sabre d'étherium (mithril)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilSabre.png",
+  "stats": {"Dégâts": 22, "Durabilité": 5000}
+}

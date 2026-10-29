@@ -1,0 +1,8 @@
+{
+  "numeric_id": 36,
+  "name": "Étherium (mithril) ouvragé",
+  "category": "Construction",
+  "hardness": 55,
+  "color": {"side": "#81a5ac"},
+  "textures": {"side": "textures/EtheriumMithrilOrnate.png"}
+}

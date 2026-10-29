@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16894,
+  "name": "Totem : faisan",
+  "description": "Posé au sol, fait apparaître un faisan.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/faisanTotem.png"
+}

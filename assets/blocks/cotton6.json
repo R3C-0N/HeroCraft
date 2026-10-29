@@ -1,0 +1,11 @@
+{
+  "numeric_id": 101,
+  "name": "Coton (mûr)",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#91a47b"},
+  "textures": {"side": "textures/Cotton6.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16673,
+  "name": "Pourpoint d'orichalque",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/orichalcumMailChestplate.png",
+  "stats": {"Protection": 23, "Durabilité": 3000}
+}

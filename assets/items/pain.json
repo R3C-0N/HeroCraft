@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16859,
+  "name": "Pain",
+  "description": "Se mange au clic droit. Rassasie de 12.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/pain.png",
+  "stats": {"Satiété": 12}
+}

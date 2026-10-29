@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16779,
+  "name": "Viande cuite de vache",
+  "description": "Se mange au clic droit. Rassasie de 40.",
+  "category": "Nourriture",
+  "max_stack": 99,
+  "icon": "icones/viandeCuiteVache.png",
+  "stats": {"Satiété": 40}
+}

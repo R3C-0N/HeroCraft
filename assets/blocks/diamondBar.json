@@ -1,0 +1,8 @@
+{
+  "numeric_id": 33,
+  "name": "Bloc de diamant",
+  "category": "Construction",
+  "hardness": 22,
+  "color": {"side": "#a7d9de"},
+  "textures": {"side": "textures/DiamondBar.png"}
+}

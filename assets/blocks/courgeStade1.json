@@ -1,0 +1,11 @@
+{
+  "numeric_id": 64,
+  "name": "Courge — semis",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#55a12e"},
+  "textures": {"side": "textures/CourgeStade1.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

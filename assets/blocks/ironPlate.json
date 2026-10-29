@@ -1,0 +1,8 @@
+{
+  "numeric_id": 46,
+  "name": "Plaques de fer",
+  "category": "Construction",
+  "hardness": 30,
+  "color": {"side": "#83868b"},
+  "textures": {"side": "textures/IronPlate.png"}
+}

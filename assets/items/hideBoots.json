@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16640,
+  "name": "Bottines de cuir",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/hideBoots.png",
+  "stats": {"Protection": 1, "Durabilité": 80}
+}

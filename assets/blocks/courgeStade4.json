@@ -1,0 +1,11 @@
+{
+  "numeric_id": 67,
+  "name": "Courge — mûr",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#757320"},
+  "textures": {"side": "textures/CourgeStade4.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

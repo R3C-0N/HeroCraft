@@ -1,0 +1,11 @@
+{
+  "numeric_id": 80,
+  "name": "Soja — semis",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#72a03b"},
+  "textures": {"side": "textures/SojaStade1.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

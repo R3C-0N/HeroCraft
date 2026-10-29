@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16636,
+  "name": "Bottes d'étherium (orichalque)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumScaleBoots.png",
+  "stats": {"Protection": 13, "Durabilité": 5000}
+}

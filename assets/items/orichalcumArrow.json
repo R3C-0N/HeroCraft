@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16520,
+  "name": "Flèche d'orichalque",
+  "category": "Armes",
+  "max_stack": 99,
+  "icon": "icones/orichalcumArrow.png",
+  "stats": {"Dégâts": 15}
+}

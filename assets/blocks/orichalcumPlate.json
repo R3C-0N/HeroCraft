@@ -1,0 +1,8 @@
+{
+  "numeric_id": 50,
+  "name": "Plaques de orichalque",
+  "category": "Construction",
+  "hardness": 45,
+  "color": {"side": "#d89536"},
+  "textures": {"side": "textures/OrichalcumPlate.png"}
+}

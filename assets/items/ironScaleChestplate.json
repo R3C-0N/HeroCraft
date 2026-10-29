@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16653,
+  "name": "Brigandine de fer",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/ironScaleChestplate.png",
+  "stats": {"Protection": 16, "Durabilité": 900}
+}

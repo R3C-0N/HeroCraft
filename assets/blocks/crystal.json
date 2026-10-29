@@ -1,0 +1,8 @@
+{
+  "numeric_id": 12,
+  "name": "Crystal",
+  "category": "Minéraux",
+  "hardness": 120,
+  "color": {"side": "#9edbf2"},
+  "textures": {"side": "textures/Crystal.png"}
+}

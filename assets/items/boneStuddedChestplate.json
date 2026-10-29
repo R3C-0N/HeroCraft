@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16577,
+  "name": "Brigandine de silex",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/boneStuddedChestplate.png",
+  "stats": {"Protection": 5, "Durabilité": 220}
+}

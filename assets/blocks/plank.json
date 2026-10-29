@@ -1,0 +1,9 @@
+{
+  "numeric_id": 51,
+  "name": "Planche",
+  "category": "Construction",
+  "hardness": 10,
+  "color": {"side": "#c19e71"},
+  "textures": {"side": "textures/Plank.png"},
+  "sound": "wood"
+}

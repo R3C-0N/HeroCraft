@@ -1,0 +1,11 @@
+{
+  "numeric_id": 100,
+  "name": "Coton (en fleur)",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#7c9364"},
+  "textures": {"side": "textures/Cotton5.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

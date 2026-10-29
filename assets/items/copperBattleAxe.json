@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16416,
+  "name": "Hache de guerre en cuivre",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/copperBattleAxe.png",
+  "stats": {"Dégâts": 9, "Durabilité": 300}
+}

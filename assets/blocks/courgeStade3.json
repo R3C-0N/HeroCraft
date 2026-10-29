@@ -1,0 +1,11 @@
+{
+  "numeric_id": 66,
+  "name": "Courge — plant",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#447b29"},
+  "textures": {"side": "textures/CourgeStade3.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

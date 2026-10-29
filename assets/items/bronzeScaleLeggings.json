@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16591,
+  "name": "Chausses de bronze",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/bronzeScaleLeggings.png",
+  "stats": {"Protection": 9, "Durabilité": 500}
+}

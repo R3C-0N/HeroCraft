@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16439,
+  "name": "Bouclier d'étherium (adamantine)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumAdamantineShield.png",
+  "stats": {"Dégâts": 12, "Durabilité": 5000}
+}

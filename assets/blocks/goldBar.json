@@ -1,0 +1,8 @@
+{
+  "numeric_id": 42,
+  "name": "Bloc d'or",
+  "category": "Construction",
+  "hardness": 22,
+  "color": {"side": "#dfb65e"},
+  "textures": {"side": "textures/GoldBar.png"}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16545,
+  "name": "Sceptre d'acier",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/steelScepter.png",
+  "stats": {"Dégâts": 8, "Durabilité": 2000}
+}

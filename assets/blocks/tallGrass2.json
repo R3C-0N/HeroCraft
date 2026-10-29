@@ -1,0 +1,12 @@
+{
+  "numeric_id": 112,
+  "name": "Herbes hautes",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#2d651a"},
+  "textures": {"side": "textures/TallGrass2.png"},
+  "texture_tint": "#73c754",
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

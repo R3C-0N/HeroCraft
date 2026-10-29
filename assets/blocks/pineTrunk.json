@@ -1,0 +1,9 @@
+{
+  "numeric_id": 17,
+  "name": "Tronc de pin",
+  "category": "Arbres",
+  "hardness": 10,
+  "color": {"top": "#ad8158", "side": "#896246"},
+  "textures": {"top": "textures/PineTrunkTopBottom.png", "side": "textures/PineTrunkSides.png", "bottom": "textures/PineTrunkTopBottom.png"},
+  "sound": "wood"
+}

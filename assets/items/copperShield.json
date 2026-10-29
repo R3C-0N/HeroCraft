@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16424,
+  "name": "Bouclier de cuivre",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/copperShield.png",
+  "stats": {"Dégâts": 2, "Durabilité": 300}
+}

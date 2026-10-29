@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16807,
+  "name": "Hache en étherium (orichalque)",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumAxe.png",
+  "stats": {"Dégâts": 11, "Durabilité": 5000}
+}

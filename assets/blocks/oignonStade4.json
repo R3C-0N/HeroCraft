@@ -1,0 +1,11 @@
+{
+  "numeric_id": 71,
+  "name": "Oignon — mûr",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#7c8648"},
+  "textures": {"side": "textures/OignonStade4.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

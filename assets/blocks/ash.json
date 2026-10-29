@@ -1,0 +1,9 @@
+{
+  "numeric_id": 130,
+  "name": "Ash",
+  "category": "Sols",
+  "hardness": 9,
+  "color": {"side": "#a8a399"},
+  "textures": {"side": "textures/Ash.png"},
+  "sound": "dirt"
+}

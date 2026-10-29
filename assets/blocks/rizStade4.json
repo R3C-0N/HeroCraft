@@ -1,0 +1,11 @@
+{
+  "numeric_id": 79,
+  "name": "Riz — mûr",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#6e814a"},
+  "textures": {"side": "textures/RizStade4.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

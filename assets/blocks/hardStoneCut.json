@@ -1,0 +1,8 @@
+{
+  "numeric_id": 43,
+  "name": "Pierre dure taillée",
+  "category": "Construction",
+  "hardness": 120,
+  "color": {"side": "#696d71"},
+  "textures": {"side": "textures/HardStoneCut.png"}
+}

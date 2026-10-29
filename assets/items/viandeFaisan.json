@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16726,
+  "name": "Viande crue de faisan",
+  "description": "Se mange au clic droit. Rassasie de 6, de 15 une fois cuite au fourneau.",
+  "category": "Butin",
+  "max_stack": 64,
+  "icon": "icones/viandeFaisan.png",
+  "stats": {"Satiété": 6}
+}

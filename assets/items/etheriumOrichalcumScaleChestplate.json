@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16637,
+  "name": "Brigandine d'étherium (orichalque)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumScaleChestplate.png",
+  "stats": {"Protection": 35, "Durabilité": 5000}
+}

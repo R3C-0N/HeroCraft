@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16421,
+  "name": "Marteau de cuivre",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/copperMallet.png",
+  "stats": {"Dégâts": 7, "Durabilité": 300}
+}

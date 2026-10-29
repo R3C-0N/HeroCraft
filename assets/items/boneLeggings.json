@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16575,
+  "name": "Grèves d'os",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/boneLeggings.png",
+  "stats": {"Protection": 5, "Durabilité": 150}
+}

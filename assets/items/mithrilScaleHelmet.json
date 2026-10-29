@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16670,
+  "name": "Camail de mithril",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/mithrilScaleHelmet.png",
+  "stats": {"Protection": 14, "Durabilité": 3000}
+}

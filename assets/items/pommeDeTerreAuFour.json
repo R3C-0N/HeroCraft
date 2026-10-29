@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16863,
+  "name": "Pomme de terre au four",
+  "description": "Se mange au clic droit. Rassasie de 10.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/pommeDeTerreAuFour.png",
+  "stats": {"Satiété": 10}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16574,
+  "name": "Heaume d'os",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/boneHelmet.png",
+  "stats": {"Protection": 4, "Durabilité": 150}
+}

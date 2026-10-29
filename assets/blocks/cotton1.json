@@ -1,0 +1,11 @@
+{
+  "numeric_id": 96,
+  "name": "Coton (pousse)",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#688650"},
+  "textures": {"side": "textures/Cotton1.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

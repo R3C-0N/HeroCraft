@@ -1,0 +1,11 @@
+{
+  "numeric_id": 68,
+  "name": "Oignon — semis",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#3c7a48"},
+  "textures": {"side": "textures/OignonStade1.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

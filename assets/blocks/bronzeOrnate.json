@@ -1,0 +1,8 @@
+{
+  "numeric_id": 28,
+  "name": "Bronze ouvragé",
+  "category": "Construction",
+  "hardness": 26,
+  "color": {"side": "#8f6826"},
+  "textures": {"side": "textures/BronzeOrnate.png"}
+}

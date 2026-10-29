@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16822,
+  "name": "Hache en mithril",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/mithrilAxe.png",
+  "stats": {"Dégâts": 8, "Durabilité": 3000}
+}

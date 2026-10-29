@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16648,
+  "name": "Solerets de fer",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/ironPlateBoots.png",
+  "stats": {"Protection": 7, "Durabilité": 900}
+}

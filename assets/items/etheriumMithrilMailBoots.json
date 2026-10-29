@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16616,
+  "name": "Bottines d'étherium (mithril)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilMailBoots.png",
+  "stats": {"Protection": 12, "Durabilité": 5000}
+}

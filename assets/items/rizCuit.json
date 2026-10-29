@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16867,
+  "name": "Riz cuit",
+  "description": "Se mange au clic droit. Rassasie de 10.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/rizCuit.png",
+  "stats": {"Satiété": 10}
+}

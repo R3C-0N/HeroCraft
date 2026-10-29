@@ -1,0 +1,13 @@
+{
+  "numeric_id": 7,
+  "name": "Lave",
+  "category": "Liquides",
+  "hardness": 0,
+  "color": {"side": "#e0581a"},
+  "textures": {"side": "textures/Lava.png"},
+  "liquid": true,
+  "opaque": false,
+  "light": 15,
+  "sound": "water",
+  "drop": null
+}

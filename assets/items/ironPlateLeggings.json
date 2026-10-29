@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16651,
+  "name": "Grèves de fer",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/ironPlateLeggings.png",
+  "stats": {"Protection": 14, "Durabilité": 900}
+}

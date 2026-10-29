@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16605,
+  "name": "Pourpoint d'étherium (adamantine)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumAdamantineMailChestplate.png",
+  "stats": {"Protection": 33, "Durabilité": 5000}
+}

@@ -1,0 +1,11 @@
+{
+  "numeric_id": 77,
+  "name": "Riz — jeune pousse",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#488b4a"},
+  "textures": {"side": "textures/RizStade2.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

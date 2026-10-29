@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16675,
+  "name": "Braies d'orichalque",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/orichalcumMailLeggings.png",
+  "stats": {"Protection": 17, "Durabilité": 3000}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16890,
+  "name": "Totem : cerf de cristal",
+  "description": "Posé au sol, fait apparaître un cerf de cristal.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/cerfCristalTotem.png"
+}

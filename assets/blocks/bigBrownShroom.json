@@ -1,0 +1,11 @@
+{
+  "numeric_id": 93,
+  "name": "Grand champignon brun",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#a1866e"},
+  "textures": {"side": "textures/BigBrownShroom.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16590,
+  "name": "Camail de bronze",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/bronzeScaleHelmet.png",
+  "stats": {"Protection": 6, "Durabilité": 500}
+}

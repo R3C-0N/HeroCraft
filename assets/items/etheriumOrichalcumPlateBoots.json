@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16632,
+  "name": "Solerets d'étherium (orichalque)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumPlateBoots.png",
+  "stats": {"Protection": 14, "Durabilité": 5000}
+}

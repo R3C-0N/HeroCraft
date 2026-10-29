@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16885,
+  "name": "Oignon",
+  "description": "Se mange au clic droit. Rassasie de 2.",
+  "category": "Récoltes",
+  "max_stack": 99,
+  "icon": "icones/oignon.png",
+  "stats": {"Satiété": 2}
+}

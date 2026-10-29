@@ -1,0 +1,11 @@
+{
+  "numeric_id": 97,
+  "name": "Coton (jeune)",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#65834e"},
+  "textures": {"side": "textures/Cotton2.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

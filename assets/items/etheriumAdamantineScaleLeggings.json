@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16615,
+  "name": "Chausses d'étherium (adamantine)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumAdamantineScaleLeggings.png",
+  "stats": {"Protection": 25, "Durabilité": 5000}
+}

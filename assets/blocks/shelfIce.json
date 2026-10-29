@@ -1,0 +1,9 @@
+{
+  "numeric_id": 90,
+  "name": "Shelf Ice",
+  "category": "Divers",
+  "hardness": 1,
+  "color": {"side": "#d7e8efb3"},
+  "textures": {"side": "textures/ShelfIce.png"},
+  "opaque": false
+}

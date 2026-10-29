@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16876,
+  "name": "Tofu farci",
+  "description": "Se mange au clic droit. Rassasie de 40.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/tofuFarci.png",
+  "stats": {"Satiété": 40}
+}

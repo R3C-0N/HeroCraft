@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16843,
+  "name": "Boulettes de tofu",
+  "description": "Se mange au clic droit. Rassasie de 52.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/boulettesDeTofu.png",
+  "stats": {"Satiété": 52}
+}

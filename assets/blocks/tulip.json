@@ -1,0 +1,11 @@
+{
+  "numeric_id": 114,
+  "name": "Tulipe",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#7c754e"},
+  "textures": {"side": "textures/Tulip.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

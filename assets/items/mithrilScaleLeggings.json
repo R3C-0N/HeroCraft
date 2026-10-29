@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16671,
+  "name": "Chausses de mithril",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/mithrilScaleLeggings.png",
+  "stats": {"Protection": 18, "Durabilité": 3000}
+}

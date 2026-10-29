@@ -1,0 +1,11 @@
+{
+  "numeric_id": 92,
+  "name": "Torche",
+  "category": "Divers",
+  "hardness": 1,
+  "color": {"side": "#ab7847"},
+  "textures": {"side": "textures/Torch.png"},
+  "shape": "plant",
+  "solid": false,
+  "light": 15
+}

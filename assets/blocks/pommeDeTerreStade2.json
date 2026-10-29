@@ -1,0 +1,11 @@
+{
+  "numeric_id": 73,
+  "name": "Pomme de terre — jeune pousse",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#397a26"},
+  "textures": {"side": "textures/PommeDeTerreStade2.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

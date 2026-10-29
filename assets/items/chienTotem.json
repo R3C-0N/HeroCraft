@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16893,
+  "name": "Totem : chien des enfers",
+  "description": "Posé au sol, fait apparaître un chien des enfers.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/chienTotem.png"
+}

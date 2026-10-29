@@ -1,0 +1,11 @@
+{
+  "numeric_id": 70,
+  "name": "Oignon — plant",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#5c9160"},
+  "textures": {"side": "textures/OignonStade3.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

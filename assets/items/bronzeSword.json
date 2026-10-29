@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16411,
+  "name": "Épée de bronze",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/bronzeSword.png",
+  "stats": {"Dégâts": 8, "Durabilité": 500}
+}

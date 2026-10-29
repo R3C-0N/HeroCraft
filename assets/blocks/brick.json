@@ -1,0 +1,8 @@
+{
+  "numeric_id": 26,
+  "name": "Brick",
+  "category": "Construction",
+  "hardness": 14,
+  "color": {"side": "#c4937d"},
+  "textures": {"side": "textures/Brick.png"}
+}

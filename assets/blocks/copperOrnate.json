@@ -1,0 +1,8 @@
+{
+  "numeric_id": 31,
+  "name": "Cuivre ouvragé",
+  "category": "Construction",
+  "hardness": 22,
+  "color": {"side": "#9a5e2f"},
+  "textures": {"side": "textures/CopperOrnate.png"}
+}

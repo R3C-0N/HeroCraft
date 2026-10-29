@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16728,
+  "name": "Viande de lézard",
+  "description": "Se mange au clic droit. Rassasie de 8, de 20 une fois cuite au fourneau.",
+  "category": "Butin",
+  "max_stack": 64,
+  "icon": "icones/viandeLezard.png",
+  "stats": {"Satiété": 8}
+}

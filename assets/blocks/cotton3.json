@@ -1,0 +1,11 @@
+{
+  "numeric_id": 98,
+  "name": "Coton (en croissance)",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#66844f"},
+  "textures": {"side": "textures/Cotton3.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

@@ -1,0 +1,9 @@
+{
+  "numeric_id": 131,
+  "name": "Blight",
+  "category": "Sols",
+  "hardness": 9,
+  "color": {"side": "#959673"},
+  "textures": {"side": "textures/Blight.png"},
+  "sound": "dirt"
+}

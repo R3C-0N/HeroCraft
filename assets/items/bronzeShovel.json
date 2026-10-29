@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16791,
+  "name": "Pelle en bronze",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/bronzeShovel.png",
+  "stats": {"Dégâts": 4, "Durabilité": 500}
+}

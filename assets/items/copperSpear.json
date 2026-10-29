@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16426,
+  "name": "Lance de cuivre",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/copperSpear.png",
+  "stats": {"Dégâts": 10, "Durabilité": 300}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16536,
+  "name": "Arc court",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/shortBow.png",
+  "stats": {"Dégâts": 2, "Durabilité": 80}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 117,
+  "name": "Minerai d'aigue-marine",
+  "category": "Minéraux",
+  "hardness": 24,
+  "color": {"side": "#aaaea4"},
+  "textures": {"side": "textures/AquamarineOre.png"}
+}

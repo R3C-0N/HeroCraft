@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16836,
+  "name": "Hache en acier",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/steelAxe.png",
+  "stats": {"Dégâts": 6, "Durabilité": 2000}
+}

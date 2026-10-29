@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16776,
+  "name": "Viande cuite d'ours",
+  "description": "Se mange au clic droit. Rassasie de 45.",
+  "category": "Nourriture",
+  "max_stack": 99,
+  "icon": "icones/viandeCuiteOurs.png",
+  "stats": {"Satiété": 45}
+}

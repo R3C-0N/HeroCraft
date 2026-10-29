@@ -1,0 +1,11 @@
+{
+  "numeric_id": 69,
+  "name": "Oignon — jeune pousse",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#377a44"},
+  "textures": {"side": "textures/OignonStade2.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

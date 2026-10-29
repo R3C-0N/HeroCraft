@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16600,
+  "name": "Bottes de cuivre",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/copperScaleBoots.png",
+  "stats": {"Protection": 4, "Durabilité": 300}
+}

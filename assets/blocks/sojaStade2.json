@@ -1,0 +1,11 @@
+{
+  "numeric_id": 81,
+  "name": "Soja — jeune pousse",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#4b912c"},
+  "textures": {"side": "textures/SojaStade2.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

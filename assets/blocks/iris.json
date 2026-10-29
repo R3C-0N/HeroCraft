@@ -1,0 +1,11 @@
+{
+  "numeric_id": 106,
+  "name": "Iris",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#6e7d69"},
+  "textures": {"side": "textures/Iris.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

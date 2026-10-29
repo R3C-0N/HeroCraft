@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16441,
+  "name": "Lance d'étherium (adamantine)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumAdamantineSpear.png",
+  "stats": {"Dégâts": 28, "Durabilité": 5000}
+}

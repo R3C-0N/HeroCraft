@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16610,
+  "name": "Heaume d'étherium (adamantine)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumAdamantinePlateHelmet.png",
+  "stats": {"Protection": 21, "Durabilité": 5000}
+}

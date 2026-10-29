@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16539,
+  "name": "Carreau d'acier",
+  "category": "Armes",
+  "max_stack": 99,
+  "icon": "icones/steelBolt.png",
+  "stats": {"Dégâts": 9}
+}

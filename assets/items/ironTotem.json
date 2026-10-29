@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16504,
+  "name": "Totem de fer",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/ironTotem.png",
+  "stats": {"Dégâts": 10, "Durabilité": 900}
+}

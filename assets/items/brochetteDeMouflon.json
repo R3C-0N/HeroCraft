@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16844,
+  "name": "Brochette de mouflon",
+  "description": "Se mange au clic droit. Rassasie de 40.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/brochetteDeMouflon.png",
+  "stats": {"Satiété": 40}
+}

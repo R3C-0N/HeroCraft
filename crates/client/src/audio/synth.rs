@@ -22,16 +22,17 @@ impl Material {
     pub const ALL: [Material; 7] =
         [Material::Grass, Material::Dirt, Material::Stone, Material::Sand, Material::Snow, Material::Wood, Material::Water];
 
+    /// Matière d'un bloc, d'après le son de sa fiche
     pub fn of(block: herocraft_common::BlockId) -> Material {
-        use herocraft_common::BlockId;
-        match block {
-            BlockId::GRASS | BlockId::LEAVES => Material::Grass,
-            BlockId::DIRT => Material::Dirt,
-            BlockId::SAND => Material::Sand,
-            BlockId::SNOW => Material::Snow,
-            BlockId::WOOD => Material::Wood,
-            BlockId::WATER | BlockId::LAVA => Material::Water,
-            _ => Material::Stone,
+        use herocraft_common::BlockSound;
+        match herocraft_common::blocks().get(block).map(|sheet| sheet.sound) {
+            Some(BlockSound::Grass) => Material::Grass,
+            Some(BlockSound::Dirt) => Material::Dirt,
+            Some(BlockSound::Sand) => Material::Sand,
+            Some(BlockSound::Snow) => Material::Snow,
+            Some(BlockSound::Wood) => Material::Wood,
+            Some(BlockSound::Water) => Material::Water,
+            Some(BlockSound::Stone) | None => Material::Stone,
         }
     }
 }

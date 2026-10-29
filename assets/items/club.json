@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16414,
+  "name": "Gourdin",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/club.png",
+  "stats": {"Dégâts": 5, "Durabilité": 80}
+}

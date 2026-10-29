@@ -1,0 +1,11 @@
+{
+  "numeric_id": 104,
+  "name": "Clochelueur",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#759479"},
+  "textures": {"side": "textures/Glowbell.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

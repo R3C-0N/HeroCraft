@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16450,
+  "name": "Masse d'étherium (mithril)",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/etheriumMithrilMace.png",
+  "stats": {"Dégâts": 28, "Durabilité": 5000}
+}

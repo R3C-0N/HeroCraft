@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16903,
+  "name": "Totem : rampant aveugle",
+  "description": "Posé au sol, fait apparaître un rampant aveugle.",
+  "category": "Totems",
+  "max_stack": 16,
+  "icon": "icones/rampantTotem.png"
+}

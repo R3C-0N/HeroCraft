@@ -1,0 +1,11 @@
+{
+  "numeric_id": 58,
+  "name": "Blé — plant",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#427c26"},
+  "textures": {"side": "textures/BleStade3.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

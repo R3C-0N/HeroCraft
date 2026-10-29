@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16880,
+  "name": "Tourte de gibier",
+  "description": "Se mange au clic droit. Rassasie de 50.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/tourteDeGibier.png",
+  "stats": {"Satiété": 50}
+}

@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16861,
+  "name": "Pâté de lapin en croûte",
+  "description": "Se mange au clic droit. Rassasie de 42.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/pateDeLapinEnCroute.png",
+  "stats": {"Satiété": 42}
+}

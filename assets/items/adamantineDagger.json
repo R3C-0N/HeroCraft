@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16387,
+  "name": "Dague d'adamantine",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/adamantineDagger.png",
+  "stats": {"Dégâts": 16, "Durabilité": 3000}
+}

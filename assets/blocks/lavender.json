@@ -1,0 +1,11 @@
+{
+  "numeric_id": 107,
+  "name": "Lavande",
+  "category": "Flore",
+  "hardness": 1,
+  "color": {"side": "#73836f"},
+  "textures": {"side": "textures/Lavender.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

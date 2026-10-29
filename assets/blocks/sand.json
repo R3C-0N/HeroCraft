@@ -1,0 +1,9 @@
+{
+  "numeric_id": 4,
+  "name": "Sable",
+  "category": "Sols",
+  "hardness": 9,
+  "color": {"side": "#e0d18f"},
+  "textures": {"side": "textures/Sand.png"},
+  "sound": "sand"
+}

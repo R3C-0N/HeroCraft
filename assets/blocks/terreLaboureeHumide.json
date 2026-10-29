@@ -1,0 +1,9 @@
+{
+  "numeric_id": 85,
+  "name": "Terre labourée humide",
+  "category": "Cultures",
+  "hardness": 9,
+  "color": {"top": "#372415", "side": "#997c58"},
+  "textures": {"top": "textures/TerreLaboureeHumide.png", "side": "textures/Dirt.png"},
+  "sound": "dirt"
+}

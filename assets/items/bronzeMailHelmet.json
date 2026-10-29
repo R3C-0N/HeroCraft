@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16582,
+  "name": "Capuche de bronze",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/bronzeMailHelmet.png",
+  "stats": {"Protection": 5, "Durabilité": 500}
+}

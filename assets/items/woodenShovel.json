@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16841,
+  "name": "Pelle en bois",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/woodenShovel.png",
+  "stats": {"Dégâts": 2, "Durabilité": 80}
+}

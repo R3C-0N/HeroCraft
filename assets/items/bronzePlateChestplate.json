@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16585,
+  "name": "Cuirasse de bronze",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/bronzePlateChestplate.png",
+  "stats": {"Protection": 14, "Durabilité": 500}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16525,
+  "name": "Masse d'orichalque",
+  "category": "Armes",
+  "max_stack": 1,
+  "icon": "icones/orichalcumMace.png",
+  "stats": {"Dégâts": 21, "Durabilité": 3000}
+}

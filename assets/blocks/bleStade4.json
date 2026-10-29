@@ -1,0 +1,11 @@
+{
+  "numeric_id": 59,
+  "name": "Blé — mûr",
+  "category": "Cultures",
+  "hardness": 1,
+  "color": {"side": "#a1833f"},
+  "textures": {"side": "textures/BleStade4.png"},
+  "shape": "plant",
+  "solid": false,
+  "sound": "grass"
+}

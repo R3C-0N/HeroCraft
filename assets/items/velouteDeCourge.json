@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16881,
+  "name": "Velouté de courge",
+  "description": "Se mange au clic droit. Rassasie de 26.",
+  "category": "Plats",
+  "max_stack": 99,
+  "icon": "icones/velouteDeCourge.png",
+  "stats": {"Satiété": 26}
+}

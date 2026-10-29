@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16647,
+  "name": "Braies de fer",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/ironMailLeggings.png",
+  "stats": {"Protection": 9, "Durabilité": 900}
+}

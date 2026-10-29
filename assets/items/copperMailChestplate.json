@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16593,
+  "name": "Pourpoint de cuivre",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/copperMailChestplate.png",
+  "stats": {"Protection": 7, "Durabilité": 300}
+}

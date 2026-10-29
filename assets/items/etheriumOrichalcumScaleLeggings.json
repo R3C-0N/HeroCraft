@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16639,
+  "name": "Chausses d'étherium (orichalque)",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/etheriumOrichalcumScaleLeggings.png",
+  "stats": {"Protection": 25, "Durabilité": 5000}
+}

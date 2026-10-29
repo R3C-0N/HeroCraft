@@ -685,15 +685,23 @@ impl VoxelMeshBuilder {
                     if block.is_air() {
                         continue;
                     }
+                    if block.is_plant() {
+                        // Fleurs, herbes, pousses : deux panneaux croisés en diagonale du bloc, vus des deux côtés
+                        let color = get_color(gx, gy, gz, block, true, (0, 1, 0));
+                        let corner = |dx: f64, dy: f64, dz: f64| get_corner(fx + dx, fy + dy, fz + dz, layer);
+                        for (a, b) in [((0.0, 0.0), (1.0, 1.0)), ((1.0, 0.0), (0.0, 1.0))] {
+                            let (c0, c1) = (corner(a.0, 0.0, a.1), corner(b.0, 0.0, b.1));
+                            let (c2, c3) = (corner(b.0, 1.0, b.1), corner(a.0, 1.0, a.1));
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, [1.0; 4]);
+                            Self::add_quad(&mut vertices, &mut indices, c1, c0, c3, c2, color, [1.0; 4]);
+                        }
+                        continue;
+                    }
                     let is_water = block == BlockId::WATER;
 
                     // 1. Face Haut (+Y)
                     let neighbor_top = get_voxel(gx, gy + 1, gz);
-                    let should_emit_top = if is_water {
-                        neighbor_top.is_air()
-                    } else {
-                        neighbor_top.is_air() || neighbor_top == BlockId::WATER
-                    };
+                    let should_emit_top = Self::shows_face(block, neighbor_top);
                     if should_emit_top {
                         let color = get_color(gx, gy, gz, block, true, (0, 1, 0));
                         let c0 = get_corner(fx, fy + 1.0, fz, layer);
@@ -716,7 +724,7 @@ impl VoxelMeshBuilder {
                     // 2. Face Bas (-Y)
                     if !is_water {
                         let neighbor_bottom = get_voxel(gx, gy - 1, gz);
-                        if neighbor_bottom.is_air() {
+                        if Self::shows_face(block, neighbor_bottom) && !neighbor_bottom.is_liquid() {
                             let color = get_color(gx, gy, gz, block, false, (0, -1, 0));
                             let c0 = get_corner(fx, fy, fz, layer);
                             let c1 = get_corner(fx + 1.0, fy, fz, layer);
@@ -734,11 +742,7 @@ impl VoxelMeshBuilder {
 
                     // 3. Face Gauche (-X)
                     let neighbor_left = get_voxel(gx - 1, gy, gz);
-                    let should_emit_left = if is_water {
-                        neighbor_left.is_air()
-                    } else {
-                        neighbor_left.is_air() || neighbor_left == BlockId::WATER
-                    };
+                    let should_emit_left = Self::shows_face(block, neighbor_left);
                     if should_emit_left {
                         let color = get_color(gx, gy, gz, block, false, (-1, 0, 0));
                         let c0 = get_corner(fx, fy, fz, layer);
@@ -760,11 +764,7 @@ impl VoxelMeshBuilder {
 
                     // 4. Face Droite (+X)
                     let neighbor_right = get_voxel(gx + 1, gy, gz);
-                    let should_emit_right = if is_water {
-                        neighbor_right.is_air()
-                    } else {
-                        neighbor_right.is_air() || neighbor_right == BlockId::WATER
-                    };
+                    let should_emit_right = Self::shows_face(block, neighbor_right);
                     if should_emit_right {
                         let color = get_color(gx, gy, gz, block, false, (1, 0, 0));
                         let c0 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
@@ -786,11 +786,7 @@ impl VoxelMeshBuilder {
 
                     // 5. Face Avant (+Z)
                     let neighbor_front = get_voxel(gx, gy, gz + 1);
-                    let should_emit_front = if is_water {
-                        neighbor_front.is_air()
-                    } else {
-                        neighbor_front.is_air() || neighbor_front == BlockId::WATER
-                    };
+                    let should_emit_front = Self::shows_face(block, neighbor_front);
                     if should_emit_front {
                         let color = get_color(gx, gy, gz, block, false, (0, 0, 1));
                         let c0 = get_corner(fx + 1.0, fy, fz + 1.0, layer);
@@ -812,11 +808,7 @@ impl VoxelMeshBuilder {
 
                     // 6. Face Arrière (-Z)
                     let neighbor_back = get_voxel(gx, gy, gz - 1);
-                    let should_emit_back = if is_water {
-                        neighbor_back.is_air()
-                    } else {
-                        neighbor_back.is_air() || neighbor_back == BlockId::WATER
-                    };
+                    let should_emit_back = Self::shows_face(block, neighbor_back);
                     if should_emit_back {
                         let color = get_color(gx, gy, gz, block, false, (0, 0, -1));
                         let c0 = get_corner(fx, fy, fz, layer);
@@ -844,7 +836,15 @@ impl VoxelMeshBuilder {
 
     #[inline(always)]
     fn is_solid_for_ao(block: BlockId) -> bool {
-        !block.is_air() && block != BlockId::WATER
+        !block.is_air() && !block.is_liquid() && !block.is_plant()
+    }
+
+    /// La face de `block` tournée vers `neighbor` se voit : le voisin laisse voir à travers (air,
+    /// eau, verre, feuillage, plante) et n'est pas de la même matière (l'eau contre l'eau, le verre
+    /// contre le verre ne montrent pas de paroi)
+    #[inline(always)]
+    fn shows_face(block: BlockId, neighbor: BlockId) -> bool {
+        !neighbor.is_opaque() && neighbor != block
     }
 
     fn calc_corner_ao<F>(get_voxel: &F, s1: (i32, i32, i32), s2: (i32, i32, i32), c: (i32, i32, i32)) -> f32
@@ -922,24 +922,12 @@ impl VoxelMeshBuilder {
         }
     }
 
-    /// Palette de couleurs fidèle aux blocs HeroCraft
+    /// Couleur d'une face, celle de la fiche du bloc
     pub(crate) fn block_color(block: BlockId, is_top: bool) -> [f32; 4] {
-        match block {
-            BlockId::GRASS => {
-                if is_top {
-                    [0.28, 0.65, 0.22, 1.0] // Sommet herbeux vert
-                } else {
-                    [0.46, 0.33, 0.18, 1.0] // Tranche de terre brune
-                }
-            }
-            BlockId::DIRT => [0.46, 0.33, 0.18, 1.0],
-            BlockId::STONE => [0.52, 0.50, 0.48, 1.0],
-            BlockId::SAND => [0.88, 0.82, 0.56, 1.0],
-            BlockId::SNOW => [0.96, 0.97, 1.00, 1.0],
-            BlockId::WATER => [0.10, 0.54, 0.82, 0.90], // Eau azur translucide
-            BlockId::WOOD => [0.42, 0.28, 0.16, 1.0],
-            BlockId::LEAVES => [0.14, 0.44, 0.16, 1.0],
-            _ => [0.60, 0.60, 0.60, 1.0],
+        match herocraft_common::blocks().get(block) {
+            Some(sheet) if is_top => sheet.top_color(),
+            Some(sheet) => sheet.side_color(),
+            None => [0.60, 0.60, 0.60, 1.0],
         }
     }
 }

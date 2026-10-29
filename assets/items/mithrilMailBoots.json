@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16660,
+  "name": "Bottines de mithril",
+  "category": "Armures",
+  "max_stack": 1,
+  "icon": "icones/mithrilMailBoots.png",
+  "stats": {"Protection": 11, "Durabilité": 3000}
+}

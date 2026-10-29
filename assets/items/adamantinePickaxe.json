@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16783,
+  "name": "Pioche en adamantine",
+  "category": "Outils",
+  "max_stack": 1,
+  "icon": "icones/adamantinePickaxe.png",
+  "stats": {"Dégâts": 9, "Durabilité": 3000}
+}

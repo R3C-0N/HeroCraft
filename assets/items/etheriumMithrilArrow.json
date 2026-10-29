@@ -1,0 +1,8 @@
+{
+  "numeric_id": 16445,
+  "name": "Flèche d'étherium (mithril)",
+  "category": "Armes",
+  "max_stack": 99,
+  "icon": "icones/etheriumMithrilArrow.png",
+  "stats": {"Dégâts": 18}
+}

@@ -1,0 +1,8 @@
+{
+  "numeric_id": 54,
+  "name": "Plaques de acier",
+  "category": "Construction",
+  "hardness": 36,
+  "color": {"side": "#a2b0bc"},
+  "textures": {"side": "textures/SteelPlate.png"}
+}
