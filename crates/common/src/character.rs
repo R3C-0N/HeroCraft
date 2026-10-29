@@ -1,5 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+/// Hauteur de chute sans dommage, en blocs (un saut depuis le bord d'une marche n'en fait pas)
+pub const SAFE_FALL_BLOCKS: f32 = 5.0;
+/// Points de vie perdus par bloc de chute au-delà de `SAFE_FALL_BLOCKS`
+pub const FALL_DAMAGE_PER_BLOCK: f32 = 8.0;
+/// Endurance consommée par seconde de sprint
+pub const SPRINT_STAMINA_COST: f32 = 15.0;
+
 /// Classe de personnage RPG
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PlayerClass {
@@ -9,6 +16,29 @@ pub enum PlayerClass {
     Ranger,
     Paladin,
     Rogue,
+}
+
+impl PlayerClass {
+    /// Nom affiché de la classe
+    pub fn label(self) -> &'static str {
+        match self {
+            PlayerClass::Adventurer => "Aventurier",
+            PlayerClass::Warrior => "Guerrier",
+            PlayerClass::Mage => "Mage",
+            PlayerClass::Ranger => "Rôdeur",
+            PlayerClass::Paladin => "Paladin",
+            PlayerClass::Rogue => "Voleur",
+        }
+    }
+}
+
+/// Points de vie perdus pour une chute de `blocks` blocs
+pub fn fall_damage(blocks: f32) -> f32 {
+    if blocks.is_finite() {
+        (blocks - SAFE_FALL_BLOCKS).max(0.0) * FALL_DAMAGE_PER_BLOCK
+    } else {
+        0.0
+    }
 }
 
 /// Attributs primaires du RPG
@@ -134,6 +164,24 @@ impl CharacterStats {
         self.hp = (self.hp - amount).max(0.0);
         self.hp == 0.0 // True si mort
     }
+
+    /// Avance les jauges de `dt` secondes : le sprint consomme l'endurance, qui se régénère
+    /// (+10 par sec) sinon ; la vie (+1 par sec) et le mana (+2 par sec) remontent toujours
+    pub fn regenerate(&mut self, dt: f32, sprinting: bool) {
+        let stamina = if sprinting { -SPRINT_STAMINA_COST } else { 10.0 };
+        self.stamina = (self.stamina + stamina * dt).clamp(0.0, self.max_stamina);
+        self.mana = (self.mana + 2.0 * dt).min(self.max_mana);
+        if self.hp > 0.0 {
+            self.hp = (self.hp + 1.0 * dt).min(self.max_hp);
+        }
+    }
+
+    /// Retour à la vie après une mort : jauges pleines, niveau et expérience conservés
+    pub fn revive(&mut self) {
+        self.hp = self.max_hp;
+        self.mana = self.max_mana;
+        self.stamina = self.max_stamina;
+    }
 }
 
 #[cfg(test)]
@@ -151,5 +199,27 @@ mod tests {
         assert!(leveled);
         assert_eq!(hero.level, 2);
         assert!(hero.max_hp > initial_max_hp);
+    }
+
+    #[test]
+    fn test_fall_damage_starts_past_safe_height() {
+        assert_eq!(fall_damage(0.0), 0.0);
+        assert_eq!(fall_damage(SAFE_FALL_BLOCKS), 0.0);
+        assert_eq!(fall_damage(SAFE_FALL_BLOCKS + 2.0), 2.0 * FALL_DAMAGE_PER_BLOCK);
+        assert_eq!(fall_damage(f32::NAN), 0.0);
+        // Une très grande chute tue un guerrier débutant
+        let mut hero = CharacterStats::new(PlayerClass::Warrior);
+        assert!(hero.take_damage(fall_damage(40.0)));
+    }
+
+    #[test]
+    fn test_sprint_drains_stamina_and_rest_restores_it() {
+        let mut hero = CharacterStats::new(PlayerClass::Warrior);
+        hero.regenerate(2.0, true);
+        assert!((hero.stamina - (hero.max_stamina - 2.0 * SPRINT_STAMINA_COST)).abs() < 1e-3);
+        hero.regenerate(100.0, true);
+        assert_eq!(hero.stamina, 0.0);
+        hero.regenerate(100.0, false);
+        assert_eq!(hero.stamina, hero.max_stamina);
     }
 }

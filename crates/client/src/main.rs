@@ -23,6 +23,7 @@ mod lod;
 mod monitor;
 mod network;
 mod planet_mesh;
+mod player_stats;
 mod post;
 mod renderer;
 mod shaders;
@@ -353,6 +354,18 @@ fn main() {
                         if !ui_state.is_settings_open {
                             herocraft_common::prof_scope!("frame::camera_update");
                             camera.update(dt, &generator);
+                            // Jauges du joueur, chute terminée : dommages (signalés au serveur en
+                            // ligne) et, si elle tue, retour au point d'apparition
+                            ui_state.player.tick(dt, &mut camera);
+                            if let Some(blocks) = camera.take_landing() {
+                                if let Some(client) = net.as_mut() {
+                                    client.send_fall(blocks);
+                                }
+                                if ui_state.player.fall(blocks) {
+                                    info!("Mort après une chute de {:.0} blocs : retour au point d'apparition.", blocks);
+                                    camera.spawn_on_ground(&generator);
+                                }
+                            }
                         }
                         state.update_camera(&camera, &ui_state.lighting_settings, &ui_state.cloud_settings, ui_state.video_settings.flattening);
                         state.update_post(&ui_state.post_settings);
@@ -389,6 +402,7 @@ fn main() {
                                             block_interaction.invalidate();
                                         }
                                     }
+                                    NetEvent::Stats(stats) => ui_state.player.sync(stats, &mut camera),
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
                                 }
                             }
