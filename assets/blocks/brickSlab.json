@@ -1,10 +1,11 @@
 {
   "numeric_id": 140,
   "name": "Dalle de briques",
-  "description": "La moitié d'un bloc : se monte sans sauter.",
+  "description": "La moitié d'un bloc, couchée contre la face visée : au sol, sous un plafond ou contre un mur. Se monte sans sauter.",
   "category": "Construction",
   "hardness": 14,
   "color": {"side": "#c4937d"},
   "textures": {"side": "textures/Brick.png"},
-  "shape": "dalle"
+  "shape": "dalle",
+  "rotation": "face"
 }

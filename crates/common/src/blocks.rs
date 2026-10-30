@@ -21,6 +21,9 @@ pub const SHAPES_DIR: &str = "shapes";
 pub const NO_TEXTURE: u16 = u16::MAX;
 /// Premier numéro d'objet : les blocs ont les numéros en dessous (voir `ItemId`)
 pub const FIRST_OBJECT_ID: u16 = 0x4000;
+/// Numéros de fiche des blocs : sous cette limite. Les trois bits au-dessus portent l'orientation
+/// du bloc posé dans le monde.
+pub const BLOCK_ID_LIMIT: u16 = 0x2000;
 
 /// Un bloc, tel que décrit par sa fiche
 #[derive(Debug, Clone, Deserialize)]
@@ -52,9 +55,14 @@ pub struct BlockSheet {
     /// Forme : `cube`, `plant`, le nom d'une forme de `shapes/` ou des pavés décrits sur place
     #[serde(default)]
     pub shape: ShapeSpec,
-    /// Orientation choisie à la pose (`horizontal` : la forme se tourne vers le joueur)
+    /// Orientation choisie à la pose (`horizontal` : la forme se tourne vers le joueur ; `face` :
+    /// elle se couche contre la face visée)
     #[serde(default)]
     pub rotation: BlockRotation,
+    /// Avec `rotation: horizontal` : posé à l'envers quand on vise le dessous d'un bloc ou la moitié
+    /// haute d'un côté (escaliers)
+    #[serde(default)]
+    pub upside_down: bool,
     /// Arrête le joueur et les créatures
     #[serde(default = "yes")]
     pub solid: bool,
@@ -174,7 +182,40 @@ pub enum BlockRotation {
     None,
     /// Tourné d'un quart de tour en quart de tour pour que son avant regarde le joueur
     Horizontal,
+    /// Couché contre la face visée : le dessous de la forme (y = 0) se colle au bloc visé (une
+    /// dalle posée contre un mur est une dalle verticale, sous un plafond une dalle haute)
+    Face,
 }
+
+impl BlockRotation {
+    /// Orientations possibles (valeurs de `BlockId::rotation`)
+    pub fn count(self, upside_down: bool) -> u8 {
+        match self {
+            BlockRotation::None => 1,
+            BlockRotation::Horizontal if upside_down => 8,
+            BlockRotation::Horizontal => 4,
+            BlockRotation::Face => 6,
+        }
+    }
+
+    /// Variante de la forme (`BlockShape::boxes`) d'un bloc posé avec l'orientation `rotation`
+    pub fn variant(self, rotation: u8) -> usize {
+        match self {
+            BlockRotation::None => 0,
+            BlockRotation::Horizontal => (rotation & 7) as usize,
+            BlockRotation::Face => HORIZONTAL_VARIANTS + (rotation as usize).min(5),
+        }
+    }
+}
+
+/// Variantes horizontales d'une forme : quatre quarts de tour, à l'endroit puis à l'envers
+const HORIZONTAL_VARIANTS: usize = 8;
+/// Toutes les variantes : les horizontales, puis couchée contre chacune des six faces
+const SHAPE_VARIANTS: usize = HORIZONTAL_VARIANTS + 6;
+
+/// Orientation `face` : la face contre laquelle le bloc est couché, dans l'ordre des valeurs de
+/// `BlockId::rotation` (index de `FACE_DIRS`) : dessous (la forme telle quelle), dessus, +X, -X, +Z, -Z
+pub const ATTACHED_FACES: [usize; 6] = [3, 2, 0, 1, 4, 5];
 
 /// Les six faces d'un bloc, dans l'ordre des voisins : +X, -X, +Y (dessus), -Y, +Z, -Z
 pub const FACE_DIRS: [(i32, i32, i32); 6] = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)];
@@ -184,13 +225,13 @@ pub const fn opposite_face(dir: usize) -> usize {
     dir ^ 1
 }
 
-/// Forme faite de pavés, tournée dans ses quatre orientations
+/// Forme faite de pavés, dans toutes ses orientations (`BlockRotation::variant`)
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockShape {
-    /// Pavés de chaque orientation (quart de tour 0 à 3)
-    pub rotations: [Vec<ShapeBox>; 4],
-    /// Faces entièrement couvertes, par orientation (bit `dir` de `FACE_DIRS`)
-    full_faces: [u8; 4],
+    /// Pavés de chaque variante
+    variants: Vec<Vec<ShapeBox>>,
+    /// Faces entièrement couvertes, par variante (bit `dir` de `FACE_DIRS`)
+    full_faces: Vec<u8>,
     pub texture: ShapeTexture,
 }
 
@@ -204,31 +245,45 @@ impl BlockShape {
                 return Err(format!("pavé {b:?} invalide : [x0, y0, z0, x1, y1, z1] de 0 à 16, chaque début avant sa fin"));
             }
         }
-        let rotations: [Vec<ShapeBox>; 4] = std::array::from_fn(|r| boxes.iter().map(|b| rotate_box(*b, r as u8)).collect());
-        let full_faces = std::array::from_fn(|r| (0..6).filter(|&dir| covers_face(&rotations[r], dir)).fold(0, |m, dir| m | (1 << dir)));
-        Ok(Self { rotations, full_faces, texture })
+        let variants: Vec<Vec<ShapeBox>> = (0..SHAPE_VARIANTS)
+            .map(|v| {
+                boxes
+                    .iter()
+                    .map(|&b| match v {
+                        // Quart de tour, puis retournement à l'envers
+                        0..HORIZONTAL_VARIANTS => {
+                            let b = rotate_box(b, v as u8 & 3);
+                            if v >= 4 { [b[0], 16 - b[4], b[2], b[3], 16 - b[1], b[5]] } else { b }
+                        }
+                        _ => lay_box(b, ATTACHED_FACES[v - HORIZONTAL_VARIANTS]),
+                    })
+                    .collect()
+            })
+            .collect();
+        let full_faces = variants.iter().map(|boxes| (0..6).filter(|&dir| covers_face(boxes, dir)).fold(0, |m, dir| m | (1 << dir))).collect();
+        Ok(Self { variants, full_faces, texture })
     }
 
-    /// Pavés du bloc tourné de `rotation` quarts de tour
-    pub fn boxes(&self, rotation: u8) -> &[ShapeBox] {
-        &self.rotations[(rotation & 3) as usize]
+    /// Pavés de la variante `variant` (`BlockRotation::variant`)
+    pub fn boxes(&self, variant: usize) -> &[ShapeBox] {
+        &self.variants[variant]
     }
 
-    /// La face `dir` (index de `FACE_DIRS`) du bloc tourné est entièrement couverte
-    pub fn covers(&self, rotation: u8, dir: usize) -> bool {
-        self.full_faces[(rotation & 3) as usize] & (1 << dir) != 0
+    /// La face `dir` (index de `FACE_DIRS`) de la variante est entièrement couverte
+    pub fn covers(&self, variant: usize, dir: usize) -> bool {
+        self.full_faces[variant] & (1 << dir) != 0
     }
 
     /// Le point local (de 0 à 1 dans chaque axe) est dans un pavé
-    pub fn contains(&self, rotation: u8, local: [f64; 3]) -> bool {
+    pub fn contains(&self, variant: usize, local: [f64; 3]) -> bool {
         let p = local.map(|v| v * 16.0);
-        self.boxes(rotation).iter().any(|b| (0..3).all(|i| p[i] >= b[i] as f64 && p[i] < b[i + 3] as f64))
+        self.boxes(variant).iter().any(|b| (0..3).all(|i| p[i] >= b[i] as f64 && p[i] < b[i + 3] as f64))
     }
 
     /// Hauteur (de 0 à 1) du dessus du plus haut pavé au-dessus du point local (x, z), au plus `max_y`
-    pub fn top_at(&self, rotation: u8, x: f64, z: f64, max_y: f64) -> Option<f64> {
+    pub fn top_at(&self, variant: usize, x: f64, z: f64, max_y: f64) -> Option<f64> {
         let (x, z) = (x * 16.0, z * 16.0);
-        self.boxes(rotation)
+        self.boxes(variant)
             .iter()
             .filter(|b| x >= b[0] as f64 && x < b[3] as f64 && z >= b[2] as f64 && z < b[5] as f64)
             .map(|b| b[4] as f64 / 16.0)
@@ -237,8 +292,8 @@ impl BlockShape {
     }
 
     /// Boîte englobante (seizièmes)
-    pub fn bounds(&self, rotation: u8) -> ShapeBox {
-        self.boxes(rotation).iter().fold([16, 16, 16, 0, 0, 0], |a, b| {
+    pub fn bounds(&self, variant: usize) -> ShapeBox {
+        self.boxes(variant).iter().fold([16, 16, 16, 0, 0, 0], |a, b| {
             [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2]), a[3].max(b[3]), a[4].max(b[4]), a[5].max(b[5])]
         })
     }
@@ -258,6 +313,23 @@ pub fn rotate_box(b: ShapeBox, r: u8) -> ShapeBox {
     let (ax, az) = turn(b[0], b[2]);
     let (bx, bz) = turn(b[3], b[5]);
     [ax.min(bx), b[1], az.min(bz), ax.max(bx), b[4], az.max(bz)]
+}
+
+/// Couche un pavé contre la face `dir` (index de `FACE_DIRS`) : son dessous (y = 0) passe contre
+/// cette face
+fn lay_box(b: ShapeBox, dir: usize) -> ShapeBox {
+    let lay = |x: u8, y: u8, z: u8| -> [u8; 3] {
+        match dir {
+            3 => [x, y, z],
+            2 => [x, 16 - y, z],
+            1 => [y, x, z],
+            0 => [16 - y, x, z],
+            5 => [x, z, y],
+            _ => [x, z, 16 - y],
+        }
+    };
+    let (a, c) = (lay(b[0], b[1], b[2]), lay(b[3], b[4], b[5]));
+    [a[0].min(c[0]), a[1].min(c[1]), a[2].min(c[2]), a[0].max(c[0]), a[1].max(c[1]), a[2].max(c[2])]
 }
 
 /// Les pavés couvrent entièrement la face `dir` du bloc
@@ -326,8 +398,11 @@ impl BlockSheet {
     pub fn parse(id: &str, json: &str) -> Result<Self, String> {
         let mut sheet: BlockSheet = serde_json::from_str(json).map_err(|e| e.to_string())?;
         sheet.id = id.to_string();
-        if sheet.numeric_id == 0 || sheet.numeric_id >= FIRST_OBJECT_ID {
-            return Err(format!("numéro {} invalide (de 1 à {} : 0 est l'air)", sheet.numeric_id, FIRST_OBJECT_ID - 1));
+        if sheet.numeric_id == 0 || sheet.numeric_id >= BLOCK_ID_LIMIT {
+            return Err(format!("numéro {} invalide (de 1 à {} : 0 est l'air)", sheet.numeric_id, BLOCK_ID_LIMIT - 1));
+        }
+        if sheet.upside_down && sheet.rotation != BlockRotation::Horizontal {
+            return Err("upside_down demande \"rotation\": \"horizontal\"".into());
         }
         if sheet.light > 15 {
             return Err("lumière invalide (de 0 à 15)".into());
@@ -384,14 +459,16 @@ struct BlockFlags {
     shaped: bool,
     /// Matière qui ne laisse pas voir à travers (pour les faces couvertes d'une forme)
     material_opaque: bool,
-    rotatable: bool,
+    /// Comment le bloc s'oriente, et le nombre de ses orientations (1 s'il ne s'oriente pas)
+    rotation: BlockRotation,
+    orientations: u8,
 }
 
 /// Bloc sans fiche (fichier retiré d'un monde existant) : un cube plein
 const UNKNOWN: BlockFlags =
-    BlockFlags { known: false, solid: true, opaque: true, liquid: false, plant: false, shaped: false, material_opaque: true, rotatable: false };
+    BlockFlags { known: false, solid: true, opaque: true, liquid: false, plant: false, shaped: false, material_opaque: true, rotation: BlockRotation::None, orientations: 1 };
 const AIR: BlockFlags =
-    BlockFlags { known: false, solid: false, opaque: false, liquid: false, plant: false, shaped: false, material_opaque: false, rotatable: false };
+    BlockFlags { known: false, solid: false, opaque: false, liquid: false, plant: false, shaped: false, material_opaque: false, rotation: BlockRotation::None, orientations: 1 };
 
 /// Tous les blocs connus
 #[derive(Debug, Clone)]
@@ -540,7 +617,8 @@ impl BlockRegistry {
                 plant: sheet.shape.is_named("plant"),
                 shaped: shape.is_some(),
                 material_opaque: sheet.opaque,
-                rotatable: sheet.rotation == BlockRotation::Horizontal && shape.is_some(),
+                rotation: if shape.is_some() { sheet.rotation } else { BlockRotation::None },
+                orientations: if shape.is_some() { sheet.rotation.count(sheet.upside_down) } else { 1 },
             };
             shapes[n] = shape;
             // Les liquides gardent leur couleur : la mer garde ses dégradés de profondeur
@@ -605,7 +683,7 @@ impl BlockRegistry {
 
     pub fn is_known(&self, block: BlockId) -> bool {
         let flags = self.flags(block);
-        flags.known && (block.rotation() == 0 || flags.rotatable)
+        flags.known && block.rotation() < flags.orientations
     }
 
     /// Ce que donne le bloc cassé
@@ -642,9 +720,9 @@ impl BlockRegistry {
 }
 
 impl BlockId {
-    /// Les deux bits hauts du numéro posé dans le monde : l'orientation (quarts de tour) d'un bloc
-    /// qui s'oriente. Les fiches ont des numéros en dessous (`FIRST_OBJECT_ID`).
-    pub const ROTATION_SHIFT: u16 = 14;
+    /// Les trois bits hauts du numéro posé dans le monde : l'orientation d'un bloc qui s'oriente
+    /// (`BlockRotation`). Les fiches ont des numéros en dessous (`BLOCK_ID_LIMIT`).
+    pub const ROTATION_SHIFT: u16 = 13;
 
     #[inline(always)]
     pub fn is_air(&self) -> bool {
@@ -654,22 +732,39 @@ impl BlockId {
     /// Le bloc sans son orientation : le numéro de sa fiche
     #[inline(always)]
     pub fn kind(self) -> BlockId {
-        BlockId(self.0 & (FIRST_OBJECT_ID - 1))
+        BlockId(self.0 & (BLOCK_ID_LIMIT - 1))
     }
 
-    /// Quarts de tour du bloc posé (0 à 3)
+    /// Orientation du bloc posé (0 à 7, selon sa `BlockRotation`)
     #[inline(always)]
     pub fn rotation(self) -> u8 {
         (self.0 >> Self::ROTATION_SHIFT) as u8
     }
 
-    /// Le bloc tourné de `rotation` quarts de tour, s'il s'oriente (sinon tel quel)
+    /// Le bloc posé avec l'orientation `rotation`, s'il peut la prendre (sinon sans orientation)
     pub fn with_rotation(self, rotation: u8) -> BlockId {
-        if blocks().flags(self).rotatable {
-            BlockId(self.kind().0 | ((rotation as u16 & 3) << Self::ROTATION_SHIFT))
+        if rotation < blocks().flags(self).orientations {
+            BlockId(self.kind().0 | ((rotation as u16) << Self::ROTATION_SHIFT))
         } else {
             self.kind()
         }
+    }
+
+    /// Comment le bloc s'oriente à la pose
+    #[inline(always)]
+    pub fn rotation_mode(&self) -> BlockRotation {
+        blocks().flags(*self).rotation
+    }
+
+    /// Le bloc peut être posé à l'envers (escalier)
+    pub fn can_be_upside_down(&self) -> bool {
+        blocks().flags(*self).orientations == 8
+    }
+
+    /// Variante de sa forme qu'a ce bloc posé (`BlockShape::boxes`)
+    #[inline(always)]
+    pub fn shape_variant(&self) -> usize {
+        self.rotation_mode().variant(self.rotation())
     }
 
     /// Forme du bloc s'il est fait de pavés (dalle, escalier…)
@@ -682,7 +777,7 @@ impl BlockId {
     #[inline(always)]
     pub fn hides_face(&self, dir: usize) -> bool {
         let flags = blocks().flags(*self);
-        flags.opaque || (flags.shaped && flags.material_opaque && self.shape().is_some_and(|s| s.covers(self.rotation(), dir)))
+        flags.opaque || (flags.shaped && flags.material_opaque && self.shape().is_some_and(|s| s.covers(self.shape_variant(), dir)))
     }
 
     /// Le point local (de 0 à 1 dans chaque axe du bloc) est dans la matière du bloc : tout le
@@ -690,7 +785,7 @@ impl BlockId {
     #[inline(always)]
     pub fn contains(&self, local: [f64; 3]) -> bool {
         match self.shape() {
-            Some(shape) => shape.contains(self.rotation(), local),
+            Some(shape) => shape.contains(self.shape_variant(), local),
             None => true,
         }
     }
@@ -805,6 +900,17 @@ mod tests {
         // Quatre quarts de tour ramènent le pavé
         let b = [1, 2, 3, 9, 10, 12];
         assert_eq!((0..4).fold(b, |b, _| rotate_box(b, 1)), b);
+        // À l'envers (variantes 4 à 7) : la marche haute en bas, dalle en haut
+        assert!(stairs.covers(4, 2) && !stairs.covers(4, 3) && stairs.covers(4, 4));
+        assert_eq!(stairs.top_at(4, 0.5, 0.2, 1.0), Some(1.0));
+        assert!(stairs.contains(4, [0.5, 0.2, 0.9]) && !stairs.contains(4, [0.5, 0.2, 0.1]));
+        // Dalle couchée contre chaque face : elle couvre cette face-là seulement
+        for (rotation, &face) in ATTACHED_FACES.iter().enumerate() {
+            let variant = BlockRotation::Face.variant(rotation as u8);
+            assert!((0..6).all(|dir| slab.covers(variant, dir) == (dir == face)), "dalle contre la face {face}");
+        }
+        // Contre -X : une dalle verticale, à l'ouest du bloc
+        assert_eq!(slab.boxes(BlockRotation::Face.variant(3)), &[[0, 0, 0, 8, 16, 16]]);
 
         assert!(BlockShape::new(&[[0, 0, 0, 16, 17, 16]], ShapeTexture::Crop).is_err());
         assert!(BlockShape::new(&[[4, 0, 0, 4, 8, 16]], ShapeTexture::Crop).is_err());
@@ -820,20 +926,26 @@ mod tests {
         let shape = registry.shape(stairs).expect("escalier fait de pavés");
         assert_eq!(shape.boxes(0).len(), 2);
         assert!(!stairs.is_opaque() && stairs.is_solid());
-        // Orienté : le numéro posé porte ses quarts de tour, la fiche et ce qu'il donne restent les mêmes
+        // Orienté : le numéro posé porte son orientation, la fiche et ce qu'il donne restent les mêmes
         let turned = stairs.with_rotation(3);
         assert_eq!((turned.kind(), turned.rotation()), (stairs, 3));
+        assert!(stairs.can_be_upside_down() && registry.is_known(stairs.with_rotation(7)));
         assert!(registry.is_known(turned));
         assert_eq!(registry.drop_of(turned), Some(stairs));
         assert_eq!(registry.name(turned), "Escalier de planches");
         assert!(turned.hides_face(0) && !turned.hides_face(1));
-        // Une dalle ne s'oriente pas : la rotation est ignorée, et refusée d'un autre joueur
+        // Une dalle se couche contre l'une des six faces : au-delà, l'orientation est ignorée, et
+        // refusée d'un autre joueur
         let slab = registry.find("plankSlab").unwrap();
-        assert_eq!(slab.with_rotation(2), slab);
-        assert!(!registry.is_known(BlockId(slab.0 | 2 << BlockId::ROTATION_SHIFT)));
+        assert_eq!(slab.with_rotation(6), slab);
+        assert!(!registry.is_known(BlockId(slab.0 | 6 << BlockId::ROTATION_SHIFT)));
         assert!(slab.hides_face(3) && !slab.hides_face(2));
-        // L'échelle, aux texels découpés, ne cache rien
+        let wall_slab = slab.with_rotation(2);
+        assert!(wall_slab.hides_face(0) && !wall_slab.hides_face(3));
+        // L'échelle tourne sans se retourner
         let ladder = registry.find("ladder").unwrap();
+        assert!(!ladder.can_be_upside_down() && ladder.with_rotation(5) == ladder);
+        // L'échelle, aux texels découpés, ne cache rien
         assert!(registry.shape(ladder).is_some() && !ladder.hides_face(4));
         // Textures des faces : chacune une fois dans la liste
         let files = registry.texture_files();

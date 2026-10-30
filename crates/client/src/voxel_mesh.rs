@@ -757,7 +757,7 @@ impl VoxelMeshBuilder {
                     }
                     if let Some(shape) = block.shape() {
                         // Dalle, escalier, échelle : les faces de chaque pavé que rien ne couvre
-                        let boxes = shape.boxes(block.rotation());
+                        let boxes = shape.boxes(block.shape_variant());
                         for (i, b) in boxes.iter().enumerate() {
                             for (dir, face) in CUBE_FACES.iter().enumerate() {
                                 let axis = dir / 2;

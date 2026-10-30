@@ -1,10 +1,11 @@
 {
   "numeric_id": 138,
   "name": "Dalle de pavés",
-  "description": "La moitié d'un bloc : se monte sans sauter.",
+  "description": "La moitié d'un bloc, couchée contre la face visée : au sol, sous un plafond ou contre un mur. Se monte sans sauter.",
   "category": "Construction",
   "hardness": 14,
   "color": {"side": "#a9a69d"},
   "textures": {"side": "textures/CobbleStone.png"},
-  "shape": "dalle"
+  "shape": "dalle",
+  "rotation": "face"
 }

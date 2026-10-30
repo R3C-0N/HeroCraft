@@ -1,12 +1,13 @@
 {
   "numeric_id": 137,
   "name": "Escalier de planches",
-  "description": "Se tourne vers le joueur qui le pose ; ses marches se montent sans sauter.",
+  "description": "Se tourne vers le joueur qui le pose, à l'envers sous un plafond ou contre le haut d'un mur. Ses marches se montent sans sauter.",
   "category": "Construction",
   "hardness": 10,
   "color": {"side": "#c19e71"},
   "textures": {"side": "textures/Plank.png"},
   "shape": "escalier",
   "rotation": "horizontal",
+  "upside_down": true,
   "sound": "wood"
 }

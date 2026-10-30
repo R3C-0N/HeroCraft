@@ -66,7 +66,7 @@ impl VoxelCollider {
                 let y = top - 1;
                 let block = q.block(BlockPos { y, ..pos });
                 let height = match block.shape() {
-                    Some(shape) => shape.top_at(block.rotation(), local[0], local[2], limit - y as f64),
+                    Some(shape) => shape.top_at(block.shape_variant(), local[0], local[2], limit - y as f64),
                     None => Some(1.0),
                 };
                 match height {

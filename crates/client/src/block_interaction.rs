@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use glam::Vec3;
-use herocraft_common::{BlockId, PlanetFace};
+use herocraft_common::{opposite_face, BlockId, BlockRotation, PlanetFace, ATTACHED_FACES, FACE_DIRS};
 use herocraft_world::generator::ColumnSample;
 use herocraft_world::{raycast_blocks, BlockGeometry, BlockPos, PlanetWorldGenerator, RayHit, TerrainEdits, TerrainQuery};
 use winit::event::MouseButton;
@@ -224,7 +224,7 @@ impl BlockInteraction {
             BlockAction::Place => match (hit.before, inventory.selected_block()) {
                 // Une plante se pose même là où se tient le joueur : on la traverse
                 (Some(pos), Some(block)) if !block.is_solid() || !overlaps_player(camera, pos) => {
-                    (pos, block.with_rotation(facing_rotation(camera, pos)))
+                    (pos, block.with_rotation(placement_rotation(block, camera, &hit, pos)))
                 }
                 _ => return None,
             },
@@ -261,11 +261,45 @@ impl BlockInteraction {
         let Some(shape) = self.target_block.shape() else {
             return Some(geometry.block_corners(pos).map(|c| c.as_vec3()));
         };
-        let b = shape.bounds(self.target_block.rotation()).map(|v| v as f64 / 16.0);
+        let b = shape.bounds(self.target_block.shape_variant()).map(|v| v as f64 / 16.0);
         Some(std::array::from_fn(|i| {
             let pick = |bit: usize, axis: usize| if (i >> bit) & 1 == 1 { b[axis + 3] } else { b[axis] };
             geometry.corner(pos.face, pos.x as f64 + pick(0, 0), pos.y as f64 + pick(1, 1), pos.z as f64 + pick(2, 2)).as_vec3()
         }))
+    }
+}
+
+/// Orientation d'un bloc posé en `pos` contre le bloc visé (`BlockRotation`) : tourné vers le
+/// joueur, à l'envers sous un plafond ou contre la moitié haute d'un côté, ou couché contre la
+/// face visée
+fn placement_rotation(block: BlockId, camera: &OrbitCamera, hit: &RayHit, pos: BlockPos) -> u8 {
+    // Face du bloc visé contre laquelle le bloc est posé (index de `FACE_DIRS`)
+    let target = hit.block;
+    let toward = (target.face == pos.face)
+        .then(|| FACE_DIRS.iter().position(|&d| d == (pos.x - target.x, pos.y - target.y, pos.z - target.z)))
+        .flatten();
+    match block.rotation_mode() {
+        BlockRotation::None => 0,
+        BlockRotation::Face => {
+            // Le dessous de la forme se colle au bloc visé
+            let attached = toward.map_or(3, opposite_face);
+            ATTACHED_FACES.iter().position(|&f| f == attached).unwrap_or(0) as u8
+        }
+        BlockRotation::Horizontal => {
+            let turn = facing_rotation(camera, pos);
+            let upside_down = block.can_be_upside_down()
+                && match toward {
+                    Some(3) => true,
+                    Some(2) | None => false,
+                    // Contre un côté : à l'envers si le réticule vise sa moitié haute
+                    Some(_) => camera.view_ray().is_some_and(|(eye, dir, _)| {
+                        let geometry = BlockGeometry::new(camera.base_radius as f64);
+                        let point = eye.as_dvec3() + dir.as_dvec3() * hit.distance;
+                        geometry.locate(point).is_some_and(|(_, local)| local[1] > 0.5)
+                    }),
+                };
+            turn + if upside_down { 4 } else { 0 }
+        }
     }
 }
 
@@ -323,6 +357,34 @@ mod tests {
         // Le clic gauche ne casse rien tout de suite, et rien sans bloc visé
         assert_eq!(interaction.on_mouse_button(MouseButton::Left, true), None);
         assert_eq!(interaction.tick(10.0), None);
+    }
+
+    #[test]
+    fn test_slabs_lie_against_the_aimed_face_and_stairs_turn_upside_down() {
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
+        let mut camera = OrbitCamera::new(165.0, 50.0, &generator);
+        camera.distance = 0.0;
+        camera.target_distance = 0.0;
+        camera.update_camera_bounds(&generator);
+        let target = BlockPos::new(PlanetFace::PosX, 300, 200, 400);
+        let place = |block: BlockId, d: (i32, i32, i32)| {
+            let pos = BlockPos { x: target.x + d.0, y: target.y + d.1, z: target.z + d.2, ..target };
+            let hit = RayHit { block: target, before: Some(pos), distance: 0.0 };
+            block.with_rotation(placement_rotation(block, &camera, &hit, pos))
+        };
+        let slab = herocraft_common::blocks().find("plankSlab").unwrap();
+        // Sur le sol : dalle basse ; sous un plafond : dalle haute ; contre un mur : dalle verticale
+        // collée au mur
+        assert_eq!(place(slab, (0, 1, 0)), slab);
+        assert!(place(slab, (0, -1, 0)).hides_face(2));
+        let wall = place(slab, (1, 0, 0));
+        assert!(wall.hides_face(1) && !wall.hides_face(0) && !wall.hides_face(3));
+        assert!(place(slab, (0, 0, -1)).hides_face(4));
+        // Escalier : à l'endroit posé sur le sol, à l'envers sous un plafond
+        let stairs = herocraft_common::blocks().find("plankStairs").unwrap();
+        assert!(place(stairs, (0, 1, 0)).rotation() < 4);
+        assert!(place(stairs, (0, -1, 0)).rotation() >= 4);
+        assert!(place(stairs, (0, -1, 0)).hides_face(2));
     }
 
     #[test]
