@@ -14,6 +14,8 @@ pub const PLAYER_HALF_WIDTH: f32 = 0.3;
 pub const PLAYER_HEIGHT: f32 = 1.75;
 /// Tolérance de contact avec le sol, en blocs : aucune marche n'est montée sans sauter
 const GROUND_TOLERANCE: f32 = 0.05;
+/// Marche que le joueur au sol monte sans sauter (une dalle), en blocs
+const STEP_UP: f32 = 0.55;
 /// Hauteur d'un saut sur place, en blocs : de quoi franchir une marche d'un bloc, pas deux
 const JUMP_HEIGHT: f32 = 1.3;
 /// Gravité, en blocs par seconde au carré : un saut reste en l'air ~0,65 s
@@ -612,10 +614,11 @@ impl OrbitCamera {
                 Some(collider) => {
                     let (_, east, north) = self.local_frame();
                     let start = self.player_pos;
-                    let trapped = body_blocked(collider, generator, start);
+                    let step = if self.is_grounded && !self.is_flying { STEP_UP } else { GROUND_TOLERANCE };
+                    let trapped = body_blocked(collider, generator, start, step);
                     let moved = [delta, east * delta.dot(east), north * delta.dot(north)].into_iter().find_map(|d| {
                         let candidate = (start + d).normalize() * start.length();
-                        (trapped || !body_blocked(collider, generator, candidate)).then_some(candidate)
+                        (trapped || !body_blocked(collider, generator, candidate, step)).then_some(candidate)
                     });
                     if let Some(pos) = moved {
                         self.player_pos = pos;
@@ -629,7 +632,11 @@ impl OrbitCamera {
         let new_up = self.player_pos.normalize();
         let ground_radius = match &self.collider {
             // Dessus des blocs sous l'empreinte du joueur, jamais plus haut que ses pieds
-            Some(collider) => footprint_ground(collider, generator, self.player_pos),
+            // Au sol, le joueur monte de lui-même une demi-marche (dalle, escalier)
+            Some(collider) => {
+                let step = if self.is_grounded && !self.is_flying { STEP_UP } else { GROUND_TOLERANCE };
+                footprint_ground(collider, generator, self.player_pos, step)
+            }
             None => self.ground_radius_at(new_up, generator),
         };
 
@@ -810,19 +817,20 @@ pub fn footprint(p: Vec3, block_height: f32) -> [Vec3; 5] {
     [p, p + e + n, p + e - n, p - e + n, p - e - n]
 }
 
-/// Rayon du sol sous l'empreinte du joueur : le plus haut des sols de ses coins
-fn footprint_ground(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3) -> f32 {
+/// Rayon du sol sous l'empreinte du joueur : le plus haut des sols de ses coins, au plus `step`
+/// blocs au-dessus des pieds
+fn footprint_ground(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3, step: f32) -> f32 {
     footprint(feet, collider.block_height())
         .iter()
-        .map(|&p| collider.ground_radius(generator, p, GROUND_TOLERANCE))
+        .map(|&p| collider.ground_radius(generator, p, step))
         .fold(f32::MIN, f32::max)
 }
 
 /// Le corps du joueur, posé sur le sol qu'il trouverait aux pieds `feet`, entre dans un bloc solide
-fn body_blocked(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3) -> bool {
+fn body_blocked(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3, step: f32) -> bool {
     let h = collider.block_height();
     let up = feet.normalize();
-    let base = feet.length().max(footprint_ground(collider, generator, feet));
+    let base = feet.length().max(footprint_ground(collider, generator, feet, step));
     let points: Vec<Vec3> = [GROUND_TOLERANCE, 0.6, 1.2, PLAYER_HEIGHT]
         .iter()
         .flat_map(|&height| footprint(up * (base + height * h), h))
@@ -1146,6 +1154,47 @@ mod tests {
         let travelled = (cam.player_pos.normalize() - start.normalize()).length() * cam.base_radius / h;
         assert!(travelled < 1.5, "la marche doit arrêter le joueur ({} blocs parcourus)", travelled);
         assert!((altitude_blocks(&cam) - floor as f32).abs() < 1e-2, "pas de montée automatique : pieds à {}", altitude_blocks(&cam));
+    }
+
+    #[test]
+    fn test_voxel_slabs_are_climbed_without_jumping() {
+        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        let slab = herocraft_common::blocks().find("plankSlab").unwrap();
+        fill(&cam, &gen, &edits, &[1.5, 2.5, 3.5], &[floor], slab);
+        walk(&mut cam, &gen, 0.45);
+        assert!(cam.is_grounded);
+        assert!((altitude_blocks(&cam) - (floor as f32 + 0.5)).abs() < 1e-2, "debout sur la dalle : pieds à {}", altitude_blocks(&cam));
+    }
+
+    #[test]
+    fn test_voxel_stairs_are_climbed_step_by_step() {
+        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        let stairs = herocraft_common::blocks().find("plankStairs").unwrap();
+        // Escalier tourné vers le joueur (marche basse devant lui), puis palier d'un bloc
+        for r in [-1.0, 0.0, 1.0] {
+            let pos = cell_at(&cam, 1.5, r, floor);
+            edits.set_block(&gen, pos, stairs.with_rotation(facing(&cam, pos)));
+        }
+        fill(&cam, &gen, &edits, &[2.5, 3.5], &[floor], herocraft_common::BlockId::STONE);
+        walk(&mut cam, &gen, 0.55);
+        assert!((altitude_blocks(&cam) - (floor + 1) as f32).abs() < 1e-2, "en haut de l'escalier : pieds à {}", altitude_blocks(&cam));
+    }
+
+    /// Quarts de tour qui tournent l'avant d'une forme vers la caméra (comme à la pose)
+    fn facing(cam: &OrbitCamera, pos: herocraft_world::BlockPos) -> u8 {
+        let geometry = herocraft_world::BlockGeometry::new(cam.base_radius as f64);
+        let origin = geometry.corner(pos.face, pos.x as f64, pos.y as f64, pos.z as f64);
+        let axis_x = (geometry.corner(pos.face, pos.x as f64 + 1.0, pos.y as f64, pos.z as f64) - origin).normalize();
+        let axis_z = (geometry.corner(pos.face, pos.x as f64, pos.y as f64, pos.z as f64 + 1.0) - origin).normalize();
+        let (_, forward, _, _) = cam.look_vectors();
+        let (x, z) = (forward.as_dvec3().dot(axis_x), forward.as_dvec3().dot(axis_z));
+        if z.abs() >= x.abs() {
+            if z > 0.0 { 0 } else { 2 }
+        } else if x < 0.0 {
+            1
+        } else {
+            3
+        }
     }
 
     #[test]

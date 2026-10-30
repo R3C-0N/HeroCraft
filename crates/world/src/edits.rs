@@ -338,14 +338,21 @@ impl BlockGeometry {
 
     /// Le bloc qui contient un point de l'espace (`None` au centre de la planète)
     pub fn block_at_point(&self, p: DVec3) -> Option<BlockPos> {
+        self.locate(p).map(|(pos, _)| pos)
+    }
+
+    /// Le bloc qui contient un point, et la place du point dans le bloc (de 0 à 1 en x, y, z)
+    pub fn locate(&self, p: DVec3) -> Option<(BlockPos, [f64; 3])> {
         let r = p.length();
         if r < 1e-9 {
             return None;
         }
         let (face, u, v) = PlanetFace::sphere_direction_to_face_uv(p / r);
-        let to_block = |t: f64| (((t + 1.0) * 0.5 * FACE_BLOCKS as f64).floor() as i32).clamp(0, FACE_BLOCKS - 1);
-        let y = ((r - self.base_radius) / self.block_height).floor() as i32;
-        Some(BlockPos::new(face, to_block(u), y, to_block(v)))
+        let to_grid = |t: f64| ((t + 1.0) * 0.5 * FACE_BLOCKS as f64).clamp(0.0, FACE_BLOCKS as f64 - 1e-9);
+        let (gx, gz) = (to_grid(u), to_grid(v));
+        let gy = (r - self.base_radius) / self.block_height;
+        let pos = BlockPos::new(face, gx.floor() as i32, gy.floor() as i32, gz.floor() as i32);
+        Some((pos, [gx.fract(), gy - gy.floor(), gz.fract()]))
     }
 }
 
@@ -360,22 +367,23 @@ pub struct RayHit {
     pub distance: f64,
 }
 
-/// Lance un rayon depuis `origin` dans la direction `dir` (unitaire) et renvoie le premier bloc pour
-/// lequel `is_solid` est vrai, à moins de `max_distance`.
+/// Lance un rayon depuis `origin` dans la direction `dir` (unitaire) et renvoie le premier bloc
+/// visé à moins de `max_distance` : `target` donne le bloc d'une place s'il peut l'être, et le rayon
+/// le touche en entrant dans sa matière (les pavés d'une dalle, d'un escalier).
 ///
 /// Les blocs sont courbes (leurs faces latérales sont des plans passant par le centre de la
 /// planète, leurs dessus des calottes) : pas de traversée de grille exacte possible, le rayon est
 /// donc avancé par pas d'un dixième de bloc, puis le point d'entrée est affiné par dichotomie.
-pub fn raycast_blocks<F>(geometry: &BlockGeometry, origin: DVec3, dir: DVec3, max_distance: f64, mut is_solid: F) -> Option<RayHit>
+pub fn raycast_blocks<F>(geometry: &BlockGeometry, origin: DVec3, dir: DVec3, max_distance: f64, mut target: F) -> Option<RayHit>
 where
-    F: FnMut(BlockPos) -> bool,
+    F: FnMut(BlockPos) -> Option<BlockId>,
 {
     let step = geometry.block_height * 0.1;
-    let mut solid_cache: HashMap<BlockPos, bool> = HashMap::new();
+    let mut block_cache: HashMap<BlockPos, Option<BlockId>> = HashMap::new();
     let mut solid_at = |t: f64| -> Option<(BlockPos, bool)> {
-        let pos = geometry.block_at_point(origin + dir * t)?;
-        let solid = *solid_cache.entry(pos).or_insert_with(|| pos.is_valid() && is_solid(pos));
-        Some((pos, solid))
+        let (pos, local) = geometry.locate(origin + dir * t)?;
+        let block = *block_cache.entry(pos).or_insert_with(|| if pos.is_valid() { target(pos) } else { None });
+        Some((pos, block.is_some_and(|b| b.contains(local))))
     };
 
     // Départ dans un bloc solide (caméra dans la roche) : il est visé tel quel
@@ -398,7 +406,13 @@ where
                 }
             }
             let (block, _) = solid_at(hi)?;
-            let before = solid_at(lo).filter(|(_, solid)| !solid).map(|(pos, _)| pos).filter(|pos| *pos != block);
+            // La place libre devant : la case traversée juste avant celle du bloc (dans une forme,
+            // le rayon a pu entrer dans la case par sa partie vide)
+            let mut back = lo;
+            while back > 0.0 && solid_at(back).is_some_and(|(pos, _)| pos == block) {
+                back -= geometry.block_height * 0.05;
+            }
+            let before = solid_at(back.max(0.0)).filter(|(_, solid)| !solid).map(|(pos, _)| pos).filter(|pos| *pos != block);
             return Some(RayHit { block, before, distance: hi });
         }
         if t_clamped >= max_distance {
@@ -565,18 +579,18 @@ mod tests {
         let column = BlockPos::new(face, 300, 0, 400);
         let corners = geometry.block_corners(BlockPos { y: 103, ..column });
         let origin = corners.iter().fold(DVec3::ZERO, |a, c| a + *c) / 8.0;
-        let hit = raycast_blocks(&geometry, origin, -origin.normalize(), 10.0 * geometry.block_height, |p| p.y < 100).unwrap();
+        let hit = raycast_blocks(&geometry, origin, -origin.normalize(), 10.0 * geometry.block_height, |p| (p.y < 100).then_some(BlockId::STONE)).unwrap();
         assert_eq!(hit.block, BlockPos { y: 99, ..column });
         assert_eq!(hit.before, Some(BlockPos { y: 100, ..column }));
         assert!((hit.distance - 3.5 * geometry.block_height).abs() < 0.01 * geometry.block_height);
 
         // Trop loin : rien
-        assert!(raycast_blocks(&geometry, origin, -origin.normalize(), 2.0 * geometry.block_height, |p| p.y < 100).is_none());
+        assert!(raycast_blocks(&geometry, origin, -origin.normalize(), 2.0 * geometry.block_height, |p| (p.y < 100).then_some(BlockId::STONE)).is_none());
 
         // Un mur à x = 305 : visé de côté, le bloc d'avant est son voisin en x
         let side = geometry.corner(face, 302.5, 100.5, 400.5);
         let target = geometry.corner(face, 310.5, 100.5, 400.5);
-        let hit = raycast_blocks(&geometry, side, (target - side).normalize(), 10.0 * geometry.block_height, |p| p.x >= 305).unwrap();
+        let hit = raycast_blocks(&geometry, side, (target - side).normalize(), 10.0 * geometry.block_height, |p| (p.x >= 305).then_some(BlockId::STONE)).unwrap();
         assert_eq!(hit.block, BlockPos::new(face, 305, 100, 400));
         assert_eq!(hit.before, Some(BlockPos::new(face, 304, 100, 400)));
     }

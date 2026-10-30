@@ -1,0 +1,12 @@
+{
+  "numeric_id": 139,
+  "name": "Escalier de pavés",
+  "description": "Se tourne vers le joueur qui le pose, à l'envers sous un plafond ou contre le haut d'un mur. Ses marches se montent sans sauter.",
+  "category": "Construction",
+  "hardness": 14,
+  "color": {"side": "#a9a69d"},
+  "textures": {"side": "textures/CobbleStone.png"},
+  "shape": "escalier",
+  "rotation": "horizontal",
+  "upside_down": true
+}

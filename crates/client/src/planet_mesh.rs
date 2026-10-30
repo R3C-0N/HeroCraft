@@ -12,9 +12,20 @@ pub struct PlanetVertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub color: [f32; 4],
+    /// Texture du bloc : rang dans la liste des textures (16 bits bas, `NO_TEXTURE` : couleur
+    /// seule), puis u et v en seizièmes de la texture (8 bits chacun)
+    pub texture: u32,
 }
 
 impl PlanetVertex {
+    /// Sans texture : la couleur seule
+    pub const UNTEXTURED: u32 = herocraft_common::NO_TEXTURE as u32;
+
+    /// Texture `layer` lue en (u, v), en seizièmes
+    pub fn pack_texture(layer: u16, u: u8, v: u8) -> u32 {
+        layer as u32 | (u as u32) << 16 | (v as u32) << 24
+    }
+
     pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<PlanetVertex>() as wgpu::BufferAddress,
@@ -37,6 +48,13 @@ impl PlanetVertex {
                     offset: 24,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x4,
+                },
+                // Texture : rang et coordonnées tassés dans un entier (emplacement 8, loin de
+                // ceux qu'ajoutent les créatures dans un second tampon)
+                wgpu::VertexAttribute {
+                    offset: 40,
+                    shader_location: 8,
+                    format: wgpu::VertexFormat::Uint32,
                 },
             ],
         }
@@ -347,10 +365,10 @@ impl PlanetMesh {
                         normal: Vec3, color: [f32; 4]| {
             let base_idx = verts.len() as u32;
             let norm_arr = normal.to_array();
-            verts.push(PlanetVertex { position: p0.to_array(), normal: norm_arr, color });
-            verts.push(PlanetVertex { position: p1.to_array(), normal: norm_arr, color });
-            verts.push(PlanetVertex { position: p2.to_array(), normal: norm_arr, color });
-            verts.push(PlanetVertex { position: p3.to_array(), normal: norm_arr, color });
+            verts.push(PlanetVertex { position: p0.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED });
+            verts.push(PlanetVertex { position: p1.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED });
+            verts.push(PlanetVertex { position: p2.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED });
+            verts.push(PlanetVertex { position: p3.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED });
 
             // Triangle 1 CCW: (0, 1, 2)
             inds.push(base_idx);

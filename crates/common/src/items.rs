@@ -26,7 +26,7 @@ pub struct ItemId(pub u16);
 
 impl From<BlockId> for ItemId {
     fn from(block: BlockId) -> Self {
-        ItemId(block.0)
+        ItemId(block.kind().0)
     }
 }
 

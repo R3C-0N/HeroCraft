@@ -1,0 +1,5 @@
+{
+  "name": "Escalier",
+  "description": "Une marche basse à l'avant, une haute à l'arrière.",
+  "boxes": [[0, 0, 0, 16, 8, 16], [0, 8, 8, 16, 16, 16]]
+}

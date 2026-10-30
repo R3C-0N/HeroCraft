@@ -5,5 +5,6 @@
   "hardness": 6,
   "color": {"top": "#648663b3", "side": "#6c8b68b3"},
   "textures": {"top": "textures/CactusTop.png", "side": "textures/Cactus.png", "bottom": "textures/CactusBottom.png"},
+  "shape": "colonne",
   "opaque": false
 }

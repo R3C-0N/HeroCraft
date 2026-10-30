@@ -5,5 +5,7 @@
   "hardness": 3,
   "color": {"side": "#9c7e58b3"},
   "textures": {"side": "textures/Ladder.png"},
+  "shape": "panneau",
+  "rotation": "horizontal",
   "opaque": false
 }

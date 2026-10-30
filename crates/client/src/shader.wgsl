@@ -7,17 +7,26 @@
 // - Perspective aérienne : diffusion et extinction de l'air entre la caméra et la surface
 // - Dithered Cross-Fade (tramage stochastique Bayer 4x4) pour transitions LOD
 // - Ombres portées du soleil (3 cascades, PCF) et ombres mouvantes des nuages
+// - Textures des blocs : rapport à leur couleur moyenne, qui module la couleur du sommet
 // =========================================================================
 
 #import herocraft::common::{camera, get_moon_data, flatten_point, rotate_by}
 #import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective}
 #import herocraft::shadow::sun_visibility
 
+// Textures des blocs (block_textures.rs) : une couche par texture, ses texels divisés par sa
+// couleur moyenne (et par 4 pour tenir dans un octet), sa transparence découpée en 0 ou 1
+@group(2) @binding(0) var block_textures: texture_2d_array<f32>;
+@group(2) @binding(1) var block_sampler: sampler;
+// Rang d'une face sans texture (NO_TEXTURE)
+const NO_TEXTURE: u32 = 0xFFFFu;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) color: vec4<f32>,
+    // Rang de la texture (16 bits bas), puis u et v en seizièmes (8 bits chacun)
+    @location(8) texture: u32,
 };
 
 struct VertexOutput {
@@ -31,6 +40,8 @@ struct VertexOutput {
     @location(4) screen_clip: vec4<f32>,
     // Rotation du repère vrai du point vers son repère dessiné (planète aplatie)
     @location(5) flat_rot: vec3<f32>,
+    @location(6) uv: vec2<f32>,
+    @location(7) @interpolate(flat) texture_layer: u32,
 };
 
 @vertex
@@ -45,6 +56,8 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.clip_position = camera.view_proj * vec4<f32>(flat.pos, 1.0);
     out.screen_clip = out.clip_position;
     out.flat_rot = flat.rot;
+    out.texture_layer = in.texture & 0xFFFFu;
+    out.uv = vec2<f32>(f32((in.texture >> 16u) & 0xFFu), f32(in.texture >> 24u)) / 16.0;
     return out;
 }
 
@@ -70,6 +83,15 @@ fn bayer4x4(pos: vec2<u32>) -> f32 {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // 0. Texture du bloc, lue avant tout abandon de fragment (les dérivées des mipmaps l'exigent)
+    let textured = in.texture_layer != NO_TEXTURE;
+    let texel = textureSample(block_textures, block_sampler, in.uv, select(0u, in.texture_layer, textured));
+    // Découpe : trous des feuillages, des fleurs et de l'échelle
+    if (textured && texel.a < 0.5) {
+        discard;
+    }
+    let texture_ratio = select(vec3<f32>(1.0), texel.rgb * 4.0, textured);
+
     // 1. Transition douce hybride par tramage stochastique (Dithered Cross-Fade)
     let alpha = in.color.a;
     if (abs(alpha) < 0.999) {
@@ -132,7 +154,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let verticality = dot(n_facet, n_sphere);
     let cliff_factor = clamp((0.88 - verticality) / 0.22, 0.0, 1.0) * orbit_factor;
 
-    var base_color = in.color.rgb;
+    var base_color = in.color.rgb * texture_ratio;
 
     // Si on est sur une falaise terrestre en vue orbitale :
     // On applique une roche minérale sombre avec fines strates rocheuses étagées

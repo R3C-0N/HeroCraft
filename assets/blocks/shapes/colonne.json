@@ -1,0 +1,5 @@
+{
+  "name": "Colonne",
+  "description": "Un bloc aminci de deux seizièmes de chaque côté (cactus) : ses textures, bordées de deux colonnes transparentes, couvrent les faces sans trou aux arêtes.",
+  "boxes": [[2, 0, 2, 14, 16, 14]]
+}
