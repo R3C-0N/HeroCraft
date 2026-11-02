@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 use glam::Vec3;
 
 use crate::camera::OrbitCamera;
-use crate::ui::{LodDistanceSetting, UiState};
+use crate::ui::{GraphicsQuality, LodDistanceSetting, UiState};
 
 /// Graine par défaut : la même planète d'un banc d'essai à l'autre
 pub const DEFAULT_SEED: u64 = 2026;
@@ -83,6 +83,12 @@ struct Setup {
 }
 
 impl Setup {
+    /// La référence, avec les effets d'un préréglage de qualité
+    fn quality(quality: GraphicsQuality) -> Setup {
+        let e = quality.effects();
+        Setup { shadows: e.shadows, cloud_shadows: e.cloud_shadows, god_rays: e.god_rays, bloom: e.bloom, lod: e.lod_distance, ..Setup::REFERENCE }
+    }
+
     const REFERENCE: Setup = Setup {
         shadows: true,
         cloud_shadows: true,
@@ -130,6 +136,8 @@ fn phases() -> Vec<Phase> {
             Setup { shadows: false, cloud_shadows: false, clouds: false, god_rays: false, bloom: false, creatures: CreatureMode::Off, ..r },
             true,
         ),
+        p("Qualité moyenne", "passage de la qualité haute à moyenne", Setup::quality(GraphicsQuality::Moyenne), true),
+        p("Qualité basse", "passage de la qualité haute à basse", Setup::quality(GraphicsQuality::Basse), true),
         p("Beaucoup de créatures (+60)", "60 créatures de plus (coût négatif : ce qu'elles ajoutent)", Setup { creatures: CreatureMode::Stress, ..r }, true),
         p("Vue à la troisième personne", "", Setup { view: View::ThirdPerson, ..r }, false),
         p("Vue satellite", "", Setup { view: View::Orbit, ..r }, false),

@@ -21,7 +21,7 @@ rapport le signale en tête.
   soleil de midi qui reste fixe.
 - V-Sync et limite de FPS coupées, joueur invulnérable, rien n'est enregistré dans la sauvegarde.
 - Une mise en route de 20 s, non mesurée : le relief, les nuages et les textures se chargent.
-- Puis 17 phases, chacune avec 3 s de chauffe et 8 s de mesure. Avant chaque phase, le joueur
+- Puis 19 phases, chacune avec 3 s de chauffe et 8 s de mesure. Avant chaque phase, le joueur
   revient au point de départ et la population de créatures est tirée de nouveau, la même chaque
   fois. Pendant la mesure, la tête fait un tour complet : toutes les directions comptent.
 
@@ -37,6 +37,7 @@ rapport le signale en tête.
 | Sans créatures | ni simulation, ni dessin |
 | Distance LOD courte / élevée | |
 | Minimum | tous les effets et les créatures coupés |
+| Qualité moyenne, qualité basse | les préréglages du menu Options > Affichage |
 | Beaucoup de créatures | 60 bêtes de plus autour du joueur |
 | Vue à la troisième personne, vue satellite | |
 | Marche, vol rapide | le relief se charge en continu |
