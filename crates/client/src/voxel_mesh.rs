@@ -476,6 +476,13 @@ impl VoxelMeshBuilder {
         let columns = generator.sample_chunk_columns(face, chunk_x, chunk_y, COLUMN_BORDER);
         let cave_bottom = columns.iter().map(carvable_range).filter(|r| !r.is_empty()).map(|r| r.start).min();
 
+        // Villes, villages et ruines : leurs toits dépassent le relief, leurs caves et leurs bâtiments
+        // creusés dans la pente descendent un peu sous lui
+        if let Some(top) = generator.structures_top(face, chunk_x, chunk_y, COLUMN_BORDER) {
+            max_elev = max_elev.max(top as f64);
+            min_elev -= 8.0;
+        }
+
         VoxelColumnSource { face, chunk_x, chunk_y, base_radius, min_elev, max_elev, cave_bottom, column_colors, columns }
     }
 
@@ -635,9 +642,12 @@ impl VoxelMeshBuilder {
                 &sampled
             };
 
+            let (bx, by, bz) = (block_x0 + gx, layer * 32 + gy, block_z0 + gz);
+            if let Some(block) = generator.structure_block(column, face, bx, by, bz) {
+                return block;
+            }
             let elev_floor = column.elevation.floor();
             if global_y < elev_floor {
-                let (bx, by, bz) = (block_x0 + gx, layer * 32 + gy, block_z0 + gz);
                 let carved = match &caves {
                     Some(caves) => caves.carved(column, bx, by, bz),
                     // Sans champ, aucune colonne de la bordure n'a de grotte à ces altitudes
@@ -681,6 +691,12 @@ impl VoxelMeshBuilder {
             // Paroi de grotte : la couleur de sa matière, comme un trou creusé par le joueur, et non
             // celle du biome qui est celle de la surface (l'ombre du relief l'assombrit déjà)
             if block != BlockId::WATER && cave_air(gx + toward.0, gy + toward.1, gz + toward.2) {
+                let c = own_color(side_shade);
+                return [c[0], c[1], c[2], 1.0];
+            }
+            // Bloc d'une construction (pavés, planches, toits…) : la couleur de sa matière, jamais
+            // celle du biome, qui ne teinte que le sol naturel
+            if !matches!(block, BlockId::STONE | BlockId::DIRT | BlockId::GRASS | BlockId::SAND | BlockId::SNOW | BlockId::WATER) {
                 let c = own_color(side_shade);
                 return [c[0], c[1], c[2], 1.0];
             }

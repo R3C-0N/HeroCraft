@@ -6,6 +6,7 @@ pub mod generator;
 pub mod ocean_currents;
 pub mod population;
 pub mod quadtree;
+pub mod structures;
 pub mod tectonics;
 
 pub use caves::{carvable_range, CaveField, CAVE_DEPTH};
@@ -15,4 +16,5 @@ pub use edits::*;
 pub use generator::*;
 pub use ocean_currents::*;
 pub use quadtree::*;
+pub use structures::{Settlement, SettlementKind, StructureMap};
 pub use tectonics::*;

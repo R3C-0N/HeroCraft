@@ -278,12 +278,19 @@ impl<'a> TerrainQuery<'a> {
         let ground_top = column.elevation.floor() as i32;
         let natural_top = ground_top.max(crate::generator::SEA_LEVEL_BLOCKS.ceil() as i32);
         let caves = carvable_range(&column);
+        // Altitudes où une ville, un village ou des ruines changent la colonne : lues bloc par bloc
+        let built = self.generator.structure_span(&column, face, x, z);
         let mut y = from_y.min(WORLD_HEIGHT - 1);
         while y >= 0 {
             let pos = BlockPos::new(face, x, y, z);
             if let Some(chunk) = self.edits.chunk(&pos.chunk_coord()) {
                 let (lx, ly, lz) = pos.local();
                 if !chunk.get_voxel(lx, ly, lz).is_air() {
+                    return y + 1;
+                }
+                y -= 1;
+            } else if built.contains(&y) {
+                if !self.generator.column_block(&column, face, x, y, z).is_air() {
                     return y + 1;
                 }
                 y -= 1;
@@ -297,7 +304,9 @@ impl<'a> TerrainQuery<'a> {
             } else {
                 // Couche intacte et vide au-dessus du relief : passage au plus haut bloc utile en dessous
                 let layer_base = y.div_euclid(CHUNK_SIZE as i32) * CHUNK_SIZE as i32;
-                y = (natural_top - 1).max(layer_base - 1);
+                let next = (natural_top - 1).max(layer_base - 1);
+                // Sans sauter par-dessus le haut d'une construction
+                y = if !built.is_empty() && built.end - 1 > next && built.end - 1 < y { built.end - 1 } else { next };
             }
         }
         // Sous l'altitude 0, tout est roche
