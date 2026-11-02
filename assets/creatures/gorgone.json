@@ -6,5 +6,6 @@
   "min_group": 1,
   "max_group": 1,
   "spawn": [],
+  "activity": "nocturnal",
   "model": {"mesh": "modeles/gorgone.gltf", "texture": "modeles/gorgone.png", "walk_animation": "repos"}
 }

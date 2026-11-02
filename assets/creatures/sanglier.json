@@ -9,5 +9,6 @@
     {"biome": "Plains", "weight": 0.5},
     {"biome": "Forest", "weight": 0.5}
   ],
+  "activity": "nocturnal",
   "model": {"mesh": "modeles/sanglier.gltf", "texture": "modeles/sanglier.png", "walk_animation": "repos"}
 }

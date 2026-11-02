@@ -76,6 +76,9 @@ def importer(module):
                 print(f"{ident} : biome {biome} sans équivalent, ignoré")
             for nom in BIOMES.get(biome, []):
                 spawn.append({"biome": nom, "weight": habitat.get("densite", 1.0)})
+        # Le rythme jour/nuit n'existe pas dans le bestiaire : celui déjà choisi est gardé
+        existante = SORTIE / f"{ident}.json"
+        activite = json.loads(existante.read_text(encoding="utf-8")).get("activity") if existante.exists() else None
         description = {
             "name": p["DisplayName"]["name"],
             "description": p["DisplayName"].get("description", ""),
@@ -84,6 +87,7 @@ def importer(module):
             "min_group": habitat.get("groupeMin", 1),
             "max_group": habitat.get("groupeMax", 1),
             "spawn": spawn,
+            **({"activity": activite} if activite else {}),
             "model": {
                 "mesh": f"modeles/{ident}.gltf",
                 "texture": f"modeles/{ident}.png",

@@ -6,5 +6,6 @@
   "min_group": 1,
   "max_group": 1,
   "spawn": [],
+  "activity": "diurnal",
   "model": {"mesh": "modeles/mouflonTondu.gltf", "texture": "modeles/mouflonTondu.png", "walk_animation": "repos"}
 }

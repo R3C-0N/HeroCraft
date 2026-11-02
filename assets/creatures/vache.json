@@ -8,5 +8,6 @@
   "spawn": [
     {"biome": "Plains", "weight": 1.0}
   ],
+  "activity": "diurnal",
   "model": {"mesh": "modeles/vache.gltf", "texture": "modeles/vache.png", "walk_animation": "repos"}
 }

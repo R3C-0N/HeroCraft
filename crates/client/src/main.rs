@@ -535,6 +535,8 @@ fn main() {
                                         creatures_seed = current_seed;
                                     }
                                     if !ui_state.is_settings_open {
+                                        // L'heure du ciel règle le sommeil et les apparitions
+                                        solo_creatures.set_sun_dir(state.sun_dir());
                                         solo_creatures.tick(dt, &generator, lod_manager.terrain_edits(), &[camera.player_pos]);
                                     }
                                     solo_creatures

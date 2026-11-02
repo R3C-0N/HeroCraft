@@ -8,5 +8,6 @@
   "spawn": [
     {"biome": "Mountains", "weight": 1.0}
   ],
+  "activity": "diurnal",
   "model": {"mesh": "modeles/mouflon.gltf", "texture": "modeles/mouflon.png", "walk_animation": "repos"}
 }

@@ -9,5 +9,6 @@
     {"biome": "Plains", "weight": 1.2},
     {"biome": "Forest", "weight": 1.2}
   ],
+  "activity": "crepuscular",
   "model": {"mesh": "modeles/lapin.gltf", "texture": "modeles/lapin.png", "walk_animation": "repos"}
 }
