@@ -1,5 +1,5 @@
 //! Habillage des menus repris de l'ancien Terasology : panneaux de planches cerclés de fer,
-//! boutons de bois à pierre dorée, plaque de titre en métal, polices Grenze et Uncial Antiqua.
+//! boutons de bois, plaque de titre en métal, polices Grenze et Uncial Antiqua.
 //!
 //! Les textures sont du pixel art dessiné à l'échelle 3 (un pixel du dessin = 3 pixels de la
 //! texture). Elles sont découpées en neuf (coins fixes, bords et centre répétés) et dessinées par
@@ -348,7 +348,7 @@ impl SkinFrame {
 /// Famille de bouton de l'ancien thème
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonKind {
-    /// Grande entrée de menu, pierre dorée à gauche
+    /// Grande entrée de menu en bois clair
     Menu,
     /// Entrée de menu rouge (quitter)
     MenuDanger,
@@ -401,7 +401,7 @@ impl SkinButton {
     /// Découpe, marges du texte (gauche, droite) et hauteur du rebord bas (en pixels de texture)
     fn layout(&self) -> (Slice, f32, f32, f32) {
         match self.kind {
-            ButtonKind::Menu | ButtonKind::MenuDanger => (Slice::new(Tex::ButtonMenu, 36.0, 9.0, 9.0, 18.0), 48.0, 18.0, 15.0),
+            ButtonKind::Menu | ButtonKind::MenuDanger => (Slice::new(Tex::ButtonMenu, 9.0, 9.0, 9.0, 18.0), 20.0, 18.0, 15.0),
             ButtonKind::ListItem => (Slice::new(Tex::ListItem, 18.0, 6.0, 6.0, 6.0), 22.0, 10.0, 3.0),
             _ => (Slice::new(Tex::Button, 9.0, 9.0, 9.0, 18.0), 16.0, 16.0, 15.0),
         }

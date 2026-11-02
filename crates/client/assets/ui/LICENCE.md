@@ -13,3 +13,6 @@ Textures et polices reprises du thème des menus de l'ancienne version Java (bra
 
 L'ancien jeu utilisait ces polices en bitmap (`.fnt`) ; egui demande les fichiers TrueType, pris
 chez Google Fonts.
+
+Les textures `buttonMenu*` ont été retouchées : la pierre dorée à gauche est remplacée par le bois
+voisin, pour ne garder que l'icône du bouton.

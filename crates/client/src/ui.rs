@@ -445,8 +445,6 @@ pub struct UiState {
     pub is_settings_open: bool,
     pub menu_page: MenuPage,
     pub options_tab: OptionsTab,
-    /// Le bouton Quitter attend une confirmation
-    pub confirm_quit: bool,
     pub video_settings: VideoSettings,
     pub lighting_settings: LightingSettings,
     pub cloud_settings: CloudSettings,
@@ -498,7 +496,6 @@ impl UiState {
             is_settings_open: false,
             menu_page: MenuPage::Main,
             options_tab: OptionsTab::Display,
-            confirm_quit: false,
             video_settings: VideoSettings::default(),
             lighting_settings: LightingSettings::default(),
             cloud_settings: CloudSettings::default(),
@@ -652,7 +649,6 @@ impl UiState {
 
     pub fn set_settings_open(&mut self, is_open: bool) {
         self.is_settings_open = is_open;
-        self.confirm_quit = false;
         self.rebinding = None;
         if is_open {
             self.menu_page = MenuPage::Main;
@@ -691,8 +687,6 @@ impl UiState {
             self.set_settings_open(true);
         } else if self.rebinding.is_some() {
             self.rebinding = None;
-        } else if self.confirm_quit {
-            self.confirm_quit = false;
         } else if self.menu_page != MenuPage::Main {
             self.menu_page = MenuPage::Main;
         } else {
@@ -1252,27 +1246,12 @@ impl UiState {
                 ui.separator();
                 ui.add_space(2.0_f32);
 
-                if self.confirm_quit {
-                    ui.vertical_centered(|ui| {
-                        ui.label(egui::RichText::new("Sauvegarder le monde et quitter ?").color(TEXT_SOFT));
-                    });
-                    ui.columns(2, |cols| {
-                        let half = egui::vec2(cols[0].available_width(), 40.0_f32);
-                        if cols[0]
-                            .add(SkinButton::new(egui::RichText::new("🚪  Quitter").size(15.0_f32)).kind(ButtonKind::Danger).min_size(half))
-                            .clicked()
-                        {
-                            *action = Some(UiAction::QuitGame);
-                        }
-                        if cols[1].add(SkinButton::new(egui::RichText::new("Annuler").size(15.0_f32)).kind(ButtonKind::Secondary).min_size(half)).clicked() {
-                            self.confirm_quit = false;
-                        }
-                    });
-                } else if ui
+                // Quitter enregistre le monde et ferme le jeu, sans confirmation
+                if ui
                     .add(SkinButton::new(egui::RichText::new("🚪   Quitter le jeu").size(16.0_f32)).kind(ButtonKind::MenuDanger).min_size(size))
                     .clicked()
                 {
-                    self.confirm_quit = true;
+                    *action = Some(UiAction::QuitGame);
                 }
             });
     }
@@ -2256,21 +2235,14 @@ mod tests {
         assert!(ui.handle_escape());
         assert_eq!(ui.menu_page, MenuPage::Main);
 
-        // Une confirmation de sortie en cours est annulée d'abord
-        ui.confirm_quit = true;
-        assert!(ui.handle_escape());
-        assert!(!ui.confirm_quit);
-
         // Depuis l'accueil, Échap referme
         assert!(!ui.handle_escape());
 
-        // Le menu se rouvre toujours sur l'accueil, sans confirmation en attente
+        // Le menu se rouvre toujours sur l'accueil
         ui.open_menu_at(MenuPage::Controls);
-        ui.confirm_quit = true;
         ui.set_settings_open(false);
         assert!(ui.handle_escape());
         assert_eq!(ui.menu_page, MenuPage::Main);
-        assert!(!ui.confirm_quit);
     }
 
     #[test]
@@ -2514,13 +2486,9 @@ mod tests {
             .and_then(|t| t.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
             .unwrap_or((1280_usize, 720_usize));
 
-        let scenes: [(&str, fn(&mut UiState), bool, Option<egui::Pos2>); 8] = [
+        let scenes: [(&str, fn(&mut UiState), bool, Option<egui::Pos2>); 7] = [
             ("menu", |ui| ui.open_menu_at(MenuPage::Main), true, None),
             ("menu_survol", |ui| ui.open_menu_at(MenuPage::Main), true, Some(egui::pos2(640.0, 372.0))),
-            ("quitter", |ui| {
-                ui.open_menu_at(MenuPage::Main);
-                ui.confirm_quit = true;
-            }, true, None),
             ("options", |ui| ui.open_menu_at(MenuPage::Options), true, None),
             ("options_ombres", |ui| {
                 ui.open_menu_at(MenuPage::Options);
