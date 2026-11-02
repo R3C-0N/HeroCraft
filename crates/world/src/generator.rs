@@ -2,6 +2,7 @@ use crate::caves::{block_carved, carvable_range, CaveField};
 use crate::cubed_sphere::{base_solar_temperature, unit_sphere_to_lat_lon, PlanetDescriptor};
 use crate::ocean_currents::OceanicCurrentSimulation;
 use crate::tectonics::TectonicSimulation;
+use crate::vegetation::{VegetationField, VEGETATION_SPAN};
 use glam::DVec3;
 use herocraft_common::{BlockId, PlanetChunkCoord, PlanetFace};
 use herocraft_voxel_engine::{ChunkData, CHUNK_SIZE};
@@ -151,7 +152,7 @@ impl PlanetWorldGenerator {
     }
 
     /// Bloc d'une cellule solide (sous le sol) : surface selon le biome, couche de terre, roche
-    fn solid_block(&self, sphere_dir: DVec3, biome: BiomeType, global_y: f64, elev_floor: f64) -> BlockId {
+    pub(crate) fn solid_block(&self, sphere_dir: DVec3, biome: BiomeType, global_y: f64, elev_floor: f64) -> BlockId {
         let is_surface = global_y + 1.0 >= elev_floor;
         if is_surface {
             // Enneigement strict au-dessus de 300 blocs
@@ -202,6 +203,16 @@ impl PlanetWorldGenerator {
     /// Bloc généré en (x, y, z) d'une face, `column` étant sa colonne : exactement celui que pose
     /// `generate_chunk_from_columns`, sans générer le chunk entier
     pub fn column_block(&self, column: &ColumnSample, face: PlanetFace, x: i32, y: i32, z: i32) -> BlockId {
+        let block = self.column_block_without_vegetation(column, face, x, y, z);
+        if block.is_air() && y as f64 >= column.elevation.floor() {
+            self.vegetation_block(column, face, x, y, z, |cx, cz| self.tree_in_cell(face, cx, cz))
+        } else {
+            block
+        }
+    }
+
+    /// `column_block` sans les arbres ni les plantes : le relief, les grottes et l'eau seuls
+    pub fn column_block_without_vegetation(&self, column: &ColumnSample, face: PlanetFace, x: i32, y: i32, z: i32) -> BlockId {
         if y < 0 {
             return BlockId::STONE;
         }
@@ -283,6 +294,33 @@ impl PlanetWorldGenerator {
         border: i32,
         caves: Option<&CaveField>,
     ) -> ChunkData {
+        let layer_base = coord.altitude_layer * CHUNK_SIZE as i32;
+        let reaches = columns.iter().any(|c| {
+            let ground = crate::vegetation::column_ground(c);
+            ground < layer_base + CHUNK_SIZE as i32 && ground + VEGETATION_SPAN > layer_base
+        });
+        let vegetation = if reaches { self.chunk_vegetation(coord.face, coord.x, coord.y, columns, border) } else { VegetationField::default() };
+        self.generate_chunk_full(coord, columns, border, caves, &vegetation)
+    }
+
+    /// Arbres qui touchent la colonne de chunks (chunk_x, chunk_y) et sa bordure de `border`
+    /// colonnes, `columns` venant de `sample_chunk_columns` avec la même bordure
+    pub fn chunk_vegetation(&self, face: PlanetFace, chunk_x: i32, chunk_y: i32, columns: &[ColumnSample], border: i32) -> VegetationField {
+        let size = CHUNK_SIZE as i32;
+        let (x0, z0) = (chunk_x * size - border, chunk_y * size - border);
+        let side = size + 2 * border;
+        self.vegetation_field(face, x0..x0 + side, z0..z0 + side, Some((columns, x0, z0, side)))
+    }
+
+    /// `generate_chunk_with_caves` avec les arbres déjà trouvés par `chunk_vegetation`
+    pub fn generate_chunk_full(
+        &self,
+        coord: &PlanetChunkCoord,
+        columns: &[ColumnSample],
+        border: i32,
+        caves: Option<&CaveField>,
+        vegetation: &VegetationField,
+    ) -> ChunkData {
         herocraft_common::prof_scope!("world::generate_chunk");
         let mut chunk = ChunkData::new_empty();
         let side = CHUNK_SIZE + 2 * border as usize;
@@ -332,7 +370,71 @@ impl PlanetWorldGenerator {
             }
         }
 
+        self.place_vegetation(&mut chunk, coord, columns, border, vegetation);
         chunk
+    }
+
+    /// Pose dans le chunk les arbres puis les plantes du sol, là où le terrain a laissé de l'air
+    /// au-dessus du sol : exactement ce que renvoie `vegetation_block` bloc par bloc
+    fn place_vegetation(&self, chunk: &mut ChunkData, coord: &PlanetChunkCoord, columns: &[ColumnSample], border: i32, vegetation: &VegetationField) {
+        herocraft_common::prof_scope!("world::place_vegetation");
+        let size = CHUNK_SIZE as i32;
+        let side = size + 2 * border;
+        let layer_base = coord.altitude_layer * size;
+        let (x0, z0) = (coord.x * size, coord.y * size);
+        let column_at = |lx: i32, lz: i32| &columns[((lz + border) * side + lx + border) as usize];
+        let dry = |c: &ColumnSample| c.elevation.floor() >= SEA_LEVEL_BLOCKS;
+
+        // Arbres : les troncs d'abord (ils l'emportent sur tout feuillage), puis les feuillages,
+        // le premier arbre de la liste l'emportant sur les suivants
+        if vegetation.top() > layer_base {
+            for trunks in [true, false] {
+                for tree in vegetation.trees() {
+                    if tree.top() <= layer_base || tree.ground >= layer_base + size {
+                        continue;
+                    }
+                    let r = if trunks { 0 } else { tree.reach() };
+                    let (ys, ye) = (tree.ground.max(layer_base), tree.top().min(layer_base + size));
+                    for z in (tree.z - r).max(z0)..=(tree.z + r).min(z0 + size - 1) {
+                        for x in (tree.x - r).max(x0)..=(tree.x + r).min(x0 + size - 1) {
+                            let column = column_at(x - x0, z - z0);
+                            if !dry(column) {
+                                continue;
+                            }
+                            let ground = crate::vegetation::column_ground(column);
+                            for y in ys.max(ground)..ye.min(ground + VEGETATION_SPAN) {
+                                let Some((block, is_trunk)) = tree.block(x, y, z) else { continue };
+                                if is_trunk != trunks {
+                                    continue;
+                                }
+                                let (lx, ly, lz) = ((x - x0) as u8, (y - layer_base) as u8, (z - z0) as u8);
+                                if chunk.get_voxel(lx, ly, lz).is_air() {
+                                    chunk.set_voxel(lx, ly, lz, block);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Herbes, fleurs, champignons : sur le dessus du sol de chaque colonne
+        for lz in 0..size {
+            for lx in 0..size {
+                let column = column_at(lx, lz);
+                let ground = crate::vegetation::column_ground(column);
+                if !dry(column) || ground < layer_base || ground >= layer_base + size {
+                    continue;
+                }
+                let (cx, cy, cz) = (lx as u8, (ground - layer_base) as u8, lz as u8);
+                if !chunk.get_voxel(cx, cy, cz).is_air() {
+                    continue;
+                }
+                if let Some(plant) = self.ground_plant(column, coord.face, x0 + lx, z0 + lz) {
+                    chunk.set_voxel(cx, cy, cz, plant);
+                }
+            }
+        }
     }
 
     /// Calcule la valeur continentale brute sur la sphère

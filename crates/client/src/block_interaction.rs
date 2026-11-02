@@ -221,7 +221,8 @@ impl BlockInteraction {
         let hit = self.target?;
         let (pos, block) = match action {
             BlockAction::Break => (hit.block, BlockId::AIR),
-            BlockAction::Place => match (hit.before, inventory.selected_block()) {
+            // Une herbe folle visée laisse sa place au bloc posé
+            BlockAction::Place => match (if self.target_block.is_replaceable() { Some(hit.block) } else { hit.before }, inventory.selected_block()) {
                 // Une plante se pose même là où se tient le joueur : on la traverse
                 (Some(pos), Some(block)) if !block.is_solid() || !overlaps_player(camera, pos) => {
                     (pos, block.with_rotation(placement_rotation(block, camera, &hit, pos)))
