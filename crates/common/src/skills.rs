@@ -1,10 +1,12 @@
-//! Roue des compétences : des branches qui se partagent le cercle, et dans chacune des compétences
-//! posées sur des anneaux, du centre vers le bord. Chaque niveau donne un point de compétence ;
-//! un point apprend une compétence, ou la renforce d'un rang, pourvu que celles qu'elle demande
-//! soient déjà apprises.
+//! Roue des compétences : les quinze classes se partagent le cercle, et dans chacune ses douze
+//! compétences sont posées sur des anneaux, du niveau 1 (au centre) à l'ultime (au bord), en
+//! passant par le niveau 2 et les fusions. Chaque niveau du héros donne un point de compétence ;
+//! un point apprend une compétence, de n'importe quelle classe, ou la renforce d'un rang, pourvu
+//! que celles qu'elle demande soient déjà apprises.
 //!
-//! La roue est décrite dans `assets/competences/roue.json`, embarquée dans le jeu et le serveur
-//! pour que les deux jugent les mêmes règles.
+//! La roue est décrite dans `assets/competences/roue.json`, reprise du carnet Planner par
+//! `tools/importer_roue_competences.py`, et embarquée dans le jeu et le serveur pour que les deux
+//! jugent les mêmes règles.
 
 use std::collections::HashSet;
 
@@ -18,11 +20,14 @@ const WHEEL_JSON: &str = include_str!("../../../assets/competences/roue.json");
 /// Rang maximal d'une compétence, sauf mention contraire dans la roue
 pub const DEFAULT_MAX_RANK: u8 = 3;
 
-/// Une part du cercle (une famille de compétences)
+/// Une part du cercle : une classe
 #[derive(Debug, Clone, Deserialize)]
 pub struct SkillBranch {
     pub id: String,
     pub name: String,
+    /// Famille de la classe : `magic`, `ranged` ou `melee`
+    #[serde(default)]
+    pub family: String,
     /// Couleur de la part, en RGB
     pub color: [u8; 3],
 }
@@ -36,8 +41,11 @@ pub struct SkillNode {
     pub description: String,
     /// Identifiant de la branche qui la porte
     pub branch: String,
-    /// Anneau, compté depuis le centre à partir de 1
-    pub ring: u8,
+    /// Palier : 1 et 2 pour les niveaux 1 et 2, 3 pour les fusions, 4 pour l'ultime
+    pub tier: u8,
+    /// Distance au centre sur la roue, en anneaux (1 : le plus proche) ; le palier par défaut
+    #[serde(default)]
+    pub ring: Option<f32>,
     /// Position dans la part de sa branche, de 0 (début) à 1 (fin)
     #[serde(default = "half")]
     pub slot: f32,
@@ -46,6 +54,30 @@ pub struct SkillNode {
     pub requires: Vec<String>,
     #[serde(default = "default_max_rank")]
     pub max_rank: u8,
+    /// Numéro de la fiche du carnet Planner qui la décrit
+    #[serde(default)]
+    pub planner: Option<u32>,
+}
+
+impl SkillNode {
+    /// Anneau où la dessiner
+    pub fn ring(&self) -> f32 {
+        self.ring.unwrap_or(self.tier as f32)
+    }
+
+    /// Nom du palier, pour sa fiche
+    pub fn tier_label(&self) -> &'static str {
+        match self.tier {
+            1 => "Niveau 1",
+            2 => "Niveau 2",
+            3 => "Fusion",
+            _ => "Ultime",
+        }
+    }
+
+    pub fn is_ultimate(&self) -> bool {
+        self.tier >= 4
+    }
 }
 
 fn half() -> f32 {
@@ -101,8 +133,8 @@ impl SkillWheel {
             if !wheel.branches.iter().any(|b| b.id == node.branch) {
                 return Err(format!("{} : branche inconnue {}", node.id, node.branch));
             }
-            if node.ring == 0 || node.max_rank == 0 {
-                return Err(format!("{} : anneau et rang maximal commencent à 1", node.id));
+            if !(1..=4).contains(&node.tier) || node.max_rank == 0 || node.ring() < 1.0 {
+                return Err(format!("{} : palier de 1 à 4, anneau et rang maximal à partir de 1", node.id));
             }
         }
         for node in &wheel.nodes {
@@ -121,9 +153,9 @@ impl SkillWheel {
         self.branches.iter().find(|b| b.id == id)
     }
 
-    /// Nombre d'anneaux de la roue
-    pub fn rings(&self) -> u8 {
-        self.nodes.iter().map(|n| n.ring).max().unwrap_or(1)
+    /// Anneau le plus éloigné du centre
+    pub fn rings(&self) -> f32 {
+        self.nodes.iter().map(SkillNode::ring).fold(1.0, f32::max)
     }
 
     /// Ce qui empêche d'apprendre `id` (ou de le renforcer), `None` si c'est possible
@@ -166,8 +198,22 @@ mod tests {
     #[test]
     fn test_standard_wheel_is_valid() {
         let wheel = SkillWheel::standard();
-        assert!(!wheel.nodes.is_empty());
-        assert!(wheel.rings() >= 1);
+        // Les 180 compétences des 15 classes, douze chacune
+        assert_eq!(wheel.branches.len(), 15);
+        assert_eq!(wheel.nodes.len(), 180);
+        for branch in &wheel.branches {
+            let nodes: Vec<_> = wheel.nodes.iter().filter(|n| n.branch == branch.id).collect();
+            assert_eq!(nodes.len(), 12, "{}", branch.name);
+            assert_eq!(nodes.iter().filter(|n| n.is_ultimate()).count(), 1, "{} : un ultime", branch.name);
+            assert!(["magic", "ranged", "melee"].contains(&branch.family.as_str()), "{}", branch.family);
+        }
+        // Une compétence ne demande que des compétences plus proches du centre
+        for node in &wheel.nodes {
+            for r in &node.requires {
+                assert!(wheel.node(r).unwrap().ring() < node.ring(), "{} demande {}", node.id, r);
+            }
+        }
+        assert_eq!(wheel.rings(), 4.0);
     }
 
     #[test]
@@ -179,29 +225,32 @@ mod tests {
         // Niveau 4 : trois points
         hero.add_experience(600);
         assert_eq!(hero.skill_points, 3);
-        assert_eq!(wheel.learn(&mut hero, "briseGarde"), Err(LearnError::MissingPrerequisite));
+        assert_eq!(wheel.learn(&mut hero, "balayageCirculaire"), Err(LearnError::MissingPrerequisite));
         assert_eq!(wheel.learn(&mut hero, "frappeLourde"), Ok(1));
-        assert_eq!(wheel.learn(&mut hero, "briseGarde"), Ok(1));
+        assert_eq!(wheel.learn(&mut hero, "balayageCirculaire"), Ok(1));
         assert_eq!(wheel.learn(&mut hero, "frappeLourde"), Ok(2));
         assert_eq!(hero.skill_points, 0);
         assert_eq!(wheel.learn(&mut hero, "frappeLourde"), Err(LearnError::NoPoint));
         assert_eq!(wheel.learn(&mut hero, "inconnue"), Err(LearnError::Unknown));
 
-        hero.skill_points = 5;
+        hero.skill_points = 10;
         assert_eq!(wheel.learn(&mut hero, "frappeLourde"), Ok(3));
         assert_eq!(wheel.learn(&mut hero, "frappeLourde"), Err(LearnError::MaxRank));
-        // Ruée frontale demande les deux compétences de l'anneau 2
-        assert_eq!(wheel.learn(&mut hero, "rueeFrontale"), Err(LearnError::MissingPrerequisite));
-        assert_eq!(wheel.learn(&mut hero, "ondeSismique"), Ok(1));
+        // Une fusion demande les deux formes du niveau 2 qu'elle unit
+        assert_eq!(wheel.learn(&mut hero, "tornadeEcrasante"), Err(LearnError::MissingPrerequisite));
         assert_eq!(wheel.learn(&mut hero, "rueeFrontale"), Ok(1));
+        assert_eq!(wheel.learn(&mut hero, "frappePlongeante"), Ok(1));
+        assert_eq!(wheel.learn(&mut hero, "tornadeEcrasante"), Ok(1));
+        // Les compétences des autres classes s'apprennent aussi (#171)
+        assert_eq!(wheel.learn(&mut hero, "frappeDuJuste"), Ok(1));
     }
 
     #[test]
     fn test_parse_rejects_broken_wheels() {
         let branch = r#"{ "id": "a", "name": "A", "color": [0, 0, 0] }"#;
-        let bad_branch = format!(r#"{{ "branches": [{branch}], "nodes": [{{ "id": "x", "name": "X", "branch": "b", "ring": 1 }}] }}"#);
+        let bad_branch = format!(r#"{{ "branches": [{branch}], "nodes": [{{ "id": "x", "name": "X", "branch": "b", "tier": 1 }}] }}"#);
         assert!(SkillWheel::parse(&bad_branch).is_err());
-        let bad_requires = format!(r#"{{ "branches": [{branch}], "nodes": [{{ "id": "x", "name": "X", "branch": "a", "ring": 1, "requires": ["y"] }}] }}"#);
+        let bad_requires = format!(r#"{{ "branches": [{branch}], "nodes": [{{ "id": "x", "name": "X", "branch": "a", "tier": 1, "requires": ["y"] }}] }}"#);
         assert!(SkillWheel::parse(&bad_requires).is_err());
     }
 }

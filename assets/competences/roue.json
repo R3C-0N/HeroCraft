@@ -1,45 +1,2625 @@
 {
-    "_note": "Contenu provisoire : les quatre compétences du soldat reprises de la branche Java, en attendant la roue décrite dans Planner.",
-    "branches": [
-        { "id": "melee", "name": "Mêlée", "color": [205, 90, 60] },
-        { "id": "ranged", "name": "Distance", "color": [90, 170, 80] },
-        { "id": "magic", "name": "Magie", "color": [90, 120, 220] }
-    ],
-    "nodes": [
-        {
-            "id": "frappeLourde",
-            "name": "Frappe lourde",
-            "description": "Un coup ample qui balaie tout ce qui se tient devant.",
-            "branch": "melee",
-            "ring": 1,
-            "slot": 0.5
-        },
-        {
-            "id": "briseGarde",
-            "name": "Brise-garde",
-            "description": "Un coup sec et étroit, porté droit sur l'adversaire.",
-            "branch": "melee",
-            "ring": 2,
-            "slot": 0.25,
-            "requires": ["frappeLourde"]
-        },
-        {
-            "id": "ondeSismique",
-            "name": "Onde sismique",
-            "description": "Un coup frappé au sol, dont l'onde court droit devant.",
-            "branch": "melee",
-            "ring": 2,
-            "slot": 0.75,
-            "requires": ["frappeLourde"]
-        },
-        {
-            "id": "rueeFrontale",
-            "name": "Ruée frontale",
-            "description": "Une charge qui frappe tout ce qui se trouve sur sa trajectoire.",
-            "branch": "melee",
-            "ring": 3,
-            "slot": 0.5,
-            "requires": ["briseGarde", "ondeSismique"]
-        }
-    ]
+  "_source": "Carnet Planner, fiche #138 « Classes » ; regénérer avec tools/importer_roue_competences.py",
+  "branches": [
+    {
+      "id": "pretreGuerrier",
+      "name": "Prêtre-guerrier",
+      "family": "magic",
+      "color": [
+        124,
+        88,
+        178
+      ]
+    },
+    {
+      "id": "chapelain",
+      "name": "Chapelain",
+      "family": "magic",
+      "color": [
+        124,
+        88,
+        178
+      ]
+    },
+    {
+      "id": "necromancien",
+      "name": "Nécromancien",
+      "family": "magic",
+      "color": [
+        124,
+        88,
+        178
+      ]
+    },
+    {
+      "id": "druide",
+      "name": "Druide",
+      "family": "magic",
+      "color": [
+        124,
+        88,
+        178
+      ]
+    },
+    {
+      "id": "sorcierElementaire",
+      "name": "Sorcier élémentaire",
+      "family": "magic",
+      "color": [
+        124,
+        88,
+        178
+      ]
+    },
+    {
+      "id": "voleur",
+      "name": "Voleur",
+      "family": "ranged",
+      "color": [
+        44,
+        140,
+        90
+      ]
+    },
+    {
+      "id": "rodeur",
+      "name": "Rôdeur",
+      "family": "ranged",
+      "color": [
+        44,
+        140,
+        90
+      ]
+    },
+    {
+      "id": "archer",
+      "name": "Archer",
+      "family": "ranged",
+      "color": [
+        44,
+        140,
+        90
+      ]
+    },
+    {
+      "id": "ingenieur",
+      "name": "Ingénieur",
+      "family": "ranged",
+      "color": [
+        44,
+        140,
+        90
+      ]
+    },
+    {
+      "id": "chasseurDeMonstre",
+      "name": "Chasseur de monstre",
+      "family": "ranged",
+      "color": [
+        44,
+        140,
+        90
+      ]
+    },
+    {
+      "id": "lameDuVent",
+      "name": "Lame du vent",
+      "family": "melee",
+      "color": [
+        192,
+        72,
+        52
+      ]
+    },
+    {
+      "id": "soldat",
+      "name": "Soldat",
+      "family": "melee",
+      "color": [
+        192,
+        72,
+        52
+      ]
+    },
+    {
+      "id": "champion",
+      "name": "Champion",
+      "family": "melee",
+      "color": [
+        192,
+        72,
+        52
+      ]
+    },
+    {
+      "id": "berserker",
+      "name": "Berserker",
+      "family": "melee",
+      "color": [
+        192,
+        72,
+        52
+      ]
+    },
+    {
+      "id": "paladin",
+      "name": "Paladin",
+      "family": "melee",
+      "color": [
+        192,
+        72,
+        52
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "frappeDuJuste",
+      "name": "Frappe du Juste",
+      "description": "Maillet. Un coup lourd avec le maillet qui inflige des dégâts physiques et soigne légèrement le Prêtre-guerrier.",
+      "branch": "pretreGuerrier",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 241
+    },
+    {
+      "id": "eclairDeGuerison",
+      "name": "Éclair de Guérison",
+      "description": "Soin. Le sceptre libère un soin rapide sur un allié proche ou sur lui-même.",
+      "branch": "pretreGuerrier",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 242
+    },
+    {
+      "id": "jugement",
+      "name": "Jugement",
+      "description": "Sol. Frappe le sol avec le maillet, créant une petite onde de choc qui ralentit les ennemis.",
+      "branch": "pretreGuerrier",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 243
+    },
+    {
+      "id": "armureDeFoi",
+      "name": "Armure de Foi",
+      "description": "Protection. S'entoure d'un bouclier lumineux temporaire qui réduit les dégâts physiques subis.",
+      "branch": "pretreGuerrier",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 244
+    },
+    {
+      "id": "marteauConsacre",
+      "name": "Marteau Consacré",
+      "description": "Maillet. Le maillet s'illumine. Les prochaines attaques infligent des dégâts de lumière supplémentaires et soignent les alliés dans un petit rayon autour de la cible.",
+      "branch": "pretreGuerrier",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "frappeDuJuste"
+      ],
+      "max_rank": 3,
+      "planner": 246
+    },
+    {
+      "id": "auraDeDevotion",
+      "name": "Aura de Dévotion",
+      "description": "Soin. Active une aura persistante qui augmente légèrement la régénération de santé de tous les alliés proches tant que le Prêtre-guerrier est en combat.",
+      "branch": "pretreGuerrier",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "eclairDeGuerison"
+      ],
+      "max_rank": 3,
+      "planner": 247
+    },
+    {
+      "id": "chargePenitente",
+      "name": "Charge Pénitente",
+      "description": "Protection. Fonce sur un ennemi avec le bouclier (ou l'épaule), l'étourdissant brièvement et se rapprochant instantanément pour le corps à corps.",
+      "branch": "pretreGuerrier",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "armureDeFoi"
+      ],
+      "max_rank": 3,
+      "planner": 248
+    },
+    {
+      "id": "sanctuaire",
+      "name": "Sanctuaire",
+      "description": "Sol. Pose une zone bénie au sol. Les ennemis à l'intérieur subissent des dégâts continus, tandis que les alliés sont soignés.",
+      "branch": "pretreGuerrier",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "jugement"
+      ],
+      "max_rank": 3,
+      "planner": 249
+    },
+    {
+      "id": "ondePurificatrice",
+      "name": "Onde Purificatrice",
+      "description": "Frappe du Juste + Éclair de Guérison. Frappe le maillet contre le sceptre. Libère une onde radiale qui inflige de lourds dégâts de lumière aux ennemis et soigne fortement les alliés traversés.",
+      "branch": "pretreGuerrier",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "marteauConsacre",
+        "auraDeDevotion"
+      ],
+      "max_rank": 3,
+      "planner": 251
+    },
+    {
+      "id": "bastionDeLumiere",
+      "name": "Bastion de Lumière",
+      "description": "Jugement + Armure de Foi. Frappe violemment le sol, créant un large dôme protecteur. Les alliés à l'intérieur bénéficient d'une réduction massive des dégâts, et les ennemis qui tentent d'y entrer sont repoussés.",
+      "branch": "pretreGuerrier",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "sanctuaire",
+        "chargePenitente"
+      ],
+      "max_rank": 3,
+      "planner": 252
+    },
+    {
+      "id": "condamnation",
+      "name": "Condamnation",
+      "description": "Marteau Consacré + Charge Pénitente. Effectue une charge fulgurante terminée par un coup de maillet surpuissant. Si la cible est tuée, elle explose en un soin de zone massif pour le groupe.",
+      "branch": "pretreGuerrier",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "marteauConsacre",
+        "chargePenitente"
+      ],
+      "max_rank": 3,
+      "planner": 253
+    },
+    {
+      "id": "avatarDeLaJustice",
+      "name": "Avatar de la Justice",
+      "description": "Compétence ultime, aussi appelée Courroux de l'Étherium. Le Prêtre-guerrier canalise la Pierre du néant à travers ses deux armes. Il devient une immense figure de lumière astrale. Ses attaques au maillet provoquent des tremblements de terre ravageurs, et chaque coup porté déclenche automatiquement des soins de zone équivalents aux dégâts infligés pour toute l'équipe. L'effet dure 15 secondes.",
+      "branch": "pretreGuerrier",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "ondePurificatrice",
+        "bastionDeLumiere",
+        "condamnation"
+      ],
+      "max_rank": 3,
+      "planner": 254
+    },
+    {
+      "id": "lumiereApaisante",
+      "name": "Lumière Apaisante",
+      "description": "Soin. Un soin rapide et direct sur une cible unique (allié ou soi-même).",
+      "branch": "chapelain",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 226
+    },
+    {
+      "id": "auraDeProtection",
+      "name": "Aura de Protection",
+      "description": "Protection. Crée un petit bouclier de lumière autour d'un allié, absorbant une faible quantité de dégâts.",
+      "branch": "chapelain",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 227
+    },
+    {
+      "id": "chatimentCeleste",
+      "name": "Châtiment Céleste",
+      "description": "Lumière offensive. Envoie un faible rayon de lumière sur un ennemi, infligeant de légers dégâts et le ralentissant brièvement (le seul sort offensif direct du niveau 1).",
+      "branch": "chapelain",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 228
+    },
+    {
+      "id": "benedictionDeVitesse",
+      "name": "Bénédiction de Vitesse",
+      "description": "Bénédiction. Augmente temporairement la vitesse de déplacement d'un allié ou de soi-même.",
+      "branch": "chapelain",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 229
+    },
+    {
+      "id": "soinsDeZone",
+      "name": "Soins de Zone",
+      "description": "Soin. Une vague de lumière soignant tous les alliés dans un rayon modéré autour du Chapelain.",
+      "branch": "chapelain",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "lumiereApaisante"
+      ],
+      "max_rank": 3,
+      "planner": 231
+    },
+    {
+      "id": "rempartSacre",
+      "name": "Rempart Sacré",
+      "description": "Protection. Invoque un mur de lumière immobile bloquant les projectiles ennemis pendant quelques secondes.",
+      "branch": "chapelain",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "auraDeProtection"
+      ],
+      "max_rank": 3,
+      "planner": 232
+    },
+    {
+      "id": "purification",
+      "name": "Purification",
+      "description": "Lumière offensive. Retire un effet négatif (poison, ralentissement) sur un allié et lui rend une petite portion de santé.",
+      "branch": "chapelain",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "chatimentCeleste"
+      ],
+      "max_rank": 3,
+      "planner": 233
+    },
+    {
+      "id": "marqueDuMartyr",
+      "name": "Marque du Martyr",
+      "description": "Bénédiction. Le Chapelain lie sa vitalité à un allié. Une partie des dégâts subis par l'allié est redirigée vers le Chapelain, mais l'allié bénéficie d'une forte régénération.",
+      "branch": "chapelain",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "benedictionDeVitesse"
+      ],
+      "max_rank": 3,
+      "planner": 234
+    },
+    {
+      "id": "novaSanctifiee",
+      "name": "Nova Sanctifiée",
+      "description": "Lumière Apaisante + Soins de Zone. Le Sceptre accumule l'énergie lumineuse et la libère en une explosion de soins massifs sur une large zone.",
+      "branch": "chapelain",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "soinsDeZone"
+      ],
+      "max_rank": 3,
+      "planner": 236
+    },
+    {
+      "id": "egideDivine",
+      "name": "Égide Divine",
+      "description": "Aura de Protection + Rempart Sacré. La main libre canalise un bouclier colossal autour du Chapelain, le rendant insensible aux dégâts, tout en repoussant fortement les ennemis proches.",
+      "branch": "chapelain",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "rempartSacre"
+      ],
+      "max_rank": 3,
+      "planner": 237
+    },
+    {
+      "id": "redemption",
+      "name": "Rédemption",
+      "description": "Châtiment Céleste + Purification. Un rayon intense frappe une zone, soignant les alliés tout en aveuglant et affaiblissant les ennemis touchés.",
+      "branch": "chapelain",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "purification"
+      ],
+      "max_rank": 3,
+      "planner": 238
+    },
+    {
+      "id": "interventionSupreme",
+      "name": "Intervention Suprême",
+      "description": "Compétence ultime, aussi appelée Lueur de l'Étherium. Le Chapelain lève son Sceptre et canalise la pure énergie de l'Étherium. Tous les alliés morts dans une très large zone sont instantanément ressuscités avec la moitié de leur santé. Les alliés en vie sont soignés au maximum et bénéficient d'une aura d'invincibilité pendant une courte durée.",
+      "branch": "chapelain",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "novaSanctifiee",
+        "egideDivine",
+        "redemption",
+        "marqueDuMartyr"
+      ],
+      "max_rank": 3,
+      "planner": 239
+    },
+    {
+      "id": "serviteurSquelette",
+      "name": "Serviteur Squelette",
+      "description": "Invocation. Invoque un squelette armé d'une épée courte pour harceler au corps à corps.",
+      "branch": "necromancien",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 211
+    },
+    {
+      "id": "siphonDAme",
+      "name": "Siphon d'Âme",
+      "description": "Drain. Utilise ta main libre pour arracher la force vitale d'une cible et te soigner lentement.",
+      "branch": "necromancien",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 212
+    },
+    {
+      "id": "murDOssements",
+      "name": "Mur d'Ossements",
+      "description": "Défense. Fait surgir une épaisse barricade d'os du sol pour bloquer les ennemis et les projectiles.",
+      "branch": "necromancien",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 213
+    },
+    {
+      "id": "espritFrappeur",
+      "name": "Esprit Frappeur",
+      "description": "Spectre. Libère un spectre hurlant depuis ta lanterne qui fonce exploser sur la première cible touchée.",
+      "branch": "necromancien",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 214
+    },
+    {
+      "id": "chevalierDeLaMort",
+      "name": "Chevalier de la Mort",
+      "description": "Invocation. Invoque un mort-vivant en armure lourde qui force les ennemis à l'attaquer pour te protéger.",
+      "branch": "necromancien",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "serviteurSquelette"
+      ],
+      "max_rank": 3,
+      "planner": 216
+    },
+    {
+      "id": "nuageMiasmatique",
+      "name": "Nuage Miasmatique",
+      "description": "Drain. Crée une large zone de décomposition persistante qui ronge la santé et l'armure des adversaires.",
+      "branch": "necromancien",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "siphonDAme"
+      ],
+      "max_rank": 3,
+      "planner": 217
+    },
+    {
+      "id": "golemDeChair",
+      "name": "Golem de Chair",
+      "description": "Défense. Amalgame de cadavres très lent, incapable d'esquiver, mais encaissant des dégâts colossaux à ta place.",
+      "branch": "necromancien",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "murDOssements"
+      ],
+      "max_rank": 3,
+      "planner": 218
+    },
+    {
+      "id": "empriseSpectrale",
+      "name": "Emprise Spectrale",
+      "description": "Spectre. Des mains fantomatiques jaillissent du sol pour paralyser totalement un groupe d'ennemis.",
+      "branch": "necromancien",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "espritFrappeur"
+      ],
+      "max_rank": 3,
+      "planner": 219
+    },
+    {
+      "id": "seigneurLiche",
+      "name": "Seigneur Liche",
+      "description": "Squelette + Frappeur. Une entité supérieure qui attaque en mêlée tout en balançant des orbes explosifs à distance.",
+      "branch": "necromancien",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "chevalierDeLaMort",
+        "empriseSpectrale"
+      ],
+      "max_rank": 3,
+      "planner": 221
+    },
+    {
+      "id": "behemothDOs",
+      "name": "Béhémoth d'Os",
+      "description": "Golem + Mur. Une monstruosité géante faite d'os et de chair putréfiée qui charge en ligne droite, écrasant et renversant tout sur son passage.",
+      "branch": "necromancien",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "golemDeChair"
+      ],
+      "max_rank": 3,
+      "planner": 222
+    },
+    {
+      "id": "tempeteDesAmes",
+      "name": "Tempête des Âmes",
+      "description": "Siphon + Miasme. Un vaste tourbillon spectral qui aspire massivement la vie de tous les ennemis piégés à l'intérieur pour régénérer tes invocations et toi-même.",
+      "branch": "necromancien",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "nuageMiasmatique"
+      ],
+      "max_rank": 3,
+      "planner": 223
+    },
+    {
+      "id": "legionDuNeant",
+      "name": "Légion du Néant",
+      "description": "Compétence ultime. Tu plantes ton Bâton-lanterne d'âmes au sol et le surcharges avec l'énergie de la Pierre du néant. La réalité se déchire, transformant instantanément tous les cadavres de la zone (alliés comme ennemis) en ombres d'Étherium. Ces ombres sont totalement invulnérables, déchiquettent les ennemis survivants à une vitesse fulgurante, puis implosent en te conférant un bouclier de santé impénétrable.",
+      "branch": "necromancien",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "seigneurLiche",
+        "behemothDOs",
+        "tempeteDesAmes"
+      ],
+      "max_rank": 3,
+      "planner": 224
+    },
+    {
+      "id": "griffesDeLaMeute",
+      "name": "Griffes de la Meute",
+      "description": "Loup. Ton bras libre se transforme en patte de loup pour des attaques de mêlée très rapides.",
+      "branch": "druide",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 196
+    },
+    {
+      "id": "echineDuPlantigrade",
+      "name": "Échine du Plantigrade",
+      "description": "Ours. Ton dos se couvre d'une épaisse fourrure protectrice pour absorber les dégâts lourds.",
+      "branch": "druide",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 197
+    },
+    {
+      "id": "jambesDeLElan",
+      "name": "Jambes de l'Élan",
+      "description": "Cerf. Tes jambes mutent, t'offrant un grand bonus de vitesse et un violent coup de sabot pour déséquilibrer l'ennemi.",
+      "branch": "druide",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 198
+    },
+    {
+      "id": "plumesDeBourrasque",
+      "name": "Plumes de Bourrasque",
+      "description": "Faucon. Tes bras se dotent de plumes robustes pour repousser les adversaires d'un puissant battement.",
+      "branch": "druide",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 199
+    },
+    {
+      "id": "loupDesBois",
+      "name": "Loup des Bois",
+      "description": "Loup. Transformation totale axée sur l'agilité, l'esquive et les enchaînements critiques.",
+      "branch": "druide",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "griffesDeLaMeute"
+      ],
+      "max_rank": 3,
+      "planner": 201
+    },
+    {
+      "id": "oursRunique",
+      "name": "Ours Runique",
+      "description": "Ours. Transformation en tank massif qui encaisse les coups et renverse les ennemis avec son poids.",
+      "branch": "druide",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "echineDuPlantigrade"
+      ],
+      "max_rank": 3,
+      "planner": 202
+    },
+    {
+      "id": "grandCerfAncien",
+      "name": "Grand Cerf Ancien",
+      "description": "Cerf. Forme rapide spécialisée dans la charge perçante et la diffusion d'une aura de régénération.",
+      "branch": "druide",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "jambesDeLElan"
+      ],
+      "max_rank": 3,
+      "planner": 203
+    },
+    {
+      "id": "fauconPelerin",
+      "name": "Faucon Pèlerin",
+      "description": "Faucon. Forme de vol courte durée pour t'échapper, ignorer le terrain ou fondre sur une cible en piqué.",
+      "branch": "druide",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "plumesDeBourrasque"
+      ],
+      "max_rank": 3,
+      "planner": 204
+    },
+    {
+      "id": "oursHibou",
+      "name": "Ours-Hibou",
+      "description": "Ours + Faucon. Une créature massive capable de faire de très hauts bonds pour s'écraser au sol et créer une violente onde de choc de zone.",
+      "branch": "druide",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "oursRunique",
+        "fauconPelerin"
+      ],
+      "max_rank": 3,
+      "planner": 206
+    },
+    {
+      "id": "wendigo",
+      "name": "Wendigo",
+      "description": "Cerf + Loup. Un prédateur bipède terrifiant aux bois acérés, spécialisé dans la furtivité et les attaques magiques provoquant de lourds saignements.",
+      "branch": "druide",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "grandCerfAncien",
+        "loupDesBois"
+      ],
+      "max_rank": 3,
+      "planner": 207
+    },
+    {
+      "id": "griffonSylvestre",
+      "name": "Griffon Sylvestre",
+      "description": "Faucon + Loup. Un chasseur ailé ultra-rapide qui harcèle les cibles en mêlée tout en restant constamment en mouvement.",
+      "branch": "druide",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "fauconPelerin",
+        "loupDesBois"
+      ],
+      "max_rank": 3,
+      "planner": 208
+    },
+    {
+      "id": "avatarDuNeant",
+      "name": "Avatar du Néant",
+      "description": "Chimère ultime. Au lieu d'utiliser ta magie de la nature, tu plantes violemment ton Totem au sol et tu le surcharges avec l'énergie de la Pierre du néant. Tu fusionnes avec lui pour devenir une entité cosmique colossale qui combine la force de l'ours, la vitesse du loup, les ailes du rapace et la magie du cerf grâce aux cristaux d'Étherium purs.",
+      "branch": "druide",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "oursHibou",
+        "wendigo",
+        "griffonSylvestre"
+      ],
+      "max_rank": 3,
+      "planner": 209
+    },
+    {
+      "id": "feu",
+      "name": "Feu",
+      "description": "Une compétence, deux sorts.\n\n- Offensif : Orbe Igné, lance une boule de feu explosive.\n- Défensif (piège) : Rune Volcanique, place une marque au sol qui explose en un pilier de feu au passage d'un ennemi.",
+      "branch": "sorcierElementaire",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 175
+    },
+    {
+      "id": "eau",
+      "name": "Eau",
+      "description": "Une compétence, deux sorts.\n\n- Offensif : Fouet Écumeux, frappe à moyenne portée et ralentit la cible.\n- Défensif : Voile Aquatique, un bouclier fluide qui absorbe les dégâts et te soigne légèrement.",
+      "branch": "sorcierElementaire",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 176
+    },
+    {
+      "id": "terre",
+      "name": "Terre",
+      "description": "Une compétence, deux sorts.\n\n- Offensif : Éclat Sismique, projette un rocher lourd et perforant.\n- Défensif : Rempart Tellurique, fait surgir un large mur de pierre qui avance pour repousser violemment les ennemis au loin.",
+      "branch": "sorcierElementaire",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 177
+    },
+    {
+      "id": "air",
+      "name": "Air",
+      "description": "Une compétence, deux sorts.\n\n- Offensif : Lames de Vent, envoie des rafales très rapides et tranchantes.\n- Défensif : Courant Ascendant, te propulse rapidement en arrière pour fuir, tout en déséquilibrant les ennemis devant toi.",
+      "branch": "sorcierElementaire",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 178
+    },
+    {
+      "id": "fusion",
+      "name": "Fusion",
+      "description": "Se débloque après les sorts de base. Combine deux sorts déjà connus en un seul. Cette compétence donne d'un coup les quatre fusions d'amplification (même élément × 2) ; chaque autre fusion est ensuite une compétence à part.",
+      "branch": "sorcierElementaire",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.5,
+      "requires": [
+        "feu",
+        "eau",
+        "terre",
+        "air"
+      ],
+      "max_rank": 3,
+      "planner": 179
+    },
+    {
+      "id": "typhonBouillant",
+      "name": "Typhon Bouillant",
+      "description": "Feu / Eau : Orbe Igné + Fouet Écumeux.\n\nTu fouettes ton orbe de feu pour déclencher une énorme vague de vapeur à très haute pression qui ébouillante la zone.",
+      "branch": "sorcierElementaire",
+      "tier": 3,
+      "ring": 2.5,
+      "slot": 0.125,
+      "requires": [
+        "fusion"
+      ],
+      "max_rank": 3,
+      "planner": 186
+    },
+    {
+      "id": "tempeteDeShrapnels",
+      "name": "Tempête de Shrapnels",
+      "description": "Terre / Air : Éclat Sismique + Lames de Vent.\n\nLes rafales de vent pulvérisent ton rocher en vol, le changeant en une pluie de projectiles perforants.",
+      "branch": "sorcierElementaire",
+      "tier": 3,
+      "ring": 2.5,
+      "slot": 0.375,
+      "requires": [
+        "fusion"
+      ],
+      "max_rank": 3,
+      "planner": 187
+    },
+    {
+      "id": "murDeMagma",
+      "name": "Mur de Magma",
+      "description": "Feu / Terre : Rune Volcanique + Rempart Tellurique.\n\nLe mur surgit sur ta rune et devient incandescent. Il bloque le passage et laisse une flaque de lave persistante.",
+      "branch": "sorcierElementaire",
+      "tier": 3,
+      "ring": 2.5,
+      "slot": 0.625,
+      "requires": [
+        "fusion"
+      ],
+      "max_rank": 3,
+      "planner": 189
+    },
+    {
+      "id": "brumeApaisante",
+      "name": "Brume Apaisante",
+      "description": "Eau / Air : Voile Aquatique + Courant Ascendant.\n\nLe vent disperse ton bouclier aquatique pour créer un épais brouillard de zone qui te cache et te soigne en continu.",
+      "branch": "sorcierElementaire",
+      "tier": 3,
+      "ring": 2.5,
+      "slot": 0.875,
+      "requires": [
+        "fusion"
+      ],
+      "max_rank": 3,
+      "planner": 190
+    },
+    {
+      "id": "retraiteExplosive",
+      "name": "Retraite Explosive",
+      "description": "Feu / Air : Orbe Igné + Courant Ascendant.\n\nTon bond vers l'arrière attire l'orbe exactement là où tu te trouvais, déclenchant une violente explosion pour punir ceux qui te foncent dessus.",
+      "branch": "sorcierElementaire",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.25,
+      "requires": [
+        "typhonBouillant",
+        "murDeMagma"
+      ],
+      "max_rank": 3,
+      "planner": 192
+    },
+    {
+      "id": "cristallisation",
+      "name": "Cristallisation",
+      "description": "Eau / Terre : Éclat Sismique + Voile Aquatique.\n\nTon rocher traverse ton bouclier d'eau, gèle instantanément, et explose à l'impact en projetant des éclats de givre acérés sur les ennemis proches.",
+      "branch": "sorcierElementaire",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.75,
+      "requires": [
+        "tempeteDeShrapnels",
+        "brumeApaisante"
+      ],
+      "max_rank": 3,
+      "planner": 193
+    },
+    {
+      "id": "singulariteDuNeant",
+      "name": "Singularité du Néant",
+      "description": "Compétence ultime. Tu surcharges tes deux gantelets runiques pour contourner les éléments classiques et déchirer la réalité, libérant une explosion d'énergie astrale pure.",
+      "branch": "sorcierElementaire",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "retraiteExplosive",
+        "cristallisation"
+      ],
+      "max_rank": 3,
+      "planner": 194
+    },
+    {
+      "id": "tirVif",
+      "name": "Tir Vif",
+      "description": "Arbalète. Un carreau ultra-rapide tiré depuis ton arbalète de poing.",
+      "branch": "voleur",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 256
+    },
+    {
+      "id": "carreauEmpoisonne",
+      "name": "Carreau Empoisonné",
+      "description": "Munition. Une munition enduite de toxines pour des dégâts sur la durée.",
+      "branch": "voleur",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 257
+    },
+    {
+      "id": "voileTenebreux",
+      "name": "Voile Ténébreux",
+      "description": "Ombre. Tu utilises ta main libre pour canaliser la magie de l'ombre et disparaître totalement pendant quelques secondes.",
+      "branch": "voleur",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 258
+    },
+    {
+      "id": "leurreObscur",
+      "name": "Leurre Obscur",
+      "description": "Illusion. Invoque un double de toi-même fait d'ombres pour attirer les tirs.",
+      "branch": "voleur",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 259
+    },
+    {
+      "id": "tirAEclats",
+      "name": "Tir à Éclats",
+      "description": "Arbalète. Le carreau explose à l'impact, projetant des fragments sur les cibles proches.",
+      "branch": "voleur",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "tirVif"
+      ],
+      "max_rank": 3,
+      "planner": 261
+    },
+    {
+      "id": "carreauGrappin",
+      "name": "Carreau-Grappin",
+      "description": "Munition. Permet de te hisser instantanément sur un point en hauteur ou d'échapper au corps à corps.",
+      "branch": "voleur",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "carreauEmpoisonne"
+      ],
+      "max_rank": 3,
+      "planner": 262
+    },
+    {
+      "id": "embuscade",
+      "name": "Embuscade",
+      "description": "Ombre. Ta première attaque en sortant d'une disparition garantit des dégâts critiques massifs.",
+      "branch": "voleur",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "voileTenebreux"
+      ],
+      "max_rank": 3,
+      "planner": 263
+    },
+    {
+      "id": "ecranDeFumee",
+      "name": "Écran de Fumée",
+      "description": "Illusion. Déploie une large zone d'ombre qui aveugle les ennemis et te rend indétectable à l'intérieur.",
+      "branch": "voleur",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "leurreObscur"
+      ],
+      "max_rank": 3,
+      "planner": 264
+    },
+    {
+      "id": "tirFantome",
+      "name": "Tir Fantôme",
+      "description": "Tir Vif + Voile Ténébreux. Tu décoches un carreau imprégné de magie. À l'impact, tu te téléportes instantanément dans le dos de la cible touchée.",
+      "branch": "voleur",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "tirAEclats",
+        "embuscade"
+      ],
+      "max_rank": 3,
+      "planner": 266
+    },
+    {
+      "id": "nuageToxique",
+      "name": "Nuage Toxique",
+      "description": "Carreau Empoisonné + Écran de Fumée. Le carreau libère un vaste brouillard empoisonné et opaque qui étouffe les ennemis pris dedans.",
+      "branch": "voleur",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "carreauGrappin",
+        "ecranDeFumee"
+      ],
+      "max_rank": 3,
+      "planner": 267
+    },
+    {
+      "id": "delugeIllusoire",
+      "name": "Déluge Illusoire",
+      "description": "Tir à Éclats + Leurre. Ton leurre se met à tirer simultanément une volée de carreaux d'ombre explosifs avant de se dissiper.",
+      "branch": "voleur",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "tirAEclats",
+        "ecranDeFumee"
+      ],
+      "max_rank": 3,
+      "planner": 268
+    },
+    {
+      "id": "eclipseDuNeant",
+      "name": "Éclipse du Néant",
+      "description": "Compétence ultime. Tu relies ton arbalète à la Pierre du néant. La zone plonge dans une obscurité totale. Tu deviens une ombre pure, rebondissant de cible en cible à la vitesse de l'éclair pour décocher des carreaux d'Étherium imperceptibles et mortels.",
+      "branch": "voleur",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "tirFantome",
+        "nuageToxique",
+        "delugeIllusoire"
+      ],
+      "max_rank": 3,
+      "planner": 269
+    },
+    {
+      "id": "tirJumele",
+      "name": "Tir Jumelé",
+      "description": "Rafale. Tire simultanément une balle magique de chaque arbalète pour des dégâts rapides.",
+      "branch": "rodeur",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 271
+    },
+    {
+      "id": "rouladeEvasive",
+      "name": "Roulade Évasive",
+      "description": "Mobilité. Esquive lointaine qui recharge automatiquement tes deux arbalètes.",
+      "branch": "rodeur",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 272
+    },
+    {
+      "id": "balleTracante",
+      "name": "Balle Traçante",
+      "description": "Munition. Munition lumineuse qui marque la cible, augmentant fortement tes chances de coup critique sur celle-ci.",
+      "branch": "rodeur",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 273
+    },
+    {
+      "id": "tirDeRecul",
+      "name": "Tir de Recul",
+      "description": "Contrôle. Tir lourd chargé d'énergie cinétique qui repousse violemment l'ennemi pour le maintenir à distance.",
+      "branch": "rodeur",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 274
+    },
+    {
+      "id": "ballesAFragmentation",
+      "name": "Balles à Fragmentation",
+      "description": "Munition. Tes tirs explosent à l'impact, infligeant des dégâts magiques de zone.",
+      "branch": "rodeur",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "balleTracante"
+      ],
+      "max_rank": 3,
+      "planner": 276
+    },
+    {
+      "id": "salveElectrifiee",
+      "name": "Salve Électrifiée",
+      "description": "Rafale. Tire des balles imprégnées de foudre qui rebondissent entre les ennemis proches.",
+      "branch": "rodeur",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "tirJumele"
+      ],
+      "max_rank": 3,
+      "planner": 277
+    },
+    {
+      "id": "tirDeCouverture",
+      "name": "Tir de Couverture",
+      "description": "Contrôle. Déluge continu dans un large cône frontal qui ralentit considérablement l'avancée ennemie.",
+      "branch": "rodeur",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "tirDeRecul"
+      ],
+      "max_rank": 3,
+      "planner": 278
+    },
+    {
+      "id": "acrobatieMeurtriere",
+      "name": "Acrobatie Meurtrière",
+      "description": "Mobilité. Saut périlleux arrière rapide tout en décochant une volée de tirs vers le sol.",
+      "branch": "rodeur",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "rouladeEvasive"
+      ],
+      "max_rank": 3,
+      "planner": 279
+    },
+    {
+      "id": "marqueDetonante",
+      "name": "Marque Détonante",
+      "description": "Balle Traçante + Balles à Fragmentation. Tes tirs explosifs cherchent désormais automatiquement les cibles verrouillées par tes balles traçantes.",
+      "branch": "rodeur",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "ballesAFragmentation"
+      ],
+      "max_rank": 3,
+      "planner": 281
+    },
+    {
+      "id": "tempeteMagnetique",
+      "name": "Tempête Magnétique",
+      "description": "Salve Électrifiée + Tir de Couverture. Le cône de tir devient un champ électrique continu qui étourdit et détruit l'armure.",
+      "branch": "rodeur",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "salveElectrifiee",
+        "tirDeCouverture"
+      ],
+      "max_rank": 3,
+      "planner": 282
+    },
+    {
+      "id": "danseDesBalles",
+      "name": "Danse des Balles",
+      "description": "Tir Jumelé + Acrobatie Meurtrière. Tu tournoies en te déplaçant à grande vitesse, arrosant toute la zone autour de toi de projectiles magiques.",
+      "branch": "rodeur",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "salveElectrifiee",
+        "acrobatieMeurtriere"
+      ],
+      "max_rank": 3,
+      "planner": 283
+    },
+    {
+      "id": "delugeDuNeant",
+      "name": "Déluge du Néant",
+      "description": "Compétence ultime. Tu surcharges tes arbalètes avec la Pierre du néant. Tu lévites brièvement et libères instantanément une onde sphérique composée de centaines de balles d'Étherium. Ces projectiles sont à tête chercheuse, traversent absolument tous les murs et boucliers, et perforent l'armure de tous les ennemis dans un très large rayon.",
+      "branch": "rodeur",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "marqueDetonante",
+        "tempeteMagnetique",
+        "danseDesBalles"
+      ],
+      "max_rank": 3,
+      "planner": 284
+    },
+    {
+      "id": "tirCharge",
+      "name": "Tir Chargé",
+      "description": "Puissance. Un tir puissant qui demande un court temps de tension de l'arc pour percer la première ligne ennemie.",
+      "branch": "archer",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 286
+    },
+    {
+      "id": "flecheDArret",
+      "name": "Flèche d'Arrêt",
+      "description": "Entrave. Un tir lourd visant les jambes pour ralentir fortement ou immobiliser brièvement une cible qui s'approche.",
+      "branch": "archer",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 287
+    },
+    {
+      "id": "repliTactique",
+      "name": "Repli Tactique",
+      "description": "Précision. Un bond en arrière rapide pour maintenir la distance tout en décochant une flèche d'instinct.",
+      "branch": "archer",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 288
+    },
+    {
+      "id": "tirMultiple",
+      "name": "Tir Multiple",
+      "description": "Volée. Décoche trois flèches simultanément dans un cône restreint pour repousser un groupe au corps à corps.",
+      "branch": "archer",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 289
+    },
+    {
+      "id": "pluieDeFleches",
+      "name": "Pluie de Flèches",
+      "description": "Volée. Tire une volée en cloche qui s'abat sur une large zone ciblée.",
+      "branch": "archer",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "tirMultiple"
+      ],
+      "max_rank": 3,
+      "planner": 291
+    },
+    {
+      "id": "flechePerforante",
+      "name": "Flèche Perforante",
+      "description": "Puissance. Un tir à très haute tension, utilisant la force des deux mains, qui traverse tous les ennemis sur une longue ligne droite.",
+      "branch": "archer",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "tirCharge"
+      ],
+      "max_rank": 3,
+      "planner": 292
+    },
+    {
+      "id": "ilDeFaucon",
+      "name": "Œil de Faucon",
+      "description": "Précision. Posture de concentration augmentant drastiquement la portée, la vitesse de visée et les chances de coup critique pendant quelques secondes.",
+      "branch": "archer",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "repliTactique"
+      ],
+      "max_rank": 3,
+      "planner": 293
+    },
+    {
+      "id": "flecheBarbelee",
+      "name": "Flèche Barbelée",
+      "description": "Entrave. Décoche une flèche à pointe large causant un lourd saignement continu sur la cible.",
+      "branch": "archer",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "flecheDArret"
+      ],
+      "max_rank": 3,
+      "planner": 294
+    },
+    {
+      "id": "tirDeBaliste",
+      "name": "Tir de Baliste",
+      "description": "Flèche Perforante + Tir Chargé. Tu bandes ton arc à son maximum absolu. La flèche vole à une vitesse inouïe, brisant instantanément les armures lourdes et projetant les ennemis touchés en arrière.",
+      "branch": "archer",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "flechePerforante"
+      ],
+      "max_rank": 3,
+      "planner": 296
+    },
+    {
+      "id": "delugeDAcier",
+      "name": "Déluge d'Acier",
+      "description": "Pluie de Flèches + Tir Multiple. Tu tires plusieurs poignées de flèches en l'air à une vitesse folle, créant une zone de mort où les projectiles pleuvent en continu pendant plusieurs secondes.",
+      "branch": "archer",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "pluieDeFleches"
+      ],
+      "max_rank": 3,
+      "planner": 297
+    },
+    {
+      "id": "traqueMortelle",
+      "name": "Traque Mortelle",
+      "description": "Œil de Faucon + Flèche Barbelée. Un tir de précision absolu qui trouve systématiquement le point faible. Applique un saignement critique qui s'aggrave drastiquement si l'ennemi tente de se déplacer.",
+      "branch": "archer",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "ilDeFaucon",
+        "flecheBarbelee"
+      ],
+      "max_rank": 3,
+      "planner": 298
+    },
+    {
+      "id": "frappeDEtherium",
+      "name": "Frappe d'Étherium",
+      "description": "Compétence ultime. Sans utiliser de magie propre, tu coches une unique flèche taillée dans de l'Étherium pur. En relâchant la corde, le projectile déchire l'air dans un silence total, transperçant absolument tous les obstacles, murs, boucliers et ennemis sur toute la longueur de la zone, infligeant des dégâts physiques cataclysmiques.",
+      "branch": "archer",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "tirDeBaliste",
+        "delugeDAcier",
+        "traqueMortelle"
+      ],
+      "max_rank": 3,
+      "planner": 299
+    },
+    {
+      "id": "tourelleBalistique",
+      "name": "Tourelle Balistique",
+      "description": "Tourelle. Déploie rapidement une tourelle automatisée qui tire des carreaux réguliers sur les ennemis proches.",
+      "branch": "ingenieur",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 301
+    },
+    {
+      "id": "piegeAMachoire",
+      "name": "Piège à Mâchoire",
+      "description": "Piège. Pose un piège dissimulé au sol qui immobilise le premier ennemi marchant dessus et lui inflige un lourd saignement.",
+      "branch": "ingenieur",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 302
+    },
+    {
+      "id": "mineAEclats",
+      "name": "Mine à Éclats",
+      "description": "Explosif. Un explosif de proximité qui projette des fragments métalliques dans un court rayon.",
+      "branch": "ingenieur",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 303
+    },
+    {
+      "id": "grappinDeSecours",
+      "name": "Grappin de Secours",
+      "description": "Défense. Utilise ta main libre pour lancer un câble qui te tracte instantanément vers une zone sûre, loin de la mêlée.",
+      "branch": "ingenieur",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 304
+    },
+    {
+      "id": "tourelleIncendiaire",
+      "name": "Tourelle Incendiaire",
+      "description": "Explosif. Déploie un canon à courte portée qui crache un cône de flammes continu, idéal pour verrouiller un couloir.",
+      "branch": "ingenieur",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "mineAEclats"
+      ],
+      "max_rank": 3,
+      "planner": 306
+    },
+    {
+      "id": "piegeMagnetique",
+      "name": "Piège Magnétique",
+      "description": "Piège. Attire violemment les ennemis au centre d'une zone piégée et ralentit fortement leur vitesse de déplacement.",
+      "branch": "ingenieur",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "piegeAMachoire"
+      ],
+      "max_rank": 3,
+      "planner": 307
+    },
+    {
+      "id": "barricadePortative",
+      "name": "Barricade Portative",
+      "description": "Défense. Jette un module qui se déplie en un large mur robuste, bloquant les projectiles et les charges ennemies.",
+      "branch": "ingenieur",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "grappinDeSecours"
+      ],
+      "max_rank": 3,
+      "planner": 308
+    },
+    {
+      "id": "surchargeMecanique",
+      "name": "Surcharge Mécanique",
+      "description": "Tourelle. Ta main libre envoie un signal qui booste temporairement la cadence de tir et la résistance de toutes tes tourelles actives.",
+      "branch": "ingenieur",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "tourelleBalistique"
+      ],
+      "max_rank": 3,
+      "planner": 309
+    },
+    {
+      "id": "zoneDExecution",
+      "name": "Zone d'Exécution",
+      "description": "Tourelle Balistique + Piège Magnétique. Les tirs de la tourelle sont magnétisés, ciblant automatiquement et transperçant la grappe d'ennemis regroupés par le piège.",
+      "branch": "ingenieur",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "surchargeMecanique",
+        "piegeMagnetique"
+      ],
+      "max_rank": 3,
+      "planner": 311
+    },
+    {
+      "id": "murFournaise",
+      "name": "Mur Fournaise",
+      "description": "Tourelle Incendiaire + Barricade Portative. Le lance-flammes embrase ta propre barricade. Le mur bloque toujours les attaques, mais devient incandescent et calcine instantanément quiconque tente de le frapper au corps à corps.",
+      "branch": "ingenieur",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "tourelleIncendiaire",
+        "barricadePortative"
+      ],
+      "max_rank": 3,
+      "planner": 312
+    },
+    {
+      "id": "eradicationCiblee",
+      "name": "Éradication Ciblée",
+      "description": "Mine à Éclats + Piège à Mâchoire. Dès qu'un ennemi est immobilisé par le piège, cela déclenche le largage automatique de trois mines à éclats tout autour de lui pour une explosion mortelle.",
+      "branch": "ingenieur",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "piegeMagnetique",
+        "tourelleIncendiaire"
+      ],
+      "max_rank": 3,
+      "planner": 313
+    },
+    {
+      "id": "bastionDEtherium",
+      "name": "Bastion d'Étherium",
+      "description": "Compétence ultime. Tu enfonces ta trousse du bricoleur gorgée d'Étherium directement sous tes pieds. Le sol s'ouvre et une forteresse mécanique imprenable s'assemble instantanément autour de toi, te surélevant aux commandes d'une tourelle de siège colossale.\n\n- Mur Fournaise intégré : la base du bastion est encerclée par un mur d'acier incandescent qui repousse et calcine instantanément toute cible tentant le corps à corps.\n- Zone d'Exécution amplifiée : tu pilotes manuellement la tourelle qui tire des obus magnétiques perforants. Chaque tir attire et écrase les ennemis au centre de l'impact avant de tout vaporiser.",
+      "branch": "ingenieur",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "zoneDExecution",
+        "eradicationCiblee",
+        "murFournaise"
+      ],
+      "max_rank": 3,
+      "planner": 314
+    },
+    {
+      "id": "entailleVive",
+      "name": "Entaille vive",
+      "description": "Épée. Coup rapide avec ton épée à une main pour faire saigner la cible.",
+      "branch": "chasseurDeMonstre",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 316
+    },
+    {
+      "id": "tirDEntrave",
+      "name": "Tir d'entrave",
+      "description": "Arbalète. Un carreau ciblé depuis ton arbalète de poing pour ralentir l'approche d'un monstre.",
+      "branch": "chasseurDeMonstre",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 317
+    },
+    {
+      "id": "esquiveTactique",
+      "name": "Esquive tactique",
+      "description": "Réflexe. Roulade de côté qui recharge ton arbalète instantanément.",
+      "branch": "chasseurDeMonstre",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 318
+    },
+    {
+      "id": "coupDePommeau",
+      "name": "Coup de pommeau",
+      "description": "Contrôle. Frappe brutale au corps à corps pour étourdir brièvement.",
+      "branch": "chasseurDeMonstre",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 319
+    },
+    {
+      "id": "salvePerforante",
+      "name": "Salve perforante",
+      "description": "Arbalète. Décoche trois carreaux d'affilée en éventail pour repousser un groupe.",
+      "branch": "chasseurDeMonstre",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "tirDEntrave"
+      ],
+      "max_rank": 3,
+      "planner": 321
+    },
+    {
+      "id": "brocheMonstre",
+      "name": "Broche-monstre",
+      "description": "Épée. Un violent coup d'estoc à l'épée, conçu pour percer les peaux épaisses et les armures moyennes.",
+      "branch": "chasseurDeMonstre",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "entailleVive"
+      ],
+      "max_rank": 3,
+      "planner": 322
+    },
+    {
+      "id": "carreauHarpon",
+      "name": "Carreau-harpon",
+      "description": "Contrôle. Projette un carreau câblé pour tracter un petit ennemi vers toi, ou te hisser rapidement vers une créature géante.",
+      "branch": "chasseurDeMonstre",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "coupDePommeau"
+      ],
+      "max_rank": 3,
+      "planner": 323
+    },
+    {
+      "id": "riposteCroisee",
+      "name": "Riposte croisée",
+      "description": "Réflexe. Pare une attaque physique avec ta lame et enchaîne automatiquement avec un tir à bout portant.",
+      "branch": "chasseurDeMonstre",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "esquiveTactique"
+      ],
+      "max_rank": 3,
+      "planner": 324
+    },
+    {
+      "id": "danseMortelle",
+      "name": "Danse mortelle",
+      "description": "Entaille vive + Salve perforante. Tu tailles dans le vif en avançant, tout en arrosant les flancs de tirs rapides d'arbalète.",
+      "branch": "chasseurDeMonstre",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "brocheMonstre",
+        "salvePerforante"
+      ],
+      "max_rank": 3,
+      "planner": 326
+    },
+    {
+      "id": "miseAMort",
+      "name": "Mise à mort",
+      "description": "Tir d'entrave + Broche-monstre. Un tir précis dans les articulations pour faire chuter la cible, suivi d'un empalement ascendant dévastateur.",
+      "branch": "chasseurDeMonstre",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "salvePerforante",
+        "brocheMonstre"
+      ],
+      "max_rank": 3,
+      "planner": 327
+    },
+    {
+      "id": "assautFulgurant",
+      "name": "Assaut fulgurant",
+      "description": "Esquive tactique + Carreau-harpon. Roulade arrière pour éviter un coup, harponnage immédiat, puis propulsion vers l'ennemi pour une frappe plongeante.",
+      "branch": "chasseurDeMonstre",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "riposteCroisee",
+        "carreauHarpon"
+      ],
+      "max_rank": 3,
+      "planner": 328
+    },
+    {
+      "id": "fureurDEtherium",
+      "name": "Fureur d'Étherium",
+      "description": "Compétence ultime. Tu enduis la lame de ton épée et les carreaux de ton arbalète d'Étherium pur. Le temps d'action est drastiquement réduit : tes coups d'épée libèrent des ondes d'énergie massives et chaque tir traverse tous les obstacles sur la carte, broyant n'importe quel monstre sur ton passage.",
+      "branch": "chasseurDeMonstre",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "danseMortelle",
+        "miseAMort",
+        "assautFulgurant"
+      ],
+      "max_rank": 3,
+      "planner": 329
+    },
+    {
+      "id": "frappeCisaillante",
+      "name": "Frappe Cisaillante",
+      "description": "Mêlée. Un coup de sabre ample et lourd au corps à corps qui repousse légèrement les adversaires.",
+      "branch": "lameDuVent",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 331
+    },
+    {
+      "id": "lameDAir",
+      "name": "Lame d'Air",
+      "description": "Projectile. Tu fends l'air avec ton sabre pour envoyer un projectile tranchant magique à moyenne portée.",
+      "branch": "lameDuVent",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 332
+    },
+    {
+      "id": "pasDeBrise",
+      "name": "Pas de Brise",
+      "description": "Mobilité. Une esquive rapide et fluide où le vent te pousse pour te rapprocher instantanément de ta cible ou fuir une zone dangereuse.",
+      "branch": "lameDuVent",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 333
+    },
+    {
+      "id": "tornadeMineure",
+      "name": "Tornade Mineure",
+      "description": "Tourbillon. Un coup circulaire rapide qui crée un petit tourbillon autour de toi, déséquilibrant les ennemis très proches.",
+      "branch": "lameDuVent",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 334
+    },
+    {
+      "id": "bourrasquePercante",
+      "name": "Bourrasque Perçante",
+      "description": "Mêlée. Une série d'estocs ultra-rapides et dévastateurs au corps à corps.",
+      "branch": "lameDuVent",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "frappeCisaillante"
+      ],
+      "max_rank": 3,
+      "planner": 336
+    },
+    {
+      "id": "croissantDeVent",
+      "name": "Croissant de Vent",
+      "description": "Projectile. Un grand coup vertical balayé à deux mains qui projette une haute lame d'air capable de traverser plusieurs ennemis sur une longue ligne.",
+      "branch": "lameDuVent",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "lameDAir"
+      ],
+      "max_rank": 3,
+      "planner": 337
+    },
+    {
+      "id": "manteauDeZephyr",
+      "name": "Manteau de Zéphyr",
+      "description": "Mobilité. Le vent s'enroule autour de toi, augmentant drastiquement ta vitesse de déplacement et déviant les petits projectiles.",
+      "branch": "lameDuVent",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "pasDeBrise"
+      ],
+      "max_rank": 3,
+      "planner": 338
+    },
+    {
+      "id": "frappeAscendante",
+      "name": "Frappe Ascendante",
+      "description": "Tourbillon. Un puissant coup de sabre vers le haut qui soulève l'ennemi dans les airs et le laisse vulnérable.",
+      "branch": "lameDuVent",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "tornadeMineure"
+      ],
+      "max_rank": 3,
+      "planner": 339
+    },
+    {
+      "id": "danseDeLOuragan",
+      "name": "Danse de l'Ouragan",
+      "description": "Bourrasque Perçante + Lame d'Air. Tu enchaînes des frappes de mêlée à une vitesse folle, chaque coup de ton sabre générant des lames d'air perforantes qui partent dans toutes les directions.",
+      "branch": "lameDuVent",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "bourrasquePercante",
+        "croissantDeVent"
+      ],
+      "max_rank": 3,
+      "planner": 341
+    },
+    {
+      "id": "tempeteTranchante",
+      "name": "Tempête Tranchante",
+      "description": "Tornade Mineure + Croissant de Vent. Tu tournoies sur toi-même tout en chargeant ton coup, libérant un gigantesque croissant de vent horizontal qui fauche tout sur un très large rayon autour de toi.",
+      "branch": "lameDuVent",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "croissantDeVent",
+        "frappeAscendante"
+      ],
+      "max_rank": 3,
+      "planner": 342
+    },
+    {
+      "id": "executionCeleste",
+      "name": "Exécution Céleste",
+      "description": "Frappe Ascendante + Pas de Brise. Tu propulses l'ennemi en l'air avec ton sabre, le vent te téléporte instantanément au-dessus de lui, et tu le rabats violemment au sol d'un coup fracassant.",
+      "branch": "lameDuVent",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "frappeAscendante",
+        "manteauDeZephyr"
+      ],
+      "max_rank": 3,
+      "planner": 343
+    },
+    {
+      "id": "typhonDuNeant",
+      "name": "Typhon du Néant",
+      "description": "Compétence ultime. Tu canalises la Pierre du néant directement dans la lame de ton sabre. Tu déclenches un coup d'une puissance colossale qui déchire l'espace lui-même. Une tornade géante d'Étherium noir avance sur le terrain, aspirant tous les ennemis sur son passage et les lacérant avec des milliers de coupures imblocables avant d'exploser.",
+      "branch": "lameDuVent",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "danseDeLOuragan",
+        "tempeteTranchante",
+        "executionCeleste"
+      ],
+      "max_rank": 3,
+      "planner": 344
+    },
+    {
+      "id": "frappeLourde",
+      "name": "Frappe Lourde",
+      "description": "Puissance. Un grand mouvement ample qui repousse l'ennemi en arrière, parfait pour se créer de l'espace.",
+      "branch": "soldat",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 346
+    },
+    {
+      "id": "briseGarde",
+      "name": "Brise-Garde",
+      "description": "Garde. Une frappe de bas en haut utilisant tout le poids du corps pour briser la posture et la parade de la cible.",
+      "branch": "soldat",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 347
+    },
+    {
+      "id": "rueeFrontale",
+      "name": "Ruée Frontale",
+      "description": "Assaut. Une charge à l'épaule très rapide pour réduire la distance et déséquilibrer l'adversaire.",
+      "branch": "soldat",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 348
+    },
+    {
+      "id": "ondeSismique",
+      "name": "Onde Sismique",
+      "description": "Zone. Un coup violent frappé directement le sol, soulevant une ligne de débris vers l'avant pour toucher à distance.",
+      "branch": "soldat",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 349
+    },
+    {
+      "id": "balayageCirculaire",
+      "name": "Balayage Circulaire",
+      "description": "Puissance. Une violente rotation sur toi-même qui fauche tous les ennemis dans un court rayon.",
+      "branch": "soldat",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "frappeLourde"
+      ],
+      "max_rank": 3,
+      "planner": 351
+    },
+    {
+      "id": "criDeRalliementSoldat",
+      "name": "Cri de Ralliement",
+      "description": "Zone. Un hurlement de guerre qui ralentit les ennemis proches et augmente temporairement ta résistance aux dégâts physiques.",
+      "branch": "soldat",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "ondeSismique"
+      ],
+      "max_rank": 3,
+      "planner": 352
+    },
+    {
+      "id": "frappePlongeante",
+      "name": "Frappe Plongeante",
+      "description": "Assaut. Un bond en avant suivi d'un écrasement brutal de l'arme au sol, créant un cratère d'impact.",
+      "branch": "soldat",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "rueeFrontale"
+      ],
+      "max_rank": 3,
+      "planner": 353
+    },
+    {
+      "id": "paradeAbsolue",
+      "name": "Parade Absolue",
+      "description": "Garde. Une posture défensive utilisant le manche de l'arme pour encaisser n'importe quel coup et riposter immédiatement avec une force doublée.",
+      "branch": "soldat",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "briseGarde"
+      ],
+      "max_rank": 3,
+      "planner": 354
+    },
+    {
+      "id": "perceeSismique",
+      "name": "Percée Sismique",
+      "description": "Ruée Frontale + Onde Sismique. Tu charges en raclant ton arme au sol, accumulant des gravats pour les projeter en un large cône dévastateur à la fin de ta course.",
+      "branch": "soldat",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "frappePlongeante",
+        "criDeRalliementSoldat"
+      ],
+      "max_rank": 3,
+      "planner": 356
+    },
+    {
+      "id": "tornadeEcrasante",
+      "name": "Tornade Écrasante",
+      "description": "Balayage Circulaire + Frappe Plongeante. Tu tournoies dans les airs pendant ton saut pour t'écraser lourdement au centre du groupe ennemi, balayant toute la zone.",
+      "branch": "soldat",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "balayageCirculaire",
+        "frappePlongeante"
+      ],
+      "max_rank": 3,
+      "planner": 357
+    },
+    {
+      "id": "executionImplacable",
+      "name": "Exécution Implacable",
+      "description": "Brise-Garde + Frappe Lourde. Un combo en deux temps inarrêtable : le premier coup pulvérise l'armure, le second expédie la cible à l'autre bout de la pièce.",
+      "branch": "soldat",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "paradeAbsolue",
+        "balayageCirculaire"
+      ],
+      "max_rank": 3,
+      "planner": 358
+    },
+    {
+      "id": "maitreDeGuerreDuNeant",
+      "name": "Maître de guerre du Néant",
+      "description": "Compétence ultime. Tu imprègnes ton arme d'Étherium pur. Tu deviens totalement inarrêtable et tes attaques génèrent des ondes de choc gigantesques qui traversent toute la carte. La force libérée pulvérise tout sur son passage, quelle que soit la forme de l'arme que tu tiens entre tes mains.",
+      "branch": "soldat",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "executionImplacable",
+        "tornadeEcrasante",
+        "perceeSismique"
+      ],
+      "max_rank": 3,
+      "planner": 359
+    },
+    {
+      "id": "coupDeBouclier",
+      "name": "Coup de bouclier",
+      "description": "Ancrage. Frappe brutale qui repousse et étourdit la cible.",
+      "branch": "champion",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 361
+    },
+    {
+      "id": "fenteDArret",
+      "name": "Fente d'arrêt",
+      "description": "Épée. Coup d'épée rapide ciblant les jambes pour ralentir l'ennemi.",
+      "branch": "champion",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 362
+    },
+    {
+      "id": "provocation",
+      "name": "Provocation",
+      "description": "Provocation. Un cri qui force un monstre à t'attaquer pour protéger tes alliés.",
+      "branch": "champion",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 363
+    },
+    {
+      "id": "gardeDeFer",
+      "name": "Garde de fer",
+      "description": "Parade. Posture levant le bouclier pour bloquer totalement les attaques physiques frontales.",
+      "branch": "champion",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 364
+    },
+    {
+      "id": "phalange",
+      "name": "Phalange",
+      "description": "Ancrage. Tu t'ancres au sol en utilisant le poids de ton armure lourde, devenant impossible à renverser ou à repousser.",
+      "branch": "champion",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "coupDeBouclier"
+      ],
+      "max_rank": 3,
+      "planner": 366
+    },
+    {
+      "id": "briseArmure",
+      "name": "Brise-armure",
+      "description": "Épée. Frappe lourde à l'épée qui détériore la protection de la cible.",
+      "branch": "champion",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "fenteDArret"
+      ],
+      "max_rank": 3,
+      "planner": 367
+    },
+    {
+      "id": "criDeRalliementChampion",
+      "name": "Cri de ralliement",
+      "description": "Provocation. Force tous les ennemis dans un large rayon à te cibler exclusivement.",
+      "branch": "champion",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "provocation"
+      ],
+      "max_rank": 3,
+      "planner": 368
+    },
+    {
+      "id": "riposteParfaite",
+      "name": "Riposte parfaite",
+      "description": "Parade. Une parade au bouclier bien synchronisée déclenche un violent coup d'épée automatique.",
+      "branch": "champion",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "gardeDeFer"
+      ],
+      "max_rank": 3,
+      "planner": 369
+    },
+    {
+      "id": "perceeCuirassee",
+      "name": "Percée cuirassée",
+      "description": "Coup de bouclier + Fente d'arrêt. Charge frontale avec le bouclier en avant, suivie immédiatement d'un empalement profond à l'épée.",
+      "branch": "champion",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "phalange",
+        "briseArmure"
+      ],
+      "max_rank": 3,
+      "planner": 371
+    },
+    {
+      "id": "murVivant",
+      "name": "Mur vivant",
+      "description": "Garde de fer + Phalange. Crée une véritable ligne de front impénétrable. Tu avances lentement tout en bloquant les projectiles et en écrasant les ennemis sous ton avancée.",
+      "branch": "champion",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "riposteParfaite",
+        "phalange"
+      ],
+      "max_rank": 3,
+      "planner": 372
+    },
+    {
+      "id": "contreDevastateur",
+      "name": "Contre dévastateur",
+      "description": "Brise-armure + Riposte parfaite. Tu encaisses volontairement une attaque lourde sur ton bouclier pour relâcher instantanément un coup d'épée circulaire massif qui fauche la zone.",
+      "branch": "champion",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "briseArmure",
+        "riposteParfaite"
+      ],
+      "max_rank": 3,
+      "planner": 373
+    },
+    {
+      "id": "monolitheDuNeant",
+      "name": "Monolithe du Néant",
+      "description": "Compétence ultime. Tu incrustes de l'Étherium pur dans ton épée et ton bouclier. Tu frappes violemment le sol, créant une onde de choc qui enferme les ennemis proches dans un cratère. À l'intérieur, tu deviens totalement invulnérable et chacune de tes frappes à l'épée désintègre l'armure adverse.",
+      "branch": "champion",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "perceeCuirassee",
+        "murVivant",
+        "contreDevastateur"
+      ],
+      "max_rank": 3,
+      "planner": 374
+    },
+    {
+      "id": "frappeSauvage",
+      "name": "Frappe Sauvage",
+      "description": "Frappe. Un coup lourd et désordonné avec ton arme qui arrache la chair de l'ennemi, l'éclaboussure éveillant ta fureur.",
+      "branch": "berserker",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 376
+    },
+    {
+      "id": "entailleSanglante",
+      "name": "Entaille Sanglante",
+      "description": "Sacrifice. Tu t'entailles violemment la main libre pour enduire ton arme de sang bouillant, augmentant drastiquement tes dégâts au prix de ta propre santé.",
+      "branch": "berserker",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 377
+    },
+    {
+      "id": "hurlementVisceral",
+      "name": "Hurlement Viscéral",
+      "description": "Terreur. Un cri de pure souffrance qui terrorise les ennemis proches et brise leur posture.",
+      "branch": "berserker",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 378
+    },
+    {
+      "id": "chargeAveugle",
+      "name": "Charge Aveugle",
+      "description": "Assaut. Tu fonces tête baissée, ignorant totalement la douleur pour percuter et renverser ta cible.",
+      "branch": "berserker",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 379
+    },
+    {
+      "id": "mutilationFrenetique",
+      "name": "Mutilation Frénétique",
+      "description": "Frappe. Une rafale de coups chaotiques. Chaque coup raté te blesse, mais chaque coup au but te soigne légèrement.",
+      "branch": "berserker",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "frappeSauvage"
+      ],
+      "max_rank": 3,
+      "planner": 381
+    },
+    {
+      "id": "plaieBeante",
+      "name": "Plaie Béante",
+      "description": "Terreur. Tu frappes le sol à main nue jusqu'au sang, déclenchant une décharge magique rougeâtre qui repousse le danger.",
+      "branch": "berserker",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "hurlementVisceral"
+      ],
+      "max_rank": 3,
+      "planner": 382
+    },
+    {
+      "id": "frenesieMoribonde",
+      "name": "Frénésie Moribonde",
+      "description": "Sacrifice. Plus ta jauge de santé se vide, plus tes muscles gonflent magiquement, augmentant ta vitesse d'attaque.",
+      "branch": "berserker",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "entailleSanglante"
+      ],
+      "max_rank": 3,
+      "planner": 383
+    },
+    {
+      "id": "priseEcrasante",
+      "name": "Prise Écrasante",
+      "description": "Assaut. Ta main libre agrippe la gorge de l'ennemi par réflexe de survie, broyant ses os pendant que tu l'achèves avec ton arme.",
+      "branch": "berserker",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "chargeAveugle"
+      ],
+      "max_rank": 3,
+      "planner": 384
+    },
+    {
+      "id": "eruptionDHemoglobine",
+      "name": "Éruption d'Hémoglobine",
+      "description": "Entaille Sanglante + Frappe Sauvage. Le sang magique sur ton arme explose violemment à l'impact, brûlant tous les ennemis dans la zone.",
+      "branch": "berserker",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "frenesieMoribonde",
+        "mutilationFrenetique"
+      ],
+      "max_rank": 3,
+      "planner": 386
+    },
+    {
+      "id": "trombeDAgonie",
+      "name": "Trombe d'Agonie",
+      "description": "Charge Aveugle + Mutilation Frénétique. Tu deviens une tornade inarrêtable. Tu tailles tout sur ton passage en ignorant la douleur, provoquant une grave hémorragie sur toi-même.",
+      "branch": "berserker",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "mutilationFrenetique",
+        "priseEcrasante"
+      ],
+      "max_rank": 3,
+      "planner": 387
+    },
+    {
+      "id": "ondeDeChocCharnelle",
+      "name": "Onde de Choc Charnelle",
+      "description": "Hurlement Viscéral + Plaie Béante. Tu frappes ton propre torse de ta main libre. Le choc magique résonne avec ton hurlement et paralyse totalement la zone.",
+      "branch": "berserker",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "plaieBeante"
+      ],
+      "max_rank": 3,
+      "planner": 388
+    },
+    {
+      "id": "abominationDeLEtherium",
+      "name": "Abomination de l'Étherium",
+      "description": "Compétence ultime. Tu enfonces un éclat d'Étherium pur directement dans ta chair. Tu deviens un monstre colossal et insensible. Ta santé se vide rapidement, mais tes frappes provoquent des séismes. Si tu tombes à zéro point de vie sous cet effet, tu exploses dans une nova de néant destructrice au lieu de mourir.",
+      "branch": "berserker",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "eruptionDHemoglobine",
+        "trombeDAgonie",
+        "ondeDeChocCharnelle"
+      ],
+      "max_rank": 3,
+      "planner": 389
+    },
+    {
+      "id": "frappeRayonnante",
+      "name": "Frappe Rayonnante",
+      "description": "Arme. Un coup d'arme infusé de lumière qui aveugle brièvement la cible.",
+      "branch": "paladin",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.125,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 391
+    },
+    {
+      "id": "eclatDeBouclier",
+      "name": "Éclat de Bouclier",
+      "description": "Bouclier. Une parade qui relâche un flash éblouissant pour repousser les assaillants.",
+      "branch": "paladin",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.375,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 392
+    },
+    {
+      "id": "sceauDeBravoure",
+      "name": "Sceau de Bravoure",
+      "description": "Soutien. Un enchantement rapide augmentant tes dégâts de mêlée et ceux des alliés proches.",
+      "branch": "paladin",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.625,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 393
+    },
+    {
+      "id": "assautAile",
+      "name": "Assaut Ailé",
+      "description": "Charge. Une charge fulgurante, bouclier en avant, pour percuter l'ennemi et réduire la distance.",
+      "branch": "paladin",
+      "tier": 1,
+      "ring": 1.0,
+      "slot": 0.875,
+      "requires": [],
+      "max_rank": 3,
+      "planner": 394
+    },
+    {
+      "id": "gardeScintillante",
+      "name": "Garde Scintillante",
+      "description": "Bouclier. Ton bouclier absorbe les dégâts magiques et les convertit pour recharger ta propre énergie.",
+      "branch": "paladin",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.375,
+      "requires": [
+        "eclatDeBouclier"
+      ],
+      "max_rank": 3,
+      "planner": 396
+    },
+    {
+      "id": "armeDeLAube",
+      "name": "Arme de l'Aube",
+      "description": "Arme. Ton arme s'embrase de lumière, infligeant des dégâts supplémentaires majeurs, surtout aux créatures de l'ombre.",
+      "branch": "paladin",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.125,
+      "requires": [
+        "frappeRayonnante"
+      ],
+      "max_rank": 3,
+      "planner": 397
+    },
+    {
+      "id": "auraDeVigueur",
+      "name": "Aura de Vigueur",
+      "description": "Soutien. Une zone lumineuse persistante autour de toi qui accélère la récupération d'endurance de tout le groupe.",
+      "branch": "paladin",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.625,
+      "requires": [
+        "sceauDeBravoure"
+      ],
+      "max_rank": 3,
+      "planner": 398
+    },
+    {
+      "id": "interventionVertueuse",
+      "name": "Intervention Vertueuse",
+      "description": "Charge. Un bond instantané devant un allié ciblé pour encaisser la prochaine attaque lourde à sa place.",
+      "branch": "paladin",
+      "tier": 2,
+      "ring": 2.0,
+      "slot": 0.875,
+      "requires": [
+        "assautAile"
+      ],
+      "max_rank": 3,
+      "planner": 399
+    },
+    {
+      "id": "ondeSolaire",
+      "name": "Onde Solaire",
+      "description": "Frappe Rayonnante + Éclat de Bouclier. Tu frappes violemment ton arme contre ton bouclier, libérant une puissante onde de choc lumineuse à 360° qui étourdit la zone.",
+      "branch": "paladin",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.1667,
+      "requires": [
+        "armeDeLAube",
+        "gardeScintillante"
+      ],
+      "max_rank": 3,
+      "planner": 401
+    },
+    {
+      "id": "phalangeCeleste",
+      "name": "Phalange Céleste",
+      "description": "Assaut Ailé + Garde Scintillante. Tu charges en générant un large mur de lumière frontal, bousculant les ennemis tout en abritant totalement les alliés dans ton sillage.",
+      "branch": "paladin",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.8333,
+      "requires": [
+        "gardeScintillante",
+        "interventionVertueuse"
+      ],
+      "max_rank": 3,
+      "planner": 402
+    },
+    {
+      "id": "courrouxDuJuste",
+      "name": "Courroux du Juste",
+      "description": "Sceau de Bravoure + Arme de l'Aube. Un enchaînement de mêlée surpuissant où chaque impact libère une étincelle qui soigne légèrement les alliés au contact.",
+      "branch": "paladin",
+      "tier": 3,
+      "ring": 3.0,
+      "slot": 0.5,
+      "requires": [
+        "auraDeVigueur",
+        "armeDeLAube"
+      ],
+      "max_rank": 3,
+      "planner": 403
+    },
+    {
+      "id": "forteresseDuNeant",
+      "name": "Forteresse du Néant",
+      "description": "Compétence ultime. L'Étherium sature ton équipement. Ton bouclier déploie un immense dôme astral impénétrable. Tu deviens immobile et invincible, et ton arme projette des lances de lumière pure qui perforent toutes les défenses ennemies sur leur trajectoire.",
+      "branch": "paladin",
+      "tier": 4,
+      "ring": 4.0,
+      "slot": 0.5,
+      "requires": [
+        "courrouxDuJuste",
+        "ondeSolaire",
+        "phalangeCeleste"
+      ],
+      "max_rank": 3,
+      "planner": 404
+    }
+  ]
 }

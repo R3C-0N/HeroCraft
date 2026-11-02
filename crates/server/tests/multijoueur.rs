@@ -233,19 +233,19 @@ fn l_experience_donne_des_points_que_la_roue_juge() {
             _ => None,
         });
         client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
-        client.send(&ClientPacket::LearnSkill { id: "rueeFrontale".into() });
+        client.send(&ClientPacket::LearnSkill { id: "tornadeEcrasante".into() });
         let stats = wait_for(&client, |p| match p {
             ServerPacket::StatsUpdate(stats) if stats.skill_points < 2 => Some(stats),
             _ => None,
         });
         assert_eq!(stats.skills.get("frappeLourde"), Some(&1));
-        // Ruée frontale demande deux compétences de l'anneau 2 : refusée, le point reste
+        // Tornade écrasante est une fusion du niveau 2 : refusée, le point reste
         let stats = wait_for(&client, |p| match p {
             ServerPacket::StatsUpdate(stats) => Some(stats),
             _ => None,
         });
         assert_eq!(stats.skill_points, 1);
-        assert!(!stats.skills.contains_key("rueeFrontale"));
+        assert!(!stats.skills.contains_key("tornadeEcrasante"));
     });
 
     let deadline = Instant::now() + WAIT;
