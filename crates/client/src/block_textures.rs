@@ -26,10 +26,24 @@ struct Layer {
     mean: [f32; 3],
 }
 
-/// Toutes les textures des blocs, dans l'ordre de `BlockRegistry::texture_files`
+/// Toutes les textures des blocs, dans l'ordre de `BlockRegistry::texture_files`, suivies des
+/// variantes des textures connectées
 pub struct BlockTextureSet {
     layers: Vec<Layer>,
+    /// Pour chaque texture d'un bloc connecté (verre) : la première de ses 16 variantes, une par
+    /// combinaison de bords reliés (`CONNECTED_*`)
+    connected: Vec<Option<u16>>,
 }
+
+/// Bords d'une face reliés à un bloc du même genre (bits du masque d'une texture connectée), dans
+/// le repère de la texture : gauche (u = 0), droite, haut (v = 0), bas
+pub const CONNECTED_LEFT: u8 = 1;
+pub const CONNECTED_RIGHT: u8 = 2;
+pub const CONNECTED_TOP: u8 = 4;
+pub const CONNECTED_BOTTOM: u8 = 8;
+/// Cadre d'une texture connectée : un liseré sombre au bord, un clair juste dedans
+const FRAME_OUTER: [f32; 3] = [0.40, 0.45, 0.50];
+const FRAME_INNER: [f32; 3] = [0.80, 0.86, 0.90];
 
 static TEXTURES: OnceLock<BlockTextureSet> = OnceLock::new();
 
@@ -41,21 +55,39 @@ pub fn block_textures() -> &'static BlockTextureSet {
 impl BlockTextureSet {
     fn load() -> Self {
         let registry = blocks();
-        let layers = registry
+        let images: Vec<Option<Texture>> = registry
             .texture_files()
             .iter()
             .map(|file| {
                 let path = registry.asset_path(file);
-                match Texture::load(&path) {
-                    Ok(image) => Layer::from_image(&image),
-                    Err(e) => {
-                        log::warn!("Texture {} illisible : {e}", path.display());
-                        Layer::flat()
-                    }
-                }
+                Texture::load(&path).map_err(|e| log::warn!("Texture {} illisible : {e}", path.display())).ok()
             })
             .collect();
-        Self { layers }
+        let mut layers: Vec<Layer> = images.iter().map(|image| image.as_ref().map_or_else(Layer::flat, Layer::from_image)).collect();
+        // Variantes des textures connectées, ajoutées après les textures des fiches
+        let mut connected = vec![None; layers.len()];
+        for sheet in registry.iter().filter(|s| s.connected) {
+            for dir in 0..6 {
+                let base = registry.face_texture(BlockId(sheet.numeric_id), dir);
+                let Some(Some(image)) = images.get(base as usize) else { continue };
+                if connected[base as usize].is_some() {
+                    continue;
+                }
+                connected[base as usize] = Some(layers.len() as u16);
+                let mean = layers[base as usize].mean;
+                layers.extend((0..16).map(|mask| Layer::connected(image, mean, mask)));
+            }
+        }
+        Self { layers, connected }
+    }
+
+    /// Couche à montrer pour la texture `layer` d'un bloc connecté dont les bords `mask` touchent un
+    /// bloc du même genre (la texture telle quelle si elle n'a pas de variantes)
+    pub fn connected_layer(&self, layer: u16, mask: u8) -> u16 {
+        match self.connected.get(layer as usize) {
+            Some(Some(first)) => first + (mask & 15) as u16,
+            _ => layer,
+        }
     }
 
     /// Couleur moyenne (texels visibles) de la couche
@@ -169,8 +201,8 @@ impl Layer {
         Self { mips, mean: [1.0; 3] }
     }
 
-    fn from_image(image: &Texture) -> Self {
-        // Première image d'une texture animée (bande d'images carrées), ramenée à 16 x 16
+    /// Les 16 x 16 texels d'une image (la première d'une texture animée, bande d'images carrées)
+    fn texels(image: &Texture) -> Vec<[f32; 4]> {
         let frame = image.width.min(image.height).max(1);
         let n = TEXTURE_SIZE as usize;
         let texel = |x: usize, y: usize| -> [f32; 4] {
@@ -178,16 +210,54 @@ impl Layer {
             let i = ((sy * image.width + sx) * 4) as usize;
             std::array::from_fn(|c| image.rgba.get(i + c).copied().unwrap_or(255) as f32 / 255.0)
         };
-        let texels: Vec<[f32; 4]> = (0..n * n).map(|i| texel(i % n, i / n)).collect();
-        // Découpée (fleurs, feuillages, échelle) : des texels entièrement transparents. Sinon (verre,
-        // glace) la transparence vient de la couleur de la fiche, la texture reste pleine.
-        let cutout = texels.iter().any(|t| t[3] < 0.5);
+        (0..n * n).map(|i| texel(i % n, i / n)).collect()
+    }
+
+    fn from_image(image: &Texture) -> Self {
+        let texels = Self::texels(image);
         let visible: Vec<&[f32; 4]> = texels.iter().filter(|t| t[3] >= 0.5).collect();
         let mean = if visible.is_empty() {
             [1.0; 3]
         } else {
             std::array::from_fn(|c| (visible.iter().map(|t| t[c]).sum::<f32>() / visible.len() as f32).max(1.0 / 255.0))
         };
+        Self::from_texels(&texels, mean)
+    }
+
+    /// Variante connectée d'une texture (verre) : le dedans transparent, sauf ses reflets, et un
+    /// cadre de deux texels sur chaque bord qui ne touche pas un bloc du même genre (`mask`). Le
+    /// coin d'un cadre reste là où l'un de ses deux bords en a un.
+    fn connected(image: &Texture, mean: [f32; 3], mask: u8) -> Self {
+        let n = TEXTURE_SIZE as usize;
+        let source = Self::texels(image);
+        let framed = |bit: u8| mask & bit == 0;
+        let texels: Vec<[f32; 4]> = (0..n * n)
+            .map(|i| {
+                let (x, y) = (i % n, i / n);
+                // Distance au bord encadré le plus proche (0 : liseré extérieur, 1 : intérieur)
+                let edges = [(x, CONNECTED_LEFT), (n - 1 - x, CONNECTED_RIGHT), (y, CONNECTED_TOP), (n - 1 - y, CONNECTED_BOTTOM)];
+                let depth = edges.iter().filter(|(d, bit)| *d < 2 && framed(*bit)).map(|(d, _)| *d).min();
+                match depth {
+                    Some(0) => [FRAME_OUTER[0], FRAME_OUTER[1], FRAME_OUTER[2], 1.0],
+                    Some(_) => [FRAME_INNER[0], FRAME_INNER[1], FRAME_INNER[2], 1.0],
+                    None => {
+                        // Reflets : les texels du dedans plus marqués que la vitre autour
+                        let t = source[i];
+                        let interior = (2..n - 2).contains(&x) && (2..n - 2).contains(&y);
+                        if interior && t[3] > 0.15 { [t[0], t[1], t[2], 1.0] } else { [0.0; 4] }
+                    }
+                }
+            })
+            .collect();
+        Self::from_texels(&texels, mean)
+    }
+
+    /// Couche tirée de 16 x 16 texels, ses couleurs rapportées à `mean`
+    fn from_texels(texels: &[[f32; 4]], mean: [f32; 3]) -> Self {
+        let n = TEXTURE_SIZE as usize;
+        // Découpée (fleurs, feuillages, échelle) : des texels entièrement transparents. Sinon (glace)
+        // la transparence vient de la couleur de la fiche, la texture reste pleine.
+        let cutout = texels.iter().any(|t| t[3] < 0.5);
         // Rapports à la moyenne et couverture (1 : texel visible), en flottants pour les mipmaps
         let mut level: Vec<[f32; 4]> = texels
             .iter()
@@ -250,7 +320,8 @@ mod tests {
     #[test]
     fn test_every_block_texture_loads() {
         let set = block_textures();
-        assert_eq!(set.layers.len(), blocks().texture_files().len());
+        let variants = set.connected.iter().flatten().count() * 16;
+        assert_eq!(set.layers.len(), blocks().texture_files().len() + variants);
         assert!(set.layers.len() > 100);
         for layer in &set.layers {
             assert_eq!(layer.mips.len(), MIP_LEVELS as usize);
@@ -279,5 +350,27 @@ mod tests {
         assert_eq!(layer.mips[0][0], 64);
         // Plus petit niveau : moitié couvert, couleur des seuls texels visibles
         assert_eq!(layer.mips[4], vec![64, 64, 64, 128]);
+    }
+
+    #[test]
+    fn test_glass_frame_follows_its_neighbours() {
+        let set = block_textures();
+        let glass = blocks().find("glass").unwrap();
+        let base = blocks().face_texture(glass, 0);
+        let alone = set.connected_layer(base, 0);
+        assert_ne!(alone, base, "le verre a ses variantes connectées");
+        let covered = |layer: u16, x: usize, y: usize| set.layers[layer as usize].mips[0][(y * 16 + x) * 4 + 3] > 127;
+        // Seul : cadre sur les quatre bords, vitre transparente au milieu
+        assert!(covered(alone, 0, 8) && covered(alone, 15, 8) && covered(alone, 8, 0) && covered(alone, 8, 15));
+        assert!(!covered(alone, 4, 4));
+        // Relié à droite : plus de cadre à droite, toujours à gauche
+        let right = set.connected_layer(base, CONNECTED_RIGHT);
+        assert!(covered(right, 0, 8) && !covered(right, 15, 8) && covered(right, 15, 0));
+        // Relié de tous côtés : aucun cadre
+        let all = set.connected_layer(base, 15);
+        assert!(!covered(all, 0, 8) && !covered(all, 8, 0) && !covered(all, 15, 15));
+        // Un bloc qui n'est pas connecté garde sa texture
+        let stone = blocks().face_texture(BlockId::STONE, 0);
+        assert_eq!(set.connected_layer(stone, 3), stone);
     }
 }
