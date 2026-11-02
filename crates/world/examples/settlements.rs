@@ -1,7 +1,7 @@
 //! Liste les villes, villages et ruines d'une planète, et dessine le plan vu de dessus de l'un d'eux (PPM).
 //! Usage : cargo run -p herocraft_world --release --example settlements -- [graine] [n° à dessiner] [sortie.ppm]
 use herocraft_common::{blocks, PlanetFace};
-use herocraft_world::structures::CELLS_PER_FACE;
+use herocraft_world::structures::{Piece, Use, CELLS_PER_FACE};
 use herocraft_world::{PlanetDescriptor, PlanetWorldGenerator};
 use std::io::Write;
 
@@ -25,8 +25,23 @@ fn main() {
     }
     println!("{} établissements dessinés en {:.0} ms", all.len(), start.elapsed().as_secs_f64() * 1000.0);
     for (i, s) in all.iter().enumerate() {
+        // Les bâtiments par sorte
+        let mut count = [0; 6];
+        for piece in &s.pieces {
+            match piece {
+                Piece::House(h) => count[h.usage as usize] += 1,
+                Piece::Forge(_) => count[4] += 1,
+                Piece::Stall(_) => count[5] += 1,
+                _ => {}
+            }
+        }
+        let buildings = if count.iter().any(|&n| n > 0) {
+            format!(" ({} maisons, {} tavernes, {} granges, {} églises, {} forges, {} étals)", count[0], count[1], count[2], count[3], count[4], count[5])
+        } else {
+            String::new()
+        };
         println!(
-            "{i:3} {:8} face {:?} centre ({}, {}) {:?}, {} pièces, {}×{} blocs",
+            "{i:3} {:8} face {:?} centre ({}, {}) {:?}, {} pièces{buildings}, {}×{} blocs",
             s.kind.name(),
             s.face,
             s.center.0,
@@ -41,6 +56,16 @@ fn main() {
     let Some(s) = args.get(2).and_then(|n| n.parse::<usize>().ok()).and_then(|n| all.get(n)) else {
         return;
     };
+    // Les bâtiments particuliers, par rapport au centre
+    for piece in &s.pieces {
+        let (name, rect) = match piece {
+            Piece::House(h) if h.usage != Use::Home => (format!("{:?}", h.usage), h.foot),
+            Piece::Forge(f) => ("Forge".to_string(), f.foot),
+            _ => continue,
+        };
+        let (x, z) = rect.center();
+        println!("{name:8} ({:+}, {:+}) par rapport au centre, {}×{}", x - s.center.0, z - s.center.1, rect.width(), rect.depth());
+    }
     let out = args.get(3).cloned().unwrap_or_else(|| "settlement.ppm".to_string());
     let area = s.bounds.expand(6);
     let (w, h) = (area.width() as usize, area.depth() as usize);

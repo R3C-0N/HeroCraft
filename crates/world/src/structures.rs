@@ -41,6 +41,7 @@ pub mod block {
     pub const BRICK: BlockId = BlockId(26);
     pub const WHITE_BRICK: BlockId = BlockId(27);
     pub const GLASS: BlockId = BlockId(41);
+    pub const IRON_PLATE: BlockId = BlockId(46);
     pub const CUT_STONE: BlockId = BlockId(43);
     pub const PLANK: BlockId = BlockId(51);
     pub const WOOD_PANEL: BlockId = BlockId(55);
@@ -62,7 +63,8 @@ pub mod block {
     pub const BRICK_STAIRS: BlockId = BlockId(141);
 
     /// Tous les blocs que posent les structures (pour vérifier qu'ils ont leur fiche)
-    pub const ALL: [(BlockId, &str); 30] = [
+    pub const ALL: [(BlockId, &str); 31] = [
+        (IRON_PLATE, "ironPlate"),
         (STONE, "stone"),
         (WATER, "water"),
         (OAK_LOG, "oakTrunk"),
@@ -322,7 +324,30 @@ impl Style {
     }
 }
 
-/// Une maison : un rez-de-chaussée (et un étage si `storeys` vaut 2), une porte, des fenêtres, un toit
+/// Ce que contient un bâtiment
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Use {
+    /// Maison : établi, fourneau, un étage et son échelle s'il y en a deux
+    Home,
+    /// Taverne : des tables dans la salle, une cheminée
+    Tavern,
+    /// Grange : grande porte, bottes de blé au sol
+    Barn,
+    /// Église ou chapelle : bancs, autel, clocher au fond
+    Church,
+}
+
+/// Forme du toit en pente
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Roof {
+    /// Deux pans et deux pignons
+    Gable,
+    /// Quatre pans, sans pignon
+    Hip,
+}
+
+/// Un bâtiment : un rez-de-chaussée (et un étage si `storeys` vaut 2), une porte, des fenêtres, un
+/// toit, et selon le cas une cheminée, un porche, un clocher
 #[derive(Debug, Clone, Copy)]
 pub struct House {
     /// Murs extérieurs
@@ -330,13 +355,52 @@ pub struct House {
     /// Altitude du premier bloc d'air au-dessus du plancher
     pub floor: i32,
     pub storeys: i32,
+    /// Hauteur des murs
+    pub height: i32,
     pub door: Side,
+    /// Largeur de la porte (1, ou 3 pour une grange)
+    pub door_width: i32,
     pub style: Style,
+    pub roof: Roof,
+    pub chimney: bool,
+    pub porch: bool,
+    pub usage: Use,
 }
 
 impl House {
+    /// Maison ordinaire
+    fn home(foot: Rect, floor: i32, storeys: i32, door: Side, style: Style) -> House {
+        House {
+            foot,
+            floor,
+            storeys,
+            height: if storeys > 1 { 7 } else { 4 },
+            door,
+            door_width: 1,
+            style,
+            roof: Roof::Gable,
+            chimney: false,
+            porch: false,
+            usage: Use::Home,
+        }
+    }
+
     fn wall_height(&self) -> i32 {
-        if self.storeys > 1 { 7 } else { 4 }
+        self.height
+    }
+
+    fn door_height(&self) -> i32 {
+        if matches!(self.usage, Use::Barn | Use::Church) { 3 } else { 2 }
+    }
+
+    /// Colonnes que le bâtiment peut changer : murs, avant-toits, porche
+    fn rect(&self) -> Rect {
+        // Avant-toits, ou seuil devant la porte
+        let mut rect = self.foot.expand(1);
+        if let Some(porch) = self.porch_rect() {
+            rect = rect.union(&porch);
+        }
+        rect
     }
 
     /// Le faîte court le long de x (le toit descend vers le nord et le sud)
@@ -344,36 +408,48 @@ impl House {
         self.foot.width() >= self.foot.depth()
     }
 
-    /// Altitude du toit à cette colonne (avant-toits compris), et le côté vers lequel il monte
+    /// Altitude du toit à cette colonne (avant-toits compris), plus haute altitude du toit, et le
+    /// côté vers lequel il monte (`None` : faîte)
     fn roof_level(&self, x: i32, z: i32) -> (i32, i32, Option<Side>) {
-        let (c, c0, c1, low, high) = if self.ridge_along_x() {
-            (z, self.foot.z0 - 1, self.foot.z1 + 1, Side::South, Side::North)
-        } else {
-            (x, self.foot.x0 - 1, self.foot.x1 + 1, Side::East, Side::West)
-        };
-        let n = c1 - c0;
-        let k = (c - c0).min(c1 - 1 - c);
-        let k_max = (n - 1) / 2;
         let base = self.floor + self.wall_height() - 1;
-        // Rang du milieu d'une largeur impaire : faîte plein ; sinon l'escalier monte vers le milieu
-        let rising = if n % 2 == 1 && k == k_max {
-            None
-        } else if c - c0 < c1 - 1 - c {
-            Some(low)
-        } else {
-            Some(high)
+        // Rang depuis l'avant-toit le long de chaque axe, et rang du faîte
+        let (zc0, zc1) = (self.foot.z0 - 1, self.foot.z1 + 1);
+        let (xc0, xc1) = (self.foot.x0 - 1, self.foot.x1 + 1);
+        let kz = (z - zc0).min(zc1 - 1 - z);
+        let kx = (x - xc0).min(xc1 - 1 - x);
+        let (nz, nx) = (zc1 - zc0, xc1 - xc0);
+        let rise_z = if z - zc0 < zc1 - 1 - z { Side::South } else { Side::North };
+        let rise_x = if x - xc0 < xc1 - 1 - x { Side::East } else { Side::West };
+        let along_x = self.ridge_along_x();
+        // Le pan qui compte : en travers du faîte pour deux pans ; le plus proche pour quatre
+        let (k, n, rise) = match self.roof {
+            Roof::Gable if along_x => (kz, nz, rise_z),
+            Roof::Gable => (kx, nx, rise_x),
+            Roof::Hip => {
+                let across = if along_x { (kz, nz, rise_z) } else { (kx, nx, rise_x) };
+                let along = if along_x { (kx, nx, rise_x) } else { (kz, nz, rise_z) };
+                if along.0 < across.0 { along } else { across }
+            }
         };
+        let n_across = if along_x { nz } else { nx };
+        let k_max = (n_across - 1) / 2;
+        let rising = if n_across % 2 == 1 && k == k_max && n == n_across { None } else { Some(rise) };
         (base + k, base + k_max, rising)
     }
 
     fn top(&self) -> i32 {
-        match self.style.roof {
+        let roof_top = match self.style.roof {
             Some(_) => self.roof_level(self.foot.x0, self.foot.z0).1 + 1,
             None => self.floor + self.wall_height() + 2,
+        };
+        let chimney = if self.chimney { roof_top + 2 } else { roof_top };
+        match self.tower_rect() {
+            Some(_) => chimney.max(self.floor + self.tower_height() + 3),
+            None => chimney,
         }
     }
 
-    /// Colonne de la porte
+    /// Colonnes de la porte : la colonne du milieu du côté de la porte, et ses voisines si elle est large
     fn door_column(&self) -> (i32, i32) {
         let (cx, cz) = self.foot.center();
         match self.door {
@@ -384,16 +460,91 @@ impl House {
         }
     }
 
+    /// Distance (le long du mur) de la colonne à la porte, `None` si elle n'est pas sur le mur de la porte
+    fn from_door(&self, x: i32, z: i32) -> Option<i32> {
+        let (dx, dz) = self.door_column();
+        match self.door {
+            Side::North | Side::South => (z == dz).then_some((x - dx).abs()),
+            Side::West | Side::East => (x == dx).then_some((z - dz).abs()),
+        }
+    }
+
+    /// Porche devant la porte : 3 de large, 2 de profondeur
+    fn porch_rect(&self) -> Option<Rect> {
+        if !self.porch {
+            return None;
+        }
+        let (dx, dz) = self.door_column();
+        Some(match self.door {
+            Side::North => Rect::new(dx - 1, dz - 2, dx + 2, dz),
+            Side::South => Rect::new(dx - 1, dz + 1, dx + 2, dz + 3),
+            Side::West => Rect::new(dx - 2, dz - 1, dx, dz + 2),
+            Side::East => Rect::new(dx + 1, dz - 1, dx + 3, dz + 2),
+        })
+    }
+
+    /// Colonne de la cheminée : dans le mur du fond, à un bloc de l'angle
+    fn chimney_column(&self) -> (i32, i32) {
+        let f = &self.foot;
+        match self.door.opposite() {
+            Side::North => (f.x0 + 1, f.z0),
+            Side::South => (f.x1 - 2, f.z1 - 1),
+            Side::West => (f.x0, f.z1 - 2),
+            Side::East => (f.x1 - 1, f.z0 + 1),
+        }
+    }
+
+    /// Clocher d'une église : 3 × 3 au milieu du mur du fond, dans l'emprise de la nef
+    fn tower_rect(&self) -> Option<Rect> {
+        if self.usage != Use::Church {
+            return None;
+        }
+        let (cx, cz) = self.foot.center();
+        let f = &self.foot;
+        Some(match self.door.opposite() {
+            Side::North => Rect::new(cx - 1, f.z0, cx + 2, f.z0 + 3),
+            Side::South => Rect::new(cx - 1, f.z1 - 3, cx + 2, f.z1),
+            Side::West => Rect::new(f.x0, cz - 1, f.x0 + 3, cz + 2),
+            Side::East => Rect::new(f.x1 - 3, cz - 1, f.x1, cz + 2),
+        })
+    }
+
+    fn tower_height(&self) -> i32 {
+        self.wall_height() + 7
+    }
+
     fn block(&self, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
         let f = self.floor;
+        if self.chimney && (x, z) == self.chimney_column() && y >= f && y < self.top() {
+            return Some(if y == self.top() - 1 { COBBLE_SLAB } else { COBBLE });
+        }
+        if let Some(tower) = self.tower_rect() {
+            if tower.contains(x, z) && y >= f {
+                return self.tower_block(&tower, x, y, z, ground);
+            }
+        }
         let h = self.wall_height();
         let foot = &self.foot;
-        let inside = foot.contains(x, z);
         let pitched = self.style.roof.is_some();
 
-        if !inside {
+        if !foot.contains(x, z) {
+            if let Some(porch) = self.porch_rect() {
+                if porch.contains(x, z) && y < f + 3 {
+                    return self.porch_block(&porch, x, y, z, ground);
+                }
+            }
+            // Devant la porte : un seuil, et de l'air sur la hauteur de la porte même si le terrain monte
+            let (ox, oz) = self.door.delta();
+            if self.from_door(x - ox, z - oz).is_some_and(|d| d <= self.door_width / 2) {
+                if y == f - 1 {
+                    return Some(self.style.foundation);
+                }
+                if y >= f && y < f + self.door_height() {
+                    return Some(BlockId::AIR);
+                }
+            }
             // Avant-toit : seulement l'escalier du toit en pente
-            if !pitched {
+            if !pitched || !foot.expand(1).contains(x, z) {
                 return None;
             }
             let (level, _, rising) = self.roof_level(x, z);
@@ -416,55 +567,25 @@ impl House {
                 if foot.on_corner(x, z) {
                     return Some(self.style.corner);
                 }
-                if (x, z) == self.door_column() && level < 2 {
+                let from_door = self.from_door(x, z);
+                if from_door.is_some_and(|d| d <= self.door_width / 2) && level < self.door_height() {
                     return Some(BlockId::AIR);
                 }
-                // Fenêtres : deux colonnes sur quatre du mur (des paires de vitres), à hauteur d'yeux de
-                // chaque niveau
                 let along = if z == foot.z0 || z == foot.z1 - 1 { x - foot.x0 } else { z - foot.z0 };
-                let door_near = {
-                    let (dx, dz) = self.door_column();
-                    (dx - x).abs() + (dz - z).abs() <= 1 && (dx == x || dz == z)
+                let door_near = from_door.is_some_and(|d| d <= self.door_width / 2 + 1);
+                let window = match self.usage {
+                    // Hautes fenêtres étroites
+                    Use::Church => along % 3 == 1 && (1..=3).contains(&level),
+                    Use::Barn => false,
+                    // Paires de vitres à hauteur d'yeux de chaque niveau
+                    _ => matches!(along % 4, 1 | 2) && (level == 1 || level == 4),
                 };
-                if matches!(along % 4, 1 | 2) && (level == 1 || level == 4) && !door_near {
+                if window && !door_near {
                     return Some(GLASS);
                 }
                 return Some(self.style.wall);
             }
-            // Intérieur : plancher de l'étage, échelle, établi et fourneau
-            if self.storeys > 1 {
-                let ladder = self.ladder_column();
-                if (x, z) == ladder.0 && level < 4 {
-                    return Some(facing(LADDER, ladder.1));
-                }
-                if level == 3 {
-                    return Some(self.style.floor);
-                }
-            }
-            if level == 0 {
-                let back = self.door.opposite();
-                let (bx, bz) = match back {
-                    Side::North => (foot.x0 + 1, foot.z0 + 1),
-                    Side::South => (foot.x1 - 2, foot.z1 - 2),
-                    Side::West => (foot.x0 + 1, foot.z1 - 2),
-                    Side::East => (foot.x1 - 2, foot.z0 + 1),
-                };
-                if (x, z) == (bx, bz) {
-                    return Some(WORKBENCH);
-                }
-                if foot.width() >= 6 && foot.depth() >= 6 {
-                    let (fx, fz) = match back {
-                        Side::North => (foot.x1 - 2, foot.z0 + 1),
-                        Side::South => (foot.x0 + 1, foot.z1 - 2),
-                        Side::West => (foot.x0 + 1, foot.z0 + 1),
-                        Side::East => (foot.x1 - 2, foot.z1 - 2),
-                    };
-                    if (x, z) == (fx, fz) {
-                        return Some(FURNACE);
-                    }
-                }
-            }
-            return Some(BlockId::AIR);
+            return Some(self.interior(x, z, level));
         }
 
         // Toit
@@ -474,8 +595,9 @@ impl House {
                 return Some(self.roof_block(rising));
             }
             if y < level {
-                // Pignons : le mur monte sous le toit aux deux bouts du faîte ; combles vides
-                let gable = if self.ridge_along_x() { x == foot.x0 || x == foot.x1 - 1 } else { z == foot.z0 || z == foot.z1 - 1 };
+                // Pignons d'un toit à deux pans : le mur monte sous le toit aux deux bouts du faîte
+                let gable = self.roof == Roof::Gable
+                    && if self.ridge_along_x() { x == foot.x0 || x == foot.x1 - 1 } else { z == foot.z0 || z == foot.z1 - 1 };
                 return Some(if gable { self.style.wall } else { BlockId::AIR });
             }
             return (y < ground).then_some(BlockId::AIR);
@@ -488,6 +610,145 @@ impl House {
             return Some(if foot.on_corner(x, z) { self.style.corner } else { BlockId::AIR });
         }
         (y < ground).then_some(BlockId::AIR)
+    }
+
+    /// Intérieur, au niveau `level` au-dessus du plancher
+    fn interior(&self, x: i32, z: i32, level: i32) -> BlockId {
+        let foot = &self.foot;
+        let back = self.door.opposite();
+        if self.storeys > 1 {
+            let ladder = self.ladder_column();
+            if (x, z) == ladder.0 && level < 4 {
+                return facing(LADDER, ladder.1);
+            }
+            if level == 3 {
+                return self.style.floor;
+            }
+        }
+        // Rang depuis le mur de la porte, et décalage depuis l'axe de la porte
+        let (dx, dz) = self.door_column();
+        let (depth, offset) = match self.door {
+            Side::North => (z - foot.z0, x - dx),
+            Side::South => (foot.z1 - 1 - z, x - dx),
+            Side::West => (x - foot.x0, z - dz),
+            Side::East => (foot.x1 - 1 - x, z - dz),
+        };
+        let inner_depth = match self.door {
+            Side::North | Side::South => foot.depth(),
+            _ => foot.width(),
+        };
+        if level == 0 {
+            match self.usage {
+                Use::Church => {
+                    // Bancs de part et d'autre de l'allée, tournés vers l'autel ; l'autel devant le clocher
+                    if depth == inner_depth - 5 && offset == 0 {
+                        return CUT_STONE;
+                    }
+                    if depth >= 2 && depth < inner_depth - 5 && depth % 2 == 0 && offset != 0 {
+                        return facing(PLANK_STAIRS, self.door);
+                    }
+                    return BlockId::AIR;
+                }
+                Use::Barn => {
+                    let h = hash2(self.floor as u64 ^ 0xBA, x, z);
+                    return if depth > 1 && h % 4 == 0 { WHEAT } else { BlockId::AIR };
+                }
+                Use::Tavern => {
+                    // Tables (une dalle haute) sur une grille, loin de la porte
+                    if depth >= 2 && depth % 3 == 2 && offset.rem_euclid(3) == 1 && offset.abs() > 1 {
+                        return BlockId(PLANK_SLAB.0 | (1 << BlockId::ROTATION_SHIFT));
+                    }
+                }
+                Use::Home => {}
+            }
+            let (bx, bz) = match back {
+                Side::North => (foot.x0 + 1, foot.z0 + 1),
+                Side::South => (foot.x1 - 2, foot.z1 - 2),
+                Side::West => (foot.x0 + 1, foot.z1 - 2),
+                Side::East => (foot.x1 - 2, foot.z0 + 1),
+            };
+            if (x, z) == (bx, bz) {
+                return WORKBENCH;
+            }
+            if foot.width() >= 6 && foot.depth() >= 6 {
+                let (fx, fz) = match back {
+                    Side::North => (foot.x1 - 2, foot.z0 + 1),
+                    Side::South => (foot.x0 + 1, foot.z1 - 2),
+                    Side::West => (foot.x0 + 1, foot.z0 + 1),
+                    Side::East => (foot.x1 - 2, foot.z1 - 2),
+                };
+                if (x, z) == (fx, fz) {
+                    return FURNACE;
+                }
+            }
+        }
+        if level == 1 && self.usage == Use::Church && depth == inner_depth - 5 && offset == 0 {
+            return TORCH;
+        }
+        BlockId::AIR
+    }
+
+    /// Clocher : murs creux montant au-dessus de la nef, abat-sons ouverts, toit pointu
+    fn tower_block(&self, tower: &Rect, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
+        let level = y - self.floor;
+        let th = self.tower_height();
+        let (cx, cz) = tower.center();
+        let middle = x == cx || z == cz;
+        if level < th {
+            if tower.on_edge(x, z) {
+                if tower.on_corner(x, z) {
+                    return Some(self.style.corner);
+                }
+                // Passage depuis la nef, du côté de la porte
+                let toward_nave = match self.door {
+                    Side::North => z == tower.z0,
+                    Side::South => z == tower.z1 - 1,
+                    Side::West => x == tower.x0,
+                    Side::East => x == tower.x1 - 1,
+                };
+                if toward_nave && middle && level < 3 {
+                    return Some(BlockId::AIR);
+                }
+                // Abat-sons : baies ouvertes en haut de chaque face
+                if middle && (level == th - 3 || level == th - 2) {
+                    return Some(BlockId::AIR);
+                }
+                return Some(self.style.wall);
+            }
+            return Some(if level == th - 4 { self.style.floor } else { BlockId::AIR });
+        }
+        match level - th {
+            0 => Some(self.style.ridge),
+            1 if (x, z) == (cx, cz) => Some(self.style.ridge),
+            1 => Some(match self.style.roof {
+                Some(stairs) if middle => facing(stairs, if x < cx { Side::East } else if x > cx { Side::West } else if z < cz { Side::South } else { Side::North }),
+                _ => BlockId::AIR,
+            }),
+            2 if (x, z) == (cx, cz) => Some(COBBLE_SLAB),
+            _ => (y < ground).then_some(BlockId::AIR),
+        }
+    }
+
+    /// Porche : plancher, deux poteaux devant, un auvent de dalles
+    fn porch_block(&self, porch: &Rect, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
+        let f = self.floor;
+        if y < f - 1 {
+            return (y >= ground).then_some(self.style.foundation);
+        }
+        if y == f - 1 {
+            return Some(self.style.floor);
+        }
+        let outer = match self.door {
+            Side::North => z == porch.z0,
+            Side::South => z == porch.z1 - 1,
+            Side::West => x == porch.x0,
+            Side::East => x == porch.x1 - 1,
+        };
+        let level = y - f;
+        if level < 2 {
+            return Some(if outer && porch.on_corner(x, z) { OAK_LOG } else { BlockId::AIR });
+        }
+        Some(PLANK_SLAB)
     }
 
     fn roof_block(&self, rising: Option<Side>) -> BlockId {
@@ -508,6 +769,101 @@ impl House {
             Side::East => (foot.x1 - 2, foot.z1 - 3),
         };
         (pos, back)
+    }
+}
+
+/// Forge : un appentis ouvert, un mur du fond en pierre, l'âtre et sa cheminée, une enclume
+#[derive(Debug, Clone, Copy)]
+pub struct Forge {
+    pub foot: Rect,
+    pub floor: i32,
+    /// Côté ouvert sur la rue
+    pub front: Side,
+}
+
+impl Forge {
+    fn top(&self) -> i32 {
+        self.floor + 7
+    }
+
+    fn block(&self, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
+        let f = self.floor;
+        let foot = &self.foot;
+        if y < f - 1 {
+            return (y >= ground).then_some(COBBLE);
+        }
+        if y == f - 1 {
+            return Some(COBBLE);
+        }
+        let back = self.front.opposite();
+        let on_back = match back {
+            Side::North => z == foot.z0,
+            Side::South => z == foot.z1 - 1,
+            Side::West => x == foot.x0,
+            Side::East => x == foot.x1 - 1,
+        };
+        let (cx, cz) = foot.center();
+        let level = y - f;
+        // Âtre et cheminée dans l'angle du fond
+        let hearth = match back {
+            Side::North => (foot.x0, foot.z0),
+            Side::South => (foot.x1 - 1, foot.z1 - 1),
+            Side::West => (foot.x0, foot.z1 - 1),
+            Side::East => (foot.x1 - 1, foot.z0),
+        };
+        if (x, z) == hearth {
+            return Some(if level < 6 { COBBLE } else if level == 6 { COBBLE_SLAB } else { return (y < ground).then_some(BlockId::AIR) });
+        }
+        if level < 3 {
+            if on_back {
+                // Le fourneau dans le mur du fond, à côté de l'âtre
+                let next_to_hearth = (x - hearth.0).abs() + (z - hearth.1).abs() == 1;
+                return Some(if level == 0 && next_to_hearth { FURNACE } else { COBBLE });
+            }
+            if foot.on_corner(x, z) {
+                return Some(OAK_LOG);
+            }
+            if level == 0 && (x, z) == (cx, cz) {
+                return Some(IRON_PLATE);
+            }
+            if level == 0 && foot.on_edge(x, z) && !on_back && hash2(0xF0, x, z) % 3 == 0 {
+                return Some(WORKBENCH);
+            }
+            return Some(BlockId::AIR);
+        }
+        if level == 3 {
+            return Some(COBBLE_SLAB);
+        }
+        (y < ground).then_some(BlockId::AIR)
+    }
+}
+
+/// Étal de marché : quatre poteaux, un auvent, un comptoir garni
+#[derive(Debug, Clone, Copy)]
+pub struct Stall {
+    pub rect: Rect,
+    pub front: Side,
+    pub goods: BlockId,
+}
+
+impl Stall {
+    fn block(&self, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
+        let r = &self.rect;
+        let level = y - ground;
+        let front_row = match self.front {
+            Side::North => z == r.z0,
+            Side::South => z == r.z1 - 1,
+            Side::West => x == r.x0,
+            Side::East => x == r.x1 - 1,
+        };
+        match level {
+            -1 => Some(PLANK),
+            0 | 1 if r.on_corner(x, z) => Some(OAK_LOG),
+            0 => Some(if front_row { WOOD_PANEL } else { BlockId::AIR }),
+            1 => Some(if front_row { self.goods } else { BlockId::AIR }),
+            2 => Some(PLANK_SLAB),
+            _ => None,
+        }
     }
 }
 
@@ -697,6 +1053,9 @@ pub enum Piece {
     /// Champ cultivé, bordé de rondins et irrigué par des rigoles
     Field { rect: Rect, crop: BlockId, rows_along_x: bool },
     House(House),
+    Forge(Forge),
+    /// Étal de marché, qui suit le terrain
+    Stall(Stall),
     /// Puits de 3 × 3 couvert d'un petit toit
     Well { rect: Rect, floor: i32 },
     /// Fontaine de 5 × 5, une colonne au milieu
@@ -725,7 +1084,9 @@ impl Piece {
             | Piece::Rampart { rect }
             | Piece::Gate { rect }
             | Piece::Tower { rect, .. } => *rect,
-            Piece::House(house) => if house.style.roof.is_some() { house.foot.expand(1) } else { house.foot },
+            Piece::House(house) => house.rect(),
+            Piece::Forge(forge) => forge.foot,
+            Piece::Stall(stall) => stall.rect,
             Piece::Lamp { x, z } => Rect::sized(*x, *z, 1, 1),
             Piece::RuinHouse(r) => r.foot,
             Piece::Temple(t) => t.foot,
@@ -742,6 +1103,8 @@ impl Piece {
             Piece::Lamp { .. } => ground..ground + 3,
             Piece::Rampart { .. } | Piece::Gate { .. } => ground - 1..ground + Self::RAMPART_HEIGHT + 1,
             Piece::House(h) => span(h.floor, 1, h.top()),
+            Piece::Forge(forge) => span(forge.floor, 1, forge.top()),
+            Piece::Stall(_) => ground - 1..ground + 3,
             Piece::Well { floor, .. } => span(*floor, 5, floor + 4),
             Piece::Fountain { floor, .. } => span(*floor, 3, floor + 3),
             Piece::Tower { floor, .. } => span(*floor, 1, floor + Self::TOWER_HEIGHT + 1),
@@ -774,6 +1137,8 @@ impl Piece {
                 }
             }
             Piece::House(house) => house.block(x, y, z, ground),
+            Piece::Forge(forge) => forge.block(x, y, z, ground),
+            Piece::Stall(stall) => stall.block(x, y, z, ground),
             Piece::Well { rect, floor } => {
                 let f = *floor;
                 let (cx, cz) = rect.center();
@@ -909,7 +1274,7 @@ impl SettlementKind {
     /// Demi-côté du site
     fn radius(&self) -> i32 {
         match self {
-            SettlementKind::Town => 40,
+            SettlementKind::Town => 46,
             SettlementKind::Village => 32,
             SettlementKind::Ruins => 14,
         }
@@ -1107,31 +1472,61 @@ impl<'a> Planner<'a> {
         self.pieces.push(piece);
     }
 
-    /// Pose une maison si la place est libre et le sol assez plat
-    fn try_house(&mut self, foot: Rect, door: Side, storeys: i32, style: Style) -> bool {
-        let rect = foot.expand(1);
-        if !self.free(&rect) {
+    /// Pose un bâtiment (son plancher est calculé ici) ; sans son porche s'il gêne
+    fn try_building(&mut self, mut house: House) -> bool {
+        // Les avant-toits peuvent toucher la rue, pas les murs
+        let room = |h: &House| h.rect().union(&h.foot.expand(1));
+        if house.porch && !self.free(&room(&house)) {
+            house.porch = false;
+        }
+        if !self.free(&room(&house)) {
             return false;
         }
-        let Some(floor) = floor_for(self.generator, self.face, &foot, 5) else {
+        let Some(floor) = floor_for(self.generator, self.face, &house.foot, 5) else {
             return false;
         };
-        self.take(Piece::House(House { foot, floor, storeys, door, style }), 1);
+        house.floor = floor;
+        self.take(Piece::House(house), 1);
         true
     }
 
-    /// Maison collée à une rue : `side` est le côté de la rue où elle se trouve, `at` la colonne
-    /// de la rue en face de laquelle elle se centre, `street_half` la demi-largeur de la rue
-    fn house_along(&mut self, at: (i32, i32), street_along_x: bool, side: i32, street_half: i32, w: i32, d: i32, storeys: i32, style: Style) -> bool {
-        let gap = street_half + 2;
-        let (foot, door) = if street_along_x {
+    /// Pose une forge si la place est libre
+    fn try_forge(&mut self, foot: Rect, front: Side) -> bool {
+        if !self.free(&foot.expand(1)) {
+            return false;
+        }
+        let Some(floor) = floor_for(self.generator, self.face, &foot, 4) else {
+            return false;
+        };
+        self.take(Piece::Forge(Forge { foot, floor, front }), 1);
+        true
+    }
+
+    /// Emprise d'un bâtiment collé à une rue, et le côté de sa porte : `side` est le côté de la rue
+    /// où il se trouve, `at` la colonne de la rue en face de laquelle il se centre, `gap` la distance
+    /// de l'axe de la rue au mur de la porte, `w` sa largeur le long de la rue et `d` sa profondeur
+    fn along(at: (i32, i32), street_along_x: bool, side: i32, gap: i32, w: i32, d: i32) -> (Rect, Side) {
+        if street_along_x {
             let z0 = if side > 0 { at.1 + gap } else { at.1 - gap - d + 1 };
             (Rect::sized(at.0 - w / 2, z0, w, d), if side > 0 { Side::North } else { Side::South })
         } else {
             let x0 = if side > 0 { at.0 + gap } else { at.0 - gap - d + 1 };
             (Rect::sized(x0, at.1 - w / 2, d, w), if side > 0 { Side::West } else { Side::East })
-        };
-        self.try_house(foot, door, storeys, style)
+        }
+    }
+
+    /// Bâtiment collé à une rue (voir `along`) ; `house` en donne tout sauf l'emprise et la porte.
+    /// Un porche recule le bâtiment de deux blocs, et saute s'il ne trouve pas sa place
+    fn house_along(&mut self, at: (i32, i32), street_along_x: bool, side: i32, street_half: i32, w: i32, d: i32, house: House) -> bool {
+        let gap = street_half + 2;
+        if house.porch {
+            let (foot, door) = Self::along(at, street_along_x, side, gap + 2, w, d);
+            if self.try_building(House { foot, door, ..house }) {
+                return true;
+            }
+        }
+        let (foot, door) = Self::along(at, street_along_x, side, gap, w, d);
+        self.try_building(House { foot, door, porch: false, ..house })
     }
 
     fn finish(self, kind: SettlementKind, center: (i32, i32), biome: BiomeType) -> Option<Settlement> {
@@ -1150,6 +1545,7 @@ impl<'a> Planner<'a> {
 fn piece_floor_top(piece: &Piece) -> i32 {
     match piece {
         Piece::House(h) => h.top(),
+        Piece::Forge(f) => f.top(),
         Piece::Well { floor, .. } => floor + 4,
         Piece::Fountain { floor, .. } => floor + 3,
         Piece::Tower { floor, .. } => floor + Piece::TOWER_HEIGHT + 1,
@@ -1170,11 +1566,11 @@ fn plan_cell(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
     herocraft_common::prof_scope!("world::structures::plan_cell");
     let mut dice = Dice(cell_seed(generator, face, cx, cz));
     let roll = unit(dice.next());
-    let wanted = if roll < 0.16 {
+    let wanted = if roll < 0.22 {
         SettlementKind::Town
-    } else if roll < 0.44 {
+    } else if roll < 0.48 {
         SettlementKind::Village
-    } else if roll < 0.66 {
+    } else if roll < 0.68 {
         SettlementKind::Ruins
     } else {
         return None;
@@ -1213,6 +1609,70 @@ fn plan_cell(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
     None
 }
 
+/// Maison ordinaire tirée au sort : toit à deux ou quatre pans, cheminée, porche
+fn random_home(dice: &mut Dice, storeys: i32, style: Style, porch: f64) -> House {
+    let mut house = House::home(Rect::sized(0, 0, 1, 1), 0, storeys, Side::North, style);
+    if style.roof.is_some() && dice.chance(0.35) {
+        house.roof = Roof::Hip;
+    }
+    house.chimney = dice.chance(0.35);
+    house.porch = dice.chance(porch);
+    house
+}
+
+/// Bâtiment particulier d'un village ou d'une ville, avec sa largeur (le long de la rue) et sa profondeur
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Special {
+    Church,
+    Tavern,
+    Forge,
+}
+
+impl Special {
+    /// Une ville a toujours une grande église, un village parfois une petite chapelle
+    fn size(self, dice: &mut Dice, town: bool) -> (i32, i32) {
+        match self {
+            Special::Church => (if town || dice.chance(0.5) { 7 } else { 5 }, 9),
+            Special::Tavern => (dice.range(7, 10), 7),
+            Special::Forge => (dice.range(5, 7), 5),
+        }
+    }
+
+    fn house(self, dice: &mut Dice, style: Style) -> Option<House> {
+        let mut house = House::home(Rect::sized(0, 0, 1, 1), 0, 1, Side::North, style);
+        match self {
+            Special::Church => {
+                house.usage = Use::Church;
+                house.height = 6;
+                if house.style.roof.is_none() {
+                    house.style.roof = Some(COBBLE_STAIRS);
+                    house.style.ridge = COBBLE;
+                }
+            }
+            Special::Tavern => {
+                house.usage = Use::Tavern;
+                house.storeys = 2;
+                house.height = 7;
+                house.chimney = true;
+                house.porch = true;
+                if house.style.roof.is_some() && dice.chance(0.5) {
+                    house.roof = Roof::Hip;
+                }
+            }
+            Special::Forge => return None,
+        }
+        Some(house)
+    }
+}
+
+/// Mélange une liste
+fn shuffle<T>(dice: &mut Dice, items: &mut [T]) {
+    for i in (1..items.len()).rev() {
+        let j = dice.range(0, i as i32 + 1) as usize;
+        items.swap(i, j);
+    }
+}
+
 fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Dice) -> Option<Settlement> {
     let (x, z) = center;
     let well = Rect::around(x, z, 1);
@@ -1226,6 +1686,13 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
     if arms.len() < 2 {
         arms = vec![Side::West, Side::East];
     }
+    // Une chapelle, une taverne et une forge (chacune pas toujours), posées en premier le long des chemins
+    let mut specials: Vec<Special> = [(Special::Church, 0.75), (Special::Tavern, 0.6), (Special::Forge, 0.6)]
+        .into_iter()
+        .filter(|&(_, p)| dice.chance(p))
+        .map(|(s, _)| s)
+        .collect();
+    shuffle(dice, &mut specials);
     let mut houses = 0;
     for &arm in &arms {
         let length = dice.range(18, p.area.width().min(2 * SettlementKind::Village.radius()) / 2 + 1);
@@ -1235,17 +1702,34 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
         let (a, b) = ((x + dx * 4, z + dz * 4), (x + dx * length, z + dz * length));
         let road = Rect::new(a.0.min(b.0) - (!along_x) as i32, a.1.min(b.1) - along_x as i32, a.0.max(b.0) + 1 + (!along_x) as i32, a.1.max(b.1) + 1 + along_x as i32);
         p.take(Piece::Paving { rect: road, block: path }, 0);
-        // Maisons des deux côtés, porte sur le chemin
+        // Bâtiments des deux côtés, porte sur le chemin
         let mut t = 7;
         while t + 3 <= length {
             for side in [-1, 1] {
+                let at = (x + dx * t, z + dz * t);
+                if let Some(&special) = specials.first() {
+                    let (w, d) = special.size(dice, false);
+                    let style = Style::village(biome, dice);
+                    let placed = match special.house(dice, style) {
+                        Some(house) => p.house_along(at, along_x, side, 1, w, d, house),
+                        None => {
+                            let (foot, door) = Planner::along(at, along_x, side, 3, w, d);
+                            p.try_forge(foot, door)
+                        }
+                    };
+                    if placed {
+                        specials.remove(0);
+                        continue;
+                    }
+                }
                 if !dice.chance(0.85) {
                     continue;
                 }
-                let (w, d) = (dice.range(5, 8), dice.range(5, 8));
+                let (w, d) = (dice.range(5, 9), dice.range(5, 8));
                 let style = Style::village(biome, dice);
-                let storeys = if dice.chance(0.12) { 2 } else { 1 };
-                if p.house_along((x + dx * t, z + dz * t), along_x, side, 1, w, d, storeys, style) {
+                let storeys = if dice.chance(0.15) { 2 } else { 1 };
+                let house = random_home(dice, storeys, style, 0.3);
+                if p.house_along(at, along_x, side, 1, w, d, house) {
                     houses += 1;
                 }
             }
@@ -1258,7 +1742,7 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
                     p.take(Piece::Lamp { x: lamp.0, z: lamp.1 }, 0);
                 }
             }
-            t += dice.range(6, 9);
+            t += dice.range(7, 10);
         }
     }
     if houses < 2 {
@@ -1283,14 +1767,43 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
         p.take(Piece::Field { rect, crop: dice.pick(&crops), rows_along_x: dice.chance(0.5) }, 1);
         placed += 1;
     }
+    // Une grange aux abords, grande porte tournée vers la place
+    if placed > 0 && dice.chance(0.7) {
+        let r = SettlementKind::Village.radius();
+        for _ in 0..16 {
+            let (w, d) = if dice.chance(0.5) { (7, 9) } else { (9, 7) };
+            let foot = Rect::sized(x + dice.range(-r, r - w), z + dice.range(-r, r - d), w, d);
+            let (bcx, bcz) = foot.center();
+            let door = if (bcx - x).abs() > (bcz - z).abs() {
+                if bcx > x { Side::West } else { Side::East }
+            } else if bcz > z {
+                Side::North
+            } else {
+                Side::South
+            };
+            let mut style = Style::village(biome, dice);
+            if style.roof.is_none() {
+                style.roof = Some(PLANK_STAIRS);
+                style.ridge = PLANK;
+            }
+            style.wall = PLANK;
+            let mut barn = House::home(foot, 0, 1, door, style);
+            barn.usage = Use::Barn;
+            barn.height = 5;
+            barn.door_width = 3;
+            if p.try_building(barn) {
+                break;
+            }
+        }
+    }
     p.finish(SettlementKind::Village, center, biome)
 }
 
 fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Dice) -> Option<Settlement> {
     let (x, z) = center;
-    // Le damier : rues tous les 12 blocs, remparts à 36 blocs du centre
-    const STEP: i32 = 12;
-    const HALF: i32 = 36;
+    // Le damier : rues tous les 14 blocs, remparts à 42 blocs du centre
+    const STEP: i32 = 14;
+    const HALF: i32 = 42;
     let walls = Rect::new(x - HALF, z - HALF, x + HALF + 1, z + HALF + 1);
 
     // Fontaine au milieu de la grand-place (posée en premier : elle passe avant le pavage)
@@ -1330,6 +1843,18 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         p.taken.push(side);
     }
 
+    // Étals de marché autour de la fontaine, tournés vers elle (posés avant le pavage de la place)
+    let mut spots: [(i32, i32); 8] = [(-7, -7), (7, -7), (-7, 7), (7, 7), (-4, -9), (4, 9), (9, -4), (-9, 4)];
+    shuffle(dice, &mut spots);
+    let goods = [WHEAT, CARROT, POTATO, SQUASH, PLANK, CRYSTAL];
+    for &(ox, oz) in &spots[..dice.range(4, 7) as usize] {
+        let (rect, front) = if ox.abs() > oz.abs() {
+            (Rect::sized(x + ox - (ox > 0) as i32, z + oz - 1, 2, 3), if ox > 0 { Side::West } else { Side::East })
+        } else {
+            (Rect::sized(x + ox - 1, z + oz - (oz > 0) as i32, 3, 2), if oz > 0 { Side::North } else { Side::South })
+        };
+        p.pieces.push(Piece::Stall(Stall { rect, front, goods: dice.pick(&goods) }));
+    }
     // Grand-place pavée autour de la fontaine
     let plaza = Rect::around(x, z, STEP - 2);
     p.pieces.push(Piece::Paving { rect: plaza, block: COBBLE });
@@ -1347,38 +1872,88 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         }
         offset += STEP;
     }
-    // Un pâté de maisons entre chaque paire de rues : une grande maison ou deux petites
-    let mut houses = 0;
+    // Un bâtiment par pâté de maisons : l'église sur la place, une ou deux tavernes et une forge
+    // ailleurs, des maisons partout autour
+    let mut blocks = Vec::new();
     let mut bz = -HALF;
     while bz < HALF {
         let mut bx = -HALF;
         while bx < HALF {
-            // Pâté de 9 × 9 entre deux rues de 3 de large
+            // Pâté de 11 × 11 entre deux rues de 3 de large
             let block = Rect::new(x + bx + 2, z + bz + 2, x + bx + STEP - 1, z + bz + STEP - 1);
+            if !block.intersects(&plaza) {
+                blocks.push(block);
+            }
             bx += STEP;
-            if !dice.chance(0.9) {
-                continue;
-            }
-            // Porte sur la rue la plus proche du centre
-            let (bcx, bcz) = block.center();
-            let door = if (bcx - x).abs() > (bcz - z).abs() {
-                if bcx > x { Side::West } else { Side::East }
-            } else if bcz > z {
-                Side::North
-            } else {
-                Side::South
-            };
-            let style = Style::town(biome, dice);
-            let storeys = if dice.chance(0.55) { 2 } else { 1 };
-            // Maison de 5 à 7 de côté, avant-toits compris dans le pâté
-            let (w, d) = (dice.range(5, 8), dice.range(5, 8));
-            let fx = block.x0 + 1 + dice.range(0, 8 - w);
-            let fz = block.z0 + 1 + dice.range(0, 8 - d);
-            if p.try_house(Rect::sized(fx, fz, w, d), door, storeys, style) {
-                houses += 1;
-            }
         }
         bz += STEP;
+    }
+    // Les pâtés qui donnent sur la place d'abord : l'église prend l'un d'eux
+    let near_plaza = |b: &Rect| {
+        let (bcx, bcz) = b.center();
+        b.expand(4).intersects(&plaza) && ((bcx - x).abs() < STEP || (bcz - z).abs() < STEP)
+    };
+    let (mut first, mut rest): (Vec<Rect>, Vec<Rect>) = blocks.into_iter().partition(near_plaza);
+    shuffle(dice, &mut first);
+    shuffle(dice, &mut rest);
+    let mut specials = vec![Special::Church, Special::Tavern, Special::Forge];
+    if dice.chance(0.5) {
+        specials.push(Special::Tavern);
+    }
+    let mut houses = 0;
+    for block in first.into_iter().chain(rest) {
+        // Porte sur la rue la plus proche du centre
+        let (bcx, bcz) = block.center();
+        let door = if (bcx - x).abs() > (bcz - z).abs() {
+            if bcx > x { Side::West } else { Side::East }
+        } else if bcz > z {
+            Side::North
+        } else {
+            Side::South
+        };
+        let style = Style::town(biome, dice);
+        // Emprise de `w` (le long de la rue) sur `d`, contre la rue de la porte, au hasard le long d'elle
+        let place = |dice: &mut Dice, w: i32, d: i32, back: i32| {
+            let along = dice.range(0, 10 - w);
+            let deep = back.min(10 - d - 1);
+            match door {
+                Side::North => Rect::sized(block.x0 + 1 + along, block.z0 + 1 + deep, w, d),
+                Side::South => Rect::sized(block.x0 + 1 + along, block.z1 - 1 - deep - d, w, d),
+                Side::West => Rect::sized(block.x0 + 1 + deep, block.z0 + 1 + along, d, w),
+                Side::East => Rect::sized(block.x1 - 1 - deep - d, block.z0 + 1 + along, d, w),
+            }
+        };
+        if let Some(&special) = specials.first() {
+            let (w, d) = special.size(dice, true);
+            let placed = match special.house(dice, style) {
+                Some(house) => {
+                    let back = if house.porch { 2 } else { 0 };
+                    let foot = place(dice, w, d, back);
+                    p.try_building(House { foot, door, ..house })
+                }
+                None => {
+                    let foot = place(dice, w, d, 0);
+                    p.try_forge(foot, door)
+                }
+            };
+            if placed {
+                specials.remove(0);
+                continue;
+            }
+        }
+        if !dice.chance(0.9) {
+            continue;
+        }
+        let storeys = if dice.chance(0.55) { 2 } else { 1 };
+        // Maison de 5 à 9 de côté, avant-toits compris dans le pâté
+        let (w, d) = (dice.range(5, 10), dice.range(5, 10));
+        let mut house = random_home(dice, storeys, style, 0.2);
+        let back = if house.porch { 2 } else { dice.range(0, 2) };
+        house.foot = place(dice, w, d, back);
+        house.door = door;
+        if p.try_building(house) {
+            houses += 1;
+        }
     }
     if houses < 6 {
         return None;
@@ -1608,5 +2183,59 @@ mod tests {
         assert!((house.floor + house.wall_height()..house.top()).any(|y| !block(cx, y, cz).is_air()), "pas de toit");
         // Un coin du mur
         assert_eq!(block(house.foot.x0, house.floor, house.foot.z0), house.style.corner);
+    }
+
+    #[test]
+    fn test_towns_and_villages_have_varied_buildings() {
+        let generator = generator(2026);
+        let all = all_settlements(&generator);
+        let usage = |s: &Settlement, u: Use| s.pieces.iter().filter(|p| matches!(p, Piece::House(h) if h.usage == u)).count();
+        let towns: Vec<_> = all.iter().filter(|s| s.kind == SettlementKind::Town).collect();
+        assert!(!towns.is_empty());
+        for town in &towns {
+            assert_eq!(usage(town, Use::Church), 1, "une église par ville");
+            assert!(usage(town, Use::Tavern) >= 1, "pas de taverne");
+            assert!(town.pieces.iter().filter(|p| matches!(p, Piece::Stall(_))).count() >= 4, "pas de marché");
+        }
+        let villages: Vec<_> = all.iter().filter(|s| s.kind == SettlementKind::Village).collect();
+        for u in [Use::Church, Use::Tavern, Use::Barn] {
+            assert!(villages.iter().any(|v| usage(v, u) > 0), "aucun village n'a de {u:?}");
+        }
+        assert!(villages.iter().any(|v| v.pieces.iter().any(|p| matches!(p, Piece::Forge(_)))), "aucune forge de village");
+        let homes = || all.iter().flat_map(|s| &s.pieces).filter_map(|p| if let Piece::House(h) = p { Some(h) } else { None });
+        assert!(homes().any(|h| h.roof == Roof::Hip), "pas de toit à quatre pans");
+        assert!(homes().any(|h| h.chimney), "pas de cheminée");
+        assert!(homes().any(|h| h.porch), "pas de porche");
+    }
+
+    #[test]
+    fn test_every_building_has_an_open_door_and_a_roof() {
+        let generator = generator(2026);
+        let all = all_settlements(&generator);
+        let mut checked = 0;
+        for s in all.iter().filter(|s| s.kind != SettlementKind::Ruins).take(8) {
+            let block = |x: i32, y: i32, z: i32| generator.block_at(s.face, x, y, z);
+            for piece in &s.pieces {
+                let Piece::House(house) = piece else { continue };
+                let (dx, dz) = house.door_column();
+                let (ox, oz) = house.door.delta();
+                for y in house.floor..house.floor + 2 {
+                    assert!(block(dx, y, dz).is_air(), "{:?} : porte bouchée en ({dx}, {y}, {dz})", house.usage);
+                }
+                assert!(!block(dx, house.floor - 1, dz).is_air(), "{:?} : seuil manquant", house.usage);
+                // Devant la porte, le passage est libre (un porche n'a de poteaux qu'aux angles)
+                assert!(block(dx + ox, house.floor, dz + oz).is_air(), "{:?} : sortie bouchée", house.usage);
+                assert_eq!(block(house.foot.x0, house.floor, house.foot.z0), house.style.corner);
+                // Un toit au-dessus d'un coin intérieur
+                let (cx, cz) = (house.foot.x0 + 1, house.foot.z0 + 1);
+                assert!((house.floor + house.wall_height()..house.top()).any(|y| !block(cx, y, cz).is_air()), "{:?} : pas de toit", house.usage);
+                if house.chimney {
+                    let (kx, kz) = house.chimney_column();
+                    assert!(!block(kx, house.top() - 1, kz).is_air(), "cheminée tronquée");
+                }
+                checked += 1;
+            }
+        }
+        assert!(checked > 20, "{checked} bâtiments vérifiés");
     }
 }
