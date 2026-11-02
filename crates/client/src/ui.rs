@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{Key, KeyCode, NamedKey};
 
@@ -1798,44 +1800,214 @@ fn item_tooltip(ui: &mut egui::Ui, item: ItemId, count: Option<u16>) {
     }
 }
 
+/// Onglet du panneau de fabrication : la rubrique de ce que fabrique la recette
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum CraftTab {
+    All,
+    Weapons,
+    Armor,
+    Tools,
+    Cooking,
+    Materials,
+    Building,
+}
+
+impl CraftTab {
+    pub const ALL: [CraftTab; 7] =
+        [CraftTab::All, CraftTab::Weapons, CraftTab::Armor, CraftTab::Tools, CraftTab::Cooking, CraftTab::Materials, CraftTab::Building];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            CraftTab::All => "Tout",
+            CraftTab::Weapons => "Armes",
+            CraftTab::Armor => "Armures",
+            CraftTab::Tools => "Outils",
+            CraftTab::Cooking => "Cuisine",
+            CraftTab::Materials => "Matériaux",
+            CraftTab::Building => "Construction",
+        }
+    }
+
+    /// Onglet d'une recette, d'après la rubrique de la fiche de ce qu'elle fabrique
+    pub fn of(recipe: &Recipe) -> CraftTab {
+        let category = match recipe.result.block() {
+            Some(block) => blocks().get(block).map(|s| s.category.as_str()),
+            None => items().get(recipe.result).map(|s| s.category.as_str()),
+        };
+        match category.unwrap_or_default() {
+            "Armes" => CraftTab::Weapons,
+            "Armures" => CraftTab::Armor,
+            "Outils" => CraftTab::Tools,
+            "Plats" | "Nourriture" | "Récoltes" => CraftTab::Cooking,
+            "Matériaux" => CraftTab::Materials,
+            _ => CraftTab::Building,
+        }
+    }
+
+    /// Les recettes de l'onglet se rangent par palier (armes, armures, outils)
+    fn has_tiers(self) -> bool {
+        matches!(self, CraftTab::Weapons | CraftTab::Armor | CraftTab::Tools)
+    }
+}
+
+/// Paliers, du premier au dernier : début de l'identifiant de ce qui est fabriqué, et nom affiché
+const TIERS: [(&[&str], &str); 11] = [
+    (&["wooden", "plank", "log", "wicker", "club", "short", "hand", "war", "tinker"], "Bois"),
+    (&["bone", "hide"], "Os et peau"),
+    (&["flint"], "Silex"),
+    (&["copper"], "Cuivre"),
+    (&["bronze"], "Bronze"),
+    (&["iron"], "Fer"),
+    (&["steel"], "Acier"),
+    (&["mithril"], "Mithril"),
+    (&["orichalcum"], "Orichalque"),
+    (&["adamantine"], "Adamantine"),
+    (&["etherium"], "Étherium"),
+];
+
+/// Rang du palier d'une recette dans `TIERS` (`TIERS.len()` : sans palier connu)
+fn tier_of(recipe: &Recipe) -> usize {
+    let id = match recipe.result.block() {
+        Some(block) => blocks().get(block).map(|s| s.id.as_str()),
+        None => items().get(recipe.result).map(|s| s.id.as_str()),
+    }
+    .unwrap_or_default();
+    TIERS.iter().position(|(prefixes, _)| prefixes.iter().any(|p| id.starts_with(p))).unwrap_or(TIERS.len())
+}
+
+/// Texte sans accents ni majuscules, pour la recherche
+fn fold(text: &str) -> String {
+    text.chars()
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            'à' | 'â' | 'ä' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'î' | 'ï' => 'i',
+            'ô' | 'ö' => 'o',
+            'ù' | 'û' | 'ü' => 'u',
+            'ç' => 'c',
+            'œ' => 'o',
+            c => c,
+        })
+        .collect()
+}
+
+/// Une section du panneau : un palier, ou une rubrique dans l'onglet Tout
+pub struct CraftSection {
+    pub title: String,
+    /// Recettes (rangs dans `crafting().recipes`) et nombre de fois faisables
+    pub recipes: Vec<(usize, u32)>,
+}
+
+impl CraftSection {
+    pub fn craftable(&self) -> usize {
+        self.recipes.iter().filter(|&&(_, times)| times > 0).count()
+    }
+}
+
 /// Panneau de fabrication de l'écran d'inventaire : les recettes faisables là où se tient le joueur
-/// (à la main, ou à l'établi ouvert), celles qu'il peut faire d'abord, avec une recherche par nom
+/// (à la main, ou à l'établi ouvert), en onglets par rubrique et en sections par palier, celles
+/// qu'il peut faire d'abord, avec une recherche par nom
 #[derive(Default)]
 pub struct CraftingPanel {
     pub search: String,
     /// Ne montrer que les recettes dont l'inventaire a tous les ingrédients
     pub only_craftable: bool,
+    /// Onglet ouvert, retenu pour chaque établi (`None` : à la main)
+    tabs: HashMap<Option<usize>, CraftTab>,
+    /// Sections ouvertes ou refermées à la main (sinon : ouvertes s'il y a de quoi faire)
+    folded: HashMap<(CraftTab, String), bool>,
 }
 
-/// Largeur du panneau de fabrication
-const CRAFTING_WIDTH: f32 = 380.0;
-/// Hauteur d'une recette dans la liste
-const RECIPE_ROW_HEIGHT: f32 = 50.0;
-const RECIPE_ICON_SIZE: f32 = 40.0;
-const INGREDIENT_ICON_SIZE: f32 = 18.0;
-const CRAFTABLE: egui::Color32 = egui::Color32::from_rgb(120, 210, 120);
-
 impl CraftingPanel {
-    /// Recettes montrées (rangs dans `crafting().recipes`), avec le nombre de fois que l'inventaire
-    /// permet de les faire : les faisables d'abord, puis par nom
-    pub fn visible(&self, inventory: &Inventory, at: Option<StationAt>) -> Vec<(usize, u32)> {
-        let search = self.search.trim().to_lowercase();
-        let mut list: Vec<(usize, u32)> = crafting()
+    /// Onglet ouvert là où se tient le joueur
+    pub fn tab(&self, at: Option<StationAt>) -> CraftTab {
+        self.tabs.get(&at.map(|a| a.station)).copied().unwrap_or(CraftTab::All)
+    }
+
+    pub fn set_tab(&mut self, at: Option<StationAt>, tab: CraftTab) {
+        self.tabs.insert(at.map(|a| a.station), tab);
+    }
+
+    /// Recettes faisables ici qui répondent à la recherche, avec le nombre de fois que
+    /// l'inventaire permet de les faire, tous onglets confondus
+    fn matching(&self, inventory: &Inventory, at: Option<StationAt>) -> Vec<(usize, u32)> {
+        let search = fold(self.search.trim());
+        crafting()
             .recipes
             .iter()
             .enumerate()
             .filter(|(_, r)| r.is_available_at(at))
-            .filter(|(_, r)| search.is_empty() || r.result.name().to_lowercase().contains(&search))
+            .filter(|(_, r)| search.is_empty() || fold(r.result.name()).contains(&search))
             .map(|(i, r)| (i, inventory.craftable_times(r)))
             .filter(|&(_, times)| !self.only_craftable || times > 0)
-            .collect();
+            .collect()
+    }
+
+    /// Onglets qui ont des recettes ici, avec le nombre de recettes faisables de chacun
+    pub fn tabs_here(&self, inventory: &Inventory, at: Option<StationAt>) -> Vec<(CraftTab, usize)> {
+        let matching = self.matching(inventory, at);
         let recipes = &crafting().recipes;
-        // Devant un établi, ses recettes passent avant celles faites à la main
-        list.sort_by_key(|&(i, times)| {
-            let recipe = &recipes[i];
-            (times == 0, at.is_some() && recipe.station.is_none(), std::cmp::Reverse(recipe.station.map_or(0, |s| s.level)), recipe.result.name())
-        });
-        list
+        CraftTab::ALL
+            .iter()
+            .map(|&tab| {
+                let in_tab: Vec<_> = matching.iter().filter(|&&(i, _)| tab == CraftTab::All || CraftTab::of(&recipes[i]) == tab).collect();
+                (tab, in_tab.len(), in_tab.iter().filter(|&&&(_, times)| times > 0).count())
+            })
+            .filter(|&(tab, count, _)| tab == CraftTab::All || count > 0)
+            .map(|(tab, _, craftable)| (tab, craftable))
+            .collect()
+    }
+
+    /// Recettes de l'onglet ouvert, à plat : les faisables d'abord, puis par nom
+    #[cfg(test)]
+    pub fn visible(&self, inventory: &Inventory, at: Option<StationAt>) -> Vec<(usize, u32)> {
+        self.sections(inventory, at).into_iter().flat_map(|s| s.recipes).collect::<Vec<_>>().sorted_by_craftable(at)
+    }
+
+    /// Sections de l'onglet ouvert : par palier (armes, armures, outils), par rubrique dans l'onglet
+    /// Tout, une seule sinon. Dans chacune, les faisables d'abord, puis par nom.
+    pub fn sections(&self, inventory: &Inventory, at: Option<StationAt>) -> Vec<CraftSection> {
+        let tab = self.tab(at);
+        let recipes = &crafting().recipes;
+        let mut keyed: Vec<((usize, String), (usize, u32))> = self
+            .matching(inventory, at)
+            .into_iter()
+            .filter(|&(i, _)| tab == CraftTab::All || CraftTab::of(&recipes[i]) == tab)
+            .map(|(i, times)| {
+                let recipe = &recipes[i];
+                let key = if tab == CraftTab::All {
+                    let t = CraftTab::of(recipe);
+                    (t as usize, t.label().to_string())
+                } else if tab.has_tiers() {
+                    let tier = tier_of(recipe);
+                    (tier, TIERS.get(tier).map_or("Autres", |t| t.1).to_string())
+                } else {
+                    (0, String::new())
+                };
+                (key, (i, times))
+            })
+            .collect();
+        keyed.sort_by_key(|(key, _)| key.0);
+        let mut sections: Vec<CraftSection> = Vec::new();
+        for ((_, title), entry) in keyed {
+            match sections.last_mut().filter(|s| s.title == title) {
+                Some(section) => section.recipes.push(entry),
+                None => sections.push(CraftSection { title, recipes: vec![entry] }),
+            }
+        }
+        for section in &mut sections {
+            section.recipes = std::mem::take(&mut section.recipes).sorted_by_craftable(at);
+        }
+        sections
+    }
+
+    /// Section ouverte : au choix du joueur, sinon s'il y a de quoi y faire (ou une recherche)
+    fn is_open(&self, tab: CraftTab, section: &CraftSection) -> bool {
+        if !self.search.trim().is_empty() || section.title.is_empty() {
+            return true;
+        }
+        self.folded.get(&(tab, section.title.clone())).copied().unwrap_or(section.craftable() > 0)
     }
 
     /// Clic gauche sur une recette : une fois ; clic droit : autant que possible (au plus une pile)
@@ -1848,47 +2020,101 @@ impl CraftingPanel {
         crafted: &mut Option<(usize, bool)>,
         hovered: &mut Option<(ItemId, Option<u16>)>,
     ) {
+        // Onglets : ceux qui ont des recettes ici, avec le nombre de faisables
+        let tabs = self.tabs_here(inventory, at);
+        if !tabs.iter().any(|&(t, _)| t == self.tab(at)) {
+            self.set_tab(at, CraftTab::All);
+        }
+        let current = self.tab(at);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+            for &(tab, craftable) in &tabs {
+                let text = if craftable > 0 { format!("{} · {craftable}", tab.label()) } else { tab.label().to_string() };
+                let color = if tab == current { GOLD_BRIGHT } else if craftable > 0 { TEXT_SOFT } else { TEXT_DIM };
+                if ui.selectable_label(tab == current, egui::RichText::new(text).size(12.0_f32).color(color)).clicked() {
+                    self.set_tab(at, tab);
+                }
+            }
+        });
         ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Rechercher…").desired_width(CRAFTING_WIDTH - 140.0_f32));
+            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Rechercher…").desired_width(CRAFTING_WIDTH - 110.0_f32));
             ui.checkbox(&mut self.only_craftable, "Faisables");
         });
         ui.add_space(2.0_f32);
-        let visible = self.visible(inventory, at);
+        let tab = self.tab(at);
+        let sections = self.sections(inventory, at);
         let recipes = &crafting().recipes;
+        let mut toggled: Option<(String, bool)> = None;
         // Hauteur fixe : l'écran ne change pas de taille au fil de la recherche
-        let height = 4.0_f32 * (INVENTORY_SLOT_SIZE + 4.0_f32) + 28.0_f32;
-        egui::ScrollArea::vertical().id_salt("crafting").max_height(height).auto_shrink([false, false]).show_rows(
-            ui,
-            RECIPE_ROW_HEIGHT,
-            visible.len(),
-            |ui, rows| {
-                ui.set_width(CRAFTING_WIDTH);
-                for &(index, times) in &visible[rows] {
+        let height = 4.0_f32 * (INVENTORY_SLOT_SIZE + 4.0_f32) + 6.0_f32;
+        egui::ScrollArea::vertical().id_salt(("crafting", tab)).max_height(height).auto_shrink([false, false]).show(ui, |ui| {
+            ui.set_width(CRAFTING_WIDTH);
+            ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+            for section in &sections {
+                let open = self.is_open(tab, section);
+                if !section.title.is_empty() {
+                    let craftable = section.craftable();
+                    let mut text = format!("{} {}", if open { "▾" } else { "▸" }, section.title);
+                    if craftable > 0 {
+                        text += &format!("  ·  {craftable} faisable{}", if craftable > 1 { "s" } else { "" });
+                    }
+                    let color = if craftable > 0 { GOLD } else { TEXT_DIM };
+                    let header = ui.add(egui::Label::new(egui::RichText::new(text).size(12.0_f32).strong().color(color)).sense(egui::Sense::click()));
+                    if header.clicked() {
+                        toggled = Some((section.title.clone(), !open));
+                    }
+                }
+                if !open {
+                    continue;
+                }
+                for &(index, times) in &section.recipes {
                     let recipe = &recipes[index];
                     let (rect, response) = ui.allocate_exact_size(egui::vec2(CRAFTING_WIDTH, RECIPE_ROW_HEIGHT - 4.0_f32), egui::Sense::click());
-                    paint_recipe(ui, icons, inventory, rect, recipe, times, response.hovered(), hovered);
+                    if ui.is_rect_visible(rect) {
+                        paint_recipe(ui, icons, inventory, rect, recipe, times, response.hovered(), hovered);
+                    }
                     if times > 0 && response.clicked() {
                         *crafted = Some((index, false));
                     } else if times > 0 && response.secondary_clicked() {
                         *crafted = Some((index, true));
                     }
                 }
-                if visible.is_empty() {
-                    let text = if self.search.trim().is_empty() && !self.only_craftable {
-                        "Aucune recette ici."
-                    } else {
-                        "Rien ne correspond."
-                    };
-                    ui.label(egui::RichText::new(text).color(TEXT_DIM));
-                }
-            },
-        );
+            }
+            if sections.is_empty() {
+                let text = if self.search.trim().is_empty() && !self.only_craftable { "Aucune recette ici." } else { "Rien ne correspond." };
+                ui.label(egui::RichText::new(text).color(TEXT_DIM));
+            }
+        });
+        if let Some((title, open)) = toggled {
+            self.folded.insert((tab, title), open);
+        }
     }
 }
 
-/// Une recette : ce qu'elle donne, son nom et où elle se fait, puis ses ingrédients (ce que
-/// l'inventaire en a sur ce qu'il faut, en vert quand il y en a assez)
-#[allow(clippy::too_many_arguments)]
+/// Tri des recettes d'une liste : les faisables d'abord ; devant un établi, les siennes avant
+/// celles faites à la main ; le plus haut niveau d'établi d'abord ; puis par nom
+trait SortedByCraftable {
+    fn sorted_by_craftable(self, at: Option<StationAt>) -> Self;
+}
+
+impl SortedByCraftable for Vec<(usize, u32)> {
+    fn sorted_by_craftable(mut self, at: Option<StationAt>) -> Self {
+        let recipes = &crafting().recipes;
+        self.sort_by_key(|&(i, times)| {
+            let recipe = &recipes[i];
+            (times == 0, at.is_some() && recipe.station.is_none(), std::cmp::Reverse(recipe.station.map_or(0, |s| s.level)), recipe.result.name())
+        });
+        self
+    }
+}
+
+/// Largeur du panneau de fabrication
+const CRAFTING_WIDTH: f32 = 380.0;
+/// Hauteur d'une recette dans la liste
+const RECIPE_ROW_HEIGHT: f32 = 50.0;
+const RECIPE_ICON_SIZE: f32 = 40.0;
+const INGREDIENT_ICON_SIZE: f32 = 18.0;
+const CRAFTABLE: egui::Color32 = egui::Color32::from_rgb(120, 210, 120);
 fn paint_recipe(
     ui: &egui::Ui,
     icons: &ItemIcons,
@@ -2500,6 +2726,54 @@ mod tests {
         let found = ui.crafting.visible(&ui.inventory, at_bench);
         assert_eq!(found.len(), 1);
         assert!(ui.crafting.visible(&ui.inventory, None).is_empty(), "pas à la main");
+    }
+
+    #[test]
+    fn test_crafting_tabs_and_tiers() {
+        use herocraft_common::{blocks, crafting, items};
+        let mut ui = UiState::new(1);
+        let bench = crafting().station_of(blocks().find("workbench").unwrap());
+        let furnace = crafting().station_of(blocks().find("furnace").unwrap());
+
+        // À la main : pas d'onglet Armes ; devant l'établi, si
+        let hand: Vec<_> = ui.crafting.tabs_here(&ui.inventory, None).into_iter().map(|t| t.0).collect();
+        assert_eq!(hand[0], CraftTab::All);
+        assert!(!hand.contains(&CraftTab::Weapons));
+        let at_bench: Vec<_> = ui.crafting.tabs_here(&ui.inventory, bench).into_iter().map(|t| t.0).collect();
+        assert!(at_bench.contains(&CraftTab::Weapons) && at_bench.contains(&CraftTab::Armor));
+
+        // Armes à l'établi : une section par palier, dans l'ordre, du bois au fer
+        ui.crafting.set_tab(bench, CraftTab::Weapons);
+        let titles: Vec<_> = ui.crafting.sections(&ui.inventory, bench).into_iter().map(|s| s.title).collect();
+        let pos = |t: &str| titles.iter().position(|x| x == t).unwrap_or_else(|| panic!("{t} absent de {titles:?}"));
+        assert!(pos("Bois") < pos("Silex") && pos("Silex") < pos("Cuivre") && pos("Bronze") < pos("Fer"));
+        assert!(!titles.iter().any(|t| t == "Étherium"), "pas à l'établi");
+
+        // Faisable : compté sur l'onglet, sa section s'ouvre seule
+        let ingot = items().find("bronzeIngot").unwrap();
+        ui.inventory.add_many(ingot, 3);
+        ui.inventory.add_many(items().find("stick").unwrap(), 2);
+        ui.inventory.add(items().find("rope").unwrap());
+        ui.crafting.set_tab(bench, CraftTab::Tools);
+        let sections = ui.crafting.sections(&ui.inventory, bench);
+        let bronze = sections.iter().find(|s| s.title == "Bronze").unwrap();
+        assert!(bronze.craftable() > 0);
+        assert!(ui.crafting.is_open(CraftTab::Tools, bronze));
+        let steel = sections.iter().find(|s| s.title == "Acier").unwrap();
+        assert!(!ui.crafting.is_open(CraftTab::Tools, steel), "palier hors d'atteinte replié");
+        let tools = ui.crafting.tabs_here(&ui.inventory, bench).into_iter().find(|t| t.0 == CraftTab::Tools).unwrap();
+        assert!(tools.1 > 0);
+
+        // L'onglet est retenu par établi ; un onglet sans recette ici ne s'affiche pas
+        assert_eq!(ui.crafting.tab(furnace), CraftTab::All);
+        assert_eq!(ui.crafting.tab(bench), CraftTab::Tools);
+        assert!(!ui.crafting.tabs_here(&ui.inventory, furnace).iter().any(|t| t.0 == CraftTab::Weapons));
+
+        // Recherche sans accents, dans tous les onglets depuis Tout
+        ui.crafting.set_tab(bench, CraftTab::All);
+        ui.crafting.search = "ETABLI".into();
+        let found = ui.crafting.visible(&ui.inventory, bench);
+        assert!(found.iter().any(|&(i, _)| crafting().recipes[i].result.name() == "Établi"));
     }
 
     #[test]
