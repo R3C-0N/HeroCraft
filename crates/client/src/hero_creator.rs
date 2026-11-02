@@ -7,12 +7,10 @@
 //! cours. Rien n'est définitif avant le baptême, qui vérifie chaque choix contre l'atlas
 //! ([`Legend::verify`]) et scelle le héros pour de bon.
 
-use std::collections::HashMap;
-
+use crate::hero_model::{figure, Piece};
 use herocraft_common::hero::{self, atlas, Appearance, ClassSheet, Dice, Family, Legend, CLASSES, NAME_MAX, SHEET_SIZE};
-use herocraft_common::{items, PlayerClass};
+use herocraft_common::PlayerClass;
 
-use crate::item_icons::ItemIcons;
 
 // Palette du créateur : bois sombre, parchemin et or
 const GOLD: egui::Color32 = egui::Color32::from_rgb(212, 175, 55);
@@ -55,8 +53,8 @@ impl Tab {
 /// Ce que le créateur demande au jeu
 #[derive(Debug, Clone, PartialEq)]
 pub enum CreatorEvent {
-    /// Le baptême est accepté : la légende est à enregistrer, et son paquetage à donner
-    Sealed(Legend),
+    /// Le baptême est accepté : la légende est à enregistrer et à envoyer au serveur
+    Sealed(Box<Legend>),
     /// Le héros entre dans le monde : l'écran se referme
     Enter,
 }
@@ -67,8 +65,6 @@ pub struct HeroCreator {
     tab: Tab,
     cfg: Appearance,
     class: Option<PlayerClass>,
-    /// Arme choisie dans l'arsenal, voie par voie
-    weapons: HashMap<PlayerClass, &'static str>,
     name: String,
     dice: Dice,
     /// Raison du dernier refus du baptême
@@ -91,7 +87,6 @@ impl HeroCreator {
             tab: Tab::Species,
             cfg: atlas().defaut("humain"),
             class: None,
-            weapons: HashMap::new(),
             name: String::new(),
             dice: Dice::from_clock(),
             refusal: None,
@@ -102,17 +97,6 @@ impl HeroCreator {
 
     fn sheet(&self) -> Option<&'static ClassSheet> {
         self.class.and_then(hero::class_sheet)
-    }
-
-    /// L'arme de l'arsenal pour la voie prise : la première tant qu'aucune autre n'est choisie
-    fn weapon(&self) -> Option<&'static str> {
-        let sheet = self.sheet()?;
-        sheet.weapon(self.weapons.get(&sheet.class).copied())
-    }
-
-    /// Ce que le baptême mettra dans le sac : l'arme choisie, puis le paquetage
-    fn starting_items(&self) -> Vec<(&'static str, u16)> {
-        self.sheet().map(|s| s.starting_items(self.weapon())).unwrap_or_default()
     }
 
     fn go(&mut self, step: usize) {
@@ -129,13 +113,13 @@ impl HeroCreator {
         let class = self.class?;
         let mut appearance = self.cfg.clone();
         appearance.nom = self.name.clone();
-        let mut legend = Legend { appearance, class, weapon: self.weapon().map(str::to_string) };
+        let mut legend = Legend { appearance, class };
         match legend.verify() {
             Ok(()) => {
                 self.refusal = None;
                 self.cfg = legend.appearance.clone();
                 self.sealed = Some(legend.clone());
-                Some(CreatorEvent::Sealed(legend))
+                Some(CreatorEvent::Sealed(Box::new(legend)))
             }
             Err(reason) => {
                 self.refusal = Some(format!("Le sceau ne prend pas : {reason}."));
@@ -145,7 +129,7 @@ impl HeroCreator {
     }
 
     /// Dessine l'écran sur tout l'écran ; renvoie ce que le joueur vient de décider
-    pub fn show(&mut self, ctx: &egui::Context, icons: &ItemIcons) -> Option<CreatorEvent> {
+    pub fn show(&mut self, ctx: &egui::Context) -> Option<CreatorEvent> {
         let mut event = None;
         let screen = ctx.screen_rect();
         // Le temps réel écoulé (et non le pas prévu par egui) : la figure tourne à la même allure
@@ -172,7 +156,7 @@ impl HeroCreator {
 
                 ui.allocate_new_ui(egui::UiBuilder::new().max_rect(left), |ui| self.draw_preview_panel(ui, left));
                 ui.allocate_new_ui(egui::UiBuilder::new().max_rect(right), |ui| {
-                    event = self.draw_step_panel(ui, right, icons);
+                    event = self.draw_step_panel(ui, right);
                 });
             });
         event
@@ -238,15 +222,9 @@ impl HeroCreator {
             ui.add_space(2.0_f32);
             ui.horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new("MAINS").size(10.5_f32).strong().color(GOLD));
-                let hands = if self.class.is_none() {
-                    "Vides. Aucune voie n’a encore été choisie.".to_string()
-                } else {
-                    let names = self.starting_items().iter().map(|(id, n)| item_line(id, *n)).collect::<Vec<_>>();
-                    if names.is_empty() {
-                        "Vides.".to_string()
-                    } else {
-                        names.join(" · ")
-                    }
+                let hands = match self.sheet() {
+                    Some(sheet) => sheet.armament,
+                    None => "Vides. Aucune voie n’a encore été choisie.",
                 };
                 ui.label(egui::RichText::new(hands).size(12.0_f32).color(INK_SOFT));
             });
@@ -255,7 +233,7 @@ impl HeroCreator {
 
     /* ---------------------------------------------------------------- panneau de droite */
 
-    fn draw_step_panel(&mut self, ui: &mut egui::Ui, rect: egui::Rect, icons: &ItemIcons) -> Option<CreatorEvent> {
+    fn draw_step_panel(&mut self, ui: &mut egui::Ui, rect: egui::Rect) -> Option<CreatorEvent> {
         panel_frame(ui.painter(), rect);
         let mut event = None;
         let pad = 18.0_f32;
@@ -292,7 +270,7 @@ impl HeroCreator {
                 ui.set_width(ui.available_width() - 10.0_f32);
                 match self.step {
                     0 => self.draw_forge(ui),
-                    1 => self.draw_rack(ui, icons),
+                    1 => self.draw_rack(ui),
                     _ => self.draw_baptism(ui),
                 }
             });
@@ -457,7 +435,7 @@ impl HeroCreator {
 
     /* ---------------------------------------------------------------- étape 2 : le râtelier */
 
-    fn draw_rack(&mut self, ui: &mut egui::Ui, icons: &ItemIcons) {
+    fn draw_rack(&mut self, ui: &mut egui::Ui) {
         for (family, title, line) in Family::ALL {
             ui.add_space(4.0_f32);
             ui.horizontal(|ui| {
@@ -483,28 +461,6 @@ impl HeroCreator {
             ui.label(
                 egui::RichText::new(format!("Mêlée {} · Distance {} · Magie {}", sheet.melee, sheet.ranged, sheet.magic)).size(12.0_f32).color(INK_DIM),
             );
-            if !sheet.arsenal.is_empty() {
-                rubric(ui, "Arsenal");
-                let chosen = self.weapon();
-                ui.horizontal_wrapped(|ui| {
-                    for &item in sheet.arsenal {
-                        let response = item_case(ui, icons, item, chosen == Some(item));
-                        if response.clicked() {
-                            self.weapons.insert(sheet.class, item);
-                        }
-                    }
-                });
-            }
-            rubric(ui, "Au premier matin");
-            for (item, count) in self.starting_items() {
-                ui.horizontal(|ui| {
-                    if let Some(id) = items().find(item) {
-                        let (rect, _) = ui.allocate_exact_size(egui::vec2(20.0_f32, 20.0_f32), egui::Sense::hover());
-                        icons.paint(ui.painter(), rect, id);
-                    }
-                    ui.label(egui::RichText::new(item_line(item, count)).size(12.5_f32).color(INK_SOFT));
-                });
-            }
         });
     }
 
@@ -611,73 +567,6 @@ impl Preview {
     }
 }
 
-/// Un quadrilatère de la figure : coins vus de dehors (bas gauche, bas droit, haut droit, haut
-/// gauche) et le rectangle de la planche qu'il montre
-struct Quad {
-    corners: [glam::Vec3; 4],
-    uv: [f32; 4],
-}
-
-/// Une pièce de la figure : ses faces, son centre (pour l'ordre de dessin) et sa couche
-struct Piece {
-    quads: Vec<Quad>,
-    centre: glam::Vec3,
-    layer: u8,
-}
-
-/// Une boîte dépliée à la manière de Minecraft depuis son coin du patron, gonflée de `g`
-fn boite(cx: f32, bottom: f32, w: f32, h: f32, d: f32, u: f32, v: f32, g: f32, layer: u8) -> Piece {
-    use glam::vec3;
-    let (x0, x1) = (cx - w / 2.0 - g, cx + w / 2.0 + g);
-    let (y0, y1) = (bottom - g, bottom + h + g);
-    let (z0, z1) = (-d / 2.0 - g, d / 2.0 + g);
-    let quads = vec![
-        Quad { corners: [vec3(x0, y0, z1), vec3(x1, y0, z1), vec3(x1, y1, z1), vec3(x0, y1, z1)], uv: [u + d, v + d, w, h] },
-        Quad { corners: [vec3(x1, y0, z0), vec3(x0, y0, z0), vec3(x0, y1, z0), vec3(x1, y1, z0)], uv: [u + d + w + d, v + d, w, h] },
-        Quad { corners: [vec3(x1, y0, z1), vec3(x1, y0, z0), vec3(x1, y1, z0), vec3(x1, y1, z1)], uv: [u + d + w, v + d, d, h] },
-        Quad { corners: [vec3(x0, y0, z0), vec3(x0, y0, z1), vec3(x0, y1, z1), vec3(x0, y1, z0)], uv: [u, v + d, d, h] },
-        Quad { corners: [vec3(x0, y1, z1), vec3(x1, y1, z1), vec3(x1, y1, z0), vec3(x0, y1, z0)], uv: [u + d, v, w, d] },
-        Quad { corners: [vec3(x0, y0, z0), vec3(x1, y0, z0), vec3(x1, y0, z1), vec3(x0, y0, z1)], uv: [u + d + w, v, w, d] },
-    ];
-    Piece { quads, centre: vec3(cx, bottom + h / 2.0, 0.0), layer }
-}
-
-/// Plaque 8 × 8 des épaules vers le haut (barbe, cheveux tombants) : ses deux grandes faces lisent
-/// toute la case
-fn plaque(bottom: f32, z0: f32, z1: f32, u: f32, v: f32) -> Piece {
-    use glam::vec3;
-    let (x0, x1, y0, y1) = (-4.0, 4.0, bottom, bottom + 8.0);
-    let quads = vec![
-        Quad { corners: [vec3(x0, y0, z1), vec3(x1, y0, z1), vec3(x1, y1, z1), vec3(x0, y1, z1)], uv: [u, v, 8.0, 8.0] },
-        Quad { corners: [vec3(x1, y0, z0), vec3(x0, y0, z0), vec3(x0, y1, z0), vec3(x1, y1, z0)], uv: [u, v, 8.0, 8.0] },
-    ];
-    Piece { quads, centre: vec3(0.0, bottom + 4.0, (z0 + z1) / 2.0), layer: 3 }
-}
-
-/// Le corps du héros en unités du patron (un héros mesure 32), pieds à zéro, face vers +z : les
-/// boîtes et les deux plaques de `tools/heros/construire.py`
-fn figure() -> Vec<Piece> {
-    vec![
-        // couche 1 : centre x, bas, taille, coin du patron
-        boite(0.0, 24.0, 8.0, 8.0, 8.0, 0.0, 0.0, 0.0, 1),
-        boite(0.0, 12.0, 8.0, 12.0, 4.0, 16.0, 16.0, 0.0, 1),
-        boite(-6.0, 12.0, 4.0, 12.0, 4.0, 40.0, 16.0, 0.0, 1),
-        boite(6.0, 12.0, 4.0, 12.0, 4.0, 32.0, 48.0, 0.0, 1),
-        boite(-2.0, 0.0, 4.0, 12.0, 4.0, 0.0, 16.0, 0.0, 1),
-        boite(2.0, 0.0, 4.0, 12.0, 4.0, 16.0, 48.0, 0.0, 1),
-        // couche 2
-        boite(0.0, 24.0, 8.0, 8.0, 8.0, 32.0, 0.0, 0.5, 2),
-        boite(0.0, 12.0, 8.0, 12.0, 4.0, 16.0, 32.0, 0.25, 2),
-        boite(-6.0, 12.0, 4.0, 12.0, 4.0, 40.0, 32.0, 0.25, 2),
-        boite(6.0, 12.0, 4.0, 12.0, 4.0, 48.0, 48.0, 0.25, 2),
-        boite(-2.0, 0.0, 4.0, 12.0, 4.0, 0.0, 32.0, 0.25, 2),
-        boite(2.0, 0.0, 4.0, 12.0, 4.0, 0.0, 48.0, 0.25, 2),
-        // barbe et cheveux tombants
-        plaque(20.0, 4.05, 4.45, 0.0, 0.0),
-        plaque(20.0, -4.45, -4.05, 24.0, 0.0),
-    ]
-}
-
 /// Dessine la figure tournée de `angle` et inclinée de `tilt` dans le cadre : à la taille de son
 /// espèce contre un cadre de deux mètres, pieds sur la même ligne, élargie par sa carrure
 fn draw_figure(painter: &egui::Painter, frame: egui::Rect, texture: &egui::TextureHandle, cfg: &Appearance, angle: f32, tilt: f32) {
@@ -735,16 +624,6 @@ fn metres(m: f64) -> String {
     format!("{:.2} m", m).replace('.', ",")
 }
 
-/// Nom d'un objet du paquetage, avec son nombre
-fn item_line(id: &str, count: u16) -> String {
-    let name = items().find(id).map_or(id, |item| item.name());
-    if count > 1 {
-        format!("{name} × {count}")
-    } else {
-        name.to_string()
-    }
-}
-
 fn options<T: hero::atlas::Choix>(liste: &[T]) -> Vec<(String, String)> {
     liste.iter().map(|o| (o.id().to_string(), o.nom().to_string())).collect()
 }
@@ -761,7 +640,7 @@ fn paint_planks(painter: &egui::Painter, rect: egui::Rect) {
         painter.rect_filled(r, 0.0_f32, egui::Color32::from_rgb(tint.0, tint.1, tint.2));
         painter.line_segment([r.left_bottom(), r.right_bottom()], egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(22, 15, 10)));
         // Joints décalés d'une planche à l'autre
-        let offset = if i % 2 == 0 { 0.0_f32 } else { 170.0_f32 };
+        let offset = if i.is_multiple_of(2) { 0.0_f32 } else { 170.0_f32 };
         let mut x = rect.left() + offset + 120.0_f32;
         while x < rect.right() {
             painter.line_segment([egui::pos2(x, r.top()), egui::pos2(x, r.bottom())], egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(26, 18, 12)));
@@ -935,21 +814,6 @@ fn case(ui: &mut egui::Ui, width: f32, title: &str, detail: Option<&str>, on: bo
     response
 }
 
-/// Case d'une arme de l'arsenal : son icône et son nom
-fn item_case(ui: &mut egui::Ui, icons: &ItemIcons, item: &str, on: bool) -> egui::Response {
-    let name = item_line(item, 1);
-    let galley_w = ui.fonts(|f| f.layout_no_wrap(name.clone(), egui::FontId::proportional(13.0_f32), INK).size().x);
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(galley_w + 52.0_f32, 34.0_f32), egui::Sense::click());
-    let painter = ui.painter();
-    painter.rect_filled(rect, 4.0_f32, if on { CASE_ON } else if response.hovered() { CASE_HOVER } else { CASE });
-    painter.rect_stroke(rect, 4.0_f32, egui::Stroke::new(if on { 1.5_f32 } else { 1.0_f32 }, if on { GOLD } else { EDGE }));
-    if let Some(id) = items().find(item) {
-        icons.paint(painter, egui::Rect::from_min_size(rect.min + egui::vec2(6.0_f32, 5.0_f32), egui::vec2(24.0_f32, 24.0_f32)), id);
-    }
-    painter.text(egui::pos2(rect.left() + 38.0_f32, rect.center().y), egui::Align2::LEFT_CENTER, name, egui::FontId::proportional(13.0_f32), if on { GOLD_BRIGHT } else { INK });
-    response
-}
-
 /// Case à cocher dessinée (Rotation de l'aperçu)
 fn paint_check(painter: &egui::Painter, rect: egui::Rect, label: &str, on: bool, hovered: bool) {
     painter.rect_filled(rect, 4.0_f32, if hovered { CASE_HOVER } else { CASE.gamma_multiply(0.8_f32) });
@@ -971,10 +835,9 @@ mod tests {
     use super::*;
 
     fn run(creator: &mut HeroCreator, ctx: &egui::Context) -> Option<CreatorEvent> {
-        let icons = ItemIcons::default();
         let mut event = None;
         let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 720.0))), ..Default::default() };
-        let _ = ctx.run(input, |ctx| event = creator.show(ctx, &icons));
+        let _ = ctx.run(input, |ctx| event = creator.show(ctx));
         event
     }
 
@@ -1010,27 +873,8 @@ mod tests {
         creator.name = "  Torgar le Rouge ".into();
         let Some(CreatorEvent::Sealed(legend)) = creator.seal() else { panic!("baptême refusé : {:?}", creator.refusal) };
         assert_eq!(legend.appearance.nom, "Torgar le Rouge");
-        // Le berserker prend la première arme de son arsenal tant qu'aucune autre n'est choisie
-        assert_eq!(legend.weapon.as_deref(), Some("flintBattleAxe"));
+        assert_eq!(legend.class, PlayerClass::Berserker);
         creator.go(0);
         assert_eq!(creator.step, 0, "une fiche scellée ne bouge plus");
-    }
-
-    #[test]
-    fn the_figure_shows_front_faces_only() {
-        // De face, la tête montre sa face avant et pas l'arrière
-        let rotation = glam::Quat::IDENTITY;
-        let head = boite(0.0, 24.0, 8.0, 8.0, 8.0, 0.0, 0.0, 0.0, 1);
-        let visible: Vec<usize> = head
-            .quads
-            .iter()
-            .enumerate()
-            .filter(|(_, q)| {
-                let c = q.corners.map(|p| rotation * p);
-                (c[1] - c[0]).cross(c[3] - c[0]).z > 1e-4
-            })
-            .map(|(i, _)| i)
-            .collect();
-        assert_eq!(visible, vec![0]);
     }
 }

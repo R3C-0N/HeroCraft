@@ -12,6 +12,8 @@ use crate::collision::VoxelCollider;
 pub const PLAYER_HALF_WIDTH: f32 = 0.3;
 /// Hauteur du corps testée contre les murs et plafonds, en blocs (le joueur mesure 1.8 bloc)
 pub const PLAYER_HEIGHT: f32 = 1.75;
+/// Distance de la vue TPS la plus proche, en blocs
+const TPS_CLOSE_BLOCKS: f32 = 4.5;
 /// Tolérance de contact avec le sol, en blocs : aucune marche n'est montée sans sauter
 const GROUND_TOLERANCE: f32 = 0.05;
 /// Marche que le joueur au sol monte sans sauter (une dalle), en blocs
@@ -407,6 +409,11 @@ impl OrbitCamera {
         self.descend_held && !self.is_flying && !self.is_dead && self.view_mode() != CameraViewMode::SatelliteOrbit
     }
 
+    /// Hauteur des yeux d'un héros de taille ordinaire debout, en unités du monde (~1,7 bloc)
+    fn eye_height_standing(&self) -> f32 {
+        0.065 * self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32
+    }
+
     /// Hauteur des yeux au-dessus des pieds, en unités du monde : ~1,7 bloc debout, ~1,35 accroupi
     fn eye_height(&self) -> f32 {
         let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
@@ -448,15 +455,27 @@ impl OrbitCamera {
 
     /// Zoom continu via la molette : passe sans couture de Satellite à TPS puis à FPS
     pub fn zoom(&mut self, delta_y: f32) {
+        // Au plus près, la caméra se tient à quelques blocs du héros pour qu'on le voie en entier
+        let close = TPS_CLOSE_BLOCKS * self.eye_height_standing() / 1.7;
         if self.target_distance <= 0.05 && delta_y < 0.0 {
-            // Sortie du mode FPS vers TPS
-            self.target_distance = 1.2;
+            // Sortie du mode FPS vers TPS, juste derrière le héros
+            self.target_distance = close;
+            return;
+        }
+
+        if self.target_distance < 1.2 && delta_y < 0.0 {
+            // Recul par pas égaux jusqu'à la vue TPS d'ensemble, puis zoom proportionnel
+            self.target_distance = (self.target_distance - delta_y * 0.40).min(1.2);
             return;
         }
 
         if self.target_distance <= 2.5 && delta_y > 0.0 {
-            // Rentrée douce dans le mode FPS
-            self.target_distance = (self.target_distance - delta_y * 0.40).max(0.0);
+            // Rentrée douce : on s'arrête derrière le héros avant de rentrer dans ses yeux
+            let next = self.target_distance - delta_y * 0.40;
+            self.target_distance = if self.target_distance > close + 1e-3 { next.max(close) } else { next.max(0.0) };
+            if self.target_distance < 0.05 {
+                self.target_distance = 0.0;
+            }
             return;
         }
 
@@ -951,6 +970,25 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_wheel_stops_just_behind_the_hero_between_fps_and_tps() {
+        let mut cam = OrbitCamera::default();
+        let close = TPS_CLOSE_BLOCKS * cam.eye_height_standing() / 1.7;
+        cam.target_distance = 0.0;
+        cam.zoom(-1.0);
+        assert!((cam.target_distance - close).abs() < 1e-6, "sortie du FPS à {}", cam.target_distance);
+        cam.zoom(-1.0);
+        cam.zoom(-1.0);
+        cam.zoom(-1.0);
+        assert!((cam.target_distance - 1.2).abs() < 1e-6);
+        cam.zoom(1.0);
+        cam.zoom(1.0);
+        cam.zoom(1.0);
+        assert!((cam.target_distance - close).abs() < 1e-6, "arrêt derrière le héros à {}", cam.target_distance);
+        cam.zoom(1.0);
+        assert_eq!(cam.target_distance, 0.0);
     }
 
     #[test]

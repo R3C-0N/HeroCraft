@@ -38,7 +38,7 @@ pub enum UiAction {
     /// Écran de mort : revenir à la vie au point d'apparition
     Respawn,
     /// Le créateur vient de sceller la légende du héros (`UiState::take_sealed_legend`) : elle est
-    /// à enregistrer, et son paquetage à mettre dans le sac
+    /// à enregistrer
     LegendSealed,
 }
 
@@ -853,7 +853,7 @@ impl UiState {
         let egui_ctx = self.ctx.clone();
         let full_output = egui_ctx.run(raw_input, |ctx| {
             // 1. Réticule de visée en mode FPS (quand le menu est fermé)
-            if is_ground && !self.is_settings_open && !self.inventory_open && !self.player.is_dead() {
+            if is_ground && !self.is_settings_open && !self.inventory_open && self.creator.is_none() && !self.player.is_dead() {
                 let center = ctx.screen_rect().center();
                 let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("crosshair")));
                 let stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_white_alpha(180));
@@ -878,10 +878,10 @@ impl UiState {
             // blessure, barre d'objets au centre et écran d'inventaire par-dessus le jeu
             // Créateur de légende : il tient tout l'écran, menu de pause excepté
             if self.creator.is_some() && !self.is_settings_open {
-                let event = self.creator.as_mut().and_then(|creator| creator.show(ctx, &self.icons));
+                let event = self.creator.as_mut().and_then(|creator| creator.show(ctx));
                 match event {
                     Some(CreatorEvent::Sealed(legend)) => {
-                        self.sealed_legend = Some(legend);
+                        self.sealed_legend = Some(*legend);
                         action = Some(UiAction::LegendSealed);
                     }
                     Some(CreatorEvent::Enter) => self.creator = None,

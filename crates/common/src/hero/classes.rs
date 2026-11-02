@@ -1,8 +1,6 @@
 //! Les quinze voies du râtelier, reprises des classes du module `HeroClasses` de la branche
 //! `develop` : leur famille, leur devise, leur armement, la répartition de leur maîtrise (mêlée,
-//! distance, magie, sur cent) et le paquetage qu'elles mettent dans le sac au premier matin.
-//!
-//! Les objets sont nommés par l'identifiant de leur fiche (`assets/items/<id>.json`).
+//! distance, magie, sur cent). Le héros part les mains vides : aucune voie ne donne de paquetage.
 
 use crate::character::PlayerClass;
 
@@ -39,10 +37,6 @@ pub struct ClassSheet {
     pub melee: u32,
     pub ranged: u32,
     pub magic: u32,
-    /// Ce que la voie donne au premier matin : objet et nombre
-    pub kit: &'static [(&'static str, u16)],
-    /// Armes au choix (une seule est donnée) ; vide quand la voie n'en propose pas
-    pub arsenal: &'static [&'static str],
 }
 
 /// Les voies, dans l'ordre du râtelier (`order` des prefabs)
@@ -57,8 +51,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 0,
         ranged: 15,
         magic: 85,
-        kit: &[("flintGauntlet", 1)],
-        arsenal: &[],
     },
     ClassSheet {
         class: PlayerClass::Druid,
@@ -70,8 +62,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 5,
         ranged: 0,
         magic: 95,
-        kit: &[("flintTotem", 1)],
-        arsenal: &[],
     },
     ClassSheet {
         class: PlayerClass::Necromancer,
@@ -83,8 +73,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 0,
         ranged: 0,
         magic: 100,
-        kit: &[("flintSoulStaff", 1)],
-        arsenal: &[],
     },
     ClassSheet {
         class: PlayerClass::Chaplain,
@@ -96,8 +84,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 5,
         ranged: 0,
         magic: 95,
-        kit: &[("flintScepter", 1)],
-        arsenal: &[],
     },
     ClassSheet {
         class: PlayerClass::WarPriest,
@@ -109,8 +95,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 40,
         ranged: 0,
         magic: 60,
-        kit: &[("flintScepter", 1)],
-        arsenal: &["warMallet", "flintMallet"],
     },
     ClassSheet {
         class: PlayerClass::Rogue,
@@ -122,8 +106,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 15,
         ranged: 60,
         magic: 25,
-        kit: &[("handCrossbow", 1), ("flintBolt", 32)],
-        arsenal: &[],
     },
     ClassSheet {
         class: PlayerClass::Ranger,
@@ -135,8 +117,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 0,
         ranged: 75,
         magic: 25,
-        kit: &[("handCrossbow", 1), ("handCrossbow", 1), ("flintBolt", 32)],
-        arsenal: &[],
     },
     ClassSheet {
         class: PlayerClass::Archer,
@@ -148,8 +128,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 0,
         ranged: 100,
         magic: 0,
-        kit: &[("shortBow", 1), ("flintArrow", 32)],
-        arsenal: &[],
     },
     ClassSheet {
         class: PlayerClass::Engineer,
@@ -161,8 +139,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 10,
         ranged: 90,
         magic: 0,
-        kit: &[("flintTinkerKit", 1)],
-        arsenal: &[],
     },
     ClassSheet {
         class: PlayerClass::MonsterHunter,
@@ -174,8 +150,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 45,
         ranged: 55,
         magic: 0,
-        kit: &[("flintSword", 1), ("handCrossbow", 1), ("flintBolt", 32)],
-        arsenal: &[],
     },
     ClassSheet {
         class: PlayerClass::WindBlade,
@@ -187,8 +161,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 60,
         ranged: 25,
         magic: 15,
-        kit: &[("flintSabre", 1)],
-        arsenal: &[],
     },
     ClassSheet {
         class: PlayerClass::Champion,
@@ -200,8 +172,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 100,
         ranged: 0,
         magic: 0,
-        kit: &[("flintSword", 1), ("flintShield", 1)],
-        arsenal: &[],
     },
     ClassSheet {
         class: PlayerClass::Soldier,
@@ -213,8 +183,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 90,
         ranged: 10,
         magic: 0,
-        kit: &[("flintShield", 1)],
-        arsenal: &["flintSword", "flintSabre", "flintBattleAxe", "flintMallet", "warMallet"],
     },
     ClassSheet {
         class: PlayerClass::Berserker,
@@ -226,8 +194,6 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 85,
         ranged: 0,
         magic: 15,
-        kit: &[],
-        arsenal: &["flintBattleAxe", "club"],
     },
     ClassSheet {
         class: PlayerClass::Paladin,
@@ -239,30 +205,12 @@ pub const CLASSES: [ClassSheet; 15] = [
         melee: 70,
         ranged: 0,
         magic: 30,
-        kit: &[("flintShield", 1)],
-        arsenal: &["flintSword", "flintMallet"],
     },
 ];
 
 /// La fiche d'une voie ; `None` pour l'aventurier, qui n'en a pas encore choisi
 pub fn class_sheet(class: PlayerClass) -> Option<&'static ClassSheet> {
     CLASSES.iter().find(|c| c.class == class)
-}
-
-impl ClassSheet {
-    /// L'arme que donne la voie : celle choisie si elle est dans l'arsenal, sinon la première ;
-    /// `None` sans arsenal
-    pub fn weapon(&self, wanted: Option<&str>) -> Option<&'static str> {
-        let first = self.arsenal.first().copied()?;
-        Some(wanted.and_then(|w| self.arsenal.iter().copied().find(|a| *a == w)).unwrap_or(first))
-    }
-
-    /// Ce que la voie met dans le sac au premier matin : l'arme choisie, puis le paquetage
-    pub fn starting_items(&self, weapon: Option<&str>) -> Vec<(&'static str, u16)> {
-        let mut items: Vec<(&'static str, u16)> = self.weapon(weapon).map(|w| (w, 1)).into_iter().collect();
-        items.extend_from_slice(self.kit);
-        items
-    }
 }
 
 #[cfg(test)]
@@ -276,26 +224,5 @@ mod tests {
             assert_eq!(class_sheet(c.class).map(|s| s.id), Some(c.id));
         }
         assert!(class_sheet(PlayerClass::Adventurer).is_none());
-    }
-
-    #[test]
-    fn every_starting_item_exists() {
-        let registry = crate::items::items();
-        assert!(!registry.is_empty());
-        for c in &CLASSES {
-            for item in c.kit.iter().map(|(item, _)| *item).chain(c.arsenal.iter().copied()) {
-                assert!(registry.find(item).is_some(), "{} : objet inconnu {item}", c.id);
-            }
-        }
-    }
-
-    #[test]
-    fn arsenal_pick_falls_back_to_the_first_weapon() {
-        let soldat = CLASSES.iter().find(|c| c.id == "soldat").unwrap();
-        assert_eq!(soldat.weapon(Some("warMallet")), Some("warMallet"));
-        assert_eq!(soldat.weapon(Some("shortBow")), Some("flintSword"));
-        assert_eq!(soldat.starting_items(None), vec![("flintSword", 1), ("flintShield", 1)]);
-        let archer = CLASSES.iter().find(|c| c.id == "archer").unwrap();
-        assert_eq!(archer.weapon(Some("flintSword")), None);
     }
 }

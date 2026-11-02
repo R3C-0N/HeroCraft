@@ -233,10 +233,10 @@ fn la_legende_donne_sa_voie_et_une_legende_truquee_est_refusee() {
     let mut appearance = atlas().defaut("gnome");
     appearance.nom = "Brandin".into();
     // Un gnome de deux mètres n'existe pas : le serveur ne change rien
-    let mut truquee = Legend { appearance: appearance.clone(), class: PlayerClass::Archer, weapon: None };
+    let mut truquee = Legend { appearance: appearance.clone(), class: PlayerClass::Archer };
     truquee.appearance.taille = 2.0;
     client.send(&ClientPacket::Legend(Box::new(truquee)));
-    let legend = Legend { appearance, class: PlayerClass::Druid, weapon: None };
+    let legend = Legend { appearance, class: PlayerClass::Druid };
     client.send(&ClientPacket::Legend(Box::new(legend)));
     let class = wait_for(&client, |p| match p {
         ServerPacket::StatsUpdate(stats) if stats.class != PlayerClass::Adventurer => Some(stats.class),

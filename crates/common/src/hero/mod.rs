@@ -187,34 +187,22 @@ impl Appearance {
     }
 }
 
-/// La légende d'un héros baptisé : son apparence (nom compris), sa voie et l'arme prise à
-/// l'arsenal
+/// La légende d'un héros baptisé : son apparence (nom compris) et sa voie
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Legend {
     pub appearance: Appearance,
     pub class: PlayerClass,
-    /// Arme choisie dans l'arsenal de la voie (identifiant de fiche d'objet), s'il y en a un
-    #[serde(default)]
-    pub weapon: Option<String>,
 }
 
 impl Legend {
-    /// Vérifie toute la légende (voir [`Appearance::verify`]) : une voie du râtelier, et une arme
-    /// de son arsenal quand elle en a un. Acceptée, elle est normalisée sur place.
+    /// Vérifie toute la légende (voir [`Appearance::verify`]) et une voie du râtelier. Acceptée,
+    /// elle est normalisée sur place.
     pub fn verify(&mut self) -> Result<(), String> {
         self.appearance.verify()?;
-        let Some(sheet) = class_sheet(self.class) else { return Err("voie inconnue".into()) };
-        match (&self.weapon, sheet.arsenal.is_empty()) {
-            (_, true) => self.weapon = None,
-            (Some(w), false) if sheet.arsenal.contains(&w.as_str()) => {}
-            _ => return Err("arme hors de l'arsenal de la voie".into()),
+        if class_sheet(self.class).is_none() {
+            return Err("voie inconnue".into());
         }
         Ok(())
-    }
-
-    /// Ce que le baptême met dans le sac
-    pub fn starting_items(&self) -> Vec<(&'static str, u16)> {
-        class_sheet(self.class).map(|s| s.starting_items(self.weapon.as_deref())).unwrap_or_default()
     }
 }
 
@@ -273,7 +261,7 @@ mod tests {
     fn legende() -> Legend {
         let mut a = atlas().defaut("nain");
         a.nom = "  Brandin de Valbrume ".into();
-        Legend { appearance: a, class: PlayerClass::Soldier, weapon: Some("warMallet".into()) }
+        Legend { appearance: a, class: PlayerClass::Soldier }
     }
 
     #[test]
@@ -281,7 +269,6 @@ mod tests {
         let mut l = legende();
         assert_eq!(l.verify(), Ok(()));
         assert_eq!(l.appearance.nom, "Brandin de Valbrume");
-        assert_eq!(l.starting_items(), vec![("warMallet", 1), ("flintShield", 1)]);
     }
 
     #[test]
@@ -295,9 +282,6 @@ mod tests {
         let mut l = legende();
         l.appearance.peau = "#123456".into();
         assert_eq!(l.verify(), Err("choix inconnu : couleur de peau".into()));
-        let mut l = legende();
-        l.weapon = Some("shortBow".into());
-        assert!(l.verify().is_err());
         let mut l = legende();
         l.class = PlayerClass::Adventurer;
         assert_eq!(l.verify(), Err("voie inconnue".into()));

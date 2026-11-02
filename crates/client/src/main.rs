@@ -25,6 +25,7 @@ mod creatures;
 mod dropped_items;
 mod gpu_timer;
 mod hero_creator;
+mod hero_model;
 mod input;
 mod inventory;
 mod item_icons;
@@ -168,6 +169,7 @@ fn main() {
     let mut solo_creatures = solo_creature_world(base_radius as f64, current_seed, &creature_registry);
     let mut creatures_seed = current_seed;
     let mut creature_animator = creatures::CreatureAnimator::default();
+    let mut hero_gait = hero_model::HeroGait::default();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
     // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
     // prochain coup qu'on peut leur porter
@@ -618,7 +620,13 @@ fn main() {
                             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
                             let anim_dt = if ui_state.is_settings_open { 0.0 } else { dt };
                             creature_animator.update(&creature_views, &creature_registry, &creature_models, anim_dt, block);
-                            let frame = creatures::build_frame(&creature_views, &creature_registry, &creature_models, &creature_animator, block);
+                            let mut frame = creatures::build_frame(&creature_views, &creature_registry, &creature_models, &creature_animator, block);
+                            // Le héros, vu de dehors à la troisième personne
+                            hero_gait.update(camera.player_pos, anim_dt, block);
+                            if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson) {
+                                state.set_hero_sheet(&legend.appearance);
+                                hero_model::push_hero(&mut frame, &legend.appearance, camera.player_pos, camera.player_yaw, hero_gait.swing(), block);
+                            }
                             state.set_creature_frame(&frame);
                             creature_vertices = frame.vertices.len();
                             probe.section("créatures : animation et maillage", section);
@@ -754,19 +762,6 @@ fn main() {
                                     if let Err(e) = save_legend(&file, &legend) {
                                         warn!("Légende non enregistrée dans {} : {}", file.display(), e);
                                     }
-                                    // Le paquetage de la voie, dans le sac
-                                    for (id, count) in legend.starting_items() {
-                                        match herocraft_common::items().find(id) {
-                                            Some(item) => {
-                                                let left = ui_state.inventory.add_many(item, count);
-                                                if left > 0 {
-                                                    warn!("Sac plein : {} × {} non reçu(s).", left, item.name());
-                                                }
-                                            }
-                                            None => warn!("Objet du paquetage inconnu : {}", id),
-                                        }
-                                    }
-                                    ui_state.inventory.save();
                                     if let Some(client) = net.as_mut() {
                                         client.send_legend(&legend);
                                     }
