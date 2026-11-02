@@ -1830,7 +1830,11 @@ impl CraftingPanel {
             .filter(|&(_, times)| !self.only_craftable || times > 0)
             .collect();
         let recipes = &crafting().recipes;
-        list.sort_by_key(|&(i, times)| (times == 0, recipes[i].station.map_or(0, |s| s.level), recipes[i].result.name()));
+        // Devant un établi, ses recettes passent avant celles faites à la main
+        list.sort_by_key(|&(i, times)| {
+            let recipe = &recipes[i];
+            (times == 0, at.is_some() && recipe.station.is_none(), std::cmp::Reverse(recipe.station.map_or(0, |s| s.level)), recipe.result.name())
+        });
         list
     }
 
@@ -2484,6 +2488,8 @@ mod tests {
         // Devant l'établi : ses recettes s'ajoutent, refermer l'écran l'oublie
         let bench = ui.crafting.visible(&ui.inventory, at_bench);
         assert!(bench.len() > hand.len() + 100);
+        let first_missing = bench.iter().find(|&&(_, times)| times == 0).unwrap();
+        assert!(crafting().recipes[first_missing.0].station.is_some(), "les recettes de l'établi avant celles à la main");
         ui.open_station(at_bench.unwrap());
         assert!(ui.inventory_open && ui.station == at_bench);
         let _ = ui.update_ui(true);
