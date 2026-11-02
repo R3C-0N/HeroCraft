@@ -18,5 +18,8 @@ Thumbs.db
 # Rapports de profilage (feature `profiling`)
 /profiling/
 
+# Rapports du banc d'essai (`--benchmark`)
+/benchmark/
+
 # Configuration locale (voir .env.example)
 /.env

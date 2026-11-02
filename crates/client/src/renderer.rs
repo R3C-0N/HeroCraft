@@ -166,6 +166,8 @@ pub struct State {
 
     // Mesure du temps GPU par passe (feature `profiling` uniquement)
     gpu_timer: Option<GpuTimer>,
+    /// Durées CPU des étapes du dernier `render` (à-coups et banc d'essai)
+    pub render_timings: RenderTimings,
     view_mode: CameraViewMode,
 }
 
@@ -203,6 +205,7 @@ impl State {
     pub async fn new(window: Arc<Window>, _ui_state: &UiState) -> Self {
         herocraft_common::prof_scope!("render::State::new");
         let size = window.inner_size();
+        crate::benchmark::set_meta("Résolution", format!("{} × {}", size.width, size.height));
 
         // 1. Instance WGPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -229,6 +232,10 @@ impl State {
         let adapter_info = adapter.get_info();
         herocraft_common::profiler::set_meta(
             "gpu",
+            format!("{} ({:?}, {:?}, pilote {} {})", adapter_info.name, adapter_info.backend, adapter_info.device_type, adapter_info.driver, adapter_info.driver_info),
+        );
+        crate::benchmark::set_meta(
+            "Carte graphique",
             format!("{} ({:?}, {:?}, pilote {} {})", adapter_info.name, adapter_info.backend, adapter_info.device_type, adapter_info.driver, adapter_info.driver_info),
         );
 
@@ -591,6 +598,7 @@ impl State {
             simulated_time: 0.0,
             last_uniform_time: std::time::Instant::now(),
             gpu_timer,
+            render_timings: RenderTimings::default(),
             view_mode: CameraViewMode::SatelliteOrbit,
         }
     }
@@ -624,6 +632,7 @@ impl State {
         herocraft_common::prof_scope!("render::resize");
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
+            crate::benchmark::set_meta("Résolution", format!("{} × {}", new_size.width, new_size.height));
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
@@ -649,6 +658,7 @@ impl State {
             self.surface.configure(&self.device, &self.config);
             log::info!("Mode de présentation WGPU mis à jour : {:?}", target_mode);
             herocraft_common::profiler::set_meta("present_mode_final", format!("{:?}", target_mode));
+            crate::benchmark::set_meta("Présentation", format!("{:?}", target_mode));
         }
     }
 
@@ -882,6 +892,8 @@ impl State {
         textures_delta: &egui::TexturesDelta,
     ) -> Result<(), wgpu::SurfaceError> {
         herocraft_common::prof_scope!("render::render");
+        let start = std::time::Instant::now();
+        self.render_timings = RenderTimings::default();
         {
             herocraft_common::prof_scope!("render::egui_textures");
             for (id, delta) in &textures_delta.set {
@@ -890,10 +902,12 @@ impl State {
         }
 
         // Bloque si le GPU est en retard ou en attente de V-Sync
+        let acquire_start = std::time::Instant::now();
         let output = {
             herocraft_common::prof_scope!("render::acquire_frame");
             self.surface.get_current_texture()?
         };
+        self.render_timings.acquire = acquire_start.elapsed();
         let swapchain_view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -1073,6 +1087,8 @@ impl State {
             self.egui_renderer.render(&mut ui_pass, paint_jobs, screen_descriptor);
         }
 
+        let submit_start = std::time::Instant::now();
+        self.render_timings.prepare = submit_start.duration_since(start).saturating_sub(self.render_timings.acquire);
         {
             herocraft_common::prof_scope!("render::submit");
             if let Some(timer) = self.gpu_timer.as_ref() {
@@ -1083,10 +1099,13 @@ impl State {
                 timer.end_frame();
             }
         }
+        let present_start = std::time::Instant::now();
+        self.render_timings.submit = present_start.duration_since(submit_start);
         {
             herocraft_common::prof_scope!("render::present");
             output.present();
         }
+        self.render_timings.present = present_start.elapsed();
 
         for id in &textures_delta.free {
             self.egui_renderer.free_texture(id);
@@ -1094,6 +1113,18 @@ impl State {
 
         Ok(())
     }
+}
+
+/// Durées CPU des étapes d'un `render`
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RenderTimings {
+    /// Attente d'une image libre de la chaîne de présentation (le GPU est en retard, ou V-Sync)
+    pub acquire: std::time::Duration,
+    /// Textures de l'interface et encodage des passes
+    pub prepare: std::time::Duration,
+    /// Envoi des commandes au GPU
+    pub submit: std::time::Duration,
+    pub present: std::time::Duration,
 }
 
 /// Petit maillage réécrit souvent (blocs tombés au sol) : ses buffers ne sont recréés que s'il

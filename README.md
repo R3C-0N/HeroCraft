@@ -31,8 +31,9 @@ Le serveur écoute en TCP (port 7777 par défaut) à 60 TPS et s'annonce sur le 
 
 ### Lancer le prototype client interactif :
 ```bash
-cargo run --bin herocraft_client
+cargo run --release --bin herocraft_client
 ```
+Sans `--release`, le code du jeu est compilé sans optimisation : plus rapide à compiler, mais il tourne 5 à 10 fois plus lentement (les créatures à elles seules y prennent ~5 ms par image au lieu de ~0,6 ms). Le jeu le rappelle dans la console au lancement.
 Pour rejoindre directement un serveur au lancement : `-- --connect 127.0.0.1:7777 --name Mat` (ou `HEROCRAFT_SERVER` et `HEROCRAFT_PSEUDO` dans `.env`).
 Chaque partie solo, comme chaque appui sur « Nouvelle planète » (`G`), tire une graine au hasard, affichée dans la console. Pour retrouver une planète précise : `-- --seed 1234567890` (ou `HEROCRAFT_SEED` dans `.env`).
 
@@ -74,6 +75,12 @@ Le son passe par PulseAudio (ou PipeWire), ce que WSLg fournit d'office. Pour é
 cargo run --release --features profiling --bin herocraft_client
 ```
 Le rapport est écrit dans `./profiling/` à la fermeture (ou avec `[F9]`). Voir [docs/PROFILAGE.md](docs/PROFILAGE.md).
+
+### Banc d'essai automatique (FPS par fonctionnalité) :
+```bash
+cargo run --release --bin herocraft_client -- --benchmark
+```
+Le jeu joue seul une suite de phases d'environ 11 s (ombres, nuages, rayons, bloom, créatures, distance LOD, vues, marche, vol), puis écrit un rapport dans `./benchmark/` et se ferme. Voir [docs/BANC_ESSAI.md](docs/BANC_ESSAI.md).
 
 ### Lancer les tests unitaires :
 ```bash

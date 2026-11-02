@@ -103,6 +103,52 @@ impl LodDistanceSetting {
     }
 }
 
+/// Durée d'affichage du dernier à-coup sous le compteur FPS, en secondes
+const HITCH_DISPLAY_SECS: f32 = 5.0;
+
+/// Préréglage de qualité graphique : règle d'un coup les effets les plus chers pour le GPU
+/// (mesurés avec `--benchmark` sur un GPU intégré Iris Xe : ombres du relief ~4 ms par image,
+/// rayons crépusculaires 1 à 4 ms, ombres des nuages ~1 ms, bloom ~0,5 ms)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphicsQuality {
+    /// Ni ombres, ni rayons, ni bloom, distance de détail courte
+    Basse,
+    /// Ombres du relief, sans ombres des nuages ni rayons crépusculaires
+    Moyenne,
+    /// Tous les effets
+    Haute,
+}
+
+/// Effets réglés par un préréglage de qualité
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QualityEffects {
+    pub shadows: bool,
+    pub cloud_shadows: bool,
+    pub god_rays: bool,
+    pub bloom: bool,
+    pub lod_distance: LodDistanceSetting,
+}
+
+impl GraphicsQuality {
+    pub const ALL: [GraphicsQuality; 3] = [GraphicsQuality::Basse, GraphicsQuality::Moyenne, GraphicsQuality::Haute];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Basse => "Basse",
+            Self::Moyenne => "Moyenne",
+            Self::Haute => "Haute",
+        }
+    }
+
+    pub fn effects(self) -> QualityEffects {
+        match self {
+            Self::Basse => QualityEffects { shadows: false, cloud_shadows: false, god_rays: false, bloom: false, lod_distance: LodDistanceSetting::Courte },
+            Self::Moyenne => QualityEffects { shadows: true, cloud_shadows: false, god_rays: false, bloom: true, lod_distance: LodDistanceSetting::Normale },
+            Self::Haute => QualityEffects { shadows: true, cloud_shadows: true, god_rays: true, bloom: true, lod_distance: LodDistanceSetting::Normale },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FpsLimitSetting {
     Fps60,
@@ -394,6 +440,9 @@ pub struct UiState {
     pub show_tectonics: bool,
     pub show_ocean_currents: bool,
     pub current_fps: u32,
+    /// Dernier à-coup (durée de l'image en ms) et quand il a eu lieu : le compteur FPS, moyenné,
+    /// ne le montre pas
+    hitch: Option<(f32, std::time::Instant)>,
     pub is_settings_open: bool,
     pub menu_page: MenuPage,
     pub options_tab: OptionsTab,
@@ -446,6 +495,7 @@ impl UiState {
             show_tectonics: false,
             show_ocean_currents: false,
             current_fps: 60,
+            hitch: None,
             is_settings_open: false,
             menu_page: MenuPage::Main,
             options_tab: OptionsTab::Display,
@@ -535,6 +585,41 @@ impl UiState {
 
     pub fn set_auto_rotate(&mut self, auto_rotate: bool) {
         self.auto_rotate = auto_rotate;
+    }
+
+    /// Effets actuellement réglés, dans les termes des préréglages de qualité
+    fn quality_effects(&self) -> QualityEffects {
+        QualityEffects {
+            shadows: self.shadow_settings.enabled,
+            cloud_shadows: self.shadow_settings.cloud_shadows,
+            god_rays: self.atmosphere_settings.god_rays,
+            bloom: self.post_settings.bloom_enabled,
+            lod_distance: self.video_settings.lod_distance,
+        }
+    }
+
+    /// Préréglage de qualité qui correspond aux réglages actuels (`None` : réglages personnalisés)
+    pub fn graphics_quality(&self) -> Option<GraphicsQuality> {
+        let current = self.quality_effects();
+        GraphicsQuality::ALL.into_iter().find(|q| q.effects() == current)
+    }
+
+    /// Applique un préréglage de qualité. Renvoie vrai si la distance de détail a changé (le LOD
+    /// est alors à recalculer).
+    pub fn apply_graphics_quality(&mut self, quality: GraphicsQuality) -> bool {
+        let e = quality.effects();
+        self.shadow_settings.enabled = e.shadows;
+        self.shadow_settings.cloud_shadows = e.cloud_shadows;
+        self.atmosphere_settings.god_rays = e.god_rays;
+        self.post_settings.bloom_enabled = e.bloom;
+        let lod_changed = self.video_settings.lod_distance != e.lod_distance;
+        self.video_settings.lod_distance = e.lod_distance;
+        lod_changed
+    }
+
+    /// Une image a duré `ms` millisecondes : affichée quelques secondes sous le compteur FPS
+    pub fn set_hitch(&mut self, ms: f32) {
+        self.hitch = Some((ms, std::time::Instant::now()));
     }
 
     pub fn set_fps(&mut self, fps: u32) {
@@ -1023,6 +1108,10 @@ impl UiState {
                         egui::Color32::from_rgb(240, 80, 80)
                     };
                     ui.label(egui::RichText::new(format!("{} FPS", self.current_fps)).strong().color(fps_color));
+                    // Le compteur est une moyenne : un gel d'une seconde y passe presque inaperçu
+                    if let Some((ms, _)) = self.hitch.filter(|(_, at)| at.elapsed().as_secs_f32() < HITCH_DISPLAY_SECS) {
+                        ui.label(egui::RichText::new(format!("à-coup {ms:.0} ms")).size(11.0_f32).color(egui::Color32::from_rgb(240, 80, 80)));
+                    }
                 });
             });
     }
@@ -1368,7 +1457,23 @@ impl UiState {
     }
 
     fn draw_display_tab(&mut self, ui: &mut egui::Ui, action: &mut Option<UiAction>) {
+        let quality = self.graphics_quality();
+        let mut chosen = None;
         settings_grid(ui, "display_grid", |ui| {
+            row_label(ui, "Qualité graphique", "Règle d'un coup les ombres, les rayons crépusculaires, le bloom et la distance de détail");
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0_f32;
+                for q in GraphicsQuality::ALL {
+                    if ui.selectable_label(quality == Some(q), q.label()).clicked() && quality != Some(q) {
+                        chosen = Some(q);
+                    }
+                }
+                if quality.is_none() {
+                    ui.label(egui::RichText::new("Personnalisée").size(11.0_f32).color(TEXT_DIM));
+                }
+            });
+            ui.end_row();
+
             row_label(ui, "Synchronisation verticale", "Aligne les images sur l'écran pour éviter les déchirures");
             if toggle_switch(ui, &mut self.video_settings.vsync).changed() {
                 *action = Some(UiAction::ToggleVsync);
@@ -1407,6 +1512,11 @@ impl UiState {
                 "Vue au sol : la planète est dessinée moins courbe pour voir plus loin (0 = vraie courbure)",
             );
         });
+        if let Some(q) = chosen {
+            if self.apply_graphics_quality(q) {
+                *action = Some(UiAction::SetLodDistance);
+            }
+        }
         ui.add_space(4.0_f32);
         ui.label(egui::RichText::new(format!("Détail actuel : {}", self.video_settings.lod_distance.label())).size(11.0_f32).color(TEXT_DIM));
     }
@@ -2084,6 +2194,21 @@ mod tests {
         assert!(!ui.show_tectonics);
         assert!(!ui.show_ocean_currents);
         assert_eq!(ui.active_filter(), herocraft_world::VisualizationFilter::Standard);
+    }
+
+    #[test]
+    fn test_graphics_quality_presets() {
+        let mut ui = UiState::new(1);
+        // Par défaut : tous les effets, c'est la qualité haute
+        assert_eq!(ui.graphics_quality(), Some(GraphicsQuality::Haute));
+        assert!(ui.apply_graphics_quality(GraphicsQuality::Basse), "la distance de détail passe à courte");
+        assert_eq!(ui.graphics_quality(), Some(GraphicsQuality::Basse));
+        assert!(!ui.shadow_settings.enabled && !ui.atmosphere_settings.god_rays && !ui.post_settings.bloom_enabled);
+        assert!(ui.apply_graphics_quality(GraphicsQuality::Moyenne));
+        assert!(ui.shadow_settings.enabled && !ui.shadow_settings.cloud_shadows && !ui.atmosphere_settings.god_rays);
+        // Un effet réglé à la main : réglages personnalisés
+        ui.atmosphere_settings.god_rays = true;
+        assert_eq!(ui.graphics_quality(), None);
     }
 
     #[test]
