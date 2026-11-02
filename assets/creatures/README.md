@@ -16,6 +16,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
   "walk_speed": 1.7,
   "min_group": 3,
   "max_group": 4,
+  "temperament": "indifferent",
   "spawn": [
     {"biome": "Forest", "weight": 0.6},
     {"biome": "Taiga", "weight": 0.6, "chance": 0.5}
@@ -33,6 +34,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 | `walk_speed` | Vitesse de promenade, en blocs par seconde. À 0, la créature ne bouge pas. |
 | `health` | Points de vie (10 par défaut). Un coup de joueur en retire 2,5 : la bête rougit, recule, puis s'enfuit ; à 0 elle bascule sur le flanc et disparaît. |
 | `min_group`, `max_group` | Taille d'un groupe qui apparaît ensemble (1 par défaut). |
+| `temperament` | Réaction au joueur le plus proche, tant qu'il ne l'a pas frappée : `craintif` (fuit quand il approche à moins de 8 blocs), `placide` (s'arrête et le regarde à moins de 6 blocs), `curieux` (le suit à moins de 16 blocs et s'arrête à 3 blocs de lui) ou `indifferent` (l'ignore, par défaut). |
 | `spawn` | Les biomes où l'espèce apparaît d'elle-même (voir ci-dessous). Sans ce champ, elle n'apparaît jamais seule : c'est le cas des créatures des profondeurs, des mondes démoniaques et des bois féeriques, qui attendent leur monde. |
 | `model` | Le modèle 3D (voir ci-dessous). |
 

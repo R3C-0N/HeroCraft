@@ -8,13 +8,16 @@
 //!
 //! Une créature se tourne peu à peu vers son nouveau cap, saute pour monter sur un bloc, et, frappée
 //! par un joueur, rougit, recule, puis s'enfuit ; sans vie, elle bascule sur le flanc et disparaît.
+//!
+//! Le tempérament de l'espèce règle sa réaction au joueur le plus proche : une bête craintive fuit
+//! dès qu'il approche, une placide s'arrête pour le regarder, une curieuse le suit à distance.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
-use herocraft_common::{tangent_frame, BlockId, CreatureRegistry, CreatureSpecies, CreatureState, PlanetFace, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, PLAYER_HIT_DAMAGE};
+use herocraft_common::{tangent_frame, BlockId, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, PLAYER_HIT_DAMAGE};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -51,6 +54,17 @@ const KNOCKBACK_DAMPING: f32 = 5.0;
 /// Fuite après un coup : durée, en secondes, et allure par rapport à la marche
 const PANIC_TIME: f32 = 4.0;
 const PANIC_SPEED: f32 = 1.8;
+/// Une bête craintive fuit un joueur plus près que ça, en blocs, pendant `FLEE_TIME` secondes avant
+/// de jeter un nouveau coup d'œil
+const FLEE_RADIUS_BLOCKS: f32 = 8.0;
+const FLEE_TIME: f32 = 1.5;
+/// Une bête placide regarde un joueur plus près que ça, en blocs
+const WATCH_RADIUS_BLOCKS: f32 = 6.0;
+/// Une bête curieuse suit un joueur plus près que `FOLLOW_RADIUS_BLOCKS` et s'arrête à
+/// `FOLLOW_STOP_BLOCKS` de lui ; elle repart quand il s'éloigne au-delà de `FOLLOW_RESUME_BLOCKS`
+const FOLLOW_RADIUS_BLOCKS: f32 = 16.0;
+const FOLLOW_STOP_BLOCKS: f32 = 3.0;
+const FOLLOW_RESUME_BLOCKS: f32 = 4.5;
 /// Une créature ne descend pas volontairement plus bas que ça, en blocs
 const MAX_DROP_BLOCKS: f32 = 3.0;
 /// Pas de simulation le plus long, en secondes
@@ -216,7 +230,8 @@ impl CreatureWorld {
         let mut walker = Walker { geometry: self.geometry, query: &mut query };
         for creature in &mut self.creatures {
             if let Some(species) = self.registry.get(creature.species) {
-                walker.step(creature, species, &mut self.rng, dt);
+                let nearest = players.iter().copied().min_by(|a, b| a.distance_squared(creature.position).total_cmp(&b.distance_squared(creature.position)));
+                walker.step(creature, species, nearest, &mut self.rng, dt);
             }
         }
 
@@ -345,7 +360,48 @@ impl Walker<'_, '_> {
         })
     }
 
-    fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, rng: &mut StdRng, dt: f32) {
+    /// Réaction de la créature au joueur le plus proche, dont les pieds sont `player`, selon son
+    /// tempérament. Renvoie vrai si elle s'en occupe, et laisse alors son humeur de côté.
+    fn react(&self, c: &mut Creature, temperament: Temperament, player: Vec3, rng: &mut StdRng) -> bool {
+        let up = c.position.normalize_or_zero();
+        let (east, north) = tangent_frame(up);
+        let towards = player - c.position;
+        let towards = towards - up * towards.dot(up);
+        let distance = towards.length() / self.block();
+        // Joueur juste au-dessus ou au-dessous d'elle : pas de direction où regarder ni fuir
+        if distance < 0.25 {
+            return false;
+        }
+        let yaw_to_player = towards.dot(east).atan2(towards.dot(north)).rem_euclid(TAU);
+        match temperament {
+            Temperament::Indifferent => false,
+            Temperament::Craintif if distance < FLEE_RADIUS_BLOCKS => {
+                // À l'opposé du joueur, un peu de travers pour ne pas filer toutes en ligne
+                c.panic = FLEE_TIME;
+                c.walking = true;
+                c.target_yaw = (yaw_to_player + PI + rng.gen_range(-0.4..0.4)).rem_euclid(TAU);
+                true
+            }
+            Temperament::Placide if distance < WATCH_RADIUS_BLOCKS => {
+                c.walking = false;
+                c.target_yaw = yaw_to_player;
+                // Une fois le joueur parti, elle reprend vite sa promenade
+                c.timer = c.timer.min(1.5);
+                true
+            }
+            Temperament::Curieux if distance < FOLLOW_RADIUS_BLOCKS => {
+                // Elle s'arrête près de lui, et ne repart que s'il s'éloigne franchement
+                let stop = if c.walking { FOLLOW_STOP_BLOCKS } else { FOLLOW_RESUME_BLOCKS };
+                c.walking = distance > stop;
+                c.target_yaw = yaw_to_player;
+                c.timer = c.timer.min(1.5);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, nearest_player: Option<Vec3>, rng: &mut StdRng, dt: f32) {
         let block = self.block();
         let base_radius = self.geometry.base_radius as f32;
         let radius_of = move |altitude: f32| base_radius + altitude * block;
@@ -360,6 +416,8 @@ impl Walker<'_, '_> {
                 c.walking = false;
                 c.timer = rng.gen_range(2.0..6.0);
             }
+        } else if nearest_player.is_some_and(|player| self.react(c, species.temperament, player, rng)) {
+            // Elle s'occupe du joueur
         } else {
             // Humeur : marcher un moment dans une direction, puis s'arrêter brouter
             c.timer -= dt;
@@ -689,5 +747,95 @@ mod tests {
             world.tick(0.05, &generator, &edits, &[feet]);
         }
         assert!(world.creatures().is_empty());
+    }
+
+    /// Distance dans le plan tangent entre deux pieds, en blocs
+    fn planar_blocks(geometry: &BlockGeometry, a: Vec3, b: Vec3) -> f32 {
+        let up = a.normalize();
+        let d = b - a;
+        (d - up * d.dot(up)).length() / geometry.block_height as f32
+    }
+
+    /// Une créature de l'espèce `id` posée sur l'herbe, et un joueur à `blocks` blocs à l'est d'elle
+    fn creature_and_player(id: &str, blocks: f32, seed: u64) -> (PlanetWorldGenerator, TerrainEdits, BlockGeometry, CreatureWorld, Vec3) {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), seed, registry());
+        let species = world.registry().find(id).unwrap();
+        world.spawn(species, feet);
+        let (east, _) = tangent_frame(feet.normalize());
+        let player = feet + east * blocks * geometry.block_height as f32;
+        (generator, edits, geometry, world, player)
+    }
+
+    #[test]
+    fn bundled_species_have_their_temperament() {
+        let registry = registry();
+        let temperament = |id: &str| registry.get(registry.find(id).unwrap()).unwrap().temperament;
+        for id in ["lapin", "cerf", "faisan"] {
+            assert_eq!(temperament(id), Temperament::Craintif, "{id}");
+        }
+        assert_eq!(temperament("vache"), Temperament::Placide);
+        assert_eq!(temperament("chien"), Temperament::Curieux);
+    }
+
+    #[test]
+    fn a_shy_creature_flees_an_approaching_player() {
+        let (generator, edits, geometry, mut world, player) = creature_and_player("lapin", 4.0, 13);
+        let start = planar_blocks(&geometry, world.creatures()[0].position, player);
+        let mut fled = false;
+        for _ in 0..40 {
+            world.tick(0.05, &generator, &edits, &[player]);
+            fled |= world.creatures()[0].walking && world.creatures()[0].panic > 0.0;
+        }
+        let end = planar_blocks(&geometry, world.creatures()[0].position, player);
+        assert!(fled, "le lapin n'a pas détalé");
+        assert!(end > start + 1.5, "le lapin ne s'est pas éloigné ({start} → {end} blocs)");
+    }
+
+    #[test]
+    fn a_placid_creature_stops_and_watches_the_player() {
+        let (generator, edits, geometry, mut world, player) = creature_and_player("vache", 4.0, 17);
+        let c = &mut world.creatures[0];
+        (c.yaw, c.target_yaw, c.walking, c.timer) = (PI, PI, true, 100.0);
+        for _ in 0..40 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        let c = &world.creatures()[0];
+        assert!(!c.walking, "la vache continue sa promenade");
+        let up = c.position.normalize();
+        let (east, north) = tangent_frame(up);
+        let d = player - c.position;
+        let towards = d.dot(east).atan2(d.dot(north));
+        assert!(angle_between(c.yaw, towards).abs() < 0.05, "la vache ne regarde pas le joueur");
+        assert!(planar_blocks(&geometry, c.position, player) > 3.0, "la vache est venue vers le joueur");
+    }
+
+    #[test]
+    fn a_curious_creature_follows_the_player_and_keeps_its_distance() {
+        let (generator, edits, geometry, mut world, player) = creature_and_player("chien", 10.0, 19);
+        let mut closest = f32::MAX;
+        for _ in 0..120 {
+            world.tick(0.05, &generator, &edits, &[player]);
+            closest = closest.min(planar_blocks(&geometry, world.creatures()[0].position, player));
+        }
+        let end = planar_blocks(&geometry, world.creatures()[0].position, player);
+        assert!(end < 6.0, "le chien n'a pas suivi le joueur ({end} blocs)");
+        assert!(closest > 2.0, "le chien colle le joueur ({closest} blocs)");
+        assert!(!world.creatures()[0].walking, "le chien ne s'arrête pas près du joueur");
+    }
+
+    #[test]
+    fn an_indifferent_creature_ignores_the_player() {
+        let (generator, edits, _, mut world, player) = creature_and_player("sanglier", 2.0, 23);
+        let c = &mut world.creatures[0];
+        (c.walking, c.timer) = (false, 100.0);
+        for _ in 0..20 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        let c = &world.creatures()[0];
+        assert!(!c.walking && c.panic == 0.0, "le sanglier réagit au joueur");
     }
 }

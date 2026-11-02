@@ -47,6 +47,9 @@ pub struct CreatureSpecies {
     /// Biomes où l'espèce apparaît (aucun : elle n'apparaît pas d'elle-même)
     #[serde(default)]
     pub spawn: Vec<SpawnRule>,
+    /// Réaction à l'approche d'un joueur (indifférente par défaut)
+    #[serde(default)]
+    pub temperament: Temperament,
     /// Modèle 3D
     pub model: CreatureModel,
 }
@@ -60,6 +63,22 @@ pub struct CreatureBody {
     /// Demi-longueur (de la tête à la queue)
     pub half_length: f32,
     pub height: f32,
+}
+
+/// Réaction d'une espèce à un joueur qui s'approche, tant qu'il ne l'a pas frappée (un coup la fait
+/// toujours fuir)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Temperament {
+    /// Ne prête pas attention aux joueurs
+    #[default]
+    Indifferent,
+    /// S'enfuit quand un joueur s'approche
+    Craintif,
+    /// S'arrête et regarde le joueur qui passe près d'elle
+    Placide,
+    /// Suit le joueur à distance, et le regarde une fois près de lui
+    Curieux,
 }
 
 /// Apparition dans un biome
@@ -252,6 +271,11 @@ mod tests {
         assert_eq!(cube.spawn[0].chance, 1.0);
         assert_eq!(cube.model.walk_animation, "repos");
         assert_eq!(cube.health, 10.0);
+        assert_eq!(cube.temperament, Temperament::Indifferent);
+        let shy = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "temperament": "craintif","#);
+        assert_eq!(CreatureSpecies::parse("cube", &shy).unwrap().temperament, Temperament::Craintif);
+        let unknown = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "temperament": "farouche","#);
+        assert!(CreatureSpecies::parse("cube", &unknown).unwrap_err().contains("farouche"));
 
         let typo = ok.replace("walk_speed", "walk_sped");
         assert!(CreatureSpecies::parse("cube", &typo).unwrap_err().contains("walk_sped"));

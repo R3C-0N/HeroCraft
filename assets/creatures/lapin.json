@@ -5,6 +5,7 @@
   "walk_speed": 1.1,
   "min_group": 1,
   "max_group": 2,
+  "temperament": "craintif",
   "spawn": [
     {"biome": "Plains", "weight": 1.2},
     {"biome": "Forest", "weight": 1.2}
