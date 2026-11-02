@@ -7,6 +7,7 @@ use crate::inventory::{can_hold, Inventory, ItemStack, HOTBAR_SLOTS, TOTAL_SLOTS
 use crate::item_icons::ItemIcons;
 use herocraft_common::{blocks, items, ItemId};
 use crate::player_stats::PlayerStats;
+use crate::ui_skin::{ButtonKind, SkinButton};
 
 /// Actions déclenchées par l'interface utilisateur
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -409,12 +410,12 @@ impl OptionsTab {
     }
 }
 
-// Palette obsidienne et or partagée par le HUD et le menu
-const GOLD: egui::Color32 = egui::Color32::from_rgb(212, 175, 55);
-const GOLD_BRIGHT: egui::Color32 = egui::Color32::from_rgb(240, 200, 60);
-const TEXT_DIM: egui::Color32 = egui::Color32::from_rgb(150, 165, 185);
-const TEXT_SOFT: egui::Color32 = egui::Color32::from_rgb(200, 210, 225);
-const DANGER: egui::Color32 = egui::Color32::from_rgb(245, 110, 110);
+// Palette bois, crème et or de l'ancien Terasology, partagée par le HUD et le menu
+const GOLD: egui::Color32 = egui::Color32::from_rgb(245, 197, 66);
+const GOLD_BRIGHT: egui::Color32 = egui::Color32::from_rgb(255, 224, 140);
+const TEXT_DIM: egui::Color32 = egui::Color32::from_rgb(180, 158, 124);
+const TEXT_SOFT: egui::Color32 = egui::Color32::from_rgb(242, 226, 192);
+const DANGER: egui::Color32 = egui::Color32::from_rgb(255, 128, 104);
 
 /// Marge minimale entre un panneau et le bord de l'écran (points logiques)
 const SCREEN_MARGIN: f32 = 16.0;
@@ -424,8 +425,6 @@ const GAUGE_WIDTH: f32 = 150.0;
 const HURT_FLASH_SECS: f32 = 0.9;
 /// Sous cette fraction de la vie, le bord de l'écran rougit et bat comme un cœur
 const LOW_HP_FRACTION: f32 = 0.3;
-/// Marge intérieure du cadre du menu de pause
-const MENU_PADDING: f32 = 18.0;
 /// En dessous de cette largeur, les onglets des options passent au-dessus du contenu
 const OPTIONS_SIDEBAR_MIN_WIDTH: f32 = 560.0;
 const OPTIONS_SIDEBAR_WIDTH: f32 = 150.0;
@@ -446,8 +445,6 @@ pub struct UiState {
     pub is_settings_open: bool,
     pub menu_page: MenuPage,
     pub options_tab: OptionsTab,
-    /// Le bouton Quitter attend une confirmation
-    pub confirm_quit: bool,
     pub video_settings: VideoSettings,
     pub lighting_settings: LightingSettings,
     pub cloud_settings: CloudSettings,
@@ -501,7 +498,6 @@ impl UiState {
             is_settings_open: false,
             menu_page: MenuPage::Main,
             options_tab: OptionsTab::Display,
-            confirm_quit: false,
             video_settings: VideoSettings::default(),
             lighting_settings: LightingSettings::default(),
             cloud_settings: CloudSettings::default(),
@@ -526,42 +522,67 @@ impl UiState {
         }
     }
 
-    /// Applique un thème personnalisé sombre fantasy/voxel aux teintes obsidienne et or
+    /// Applique le thème de l'ancien Terasology : textures de bois et de fer, polices Grenze et
+    /// Uncial Antiqua, texte crème. Les widgets egui sans texture (curseurs, listes déroulantes,
+    /// champs) reprennent les mêmes teintes de bois.
     pub fn apply_custom_theme(ctx: &egui::Context) {
+        use crate::ui_skin::{TEXT, WOOD, WOOD_DARK, WOOD_DEEP, WOOD_LIGHT, WOOD_MID};
+        crate::ui_skin::install(ctx);
+
         let mut visuals = egui::Visuals::dark();
+        let edge = egui::Color32::from_rgb(23, 13, 8);
 
-        visuals.window_rounding = egui::Rounding::same(8.0_f32);
-        visuals.window_fill = egui::Color32::from_rgba_premultiplied(14, 18, 28, 240);
-        visuals.window_stroke = egui::Stroke::new(1.5_f32, GOLD);
-        visuals.panel_fill = egui::Color32::from_rgba_premultiplied(10, 14, 22, 210);
+        visuals.window_rounding = egui::Rounding::ZERO;
+        visuals.menu_rounding = egui::Rounding::ZERO;
+        visuals.window_fill = egui::Color32::from_rgba_premultiplied(32, 18, 10, 245);
+        visuals.window_stroke = egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(92, 65, 45));
+        visuals.panel_fill = egui::Color32::from_rgba_premultiplied(32, 18, 10, 220);
+        visuals.window_shadow = egui::epaint::Shadow { offset: egui::vec2(3.0_f32, 4.0_f32), blur: 0.0_f32, spread: 0.0_f32, color: egui::Color32::from_black_alpha(110) };
+        visuals.popup_shadow = visuals.window_shadow;
+        // Champs de saisie : creux de bois sombre
+        visuals.extreme_bg_color = egui::Color32::from_rgb(23, 16, 12);
+        visuals.faint_bg_color = WOOD_DEEP;
+        visuals.text_cursor.stroke = egui::Stroke::new(2.0_f32, GOLD_BRIGHT);
 
-        // Boutons inactifs
-        visuals.widgets.inactive.bg_fill = egui::Color32::from_rgba_premultiplied(24, 32, 46, 220);
-        visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgba_premultiplied(24, 32, 46, 220);
-        visuals.widgets.inactive.rounding = egui::Rounding::same(5.0_f32);
-        visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(55, 70, 95));
-        visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(220, 225, 235));
+        // Texte et filets (séparateurs)
+        visuals.widgets.noninteractive.bg_fill = WOOD_DEEP;
+        visuals.widgets.noninteractive.weak_bg_fill = WOOD_DEEP;
+        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, TEXT_DIM.gamma_multiply(0.45_f32));
+        visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, TEXT);
+        visuals.widgets.noninteractive.rounding = egui::Rounding::ZERO;
 
-        // Boutons survolés
-        visuals.widgets.hovered.bg_fill = egui::Color32::from_rgba_premultiplied(42, 54, 78, 235);
-        visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgba_premultiplied(42, 54, 78, 235);
-        visuals.widgets.hovered.rounding = egui::Rounding::same(5.0_f32);
+        // Widgets au repos : bois, liseré sombre ; le rail des curseurs est un creux sombre
+        visuals.widgets.inactive.bg_fill = WOOD_DARK;
+        visuals.widgets.inactive.weak_bg_fill = WOOD;
+        visuals.widgets.inactive.rounding = egui::Rounding::ZERO;
+        visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, edge);
+        visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, TEXT);
+
+        // Survol : bois clair, liseré doré
+        visuals.widgets.hovered.bg_fill = WOOD_LIGHT;
+        visuals.widgets.hovered.weak_bg_fill = WOOD_LIGHT;
+        visuals.widgets.hovered.rounding = egui::Rounding::ZERO;
         visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.5_f32, GOLD);
-        visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
+        visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.5_f32, TEXT);
 
-        // Boutons cliqués / actifs
-        visuals.widgets.active.bg_fill = egui::Color32::from_rgba_premultiplied(65, 85, 125, 245);
-        visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgba_premultiplied(65, 85, 125, 245);
-        visuals.widgets.active.rounding = egui::Rounding::same(5.0_f32);
-        visuals.widgets.active.bg_stroke = egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(255, 215, 0));
-        visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
+        // Clic : bois enfoncé, texte doré
+        visuals.widgets.active.bg_fill = WOOD_LIGHT;
+        visuals.widgets.active.weak_bg_fill = WOOD_MID;
+        visuals.widgets.active.rounding = egui::Rounding::ZERO;
+        visuals.widgets.active.bg_stroke = egui::Stroke::new(2.0_f32, GOLD_BRIGHT);
+        visuals.widgets.active.fg_stroke = egui::Stroke::new(2.0_f32, GOLD_BRIGHT);
 
-        // Onglets et choix sélectionnés : fond or sombre, liseré or
-        visuals.selection.bg_fill = egui::Color32::from_rgb(92, 74, 24);
+        visuals.widgets.open.bg_fill = WOOD_MID;
+        visuals.widgets.open.weak_bg_fill = WOOD_MID;
+        visuals.widgets.open.rounding = egui::Rounding::ZERO;
+        visuals.widgets.open.bg_stroke = egui::Stroke::new(1.0_f32, GOLD);
+        visuals.widgets.open.fg_stroke = egui::Stroke::new(1.0_f32, TEXT);
+
+        // Choix sélectionnés et partie remplie des curseurs : or
+        visuals.selection.bg_fill = egui::Color32::from_rgb(150, 104, 28);
         visuals.selection.stroke = egui::Stroke::new(1.0_f32, GOLD_BRIGHT);
-
-        // Menu & fenêtres
-        visuals.override_text_color = Some(egui::Color32::from_rgb(235, 240, 248));
+        visuals.slider_trailing_fill = true;
+        visuals.handle_shape = egui::style::HandleShape::Rect { aspect_ratio: 0.6_f32 };
 
         let mut style = (*ctx.style()).clone();
         style.visuals = visuals;
@@ -631,7 +652,6 @@ impl UiState {
 
     pub fn set_settings_open(&mut self, is_open: bool) {
         self.is_settings_open = is_open;
-        self.confirm_quit = false;
         self.rebinding = None;
         if is_open {
             self.menu_page = MenuPage::Main;
@@ -670,8 +690,6 @@ impl UiState {
             self.set_settings_open(true);
         } else if self.rebinding.is_some() {
             self.rebinding = None;
-        } else if self.confirm_quit {
-            self.confirm_quit = false;
         } else if self.menu_page != MenuPage::Main {
             self.menu_page = MenuPage::Main;
         } else {
@@ -890,7 +908,7 @@ impl UiState {
                     let (rect, _) = ui.allocate_exact_size(galley.size() + egui::vec2(16.0_f32, 4.0_f32), egui::Sense::hover());
                     ui.painter().rect_filled(rect, 4.0_f32, egui::Color32::from_black_alpha(150));
                     ui.painter().galley(rect.min + egui::vec2(8.0_f32, 2.0_f32), galley, TEXT_SOFT);
-                    hud_frame().inner_margin(egui::Margin::same(4.0_f32)).show(ui, |ui| {
+                    hud_frame(egui::Margin::same(6.0_f32)).show(ui, |ui| {
                         ui.spacing_mut().item_spacing = egui::vec2(3.0_f32, 0.0_f32);
                         ui.horizontal(|ui| {
                             for i in 0..HOTBAR_SLOTS {
@@ -923,14 +941,10 @@ impl UiState {
             .order(egui::Order::Middle)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
-                egui::Frame::none()
-                    .fill(egui::Color32::from_rgba_premultiplied(14, 18, 28, 245))
-                    .stroke(egui::Stroke::new(1.5_f32, GOLD))
-                    .rounding(egui::Rounding::same(10.0_f32))
-                    .inner_margin(egui::Margin::same(MENU_PADDING))
+                crate::ui_skin::SkinFrame::panel()
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("INVENTAIRE").strong().size(16.0_f32).color(GOLD_BRIGHT));
+                            ui.label(egui::RichText::new("Inventaire").font(crate::ui_skin::title_font(20.0_f32)).color(GOLD_BRIGHT));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 ui.label(egui::RichText::new(format!("[{}] ou [Échap] pour fermer", open_key)).size(11.0_f32).color(TEXT_DIM));
                             });
@@ -1019,14 +1033,12 @@ impl UiState {
             .show(ctx, |ui| {
                 ui.set_opacity(fade);
                 ui.vertical_centered(|ui| {
-                    ui.label(egui::RichText::new("Vous êtes mort").size(42.0_f32).strong().color(DANGER));
+                    ui.label(egui::RichText::new("Vous êtes mort").font(crate::ui_skin::title_font(44.0_f32)).color(DANGER));
                     ui.add_space(4.0_f32);
                     ui.label(egui::RichText::new(&death.cause).size(16.0_f32).color(TEXT_SOFT));
                     ui.add_space(24.0_f32);
                     let label = if wait > 0.0_f32 { format!("Réapparaître ({:.0})", wait.ceil()) } else { "Réapparaître".to_string() };
-                    let button = egui::Button::new(egui::RichText::new(label).size(17.0_f32).strong().color(GOLD_BRIGHT))
-                        .min_size(egui::vec2(220.0_f32, 42.0_f32))
-                        .stroke(egui::Stroke::new(1.5_f32, GOLD));
+                    let button = SkinButton::new(egui::RichText::new(label).size(18.0_f32)).min_size(egui::vec2(220.0_f32, 48.0_f32));
                     if ui.add_enabled(wait <= 0.0_f32, button).clicked() {
                         *action = Some(UiAction::Respawn);
                     }
@@ -1067,7 +1079,7 @@ impl UiState {
             .fixed_pos(egui::pos2(SCREEN_MARGIN, screen.bottom() - SCREEN_MARGIN))
             .interactable(false)
             .show(ctx, |ui| {
-                hud_frame().inner_margin(egui::Margin::symmetric(10.0_f32, 6.0_f32)).show(ui, |ui| {
+                hud_frame(egui::Margin::symmetric(12.0_f32, 8.0_f32)).show(ui, |ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(8.0_f32, 4.0_f32);
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(stats.class.label()).strong().color(GOLD_BRIGHT));
@@ -1107,7 +1119,7 @@ impl UiState {
             .fixed_pos(egui::pos2(screen.right() - SCREEN_MARGIN, SCREEN_MARGIN))
             .interactable(false)
             .show(ctx, |ui| {
-                hud_frame().inner_margin(egui::Margin::symmetric(10.0_f32, 6.0_f32)).show(ui, |ui| {
+                hud_frame(egui::Margin::symmetric(12.0_f32, 8.0_f32)).show(ui, |ui| {
                     let fps_color = if self.current_fps >= 55 {
                         egui::Color32::from_rgb(80, 220, 100)
                     } else if self.current_fps >= 30 {
@@ -1128,16 +1140,27 @@ impl UiState {
     fn draw_pause_menu(&mut self, ctx: &egui::Context, action: &mut Option<UiAction>) {
         let screen = ctx.screen_rect();
         let page = self.menu_page;
-        let target_width = match page {
-            MenuPage::Main => 340.0_f32,
-            MenuPage::Options => 680.0_f32,
-            MenuPage::Controls => 540.0_f32,
-            MenuPage::Multiplayer => 520.0_f32,
+        // Largeur du contenu ; le panneau de planches y ajoute ses bords
+        let content_width = match page {
+            MenuPage::Main => 304.0_f32,
+            MenuPage::Options => 644.0_f32,
+            MenuPage::Controls => 504.0_f32,
+            MenuPage::Multiplayer => 484.0_f32,
         };
-        let width = target_width.min(screen.width() - 2.0_f32 * SCREEN_MARGIN).max(200.0_f32);
-        let max_height = (screen.height() - 2.0_f32 * SCREEN_MARGIN).max(160.0_f32);
-        let inner_width = width - 2.0_f32 * MENU_PADDING;
-        let inner_max_height = max_height - 2.0_f32 * MENU_PADDING;
+        // Sur une petite fenêtre, le cadre de planches rétrécit pour laisser la place au contenu
+        let panel_scale = if screen.height() < 400.0_f32 || screen.width() < 400.0_f32 {
+            1.0_f32 / 3.0_f32
+        } else if screen.height() < 480.0_f32 || screen.width() < 560.0_f32 {
+            2.0_f32 / 3.0_f32
+        } else {
+            1.0_f32
+        };
+        let margin = crate::ui_skin::panel_margin(panel_scale);
+        let target_width = content_width + margin.left + margin.right;
+        let width = target_width.min(screen.width() - 2.0_f32 * SCREEN_MARGIN).max(240.0_f32);
+        let max_height = (screen.height() - 2.0_f32 * SCREEN_MARGIN).max(200.0_f32);
+        let inner_width = width - margin.left - margin.right;
+        let inner_max_height = max_height - margin.top - margin.bottom;
         // Hauteur du pied de page mesurée à la frame précédente, pour réserver sa place
         let footer_id = egui::Id::new(("pause_menu_footer", page));
         let footer_height = ctx.data(|d| d.get_temp::<f32>(footer_id)).unwrap_or(48.0_f32);
@@ -1146,17 +1169,7 @@ impl UiState {
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
-                egui::Frame::none()
-                    .fill(egui::Color32::from_rgba_premultiplied(14, 18, 28, 250))
-                    .stroke(egui::Stroke::new(1.5_f32, GOLD))
-                    .rounding(egui::Rounding::same(10.0_f32))
-                    .inner_margin(egui::Margin::same(MENU_PADDING))
-                    .shadow(egui::epaint::Shadow {
-                        offset: egui::vec2(0.0_f32, 10.0_f32),
-                        blur: 30.0_f32,
-                        spread: 0.0_f32,
-                        color: egui::Color32::from_black_alpha(140),
-                    })
+                crate::ui_skin::SkinFrame::panel_scaled(panel_scale)
                     .show(ui, |ui| {
                         ui.set_width(inner_width);
                         ui.set_max_width(inner_width);
@@ -1187,11 +1200,11 @@ impl UiState {
         match self.menu_page {
             MenuPage::Main => {
                 ui.vertical_centered(|ui| {
-                    ui.label(egui::RichText::new("HEROCRAFT").size(26.0_f32).strong().color(GOLD_BRIGHT));
-                    ui.add_space(-6.0_f32);
-                    ui.label(egui::RichText::new("— PAUSE —").size(11.0_f32).color(TEXT_DIM));
+                    crate::ui_skin::plaque_title(ui, "HEROCRAFT", 28.0_f32);
+                    ui.add_space(-4.0_f32);
+                    ui.label(egui::RichText::new("— PAUSE —").size(12.0_f32).color(TEXT_DIM));
                 });
-                ui.add_space(4.0_f32);
+                ui.add_space(2.0_f32);
                 ornament(ui, inner_width);
             }
             page => {
@@ -1201,12 +1214,12 @@ impl UiState {
                     _ => "⌨  Commandes",
                 };
                 ui.horizontal(|ui| {
-                    if ui.button("⬅ Retour").on_hover_text("Revenir au menu (Échap)").clicked() {
+                    if ui.add(SkinButton::new("⬅ Retour").kind(ButtonKind::Secondary).small()).on_hover_text("Revenir au menu (Échap)").clicked() {
                         self.menu_page = MenuPage::Main;
                     }
                     ui.add_space(4.0_f32);
                     ui.label(egui::RichText::new("Pause  ›").size(13.0_f32).color(TEXT_DIM));
-                    ui.label(egui::RichText::new(title).size(17.0_f32).strong().color(GOLD_BRIGHT));
+                    ui.label(egui::RichText::new(title).font(crate::ui_skin::title_font(19.0_f32)).color(GOLD_BRIGHT));
                 });
                 ornament(ui, inner_width);
             }
@@ -1220,7 +1233,8 @@ impl UiState {
             .max_height(body_height)
             .auto_shrink([false, true])
             .show(ui, |ui| {
-                let size = egui::vec2(ui.available_width(), 40.0_f32);
+                let size = egui::vec2(ui.available_width(), 48.0_f32);
+                ui.spacing_mut().item_spacing.y = 4.0_f32;
 
                 if menu_entry(ui, size, "▶   Reprendre la partie", None).clicked() {
                     self.set_settings_open(false);
@@ -1240,27 +1254,12 @@ impl UiState {
                 ui.separator();
                 ui.add_space(2.0_f32);
 
-                if self.confirm_quit {
-                    ui.vertical_centered(|ui| {
-                        ui.label(egui::RichText::new("Sauvegarder le monde et quitter ?").color(TEXT_SOFT));
-                    });
-                    ui.columns(2, |cols| {
-                        let half = egui::vec2(cols[0].available_width(), 36.0_f32);
-                        if cols[0]
-                            .add(egui::Button::new(egui::RichText::new("🚪  Quitter").strong().color(DANGER)).min_size(half))
-                            .clicked()
-                        {
-                            *action = Some(UiAction::QuitGame);
-                        }
-                        if cols[1].add(egui::Button::new("Annuler").min_size(half)).clicked() {
-                            self.confirm_quit = false;
-                        }
-                    });
-                } else if ui
-                    .add(egui::Button::new(egui::RichText::new("🚪   Quitter le jeu").size(15.0_f32).color(DANGER)).min_size(size))
+                // Quitter enregistre le monde et ferme le jeu, sans confirmation
+                if ui
+                    .add(SkinButton::new(egui::RichText::new("🚪   Quitter le jeu").size(16.0_f32)).kind(ButtonKind::MenuDanger).min_size(size))
                     .clicked()
                 {
-                    self.confirm_quit = true;
+                    *action = Some(UiAction::QuitGame);
                 }
             });
     }
@@ -1274,7 +1273,7 @@ impl UiState {
             .auto_shrink([false, true])
             .show(ui, |ui| {
                 let mp = &mut self.multiplayer;
-                let size = egui::vec2(ui.available_width(), 36.0_f32);
+                let size = egui::vec2(ui.available_width(), 48.0_f32);
 
                 // État de la partie
                 let (status, color) = match &mp.status {
@@ -1308,7 +1307,7 @@ impl UiState {
                         ui.add_space(4.0_f32);
                         let can_play = !mp.pseudo.trim().is_empty();
                         let open = ui
-                            .add_enabled(can_play, egui::Button::new(egui::RichText::new("🌍   Ouvrir au réseau local").size(15.0_f32)).min_size(size))
+                            .add_enabled(can_play, SkinButton::new(egui::RichText::new("🌍   Ouvrir au réseau local").size(16.0_f32)).kind(ButtonKind::Menu).min_size(size))
                             .on_hover_text("Lance un serveur sur ce monde : les joueurs du réseau local peuvent vous rejoindre");
                         if open.clicked() {
                             *action = Some(UiAction::OpenToLan);
@@ -1332,7 +1331,7 @@ impl UiState {
                                     ui.label(egui::RichText::new(format!("{}  ·  {players}", server.addr)).monospace().size(11.0_f32).color(TEXT_DIM));
                                 });
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.add_enabled(can_play, egui::Button::new("▶ Rejoindre")).clicked() {
+                                    if ui.add_enabled(can_play, SkinButton::new("▶ Rejoindre").small()).clicked() {
                                         mp.join_target = server.addr.clone();
                                         *action = Some(UiAction::JoinServer);
                                     }
@@ -1351,7 +1350,7 @@ impl UiState {
                             );
                             let submit = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                             let can_join = can_play && !mp.address.trim().is_empty();
-                            if (ui.add_enabled(can_join, egui::Button::new("▶ Se connecter")).clicked() || submit) && can_join {
+                            if (ui.add_enabled(can_join, SkinButton::new("▶ Se connecter").small()).clicked() || submit) && can_join {
                                 mp.join_target = mp.address.trim().to_string();
                                 *action = Some(UiAction::JoinServer);
                             }
@@ -1365,7 +1364,7 @@ impl UiState {
                             "🚪   Se déconnecter"
                         };
                         let leave = ui
-                            .add(egui::Button::new(egui::RichText::new(label).size(15.0_f32).color(DANGER)).min_size(size))
+                            .add(SkinButton::new(egui::RichText::new(label).size(16.0_f32)).kind(ButtonKind::MenuDanger).min_size(size))
                             .on_hover_text("Revient à la partie solo");
                         if leave.clicked() {
                             *action = Some(UiAction::LeaveServer);
@@ -1390,12 +1389,14 @@ impl UiState {
                             .max_height(body_height)
                             .auto_shrink([false, true])
                             .show(ui, |ui| {
-                                ui.spacing_mut().item_spacing.y = 4.0_f32;
+                                ui.spacing_mut().item_spacing.y = 2.0_f32;
                                 for tab in OptionsTab::ALL {
-                                    let text = egui::RichText::new(format!("{}  {}", tab.icon(), tab.label())).size(14.0_f32);
-                                    let response = ui.add_sized(
-                                        egui::vec2(ui.available_width(), 32.0_f32),
-                                        egui::SelectableLabel::new(self.options_tab == tab, text),
+                                    let text = egui::RichText::new(format!("{}  {}", tab.icon(), tab.label())).size(15.0_f32);
+                                    let response = ui.add(
+                                        SkinButton::new(text)
+                                            .kind(ButtonKind::ListItem)
+                                            .selected(self.options_tab == tab)
+                                            .min_size(egui::vec2(ui.available_width(), 34.0_f32)),
                                     );
                                     if response.on_hover_text(tab.subtitle()).clicked() {
                                         self.options_tab = tab;
@@ -1422,7 +1423,7 @@ impl UiState {
                 for tab in OptionsTab::ALL {
                     let selected = self.options_tab == tab;
                     let text = if selected { format!("{} {}", tab.icon(), tab.label()) } else { tab.icon().to_string() };
-                    if ui.selectable_label(selected, text).on_hover_text(tab.label()).clicked() {
+                    if ui.add(SkinButton::new(text).kind(ButtonKind::Secondary).selected(selected).small()).on_hover_text(tab.label()).clicked() {
                         self.options_tab = tab;
                     }
                 }
@@ -1437,7 +1438,7 @@ impl UiState {
     fn draw_options_content(&mut self, ui: &mut egui::Ui, width: f32, height: f32, action: &mut Option<UiAction>) {
         let tab = self.options_tab;
         let top = ui.cursor().top();
-        ui.label(egui::RichText::new(format!("{}  {}", tab.icon(), tab.label())).size(16.0_f32).strong().color(GOLD_BRIGHT));
+        ui.label(egui::RichText::new(format!("{}  {}", tab.icon(), tab.label())).font(crate::ui_skin::title_font(18.0_f32)).color(GOLD_BRIGHT));
         ui.add_space(-6.0_f32);
         ui.label(egui::RichText::new(tab.subtitle()).size(11.0_f32).color(TEXT_DIM));
         ui.add_space(2.0_f32);
@@ -1472,7 +1473,7 @@ impl UiState {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0_f32;
                 for q in GraphicsQuality::ALL {
-                    if ui.selectable_label(quality == Some(q), q.label()).clicked() && quality != Some(q) {
+                    if ui.add(SkinButton::new(q.label()).kind(ButtonKind::Secondary).selected(quality == Some(q)).small()).clicked() && quality != Some(q) {
                         chosen = Some(q);
                     }
                 }
@@ -1675,7 +1676,7 @@ impl UiState {
                 }
                 MenuPage::Options => {
                     if ui
-                        .small_button("↺ Tout le rendu par défaut")
+                        .add(SkinButton::new("↺ Tout le rendu par défaut").kind(ButtonKind::Secondary).small())
                         .on_hover_text("Éclairage, nuages, HDR, ombres et atmosphère (l'affichage est conservé)")
                         .clicked()
                     {
@@ -1690,7 +1691,7 @@ impl UiState {
                     ui.label(egui::RichText::new(format!("Monde #{}", self.current_seed)).monospace().size(11.0_f32).color(TEXT_DIM));
                 }
                 MenuPage::Controls => {
-                    if ui.small_button("▶ Reprendre").clicked() {
+                    if ui.add(SkinButton::new("▶ Reprendre").small()).clicked() {
                         self.set_settings_open(false);
                         *action = Some(UiAction::ResumeGame);
                     }
@@ -1724,14 +1725,13 @@ const INVENTORY_SLOT_SIZE: f32 = 44.0;
 
 /// Case d'inventaire : fond, liseré (or si choisie) et pile éventuelle
 fn paint_slot(painter: &egui::Painter, icons: &ItemIcons, rect: egui::Rect, stack: Option<ItemStack>, selected: bool, hovered: bool) {
-    let fill = if hovered { egui::Color32::from_rgb(42, 54, 78) } else { egui::Color32::from_rgba_premultiplied(22, 28, 40, 230) };
-    painter.rect_filled(rect, 4.0_f32, fill);
-    let stroke = if selected {
-        egui::Stroke::new(2.0_f32, GOLD_BRIGHT)
-    } else {
-        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(55, 70, 95))
-    };
-    painter.rect_stroke(rect, 4.0_f32, stroke);
+    let skin = crate::ui_skin::skin(painter.ctx());
+    let slice = if selected { crate::ui_skin::SLOT.with_tex(crate::ui_skin::Tex::SlotSelected) } else { crate::ui_skin::SLOT };
+    // Coins de fer à l'échelle du dessin (trois pixels de texture pour un du dessin, ramenés à deux)
+    crate::ui_skin::paint_slice(painter, &skin, slice, rect, 2.0_f32 / 3.0_f32, egui::Color32::WHITE);
+    if hovered {
+        painter.rect_filled(rect.shrink(4.0_f32), 0.0_f32, egui::Color32::from_white_alpha(22));
+    }
     if let Some(stack) = stack {
         paint_stack(painter, icons, rect, stack);
     }
@@ -1883,14 +1883,16 @@ impl Catalog {
 fn gauge(ui: &mut egui::Ui, width: f32, height: f32, fraction: f32, color: egui::Color32, text: Option<&str>) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let painter = ui.painter();
-    let rounding = egui::Rounding::same(3.0_f32);
-    painter.rect_filled(rect, rounding, egui::Color32::from_rgba_premultiplied(0, 0, 0, 160));
+    let rounding = egui::Rounding::ZERO;
+    painter.rect_filled(rect, rounding, egui::Color32::from_rgba_premultiplied(23, 13, 8, 210));
     let fraction = if fraction.is_finite() { fraction.clamp(0.0_f32, 1.0_f32) } else { 0.0_f32 };
     if fraction > 0.0_f32 {
         let filled = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width() * fraction, rect.height()));
         painter.rect_filled(filled, rounding, color);
     }
-    painter.rect_stroke(rect, rounding, egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(40)));
+    // Liseré de bois clair puis bord sombre, comme les cadres de l'ancien HUD
+    painter.rect_stroke(rect, rounding, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(92, 65, 45)));
+    painter.rect_stroke(rect.expand(1.0_f32), rounding, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(23, 13, 8)));
     if let Some(text) = text {
         let font = egui::FontId::proportional(11.5_f32);
         painter.text(rect.center() + egui::vec2(1.0_f32, 1.0_f32), egui::Align2::CENTER_CENTER, text, font.clone(), egui::Color32::from_black_alpha(200));
@@ -1925,12 +1927,9 @@ fn red_vignette(screen: egui::Rect, alpha: u8) -> egui::Shape {
     egui::Shape::mesh(mesh)
 }
 
-/// Cadre commun des panneaux du HUD
-fn hud_frame() -> egui::Frame {
-    egui::Frame::none()
-        .fill(egui::Color32::from_rgba_premultiplied(12, 16, 24, 215))
-        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(180, 140, 45)))
-        .rounding(egui::Rounding::same(6.0_f32))
+/// Cadre commun des panneaux du HUD : bois sombre à liseré, comme les bulles de l'ancien jeu
+fn hud_frame(margin: egui::Margin) -> crate::ui_skin::SkinFrame {
+    crate::ui_skin::SkinFrame::area(margin)
 }
 
 /// Petit intitulé de section en capitales
@@ -1938,26 +1937,14 @@ fn caption(ui: &mut egui::Ui, text: &str) {
     ui.label(egui::RichText::new(text).size(10.5_f32).strong().color(TEXT_DIM));
 }
 
-/// Filet doré orné d'un losange central, sous les titres du menu
+/// Filet de fer à pierre bleue, sous les titres du menu
 fn ornament(ui: &mut egui::Ui, width: f32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 10.0_f32), egui::Sense::hover());
-    let painter = ui.painter();
-    let y = rect.center().y;
-    let c = rect.center().x;
-    let line = egui::Stroke::new(1.0_f32, GOLD.gamma_multiply(0.6_f32));
-    painter.line_segment([egui::pos2(rect.left(), y), egui::pos2(c - 8.0_f32, y)], line);
-    painter.line_segment([egui::pos2(c + 8.0_f32, y), egui::pos2(rect.right(), y)], line);
-    let d = 4.0_f32;
-    painter.add(egui::Shape::convex_polygon(
-        vec![egui::pos2(c, y - d), egui::pos2(c + d, y), egui::pos2(c, y + d), egui::pos2(c - d, y)],
-        GOLD_BRIGHT,
-        egui::Stroke::NONE,
-    ));
+    crate::ui_skin::ornament(ui, width);
 }
 
 /// Grande entrée du menu d'accueil, avec une ligne d'explication au survol
 fn menu_entry(ui: &mut egui::Ui, size: egui::Vec2, text: &str, hint: Option<&str>) -> egui::Response {
-    let button = egui::Button::new(egui::RichText::new(text).size(15.0_f32)).min_size(size);
+    let button = SkinButton::new(egui::RichText::new(text).size(16.0_f32)).kind(ButtonKind::Menu).min_size(size);
     let response = ui.add(button);
     match hint {
         Some(hint) => response.on_hover_text(hint),
@@ -1967,14 +1954,9 @@ fn menu_entry(ui: &mut egui::Ui, size: egui::Vec2, text: &str, hint: Option<&str
 
 /// Touche dessinée comme un capuchon de clavier
 fn keycap(ui: &mut egui::Ui, key: &str) {
-    egui::Frame::none()
-        .fill(egui::Color32::from_rgb(30, 38, 54))
-        .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(90, 105, 130)))
-        .rounding(egui::Rounding::same(4.0_f32))
-        .inner_margin(egui::Margin::symmetric(6.0_f32, 1.0_f32))
-        .show(ui, |ui| {
-            ui.label(egui::RichText::new(key).monospace().size(11.5_f32).strong().color(egui::Color32::from_rgb(225, 230, 240)));
-        });
+    crate::ui_skin::SkinFrame::new(crate::ui_skin::BOX, 0.5_f32, egui::Margin::symmetric(9.0_f32, 5.0_f32)).show(ui, |ui| {
+        ui.label(egui::RichText::new(key).monospace().size(11.5_f32).color(crate::ui_skin::TEXT));
+    });
 }
 
 /// Grille à deux colonnes (libellé, réglage) commune aux onglets d'options
@@ -2021,7 +2003,7 @@ fn choice_row<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, choices: &[
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0_f32;
         for (choice, label) in choices {
-            if ui.selectable_label(*value == *choice, *label).clicked() && *value != *choice {
+            if ui.add(SkinButton::new(*label).kind(ButtonKind::Secondary).selected(*value == *choice).small()).clicked() && *value != *choice {
                 *value = *choice;
                 changed = true;
             }
@@ -2030,56 +2012,33 @@ fn choice_row<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, choices: &[
     changed
 }
 
-/// Interrupteur animé or/obsidienne
+/// Case à cocher de l'ancien thème (coche dorée sur bois sombre)
 fn toggle_switch(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
-    let size = egui::vec2(40.0_f32, 20.0_f32);
+    let size = egui::vec2(24.0_f32, 24.0_f32);
     let (rect, mut response) = ui.allocate_exact_size(size, egui::Sense::click());
     if response.clicked() {
         *on = !*on;
         response.mark_changed();
     }
     if ui.is_rect_visible(rect) {
-        let t = ui.ctx().animate_bool(response.id, *on);
-        let off_fill = egui::Color32::from_rgb(36, 44, 60);
-        let on_fill = egui::Color32::from_rgb(150, 118, 30);
-        let mut fill = lerp_color(off_fill, on_fill, t);
-        let mut knob = lerp_color(egui::Color32::from_rgb(150, 160, 178), GOLD_BRIGHT, t);
-        if !ui.is_enabled() {
-            fill = fill.gamma_multiply(0.5_f32);
-            knob = knob.gamma_multiply(0.5_f32);
-        }
-        let stroke_color = if response.hovered() { GOLD } else { egui::Color32::from_rgb(70, 85, 110) };
-        let radius = 0.5_f32 * rect.height();
-        ui.painter().rect(rect, radius, fill, egui::Stroke::new(1.0_f32, stroke_color));
-        let x = egui::lerp((rect.left() + radius)..=(rect.right() - radius), t);
-        ui.painter().circle_filled(egui::pos2(x, rect.center().y), radius - 3.0_f32, knob);
+        crate::ui_skin::paint_checkbox(ui, rect, *on, response.hovered());
     }
     response
-}
-
-fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
-    let mix = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
-    egui::Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
 }
 
 /// Bouton discret de remise à zéro en bas d'un onglet ; renvoie vrai au clic
 fn reset_button(ui: &mut egui::Ui, text: &str) -> bool {
     ui.add_space(8.0_f32);
-    ui.small_button(egui::RichText::new(format!("↺  {}", text)).color(TEXT_DIM)).clicked()
+    ui.add(SkinButton::new(format!("↺  {}", text)).kind(ButtonKind::Secondary).small()).clicked()
 }
 
 /// Bouton en forme de capuchon de clavier, doré quand il attend une touche
 fn keycap_button(ui: &mut egui::Ui, text: &str, listening: bool) -> egui::Response {
-    let (fill, stroke, color) = if listening {
-        (egui::Color32::from_rgb(70, 56, 18), GOLD_BRIGHT, GOLD_BRIGHT)
-    } else {
-        (egui::Color32::from_rgb(30, 38, 54), egui::Color32::from_rgb(90, 105, 130), egui::Color32::from_rgb(225, 230, 240))
-    };
     ui.add(
-        egui::Button::new(egui::RichText::new(text).monospace().size(11.5_f32).strong().color(color))
-            .fill(fill)
-            .stroke(egui::Stroke::new(1.0_f32, stroke))
-            .rounding(egui::Rounding::same(4.0_f32))
+        SkinButton::new(egui::RichText::new(text).monospace().size(11.5_f32))
+            .kind(ButtonKind::Secondary)
+            .selected(listening)
+            .small()
             .min_size(egui::vec2(96.0_f32, 0.0_f32)),
     )
 }
@@ -2284,21 +2243,14 @@ mod tests {
         assert!(ui.handle_escape());
         assert_eq!(ui.menu_page, MenuPage::Main);
 
-        // Une confirmation de sortie en cours est annulée d'abord
-        ui.confirm_quit = true;
-        assert!(ui.handle_escape());
-        assert!(!ui.confirm_quit);
-
         // Depuis l'accueil, Échap referme
         assert!(!ui.handle_escape());
 
-        // Le menu se rouvre toujours sur l'accueil, sans confirmation en attente
+        // Le menu se rouvre toujours sur l'accueil
         ui.open_menu_at(MenuPage::Controls);
-        ui.confirm_quit = true;
         ui.set_settings_open(false);
         assert!(ui.handle_escape());
         assert_eq!(ui.menu_page, MenuPage::Main);
-        assert!(!ui.confirm_quit);
     }
 
     #[test]
@@ -2527,4 +2479,59 @@ mod tests {
         assert_eq!(clouds.density, 1.0);
         assert_eq!(clouds.roundness, 0.45);
     }
+
+    /// Captures des menus en PNG, rendues sur le processeur :
+    /// `HEROCRAFT_CAPTURES=dossier [HEROCRAFT_CAPTURES_FOND=image.png] cargo test -p herocraft_client snapshot_menus -- --ignored`
+    #[test]
+    #[ignore]
+    fn snapshot_menus() {
+        let Ok(dir) = std::env::var("HEROCRAFT_CAPTURES") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        let background = std::env::var("HEROCRAFT_CAPTURES_FOND").ok().map(std::path::PathBuf::from);
+        // Taille de la fenêtre, « 1280x720 » par défaut
+        let (width, height) = std::env::var("HEROCRAFT_CAPTURES_TAILLE")
+            .ok()
+            .and_then(|t| t.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
+            .unwrap_or((1280_usize, 720_usize));
+
+        let scenes: [(&str, fn(&mut UiState), bool, Option<egui::Pos2>); 7] = [
+            ("menu", |ui| ui.open_menu_at(MenuPage::Main), true, None),
+            ("menu_survol", |ui| ui.open_menu_at(MenuPage::Main), true, Some(egui::pos2(640.0, 372.0))),
+            ("options", |ui| ui.open_menu_at(MenuPage::Options), true, None),
+            ("options_ombres", |ui| {
+                ui.open_menu_at(MenuPage::Options);
+                ui.options_tab = OptionsTab::Shadows;
+            }, true, None),
+            ("commandes", |ui| ui.open_menu_at(MenuPage::Controls), true, None),
+            ("multijoueur", |ui| ui.open_menu_at(MenuPage::Multiplayer), true, None),
+            ("inventaire", |ui| ui.set_inventory_open(true), true, None),
+        ];
+        let mut all: Vec<(&str, fn(&mut UiState), bool, Option<egui::Pos2>)> = scenes.to_vec();
+        all.push(("hud", |_| {}, true, None));
+
+        for (name, setup, ground, pointer) in all {
+            let mut ui = UiState::new(424242);
+            ui.set_screen_size(width as f32, height as f32);
+            setup(&mut ui);
+            let mut snapshot = crate::ui_snapshot::Snapshot::new(width, height);
+            snapshot.set_background(background.as_deref());
+            let mut last = None;
+            // Plusieurs images : mesure des pieds de page, fondus et survols
+            for _ in 0..12 {
+                if let Some(pos) = pointer {
+                    ui.raw_input.events.push(egui::Event::PointerMoved(pos));
+                }
+                ui.raw_input.time = Some(ui.raw_input.time.unwrap_or(0.0) + 0.5);
+                ui.raw_input.predicted_dt = 0.5;
+                let (output, _) = ui.update_ui(ground);
+                snapshot.apply_textures(&output.textures_delta);
+                last = Some(output);
+            }
+            let output = last.unwrap();
+            let primitives = ui.ctx.tessellate(output.shapes, output.pixels_per_point);
+            snapshot.paint(&primitives, output.pixels_per_point);
+            snapshot.save(&dir.join(format!("{name}.png")));
+        }
+    }
+
 }

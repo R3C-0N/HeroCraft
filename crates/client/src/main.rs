@@ -41,6 +41,9 @@ mod shaders;
 mod shadow;
 mod skinned_model;
 mod ui;
+mod ui_skin;
+#[cfg(test)]
+mod ui_snapshot;
 mod voxel_mesh;
 
 use block_interaction::BlockInteraction;
