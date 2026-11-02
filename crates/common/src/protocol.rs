@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 7;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -52,6 +52,17 @@ pub enum ClientPacket {
     },
     /// Envoi d'un message dans le chat
     ChatMessage(String),
+    /// Commande `/summon` : `count` créatures de l'espèce `species` (nom de son fichier) aux pieds
+    /// `feet`, près du joueur
+    Summon {
+        species: String,
+        count: u32,
+        feet: Vec3,
+    },
+    /// Commande `/heal` : jauges pleines
+    Heal,
+    /// Commande `/xp` : points d'expérience gagnés
+    GainExperience(u64),
     /// Le joueur quitte la partie
     Disconnect,
 }

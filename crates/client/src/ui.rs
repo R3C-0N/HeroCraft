@@ -477,6 +477,8 @@ pub struct UiState {
     pub inventory_open: bool,
     /// Jauges, classe et niveau du joueur
     pub player: PlayerStats,
+    /// Chat et commandes (touche Entrée)
+    pub chat: crate::chat::Chat,
 }
 
 impl UiState {
@@ -520,6 +522,7 @@ impl UiState {
             icons: ItemIcons::default(),
             inventory_open: false,
             player: PlayerStats::default(),
+            chat: crate::chat::Chat::default(),
         }
     }
 
@@ -844,6 +847,11 @@ impl UiState {
                 } else {
                     self.draw_hotbar(ctx);
                 }
+            }
+
+            // Chat : dernières lignes, ou saisie ouverte par Entrée
+            if !self.is_settings_open {
+                self.chat.draw(ctx);
             }
 
             // 3. Compteur FPS en haut à droite

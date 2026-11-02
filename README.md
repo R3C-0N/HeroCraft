@@ -27,7 +27,7 @@ Tout passe par **`Échap > Multijoueur`** :
 ```bash
 cargo run --release --bin herocraft_server -- [--port 7777] [--seed 2026] [--name "Mon serveur"] [--no-lan]
 ```
-Le serveur écoute en TCP (port 7777 par défaut) à 60 TPS et s'annonce sur le réseau local (sauf `--no-lan`). Il fait autorité sur les blocs : il valide chaque bloc cassé ou posé (portée, contenu), l'enregistre dans `saves/serveur_monde_<graine>/` et le diffuse à tous les joueurs. Il relaie aussi leurs positions. Tapez `stop` dans sa console pour l'arrêter en enregistrant le monde.
+Le serveur écoute en TCP (port 7777 par défaut) à 60 TPS et s'annonce sur le réseau local (sauf `--no-lan`). Il fait autorité sur les blocs : il valide chaque bloc cassé ou posé (portée, contenu), l'enregistre dans `saves/serveur_monde_<graine>/` et le diffuse à tous les joueurs. Il relaie aussi leurs positions et le chat. Dans sa console : `stop` l'arrête en enregistrant le monde, `list` donne les joueurs en ligne, `seed` la graine, `say <message>` écrit à tous les joueurs, `help` rappelle ces commandes.
 
 ### Lancer le prototype client interactif :
 ```bash
@@ -62,7 +62,20 @@ Toutes les touches se changent dans `Échap > Commandes` (clic sur une touche, p
 - **Barre d'objets** (en bas de l'écran) : **`1`** à **`9`** ou la **molette** choisissent la case. **`E`** ouvre l'inventaire (27 cases de sac + la barre, piles de 64) : clic gauche pour prendre, poser, fusionner ou échanger une pile, clic droit pour en prendre la moitié ou poser un seul bloc. À côté, le **catalogue** liste tous les blocs et objets, par rubrique ou par recherche : clic gauche pour en prendre une pile, clic droit pour un seul. L'inventaire est enregistré avec le monde (`saves/monde_<graine>/inventaire.json`) ; en ligne, un inventaire à part est gardé pour la planète du serveur (`saves/en_ligne_<graine>/`).
 - **`Alt` + molette** : zoom continu de la vue, du sol à l'orbite. En vue satellite, la molette seule suffit et clic + glisser tourne la planète.
 - **`F`** : vue au sol / satellite. **`R`** : réinitialiser la vue. **`G`** : nouvelle planète. **`T` / `C`** : filtres plaques tectoniques / courants marins.
-- **`Échap`** : menu de pause. **`F9`** : rapport de profilage.
+- **`Entrée`** : chat (voir plus bas). **`Échap`** : menu de pause. **`F9`** : rapport de profilage.
+
+#### Chat et commandes :
+**`Entrée`** ouvre le chat en bas à gauche (la souris est libérée, les touches ne pilotent plus le joueur). `Entrée` envoie, `Échap` referme. En ligne, le message part à tous les joueurs du serveur ; en solo, il reste à l'écran. Les dernières lignes restent affichées 10 secondes une fois le chat fermé. **`↑` / `↓`** rappellent les lignes déjà envoyées, **`Tab`** complète le nom d'une commande, d'un bloc ou objet (`/give`), d'une créature (`/summon`) ou d'un joueur (`/tp`), et passe d'une suite à l'autre.
+
+Une ligne qui commence par `/` est une commande (en anglais) :
+- `/help [command]` : liste des commandes, ou détail de l'une.
+- `/tp <latitude> <longitude> [height]` : téléportation au sol (degrés), éventuellement quelques blocs au-dessus (en vol). `/tp <player>` : à côté d'un autre joueur. `/spawn` : retour au point d'apparition. `/pos` : latitude, longitude, altitude et bloc.
+- `/time` : heure locale. `/time set <0-24|hh:mm|sunrise|day|noon|sunset|night|midnight>` : règle l'heure là où l'on est. `/time speed <factor>` : vitesse du ciel (1 : jour de 20 min, 0 : ciel figé). En ligne, le ciel reste propre à chaque joueur.
+- `/seed` : graine de la planète. `/planet [seed]` : nouvelle planète, au hasard ou de cette graine (solo).
+- `/give <item> [count]` : blocs ou objets dans l'inventaire (identifiant de la fiche, comme `cobbleStone`, ou nom affiché).
+- `/fly` : voler ou se poser. `/speed <factor>` : vitesse de déplacement (0,1 à 20, 1 : normale).
+- `/summon <creature> [count]` : créatures devant soi (`loup`, `vache`…). `/heal` : jauges pleines. `/xp <amount>` : expérience. En ligne, ces trois commandes passent par le serveur.
+- `/list` : joueurs en ligne. `/clear` : vide le chat.
 
 #### Son :
 Pas (selon le bloc sous les pieds : herbe, terre, pierre, sable, neige, bois, eau), saut, réception, blessure, coups portés au bloc qu'on casse, blocs cassés et posés (aussi ceux des autres joueurs proches), et ambiance : vent qui forcit en altitude, oiseaux le jour, grillons la nuit, étouffés sous un plafond. Les sons sont synthétisés au lancement, sans fichier audio. Les volumes (général, bruitages, ambiance) se règlent dans `Échap > Options > Son` et sont enregistrés dans `config/audio.json`. Sans sortie audio, le jeu tourne en silence.

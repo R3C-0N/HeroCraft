@@ -56,11 +56,13 @@ fn main() {
         }
     }
     info!("Planète de graine #{seed}, sauvegarde dans saves/serveur_monde_{seed}/.");
-    info!("En écoute sur {} à {TICK_RATE} TPS. Tapez « stop » pour arrêter le serveur proprement.", server.local_addr().map(|a| a.to_string()).unwrap_or(bind));
+    info!("En écoute sur {} à {TICK_RATE} TPS. Tapez « stop » pour arrêter le serveur proprement, « help » pour les autres commandes.", server.local_addr().map(|a| a.to_string()).unwrap_or(bind));
 
     // Console : « stop » arrête la boucle, qui enregistre le monde avant de rendre la main
     let running = Arc::new(AtomicBool::new(true));
     let console_running = running.clone();
+    let (console_tx, console_rx) = std::sync::mpsc::channel();
+    server.set_console(console_rx);
     std::thread::spawn(move || {
         for line in std::io::stdin().lock().lines() {
             let Ok(line) = line else { break };
@@ -70,7 +72,12 @@ fn main() {
                     break;
                 }
                 "" => {}
-                other => info!("Commande inconnue : {other} (commandes : stop)"),
+                // Les autres commandes (help, list, seed, say) passent par la boucle du serveur
+                other => {
+                    if console_tx.send(other.to_string()).is_err() {
+                        break;
+                    }
+                }
             }
         }
     });
