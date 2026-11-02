@@ -54,8 +54,57 @@ pub struct CreatureSpecies {
     /// reste du temps
     #[serde(default)]
     pub activity: Activity,
+    /// Comportement agressif (aucun : la bête est paisible et s'enfuit quand on la frappe)
+    #[serde(default)]
+    pub attack: Option<CreatureAttack>,
     /// Modèle 3D
     pub model: CreatureModel,
+}
+
+/// Façon d'attaquer d'une bête agressive
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AttackMode {
+    /// Seule : elle poursuit sa cible et la mord dès qu'elle est à portée
+    Solo,
+    /// En meute : elle n'ose attaquer qu'entourée d'au moins `pack_size` bêtes de son espèce, qui se
+    /// joignent toutes à la chasse et encerclent la cible ; trop peu nombreuses, elles fuient
+    Pack,
+    /// À la charge : elle s'arrête, vise, puis fonce en ligne droite et souffle un moment après
+    Charge,
+}
+
+/// Comportement agressif : qui la bête chasse, comment, et ce que coûte sa morsure
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureAttack {
+    pub mode: AttackMode,
+    /// Points de vie retirés par coup (à un joueur ou à une proie)
+    pub damage: f32,
+    /// Temps entre deux coups, en secondes
+    #[serde(default = "default_attack_cooldown")]
+    pub cooldown: f32,
+    /// Distance à laquelle elle repère une cible, en blocs
+    #[serde(default = "default_sight")]
+    pub sight: f32,
+    /// Allonge d'un coup, en blocs devant son museau
+    #[serde(default = "default_reach")]
+    pub reach: f32,
+    /// Allure de la poursuite (ou de la charge), par rapport à la marche
+    #[serde(default = "default_chase_speed")]
+    pub chase_speed: f32,
+    /// Elle s'en prend aux joueurs qu'elle voit (sinon seulement à celui qui l'a frappée)
+    #[serde(default = "yes")]
+    pub hunts_players: bool,
+    /// Elle n'attaque que frappée la première (ours, tréant…)
+    #[serde(default)]
+    pub provoked_only: bool,
+    /// Espèces qu'elle chasse (identifiants de leurs fichiers)
+    #[serde(default)]
+    pub prey: Vec<String>,
+    /// En meute : nombre de bêtes de son espèce, elle comprise, qu'il lui faut autour d'elle pour oser
+    #[serde(default = "default_pack_size")]
+    pub pack_size: u32,
 }
 
 /// Volume du corps, en blocs
@@ -156,6 +205,30 @@ fn walk_animation() -> String {
 
 fn default_health() -> f32 {
     10.0
+}
+
+fn default_attack_cooldown() -> f32 {
+    1.2
+}
+
+fn default_sight() -> f32 {
+    12.0
+}
+
+fn default_reach() -> f32 {
+    0.8
+}
+
+fn default_chase_speed() -> f32 {
+    1.6
+}
+
+fn default_pack_size() -> u32 {
+    3
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn one() -> u32 {
@@ -265,6 +338,11 @@ impl CreatureSpecies {
         if species.spawn.iter().any(|rule| !(rule.weight >= 0.0 && (0.0..=1.0).contains(&rule.chance))) {
             return Err("apparition invalide (poids positif, chance entre 0 et 1)".into());
         }
+        if let Some(a) = &species.attack {
+            if !(a.damage > 0.0 && a.cooldown > 0.0 && a.sight > 0.0 && a.reach >= 0.0 && a.chase_speed > 0.0 && a.pack_size >= 1) {
+                return Err("attaque invalide (dégâts, délai, vue et allure positifs, meute d'au moins 1)".into());
+            }
+        }
         Ok(species)
     }
 }
@@ -337,5 +415,15 @@ mod tests {
         assert!(CreatureSpecies::parse("cube", &flat).is_err());
         let groups = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "min_group": 3, "max_group": 2,"#);
         assert!(CreatureSpecies::parse("cube", &groups).is_err());
+        assert!(cube.attack.is_none(), "paisible par défaut");
+
+        let wolf = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "attack": { "mode": "pack", "damage": 4, "prey": ["lapin"] },"#);
+        let attack = CreatureSpecies::parse("cube", &wolf).unwrap().attack.unwrap();
+        assert_eq!((attack.mode, attack.pack_size, attack.hunts_players, attack.provoked_only), (AttackMode::Pack, 3, true, false));
+        assert_eq!(attack.prey, ["lapin"]);
+        let unknown = wolf.replace("pack", "horde");
+        assert!(CreatureSpecies::parse("cube", &unknown).is_err());
+        let harmless = wolf.replace(r#""damage": 4"#, r#""damage": 0"#);
+        assert!(CreatureSpecies::parse("cube", &harmless).is_err());
     }
 }

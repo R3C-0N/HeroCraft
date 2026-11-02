@@ -12,5 +12,6 @@
     {"biome": "Taiga", "weight": 0.6}
   ],
   "activity": "nocturnal",
+  "attack": {"mode": "pack", "damage": 4, "cooldown": 1.0, "sight": 14, "chase_speed": 1.6, "pack_size": 3, "prey": ["lapin", "cerf", "faisan", "mouflon", "mouflonTondu"]},
   "model": {"mesh": "modeles/loup.gltf", "texture": "modeles/loup.png", "walk_animation": "repos"}
 }

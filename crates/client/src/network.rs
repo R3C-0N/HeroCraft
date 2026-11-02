@@ -323,6 +323,8 @@ pub enum NetEvent {
     BlockChanged(BlockPos, BlockId),
     /// Statistiques RPG du joueur, qui font foi
     Stats(CharacterStats),
+    /// Le joueur vient d'être frappé par une créature (`cause` : son nom)
+    Hurt { damage: f32, cause: String },
     /// Connexion perdue ou fermée par le serveur
     Disconnected(String),
 }
@@ -436,6 +438,7 @@ impl NetClient {
             ServerPacket::Disconnect(reason) => return Some(NetEvent::Disconnected(reason)),
             ServerPacket::ChunkData { coord, .. } => warn!("Chunk {coord:?} reçu hors de la connexion, ignoré."),
             ServerPacket::StatsUpdate(stats) => return Some(NetEvent::Stats(stats)),
+            ServerPacket::PlayerHurt { damage, cause } => return Some(NetEvent::Hurt { damage, cause }),
             ServerPacket::ConnectAck { .. } | ServerPacket::PlayerJoined { .. } => {}
         }
         None

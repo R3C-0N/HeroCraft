@@ -7,5 +7,6 @@
   "max_group": 2,
   "spawn": [],
   "activity": "nocturnal",
+  "attack": {"mode": "solo", "damage": 5, "cooldown": 1.2, "sight": 4, "reach": 1.0},
   "model": {"mesh": "modeles/millepattes.gltf", "texture": "modeles/millepattes.png", "walk_animation": "repos"}
 }

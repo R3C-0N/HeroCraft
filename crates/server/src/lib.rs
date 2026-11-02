@@ -208,9 +208,11 @@ impl Server {
             player.stats.regenerate(dt, player.sprinting);
         }
 
-        let presences: Vec<herocraft_world::PlayerPresence> =
-            self.players.values().filter_map(|p| p.position.map(|feet| herocraft_world::PlayerPresence { feet, crouching: p.crouching })).collect();
-        self.creatures.tick_with_presences(dt, &self.generator, &self.edits, &presences);
+        let (ids, presences): (Vec<u64>, Vec<herocraft_world::PlayerPresence>) =
+            self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching }))).unzip();
+        for hit in self.creatures.tick_with_presences(dt, &self.generator, &self.edits, &presences) {
+            self.creature_attack(ids[hit.player], hit.species, hit.damage);
+        }
 
         if self.tick_counter % STATE_BROADCAST_TICKS == 0 {
             self.broadcast_player_states();
@@ -425,6 +427,24 @@ impl Server {
             let name = player.name.clone();
             info!("{name} est mort d'une chute de {blocks:.0} blocs.");
             self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{name} s'est écrasé au sol") });
+        }
+    }
+
+    /// Coup d'une créature de l'espèce de rang `species` sur un joueur ; comme une chute, celui qu'il
+    /// tue revient à la vie et ses nouvelles jauges lui sont envoyées aussitôt
+    fn creature_attack(&mut self, id: u64, species: usize, damage: f32) {
+        let cause = self.creatures.registry().get(species).map_or_else(|| "Une créature".to_string(), |s| s.name.clone());
+        let Some(player) = self.players.get_mut(&id) else { return };
+        let died = player.stats.take_damage(damage);
+        if died {
+            player.stats.revive();
+        }
+        player.connection.send(&ServerPacket::PlayerHurt { damage, cause: cause.clone() });
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+        if died {
+            let name = player.name.clone();
+            info!("{name} a été tué par : {cause}.");
+            self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{name} a été tué par : {cause}") });
         }
     }
 

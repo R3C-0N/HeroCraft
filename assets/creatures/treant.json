@@ -7,5 +7,6 @@
   "max_group": 1,
   "spawn": [],
   "activity": "always",
+  "attack": {"mode": "solo", "damage": 15, "cooldown": 2.5, "sight": 10, "chase_speed": 2.0, "reach": 1.2, "provoked_only": true},
   "model": {"mesh": "modeles/treant.gltf", "texture": "modeles/treant.png", "walk_animation": "repos"}
 }

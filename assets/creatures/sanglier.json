@@ -10,5 +10,6 @@
     {"biome": "Forest", "weight": 0.5}
   ],
   "activity": "nocturnal",
+  "attack": {"mode": "charge", "damage": 6, "cooldown": 2.0, "sight": 7, "chase_speed": 2.5},
   "model": {"mesh": "modeles/sanglier.gltf", "texture": "modeles/sanglier.png", "walk_animation": "repos"}
 }

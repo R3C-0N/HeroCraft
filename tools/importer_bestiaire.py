@@ -91,6 +91,8 @@ def importer(module):
             **({"temperament": t} if (t := ancien.get("temperament")) else {}),
             "spawn": spawn,
             **({"activity": activite} if activite else {}),
+            # L'attaque n'existe pas dans le bestiaire : celle de la fiche actuelle est gardée
+            **({"attack": a} if (a := ancien.get("attack")) else {}),
             "model": {
                 "mesh": f"modeles/{ident}.gltf",
                 "texture": f"modeles/{ident}.png",

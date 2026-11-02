@@ -36,6 +36,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 | `health` | Points de vie (10 par défaut). Un coup de joueur en retire 2,5 : la bête rougit, recule, puis s'enfuit ; à 0 elle bascule sur le flanc et disparaît. |
 | `min_group`, `max_group` | Taille d'un groupe qui apparaît ensemble (1 par défaut). |
 | `temperament` | Réaction au joueur le plus proche, tant qu'il ne l'a pas frappée : `craintif` (fuit quand il approche à moins de 8 blocs, ou de 3 blocs s'il est accroupi avec Maj), `placide` (s'arrête et le regarde à moins de 6 blocs), `curieux` (le suit à moins de 16 blocs et s'arrête à 3 blocs de lui) ou `indifferent` (l'ignore, par défaut). |
+| `attack` | Comportement agressif (voir plus bas). Sans ce champ, la bête est paisible : frappée, elle s'enfuit. |
 | `spawn` | Les biomes où l'espèce apparaît d'elle-même (voir ci-dessous). Sans ce champ, elle n'apparaît jamais seule : c'est le cas des créatures des profondeurs, des mondes démoniaques et des bois féeriques, qui attendent leur monde. |
 | `activity` | Le rythme de vie de l'espèce (voir ci-dessous, `diurnal` par défaut). |
 | `model` | Le modèle 3D (voir ci-dessous). |
@@ -59,6 +60,29 @@ L'heure dépend de l'endroit : la planète est ronde, il fait jour d'un côté e
 | `always` | tout le temps | tréant, rampant, champion |
 
 Une espèce n'apparaît qu'aux heures où elle est éveillée. Hors de ses heures, une bête déjà là s'endort sur place à la fin de ce qu'elle faisait : un troupeau s'endort et se réveille peu à peu, pas d'un bloc. Un coup la réveille (et la fait fuir) ; elle se rendort plus tard si ce n'est toujours pas son heure.
+
+## Attaque
+
+Une bête dont la fiche a un champ `attack` chasse les joueurs et ses proies qu'elle voit, les poursuit et les frappe. Frappée par un joueur, elle riposte au lieu de fuir. Exemple, le loup :
+
+```json
+"attack": {"mode": "pack", "damage": 4, "cooldown": 1.0, "sight": 14, "chase_speed": 1.6, "pack_size": 3, "prey": ["lapin", "cerf"]}
+```
+
+| Champ | Rôle |
+|---|---|
+| `mode` | `solo` : elle poursuit sa cible et la frappe au contact. `pack` : elle n'ose attaquer qu'entourée d'au moins `pack_size` bêtes de son espèce (à moins de 16 blocs), qui se joignent à la chasse et encerclent la cible ; frapper l'une ameute les autres ; trop peu nombreuses, elles fuient. `charge` : elle s'arrête, vise, fonce en ligne droite, puis souffle un moment. |
+| `damage` | Points de vie retirés par coup, au joueur ou à la proie. |
+| `cooldown` | Secondes entre deux coups (1,2 par défaut). |
+| `sight` | Distance à laquelle elle repère une cible, en blocs (12 par défaut). Une cible prise en chasse n'est lâchée qu'au-delà de 1,6 fois cette distance. |
+| `reach` | Allonge d'un coup devant son museau, en blocs (0,8 par défaut). |
+| `chase_speed` | Allure de la poursuite ou de la charge, par rapport à `walk_speed` (1,6 par défaut). |
+| `hunts_players` | Elle s'en prend aux joueurs qu'elle voit (`true` par défaut). |
+| `provoked_only` | Elle n'attaque qu'une fois frappée, et reste en colère 20 secondes (`false` par défaut). |
+| `prey` | Espèces qu'elle chasse (identifiants de fichiers). Après avoir tué une proie, elle les laisse tranquilles une minute. |
+| `pack_size` | En meute, nombre de bêtes qu'il lui faut, elle comprise (3 par défaut). |
+
+Le bestiaire ne décrit pas d'attaque : `tools/importer_bestiaire.py` garde celle de la fiche existante.
 
 ## Modèle
 

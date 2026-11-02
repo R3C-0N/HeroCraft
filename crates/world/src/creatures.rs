@@ -20,13 +20,20 @@
 //! Les bêtes apparues ensemble forment un troupeau : chacune revient vers ses voisines quand elle
 //! s'en écarte et prend volontiers le cap de celles qui marchent. Quand l'une est frappée, les autres
 //! s'affolent aussi, mais moins : elles courent moins vite et se calment plus tôt que la victime.
+//!
+//! Une bête dont la fiche décrit une attaque (`attack`) chasse : elle repère les joueurs et ses
+//! proies à portée de vue, les poursuit et les frappe. Seule, elle mord dès qu'elle est au contact ;
+//! en meute, elle n'ose qu'entourée de ses semblables, qui encerclent la cible avec elle ; à la
+//! charge, elle vise, fonce en ligne droite, puis souffle. Frappée, elle riposte au lieu de fuir
+//! (sauf une meute trop maigre). Les coups portés aux joueurs sont renvoyés par `tick`, qui laisse
+//! au serveur ou à la partie solo le soin de les retirer des jauges de vie.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
-use herocraft_common::{tangent_frame, BlockId, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, PLAYER_HIT_DAMAGE};
+use herocraft_common::{tangent_frame, AttackMode, BlockId, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, PLAYER_HIT_DAMAGE};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -92,6 +99,31 @@ const HERD_LOOSE_BLOCKS: f32 = 4.0;
 const HERD_STRAY_BLOCKS: f32 = 7.0;
 /// Chance qu'une bête au repos emboîte le pas de voisines qui marchent, à chaque changement d'humeur
 const HERD_FOLLOW_CHANCE: f64 = 0.6;
+/// Rayon dans lequel les bêtes d'une même espèce se comptent comme une meute, en blocs
+const PACK_RADIUS: f32 = 16.0;
+/// Colère d'une bête agressive frappée par un joueur, en secondes
+const ANGER_TIME: f32 = 20.0;
+/// Une cible prise en chasse (ou signalée par la meute) se repère de plus loin, d'autant
+const PURSUIT_FACTOR: f32 = 1.6;
+/// Répit d'un prédateur qui vient de tuer une proie, en secondes
+const SATED_TIME: f32 = 60.0;
+/// Charge : visée, course au plus, souffle après, en secondes
+const CHARGE_AIM: f32 = 0.7;
+const CHARGE_RUN: f32 = 2.5;
+const CHARGE_REST: f32 = 2.0;
+/// Encerclement d'une meute : plus loin que ça de la cible, chaque bête vise un point à côté
+/// d'elle, à cette distance, en blocs
+const FLANK_DISTANCE: f32 = 5.0;
+const FLANK_OFFSET: f32 = 2.5;
+/// Demi-largeur d'une cible, ajoutée à l'allonge, en blocs
+const TARGET_RADIUS: f32 = 0.3;
+/// Écart de hauteur au-delà duquel un coup ne porte pas, en blocs
+const MAX_STRIKE_HEIGHT: f32 = 1.8;
+/// Écart au cap de la cible au-delà duquel elle se tourne avant de frapper, en radians
+const STRIKE_ANGLE: f32 = 0.6;
+/// Bond d'un coup : élan vers la cible, en blocs par seconde, et petit saut
+const LUNGE_SPEED: f32 = 3.0;
+const LUNGE_HOP: f32 = 3.0;
 /// Une créature ne descend pas volontairement plus bas que ça, en blocs : au-delà, c'est une falaise
 const MAX_DROP_BLOCKS: f32 = 3.0;
 /// Regard devant elle : nombre de points sondés sur son chemin, et écart entre eux, en blocs
@@ -148,6 +180,49 @@ pub struct Creature {
     swimming: bool,
     /// Enfoncement du corps dans l'eau, en unités du monde
     sink: f32,
+    /// Elle poursuit une cible : la promenade est suspendue
+    hunting: bool,
+    /// Allure de la poursuite, par rapport à la marche
+    pace: f32,
+    /// Temps restant de colère contre les joueurs, après un coup, en secondes
+    anger: f32,
+    /// Temps restant avant de pouvoir frapper de nouveau, en secondes
+    attack_cooldown: f32,
+    /// Temps restant de répit après avoir tué une proie, en secondes
+    sated: f32,
+    charge: Charge,
+}
+
+/// Étape d'une charge
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Charge {
+    Idle,
+    /// Arrêtée, elle vise (temps restant)
+    Aiming(f32),
+    /// Elle fonce droit devant (temps restant)
+    Running(f32),
+    /// Elle souffle (temps restant)
+    Resting(f32),
+}
+
+/// Coup porté à un joueur par une créature : à retirer de sa vie
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlayerHit {
+    /// Rang du joueur dans la liste passée à `CreatureWorld::tick`
+    pub player: usize,
+    pub creature_id: u64,
+    /// Rang de l'espèce de la créature dans le registre
+    pub species: usize,
+    pub damage: f32,
+}
+
+/// Ce qu'une bête chasse
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Target {
+    /// Rang du joueur
+    Player(usize),
+    /// Identifiant de la proie
+    Creature(u64),
 }
 
 impl Creature {
@@ -164,6 +239,22 @@ impl Creature {
 
     pub fn is_alive(&self) -> bool {
         self.dead_for.is_none()
+    }
+
+    /// Elle poursuit une cible
+    pub fn is_hunting(&self) -> bool {
+        self.hunting
+    }
+
+    /// Lâche sa cible et reprend sa promenade un peu plus tard
+    fn stop_hunting(&mut self, rng: &mut StdRng) {
+        if self.hunting {
+            self.hunting = false;
+            self.walking = false;
+            self.timer = rng.gen_range(1.0..3.0);
+        }
+        self.pace = 1.0;
+        self.charge = Charge::Idle;
     }
 
     pub fn is_sleeping(&self) -> bool {
@@ -193,6 +284,8 @@ pub struct CreatureWorld {
     registry: Arc<CreatureRegistry>,
     /// Espèces qui apparaissent dans chaque biome
     spawn_table: HashMap<BiomeType, Vec<SpawnCandidate>>,
+    /// Rangs des espèces que chaque espèce chasse
+    prey_table: Vec<Vec<usize>>,
     geometry: BlockGeometry,
     creatures: Vec<Creature>,
     next_id: u64,
@@ -217,9 +310,25 @@ impl CreatureWorld {
                 }
             }
         }
+        let prey_table = registry
+            .iter()
+            .map(|species| {
+                let prey = species.attack.as_ref().map_or(&[][..], |a| &a.prey[..]);
+                prey.iter()
+                    .filter_map(|id| {
+                        let found = registry.find(id);
+                        if found.is_none() {
+                            log::warn!("Créature {} : proie « {id} » inconnue.", species.id);
+                        }
+                        found
+                    })
+                    .collect()
+            })
+            .collect();
         Self {
             registry,
             spawn_table,
+            prey_table,
             geometry: BlockGeometry::new(base_radius),
             creatures: Vec::new(),
             next_id: 1,
@@ -286,15 +395,47 @@ impl CreatureWorld {
             detour_side: if self.rng.gen_bool(0.5) { 1.0 } else { -1.0 },
             swimming: false,
             sink: 0.0,
+            hunting: false,
+            pace: 1.0,
+            anger: 0.0,
+            attack_cooldown: 0.0,
+            sated: 0.0,
+            charge: Charge::Idle,
         });
         id
     }
 
-    /// Un joueur dont la tête est en `from` frappe la créature `id` : elle perd de la vie, est
-    /// repoussée à l'opposé, puis s'enfuit ; les bêtes de son troupeau proches fuient aussi, moins
-    /// longtemps et moins vite. Renvoie faux si elle n'existe pas ou est déjà morte.
+    /// Un joueur dont la tête est en `from` frappe la créature `id` : elle perd de la vie, se réveille
+    /// et est repoussée à l'opposé. Une bête paisible (ou une meute trop maigre) s'enfuit, et les
+    /// bêtes de son troupeau proches fuient aussi, moins longtemps et moins vite ; une bête agressive
+    /// riposte, avec toute sa meute. Renvoie faux si elle n'existe pas ou est déjà morte.
     pub fn hit(&mut self, id: u64, from: Vec3) -> bool {
-        let Some(index) = self.creatures.iter().position(|c| c.id == id && c.is_alive()) else { return false };
+        self.strike(id, from, PLAYER_HIT_DAMAGE, true).is_some()
+    }
+
+    /// Bêtes vivantes de l'espèce de la créature de rang `index` autour d'elle, elle comprise
+    fn pack_count(&self, index: usize) -> usize {
+        let c = &self.creatures[index];
+        let radius = PACK_RADIUS * self.geometry.block_height as f32;
+        self.creatures.iter().filter(|o| o.is_alive() && o.species == c.species && o.position.distance(c.position) <= radius).count()
+    }
+
+    /// Coup de `damage` sur la créature `id`, porté depuis `from` (par un joueur ou par un
+    /// prédateur). Renvoie `Some(vrai)` s'il l'a tuée, `None` si elle n'existe pas ou est déjà morte.
+    fn strike(&mut self, id: u64, from: Vec3, damage: f32, by_player: bool) -> Option<bool> {
+        let index = self.creatures.iter().position(|c| c.id == id && c.is_alive())?;
+        let species = self.creatures[index].species;
+        let attack = self.registry.get(species).and_then(|s| s.attack.as_ref());
+        let fights_back = by_player
+            && attack.is_some_and(|a| a.mode != AttackMode::Pack || self.pack_count(index) >= a.pack_size as usize);
+        if fights_back && attack.is_some_and(|a| a.mode == AttackMode::Pack) {
+            // Toute la meute prend la défense de la bête frappée
+            let (position, radius) = (self.creatures[index].position, PACK_RADIUS * self.geometry.block_height as f32);
+            for other in self.creatures.iter_mut().filter(|o| o.is_alive() && o.species == species && o.position.distance(position) <= radius) {
+                other.anger = ANGER_TIME;
+            }
+        }
+
         let c = &mut self.creatures[index];
         let up = c.position.normalize_or_zero();
         let (east, north) = tangent_frame(up);
@@ -305,20 +446,31 @@ impl CreatureWorld {
         c.push = away * KNOCKBACK_SPEED;
         c.vertical_speed = c.vertical_speed.max(KNOCKBACK_HOP);
         c.hurt = CREATURE_HURT_TIME;
-        c.health -= PLAYER_HIT_DAMAGE;
+        c.health -= damage;
         c.sleeping = false;
         if c.health <= 0.0 {
             c.dead_for = Some(0.0);
             c.walking = false;
+            c.hunting = false;
+            return Some(true);
+        }
+        if fights_back {
+            c.anger = ANGER_TIME;
         } else {
             c.panic = PANIC_TIME;
             c.panic_speed = PANIC_SPEED;
             c.walking = true;
+            c.hunting = false;
+            c.pace = 1.0;
+            c.charge = Charge::Idle;
             c.target_yaw = away.dot(east).atan2(away.dot(north)).rem_euclid(TAU);
         }
-        let (herd, center) = (c.herd, c.position);
-        self.alarm_herd(id, herd, center, from);
-        true
+        if !fights_back {
+            // Les bêtes de son troupeau s'affolent avec elle
+            let (herd, center) = (c.herd, c.position);
+            self.alarm_herd(id, herd, center, from);
+        }
+        Some(false)
     }
 
     /// Les bêtes du troupeau `herd` proches de `center` (sauf la victime `victim`) s'enfuient loin
@@ -347,21 +499,175 @@ impl CreatureWorld {
         }
     }
 
-    /// Avance la simulation de `dt` secondes autour des joueurs debout dont les pieds sont `players`
-    pub fn tick(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, players: &[Vec3]) {
+    /// Les bêtes agressives choisissent leur cible, s'en approchent et frappent celles à portée.
+    /// Renvoie les coups portés aux joueurs ; ceux portés aux proies sont appliqués ici.
+    fn hunt(&mut self, dt: f32, players: &[Vec3]) -> Vec<PlayerHit> {
+        let block = self.geometry.block_height as f32;
+        let snapshot: Vec<(u64, usize, Vec3, bool, bool)> = self.creatures.iter().map(|c| (c.id, c.species, c.position, c.is_alive(), c.hunting)).collect();
+        let mut player_hits = Vec::new();
+        // Coups portés aux proies : proie, d'où, dégâts, rang du prédateur
+        let mut bites = Vec::new();
+        let Self { creatures, registry, prey_table, rng, .. } = self;
+        for (index, c) in creatures.iter_mut().enumerate() {
+            c.attack_cooldown = (c.attack_cooldown - dt).max(0.0);
+            c.anger = (c.anger - dt).max(0.0);
+            c.sated = (c.sated - dt).max(0.0);
+            let Some(species) = registry.get(c.species) else { continue };
+            let Some(attack) = &species.attack else { continue };
+            // Endormie, elle ne chasse pas, sauf si un coup l'a réveillée en colère
+            if !c.is_alive() || c.panic > 0.0 || (c.sleeping && c.anger <= 0.0) {
+                c.hunting = false;
+                continue;
+            }
+            c.sleeping = false;
+            let (mut kin, mut alerted) = (0, false);
+            for &(id, kind, position, alive, hunting) in &snapshot {
+                if alive && kind == c.species && position.distance(c.position) <= PACK_RADIUS * block {
+                    kin += 1;
+                    alerted |= hunting && id != c.id;
+                }
+            }
+            let angry = c.anger > 0.0;
+            let pack_mode = attack.mode == AttackMode::Pack;
+            if (pack_mode && kin < attack.pack_size as usize) || (attack.provoked_only && !angry) {
+                c.stop_hunting(rng);
+                continue;
+            }
+
+            // La cible la plus proche à portée de vue : un joueur, ou une proie s'il a faim
+            let range = attack.sight * block * if c.hunting || angry || (pack_mode && alerted) { PURSUIT_FACTOR } else { 1.0 };
+            let mut target: Option<(Target, Vec3, f32)> = None;
+            let mut consider = |candidate: Target, position: Vec3| {
+                let distance = position.distance(c.position);
+                if distance <= range && target.is_none_or(|(_, _, best)| distance < best) {
+                    target = Some((candidate, position, distance));
+                }
+            };
+            if attack.hunts_players || angry {
+                for (k, &player) in players.iter().enumerate() {
+                    consider(Target::Player(k), player);
+                }
+            }
+            if c.sated <= 0.0 && !angry {
+                for &(id, kind, position, alive, _) in &snapshot {
+                    if alive && prey_table[c.species].contains(&kind) {
+                        consider(Target::Creature(id), position);
+                    }
+                }
+            }
+            let Some((target, goal, _)) = target else {
+                c.stop_hunting(rng);
+                continue;
+            };
+            c.hunting = true;
+
+            let up = c.position.normalize_or_zero();
+            let (east, north) = tangent_frame(up);
+            let yaw_to = |v: Vec3| v.dot(east).atan2(v.dot(north)).rem_euclid(TAU);
+            let to = goal - c.position;
+            let flat = to - up * to.dot(up);
+            let flat_distance = flat.length() / block;
+            let toward = yaw_to(flat);
+            let in_reach = flat_distance <= species.body.half_length + attack.reach + TARGET_RADIUS && (to.dot(up) / block).abs() <= MAX_STRIKE_HEIGHT;
+            let mut strikes = false;
+            match attack.mode {
+                AttackMode::Charge => {
+                    c.charge = match c.charge {
+                        Charge::Idle if in_reach => {
+                            // Au contact, elle frappe sans prendre d'élan
+                            c.walking = false;
+                            c.target_yaw = toward;
+                            strikes = angle_between(c.yaw, toward).abs() < STRIKE_ANGLE;
+                            Charge::Idle
+                        }
+                        Charge::Idle => {
+                            c.walking = false;
+                            c.target_yaw = toward;
+                            Charge::Aiming(CHARGE_AIM)
+                        }
+                        Charge::Aiming(t) => {
+                            c.walking = false;
+                            c.target_yaw = toward;
+                            if t > dt { Charge::Aiming(t - dt) } else { Charge::Running(CHARGE_RUN) }
+                        }
+                        // Lancée, elle ne corrige plus son cap
+                        Charge::Running(t) if in_reach && c.attack_cooldown <= 0.0 => {
+                            strikes = true;
+                            Charge::Resting(CHARGE_REST + t.min(0.0))
+                        }
+                        Charge::Running(t) => {
+                            c.walking = true;
+                            c.pace = attack.chase_speed;
+                            if t > dt { Charge::Running(t - dt) } else { Charge::Resting(CHARGE_REST) }
+                        }
+                        Charge::Resting(t) => {
+                            c.walking = false;
+                            c.pace = 1.0;
+                            if t > dt { Charge::Resting(t - dt) } else { Charge::Idle }
+                        }
+                    };
+                    if matches!(c.charge, Charge::Resting(_)) {
+                        c.walking = false;
+                    }
+                }
+                AttackMode::Solo | AttackMode::Pack => {
+                    if in_reach {
+                        c.walking = false;
+                        c.target_yaw = toward;
+                        strikes = angle_between(c.yaw, toward).abs() < STRIKE_ANGLE;
+                    } else {
+                        c.walking = true;
+                        c.pace = attack.chase_speed;
+                        c.target_yaw = if pack_mode && flat_distance > FLANK_DISTANCE {
+                            // Chaque bête de la meute vise son propre côté de la cible
+                            let angle = (c.id as f32 * 2.399_963).rem_euclid(TAU);
+                            let (goal_east, goal_north) = tangent_frame(goal.normalize_or_zero());
+                            yaw_to(goal + (goal_north * angle.cos() + goal_east * angle.sin()) * FLANK_OFFSET * block - c.position)
+                        } else {
+                            toward
+                        };
+                    }
+                }
+            }
+            if strikes && c.attack_cooldown <= 0.0 {
+                c.attack_cooldown = attack.cooldown;
+                // Un petit bond vers la cible
+                c.push += flat.normalize_or_zero() * LUNGE_SPEED;
+                if c.vertical_speed == 0.0 {
+                    c.vertical_speed = LUNGE_HOP;
+                }
+                match target {
+                    Target::Player(player) => player_hits.push(PlayerHit { player, creature_id: c.id, species: c.species, damage: attack.damage }),
+                    Target::Creature(prey) => bites.push((prey, c.position, attack.damage, index)),
+                }
+            }
+        }
+        for (prey, from, damage, hunter) in bites {
+            if self.strike(prey, from, damage, false) == Some(true) {
+                self.creatures[hunter].sated = SATED_TIME;
+            }
+        }
+        player_hits
+    }
+
+    /// Avance la simulation de `dt` secondes autour des joueurs debout dont les pieds sont `players`,
+    /// et renvoie les coups que les bêtes agressives leur ont portés
+    pub fn tick(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, players: &[Vec3]) -> Vec<PlayerHit> {
         let presences: Vec<PlayerPresence> = players.iter().copied().map(PlayerPresence::standing).collect();
-        self.tick_with_presences(dt, generator, edits, &presences);
+        self.tick_with_presences(dt, generator, edits, &presences)
     }
 
     /// Avance la simulation de `dt` secondes autour des joueurs `players`, en tenant compte de leur
-    /// posture (accroupi ou debout)
-    pub fn tick_with_presences(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, presences: &[PlayerPresence]) {
+    /// posture (accroupi ou debout), et renvoie les coups que les bêtes agressives leur ont portés
+    /// (`PlayerHit::player` : rang dans `presences`)
+    pub fn tick_with_presences(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, presences: &[PlayerPresence]) -> Vec<PlayerHit> {
         let players: Vec<Vec3> = presences.iter().map(|p| p.feet).collect();
         let players = players.as_slice();
         // Une image très longue (fenêtre en arrière-plan) ne fait pas traverser les murs
         let dt = dt.min(MAX_STEP);
         let range = CREATURE_RANGE_BLOCKS * self.geometry.block_height as f32;
         self.creatures.retain(|c| c.dead_for.is_none_or(|t| t < CREATURE_DEATH_TIME) && players.iter().any(|p| p.distance(c.position) <= range));
+        let hits = self.hunt(dt, players);
 
         let columns = std::mem::take(&mut self.columns);
         let mut query = TerrainQuery::with_columns(generator, edits, columns);
@@ -387,6 +693,7 @@ impl CreatureWorld {
             columns.clear();
         }
         self.columns = columns;
+        hits
     }
 
     /// Tente de faire apparaître un groupe sur le relief autour d'un joueur, selon le biome
@@ -504,7 +811,7 @@ fn herd_pulls(creatures: &[Creature], block: f32) -> Vec<HerdPull> {
                 }
                 sum += o.position;
                 count += 1;
-                if o.walking && o.panic <= 0.0 {
+                if o.walking && o.panic <= 0.0 && !o.hunting {
                     heading += heading_of(o);
                     walkers += 1;
                 }
@@ -725,6 +1032,8 @@ impl Walker<'_, '_> {
         c.hurt = (c.hurt - dt).max(0.0);
         if let Some(t) = c.dead_for.as_mut() {
             *t += dt;
+        } else if c.hunting {
+            // La chasse décide du cap et de l'allure
         } else if c.panic > 0.0 {
             // Fuite : elle court droit devant, jusqu'à se calmer
             c.panic -= dt;
@@ -838,7 +1147,7 @@ impl Walker<'_, '_> {
             c.push = Vec3::ZERO;
         }
         let mut velocity = c.push;
-        let pace = if c.panic > 0.0 { c.panic_speed } else { 1.0 } * if c.swimming { SWIM_SPEED } else { 1.0 };
+        let pace = if c.panic > 0.0 { c.panic_speed } else { c.pace } * if c.swimming { SWIM_SPEED } else { 1.0 };
         let speed = species.walk_speed * pace * turn.cos().max(0.0);
         if c.walking && c.dead_for.is_none() && speed > 0.0 {
             // Elle regarde quelques pas devant elle : le sol juste devant le museau décide si elle
@@ -982,6 +1291,9 @@ mod tests {
         let mut world = CreatureWorld::new(generator.base_radius(), 3, registry());
         let boar = world.registry().find("sanglier").unwrap();
         world.spawn(boar, feet);
+        // Le joueur reste hors de la vue du sanglier, qui le chargerait
+        let (east, _) = tangent_frame(feet.normalize());
+        let player = feet - east * 30.0 * geometry.block_height as f32;
 
         // Mur de deux blocs tout autour : le sanglier ne passe pas, quel que soit son cap
         for (dx, dz) in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)] {
@@ -990,7 +1302,7 @@ mod tests {
             }
         }
         for _ in 0..600 {
-            world.tick(0.05, &generator, &edits, &[feet]);
+            world.tick(0.05, &generator, &edits, &[player]);
         }
         let c = &world.creatures()[0];
         assert_eq!(geometry.block_at_point(c.position.as_dvec3()).map(|p| (p.x, p.z)), Some((ground.x, ground.z)));
@@ -998,7 +1310,7 @@ mod tests {
         // Le sol creusé sous lui : il tombe d'un bloc
         assert!(edits.set_block(&generator, BlockPos { y: ground.y - 1, ..ground }, BlockId::AIR));
         for _ in 0..40 {
-            world.tick(0.05, &generator, &edits, &[feet]);
+            world.tick(0.05, &generator, &edits, &[player]);
         }
         let alt = altitude(&geometry, world.creatures()[0].position);
         assert!((alt - (ground.y - 1) as f32).abs() < 1e-2, "altitude {alt} au lieu de {}", ground.y - 1);
@@ -1051,6 +1363,9 @@ mod tests {
         let c = &mut world.creatures[0];
         c.yaw = yaw_towards(&geometry, feet, step);
         (c.target_yaw, c.walking, c.timer) = (c.yaw, true, 100.0);
+        // Le joueur reste hors de la vue du sanglier, qui le chargerait
+        let (east, _) = tangent_frame(feet.normalize());
+        let feet = feet - east * 30.0 * geometry.block_height as f32;
 
         let base = ground.y as f32;
         let (mut highest, mut midair, mut on_step) = (base, 0, false);
@@ -1223,14 +1538,14 @@ mod tests {
 
     #[test]
     fn an_indifferent_creature_ignores_the_player() {
-        let (generator, edits, _, mut world, player) = creature_and_player("sanglier", 2.0, 23);
+        let (generator, edits, _, mut world, player) = creature_and_player("lezard", 2.0, 23);
         let c = &mut world.creatures[0];
         (c.walking, c.timer) = (false, 100.0);
         for _ in 0..20 {
             world.tick(0.05, &generator, &edits, &[player]);
         }
         let c = &world.creatures()[0];
-        assert!(!c.walking && c.panic == 0.0, "le sanglier réagit au joueur");
+        assert!(!c.walking && c.panic == 0.0, "le lézard réagit au joueur");
     }
 
     #[test]
@@ -1394,8 +1709,8 @@ mod tests {
         }
         let feet = feet_on(&geometry, floor, -3, 0);
         let mut world = CreatureWorld::new(generator.base_radius(), 13, registry());
-        let boar = world.registry().find("sanglier").unwrap();
-        world.spawn(boar, feet);
+        let lizard = world.registry().find("lezard").unwrap();
+        world.spawn(lizard, feet);
         walk_towards(&mut world, &geometry, BlockPos { x: floor.x + 6, ..floor });
 
         let mut passed = false;
@@ -1407,7 +1722,7 @@ mod tests {
             let column = geometry.block_at_point(position.as_dvec3()).unwrap();
             passed |= column.x >= floor.x + 3 && (alt - (floor.y + 1) as f32).abs() < 1e-2;
         }
-        assert!(passed, "le sanglier n'a pas contourné le mur");
+        assert!(passed, "le lézard n'a pas contourné le mur");
     }
 
     #[test]
@@ -1501,5 +1816,104 @@ mod tests {
         let column = geometry.block_at_point(c.position.as_dvec3()).unwrap();
         assert!(column.x >= floor.x + 5 && !c.swimming, "le mouton est resté à l'eau (colonne {})", column.x - floor.x);
         assert!((altitude(&geometry, c.position) - (floor.y + 1) as f32).abs() < 1e-2);
+    }
+
+    /// `count` bêtes de l'espèce `id` sur une colonne d'herbe plate, et un joueur à `blocks` blocs à
+    /// l'est d'elles
+    fn beasts_and_player(id: &str, count: usize, blocks: f32, seed: u64) -> (PlanetWorldGenerator, TerrainEdits, CreatureWorld, Vec3, Vec3) {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), seed, registry());
+        let species = world.registry().find(id).unwrap();
+        for _ in 0..count {
+            world.spawn(species, feet);
+        }
+        let (east, _) = tangent_frame(feet.normalize());
+        let player = feet + east * blocks * geometry.block_height as f32;
+        (generator, edits, world, feet, player)
+    }
+
+    /// Coups portés au joueur en `seconds` secondes de jeu
+    fn hits_over(world: &mut CreatureWorld, generator: &PlanetWorldGenerator, edits: &TerrainEdits, player: Vec3, seconds: f32) -> Vec<PlayerHit> {
+        (0..(seconds / 0.05) as usize).flat_map(|_| world.tick(0.05, generator, edits, &[player])).collect()
+    }
+
+    #[test]
+    fn a_wolf_pack_attacks_the_player_but_a_lone_wolf_flees() {
+        let (generator, edits, mut world, _, player) = beasts_and_player("loup", 3, 2.0, 21);
+        let hits = hits_over(&mut world, &generator, &edits, player, 5.0);
+        let wolf = world.registry().find("loup").unwrap();
+        let damage = world.registry().get(wolf).unwrap().attack.as_ref().unwrap().damage;
+        assert!(!hits.is_empty(), "la meute n'a pas attaqué");
+        assert!(hits.iter().all(|h| h.player == 0 && h.species == wolf && h.damage == damage));
+        // Les trois loups posés (d'autres bêtes ont pu apparaître plus loin entre-temps)
+        assert!(world.creatures().iter().filter(|c| c.id <= 3).all(|c| c.is_hunting()));
+
+        // Seul, il n'ose pas, et s'enfuit quand on le frappe
+        let (generator, edits, mut world, feet, player) = beasts_and_player("loup", 1, 2.0, 22);
+        assert!(hits_over(&mut world, &generator, &edits, player, 5.0).is_empty(), "un loup seul a attaqué");
+        let id = world.creatures()[0].id;
+        assert!(world.hit(id, feet));
+        assert!(world.creatures()[0].panic > 0.0, "le loup seul ne fuit pas");
+    }
+
+    #[test]
+    fn a_hit_wolf_rallies_its_pack() {
+        let (generator, edits, mut world, feet, player) = beasts_and_player("loup", 3, 2.0, 23);
+        let id = world.creatures()[0].id;
+        assert!(world.hit(id, feet));
+        assert!(world.creatures().iter().all(|c| c.anger > 0.0 && c.panic <= 0.0), "la meute ne riposte pas");
+        assert!(!hits_over(&mut world, &generator, &edits, player, 5.0).is_empty());
+    }
+
+    #[test]
+    fn a_bear_attacks_only_once_provoked() {
+        let (generator, edits, mut world, feet, player) = beasts_and_player("ours", 1, 2.0, 24);
+        assert!(hits_over(&mut world, &generator, &edits, player, 5.0).is_empty(), "l'ours a attaqué sans raison");
+        let id = world.creatures()[0].id;
+        assert!(world.hit(id, feet));
+        assert_eq!(world.creatures()[0].panic, 0.0, "l'ours frappé fuit au lieu de riposter");
+        assert!(!hits_over(&mut world, &generator, &edits, player, 5.0).is_empty(), "l'ours frappé ne riposte pas");
+    }
+
+    #[test]
+    fn a_peaceful_creature_never_attacks() {
+        let (generator, edits, mut world, feet, player) = beasts_and_player("vache", 3, 1.0, 25);
+        let id = world.creatures()[0].id;
+        world.hit(id, feet);
+        assert!(hits_over(&mut world, &generator, &edits, player, 5.0).is_empty());
+    }
+
+    #[test]
+    fn a_boar_aims_then_charges() {
+        let (generator, edits, mut world, _, player) = beasts_and_player("sanglier", 1, 5.0, 26);
+        world.tick(0.05, &generator, &edits, &[player]);
+        assert!(matches!(world.creatures()[0].charge, Charge::Aiming(_)), "{:?}", world.creatures()[0].charge);
+        assert!(!world.creatures()[0].walking, "il vise sans bouger");
+        for _ in 0..((CHARGE_AIM / 0.05) as usize + 1) {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        let charge = world.creatures()[0].charge;
+        assert!(matches!(charge, Charge::Running(_) | Charge::Resting(_)), "pas de charge : {charge:?}");
+    }
+
+    #[test]
+    fn wolves_hunt_their_prey() {
+        // Joueur hors de vue : les loups s'occupent du lapin posé à côté d'eux
+        let (generator, edits, mut world, feet, _) = beasts_and_player("loup", 3, 0.0, 27);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let (east, _) = tangent_frame(feet.normalize());
+        let player = feet - east * 40.0 * geometry.block_height as f32;
+        let rabbit = world.registry().find("lapin").unwrap();
+        let id = world.spawn(rabbit, feet);
+        let health = world.registry().get(rabbit).unwrap().health;
+        let mut bitten = false;
+        for _ in 0..600 {
+            assert!(world.tick(0.05, &generator, &edits, &[player]).is_empty(), "le joueur est trop loin pour être mordu");
+            bitten |= world.creatures().iter().find(|c| c.id == id).is_none_or(|c| c.health < health);
+        }
+        assert!(bitten, "le lapin n'a jamais été mordu");
     }
 }
