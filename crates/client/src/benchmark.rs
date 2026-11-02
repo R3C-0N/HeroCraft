@@ -8,7 +8,8 @@
 //! le coût de ce qui a été coupé. Le rapport est écrit dans `./benchmark/`, puis le jeu se ferme.
 //!
 //! La V-Sync et la limite de FPS sont coupées pendant le banc d'essai, le joueur ne peut pas être
-//! blessé, et rien n'est enregistré dans la sauvegarde.
+//! blessé, rien n'est enregistré dans la sauvegarde, et la souris n'est pas capturée : la fenêtre
+//! peut être déplacée sur un autre écran (sans être réduite) pendant la mesure.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -27,7 +28,7 @@ pub const DEFAULT_SEED: u64 = 2026;
 const WARMUP_SECS: f32 = 3.0;
 const MEASURE_SECS: f32 = 8.0;
 /// Mise en route avant la première mesure : relief, nuages et textures se chargent
-const STARTUP_SECS: f32 = 10.0;
+const STARTUP_SECS: f32 = 20.0;
 /// Bêtes ajoutées autour du joueur pour la phase « beaucoup de créatures »
 pub const STRESS_CREATURES: usize = 60;
 

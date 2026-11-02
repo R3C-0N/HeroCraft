@@ -7,8 +7,10 @@ et, dans chacune, ne change qu'une seule chose par rapport à la référence.
 cargo run --release --bin herocraft_client -- --benchmark
 ```
 
-Environ 3 minutes. Ne touchez à rien : la fenêtre doit rester au premier plan, et la souris n'est
-pas capturée. À la fin, le rapport est écrit dans `./benchmark/` et le jeu se ferme.
+Environ 3 minutes et demie. La souris reste libre : la fenêtre peut être déplacée sur un autre
+écran et vous pouvez faire autre chose à côté, tant que la fenêtre n'est pas réduite (un autre
+programme gourmand fausse quand même la mesure). À la fin, le rapport est écrit dans `./benchmark/`
+et le jeu se ferme.
 
 Toujours en `--release` : en debug, le code du jeu tourne 5 à 10 fois plus lentement, et le
 rapport le signale en tête.
@@ -18,7 +20,7 @@ rapport le signale en tête.
 - Toujours la même planète (graine 2026, ou celle de `--seed`) et le même point de départ, au
   soleil de midi qui reste fixe.
 - V-Sync et limite de FPS coupées, joueur invulnérable, rien n'est enregistré dans la sauvegarde.
-- Une mise en route de 10 s, non mesurée : le relief, les nuages et les textures se chargent.
+- Une mise en route de 20 s, non mesurée : le relief, les nuages et les textures se chargent.
 - Puis 17 phases, chacune avec 3 s de chauffe et 8 s de mesure. Avant chaque phase, le joueur
   revient au point de départ et la population de créatures est tirée de nouveau, la même chaque
   fois. Pendant la mesure, la tête fait un tour complet : toutes les directions comptent.

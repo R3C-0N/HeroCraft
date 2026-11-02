@@ -445,7 +445,10 @@ fn main() {
                             ui_state.set_inventory_open(false);
                         }
                         // Mort : la souris est libérée pour le bouton de réapparition
+                        // Banc d'essai : la souris reste libre (le jeu se pilote seul, la fenêtre peut
+                        // être déplacée sur un autre écran pendant la mesure)
                         let want_capture = window_focused
+                            && bench.is_none()
                             && !ui_state.player.is_dead()
                             && !ui_state.is_settings_open
                             && !ui_state.inventory_open
