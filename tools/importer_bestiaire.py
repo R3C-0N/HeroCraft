@@ -76,6 +76,8 @@ def importer(module):
                 print(f"{ident} : biome {biome} sans équivalent, ignoré")
             for nom in BIOMES.get(biome, []):
                 spawn.append({"biome": nom, "weight": habitat.get("densite", 1.0)})
+        fiche = SORTIE / f"{ident}.json"
+        ancien = json.loads(fiche.read_text(encoding="utf-8")) if fiche.is_file() else {}
         description = {
             "name": p["DisplayName"]["name"],
             "description": p["DisplayName"].get("description", ""),
@@ -83,6 +85,8 @@ def importer(module):
             "walk_speed": (wander.get("speed", VITESSE_PAR_DEFAUT) if wander else 0.0),
             "min_group": habitat.get("groupeMin", 1),
             "max_group": habitat.get("groupeMax", 1),
+            # Le tempérament n'existe pas dans le bestiaire : celui de la fiche actuelle est gardé
+            **({"temperament": t} if (t := ancien.get("temperament")) else {}),
             "spawn": spawn,
             "model": {
                 "mesh": f"modeles/{ident}.gltf",
@@ -90,7 +94,7 @@ def importer(module):
                 "walk_animation": maillage.get("animation", "#repos").split("#")[-1],
             },
         }
-        ecrire(SORTIE / f"{ident}.json", description)
+        ecrire(fiche, description)
         print(f"{ident} : {description['name']}, {len(spawn)} biome(s)")
 
 

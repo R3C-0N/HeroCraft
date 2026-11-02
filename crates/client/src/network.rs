@@ -333,19 +333,19 @@ pub struct NetClient {
     players: HashMap<u64, RemotePlayer>,
     creatures: HashMap<u64, RemoteCreature>,
     last_move_sent: Option<Instant>,
-    last_move: Option<(Vec3, f32, f32, bool)>,
+    last_move: Option<(Vec3, f32, f32, bool, bool)>,
 }
 
 impl NetClient {
     /// Envoie la position du joueur (au plus 20 fois par seconde, et seulement si elle a changé)
     pub fn send_move(&mut self, camera: &OrbitCamera) {
-        let state = (camera.player_pos, camera.player_yaw, camera.player_pitch, camera.is_running());
+        let state = (camera.player_pos, camera.player_yaw, camera.player_pitch, camera.is_running(), camera.is_crouching());
         if self.last_move == Some(state) || self.last_move_sent.is_some_and(|t| t.elapsed() < MOVE_SEND_INTERVAL) {
             return;
         }
         self.last_move = Some(state);
         self.last_move_sent = Some(Instant::now());
-        self.connection.send(&ClientPacket::PlayerMove { position: state.0, yaw: state.1, pitch: state.2, sprinting: state.3 });
+        self.connection.send(&ClientPacket::PlayerMove { position: state.0, yaw: state.1, pitch: state.2, sprinting: state.3, crouching: state.4 });
     }
 
     /// Signale au serveur une chute de `blocks` blocs, qui en tire les dommages

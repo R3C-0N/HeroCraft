@@ -77,7 +77,7 @@ impl Action {
             Action::MoveLeft => "Aller à gauche",
             Action::MoveRight => "Aller à droite",
             Action::Jump => "Sauter (deux fois : voler), monter en vol",
-            Action::Descend => "Descendre en vol",
+            Action::Descend => "S'accroupir, descendre en vol",
             Action::Sprint => "Sprinter",
             Action::ZoomModifier => "Zoom de la vue (maintenir + molette)",
             Action::ToggleView => "Basculer vue au sol / satellite",

@@ -68,7 +68,7 @@ fn main() {
     info!(" • [1-9] / Molette / [E]              : Choisir la case de la barre d'objets / Inventaire");
     info!(" • [Z,Q,S,D] (AZERTY) / [W,A,S,D]     : Se déplacer");
     info!(" • [ESPACE] / double [ESPACE]         : Sauter / S'envoler (monter en vol)");
-    info!(" • [MAJ] / [CTRL]                     : Descendre en vol / Sprinter");
+    info!(" • [MAJ] / [CTRL]                     : S'accroupir (descendre en vol) / Sprinter");
     info!(" • [ALT] + Molette                    : Zoom FPS (0m) -> TPS (1-25m) -> Satellite");
     info!(" • [F] / [R]                          : Vue sol <-> satellite / Réinitialiser la vue");
     info!(" • [G] / [T] / [C]                    : Nouvelle planète / Filtres tectonique, courants");
@@ -535,7 +535,8 @@ fn main() {
                                         creatures_seed = current_seed;
                                     }
                                     if !ui_state.is_settings_open {
-                                        solo_creatures.tick(dt, &generator, lod_manager.terrain_edits(), &[camera.player_pos]);
+                                        let player = herocraft_world::PlayerPresence { feet: camera.player_pos, crouching: camera.is_crouching() };
+                                        solo_creatures.tick_with_presences(dt, &generator, lod_manager.terrain_edits(), &[player]);
                                     }
                                     solo_creatures
                                         .creatures()

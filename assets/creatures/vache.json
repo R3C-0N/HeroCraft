@@ -5,6 +5,7 @@
   "walk_speed": 0.8,
   "min_group": 3,
   "max_group": 5,
+  "temperament": "placide",
   "spawn": [
     {"biome": "Plains", "weight": 1.0}
   ],

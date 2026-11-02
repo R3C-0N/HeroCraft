@@ -8,7 +8,7 @@ pub mod quadtree;
 pub mod tectonics;
 
 pub use caves::{carvable_range, CaveField, CAVE_DEPTH};
-pub use creatures::{Creature, CreatureWorld, CREATURE_RANGE_BLOCKS, MAX_CREATURES};
+pub use creatures::{Creature, CreatureWorld, PlayerPresence, CREATURE_RANGE_BLOCKS, MAX_CREATURES};
 pub use cubed_sphere::*;
 pub use edits::*;
 pub use generator::*;
