@@ -1100,6 +1100,9 @@ impl UiState {
             .interactable(false)
             .show(ctx, |ui| {
                 hud_frame().inner_margin(egui::Margin::symmetric(10.0_f32, 6.0_f32)).show(ui, |ui| {
+                    // Collé au bord droit, la zone n'a aucune largeur libre : sans cela, egui
+                    // renvoie le texte à la ligne à chaque caractère
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                     let fps_color = if self.current_fps >= 55 {
                         egui::Color32::from_rgb(80, 220, 100)
                     } else if self.current_fps >= 30 {
