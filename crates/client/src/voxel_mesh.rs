@@ -700,19 +700,16 @@ impl VoxelMeshBuilder {
             };
             let side_shade = if is_top { 1.0 } else { 0.78 };
             // Arbres, herbes et fleurs : la couleur de leur texture, ni celle du biome ni celle du sol
+            // (constructions comprises). Le verre est plein : sa vitre est un trou de sa texture, son
+            // cadre reste net au lieu d'être tramé par la transparence de la fiche.
             if !Self::is_ground(block) {
                 let c = own_color(if block.is_plant() { 1.0 } else { side_shade });
-                return [c[0], c[1], c[2], c[3]];
+                let connected = blocks().get(block).is_some_and(|sheet| sheet.connected);
+                return [c[0], c[1], c[2], if connected { 1.0 } else { c[3] }];
             }
             // Paroi de grotte : la couleur de sa matière, comme un trou creusé par le joueur, et non
             // celle du biome qui est celle de la surface (l'ombre du relief l'assombrit déjà)
             if block != BlockId::WATER && cave_air(gx + toward.0, gy + toward.1, gz + toward.2) {
-                let c = own_color(side_shade);
-                return [c[0], c[1], c[2], 1.0];
-            }
-            // Bloc d'une construction (pavés, planches, toits…) : la couleur de sa matière, jamais
-            // celle du biome, qui ne teinte que le sol naturel
-            if !matches!(block, BlockId::STONE | BlockId::DIRT | BlockId::GRASS | BlockId::SAND | BlockId::SNOW | BlockId::WATER) {
                 let c = own_color(side_shade);
                 return [c[0], c[1], c[2], 1.0];
             }
@@ -844,7 +841,13 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, at(s1), at(s2), at(c))
                             })
                         };
-                        let tex = face_texture(block, dir, face.corners.map(|o| [o.0 * 16, o.1 * 16, o.2 * 16]));
+                        let mut tex = face_texture(block, dir, face.corners.map(|o| [o.0 * 16, o.1 * 16, o.2 * 16]));
+                        if blocks().get(block).is_some_and(|sheet| sheet.connected) {
+                            // Verre : le cadre ne court que sur les bords qui ne touchent pas un bloc pareil
+                            let mask = Self::connected_mask(dir, |o: (i32, i32, i32)| get_voxel(gx + o.0, gy + o.1, gz + o.2).kind() == block.kind());
+                            let layer = block_textures().connected_layer(blocks().face_texture(block, dir), mask);
+                            tex = tex.map(|t| (t & !0xFFFF) | layer as u32);
+                        }
                         Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, tex);
                     }
                 }
@@ -852,6 +855,24 @@ impl VoxelMeshBuilder {
         }
 
         PlanetMesh { vertices, indices }
+    }
+
+    /// Bords de la face `dir` (dans le repère de sa texture, `face_uv`) qui touchent un bloc du même
+    /// genre : `same(décalage)` dit si le voisin à ce décalage en est un
+    fn connected_mask(dir: usize, same: impl Fn((i32, i32, i32)) -> bool) -> u8 {
+        use crate::block_textures::{CONNECTED_BOTTOM, CONNECTED_LEFT, CONNECTED_RIGHT, CONNECTED_TOP};
+        // Voisins à gauche (u = 0), à droite, en haut (v = 0) et en bas de la texture
+        let [left, right, top, bottom] = match dir {
+            0 => [(0, 0, 1), (0, 0, -1), (0, 1, 0), (0, -1, 0)],
+            1 => [(0, 0, -1), (0, 0, 1), (0, 1, 0), (0, -1, 0)],
+            2 | 3 => [(-1, 0, 0), (1, 0, 0), (0, 0, -1), (0, 0, 1)],
+            4 => [(-1, 0, 0), (1, 0, 0), (0, 1, 0), (0, -1, 0)],
+            _ => [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0)],
+        };
+        [(left, CONNECTED_LEFT), (right, CONNECTED_RIGHT), (top, CONNECTED_TOP), (bottom, CONNECTED_BOTTOM)]
+            .into_iter()
+            .filter(|(o, _)| same(*o))
+            .fold(0, |mask, (_, bit)| mask | bit)
     }
 
     /// Matière du relief naturel, que le dessus du terrain colore selon le biome

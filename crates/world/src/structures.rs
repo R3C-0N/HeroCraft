@@ -419,13 +419,14 @@ impl House {
                 if (x, z) == self.door_column() && level < 2 {
                     return Some(BlockId::AIR);
                 }
-                // Fenêtres : une colonne sur deux du mur, à hauteur d'yeux de chaque niveau
+                // Fenêtres : deux colonnes sur quatre du mur (des paires de vitres), à hauteur d'yeux de
+                // chaque niveau
                 let along = if z == foot.z0 || z == foot.z1 - 1 { x - foot.x0 } else { z - foot.z0 };
                 let door_near = {
                     let (dx, dz) = self.door_column();
                     (dx - x).abs() + (dz - z).abs() <= 1 && (dx == x || dz == z)
                 };
-                if along % 2 == 1 && (level == 1 || level == 4) && !door_near {
+                if matches!(along % 4, 1 | 2) && (level == 1 || level == 4) && !door_near {
                     return Some(GLASS);
                 }
                 return Some(self.style.wall);
