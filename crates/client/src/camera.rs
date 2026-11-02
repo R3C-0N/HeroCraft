@@ -75,6 +75,8 @@ pub struct OrbitCamera {
 
     /// Vol libre (double appui sur Saut) : pas de gravité, Saut monte et Descendre descend
     pub is_flying: bool,
+    /// Multiplicateur de la vitesse de déplacement (commande `/speed`)
+    pub speed_multiplier: f32,
     pub ascend_held: bool,
     pub descend_held: bool,
     /// Accroupissement affiché, de 0 (debout) à 1 (accroupi) : les yeux descendent en douceur
@@ -150,6 +152,7 @@ impl Default for OrbitCamera {
             jump_requested: false,
 
             is_flying: false,
+            speed_multiplier: 1.0,
             ascend_held: false,
             descend_held: false,
             crouch_blend: 0.0,
@@ -453,6 +456,29 @@ impl OrbitCamera {
         }
     }
 
+    /// Téléporte le joueur aux pieds `feet` (vue au sol) : en vol s'il n'est pas posé au sol, pour
+    /// qu'il ne fasse pas de chute
+    pub fn teleport(&mut self, feet: Vec3, generator: &PlanetWorldGenerator) {
+        let ground = self.ground_radius_at(feet.normalize_or_zero(), generator);
+        let block = self.block_height();
+        self.player_pos = feet;
+        self.vertical_velocity = 0.0;
+        self.jump_requested = false;
+        self.cancel_fall();
+        self.is_flying = feet.length() > ground + 0.5 * block;
+        self.is_grounded = !self.is_flying;
+        self.sync_orbit_to_ground();
+        self.distance = 0.0;
+        self.target_distance = 0.0;
+        self.update_camera_bounds(generator);
+    }
+
+    /// Pieds posés au sol à cette latitude et longitude (radians), `height_blocks` blocs au-dessus
+    pub fn ground_point(&self, lat: f32, lon: f32, height_blocks: f32, generator: &PlanetWorldGenerator) -> Vec3 {
+        let dir = Vec3::new(lat.cos() * lon.cos(), lat.sin(), lat.cos() * lon.sin());
+        dir * (self.ground_radius_at(dir, generator) + height_blocks * self.block_height())
+    }
+
     /// Zoom continu via la molette : passe sans couture de Satellite à TPS puis à FPS
     pub fn zoom(&mut self, delta_y: f32) {
         // Au plus près, la caméra se tient à quelques blocs du héros pour qu'on le voie en entier
@@ -652,7 +678,7 @@ impl OrbitCamera {
                 (false, true) => 0.45,
                 (true, false) => 0.50,
                 (true, true) => 1.10,
-            } * scale;
+            } * scale * self.speed_multiplier;
             let delta = move_dir * speed * dt;
             match &self.collider {
                 // Les murs arrêtent le joueur, qui glisse le long d'eux (axe est puis axe nord)

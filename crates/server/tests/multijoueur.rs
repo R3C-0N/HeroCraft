@@ -247,3 +247,52 @@ fn la_legende_donne_sa_voie_et_une_legende_truquee_est_refusee() {
     running.store(false, Ordering::SeqCst);
     server_thread.join().unwrap();
 }
+
+#[test]
+fn le_chat_et_les_commandes_passent_par_le_serveur() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let (_, feet) = land(&server);
+
+    let join = |server: &mut Server, name: &str| {
+        let client = Client::connect(&addr, WAIT).unwrap();
+        client.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION });
+        pump(server, &client, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
+        client
+    };
+    let alice = join(&mut server, "Alice");
+    let bob = join(&mut server, "Bob");
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
+
+    // Un message d'Alice arrive à Bob, et à Alice elle-même
+    alice.send(&ClientPacket::ChatMessage("  salut Bob  ".into()));
+    let chat = |p: ServerPacket| match p {
+        ServerPacket::ChatMessage { sender, message } if !sender.is_empty() => Some((sender, message)),
+        _ => None,
+    };
+    assert_eq!(pump(&mut server, &bob, chat), ("Alice".to_string(), "salut Bob".to_string()));
+    assert_eq!(pump(&mut server, &alice, chat), ("Alice".to_string(), "salut Bob".to_string()));
+
+    // /summon : trois loups à ses pieds, la réponse ne va qu'à elle
+    let before = server.creatures().creatures().len();
+    alice.send(&ClientPacket::Summon { species: "loup".into(), count: 3, feet });
+    let reply = |p: ServerPacket| match p {
+        ServerPacket::ChatMessage { sender, message } if sender.is_empty() && !message.contains("rejoint") => Some(message),
+        _ => None,
+    };
+    assert!(pump(&mut server, &alice, reply).starts_with("Summoned 3"));
+    assert_eq!(server.creatures().creatures().len(), before + 3);
+    // Trop loin d'elle : refusé
+    alice.send(&ClientPacket::Summon { species: "loup".into(), count: 1, feet: feet * 2.0 });
+    assert!(pump(&mut server, &alice, reply).contains("Too far"));
+
+    // /xp : de l'expérience, et le niveau qui va avec
+    alice.send(&ClientPacket::GainExperience(100_000));
+    pump(&mut server, &alice, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.level > 1).then_some(()));
+
+    // Console du serveur
+    assert_eq!(server.console_command("list"), vec!["2 player(s) online: Alice, Bob".to_string()]);
+    assert_eq!(server.console_command("seed"), vec!["Seed: 4242".to_string()]);
+    server.console_command("say Bonjour");
+    assert_eq!(pump(&mut server, &bob, chat), ("Server".to_string(), "Bonjour".to_string()));
+}

@@ -7,5 +7,6 @@
   "textures": {"side": "textures/DeadBush.png"},
   "shape": "plant",
   "solid": false,
+  "replaceable": true,
   "sound": "grass"
 }

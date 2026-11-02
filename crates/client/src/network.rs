@@ -328,6 +328,8 @@ pub enum NetEvent {
     Stats(CharacterStats),
     /// Le joueur vient d'être frappé par une créature (`cause` : son nom)
     Hurt { damage: f32, cause: String },
+    /// Message du chat (`sender` vide : annonce du serveur, ou réponse d'une commande)
+    Chat { sender: String, message: String },
     /// Connexion perdue ou fermée par le serveur
     Disconnected(String),
 }
@@ -372,6 +374,36 @@ impl NetClient {
     /// Signale au serveur un coup porté à une créature
     pub fn send_hit_creature(&mut self, creature_id: u64) {
         self.connection.send(&ClientPacket::HitCreature { creature_id });
+    }
+
+    /// Envoie un message dans le chat ; le serveur le renvoie à tous, nous compris
+    pub fn send_chat(&mut self, message: &str) {
+        self.connection.send(&ClientPacket::ChatMessage(message.to_string()));
+    }
+
+    /// Commandes que le serveur exécute : `/summon`, `/heal`, `/xp`
+    pub fn send_summon(&mut self, species: &str, count: u32, feet: Vec3) {
+        self.connection.send(&ClientPacket::Summon { species: species.to_string(), count, feet });
+    }
+
+    pub fn send_heal(&mut self) {
+        self.connection.send(&ClientPacket::Heal);
+    }
+
+    pub fn send_experience(&mut self, amount: u64) {
+        self.connection.send(&ClientPacket::GainExperience(amount));
+    }
+
+    /// Noms des autres joueurs en ligne
+    pub fn player_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.players.values().map(|p| p.name.clone()).collect();
+        names.sort_unstable_by_key(|n| n.to_lowercase());
+        names
+    }
+
+    /// Pieds affichés de l'autre joueur nommé `name` (sans tenir compte de la casse)
+    pub fn player_position(&self, name: &str) -> Option<(String, Option<Vec3>)> {
+        self.players.values().find(|p| p.name.eq_ignore_ascii_case(name)).map(|p| (p.name.clone(), p.position))
     }
 
     /// Prévient le serveur du départ du joueur
@@ -442,6 +474,7 @@ impl NetClient {
                 } else {
                     info!("<{sender}> {message}");
                 }
+                return Some(NetEvent::Chat { sender, message });
             }
             ServerPacket::Disconnect(reason) => return Some(NetEvent::Disconnected(reason)),
             ServerPacket::ChunkData { coord, .. } => warn!("Chunk {coord:?} reçu hors de la connexion, ignoré."),
