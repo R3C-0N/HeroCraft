@@ -29,6 +29,9 @@ const HURT_ROLL: f32 = 0.16;
 /// Mort : la vue s'effondre au sol en tant de secondes, couchée sur le côté
 const DEATH_FALL_SECS: f32 = 0.7;
 const DEATH_ROLL: f32 = 1.25;
+/// Accroupi : les yeux descendent de cette fraction de leur hauteur, en tant de secondes
+const CROUCH_EYE_DROP: f32 = 0.2;
+const CROUCH_SECS: f32 = 0.12;
 
 /// Mode de vue actif selon le continuum de distance de zoom
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +73,8 @@ pub struct OrbitCamera {
     pub is_flying: bool,
     pub ascend_held: bool,
     pub descend_held: bool,
+    /// Accroupissement affiché, de 0 (debout) à 1 (accroupi) : les yeux descendent en douceur
+    crouch_blend: f32,
 
     /// Distance actuelle de la caméra (interpolée avec fluidité vers target_distance)
     pub distance: f32,
@@ -143,6 +148,7 @@ impl Default for OrbitCamera {
             is_flying: false,
             ascend_held: false,
             descend_held: false,
+            crouch_blend: 0.0,
 
             distance: 330.0,
             target_distance: 330.0,
@@ -392,9 +398,22 @@ impl OrbitCamera {
         self.landed_fall.take()
     }
 
+    /// Le joueur est accroupi : Descendre maintenu, au sol. Il marche lentement, ne sprinte pas, et
+    /// les bêtes craintives le remarquent de moins loin.
+    pub fn is_crouching(&self) -> bool {
+        self.descend_held && !self.is_flying && !self.is_dead && self.view_mode() != CameraViewMode::SatelliteOrbit
+    }
+
+    /// Hauteur des yeux au-dessus des pieds, en unités du monde : ~1,7 bloc debout, ~1,35 accroupi
+    fn eye_height(&self) -> f32 {
+        let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
+        0.065 * scale * (1.0 - CROUCH_EYE_DROP * self.crouch_blend)
+    }
+
     /// Le joueur sprinte à pied (ce qui consomme son endurance)
     pub fn is_running(&self) -> bool {
         self.is_sprinting
+            && !self.is_crouching()
             && !self.sprint_exhausted
             && !self.is_flying
             && (self.move_forward || self.move_backward || self.move_left || self.move_right)
@@ -472,7 +491,7 @@ impl OrbitCamera {
         herocraft_common::prof_scope!("camera::update_camera_bounds");
         let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
         let (up, _, _, look_dir) = self.look_vectors();
-        let eye_height = 0.065 * scale; // ~1.7 blocs au-dessus des pieds
+        let eye_height = self.eye_height();
         let head = self.player_pos + up * eye_height;
 
         let margin = 0.035 * scale; // Marge de sécurité stricte au-dessus du sol (~0.9 bloc)
@@ -577,6 +596,8 @@ impl OrbitCamera {
         }
 
         self.hurt_shake = (self.hurt_shake - dt).max(0.0);
+        let crouch_target = if self.is_crouching() { 1.0 } else { 0.0 };
+        self.crouch_blend += (crouch_target - self.crouch_blend).clamp(-dt / CROUCH_SECS, dt / CROUCH_SECS);
         if self.is_dead {
             // Mort : plus de déplacement ni de vol, la vue s'effondre
             self.release_inputs();
@@ -603,6 +624,8 @@ impl OrbitCamera {
             // ~13 blocs/s en vol et ~29 blocs/s en vol sprinté
             let sprinting = self.is_sprinting && (self.is_flying || !self.sprint_exhausted);
             let speed = match (self.is_flying, sprinting) {
+                // Accroupi : ~2 blocs/s, sans sprint
+                (false, _) if self.is_crouching() => 0.08,
                 (false, false) => 0.20,
                 (false, true) => 0.45,
                 (true, false) => 0.50,
@@ -758,8 +781,7 @@ impl OrbitCamera {
     pub fn build_view_projection_matrix(&self) -> Mat4 {
         let eye = self.effective_eye;
         let (up, _, _, look_dir) = self.look_vectors();
-        let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
-        let eye_height = 0.065 * scale;
+        let eye_height = self.eye_height();
         let head = self.player_pos + up * eye_height;
 
         // Secousse d'une blessure et joueur mort couché : la vue tourne autour du regard
@@ -1032,6 +1054,36 @@ mod tests {
         }
         assert!(cam.is_grounded && !cam.is_flying);
         assert_eq!(cam.take_landing(), None);
+    }
+
+    #[test]
+    fn test_crouching_slows_walking_and_lowers_the_eyes() {
+        let (mut cam, gen) = ground_test_camera();
+        let walk = |cam: &mut OrbitCamera| {
+            let start = cam.player_pos;
+            cam.move_forward = true;
+            for _ in 0..30 {
+                cam.update(0.016, &gen);
+            }
+            cam.move_forward = false;
+            cam.player_pos.distance(start)
+        };
+        let standing_eye = cam.eye_height();
+        let standing = walk(&mut cam);
+
+        cam.descend_held = true;
+        cam.is_sprinting = true;
+        assert!(cam.is_crouching());
+        let crouching = walk(&mut cam);
+        assert!(crouching < standing * 0.5, "accroupi, il avance presque aussi vite ({crouching} contre {standing})");
+        assert!(cam.eye_height() < standing_eye * 0.9, "les yeux ne descendent pas");
+        assert!(!cam.is_running(), "accroupi, il ne sprinte pas");
+
+        // En vol, Descendre descend au lieu de s'accroupir
+        cam.descend_held = false;
+        cam.toggle_flight();
+        cam.descend_held = true;
+        assert!(!cam.is_crouching());
     }
 
     #[test]

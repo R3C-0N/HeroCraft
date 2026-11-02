@@ -6,6 +6,7 @@
 //! rendu du client lisent tout dans ces descriptions. Le format est décrit dans
 //! `assets/creatures/README.md`.
 
+use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -47,8 +48,63 @@ pub struct CreatureSpecies {
     /// Biomes où l'espèce apparaît (aucun : elle n'apparaît pas d'elle-même)
     #[serde(default)]
     pub spawn: Vec<SpawnRule>,
+    /// Réaction à l'approche d'un joueur (indifférente par défaut)
+    #[serde(default)]
+    pub temperament: Temperament,
+    /// Moment de la journée où l'espèce est éveillée : elle dort le reste du temps
+    #[serde(default)]
+    pub activity: Activity,
+    /// Comportement agressif (aucun : la bête est paisible et s'enfuit quand on la frappe)
+    #[serde(default)]
+    pub attack: Option<CreatureAttack>,
     /// Modèle 3D
     pub model: CreatureModel,
+}
+
+/// Façon d'attaquer d'une bête agressive
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AttackMode {
+    /// Seule : elle poursuit sa cible et la mord dès qu'elle est à portée
+    Solo,
+    /// En meute : elle n'ose attaquer qu'entourée d'au moins `pack_size` bêtes de son espèce, qui se
+    /// joignent toutes à la chasse et encerclent la cible ; trop peu nombreuses, elles fuient
+    Pack,
+    /// À la charge : elle s'arrête, vise, puis fonce en ligne droite et souffle un moment après
+    Charge,
+}
+
+/// Comportement agressif : qui la bête chasse, comment, et ce que coûte sa morsure
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureAttack {
+    pub mode: AttackMode,
+    /// Points de vie retirés par coup (à un joueur ou à une proie)
+    pub damage: f32,
+    /// Temps entre deux coups, en secondes
+    #[serde(default = "default_attack_cooldown")]
+    pub cooldown: f32,
+    /// Distance à laquelle elle repère une cible, en blocs
+    #[serde(default = "default_sight")]
+    pub sight: f32,
+    /// Allonge d'un coup, en blocs devant son museau
+    #[serde(default = "default_reach")]
+    pub reach: f32,
+    /// Allure de la poursuite (ou de la charge), par rapport à la marche
+    #[serde(default = "default_chase_speed")]
+    pub chase_speed: f32,
+    /// Elle s'en prend aux joueurs qu'elle voit (sinon seulement à celui qui l'a frappée)
+    #[serde(default = "yes")]
+    pub hunts_players: bool,
+    /// Elle n'attaque que frappée la première (ours, tréant…)
+    #[serde(default)]
+    pub provoked_only: bool,
+    /// Espèces qu'elle chasse (identifiants de leurs fichiers)
+    #[serde(default)]
+    pub prey: Vec<String>,
+    /// En meute : nombre de bêtes de son espèce, elle comprise, qu'il lui faut autour d'elle pour oser
+    #[serde(default = "default_pack_size")]
+    pub pack_size: u32,
 }
 
 /// Volume du corps, en blocs
@@ -60,6 +116,58 @@ pub struct CreatureBody {
     /// Demi-longueur (de la tête à la queue)
     pub half_length: f32,
     pub height: f32,
+}
+
+/// Réaction d'une espèce à un joueur qui s'approche, tant qu'il ne l'a pas frappée (un coup la fait
+/// toujours fuir)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Temperament {
+    /// Ne prête pas attention aux joueurs
+    #[default]
+    Indifferent,
+    /// S'enfuit quand un joueur s'approche
+    Craintif,
+    /// S'arrête et regarde le joueur qui passe près d'elle
+    Placide,
+    /// Suit le joueur à distance, et le regarde une fois près de lui
+    Curieux,
+}
+
+/// Rythme de vie d'une espèce, selon la hauteur du soleil là où se trouve la bête (la planète est
+/// ronde : il fait jour d'un côté et nuit de l'autre)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Activity {
+    /// Éveillée le jour et au crépuscule, endormie en pleine nuit
+    #[default]
+    Diurnal,
+    /// Éveillée la nuit et au crépuscule, endormie en plein jour
+    Nocturnal,
+    /// Éveillée à l'aube et au crépuscule, endormie en plein jour comme en pleine nuit
+    Crepuscular,
+    /// Toujours éveillée
+    Always,
+}
+
+impl Activity {
+    /// Au-delà de cette hauteur du soleil (sinus de son élévation), c'est le plein jour ; en deçà de
+    /// son opposé, la pleine nuit. Entre les deux, l'aube ou le crépuscule.
+    pub const FULL_LIGHT: f32 = 0.1;
+    /// Hauteur du soleil, au-dessus comme en dessous de l'horizon, jusqu'où s'éveille une espèce
+    /// crépusculaire
+    pub const TWILIGHT: f32 = 0.5;
+
+    /// L'espèce est éveillée quand le soleil est à cette hauteur (sinus de son élévation, de -1 sous
+    /// les pieds à 1 au zénith)
+    pub fn is_awake(self, sun_height: f32) -> bool {
+        match self {
+            Activity::Diurnal => sun_height > -Self::FULL_LIGHT,
+            Activity::Nocturnal => sun_height < Self::FULL_LIGHT,
+            Activity::Crepuscular => sun_height.abs() < Self::TWILIGHT,
+            Activity::Always => true,
+        }
+    }
 }
 
 /// Apparition dans un biome
@@ -85,18 +193,138 @@ pub struct CreatureModel {
     pub mesh: String,
     /// Texture PNG, lue au plus proche texel
     pub texture: String,
-    /// Animation jouée pendant la marche, d'autant plus vite que la créature va vite, et figée à
-    /// l'arrêt
-    #[serde(default = "walk_animation")]
-    pub walk_animation: String,
+    /// Animations de la bête, par nom : `repos`, `marche`, `course`, `attaque`, `coup`, et ses
+    /// inactivités (celles qui ont une `pause` : `broute`, `sommeil`…). Rangées par nom, le même
+    /// ordre sur le serveur et le client.
+    #[serde(default)]
+    pub animations: BTreeMap<String, CreatureAnimation>,
 }
 
-fn walk_animation() -> String {
-    "repos".into()
+/// Une animation, jouée en boucle : des os qui oscillent autour d'une pose, ou une animation du glTF
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureAnimation {
+    /// Animation du glTF à jouer à la place des mouvements d'os
+    #[serde(default)]
+    pub clip: Option<String>,
+    /// Durée d'un cycle, en secondes
+    #[serde(default = "one_second")]
+    pub cycle: f32,
+    /// Distance parcourue en un cycle, en blocs : le cycle suit alors le chemin parcouru (marche,
+    /// course), pour que les pattes ne glissent pas
+    #[serde(default)]
+    pub foulee: Option<f32>,
+    /// Mouvement de chaque os, par nom de nœud du glTF. Un nom qui finit par `*` vise tous les os qui
+    /// commencent ainsi.
+    #[serde(default)]
+    pub os: BTreeMap<String, BoneMotion>,
+    /// Inactivité que la bête choisit quand elle s'arrête
+    #[serde(default)]
+    pub pause: Option<PauseRule>,
+}
+
+/// Mouvement d'un os : une pose fixe plus une oscillation sinusoïdale, par-dessus sa pose de repos.
+/// Angles en degrés autour des axes du modèle (x : bascule en avant, le museau pique vers le bas ;
+/// y : tourne vers la gauche ; z : penche sur la droite), déplacements en blocs.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoneMotion {
+    /// Amplitude de l'oscillation des angles
+    #[serde(default)]
+    pub rotation: [f32; 3],
+    /// Angles tenus pendant toute l'animation
+    #[serde(default)]
+    pub rotation_fixe: [f32; 3],
+    /// Amplitude de l'oscillation de la position
+    #[serde(default)]
+    pub translation: [f32; 3],
+    /// Déplacement tenu pendant toute l'animation
+    #[serde(default)]
+    pub translation_fixe: [f32; 3],
+    /// Avance de l'oscillation, en fraction de cycle (0,5 : à contretemps)
+    #[serde(default)]
+    pub phase: f32,
+    /// Oscillations par cycle (2 : deux fois plus vite que le cycle)
+    #[serde(default = "one_f32")]
+    pub frequence: f32,
+    /// Avance de phase ajoutée à chaque os suivant du même nom (mille-pattes, queue en segments)
+    #[serde(default)]
+    pub decalage: f32,
+}
+
+/// Une inactivité : la bête arrêtée la choisit au poids parmi les autres, et la tient un moment
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PauseRule {
+    pub poids: f32,
+    /// Durée, en secondes : au moins la première valeur, au plus la seconde
+    pub duree: [f32; 2],
+}
+
+/// Inactivité d'une espèce dont la fiche n'en décrit aucune : elle se tient au repos
+pub const DEFAULT_PAUSE: PauseRule = PauseRule { poids: 1.0, duree: [2.0, 6.0] };
+
+/// Ce que fait une créature, pour choisir son animation
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CreatureAction {
+    /// Arrêtée (ou morte)
+    #[default]
+    Repos,
+    Marche,
+    /// Fuite ou poursuite
+    Course,
+    Attaque,
+    /// Inactivité : rang dans `CreatureSpecies::pauses`
+    Pause(u8),
+}
+
+impl CreatureAction {
+    /// Nom de l'animation de l'action dans la fiche de l'espèce
+    pub fn animation_name(self, species: &CreatureSpecies) -> &str {
+        match self {
+            Self::Repos => "repos",
+            Self::Marche => "marche",
+            Self::Course => "course",
+            Self::Attaque => "attaque",
+            Self::Pause(i) => species.pauses().nth(i as usize).map_or("repos", |(name, _)| name),
+        }
+    }
+}
+
+fn one_second() -> f32 {
+    1.0
+}
+
+fn one_f32() -> f32 {
+    1.0
 }
 
 fn default_health() -> f32 {
     10.0
+}
+
+fn default_attack_cooldown() -> f32 {
+    1.2
+}
+
+fn default_sight() -> f32 {
+    12.0
+}
+
+fn default_reach() -> f32 {
+    0.8
+}
+
+fn default_chase_speed() -> f32 {
+    1.6
+}
+
+fn default_pack_size() -> u32 {
+    3
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn one() -> u32 {
@@ -206,7 +434,34 @@ impl CreatureSpecies {
         if species.spawn.iter().any(|rule| !(rule.weight >= 0.0 && (0.0..=1.0).contains(&rule.chance))) {
             return Err("apparition invalide (poids positif, chance entre 0 et 1)".into());
         }
+        if let Some(a) = &species.attack {
+            if !(a.damage > 0.0 && a.cooldown > 0.0 && a.sight > 0.0 && a.reach >= 0.0 && a.chase_speed > 0.0 && a.pack_size >= 1) {
+                return Err("attaque invalide (dégâts, délai, vue et allure positifs, meute d'au moins 1)".into());
+            }
+        }
+        for (name, animation) in &species.model.animations {
+            if !(animation.cycle > 0.0 && animation.foulee.is_none_or(|f| f > 0.0)) {
+                return Err(format!("animation {name} : cycle et foulée doivent être positifs"));
+            }
+            if let Some(PauseRule { poids, duree: [min, max] }) = animation.pause {
+                if !(poids >= 0.0 && min > 0.0 && max >= min) {
+                    return Err(format!("animation {name} : pause invalide (poids positif, 0 < durée min ≤ durée max)"));
+                }
+            }
+            let values = animation.os.values().flat_map(|m| m.rotation.into_iter().chain(m.rotation_fixe).chain(m.translation).chain(m.translation_fixe).chain([m.phase, m.frequence, m.decalage]));
+            if values.into_iter().any(|v| !v.is_finite()) {
+                return Err(format!("animation {name} : valeur d'os invalide"));
+            }
+        }
+        if species.pauses().count() > u8::MAX as usize {
+            return Err("trop d'inactivités".into());
+        }
         Ok(species)
+    }
+
+    /// Les inactivités de l'espèce (animations qui ont une `pause`), rangées par nom
+    pub fn pauses(&self) -> impl Iterator<Item = (&str, PauseRule)> {
+        self.model.animations.iter().filter_map(|(name, a)| a.pause.map(|p| (name.as_str(), p)))
     }
 }
 
@@ -222,10 +477,23 @@ pub struct CreatureState {
     pub hurt: f32,
     /// Mort : 0 vivante, puis de 0 à 1 pendant qu'elle bascule sur le flanc avant de disparaître
     pub death: f32,
+    /// Ce qu'elle fait, pour choisir son animation
+    pub action: CreatureAction,
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_activity_follows_the_sun() {
+        use super::Activity::*;
+        // Plein jour, crépuscule, pleine nuit
+        let awake = |a: super::Activity| [0.9, 0.0, -0.9].map(|h| a.is_awake(h));
+        assert_eq!(awake(Diurnal), [true, true, false]);
+        assert_eq!(awake(Nocturnal), [false, true, true]);
+        assert_eq!(awake(Crepuscular), [false, true, false]);
+        assert_eq!(awake(Always), [true, true, true]);
+    }
+
     use super::*;
 
     #[test]
@@ -237,6 +505,9 @@ mod tests {
             let species = registry.get(registry.find(id).unwrap_or_else(|| panic!("{id} manquant"))).unwrap();
             assert!(!species.spawn.is_empty());
         }
+        let activity = |id| registry.get(registry.find(id).unwrap()).unwrap().activity;
+        assert_eq!(activity("vache"), Activity::Diurnal);
+        assert_eq!(activity("loup"), Activity::Nocturnal);
         for species in registry.iter() {
             assert!(registry.asset_path(&species.model.mesh).is_file(), "{} : modèle manquant", species.id);
             assert!(registry.asset_path(&species.model.texture).is_file(), "{} : texture manquante", species.id);
@@ -250,8 +521,29 @@ mod tests {
         let cube = CreatureSpecies::parse("cube", ok).unwrap();
         assert_eq!((cube.min_group, cube.max_group), (1, 1));
         assert_eq!(cube.spawn[0].chance, 1.0);
-        assert_eq!(cube.model.walk_animation, "repos");
+        assert!(cube.model.animations.is_empty());
+        assert_eq!(CreatureAction::Pause(0).animation_name(&cube), "repos");
         assert_eq!(cube.health, 10.0);
+        assert_eq!(cube.temperament, Temperament::Indifferent);
+        let shy = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "temperament": "craintif","#);
+        assert_eq!(CreatureSpecies::parse("cube", &shy).unwrap().temperament, Temperament::Craintif);
+        let unknown = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "temperament": "farouche","#);
+        assert!(CreatureSpecies::parse("cube", &unknown).unwrap_err().contains("farouche"));
+
+        let animated = ok.replace(r#""texture": "cube.png""#, r#""texture": "cube.png", "animations": {
+            "marche": { "foulee": 0.5, "os": { "patte*": { "rotation": [20, 0, 0], "phase": 0.5, "decalage": 0.1 } } },
+            "sommeil": { "cycle": 4, "pause": { "poids": 1, "duree": [10, 20] } },
+            "broute": { "pause": { "poids": 2, "duree": [3, 6] } } }"#);
+        let cube = CreatureSpecies::parse("cube", &animated).unwrap();
+        let pauses: Vec<&str> = cube.pauses().map(|(name, _)| name).collect();
+        assert_eq!(pauses, ["broute", "sommeil"]);
+        assert_eq!(CreatureAction::Pause(1).animation_name(&cube), "sommeil");
+        assert_eq!(CreatureAction::Course.animation_name(&cube), "course");
+        assert_eq!(cube.model.animations["marche"].os["patte*"].frequence, 1.0);
+        let bad_pause = animated.replace("[10, 20]", "[20, 10]");
+        assert!(CreatureSpecies::parse("cube", &bad_pause).unwrap_err().contains("sommeil"));
+        let bad_stride = animated.replace(r#""foulee": 0.5"#, r#""foulee": 0"#);
+        assert!(CreatureSpecies::parse("cube", &bad_stride).is_err());
 
         let typo = ok.replace("walk_speed", "walk_sped");
         assert!(CreatureSpecies::parse("cube", &typo).unwrap_err().contains("walk_sped"));
@@ -259,5 +551,15 @@ mod tests {
         assert!(CreatureSpecies::parse("cube", &flat).is_err());
         let groups = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "min_group": 3, "max_group": 2,"#);
         assert!(CreatureSpecies::parse("cube", &groups).is_err());
+        assert!(cube.attack.is_none(), "paisible par défaut");
+
+        let wolf = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "attack": { "mode": "pack", "damage": 4, "prey": ["lapin"] },"#);
+        let attack = CreatureSpecies::parse("cube", &wolf).unwrap().attack.unwrap();
+        assert_eq!((attack.mode, attack.pack_size, attack.hunts_players, attack.provoked_only), (AttackMode::Pack, 3, true, false));
+        assert_eq!(attack.prey, ["lapin"]);
+        let unknown = wolf.replace("pack", "horde");
+        assert!(CreatureSpecies::parse("cube", &unknown).is_err());
+        let harmless = wolf.replace(r#""damage": 4"#, r#""damage": 0"#);
+        assert!(CreatureSpecies::parse("cube", &harmless).is_err());
     }
 }

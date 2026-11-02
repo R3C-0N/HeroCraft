@@ -6,5 +6,38 @@
   "min_group": 1,
   "max_group": 2,
   "spawn": [],
-  "model": {"mesh": "modeles/millepattes.gltf", "texture": "modeles/millepattes.png", "walk_animation": "repos"}
+  "activity": "nocturnal",
+  "attack": {"mode": "solo", "damage": 5, "cooldown": 1.2, "sight": 4, "reach": 1.0},
+  "model": {
+    "mesh": "modeles/millepattes.gltf",
+    "texture": "modeles/millepattes.png",
+    "animations": {
+      "repos": {"cycle": 3.0, "pause": {"poids": 1, "duree": [2, 5]}, "os": {
+        "antenne*": {"rotation": [10, 0, 0], "decalage": 0.3},
+        "segment*": {"rotation": [0, 1.5, 0], "decalage": 0.08}
+      }},
+      "marche": {"foulee": 0.4, "os": {
+        "patte-1": {"rotation": [0, 25, 0], "decalage": 0.12},
+        "patte1": {"rotation": [0, -25, 0], "phase": 0.5, "decalage": 0.12},
+        "segment*": {"rotation": [0, 4, 0], "decalage": 0.1},
+        "antenne*": {"rotation": [8, 0, 0], "frequence": 2, "decalage": 0.25}
+      }},
+      "course": {"foulee": 0.6, "os": {
+        "patte-1": {"rotation": [0, 32, 0], "decalage": 0.12},
+        "patte1": {"rotation": [0, -32, 0], "phase": 0.5, "decalage": 0.12},
+        "segment*": {"rotation": [0, 6, 0], "decalage": 0.1},
+        "antenne*": {"rotation_fixe": [-15, 0, 0]}
+      }},
+      "attaque": {"cycle": 0.7, "os": {
+        "segment0": {"rotation": [10, 0, 0], "rotation_fixe": [-20, 0, 0], "frequence": 2},
+        "mandibuleD": {"rotation": [0, 25, 0], "frequence": 2},
+        "mandibuleG": {"rotation": [0, -25, 0], "frequence": 2},
+        "antenne*": {"rotation": [10, 0, 0], "rotation_fixe": [-20, 0, 0], "frequence": 2}
+      }},
+      "coup": {"os": {
+        "segment*": {"rotation": [-6, 0, 0], "frequence": 0.5, "decalage": 0.05},
+        "antenne*": {"rotation": [-25, 0, 0], "frequence": 0.5}
+      }}
+    }
+  }
 }

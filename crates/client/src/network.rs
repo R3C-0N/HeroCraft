@@ -17,7 +17,7 @@ use glam::Vec3;
 use herocraft_common::net::Connection;
 use herocraft_server::{Server, ServerConfig};
 use herocraft_common::{
-    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, PlanetChunkCoord, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, ServerPacket, PROTOCOL_VERSION,
+    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureAction, CreatureRegistry, CreatureState, PlanetChunkCoord, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, ServerPacket, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkData;
 use herocraft_world::{BlockGeometry, BlockPos};
@@ -288,32 +288,35 @@ pub struct RemoteCreature {
     /// Coup reçu et mort affichés (`CreatureState::hurt`, `death`), recalculés avec la position
     pub hurt: f32,
     pub death: f32,
+    /// Ce qu'elle fait (`CreatureState::action`), au même rythme que la position
+    pub action: CreatureAction,
     track: Track,
-    /// Derniers coups et morts reçus, avec leur instant, pour les montrer au rythme des positions
-    effects: VecDeque<(Instant, f32, f32)>,
+    /// Derniers coups, morts et actions reçus, avec leur instant, pour les montrer au rythme des
+    /// positions
+    effects: VecDeque<(Instant, f32, f32, CreatureAction)>,
 }
 
 impl RemoteCreature {
     fn new(species: String) -> Self {
-        Self { species, position: None, hurt: 0.0, death: 0.0, track: Track::default(), effects: VecDeque::new() }
+        Self { species, position: None, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, track: Track::default(), effects: VecDeque::new() }
     }
 
     fn push(&mut self, at: Instant, state: &CreatureState) {
         self.track.push(at, state.position, state.yaw);
-        self.effects.push_back((at, state.hurt, state.death));
+        self.effects.push_back((at, state.hurt, state.death, state.action));
         while self.effects.len() > MAX_SNAPSHOTS {
             self.effects.pop_front();
         }
     }
 
-    /// Coup et mort à l'instant `now - delay` : le dernier état reçu avant, avancé du temps passé
-    /// depuis (la rougeur s'efface, la bête morte continue de basculer)
-    fn sample_effects(&self, now: Instant, delay: Duration) -> (f32, f32) {
+    /// Coup, mort et action à l'instant `now - delay` : le dernier état reçu avant, avancé du temps
+    /// passé depuis (la rougeur s'efface, la bête morte continue de basculer)
+    fn sample_effects(&self, now: Instant, delay: Duration) -> (f32, f32, CreatureAction) {
         let render = now.checked_sub(delay).unwrap_or(now);
-        let Some(&(at, hurt, death)) = self.effects.iter().rev().find(|(at, _, _)| *at <= render) else { return (0.0, 0.0) };
+        let Some(&(at, hurt, death, action)) = self.effects.iter().rev().find(|(at, ..)| *at <= render) else { return (0.0, 0.0, CreatureAction::Repos) };
         let elapsed = (render - at).as_secs_f32();
         let death = if death > 0.0 { (death + elapsed / CREATURE_DEATH_TIME).min(1.0) } else { 0.0 };
-        ((hurt - elapsed / CREATURE_HURT_TIME).max(0.0), death)
+        ((hurt - elapsed / CREATURE_HURT_TIME).max(0.0), death, action)
     }
 }
 
@@ -323,6 +326,8 @@ pub enum NetEvent {
     BlockChanged(BlockPos, BlockId),
     /// Statistiques RPG du joueur, qui font foi
     Stats(CharacterStats),
+    /// Le joueur vient d'être frappé par une créature (`cause` : son nom)
+    Hurt { damage: f32, cause: String },
     /// Connexion perdue ou fermée par le serveur
     Disconnected(String),
 }
@@ -333,19 +338,19 @@ pub struct NetClient {
     players: HashMap<u64, RemotePlayer>,
     creatures: HashMap<u64, RemoteCreature>,
     last_move_sent: Option<Instant>,
-    last_move: Option<(Vec3, f32, f32, bool)>,
+    last_move: Option<(Vec3, f32, f32, bool, bool)>,
 }
 
 impl NetClient {
     /// Envoie la position du joueur (au plus 20 fois par seconde, et seulement si elle a changé)
     pub fn send_move(&mut self, camera: &OrbitCamera) {
-        let state = (camera.player_pos, camera.player_yaw, camera.player_pitch, camera.is_running());
+        let state = (camera.player_pos, camera.player_yaw, camera.player_pitch, camera.is_running(), camera.is_crouching());
         if self.last_move == Some(state) || self.last_move_sent.is_some_and(|t| t.elapsed() < MOVE_SEND_INTERVAL) {
             return;
         }
         self.last_move = Some(state);
         self.last_move_sent = Some(Instant::now());
-        self.connection.send(&ClientPacket::PlayerMove { position: state.0, yaw: state.1, pitch: state.2, sprinting: state.3 });
+        self.connection.send(&ClientPacket::PlayerMove { position: state.0, yaw: state.1, pitch: state.2, sprinting: state.3, crouching: state.4 });
     }
 
     /// Signale au serveur une chute de `blocks` blocs, qui en tire les dommages
@@ -388,7 +393,7 @@ impl NetClient {
         }
         for creature in self.creatures.values_mut() {
             creature.position = creature.track.sample(now, CREATURE_INTERPOLATION_DELAY);
-            (creature.hurt, creature.death) = creature.sample_effects(now, CREATURE_INTERPOLATION_DELAY);
+            (creature.hurt, creature.death, creature.action) = creature.sample_effects(now, CREATURE_INTERPOLATION_DELAY);
         }
         events
     }
@@ -436,6 +441,7 @@ impl NetClient {
             ServerPacket::Disconnect(reason) => return Some(NetEvent::Disconnected(reason)),
             ServerPacket::ChunkData { coord, .. } => warn!("Chunk {coord:?} reçu hors de la connexion, ignoré."),
             ServerPacket::StatsUpdate(stats) => return Some(NetEvent::Stats(stats)),
+            ServerPacket::PlayerHurt { damage, cause } => return Some(NetEvent::Hurt { damage, cause }),
             ServerPacket::ConnectAck { .. } | ServerPacket::PlayerJoined { .. } => {}
         }
         None
@@ -489,7 +495,7 @@ impl NetClient {
             .iter()
             .filter_map(|(&id, c)| {
                 let (feet, yaw) = c.position?;
-                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw, hurt: c.hurt, death: c.death })
+                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw, hurt: c.hurt, death: c.death, action: c.action })
             })
             .collect()
     }

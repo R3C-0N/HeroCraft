@@ -10,5 +10,63 @@
     {"biome": "Mountains", "weight": 0.2},
     {"biome": "Taiga", "weight": 0.2}
   ],
-  "model": {"mesh": "modeles/ours.gltf", "texture": "modeles/ours.png", "walk_animation": "repos"}
+  "activity": "diurnal",
+  "attack": {"mode": "solo", "damage": 12, "cooldown": 1.8, "sight": 10, "chase_speed": 1.8, "provoked_only": true},
+  "model": {
+    "mesh": "modeles/ours.gltf",
+    "texture": "modeles/ours.png",
+    "animations": {
+      "repos": {"cycle": 3.5, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "tete": {"rotation": [2, 0, 0]},
+        "racine": {"translation": [0, 0.006, 0], "frequence": 2}
+      }},
+      "marche": {"foulee": 0.63, "os": {
+        "patteAVD": {"rotation": [22, 0, 0]},
+        "patteAVG": {"rotation": [22, 0, 0], "phase": 0.5},
+        "patteARD": {"rotation": [22, 0, 0], "phase": 0.5},
+        "patteARG": {"rotation": [22, 0, 0]},
+        "racine": {"translation": [0, 0.02, 0], "phase": 0.25, "frequence": 2},
+        "tete": {"rotation": [3.0, 0, 0], "phase": 0.1, "frequence": 2}
+      }},
+      "course": {"foulee": 1.43, "os": {
+        "patteAVD": {"rotation": [34.0, 0, 0]},
+        "patteAVG": {"rotation": [34.0, 0, 0], "phase": 0.1},
+        "patteARD": {"rotation": [34.0, 0, 0], "phase": 0.5},
+        "patteARG": {"rotation": [34.0, 0, 0], "phase": 0.6},
+        "racine": {"rotation": [5, 0, 0], "translation": [0, 0.051, 0], "phase": 0.3},
+        "tete": {"rotation": [6.0, 0, 0], "rotation_fixe": [8.0, 0, 0], "phase": 0.55}
+      }},
+      "renifle": {"cycle": 2.0, "pause": {"poids": 2, "duree": [3, 6]}, "os": {
+        "tete": {"rotation": [0, 20, 0], "rotation_fixe": [40, 0, 0], "frequence": 2},
+        "racine": {"rotation_fixe": [7, 0, 0]},
+        "patteAVD": {"rotation_fixe": [-7, 0, 0]},
+        "patteAVG": {"rotation_fixe": [-7, 0, 0]},
+        "patteARD": {"rotation_fixe": [-7, 0, 0]},
+        "patteARG": {"rotation_fixe": [-7, 0, 0]}
+      }},
+      "regarde": {"cycle": 4.0, "pause": {"poids": 1.5, "duree": [2, 4]}, "os": {
+        "tete": {"rotation": [0, 35, 0], "rotation_fixe": [-12.0, 0, 0]}
+      }},
+      "sommeil": {"cycle": 4.0, "pause": {"poids": 0.8, "duree": [15, 30]}, "os": {
+        "racine": {"translation": [0, 0.01, 0], "translation_fixe": [0, -0.418, 0]},
+        "patteAVD": {"rotation_fixe": [-88, 8, 0]},
+        "patteAVG": {"rotation_fixe": [-88, -8, 0]},
+        "patteARD": {"rotation_fixe": [-88, -10, 0]},
+        "patteARG": {"rotation_fixe": [-88, 10, 0]},
+        "tete": {"rotation": [1.5, 0, 0], "rotation_fixe": [14, 22, 0]}
+      }},
+      "coup": {"os": {
+        "racine": {"rotation": [-9, 0, 0], "frequence": 0.5},
+        "tete": {"rotation": [-14, 0, 0], "frequence": 0.5}
+      }},
+      "attaque": {"cycle": 1.1, "os": {
+        "racine": {"rotation": [6, 0, 0], "rotation_fixe": [-48, 0, 0], "translation_fixe": [0, 0.25, -0.12], "frequence": 2},
+        "patteARD": {"rotation_fixe": [48, 0, 0]},
+        "patteARG": {"rotation_fixe": [48, 0, 0]},
+        "patteAVD": {"rotation": [-45, 0, 0], "rotation_fixe": [-10, 0, 0]},
+        "patteAVG": {"rotation": [-45, 0, 0], "rotation_fixe": [-10, 0, 0], "phase": 0.5},
+        "tete": {"rotation": [0, 12, 0], "rotation_fixe": [35, 0, 0], "frequence": 2}
+      }}
+    }
+  }
 }

@@ -5,9 +5,54 @@
   "walk_speed": 1.0,
   "min_group": 1,
   "max_group": 2,
+  "temperament": "craintif",
   "spawn": [
     {"biome": "Forest", "weight": 0.8},
     {"biome": "Plains", "weight": 0.8}
   ],
-  "model": {"mesh": "modeles/faisan.gltf", "texture": "modeles/faisan.png", "walk_animation": "repos"}
+  "activity": "diurnal",
+  "model": {
+    "mesh": "modeles/faisan.gltf",
+    "texture": "modeles/faisan.png",
+    "animations": {
+      "repos": {"cycle": 3.0, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "cou": {"rotation": [3, 0, 0], "frequence": 2},
+        "queue": {"rotation": [4, 0, 0]}
+      }},
+      "marche": {"foulee": 0.32, "os": {
+        "patteD": {"rotation": [30, 0, 0]},
+        "patteG": {"rotation": [30, 0, 0], "phase": 0.5},
+        "cou": {"rotation": [10, 0, 0], "translation": [0, 0, 0.03], "frequence": 2},
+        "racine": {"rotation": [0, 0, 3], "translation": [0, 0.015, 0], "phase": 0.25, "frequence": 2},
+        "queue": {"rotation": [5, 0, 0], "frequence": 2}
+      }},
+      "course": {"foulee": 0.55, "os": {
+        "patteD": {"rotation": [45, 0, 0]},
+        "patteG": {"rotation": [45, 0, 0], "phase": 0.5},
+        "cou": {"rotation": [6, 0, 0], "rotation_fixe": [25, 0, 0], "frequence": 2},
+        "racine": {"rotation_fixe": [10, 0, 0], "translation": [0, 0.03, 0], "phase": 0.25, "frequence": 2},
+        "queue": {"rotation_fixe": [15, 0, 0]}
+      }},
+      "picore": {"cycle": 1.2, "pause": {"poids": 3, "duree": [3, 7]}, "os": {
+        "cou": {"rotation": [18, 0, 0], "rotation_fixe": [55, 0, 0], "frequence": 3},
+        "racine": {"rotation_fixe": [12, 0, 0]},
+        "queue": {"rotation_fixe": [12, 0, 0]}
+      }},
+      "regarde": {"cycle": 2.0, "pause": {"poids": 1.5, "duree": [2, 4]}, "os": {
+        "cou": {"rotation": [0, 45, 0], "rotation_fixe": [-10, 0, 0]},
+        "queue": {"rotation": [0, 10, 0], "frequence": 2}
+      }},
+      "sommeil": {"cycle": 3.0, "pause": {"poids": 0.4, "duree": [10, 20]}, "os": {
+        "racine": {"translation": [0, 0.006, 0], "translation_fixe": [0, -0.17, 0]},
+        "patteD": {"rotation_fixe": [-85, 0, 0]},
+        "patteG": {"rotation_fixe": [-85, 0, 0]},
+        "cou": {"rotation_fixe": [-10, 0, 0], "translation_fixe": [0, -0.08, -0.08]}
+      }},
+      "coup": {"os": {
+        "racine": {"translation": [0, 0.2, 0], "frequence": 0.5},
+        "cou": {"rotation": [-30, 0, 0], "frequence": 0.5},
+        "queue": {"rotation": [25, 0, 0], "frequence": 0.5}
+      }}
+    }
+  }
 }

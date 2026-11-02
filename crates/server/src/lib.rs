@@ -73,6 +73,8 @@ pub struct ConnectedPlayer {
     pub pitch: f32,
     /// Sprint en cours, d'après le dernier `PlayerMove`
     pub sprinting: bool,
+    /// Accroupi, d'après le dernier `PlayerMove`
+    pub crouching: bool,
     /// Créatures que son client affiche (celles qui lui ont été annoncées)
     known_creatures: HashSet<u64>,
     connection: ClientConnection,
@@ -117,7 +119,12 @@ impl Server {
         };
         let edits = TerrainEdits::new(storage);
         let instance = random_instance();
-        let creatures = CreatureWorld::new(generator.base_radius(), config.seed ^ instance, Arc::new(CreatureRegistry::load_default()));
+        // La population des zones vient de la graine du monde, et reprend la sauvegarde
+        let registry = Arc::new(CreatureRegistry::load_default());
+        let creatures = match &config.save_dir {
+            Some(dir) => CreatureWorld::with_save_dir(generator.base_radius(), config.seed, registry, dir),
+            None => CreatureWorld::new(generator.base_radius(), config.seed, registry),
+        };
 
         Ok(Self {
             listener,
@@ -166,7 +173,7 @@ impl Server {
     }
 
     /// Fait apparaître une créature de l'espèce `species` (nom de son fichier) aux pieds `feet` ;
-    /// elle disparaîtra si aucun joueur n'est près. `None` si l'espèce est inconnue.
+    /// elle s'endormira avec sa zone si aucun joueur n'est près. `None` si l'espèce est inconnue.
     pub fn spawn_creature(&mut self, species: &str, feet: Vec3) -> Option<u64> {
         let species = self.creatures.registry().find(species)?;
         Some(self.creatures.spawn(species, feet))
@@ -206,8 +213,11 @@ impl Server {
             player.stats.regenerate(dt, player.sprinting);
         }
 
-        let positions: Vec<Vec3> = self.players.values().filter_map(|p| p.position).collect();
-        self.creatures.tick(dt, &self.generator, &self.edits, &positions);
+        let (ids, presences): (Vec<u64>, Vec<herocraft_world::PlayerPresence>) =
+            self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching }))).unzip();
+        for hit in self.creatures.tick_with_presences(dt, &self.generator, &self.edits, &presences) {
+            self.creature_attack(ids[hit.player], hit.species, hit.damage);
+        }
 
         if self.tick_counter % STATE_BROADCAST_TICKS == 0 {
             self.broadcast_player_states();
@@ -237,12 +247,15 @@ impl Server {
         }
     }
 
-    /// Enregistre les chunks modifiés depuis le dernier enregistrement
+    /// Enregistre les chunks modifiés depuis le dernier enregistrement, et la population de créatures
     pub fn save(&self) {
         match self.edits.flush() {
             Ok(0) => {}
             Ok(n) => info!("{n} chunks modifiés enregistrés."),
             Err(e) => warn!("Échec de l'enregistrement des blocs modifiés : {e}"),
+        }
+        if let Err(e) = self.creatures.save() {
+            warn!("Échec de l'enregistrement des créatures : {e}");
         }
     }
 
@@ -349,6 +362,7 @@ impl Server {
                 yaw: 0.0,
                 pitch: 0.0,
                 sprinting: false,
+                crouching: false,
                 known_creatures: HashSet::new(),
                 connection,
             },
@@ -375,7 +389,7 @@ impl Server {
     fn handle_packet(&mut self, id: u64, packet: ClientPacket) {
         match packet {
             ClientPacket::Connect { .. } => {}
-            ClientPacket::PlayerMove { position, yaw, pitch, sprinting } => {
+            ClientPacket::PlayerMove { position, yaw, pitch, sprinting, crouching } => {
                 if !(position.is_finite() && yaw.is_finite() && pitch.is_finite()) {
                     return;
                 }
@@ -384,6 +398,7 @@ impl Server {
                     player.yaw = yaw;
                     player.pitch = pitch;
                     player.sprinting = sprinting;
+                    player.crouching = crouching;
                 }
             }
             ClientPacket::Fall { blocks } => self.fall(id, blocks),
@@ -420,6 +435,24 @@ impl Server {
             let name = player.name.clone();
             info!("{name} est mort d'une chute de {blocks:.0} blocs.");
             self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{name} s'est écrasé au sol") });
+        }
+    }
+
+    /// Coup d'une créature de l'espèce de rang `species` sur un joueur ; comme une chute, celui qu'il
+    /// tue revient à la vie et ses nouvelles jauges lui sont envoyées aussitôt
+    fn creature_attack(&mut self, id: u64, species: usize, damage: f32) {
+        let cause = self.creatures.registry().get(species).map_or_else(|| "Une créature".to_string(), |s| s.name.clone());
+        let Some(player) = self.players.get_mut(&id) else { return };
+        let died = player.stats.take_damage(damage);
+        if died {
+            player.stats.revive();
+        }
+        player.connection.send(&ServerPacket::PlayerHurt { damage, cause: cause.clone() });
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+        if died {
+            let name = player.name.clone();
+            info!("{name} a été tué par : {cause}.");
+            self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{name} a été tué par : {cause}") });
         }
     }
 

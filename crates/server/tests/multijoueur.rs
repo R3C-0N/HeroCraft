@@ -98,7 +98,7 @@ fn deux_joueurs_partagent_les_blocs_et_les_positions() {
     assert_ne!(restored, 0);
 
     // Posée sur la colonne, Alice casse le bloc sous ses pieds : les deux joueurs le voient
-    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.3, pitch: -0.2, sprinting: false });
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.3, pitch: -0.2, sprinting: false, crouching: false });
     alice.send(&ClientPacket::InteractBlock { block: surface.into(), action: BlockInteractionAction::Break });
     for client in [&alice, &bob] {
         let id = wait_for(client, |p| match p {
@@ -117,7 +117,7 @@ fn deux_joueurs_partagent_les_blocs_et_les_positions() {
 
     // Un bloc hors de portée (en plein ciel, loin de Bob) est refusé
     let far = BlockPos::new(face, (x + 200) % 1024, WORLD_HEIGHT - 1, z);
-    bob.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false });
+    bob.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
     bob.send(&ClientPacket::InteractBlock { block: far.into(), action: BlockInteractionAction::Place(1) });
     let id = wait_for(&bob, |p| match p {
         ServerPacket::VoxelUpdate { block, block_id } if block == far.into() => Some(block_id),
@@ -173,7 +173,7 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
     let alice = Client::connect(&addr, WAIT).unwrap();
     alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
     pump(&mut server, &alice, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
-    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false });
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
     let deadline = Instant::now() + WAIT;
     while server.players().all(|p| p.position.is_none()) {
         assert!(Instant::now() < deadline, "position d'Alice non reçue");
@@ -207,7 +207,7 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
     });
 
     // Alice part à l'autre bout de la planète : la vache, seule, disparaît de son affichage
-    alice.send(&ClientPacket::PlayerMove { position: -feet, yaw: 0.0, pitch: 0.0, sprinting: false });
+    alice.send(&ClientPacket::PlayerMove { position: -feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
     pump(&mut server, &alice, |p| match p {
         ServerPacket::CreaturesDespawned(ids) => ids.contains(&sheep).then_some(()),
         _ => None,
