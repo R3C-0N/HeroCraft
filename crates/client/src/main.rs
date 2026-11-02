@@ -177,6 +177,9 @@ fn main() {
     state.sync_lod_meshes(&lod_manager);
 
     // Banc d'essai (`--benchmark`) : le jeu joue seul une suite de phases et mesure chacune
+    // Chronométrage des étapes de chaque image (à-coups, banc d'essai)
+    let mut probe = benchmark::FrameProbe::default();
+    let mut last_hitch_log: Option<Instant> = None;
     let mut bench = benchmark::requested().then(|| benchmark::Benchmark::new(&camera, current_seed));
     if bench.is_some() {
         state.set_vsync(false);
@@ -483,9 +486,7 @@ fn main() {
                                 }
                             }
                         }
-                        if let Some(b) = bench.as_mut() {
-                            b.section("caméra et joueur", section);
-                        }
+                        probe.section("caméra et joueur", section);
                         {
                             herocraft_common::prof_scope!("son");
                             update_sound(&mut audio, &camera, &generator, &state, &ui_state, dt, &mut sky_check_in, &mut sky_covered);
@@ -601,9 +602,7 @@ fn main() {
                                     }
                                 }
                             };
-                            if let Some(b) = bench.as_mut() {
-                                b.section("créatures : simulation", section);
-                            }
+                            probe.section("créatures : simulation", section);
                             let section = Instant::now();
                             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
                             let anim_dt = if ui_state.is_settings_open { 0.0 } else { dt };
@@ -611,9 +610,7 @@ fn main() {
                             let frame = creatures::build_frame(&creature_views, &creature_registry, &creature_models, &creature_animator, block);
                             state.set_creature_frame(&frame);
                             creature_vertices = frame.vertices.len();
-                            if let Some(b) = bench.as_mut() {
-                                b.section("créatures : animation et maillage", section);
-                            }
+                            probe.section("créatures : animation et maillage", section);
                         }
 
                         // Connexion menée en tâche de fond : à son terme, la planète du serveur
@@ -720,9 +717,7 @@ fn main() {
                             state.sync_lod_meshes(&lod_manager);
                         }
                         drop(lod_guard);
-                        if let Some(b) = bench.as_mut() {
-                            b.section("LOD et envoi au GPU", section);
-                        }
+                        probe.section("LOD et envoi au GPU", section);
 
                         // 1. Mise à jour de l'interface egui
                         let ui_section = Instant::now();
@@ -887,31 +882,24 @@ fn main() {
                         herocraft_common::prof_scope!("frame::egui_tessellate" => tess_guard);
                         let paint_jobs = ui_state.ctx.tessellate(full_output.shapes, ui_state.scale_factor);
                         drop(tess_guard);
-                        if let Some(b) = bench.as_mut() {
-                            b.section("interface", ui_section);
-                        }
+                        probe.section("interface", ui_section);
                         let screen_descriptor = egui_wgpu::ScreenDescriptor {
                             size_in_pixels: [state.size.width, state.size.height],
                             pixels_per_point: ui_state.scale_factor,
                         };
 
                         // 4. Rendu WGPU (3D + egui pass)
-                        let section = Instant::now();
                         match state.render(&paint_jobs, &screen_descriptor, &full_output.textures_delta) {
                             Ok(_) => {}
                             Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
                             Err(wgpu::SurfaceError::OutOfMemory) => target.exit(),
                             Err(e) => log::warn!("Erreur lors du rendu : {:?}", e),
                         }
-                        if let Some(b) = bench.as_mut() {
-                            b.section("rendu (encodage et attente du GPU)", section);
-                            let shown = if net.is_none() { solo_creatures.creatures().len() } else { creature_views.len() };
-                            if b.after_frame(dt, now, shown, creature_vertices) {
-                                info!("Banc d'essai terminé : rapport dans ./benchmark/.");
-                                write_profile_report();
-                                target.exit();
-                            }
-                        }
+                        let timings = state.render_timings;
+                        probe.push("rendu : attente d'une image libre", timings.acquire);
+                        probe.push("rendu : préparation", timings.prepare);
+                        probe.push("rendu : envoi au GPU", timings.submit);
+                        probe.push("rendu : présentation", timings.present);
 
                         // Limiteur de framerate si V-Sync est désactivée
                         if !ui_state.video_settings.vsync {
@@ -926,6 +914,27 @@ fn main() {
                                     herocraft_common::prof_scope!("frame::fps_limiter_sleep");
                                     std::thread::sleep(target_dur - frame_elapsed);
                                 }
+                            }
+                        }
+
+                        // À-coup : signalé dans la console avec ses étapes les plus longues, et gardé
+                        // quelques secondes à l'écran sous le compteur FPS
+                        let record = probe.finish(now);
+                        let total_ms = record.total().as_secs_f32() * 1000.0;
+                        if total_ms >= benchmark::HITCH_MS {
+                            // Au plus un message par seconde : une machine très lente n'inonde pas la console
+                            if last_hitch_log.is_none_or(|t: Instant| t.elapsed().as_secs_f32() >= 1.0) {
+                                warn!("À-coup : image de {:.0} ms ({}).", total_ms, record.describe());
+                                last_hitch_log = Some(Instant::now());
+                            }
+                            ui_state.set_hitch(total_ms);
+                        }
+                        if let Some(b) = bench.as_mut() {
+                            let shown = if net.is_none() { solo_creatures.creatures().len() } else { creature_views.len() };
+                            if b.after_frame(dt, &record, shown, creature_vertices) {
+                                info!("Banc d'essai terminé : rapport dans ./benchmark/.");
+                                write_profile_report();
+                                target.exit();
                             }
                         }
 

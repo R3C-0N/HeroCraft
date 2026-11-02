@@ -60,6 +60,23 @@ Durées réglables : `--benchmark-chauffe 3 --benchmark-mesure 8` (en secondes).
 - **Temps GPU par passe** (si la carte fournit les horodatages GPU) : ombres, passe 3D (relief,
   ciel, nuages), rayons, bloom, interface, et l'image entière.
 
+- **Pires images (à-coups)** : les 12 images les plus longues du banc d'essai, avec la phase,
+  l'instant et les étapes qui ont pris le temps.
+
+## À-coups en jeu
+
+Le compteur FPS est une moyenne sur un quart de seconde : un gel d'une seconde suivi d'images
+rapides y passe presque inaperçu. En jeu comme pendant le banc d'essai, toute image de plus de
+100 ms est donc affichée quelques secondes sous le compteur (« à-coup 1200 ms ») et décrite dans la
+console avec ses étapes les plus longues, par exemple :
+
+```
+À-coup : image de 1180 ms (LOD et envoi au GPU 1150 ms, rendu : présentation 20 ms).
+```
+
+« attente d'une image libre » ou « présentation » : le GPU (ou son pilote) a bloqué. « hors image » :
+le temps est passé entre deux images (événements de la fenêtre, système, antivirus…).
+
 `mesures_<horodatage>.csv` reprend les mêmes chiffres (séparateur `;`) pour un tableur.
 
 ## Simulation des créatures seule

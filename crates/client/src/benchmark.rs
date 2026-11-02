@@ -216,15 +216,86 @@ impl Stats {
 }
 
 /// Étapes de l'image mesurées côté CPU, dans l'ordre du rapport
-pub const SECTIONS: [&str; 7] = [
+pub const SECTIONS: [&str; 11] = [
     "caméra et joueur",
     "créatures : simulation",
     "créatures : animation et maillage",
     "LOD et envoi au GPU",
     "interface",
-    "rendu (encodage et attente du GPU)",
+    "rendu : attente d'une image libre",
+    "rendu : préparation",
+    "rendu : envoi au GPU",
+    "rendu : présentation",
     "reste de l'image",
+    "hors image (système, fenêtre)",
 ];
+
+/// Au-delà, une image est un à-coup : signalée dans la console et détaillée dans le rapport
+pub const HITCH_MS: f32 = 100.0;
+
+/// Chronométrage des étapes de chaque image, actif en permanence (quelques `Instant::now` par
+/// image) : il explique les à-coups dans la console, et nourrit le banc d'essai
+#[derive(Default)]
+pub struct FrameProbe {
+    sections: Vec<(&'static str, Duration)>,
+    last_end: Option<Instant>,
+}
+
+/// Une image chronométrée
+pub struct FrameRecord {
+    /// Étapes de l'image, avec « reste de l'image » et « hors image » (temps passé depuis la fin
+    /// de l'image précédente : événements de la fenêtre, système)
+    pub sections: Vec<(&'static str, Duration)>,
+}
+
+impl FrameRecord {
+    pub fn total(&self) -> Duration {
+        self.sections.iter().map(|(_, d)| *d).sum()
+    }
+
+    /// Les étapes les plus longues, en clair
+    pub fn describe(&self) -> String {
+        let mut parts: Vec<&(&str, Duration)> = self.sections.iter().filter(|(_, d)| d.as_secs_f32() * 1000.0 >= 1.0).collect();
+        parts.sort_by(|a, b| b.1.cmp(&a.1));
+        parts.iter().map(|(n, d)| format!("{n} {:.0} ms", d.as_secs_f32() * 1000.0)).collect::<Vec<_>>().join(", ")
+    }
+}
+
+impl FrameProbe {
+    /// Ajoute le temps d'une étape de l'image en cours, commencée à `since`
+    pub fn section(&mut self, name: &'static str, since: Instant) {
+        self.sections.push((name, since.elapsed()));
+    }
+
+    /// Ajoute une étape déjà mesurée
+    pub fn push(&mut self, name: &'static str, duration: Duration) {
+        self.sections.push((name, duration));
+    }
+
+    /// Termine l'image commencée à `frame_start`
+    pub fn finish(&mut self, frame_start: Instant) -> FrameRecord {
+        let end = Instant::now();
+        let mut sections = std::mem::take(&mut self.sections);
+        let accounted: Duration = sections.iter().map(|(_, d)| *d).sum();
+        sections.push(("reste de l'image", end.duration_since(frame_start).saturating_sub(accounted)));
+        if let Some(last) = self.last_end.replace(end) {
+            sections.push(("hors image (système, fenêtre)", frame_start.saturating_duration_since(last)));
+        }
+        FrameRecord { sections }
+    }
+}
+
+/// Une des pires images du banc d'essai
+struct Hitch {
+    phase: &'static str,
+    /// Secondes depuis le début de la phase
+    at: f32,
+    total_ms: f32,
+    detail: String,
+}
+
+/// Pires images gardées pour le rapport
+const WORST_KEPT: usize = 12;
 
 pub struct Benchmark {
     phases: Vec<Phase>,
@@ -237,8 +308,8 @@ pub struct Benchmark {
     pub sun_time: f32,
     warmup: f32,
     measure: f32,
-    /// Étapes mesurées pendant l'image en cours
-    frame_sections: Vec<(&'static str, Duration)>,
+    /// Pires images de tout le banc d'essai (mise en route comprise)
+    worst: Vec<Hitch>,
     pending_start: bool,
     pub seed: u64,
     began: std::time::SystemTime,
@@ -266,7 +337,7 @@ impl Benchmark {
             sun_time,
             warmup: arg("--benchmark-chauffe").unwrap_or(WARMUP_SECS),
             measure: arg("--benchmark-mesure").unwrap_or(MEASURE_SECS),
-            frame_sections: Vec::new(),
+            worst: Vec::new(),
             pending_start: true,
             seed,
             began: std::time::SystemTime::now(),
@@ -279,11 +350,6 @@ impl Benchmark {
 
     pub fn creature_mode(&self) -> CreatureMode {
         self.setup().creatures
-    }
-
-    /// Ajoute le temps d'une étape de l'image en cours
-    pub fn section(&mut self, name: &'static str, since: Instant) {
-        self.frame_sections.push((name, since.elapsed()));
     }
 
     /// À appeler en début d'image, avant la mise à jour de la caméra : impose les réglages et les
@@ -362,11 +428,16 @@ impl Benchmark {
     }
 
     /// À appeler en fin d'image. Renvoie vrai quand le banc d'essai est terminé.
-    pub fn after_frame(&mut self, dt: f32, frame_start: Instant, creatures: usize, creature_vertices: usize) -> bool {
-        let sections = std::mem::take(&mut self.frame_sections);
+    pub fn after_frame(&mut self, dt: f32, record: &FrameRecord, creatures: usize, creature_vertices: usize) -> bool {
         let gpu: Vec<(&'static str, u64)> = GPU_SAMPLES.lock().map(|mut s| std::mem::take(&mut *s)).unwrap_or_default();
         let elapsed = self.started_at.elapsed().as_secs_f32();
         let startup = self.phases[self.index].startup;
+        let total_ms = record.total().as_secs_f32() * 1000.0;
+        if self.worst.len() < WORST_KEPT || self.worst.last().is_some_and(|w| total_ms > w.total_ms) {
+            self.worst.push(Hitch { phase: self.phases[self.index].name, at: elapsed, total_ms, detail: record.describe() });
+            self.worst.sort_by(|a, b| b.total_ms.total_cmp(&a.total_ms));
+            self.worst.truncate(WORST_KEPT);
+        }
         let (warmup, measure) = if startup { (STARTUP_SECS.max(self.warmup), 0.0) } else { (self.warmup, self.measure) };
         if startup {
             // Mise en route : rien n'est mesuré
@@ -375,13 +446,9 @@ impl Benchmark {
         } else if self.measuring {
             let stats = &mut self.stats[self.index];
             stats.frames.push(dt);
-            let frame = frame_start.elapsed();
-            let mut accounted = Duration::ZERO;
-            for (name, d) in sections {
+            for (name, d) in &record.sections {
                 *stats.sections.entry(name).or_default() += d.as_secs_f64();
-                accounted += d;
             }
-            *stats.sections.entry("reste de l'image").or_default() += frame.saturating_sub(accounted).as_secs_f64();
             for (name, ns) in gpu {
                 let entry = stats.gpu.entry(name).or_default();
                 entry.0 += ns as f64;
@@ -497,7 +564,18 @@ impl Benchmark {
             let cells: Vec<String> = SECTIONS.iter().map(|n| format!("{:.2}", s.section_ms(n))).collect();
             let _ = writeln!(out, "| {} | {} |", phase.name, cells.join(" | "));
         }
-        let _ = writeln!(out, "\n« rendu » comprend l'attente d'une image libre de la chaîne de présentation : quand il domine, c'est le GPU qui limite.");
+        let _ = writeln!(
+            out,
+            "\nQuand « attente d'une image libre » ou « présentation » domine, c'est le GPU qui limite. « hors image » est le temps passé entre deux images (événements de la fenêtre, système)."
+        );
+
+        let _ = writeln!(out, "\n## Pires images (à-coups)\n");
+        let _ = writeln!(out, "Les {} images les plus longues de tout le banc d'essai, mise en route comprise, et leurs étapes de plus d'1 ms.\n", self.worst.len());
+        let _ = writeln!(out, "| Durée | Phase | À | Détail |");
+        let _ = writeln!(out, "|---:|---|---:|---|");
+        for w in &self.worst {
+            let _ = writeln!(out, "| {:.0} ms | {} | {:.1} s | {} |", w.total_ms, w.phase, w.at, w.detail);
+        }
 
         let passes = self.gpu_passes();
         let _ = writeln!(out, "\n## Temps GPU par passe (ms par image)\n");

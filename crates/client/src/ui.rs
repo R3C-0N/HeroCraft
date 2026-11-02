@@ -103,6 +103,9 @@ impl LodDistanceSetting {
     }
 }
 
+/// Durée d'affichage du dernier à-coup sous le compteur FPS, en secondes
+const HITCH_DISPLAY_SECS: f32 = 5.0;
+
 /// Préréglage de qualité graphique : règle d'un coup les effets les plus chers pour le GPU
 /// (mesurés avec `--benchmark` sur un GPU intégré Iris Xe : ombres du relief ~4 ms par image,
 /// rayons crépusculaires 1 à 4 ms, ombres des nuages ~1 ms, bloom ~0,5 ms)
@@ -437,6 +440,9 @@ pub struct UiState {
     pub show_tectonics: bool,
     pub show_ocean_currents: bool,
     pub current_fps: u32,
+    /// Dernier à-coup (durée de l'image en ms) et quand il a eu lieu : le compteur FPS, moyenné,
+    /// ne le montre pas
+    hitch: Option<(f32, std::time::Instant)>,
     pub is_settings_open: bool,
     pub menu_page: MenuPage,
     pub options_tab: OptionsTab,
@@ -489,6 +495,7 @@ impl UiState {
             show_tectonics: false,
             show_ocean_currents: false,
             current_fps: 60,
+            hitch: None,
             is_settings_open: false,
             menu_page: MenuPage::Main,
             options_tab: OptionsTab::Display,
@@ -608,6 +615,11 @@ impl UiState {
         let lod_changed = self.video_settings.lod_distance != e.lod_distance;
         self.video_settings.lod_distance = e.lod_distance;
         lod_changed
+    }
+
+    /// Une image a duré `ms` millisecondes : affichée quelques secondes sous le compteur FPS
+    pub fn set_hitch(&mut self, ms: f32) {
+        self.hitch = Some((ms, std::time::Instant::now()));
     }
 
     pub fn set_fps(&mut self, fps: u32) {
@@ -1096,6 +1108,10 @@ impl UiState {
                         egui::Color32::from_rgb(240, 80, 80)
                     };
                     ui.label(egui::RichText::new(format!("{} FPS", self.current_fps)).strong().color(fps_color));
+                    // Le compteur est une moyenne : un gel d'une seconde y passe presque inaperçu
+                    if let Some((ms, _)) = self.hitch.filter(|(_, at)| at.elapsed().as_secs_f32() < HITCH_DISPLAY_SECS) {
+                        ui.label(egui::RichText::new(format!("à-coup {ms:.0} ms")).size(11.0_f32).color(egui::Color32::from_rgb(240, 80, 80)));
+                    }
                 });
             });
     }
