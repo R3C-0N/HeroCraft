@@ -7,28 +7,37 @@ pub const FALL_DAMAGE_PER_BLOCK: f32 = 8.0;
 /// Endurance consommée par seconde de sprint
 pub const SPRINT_STAMINA_COST: f32 = 15.0;
 
-/// Classe de personnage RPG
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Voie du personnage : l'aventurier n'en a pas encore choisi, les quinze autres sont celles du
+/// râtelier du créateur de légende (voir `hero::CLASSES`, qui donne leur fiche)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PlayerClass {
     Adventurer,
-    Warrior,
-    Mage,
-    Ranger,
-    Paladin,
+    Sorcerer,
+    Druid,
+    Necromancer,
+    Chaplain,
+    WarPriest,
     Rogue,
+    Ranger,
+    Archer,
+    Engineer,
+    MonsterHunter,
+    WindBlade,
+    Champion,
+    Soldier,
+    Berserker,
+    Paladin,
 }
 
 impl PlayerClass {
-    /// Nom affiché de la classe
+    /// Nom affiché de la voie
     pub fn label(self) -> &'static str {
-        match self {
-            PlayerClass::Adventurer => "Aventurier",
-            PlayerClass::Warrior => "Guerrier",
-            PlayerClass::Mage => "Mage",
-            PlayerClass::Ranger => "Rôdeur",
-            PlayerClass::Paladin => "Paladin",
-            PlayerClass::Rogue => "Voleur",
-        }
+        crate::hero::class_sheet(self).map_or("Aventurier", |sheet| sheet.name)
+    }
+
+    /// Famille de la voie ; `None` pour l'aventurier
+    pub fn family(self) -> Option<crate::hero::Family> {
+        crate::hero::class_sheet(self).map(|sheet| sheet.family)
     }
 }
 
@@ -126,22 +135,22 @@ impl CharacterStats {
             self.level += 1;
             leveled_up = true;
 
-            // Gain automatique d'attributs selon la classe
-            match self.class {
-                PlayerClass::Warrior => {
+            // Gain automatique d'attributs selon la famille de la voie
+            match self.class.family() {
+                Some(crate::hero::Family::Melee) => {
                     self.attributes.strength += 3;
                     self.attributes.constitution += 2;
                 }
-                PlayerClass::Mage => {
+                Some(crate::hero::Family::Magic) => {
                     self.attributes.intelligence += 4;
                     self.attributes.constitution += 1;
                 }
-                PlayerClass::Ranger => {
+                Some(crate::hero::Family::Ranged) => {
                     self.attributes.agility += 3;
                     self.attributes.strength += 1;
                     self.attributes.constitution += 1;
                 }
-                _ => {
+                None => {
                     self.attributes.strength += 1;
                     self.attributes.agility += 1;
                     self.attributes.intelligence += 1;
@@ -190,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_level_up_progression() {
-        let mut hero = CharacterStats::new(PlayerClass::Warrior);
+        let mut hero = CharacterStats::new(PlayerClass::Soldier);
         assert_eq!(hero.level, 1);
         let initial_max_hp = hero.max_hp;
 
@@ -208,13 +217,13 @@ mod tests {
         assert_eq!(fall_damage(SAFE_FALL_BLOCKS + 2.0), 2.0 * FALL_DAMAGE_PER_BLOCK);
         assert_eq!(fall_damage(f32::NAN), 0.0);
         // Une très grande chute tue un guerrier débutant
-        let mut hero = CharacterStats::new(PlayerClass::Warrior);
+        let mut hero = CharacterStats::new(PlayerClass::Soldier);
         assert!(hero.take_damage(fall_damage(40.0)));
     }
 
     #[test]
     fn test_sprint_drains_stamina_and_rest_restores_it() {
-        let mut hero = CharacterStats::new(PlayerClass::Warrior);
+        let mut hero = CharacterStats::new(PlayerClass::Soldier);
         hero.regenerate(2.0, true);
         assert!((hero.stamina - (hero.max_stamina - 2.0 * SPRINT_STAMINA_COST)).abs() < 1e-3);
         hero.regenerate(100.0, true);

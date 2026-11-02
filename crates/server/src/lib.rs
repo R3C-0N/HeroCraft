@@ -357,7 +357,7 @@ impl Server {
             ConnectedPlayer {
                 id,
                 name,
-                stats: CharacterStats::new(PlayerClass::Warrior),
+                stats: CharacterStats::new(PlayerClass::Adventurer),
                 position: None,
                 yaw: 0.0,
                 pitch: 0.0,
@@ -404,6 +404,7 @@ impl Server {
             ClientPacket::Fall { blocks } => self.fall(id, blocks),
             ClientPacket::InteractBlock { block, action } => self.interact_block(id, block.into(), action),
             ClientPacket::HitCreature { creature_id } => self.hit_creature(id, creature_id),
+            ClientPacket::Legend(legend) => self.legend(id, *legend),
             ClientPacket::ChatMessage(text) => {
                 let text: String = text.trim().chars().filter(|c| !c.is_control()).take(MAX_CHAT_CHARS).collect();
                 if text.is_empty() {
@@ -416,6 +417,19 @@ impl Server {
             }
             ClientPacket::Disconnect => self.leave(id, "déconnexion"),
         }
+    }
+
+    /// Légende d'un héros : refusée si un choix sort de l'atlas, sinon sa voie devient celle du
+    /// joueur, qui reçoit aussitôt ses jauges
+    fn legend(&mut self, id: u64, mut legend: herocraft_common::hero::Legend) {
+        let Some(player) = self.players.get_mut(&id) else { return };
+        if let Err(reason) = legend.verify() {
+            warn!("Légende de {} refusée : {}", player.name, reason);
+            return;
+        }
+        info!("{} est {} ({}, {}).", player.name, legend.appearance.nom, legend.appearance.species().nom, legend.class.label());
+        player.stats.class = legend.class;
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
     }
 
     /// Dommages d'une chute ; le joueur tué revient à la vie (son client le replace au point

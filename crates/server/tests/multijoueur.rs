@@ -214,3 +214,36 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
     });
     assert!(server.creatures().creatures().iter().all(|c| c.id != sheep));
 }
+
+#[test]
+fn la_legende_donne_sa_voie_et_une_legende_truquee_est_refusee() {
+    use herocraft_common::hero::{atlas, Legend};
+    use herocraft_common::PlayerClass;
+
+    let server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let running = Arc::new(AtomicBool::new(true));
+    let server_running = running.clone();
+    let server_thread = std::thread::spawn(move || {
+        let mut server = server;
+        server.run(&server_running);
+    });
+
+    let (client, _, _) = connect(&addr, "Bran");
+    let mut appearance = atlas().defaut("gnome");
+    appearance.nom = "Brandin".into();
+    // Un gnome de deux mètres n'existe pas : le serveur ne change rien
+    let mut truquee = Legend { appearance: appearance.clone(), class: PlayerClass::Archer, weapon: None };
+    truquee.appearance.taille = 2.0;
+    client.send(&ClientPacket::Legend(Box::new(truquee)));
+    let legend = Legend { appearance, class: PlayerClass::Druid, weapon: None };
+    client.send(&ClientPacket::Legend(Box::new(legend)));
+    let class = wait_for(&client, |p| match p {
+        ServerPacket::StatsUpdate(stats) if stats.class != PlayerClass::Adventurer => Some(stats.class),
+        _ => None,
+    });
+    assert_eq!(class, PlayerClass::Druid);
+
+    running.store(false, Ordering::SeqCst);
+    server_thread.join().unwrap();
+}

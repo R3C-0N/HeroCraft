@@ -51,6 +51,8 @@ pub enum CameraViewMode {
 pub struct OrbitCamera {
     /// Position 3D du joueur sur la sphère
     pub player_pos: Vec3,
+    /// Taille du héros, en mètres (en blocs) : ses yeux et le haut de sa tête en dépendent
+    pub hero_height: f32,
     /// Azimut horizontal du regard (en radians sur le plan tangentiel local)
     pub player_yaw: f32,
     /// Inclinaison verticale du regard (tangage en radians, -85° à +85°)
@@ -149,6 +151,7 @@ impl Default for OrbitCamera {
             ascend_held: false,
             descend_held: false,
             crouch_blend: 0.0,
+            hero_height: PLAYER_HEIGHT,
 
             distance: 330.0,
             target_distance: 330.0,
@@ -407,7 +410,7 @@ impl OrbitCamera {
     /// Hauteur des yeux au-dessus des pieds, en unités du monde : ~1,7 bloc debout, ~1,35 accroupi
     fn eye_height(&self) -> f32 {
         let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
-        0.065 * scale * (1.0 - CROUCH_EYE_DROP * self.crouch_blend)
+        0.065 * scale * (self.hero_height / PLAYER_HEIGHT) * (1.0 - CROUCH_EYE_DROP * self.crouch_blend)
     }
 
     /// Le joueur sprinte à pied (ce qui consomme son endurance)
@@ -716,12 +719,12 @@ impl OrbitCamera {
         if current_radius > previous_radius {
             if let Some(collider) = &self.collider {
                 let h = collider.block_height();
-                let head = new_up * (current_radius + PLAYER_HEIGHT * h);
+                let head = new_up * (current_radius + self.hero_height * h);
                 if collider.any_solid(generator, &footprint(head, h)) {
                     // Arrêt contre le dessous du bloc touché par la tête
                     let ceiling_altitude = ((head.length() - self.base_radius) / h).floor();
                     let ceiling_radius = self.base_radius + ceiling_altitude * h;
-                    current_radius = (ceiling_radius - (PLAYER_HEIGHT + 0.01) * h).clamp(previous_radius, current_radius);
+                    current_radius = (ceiling_radius - (self.hero_height + 0.01) * h).clamp(previous_radius, current_radius);
                     self.vertical_velocity = 0.0;
                 }
             }
