@@ -2054,12 +2054,25 @@ impl CraftingPanel {
                 let open = self.is_open(tab, section);
                 if !section.title.is_empty() {
                     let craftable = section.craftable();
-                    let mut text = format!("{} {}", if open { "▾" } else { "▸" }, section.title);
+                    let mut text = section.title.clone();
                     if craftable > 0 {
                         text += &format!("  ·  {craftable} faisable{}", if craftable > 1 { "s" } else { "" });
                     }
-                    let color = if craftable > 0 { GOLD } else { TEXT_DIM };
-                    let header = ui.add(egui::Label::new(egui::RichText::new(text).size(12.0_f32).strong().color(color)).sense(egui::Sense::click()));
+                    let (rect, header) = ui.allocate_exact_size(egui::vec2(CRAFTING_WIDTH, 20.0_f32), egui::Sense::click());
+                    let color = match (header.hovered(), craftable > 0) {
+                        (true, _) => GOLD_BRIGHT,
+                        (false, true) => GOLD,
+                        (false, false) => TEXT_DIM,
+                    };
+                    // Triangle : pointe en bas ouverte, à droite refermée
+                    let c = egui::pos2(rect.left() + 7.0_f32, rect.center().y);
+                    let points = if open {
+                        vec![c + egui::vec2(-4.0_f32, -2.5_f32), c + egui::vec2(4.0_f32, -2.5_f32), c + egui::vec2(0.0_f32, 3.0_f32)]
+                    } else {
+                        vec![c + egui::vec2(-2.5_f32, -4.0_f32), c + egui::vec2(3.0_f32, 0.0_f32), c + egui::vec2(-2.5_f32, 4.0_f32)]
+                    };
+                    ui.painter().add(egui::Shape::convex_polygon(points, color, egui::Stroke::NONE));
+                    ui.painter().text(egui::pos2(rect.left() + 18.0_f32, rect.center().y), egui::Align2::LEFT_CENTER, text, egui::FontId::proportional(12.5_f32), color);
                     if header.clicked() {
                         toggled = Some((section.title.clone(), !open));
                     }
