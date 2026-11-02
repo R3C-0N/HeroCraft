@@ -73,6 +73,8 @@ pub struct ConnectedPlayer {
     pub pitch: f32,
     /// Sprint en cours, d'après le dernier `PlayerMove`
     pub sprinting: bool,
+    /// Accroupi, d'après le dernier `PlayerMove`
+    pub crouching: bool,
     /// Créatures que son client affiche (celles qui lui ont été annoncées)
     known_creatures: HashSet<u64>,
     connection: ClientConnection,
@@ -206,8 +208,9 @@ impl Server {
             player.stats.regenerate(dt, player.sprinting);
         }
 
-        let positions: Vec<Vec3> = self.players.values().filter_map(|p| p.position).collect();
-        self.creatures.tick(dt, &self.generator, &self.edits, &positions);
+        let presences: Vec<herocraft_world::PlayerPresence> =
+            self.players.values().filter_map(|p| p.position.map(|feet| herocraft_world::PlayerPresence { feet, crouching: p.crouching })).collect();
+        self.creatures.tick_with_presences(dt, &self.generator, &self.edits, &presences);
 
         if self.tick_counter % STATE_BROADCAST_TICKS == 0 {
             self.broadcast_player_states();
@@ -349,6 +352,7 @@ impl Server {
                 yaw: 0.0,
                 pitch: 0.0,
                 sprinting: false,
+                crouching: false,
                 known_creatures: HashSet::new(),
                 connection,
             },
@@ -375,7 +379,7 @@ impl Server {
     fn handle_packet(&mut self, id: u64, packet: ClientPacket) {
         match packet {
             ClientPacket::Connect { .. } => {}
-            ClientPacket::PlayerMove { position, yaw, pitch, sprinting } => {
+            ClientPacket::PlayerMove { position, yaw, pitch, sprinting, crouching } => {
                 if !(position.is_finite() && yaw.is_finite() && pitch.is_finite()) {
                     return;
                 }
@@ -384,6 +388,7 @@ impl Server {
                     player.yaw = yaw;
                     player.pitch = pitch;
                     player.sprinting = sprinting;
+                    player.crouching = crouching;
                 }
             }
             ClientPacket::Fall { blocks } => self.fall(id, blocks),

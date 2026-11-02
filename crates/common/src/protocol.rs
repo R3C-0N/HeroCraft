@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -28,12 +28,14 @@ pub enum ClientPacket {
         protocol_version: u32,
     },
     /// Position des pieds du joueur (repère du centre de la planète), orientation du regard et
-    /// sprint en cours (il consomme l'endurance)
+    /// sprint en cours (il consomme l'endurance), posture accroupie (les bêtes craintives le
+    /// remarquent de moins loin)
     PlayerMove {
         position: Vec3,
         yaw: f32,
         pitch: f32,
         sprinting: bool,
+        crouching: bool,
     },
     /// Le joueur vient de retomber au sol après une chute de `blocks` blocs
     Fall {

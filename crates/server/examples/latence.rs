@@ -46,7 +46,7 @@ fn main() {
     for i in 0..40 {
         let p = feet + glam::Vec3::splat(i as f32 * 0.01);
         let sent = Instant::now();
-        a.send(&ClientPacket::PlayerMove { position: p, yaw: 0.0, pitch: 0.0, sprinting: false });
+        a.send(&ClientPacket::PlayerMove { position: p, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
         loop {
             match b.recv_timeout(Duration::from_secs(10)).unwrap() {
                 ServerPacket::PlayerStates(s) if s.iter().any(|s| s.position == p) => break,
@@ -61,7 +61,7 @@ fn main() {
     for (i, dx) in [0, 1, 2, 3, 40, 80].into_iter().enumerate() {
         let pos = BlockPos::new(face, x + dx, top - i as i32 % 2, z);
         let p = geometry.corner(face, (x + dx) as f64 + 0.5, (top + 1) as f64, z as f64 + 0.5).as_vec3();
-        a.send(&ClientPacket::PlayerMove { position: p, yaw: 0.0, pitch: 0.0, sprinting: false });
+        a.send(&ClientPacket::PlayerMove { position: p, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
         std::thread::sleep(Duration::from_millis(100));
         let sent = Instant::now();
         a.send(&ClientPacket::InteractBlock { block: pos.into(), action: BlockInteractionAction::Break });

@@ -10,7 +10,7 @@
 //! par un joueur, rougit, recule, puis s'enfuit ; sans vie, elle bascule sur le flanc et disparaît.
 //!
 //! Le tempérament de l'espèce règle sa réaction au joueur le plus proche : une bête craintive fuit
-//! dès qu'il approche, une placide s'arrête pour le regarder, une curieuse le suit à distance.
+//! dès qu'il approche (de moins loin s'il est accroupi), une placide s'arrête pour le regarder, une curieuse le suit à distance.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -57,6 +57,8 @@ const PANIC_SPEED: f32 = 1.8;
 /// Une bête craintive fuit un joueur plus près que ça, en blocs, pendant `FLEE_TIME` secondes avant
 /// de jeter un nouveau coup d'œil
 const FLEE_RADIUS_BLOCKS: f32 = 8.0;
+/// Rayon de fuite face à un joueur accroupi, qui s'approche sans bruit, en blocs
+const FLEE_RADIUS_CROUCHING_BLOCKS: f32 = 3.0;
 const FLEE_TIME: f32 = 1.5;
 /// Une bête placide regarde un joueur plus près que ça, en blocs
 const WATCH_RADIUS_BLOCKS: f32 = 6.0;
@@ -111,6 +113,21 @@ impl Creature {
 
     pub fn is_alive(&self) -> bool {
         self.dead_for.is_none()
+    }
+}
+
+/// Un joueur tel que les créatures le perçoivent
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlayerPresence {
+    /// Pieds (repère du centre de la planète)
+    pub feet: Vec3,
+    /// Accroupi : il approche sans bruit, les bêtes craintives le remarquent de moins loin
+    pub crouching: bool,
+}
+
+impl PlayerPresence {
+    pub fn standing(feet: Vec3) -> Self {
+        Self { feet, crouching: false }
     }
 }
 
@@ -218,8 +235,17 @@ impl CreatureWorld {
         true
     }
 
-    /// Avance la simulation de `dt` secondes autour des joueurs dont les pieds sont `players`
+    /// Avance la simulation de `dt` secondes autour des joueurs debout dont les pieds sont `players`
     pub fn tick(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, players: &[Vec3]) {
+        let presences: Vec<PlayerPresence> = players.iter().copied().map(PlayerPresence::standing).collect();
+        self.tick_with_presences(dt, generator, edits, &presences);
+    }
+
+    /// Avance la simulation de `dt` secondes autour des joueurs `players`, en tenant compte de leur
+    /// posture (accroupi ou debout)
+    pub fn tick_with_presences(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, presences: &[PlayerPresence]) {
+        let players: Vec<Vec3> = presences.iter().map(|p| p.feet).collect();
+        let players = players.as_slice();
         // Une image très longue (fenêtre en arrière-plan) ne fait pas traverser les murs
         let dt = dt.min(MAX_STEP);
         let range = CREATURE_RANGE_BLOCKS * self.geometry.block_height as f32;
@@ -230,7 +256,7 @@ impl CreatureWorld {
         let mut walker = Walker { geometry: self.geometry, query: &mut query };
         for creature in &mut self.creatures {
             if let Some(species) = self.registry.get(creature.species) {
-                let nearest = players.iter().copied().min_by(|a, b| a.distance_squared(creature.position).total_cmp(&b.distance_squared(creature.position)));
+                let nearest = presences.iter().copied().min_by(|a, b| a.feet.distance_squared(creature.position).total_cmp(&b.feet.distance_squared(creature.position)));
                 walker.step(creature, species, nearest, &mut self.rng, dt);
             }
         }
@@ -360,9 +386,11 @@ impl Walker<'_, '_> {
         })
     }
 
-    /// Réaction de la créature au joueur le plus proche, dont les pieds sont `player`, selon son
-    /// tempérament. Renvoie vrai si elle s'en occupe, et laisse alors son humeur de côté.
-    fn react(&self, c: &mut Creature, temperament: Temperament, player: Vec3, rng: &mut StdRng) -> bool {
+    /// Réaction de la créature au joueur le plus proche, selon son tempérament. Renvoie vrai si elle
+    /// s'en occupe, et laisse alors son humeur de côté.
+    fn react(&self, c: &mut Creature, temperament: Temperament, player: PlayerPresence, rng: &mut StdRng) -> bool {
+        let flee_radius = if player.crouching { FLEE_RADIUS_CROUCHING_BLOCKS } else { FLEE_RADIUS_BLOCKS };
+        let player = player.feet;
         let up = c.position.normalize_or_zero();
         let (east, north) = tangent_frame(up);
         let towards = player - c.position;
@@ -375,7 +403,7 @@ impl Walker<'_, '_> {
         let yaw_to_player = towards.dot(east).atan2(towards.dot(north)).rem_euclid(TAU);
         match temperament {
             Temperament::Indifferent => false,
-            Temperament::Craintif if distance < FLEE_RADIUS_BLOCKS => {
+            Temperament::Craintif if distance < flee_radius => {
                 // À l'opposé du joueur, un peu de travers pour ne pas filer toutes en ligne
                 c.panic = FLEE_TIME;
                 c.walking = true;
@@ -401,7 +429,7 @@ impl Walker<'_, '_> {
         }
     }
 
-    fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, nearest_player: Option<Vec3>, rng: &mut StdRng, dt: f32) {
+    fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, nearest_player: Option<PlayerPresence>, rng: &mut StdRng, dt: f32) {
         let block = self.block();
         let base_radius = self.geometry.base_radius as f32;
         let radius_of = move |altitude: f32| base_radius + altitude * block;
@@ -778,7 +806,6 @@ mod tests {
             assert_eq!(temperament(id), Temperament::Craintif, "{id}");
         }
         assert_eq!(temperament("vache"), Temperament::Placide);
-        assert_eq!(temperament("chien"), Temperament::Curieux);
     }
 
     #[test]
@@ -793,6 +820,27 @@ mod tests {
         let end = planar_blocks(&geometry, world.creatures()[0].position, player);
         assert!(fled, "le lapin n'a pas détalé");
         assert!(end > start + 1.5, "le lapin ne s'est pas éloigné ({start} → {end} blocs)");
+    }
+
+    #[test]
+    fn a_crouching_player_can_approach_a_shy_creature() {
+        let (generator, edits, geometry, mut world, player) = creature_and_player("lapin", 5.0, 29);
+        let c = &mut world.creatures[0];
+        (c.walking, c.timer) = (false, 100.0);
+        let start = world.creatures()[0].position;
+        let crouching = PlayerPresence { feet: player, crouching: true };
+        for _ in 0..40 {
+            world.tick_with_presences(0.05, &generator, &edits, &[crouching]);
+        }
+        let c = &world.creatures()[0];
+        assert!(c.panic == 0.0 && !c.walking, "le lapin a remarqué le joueur accroupi à 5 blocs");
+        assert!(planar_blocks(&geometry, start, c.position) < 0.1);
+
+        // Accroupi tout près, il finit par le remarquer
+        let (east, _) = tangent_frame(c.position.normalize());
+        let close = PlayerPresence { feet: c.position + east * 2.0 * geometry.block_height as f32, crouching: true };
+        world.tick_with_presences(0.05, &generator, &edits, &[close]);
+        assert!(world.creatures()[0].panic > 0.0, "le lapin ne fuit pas un joueur accroupi à 2 blocs");
     }
 
     #[test]
@@ -815,7 +863,22 @@ mod tests {
 
     #[test]
     fn a_curious_creature_follows_the_player_and_keeps_its_distance() {
-        let (generator, edits, geometry, mut world, player) = creature_and_player("chien", 10.0, 19);
+        // Aucune espèce livrée n'est curieuse : le chien l'est le temps du test
+        let species = registry()
+            .iter()
+            .cloned()
+            .map(|mut s| {
+                if s.id == "chien" {
+                    s.temperament = Temperament::Curieux;
+                }
+                s
+            })
+            .collect();
+        let registry = Arc::new(CreatureRegistry::from_species(species, Default::default()));
+        let (generator, edits, geometry, _, player) = creature_and_player("chien", 10.0, 19);
+        let mut world = CreatureWorld::new(generator.base_radius(), 19, registry);
+        let (_, feet) = grass_column(&generator, &edits);
+        world.spawn(world.registry().find("chien").unwrap(), feet);
         let mut closest = f32::MAX;
         for _ in 0..120 {
             world.tick(0.05, &generator, &edits, &[player]);
