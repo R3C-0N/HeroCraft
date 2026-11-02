@@ -3,7 +3,9 @@
 //!
 //! La même simulation tourne sur le serveur, qui fait autorité et diffuse les positions, et dans la
 //! partie solo du client. Elle lit le terrain bloc par bloc (générateur + modifications) : une
-//! créature marche sur les blocs posés, tombe dans les trous creusés, contourne les murs et l'eau.
+//! créature marche sur les blocs posés, tombe dans les trous creusés, regarde quelques pas devant
+//! elle pour contourner murs et falaises plutôt que de faire demi-tour, préfère la terre ferme et,
+//! à l'eau, nage vers la rive la plus proche.
 //! Corps, allure et biomes de chaque espèce viennent de sa description (`CreatureRegistry`).
 //!
 //! Une créature se tourne peu à peu vers son nouveau cap, saute pour monter sur un bloc, et, frappée
@@ -51,8 +53,20 @@ const KNOCKBACK_DAMPING: f32 = 5.0;
 /// Fuite après un coup : durée, en secondes, et allure par rapport à la marche
 const PANIC_TIME: f32 = 4.0;
 const PANIC_SPEED: f32 = 1.8;
-/// Une créature ne descend pas volontairement plus bas que ça, en blocs
+/// Une créature ne descend pas volontairement plus bas que ça, en blocs : au-delà, c'est une falaise
 const MAX_DROP_BLOCKS: f32 = 3.0;
+/// Regard devant elle : nombre de points sondés sur son chemin, et écart entre eux, en blocs
+const LOOKAHEAD_STEPS: usize = 5;
+const PROBE_SPACING: f32 = 0.5;
+/// Écarts au cap essayés pour contourner un obstacle, en radians, du plus petit au plus grand
+const DETOUR_ANGLES: [f32; 6] = [0.4, 0.8, 1.2, 1.6, 2.1, 2.6];
+/// Nage : allure par rapport à la marche, et part du corps sous la surface (au plus un bloc)
+const SWIM_SPEED: f32 = 0.6;
+const SWIM_SINK: f32 = 0.5;
+/// Recherche de la rive : portée, en blocs, directions sondées et intervalle, en secondes
+const SHORE_RANGE_BLOCKS: usize = 12;
+const SHORE_DIRECTIONS: usize = 16;
+const SHORE_SEARCH_INTERVAL: f32 = 1.0;
 /// Pas de simulation le plus long, en secondes
 const MAX_STEP: f32 = 0.1;
 /// Au-delà, le cache de colonnes est vidé
@@ -82,13 +96,21 @@ pub struct Creature {
     panic: f32,
     /// Temps écoulé depuis sa mort (`None` : vivante), en secondes
     dead_for: Option<f32>,
+    /// Côté par lequel elle contourne les obstacles (1 : à droite, -1 : à gauche), gardé d'un
+    /// obstacle à l'autre pour longer un mur sans hésiter
+    detour_side: f32,
+    /// Elle nage : ses pieds sont à la surface de l'eau
+    swimming: bool,
+    /// Enfoncement du corps dans l'eau, en unités du monde
+    sink: f32,
 }
 
 impl Creature {
     pub fn state(&self) -> CreatureState {
         CreatureState {
             creature_id: self.id,
-            position: self.position,
+            // Elle nage le corps à moitié sous l'eau
+            position: self.position - self.position.normalize_or_zero() * self.sink,
             yaw: self.yaw,
             hurt: (self.hurt / CREATURE_HURT_TIME).clamp(0.0, 1.0),
             death: self.dead_for.map_or(0.0, |t| (t / CREATURE_DEATH_TIME).clamp(1e-3, 1.0)),
@@ -175,6 +197,9 @@ impl CreatureWorld {
             hurt: 0.0,
             panic: 0.0,
             dead_for: None,
+            detour_side: if self.rng.gen_bool(0.5) { 1.0 } else { -1.0 },
+            swimming: false,
+            sink: 0.0,
         });
         id
     }
@@ -305,6 +330,31 @@ fn pick_species(candidates: &[SpawnCandidate], rng: &mut StdRng) -> Option<usize
     (chance >= 1.0 || rng.gen_bool(chance.clamp(0.0, 1.0) as f64)).then_some(species)
 }
 
+/// Sol sous un point du chemin
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Footing {
+    Dry,
+    Water,
+}
+
+/// Ce qu'une créature voit devant elle dans une direction
+#[derive(Clone, Copy, Debug)]
+struct Path {
+    /// Points sondés franchissables d'affilée, de 0 (bloquée tout de suite) à `LOOKAHEAD_STEPS`
+    clear: usize,
+    /// Une partie du chemin franchissable passe dans l'eau
+    wet: bool,
+    /// Altitude du sol juste devant le museau, s'il est franchissable
+    first: Option<f32>,
+}
+
+impl Path {
+    /// Note d'un chemin : le plus long d'abord, puis au sec si `avoid_water`
+    fn score(&self, avoid_water: bool) -> usize {
+        self.clear * 2 + usize::from(!avoid_water || !self.wet)
+    }
+}
+
 /// Déplacement d'une créature sur le terrain
 struct Walker<'q, 'a> {
     geometry: BlockGeometry,
@@ -330,12 +380,6 @@ impl Walker<'_, '_> {
         Some((BlockPos { y: top, ..column }, top as f32))
     }
 
-    /// Le corps tient debout sur ce sol : il y a la place, et le sol n'est pas liquide
-    fn can_stand(&mut self, ground: BlockPos, height: f32) -> bool {
-        let below = self.query.block(BlockPos { y: ground.y - 1, ..ground });
-        below != BlockId::WATER && below != BlockId::LAVA && self.fits(ground, ground.y as f32, height)
-    }
-
     /// Rien de solide dans la colonne `column` entre les altitudes `altitude` et `altitude + height`
     fn fits(&mut self, column: BlockPos, altitude: f32, height: f32) -> bool {
         let (bottom, top) = ((altitude + 1e-3).floor() as i32, (altitude + height - 1e-3).floor() as i32);
@@ -343,6 +387,91 @@ impl Walker<'_, '_> {
             let pos = BlockPos { y, ..column };
             !pos.is_valid() || !self.query.block(pos).is_solid()
         })
+    }
+
+    /// Où poser les pieds à la place de `p`, en venant de pieds à `altitude` : rien si un mur
+    /// barre la route, si c'est une falaise, de la lave, ou si le corps n'y tient pas
+    fn footing(&mut self, p: Vec3, altitude: f32, height: f32) -> Option<(f32, Footing)> {
+        let (column, ground) = self.ground(p, altitude)?;
+        if ground < altitude - MAX_DROP_BLOCKS {
+            return None;
+        }
+        let below = self.query.block(BlockPos { y: column.y - 1, ..column });
+        if below == BlockId::LAVA || !self.fits(column, ground, height) {
+            return None;
+        }
+        Some((ground, if below.is_liquid() { Footing::Water } else { Footing::Dry }))
+    }
+
+    /// Sonde le chemin depuis `from` (pieds à `altitude`) dans la direction `heading`, à partir de
+    /// `reach` blocs devant le centre du corps
+    fn path(&mut self, from: Vec3, altitude: f32, heading: Vec3, reach: f32, height: f32) -> Path {
+        let block = self.block();
+        let mut path = Path { clear: 0, wet: false, first: None };
+        let mut alt = altitude;
+        for k in 0..LOOKAHEAD_STEPS {
+            let p = from + heading * (reach + k as f32 * PROBE_SPACING) * block;
+            let Some((ground, footing)) = self.footing(p, alt, height) else { break };
+            if k == 0 {
+                path.first = Some(ground);
+            }
+            alt = ground;
+            path.wet |= footing == Footing::Water;
+            path.clear += 1;
+        }
+        path
+    }
+
+    /// Nouveau cap pour contourner ce qui gêne sur le chemin `current` : le plus petit écart qui
+    /// mène plus loin (ou au sec), du côté habituel d'abord. Bloquée de partout, elle fait demi-tour.
+    #[allow(clippy::too_many_arguments)]
+    fn detour(&mut self, c: &mut Creature, altitude: f32, reach: f32, height: f32, current: Path, avoid_water: bool, rng: &mut StdRng) -> Option<f32> {
+        let up = c.position.normalize_or_zero();
+        let (east, north) = tangent_frame(up);
+        let perfect = LOOKAHEAD_STEPS * 2 + 1;
+        // (écart signé, note) du meilleur cap trouvé : il doit faire mieux que le cap actuel
+        let mut best: Option<(f32, usize)> = None;
+        'search: for angle in DETOUR_ANGLES {
+            for side in [c.detour_side, -c.detour_side] {
+                let yaw = c.yaw + side * angle;
+                let score = self.path(c.position, altitude, north * yaw.cos() + east * yaw.sin(), reach, height).score(avoid_water);
+                if score > best.map_or(current.score(avoid_water), |(_, s)| s) {
+                    best = Some((side * angle, score));
+                    if score == perfect {
+                        break 'search;
+                    }
+                }
+            }
+        }
+        match best {
+            Some((offset, _)) => {
+                c.detour_side = offset.signum();
+                Some((c.yaw + offset).rem_euclid(TAU))
+            }
+            // Cul-de-sac : demi-tour, un peu de travers, et elle essaiera l'autre côté la prochaine fois
+            None if current.clear == 0 => {
+                c.detour_side = -c.detour_side;
+                Some((c.yaw + PI + rng.gen_range(-0.8..0.8)).rem_euclid(TAU))
+            }
+            None => None,
+        }
+    }
+
+    /// Cap vers la rive la plus proche où elle peut sortir de l'eau, depuis des pieds à `altitude`
+    fn shore_yaw(&mut self, from: Vec3, altitude: f32, height: f32) -> Option<f32> {
+        let up = from.normalize_or_zero();
+        let (east, north) = tangent_frame(up);
+        let block = self.block();
+        for r in 1..=SHORE_RANGE_BLOCKS {
+            for i in 0..SHORE_DIRECTIONS {
+                let yaw = i as f32 * TAU / SHORE_DIRECTIONS as f32;
+                let p = from + (north * yaw.cos() + east * yaw.sin()) * r as f32 * block;
+                if matches!(self.footing(p, altitude, height), Some((_, Footing::Dry))) {
+                    return Some(yaw);
+                }
+            }
+        }
+        None
     }
 
     fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, rng: &mut StdRng, dt: f32) {
@@ -359,6 +488,17 @@ impl Walker<'_, '_> {
             if c.panic <= 0.0 {
                 c.walking = false;
                 c.timer = rng.gen_range(2.0..6.0);
+            }
+        } else if c.swimming {
+            // À l'eau : elle nage vers la rive la plus proche, qu'elle cherche de temps en temps
+            c.walking = true;
+            c.timer -= dt;
+            if c.timer <= 0.0 {
+                c.timer = SHORE_SEARCH_INTERVAL;
+                let altitude = self.altitude(c.position);
+                if let Some(yaw) = self.shore_yaw(c.position, altitude, species.body.height) {
+                    c.target_yaw = yaw;
+                }
             }
         } else {
             // Humeur : marcher un moment dans une direction, puis s'arrêter brouter
@@ -407,6 +547,13 @@ impl Walker<'_, '_> {
         }
         c.position = up * radius_of(altitude);
         let on_ground = altitude <= ground + 1e-4 && c.vertical_speed <= 0.0;
+        let swimming = on_ground && self.query.block(BlockPos { y: column.y - 1, ..column }).is_liquid();
+        if swimming && !c.swimming {
+            // Tout juste à l'eau : elle cherche la rive sans attendre
+            c.timer = 0.0;
+        }
+        c.swimming = swimming;
+        c.sink = if swimming { (species.body.height * SWIM_SINK).min(1.0) * block } else { 0.0 };
 
         // Déplacement dans le plan : recul d'un coup, et marche (ralentie le temps de se tourner)
         let (east, north) = tangent_frame(up);
@@ -415,28 +562,27 @@ impl Walker<'_, '_> {
             c.push = Vec3::ZERO;
         }
         let mut velocity = c.push;
-        let speed = species.walk_speed * if c.panic > 0.0 { PANIC_SPEED } else { 1.0 } * turn.cos().max(0.0);
+        let pace = if c.panic > 0.0 { PANIC_SPEED } else { 1.0 } * if c.swimming { SWIM_SPEED } else { 1.0 };
+        let speed = species.walk_speed * pace * turn.cos().max(0.0);
         if c.walking && c.dead_for.is_none() && speed > 0.0 {
-            // La colonne devant le museau décide si la voie est libre
+            // Elle regarde quelques pas devant elle : le sol juste devant le museau décide si elle
+            // avance, la suite si elle doit déjà obliquer pour contourner un mur, une falaise ou l'eau
             let heading = north * c.yaw.cos() + east * c.yaw.sin();
-            let probe = c.position + heading * (speed * dt + species.body.half_length) * block;
-            let ahead = match self.ground(probe, altitude) {
-                Some((column, ahead)) if ahead >= altitude - MAX_DROP_BLOCKS && self.can_stand(column, species.body.height) => Some(ahead),
-                _ => None,
-            };
-            match ahead {
-                Some(ahead) => {
-                    // Une marche devant : elle saute dessus
-                    if on_ground && ahead > altitude + 1e-3 {
-                        c.vertical_speed = JUMP_SPEED;
-                    }
-                    velocity += heading * speed;
+            let reach = speed * dt + species.body.half_length;
+            let path = self.path(c.position, altitude, heading, reach, species.body.height);
+            // Au calme et à pied sec, elle longe l'eau plutôt que d'y entrer, si elle le peut
+            let avoid_water = c.panic <= 0.0 && !c.swimming;
+            if turn.abs() < FACING_TOLERANCE && path.score(avoid_water) < LOOKAHEAD_STEPS * 2 + 1 {
+                if let Some(yaw) = self.detour(c, altitude, reach, species.body.height, path, avoid_water, rng) {
+                    c.target_yaw = yaw;
                 }
-                // Voie barrée, une fois tournée vers son cap : demi-tour, un peu de travers
-                None if turn.abs() < FACING_TOLERANCE => {
-                    c.target_yaw = (c.yaw + PI + rng.gen_range(-0.8..0.8)).rem_euclid(TAU);
+            }
+            if let Some(ahead) = path.first {
+                // Une marche devant : elle saute dessus (et sort ainsi de l'eau)
+                if on_ground && ahead > altitude + 1e-3 {
+                    c.vertical_speed = JUMP_SPEED;
                 }
-                None => {}
+                velocity += heading * speed;
             }
         }
         if velocity == Vec3::ZERO {
@@ -448,7 +594,7 @@ impl Walker<'_, '_> {
         let free = match self.ground(target, altitude) {
             Some((column, ground)) => {
                 let below = self.query.block(BlockPos { y: column.y - 1, ..column });
-                ground <= altitude + 1e-3 && below != BlockId::WATER && below != BlockId::LAVA && self.fits(column, altitude, species.body.height)
+                ground <= altitude + 1e-3 && below != BlockId::LAVA && self.fits(column, altitude, species.body.height)
             }
             None => false,
         };
@@ -623,14 +769,9 @@ mod tests {
         let mut world = CreatureWorld::new(generator.base_radius(), 9, registry());
         let boar = world.registry().find("sanglier").unwrap();
         world.spawn(boar, feet);
-        // Une marche d'un bloc devant, et un mur de deux blocs derrière elle pour qu'il s'y arrête
+        // Une marche d'un bloc devant (un mur derrière en ferait un cul-de-sac, qu'il contournerait)
         let step = BlockPos { x: ground.x + 1, ..ground };
         assert!(edits.set_block(&generator, step, BlockId::STONE));
-        for dz in -2..=2 {
-            for dy in 0..3 {
-                edits.set_block(&generator, BlockPos { x: ground.x + 2, y: ground.y + dy, z: ground.z + dz, ..ground }, BlockId::STONE);
-            }
-        }
         let c = &mut world.creatures[0];
         c.yaw = yaw_towards(&geometry, feet, step);
         (c.target_yaw, c.walking, c.timer) = (c.yaw, true, 100.0);
@@ -689,5 +830,153 @@ mod tests {
             world.tick(0.05, &generator, &edits, &[feet]);
         }
         assert!(world.creatures().is_empty());
+    }
+
+    /// Plateau de pierre en plein ciel au-dessus d'une colonne d'herbe, de `dx` blocs de part et
+    /// d'autre en x et `dz` en z : ses bords sont des falaises. Renvoie le bloc central du plancher.
+    fn sky_platform(generator: &PlanetWorldGenerator, edits: &TerrainEdits, dx: i32, dz: i32) -> BlockPos {
+        let (ground, _) = grass_column(generator, edits);
+        let floor = BlockPos { y: ground.y + 24, ..ground };
+        for x in -dx..=dx {
+            for z in -dz..=dz {
+                assert!(edits.set_block(generator, BlockPos { x: floor.x + x, z: floor.z + z, ..floor }, BlockId::STONE));
+            }
+        }
+        floor
+    }
+
+    /// Pieds posés sur le plancher `floor`, décalés de (x, z) colonnes
+    fn feet_on(geometry: &BlockGeometry, floor: BlockPos, x: i32, z: i32) -> Vec3 {
+        geometry.corner(floor.face, (floor.x + x) as f64 + 0.5, (floor.y + 1) as f64, (floor.z + z) as f64 + 0.5).as_vec3()
+    }
+
+    /// Fait marcher la créature `0` droit vers la colonne `to`, sans changer d'humeur
+    fn walk_towards(world: &mut CreatureWorld, geometry: &BlockGeometry, to: BlockPos) {
+        let c = &mut world.creatures[0];
+        c.yaw = yaw_towards(geometry, c.position, to);
+        (c.target_yaw, c.walking, c.timer) = (c.yaw, true, 1000.0);
+    }
+
+    #[test]
+    fn a_creature_walks_around_a_wall() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let floor = sky_platform(&generator, &edits, 6, 4);
+        // Mur de cinq blocs de large et deux de haut en travers, avec un passage de chaque côté
+        for z in -2..=2 {
+            for y in 1..=2 {
+                assert!(edits.set_block(&generator, BlockPos { x: floor.x + 2, y: floor.y + y, z: floor.z + z, ..floor }, BlockId::STONE));
+            }
+        }
+        let feet = feet_on(&geometry, floor, -3, 0);
+        let mut world = CreatureWorld::new(generator.base_radius(), 13, registry());
+        let boar = world.registry().find("sanglier").unwrap();
+        world.spawn(boar, feet);
+        walk_towards(&mut world, &geometry, BlockPos { x: floor.x + 6, ..floor });
+
+        let mut passed = false;
+        for _ in 0..400 {
+            world.tick(0.05, &generator, &edits, &[feet]);
+            let position = world.creatures()[0].position;
+            let alt = altitude(&geometry, position);
+            assert!((alt - (floor.y + 1) as f32).abs() < 0.6, "tombée du plateau ({alt})");
+            let column = geometry.block_at_point(position.as_dvec3()).unwrap();
+            passed |= column.x >= floor.x + 3 && (alt - (floor.y + 1) as f32).abs() < 1e-2;
+        }
+        assert!(passed, "le sanglier n'a pas contourné le mur");
+    }
+
+    #[test]
+    fn creatures_never_walk_off_a_cliff() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let floor = sky_platform(&generator, &edits, 4, 4);
+        let feet = feet_on(&geometry, floor, 0, 0);
+        let mut world = CreatureWorld::new(generator.base_radius(), 17, registry());
+        let mut ids = Vec::new();
+        for (name, x, z) in [("vache", -2, 0), ("lapin", 2, 2), ("sanglier", 0, -2)] {
+            let species = world.registry().find(name).unwrap();
+            ids.push(world.spawn(species, feet_on(&geometry, floor, x, z)));
+        }
+        // Deux minutes de promenade, toujours droit vers le bord quand elles repartent
+        for i in 0..2400 {
+            if i % 100 == 0 {
+                for c in world.creatures.iter_mut().filter(|c| ids.contains(&c.id)) {
+                    (c.walking, c.timer) = (true, 4.0);
+                }
+            }
+            world.tick(0.05, &generator, &edits, &[feet]);
+            // Celles qui apparaissent d'elles-mêmes sur le sol, plus bas, ne comptent pas
+            for c in world.creatures().iter().filter(|c| ids.contains(&c.id)) {
+                let alt = altitude(&geometry, c.position);
+                assert!((alt - (floor.y + 1) as f32).abs() < 0.6, "{} tombée du plateau ({alt})", c.species);
+            }
+        }
+    }
+
+    #[test]
+    fn a_fleeing_creature_swims_across_water() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let floor = sky_platform(&generator, &edits, 7, 3);
+        // Un ruisseau de trois blocs en travers du plateau
+        for x in 0..=2 {
+            for z in -3..=3 {
+                assert!(edits.set_block(&generator, BlockPos { x: floor.x + x, z: floor.z + z, ..floor }, BlockId::WATER));
+            }
+        }
+        let feet = feet_on(&geometry, floor, -4, 0);
+        let mut world = CreatureWorld::new(generator.base_radius(), 19, registry());
+        let cow = world.registry().find("vache").unwrap();
+        world.spawn(cow, feet);
+        walk_towards(&mut world, &geometry, BlockPos { x: floor.x + 7, ..floor });
+        world.creatures[0].panic = 100.0;
+
+        let (mut swam, mut across) = (false, false);
+        for _ in 0..300 {
+            world.tick(0.05, &generator, &edits, &[feet]);
+            let c = &world.creatures()[0];
+            let column = geometry.block_at_point(c.position.as_dvec3()).unwrap();
+            if c.swimming {
+                swam = true;
+                // Le corps est à moitié dans l'eau, les pieds restent à la surface
+                assert!(c.state().position.length() < c.position.length());
+            }
+            across |= column.x >= floor.x + 3 && !c.swimming;
+        }
+        assert!(swam, "la vache n'est pas entrée dans l'eau");
+        assert!(across, "la vache n'a pas traversé le ruisseau");
+    }
+
+    #[test]
+    fn a_creature_in_water_swims_to_the_shore() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let floor = sky_platform(&generator, &edits, 7, 4);
+        // Un bassin sur tout le plateau sauf sa bordure est
+        for x in -7..=4 {
+            for z in -4..=4 {
+                assert!(edits.set_block(&generator, BlockPos { x: floor.x + x, z: floor.z + z, ..floor }, BlockId::WATER));
+            }
+        }
+        let feet = feet_on(&geometry, floor, -5, 0);
+        let mut world = CreatureWorld::new(generator.base_radius(), 23, registry());
+        let sheep = world.registry().find("vache").unwrap();
+        world.spawn(sheep, feet);
+        // Tournée vers l'ouest, loin de la rive
+        walk_towards(&mut world, &geometry, BlockPos { x: floor.x - 7, ..floor });
+        world.creatures[0].timer = 3.0;
+
+        for _ in 0..600 {
+            world.tick(0.05, &generator, &edits, &[feet]);
+        }
+        let c = &world.creatures()[0];
+        let column = geometry.block_at_point(c.position.as_dvec3()).unwrap();
+        assert!(column.x >= floor.x + 5 && !c.swimming, "le mouton est resté à l'eau (colonne {})", column.x - floor.x);
+        assert!((altitude(&geometry, c.position) - (floor.y + 1) as f32).abs() < 1e-2);
     }
 }
