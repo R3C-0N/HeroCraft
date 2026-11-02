@@ -31,10 +31,11 @@ pub enum Action {
     ToggleTectonics,
     ToggleOceanCurrents,
     OpenInventory,
+    OpenChat,
 }
 
 /// Groupes d'actions, dans l'ordre d'affichage de la page Commandes
-pub const ACTION_GROUPS: [(&str, &[Action]); 4] = [
+pub const ACTION_GROUPS: [(&str, &[Action]); 5] = [
     (
         "DÉPLACEMENT",
         &[
@@ -50,10 +51,11 @@ pub const ACTION_GROUPS: [(&str, &[Action]); 4] = [
     ("OBJETS", &[Action::OpenInventory]),
     ("CAMÉRA", &[Action::ZoomModifier, Action::ToggleView, Action::ResetView]),
     ("MONDE", &[Action::NewPlanet, Action::ToggleTectonics, Action::ToggleOceanCurrents]),
+    ("CHAT", &[Action::OpenChat]),
 ];
 
 impl Action {
-    pub const ALL: [Action; 14] = [
+    pub const ALL: [Action; 15] = [
         Action::MoveForward,
         Action::MoveBackward,
         Action::MoveLeft,
@@ -68,6 +70,7 @@ impl Action {
         Action::ToggleTectonics,
         Action::ToggleOceanCurrents,
         Action::OpenInventory,
+        Action::OpenChat,
     ];
 
     pub fn label(self) -> &'static str {
@@ -86,6 +89,7 @@ impl Action {
             Action::ToggleTectonics => "Filtre plaques tectoniques",
             Action::ToggleOceanCurrents => "Filtre courants marins",
             Action::OpenInventory => "Ouvrir l'inventaire",
+            Action::OpenChat => "Ouvrir le chat (messages et commandes /)",
         }
     }
 
@@ -106,6 +110,7 @@ impl Action {
             Action::ToggleTectonics => KeyCode::KeyT,
             Action::ToggleOceanCurrents => KeyCode::KeyC,
             Action::OpenInventory => KeyCode::KeyE,
+            Action::OpenChat => KeyCode::Enter,
         }
     }
 }
