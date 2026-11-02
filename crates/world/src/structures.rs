@@ -1561,6 +1561,9 @@ fn cell_seed(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
     mix(generator.planet.seed ^ 0x5717_c7ae_0000_0000 ^ ((face_index(face) as u64) << 40) ^ hash2(0xC311, cx, cz))
 }
 
+/// Écart minimal, en blocs, entre deux établissements voisins
+const MIN_GAP: i32 = 48;
+
 /// Dessine l'établissement d'une case, s'il y en a un
 fn plan_cell(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i32) -> Option<Settlement> {
     herocraft_common::prof_scope!("world::structures::plan_cell");
@@ -1576,6 +1579,17 @@ fn plan_cell(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
         return None;
     };
     let cell = Rect::sized(cx * CELL, cz * CELL, CELL, CELL);
+    // Les établissements des cases voisines qui passent avant celle-ci (rang tiré de leur graine) :
+    // le site doit rester à distance d'eux. Le rang décroît strictement le long de ces appels, qui
+    // finissent donc toujours, et le plan ne dépend pas de l'ordre de lecture
+    let rank = |cx: i32, cz: i32| (mix(cell_seed(generator, face, cx, cz) ^ 0x7A11), cx, cz);
+    let mine = rank(cx, cz);
+    let neighbours: Vec<Rect> = [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+        .into_iter()
+        .map(|(dx, dz)| (cx + dx, cz + dz))
+        .filter(|&(nx, nz)| (0..CELLS_PER_FACE).contains(&nx) && (0..CELLS_PER_FACE).contains(&nz) && rank(nx, nz) > mine)
+        .filter_map(|(nx, nz)| generator.structures.cell(generator, face, nx, nz).map(|s| s.bounds))
+        .collect();
     // Un site refusé à une ville peut accueillir un village, puis des ruines
     let kinds: &[SettlementKind] = match wanted {
         SettlementKind::Town => &[SettlementKind::Town, SettlementKind::Village],
@@ -1587,6 +1601,10 @@ fn plan_cell(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
         for _ in 0..10 {
             let x = dice.range(cell.x0 + margin, cell.x1 - margin);
             let z = dice.range(cell.z0 + margin, cell.z1 - margin);
+            let reach = Rect::around(x, z, kind.radius() + MIN_GAP);
+            if neighbours.iter().any(|n| n.intersects(&reach)) {
+                continue;
+            }
             let (g, biome) = ground_at(generator, face, x, z);
             if !kind.accepts(biome) || (g as f64) <= SEA_LEVEL_BLOCKS + 1.0 {
                 continue;
@@ -2237,5 +2255,20 @@ mod tests {
             }
         }
         assert!(checked > 20, "{checked} bâtiments vérifiés");
+    }
+
+    #[test]
+    fn test_settlements_keep_their_distance() {
+        for seed in [42, 2026] {
+            let generator = generator(seed);
+            let all = all_settlements(&generator);
+            for (i, a) in all.iter().enumerate() {
+                for b in &all[i + 1..] {
+                    if a.face == b.face {
+                        assert!(!a.bounds.expand(20).intersects(&b.bounds.expand(20)), "graine {seed} : {:?} et {:?} trop proches", a.center, b.center);
+                    }
+                }
+            }
+        }
     }
 }
