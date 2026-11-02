@@ -6,7 +6,7 @@ use herocraft_common::{blocks, opposite_face, BlockId, PlanetChunkCoord, PlanetF
 use herocraft_voxel_engine::cache::WorldChunkCache;
 use herocraft_voxel_engine::chunk::{ChunkData, CHUNK_SIZE};
 use herocraft_world::generator::{ColumnSample, PlanetWorldGenerator};
-use herocraft_world::{carvable_range, TerrainEdits, ALTITUDE_LAYERS, FACE_CHUNKS};
+use herocraft_world::{carvable_range, TerrainEdits, VegetationField, ALTITUDE_LAYERS, FACE_CHUNKS};
 
 use crate::block_textures::{block_textures, face_uv};
 use crate::planet_mesh::{PlanetMesh, PlanetVertex};
@@ -64,6 +64,8 @@ pub struct VoxelColumnSource {
     column_colors: Vec<[f32; 4]>,
     /// Colonnes du générateur avec une bordure de `COLUMN_BORDER`
     columns: Vec<ColumnSample>,
+    /// Arbres qui touchent la colonne et sa bordure
+    vegetation: VegetationField,
 }
 
 /// Place d'une couche d'altitude dans le maillage d'une colonne
@@ -131,7 +133,8 @@ impl VoxelColumnSource {
     /// Chunk du générateur à cette couche, tiré des colonnes déjà échantillonnées (sans bruit)
     pub fn generate_chunk(&self, generator: &PlanetWorldGenerator, layer: i32) -> ChunkData {
         let coord = PlanetChunkCoord::new(self.face, self.chunk_x, self.chunk_y, layer);
-        generator.generate_chunk_from_columns(&coord, &self.columns, COLUMN_BORDER)
+        let caves = generator.chunk_cave_field(&coord, &self.columns, COLUMN_BORDER);
+        generator.generate_chunk_full(&coord, &self.columns, COLUMN_BORDER, caves.as_ref(), &self.vegetation)
     }
 }
 
@@ -475,6 +478,7 @@ impl VoxelMeshBuilder {
         // une seule fois et partagées par toutes les couches d'altitude
         let columns = generator.sample_chunk_columns(face, chunk_x, chunk_y, COLUMN_BORDER);
         let cave_bottom = columns.iter().map(carvable_range).filter(|r| !r.is_empty()).map(|r| r.start).min();
+        let vegetation = generator.chunk_vegetation(face, chunk_x, chunk_y, &columns, COLUMN_BORDER);
 
         // Villes, villages et ruines : leurs toits dépassent le relief, leurs caves et leurs bâtiments
         // creusés dans la pente descendent un peu sous lui
@@ -483,7 +487,7 @@ impl VoxelMeshBuilder {
             min_elev -= 8.0;
         }
 
-        VoxelColumnSource { face, chunk_x, chunk_y, base_radius, min_elev, max_elev, cave_bottom, column_colors, columns }
+        VoxelColumnSource { face, chunk_x, chunk_y, base_radius, min_elev, max_elev, cave_bottom, column_colors, columns, vegetation }
     }
 
     /// Couches d'altitude à mailler : celles que le relief et la mer occupent, plus celles que le
@@ -496,7 +500,8 @@ impl VoxelMeshBuilder {
         // Sous le relief, seules les couches que les grottes atteignent ont quelque chose à montrer
         let cave_bottom = source.cave_bottom.map_or(f64::MAX, |y| y as f64);
         let lowest = (min_elev.min(sea).min(cave_bottom) - 6.0).max(0.0);
-        let highest = (max_elev.max(sea) + 6.0).min(528.0);
+        // Les arbres dépassent du relief
+        let highest = (max_elev.max(sea).max(source.vegetation.top() as f64) + 6.0).min(528.0);
 
         let min_layer = ((lowest / 32.0).floor() as i32).clamp(0, 16);
         let max_layer = ((highest / 32.0).ceil() as i32).clamp(0, 16);
@@ -517,7 +522,7 @@ impl VoxelMeshBuilder {
                 // Optimisation : saut des chunks 100% souterrains ou 100% dans le ciel. Une couche
                 // dont le bloc du dessus touche une grotte de la couche au-dessus garde ses faces.
                 let buried = min_elev >= layer_top && sea < layer_base && cave_bottom > layer_top;
-                let empty_sky = max_elev < layer_base && sea < layer_base;
+                let empty_sky = max_elev < layer_base && sea < layer_base && (source.vegetation.top() as f64) <= layer_base;
                 !(buried || empty_sky) || touched(layer)
             })
             .collect();
@@ -606,7 +611,7 @@ impl VoxelMeshBuilder {
         let coord = PlanetChunkCoord::new(face, chunk_x, chunk_y, layer);
         // Grottes du chunk et de sa bordure d'un bloc : celles des voisins décident de leurs faces
         let caves = generator.chunk_cave_field(&coord, columns, COLUMN_BORDER);
-        let generated = generator.generate_chunk_with_caves(&coord, columns, COLUMN_BORDER, caves.as_ref());
+        let generated = generator.generate_chunk_full(&coord, columns, COLUMN_BORDER, caves.as_ref(), &source.vegetation);
         let (block_x0, block_z0) = (chunk_x * CHUNK_SIZE as i32, chunk_y * CHUNK_SIZE as i32);
         // Chunks modifiés du voisinage 3x3x3 (index (dy+1)*9 + (dz+1)*3 + dx+1), lus une fois par couche
         let neighbours: [Option<Arc<ChunkData>>; 27] = std::array::from_fn(|i| {
@@ -635,7 +640,8 @@ impl VoxelMeshBuilder {
             // Voisin non modifié : le générateur, réduit à ce que le maillage en lit (solide, eau ou air)
             let global_y = (layer as f64) * 32.0 + (gy as f64);
             let sampled;
-            let column = if (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&gx) && (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&gz) {
+            let in_border = (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&gx) && (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&gz);
+            let column = if in_border {
                 &columns[((gz + COLUMN_BORDER) * COLUMN_SIDE + gx + COLUMN_BORDER) as usize]
             } else {
                 sampled = generator.sample_column(face, base_u + (gx as f64) * voxel_span_uv, base_v + (gz as f64) * voxel_span_uv);
@@ -664,6 +670,11 @@ impl VoxelMeshBuilder {
                 } else {
                     BlockId::WATER
                 }
+            } else if in_border {
+                // Arbres voisins : leurs troncs et feuillages cachent ou non les faces d'à côté (les
+                // herbes et les fleurs ne cachent rien)
+                let (bx, by, bz) = (block_x0 + gx, layer * 32 + gy, block_z0 + gz);
+                source.vegetation.tree_block(elev_floor as i32, bx, by, bz).unwrap_or(BlockId::AIR)
             } else {
                 BlockId::AIR
             }
@@ -688,6 +699,11 @@ impl VoxelMeshBuilder {
                 [c[0] * shade, c[1] * shade, c[2] * shade, c[3]]
             };
             let side_shade = if is_top { 1.0 } else { 0.78 };
+            // Arbres, herbes et fleurs : la couleur de leur texture, ni celle du biome ni celle du sol
+            if !Self::is_ground(block) {
+                let c = own_color(if block.is_plant() { 1.0 } else { side_shade });
+                return [c[0], c[1], c[2], c[3]];
+            }
             // Paroi de grotte : la couleur de sa matière, comme un trou creusé par le joueur, et non
             // celle du biome qui est celle de la surface (l'ombre du relief l'assombrit déjà)
             if block != BlockId::WATER && cave_air(gx + toward.0, gy + toward.1, gz + toward.2) {
@@ -836,6 +852,12 @@ impl VoxelMeshBuilder {
         }
 
         PlanetMesh { vertices, indices }
+    }
+
+    /// Matière du relief naturel, que le dessus du terrain colore selon le biome
+    #[inline(always)]
+    fn is_ground(block: BlockId) -> bool {
+        matches!(block, BlockId::GRASS | BlockId::DIRT | BlockId::SAND | BlockId::SNOW | BlockId::STONE | BlockId::WATER)
     }
 
     #[inline(always)]

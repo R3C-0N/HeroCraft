@@ -26,7 +26,7 @@ Les 135 premiers blocs viennent des modules de la branche `develop` (`CoreAssets
 
 | Champ | Rôle |
 |---|---|
-| `numeric_id` | Numéro du bloc dans les chunks, le réseau et les sauvegardes, de 1 à 8191 (0 est l'air). **Ne plus le changer** une fois des mondes enregistrés : un bloc posé y est noté par ce numéro. Les numéros 1 à 13 sont ceux que pose le générateur de terrain (pierre, terre, herbe, sable, neige, eau, lave, tronc, feuilles, minerais de fer et d'or, cristal, obsidienne). |
+| `numeric_id` | Numéro du bloc dans les chunks, le réseau et les sauvegardes, de 1 à 8191 (0 est l'air). **Ne plus le changer** une fois des mondes enregistrés : un bloc posé y est noté par ce numéro. Les numéros 1 à 13 sont ceux que pose le générateur de terrain (pierre, terre, herbe, sable, neige, eau, lave, tronc, feuilles, minerais de fer et d'or, cristal, obsidienne). La végétation qu'il pose (troncs, feuillages, cactus, herbes, fleurs, champignons) est cherchée par l'identifiant de sa fiche (`crates/world/src/vegetation.rs`) : renommer l'une de ces fiches la retire du monde. |
 | `name`, `description` | Nom affiché et description (bulle de l'inventaire). |
 | `category` | Rubrique du catalogue (`Minéraux`, `Sols`, `Flore`, `Construction`…). |
 | `hardness` | Dureté, celle des modules d'origine (1 pour une fleur, 14 pour la pierre). Le bloc se casse en un dixième de seconde par point de dureté (les blocs du terrain ont leurs propres temps). |
@@ -39,6 +39,7 @@ Les 135 premiers blocs viennent des modules de la branche `develop` (`CoreAssets
 | `solid` | `false` : on le traverse (plantes, torche). Vrai par défaut. Un bloc qu'on traverse se pose aussi là où se tient le joueur. |
 | `opaque` | `false` : il laisse voir les faces des blocs derrière lui (verre, glace, feuillages). Vrai par défaut. |
 | `liquid` | `true` : un liquide (eau, lave). Il n'est ni solide, ni opaque, ni visé par le réticule, ni ramassé ; un bloc posé le remplace. |
+| `replaceable` | `true` : une herbe folle (herbes hautes, buisson mort). Un bloc posé en la visant prend sa place, au lieu de se poser par-dessus. |
 | `light` | Lumière émise, de 0 à 15. Pas encore rendue. |
 | `sound` | Matière des pas et des blocs cassés ou posés : `stone` (par défaut), `dirt`, `grass`, `sand`, `snow`, `wood` ou `water`. |
 | `drop` | Ce que donne le bloc cassé : lui-même si le champ est absent, l'identifiant d'un autre bloc (l'herbe donne `dirt`), ou `null` pour rien. |

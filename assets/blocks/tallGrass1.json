@@ -8,5 +8,6 @@
   "texture_tint": "#73c754",
   "shape": "plant",
   "solid": false,
+  "replaceable": true,
   "sound": "grass"
 }

@@ -15,6 +15,7 @@ use herocraft_voxel_engine::{ChunkData, ChunkStorage, CHUNK_SIZE};
 
 use crate::caves::carvable_range;
 use crate::generator::{ColumnSample, PlanetWorldGenerator};
+use crate::vegetation::{Tree, VEGETATION_SPAN};
 
 /// Chunks par arête de face du cube
 pub const FACE_CHUNKS: i32 = 32;
@@ -230,11 +231,13 @@ pub struct TerrainQuery<'a> {
     generator: &'a PlanetWorldGenerator,
     edits: &'a TerrainEdits,
     columns: HashMap<(PlanetFace, i32, i32), ColumnSample>,
+    /// Arbres des cases déjà regardées (`TREE_CELL` blocs de côté)
+    trees: HashMap<(PlanetFace, i32, i32), Option<Tree>>,
 }
 
 impl<'a> TerrainQuery<'a> {
     pub fn new(generator: &'a PlanetWorldGenerator, edits: &'a TerrainEdits) -> Self {
-        Self { generator, edits, columns: HashMap::new() }
+        Self { generator, edits, columns: HashMap::new(), trees: HashMap::new() }
     }
 
     /// Reprend des colonnes déjà échantillonnées (cache gardé d'une image à l'autre)
@@ -243,7 +246,7 @@ impl<'a> TerrainQuery<'a> {
         edits: &'a TerrainEdits,
         columns: HashMap<(PlanetFace, i32, i32), ColumnSample>,
     ) -> Self {
-        Self { generator, edits, columns }
+        Self { generator, edits, columns, trees: HashMap::new() }
     }
 
     pub fn into_columns(self) -> HashMap<(PlanetFace, i32, i32), ColumnSample> {
@@ -266,11 +269,34 @@ impl<'a> TerrainQuery<'a> {
             return chunk.get_voxel(x, y, z);
         }
         let generator = self.generator;
-        generator.column_block(self.column(pos.face, pos.x, pos.z), pos.face, pos.x, pos.y, pos.z)
+        let column = *self.column(pos.face, pos.x, pos.z);
+        let block = generator.column_block_without_vegetation(&column, pos.face, pos.x, pos.y, pos.z);
+        if !block.is_air() || (pos.y as f64) < column.elevation.floor() {
+            return block;
+        }
+        let (face, trees) = (pos.face, &mut self.trees);
+        generator.vegetation_block(&column, face, pos.x, pos.y, pos.z, |cx, cz| {
+            *trees.entry((face, cx, cz)).or_insert_with(|| generator.tree_in_cell(face, cx, cz))
+        })
+    }
+
+    /// Altitude juste au-dessus du plus haut bloc d'arbre de la colonne (x, z), 0 sans arbre
+    fn tree_top(&mut self, face: PlanetFace, x: i32, z: i32) -> i32 {
+        let (generator, trees) = (self.generator, &mut self.trees);
+        generator.column_tree_top(x, z, &mut |cx, cz| *trees.entry((face, cx, cz)).or_insert_with(|| generator.tree_in_cell(face, cx, cz)))
+    }
+
+    /// Bloc d'arbre porteur (tronc, feuillage, cactus) en (x, y, z), hors modifications
+    fn tree_supports(&mut self, face: PlanetFace, x: i32, y: i32, z: i32) -> bool {
+        let (generator, trees) = (self.generator, &mut self.trees);
+        generator
+            .column_tree_block(x, y, z, &mut |cx, cz| *trees.entry((face, cx, cz)).or_insert_with(|| generator.tree_in_cell(face, cx, cz)))
+            .is_some_and(|b| b.is_solid())
     }
 
     /// Altitude (en blocs) du dessus du plus haut bloc porteur de la colonne (x, z) parmi les blocs
-    /// d'altitude ≤ `from_y`. Tout bloc non vide porte, l'eau comprise : on marche sur la mer.
+    /// d'altitude ≤ `from_y`. Tout bloc solide porte, l'eau aussi : on marche sur la mer. Les
+    /// herbes, les fleurs et la torche, qu'on traverse, ne portent pas.
     /// Les couches jamais modifiées sont sautées d'un coup, la recherche ne descend bloc par bloc
     /// que dans les chunks modifiés et à travers les grottes.
     pub fn support_top(&mut self, face: PlanetFace, x: i32, z: i32, from_y: i32) -> i32 {
@@ -280,17 +306,23 @@ impl<'a> TerrainQuery<'a> {
         let caves = carvable_range(&column);
         // Altitudes où une ville, un village ou des ruines changent la colonne : lues bloc par bloc
         let built = self.generator.structure_span(&column, face, x, z);
+        // Arbres de la colonne : leurs blocs portent aussi (mais pas les herbes et les fleurs)
+        let tree_top = if column.elevation.floor() >= crate::generator::SEA_LEVEL_BLOCKS {
+            self.tree_top(face, x, z).min(ground_top + VEGETATION_SPAN)
+        } else {
+            0
+        };
         let mut y = from_y.min(WORLD_HEIGHT - 1);
         while y >= 0 {
             let pos = BlockPos::new(face, x, y, z);
             if let Some(chunk) = self.edits.chunk(&pos.chunk_coord()) {
                 let (lx, ly, lz) = pos.local();
-                if !chunk.get_voxel(lx, ly, lz).is_air() {
+                if bears(chunk.get_voxel(lx, ly, lz)) {
                     return y + 1;
                 }
                 y -= 1;
             } else if built.contains(&y) {
-                if !self.generator.column_block(&column, face, x, y, z).is_air() {
+                if bears(self.generator.column_block(&column, face, x, y, z)) {
                     return y + 1;
                 }
                 y -= 1;
@@ -301,10 +333,16 @@ impl<'a> TerrainQuery<'a> {
                 } else {
                     return y + 1;
                 }
+            } else if y < tree_top {
+                // Dans la hauteur d'un arbre : bloc par bloc
+                if self.tree_supports(face, x, y, z) {
+                    return y + 1;
+                }
+                y -= 1;
             } else {
                 // Couche intacte et vide au-dessus du relief : passage au plus haut bloc utile en dessous
                 let layer_base = y.div_euclid(CHUNK_SIZE as i32) * CHUNK_SIZE as i32;
-                let next = (natural_top - 1).max(layer_base - 1);
+                let next = (natural_top.max(tree_top) - 1).max(layer_base - 1);
                 // Sans sauter par-dessus le haut d'une construction
                 y = if !built.is_empty() && built.end - 1 > next && built.end - 1 < y { built.end - 1 } else { next };
             }
@@ -312,6 +350,11 @@ impl<'a> TerrainQuery<'a> {
         // Sous l'altitude 0, tout est roche
         0
     }
+}
+
+/// Le bloc porte ce qui se tient dessus (`TerrainQuery::support_top`) : solide, ou liquide
+pub fn bears(block: BlockId) -> bool {
+    block.is_solid() || block.is_liquid()
 }
 
 /// Géométrie des blocs sur la sphère : un bloc (x, y, z) d'une face occupe les directions de la
@@ -496,7 +539,7 @@ mod tests {
         let edits = TerrainEdits::new(None);
         let (face, x, z) = (PlanetFace::PosZ, 430, 610);
         let naive = |edits: &TerrainEdits, from_y: i32| {
-            (0..=from_y.min(WORLD_HEIGHT - 1)).rev().find(|&y| !edits.block(&generator, BlockPos::new(face, x, y, z)).is_air()).map_or(0, |y| y + 1)
+            (0..=from_y.min(WORLD_HEIGHT - 1)).rev().find(|&y| bears(edits.block(&generator, BlockPos::new(face, x, y, z)))).map_or(0, |y| y + 1)
         };
         let surface = TerrainQuery::new(&generator, &edits).support_top(face, x, z, WORLD_HEIGHT - 1);
         // Un trou de 3 blocs, un bloc flottant au-dessus et un autre en couche haute
@@ -556,7 +599,7 @@ mod tests {
         let face = PlanetFace::NegZ;
         let (x, z, cave_y) = column_with_cave(&generator);
         let naive = |from_y: i32| {
-            (0..=from_y.min(WORLD_HEIGHT - 1)).rev().find(|&y| !edits.block(&generator, BlockPos::new(face, x, y, z)).is_air()).map_or(0, |y| y + 1)
+            (0..=from_y.min(WORLD_HEIGHT - 1)).rev().find(|&y| bears(edits.block(&generator, BlockPos::new(face, x, y, z)))).map_or(0, |y| y + 1)
         };
         let mut query = TerrainQuery::new(&generator, &edits);
         // Debout dans la grotte : le sol est son plancher, pas la surface au-dessus

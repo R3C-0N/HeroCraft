@@ -1557,7 +1557,7 @@ mod tests {
             // Le dessus porteur d'une colonne bâtie : le premier bloc non vide en descendant
             for (x, z) in [(bx, bz), (bx + 1, bz), (bx + 3, bz + 2)] {
                 for from_y in [WORLD_HEIGHT - 1, town.top + 2, ground + 3, ground, ground - 3] {
-                    let naive = (0..=from_y).rev().find(|&y| !edits.block(&generator, BlockPos::new(face, x, y, z)).is_air()).map_or(0, |y| y + 1);
+                    let naive = (0..=from_y).rev().find(|&y| crate::edits::bears(edits.block(&generator, BlockPos::new(face, x, y, z)))).map_or(0, |y| y + 1);
                     assert_eq!(query.support_top(face, x, z, from_y), naive, "({x}, {z}) depuis {from_y}");
                 }
             }
