@@ -12,6 +12,7 @@ use winit::{
 
 mod atmosphere;
 mod audio;
+mod benchmark;
 mod block_cracks;
 mod block_interaction;
 mod block_outline;
@@ -55,6 +56,9 @@ fn main() {
     std::env::set_var("RUST_LOG", "info");
     env_logger::init();
     herocraft_common::profiler::init_main_thread();
+    if cfg!(debug_assertions) {
+        warn!("Jeu compilé en DEBUG : il tourne 5 à 10 fois plus lentement qu'en release. Pour jouer : cargo run --release --bin herocraft_client");
+    }
     if herocraft_common::profiler::is_enabled() {
         info!("PROFILAGE ACTIF : rapport écrit dans ./profiling/ à la fermeture (ou avec [F9]).");
     }
@@ -92,7 +96,8 @@ fn main() {
     // Initialisation du générateur procédural planétaire : graine imposée au lancement, sinon une
     // nouvelle planète à chaque partie
     let launch = network::launch_options();
-    let mut current_seed = launch.seed.unwrap_or_else(herocraft_world::random_seed);
+    // Banc d'essai : toujours la même planète, sauf graine imposée
+    let mut current_seed = launch.seed.or(benchmark::requested().then_some(benchmark::DEFAULT_SEED)).unwrap_or_else(herocraft_world::random_seed);
     info!("Planète de graine #{current_seed} (relancer avec --seed {current_seed} pour la retrouver).");
     let mut planet_desc = herocraft_world::PlanetDescriptor::default();
     planet_desc.seed = current_seed;
@@ -170,6 +175,14 @@ fn main() {
     let mut state = pollster::block_on(State::new(window.clone(), &ui_state));
     state.set_creature_textures(&creature_textures);
     state.sync_lod_meshes(&lod_manager);
+
+    // Banc d'essai (`--benchmark`) : le jeu joue seul une suite de phases et mesure chacune
+    let mut bench = benchmark::requested().then(|| benchmark::Benchmark::new(&camera, current_seed));
+    if bench.is_some() {
+        state.set_vsync(false);
+        // Population tirée de la graine, sans sauvegarde : la même à chaque banc d'essai
+        solo_creatures = herocraft_world::CreatureWorld::new(base_radius as f64, current_seed, creature_registry.clone());
+    }
 
     // Gestion des entrées : souris capturée en jeu, glisser en vue satellite
     let mut cursor_captured = false;
@@ -387,6 +400,8 @@ fn main() {
                         let now = Instant::now();
                         let dt = now.duration_since(last_frame_time).as_secs_f32();
                         last_frame_time = now;
+                        // Sommets des créatures dessinées à cette image (rapport du banc d'essai)
+                        let creature_vertices;
 
                         // Mesure et mise à jour du compteur FPS (rafraîchi toutes les 250 ms pour une lecture stable)
                         fps_frame_count += 1;
@@ -396,6 +411,22 @@ fn main() {
                             ui_state.set_fps(current_fps);
                             fps_frame_count = 0;
                             fps_timer = now;
+                        }
+
+                        // Banc d'essai : réglages et entrées de la phase en cours
+                        if let Some(b) = bench.as_mut() {
+                            if let Some(start) = b.before_frame(dt, &mut camera, &mut ui_state, &generator) {
+                                lod_manager.set_distance_preset(ui_state.video_settings.lod_distance);
+                                if start.reset_creatures {
+                                    solo_creatures = herocraft_world::CreatureWorld::new(camera.base_radius as f64, current_seed, creature_registry.clone());
+                                    creature_animator = creatures::CreatureAnimator::default();
+                                }
+                                let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+                                for (i, feet) in benchmark::stress_positions(camera.player_pos, block, start.extra_creatures).into_iter().enumerate() {
+                                    solo_creatures.spawn(i % creature_registry.len(), feet);
+                                }
+                            }
+                            state.simulated_time = b.sun_time;
                         }
 
                         // Touches prises aux autres programmes par le crochet clavier depuis l'image précédente
@@ -431,6 +462,7 @@ fn main() {
                         }
 
                         // Mise à jour de la caméra uniquement si le menu n'est pas ouvert
+                        let section = Instant::now();
                         if !ui_state.is_settings_open {
                             herocraft_common::prof_scope!("frame::camera_update");
                             camera.update(dt, &generator);
@@ -441,9 +473,15 @@ fn main() {
                                 if let Some(client) = net.as_mut() {
                                     client.send_fall(blocks);
                                 }
-                                let hurt = ui_state.player.fall(blocks);
-                                show_wound(hurt, &format!("chute de {:.0} blocs", blocks), &mut camera, &mut ui_state, &mut audio);
+                                // Banc d'essai : le joueur ne se blesse pas
+                                if bench.is_none() {
+                                    let hurt = ui_state.player.fall(blocks);
+                                    show_wound(hurt, &format!("chute de {:.0} blocs", blocks), &mut camera, &mut ui_state, &mut audio);
+                                }
                             }
+                        }
+                        if let Some(b) = bench.as_mut() {
+                            b.section("caméra et joueur", section);
                         }
                         {
                             herocraft_common::prof_scope!("son");
@@ -528,6 +566,8 @@ fn main() {
                         // en pause avec le menu. Dessinées d'après le modèle de leur espèce.
                         {
                             herocraft_common::prof_scope!("creatures");
+                            let section = Instant::now();
+                            let creature_mode = bench.as_ref().map_or(benchmark::CreatureMode::Full, |b| b.creature_mode());
                             creature_views = match net.as_ref() {
                                 Some(client) => client.creature_views(&creature_registry),
                                 None => {
@@ -535,29 +575,42 @@ fn main() {
                                         solo_creatures = solo_creature_world(camera.base_radius as f64, current_seed, &creature_registry);
                                         creatures_seed = current_seed;
                                     }
-                                    if !ui_state.is_settings_open {
+                                    if !ui_state.is_settings_open && creature_mode != benchmark::CreatureMode::Off {
                                         // L'heure du ciel règle le sommeil et les apparitions
                                         solo_creatures.set_sun_dir(state.sun_dir());
                                         let player = herocraft_world::PlayerPresence { feet: camera.player_pos, crouching: camera.is_crouching() };
                                         // Morsures et charges des bêtes agressives
-                                        for hit in solo_creatures.tick_with_presences(dt, &generator, lod_manager.terrain_edits(), &[player]) {
+                                        let hits = solo_creatures.tick_with_presences(dt, &generator, lod_manager.terrain_edits(), &[player]);
+                                        // Banc d'essai : les bêtes ne blessent pas le joueur
+                                        for hit in hits.into_iter().filter(|_| bench.is_none()) {
                                             let cause = creature_registry.get(hit.species).map_or("Une créature", |s| s.name.as_str());
                                             let hurt = ui_state.player.bitten(hit.damage, cause);
                                             show_wound(hurt, cause, &mut camera, &mut ui_state, &mut audio);
                                         }
                                     }
-                                    solo_creatures
-                                        .creatures()
-                                        .iter()
-                                        .map(|c| creatures::CreatureView::new(Some(c.species), &c.state()))
-                                        .collect()
+                                    match creature_mode {
+                                        benchmark::CreatureMode::Full | benchmark::CreatureMode::Stress => solo_creatures
+                                            .creatures()
+                                            .iter()
+                                            .map(|c| creatures::CreatureView::new(Some(c.species), &c.state()))
+                                            .collect(),
+                                        benchmark::CreatureMode::SimulationOnly | benchmark::CreatureMode::Off => Vec::new(),
+                                    }
                                 }
                             };
+                            if let Some(b) = bench.as_mut() {
+                                b.section("créatures : simulation", section);
+                            }
+                            let section = Instant::now();
                             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
                             let anim_dt = if ui_state.is_settings_open { 0.0 } else { dt };
                             creature_animator.update(&creature_views, &creature_registry, &creature_models, anim_dt, block);
                             let frame = creatures::build_frame(&creature_views, &creature_registry, &creature_models, &creature_animator, block);
                             state.set_creature_frame(&frame);
+                            creature_vertices = frame.vertices.len();
+                            if let Some(b) = bench.as_mut() {
+                                b.section("créatures : animation et maillage", section);
+                            }
                         }
 
                         // Connexion menée en tâche de fond : à son terme, la planète du serveur
@@ -645,7 +698,7 @@ fn main() {
                             state.set_block_outline(block_interaction.outline(&camera).filter(|_| aimed.is_none()));
                             state.set_block_cracks(block_interaction.cracks(&camera).filter(|_| aimed.is_none()));
                         }
-                        if last_autosave.elapsed().as_secs() >= 30 {
+                        if last_autosave.elapsed().as_secs() >= 30 && bench.is_none() {
                             save_terrain_edits(&lod_manager);
                             if net.is_none() && hosted.is_none() {
                                 save_solo_creatures(&solo_creatures);
@@ -656,6 +709,7 @@ fn main() {
 
                         // Mise à jour adaptative du QuadTree LOD
                         herocraft_common::prof_scope!("frame::lod_and_upload" => lod_guard);
+                        let section = Instant::now();
                         if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, dt, None)
                             || terrain_edited
                             || state.has_pending_lod_uploads()
@@ -663,8 +717,12 @@ fn main() {
                             state.sync_lod_meshes(&lod_manager);
                         }
                         drop(lod_guard);
+                        if let Some(b) = bench.as_mut() {
+                            b.section("LOD et envoi au GPU", section);
+                        }
 
                         // 1. Mise à jour de l'interface egui
+                        let ui_section = Instant::now();
                         let is_ground = camera.distance <= camera.base_radius;
                         let (full_output, maybe_action) = ui_state.update_ui(is_ground);
 
@@ -826,17 +884,30 @@ fn main() {
                         herocraft_common::prof_scope!("frame::egui_tessellate" => tess_guard);
                         let paint_jobs = ui_state.ctx.tessellate(full_output.shapes, ui_state.scale_factor);
                         drop(tess_guard);
+                        if let Some(b) = bench.as_mut() {
+                            b.section("interface", ui_section);
+                        }
                         let screen_descriptor = egui_wgpu::ScreenDescriptor {
                             size_in_pixels: [state.size.width, state.size.height],
                             pixels_per_point: ui_state.scale_factor,
                         };
 
                         // 4. Rendu WGPU (3D + egui pass)
+                        let section = Instant::now();
                         match state.render(&paint_jobs, &screen_descriptor, &full_output.textures_delta) {
                             Ok(_) => {}
                             Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
                             Err(wgpu::SurfaceError::OutOfMemory) => target.exit(),
                             Err(e) => log::warn!("Erreur lors du rendu : {:?}", e),
+                        }
+                        if let Some(b) = bench.as_mut() {
+                            b.section("rendu (encodage et attente du GPU)", section);
+                            let shown = if net.is_none() { solo_creatures.creatures().len() } else { creature_views.len() };
+                            if b.after_frame(dt, now, shown, creature_vertices) {
+                                info!("Banc d'essai terminé : rapport dans ./benchmark/.");
+                                write_profile_report();
+                                target.exit();
+                            }
                         }
 
                         // Limiteur de framerate si V-Sync est désactivée

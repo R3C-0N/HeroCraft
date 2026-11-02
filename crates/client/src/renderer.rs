@@ -203,6 +203,7 @@ impl State {
     pub async fn new(window: Arc<Window>, _ui_state: &UiState) -> Self {
         herocraft_common::prof_scope!("render::State::new");
         let size = window.inner_size();
+        crate::benchmark::set_meta("Résolution", format!("{} × {}", size.width, size.height));
 
         // 1. Instance WGPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -229,6 +230,10 @@ impl State {
         let adapter_info = adapter.get_info();
         herocraft_common::profiler::set_meta(
             "gpu",
+            format!("{} ({:?}, {:?}, pilote {} {})", adapter_info.name, adapter_info.backend, adapter_info.device_type, adapter_info.driver, adapter_info.driver_info),
+        );
+        crate::benchmark::set_meta(
+            "Carte graphique",
             format!("{} ({:?}, {:?}, pilote {} {})", adapter_info.name, adapter_info.backend, adapter_info.device_type, adapter_info.driver, adapter_info.driver_info),
         );
 
@@ -624,6 +629,7 @@ impl State {
         herocraft_common::prof_scope!("render::resize");
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
+            crate::benchmark::set_meta("Résolution", format!("{} × {}", new_size.width, new_size.height));
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
@@ -649,6 +655,7 @@ impl State {
             self.surface.configure(&self.device, &self.config);
             log::info!("Mode de présentation WGPU mis à jour : {:?}", target_mode);
             herocraft_common::profiler::set_meta("present_mode_final", format!("{:?}", target_mode));
+            crate::benchmark::set_meta("Présentation", format!("{:?}", target_mode));
         }
     }
 

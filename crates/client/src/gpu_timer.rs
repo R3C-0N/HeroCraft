@@ -46,7 +46,7 @@ pub struct GpuTimer {
 impl GpuTimer {
     /// Fonctionnalités à demander au device (vide sans la feature `profiling`)
     pub fn wanted_features(adapter_features: wgpu::Features) -> wgpu::Features {
-        if !herocraft_common::profiler::is_enabled() {
+        if !herocraft_common::profiler::is_enabled() && !crate::benchmark::requested() {
             return wgpu::Features::empty();
         }
         adapter_features & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES)
@@ -54,7 +54,8 @@ impl GpuTimer {
 
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<Self> {
         let features = device.features();
-        if !herocraft_common::profiler::is_enabled() || !features.contains(wgpu::Features::TIMESTAMP_QUERY) {
+        let wanted = herocraft_common::profiler::is_enabled() || crate::benchmark::requested();
+        if !wanted || !features.contains(wgpu::Features::TIMESTAMP_QUERY) {
             if herocraft_common::profiler::is_enabled() {
                 herocraft_common::profiler::set_meta("gpu_timestamps", "non supportés par l'adaptateur".into());
             }
@@ -153,6 +154,23 @@ fn record(ts: &[u64], period_ns: f64, view_mode: CameraViewMode, inside_passes: 
         let (a, b) = (ts[a as usize], ts[b as usize]);
         (b.saturating_sub(a) as f64 * period_ns) as u64
     };
+    // Banc d'essai : mêmes temps, par passe, relevés pour la phase en cours
+    let benchmark = [
+        ("gpu::ombres", span(TS_SHADOW_BEGIN, TS_SHADOW_END)),
+        ("gpu::passe_3d", span(TS_3D_BEGIN, TS_3D_END)),
+        ("gpu::rayons", span(TS_GOD_RAYS_BEGIN, TS_GOD_RAYS_END)),
+        ("gpu::post_bloom", span(TS_POST_BEGIN, TS_POST_END)),
+        ("gpu::interface", span(TS_UI_BEGIN, TS_UI_END)),
+        ("gpu::image", span(TS_SHADOW_BEGIN, TS_UI_END)),
+    ];
+    for (name, ns) in benchmark {
+        crate::benchmark::record_gpu(name, ns);
+    }
+    if inside_passes {
+        crate::benchmark::record_gpu("gpu::passe_3d::terrain", span(TS_3D_BEGIN, TS_AFTER_TERRAIN));
+        crate::benchmark::record_gpu("gpu::passe_3d::ciel", span(TS_AFTER_TERRAIN, TS_AFTER_SKY));
+        crate::benchmark::record_gpu("gpu::passe_3d::nuages_resolve", span(TS_AFTER_SKY, TS_3D_END));
+    }
     herocraft_common::prof_gpu!("gpu::shadows", span(TS_SHADOW_BEGIN, TS_SHADOW_END));
     herocraft_common::prof_gpu!("gpu::pass_3d", span(TS_3D_BEGIN, TS_3D_END));
     if inside_passes {
