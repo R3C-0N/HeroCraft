@@ -1,0 +1,45 @@
+{
+    "_note": "Contenu provisoire : les quatre compétences du soldat reprises de la branche Java, en attendant la roue décrite dans Planner.",
+    "branches": [
+        { "id": "melee", "name": "Mêlée", "color": [205, 90, 60] },
+        { "id": "ranged", "name": "Distance", "color": [90, 170, 80] },
+        { "id": "magic", "name": "Magie", "color": [90, 120, 220] }
+    ],
+    "nodes": [
+        {
+            "id": "frappeLourde",
+            "name": "Frappe lourde",
+            "description": "Un coup ample qui balaie tout ce qui se tient devant.",
+            "branch": "melee",
+            "ring": 1,
+            "slot": 0.5
+        },
+        {
+            "id": "briseGarde",
+            "name": "Brise-garde",
+            "description": "Un coup sec et étroit, porté droit sur l'adversaire.",
+            "branch": "melee",
+            "ring": 2,
+            "slot": 0.25,
+            "requires": ["frappeLourde"]
+        },
+        {
+            "id": "ondeSismique",
+            "name": "Onde sismique",
+            "description": "Un coup frappé au sol, dont l'onde court droit devant.",
+            "branch": "melee",
+            "ring": 2,
+            "slot": 0.75,
+            "requires": ["frappeLourde"]
+        },
+        {
+            "id": "rueeFrontale",
+            "name": "Ruée frontale",
+            "description": "Une charge qui frappe tout ce qui se trouve sur sa trajectoire.",
+            "branch": "melee",
+            "ring": 3,
+            "slot": 0.5,
+            "requires": ["briseGarde", "ondeSismique"]
+        }
+    ]
+}

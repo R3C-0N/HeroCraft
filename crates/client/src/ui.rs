@@ -7,6 +7,8 @@ use crate::inventory::{can_hold, Inventory, ItemStack, HOTBAR_SLOTS, TOTAL_SLOTS
 use crate::item_icons::ItemIcons;
 use herocraft_common::{blocks, items, ItemId};
 use crate::player_stats::PlayerStats;
+use crate::skills_screen::{SkillScreen, SkillScreenRequests};
+use herocraft_common::SkillWheel;
 
 /// Actions déclenchées par l'interface utilisateur
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -410,10 +412,10 @@ impl OptionsTab {
 }
 
 // Palette obsidienne et or partagée par le HUD et le menu
-const GOLD: egui::Color32 = egui::Color32::from_rgb(212, 175, 55);
-const GOLD_BRIGHT: egui::Color32 = egui::Color32::from_rgb(240, 200, 60);
-const TEXT_DIM: egui::Color32 = egui::Color32::from_rgb(150, 165, 185);
-const TEXT_SOFT: egui::Color32 = egui::Color32::from_rgb(200, 210, 225);
+pub(crate) const GOLD: egui::Color32 = egui::Color32::from_rgb(212, 175, 55);
+pub(crate) const GOLD_BRIGHT: egui::Color32 = egui::Color32::from_rgb(240, 200, 60);
+pub(crate) const TEXT_DIM: egui::Color32 = egui::Color32::from_rgb(150, 165, 185);
+pub(crate) const TEXT_SOFT: egui::Color32 = egui::Color32::from_rgb(200, 210, 225);
 const DANGER: egui::Color32 = egui::Color32::from_rgb(245, 110, 110);
 
 /// Marge minimale entre un panneau et le bord de l'écran (points logiques)
@@ -425,7 +427,7 @@ const HURT_FLASH_SECS: f32 = 0.9;
 /// Sous cette fraction de la vie, le bord de l'écran rougit et bat comme un cœur
 const LOW_HP_FRACTION: f32 = 0.3;
 /// Marge intérieure du cadre du menu de pause
-const MENU_PADDING: f32 = 18.0;
+pub(crate) const MENU_PADDING: f32 = 18.0;
 /// En dessous de cette largeur, les onglets des options passent au-dessus du contenu
 const OPTIONS_SIDEBAR_MIN_WIDTH: f32 = 560.0;
 const OPTIONS_SIDEBAR_WIDTH: f32 = 150.0;
@@ -477,6 +479,13 @@ pub struct UiState {
     pub inventory_open: bool,
     /// Jauges, classe et niveau du joueur
     pub player: PlayerStats,
+    /// Écran de la roue des compétences ouvert (la souris est libérée pour choisir)
+    pub skills_open: bool,
+    /// Roue des compétences, la même que celle du serveur
+    pub skill_wheel: SkillWheel,
+    pub skill_screen: SkillScreen,
+    /// Demandes faites sur l'écran des compétences depuis la dernière image, que le jeu applique
+    pub skill_requests: SkillScreenRequests,
 }
 
 impl UiState {
@@ -520,6 +529,10 @@ impl UiState {
             icons: ItemIcons::default(),
             inventory_open: false,
             player: PlayerStats::default(),
+            skills_open: false,
+            skill_wheel: SkillWheel::standard(),
+            skill_screen: SkillScreen::default(),
+            skill_requests: SkillScreenRequests::default(),
         }
     }
 
@@ -633,7 +646,21 @@ impl UiState {
         if is_open {
             self.menu_page = MenuPage::Main;
             self.set_inventory_open(false);
+            self.skills_open = false;
         }
+    }
+
+    /// Un écran de jeu (inventaire, compétences) est ouvert par-dessus la partie
+    pub fn screen_open(&self) -> bool {
+        self.inventory_open || self.skills_open
+    }
+
+    /// Ouvre ou referme l'écran de la roue des compétences (l'inventaire se referme)
+    pub fn set_skills_open(&mut self, open: bool) {
+        if open {
+            self.set_inventory_open(false);
+        }
+        self.skills_open = open;
     }
 
     /// Ouvre ou referme l'écran d'inventaire. Refermé, la pile tenue à la souris retourne dans
@@ -641,6 +668,8 @@ impl UiState {
     pub fn set_inventory_open(&mut self, open: bool) {
         if !open {
             self.inventory.return_held();
+        } else {
+            self.skills_open = false;
         }
         self.inventory_open = open;
     }
@@ -663,6 +692,8 @@ impl UiState {
     pub fn handle_escape(&mut self) -> bool {
         if self.inventory_open {
             self.set_inventory_open(false);
+        } else if self.skills_open {
+            self.set_skills_open(false);
         } else if !self.is_settings_open {
             self.set_settings_open(true);
         } else if self.rebinding.is_some() {
@@ -812,7 +843,7 @@ impl UiState {
         let egui_ctx = self.ctx.clone();
         let full_output = egui_ctx.run(raw_input, |ctx| {
             // 1. Réticule de visée en mode FPS (quand le menu est fermé)
-            if is_ground && !self.is_settings_open && !self.inventory_open && !self.player.is_dead() {
+            if is_ground && !self.is_settings_open && !self.screen_open() && !self.player.is_dead() {
                 let center = ctx.screen_rect().center();
                 let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("crosshair")));
                 let stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_white_alpha(180));
@@ -841,6 +872,14 @@ impl UiState {
                     self.draw_death_screen(ctx, &mut action);
                 } else if self.inventory_open {
                     self.draw_inventory_screen(ctx);
+                } else if self.skills_open {
+                    let close_hint = self.controls.action_key_label(Action::OpenSkills);
+                    let solo = self.multiplayer.status == NetStatus::Solo;
+                    let requests = self.skill_screen.draw(ctx, &self.skill_wheel, &self.player.stats, &close_hint, solo);
+                    if requests.learn.is_some() {
+                        self.skill_requests.learn = requests.learn;
+                    }
+                    self.skill_requests.experience += requests.experience;
                 } else {
                     self.draw_hotbar(ctx);
                 }
@@ -1064,6 +1103,11 @@ impl UiState {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(stats.class.label()).strong().color(GOLD_BRIGHT));
                         ui.label(egui::RichText::new(format!("Niv. {}", stats.level)).color(TEXT_SOFT));
+                        // Points en attente : rappel de la touche de la roue
+                        if stats.skill_points > 0 {
+                            let key = self.controls.action_key_label(Action::OpenSkills);
+                            ui.label(egui::RichText::new(format!("+{} pt [{key}]", stats.skill_points)).size(11.0_f32).color(GOLD_BRIGHT));
+                        }
                     });
                     let next = stats.exp_for_next_level();
                     gauge(ui, 120.0_f32, 6.0_f32, stats.experience as f32 / next.max(1) as f32, GOLD, None);
@@ -2428,6 +2472,29 @@ mod tests {
         }
         let screen = ui.ctx.memory(|m| m.area_rect(egui::Id::new("inventory_screen"))).expect("inventaire dessiné");
         assert!(screen.top() >= 0.0 && screen.bottom() <= 720.0 && screen.left() >= 0.0 && screen.right() <= 1280.0, "{:?}", screen);
+    }
+
+    /// La roue des compétences tient dans une fenêtre de 1280×720, se ferme avec Échap et
+    /// n'est jamais ouverte en même temps que l'inventaire
+    #[test]
+    fn test_skills_screen_fits_and_closes() {
+        let mut ui = UiState::new(1);
+        ui.set_screen_size(1280.0, 720.0);
+        ui.set_inventory_open(true);
+        ui.set_skills_open(true);
+        assert!(ui.skills_open && !ui.inventory_open && ui.screen_open());
+        for _ in 0..3 {
+            ui.update_ui(true);
+        }
+        let screen = ui.ctx.memory(|m| m.area_rect(egui::Id::new("skills_screen"))).expect("roue dessinée");
+        assert!(screen.top() >= 0.0 && screen.bottom() <= 720.0 && screen.left() >= 0.0 && screen.right() <= 1280.0, "{:?}", screen);
+        assert_eq!(ui.skill_requests, SkillScreenRequests::default(), "rien n'est demandé sans clic");
+
+        ui.set_inventory_open(true);
+        assert!(!ui.skills_open);
+        ui.set_skills_open(true);
+        assert!(!ui.handle_escape(), "Échap referme la roue sans ouvrir le menu");
+        assert!(!ui.skills_open && !ui.is_settings_open);
     }
 
     /// Les jauges du joueur s'affichent au sol, en bas de l'écran, et pas en vue satellite

@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 7;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -49,6 +49,11 @@ pub enum ClientPacket {
     /// Le joueur frappe une créature (dégâts, recul et fuite décidés par le serveur)
     HitCreature {
         creature_id: u64,
+    },
+    /// Le joueur investit un point dans une compétence de la roue (le serveur vérifie points et
+    /// prérequis, puis renvoie ses statistiques)
+    LearnSkill {
+        id: String,
     },
     /// Envoi d'un message dans le chat
     ChatMessage(String),

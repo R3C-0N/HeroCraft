@@ -7,6 +7,11 @@ pub const FALL_DAMAGE_PER_BLOCK: f32 = 8.0;
 /// Endurance consommée par seconde de sprint
 pub const SPRINT_STAMINA_COST: f32 = 15.0;
 
+/// Expérience du passage au niveau 2 ; chaque niveau suivant en coûte autant de plus
+pub const EXPERIENCE_STEP: u64 = 100;
+/// Points de compétence qu'apporte chaque niveau
+pub const SKILL_POINTS_PER_LEVEL: u32 = 1;
+
 /// Classe de personnage RPG
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PlayerClass {
@@ -76,6 +81,13 @@ pub struct CharacterStats {
     pub max_mana: f32,
     pub stamina: f32,
     pub max_stamina: f32,
+
+    /// Points de compétence gagnés et pas encore investis dans la roue (un par niveau)
+    #[serde(default)]
+    pub skill_points: u32,
+    /// Compétences apprises dans la roue, par identifiant, et leur rang (1 à `SkillNode::max_rank`)
+    #[serde(default)]
+    pub skills: std::collections::BTreeMap<String, u8>,
 }
 
 impl CharacterStats {
@@ -91,6 +103,8 @@ impl CharacterStats {
             max_mana: 50.0,
             stamina: 100.0,
             max_stamina: 100.0,
+            skill_points: 0,
+            skills: std::collections::BTreeMap::new(),
         };
         stats.recalculate();
         stats.hp = stats.max_hp;
@@ -110,13 +124,14 @@ impl CharacterStats {
         self.stamina = self.stamina.min(self.max_stamina);
     }
 
-    /// Expérience requise pour passer au niveau suivant
+    /// Expérience requise pour passer au niveau suivant : 100 pour le niveau 2, et chaque palier
+    /// coûte 100 de plus que le précédent (la progression de la branche Java)
     pub fn exp_for_next_level(&self) -> u64 {
-        let lvl = self.level as u64;
-        100 * lvl * lvl
+        EXPERIENCE_STEP * self.level.max(1) as u64
     }
 
-    /// Ajoute de l'expérience et gère le level up
+    /// Ajoute de l'expérience et gère le level up : chaque niveau gagné donne
+    /// `SKILL_POINTS_PER_LEVEL` point(s) de compétence
     pub fn add_experience(&mut self, amount: u64) -> bool {
         self.experience += amount;
         let mut leveled_up = false;
@@ -124,6 +139,7 @@ impl CharacterStats {
         while self.experience >= self.exp_for_next_level() {
             self.experience -= self.exp_for_next_level();
             self.level += 1;
+            self.skill_points += SKILL_POINTS_PER_LEVEL;
             leveled_up = true;
 
             // Gain automatique d'attributs selon la classe
@@ -199,6 +215,18 @@ mod tests {
         assert!(leveled);
         assert_eq!(hero.level, 2);
         assert!(hero.max_hp > initial_max_hp);
+        assert_eq!(hero.skill_points, 1);
+    }
+
+    #[test]
+    fn test_each_level_costs_one_step_more_and_brings_a_point() {
+        let mut hero = CharacterStats::new(PlayerClass::Warrior);
+        // Niveaux 2, 3 et 4 : 100 + 200 + 300
+        hero.add_experience(599);
+        assert_eq!((hero.level, hero.experience, hero.skill_points), (3, 299, 2));
+        hero.add_experience(1);
+        assert_eq!((hero.level, hero.experience, hero.skill_points), (4, 0, 3));
+        assert_eq!(hero.exp_for_next_level(), 400);
     }
 
     #[test]

@@ -214,3 +214,56 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
     });
     assert!(server.creatures().creatures().iter().all(|c| c.id != sheep));
 }
+
+#[test]
+fn l_experience_donne_des_points_que_la_roue_juge() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    // Le client se connecte et dépense ses points pendant que le serveur tourne ici, sur ce fil
+    let client_thread = std::thread::spawn(move || {
+        let (client, _, _) = connect(&addr, "Alice");
+        // Sans point, la roue refuse : les statistiques reviennent inchangées
+        client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
+        wait_for(&client, |p| match p {
+            ServerPacket::StatsUpdate(stats) if stats.skill_points == 2 => Some(()),
+            ServerPacket::StatsUpdate(stats) => {
+                assert!(stats.skills.is_empty(), "appris sans point : {:?}", stats.skills);
+                None
+            }
+            _ => None,
+        });
+        client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
+        client.send(&ClientPacket::LearnSkill { id: "rueeFrontale".into() });
+        let stats = wait_for(&client, |p| match p {
+            ServerPacket::StatsUpdate(stats) if stats.skill_points < 2 => Some(stats),
+            _ => None,
+        });
+        assert_eq!(stats.skills.get("frappeLourde"), Some(&1));
+        // Ruée frontale demande deux compétences de l'anneau 2 : refusée, le point reste
+        let stats = wait_for(&client, |p| match p {
+            ServerPacket::StatsUpdate(stats) => Some(stats),
+            _ => None,
+        });
+        assert_eq!(stats.skill_points, 1);
+        assert!(!stats.skills.contains_key("rueeFrontale"));
+    });
+
+    let deadline = Instant::now() + WAIT;
+    let mut granted = false;
+    while !client_thread.is_finished() {
+        assert!(Instant::now() < deadline, "le client n'a pas fini à temps");
+        server.tick(0.05);
+        if !granted {
+            let first = server.players().next().map(|p| p.id);
+            if let Some(id) = first {
+                // Assez pour atteindre le niveau 3 (100 + 200) : deux points, après un premier refus
+                std::thread::sleep(Duration::from_millis(200));
+                server.tick(0.05);
+                granted = server.grant_experience(id, 300);
+            }
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    client_thread.join().unwrap();
+    assert!(granted);
+}

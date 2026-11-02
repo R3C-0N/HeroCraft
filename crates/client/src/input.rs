@@ -31,10 +31,11 @@ pub enum Action {
     ToggleTectonics,
     ToggleOceanCurrents,
     OpenInventory,
+    OpenSkills,
 }
 
 /// Groupes d'actions, dans l'ordre d'affichage de la page Commandes
-pub const ACTION_GROUPS: [(&str, &[Action]); 4] = [
+pub const ACTION_GROUPS: [(&str, &[Action]); 5] = [
     (
         "DÉPLACEMENT",
         &[
@@ -48,12 +49,13 @@ pub const ACTION_GROUPS: [(&str, &[Action]); 4] = [
         ],
     ),
     ("OBJETS", &[Action::OpenInventory]),
+    ("HÉROS", &[Action::OpenSkills]),
     ("CAMÉRA", &[Action::ZoomModifier, Action::ToggleView, Action::ResetView]),
     ("MONDE", &[Action::NewPlanet, Action::ToggleTectonics, Action::ToggleOceanCurrents]),
 ];
 
 impl Action {
-    pub const ALL: [Action; 14] = [
+    pub const ALL: [Action; 15] = [
         Action::MoveForward,
         Action::MoveBackward,
         Action::MoveLeft,
@@ -68,6 +70,7 @@ impl Action {
         Action::ToggleTectonics,
         Action::ToggleOceanCurrents,
         Action::OpenInventory,
+        Action::OpenSkills,
     ];
 
     pub fn label(self) -> &'static str {
@@ -86,6 +89,7 @@ impl Action {
             Action::ToggleTectonics => "Filtre plaques tectoniques",
             Action::ToggleOceanCurrents => "Filtre courants marins",
             Action::OpenInventory => "Ouvrir l'inventaire",
+            Action::OpenSkills => "Ouvrir la roue des compétences",
         }
     }
 
@@ -104,8 +108,9 @@ impl Action {
             Action::ResetView => KeyCode::KeyR,
             Action::NewPlanet => KeyCode::KeyG,
             Action::ToggleTectonics => KeyCode::KeyT,
-            Action::ToggleOceanCurrents => KeyCode::KeyC,
+            Action::ToggleOceanCurrents => KeyCode::KeyY,
             Action::OpenInventory => KeyCode::KeyE,
+            Action::OpenSkills => KeyCode::KeyC,
         }
     }
 }
@@ -189,6 +194,16 @@ impl Controls {
     /// Complète les actions manquantes et dédoublonne les touches d'un fichier ancien ou édité à la main
     fn repair(&mut self) {
         let defaults = Controls::default();
+        // Avant la roue des compétences, C servait aux courants marins : un fichier de cette
+        // époque les envoie sur leur nouvelle touche plutôt que de tout remettre à zéro
+        if !self.bindings.contains_key(&Action::OpenSkills)
+            && self.bindings.get(&Action::ToggleOceanCurrents) == Some(&Action::OpenSkills.default_key())
+        {
+            let moved = Action::ToggleOceanCurrents.default_key();
+            if !self.bindings.values().any(|&k| k == moved) {
+                self.bindings.insert(Action::ToggleOceanCurrents, moved);
+            }
+        }
         for action in Action::ALL {
             let key = self.key(action);
             let taken = Action::ALL
@@ -398,6 +413,17 @@ mod tests {
         assert_eq!(controls.key(Action::MoveForward), KeyCode::KeyW);
         assert_eq!(controls.key(Action::Jump), KeyCode::Space);
         assert_eq!(controls.mouse_sensitivity, 5.0);
+    }
+
+    #[test]
+    fn test_old_file_moves_currents_off_the_skills_key() {
+        let json = r#"{ "bindings": { "ToggleOceanCurrents": "KeyC", "Jump": "KeyJ" } }"#;
+        let mut controls: Controls = serde_json::from_str(json).unwrap();
+        controls.repair();
+        assert_eq!(controls.key(Action::OpenSkills), KeyCode::KeyC);
+        assert_eq!(controls.key(Action::ToggleOceanCurrents), KeyCode::KeyY);
+        // Les autres touches personnalisées sont gardées
+        assert_eq!(controls.key(Action::Jump), KeyCode::KeyJ);
     }
 
     #[test]
