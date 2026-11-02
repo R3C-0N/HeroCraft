@@ -51,6 +51,10 @@ const DEPTH_FADE: f64 = 10.0;
 const SURFACE_FADE: f64 = 7.0;
 /// Densité de tunnels au-delà de laquelle ils débouchent quand même à la surface : les entrées
 const ENTRANCE_REGION: f64 = 0.32;
+/// Bruit des cavernes au-delà duquel les tunnels débouchent aussi : des entrées éparpillées partout
+const ENTRANCE_SPOT: f64 = 0.15;
+/// Élargissement des tunnels à leur sortie en surface (0,6 : bouche 60 % plus large)
+const ENTRANCE_FUNNEL: f64 = 0.6;
 
 /// Valeurs du champ en un point du réseau : deux bruits dont l'intersection des zéros trace les
 /// tunnels, la densité des régions de tunnels et le bruit des cavernes
@@ -191,16 +195,23 @@ fn carved_between(below: &CavePoint, above: &CavePoint, y: i32, depth: f64) -> b
     let cavern = lerp(below[3], above[3], fy) as f64;
     let tunnel_distance = a * a + b * b;
     let cavern_possible = depth > CAVERN_MIN_DEPTH && cavern > CAVERN_THRESHOLD;
-    // Presque partout, ni tunnel ni caverne possibles : la suite (fondus) est sautée
-    if tunnel_distance >= TUNNEL_RADIUS * TUNNEL_RADIUS && !cavern_possible {
+    // Presque partout, ni tunnel ni caverne possibles : la suite (fondus) est sautée. Le rayon
+    // maximal compte l'évasement des entrées.
+    const MAX_RADIUS: f64 = TUNNEL_RADIUS * (1.0 + ENTRANCE_FUNNEL);
+    if tunnel_distance >= MAX_RADIUS * MAX_RADIUS && !cavern_possible {
         return false;
     }
     let region = lerp(below[2], above[2], fy) as f64;
 
     // Les grottes se referment en approchant du fond de la bande (pas de sol plat à la limite)
     let fade = smoothstep(0.0, DEPTH_FADE, CAVE_DEPTH - depth);
-    // Près de la surface aussi, sauf dans les régions les plus creusées : quelques entrées seulement
-    let surface = smoothstep(1.0, SURFACE_FADE, depth).max(smoothstep(ENTRANCE_REGION - 0.08, ENTRANCE_REGION, region));
+    // Près de la surface aussi, sauf aux entrées : les régions les plus creusées et les points où une
+    // caverne se forme plus bas (sommets du bruit des cavernes), réguliers sur tout le relief
+    let shallow = smoothstep(1.0, SURFACE_FADE, depth);
+    let cavern_spot = smoothstep(ENTRANCE_SPOT - 0.08, ENTRANCE_SPOT, cavern);
+    let entrance = smoothstep(ENTRANCE_REGION - 0.08, ENTRANCE_REGION, region).max(cavern_spot);
+    // Aux entrées, le tunnel s'évase en approchant de la surface : une bouche visible de loin
+    let surface = shallow.max(entrance) * (1.0 + ENTRANCE_FUNNEL * entrance * (1.0 - shallow));
 
     // Tunnels : là où les deux bruits sont proches de zéro à la fois, un tube sinueux
     let radius = TUNNEL_RADIUS * smoothstep(-0.25, 0.15, region) * fade * surface;
