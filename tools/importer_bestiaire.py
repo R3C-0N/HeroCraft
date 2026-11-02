@@ -76,6 +76,8 @@ def importer(module):
                 print(f"{ident} : biome {biome} sans équivalent, ignoré")
             for nom in BIOMES.get(biome, []):
                 spawn.append({"biome": nom, "weight": habitat.get("densite", 1.0)})
+        fiche = SORTIE / f"{ident}.json"
+        ancien = json.loads(fiche.read_text(encoding="utf-8")) if fiche.is_file() else {}
         description = {
             "name": p["DisplayName"]["name"],
             "description": p["DisplayName"].get("description", ""),
@@ -84,13 +86,15 @@ def importer(module):
             "min_group": habitat.get("groupeMin", 1),
             "max_group": habitat.get("groupeMax", 1),
             "spawn": spawn,
+            # L'attaque n'existe pas dans le bestiaire : celle de la fiche actuelle est gardée
+            **({"attack": a} if (a := ancien.get("attack")) else {}),
             "model": {
                 "mesh": f"modeles/{ident}.gltf",
                 "texture": f"modeles/{ident}.png",
                 "walk_animation": maillage.get("animation", "#repos").split("#")[-1],
             },
         }
-        ecrire(SORTIE / f"{ident}.json", description)
+        ecrire(fiche, description)
         print(f"{ident} : {description['name']}, {len(spawn)} biome(s)")
 
 

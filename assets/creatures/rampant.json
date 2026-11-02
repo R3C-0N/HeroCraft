@@ -6,5 +6,6 @@
   "min_group": 1,
   "max_group": 1,
   "spawn": [],
+  "attack": {"mode": "solo", "damage": 7, "cooldown": 1.4, "sight": 10, "chase_speed": 1.8},
   "model": {"mesh": "modeles/rampant.gltf", "texture": "modeles/rampant.png", "walk_animation": "repos"}
 }

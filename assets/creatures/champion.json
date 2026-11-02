@@ -6,5 +6,6 @@
   "min_group": 1,
   "max_group": 1,
   "spawn": [],
+  "attack": {"mode": "solo", "damage": 14, "cooldown": 1.5, "sight": 14, "chase_speed": 1.4, "reach": 1.2},
   "model": {"mesh": "modeles/champion.gltf", "texture": "modeles/champion.png", "walk_animation": "repos"}
 }

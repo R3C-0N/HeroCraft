@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -116,6 +116,12 @@ pub enum ServerPacket {
     CreatureStates(Vec<CreatureState>),
     /// Mise à jour des statistiques RPG du joueur (chaque seconde, et aussitôt après une chute)
     StatsUpdate(CharacterStats),
+    /// Le joueur vient d'être mordu ou chargé par une créature (suivi de ses nouvelles jauges)
+    PlayerHurt {
+        damage: f32,
+        /// Nom de l'espèce qui l'a frappé, pour l'écran de mort
+        cause: String,
+    },
     /// Message de chat ou notification système
     ChatMessage {
         sender: String,

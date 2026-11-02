@@ -10,5 +10,6 @@
     {"biome": "Mountains", "weight": 0.2},
     {"biome": "Taiga", "weight": 0.2}
   ],
+  "attack": {"mode": "solo", "damage": 12, "cooldown": 1.8, "sight": 10, "chase_speed": 1.8, "provoked_only": true},
   "model": {"mesh": "modeles/ours.gltf", "texture": "modeles/ours.png", "walk_animation": "repos"}
 }

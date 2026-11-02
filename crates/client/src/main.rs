@@ -437,15 +437,7 @@ fn main() {
                                     client.send_fall(blocks);
                                 }
                                 let hurt = ui_state.player.fall(blocks);
-                                if hurt > 0.0 {
-                                    camera.hurt(hurt);
-                                    audio.player_hurt(hurt, &ui_state.audio_settings);
-                                }
-                                if ui_state.player.is_dead() && !camera.is_dead {
-                                    info!("Mort après une chute de {:.0} blocs.", blocks);
-                                    camera.is_dead = true;
-                                    ui_state.set_inventory_open(false);
-                                }
+                                show_wound(hurt, &format!("chute de {:.0} blocs", blocks), &mut camera, &mut ui_state, &mut audio);
                             }
                         }
                         {
@@ -510,6 +502,10 @@ fn main() {
                                         }
                                     }
                                     NetEvent::Stats(stats) => ui_state.player.sync(stats, &mut camera),
+                                    NetEvent::Hurt { damage, cause } => {
+                                        let hurt = ui_state.player.bitten(damage, &cause);
+                                        show_wound(hurt, &cause, &mut camera, &mut ui_state, &mut audio);
+                                    }
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
                                 }
                             }
@@ -535,7 +531,12 @@ fn main() {
                                         creatures_seed = current_seed;
                                     }
                                     if !ui_state.is_settings_open {
-                                        solo_creatures.tick(dt, &generator, lod_manager.terrain_edits(), &[camera.player_pos]);
+                                        // Morsures et charges des bêtes agressives
+                                        for hit in solo_creatures.tick(dt, &generator, lod_manager.terrain_edits(), &[camera.player_pos]) {
+                                            let cause = creature_registry.get(hit.species).map_or("Une créature", |s| s.name.as_str());
+                                            let hurt = ui_state.player.bitten(hit.damage, cause);
+                                            show_wound(hurt, cause, &mut camera, &mut ui_state, &mut audio);
+                                        }
                                     }
                                     solo_creatures
                                         .creatures()
@@ -1081,6 +1082,20 @@ fn aimed_creature(camera: &OrbitCamera, interaction: &BlockInteraction, views: &
     let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
     let reach = interaction.target().map_or(arm + block_interaction::REACH_BLOCKS as f32 * block, |hit| hit.distance as f32);
     creatures::aimed_creature(views, registry, eye, dir, reach, block).map(|(id, _)| id)
+}
+
+/// Blessure du joueur de force `hurt` (0 : sans mal) : vue secouée, cri et, s'il en est mort,
+/// écran de mort (`what` : ce qui l'a blessé, pour le journal)
+fn show_wound(hurt: f32, what: &str, camera: &mut OrbitCamera, ui_state: &mut UiState, audio: &mut audio::Audio) {
+    if hurt > 0.0 {
+        camera.hurt(hurt);
+        audio.player_hurt(hurt, &ui_state.audio_settings);
+    }
+    if ui_state.player.is_dead() && !camera.is_dead {
+        info!("Mort : {what}.");
+        camera.is_dead = true;
+        ui_state.set_inventory_open(false);
+    }
 }
 
 /// Frappe la créature `id` (la simulation solo, ou le serveur en ligne, en tire dégâts, recul et
