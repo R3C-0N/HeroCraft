@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/copperMallet.png",
-  "stats": {"Dégâts": 7, "Durabilité": 300}
+  "stats": {"Dégâts": 7, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperIngot": 4, "stick": 2}, "repair": {"copperIngot": 1}}
+  ]
 }

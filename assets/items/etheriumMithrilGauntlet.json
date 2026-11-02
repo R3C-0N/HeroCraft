@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/etheriumMithrilGauntlet.png",
-  "stats": {"Dégâts": 23, "Durabilité": 5000}
+  "stats": {"Dégâts": 23, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"mithrilGauntlet|orichalcumGauntlet|adamantineGauntlet": 1, "etheriumMithrilIngot": 3, "rope": 1}, "repair": {"etheriumMithrilIngot": 1}}
+  ]
 }

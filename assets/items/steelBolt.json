@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 99,
   "icon": "icones/steelBolt.png",
-  "stats": {"Dégâts": 9}
+  "stats": {"Dégâts": 9},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"steelIngot": 1, "stick": 1, "fibre": 1}, "count": 6}
+  ]
 }

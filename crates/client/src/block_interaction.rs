@@ -158,6 +158,11 @@ impl BlockInteraction {
         None
     }
 
+    /// Établi visé, et son niveau
+    pub fn aimed_station(&self) -> Option<herocraft_common::StationAt> {
+        self.target.and_then(|_| herocraft_common::crafting().station_of(self.target_block))
+    }
+
     /// Le clic gauche est tenu enfoncé (casse en cours, ou coup porté à une bête)
     pub fn is_breaking_held(&self) -> bool {
         self.held == Some(BlockAction::Break)

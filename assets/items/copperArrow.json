@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 99,
   "icon": "icones/copperArrow.png",
-  "stats": {"Dégâts": 5}
+  "stats": {"Dégâts": 5},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperIngot": 1, "stick": 2, "fibre": 1}, "count": 8}
+  ]
 }

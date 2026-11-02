@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 99,
   "icon": "icones/etheriumMithrilBolt.png",
-  "stats": {"Dégâts": 18}
+  "stats": {"Dégâts": 18},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"etheriumMithrilIngot": 1, "stick": 1, "fibre": 1}, "count": 6}
+  ]
 }

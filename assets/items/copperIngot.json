@@ -3,5 +3,8 @@
   "name": "Lingot de cuivre",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/copperIngot.png"
+  "icon": "icones/copperIngot.png",
+  "recipes": [
+    {"station": "furnace", "ingredients": {"copperOre": 2, "coal": 1}}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/orichalcumPlateChestplate.png",
-  "stats": {"Protection": 26, "Durabilité": 3000}
+  "stats": {"Protection": 26, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"orichalcumIngot": 11, "rope": 2}, "repair": {"orichalcumIngot": 4}}
+  ]
 }

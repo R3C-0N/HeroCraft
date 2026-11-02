@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/brochetteDeTofu.png",
-  "stats": {"Satiété": 40}
+  "stats": {"Satiété": 40},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"oignon": 1, "tofu": 1, "coal|plank": 1}}
+  ]
 }

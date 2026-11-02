@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/adamantineScaleLeggings.png",
-  "stats": {"Protection": 20, "Durabilité": 3000}
+  "stats": {"Protection": 20, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"adamantineIngot": 7, "rope": 1}, "repair": {"adamantineIngot": 2}}
+  ]
 }

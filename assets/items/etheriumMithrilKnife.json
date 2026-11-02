@@ -4,5 +4,8 @@
   "category": "Outils",
   "max_stack": 1,
   "icon": "icones/etheriumMithrilKnife.png",
-  "stats": {"Dégâts": 11, "Durabilité": 5000}
+  "stats": {"Dégâts": 11, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"etheriumMithrilIngot": 1, "stick": 1, "rope": 1}, "repair": {"etheriumMithrilIngot": 1}}
+  ]
 }

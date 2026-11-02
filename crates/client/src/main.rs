@@ -281,7 +281,13 @@ fn main() {
                             let pressed = *btn_state == ElementState::Pressed;
                             if let Some(action) = block_interaction.on_mouse_button(*button, pressed) {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
-                                if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
+                                // Clic droit sur un établi : il s'ouvre (accroupi, on pose contre lui)
+                                let station = block_interaction.aimed_station().filter(|_| action == block_interaction::BlockAction::Place && !camera.is_crouching());
+                                if let Some(at) = station {
+                                    camera.release_inputs();
+                                    block_interaction.reset();
+                                    ui_state.open_station(at);
+                                } else if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
                                     block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
                                     drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
                                     state.sync_lod_meshes(&lod_manager);
@@ -379,7 +385,7 @@ fn main() {
                             write_profile_report();
                         } else if ui_state.inventory_open {
                             // Écran d'inventaire : seule sa touche le referme, sauf pendant la saisie
-                            // d'une recherche dans le catalogue
+                            // d'une recherche dans les recettes
                             let typing = ui_state.ctx.wants_keyboard_input();
                             if is_pressed && !*repeat && !typing && ui_state.controls.action_for(key_code) == Some(Action::OpenInventory) {
                                 ui_state.set_inventory_open(false);

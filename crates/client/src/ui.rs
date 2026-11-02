@@ -3,9 +3,9 @@ use winit::keyboard::{Key, KeyCode, NamedKey};
 
 use crate::audio::AudioSettings;
 use crate::input::{is_reserved_key, Action, Controls, ACTION_GROUPS};
-use crate::inventory::{can_hold, Inventory, ItemStack, HOTBAR_SLOTS, TOTAL_SLOTS};
+use crate::inventory::{Inventory, ItemStack, HOTBAR_SLOTS, TOTAL_SLOTS};
 use crate::item_icons::ItemIcons;
-use herocraft_common::{blocks, items, ItemId};
+use herocraft_common::{blocks, crafting, items, ItemId, Recipe, StationAt};
 use crate::player_stats::PlayerStats;
 
 /// Actions déclenchées par l'interface utilisateur
@@ -469,8 +469,11 @@ pub struct UiState {
     pub multiplayer: MultiplayerUi,
     /// Blocs et objets du joueur : barre d'objets en bas de l'écran, sac dans l'écran d'inventaire
     pub inventory: Inventory,
-    /// Tous les blocs et objets, à prendre dans l'écran d'inventaire
-    pub catalog: Catalog,
+    /// Recettes de l'écran d'inventaire
+    pub crafting: CraftingPanel,
+    /// Établi ouvert d'un clic droit : l'écran d'inventaire montre aussi ses recettes. `None` :
+    /// inventaire ouvert à la main.
+    pub station: Option<StationAt>,
     /// Icônes des blocs et des objets
     pub icons: ItemIcons,
     /// Écran d'inventaire ouvert (la souris est libérée pour déplacer les piles)
@@ -516,7 +519,8 @@ impl UiState {
             name_tags: Vec::new(),
             multiplayer: MultiplayerUi::default(),
             inventory: Inventory::default(),
-            catalog: Catalog::default(),
+            crafting: CraftingPanel::default(),
+            station: None,
             icons: ItemIcons::default(),
             inventory_open: false,
             player: PlayerStats::default(),
@@ -643,6 +647,13 @@ impl UiState {
             self.inventory.return_held();
         }
         self.inventory_open = open;
+        self.station = None;
+    }
+
+    /// Ouvre l'écran d'inventaire devant un établi : ses recettes s'ajoutent à celles faites à la main
+    pub fn open_station(&mut self, at: StationAt) {
+        self.set_inventory_open(true);
+        self.station = Some(at);
     }
 
     #[cfg(test)]
@@ -902,14 +913,14 @@ impl UiState {
             });
     }
 
-    /// Écran d'inventaire : sac de 27 cases au-dessus de la barre d'objets, et à côté le catalogue
-    /// de tous les blocs et objets. Clic gauche : prendre, poser, fusionner ou échanger une pile ;
-    /// clic droit : prendre la moitié ou poser un exemplaire. Dans le catalogue, clic gauche : une
-    /// pile entière, clic droit : un seul.
+    /// Écran d'inventaire : sac de 27 cases au-dessus de la barre d'objets, et à côté les recettes
+    /// faisables ici (à la main, ou à l'établi ouvert). Clic gauche : prendre, poser, fusionner ou
+    /// échanger une pile ; clic droit : prendre la moitié ou poser un exemplaire. Sur une recette,
+    /// clic gauche : la faire une fois, clic droit : autant que possible.
     fn draw_inventory_screen(&mut self, ctx: &egui::Context) {
         let open_key = self.controls.action_key_label(Action::OpenInventory);
         let mut clicked: Option<(usize, bool)> = None;
-        let mut taken: Option<(ItemId, bool)> = None;
+        let mut crafted: Option<(usize, bool)> = None;
         let mut hovered: Option<(ItemId, Option<u16>)> = None;
         egui::Area::new(egui::Id::new("inventory_screen"))
             .order(egui::Order::Middle)
@@ -922,7 +933,11 @@ impl UiState {
                     .inner_margin(egui::Margin::same(MENU_PADDING))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("INVENTAIRE").strong().size(16.0_f32).color(GOLD_BRIGHT));
+                            let title = match self.station {
+                                Some(at) => crafting().place_name(Some(at)).to_uppercase(),
+                                None => "INVENTAIRE".to_string(),
+                            };
+                            ui.label(egui::RichText::new(title).strong().size(16.0_f32).color(GOLD_BRIGHT));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 ui.label(egui::RichText::new(format!("[{}] ou [Échap] pour fermer", open_key)).size(11.0_f32).color(TEXT_DIM));
                             });
@@ -967,8 +982,18 @@ impl UiState {
                             });
                             ui.add_space(10.0_f32);
                             ui.vertical(|ui| {
-                                caption(ui, "CATALOGUE");
-                                self.catalog.draw(ui, &self.icons, &mut taken, &mut hovered);
+                                let place = match self.station {
+                                    Some(at) => format!("FABRICATION · {} ET À LA MAIN", crafting().place_name(Some(at)).to_uppercase()),
+                                    None => "FABRICATION À LA MAIN".to_string(),
+                                };
+                                caption(ui, &place);
+                                self.crafting.draw(ui, &self.icons, &self.inventory, self.station, &mut crafted, &mut hovered);
+                                ui.add_space(2.0_f32);
+                                ui.label(
+                                    egui::RichText::new("Clic gauche : une fois · Clic droit : autant que possible")
+                                        .size(11.0_f32)
+                                        .color(TEXT_DIM),
+                                );
                             });
                         });
                     });
@@ -979,8 +1004,11 @@ impl UiState {
             Some((i, true)) => self.inventory.click_secondary(i),
             None => {}
         }
-        if let Some((item, one)) = taken {
-            self.inventory.add_many(item, if one { 1 } else { item.max_stack() });
+        if let Some((index, all)) = crafted {
+            let recipe = &crafting().recipes[index];
+            // Autant que possible : jusqu'à une pile de ce que donne la recette
+            let times = if all { (recipe.result.max_stack() / recipe.count).max(1) as u32 } else { 1 };
+            self.inventory.craft_many(recipe, times);
         }
 
         // Pile tenue sous le curseur, sinon fiche de l'objet survolé
@@ -1770,104 +1798,150 @@ fn item_tooltip(ui: &mut egui::Ui, item: ItemId, count: Option<u16>) {
     }
 }
 
-/// Une rubrique du catalogue
-struct CatalogCategory {
-    label: String,
-    items: Vec<ItemId>,
-}
-
-/// Catalogue de l'écran d'inventaire : les blocs qui se ramassent et tous les objets, rangés par
-/// rubrique (celle de leur fiche), avec une recherche par nom
-pub struct Catalog {
-    categories: Vec<CatalogCategory>,
-    /// Rubrique montrée (`None` : toutes)
-    pub category: Option<usize>,
+/// Panneau de fabrication de l'écran d'inventaire : les recettes faisables là où se tient le joueur
+/// (à la main, ou à l'établi ouvert), celles qu'il peut faire d'abord, avec une recherche par nom
+#[derive(Default)]
+pub struct CraftingPanel {
     pub search: String,
+    /// Ne montrer que les recettes dont l'inventaire a tous les ingrédients
+    pub only_craftable: bool,
 }
 
-/// Cases du catalogue par ligne
-const CATALOG_COLUMNS: usize = 8;
-const CATALOG_SLOT_SIZE: f32 = 36.0;
+/// Largeur du panneau de fabrication
+const CRAFTING_WIDTH: f32 = 380.0;
+/// Hauteur d'une recette dans la liste
+const RECIPE_ROW_HEIGHT: f32 = 50.0;
+const RECIPE_ICON_SIZE: f32 = 40.0;
+const INGREDIENT_ICON_SIZE: f32 = 18.0;
+const CRAFTABLE: egui::Color32 = egui::Color32::from_rgb(120, 210, 120);
 
-impl Default for Catalog {
-    fn default() -> Self {
-        let mut categories: Vec<CatalogCategory> = Vec::new();
-        let mut add = |prefix: &str, category: &str, item: ItemId| {
-            let label = format!("{prefix} · {}", if category.is_empty() { "Divers" } else { category });
-            match categories.iter_mut().find(|c| c.label == label) {
-                Some(c) => c.items.push(item),
-                None => categories.push(CatalogCategory { label, items: vec![item] }),
-            }
-        };
-        for sheet in blocks().iter() {
-            let item = ItemId::from(herocraft_common::BlockId(sheet.numeric_id));
-            if can_hold(item) {
-                add("Blocs", &sheet.category, item);
-            }
-        }
-        for sheet in items().iter() {
-            add("Objets", &sheet.category, sheet.item());
-        }
-        for category in &mut categories {
-            category.items.sort_by_key(|item| item.name());
-        }
-        Self { categories, category: None, search: String::new() }
-    }
-}
-
-impl Catalog {
-    /// Ce que montre le catalogue : la rubrique choisie, filtrée par la recherche
-    pub fn visible(&self) -> Vec<ItemId> {
+impl CraftingPanel {
+    /// Recettes montrées (rangs dans `crafting().recipes`), avec le nombre de fois que l'inventaire
+    /// permet de les faire : les faisables d'abord, puis par nom
+    pub fn visible(&self, inventory: &Inventory, at: Option<StationAt>) -> Vec<(usize, u32)> {
         let search = self.search.trim().to_lowercase();
-        self.categories
+        let mut list: Vec<(usize, u32)> = crafting()
+            .recipes
             .iter()
             .enumerate()
-            .filter(|(i, _)| self.category.is_none_or(|c| c == *i))
-            .flat_map(|(_, c)| c.items.iter().copied())
-            .filter(|item| search.is_empty() || item.name().to_lowercase().contains(&search))
-            .collect()
+            .filter(|(_, r)| r.is_available_at(at))
+            .filter(|(_, r)| search.is_empty() || r.result.name().to_lowercase().contains(&search))
+            .map(|(i, r)| (i, inventory.craftable_times(r)))
+            .filter(|&(_, times)| !self.only_craftable || times > 0)
+            .collect();
+        let recipes = &crafting().recipes;
+        list.sort_by_key(|&(i, times)| (times == 0, recipes[i].station.map_or(0, |s| s.level), recipes[i].result.name()));
+        list
     }
 
-    fn draw(&mut self, ui: &mut egui::Ui, icons: &ItemIcons, taken: &mut Option<(ItemId, bool)>, hovered: &mut Option<(ItemId, Option<u16>)>) {
-        let width = CATALOG_COLUMNS as f32 * (CATALOG_SLOT_SIZE + 4.0_f32) - 4.0_f32;
+    /// Clic gauche sur une recette : une fois ; clic droit : autant que possible (au plus une pile)
+    fn draw(
+        &mut self,
+        ui: &mut egui::Ui,
+        icons: &ItemIcons,
+        inventory: &Inventory,
+        at: Option<StationAt>,
+        crafted: &mut Option<(usize, bool)>,
+        hovered: &mut Option<(ItemId, Option<u16>)>,
+    ) {
         ui.horizontal(|ui| {
-            let label = self.category.map_or("Tout", |i| self.categories[i].label.as_str()).to_string();
-            egui::ComboBox::from_id_salt("catalog_category").width(150.0_f32).selected_text(label).show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.category, None, "Tout");
-                for (i, category) in self.categories.iter().enumerate() {
-                    ui.selectable_value(&mut self.category, Some(i), category.label.as_str());
-                }
-            });
-            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Rechercher…").desired_width(width - 160.0_f32));
+            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Rechercher…").desired_width(CRAFTING_WIDTH - 140.0_f32));
+            ui.checkbox(&mut self.only_craftable, "Faisables");
         });
         ui.add_space(2.0_f32);
-        let visible = self.visible();
+        let visible = self.visible(inventory, at);
+        let recipes = &crafting().recipes;
         // Hauteur fixe : l'écran ne change pas de taille au fil de la recherche
         let height = 4.0_f32 * (INVENTORY_SLOT_SIZE + 4.0_f32) + 28.0_f32;
-        egui::ScrollArea::vertical().id_salt("catalog").max_height(height).show(ui, |ui| {
-            ui.set_width(width);
-            ui.set_min_height(height);
-            ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
-            for row in visible.chunks(CATALOG_COLUMNS) {
-                ui.horizontal(|ui| {
-                    for &item in row {
-                        let (rect, response) = ui.allocate_exact_size(egui::vec2(CATALOG_SLOT_SIZE, CATALOG_SLOT_SIZE), egui::Sense::click());
-                        paint_slot(ui.painter(), icons, rect, Some(ItemStack { item, count: 1 }), false, response.hovered());
-                        if response.hovered() {
-                            *hovered = Some((item, None));
-                        }
-                        if response.clicked() {
-                            *taken = Some((item, false));
-                        } else if response.secondary_clicked() {
-                            *taken = Some((item, true));
-                        }
+        egui::ScrollArea::vertical().id_salt("crafting").max_height(height).auto_shrink([false, false]).show_rows(
+            ui,
+            RECIPE_ROW_HEIGHT,
+            visible.len(),
+            |ui, rows| {
+                ui.set_width(CRAFTING_WIDTH);
+                for &(index, times) in &visible[rows] {
+                    let recipe = &recipes[index];
+                    let (rect, response) = ui.allocate_exact_size(egui::vec2(CRAFTING_WIDTH, RECIPE_ROW_HEIGHT - 4.0_f32), egui::Sense::click());
+                    paint_recipe(ui, icons, inventory, rect, recipe, times, response.hovered(), hovered);
+                    if times > 0 && response.clicked() {
+                        *crafted = Some((index, false));
+                    } else if times > 0 && response.secondary_clicked() {
+                        *crafted = Some((index, true));
                     }
-                });
-            }
-            if visible.is_empty() {
-                ui.label(egui::RichText::new("Rien ne correspond.").color(TEXT_DIM));
-            }
-        });
+                }
+                if visible.is_empty() {
+                    let text = if self.search.trim().is_empty() && !self.only_craftable {
+                        "Aucune recette ici."
+                    } else {
+                        "Rien ne correspond."
+                    };
+                    ui.label(egui::RichText::new(text).color(TEXT_DIM));
+                }
+            },
+        );
+    }
+}
+
+/// Une recette : ce qu'elle donne, son nom et où elle se fait, puis ses ingrédients (ce que
+/// l'inventaire en a sur ce qu'il faut, en vert quand il y en a assez)
+#[allow(clippy::too_many_arguments)]
+fn paint_recipe(
+    ui: &egui::Ui,
+    icons: &ItemIcons,
+    inventory: &Inventory,
+    rect: egui::Rect,
+    recipe: &Recipe,
+    times: u32,
+    row_hovered: bool,
+    hovered: &mut Option<(ItemId, Option<u16>)>,
+) {
+    let painter = ui.painter();
+    let fill = match (row_hovered, times > 0) {
+        (true, true) => egui::Color32::from_rgb(42, 54, 78),
+        (true, false) => egui::Color32::from_rgb(32, 38, 52),
+        _ => egui::Color32::from_rgba_premultiplied(22, 28, 40, 230),
+    };
+    painter.rect_filled(rect, 4.0_f32, fill);
+    let border = if times > 0 { egui::Stroke::new(1.0_f32, GOLD) } else { egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(55, 70, 95)) };
+    painter.rect_stroke(rect, 4.0_f32, border);
+
+    let icon = egui::Rect::from_min_size(rect.min + egui::vec2(3.0_f32, 3.0_f32), egui::vec2(RECIPE_ICON_SIZE, RECIPE_ICON_SIZE));
+    paint_stack(painter, icons, icon, ItemStack { item: recipe.result, count: recipe.count });
+    let pointer = ui.ctx().pointer_hover_pos();
+    if pointer.is_some_and(|p| icon.contains(p)) {
+        *hovered = Some((recipe.result, None));
+    }
+
+    let left = icon.right() + 8.0_f32;
+    let name_color = if times > 0 { GOLD_BRIGHT } else { TEXT_SOFT };
+    painter.text(egui::pos2(left, rect.top() + 4.0_f32), egui::Align2::LEFT_TOP, recipe.result.name(), egui::FontId::proportional(13.0_f32), name_color);
+    if recipe.station.is_some() {
+        painter.text(
+            egui::pos2(rect.right() - 6.0_f32, rect.top() + 5.0_f32),
+            egui::Align2::RIGHT_TOP,
+            crafting().place_name(recipe.station),
+            egui::FontId::proportional(10.5_f32),
+            TEXT_DIM,
+        );
+    }
+
+    let mut x = left;
+    let y = rect.bottom() - INGREDIENT_ICON_SIZE - 4.0_f32;
+    for ingredient in &recipe.ingredients {
+        let have = inventory.count_ingredient(ingredient);
+        // La variante que l'inventaire a le plus, sinon la première
+        let shown = ingredient.options.iter().copied().max_by_key(|&item| (inventory.count(item), std::cmp::Reverse(ingredient.options.iter().position(|&o| o == item)))).unwrap_or(recipe.result);
+        let small = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(INGREDIENT_ICON_SIZE, INGREDIENT_ICON_SIZE));
+        icons.paint(painter, small, shown);
+        let text = format!("{}/{}", have.min(999), ingredient.count);
+        let color = if have >= ingredient.count as u32 { CRAFTABLE } else { DANGER };
+        let galley = painter.layout_no_wrap(text, egui::FontId::proportional(11.0_f32), color);
+        let width = INGREDIENT_ICON_SIZE + 2.0_f32 + galley.size().x;
+        painter.galley(egui::pos2(small.right() + 2.0_f32, small.center().y - galley.size().y / 2.0_f32), galley, color);
+        if pointer.is_some_and(|p| egui::Rect::from_min_size(small.min, egui::vec2(width, INGREDIENT_ICON_SIZE)).contains(p)) {
+            *hovered = Some((shown, None));
+        }
+        x += width + 8.0_f32;
     }
 }
 
@@ -2385,6 +2459,43 @@ mod tests {
     }
 
     /// Échap referme d'abord l'inventaire, sans ouvrir le menu ; ouvrir le menu referme l'inventaire
+    #[test]
+    fn test_crafting_panel_lists_what_can_be_made_here() {
+        use herocraft_common::{blocks, crafting, BlockId};
+        let mut ui = UiState::new(1);
+        let plank = ItemId::from(blocks().find("plank").unwrap());
+        let workbench = blocks().find("workbench").unwrap();
+        let at_bench = crafting().station_of(workbench);
+
+        // À la main : seulement les recettes sans établi
+        let hand = ui.crafting.visible(&ui.inventory, None);
+        assert!(!hand.is_empty());
+        assert!(hand.iter().all(|&(i, _)| crafting().recipes[i].station.is_none()));
+        assert!(hand.iter().all(|&(_, times)| times == 0), "inventaire vide : rien de faisable");
+
+        // Du bois : les planches passent en tête
+        ui.inventory.add_many(BlockId::WOOD, 2);
+        let first = ui.crafting.visible(&ui.inventory, None)[0];
+        assert_eq!((crafting().recipes[first.0].result, first.1), (plank, 2));
+        ui.crafting.only_craftable = true;
+        assert_eq!(ui.crafting.visible(&ui.inventory, None).len(), 1);
+        ui.crafting.only_craftable = false;
+
+        // Devant l'établi : ses recettes s'ajoutent, refermer l'écran l'oublie
+        let bench = ui.crafting.visible(&ui.inventory, at_bench);
+        assert!(bench.len() > hand.len() + 100);
+        ui.open_station(at_bench.unwrap());
+        assert!(ui.inventory_open && ui.station == at_bench);
+        let _ = ui.update_ui(true);
+        ui.handle_escape();
+        assert_eq!(ui.station, None);
+
+        ui.crafting.search = "pioche en bronze".into();
+        let found = ui.crafting.visible(&ui.inventory, at_bench);
+        assert_eq!(found.len(), 1);
+        assert!(ui.crafting.visible(&ui.inventory, None).is_empty(), "pas à la main");
+    }
+
     #[test]
     fn test_escape_and_menu_close_inventory() {
         let mut ui = UiState::new(1);

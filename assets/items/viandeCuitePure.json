@@ -5,5 +5,8 @@
   "category": "Nourriture",
   "max_stack": 99,
   "icon": "icones/viandeCuitePure.png",
-  "stats": {"Satiété": 35}
+  "stats": {"Satiété": 35},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"viandePure": 1, "coal|plank": 1}}
+  ]
 }

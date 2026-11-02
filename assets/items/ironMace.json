@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/ironMace.png",
-  "stats": {"Dégâts": 12, "Durabilité": 900}
+  "stats": {"Dégâts": 12, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"ironIngot": 3, "stick": 2}, "repair": {"ironIngot": 1}}
+  ]
 }

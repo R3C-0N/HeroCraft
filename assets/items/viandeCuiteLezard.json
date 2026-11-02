@@ -5,5 +5,8 @@
   "category": "Nourriture",
   "max_stack": 99,
   "icon": "icones/viandeCuiteLezard.png",
-  "stats": {"Satiété": 20}
+  "stats": {"Satiété": 20},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"viandeLezard": 1, "coal|plank": 1}}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/ironScaleLeggings.png",
-  "stats": {"Protection": 12, "Durabilité": 900}
+  "stats": {"Protection": 12, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"ironIngot": 5, "rope": 1}, "repair": {"ironIngot": 2}}
+  ]
 }

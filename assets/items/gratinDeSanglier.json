@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/gratinDeSanglier.png",
-  "stats": {"Satiété": 58}
+  "stats": {"Satiété": 58},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"pommeDeTerre": 1, "viandeSanglier": 1, "oignon": 1, "coal|plank": 1}}
+  ]
 }

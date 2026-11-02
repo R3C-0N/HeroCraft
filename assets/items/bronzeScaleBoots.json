@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/bronzeScaleBoots.png",
-  "stats": {"Protection": 5, "Durabilité": 500}
+  "stats": {"Protection": 5, "Durabilité": 500},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bronzeIngot": 3, "rope": 1}, "repair": {"bronzeIngot": 1}}
+  ]
 }

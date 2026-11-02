@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/ironScepter.png",
-  "stats": {"Dégâts": 6, "Durabilité": 900}
+  "stats": {"Dégâts": 6, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bronzeScepter": 1, "ironIngot": 2, "rope": 1}, "repair": {"ironIngot": 1}}
+  ]
 }

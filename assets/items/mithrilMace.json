@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/mithrilMace.png",
-  "stats": {"Dégâts": 18, "Durabilité": 3000}
+  "stats": {"Dégâts": 18, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"mithrilIngot": 3, "stick": 2}, "repair": {"mithrilIngot": 1}}
+  ]
 }

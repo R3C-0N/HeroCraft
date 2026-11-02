@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/mithrilSoulStaff.png",
-  "stats": {"Dégâts": 16, "Durabilité": 3000}
+  "stats": {"Dégâts": 16, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"steelSoulStaff": 1, "mithrilIngot": 3, "rope": 1}, "repair": {"mithrilIngot": 1}}
+  ]
 }

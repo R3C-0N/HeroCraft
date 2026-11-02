@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/adamantineSoulStaff.png",
-  "stats": {"Dégâts": 15, "Durabilité": 3000}
+  "stats": {"Dégâts": 15, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"steelSoulStaff": 1, "adamantineIngot": 3, "rope": 1}, "repair": {"adamantineIngot": 1}}
+  ]
 }

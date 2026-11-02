@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 99,
   "icon": "icones/orichalcumBolt.png",
-  "stats": {"Dégâts": 15}
+  "stats": {"Dégâts": 15},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"orichalcumIngot": 1, "stick": 1, "fibre": 1}, "count": 6}
+  ]
 }

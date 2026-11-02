@@ -5,5 +5,8 @@
   "hardness": 10,
   "color": {"side": "#af8f66"},
   "textures": {"side": "textures/WoodPanel.png"},
-  "sound": "wood"
+  "sound": "wood",
+  "recipes": [
+    {"station": "workbench", "ingredients": {"plank": 2}, "count": 2}
+  ]
 }

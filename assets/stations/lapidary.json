@@ -1,0 +1,5 @@
+{
+  "name": "Tour de lapidaire",
+  "description": "Une meule à pointe de diamant : les gemmes brutes y sont taillées.",
+  "levels": ["lapidaryTower"]
+}

@@ -84,6 +84,9 @@ pub struct BlockSheet {
     /// Ce que donne le bloc cassé : lui-même (champ absent), un autre bloc (son identifiant) ou rien (`null`)
     #[serde(default)]
     pub drop: BlockDrop,
+    /// Recettes qui le fabriquent (voir `crafting`)
+    #[serde(default)]
+    pub recipes: Vec<crate::crafting::RecipeSheet>,
 }
 
 /// Couleur `#rrggbb` ou `#rrggbbaa`, en composantes de 0 à 1

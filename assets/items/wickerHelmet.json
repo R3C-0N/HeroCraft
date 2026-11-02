@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/wickerHelmet.png",
-  "stats": {"Protection": 1, "Durabilité": 80}
+  "stats": {"Protection": 1, "Durabilité": 80},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"stick": 2, "fibre": 4}}
+  ]
 }

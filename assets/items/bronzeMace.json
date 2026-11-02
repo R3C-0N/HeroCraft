@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/bronzeMace.png",
-  "stats": {"Dégâts": 10, "Durabilité": 500}
+  "stats": {"Dégâts": 10, "Durabilité": 500},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bronzeIngot": 3, "stick": 2}, "repair": {"bronzeIngot": 1}}
+  ]
 }

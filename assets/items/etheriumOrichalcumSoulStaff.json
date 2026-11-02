@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/etheriumOrichalcumSoulStaff.png",
-  "stats": {"Dégâts": 20, "Durabilité": 5000}
+  "stats": {"Dégâts": 20, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"mithrilSoulStaff|orichalcumSoulStaff|adamantineSoulStaff": 1, "etheriumOrichalcumIngot": 3, "rope": 1}, "repair": {"etheriumOrichalcumIngot": 1}}
+  ]
 }

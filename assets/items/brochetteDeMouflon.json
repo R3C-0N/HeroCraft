@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/brochetteDeMouflon.png",
-  "stats": {"Satiété": 40}
+  "stats": {"Satiété": 40},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"oignon": 1, "viandeMouflon": 1, "coal|plank": 1}}
+  ]
 }

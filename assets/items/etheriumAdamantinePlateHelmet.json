@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/etheriumAdamantinePlateHelmet.png",
-  "stats": {"Protection": 21, "Durabilité": 5000}
+  "stats": {"Protection": 21, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"etheriumAdamantineIngot": 7, "rope": 1}, "repair": {"etheriumAdamantineIngot": 2}}
+  ]
 }

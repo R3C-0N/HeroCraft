@@ -3,5 +3,8 @@
   "name": "Éclat du néant",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/voidShard.png"
+  "icon": "icones/voidShard.png",
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"voidStone": 1}, "count": 2}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 99,
   "icon": "icones/flintArrow.png",
-  "stats": {"Dégâts": 3}
+  "stats": {"Dégâts": 3},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"flint": 2, "stick": 4, "fibre": 2}, "count": 8}
+  ]
 }

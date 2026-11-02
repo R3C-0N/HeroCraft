@@ -1,0 +1,5 @@
+{
+  "name": "Forge astrale",
+  "description": "Un métal commun y devient fantastique. Au niveau 2, la forge ultime transmue les métaux fantastiques en étherium.",
+  "levels": ["astralForge", "ultimateAstralForge"]
+}
