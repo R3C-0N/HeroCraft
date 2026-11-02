@@ -1,5 +1,8 @@
-//! Créatures : elles apparaissent sur le relief autour des joueurs, s'y promènent au hasard et
-//! disparaissent quand plus aucun joueur n'est près d'elles.
+//! Créatures : chaque zone de la planète a sa population, tirée de la graine du monde la première
+//! fois qu'un joueur s'en approche, puis plus rien n'apparaît. Les bêtes s'y promènent au hasard,
+//! s'endorment (ne sont plus simulées, mais gardées telles quelles) quand plus aucun joueur n'est
+//! près, et se réveillent où elles étaient quand un joueur revient. Une bête tuée ne revient pas.
+//! Voir `population` pour les zones et leur enregistrement.
 //!
 //! La même simulation tourne sur le serveur, qui fait autorité et diffuse les positions, et dans la
 //! partie solo du client. Elle lit le terrain bloc par bloc (générateur + modifications) : une
@@ -16,7 +19,7 @@
 //!
 //! Chaque espèce vit à son rythme (`Activity`) : selon la hauteur du soleil là où elle se trouve, elle
 //! est éveillée ou s'endort sur place, une bête après l'autre, jusqu'à ce que son heure revienne ou
-//! qu'un coup la réveille. Une espèce n'apparaît qu'aux heures où elle est éveillée.
+//! qu'un coup la réveille.
 //! Les bêtes apparues ensemble forment un troupeau : chacune revient vers ses voisines quand elle
 //! s'en écarte et prend volontiers le cap de celles qui marchent. Quand l'une est frappée, les autres
 //! s'affolent aussi, mais moins : elles courent moins vite et se calment plus tôt que la victime.
@@ -28,7 +31,8 @@
 //! (sauf une meute trop maigre). Les coups portés aux joueurs sont renvoyés par `tick`, qui laisse
 //! au serveur ou à la partie solo le soin de les retirer des jauges de vie.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::f32::consts::{PI, TAU};
 
@@ -39,19 +43,24 @@ use rand::{Rng, SeedableRng};
 
 use crate::edits::{BlockGeometry, BlockPos, TerrainEdits, TerrainQuery, WORLD_HEIGHT};
 use crate::generator::{BiomeType, ColumnSample, PlanetWorldGenerator};
+use crate::population::{PopulationSave, SleepingCreature, ZoneKey, ZONE_BLOCKS};
 
-/// Créatures simulées au plus, tous joueurs confondus
-pub const MAX_CREATURES: usize = 64;
-/// Une créature plus loin que ça de tous les joueurs disparaît, en blocs. C'est aussi la distance
-/// à laquelle le serveur montre une créature à un joueur.
+/// Distance à laquelle le serveur montre une créature à un joueur, en blocs. Les zones dont le
+/// centre est à moins de cette distance (plus une demi-diagonale de zone) sont éveillées.
 pub const CREATURE_RANGE_BLOCKS: f32 = 96.0;
-/// Créatures au plus dans le voisinage d'un joueur avant qu'il n'en apparaisse d'autres
-const MAX_NEAR_PLAYER: usize = 10;
-/// Distance d'apparition autour d'un joueur, en blocs : hors de sa vue immédiate, mais pas trop loin
-const SPAWN_MIN_BLOCKS: f32 = 24.0;
-const SPAWN_MAX_BLOCKS: f32 = 56.0;
-/// Intervalle entre deux tentatives d'apparition autour de chaque joueur, en secondes
-const SPAWN_INTERVAL: f32 = 1.0;
+/// Demi-diagonale d'une zone, en blocs : une zone s'éveille dès qu'une partie peut être à portée
+const ZONE_HALF_DIAGONAL: f32 = ZONE_BLOCKS as f32 * std::f32::consts::FRAC_1_SQRT_2;
+/// Marge avant qu'une zone éveillée ne se rendorme, en blocs : un joueur qui fait les cent pas à la
+/// limite ne la réveille et ne l'endort pas sans cesse
+const SLEEP_MARGIN_BLOCKS: f32 = 24.0;
+/// Chance qu'une zone reçoive un groupe à sa création (l'espèce tirée a encore sa propre chance)
+const ZONE_GROUP_CHANCE: f64 = 0.25;
+/// Écart des bêtes d'un groupe autour de son centre, en blocs
+const GROUP_SPREAD: i32 = 3;
+/// Premier identifiant des bêtes posées à la main : celles des zones sont numérotées par zone en dessous
+const MANUAL_ID_BASE: u64 = 1 << 48;
+/// Nom du fichier de la population dans le dossier de sauvegarde d'un monde
+pub const POPULATION_FILE: &str = "creatures.json";
 /// Chute, en blocs par seconde²
 const GRAVITY: f32 = 20.0;
 /// Hauteur de marche franchie d'un saut, en blocs
@@ -330,23 +339,38 @@ type SpawnCandidate = (usize, f32, f32);
 
 pub struct CreatureWorld {
     registry: Arc<CreatureRegistry>,
-    /// Espèces qui apparaissent dans chaque biome
+    /// Espèces qui peuplent chaque biome
     spawn_table: HashMap<BiomeType, Vec<SpawnCandidate>>,
     /// Rangs des espèces que chaque espèce chasse
     prey_table: Vec<Vec<usize>>,
     geometry: BlockGeometry,
+    /// Graine du monde : elle décide de la population de chaque zone
+    seed: u64,
+    /// Bêtes des zones éveillées, simulées
     creatures: Vec<Creature>,
+    /// Zones éveillées : peuplées, leurs bêtes sont dans `creatures`
+    awake: HashSet<ZoneKey>,
+    /// Zones peuplées endormies, avec leurs bêtes. Une zone ni éveillée ni ici n'a encore jamais été
+    /// peuplée.
+    sleeping: HashMap<ZoneKey, Vec<SleepingCreature>>,
+    /// Direction du centre de chaque zone depuis le centre de la planète
+    zone_centers: Vec<(ZoneKey, Vec3)>,
+    /// Prochain identifiant d'une bête posée à la main
     next_id: u64,
     rng: StdRng,
-    spawn_timer: f32,
     /// Direction du soleil (repère du centre de la planète), d'où l'heure en chaque lieu. `None` :
     /// pas d'horloge, toutes les espèces restent éveillées.
     sun_dir: Option<Vec3>,
+    /// Faux : les zones restent vides (tests d'une bête seule)
+    populate: bool,
+    /// Fichier où la population est enregistrée, ou `None` pour ne rien enregistrer
+    save_path: Option<PathBuf>,
     /// Colonnes du générateur déjà échantillonnées : les créatures restent longtemps sur les mêmes
     columns: HashMap<(PlanetFace, i32, i32), ColumnSample>,
 }
 
 impl CreatureWorld {
+    /// Monde sans sauvegarde : chaque zone est peuplée d'après `seed`, la graine de la planète
     pub fn new(base_radius: f64, seed: u64, registry: Arc<CreatureRegistry>) -> Self {
         let mut spawn_table: HashMap<BiomeType, Vec<SpawnCandidate>> = HashMap::new();
         for (index, species) in registry.iter().enumerate() {
@@ -373,24 +397,56 @@ impl CreatureWorld {
                     .collect()
             })
             .collect();
+        let geometry = BlockGeometry::new(base_radius);
+        let half = ZONE_BLOCKS as f64 / 2.0;
+        let zone_centers = ZoneKey::all()
+            .map(|zone| {
+                let (x, z) = ((zone.x * ZONE_BLOCKS) as f64 + half, (zone.z * ZONE_BLOCKS) as f64 + half);
+                (zone, geometry.corner(zone.face, x, 0.0, z).normalize().as_vec3())
+            })
+            .collect();
         Self {
             registry,
             spawn_table,
             prey_table,
-            geometry: BlockGeometry::new(base_radius),
+            geometry,
+            seed,
             creatures: Vec::new(),
-            next_id: 1,
+            awake: HashSet::new(),
+            sleeping: HashMap::new(),
+            zone_centers,
+            next_id: MANUAL_ID_BASE,
             rng: StdRng::seed_from_u64(seed),
-            spawn_timer: 0.0,
             sun_dir: None,
+            populate: true,
+            save_path: None,
             columns: HashMap::new(),
         }
+    }
+
+    /// Monde enregistré dans le dossier de sauvegarde `dir` : reprend les zones déjà peuplées (bêtes
+    /// tuées comprises, qui ne reviennent pas) et y enregistrera la population avec `save`
+    pub fn with_save_dir(base_radius: f64, seed: u64, registry: Arc<CreatureRegistry>, dir: impl AsRef<std::path::Path>) -> Self {
+        let mut world = Self::new(base_radius, seed, registry);
+        let path = dir.as_ref().join(POPULATION_FILE);
+        match PopulationSave::load(&path) {
+            Ok(Some(save)) => {
+                world.next_id = save.next_id.max(MANUAL_ID_BASE);
+                world.sleeping = save.into_map();
+                world.save_path = Some(path);
+            }
+            Ok(None) => world.save_path = Some(path),
+            // Fichier illisible : on ne l'écrase pas, la population sera retirée sans être gardée
+            Err(e) => log::warn!("Population de {} illisible ({e}) : elle ne sera pas enregistrée.", path.display()),
+        }
+        world
     }
 
     pub fn registry(&self) -> &Arc<CreatureRegistry> {
         &self.registry
     }
 
+    /// Les bêtes éveillées (celles des zones proches d'un joueur)
     pub fn creatures(&self) -> &[Creature] {
         &self.creatures
     }
@@ -400,18 +456,24 @@ impl CreatureWorld {
         self.sun_dir = Some(sun_dir.normalize_or_zero());
     }
 
-    /// Hauteur du soleil en `p` (sinus de son élévation), ou `None` sans horloge
-    fn sun_height(&self, p: Vec3) -> Option<f32> {
-        sun_height(self.sun_dir, p)
-    }
-
-    pub fn clear(&mut self) {
-        self.creatures.clear();
-        self.columns.clear();
+    /// Enregistre la population : zones déjà peuplées, bêtes endormies et éveillées. Sans effet pour
+    /// un monde sans sauvegarde.
+    pub fn save(&self) -> std::io::Result<()> {
+        let Some(path) = &self.save_path else { return Ok(()) };
+        let mut zones = self.sleeping.clone();
+        for zone in &self.awake {
+            zones.entry(*zone).or_default();
+        }
+        for c in self.creatures.iter().filter(|c| c.is_alive()) {
+            if let (Some(zone), Some(sleeping)) = (self.zone_of(c.position), self.sleeping_creature(c)) {
+                zones.entry(zone).or_default().push(sleeping);
+            }
+        }
+        PopulationSave { next_id: self.next_id, zones: zones.into_iter().collect() }.save(path)
     }
 
     /// Fait apparaître une créature de l'espèce de rang `species` aux pieds `feet`, et renvoie son
-    /// identifiant
+    /// identifiant. Elle s'endort avec sa zone si aucun joueur n'est près.
     pub fn spawn(&mut self, species: usize, feet: Vec3) -> u64 {
         self.spawn_in_herd(species, feet, None)
     }
@@ -420,13 +482,18 @@ impl CreatureWorld {
     pub fn spawn_in_herd(&mut self, species: usize, feet: Vec3, herd: Option<u64>) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
-        let yaw = self.rng.gen_range(0.0..TAU);
-        let timer = self.rng.gen_range(0.5..3.0);
         let health = self.registry.get(species).map_or(1.0, |s| s.health);
+        let yaw = self.rng.gen_range(0.0..TAU);
+        self.wake_creature(id, species, herd.unwrap_or(id), feet, yaw, health);
+        id
+    }
+
+    fn wake_creature(&mut self, id: u64, species: usize, herd: u64, feet: Vec3, yaw: f32, health: f32) {
+        let timer = self.rng.gen_range(0.5..3.0);
         self.creatures.push(Creature {
             id,
             species,
-            herd: herd.unwrap_or(id),
+            herd,
             position: feet,
             yaw,
             target_yaw: yaw,
@@ -452,7 +519,6 @@ impl CreatureWorld {
             sated: 0.0,
             charge: Charge::Idle,
         });
-        id
     }
 
     /// Un joueur dont la tête est en `from` frappe la créature `id` : elle perd de la vie, se réveille
@@ -703,41 +769,35 @@ impl CreatureWorld {
         player_hits
     }
 
-    /// Avance la simulation de `dt` secondes autour des joueurs debout dont les pieds sont `players`,
-    /// et renvoie les coups que les bêtes agressives leur ont portés
+    /// Avance la simulation de `dt` secondes autour des joueurs debout dont les pieds sont `players`
+    /// (voir `tick_with_presences`), et renvoie les coups que les bêtes agressives leur ont portés
     pub fn tick(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, players: &[Vec3]) -> Vec<PlayerHit> {
         let presences: Vec<PlayerPresence> = players.iter().copied().map(PlayerPresence::standing).collect();
         self.tick_with_presences(dt, generator, edits, &presences)
     }
 
     /// Avance la simulation de `dt` secondes autour des joueurs `players`, en tenant compte de leur
-    /// posture (accroupi ou debout), et renvoie les coups que les bêtes agressives leur ont portés
+    /// posture (accroupi ou debout) : éveille les zones qui s'en approchent (en les peuplant la
+    /// première fois), endort les autres, et renvoie les coups que les bêtes agressives leur ont portés
     /// (`PlayerHit::player` : rang dans `presences`)
     pub fn tick_with_presences(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, presences: &[PlayerPresence]) -> Vec<PlayerHit> {
         let players: Vec<Vec3> = presences.iter().map(|p| p.feet).collect();
         let players = players.as_slice();
         // Une image très longue (fenêtre en arrière-plan) ne fait pas traverser les murs
         let dt = dt.min(MAX_STEP);
-        let range = CREATURE_RANGE_BLOCKS * self.geometry.block_height as f32;
-        self.creatures.retain(|c| c.dead_for.is_none_or(|t| t < CREATURE_DEATH_TIME) && players.iter().any(|p| p.distance(c.position) <= range));
-        let hits = self.hunt(dt, players);
+        self.creatures.retain(|c| c.dead_for.is_none_or(|t| t < CREATURE_DEATH_TIME));
 
         let columns = std::mem::take(&mut self.columns);
         let mut query = TerrainQuery::with_columns(generator, edits, columns);
+        self.update_zones(&mut query, players);
+        let hits = self.hunt(dt, players);
+
         let herds = herd_pulls(&self.creatures, self.geometry.block_height as f32);
         let mut walker = Walker { geometry: self.geometry, query: &mut query, sun_dir: self.sun_dir };
         for (creature, herd) in self.creatures.iter_mut().zip(herds) {
             if let Some(species) = self.registry.get(creature.species) {
                 let nearest = presences.iter().copied().min_by(|a, b| a.feet.distance_squared(creature.position).total_cmp(&b.feet.distance_squared(creature.position)));
                 walker.step(creature, species, nearest, herd, &mut self.rng, dt);
-            }
-        }
-
-        self.spawn_timer -= dt;
-        if self.spawn_timer <= 0.0 {
-            self.spawn_timer = SPAWN_INTERVAL;
-            for &player in players {
-                self.try_spawn_near(&mut query, player);
             }
         }
 
@@ -749,52 +809,106 @@ impl CreatureWorld {
         hits
     }
 
-    /// Tente de faire apparaître un groupe sur le relief autour d'un joueur, selon le biome
-    fn try_spawn_near(&mut self, query: &mut TerrainQuery, player: Vec3) {
-        let block = self.geometry.block_height as f32;
-        let near = self.creatures.iter().filter(|c| c.position.distance(player) <= CREATURE_RANGE_BLOCKS * block).count();
-        if near >= MAX_NEAR_PLAYER || self.creatures.len() >= MAX_CREATURES || !self.rng.gen_bool(0.5) {
-            return;
-        }
-        let up = player.normalize_or_zero();
-        let (east, north) = tangent_frame(up);
-        let angle = self.rng.gen_range(0.0..TAU);
-        let distance = self.rng.gen_range(SPAWN_MIN_BLOCKS..SPAWN_MAX_BLOCKS) * block;
-        let center = player + (north * angle.cos() + east * angle.sin()) * distance;
-        let Some(column) = self.geometry.block_at_point(center.as_dvec3()) else { return };
-        if surface_feet(&self.geometry, query, column.face, column.x, column.z).is_none() {
-            return;
-        }
-        let biome = query.column_sample(column.face, column.x, column.z).biome;
-        let Some(candidates) = self.spawn_table.get(&biome) else { return };
-        // Seules les espèces éveillées à cette heure-ci, à cet endroit, apparaissent
-        let candidates: Vec<SpawnCandidate> = match self.sun_height(center) {
-            Some(height) => candidates
-                .iter()
-                .copied()
-                .filter(|&(species, _, _)| self.registry.get(species).is_some_and(|s| s.activity.is_awake(height)))
-                .collect(),
-            None => candidates.clone(),
-        };
-        let Some(species) = pick_species(&candidates, &mut self.rng) else { return };
-        let Some((min_group, max_group)) = self.registry.get(species).map(|s| (s.min_group, s.max_group)) else { return };
+    /// La zone où se trouve ce point
+    fn zone_of(&self, p: Vec3) -> Option<ZoneKey> {
+        self.geometry.block_at_point(p.as_dvec3()).map(|b| ZoneKey::of_column(b.face, b.x, b.z))
+    }
 
-        let group = self.rng.gen_range(min_group..=max_group);
-        let mut herd = None;
-        for _ in 0..group {
-            if self.creatures.len() >= MAX_CREATURES {
-                break;
+    /// Éveille les zones proches d'un joueur, endort les autres avec leurs bêtes, et range dans sa
+    /// zone endormie toute bête qui est sortie des zones éveillées
+    fn update_zones(&mut self, query: &mut TerrainQuery, players: &[Vec3]) {
+        let block = self.geometry.block_height as f32;
+        let wake = (CREATURE_RANGE_BLOCKS + ZONE_HALF_DIAGONAL) * block;
+        let sleep = wake + SLEEP_MARGIN_BLOCKS * block;
+        // Distance du joueur le plus proche au centre de chaque zone, à l'altitude du joueur
+        let mut to_wake = Vec::new();
+        let mut keep = HashSet::new();
+        for &(zone, center) in &self.zone_centers {
+            let nearest = players.iter().map(|p| (center * p.length()).distance(*p)).fold(f32::INFINITY, f32::min);
+            if nearest <= sleep && self.awake.contains(&zone) {
+                keep.insert(zone);
+            } else if nearest <= wake {
+                to_wake.push(zone);
             }
-            let (dx, dz) = (self.rng.gen_range(-3..=3), self.rng.gen_range(-3..=3));
-            let pos = BlockPos::new(column.face, column.x + dx, 0, column.z + dz);
-            if !pos.is_valid() {
+        }
+        // Une zone qui s'endort reste peuplée, même vide : elle ne sera plus jamais tirée
+        for zone in self.awake.difference(&keep) {
+            self.sleeping.entry(*zone).or_default();
+        }
+        self.awake = keep;
+        for zone in to_wake {
+            let creatures = match self.sleeping.remove(&zone) {
+                Some(creatures) => creatures,
+                None => self.populate_zone(zone, query),
+            };
+            for c in creatures {
+                match self.registry.find(&c.species) {
+                    Some(species) => self.wake_creature(c.id, species, c.herd.unwrap_or(c.id), c.position, c.yaw, c.health),
+                    None => log::warn!("Créature {} : espèce « {} » inconnue, laissée de côté.", c.id, c.species),
+                }
+            }
+            self.awake.insert(zone);
+        }
+
+        // Les bêtes hors des zones éveillées s'endorment là où elles sont (les mourantes disparaissent)
+        let mut index = 0;
+        while index < self.creatures.len() {
+            let c = &self.creatures[index];
+            let zone = self.zone_of(c.position);
+            if zone.is_some_and(|z| self.awake.contains(&z)) {
+                index += 1;
                 continue;
             }
-            if let Some(feet) = surface_feet(&self.geometry, query, pos.face, pos.x, pos.z) {
-                let id = self.spawn_in_herd(species, feet, herd);
-                herd.get_or_insert(id);
+            let c = self.creatures.swap_remove(index);
+            let (Some(zone), Some(sleeping), true) = (zone, self.sleeping_creature(&c), c.is_alive()) else { continue };
+            if !self.sleeping.contains_key(&zone) {
+                let population = self.populate_zone(zone, query);
+                self.sleeping.insert(zone, population);
+            }
+            self.sleeping.get_mut(&zone).unwrap().push(sleeping);
+        }
+    }
+
+    /// La bête telle qu'elle sera gardée endormie
+    fn sleeping_creature(&self, c: &Creature) -> Option<SleepingCreature> {
+        let species = self.registry.get(c.species)?.id.clone();
+        Some(SleepingCreature { id: c.id, species, herd: Some(c.herd), position: c.position, yaw: c.yaw, health: c.health })
+    }
+
+    /// Bêtes que la graine du monde destine à cette zone : au plus un groupe, d'une espèce de son
+    /// biome, posé sur le relief. Le tirage ne dépend que de la graine et de la zone.
+    fn populate_zone(&self, zone: ZoneKey, query: &mut TerrainQuery) -> Vec<SleepingCreature> {
+        let mut population = Vec::new();
+        if !self.populate {
+            return population;
+        }
+        let mut rng = StdRng::seed_from_u64(zone.seed(self.seed));
+        if !rng.gen_bool(ZONE_GROUP_CHANCE) {
+            return population;
+        }
+        // Centre du groupe assez loin du bord pour que tout le groupe reste dans la zone
+        let span = GROUP_SPREAD..ZONE_BLOCKS - GROUP_SPREAD;
+        let (cx, cz) = (zone.x * ZONE_BLOCKS + rng.gen_range(span.clone()), zone.z * ZONE_BLOCKS + rng.gen_range(span));
+        if surface_feet(&self.geometry, query, zone.face, cx, cz).is_none() {
+            return population;
+        }
+        let biome = query.column_sample(zone.face, cx, cz).biome;
+        let Some(candidates) = self.spawn_table.get(&biome) else { return population };
+        let Some(species) = pick_species(candidates, &mut rng) else { return population };
+        let Some(info) = self.registry.get(species) else { return population };
+
+        let group = rng.gen_range(info.min_group..=info.max_group);
+        for n in 0..group {
+            let (dx, dz) = (rng.gen_range(-GROUP_SPREAD..=GROUP_SPREAD), rng.gen_range(-GROUP_SPREAD..=GROUP_SPREAD));
+            let yaw = rng.gen_range(0.0..TAU);
+            if let Some(feet) = surface_feet(&self.geometry, query, zone.face, cx + dx, cz + dz) {
+                let id = (zone.index() << 16) | n as u64;
+                // Le groupe d'une zone forme un troupeau
+                let herd = Some(zone.index() << 16);
+                population.push(SleepingCreature { id, species: info.id.clone(), herd, position: feet, yaw, health: info.health });
             }
         }
+        population
     }
 }
 
@@ -1255,6 +1369,7 @@ mod tests {
     use super::*;
     use crate::cubed_sphere::PlanetDescriptor;
     use crate::edits::FACE_BLOCKS;
+    use std::collections::HashSet;
 
     fn registry() -> Arc<CreatureRegistry> {
         Arc::new(CreatureRegistry::load_default())
@@ -1288,12 +1403,12 @@ mod tests {
     }
 
     #[test]
-    fn creatures_appear_around_a_player_and_walk_on_the_ground() {
+    fn the_zones_around_a_player_are_populated_and_creatures_walk_on_the_ground() {
         let generator = generator();
         let edits = TerrainEdits::new(None);
         let geometry = BlockGeometry::new(generator.base_radius());
         let (_, player) = grass_column(&generator, &edits);
-        let mut world = CreatureWorld::new(generator.base_radius(), 7, registry());
+        let mut world = CreatureWorld::new(generator.base_radius(), 77, registry());
         // Une minute de jeu à 20 images par seconde
         let mut starts = HashMap::new();
         for _ in 0..1200 {
@@ -1303,12 +1418,11 @@ mod tests {
             }
         }
         assert!(!world.creatures().is_empty(), "aucune créature n'est apparue");
-        assert!(world.creatures().len() <= MAX_NEAR_PLAYER + 4);
         let mut query = TerrainQuery::new(&generator, &edits);
         let mut moved = 0;
         for c in world.creatures() {
             let block = c.position.distance(player) / geometry.block_height as f32;
-            assert!(block <= CREATURE_RANGE_BLOCKS, "{} à {block} blocs", c.species);
+            assert!(block <= CREATURE_RANGE_BLOCKS + ZONE_BLOCKS as f32 * 2.0 + SLEEP_MARGIN_BLOCKS, "{} à {block} blocs", c.species);
             // Debout sur le sol de sa colonne (ou en train d'y tomber), jamais dedans
             let column = geometry.block_at_point(c.position.as_dvec3()).unwrap();
             let alt = altitude(&geometry, c.position);
@@ -1323,11 +1437,12 @@ mod tests {
     }
 
     #[test]
-    fn creatures_disappear_far_from_every_player() {
+    fn creatures_fall_asleep_far_from_every_player() {
         let generator = generator();
         let edits = TerrainEdits::new(None);
         let (_, feet) = grass_column(&generator, &edits);
         let mut world = CreatureWorld::new(generator.base_radius(), 1, registry());
+        world.populate = false;
         let sheep = world.registry().find("vache").unwrap();
         world.spawn(sheep, feet);
         world.tick(0.05, &generator, &edits, &[feet]);
@@ -1343,6 +1458,7 @@ mod tests {
         let geometry = BlockGeometry::new(generator.base_radius());
         let (ground, feet) = grass_column(&generator, &edits);
         let mut world = CreatureWorld::new(generator.base_radius(), 3, registry());
+        world.populate = false;
         let boar = world.registry().find("sanglier").unwrap();
         world.spawn(boar, feet);
         // Le joueur reste hors de la vue du sanglier, qui le chargerait
@@ -1385,6 +1501,7 @@ mod tests {
         let edits = TerrainEdits::new(None);
         let (_, feet) = grass_column(&generator, &edits);
         let mut world = CreatureWorld::new(generator.base_radius(), 5, registry());
+        world.populate = false;
         let cow = world.registry().find("vache").unwrap();
         world.spawn(cow, feet);
         let c = &mut world.creatures[0];
@@ -1409,6 +1526,7 @@ mod tests {
         let geometry = BlockGeometry::new(generator.base_radius());
         let (ground, feet) = grass_column(&generator, &edits);
         let mut world = CreatureWorld::new(generator.base_radius(), 9, registry());
+        world.populate = false;
         let boar = world.registry().find("sanglier").unwrap();
         world.spawn(boar, feet);
         // Une marche d'un bloc devant (un mur derrière en ferait un cul-de-sac, qu'il contournerait)
@@ -1484,6 +1602,7 @@ mod tests {
         let geometry = BlockGeometry::new(generator.base_radius());
         let (_, feet) = grass_column(&generator, &edits);
         let mut world = CreatureWorld::new(generator.base_radius(), 11, registry());
+        world.populate = false;
         let rabbit = world.registry().find("lapin").unwrap();
         let id = world.spawn(rabbit, feet);
         assert!(!world.hit(id + 1, feet), "pas de créature à toucher");
@@ -1677,28 +1796,6 @@ mod tests {
         }
         assert!(!get(&world, cow_id).0, "la vache dort en plein jour");
         assert!(get(&world, wolf_id).0, "le loup ne dort pas en plein jour");
-    }
-
-    #[test]
-    fn only_awake_species_appear() {
-        let generator = generator();
-        let edits = TerrainEdits::new(None);
-        let (_, player) = grass_column(&generator, &edits);
-        let up = player.normalize();
-        for (sun, hour) in [(up, "midi"), (-up, "minuit")] {
-            let mut world = CreatureWorld::new(generator.base_radius(), 11, registry());
-            world.set_sun_dir(sun);
-            for _ in 0..1200 {
-                world.tick(0.05, &generator, &edits, &[player]);
-            }
-            assert!(!world.creatures().is_empty(), "aucune créature à {hour}");
-            for c in world.creatures() {
-                let species = world.registry().get(c.species).unwrap();
-                // Apparues loin du joueur : le soleil n'y est pas tout à fait à la même hauteur
-                let height = sun.dot(c.position.normalize());
-                assert!(species.activity.is_awake(height), "{} apparu(e) à {hour}", species.id);
-            }
-        }
     }
 
     /// Plus grand écart au centre d'un troupeau, en blocs
@@ -2025,5 +2122,147 @@ mod tests {
         // Les loups qui poursuivent courent
         let actions: Vec<_> = world.creatures().iter().filter(|c| c.is_hunting() && c.walking).map(|c| c.state().action).collect();
         assert!(actions.iter().all(|a| *a == CreatureAction::Course), "{actions:?}");
+    }
+
+    /// Identifiant, espèce et position de chaque bête éveillée, triés
+    fn snapshot(world: &CreatureWorld) -> Vec<(u64, usize, Vec3)> {
+        let mut v: Vec<_> = world.creatures().iter().map(|c| (c.id, c.species, c.position)).collect();
+        v.sort_by_key(|c| c.0);
+        v
+    }
+
+    /// Un point de la face +Z, à `blocks` blocs du centre le long de x, sur le relief
+    fn feet_at(generator: &PlanetWorldGenerator, edits: &TerrainEdits, x: i32, z: i32) -> Vec3 {
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let mut query = TerrainQuery::new(generator, edits);
+        let top = query.support_top(PlanetFace::PosZ, x, z, WORLD_HEIGHT - 1);
+        geometry.corner(PlanetFace::PosZ, x as f64 + 0.5, top as f64, z as f64 + 0.5).as_vec3()
+    }
+
+    #[test]
+    fn the_population_depends_only_on_the_world_seed() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, player) = grass_column(&generator, &edits);
+        let mut a = CreatureWorld::new(generator.base_radius(), 77, registry());
+        let mut b = CreatureWorld::new(generator.base_radius(), 77, registry());
+        a.tick(0.0, &generator, &edits, &[player]);
+        b.tick(0.0, &generator, &edits, &[player]);
+        assert!(!a.creatures().is_empty());
+        assert_eq!(snapshot(&a), snapshot(&b));
+        let mut c = CreatureWorld::new(generator.base_radius(), 78, registry());
+        c.tick(0.0, &generator, &edits, &[player]);
+        assert_ne!(snapshot(&a), snapshot(&c), "une autre graine, une autre population");
+    }
+
+    #[test]
+    fn nothing_appears_after_the_first_population() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, player) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 77, registry());
+        world.tick(0.05, &generator, &edits, &[player]);
+        let first: HashSet<u64> = world.creatures().iter().map(|c| c.id).collect();
+        assert!(!first.is_empty());
+        // Une minute plus tard, aucune nouvelle bête
+        for _ in 0..1200 {
+            world.tick(0.05, &generator, &edits, &[player]);
+            assert!(world.creatures().iter().all(|c| first.contains(&c.id)), "une bête est apparue");
+        }
+        // Toutes tuées : le voisinage reste vide, même après un aller-retour au loin
+        let ids: Vec<u64> = world.creatures().iter().map(|c| c.id).collect();
+        for id in ids {
+            while world.hit(id, player) {}
+        }
+        for _ in 0..((CREATURE_DEATH_TIME / 0.05) as usize + 2) {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        assert!(world.creatures().is_empty());
+        world.tick(0.05, &generator, &edits, &[-player]);
+        world.tick(0.05, &generator, &edits, &[player]);
+        assert!(world.creatures().is_empty(), "une bête est revenue");
+        for _ in 0..200 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        assert!(world.creatures().is_empty());
+    }
+
+    #[test]
+    fn sleeping_creatures_wake_up_where_they_were() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, player) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 77, registry());
+        for _ in 0..200 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        let before = snapshot(&world);
+        assert!(!before.is_empty());
+        // Le joueur part à l'autre bout de la planète : tout s'endort ; il revient : tout se réveille
+        world.tick(0.0, &generator, &edits, &[-player]);
+        assert!(world.creatures().iter().all(|c| c.position.distance(-player) < player.length()));
+        world.tick(0.0, &generator, &edits, &[player]);
+        let after = snapshot(&world);
+        for bête in &before {
+            assert!(after.iter().any(|a| a.0 == bête.0 && a.2.distance(bête.2) < 1e-3), "bête {} perdue ou déplacée", bête.0);
+        }
+    }
+
+    #[test]
+    fn a_creature_that_wanders_off_sleeps_in_its_new_zone() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let (ground, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 5, registry());
+        world.populate = false;
+        let cow = world.registry().find("vache").unwrap();
+        let id = world.spawn(cow, feet);
+        world.tick(0.0, &generator, &edits, &[feet]);
+        // Elle s'éloigne hors des zones éveillées : elle s'endort dans la sienne, pas ailleurs
+        let far = (CREATURE_RANGE_BLOCKS + ZONE_BLOCKS as f32 * 3.0 + SLEEP_MARGIN_BLOCKS) as i32;
+        let x = if ground.x + far < crate::edits::FACE_BLOCKS { ground.x + far } else { ground.x - far };
+        let away = feet_at(&generator, &edits, x, ground.z);
+        world.creatures[0].position = away;
+        world.tick(0.0, &generator, &edits, &[feet]);
+        assert!(world.creatures().is_empty());
+        let zone = ZoneKey::of_column(PlanetFace::PosZ, x, ground.z);
+        assert!(world.sleeping[&zone].iter().any(|c| c.id == id));
+        // Le joueur la rejoint : elle est là
+        world.tick(0.0, &generator, &edits, &[away]);
+        let c = world.creatures().iter().find(|c| c.id == id).expect("la vache a disparu");
+        assert!(c.position.distance(away) < geometry.block_height as f32 * 1e-3);
+    }
+
+    #[test]
+    fn the_population_is_saved_and_reloaded() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, player) = grass_column(&generator, &edits);
+        let dir = std::env::temp_dir().join(format!("herocraft_creatures_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut world = CreatureWorld::with_save_dir(generator.base_radius(), 77, registry(), &dir);
+        for _ in 0..100 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        // Une bête tuée avant l'enregistrement
+        let killed = world.creatures()[0].id;
+        while world.hit(killed, player) {}
+        for _ in 0..((CREATURE_DEATH_TIME / 0.05) as usize + 2) {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        let before = snapshot(&world);
+        world.save().unwrap();
+
+        let mut reloaded = CreatureWorld::with_save_dir(generator.base_radius(), 77, registry(), &dir);
+        reloaded.tick(0.0, &generator, &edits, &[player]);
+        let after = snapshot(&reloaded);
+        assert!(after.iter().all(|c| c.0 != killed), "la bête tuée est revenue");
+        assert_eq!(before.len(), after.len());
+        for (b, a) in before.iter().zip(&after) {
+            assert_eq!((b.0, b.1), (a.0, a.1));
+            assert!(b.2.distance(a.2) < 1e-3);
+        }
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

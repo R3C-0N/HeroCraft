@@ -46,7 +46,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 | `body` | Volume utilisé pour les déplacements, en blocs : `half_width` (demi-largeur), `half_length` (demi-longueur, de la tête à la queue) et `height`. La créature ne passe que là où ce corps tient. |
 | `walk_speed` | Vitesse de promenade, en blocs par seconde. À 0, la créature ne bouge pas. |
 | `health` | Points de vie (10 par défaut). Un coup de joueur en retire 2,5 : la bête rougit, recule, puis s'enfuit ; à 0 elle bascule sur le flanc et disparaît. |
-| `min_group`, `max_group` | Taille d'un groupe qui apparaît ensemble (1 par défaut). |
+| `min_group`, `max_group` | Taille d'un groupe posé ensemble dans une zone (1 par défaut). |
 | `temperament` | Réaction au joueur le plus proche, tant qu'il ne l'a pas frappée : `craintif` (fuit quand il approche à moins de 8 blocs, ou de 3 blocs s'il est accroupi avec Maj), `placide` (s'arrête et le regarde à moins de 6 blocs), `curieux` (le suit à moins de 16 blocs et s'arrête à 3 blocs de lui) ou `indifferent` (l'ignore, par défaut). |
 | `attack` | Comportement agressif (voir plus bas). Sans ce champ, la bête est paisible : frappée, elle s'enfuit. |
 | `spawn` | Les biomes où l'espèce apparaît d'elle-même (voir ci-dessous). Sans ce champ, elle n'apparaît jamais seule : c'est le cas des créatures des profondeurs, des mondes démoniaques et des bois féeriques, qui attendent leur monde. |
@@ -58,7 +58,7 @@ Chaque entrée de `spawn` a trois champs :
 - `weight` : le poids de l'espèce face aux autres espèces du même biome ;
 - `chance` (1 par défaut) : la probabilité que le groupe tiré apparaisse vraiment, pour une espèce rare.
 
-Les créatures n'apparaissent que sur l'herbe, la terre, le sable ou la neige.
+Les créatures ne sont posées que sur l'herbe, la terre, le sable ou la neige. La population est tirée une seule fois par zone de 32 × 32 blocs, d'après la graine du monde, la première fois qu'un joueur s'en approche (une chance sur quatre d'y poser un groupe) ; ensuite rien ne réapparaît. Changer ces fichiers ne change que les zones pas encore visitées.
 
 ## Rythme jour/nuit
 
@@ -71,7 +71,7 @@ L'heure dépend de l'endroit : la planète est ronde, il fait jour d'un côté e
 | `crepuscular` | autour du lever et du coucher du soleil (soleil à moins de 30° de l'horizon) | lapin, cerf |
 | `always` | tout le temps | tréant, rampant, champion |
 
-Une espèce n'apparaît qu'aux heures où elle est éveillée. Hors de ses heures, une bête déjà là s'endort sur place à la fin de ce qu'elle faisait : un troupeau s'endort et se réveille peu à peu, pas d'un bloc. Un coup la réveille (et la fait fuir) ; elle se rendort plus tard si ce n'est toujours pas son heure.
+La population étant fixe, toutes les espèces sont là à toute heure. Hors de ses heures, une bête déjà là s'endort sur place à la fin de ce qu'elle faisait : un troupeau s'endort et se réveille peu à peu, pas d'un bloc. Un coup la réveille (et la fait fuir) ; elle se rendort plus tard si ce n'est toujours pas son heure.
 
 ## Attaque
 

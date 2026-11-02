@@ -119,7 +119,12 @@ impl Server {
         };
         let edits = TerrainEdits::new(storage);
         let instance = random_instance();
-        let creatures = CreatureWorld::new(generator.base_radius(), config.seed ^ instance, Arc::new(CreatureRegistry::load_default()));
+        // La population des zones vient de la graine du monde, et reprend la sauvegarde
+        let registry = Arc::new(CreatureRegistry::load_default());
+        let creatures = match &config.save_dir {
+            Some(dir) => CreatureWorld::with_save_dir(generator.base_radius(), config.seed, registry, dir),
+            None => CreatureWorld::new(generator.base_radius(), config.seed, registry),
+        };
 
         Ok(Self {
             listener,
@@ -168,7 +173,7 @@ impl Server {
     }
 
     /// Fait apparaître une créature de l'espèce `species` (nom de son fichier) aux pieds `feet` ;
-    /// elle disparaîtra si aucun joueur n'est près. `None` si l'espèce est inconnue.
+    /// elle s'endormira avec sa zone si aucun joueur n'est près. `None` si l'espèce est inconnue.
     pub fn spawn_creature(&mut self, species: &str, feet: Vec3) -> Option<u64> {
         let species = self.creatures.registry().find(species)?;
         Some(self.creatures.spawn(species, feet))
@@ -242,12 +247,15 @@ impl Server {
         }
     }
 
-    /// Enregistre les chunks modifiés depuis le dernier enregistrement
+    /// Enregistre les chunks modifiés depuis le dernier enregistrement, et la population de créatures
     pub fn save(&self) {
         match self.edits.flush() {
             Ok(0) => {}
             Ok(n) => info!("{n} chunks modifiés enregistrés."),
             Err(e) => warn!("Échec de l'enregistrement des blocs modifiés : {e}"),
+        }
+        if let Err(e) = self.creatures.save() {
+            warn!("Échec de l'enregistrement des créatures : {e}");
         }
     }
 

@@ -154,9 +154,10 @@ fn main() {
     // Planète de la partie solo, retrouvée en quittant une partie en ligne
     let mut solo_seed = current_seed;
     // Créatures de la partie solo, simulées ici (en ligne, c'est le serveur qui les fait vivre), et
-    // la planète où elles vivent. Les espèces sont décrites dans assets/creatures/.
+    // la planète où elles vivent. Les espèces sont décrites dans assets/creatures/ ; la population
+    // de chaque zone est tirée une fois pour toutes et gardée dans la sauvegarde du monde.
     let creature_registry = Arc::new(herocraft_common::CreatureRegistry::load_default());
-    let mut solo_creatures = herocraft_world::CreatureWorld::new(base_radius as f64, current_seed, creature_registry.clone());
+    let mut solo_creatures = solo_creature_world(base_radius as f64, current_seed, &creature_registry);
     let mut creatures_seed = current_seed;
     let mut creature_animator = creatures::CreatureAnimator::default();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
@@ -208,6 +209,10 @@ fn main() {
 
                 match event {
                     WindowEvent::CloseRequested => {
+                        // En ligne, la population est celle du serveur : celle du solo est déjà enregistrée
+                        if net.is_none() && hosted.is_none() {
+                            save_solo_creatures(&solo_creatures);
+                        }
                         if let Some(client) = net.as_mut() {
                             client.disconnect();
                         }
@@ -527,7 +532,7 @@ fn main() {
                                 Some(client) => client.creature_views(&creature_registry),
                                 None => {
                                     if creatures_seed != current_seed {
-                                        solo_creatures = herocraft_world::CreatureWorld::new(camera.base_radius as f64, current_seed, creature_registry.clone());
+                                        solo_creatures = solo_creature_world(camera.base_radius as f64, current_seed, &creature_registry);
                                         creatures_seed = current_seed;
                                     }
                                     if !ui_state.is_settings_open {
@@ -642,6 +647,9 @@ fn main() {
                         }
                         if last_autosave.elapsed().as_secs() >= 30 {
                             save_terrain_edits(&lod_manager);
+                            if net.is_none() && hosted.is_none() {
+                                save_solo_creatures(&solo_creatures);
+                            }
                             ui_state.inventory.save();
                             last_autosave = Instant::now();
                         }
@@ -677,6 +685,9 @@ fn main() {
                                     info!("Bouton cliqué : Reprise de la partie.");
                                 }
                                 UiAction::QuitGame => {
+                                    if net.is_none() && hosted.is_none() {
+                                        save_solo_creatures(&solo_creatures);
+                                    }
                                     if let Some(client) = net.as_mut() {
                                         client.disconnect();
                                     }
@@ -716,6 +727,7 @@ fn main() {
                                     // Le serveur reprend la sauvegarde du monde : elle est d'abord mise à jour
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
+                                    save_solo_creatures(&solo_creatures);
                                     solo_seed = current_seed;
                                     let pseudo = ui_state.multiplayer.pseudo.trim().to_string();
                                     let save_dir = std::path::PathBuf::from(solo_save_dir(current_seed));
@@ -736,6 +748,7 @@ fn main() {
                                 UiAction::JoinServer => {
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
+                                    save_solo_creatures(&solo_creatures);
                                     solo_seed = current_seed;
                                     let addr = network::server_address(&ui_state.multiplayer.join_target);
                                     let pseudo = ui_state.multiplayer.pseudo.trim().to_string();
@@ -754,6 +767,10 @@ fn main() {
                                     state.set_player_outlines(&[]);
                                     ui_state.name_tags.clear();
                                     let (storage, edits) = solo_terrain(solo_seed);
+                                    // Le serveur ouvert ici a pu faire vivre (et tuer) les bêtes du monde
+                                    // solo : elles sont reprises de la sauvegarde qu'il vient d'écrire
+                                    solo_creatures = solo_creature_world(camera.base_radius as f64, solo_seed, &creature_registry);
+                                    creatures_seed = solo_seed;
                                     if was_hosting && current_seed == solo_seed {
                                         // Même planète : le joueur reste où il est, avec les blocs des autres
                                         chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
@@ -772,6 +789,7 @@ fn main() {
                                 UiAction::GenerateNewPlanet => {
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
+                                    save_solo_creatures(&solo_creatures);
                                     current_seed = herocraft_world::random_seed();
                                     let (storage, edits) = solo_terrain(current_seed);
                                     switch_planet(current_seed, false, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
@@ -1139,6 +1157,18 @@ fn save_terrain_edits(lod: &PlanetLodManager) {
         Ok(0) => {}
         Ok(n) => info!("{} chunks modifiés enregistrés.", n),
         Err(e) => log::warn!("Échec de l'enregistrement des blocs modifiés : {}", e),
+    }
+}
+
+/// Créatures d'un monde solo, reprises de sa sauvegarde
+fn solo_creature_world(base_radius: f64, seed: u64, registry: &Arc<herocraft_common::CreatureRegistry>) -> herocraft_world::CreatureWorld {
+    herocraft_world::CreatureWorld::with_save_dir(base_radius, seed, registry.clone(), solo_save_dir(seed))
+}
+
+/// Enregistre la population de créatures du monde solo (bêtes tuées comprises, qui ne reviennent pas)
+fn save_solo_creatures(creatures: &herocraft_world::CreatureWorld) {
+    if let Err(e) = creatures.save() {
+        log::warn!("Échec de l'enregistrement des créatures : {}", e);
     }
 }
 

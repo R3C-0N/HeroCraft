@@ -51,8 +51,7 @@ pub struct CreatureSpecies {
     /// Réaction à l'approche d'un joueur (indifférente par défaut)
     #[serde(default)]
     pub temperament: Temperament,
-    /// Moment de la journée où l'espèce est éveillée : elle n'apparaît qu'à ce moment-là et dort le
-    /// reste du temps
+    /// Moment de la journée où l'espèce est éveillée : elle dort le reste du temps
     #[serde(default)]
     pub activity: Activity,
     /// Comportement agressif (aucun : la bête est paisible et s'enfuit quand on la frappe)
