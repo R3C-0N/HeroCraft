@@ -8,5 +8,46 @@
   "spawn": [],
   "activity": "always",
   "attack": {"mode": "solo", "damage": 15, "cooldown": 2.5, "sight": 10, "chase_speed": 2.0, "reach": 1.2, "provoked_only": true},
-  "model": {"mesh": "modeles/treant.gltf", "texture": "modeles/treant.png", "walk_animation": "repos"}
+  "model": {
+    "mesh": "modeles/treant.gltf",
+    "texture": "modeles/treant.png",
+    "animations": {
+      "repos": {"cycle": 5.0, "pause": {"poids": 2, "duree": [3, 8]}, "os": {
+        "racine": {"rotation": [0, 0, 1.5]},
+        "brasD": {"rotation": [3, 0, 3]},
+        "brasG": {"rotation": [3, 0, -3], "phase": 0.3}
+      }},
+      "marche": {"foulee": 0.9, "os": {
+        "racineD": {"rotation": [18, 0, 0]},
+        "racineG": {"rotation": [18, 0, 0], "phase": 0.5},
+        "brasD": {"rotation": [12, 0, 0], "phase": 0.5},
+        "brasG": {"rotation": [12, 0, 0]},
+        "racine": {"rotation": [0, 3, 3], "translation": [0, 0.03, 0], "phase": 0.25}
+      }},
+      "course": {"foulee": 1.3, "os": {
+        "racineD": {"rotation": [28, 0, 0]},
+        "racineG": {"rotation": [28, 0, 0], "phase": 0.5},
+        "brasD": {"rotation": [20, 0, 0], "phase": 0.5},
+        "brasG": {"rotation": [20, 0, 0]},
+        "racine": {"rotation": [0, 4, 4], "rotation_fixe": [6, 0, 0], "translation": [0, 0.05, 0], "phase": 0.25}
+      }},
+      "attaque": {"cycle": 1.6, "os": {
+        "brasD": {"rotation": [75, 0, 0], "rotation_fixe": [-70, 0, 0], "phase": 0.25},
+        "brasG": {"rotation": [75, 0, 0], "rotation_fixe": [-70, 0, 0], "phase": 0.25},
+        "racine": {"rotation": [7, 0, 0], "phase": 0.25}
+      }},
+      "enracine": {"cycle": 6.0, "pause": {"poids": 1, "duree": [8, 20]}, "os": {
+        "racine": {"translation_fixe": [0, -0.2, 0]},
+        "racineD": {"rotation_fixe": [0, 0, -25]},
+        "racineG": {"rotation_fixe": [0, 0, 25]},
+        "brasD": {"rotation": [0, 0, 4], "rotation_fixe": [-15, 0, 40]},
+        "brasG": {"rotation": [0, 0, -4], "rotation_fixe": [-15, 0, -40], "phase": 0.4}
+      }},
+      "coup": {"os": {
+        "racine": {"rotation": [-5, 0, 3], "frequence": 0.5},
+        "brasD": {"rotation": [-15, 0, 10], "frequence": 0.5},
+        "brasG": {"rotation": [-15, 0, -10], "frequence": 0.5}
+      }}
+    }
+  }
 }

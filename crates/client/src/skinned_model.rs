@@ -26,6 +26,7 @@ pub struct ModelVertex {
 
 #[derive(Debug, Clone)]
 struct Node {
+    name: String,
     parent: Option<usize>,
     translation: Vec3,
     rotation: Quat,
@@ -127,6 +128,7 @@ impl SkinnedModel {
             .nodes
             .iter()
             .map(|n| Node {
+                name: n.name.clone().unwrap_or_default(),
                 parent: None,
                 translation: n.translation.map_or(Vec3::ZERO, Vec3::from),
                 rotation: n.rotation.map_or(Quat::IDENTITY, Quat::from_array),
@@ -185,9 +187,29 @@ impl SkinnedModel {
         self.animations.get(name)
     }
 
+    /// Nœuds nommés `pattern`, ou dont le nom commence par `pattern` sans son `*` final, dans
+    /// l'ordre du fichier
+    pub fn nodes_matching(&self, pattern: &str) -> Vec<usize> {
+        let matches = |name: &str| match pattern.strip_suffix('*') {
+            Some(prefix) => name.starts_with(prefix),
+            None => name == pattern,
+        };
+        self.nodes.iter().enumerate().filter(|(_, n)| matches(&n.name)).map(|(i, _)| i).collect()
+    }
+
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
     /// Matrices de chaque os (pose de l'animation à l'instant `time`, ou de repos) : elles amènent
     /// un sommet de la pose de liaison à sa place dans le repère du modèle
     pub fn skin_matrices(&self, animation: Option<&Animation>, time: f32) -> Vec<Mat4> {
+        self.posed_matrices(animation, time, &[])
+    }
+
+    /// Comme `skin_matrices`, avec en plus, pour chaque nœud (rang dans le glTF), une rotation
+    /// appliquée après la sienne et un déplacement ajouté au sien (`offsets` vide : aucun)
+    pub fn posed_matrices(&self, animation: Option<&Animation>, time: f32, offsets: &[(Quat, Vec3)]) -> Vec<Mat4> {
         let mut locals: Vec<(Vec3, Quat, Vec3)> = self.nodes.iter().map(|n| (n.translation, n.rotation, n.scale)).collect();
         if let Some(animation) = animation {
             for channel in &animation.channels {
@@ -198,6 +220,10 @@ impl SkinnedModel {
                     Property::Scale => local.2 = Vec3::from_slice(&channel.sample(time, 3)),
                 }
             }
+        }
+        for (local, (rotation, translation)) in locals.iter_mut().zip(offsets) {
+            local.0 += *translation;
+            local.1 = (local.1 * *rotation).normalize();
         }
         let mut globals: Vec<Option<Mat4>> = vec![None; self.nodes.len()];
         self.joints
@@ -305,6 +331,7 @@ struct Gltf {
 
 #[derive(Deserialize)]
 struct GltfNode {
+    name: Option<String>,
     #[serde(default)]
     children: Vec<usize>,
     translation: Option<[f32; 3]>,
@@ -445,8 +472,9 @@ mod tests {
         assert!(registry.len() >= 19);
         for species in registry.iter() {
             let model = SkinnedModel::load(&registry.asset_path(&species.model.mesh)).unwrap_or_else(|e| panic!("{} : {e}", species.id));
-            let animation = model.animation(&species.model.walk_animation).unwrap_or_else(|| panic!("{} : pas d'animation", species.id));
+            let animation = model.animation("repos").unwrap_or_else(|| panic!("{} : pas d'animation", species.id));
             assert!(animation.duration > 0.0);
+            assert_eq!(model.nodes_matching("racine").len(), 1, "{}", species.id);
             // Les pieds sont sous l'origine, à la hauteur du corps à peu près
             assert!(model.feet_height > 0.0 && model.feet_height < species.body.height * 1.5, "{} : {}", species.id, model.feet_height);
             let texture = Texture::load(&registry.asset_path(&species.model.texture)).unwrap();

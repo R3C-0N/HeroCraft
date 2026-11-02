@@ -33,7 +33,7 @@ use std::sync::Arc;
 use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
-use herocraft_common::{tangent_frame, AttackMode, BlockId, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, PLAYER_HIT_DAMAGE};
+use herocraft_common::{tangent_frame, AttackMode, BlockId, CreatureAction, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -121,6 +121,8 @@ const TARGET_RADIUS: f32 = 0.3;
 const MAX_STRIKE_HEIGHT: f32 = 1.8;
 /// Écart au cap de la cible au-delà duquel elle se tourne avant de frapper, en radians
 const STRIKE_ANGLE: f32 = 0.6;
+/// Durée de l'animation d'un coup porté, si la fiche n'a pas d'animation `attaque`, en secondes
+const STRIKE_ANIMATION: f32 = 0.6;
 /// Bond d'un coup : élan vers la cible, en blocs par seconde, et petit saut
 const LUNGE_SPEED: f32 = 3.0;
 const LUNGE_HOP: f32 = 3.0;
@@ -160,6 +162,8 @@ pub struct Creature {
     /// Recul d'un coup reçu, dans le plan tangent, en blocs par seconde
     push: Vec3,
     walking: bool,
+    /// Inactivité choisie à l'arrêt (rang dans `CreatureSpecies::pauses`)
+    pause: Option<u8>,
     /// Temps restant avant de changer d'humeur (s'arrêter, repartir), en secondes
     timer: f32,
     health: f32,
@@ -188,6 +192,8 @@ pub struct Creature {
     anger: f32,
     /// Temps restant avant de pouvoir frapper de nouveau, en secondes
     attack_cooldown: f32,
+    /// Temps restant de l'animation du coup qu'elle vient de porter, en secondes
+    striking: f32,
     /// Temps restant de répit après avoir tué une proie, en secondes
     sated: f32,
     charge: Charge,
@@ -234,7 +240,49 @@ impl Creature {
             yaw: self.yaw,
             hurt: (self.hurt / CREATURE_HURT_TIME).clamp(0.0, 1.0),
             death: self.dead_for.map_or(0.0, |t| (t / CREATURE_DEATH_TIME).clamp(1e-3, 1.0)),
+            action: self.action(),
         }
+    }
+
+    /// Ce qu'elle fait, pour choisir son animation
+    pub fn action(&self) -> CreatureAction {
+        if self.dead_for.is_some() {
+            CreatureAction::Repos
+        } else if self.striking > 0.0 {
+            CreatureAction::Attaque
+        } else if self.panic > 0.0 || (self.hunting && self.walking && self.pace > 1.0) {
+            // Fuite, poursuite ou charge
+            CreatureAction::Course
+        } else if self.walking {
+            CreatureAction::Marche
+        } else if self.hunting {
+            // À l'arrêt pendant la chasse (elle vise, souffle ou se tourne vers sa cible)
+            CreatureAction::Repos
+        } else {
+            self.pause.map_or(CreatureAction::Repos, CreatureAction::Pause)
+        }
+    }
+
+    /// S'arrête et choisit au poids une inactivité de sa fiche (brouter, dormir…), qu'elle tient
+    /// le temps que la fiche lui donne
+    fn start_pause(&mut self, species: &CreatureSpecies, rng: &mut StdRng) {
+        self.walking = false;
+        let pauses: Vec<_> = species.pauses().map(|(_, rule)| rule).collect();
+        let total: f32 = pauses.iter().map(|p| p.poids).sum();
+        let (pause, rule) = if total > 0.0 {
+            let mut roll = rng.gen_range(0.0..total);
+            let index = pauses.iter().position(|p| {
+                roll -= p.poids;
+                roll < 0.0
+            });
+            let index = index.unwrap_or(pauses.len() - 1);
+            (Some(index as u8), pauses[index])
+        } else {
+            (None, DEFAULT_PAUSE)
+        };
+        self.pause = pause;
+        let [min, max] = rule.duree;
+        self.timer = if max > min { rng.gen_range(min..max) } else { min };
     }
 
     pub fn is_alive(&self) -> bool {
@@ -385,6 +433,7 @@ impl CreatureWorld {
             vertical_speed: 0.0,
             push: Vec3::ZERO,
             walking: false,
+            pause: None,
             timer,
             health,
             hurt: 0.0,
@@ -399,6 +448,7 @@ impl CreatureWorld {
             pace: 1.0,
             anger: 0.0,
             attack_cooldown: 0.0,
+            striking: 0.0,
             sated: 0.0,
             charge: Charge::Idle,
         });
@@ -510,6 +560,7 @@ impl CreatureWorld {
         let Self { creatures, registry, prey_table, rng, .. } = self;
         for (index, c) in creatures.iter_mut().enumerate() {
             c.attack_cooldown = (c.attack_cooldown - dt).max(0.0);
+            c.striking = (c.striking - dt).max(0.0);
             c.anger = (c.anger - dt).max(0.0);
             c.sated = (c.sated - dt).max(0.0);
             let Some(species) = registry.get(c.species) else { continue };
@@ -631,6 +682,8 @@ impl CreatureWorld {
             }
             if strikes && c.attack_cooldown <= 0.0 {
                 c.attack_cooldown = attack.cooldown;
+                // Le temps d'un cycle de son animation d'attaque
+                c.striking = species.model.animations.get("attaque").map_or(STRIKE_ANIMATION, |a| a.cycle);
                 // Un petit bond vers la cible
                 c.push += flat.normalize_or_zero() * LUNGE_SPEED;
                 if c.vertical_speed == 0.0 {
@@ -1038,8 +1091,7 @@ impl Walker<'_, '_> {
             // Fuite : elle court droit devant, jusqu'à se calmer
             c.panic -= dt;
             if c.panic <= 0.0 {
-                c.walking = false;
-                c.timer = rng.gen_range(2.0..6.0);
+                c.start_pause(species, rng);
             }
         } else if c.swimming {
             // À l'eau : elle nage vers la rive la plus proche, qu'elle cherche de temps en temps (on ne
@@ -1076,16 +1128,18 @@ impl Walker<'_, '_> {
                 if !awake {
                     c.sleeping = true;
                     c.walking = false;
+                    // Couchée : l'animation `sommeil` de sa fiche, si elle en a une
+                    c.pause = species.pauses().position(|(name, _)| name == "sommeil").map(|i| i as u8);
                     c.target_yaw = c.yaw;
                     c.timer = rng.gen_range(SLEEP_CHECK.0..SLEEP_CHECK.1);
                 } else if c.sleeping {
                     // Elle s'étire un moment avant de repartir
                     c.sleeping = false;
                     c.walking = false;
+                    c.pause = None;
                     c.timer = rng.gen_range(1.0..3.0);
                 } else if !straying && follow.is_none() && (c.walking || rng.gen_bool(0.4)) {
-                    c.walking = false;
-                    c.timer = rng.gen_range(2.0..6.0);
+                    c.start_pause(species, rng);
                     if rng.gen_bool(0.5) {
                         c.target_yaw = c.yaw + rng.gen_range(-1.0..1.0);
                     }
@@ -1383,6 +1437,44 @@ mod tests {
         assert!(on_step, "il n'est pas monté sur la marche");
         assert!(highest > base + 1.05, "pas de saut au-dessus de la marche ({highest})");
         assert!(midair >= 3, "montée d'un coup, sans saut ({midair} images en l'air)");
+    }
+
+    #[test]
+    fn the_action_follows_what_the_creature_does() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 13, registry());
+        let cow = world.registry().find("vache").unwrap();
+        let species = world.registry().get(cow).unwrap().clone();
+        let id = world.spawn(cow, feet);
+        assert_eq!(world.creatures()[0].state().action, CreatureAction::Repos);
+
+        // À l'arrêt, elle prend les inactivités de sa fiche, chacune le temps prévu. Le joueur se
+        // tient loin : la vache, placide, s'arrêterait sinon pour le regarder.
+        let (east, _) = tangent_frame(feet.normalize());
+        let far = feet + east * 30.0 * BlockGeometry::new(generator.base_radius()).block_height as f32;
+        let mut seen = std::collections::HashSet::new();
+        let mut walked = false;
+        for _ in 0..6000 {
+            world.tick(0.05, &generator, &edits, &[far]);
+            let c = &world.creatures()[0];
+            match c.state().action {
+                CreatureAction::Pause(i) => {
+                    let (_, rule) = species.pauses().nth(i as usize).expect("inactivité de la fiche");
+                    assert!(c.timer <= rule.duree[1] + 1e-3);
+                    seen.insert(i);
+                }
+                CreatureAction::Marche => walked = true,
+                other => assert_eq!(other, CreatureAction::Repos),
+            }
+        }
+        assert!(walked, "elle n'a jamais marché");
+        assert!(seen.len() >= 3, "trop peu d'inactivités ({seen:?})");
+
+        // Frappée, elle court
+        assert!(world.hit(id, world.creatures()[0].position - east));
+        assert_eq!(world.creatures()[0].state().action, CreatureAction::Course);
     }
 
     #[test]
@@ -1915,5 +2007,23 @@ mod tests {
             bitten |= world.creatures().iter().find(|c| c.id == id).is_none_or(|c| c.health < health);
         }
         assert!(bitten, "le lapin n'a jamais été mordu");
+    }
+
+    #[test]
+    fn a_striking_creature_plays_its_attack_animation() {
+        let (generator, edits, mut world, _, player) = beasts_and_player("loup", 3, 2.0, 21);
+        let mut struck = false;
+        for _ in 0..100 {
+            let hits = world.tick(0.05, &generator, &edits, &[player]);
+            for hit in hits {
+                let c = world.creatures().iter().find(|c| c.id == hit.creature_id).unwrap();
+                assert_eq!(c.state().action, CreatureAction::Attaque, "le loup mord sans animation d'attaque");
+                struck = true;
+            }
+        }
+        assert!(struck, "la meute n'a pas attaqué");
+        // Les loups qui poursuivent courent
+        let actions: Vec<_> = world.creatures().iter().filter(|c| c.is_hunting() && c.walking).map(|c| c.state().action).collect();
+        assert!(actions.iter().all(|a| *a == CreatureAction::Course), "{actions:?}");
     }
 }

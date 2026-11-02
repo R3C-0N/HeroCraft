@@ -7,5 +7,51 @@
   "max_group": 2,
   "spawn": [],
   "activity": "nocturnal",
-  "model": {"mesh": "modeles/lezard.gltf", "texture": "modeles/lezard.png", "walk_animation": "repos"}
+  "model": {
+    "mesh": "modeles/lezard.gltf",
+    "texture": "modeles/lezard.png",
+    "animations": {
+      "repos": {"cycle": 3.0, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "tete": {"rotation": [2, 0, 0]},
+        "queue*": {"rotation": [0, 5, 0], "decalage": 0.15}
+      }},
+      "marche": {"foulee": 0.5, "os": {
+        "patteAVD": {"rotation": [30, 0, 0]},
+        "patteARG": {"rotation": [30, 0, 0]},
+        "patteAVG": {"rotation": [30, 0, 0], "phase": 0.5},
+        "patteARD": {"rotation": [30, 0, 0], "phase": 0.5},
+        "racine": {"rotation": [0, 7, 0], "phase": 0.25},
+        "tete": {"rotation": [0, -7, 0], "phase": 0.25},
+        "queue*": {"rotation": [0, 14, 0], "phase": 0.4, "decalage": 0.15}
+      }},
+      "course": {"foulee": 0.8, "os": {
+        "patteAVD": {"rotation": [42, 0, 0]},
+        "patteARG": {"rotation": [42, 0, 0]},
+        "patteAVG": {"rotation": [42, 0, 0], "phase": 0.5},
+        "patteARD": {"rotation": [42, 0, 0], "phase": 0.5},
+        "racine": {"rotation": [0, 10, 0], "translation_fixe": [0, 0.04, 0], "phase": 0.25},
+        "tete": {"rotation": [0, -10, 0], "rotation_fixe": [-8, 0, 0], "phase": 0.25},
+        "queue*": {"rotation": [0, 18, 0], "rotation_fixe": [-4, 0, 0], "phase": 0.4, "decalage": 0.15}
+      }},
+      "soleil": {"cycle": 4.0, "pause": {"poids": 2, "duree": [6, 15]}, "os": {
+        "racine": {"translation_fixe": [0, -0.08, 0]},
+        "patteAVD": {"rotation_fixe": [0, 0, -30]},
+        "patteAVG": {"rotation_fixe": [0, 0, 30]},
+        "patteARD": {"rotation_fixe": [0, 0, -30]},
+        "patteARG": {"rotation_fixe": [0, 0, 30]},
+        "tete": {"rotation": [3, 0, 0], "rotation_fixe": [-12, 0, 0]},
+        "queue*": {"rotation_fixe": [0, 8, 0]}
+      }},
+      "attaque": {"cycle": 0.6, "os": {
+        "racine": {"rotation": [-6, 0, 0], "translation": [0, 0.03, 0.1], "phase": 0.75},
+        "tete": {"rotation": [15, 0, 0], "rotation_fixe": [-15, 0, 0], "frequence": 2},
+        "queue*": {"rotation": [0, 20, 0], "frequence": 2, "decalage": 0.1}
+      }},
+      "coup": {"os": {
+        "racine": {"translation": [0, 0.08, 0], "frequence": 0.5},
+        "tete": {"rotation": [-20, 0, 0], "frequence": 0.5},
+        "queue*": {"rotation": [0, 25, 0], "decalage": 0.1}
+      }}
+    }
+  }
 }

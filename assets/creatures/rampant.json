@@ -8,5 +8,45 @@
   "spawn": [],
   "activity": "always",
   "attack": {"mode": "solo", "damage": 7, "cooldown": 1.4, "sight": 10, "chase_speed": 1.8},
-  "model": {"mesh": "modeles/rampant.gltf", "texture": "modeles/rampant.png", "walk_animation": "repos"}
+  "model": {
+    "mesh": "modeles/rampant.gltf",
+    "texture": "modeles/rampant.png",
+    "animations": {
+      "repos": {"cycle": 3.0, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "racine": {"translation": [0, 0.01, 0], "frequence": 2},
+        "tete": {"rotation": [0, 8, 0]},
+        "brasD": {"rotation": [4, 0, 0], "frequence": 2},
+        "brasG": {"rotation": [4, 0, 0], "phase": 0.5, "frequence": 2}
+      }},
+      "marche": {"foulee": 0.7, "os": {
+        "brasD": {"rotation": [28, 0, 0]},
+        "cuisseG": {"rotation": [28, 0, 0]},
+        "brasG": {"rotation": [28, 0, 0], "phase": 0.5},
+        "cuisseD": {"rotation": [28, 0, 0], "phase": 0.5},
+        "racine": {"rotation": [0, 6, 0], "translation": [0, 0.02, 0], "phase": 0.25},
+        "tete": {"rotation": [0, -6, 0], "phase": 0.25}
+      }},
+      "course": {"foulee": 1.1, "os": {
+        "brasD": {"rotation": [40, 0, 0]},
+        "brasG": {"rotation": [40, 0, 0], "phase": 0.1},
+        "cuisseD": {"rotation": [40, 0, 0], "phase": 0.5},
+        "cuisseG": {"rotation": [40, 0, 0], "phase": 0.6},
+        "racine": {"rotation": [6, 0, 0], "translation": [0, 0.05, 0], "phase": 0.3},
+        "tete": {"rotation": [-6, 0, 0], "phase": 0.3}
+      }},
+      "attaque": {"cycle": 0.9, "os": {
+        "racine": {"rotation": [-14, 0, 0], "translation": [0, 0.12, 0.18], "phase": 0.75},
+        "brasD": {"rotation": [35, 0, 0], "rotation_fixe": [-55, 0, 0], "frequence": 2},
+        "brasG": {"rotation": [35, 0, 0], "rotation_fixe": [-55, 0, 0], "phase": 0.5, "frequence": 2},
+        "tete": {"rotation": [10, 0, 0], "rotation_fixe": [-10, 0, 0], "frequence": 2}
+      }},
+      "regarde": {"cycle": 3.0, "pause": {"poids": 1, "duree": [2, 4]}, "os": {
+        "tete": {"rotation": [0, 40, 0], "rotation_fixe": [-15, 0, 0]}
+      }},
+      "coup": {"os": {
+        "racine": {"rotation": [-10, 0, 0], "translation": [0, 0.06, 0], "frequence": 0.5},
+        "tete": {"rotation": [-20, 0, 0], "frequence": 0.5}
+      }}
+    }
+  }
 }

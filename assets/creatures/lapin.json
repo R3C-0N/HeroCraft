@@ -11,5 +11,54 @@
     {"biome": "Forest", "weight": 1.2}
   ],
   "activity": "crepuscular",
-  "model": {"mesh": "modeles/lapin.gltf", "texture": "modeles/lapin.png", "walk_animation": "repos"}
+  "model": {
+    "mesh": "modeles/lapin.gltf",
+    "texture": "modeles/lapin.png",
+    "animations": {
+      "repos": {"cycle": 2.5, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "racine": {"translation": [0, 0.004, 0], "frequence": 3},
+        "oreilleD": {"rotation": [4, 0, 0], "frequence": 2},
+        "oreilleG": {"rotation": [4, 0, 0], "phase": 0.3, "frequence": 2}
+      }},
+      "marche": {"foulee": 0.45, "os": {
+        "racine": {"rotation": [-8, 0, 0], "translation": [0, 0.06, 0], "translation_fixe": [0, 0.06, 0]},
+        "patteAVD": {"rotation": [28, 0, 0], "phase": 0.1},
+        "patteAVG": {"rotation": [28, 0, 0], "phase": 0.1},
+        "oreilleD": {"rotation": [12, 0, 0], "phase": 0.3},
+        "oreilleG": {"rotation": [12, 0, 0], "phase": 0.3}
+      }},
+      "course": {"foulee": 0.8, "os": {
+        "racine": {"rotation": [-12, 0, 0], "translation": [0, 0.12, 0], "translation_fixe": [0, 0.12, 0]},
+        "patteAVD": {"rotation": [40, 0, 0], "phase": 0.1},
+        "patteAVG": {"rotation": [40, 0, 0], "phase": 0.1},
+        "oreilleD": {"rotation": [10, 0, 0], "rotation_fixe": [-25, 0, 0], "phase": 0.3},
+        "oreilleG": {"rotation": [10, 0, 0], "rotation_fixe": [-25, 0, 0], "phase": 0.3}
+      }},
+      "broute": {"cycle": 1.0, "pause": {"poids": 3, "duree": [3, 7]}, "os": {
+        "racine": {"rotation": [1.5, 0, 0], "rotation_fixe": [10, 0, 0], "frequence": 4},
+        "patteAVD": {"rotation_fixe": [-10, 0, 0]},
+        "patteAVG": {"rotation_fixe": [-10, 0, 0]},
+        "oreilleD": {"rotation_fixe": [-10, 0, 0]}
+      }},
+      "dresse": {"cycle": 3.0, "pause": {"poids": 1.5, "duree": [2, 4]}, "os": {
+        "racine": {"rotation": [0, 10, 0], "rotation_fixe": [-35, 0, 0], "translation_fixe": [0, 0.02, -0.05]},
+        "patteAVD": {"rotation_fixe": [20, 0, 0]},
+        "patteAVG": {"rotation_fixe": [20, 0, 0]},
+        "oreilleD": {"rotation": [0, 0, 8], "rotation_fixe": [-15, 0, 0]},
+        "oreilleG": {"rotation": [0, 0, -8], "rotation_fixe": [-15, 0, 0]}
+      }},
+      "sommeil": {"cycle": 3.0, "pause": {"poids": 0.4, "duree": [10, 20]}, "os": {
+        "racine": {"translation": [0, 0.006, 0], "translation_fixe": [0, -0.1, 0]},
+        "patteAVD": {"rotation_fixe": [-80, 0, 0]},
+        "patteAVG": {"rotation_fixe": [-80, 0, 0]},
+        "oreilleD": {"rotation_fixe": [-55, 0, 0]},
+        "oreilleG": {"rotation_fixe": [-55, 0, 0]}
+      }},
+      "coup": {"os": {
+        "racine": {"rotation": [-10, 0, 0], "translation": [0, 0.15, 0], "frequence": 0.5},
+        "oreilleD": {"rotation": [-25, 0, 0], "frequence": 0.5},
+        "oreilleG": {"rotation": [-25, 0, 0], "frequence": 0.5}
+      }}
+    }
+  }
 }
