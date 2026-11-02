@@ -5,99 +5,149 @@
       "id": "pretreGuerrier",
       "name": "Prêtre-guerrier",
       "family": "magic",
+      "mix": [
+        40,
+        0,
+        60
+      ],
       "color": [
-        124,
-        88,
-        178
+        224,
+        101,
+        183
       ]
     },
     {
       "id": "chapelain",
       "name": "Chapelain",
       "family": "magic",
+      "mix": [
+        5,
+        0,
+        95
+      ],
       "color": [
-        124,
-        88,
-        178
+        186,
+        70,
+        194
       ]
     },
     {
       "id": "necromancien",
       "name": "Nécromancien",
       "family": "magic",
+      "mix": [
+        0,
+        0,
+        100
+      ],
       "color": [
-        124,
-        88,
-        178
+        156,
+        79,
+        224
       ]
     },
     {
       "id": "druide",
       "name": "Druide",
       "family": "magic",
+      "mix": [
+        5,
+        0,
+        95
+      ],
       "color": [
-        124,
-        88,
-        178
+        87,
+        70,
+        194
       ]
     },
     {
       "id": "sorcierElementaire",
       "name": "Sorcier élémentaire",
       "family": "magic",
+      "mix": [
+        0,
+        15,
+        85
+      ],
       "color": [
+        87,
         124,
-        88,
-        178
+        224
       ]
     },
     {
       "id": "voleur",
       "name": "Voleur",
       "family": "ranged",
+      "mix": [
+        15,
+        60,
+        25
+      ],
       "color": [
-        44,
-        140,
-        90
+        87,
+        158,
+        194
       ]
     },
     {
       "id": "rodeur",
       "name": "Rôdeur",
       "family": "ranged",
+      "mix": [
+        0,
+        75,
+        25
+      ],
       "color": [
-        44,
-        140,
-        90
+        93,
+        224,
+        216
       ]
     },
     {
       "id": "archer",
       "name": "Archer",
       "family": "ranged",
+      "mix": [
+        0,
+        100,
+        0
+      ],
       "color": [
-        44,
-        140,
-        90
+        68,
+        194,
+        135
       ]
     },
     {
       "id": "ingenieur",
       "name": "Ingénieur",
       "family": "ranged",
+      "mix": [
+        10,
+        90,
+        0
+      ],
       "color": [
-        44,
-        140,
-        90
+        84,
+        224,
+        103
       ]
     },
     {
       "id": "chasseurDeMonstre",
       "name": "Chasseur de monstre",
       "family": "ranged",
+      "mix": [
+        45,
+        55,
+        0
+      ],
       "color": [
-        44,
-        140,
+        117,
+        194,
         90
       ]
     },
@@ -105,50 +155,75 @@
       "id": "lameDuVent",
       "name": "Lame du vent",
       "family": "melee",
+      "mix": [
+        60,
+        25,
+        15
+      ],
       "color": [
-        192,
-        72,
-        52
+        183,
+        224,
+        101
       ]
     },
     {
       "id": "soldat",
       "name": "Soldat",
       "family": "melee",
+      "mix": [
+        90,
+        10,
+        0
+      ],
       "color": [
-        192,
-        72,
-        52
+        194,
+        186,
+        73
       ]
     },
     {
       "id": "champion",
       "name": "Champion",
       "family": "melee",
+      "mix": [
+        100,
+        0,
+        0
+      ],
       "color": [
-        192,
-        72,
-        52
+        224,
+        156,
+        79
       ]
     },
     {
       "id": "berserker",
       "name": "Berserker",
       "family": "melee",
+      "mix": [
+        85,
+        0,
+        15
+      ],
       "color": [
-        192,
-        72,
-        52
+        194,
+        91,
+        75
       ]
     },
     {
       "id": "paladin",
       "name": "Paladin",
       "family": "melee",
+      "mix": [
+        70,
+        0,
+        30
+      ],
       "color": [
-        192,
-        72,
-        52
+        224,
+        95,
+        130
       ]
     }
   ],

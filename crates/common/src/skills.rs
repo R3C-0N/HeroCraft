@@ -28,6 +28,9 @@ pub struct SkillBranch {
     /// Famille de la classe : `magic`, `ranged` ou `melee`
     #[serde(default)]
     pub family: String,
+    /// Répartition de départ de la classe entre mêlée, distance et magie (sur 100)
+    #[serde(default)]
+    pub mix: [u8; 3],
     /// Couleur de la part, en RGB
     pub color: [u8; 3],
 }
@@ -206,6 +209,7 @@ mod tests {
             assert_eq!(nodes.len(), 12, "{}", branch.name);
             assert_eq!(nodes.iter().filter(|n| n.is_ultimate()).count(), 1, "{} : un ultime", branch.name);
             assert!(["magic", "ranged", "melee"].contains(&branch.family.as_str()), "{}", branch.family);
+            assert_eq!(branch.mix.iter().map(|&p| p as u32).sum::<u32>(), 100, "{}", branch.name);
         }
         // Une compétence ne demande que des compétences plus proches du centre
         for node in &wheel.nodes {
@@ -214,6 +218,9 @@ mod tests {
             }
         }
         assert_eq!(wheel.rings(), 4.0);
+        // Chaque classe a sa couleur
+        let colors: std::collections::HashSet<_> = wheel.branches.iter().map(|b| b.color).collect();
+        assert_eq!(colors.len(), wheel.branches.len());
     }
 
     #[test]

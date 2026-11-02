@@ -12,6 +12,7 @@ Sur la roue, chaque classe a sa part du cercle, dans l'ordre du carnet en partan
 anneaux vont du niveau 1 (au centre) à l'ultime (au bord). Les compétences d'un anneau sont
 rangées sous celles qu'elles demandent, pour que les traits se croisent le moins possible.
 """
+import colorsys
 import json
 import os
 import pathlib
@@ -25,12 +26,18 @@ SORTIE = RACINE / "assets/competences/roue.json"
 API = os.environ.get("PLANNER_API", "https://planner.mathis-medard.fr/api/v1/")
 FICHE_CLASSES = 138
 
-# Famille (titre du carnet) -> identifiant et couleur de la roue de référence
+# Famille (titre du carnet) -> identifiant
 FAMILLES = {
-    "Classes de magie": ("magic", [124, 88, 178]),
-    "Classes de combat à distance": ("ranged", [44, 140, 90]),
-    "Classes de corps à corps": ("melee", [192, 72, 52]),
+    "Classes de magie": "magic",
+    "Classes de combat à distance": "ranged",
+    "Classes de corps à corps": "melee",
 }
+# Couleurs : les quinze classes font le tour du cercle des couleurs dans l'ordre de la roue, un
+# pas de 24° chacune, la classe du milieu de chaque famille sur la teinte de son style. Les
+# classes hybrides tombent ainsi d'elles-mêmes vers le style voisin (le Prêtre-guerrier, mêlée 40,
+# entre le violet de la magie et le rouge de la mêlée ; le Chasseur de monstre vers le jaune).
+TEINTE_PREMIERE = 320.0
+PAS_TEINTE = 24.0
 RANG_MAX = 3  # #172 : chaque compétence s'améliore jusqu'à trois fois
 
 _cache = {}
@@ -69,6 +76,24 @@ def description(corps):
     ]
     texte = "\n".join(lignes).replace("**", "").replace("*", "")
     return re.sub(r"\n{3,}", "\n\n", texte).strip()
+
+
+def repartition(corps):
+    """« **Répartition :** mêlée 40 · distance 0 · magie 60 » -> {"melee": 40, ...}"""
+    m = re.search(r"Répartition :\*\*\s*mêlée (\d+) · distance (\d+) · magie (\d+)", corps)
+    if not m:
+        return None
+    return dict(zip(("melee", "ranged", "magic"), map(int, m.groups())))
+
+
+def couleur(rang_roue, mix):
+    """Teinte selon la place sur la roue ; une classe pure est plus saturée qu'une hybride, et
+    deux voisines n'ont pas la même clarté"""
+    teinte = (TEINTE_PREMIERE - PAS_TEINTE * rang_roue) % 360
+    purete = max(mix.values()) / (sum(mix.values()) or 1)
+    clarte = 0.88 if rang_roue % 2 == 0 else 0.76
+    r, g, b = colorsys.hsv_to_rgb(teinte / 360, 0.40 + 0.25 * purete, clarte)
+    return [round(r * 255), round(g * 255), round(b * 255)]
 
 
 def palier(titre_groupe):
@@ -136,11 +161,19 @@ def main():
         f = fiche(famille["id"])
         if f["title"] not in FAMILLES:
             continue
-        id_famille, couleur = FAMILLES[f["title"]]
-        for c in f["children"]:
+        id_famille = FAMILLES[f["title"]]
+        classes = f["children"]
+        for i, c in enumerate(classes):
             classe = fiche(c["id"])
             id_classe = identifiant(classe["title"])
-            branches.append({"id": id_classe, "name": classe["title"], "family": id_famille, "color": couleur})
+            mix = repartition(classe["body"]) or {id_famille: 100}
+            branches.append({
+                "id": id_classe,
+                "name": classe["title"],
+                "family": id_famille,
+                "mix": [mix.get("melee", 0), mix.get("ranged", 0), mix.get("magic", 0)],
+                "color": couleur(len(branches), mix),
+            })
             de_la_classe = competences_de(classe, id_classe)
             ranger(de_la_classe)
             noeuds += de_la_classe

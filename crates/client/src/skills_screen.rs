@@ -1,7 +1,13 @@
 //! Écran de la roue des compétences (touche C) : les quinze classes se partagent le cercle,
-//! teintées de leur famille ; leurs compétences sont posées sur quatre anneaux, du niveau 1 au
-//! centre jusqu'à l'ultime au bord, reliées à celles qu'elles demandent. Un clic choisit une
-//! compétence ; sa fiche, à droite, permet d'y investir un point.
+//! chacune de sa couleur (elles font le tour des teintes, de la magie à la distance puis à la
+//! mêlée) ; leurs compétences sont posées sur quatre anneaux, du niveau 1 au
+//! centre jusqu'à l'ultime au bord, reliées à celles qu'elles demandent.
+//!
+//! Cent quatre-vingts compétences ne se lisent pas d'un coup : la roue fait loupe sur une classe.
+//! Celle-ci tourne en haut et prend près de la moitié du cercle, ses compétences grossies et
+//! nommées ; les autres se resserrent en fines parts, où l'on voit encore ce qui est appris. Un
+//! clic sur une part, la molette ou les flèches font tourner la roue ; un clic sur une compétence
+//! ouvre sa fiche, à droite, d'où l'on y investit un point.
 
 use std::f32::consts::{PI, TAU};
 
@@ -13,10 +19,18 @@ use crate::ui::{GOLD, GOLD_BRIGHT, MENU_PADDING, TEXT_DIM, TEXT_SOFT};
 /// Diamètre de la roue, en points d'écran : la hauteur de l'écran moins l'en-tête, dans ces bornes
 const WHEEL_MIN_SIZE: f32 = 380.0;
 const WHEEL_MAX_SIZE: f32 = 760.0;
-/// Rayon d'une compétence sur la roue (l'ultime est une fois et demie plus gros)
-const NODE_RADIUS: f32 = 4.5;
+/// Rayon d'une compétence dans une part resserrée, et ce qu'elle gagne sous la loupe
+/// (l'ultime est une fois et demie plus gros)
+const NODE_RADIUS: f32 = 3.5;
+const NODE_RADIUS_FOCUS: f32 = 7.5;
+/// Angle de la classe sous la loupe ; les autres se partagent le reste
+const FOCUS_SPAN: f32 = 150.0 * PI / 180.0;
+/// Durée de la rotation de la roue, en secondes
+const TURN_SECS: f32 = 0.25;
 /// Distance au pointeur sous laquelle une compétence est survolée
-const PICK_RADIUS: f32 = 8.0;
+const PICK_RADIUS: f32 = 9.0;
+/// Défilement de molette (en points) pour passer à la classe voisine
+const SCROLL_STEP: f32 = 40.0;
 /// Largeur de la fiche à droite de la roue
 const SHEET_WIDTH: f32 = 250.0;
 /// Expérience que donne le bouton d'essai
@@ -31,13 +45,43 @@ pub struct SkillScreenRequests {
     pub experience: u64,
 }
 
-/// État propre à l'écran : la compétence dont la fiche est ouverte
+/// État propre à l'écran : la classe sous la loupe et la compétence dont la fiche est ouverte
 #[derive(Debug, Default)]
 pub struct SkillScreen {
     pub selected: Option<String>,
+    /// Classe sous la loupe (rang dans la roue)
+    pub focus: usize,
+    /// Position de la loupe sans retour à zéro : la roue tourne par le plus court chemin, et
+    /// d'un tour complet plutôt qu'à rebours quand on passe de la dernière classe à la première
+    track: i32,
+    /// Défilement de molette pas encore converti en rotation
+    scroll: f32,
 }
 
 impl SkillScreen {
+    /// Met la loupe sur la classe `index`, en tournant par le plus court chemin
+    pub fn focus_on(&mut self, index: usize, count: usize) {
+        if count == 0 {
+            return;
+        }
+        let n = count as i32;
+        let mut delta = (index as i32 - self.focus as i32).rem_euclid(n);
+        if delta > n / 2 {
+            delta -= n;
+        }
+        self.track += delta;
+        self.focus = self.track.rem_euclid(n) as usize;
+    }
+
+    /// Tourne la roue de `steps` classes (positif : vers la classe suivante)
+    pub fn turn(&mut self, steps: i32, count: usize) {
+        if count == 0 {
+            return;
+        }
+        self.track += steps;
+        self.focus = self.track.rem_euclid(count as i32) as usize;
+    }
+
     /// Dessine l'écran. `allow_test_experience` montre le bouton qui donne de l'expérience (solo).
     pub fn draw(
         &mut self,
@@ -50,6 +94,14 @@ impl SkillScreen {
         let mut requests = SkillScreenRequests::default();
         if self.selected.as_deref().is_some_and(|id| wheel.node(id).is_none()) {
             self.selected = None;
+        }
+        let count = wheel.branches.len();
+        let (left, right) = ctx.input(|i| (i.key_pressed(egui::Key::ArrowLeft), i.key_pressed(egui::Key::ArrowRight)));
+        if left {
+            self.turn(-1, count);
+        }
+        if right {
+            self.turn(1, count);
         }
         egui::Area::new(egui::Id::new("skills_screen"))
             .order(egui::Order::Middle)
@@ -88,6 +140,10 @@ impl SkillScreen {
                                 ui.add_space(10.0_f32);
                                 ui.separator();
                                 ui.add_space(6.0_f32);
+                                self.draw_class_header(ui, wheel, stats);
+                                ui.add_space(6.0_f32);
+                                ui.separator();
+                                ui.add_space(6.0_f32);
                                 match self.selected.as_deref().and_then(|id| wheel.node(id)) {
                                     Some(node) => {
                                         if let Some(id) = draw_sheet(ui, wheel, stats, node) {
@@ -105,32 +161,77 @@ impl SkillScreen {
         requests
     }
 
+    /// Classe sous la loupe : nom, famille, ce qui en est appris, et comment tourner la roue
+    fn draw_class_header(&mut self, ui: &mut egui::Ui, wheel: &SkillWheel, stats: &CharacterStats) {
+        let count = wheel.branches.len();
+        let Some(branch) = wheel.branches.get(self.focus) else { return };
+        let [r, g, b] = branch.color;
+        ui.horizontal(|ui| {
+            if ui.small_button("◀").on_hover_text("Classe précédente (flèche gauche)").clicked() {
+                self.turn(-1, count);
+            }
+            ui.label(egui::RichText::new(&branch.name).strong().size(14.0_f32).color(egui::Color32::from_rgb(r, g, b).gamma_multiply(1.3)));
+            if ui.small_button("▶").on_hover_text("Classe suivante (flèche droite)").clicked() {
+                self.turn(1, count);
+            }
+        });
+        let [melee, ranged, magic] = branch.mix;
+        let nodes = wheel.nodes.iter().filter(|n| n.branch == branch.id);
+        let (total, learned) = nodes.fold((0, 0), |(t, l), n| (t + 1, l + usize::from(rank(stats, &n.id) > 0)));
+        ui.label(egui::RichText::new(format!("Mêlée {melee} · distance {ranged} · magie {magic}")).size(11.0_f32).color(TEXT_SOFT));
+        ui.label(egui::RichText::new(format!("{learned}/{total} apprises")).size(11.0_f32).color(TEXT_DIM));
+        ui.label(egui::RichText::new("Molette, flèches ou clic sur une part pour tourner la roue").size(10.5_f32).color(TEXT_DIM));
+    }
+
     fn draw_wheel(&mut self, ui: &mut egui::Ui, wheel: &SkillWheel, stats: &CharacterStats, size: f32) {
         let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::click());
+        let count = wheel.branches.len();
+        if count == 0 {
+            return;
+        }
+        // Molette sur la roue : une classe par cran
+        if response.hovered() {
+            self.scroll += ui.input(|i| i.raw_scroll_delta.y + i.raw_scroll_delta.x);
+            while self.scroll.abs() >= SCROLL_STEP {
+                let step = self.scroll.signum();
+                self.turn(-(step as i32), count);
+                self.scroll -= step * SCROLL_STEP;
+            }
+        } else {
+            self.scroll = 0.0;
+        }
+
+        let ctx = ui.ctx().clone();
+        let weights: Vec<f32> = (0..count)
+            .map(|i| ctx.animate_bool_with_time(egui::Id::new(("skills_focus", i)), i == self.focus, TURN_SECS))
+            .collect();
+        let track = ctx.animate_value_with_time(egui::Id::new("skills_track"), self.track as f32, TURN_SECS);
         let painter = ui.painter_at(rect);
-        let centre = rect.center();
-        let outer = size / 2.0 - 2.0;
-        let layout = WheelLayout { centre, outer, rings: wheel.rings(), branches: wheel.branches.len().max(1) };
-        let hub = layout.hub_radius();
+        let layout = WheelLayout::new(rect.center(), size / 2.0 - 2.0, wheel.rings(), &weights, track);
+        let (centre, outer, hub) = (layout.centre, layout.outer, layout.hub_radius());
 
         // Fond : une part par classe, teintée de sa famille, puis les anneaux des paliers
         painter.circle_filled(centre, outer, egui::Color32::from_rgb(20, 26, 38));
         for (b, branch) in wheel.branches.iter().enumerate() {
             let [r, g, bl] = branch.color;
-            // Une part sur deux un peu plus claire, pour distinguer les classes d'une même famille
-            let tint = egui::Color32::from_rgba_unmultiplied(r, g, bl, if b % 2 == 0 { 30 } else { 18 });
+            let w = weights[b];
+            let alpha = if b % 2 == 0 { 30.0 } else { 18.0 } + 14.0 * w;
+            let tint = egui::Color32::from_rgba_unmultiplied(r, g, bl, alpha as u8);
             let (start, end) = layout.sector(b);
             painter.add(sector_shape(centre, hub, outer, start, end, tint));
             painter.line_segment([layout.point(start, hub), layout.point(start, outer)], egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(22)));
-            // Nom de la classe le long du bord, jamais à l'envers
+            // Nom de la classe le long du bord, quand sa part est assez large pour lui
             let mid = (start + end) / 2.0;
             let color = egui::Color32::from_rgb(r, g, bl).gamma_multiply(1.3);
-            let galley = painter.layout_no_wrap(branch.name.clone(), egui::FontId::proportional(11.0_f32), color);
-            let angle = if mid.sin() > 0.0 { mid - PI / 2.0 } else { mid + PI / 2.0 };
-            let half = galley.size() / 2.0;
-            let (sin, cos) = angle.sin_cos();
-            let corner = layout.point(mid, outer - 11.0) - egui::vec2(half.x * cos - half.y * sin, half.x * sin + half.y * cos);
-            painter.add(egui::epaint::TextShape::new(corner, galley, color).with_angle(angle));
+            let font = egui::FontId::proportional(11.0 + 3.0 * w);
+            let galley = painter.layout_no_wrap(branch.name.clone(), font, color);
+            if galley.size().x < (end - start) * (outer - 11.0) * 0.9 {
+                let angle = if mid.sin() > 0.0 { mid - PI / 2.0 } else { mid + PI / 2.0 };
+                let half = galley.size() / 2.0;
+                let (sin, cos) = angle.sin_cos();
+                let corner = layout.point(mid, outer - 12.0) - egui::vec2(half.x * cos - half.y * sin, half.x * sin + half.y * cos);
+                painter.add(egui::epaint::TextShape::new(corner, galley, color).with_angle(angle));
+            }
         }
         for tier in 1..=4 {
             painter.circle_stroke(centre, layout.ring_radius(tier as f32), egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(12)));
@@ -150,14 +251,25 @@ impl SkillScreen {
             if points > 0 { GOLD_BRIGHT } else { TEXT_DIM },
         );
 
-        // Liens des prérequis, puis les compétences par-dessus
+        // Position, rang de part et poids de loupe de chaque compétence
+        let branch_of = |node: &SkillNode| wheel.branches.iter().position(|br| br.id == node.branch).unwrap_or(0);
         let position = |node: &SkillNode| {
-            let b = wheel.branches.iter().position(|br| br.id == node.branch).unwrap_or(0);
-            let (start, end) = layout.sector(b);
-            layout.point(start + (end - start) * node.slot.clamp(0.0, 1.0), layout.ring_radius(node.ring()))
+            let (start, end) = layout.sector(branch_of(node));
+            // Sous la loupe, les compétences se tiennent loin des bords de la part
+            let w = weights[branch_of(node)];
+            let margin = 0.06 * w;
+            let slot = margin + (1.0 - 2.0 * margin) * node.slot.clamp(0.0, 1.0);
+            layout.point(start + (end - start) * slot, layout.ring_radius(node.ring()))
+        };
+        let radius_of = |node: &SkillNode| {
+            let r = NODE_RADIUS + (NODE_RADIUS_FOCUS - NODE_RADIUS) * weights[branch_of(node)];
+            if node.is_ultimate() { r * 1.5 } else { r }
         };
         let selected = self.selected.as_deref().and_then(|id| wheel.node(id));
+
+        // Liens des prérequis
         for node in &wheel.nodes {
+            let w = weights[branch_of(node)];
             for required in node.requires.iter().filter_map(|r| wheel.node(r)) {
                 let met = rank(stats, &required.id) > 0;
                 let lit = selected.is_some_and(|s| s.id == node.id || s.id == required.id);
@@ -166,28 +278,31 @@ impl SkillScreen {
                 } else if met {
                     GOLD.gamma_multiply(0.8)
                 } else {
-                    egui::Color32::from_white_alpha(28)
+                    egui::Color32::from_white_alpha((24.0 + 36.0 * w) as u8)
                 };
-                painter.line_segment([position(required), position(node)], egui::Stroke::new(if lit { 1.8_f32 } else { 1.0_f32 }, color));
+                painter.line_segment([position(required), position(node)], egui::Stroke::new(if lit { 1.8_f32 } else { 1.0 + 0.5 * w }, color));
             }
         }
+
+        // Compétence survolée : la plus proche du pointeur
         let pointer = response.hover_pos();
-        let mut hovered: Option<(&SkillNode, f32)> = None;
+        let hovered = pointer.and_then(|p| {
+            wheel
+                .nodes
+                .iter()
+                .map(|n| (n, p.distance(position(n)) - radius_of(n)))
+                .filter(|&(_, d)| d <= PICK_RADIUS - NODE_RADIUS)
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|(n, _)| n)
+        });
+
         for node in &wheel.nodes {
             let at = position(node);
-            if let Some(d) = pointer.map(|p| p.distance(at)).filter(|&d| d <= PICK_RADIUS) {
-                if hovered.is_none_or(|(_, best)| d < best) {
-                    hovered = Some((node, d));
-                }
-            }
-        }
-        let hovered = hovered.map(|(n, _)| n);
-        for node in &wheel.nodes {
-            let at = position(node);
+            let w = weights[branch_of(node)];
             let current = rank(stats, &node.id);
             let [r, g, b] = wheel.branch(&node.branch).map_or([180, 180, 180], |b| b.color);
             let family = egui::Color32::from_rgb(r, g, b);
-            let radius = if node.is_ultimate() { NODE_RADIUS * 1.5 } else { NODE_RADIUS };
+            let radius = radius_of(node);
             let is_selected = selected.is_some_and(|s| s.id == node.id);
             let is_hovered = hovered.is_some_and(|h| h.id == node.id);
             let fill = if current > 0 {
@@ -201,7 +316,7 @@ impl SkillScreen {
             let stroke = if is_selected || is_hovered {
                 egui::Stroke::new(2.0_f32, GOLD_BRIGHT)
             } else if wheel.check(stats, &node.id).is_none() {
-                egui::Stroke::new(1.5_f32, GOLD)
+                egui::Stroke::new(1.2 + 0.6 * w, GOLD.gamma_multiply(0.5 + 0.5 * w))
             } else if current > 0 {
                 egui::Stroke::new(1.2_f32, egui::Color32::WHITE.gamma_multiply(0.7))
             } else {
@@ -212,16 +327,44 @@ impl SkillScreen {
             for extra in 1..current {
                 painter.circle_stroke(at, radius + 2.0 * extra as f32, egui::Stroke::new(0.8_f32, family));
             }
+            // Sous la loupe, le nom de la compétence sous son point
+            if w > 0.3 {
+                let alpha = ((w - 0.3) / 0.7).clamp(0.0, 1.0);
+                let color = if current > 0 { egui::Color32::WHITE } else { TEXT_SOFT }.gamma_multiply(alpha);
+                let galley = painter.layout(node.name.clone(), egui::FontId::proportional(10.0_f32), color, 84.0);
+                let top = at + egui::vec2(-galley.size().x / 2.0, radius + 3.0 + 2.0 * current.saturating_sub(1) as f32);
+                painter.galley(top, galley, color);
+            }
         }
+
+        // Survol d'une compétence : sa bulle ; d'une part resserrée : le nom de sa classe
+        let hovered_sector = pointer.and_then(|p| layout.sector_at(p));
         if let Some(node) = hovered {
             let class = wheel.branch(&node.branch).map_or("", |b| b.name.as_str());
             response.clone().on_hover_ui_at_pointer(|ui| {
                 ui.label(egui::RichText::new(&node.name).strong().color(GOLD_BRIGHT));
                 ui.label(egui::RichText::new(format!("{class} · {} · rang {}/{}", node.tier_label(), rank(stats, &node.id), node.max_rank)).size(11.0_f32).color(TEXT_SOFT));
             });
+        } else if let Some(b) = hovered_sector.filter(|&b| b != self.focus) {
+            let branch = &wheel.branches[b];
+            let learned = wheel.nodes.iter().filter(|n| n.branch == branch.id && rank(stats, &n.id) > 0).count();
+            response.clone().on_hover_ui_at_pointer(|ui| {
+                ui.label(egui::RichText::new(&branch.name).strong().color(GOLD_BRIGHT));
+                ui.label(egui::RichText::new(format!("{learned} apprise{} · clic pour l'examiner", if learned > 1 { "s" } else { "" })).size(11.0_f32).color(TEXT_SOFT));
+            });
         }
         if response.clicked() {
-            self.selected = hovered.map(|n| n.id.clone());
+            match hovered {
+                Some(node) => {
+                    self.selected = Some(node.id.clone());
+                    self.focus_on(branch_of(node), count);
+                }
+                None => {
+                    if let Some(b) = hovered_sector {
+                        self.focus_on(b, count);
+                    }
+                }
+            }
         }
     }
 }
@@ -274,30 +417,69 @@ fn draw_sheet(ui: &mut egui::Ui, wheel: &SkillWheel, stats: &CharacterStats, nod
     clicked.then(|| node.id.clone())
 }
 
-/// Géométrie de la roue : angles des parts (la première commence en haut) et rayons des anneaux
+/// Géométrie de la roue : la part de chaque classe (celle sous la loupe tournée en haut) et le
+/// rayon des anneaux
 struct WheelLayout {
     centre: egui::Pos2,
     outer: f32,
     rings: f32,
-    branches: usize,
+    /// Début et fin de chaque part, en radians
+    sectors: Vec<(f32, f32)>,
 }
 
 impl WheelLayout {
+    /// `weights` : la part de loupe de chaque classe (0 resserrée, 1 sous la loupe) ; `track` :
+    /// la position de la loupe, fractionnaire pendant que la roue tourne
+    fn new(centre: egui::Pos2, outer: f32, rings: f32, weights: &[f32], track: f32) -> Self {
+        let n = weights.len().max(1);
+        let thin = if n > 1 { (TAU - FOCUS_SPAN) / (n - 1) as f32 } else { TAU };
+        let wide = if n > 1 { FOCUS_SPAN } else { TAU };
+        let raw: Vec<f32> = weights.iter().map(|w| thin + (wide - thin) * w).collect();
+        let scale = TAU / raw.iter().sum::<f32>().max(1e-6);
+        let spans: Vec<f32> = raw.iter().map(|s| s * scale).collect();
+        let mut starts = Vec::with_capacity(n);
+        let mut at = 0.0;
+        for span in &spans {
+            starts.push(at);
+            at += span;
+        }
+        // Milieu (sans retour à zéro) de la part de rang `k`, quel que soit le nombre de tours
+        let middle = |k: i32| {
+            let i = k.rem_euclid(n as i32) as usize;
+            starts.get(i).map_or(0.0, |s| s + spans[i] / 2.0) + TAU * k.div_euclid(n as i32) as f32
+        };
+        let k = track.floor();
+        let focus_middle = middle(k as i32) + (middle(k as i32 + 1) - middle(k as i32)) * (track - k);
+        let rotation = -PI / 2.0 - focus_middle;
+        let sectors = starts.iter().zip(&spans).map(|(s, span)| (s + rotation, s + rotation + span)).collect();
+        Self { centre, outer, rings, sectors }
+    }
+
     fn sector(&self, branch: usize) -> (f32, f32) {
-        let width = TAU / self.branches as f32;
-        let start = -PI / 2.0 + branch as f32 * width;
-        (start, start + width)
+        self.sectors.get(branch).copied().unwrap_or((0.0, TAU))
+    }
+
+    /// Part sous ce point (entre le moyeu et le bord)
+    fn sector_at(&self, p: egui::Pos2) -> Option<usize> {
+        let d = p - self.centre;
+        if d.length() < self.hub_radius() || d.length() > self.outer {
+            return None;
+        }
+        let angle = d.y.atan2(d.x);
+        self.sectors.iter().position(|&(start, end)| {
+            let rel = (angle - start).rem_euclid(TAU);
+            rel < end - start
+        })
     }
 
     fn hub_radius(&self) -> f32 {
         self.outer * 0.17
     }
 
-    /// Les anneaux vont de 45 % du rayon (assez de place pour quatre compétences par classe au
-    /// niveau 1) jusqu'au nom des classes, au bord
+    /// Les anneaux vont de 40 % du rayon jusqu'au nom des classes, au bord
     fn ring_radius(&self, ring: f32) -> f32 {
-        let inner = self.outer * 0.45;
-        let outer = self.outer - 34.0;
+        let inner = self.outer * 0.40;
+        let outer = self.outer - 44.0;
         if self.rings <= 1.0 {
             return (inner + outer) / 2.0;
         }
@@ -332,14 +514,41 @@ fn sector_shape(centre: egui::Pos2, inner: f32, outer: f32, start: f32, end: f32
 mod tests {
     use super::*;
 
+    fn layout(focus: usize, n: usize) -> WheelLayout {
+        let weights: Vec<f32> = (0..n).map(|i| if i == focus { 1.0 } else { 0.0 }).collect();
+        WheelLayout::new(egui::Pos2::ZERO, 300.0, 4.0, &weights, focus as f32)
+    }
+
     #[test]
     fn test_rings_stay_between_hub_and_labels() {
-        let layout = WheelLayout { centre: egui::Pos2::ZERO, outer: 300.0, rings: 4.0, branches: 3 };
-        assert!(layout.ring_radius(1.0) > layout.hub_radius() + NODE_RADIUS);
-        assert!(layout.ring_radius(4.0) + 1.5 * NODE_RADIUS < 300.0 - 20.0, "l'ultime ne touche pas le nom de la classe");
+        let layout = layout(0, 15);
+        assert!(layout.ring_radius(1.0) > layout.hub_radius() + NODE_RADIUS_FOCUS);
+        assert!(layout.ring_radius(4.0) + 1.5 * NODE_RADIUS_FOCUS < 300.0 - 20.0, "l'ultime ne touche pas le nom de la classe");
         assert!(layout.ring_radius(1.0) < layout.ring_radius(2.0) && layout.ring_radius(2.0) < layout.ring_radius(4.0));
-        // La première part commence en haut
-        let (start, end) = layout.sector(0);
-        assert!((start + PI / 2.0).abs() < 1e-6 && (end - start - TAU / 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_focused_class_is_wide_and_on_top() {
+        for focus in [0, 7, 14] {
+            let layout = layout(focus, 15);
+            let (start, end) = layout.sector(focus);
+            assert!((end - start - FOCUS_SPAN).abs() < 1e-4);
+            assert!(((start + end) / 2.0 + PI / 2.0).rem_euclid(TAU).min((-(start + end) / 2.0 - PI / 2.0).rem_euclid(TAU)) < 1e-4, "en haut");
+            let total: f32 = (0..15).map(|b| layout.sector(b)).map(|(s, e)| e - s).sum();
+            assert!((total - TAU).abs() < 1e-4);
+            // Le haut de la roue est dans la part sous la loupe
+            assert_eq!(layout.sector_at(egui::pos2(0.0, -200.0)), Some(focus));
+        }
+    }
+
+    #[test]
+    fn test_wheel_turns_the_short_way() {
+        let mut screen = SkillScreen::default();
+        screen.focus_on(14, 15);
+        assert_eq!((screen.focus, screen.track), (14, -1), "de la première à la dernière : un cran à rebours");
+        screen.turn(1, 15);
+        assert_eq!((screen.focus, screen.track), (0, 0));
+        screen.focus_on(5, 15);
+        assert_eq!((screen.focus, screen.track), (5, 5));
     }
 }
