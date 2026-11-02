@@ -8,6 +8,10 @@
 //!
 //! Une créature se tourne peu à peu vers son nouveau cap, saute pour monter sur un bloc, et, frappée
 //! par un joueur, rougit, recule, puis s'enfuit ; sans vie, elle bascule sur le flanc et disparaît.
+//!
+//! Les bêtes apparues ensemble forment un troupeau : chacune revient vers ses voisines quand elle
+//! s'en écarte et prend volontiers le cap de celles qui marchent. Quand l'une est frappée, les autres
+//! s'affolent aussi, mais moins : elles courent moins vite et se calment plus tôt que la victime.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -51,6 +55,19 @@ const KNOCKBACK_DAMPING: f32 = 5.0;
 /// Fuite après un coup : durée, en secondes, et allure par rapport à la marche
 const PANIC_TIME: f32 = 4.0;
 const PANIC_SPEED: f32 = 1.8;
+/// Fuite des voisines d'une bête frappée, qui n'ont pas reçu le coup : plus courte et moins rapide
+const ALARM_TIME: f32 = 1.8;
+const ALARM_SPEED: f32 = 1.35;
+/// Portée de l'alerte autour de la bête frappée, en blocs
+const ALARM_RADIUS_BLOCKS: f32 = 16.0;
+/// Voisines du troupeau prises en compte, en blocs
+const HERD_RADIUS_BLOCKS: f32 = 20.0;
+/// Écart au centre du troupeau au-delà duquel une bête y revient plutôt que d'errer, en blocs
+const HERD_LOOSE_BLOCKS: f32 = 4.0;
+/// Écart au-delà duquel elle ne s'arrête plus avant d'avoir rejoint les autres, en blocs
+const HERD_STRAY_BLOCKS: f32 = 7.0;
+/// Chance qu'une bête au repos emboîte le pas de voisines qui marchent, à chaque changement d'humeur
+const HERD_FOLLOW_CHANCE: f64 = 0.6;
 /// Une créature ne descend pas volontairement plus bas que ça, en blocs
 const MAX_DROP_BLOCKS: f32 = 3.0;
 /// Pas de simulation le plus long, en secondes
@@ -62,6 +79,8 @@ pub struct Creature {
     pub id: u64,
     /// Rang de son espèce dans le registre
     pub species: usize,
+    /// Troupeau : les bêtes apparues ensemble partagent ce numéro (celui de la première)
+    pub herd: u64,
     /// Pieds (repère du centre de la planète)
     pub position: Vec3,
     /// Cap dans le plan tangent (0 = nord, π/2 = est)
@@ -80,6 +99,8 @@ pub struct Creature {
     hurt: f32,
     /// Temps restant de fuite après un coup, en secondes
     panic: f32,
+    /// Allure de la fuite par rapport à la marche : plus vive pour la bête frappée que pour ses voisines
+    panic_speed: f32,
     /// Temps écoulé depuis sa mort (`None` : vivante), en secondes
     dead_for: Option<f32>,
 }
@@ -156,6 +177,11 @@ impl CreatureWorld {
     /// Fait apparaître une créature de l'espèce de rang `species` aux pieds `feet`, et renvoie son
     /// identifiant
     pub fn spawn(&mut self, species: usize, feet: Vec3) -> u64 {
+        self.spawn_in_herd(species, feet, None)
+    }
+
+    /// Comme `spawn`, mais dans le troupeau `herd` (`None` : elle en commence un nouveau)
+    pub fn spawn_in_herd(&mut self, species: usize, feet: Vec3, herd: Option<u64>) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         let yaw = self.rng.gen_range(0.0..TAU);
@@ -164,6 +190,7 @@ impl CreatureWorld {
         self.creatures.push(Creature {
             id,
             species,
+            herd: herd.unwrap_or(id),
             position: feet,
             yaw,
             target_yaw: yaw,
@@ -174,15 +201,18 @@ impl CreatureWorld {
             health,
             hurt: 0.0,
             panic: 0.0,
+            panic_speed: PANIC_SPEED,
             dead_for: None,
         });
         id
     }
 
     /// Un joueur dont la tête est en `from` frappe la créature `id` : elle perd de la vie, est
-    /// repoussée à l'opposé, puis s'enfuit. Renvoie faux si elle n'existe pas ou est déjà morte.
+    /// repoussée à l'opposé, puis s'enfuit ; les bêtes de son troupeau proches fuient aussi, moins
+    /// longtemps et moins vite. Renvoie faux si elle n'existe pas ou est déjà morte.
     pub fn hit(&mut self, id: u64, from: Vec3) -> bool {
-        let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) else { return false };
+        let Some(index) = self.creatures.iter().position(|c| c.id == id && c.is_alive()) else { return false };
+        let c = &mut self.creatures[index];
         let up = c.position.normalize_or_zero();
         let (east, north) = tangent_frame(up);
         let away = c.position - from;
@@ -198,10 +228,39 @@ impl CreatureWorld {
             c.walking = false;
         } else {
             c.panic = PANIC_TIME;
+            c.panic_speed = PANIC_SPEED;
             c.walking = true;
             c.target_yaw = away.dot(east).atan2(away.dot(north)).rem_euclid(TAU);
         }
+        let (herd, center) = (c.herd, c.position);
+        self.alarm_herd(id, herd, center, from);
         true
+    }
+
+    /// Les bêtes du troupeau `herd` proches de `center` (sauf la victime `victim`) s'enfuient loin
+    /// de l'attaquant en `from`, sans prendre de coup : fuite courte et modérée
+    fn alarm_herd(&mut self, victim: u64, herd: u64, center: Vec3, from: Vec3) {
+        let radius = ALARM_RADIUS_BLOCKS * self.geometry.block_height as f32;
+        for c in &mut self.creatures {
+            if c.id == victim || c.herd != herd || !c.is_alive() || c.position.distance(center) > radius {
+                continue;
+            }
+            // Déjà en fuite plus longue (frappée elle-même, ou déjà alertée) : elle la garde
+            if c.panic >= ALARM_TIME {
+                continue;
+            }
+            let up = c.position.normalize_or_zero();
+            let (east, north) = tangent_frame(up);
+            let away = c.position - from;
+            let away = (away - up * away.dot(up)).normalize_or_zero();
+            if away != Vec3::ZERO {
+                let jitter = self.rng.gen_range(-0.35..0.35);
+                c.target_yaw = (away.dot(east).atan2(away.dot(north)) + jitter).rem_euclid(TAU);
+            }
+            c.panic = ALARM_TIME;
+            c.panic_speed = ALARM_SPEED;
+            c.walking = true;
+        }
     }
 
     /// Avance la simulation de `dt` secondes autour des joueurs dont les pieds sont `players`
@@ -213,10 +272,11 @@ impl CreatureWorld {
 
         let columns = std::mem::take(&mut self.columns);
         let mut query = TerrainQuery::with_columns(generator, edits, columns);
+        let herds = herd_pulls(&self.creatures, self.geometry.block_height as f32);
         let mut walker = Walker { geometry: self.geometry, query: &mut query };
-        for creature in &mut self.creatures {
+        for (creature, herd) in self.creatures.iter_mut().zip(herds) {
             if let Some(species) = self.registry.get(creature.species) {
-                walker.step(creature, species, &mut self.rng, dt);
+                walker.step(creature, species, herd, &mut self.rng, dt);
             }
         }
 
@@ -257,6 +317,7 @@ impl CreatureWorld {
         let Some((min_group, max_group)) = self.registry.get(species).map(|s| (s.min_group, s.max_group)) else { return };
 
         let group = self.rng.gen_range(min_group..=max_group);
+        let mut herd = None;
         for _ in 0..group {
             if self.creatures.len() >= MAX_CREATURES {
                 break;
@@ -267,7 +328,8 @@ impl CreatureWorld {
                 continue;
             }
             if let Some(feet) = surface_feet(&self.geometry, query, pos.face, pos.x, pos.z) {
-                self.spawn(species, feet);
+                let id = self.spawn_in_herd(species, feet, herd);
+                herd.get_or_insert(id);
             }
         }
     }
@@ -303,6 +365,59 @@ fn pick_species(candidates: &[SpawnCandidate], rng: &mut StdRng) -> Option<usize
         }
     })?;
     (chance >= 1.0 || rng.gen_bool(chance.clamp(0.0, 1.0) as f64)).then_some(species)
+}
+
+/// Ce qu'une bête sait de son troupeau autour d'elle
+#[derive(Clone, Copy, Default)]
+struct HerdPull {
+    /// Cap vers le centre de ses voisines, et distance à ce centre en blocs
+    toward: Option<(f32, f32)>,
+    /// Cap moyen des voisines qui marchent
+    heading: Option<f32>,
+}
+
+/// Pour chaque créature, la position et l'allure des autres bêtes vivantes de son troupeau
+fn herd_pulls(creatures: &[Creature], block: f32) -> Vec<HerdPull> {
+    let radius = HERD_RADIUS_BLOCKS * block;
+    let heading_of = |c: &Creature| {
+        let (east, north) = tangent_frame(c.position.normalize_or_zero());
+        north * c.yaw.cos() + east * c.yaw.sin()
+    };
+    creatures
+        .iter()
+        .map(|c| {
+            if !c.is_alive() {
+                return HerdPull::default();
+            }
+            let (mut sum, mut count, mut heading, mut walkers) = (Vec3::ZERO, 0, Vec3::ZERO, 0);
+            for o in creatures {
+                if o.id == c.id || o.herd != c.herd || !o.is_alive() || o.position.distance(c.position) > radius {
+                    continue;
+                }
+                sum += o.position;
+                count += 1;
+                if o.walking && o.panic <= 0.0 {
+                    heading += heading_of(o);
+                    walkers += 1;
+                }
+            }
+            if count == 0 {
+                return HerdPull::default();
+            }
+            let up = c.position.normalize_or_zero();
+            let (east, north) = tangent_frame(up);
+            let yaw_of = |v: Vec3| {
+                let v = v - up * v.dot(up);
+                (v.length_squared() > 1e-12).then(|| v.dot(east).atan2(v.dot(north)).rem_euclid(TAU))
+            };
+            let offset = sum / count as f32 - c.position;
+            let distance = (offset - up * offset.dot(up)).length() / block;
+            HerdPull {
+                toward: yaw_of(offset).map(|yaw| (yaw, distance)),
+                heading: if walkers > 0 { yaw_of(heading) } else { None },
+            }
+        })
+        .collect()
 }
 
 /// Déplacement d'une créature sur le terrain
@@ -345,7 +460,7 @@ impl Walker<'_, '_> {
         })
     }
 
-    fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, rng: &mut StdRng, dt: f32) {
+    fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, herd: HerdPull, rng: &mut StdRng, dt: f32) {
         let block = self.block();
         let base_radius = self.geometry.base_radius as f32;
         let radius_of = move |altitude: f32| base_radius + altitude * block;
@@ -361,10 +476,19 @@ impl Walker<'_, '_> {
                 c.timer = rng.gen_range(2.0..6.0);
             }
         } else {
-            // Humeur : marcher un moment dans une direction, puis s'arrêter brouter
+            // Humeur : marcher un moment dans une direction, puis s'arrêter brouter. Au sein d'un
+            // troupeau, elle revient vers les autres si elle s'en écarte, et suit celles qui marchent.
+            let gap = herd.toward.map_or(0.0, |(_, distance)| distance);
+            let straying = gap > HERD_STRAY_BLOCKS;
             c.timer -= dt;
+            // Seule loin des autres, elle n'attend pas la fin de sa pause pour les rejoindre
+            if straying && !c.walking {
+                c.timer = c.timer.min(0.5);
+            }
             if c.timer <= 0.0 {
-                if c.walking || rng.gen_bool(0.4) {
+                // Au repos, elle emboîte volontiers le pas des voisines qui marchent
+                let follow = herd.heading.filter(|_| !c.walking && rng.gen_bool(HERD_FOLLOW_CHANCE));
+                if !straying && follow.is_none() && (c.walking || rng.gen_bool(0.4)) {
                     c.walking = false;
                     c.timer = rng.gen_range(2.0..6.0);
                     if rng.gen_bool(0.5) {
@@ -373,7 +497,13 @@ impl Walker<'_, '_> {
                 } else {
                     c.walking = true;
                     c.timer = rng.gen_range(1.0..4.0);
-                    c.target_yaw = c.yaw + rng.gen_range(-PI / 2.0..PI / 2.0);
+                    c.target_yaw = match (herd.toward, follow) {
+                        // Écartée : droit vers le centre du troupeau
+                        (Some((toward, distance)), _) if distance > HERD_LOOSE_BLOCKS => toward + rng.gen_range(-0.3..0.3),
+                        // Dans le troupeau : le cap de celles qui marchent
+                        (_, Some(heading)) => heading + rng.gen_range(-0.4..0.4),
+                        _ => c.yaw + rng.gen_range(-PI / 2.0..PI / 2.0),
+                    };
                 }
                 c.target_yaw = c.target_yaw.rem_euclid(TAU);
             }
@@ -415,7 +545,7 @@ impl Walker<'_, '_> {
             c.push = Vec3::ZERO;
         }
         let mut velocity = c.push;
-        let speed = species.walk_speed * if c.panic > 0.0 { PANIC_SPEED } else { 1.0 } * turn.cos().max(0.0);
+        let speed = species.walk_speed * if c.panic > 0.0 { c.panic_speed } else { 1.0 } * turn.cos().max(0.0);
         if c.walking && c.dead_for.is_none() && speed > 0.0 {
             // La colonne devant le museau décide si la voie est libre
             let heading = north * c.yaw.cos() + east * c.yaw.sin();
@@ -689,5 +819,66 @@ mod tests {
             world.tick(0.05, &generator, &edits, &[feet]);
         }
         assert!(world.creatures().is_empty());
+    }
+
+    /// Plus grand écart au centre d'un troupeau, en blocs
+    fn herd_spread(world: &CreatureWorld, geometry: &BlockGeometry, herd: u64) -> f32 {
+        let members: Vec<Vec3> = world.creatures().iter().filter(|c| c.herd == herd).map(|c| c.position).collect();
+        let center = members.iter().copied().sum::<Vec3>() / members.len() as f32;
+        members.iter().map(|p| p.distance(center) / geometry.block_height as f32).fold(0.0, f32::max)
+    }
+
+    #[test]
+    fn a_herd_stays_together() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 5, registry());
+        let sheep = world.registry().find("mouflon").unwrap();
+        let herd = world.spawn_in_herd(sheep, feet, None);
+        for _ in 0..4 {
+            world.spawn_in_herd(sheep, feet, Some(herd));
+        }
+        // Trois minutes : sans cohésion, leurs errances au hasard les auraient dispersées
+        let mut worst: f32 = 0.0;
+        for frame in 0..3600 {
+            world.tick(0.05, &generator, &edits, &[feet]);
+            if frame >= 600 {
+                worst = worst.max(herd_spread(&world, &geometry, herd));
+            }
+        }
+        assert_eq!(world.creatures().iter().filter(|c| c.herd == herd).count(), 5);
+        assert!(worst < 16.0, "troupeau dispersé : une bête à {worst} blocs du centre");
+    }
+
+    #[test]
+    fn a_hit_alarms_the_herd_less_than_the_victim() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 9, registry());
+        let sheep = world.registry().find("mouflon").unwrap();
+        let victim = world.spawn_in_herd(sheep, feet, None);
+        let mates = [world.spawn_in_herd(sheep, feet, Some(victim)), world.spawn_in_herd(sheep, feet, Some(victim))];
+        let stranger = world.spawn(sheep, feet);
+        let (east, _) = tangent_frame(feet.normalize());
+        assert!(world.hit(victim, feet - east * 2.0 * geometry.block_height as f32));
+
+        let get = |world: &CreatureWorld, id: u64| world.creatures().iter().find(|c| c.id == id).map(|c| (c.panic, c.panic_speed)).unwrap();
+        assert_eq!(get(&world, victim), (PANIC_TIME, PANIC_SPEED));
+        for &mate in &mates {
+            let (panic, speed) = get(&world, mate);
+            assert!(panic > 0.0 && panic < PANIC_TIME && speed < PANIC_SPEED, "voisine : fuite {panic} s à {speed}");
+        }
+        assert_eq!(get(&world, stranger).0, 0.0, "une bête d'un autre troupeau ne s'affole pas");
+
+        // Les voisines se calment avant la victime
+        for _ in 0..((ALARM_TIME / 0.05) as usize + 2) {
+            world.tick(0.05, &generator, &edits, &[feet]);
+        }
+        assert!(mates.iter().all(|&m| get(&world, m).0 <= 0.0), "les voisines fuient encore");
+        assert!(get(&world, victim).0 > 0.0, "la victime s'est calmée trop tôt");
     }
 }
