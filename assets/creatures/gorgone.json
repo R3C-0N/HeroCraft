@@ -6,5 +6,47 @@
   "min_group": 1,
   "max_group": 1,
   "spawn": [],
-  "model": {"mesh": "modeles/gorgone.gltf", "texture": "modeles/gorgone.png", "walk_animation": "repos"}
+  "model": {
+    "mesh": "modeles/gorgone.gltf",
+    "texture": "modeles/gorgone.png",
+    "animations": {
+      "repos": {"cycle": 3.0, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "queue*": {"rotation": [0, 6, 0], "decalage": 0.2},
+        "liane*": {"rotation": [10, 0, 0], "decalage": 0.13},
+        "racine": {"rotation": [0, 0, 2], "translation": [0, 0.02, 0]},
+        "brasD": {"rotation": [0, 0, 4], "frequence": 2},
+        "brasG": {"rotation": [0, 0, -4], "frequence": 2}
+      }},
+      "marche": {"foulee": 0.9, "os": {
+        "queue*": {"rotation": [0, 16, 0], "decalage": 0.2},
+        "liane*": {"rotation": [14, 0, 0], "frequence": 2, "decalage": 0.13},
+        "racine": {"rotation": [0, 6, 4], "translation": [0.04, 0, 0]},
+        "tete": {"rotation": [0, -6, -4]},
+        "brasD": {"rotation": [15, 0, 0], "phase": 0.5},
+        "brasG": {"rotation": [15, 0, 0]}
+      }},
+      "course": {"foulee": 1.3, "os": {
+        "queue*": {"rotation": [0, 22, 0], "decalage": 0.2},
+        "liane*": {"rotation": [12, 0, 0], "rotation_fixe": [20, 0, 0], "frequence": 2, "decalage": 0.13},
+        "racine": {"rotation": [0, 8, 5], "rotation_fixe": [10, 0, 0], "translation": [0.06, 0, 0]},
+        "tete": {"rotation": [0, -8, -5], "rotation_fixe": [-8, 0, 0]},
+        "brasD": {"rotation": [25, 0, 0], "phase": 0.5},
+        "brasG": {"rotation": [25, 0, 0]}
+      }},
+      "attaque": {"cycle": 0.9, "os": {
+        "brasD": {"rotation": [25, 0, 0], "rotation_fixe": [-70, 0, 0], "frequence": 2},
+        "brasG": {"rotation": [25, 0, 0], "rotation_fixe": [-70, 0, 0], "phase": 0.5, "frequence": 2},
+        "liane*": {"rotation": [30, 0, 0], "rotation_fixe": [-30, 0, 0], "frequence": 2, "decalage": 0.1},
+        "tete": {"rotation": [10, 0, 0], "frequence": 2},
+        "racine": {"rotation": [-6, 0, 0], "translation": [0, 0.05, 0.08], "phase": 0.75},
+        "queue*": {"rotation": [0, 12, 0], "frequence": 2, "decalage": 0.2}
+      }},
+      "coup": {"os": {
+        "racine": {"rotation": [-10, 0, 0], "frequence": 0.5},
+        "liane*": {"rotation": [-30, 0, 0], "frequence": 0.5},
+        "brasD": {"rotation": [-30, 0, 0], "frequence": 0.5},
+        "brasG": {"rotation": [-30, 0, 0], "frequence": 0.5}
+      }}
+    }
+  }
 }

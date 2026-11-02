@@ -6,5 +6,15 @@
   "min_group": 1,
   "max_group": 1,
   "spawn": [],
-  "model": {"mesh": "modeles/mannequin.gltf", "texture": "modeles/mannequin.png", "walk_animation": "repos"}
+  "model": {
+    "mesh": "modeles/mannequin.gltf",
+    "texture": "modeles/mannequin.png",
+    "animations": {
+      "repos": {"cycle": 4.0, "pause": {"poids": 1, "duree": [3, 8]}},
+      "coup": {"os": {
+        "poteau": {"rotation": [-12, 0, 0], "frequence": 1.5},
+        "tete": {"rotation": [-15, 0, 0], "phase": 0.08, "frequence": 1.5}
+      }}
+    }
+  }
 }

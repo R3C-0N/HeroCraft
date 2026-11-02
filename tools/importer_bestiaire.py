@@ -48,6 +48,25 @@ def ecrire(chemin, description):
             lignes.append('  "spawn": [')
             lignes += ["    " + c(r) + ("," if j < len(valeur) - 1 else "") for j, r in enumerate(valeur)]
             lignes.append("  ]" + fin)
+        elif cle == "model" and valeur.get("animations"):
+            # Une ligne par os de chaque animation
+            lignes.append('  "model": {')
+            lignes += [f'    "{k}": {c(v)},' for k, v in valeur.items() if k != "animations"]
+            lignes.append('    "animations": {')
+            animations = list(valeur["animations"].items())
+            for j, (nom, animation) in enumerate(animations):
+                sans_os = {k: v for k, v in animation.items() if k != "os"}
+                tete = c(sans_os)[1:-1]
+                os_ = list(animation.get("os", {}).items())
+                virgule = "," if j < len(animations) - 1 else ""
+                if not os_:
+                    lignes.append(f'      "{nom}": {{{tete}}}{virgule}')
+                    continue
+                lignes.append(f'      "{nom}": {{{tete + ", " if tete else ""}"os": {{')
+                lignes += [f'        "{o}": {c(m)}' + ("," if k < len(os_) - 1 else "") for k, (o, m) in enumerate(os_)]
+                lignes.append("      }}" + virgule)
+            lignes.append("    }")
+            lignes.append("  }" + fin)
         else:
             lignes.append(f'  "{cle}": {c(valeur)}{fin}')
     lignes.append("}")
@@ -87,9 +106,14 @@ def importer(module):
             "model": {
                 "mesh": f"modeles/{ident}.gltf",
                 "texture": f"modeles/{ident}.png",
-                "walk_animation": maillage.get("animation", "#repos").split("#")[-1],
             },
         }
+        # Les animations sont écrites à la main dans les fiches : une réimportation les garde
+        ancienne = SORTIE / f"{ident}.json"
+        if ancienne.is_file():
+            animations = json.loads(ancienne.read_text(encoding="utf-8")).get("model", {}).get("animations")
+            if animations:
+                description["model"]["animations"] = animations
         ecrire(SORTIE / f"{ident}.json", description)
         print(f"{ident} : {description['name']}, {len(spawn)} biome(s)")
 
