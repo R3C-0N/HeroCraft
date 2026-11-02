@@ -1566,6 +1566,32 @@ mod tests {
     }
 
     #[test]
+    fn test_no_vegetation_on_buildings_streets_and_fields() {
+        let generator = generator(2026);
+        let settlements: Vec<_> = all_settlements(&generator).into_iter().filter(|s| s.kind != SettlementKind::Ruins).take(6).collect();
+        assert!(settlements.iter().any(|s| s.kind == SettlementKind::Town));
+        let mut checked = 0;
+        for s in settlements {
+            for piece in &s.pieces {
+                let rect = piece.rect();
+                for z in rect.z0..rect.z1 {
+                    for x in rect.x0..rect.x1 {
+                        let column = generator.sample_block_column(s.face, x, z);
+                        let ground = column.elevation.floor() as i32;
+                        for y in ground - 1..ground + crate::vegetation::VEGETATION_SPAN {
+                            let with = generator.column_block(&column, s.face, x, y, z);
+                            let without = generator.column_block_without_vegetation(&column, s.face, x, y, z);
+                            assert_eq!(with, without, "{} : végétation en ({x}, {y}, {z})", s.kind.name());
+                        }
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert!(checked > 10_000);
+    }
+
+    #[test]
     fn test_houses_have_walls_roof_and_open_door() {
         let generator = generator(2026);
         let village = all_settlements(&generator).into_iter().find(|s| s.kind == SettlementKind::Village).expect("un village");
