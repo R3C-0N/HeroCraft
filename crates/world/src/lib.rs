@@ -7,6 +7,7 @@ pub mod ocean_currents;
 pub mod population;
 pub mod quadtree;
 pub mod tectonics;
+pub mod vegetation;
 
 pub use caves::{carvable_range, CaveField, CAVE_DEPTH};
 pub use creatures::{Creature, CreatureWorld, PlayerHit, PlayerPresence, CREATURE_RANGE_BLOCKS};
@@ -16,3 +17,4 @@ pub use generator::*;
 pub use ocean_currents::*;
 pub use quadtree::*;
 pub use tectonics::*;
+pub use vegetation::{Tree, TreeKind, VegetationField, TREE_CELL, TREE_REACH, VEGETATION_SPAN};

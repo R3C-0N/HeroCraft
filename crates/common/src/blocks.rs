@@ -72,6 +72,9 @@ pub struct BlockSheet {
     /// Liquide : ni solide, ni visé, ni ramassé ; on peut poser un bloc dedans
     #[serde(default)]
     pub liquid: bool,
+    /// Herbe folle : un bloc posé dessus prend sa place, comme dans l'air
+    #[serde(default)]
+    pub replaceable: bool,
     /// Lumière émise, de 0 à 15 (pas encore rendue)
     #[serde(default)]
     pub light: u8,
@@ -455,6 +458,7 @@ struct BlockFlags {
     opaque: bool,
     liquid: bool,
     plant: bool,
+    replaceable: bool,
     /// Fait de pavés (dalle, escalier…)
     shaped: bool,
     /// Matière qui ne laisse pas voir à travers (pour les faces couvertes d'une forme)
@@ -466,9 +470,9 @@ struct BlockFlags {
 
 /// Bloc sans fiche (fichier retiré d'un monde existant) : un cube plein
 const UNKNOWN: BlockFlags =
-    BlockFlags { known: false, solid: true, opaque: true, liquid: false, plant: false, shaped: false, material_opaque: true, rotation: BlockRotation::None, orientations: 1 };
+    BlockFlags { known: false, solid: true, opaque: true, liquid: false, plant: false, replaceable: false, shaped: false, material_opaque: true, rotation: BlockRotation::None, orientations: 1 };
 const AIR: BlockFlags =
-    BlockFlags { known: false, solid: false, opaque: false, liquid: false, plant: false, shaped: false, material_opaque: false, rotation: BlockRotation::None, orientations: 1 };
+    BlockFlags { known: false, solid: false, opaque: false, liquid: false, plant: false, replaceable: false, shaped: false, material_opaque: false, rotation: BlockRotation::None, orientations: 1 };
 
 /// Tous les blocs connus
 #[derive(Debug, Clone)]
@@ -615,6 +619,7 @@ impl BlockRegistry {
                 opaque: sheet.opaque && shape.is_none(),
                 liquid: sheet.liquid,
                 plant: sheet.shape.is_named("plant"),
+                replaceable: sheet.replaceable || sheet.liquid,
                 shaped: shape.is_some(),
                 material_opaque: sheet.opaque,
                 rotation: if shape.is_some() { sheet.rotation } else { BlockRotation::None },
@@ -820,10 +825,10 @@ impl BlockId {
         !self.is_air() && !self.is_liquid()
     }
 
-    /// Un bloc posé peut prendre sa place : l'air ou un liquide
+    /// Un bloc posé peut prendre sa place : l'air, un liquide, une herbe folle
     #[inline(always)]
     pub fn is_replaceable(&self) -> bool {
-        self.is_air() || self.is_liquid()
+        self.is_air() || blocks().flags(*self).replaceable
     }
 }
 
@@ -874,6 +879,8 @@ mod tests {
         assert!(!BlockId::LEAVES.is_opaque());
         let flower = blocks().find("dandelion").unwrap();
         assert!(flower.is_plant() && !flower.is_solid() && flower.is_targetable());
+        // Une herbe haute laisse sa place au bloc posé, pas une fleur
+        assert!(blocks().find("tallGrass1").unwrap().is_replaceable() && !flower.is_replaceable());
         // Un numéro sans fiche reste un cube plein
         assert!(BlockId(FIRST_OBJECT_ID - 1).is_solid());
     }
