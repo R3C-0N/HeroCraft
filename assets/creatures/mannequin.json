@@ -6,5 +6,6 @@
   "min_group": 1,
   "max_group": 1,
   "spawn": [],
+  "activity": "always",
   "model": {"mesh": "modeles/mannequin.gltf", "texture": "modeles/mannequin.png", "walk_animation": "repos"}
 }

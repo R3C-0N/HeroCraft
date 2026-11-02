@@ -9,5 +9,6 @@
   "spawn": [
     {"biome": "Forest", "weight": 1.0}
   ],
+  "activity": "crepuscular",
   "model": {"mesh": "modeles/cerf.gltf", "texture": "modeles/cerf.png", "walk_animation": "repos"}
 }

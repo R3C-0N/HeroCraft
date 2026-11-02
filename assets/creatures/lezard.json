@@ -6,5 +6,6 @@
   "min_group": 1,
   "max_group": 2,
   "spawn": [],
+  "activity": "nocturnal",
   "model": {"mesh": "modeles/lezard.gltf", "texture": "modeles/lezard.png", "walk_animation": "repos"}
 }

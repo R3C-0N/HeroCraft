@@ -11,6 +11,10 @@
 //!
 //! Le tempérament de l'espèce règle sa réaction au joueur le plus proche : une bête craintive fuit
 //! dès qu'il approche (de moins loin s'il est accroupi), une placide s'arrête pour le regarder, une curieuse le suit à distance.
+//!
+//! Chaque espèce vit à son rythme (`Activity`) : selon la hauteur du soleil là où elle se trouve, elle
+//! est éveillée ou s'endort sur place, une bête après l'autre, jusqu'à ce que son heure revienne ou
+//! qu'un coup la réveille. Une espèce n'apparaît qu'aux heures où elle est éveillée.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -67,6 +71,9 @@ const WATCH_RADIUS_BLOCKS: f32 = 6.0;
 const FOLLOW_RADIUS_BLOCKS: f32 = 16.0;
 const FOLLOW_STOP_BLOCKS: f32 = 3.0;
 const FOLLOW_RESUME_BLOCKS: f32 = 4.5;
+/// Intervalle entre deux réveils possibles d'une créature endormie, en secondes : les bêtes d'un
+/// troupeau ne se lèvent pas toutes ensemble
+const SLEEP_CHECK: (f32, f32) = (3.0, 12.0);
 /// Une créature ne descend pas volontairement plus bas que ça, en blocs
 const MAX_DROP_BLOCKS: f32 = 3.0;
 /// Pas de simulation le plus long, en secondes
@@ -98,6 +105,8 @@ pub struct Creature {
     panic: f32,
     /// Temps écoulé depuis sa mort (`None` : vivante), en secondes
     dead_for: Option<f32>,
+    /// Endormie : elle ne bouge plus jusqu'au retour de son heure, ou jusqu'à un coup
+    sleeping: bool,
 }
 
 impl Creature {
@@ -113,6 +122,10 @@ impl Creature {
 
     pub fn is_alive(&self) -> bool {
         self.dead_for.is_none()
+    }
+
+    pub fn is_sleeping(&self) -> bool {
+        self.sleeping
     }
 }
 
@@ -143,6 +156,9 @@ pub struct CreatureWorld {
     next_id: u64,
     rng: StdRng,
     spawn_timer: f32,
+    /// Direction du soleil (repère du centre de la planète), d'où l'heure en chaque lieu. `None` :
+    /// pas d'horloge, toutes les espèces restent éveillées.
+    sun_dir: Option<Vec3>,
     /// Colonnes du générateur déjà échantillonnées : les créatures restent longtemps sur les mêmes
     columns: HashMap<(PlanetFace, i32, i32), ColumnSample>,
 }
@@ -167,6 +183,7 @@ impl CreatureWorld {
             next_id: 1,
             rng: StdRng::seed_from_u64(seed),
             spawn_timer: 0.0,
+            sun_dir: None,
             columns: HashMap::new(),
         }
     }
@@ -177,6 +194,16 @@ impl CreatureWorld {
 
     pub fn creatures(&self) -> &[Creature] {
         &self.creatures
+    }
+
+    /// Règle l'heure : la direction du soleil, vue du centre de la planète
+    pub fn set_sun_dir(&mut self, sun_dir: Vec3) {
+        self.sun_dir = Some(sun_dir.normalize_or_zero());
+    }
+
+    /// Hauteur du soleil en `p` (sinus de son élévation), ou `None` sans horloge
+    fn sun_height(&self, p: Vec3) -> Option<f32> {
+        sun_height(self.sun_dir, p)
     }
 
     pub fn clear(&mut self) {
@@ -206,6 +233,7 @@ impl CreatureWorld {
             hurt: 0.0,
             panic: 0.0,
             dead_for: None,
+            sleeping: false,
         });
         id
     }
@@ -224,6 +252,7 @@ impl CreatureWorld {
         c.vertical_speed = c.vertical_speed.max(KNOCKBACK_HOP);
         c.hurt = CREATURE_HURT_TIME;
         c.health -= PLAYER_HIT_DAMAGE;
+        c.sleeping = false;
         if c.health <= 0.0 {
             c.dead_for = Some(0.0);
             c.walking = false;
@@ -253,7 +282,7 @@ impl CreatureWorld {
 
         let columns = std::mem::take(&mut self.columns);
         let mut query = TerrainQuery::with_columns(generator, edits, columns);
-        let mut walker = Walker { geometry: self.geometry, query: &mut query };
+        let mut walker = Walker { geometry: self.geometry, query: &mut query, sun_dir: self.sun_dir };
         for creature in &mut self.creatures {
             if let Some(species) = self.registry.get(creature.species) {
                 let nearest = presences.iter().copied().min_by(|a, b| a.feet.distance_squared(creature.position).total_cmp(&b.feet.distance_squared(creature.position)));
@@ -294,7 +323,16 @@ impl CreatureWorld {
         }
         let biome = query.column_sample(column.face, column.x, column.z).biome;
         let Some(candidates) = self.spawn_table.get(&biome) else { return };
-        let Some(species) = pick_species(candidates, &mut self.rng) else { return };
+        // Seules les espèces éveillées à cette heure-ci, à cet endroit, apparaissent
+        let candidates: Vec<SpawnCandidate> = match self.sun_height(center) {
+            Some(height) => candidates
+                .iter()
+                .copied()
+                .filter(|&(species, _, _)| self.registry.get(species).is_some_and(|s| s.activity.is_awake(height)))
+                .collect(),
+            None => candidates.clone(),
+        };
+        let Some(species) = pick_species(&candidates, &mut self.rng) else { return };
         let Some((min_group, max_group)) = self.registry.get(species).map(|s| (s.min_group, s.max_group)) else { return };
 
         let group = self.rng.gen_range(min_group..=max_group);
@@ -312,6 +350,11 @@ impl CreatureWorld {
             }
         }
     }
+}
+
+/// Hauteur du soleil `sun_dir` vue de `p` (sinus de son élévation), ou `None` sans horloge
+fn sun_height(sun_dir: Option<Vec3>, p: Vec3) -> Option<f32> {
+    sun_dir.map(|sun| sun.dot(p.normalize_or_zero()))
 }
 
 /// Pieds d'une créature posée au milieu du dessus de la colonne (x, z), si ce dessus est un sol où
@@ -350,6 +393,7 @@ fn pick_species(candidates: &[SpawnCandidate], rng: &mut StdRng) -> Option<usize
 struct Walker<'q, 'a> {
     geometry: BlockGeometry,
     query: &'q mut TerrainQuery<'a>,
+    sun_dir: Option<Vec3>,
 }
 
 impl Walker<'_, '_> {
@@ -444,13 +488,26 @@ impl Walker<'_, '_> {
                 c.walking = false;
                 c.timer = rng.gen_range(2.0..6.0);
             }
-        } else if nearest_player.is_some_and(|player| self.react(c, species.temperament, player, rng)) {
-            // Elle s'occupe du joueur
+        } else if !c.sleeping && nearest_player.is_some_and(|player| self.react(c, species.temperament, player, rng)) {
+            // Éveillée, elle s'occupe du joueur ; endormie, elle ne le remarque pas (un coup la réveille)
         } else {
-            // Humeur : marcher un moment dans une direction, puis s'arrêter brouter
+            // Humeur : marcher un moment dans une direction, puis s'arrêter brouter ; hors de ses
+            // heures, s'endormir là où elle est, et au retour de ses heures, se réveiller. Chacune le
+            // fait à la fin de son humeur du moment : un troupeau s'endort et s'éveille peu à peu.
             c.timer -= dt;
             if c.timer <= 0.0 {
-                if c.walking || rng.gen_bool(0.4) {
+                let awake = sun_height(self.sun_dir, c.position).is_none_or(|height| species.activity.is_awake(height));
+                if !awake {
+                    c.sleeping = true;
+                    c.walking = false;
+                    c.target_yaw = c.yaw;
+                    c.timer = rng.gen_range(SLEEP_CHECK.0..SLEEP_CHECK.1);
+                } else if c.sleeping {
+                    // Elle s'étire un moment avant de repartir
+                    c.sleeping = false;
+                    c.walking = false;
+                    c.timer = rng.gen_range(1.0..3.0);
+                } else if c.walking || rng.gen_bool(0.4) {
                     c.walking = false;
                     c.timer = rng.gen_range(2.0..6.0);
                     if rng.gen_bool(0.5) {
@@ -900,5 +957,66 @@ mod tests {
         }
         let c = &world.creatures()[0];
         assert!(!c.walking && c.panic == 0.0, "le sanglier réagit au joueur");
+    }
+
+    #[test]
+    fn animals_sleep_outside_their_hours_and_wake_up_when_their_time_comes() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, feet) = grass_column(&generator, &edits);
+        let up = feet.normalize();
+        let mut world = CreatureWorld::new(generator.base_radius(), 3, registry());
+        let cow = world.registry().find("vache").unwrap();
+        let wolf = world.registry().find("loup").unwrap();
+        let cow_id = world.spawn(cow, feet);
+        let wolf_id = world.spawn(wolf, feet);
+        let get = |world: &CreatureWorld, id| world.creatures().iter().find(|c| c.id == id).map(|c| (c.is_sleeping(), c.position)).unwrap();
+
+        // Minuit : le soleil sous les pieds. La vache s'endort et ne bouge plus, le loup veille.
+        world.set_sun_dir(-up);
+        for _ in 0..400 {
+            world.tick(0.05, &generator, &edits, &[feet]);
+        }
+        let (cow_sleeping, at) = get(&world, cow_id);
+        assert!(cow_sleeping, "la vache ne dort pas la nuit");
+        assert!(!get(&world, wolf_id).0, "le loup dort la nuit");
+        for _ in 0..400 {
+            world.tick(0.05, &generator, &edits, &[feet]);
+        }
+        assert!(get(&world, cow_id).1.distance(at) < 1e-3, "la vache bouge en dormant");
+
+        // Un coup la réveille
+        world.hit(cow_id, feet + up * 10.0);
+        assert!(!get(&world, cow_id).0, "frappée, la vache dort encore");
+
+        // Midi : la vache est réveillée, le loup dort
+        world.set_sun_dir(up);
+        for _ in 0..600 {
+            world.tick(0.05, &generator, &edits, &[feet]);
+        }
+        assert!(!get(&world, cow_id).0, "la vache dort en plein jour");
+        assert!(get(&world, wolf_id).0, "le loup ne dort pas en plein jour");
+    }
+
+    #[test]
+    fn only_awake_species_appear() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, player) = grass_column(&generator, &edits);
+        let up = player.normalize();
+        for (sun, hour) in [(up, "midi"), (-up, "minuit")] {
+            let mut world = CreatureWorld::new(generator.base_radius(), 11, registry());
+            world.set_sun_dir(sun);
+            for _ in 0..1200 {
+                world.tick(0.05, &generator, &edits, &[player]);
+            }
+            assert!(!world.creatures().is_empty(), "aucune créature à {hour}");
+            for c in world.creatures() {
+                let species = world.registry().get(c.species).unwrap();
+                // Apparues loin du joueur : le soleil n'y est pas tout à fait à la même hauteur
+                let height = sun.dot(c.position.normalize());
+                assert!(species.activity.is_awake(height), "{} apparu(e) à {hour}", species.id);
+            }
+        }
     }
 }

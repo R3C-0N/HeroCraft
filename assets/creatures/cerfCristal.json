@@ -7,5 +7,6 @@
   "max_group": 1,
   "temperament": "craintif",
   "spawn": [],
+  "activity": "diurnal",
   "model": {"mesh": "modeles/cerfCristal.gltf", "texture": "modeles/cerfCristal.png", "walk_animation": "repos"}
 }

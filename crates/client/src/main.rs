@@ -535,6 +535,8 @@ fn main() {
                                         creatures_seed = current_seed;
                                     }
                                     if !ui_state.is_settings_open {
+                                        // L'heure du ciel règle le sommeil et les apparitions
+                                        solo_creatures.set_sun_dir(state.sun_dir());
                                         let player = herocraft_world::PlayerPresence { feet: camera.player_pos, crouching: camera.is_crouching() };
                                         solo_creatures.tick_with_presences(dt, &generator, lod_manager.terrain_edits(), &[player]);
                                     }

@@ -21,6 +21,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
     {"biome": "Forest", "weight": 0.6},
     {"biome": "Taiga", "weight": 0.6, "chance": 0.5}
   ],
+  "activity": "nocturnal",
   "model": {"mesh": "modeles/loup.gltf", "texture": "modeles/loup.png", "walk_animation": "repos"}
 }
 ```
@@ -36,6 +37,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 | `min_group`, `max_group` | Taille d'un groupe qui apparaît ensemble (1 par défaut). |
 | `temperament` | Réaction au joueur le plus proche, tant qu'il ne l'a pas frappée : `craintif` (fuit quand il approche à moins de 8 blocs, ou de 3 blocs s'il est accroupi avec Maj), `placide` (s'arrête et le regarde à moins de 6 blocs), `curieux` (le suit à moins de 16 blocs et s'arrête à 3 blocs de lui) ou `indifferent` (l'ignore, par défaut). |
 | `spawn` | Les biomes où l'espèce apparaît d'elle-même (voir ci-dessous). Sans ce champ, elle n'apparaît jamais seule : c'est le cas des créatures des profondeurs, des mondes démoniaques et des bois féeriques, qui attendent leur monde. |
+| `activity` | Le rythme de vie de l'espèce (voir ci-dessous, `diurnal` par défaut). |
 | `model` | Le modèle 3D (voir ci-dessous). |
 
 Chaque entrée de `spawn` a trois champs :
@@ -44,6 +46,19 @@ Chaque entrée de `spawn` a trois champs :
 - `chance` (1 par défaut) : la probabilité que le groupe tiré apparaisse vraiment, pour une espèce rare.
 
 Les créatures n'apparaissent que sur l'herbe, la terre, le sable ou la neige.
+
+## Rythme jour/nuit
+
+L'heure dépend de l'endroit : la planète est ronde, il fait jour d'un côté et nuit de l'autre. Pour chaque bête, c'est la hauteur du soleil au-dessus de son horizon qui compte. `activity` dit quand l'espèce est éveillée :
+
+| Valeur | Éveillée | Exemples |
+|---|---|---|
+| `diurnal` (par défaut) | le jour, l'aube et le crépuscule | vache, mouflon, faisan, ours |
+| `nocturnal` | la nuit, l'aube et le crépuscule | loup, sanglier, lézard, mille-pattes |
+| `crepuscular` | autour du lever et du coucher du soleil (soleil à moins de 30° de l'horizon) | lapin, cerf |
+| `always` | tout le temps | tréant, rampant, champion |
+
+Une espèce n'apparaît qu'aux heures où elle est éveillée. Hors de ses heures, une bête déjà là s'endort sur place à la fin de ce qu'elle faisait : un troupeau s'endort et se réveille peu à peu, pas d'un bloc. Un coup la réveille (et la fait fuir) ; elle se rendort plus tard si ce n'est toujours pas son heure.
 
 ## Modèle
 

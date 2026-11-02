@@ -10,5 +10,6 @@
     {"biome": "Forest", "weight": 0.8},
     {"biome": "Plains", "weight": 0.8}
   ],
+  "activity": "diurnal",
   "model": {"mesh": "modeles/faisan.gltf", "texture": "modeles/faisan.png", "walk_animation": "repos"}
 }

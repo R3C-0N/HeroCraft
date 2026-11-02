@@ -7,5 +7,6 @@
   "max_group": 1,
   "temperament": "placide",
   "spawn": [],
+  "activity": "diurnal",
   "model": {"mesh": "modeles/mouflonTondu.gltf", "texture": "modeles/mouflonTondu.png", "walk_animation": "repos"}
 }

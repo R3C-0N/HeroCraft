@@ -78,6 +78,8 @@ def importer(module):
                 spawn.append({"biome": nom, "weight": habitat.get("densite", 1.0)})
         fiche = SORTIE / f"{ident}.json"
         ancien = json.loads(fiche.read_text(encoding="utf-8")) if fiche.is_file() else {}
+        # Le rythme jour/nuit n'existe pas dans le bestiaire : celui déjà choisi est gardé
+        activite = ancien.get("activity")
         description = {
             "name": p["DisplayName"]["name"],
             "description": p["DisplayName"].get("description", ""),
@@ -88,6 +90,7 @@ def importer(module):
             # Le tempérament n'existe pas dans le bestiaire : celui de la fiche actuelle est gardé
             **({"temperament": t} if (t := ancien.get("temperament")) else {}),
             "spawn": spawn,
+            **({"activity": activite} if activite else {}),
             "model": {
                 "mesh": f"modeles/{ident}.gltf",
                 "texture": f"modeles/{ident}.png",

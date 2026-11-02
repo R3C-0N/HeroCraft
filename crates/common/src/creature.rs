@@ -50,6 +50,10 @@ pub struct CreatureSpecies {
     /// Réaction à l'approche d'un joueur (indifférente par défaut)
     #[serde(default)]
     pub temperament: Temperament,
+    /// Moment de la journée où l'espèce est éveillée : elle n'apparaît qu'à ce moment-là et dort le
+    /// reste du temps
+    #[serde(default)]
+    pub activity: Activity,
     /// Modèle 3D
     pub model: CreatureModel,
 }
@@ -79,6 +83,42 @@ pub enum Temperament {
     Placide,
     /// Suit le joueur à distance, et le regarde une fois près de lui
     Curieux,
+}
+
+/// Rythme de vie d'une espèce, selon la hauteur du soleil là où se trouve la bête (la planète est
+/// ronde : il fait jour d'un côté et nuit de l'autre)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Activity {
+    /// Éveillée le jour et au crépuscule, endormie en pleine nuit
+    #[default]
+    Diurnal,
+    /// Éveillée la nuit et au crépuscule, endormie en plein jour
+    Nocturnal,
+    /// Éveillée à l'aube et au crépuscule, endormie en plein jour comme en pleine nuit
+    Crepuscular,
+    /// Toujours éveillée
+    Always,
+}
+
+impl Activity {
+    /// Au-delà de cette hauteur du soleil (sinus de son élévation), c'est le plein jour ; en deçà de
+    /// son opposé, la pleine nuit. Entre les deux, l'aube ou le crépuscule.
+    pub const FULL_LIGHT: f32 = 0.1;
+    /// Hauteur du soleil, au-dessus comme en dessous de l'horizon, jusqu'où s'éveille une espèce
+    /// crépusculaire
+    pub const TWILIGHT: f32 = 0.5;
+
+    /// L'espèce est éveillée quand le soleil est à cette hauteur (sinus de son élévation, de -1 sous
+    /// les pieds à 1 au zénith)
+    pub fn is_awake(self, sun_height: f32) -> bool {
+        match self {
+            Activity::Diurnal => sun_height > -Self::FULL_LIGHT,
+            Activity::Nocturnal => sun_height < Self::FULL_LIGHT,
+            Activity::Crepuscular => sun_height.abs() < Self::TWILIGHT,
+            Activity::Always => true,
+        }
+    }
 }
 
 /// Apparition dans un biome
@@ -245,6 +285,17 @@ pub struct CreatureState {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_activity_follows_the_sun() {
+        use super::Activity::*;
+        // Plein jour, crépuscule, pleine nuit
+        let awake = |a: super::Activity| [0.9, 0.0, -0.9].map(|h| a.is_awake(h));
+        assert_eq!(awake(Diurnal), [true, true, false]);
+        assert_eq!(awake(Nocturnal), [false, true, true]);
+        assert_eq!(awake(Crepuscular), [false, true, false]);
+        assert_eq!(awake(Always), [true, true, true]);
+    }
+
     use super::*;
 
     #[test]
@@ -256,6 +307,9 @@ mod tests {
             let species = registry.get(registry.find(id).unwrap_or_else(|| panic!("{id} manquant"))).unwrap();
             assert!(!species.spawn.is_empty());
         }
+        let activity = |id| registry.get(registry.find(id).unwrap()).unwrap().activity;
+        assert_eq!(activity("vache"), Activity::Diurnal);
+        assert_eq!(activity("loup"), Activity::Nocturnal);
         for species in registry.iter() {
             assert!(registry.asset_path(&species.model.mesh).is_file(), "{} : modèle manquant", species.id);
             assert!(registry.asset_path(&species.model.texture).is_file(), "{} : texture manquante", species.id);
