@@ -7,6 +7,10 @@
   "max_group": 2,
   "spawn": [],
   "activity": "nocturnal",
+  "loot": [
+    {"item": "viandeLezard"},
+    {"item": "hide", "chance": 0.5}
+  ],
   "model": {
     "mesh": "modeles/lezard.gltf",
     "texture": "modeles/lezard.png",

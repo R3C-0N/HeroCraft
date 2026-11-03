@@ -37,7 +37,7 @@ use std::sync::Arc;
 use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
-use herocraft_common::{tangent_frame, AttackMode, BlockId, CreatureAction, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
+use herocraft_common::{tangent_frame, AttackMode, BlockId, CreatureAction, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CORPSE_TIME, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -545,6 +545,14 @@ impl CreatureWorld {
         self.strike(id, from, PLAYER_HIT_DAMAGE, true).is_some()
     }
 
+    /// Dépèce la bête morte `id` (encore à terre) : elle disparaît, et renvoie son espèce (rang
+    /// dans le registre) et ses pieds, où tombe son butin. `None` si elle n'existe pas ou vit encore.
+    pub fn skin(&mut self, id: u64) -> Option<(usize, Vec3)> {
+        let index = self.creatures.iter().position(|c| c.id == id && !c.is_alive())?;
+        let c = self.creatures.remove(index);
+        Some((c.species, c.position))
+    }
+
     /// Bêtes vivantes de l'espèce de la créature de rang `index` autour d'elle, elle comprise
     fn pack_count(&self, index: usize) -> usize {
         let c = &self.creatures[index];
@@ -801,7 +809,8 @@ impl CreatureWorld {
         let players = players.as_slice();
         // Une image très longue (fenêtre en arrière-plan) ne fait pas traverser les murs
         let dt = dt.min(MAX_STEP);
-        self.creatures.retain(|c| c.dead_for.is_none_or(|t| t < CREATURE_DEATH_TIME));
+        // Une bête morte reste à terre le temps qu'on la dépèce
+        self.creatures.retain(|c| c.dead_for.is_none_or(|t| t < CORPSE_TIME));
 
         let columns = std::mem::take(&mut self.columns);
         let mut query = TerrainQuery::with_columns(generator, edits, columns);
@@ -1647,13 +1656,44 @@ mod tests {
         // Assez de coups : elle bascule, puis disparaît
         let health = world.registry().get(rabbit).unwrap().health;
         let hits = (health / PLAYER_HIT_DAMAGE).ceil() as usize;
-        for _ in 1..hits {
+        for _ in 1..hits - 1 {
             assert!(world.hit(id, attacker));
         }
+        assert_eq!(world.skin(id), None, "une bête vivante ne se dépèce pas");
+        assert!(world.hit(id, attacker));
         assert!(world.creatures()[0].state().death > 0.0);
         assert!(!world.hit(id, attacker), "une bête morte ne se frappe plus");
         for _ in 0..((CREATURE_DEATH_TIME / 0.05) as usize + 2) {
             world.tick(0.05, &generator, &edits, &[feet]);
+        }
+        // Elle reste à terre, couchée, jusqu'à ce qu'on la dépèce
+        assert_eq!(world.creatures()[0].state().death, 1.0);
+        let at = world.creatures()[0].position;
+        let (species, feet_at) = world.skin(id).expect("bête morte à dépecer");
+        assert_eq!((species, feet_at), (rabbit, at));
+        assert!(world.creatures().is_empty());
+        assert_eq!(world.skin(id), None, "déjà dépecée");
+    }
+
+    /// Une bête morte qu'on ne dépèce pas disparaît au bout de `CORPSE_TIME`
+    #[test]
+    fn an_unskinned_corpse_disappears_after_a_while() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 11, registry());
+        world.populate = false;
+        let rabbit = world.registry().find("lapin").unwrap();
+        let id = world.spawn(rabbit, feet);
+        while world.hit(id, feet) {}
+        let mut elapsed = 0.0;
+        while elapsed < CORPSE_TIME - 1.0 {
+            world.tick(MAX_STEP, &generator, &edits, &[feet]);
+            elapsed += MAX_STEP;
+        }
+        assert_eq!(world.creatures().len(), 1, "encore à terre après {elapsed} s");
+        for _ in 0..((2.0 / MAX_STEP) as usize + 2) {
+            world.tick(MAX_STEP, &generator, &edits, &[feet]);
         }
         assert!(world.creatures().is_empty());
     }
@@ -2197,9 +2237,7 @@ mod tests {
         let ids: Vec<u64> = world.creatures().iter().map(|c| c.id).collect();
         for id in ids {
             while world.hit(id, player) {}
-        }
-        for _ in 0..((CREATURE_DEATH_TIME / 0.05) as usize + 2) {
-            world.tick(0.05, &generator, &edits, &[player]);
+            assert!(world.skin(id).is_some());
         }
         assert!(world.creatures().is_empty());
         world.tick(0.05, &generator, &edits, &[-player]);
@@ -2275,7 +2313,8 @@ mod tests {
         for _ in 0..((CREATURE_DEATH_TIME / 0.05) as usize + 2) {
             world.tick(0.05, &generator, &edits, &[player]);
         }
-        let before = snapshot(&world);
+        // Une bête morte encore à terre n'est pas enregistrée : elle ne revient pas
+        let before: Vec<_> = snapshot(&world).into_iter().filter(|c| c.0 != killed).collect();
         world.save().unwrap();
 
         let mut reloaded = CreatureWorld::with_save_dir(generator.base_radius(), 77, registry(), &dir);

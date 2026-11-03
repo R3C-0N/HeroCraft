@@ -10,6 +10,12 @@
     {"biome": "Forest", "weight": 1.0}
   ],
   "activity": "crepuscular",
+  "loot": [
+    {"item": "viandeCerf", "count": [1, 2]},
+    {"item": "hide", "count": [1, 2]},
+    {"item": "boisDeCerf", "chance": 0.5},
+    {"item": "bone", "chance": 0.5}
+  ],
   "model": {
     "mesh": "modeles/cerf.gltf",
     "texture": "modeles/cerf.png",

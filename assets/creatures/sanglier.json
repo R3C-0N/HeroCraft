@@ -11,6 +11,11 @@
   ],
   "activity": "nocturnal",
   "attack": {"mode": "charge", "damage": 6, "cooldown": 2.0, "sight": 7, "chase_speed": 2.5},
+  "loot": [
+    {"item": "viandeSanglier", "count": [1, 2]},
+    {"item": "hide", "count": [1, 2]},
+    {"item": "defenses", "chance": 0.5}
+  ],
   "model": {
     "mesh": "modeles/sanglier.gltf",
     "texture": "modeles/sanglier.png",

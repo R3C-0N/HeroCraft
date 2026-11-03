@@ -308,9 +308,15 @@ fn main() {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
                                 // Clic droit sur un établi : il s'ouvre (accroupi, on pose contre lui)
                                 let station = block_interaction.aimed_station().filter(|_| action == block_interaction::BlockAction::Place && !camera.is_crouching());
+                                // Clic droit sur une bête morte, couteau ou dague en main : on la dépèce
+                                let knife = action == block_interaction::BlockAction::Place && ui_state.inventory.slot(ui_state.inventory.selected()).is_some_and(|s| s.item.can_skin());
+                                let corpse = if knife { aimed_corpse(&camera, &block_interaction, &creature_views, &creature_registry) } else { None };
                                 // Clic droit, un aliment en main : le joueur le mange
                                 let food = ui_state.inventory.selected_food().filter(|_| action == block_interaction::BlockAction::Place && station.is_none());
-                                if let Some(at) = station {
+                                if let Some(id) = corpse {
+                                    skin_creature(id, net.as_mut(), &mut solo_creatures, &mut dropped_items, &camera);
+                                    audio.block_placed(audio::synth::Material::Dirt, 0.0, &ui_state.audio_settings);
+                                } else if let Some(at) = station {
                                     camera.release_inputs();
                                     block_interaction.reset();
                                     ui_state.open_station(at);
@@ -615,6 +621,7 @@ fn main() {
                                         let hurt = ui_state.player.bitten(damage, &cause);
                                         show_wound(hurt, &cause, &mut camera, &mut ui_state, &mut audio);
                                     }
+                                    NetEvent::Loot { position, items } => drop_loot(&mut dropped_items, &camera, position, &items),
                                     NetEvent::Chat { sender, message } if sender.is_empty() => ui_state.chat.server(&message),
                                     NetEvent::Chat { sender, message } => ui_state.chat.player(&sender, &message),
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
@@ -1410,6 +1417,14 @@ fn set_cursor_captured(window: &Window, captured: bool) {
 /// Délai entre deux coups portés à une créature, en secondes
 const ATTACK_COOLDOWN: f32 = 0.4;
 
+/// Bête morte sous le réticule, à portée et devant le bloc visé : à dépecer
+fn aimed_corpse(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<u64> {
+    let (eye, dir, arm) = camera.view_ray()?;
+    let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+    let reach = interaction.target().map_or(arm + block_interaction::REACH_BLOCKS as f32 * block, |hit| hit.distance as f32);
+    creatures::aimed_corpse(views, registry, eye, dir, reach, block).map(|(id, _)| id)
+}
+
 /// Créature vivante sous le réticule, à portée et devant le bloc visé
 fn aimed_creature(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<u64> {
     let (eye, dir, arm) = camera.view_ray()?;
@@ -1457,11 +1472,48 @@ fn hit_creature(
     audio.block_placed(audio::synth::Material::Dirt, 0.0, settings);
 }
 
-/// Le bloc cassé tombe au sol (s'il se ramasse : ni eau, ni lave)
+/// Le bloc cassé tombe au sol (s'il se ramasse : ni eau, ni lave), avec le butin de sa fiche
+/// (fibre des herbes hautes, silex du gravier, récolte d'une plante mûre…)
 fn drop_broken_block(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, pos: herocraft_world::BlockPos, block: herocraft_common::BlockId, previous: herocraft_common::BlockId) {
-    let Some(item) = inventory::drop_for(previous).filter(|_| block.is_air()) else { return };
+    if !block.is_air() {
+        return;
+    }
     let height = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
-    dropped.spawn(item, BlockInteraction::block_center(camera, pos), height);
+    let center = BlockInteraction::block_center(camera, pos);
+    if let Some(item) = inventory::drop_for(previous) {
+        dropped.spawn(item, center, height);
+    }
+    let loot = herocraft_common::loot::block_loot(previous).roll(&mut herocraft_common::LootRng::from_clock());
+    for (item, count) in loot {
+        for _ in 0..count {
+            dropped.spawn(item, center, height);
+        }
+    }
+}
+
+/// Dépèce la bête morte `id` : en solo, son butin tombe aussitôt ; en ligne, le serveur le tire et
+/// l'envoie (`NetEvent::Loot`)
+fn skin_creature(id: u64, net: Option<&mut NetClient>, solo: &mut herocraft_world::CreatureWorld, dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera) {
+    match net {
+        Some(client) => client.send_skin_creature(id),
+        None => {
+            if let Some((species, feet)) = solo.skin(id) {
+                let loot = herocraft_common::loot::creature_loot(solo.registry(), species).roll(&mut herocraft_common::LootRng::from_clock());
+                drop_loot(dropped, camera, feet, &loot);
+            }
+        }
+    }
+}
+
+/// Le butin d'une bête dépecée tombe à ses pieds (`feet`), un peu au-dessus du sol
+fn drop_loot(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, feet: glam::Vec3, loot: &[(herocraft_common::ItemId, u16)]) {
+    let height = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+    let center = feet + feet.normalize_or_zero() * 0.6 * height;
+    for &(item, count) in loot {
+        for _ in 0..count {
+            dropped.spawn(item, center, height);
+        }
+    }
 }
 
 /// Enregistre les chunks modifiés par le joueur depuis le dernier enregistrement
