@@ -925,9 +925,10 @@ impl State {
         self.atmosphere.update(&self.device, &self.queue, settings, lighting, camera.base_radius, self.shadows.is_active());
     }
 
-    pub fn update_post(&mut self, settings: &PostSettings) {
+    /// `overcast` : ciel voilé par la météo au joueur (0 à 1)
+    pub fn update_post(&mut self, settings: &PostSettings, overcast: f32) {
         self.bloom_enabled = settings.bloom_enabled && settings.bloom_intensity > 0.0;
-        self.post.update(&self.queue, settings);
+        self.post.update(&self.queue, settings, overcast);
     }
 
     /// Synchronise les buffers GPU avec les feuilles LOD affichées : seuls les nouveaux maillages

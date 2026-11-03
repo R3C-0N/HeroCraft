@@ -87,8 +87,8 @@ fn vs_precip(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32, @
     let view = to_eye / max(eye_dist, 1e-6);
     let across = normalize(cross(fall_axis, view) + vec3<f32>(1e-6));
     let flake_up = normalize(cross(view, across));
-    let half_len = mix(0.42, 0.06, snow) * block;
-    let half_wid = mix(0.012, 0.06, snow) * block;
+    let half_len = mix(0.42, 0.045, snow) * block;
+    let half_wid = mix(0.014, 0.045, snow) * block;
     let along_axis = mix(fall_axis, flake_up, snow);
     var q = vec2<f32>(-1.0, -1.0);
     switch corner {
@@ -118,11 +118,13 @@ fn fs_precip(in: VertexOutput) -> @location(0) vec4<f32> {
     let sky = sky_light(in.world_pos, up, sun);
     let night = vec3<f32>(0.035, 0.045, 0.07) * camera.lighting_params.z;
     let flash = vec3<f32>(1.6, 1.7, 2.0) * camera.weather.w;
-    let light = sky * 0.9 + night + flash;
+    // Gouttes et flocons renvoient la lumière diffuse du ciel, sans teinte propre
+    let sky_level = dot(sky, vec3<f32>(0.3, 0.5, 0.2));
+    let light = vec3<f32>(sky_level * 1.1) + night + flash;
     // Flocon rond, trait de pluie plus dense au milieu
     let d = length(in.quad);
     let shape = mix(1.0 - abs(in.quad.x), 1.0 - smoothstep(0.4, 1.0, d), snow);
     let color = mix(vec3<f32>(0.62, 0.68, 0.78), vec3<f32>(1.0, 1.0, 1.0), snow) * light;
-    let alpha = in.alpha * shape * mix(0.38, 0.9, snow);
+    let alpha = in.alpha * shape * mix(0.5, 0.9, snow);
     return vec4<f32>(color, alpha);
 }

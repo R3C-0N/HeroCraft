@@ -586,9 +586,16 @@ fn main() {
                             lighting.moon_speed = 1.0;
                         }
                         state.update_camera(&camera, &lighting, &ui_state.cloud_settings, ui_state.video_settings.flattening, &visual);
-                        state.update_post(&ui_state.post_settings);
+                        state.update_post(&ui_state.post_settings, if ground { visual.overcast() } else { 0.0 });
                         state.set_msaa(ui_state.video_settings.msaa);
-                        state.update_shadows(&camera, &ui_state.shadow_settings);
+                        // Sous un ciel couvert, la lumière est diffuse : les ombres s'effacent, et leurs passes (avec
+                        // les rayons crépusculaires) sont coupées sous un ciel tout gris
+                        let mut shadow_settings = ui_state.shadow_settings;
+                        let overcast = if ground { visual.overcast() } else { 0.0 };
+                        shadow_settings.strength *= 1.0 - overcast;
+                        shadow_settings.cloud_strength *= 1.0 - overcast;
+                        shadow_settings.enabled &= overcast < 0.9;
+                        state.update_shadows(&camera, &shadow_settings);
                         state.update_atmosphere(&camera, &ui_state.atmosphere_settings, &lighting);
 
                         // Bloc visé par le réticule (souris capturée seulement) et bouton tenu enfoncé
@@ -1676,6 +1683,7 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
             let note = if online { " for everyone" } else { "" };
             one(format!("Time set to {}{note}", format_hour(hour)))
         }
+        Command::TimeSpeed(_) if online => Err("Online, the sky follows the server's clock".into()),
         Command::TimeSpeed(speed) => {
             game.ui.lighting_settings.moon_speed = speed;
             one(if speed == 0.0 { "Sky frozen".into() } else { format!("Sky speed set to {speed}") })

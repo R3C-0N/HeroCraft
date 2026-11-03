@@ -60,8 +60,9 @@ impl WeatherVisual {
     pub fn lighting(&self, base: &LightingSettings) -> LightingSettings {
         let overcast = self.overcast();
         let mut lighting = *base;
-        lighting.sun_intensity *= 1.0 - 0.72 * overcast;
-        lighting.day_ambient *= (1.0 - 0.35 * overcast) * (1.0 + 2.5 * self.flash);
+        lighting.sun_intensity *= 1.0 - 0.85 * overcast;
+        // Le ciel gris éclaire encore : l'ambiance baisse moins que le soleil direct
+        lighting.day_ambient *= (1.0 + 0.6 * overcast) * (1.0 + 2.5 * self.flash);
         let haze = 1.0 + 2.0 * self.precipitation + 1.0 * self.snow * self.precipitation;
         lighting.fog_intensity *= (haze * 4.0).round() / 4.0;
         lighting

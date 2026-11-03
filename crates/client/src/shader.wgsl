@@ -52,15 +52,17 @@ fn season_color(color: vec3<f32>, kind: u32, world_pos: vec3<f32>, greenness: f3
     var out = color;
     if (kind == FOLIAGE_DECIDUOUS) {
         // Chaque arbre (cellule de 6 blocs) prend sa couleur : orange, rouge ou or
-        let cell = floor(world_pos / (camera.scales.y * 6.0));
-        let pick = fract(sin(dot(cell, vec3<f32>(12.9898, 78.233, 37.719))) * 43758.5453);
-        var tint = vec3<f32>(1.0, 0.42, 0.08);
-        if (pick < 0.33) {
-            tint = vec3<f32>(0.85, 0.16, 0.06);
-        } else if (pick > 0.7) {
-            tint = vec3<f32>(0.95, 0.72, 0.12);
+        let cell = vec3<i32>(floor(world_pos / (camera.scales.y * 6.0)));
+        var h = u32(cell.x) * 73856093u ^ u32(cell.y) * 19349663u ^ u32(cell.z) * 83492791u;
+        h = (h ^ (h >> 13u)) * 1274126177u;
+        let pick = f32((h >> 8u) & 1023u) / 1023.0;
+        var tint = vec3<f32>(1.0, 0.30, 0.05);
+        if (pick < 0.35) {
+            tint = vec3<f32>(0.85, 0.08, 0.04);
+        } else if (pick > 0.72) {
+            tint = vec3<f32>(1.0, 0.62, 0.08);
         }
-        out = mix(out, tint * luma * 2.1, autumn * 0.9);
+        out = mix(out, tint * luma * 2.4, autumn * 0.95);
         out = mix(out, vec3<f32>(0.42, 0.33, 0.24) * luma * 2.3, winter * 0.85);
     } else if (kind == FOLIAGE_GRASS) {
         let amount = select(greenness, 1.0, greenness < 0.0);
