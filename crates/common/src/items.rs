@@ -16,6 +16,8 @@ use crate::voxel::BlockId;
 
 /// Dossier des fiches d'objets, depuis le dossier de lancement
 pub const ITEMS_DIR: &str = "assets/items";
+/// Caractéristique des aliments : la satiété qu'ils rendent
+pub const SATIETY_STAT: &str = "Satiété";
 /// Taille de pile d'un bloc
 pub const BLOCK_STACK: u16 = 64;
 
@@ -50,6 +52,14 @@ impl ItemId {
             Some(block) => blocks().name(block),
             None => items().get(self).map_or("Objet inconnu", |item| item.name.as_str()),
         }
+    }
+
+    /// Satiété que rend l'aliment, `None` si ça ne se mange pas
+    pub fn satiety(self) -> Option<f32> {
+        if self.block().is_some() {
+            return None;
+        }
+        items().get(self)?.stats.get(SATIETY_STAT).copied().filter(|s| *s > 0.0)
     }
 
     /// Nombre au plus par case
@@ -266,6 +276,9 @@ mod tests {
         assert_eq!(sword.block(), None);
         assert_eq!(items().get(sword).unwrap().stats["Dégâts"], 4.0);
         assert_eq!(sword.equip_slot(), None, "une arme se tient en main");
+        assert_eq!(sword.satiety(), None);
+        assert_eq!(items().find("pain").unwrap().satiety(), Some(12.0));
+        assert_eq!(ItemId::from(BlockId::STONE).satiety(), None);
     }
 
     #[test]

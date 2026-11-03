@@ -2,7 +2,7 @@
 
 Chaque fichier `*.json` de ce dossier décrit un objet de l'inventaire qui n'est pas un bloc : outil, arme, armure, nourriture, matériau, butin, totem… Son nom (sans `.json`) en est l'identifiant. Les icônes sont rangées dans `icones/`. Les blocs, eux, sont décrits dans `assets/blocks/`.
 
-Pour ajouter un objet, il suffit d'ajouter sa fiche et son icône. Un fichier invalide est signalé dans la console au lancement, puis ignoré. Ils se rangent et se déplacent comme les blocs, mais ne se posent pas. Ils se fabriquent selon les recettes de leur fiche (`recipes`, voir [assets/stations/README.md](../stations/README.md)) ; les armures et les bijoux se portent dans les cases d'équipement de l'écran d'inventaire (`slot`) ; le combat et la nourriture restent à faire.
+Pour ajouter un objet, il suffit d'ajouter sa fiche et son icône. Un fichier invalide est signalé dans la console au lancement, puis ignoré. Ils se rangent et se déplacent comme les blocs, mais ne se posent pas. Ils se fabriquent selon les recettes de leur fiche (`recipes`, voir [assets/stations/README.md](../stations/README.md)) ; les armures et les bijoux se portent dans les cases d'équipement de l'écran d'inventaire (`slot`) ; le combat reste à faire. Un objet qui a une caractéristique `Satiété` se mange : en main, au clic droit, il remplit d'autant la jauge de faim.
 
 Les 523 objets actuels viennent des modules de la branche `develop` (`CoreAssets`, `HeroEquipment`, `HeroSurvival`, `HeroBestiary`). Le script `tools/importer_blocs_objets.py` les reprend : il convertit les prefabs `engine:iconItem` et découpe les icônes dans leurs atlas. Le relancer après une retouche des modules remet ces fichiers à jour sans changer les numéros.
 
