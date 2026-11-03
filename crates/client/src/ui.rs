@@ -1161,7 +1161,7 @@ impl UiState {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(&card.name).font(crate::ui_skin::title_font(20.0_f32)).color(GOLD_BRIGHT));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add(SkinButton::new("✕").kind(ButtonKind::Secondary).small()).on_hover_text("Fermer (Échap)").clicked() {
+                            if ui.add(SkinButton::new("Fermer").kind(ButtonKind::Secondary).small()).on_hover_text("Fermer (Échap)").clicked() {
                                 close = true;
                             }
                         });
@@ -1190,7 +1190,7 @@ impl UiState {
                             for &(item, count) in &offer.give {
                                 slot(ui, item, count);
                             }
-                            ui.label(egui::RichText::new("➜").size(18.0_f32).color(GOLD_BRIGHT));
+                            ui.label(egui::RichText::new("»").size(22.0_f32).color(GOLD_BRIGHT));
                             slot(ui, offer.get.0, offer.get.1);
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 let can = self.inventory.can_trade(offer);
@@ -3247,7 +3247,7 @@ mod tests {
             .and_then(|t| t.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
             .unwrap_or((1280_usize, 720_usize));
 
-        let scenes: [(&str, fn(&mut UiState), bool, Option<egui::Pos2>); 7] = [
+        let scenes: [(&str, fn(&mut UiState), bool, Option<egui::Pos2>); 8] = [
             ("menu", |ui| ui.open_menu_at(MenuPage::Main), true, None),
             ("menu_survol", |ui| ui.open_menu_at(MenuPage::Main), true, Some(egui::pos2(640.0, 372.0))),
             ("options", |ui| ui.open_menu_at(MenuPage::Options), true, None),
@@ -3258,6 +3258,25 @@ mod tests {
             ("commandes", |ui| ui.open_menu_at(MenuPage::Controls), true, None),
             ("multijoueur", |ui| ui.open_menu_at(MenuPage::Multiplayer), true, None),
             ("inventaire", |ui| ui.set_inventory_open(true), true, None),
+            ("echanges", |ui| {
+                let registry = herocraft_common::professions();
+                let forgeron = registry.get(registry.find("forgeron").unwrap()).unwrap();
+                let mut look = herocraft_common::hero::atlas().defaut("nain");
+                look.tenue = "tablier".into();
+                let card = herocraft_common::VillagerCard {
+                    name: "Thorgrim".into(),
+                    profession: forgeron.name.clone(),
+                    culture: "Nains".into(),
+                    origin: "Habitant de la ville".into(),
+                    appearance: look,
+                    trades: forgeron.trades.iter().take(4).cloned().collect(),
+                    greeting: forgeron.lines[0].clone(),
+                };
+                let (ingot, coal) = (herocraft_common::villager::find_item("ironIngot").unwrap(), herocraft_common::villager::find_item("coal").unwrap());
+                ui.inventory.add_many(ingot, 5);
+                ui.inventory.add_many(coal, 3);
+                ui.open_trade(1, std::sync::Arc::new(card));
+            }, true, None),
         ];
         let mut all: Vec<(&str, fn(&mut UiState), bool, Option<egui::Pos2>)> = scenes.to_vec();
         all.push(("hud", |_| {}, true, None));
