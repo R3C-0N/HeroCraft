@@ -379,8 +379,11 @@ def importer_objets(racine):
             "description": nom.get("description", ""),
             "category": categorie,
             "max_stack": min(item.get("maxStackSize", 64), 99),
+            "slot": p.get("Armor", {}).get("slot"),
             "icon": f"icones/{identifiant}.png",
         }
+        if not fiche["slot"]:
+            del fiche["slot"]
         if not fiche["description"]:
             del fiche["description"]
         if stats:

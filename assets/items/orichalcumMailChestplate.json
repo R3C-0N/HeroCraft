@@ -3,6 +3,7 @@
   "name": "Pourpoint d'orichalque",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/orichalcumMailChestplate.png",
   "stats": {"Protection": 23, "Durabilité": 3000},
   "recipes": [

@@ -3,6 +3,7 @@
   "name": "Braies d'adamantine",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/adamantineMailLeggings.png",
   "stats": {"Protection": 16, "Durabilité": 3000},
   "recipes": [

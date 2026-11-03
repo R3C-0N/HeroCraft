@@ -3,6 +3,7 @@
   "name": "Heaume d'orichalque",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/orichalcumPlateHelmet.png",
   "stats": {"Protection": 15, "Durabilité": 3000},
   "recipes": [

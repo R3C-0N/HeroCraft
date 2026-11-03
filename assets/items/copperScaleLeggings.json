@@ -3,6 +3,7 @@
   "name": "Chausses de cuivre",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/copperScaleLeggings.png",
   "stats": {"Protection": 6, "Durabilité": 300},
   "recipes": [

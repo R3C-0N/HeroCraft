@@ -3,6 +3,7 @@
   "name": "Solerets d'orichalque",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/orichalcumPlateBoots.png",
   "stats": {"Protection": 10, "Durabilité": 3000},
   "recipes": [

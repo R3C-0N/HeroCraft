@@ -3,6 +3,7 @@
   "name": "Bottes en rondins",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/logBoots.png",
   "stats": {"Protection": 2, "Durabilité": 80},
   "recipes": [

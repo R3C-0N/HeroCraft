@@ -3,6 +3,7 @@
   "name": "Heaume de bronze",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/bronzePlateHelmet.png",
   "stats": {"Protection": 8, "Durabilité": 500},
   "recipes": [

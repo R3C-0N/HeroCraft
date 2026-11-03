@@ -3,6 +3,7 @@
   "name": "Braies de cuir",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/hideLeggings.png",
   "stats": {"Protection": 2, "Durabilité": 80},
   "recipes": [

@@ -3,6 +3,7 @@
   "name": "Cuirasse de bronze",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/bronzePlateChestplate.png",
   "stats": {"Protection": 14, "Durabilité": 500},
   "recipes": [

@@ -3,6 +3,7 @@
   "name": "Grèves de bronze",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/bronzePlateLeggings.png",
   "stats": {"Protection": 11, "Durabilité": 500},
   "recipes": [

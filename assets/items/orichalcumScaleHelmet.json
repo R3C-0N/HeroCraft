@@ -3,6 +3,7 @@
   "name": "Camail d'orichalque",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/orichalcumScaleHelmet.png",
   "stats": {"Protection": 16, "Durabilité": 3000},
   "recipes": [

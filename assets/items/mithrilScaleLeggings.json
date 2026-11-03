@@ -3,6 +3,7 @@
   "name": "Chausses de mithril",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/mithrilScaleLeggings.png",
   "stats": {"Protection": 18, "Durabilité": 3000},
   "recipes": [

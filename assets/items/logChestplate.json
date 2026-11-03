@@ -3,6 +3,7 @@
   "name": "Plastron en rondins",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/logChestplate.png",
   "stats": {"Protection": 5, "Durabilité": 80},
   "recipes": [

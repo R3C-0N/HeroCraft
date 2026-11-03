@@ -521,8 +521,9 @@ impl HeroCreator {
 /* -------------------------------------------------------------------- aperçu tournant */
 
 /// La figure du créateur : la planche en cours sur le corps du héros, de trois quarts, qui tourne
-/// lentement ; la glisser la tourne à la main
-struct Preview {
+/// lentement ; la glisser la tourne à la main. L'écran d'inventaire en montre une aussi, au
+/// milieu des cases d'équipement.
+pub(crate) struct Preview {
     angle: f32,
     tilt: f32,
     turning: bool,
@@ -546,6 +547,18 @@ const TURN_SPEED: f32 = 0.55;
 const FRAME_METRES: f32 = 2.05;
 
 impl Preview {
+    /// Avance la rotation et dessine le héros `cfg` dans `frame` : la rotation suit l'horloge de
+    /// l'interface, comme dans le créateur
+    pub(crate) fn paint(&mut self, painter: &egui::Painter, frame: egui::Rect, cfg: &Appearance) {
+        let now = std::time::Instant::now();
+        let dt = self.last_time.map_or(0.0_f32, |t| now.duration_since(t).as_secs_f32().min(0.25_f32));
+        self.last_time = Some(now);
+        self.update(dt);
+        let texture = self.texture(painter.ctx(), cfg);
+        draw_figure(painter, frame, &texture, cfg, self.angle, self.tilt);
+        painter.ctx().request_repaint();
+    }
+
     fn update(&mut self, dt: f32) {
         if self.turning && !self.held {
             self.angle += dt * TURN_SPEED;
