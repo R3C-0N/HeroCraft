@@ -18,7 +18,7 @@ pub struct CloudVertex {
     pub _pad4: f32,
     pub bbox: [f32; 4],         // Emprise locale des cellules occupées [min_x, min_y, max_x, max_y]
     pub mask: [u32; 4],         // Masque 11x11 sur 128 bits (mot 0 = bits 0..31), bit = y * 11 + x
-    pub config: [f32; 4],       // [taille de cellule, half_depth, id de secteur, 0.0]
+    pub config: [f32; 4],       // [taille de cellule, half_depth, id de secteur, rang (météo)]
 }
 
 impl CloudVertex {
@@ -76,6 +76,26 @@ impl CloudVertex {
 pub struct CloudMesh {
     pub vertices: Vec<CloudVertex>,
     pub indices: Vec<u32>,
+    /// Centre de chaque nuage (8 sommets chacun, dans l'ordre des sommets), avant la dérive du vent
+    pub centers: Vec<glam::Vec3>,
+    /// Rang de chaque nuage, de 0 à 1 : il se montre quand la couverture nuageuse du lieu le
+    /// permet (`cloud_visibility`). Les rangs sous 0,8 donnent le ciel d'avant la météo.
+    pub ranks: Vec<f32>,
+}
+
+/// Second tampon des nuages : temps qu'il fait sous chacun (visibilité, noirceur), par sommet
+/// (`weather::CloudWeather`)
+pub const CLOUD_WEATHER_LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+    array_stride: 8,
+    step_mode: wgpu::VertexStepMode::Vertex,
+    attributes: &[wgpu::VertexAttribute { format: wgpu::VertexFormat::Float32x2, offset: 0, shader_location: 8 }],
+};
+
+/// Visibilité d'un nuage de rang `rank` sous une couverture nuageuse `cover` (0 à 1), avec un
+/// fondu : 0,7 de couverture montre les nuages de rang inférieur à 0,8, comme avant la météo
+pub fn cloud_visibility(rank: f32, cover: f32) -> f32 {
+    let threshold = 0.32 + 0.75 * cover;
+    ((threshold - rank) / 0.06).clamp(0.0, 1.0)
 }
 
 /// Masque d'occupation 11x11 d'un groupe de nuages (bit = y * 11 + x)
@@ -130,10 +150,9 @@ impl CloudMeshGenerator {
         for sy in 0..sectors {
             for sx in 0..sectors {
                 let sector_hash = Self::hash_sector(seed, face_id, sx as u64, sy as u64);
-                // ~80% de chances d'avoir une formation nuageuse dans ce secteur
-                if sector_hash % 100 >= 80 {
-                    continue;
-                }
+                // Chaque secteur a sa formation nuageuse, montrée selon la météo : par temps
+                // ordinaire, ~80 % d'entre eux (rang sous 0,8), tous par ciel couvert
+                let rank = (sector_hash % 100) as f32 / 100.0;
                 let mut rng = sector_hash;
 
                 // Rayon maximal d'un groupe pour ne jamais toucher les secteurs voisins
@@ -179,7 +198,9 @@ impl CloudMeshGenerator {
                 let max_z = half_depth + pad_z;
 
                 let mask_words = [mask as u32, (mask >> 32) as u32, (mask >> 64) as u32, (mask >> 96) as u32];
-                let config = [cell_size, half_depth, (sx * sectors + sy) as f32, 0.0];
+                let config = [cell_size, half_depth, (sx * sectors + sy) as f32, rank];
+                mesh.centers.push(cloud_center);
+                mesh.ranks.push(rank);
 
                 let base_idx = mesh.vertices.len() as u32;
 

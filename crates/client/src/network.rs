@@ -330,6 +330,8 @@ pub enum NetEvent {
     Hurt { damage: f32, cause: String },
     /// Message du chat (`sender` vide : annonce du serveur, ou réponse d'une commande)
     Chat { sender: String, message: String },
+    /// Horloge du ciel du serveur et temps imposé, qui font foi
+    Clock { time: f64, forced: Option<herocraft_common::WeatherKind> },
     /// Connexion perdue ou fermée par le serveur
     Disconnected(String),
 }
@@ -393,6 +395,11 @@ impl NetClient {
 
     pub fn send_heal(&mut self) {
         self.connection.send(&ClientPacket::Heal);
+    }
+
+    /// `/time set`, `/season`, `/weather` : le ciel du serveur change pour tous
+    pub fn send_sky(&mut self, time: Option<f64>, forced: Option<Option<herocraft_common::WeatherKind>>) {
+        self.connection.send(&ClientPacket::SetSky { time, forced });
     }
 
     pub fn send_experience(&mut self, amount: u64) {
@@ -482,6 +489,7 @@ impl NetClient {
                 return Some(NetEvent::Chat { sender, message });
             }
             ServerPacket::Disconnect(reason) => return Some(NetEvent::Disconnected(reason)),
+            ServerPacket::Clock { time, forced } => return Some(NetEvent::Clock { time, forced }),
             ServerPacket::ChunkData { coord, .. } => warn!("Chunk {coord:?} reçu hors de la connexion, ignoré."),
             ServerPacket::StatsUpdate(stats) => return Some(NetEvent::Stats(stats)),
             ServerPacket::PlayerHurt { damage, cause } => return Some(NetEvent::Hurt { damage, cause }),

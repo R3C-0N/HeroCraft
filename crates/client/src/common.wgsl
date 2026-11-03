@@ -27,6 +27,12 @@ struct CameraUniform {
     // x : échelle des dimensions mesurées en blocs (rayon / 25 sur le prototype de 1 024 blocs par
     // face, 2 aujourd'hui), y : taille d'un bloc en unités du monde
     scales: vec4<f32>,
+    // Météo au joueur : x = ciel voilé, y = sol mouillé, z = neige tombée sur le dessus des
+    // blocs, w = éclair (weather.rs, `WeatherVisual`)
+    weather: vec4<f32>,
+    // Saisons : rougeur d'automne et dépouillement d'hiver des feuillus, au nord (x, y) puis au
+    // sud (z, w)
+    season: vec4<f32>,
 };
 
 @group(0) @binding(0)

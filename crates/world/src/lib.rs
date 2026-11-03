@@ -24,4 +24,4 @@ pub use roads::{Road, RoadMap};
 pub use structures::{Settlement, SettlementKind, StructureMap};
 pub use tectonics::*;
 pub use vegetation::{Tree, TreeKind, VegetationField, TREE_CELL, TREE_REACH, VEGETATION_SPAN};
-pub use weather::{crop_growth_factor, Season, WeatherKind, WeatherModel, WeatherSample};
+pub use weather::{crop_growth_factor, Season, SkyClock, WeatherKind, WeatherModel, WeatherSample};

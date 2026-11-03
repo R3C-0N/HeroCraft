@@ -22,6 +22,8 @@ pub const AUDIO_FILE: &str = "config/audio.json";
 const VARIANTS: usize = 4;
 /// Durée de la boucle de vent
 const WIND_LOOP_SECONDS: f32 = 12.0;
+/// Durée de la boucle de pluie
+const RAIN_LOOP_SECONDS: f32 = 8.0;
 /// Au-delà, un bloc changé par un autre joueur ne s'entend plus (en blocs)
 const REMOTE_HEARING_BLOCKS: f32 = 32.0;
 
@@ -108,6 +110,10 @@ pub struct AmbienceInput {
     pub covered: bool,
     /// Le Soleil est levé au-dessus du joueur
     pub is_day: bool,
+    /// Pluie qui tombe autour du joueur, de 0 à 1 (la neige ne s'entend pas)
+    pub rain: f32,
+    /// Vent de la météo, de 0 (calme) à 1 (tempête)
+    pub wind: f32,
 }
 
 /// Sons synthétisés, par matière pour ceux des pas et des blocs
@@ -120,6 +126,7 @@ struct SoundBank {
     hurts: Vec<SamplesBuffer>,
     birds: Vec<SamplesBuffer>,
     crickets: Vec<SamplesBuffer>,
+    thunders: Vec<SamplesBuffer>,
 }
 
 fn buffer(samples: Vec<f32>) -> SamplesBuffer {
@@ -145,6 +152,7 @@ impl SoundBank {
             hurts: variants(synth::hurt_grunt),
             birds: (0..8).map(|seed| buffer(synth::bird_song(seed))).collect(),
             crickets: variants(synth::cricket_chirps),
+            thunders: variants(synth::thunder),
         }
     }
 }
@@ -157,6 +165,7 @@ fn material_index(material: Material) -> usize {
 struct Output {
     device: MixerDeviceSink,
     wind: Player,
+    rain: Player,
     bank: SoundBank,
 }
 
@@ -167,6 +176,8 @@ pub struct Audio {
     tracker: PlayerSoundTracker,
     /// Niveau du vent lissé (avant le volume de l'ambiance)
     wind_level: f32,
+    /// Niveau de la pluie lissé
+    rain_level: f32,
     /// Secondes avant le prochain chant d'oiseau ou de grillon
     critter_in: f32,
 }
@@ -182,15 +193,18 @@ impl Audio {
                 let wind = Player::connect_new(device.mixer());
                 wind.set_volume(0.0);
                 wind.append(buffer(synth::wind_loop(WIND_LOOP_SECONDS, 1)).repeat_infinite());
+                let rain = Player::connect_new(device.mixer());
+                rain.set_volume(0.0);
+                rain.append(buffer(synth::rain_loop(RAIN_LOOP_SECONDS, 1)).repeat_infinite());
                 info!("Son prêt ({} ms de synthèse).", started.elapsed().as_millis());
-                Some(Output { device, wind, bank })
+                Some(Output { device, wind, rain, bank })
             }
             Err(e) => {
                 warn!("Aucune sortie audio ({}) : le jeu continue sans le son.", e);
                 None
             }
         };
-        Self { output, rng: Noise::new(0xA0D1), last_variant: usize::MAX, tracker: PlayerSoundTracker::default(), wind_level: 0.0, critter_in: 4.0 }
+        Self { output, rng: Noise::new(0xA0D1), last_variant: usize::MAX, tracker: PlayerSoundTracker::default(), wind_level: 0.0, rain_level: 0.0, critter_in: 4.0 }
     }
 
     /// Tire une variante, différente de la précédente quand il y en a plusieurs
@@ -270,6 +284,11 @@ impl Audio {
         self.play(|b| &b.places[m], settings.effects_gain() * 0.6 * attenuation(distance_blocks), 0.06);
     }
 
+    /// Coup de tonnerre d'un éclair, de force 0 à 1 (lointain : faible)
+    pub fn thunder(&mut self, loudness: f32, settings: &AudioSettings) {
+        self.play(|b| &b.thunders, settings.ambience_gain() * 0.9 * loudness.clamp(0.0, 1.0), 0.12);
+    }
+
     /// Son d'essai joué en réglant les volumes
     pub fn preview(&mut self, settings: &AudioSettings) {
         self.block_placed(Material::Stone, 0.0, settings);
@@ -281,6 +300,10 @@ impl Audio {
             return;
         }
         let mut target = if input.ground_view { 0.3 + 0.7 * (input.height_blocks / 40.0).clamp(0.0, 1.0) } else { 0.12 };
+        // Le vent forcit avec le mauvais temps
+        if input.ground_view {
+            target = (target + 0.9 * (input.wind - 0.2).max(0.0)).min(1.4);
+        }
         if input.covered {
             target *= 0.3;
         }
@@ -289,11 +312,22 @@ impl Audio {
         }
         self.wind_level += (target - self.wind_level) * (1.0 - (-1.5 * dt).exp());
         let gain = settings.ambience_gain();
+        // Pluie : étouffée sous un toit, coupée en orbite
+        let mut rain_target = if input.ground_view { input.rain } else { 0.0 };
+        if input.covered {
+            rain_target *= 0.35;
+        }
+        if input.paused {
+            rain_target *= 0.5;
+        }
+        self.rain_level += (rain_target - self.rain_level) * (1.0 - (-1.0 * dt).exp());
         if let Some(output) = &self.output {
             output.wind.set_volume(self.wind_level * gain * 0.5);
+            output.rain.set_volume(self.rain_level * gain * 0.55);
         }
 
-        let near_ground = input.ground_view && !input.paused && !input.covered && input.height_blocks < 12.0;
+        // Ni oiseaux ni grillons sous l'averse
+        let near_ground = input.ground_view && !input.paused && !input.covered && input.height_blocks < 12.0 && input.rain < 0.3;
         if !near_ground {
             return;
         }
@@ -374,7 +408,7 @@ mod tests {
         let muted = AudioSettings { muted: true, ..AudioSettings::default() };
         audio.block_broken(Material::Stone, 0.0, &muted);
         audio.preview(&muted);
-        let input = AmbienceInput { ground_view: true, paused: false, height_blocks: 0.0, covered: false, is_day: true };
+        let input = AmbienceInput { ground_view: true, paused: false, height_blocks: 0.0, covered: false, is_day: true, rain: 0.0, wind: 0.0 };
         audio.update_ambience(0.016, input, &muted);
     }
 
@@ -408,7 +442,7 @@ mod tests {
         audio.play(|b| &b.crickets, 0.5, 0.0);
         pause(1.5);
         println!("Vent");
-        let input = AmbienceInput { ground_view: true, paused: false, height_blocks: 40.0, covered: false, is_day: true };
+        let input = AmbienceInput { ground_view: true, paused: false, height_blocks: 40.0, covered: false, is_day: true, rain: 0.0, wind: 0.0 };
         for _ in 0..300 {
             audio.update_ambience(0.016, AmbienceInput { is_day: false, ..input }, &settings);
             pause(0.016);
@@ -453,6 +487,8 @@ mod tests {
         write("oiseau", synth::bird_song(0));
         write("grillons", synth::cricket_chirps(0));
         write("vent", synth::wind_loop(WIND_LOOP_SECONDS, 1));
+        write("pluie", synth::rain_loop(RAIN_LOOP_SECONDS, 1));
+        write("tonnerre", synth::thunder(0));
         println!("Sons écrits dans {}", dir.display());
     }
 

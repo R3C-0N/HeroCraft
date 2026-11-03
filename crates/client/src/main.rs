@@ -38,6 +38,7 @@ mod network;
 mod planet_mesh;
 mod player_stats;
 mod post;
+mod precipitation;
 mod renderer;
 mod shaders;
 mod shadow;
@@ -49,6 +50,7 @@ mod ui_skin;
 #[cfg(test)]
 mod ui_snapshot;
 mod voxel_mesh;
+mod weather;
 
 use block_interaction::BlockInteraction;
 use camera::OrbitCamera;
@@ -204,7 +206,15 @@ fn main() {
     let mut probe = benchmark::FrameProbe::default();
     let mut last_hitch_log: Option<Instant> = None;
     let mut bench = benchmark::requested().then(|| benchmark::Benchmark::new(&camera, current_seed));
+    // Météo et saisons : l'horloge du ciel du monde solo reprend là où elle en était
+    let mut client_weather = weather::ClientWeather::new(current_seed);
+    let mut column_tops = weather::ColumnTops::default();
+    let clock = herocraft_world::SkyClock::load(solo_save_dir(current_seed));
+    state.simulated_time = clock.time as f32;
+    client_weather.model.forced = clock.forced;
     if bench.is_some() {
+        // Banc d'essai : beau temps, pour des mesures comparables
+        client_weather.model.forced = Some(herocraft_world::WeatherKind::Clear);
         state.set_vsync(false);
         // Population tirée de la graine, sans sauvegarde : la même à chaque banc d'essai
         solo_creatures = herocraft_world::CreatureWorld::new(base_radius as f64, current_seed, creature_registry.clone());
@@ -251,6 +261,7 @@ fn main() {
                         // En ligne, la population est celle du serveur : celle du solo est déjà enregistrée
                         if net.is_none() && hosted.is_none() {
                             save_solo_creatures(&solo_creatures);
+                            save_sky_clock(current_seed, &state, &client_weather);
                         }
                         if let Some(client) = net.as_mut() {
                             client.disconnect();
@@ -539,13 +550,46 @@ fn main() {
                         probe.section("caméra et joueur", section);
                         {
                             herocraft_common::prof_scope!("son");
-                            update_sound(&mut audio, &camera, &generator, &state, &ui_state, dt, &mut sky_check_in, &mut sky_covered);
+                            update_sound(&mut audio, &camera, &generator, &state, &ui_state, dt, &mut sky_check_in, &mut sky_covered, client_weather.visual());
                         }
-                        state.update_camera(&camera, &ui_state.lighting_settings, &ui_state.cloud_settings, ui_state.video_settings.flattening);
+                        // Météo au joueur : lumière voilée, nuages, pluie ou neige autour de lui
+                        let ground = camera.distance <= camera.base_radius;
+                        {
+                            herocraft_common::prof_scope!("meteo");
+                            let weather_dt = if ui_state.is_settings_open { 0.0 } else { dt };
+                            client_weather.update(weather_dt, state.simulated_time as f64, camera.player_pos, camera.base_radius, ground);
+                            for loudness in client_weather.take_thunder() {
+                                audio.thunder(loudness, &ui_state.audio_settings);
+                            }
+                            state.update_cloud_weather(&client_weather.model);
+                            let visual = *client_weather.visual();
+                            let raining = ground && visual.precipitation > 0.01;
+                            if let Some(collider) = camera.collider.as_ref().filter(|_| raining) {
+                                if let Some(columns) = column_tops.update(dt, collider, &generator, camera.player_pos, camera.base_radius) {
+                                    state.set_precipitation_columns(&columns);
+                                }
+                            }
+                            let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+                            state.update_precipitation(raining.then_some(precipitation::PrecipFrame {
+                                feet: camera.player_pos,
+                                block,
+                                intensity: visual.precipitation,
+                                snow: visual.snow,
+                                wind: visual.wind,
+                                time: client_weather.clock,
+                            }));
+                        }
+                        let visual = *client_weather.visual();
+                        let mut lighting = visual.lighting(&ui_state.lighting_settings);
+                        // En ligne, le ciel suit l'horloge du serveur
+                        if net.is_some() {
+                            lighting.moon_speed = 1.0;
+                        }
+                        state.update_camera(&camera, &lighting, &ui_state.cloud_settings, ui_state.video_settings.flattening, &visual);
                         state.update_post(&ui_state.post_settings);
                         state.set_msaa(ui_state.video_settings.msaa);
                         state.update_shadows(&camera, &ui_state.shadow_settings);
-                        state.update_atmosphere(&camera, &ui_state.atmosphere_settings, &ui_state.lighting_settings);
+                        state.update_atmosphere(&camera, &ui_state.atmosphere_settings, &lighting);
 
                         // Bloc visé par le réticule (souris capturée seulement) et bouton tenu enfoncé
                         let mut terrain_edited = false;
@@ -606,6 +650,10 @@ fn main() {
                                     }
                                     NetEvent::Chat { sender, message } if sender.is_empty() => ui_state.chat.server(&message),
                                     NetEvent::Chat { sender, message } => ui_state.chat.player(&sender, &message),
+                                    NetEvent::Clock { time, forced } => {
+                                        state.simulated_time = time as f32;
+                                        client_weather.model.forced = forced;
+                                    }
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
                                 }
                             }
@@ -636,6 +684,8 @@ fn main() {
                                     if !ui_state.is_settings_open && creature_mode != benchmark::CreatureMode::Off {
                                         // L'heure du ciel règle le sommeil et les apparitions
                                         solo_creatures.set_sun_dir(state.sun_dir());
+                                        // Sous l'orage les bêtes s'abritent, l'hiver les ours hibernent
+                                        solo_creatures.set_climate(&client_weather.model, state.simulated_time as f64);
                                         let player = herocraft_world::PlayerPresence { feet: camera.player_pos, crouching: camera.is_crouching() };
                                         // Morsures et charges des bêtes agressives
                                         let hits = solo_creatures.tick_with_presences(dt, &generator, lod_manager.terrain_edits(), &[player]);
@@ -697,7 +747,7 @@ fn main() {
                                         window.set_title(&format!("HeroCraft — partie ouverte au réseau local (port {})", host.port));
                                     } else {
                                         current_seed = world.seed;
-                                        switch_planet(current_seed, true, edits, None, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                        switch_planet(current_seed, true, edits, None, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state, &mut client_weather);
                                         dropped_items.clear();
                                         // De retour sur ce serveur : là où le joueur l'avait quitté
                                         if let Some(spawn) = world.spawn_position {
@@ -775,6 +825,7 @@ fn main() {
                             save_terrain_edits(&lod_manager);
                             if net.is_none() && hosted.is_none() {
                                 save_solo_creatures(&solo_creatures);
+                                save_sky_clock(current_seed, &state, &client_weather);
                             }
                             ui_state.inventory.save();
                             last_autosave = Instant::now();
@@ -837,6 +888,7 @@ fn main() {
                                         seed: current_seed,
                                         pending_actions: &mut pending_actions,
                                         next_planet_seed: &mut next_planet_seed,
+                                        weather: &mut client_weather,
                                     };
                                     run_command(command, &mut game)
                                 });
@@ -898,6 +950,7 @@ fn main() {
                                 UiAction::QuitGame => {
                                     if net.is_none() && hosted.is_none() {
                                         save_solo_creatures(&solo_creatures);
+                                        save_sky_clock(current_seed, &state, &client_weather);
                                     }
                                     if let Some(client) = net.as_mut() {
                                         client.disconnect();
@@ -940,6 +993,7 @@ fn main() {
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
                                     save_solo_creatures(&solo_creatures);
+                                    save_sky_clock(current_seed, &state, &client_weather);
                                     solo_seed = current_seed;
                                     let pseudo = ui_state.multiplayer.pseudo.trim().to_string();
                                     let save_dir = std::path::PathBuf::from(solo_save_dir(current_seed));
@@ -961,6 +1015,7 @@ fn main() {
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
                                     save_solo_creatures(&solo_creatures);
+                                    save_sky_clock(current_seed, &state, &client_weather);
                                     solo_seed = current_seed;
                                     let addr = network::server_address(&ui_state.multiplayer.join_target);
                                     let pseudo = ui_state.multiplayer.pseudo.trim().to_string();
@@ -992,9 +1047,13 @@ fn main() {
                                         ui_state.set_legend(legend);
                                         camera.set_terrain(edits.clone());
                                         lod_manager.set_terrain_edits(edits);
+                                        // Le serveur a enregistré son horloge dans le monde solo
+                                        let clock = herocraft_world::SkyClock::load(solo_save_dir(solo_seed));
+                                        state.simulated_time = clock.time as f32;
+                                        client_weather.model.forced = clock.forced;
                                     } else {
                                         current_seed = solo_seed;
-                                        switch_planet(current_seed, false, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                        switch_planet(current_seed, false, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state, &mut client_weather);
                                         dropped_items.clear();
                                     }
                                     block_interaction.invalidate();
@@ -1006,9 +1065,10 @@ fn main() {
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
                                     save_solo_creatures(&solo_creatures);
+                                    save_sky_clock(current_seed, &state, &client_weather);
                                     current_seed = next_planet_seed.take().unwrap_or_else(herocraft_world::random_seed);
                                     let (storage, edits) = solo_terrain(current_seed);
-                                    switch_planet(current_seed, false, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
+                                    switch_planet(current_seed, false, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state, &mut client_weather);
                                     dropped_items.clear();
                                     info!("Nouvelle planète générée ! (Graine: #{})", current_seed);
                                 }
@@ -1158,6 +1218,7 @@ fn update_sound(
     dt: f32,
     sky_check_in: &mut f32,
     sky_covered: &mut bool,
+    weather: &weather::WeatherVisual,
 ) {
     let settings = &ui_state.audio_settings;
     let ground_view = camera.distance <= camera.base_radius;
@@ -1194,8 +1255,18 @@ fn update_sound(
         height_blocks,
         covered: *sky_covered,
         is_day: state.sun_dir().dot(up) > -0.05,
+        rain: weather.precipitation * (1.0 - weather.snow),
+        wind: weather.wind,
     };
     audio.update_ambience(dt, input, settings);
+}
+
+/// Horloge du ciel et temps imposé du monde solo, enregistrés avec lui
+fn save_sky_clock(seed: u64, state: &State, weather: &weather::ClientWeather) {
+    let clock = herocraft_world::SkyClock { time: state.simulated_time as f64, forced: weather.model.forced };
+    if let Err(e) = clock.save(solo_save_dir(seed)) {
+        warn!("Échec de l'enregistrement de l'horloge du ciel : {e}");
+    }
 }
 
 /// Dossier de sauvegarde d'un monde solo (aussi celui du serveur qui l'ouvre au réseau local)
@@ -1274,8 +1345,16 @@ fn switch_planet(
     camera: &mut OrbitCamera,
     state: &mut State,
     ui_state: &mut UiState,
+    weather: &mut weather::ClientWeather,
 ) {
     let desc = herocraft_world::PlanetDescriptor { seed, ..Default::default() };
+    // Météo de la nouvelle planète ; en solo, son horloge reprend (en ligne, le serveur l'envoie)
+    weather.reset(seed);
+    if !online {
+        let clock = herocraft_world::SkyClock::load(solo_save_dir(seed));
+        state.simulated_time = clock.time as f32;
+        weather.model.forced = clock.forced;
+    }
     *generator = herocraft_world::PlanetWorldGenerator::new(desc);
     *chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
     lod_manager.clear(seed);
@@ -1516,6 +1595,23 @@ struct Game<'a> {
     seed: u64,
     pending_actions: &'a mut Vec<UiAction>,
     next_planet_seed: &'a mut Option<u64>,
+    /// Météo du joueur (`/weather`, `/season`)
+    weather: &'a mut weather::ClientWeather,
+}
+
+/// Température de l'échelle des biomes en degrés Celsius, à peu près : 0,4 (neige) vers 0 °C,
+/// 1 (équateur) vers 30 °C
+fn celsius(temperature: f32) -> i32 {
+    ((temperature - herocraft_world::weather::SNOW_TEMPERATURE) * 50.0).round() as i32
+}
+
+fn season_english(season: herocraft_world::weather::Season) -> &'static str {
+    match season {
+        herocraft_world::weather::Season::Spring => "Spring",
+        herocraft_world::weather::Season::Summer => "Summer",
+        herocraft_world::weather::Season::Autumn => "Autumn",
+        herocraft_world::weather::Season::Winter => "Winter",
+    }
 }
 
 /// Exécute une commande du chat : renvoie les lignes de réponse, ou l'erreur à afficher
@@ -1572,8 +1668,12 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
         Command::TimeSet(hour) => {
             let up = game.camera.player_pos.normalize_or_zero();
             let time = renderer::time_for_local_hour(game.sky.simulated_time, up, hour).ok_or("The sun never rises nor sets here")?;
-            game.sky.simulated_time = time;
-            let note = if online { " (your sky only)" } else { "" };
+            // En ligne, le ciel est celui du serveur : l'heure change pour tous
+            match game.net.as_deref_mut() {
+                Some(client) => client.send_sky(Some(time as f64), None),
+                None => game.sky.simulated_time = time,
+            }
+            let note = if online { " for everyone" } else { "" };
             one(format!("Time set to {}{note}", format_hour(hour)))
         }
         Command::TimeSpeed(speed) => {
@@ -1667,6 +1767,47 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
             let mut names = vec![format!("{me} (you)")];
             names.extend(game.net.as_deref().map(|c| c.player_names()).unwrap_or_default());
             one(format!("{} player(s) online: {}", names.len(), names.join(", ")))
+        }
+        Command::Weather(None) => {
+            let sample = game.weather.sample.ok_or("The weather is not known yet")?;
+            let forced = if game.weather.model.forced.is_some() { " (forced: /weather auto lets nature decide)" } else { "" };
+            let what = match sample.kind() {
+                herocraft_common::WeatherKind::Clear => "Clear sky",
+                herocraft_common::WeatherKind::Cloudy => "Cloudy",
+                herocraft_common::WeatherKind::Rain => "Rain",
+                herocraft_common::WeatherKind::Storm => "Thunderstorm",
+                herocraft_common::WeatherKind::Snow => "Snow",
+            };
+            one(format!("{what}, {}°C, wind {:.0}%{forced}", celsius(sample.temperature), sample.wind * 100.0))
+        }
+        Command::Weather(Some(forced)) => {
+            match game.net.as_deref_mut() {
+                Some(client) => client.send_sky(None, Some(forced)),
+                None => game.weather.model.forced = forced,
+            }
+            let everyone = if online { " for everyone" } else { "" };
+            one(match forced {
+                Some(kind) => format!("Weather forced to {}{everyone}", kind.command_word()),
+                None => format!("Natural weather is back{everyone}"),
+            })
+        }
+        Command::Season(None) => {
+            let up = game.camera.player_pos.normalize_or_zero();
+            let lat = (up.y as f64).clamp(-1.0, 1.0).asin();
+            let time = game.sky.simulated_time as f64;
+            let (season, progress) = herocraft_world::weather::season_at(time, lat);
+            let day = (progress as f64 * herocraft_world::weather::DAYS_PER_SEASON).floor() as u32 + 1;
+            let year = (time / herocraft_world::weather::YEAR_SECONDS).floor() as u32 + 1;
+            let mild = if herocraft_world::weather::season_strength(lat) < 0.3 { " (barely felt in the tropics)" } else { "" };
+            one(format!("{}, day {day} of {}, year {year}{mild}", season_english(season), herocraft_world::weather::DAYS_PER_SEASON))
+        }
+        Command::Season(Some(season)) => {
+            let time = herocraft_world::weather::time_for_season(game.sky.simulated_time as f64, season);
+            match game.net.as_deref_mut() {
+                Some(client) => client.send_sky(Some(time), None),
+                None => game.sky.simulated_time = time as f32,
+            }
+            one(format!("{} begins in the north ({} in the south)", season_english(season), season_english(herocraft_world::weather::Season::ALL[(season as usize + 2) % 4])))
         }
         Command::ClearChat => {
             game.ui.chat.clear();

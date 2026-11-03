@@ -174,6 +174,14 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let air_path = clamp((1.0 - scattering.transmittance.b) * 2.5, 0.0, 1.0);
     let night_glow = vec3<f32>(0.008, 0.012, 0.024) * night_amb_slider * air_path;
 
-    let sky = scattering.inscatter + night_glow + (sun_color + moon_color + visible_stars) * behind;
+    // 6. Ciel voilé (météo, vue du sol seulement) : le bleu tourne au gris, le soleil, la Lune et
+    // les étoiles disparaissent derrière les nuages ; l'éclair illumine tout le ciel
+    let overcast = camera.weather.x * camera.lighting_params_ext.w;
+    let luma = dot(scattering.inscatter, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let grey_sky = vec3<f32>(luma) * vec3<f32>(0.92, 0.95, 1.0) * 0.85;
+    let inscatter = mix(scattering.inscatter, grey_sky, overcast * 0.85);
+    let veil = 1.0 - 0.97 * smoothstep(0.15, 0.7, overcast);
+    let flash = vec3<f32>(0.9, 0.95, 1.2) * camera.weather.w * camera.lighting_params_ext.w;
+    let sky = inscatter + night_glow + (sun_color + moon_color + visible_stars) * behind * veil + flash;
     return vec4<f32>(quantization_dither(sky, in.clip_pos.xy), 1.0);
 }

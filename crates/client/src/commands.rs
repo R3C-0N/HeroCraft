@@ -43,6 +43,11 @@ pub enum Command {
     List,
     /// Efface le chat
     ClearChat,
+    /// Temps qu'il fait (`None`), temps imposé (`Some(Some(kind))`) ou retour au temps naturel
+    /// (`Some(None)`)
+    Weather(Option<Option<herocraft_common::WeatherKind>>),
+    /// Saison et jour de l'année (`None`), ou passage au début d'une saison (hémisphère nord)
+    Season(Option<herocraft_world::Season>),
 }
 
 /// Une commande : nom, arguments, description (affichés par `/help`)
@@ -59,6 +64,8 @@ pub const COMMANDS: &[CommandHelp] = &[
     CommandHelp { name: "spawn", usage: "/spawn", description: "Go back to the spawn point" },
     CommandHelp { name: "pos", usage: "/pos", description: "Show your latitude, longitude, altitude and block" },
     CommandHelp { name: "time", usage: "/time [set <0-24|hh:mm|sunrise|day|noon|sunset|night|midnight>] | /time speed <factor>", description: "Show or set the local time, or change how fast the sky moves (1 = 20 min day, 0 = frozen)" },
+    CommandHelp { name: "weather", usage: "/weather [clear|cloudy|rain|storm|snow|auto]", description: "Show the weather, force it everywhere, or let nature decide again (auto)" },
+    CommandHelp { name: "season", usage: "/season [spring|summer|autumn|winter]", description: "Show the season, or jump to the start of one (northern hemisphere; the south has the opposite)" },
     CommandHelp { name: "seed", usage: "/seed", description: "Show the planet seed" },
     CommandHelp { name: "planet", usage: "/planet [seed]", description: "Generate a new planet, random or from a seed (single player only)" },
     CommandHelp { name: "give", usage: "/give <item> [count]", description: "Put blocks or items in your inventory (Tab completes the name)" },
@@ -134,6 +141,13 @@ pub fn parse(line: &str) -> Result<Command, String> {
         }
         ("list" | "who", []) => Command::List,
         ("clear", []) => Command::ClearChat,
+        ("weather" | "meteo", []) => Command::Weather(None),
+        ("weather" | "meteo", ["auto" | "natural" | "reset"]) => Command::Weather(Some(None)),
+        ("weather" | "meteo", [kind]) => {
+            Command::Weather(Some(Some(herocraft_common::WeatherKind::parse(kind).ok_or_else(|| wrong(&format!("Unknown weather \"{kind}\"")))?)))
+        }
+        ("season" | "saison", []) => Command::Season(None),
+        ("season" | "saison", [season]) => Command::Season(Some(herocraft_world::Season::parse(season).ok_or_else(|| wrong(&format!("Unknown season \"{season}\"")))?)),
         ("", _) => return Err("Type /help to list the commands".into()),
         (other, _) if COMMANDS.iter().any(|c| c.name == other) => return Err(wrong("Wrong arguments")),
         (other, _) => return Err(format!("Unknown command /{other}. Type /help to list the commands")),
@@ -198,6 +212,8 @@ pub fn complete(line: &str, sources: &CompletionSources) -> Vec<String> {
             "tp" | "teleport" => sources.players.to_vec(),
             "help" | "?" => COMMANDS.iter().map(|c| c.name.to_string()).collect(),
             "time" => vec!["set".into(), "speed".into()],
+            "weather" | "meteo" => ["clear", "cloudy", "rain", "storm", "snow", "auto"].map(String::from).to_vec(),
+            "season" | "saison" => ["spring", "summer", "autumn", "winter"].map(String::from).to_vec(),
             _ => Vec::new(),
         },
         [command, sub] if command.eq_ignore_ascii_case("time") && sub.eq_ignore_ascii_case("set") => {
@@ -290,12 +306,26 @@ mod tests {
     }
 
     #[test]
+    fn test_weather_and_season() {
+        use herocraft_common::WeatherKind;
+        assert_eq!(parse("/weather"), Ok(Command::Weather(None)));
+        assert_eq!(parse("/weather storm"), Ok(Command::Weather(Some(Some(WeatherKind::Storm)))));
+        assert_eq!(parse("/weather pluie"), Ok(Command::Weather(Some(Some(WeatherKind::Rain)))));
+        assert_eq!(parse("/weather auto"), Ok(Command::Weather(Some(None))));
+        assert!(parse("/weather hail").is_err());
+        assert_eq!(parse("/season winter"), Ok(Command::Season(Some(herocraft_world::Season::Winter))));
+        assert!(parse("/season monsoon").is_err());
+        let sources = CompletionSources { items: &[], creatures: &[], players: &[] };
+        assert_eq!(complete("/weather st", &sources), vec!["/weather storm".to_string()]);
+    }
+
+    #[test]
     fn test_every_command_has_help_and_parses() {
         for c in COMMANDS {
             assert!(help(Some(c.name)).is_ok());
         }
         // Chaque commande sans argument obligatoire se lit telle quelle
-        for name in ["help", "spawn", "pos", "time", "seed", "planet", "fly", "heal", "list", "clear"] {
+        for name in ["help", "spawn", "pos", "time", "seed", "planet", "fly", "heal", "list", "clear", "weather", "season"] {
             assert!(parse(&format!("/{name}")).is_ok(), "/{name}");
         }
     }

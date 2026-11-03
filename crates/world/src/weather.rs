@@ -114,55 +114,7 @@ pub fn time_for_season(time: f64, season: Season) -> f64 {
     target
 }
 
-/// Temps qu'il fait, tel que choisi à la main (commande `/meteo`) : il s'impose partout
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum WeatherKind {
-    /// Ciel dégagé
-    Clear,
-    /// Ciel couvert, sans pluie
-    Cloudy,
-    Rain,
-    /// Pluie d'orage, éclairs et tonnerre
-    Storm,
-    Snow,
-}
-
-impl WeatherKind {
-    pub const ALL: [WeatherKind; 5] = [WeatherKind::Clear, WeatherKind::Cloudy, WeatherKind::Rain, WeatherKind::Storm, WeatherKind::Snow];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            WeatherKind::Clear => "Beau temps",
-            WeatherKind::Cloudy => "Couvert",
-            WeatherKind::Rain => "Pluie",
-            WeatherKind::Storm => "Orage",
-            WeatherKind::Snow => "Neige",
-        }
-    }
-
-    /// Mot de la commande `/meteo` (`clair`, `couvert`, `pluie`, `orage`, `neige`, ou en anglais)
-    pub fn parse(name: &str) -> Option<WeatherKind> {
-        match name.to_lowercase().as_str() {
-            "clair" | "beau" | "soleil" | "clear" | "sun" => Some(WeatherKind::Clear),
-            "couvert" | "nuages" | "cloudy" | "clouds" => Some(WeatherKind::Cloudy),
-            "pluie" | "rain" => Some(WeatherKind::Rain),
-            "orage" | "storm" | "thunder" => Some(WeatherKind::Storm),
-            "neige" | "snow" => Some(WeatherKind::Snow),
-            _ => None,
-        }
-    }
-
-    /// Mot de commande (le premier que `parse` comprend)
-    pub fn command_word(self) -> &'static str {
-        match self {
-            WeatherKind::Clear => "clair",
-            WeatherKind::Cloudy => "couvert",
-            WeatherKind::Rain => "pluie",
-            WeatherKind::Storm => "orage",
-            WeatherKind::Snow => "neige",
-        }
-    }
-}
+pub use herocraft_common::WeatherKind;
 
 /// Le temps qu'il fait en un lieu et à un moment
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -320,6 +272,43 @@ impl WeatherModel {
     }
 }
 
+/// Horloge du ciel d'un monde et temps imposé, enregistrés dans sa sauvegarde (`temps.json`) : on
+/// retrouve l'heure, la saison et la météo là où on les avait laissées
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct SkyClock {
+    /// Temps du ciel, en secondes (`sky::compute_sun_dir`)
+    pub time: f64,
+    /// Temps imposé par `/weather` (`None` : le temps naturel)
+    #[serde(default)]
+    pub forced: Option<WeatherKind>,
+}
+
+/// Nom du fichier de l'horloge dans le dossier de sauvegarde d'un monde
+pub const CLOCK_FILE: &str = "temps.json";
+
+impl SkyClock {
+    /// Horloge enregistrée dans le dossier `dir`, ou celle d'un monde neuf (fichier absent ou illisible)
+    pub fn load(dir: impl AsRef<std::path::Path>) -> Self {
+        let path = dir.as_ref().join(CLOCK_FILE);
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| {
+                serde_json::from_str::<SkyClock>(&text)
+                    .map_err(|e| log::warn!("Horloge {} illisible ({e}) : le monde repart au premier jour.", path.display()))
+                    .ok()
+            })
+            .filter(|c| c.time.is_finite())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self, dir: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        let dir = dir.as_ref();
+        std::fs::create_dir_all(dir)?;
+        let text = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        std::fs::write(dir.join(CLOCK_FILE), text)
+    }
+}
+
 fn wind(cloud_cover: f32, storm: f32) -> f32 {
     (0.15 + 0.35 * cloud_cover + 0.6 * storm).min(1.0)
 }
@@ -446,6 +435,18 @@ mod tests {
         for kind in WeatherKind::ALL {
             assert_eq!(WeatherKind::parse(kind.command_word()), Some(kind));
         }
+    }
+
+    #[test]
+    fn the_clock_is_saved_and_read_back() {
+        let dir = std::env::temp_dir().join(format!("herocraft_horloge_{}", std::process::id()));
+        assert_eq!(SkyClock::load(&dir), SkyClock::default());
+        let clock = SkyClock { time: 12345.5, forced: Some(WeatherKind::Snow) };
+        clock.save(&dir).unwrap();
+        assert_eq!(SkyClock::load(&dir), clock);
+        std::fs::write(dir.join(CLOCK_FILE), "pas du json").unwrap();
+        assert_eq!(SkyClock::load(&dir), SkyClock::default());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

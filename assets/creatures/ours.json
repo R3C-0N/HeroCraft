@@ -11,6 +11,7 @@
     {"biome": "Taiga", "weight": 0.2}
   ],
   "activity": "diurnal",
+  "hibernation": true,
   "attack": {"mode": "solo", "damage": 12, "cooldown": 1.8, "sight": 10, "chase_speed": 1.8, "provoked_only": true},
   "model": {
     "mesh": "modeles/ours.gltf",
