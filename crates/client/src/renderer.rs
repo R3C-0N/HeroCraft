@@ -84,17 +84,20 @@ struct GpuMesh {
     center: glam::Vec3,
     /// Demi-diagonale de la boîte englobante (tri des maillages par cascade d'ombre)
     radius: f32,
+    /// Distance au centre de la planète du sommet le plus haut (horizon, `terrain_cull`)
+    max_radius: f32,
 }
 
-fn mesh_bounds(vertices: &[PlanetVertex]) -> (glam::Vec3, f32) {
-    let (min, max) = vertices.iter().fold(
-        (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN)),
-        |(lo, hi), v| {
+/// Centre et demi-diagonale de la boîte englobante, et distance au centre du sommet le plus haut
+fn mesh_bounds(vertices: &[PlanetVertex]) -> (glam::Vec3, f32, f32) {
+    let (min, max, max_r2) = vertices.iter().fold(
+        (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN), 0.0_f32),
+        |(lo, hi, r2), v| {
             let p = glam::Vec3::from(v.position);
-            (lo.min(p), hi.max(p))
+            (lo.min(p), hi.max(p), r2.max(p.length_squared()))
         },
     );
-    ((min + max) * 0.5, (max - min).length() * 0.5)
+    ((min + max) * 0.5, (max - min).length() * 0.5, max_r2.sqrt())
 }
 
 /// Octets envoyés au GPU au plus par synchronisation (un gros ensemble est étalé sur plusieurs frames)
@@ -142,6 +145,10 @@ pub struct State {
     lod_gpu_meshes: HashMap<LodMeshId, GpuMesh>,
     /// Maillages à dessiner cette frame, dans l'ordre des feuilles
     lod_draw_list: Vec<LodMeshId>,
+    /// Morceaux de `lod_draw_list` visibles depuis la caméra, du plus proche au plus lointain
+    lod_visible_list: Vec<LodMeshId>,
+    /// Champ de vision et horizon de la dernière caméra (`update_camera`)
+    terrain_cull: Option<crate::terrain_cull::TerrainCull>,
     camera_eye: glam::Vec3,
     lod_sync_count: u64,
     lod_uploads_pending: bool,
@@ -624,6 +631,8 @@ impl State {
             clouds_visible: false,
             lod_gpu_meshes: HashMap::new(),
             lod_draw_list: Vec::new(),
+            lod_visible_list: Vec::new(),
+            terrain_cull: None,
             camera_eye: glam::Vec3::ZERO,
             lod_sync_count: 0,
             lod_uploads_pending: false,
@@ -773,6 +782,7 @@ impl State {
             flatten: [(k - 1.0) * sea_radius, k, flatten_start, flatten_start + FLATTEN_BLEND_BLOCKS * block],
             scales: [herocraft_world::block_scale(camera.base_radius as f64) as f32, block, 0.0, 0.0],
         };
+        self.terrain_cull = Some(crate::terrain_cull::TerrainCull::new(view_proj, eye, sea_radius, uniform.flatten, block));
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
@@ -825,7 +835,7 @@ impl State {
                 gpu_mesh.last_used_sync = sync;
             } else if uploaded_bytes < budget {
                 uploaded_bytes += mesh.vertices.len() * std::mem::size_of::<PlanetVertex>() + mesh.indices.len() * 4;
-                let (center, radius) = mesh_bounds(&mesh.vertices);
+                let (center, radius, max_radius) = mesh_bounds(&mesh.vertices);
                 let gpu_mesh = GpuMesh {
                     vertex_buffer: self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some("LOD Vertex Buffer"),
@@ -841,6 +851,7 @@ impl State {
                     last_used_sync: sync,
                     center,
                     radius,
+                    max_radius,
                 };
                 self.lod_gpu_meshes.insert(id, gpu_mesh);
             } else {
@@ -1029,16 +1040,22 @@ impl State {
 
             // 1.a. Relief planétaire & Voxels, du plus proche au plus lointain : le test de
             // profondeur précoce élimine les fragments cachés avant d'exécuter le shader
-            let (meshes, eye) = (&self.lod_gpu_meshes, self.camera_eye);
-            self.lod_draw_list.sort_by_cached_key(|id| {
+            // Les morceaux hors du champ de vision ou sous l'horizon ne sont pas dessinés
+            let (meshes, eye, cull) = (&self.lod_gpu_meshes, self.camera_eye, self.terrain_cull);
+            self.lod_visible_list.clear();
+            self.lod_visible_list.extend(self.lod_draw_list.iter().copied().filter(|id| {
+                meshes.get(id).is_some_and(|m| cull.is_none_or(|c| c.is_visible(m.center, m.radius, m.max_radius)))
+            }));
+            self.lod_visible_list.sort_by_cached_key(|id| {
                 meshes.get(id).map_or(u32::MAX, |m| m.center.distance_squared(eye).to_bits())
             });
-            if !self.lod_draw_list.is_empty() {
+            herocraft_common::prof_value!("render.draws_terrain_visibles", self.lod_visible_list.len());
+            if !self.lod_visible_list.is_empty() {
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
                 render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
                 render_pass.set_bind_group(2, &self.block_textures.bind_group, &[]);
-                for id in &self.lod_draw_list {
+                for id in &self.lod_visible_list {
                     if let Some(mesh) = self.lod_gpu_meshes.get(id) {
                         render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                         render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
