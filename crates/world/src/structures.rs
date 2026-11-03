@@ -34,6 +34,10 @@ pub const REGION_CELLS: i32 = 16;
 /// Les villes et villages s'installent à au moins tant de cases du bord de leur région : deux
 /// établissements de régions voisines restent à `2 × REGION_MARGIN` cases l'un de l'autre au moins
 const REGION_MARGIN: i32 = 5;
+/// Régions par arête de face (la dernière est rognée si la face n'en contient pas un nombre entier)
+pub const REGIONS_PER_FACE: i32 = (CELLS_PER_FACE + REGION_CELLS - 1) / REGION_CELLS;
+/// Côté d'une région, en blocs
+pub const REGION_BLOCKS: i32 = REGION_CELLS * CELL;
 /// Cases essayées par région pour sa ville ou son village (la première peut tomber en mer)
 const REGION_CANDIDATES: usize = 4;
 /// Chance qu'une case hors des sites de villes et villages reçoive des ruines (environ trois
@@ -130,7 +134,7 @@ fn facing(b: BlockId, back: Side) -> BlockId {
 // Hasard déterministe
 // ---------------------------------------------------------------------------
 
-fn mix(mut x: u64) -> u64 {
+pub(crate) fn mix(mut x: u64) -> u64 {
     x ^= x >> 30;
     x = x.wrapping_mul(0xbf58476d1ce4e5b9);
     x ^= x >> 27;
@@ -140,12 +144,12 @@ fn mix(mut x: u64) -> u64 {
 }
 
 /// Empreinte d'une position (x, z) pour la graine `seed`
-fn hash2(seed: u64, x: i32, z: i32) -> u64 {
+pub(crate) fn hash2(seed: u64, x: i32, z: i32) -> u64 {
     mix(seed ^ (x as u32 as u64).wrapping_mul(0x9E3779B97F4A7C15) ^ (z as u32 as u64).wrapping_mul(0xC2B2AE3D27D4EB4F))
 }
 
 /// Nombre dans [0, 1) tiré d'une empreinte
-fn unit(h: u64) -> f64 {
+pub(crate) fn unit(h: u64) -> f64 {
     (h >> 11) as f64 / (1u64 << 53) as f64
 }
 
@@ -251,7 +255,7 @@ pub enum Side {
 impl Side {
     pub const ALL: [Side; 4] = [Side::North, Side::South, Side::West, Side::East];
 
-    fn delta(self) -> (i32, i32) {
+    pub fn delta(self) -> (i32, i32) {
         match self {
             Side::North => (0, -1),
             Side::South => (0, 1),
@@ -1327,6 +1331,9 @@ pub struct Settlement {
     /// Plus haut bloc (exclu) que le plan pose
     pub top: i32,
     pub pieces: Vec<Piece>,
+    /// Bouts des rues où un chemin vers un autre établissement peut s'attacher : la colonne juste
+    /// au-delà du bout de la rue (ou de la porte de ville) et le côté vers lequel elle part
+    pub exits: Vec<((i32, i32), Side)>,
 }
 
 impl Settlement {
@@ -1411,7 +1418,18 @@ impl StructureMap {
     }
 }
 
-fn face_index(face: PlanetFace) -> i32 {
+impl StructureMap {
+    /// La ville ou le village de la région (rx, rz) d'une face (régions de `REGION_CELLS` cases de
+    /// côté), s'il y en a un
+    pub fn region_settlement(&self, generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i32) -> Option<&Settlement> {
+        if !(0..REGIONS_PER_FACE).contains(&rx) || !(0..REGIONS_PER_FACE).contains(&rz) {
+            return None;
+        }
+        region_candidates(generator, face, rx, rz).into_iter().find_map(|(cx, cz)| self.cell(generator, face, cx, cz))
+    }
+}
+
+pub(crate) fn face_index(face: PlanetFace) -> i32 {
     PlanetFace::ALL.iter().position(|f| *f == face).unwrap_or(0) as i32
 }
 
@@ -1472,6 +1490,8 @@ struct Planner<'a> {
     pieces: Vec<Piece>,
     /// Emprises déjà prises (bâtiments, rues), contre lesquelles un nouveau bâtiment ne doit pas buter
     taken: Vec<Rect>,
+    /// Bouts de rues où s'attachent les chemins (voir `Settlement::exits`)
+    exits: Vec<((i32, i32), Side)>,
 }
 
 impl<'a> Planner<'a> {
@@ -1551,7 +1571,7 @@ impl<'a> Planner<'a> {
         // Les pièces qui suivent le terrain restent à quelques blocs du relief : le plus haut bloc est
         // celui d'un bâtiment
         let top = self.pieces.iter().map(piece_floor_top).max()?;
-        Some(Settlement { kind, face: self.face, center, biome, bounds, top, pieces: self.pieces })
+        Some(Settlement { kind, face: self.face, center, biome, bounds, top, pieces: self.pieces, exits: self.exits })
     }
 }
 
@@ -1674,7 +1694,7 @@ fn plan_cell(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
             if !site_fits(generator, face, x, z, kind.radius(), step, kind) {
                 continue;
             }
-            let planner = Planner { generator, face, area: cell.expand(-2), pieces: Vec::new(), taken: Vec::new() };
+            let planner = Planner { generator, face, area: cell.expand(-2), pieces: Vec::new(), taken: Vec::new(), exits: Vec::new() };
             let settlement = match kind {
                 SettlementKind::Town => plan_town(planner, (x, z), biome, &mut dice),
                 SettlementKind::Village => plan_village(planner, (x, z), biome, &mut dice),
@@ -1781,6 +1801,7 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
         let (a, b) = ((x + dx * 4, z + dz * 4), (x + dx * length, z + dz * length));
         let road = Rect::new(a.0.min(b.0) - (!along_x) as i32, a.1.min(b.1) - along_x as i32, a.0.max(b.0) + 1 + (!along_x) as i32, a.1.max(b.1) + 1 + along_x as i32);
         p.take(Piece::Paving { rect: road, block: path }, 0);
+        p.exits.push(((x + dx * (length + 1), z + dz * (length + 1)), arm));
         // Bâtiments des deux côtés, porte sur le chemin
         let mut t = 7;
         while t + 3 <= length {
@@ -1904,6 +1925,12 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
     for gate in gates {
         p.take(Piece::Gate { rect: gate }, 0);
     }
+    p.exits.extend([
+        ((x, walls.z0 - 1), Side::North),
+        ((x, walls.z1), Side::South),
+        ((walls.x0 - 1, z), Side::West),
+        ((walls.x1, z), Side::East),
+    ]);
     for rect in [
         Rect::new(walls.x0, walls.z0, walls.x1, walls.z0 + 1),
         Rect::new(walls.x0, walls.z1 - 1, walls.x1, walls.z1),
