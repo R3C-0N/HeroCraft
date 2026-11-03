@@ -378,7 +378,7 @@ fn render_terrain(generator: &PlanetWorldGenerator, center: DVec3, bpp: f64) -> 
                         || (py + 1 < n && level(at(px, py + 1).0.max(SEA_LEVEL_BLOCKS)) != here);
                     if crosses {
                         c = mix(c, INK, 0.28);
-                    } else if matches!(biome, BiomeType::Forest | BiomeType::Jungle | BiomeType::Taiga) && column_hash(f, x, z) % 9 == 0 {
+                    } else if matches!(biome, BiomeType::Forest | BiomeType::Jungle | BiomeType::Taiga) && column_hash(f, x, z).is_multiple_of(9) {
                         // Forêts : pointillés d'encre verte
                         c = mix(c, [0.22, 0.32, 0.18], 0.45);
                     }
