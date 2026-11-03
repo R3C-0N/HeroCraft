@@ -23,3 +23,6 @@ Thumbs.db
 
 # Configuration locale (voir .env.example)
 /.env
+
+# Sauvegardes des parties lancées en local
+/saves/
