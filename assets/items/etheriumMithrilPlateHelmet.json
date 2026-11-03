@@ -3,6 +3,7 @@
   "name": "Heaume d'étherium (mithril)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/etheriumMithrilPlateHelmet.png",
   "stats": {"Protection": 21, "Durabilité": 5000},
   "recipes": [

@@ -3,6 +3,7 @@
   "name": "Camail d'acier",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/steelScaleHelmet.png",
   "stats": {"Protection": 11, "Durabilité": 2000},
   "recipes": [

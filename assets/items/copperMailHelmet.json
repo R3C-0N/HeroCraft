@@ -3,6 +3,7 @@
   "name": "Capuche de cuivre",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/copperMailHelmet.png",
   "stats": {"Protection": 4, "Durabilité": 300},
   "recipes": [

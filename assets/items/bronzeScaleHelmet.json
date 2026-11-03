@@ -3,6 +3,7 @@
   "name": "Camail de bronze",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/bronzeScaleHelmet.png",
   "stats": {"Protection": 6, "Durabilité": 500},
   "recipes": [

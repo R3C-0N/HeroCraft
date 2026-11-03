@@ -3,6 +3,7 @@
   "name": "Solerets d'adamantine",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/adamantinePlateBoots.png",
   "stats": {"Protection": 12, "Durabilité": 3000},
   "recipes": [

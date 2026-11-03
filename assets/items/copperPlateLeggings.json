@@ -3,6 +3,7 @@
   "name": "Grèves de cuivre",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/copperPlateLeggings.png",
   "stats": {"Protection": 8, "Durabilité": 300},
   "recipes": [

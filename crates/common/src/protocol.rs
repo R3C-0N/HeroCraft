@@ -58,6 +58,11 @@ pub enum ClientPacket {
     /// Légende du héros, envoyée à la connexion et au baptême : le serveur vérifie chaque choix
     /// contre l'atlas et en prend la voie (ses jauges et ses gains de niveau en dépendent)
     Legend(Box<crate::hero::Legend>),
+    /// Le joueur mange un aliment (numéro d'objet) : le serveur en lit la satiété et renvoie ses
+    /// statistiques
+    Eat {
+        item: u16,
+    },
     /// Envoi d'un message dans le chat
     ChatMessage(String),
     /// Commande `/summon` : `count` créatures de l'espèce `species` (nom de son fichier) aux pieds

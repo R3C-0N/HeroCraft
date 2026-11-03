@@ -3,6 +3,7 @@
   "name": "Grèves de mithril",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/mithrilPlateLeggings.png",
   "stats": {"Protection": 17, "Durabilité": 3000},
   "recipes": [

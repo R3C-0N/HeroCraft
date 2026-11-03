@@ -5,9 +5,9 @@ use winit::keyboard::{Key, KeyCode, NamedKey};
 
 use crate::audio::AudioSettings;
 use crate::input::{is_reserved_key, Action, Controls, ACTION_GROUPS};
-use crate::inventory::{Inventory, ItemStack, HOTBAR_SLOTS, TOTAL_SLOTS};
+use crate::inventory::{Inventory, ItemStack, BAG_SLOTS, EQUIPMENT, FIRST_EQUIPMENT, HOTBAR_SLOTS};
 use crate::item_icons::ItemIcons;
-use herocraft_common::{blocks, crafting, items, ItemId, Recipe, StationAt};
+use herocraft_common::{blocks, crafting, items, Hunger, ItemId, Recipe, StationAt};
 use crate::player_stats::PlayerStats;
 use crate::skills_screen::{SkillScreen, SkillScreenRequests};
 use herocraft_common::SkillWheel;
@@ -496,6 +496,8 @@ const GAUGE_WIDTH: f32 = 150.0;
 const HURT_FLASH_SECS: f32 = 0.9;
 /// Sous cette fraction de la vie, le bord de l'écran rougit et bat comme un cœur
 const LOW_HP_FRACTION: f32 = 0.3;
+/// Jauge de satiété d'un ventre rassasié, couleur de croûte de pain
+const SATIETY_COLOR: egui::Color32 = egui::Color32::from_rgb(200, 135, 50);
 /// Marge intérieure du cadre du menu de pause
 pub(crate) const MENU_PADDING: f32 = 18.0;
 /// En dessous de cette largeur, les onglets des options passent au-dessus du contenu
@@ -567,6 +569,8 @@ pub struct UiState {
     sealed_legend: Option<Legend>,
     /// Chat et commandes (touche Entrée)
     pub chat: crate::chat::Chat,
+    /// Héros qui tourne entre les cases d'équipement de l'écran d'inventaire
+    hero_portrait: crate::hero_creator::Preview,
 }
 
 impl UiState {
@@ -619,6 +623,7 @@ impl UiState {
             creator: None,
             sealed_legend: None,
             chat: crate::chat::Chat::default(),
+            hero_portrait: crate::hero_creator::Preview::default(),
         }
     }
 
@@ -1115,13 +1120,20 @@ impl UiState {
             });
     }
 
-    /// Écran d'inventaire : sac de 27 cases au-dessus de la barre d'objets, et à côté les recettes
-    /// faisables ici (à la main, ou à l'établi ouvert). Clic gauche : prendre, poser, fusionner ou
-    /// échanger une pile ; clic droit : prendre la moitié ou poser un exemplaire. Sur une recette,
-    /// clic gauche : la faire une fois, clic droit : autant que possible.
+    /// Écran d'inventaire : à gauche le héros entre ses huit cases d'équipement (tête, torse,
+    /// jambes et pieds d'un côté, cape, amulette et anneaux de l'autre) et sa protection, au milieu
+    /// le sac de 27 cases au-dessus de la barre d'objets, et à droite les recettes faisables ici (à
+    /// la main, ou à l'établi ouvert). Clic gauche : prendre, poser, fusionner ou échanger une pile ;
+    /// clic droit : prendre la moitié ou poser un exemplaire ; Maj + clic : porter ou ôter une
+    /// pièce. Sur une recette, clic gauche : la faire une fois, clic droit : autant que possible.
     fn draw_inventory_screen(&mut self, ctx: &egui::Context) {
         let open_key = self.controls.action_key_label(Action::OpenInventory);
-        let mut clicked: Option<(usize, bool)> = None;
+        let shift = ctx.input(|i| i.modifiers.shift);
+        // Ce que les cases ont reçu : des `Cell`, pour que la case se dessine depuis chaque colonne
+        let clicked: std::cell::Cell<Option<(usize, bool)>> = std::cell::Cell::new(None);
+        let quick: std::cell::Cell<Option<usize>> = std::cell::Cell::new(None);
+        let hovered_empty: std::cell::Cell<Option<herocraft_common::EquipSlot>> = std::cell::Cell::new(None);
+        let hovered_cell: std::cell::Cell<Option<(ItemId, Option<u16>)>> = std::cell::Cell::new(None);
         let mut crafted: Option<(usize, bool)> = None;
         let mut hovered: Option<(ItemId, Option<u16>)> = None;
         egui::Area::new(egui::Id::new("inventory_screen"))
@@ -1141,30 +1153,91 @@ impl UiState {
                             });
                         });
                         ui.add_space(4.0_f32);
+                        // Pile tenue à la souris : les cases d'équipement où elle se porte s'éclairent
+                        let held_kind = self.inventory.held().and_then(|s| s.item.equip_slot());
+                        let inventory = &self.inventory;
+                        let icons = &self.icons;
+                        // Une case cliquable de l'inventaire, quelle qu'elle soit
+                        let cell = |ui: &mut egui::Ui, i: usize| {
+                            let size = egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE);
+                            let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+                            let selected = i == inventory.selected();
+                            let stack = inventory.slot(i);
+                            let kind = crate::inventory::equipment_kind(i);
+                            paint_slot(ui.painter(), icons, rect, stack, selected, response.hovered());
+                            if let Some(kind) = kind {
+                                paint_equipment_placeholder(ui.painter(), rect, kind, stack.is_none(), held_kind == Some(kind));
+                            }
+                            if response.hovered() {
+                                hovered_cell.set(stack.map(|s| (s.item, Some(s.count))));
+                                if stack.is_none() {
+                                    hovered_empty.set(kind);
+                                }
+                            }
+                            if response.clicked() && shift {
+                                quick.set(Some(i));
+                            } else if response.clicked() {
+                                clicked.set(Some((i, false)));
+                            } else if response.secondary_clicked() {
+                                clicked.set(Some((i, true)));
+                            }
+                        };
                         ui.horizontal_top(|ui| {
                             ui.vertical(|ui| {
-                                let mut slot_row = |ui: &mut egui::Ui, range: std::ops::Range<usize>| {
+                                caption(ui, "ÉQUIPEMENT");
+                                let column_height = 4.0_f32 * INVENTORY_SLOT_SIZE + 3.0_f32 * 4.0_f32;
+                                ui.horizontal_top(|ui| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(6.0_f32, 4.0_f32);
+                                    ui.vertical(|ui| {
+                                        ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+                                        for i in 0..4 {
+                                            cell(ui, FIRST_EQUIPMENT + i);
+                                        }
+                                    });
+                                    let (well, _) = ui.allocate_exact_size(egui::vec2(PORTRAIT_WIDTH, column_height), egui::Sense::hover());
+                                    ui.painter().rect_filled(well, 4.0_f32, egui::Color32::from_black_alpha(90));
+                                    ui.painter().rect_stroke(well, 4.0_f32, egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(18)));
+                                    match &self.legend {
+                                        Some(legend) => self.hero_portrait.paint(ui.painter(), well.shrink(4.0_f32), &legend.appearance),
+                                        None => {
+                                            ui.painter().text(
+                                                well.center(),
+                                                egui::Align2::CENTER_CENTER,
+                                                "Héros\nsans légende",
+                                                egui::FontId::proportional(11.0_f32),
+                                                TEXT_DIM,
+                                            );
+                                        }
+                                    }
+                                    ui.vertical(|ui| {
+                                        ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+                                        for i in 4..EQUIPMENT.len() {
+                                            cell(ui, FIRST_EQUIPMENT + i);
+                                        }
+                                    });
+                                });
+                                ui.add_space(4.0_f32);
+                                if let Some(legend) = &self.legend {
+                                    ui.label(egui::RichText::new(&legend.appearance.nom).font(crate::ui_skin::title_font(15.0_f32)).color(GOLD_BRIGHT));
+                                }
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new("Protection").size(12.5_f32).color(TEXT_SOFT));
+                                    ui.label(egui::RichText::new(inventory.protection().to_string()).size(12.5_f32).strong().color(GOLD_BRIGHT));
+                                });
+                                ui.label(egui::RichText::new("Maj + clic : porter / ôter").size(11.0_f32).color(TEXT_DIM));
+                            });
+                            ui.add_space(10.0_f32);
+                            ui.vertical(|ui| {
+                                let slot_row = |ui: &mut egui::Ui, range: std::ops::Range<usize>| {
                                     ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
                                     ui.horizontal(|ui| {
                                         for i in range {
-                                            let size = egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE);
-                                            let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-                                            let selected = i == self.inventory.selected();
-                                            let stack = self.inventory.slot(i);
-                                            paint_slot(ui.painter(), &self.icons, rect, stack, selected, response.hovered());
-                                            if response.hovered() {
-                                                hovered = stack.map(|s| (s.item, Some(s.count)));
-                                            }
-                                            if response.clicked() {
-                                                clicked = Some((i, false));
-                                            } else if response.secondary_clicked() {
-                                                clicked = Some((i, true));
-                                            }
+                                            cell(ui, i);
                                         }
                                     });
                                 };
                                 caption(ui, "SAC");
-                                for row in 0..TOTAL_SLOTS / HOTBAR_SLOTS - 1 {
+                                for row in 0..BAG_SLOTS / HOTBAR_SLOTS {
                                     let start = HOTBAR_SLOTS + row * HOTBAR_SLOTS;
                                     slot_row(ui, start..start + HOTBAR_SLOTS);
                                 }
@@ -1197,10 +1270,16 @@ impl UiState {
                     });
             });
 
-        match clicked {
+        if let Some(cell) = hovered_cell.get() {
+            hovered = Some(cell);
+        }
+        match clicked.get() {
             Some((i, false)) => self.inventory.click(i),
             Some((i, true)) => self.inventory.click_secondary(i),
             None => {}
+        }
+        if let Some(i) = quick.get() {
+            self.inventory.quick_move(i);
         }
         if let Some((index, all)) = crafted {
             let recipe = &crafting().recipes[index];
@@ -1219,6 +1298,11 @@ impl UiState {
         } else if let Some((item, count)) = hovered {
             egui::show_tooltip_at_pointer(ctx, egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("inventory_tip")), egui::Id::new("inventory_tip"), |ui| {
                 item_tooltip(ui, item, count);
+            });
+        } else if let Some(kind) = hovered_empty.get() {
+            egui::show_tooltip_at_pointer(ctx, egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("inventory_tip")), egui::Id::new("inventory_tip"), |ui| {
+                ui.label(egui::RichText::new(kind.name()).strong().color(GOLD_BRIGHT));
+                ui.label(egui::RichText::new("Rien de porté").size(11.0_f32).color(TEXT_DIM));
             });
         }
     }
@@ -1250,7 +1334,8 @@ impl UiState {
             });
     }
 
-    /// HUD du personnage : classe, niveau, expérience et jauges de vie, de mana et d'endurance
+    /// HUD du personnage : classe, niveau, expérience et jauges de vie, de mana, d'endurance et de
+    /// satiété
     fn draw_vitals_hud(&mut self, ctx: &egui::Context) {
         let stats = &self.player.stats;
         // Blessure : éclair rouge sur tout l'écran et bords rougis qui s'estompent
@@ -1311,14 +1396,29 @@ impl UiState {
             .interactable(false)
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(0.0_f32, 5.0_f32);
+                // Faim : la jauge de satiété clignote quand le ventre crie famine
+                let hunger = stats.hunger();
+                let satiety_color = match hunger {
+                    Hunger::Fed => SATIETY_COLOR,
+                    Hunger::Hungry | Hunger::Starving => {
+                        let speed = if hunger == Hunger::Starving { 6.0_f32 } else { 3.0_f32 };
+                        let blink = 0.5_f32 + 0.5_f32 * (ctx.input(|i| i.time) as f32 * speed).sin();
+                        lerp_color(SATIETY_COLOR, egui::Color32::from_rgb(235, 70, 40), blink)
+                    }
+                };
                 let gauges = [
                     ("Vie", stats.hp, stats.max_hp, egui::Color32::from_rgb(200, 45, 45)),
                     ("Mana", stats.mana, stats.max_mana, egui::Color32::from_rgb(55, 105, 220)),
                     ("Endurance", stats.stamina, stats.max_stamina, egui::Color32::from_rgb(70, 175, 70)),
+                    ("Satiété", stats.satiety, stats.max_satiety, satiety_color),
                 ];
                 for (name, value, max, color) in gauges {
                     let text = format!("{name}  {:.0} / {:.0}", value.max(0.0_f32).ceil(), max);
                     gauge(ui, GAUGE_WIDTH, 16.0_f32, value / max.max(1.0_f32), color, Some(&text));
+                }
+                if hunger != Hunger::Fed && !self.player.is_dead() {
+                    let warning = if hunger == Hunger::Starving { "Vous mourez de faim" } else { "Vous avez faim" };
+                    ui.label(egui::RichText::new(warning).size(12.0_f32).color(egui::Color32::from_rgb(240, 150, 110)));
                 }
             });
     }
@@ -1946,6 +2046,26 @@ fn egui_key(key: &Key) -> Option<egui::Key> {
 /// Côté d'une case de la barre d'objets et de l'écran d'inventaire (points logiques)
 const HOTBAR_SLOT_SIZE: f32 = 40.0;
 const INVENTORY_SLOT_SIZE: f32 = 44.0;
+/// Largeur du cadre du héros, entre les deux colonnes de cases d'équipement
+const PORTRAIT_WIDTH: f32 = 112.0;
+
+/// Case d'équipement : vide, le nom de ce qui s'y porte, en clair ; un liseré d'or quand la pile
+/// tenue à la souris peut s'y poser
+fn paint_equipment_placeholder(painter: &egui::Painter, rect: egui::Rect, kind: herocraft_common::EquipSlot, empty: bool, accepts_held: bool) {
+    if accepts_held {
+        painter.rect_stroke(rect.shrink(3.0_f32), 2.0_f32, egui::Stroke::new(1.5_f32, GOLD_BRIGHT));
+    }
+    if empty {
+        let color = if accepts_held { GOLD_BRIGHT } else { TEXT_DIM.gamma_multiply(0.75_f32) };
+        // Le nom tient entre les coins de fer de la case : « Amulette » se resserre
+        let room = rect.width() - 12.0_f32;
+        let mut galley = painter.layout_no_wrap(kind.name().to_string(), egui::FontId::proportional(8.5_f32), color);
+        if galley.size().x > room {
+            galley = painter.layout_no_wrap(kind.name().to_string(), egui::FontId::proportional(8.5_f32 * room / galley.size().x), color);
+        }
+        painter.galley(rect.center() - galley.size() / 2.0_f32, galley, color);
+    }
+}
 
 /// Case d'inventaire : fond, liseré (or si choisie) et pile éventuelle
 fn paint_slot(painter: &egui::Painter, icons: &ItemIcons, rect: egui::Rect, stack: Option<ItemStack>, selected: bool, hovered: bool) {
@@ -1994,12 +2114,24 @@ fn item_tooltip(ui: &mut egui::Ui, item: ItemId, count: Option<u16>) {
     if !category.is_empty() {
         ui.label(egui::RichText::new(category).size(11.0_f32).color(TEXT_DIM));
     }
+    if let Some(kind) = item.equip_slot() {
+        ui.label(egui::RichText::new(format!("Se porte : {}", kind.name())).size(11.0_f32).color(TEXT_SOFT));
+    }
     if !description.is_empty() {
         ui.label(description);
     }
     for (name, value) in stats.into_iter().flatten() {
         ui.label(egui::RichText::new(format!("{name} : {value}")).size(12.0_f32).color(TEXT_SOFT));
     }
+    if item.satiety().is_some() {
+        ui.label(egui::RichText::new("Clic droit en main : manger").size(11.0_f32).color(TEXT_DIM));
+    }
+}
+
+/// Couleur entre `a` (t = 0) et `b` (t = 1)
+fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let mix = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t.clamp(0.0_f32, 1.0_f32)).round() as u8;
+    egui::Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
 }
 
 /// Onglet du panneau de fabrication : la rubrique de ce que fabrique la recette
@@ -3136,7 +3268,7 @@ mod tests {
             .and_then(|t| t.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
             .unwrap_or((1280_usize, 720_usize));
 
-        let scenes: [(&str, fn(&mut UiState), bool, Option<egui::Pos2>); 7] = [
+        let scenes: [(&str, fn(&mut UiState), bool, Option<egui::Pos2>); 8] = [
             ("menu", |ui| ui.open_menu_at(MenuPage::Main), true, None),
             ("menu_survol", |ui| ui.open_menu_at(MenuPage::Main), true, Some(egui::pos2(640.0, 372.0))),
             ("options", |ui| ui.open_menu_at(MenuPage::Options), true, None),
@@ -3147,9 +3279,36 @@ mod tests {
             ("commandes", |ui| ui.open_menu_at(MenuPage::Controls), true, None),
             ("multijoueur", |ui| ui.open_menu_at(MenuPage::Multiplayer), true, None),
             ("inventaire", |ui| ui.set_inventory_open(true), true, None),
+            ("inventaire_equipe", |ui| {
+                let mut appearance = herocraft_common::hero::Appearance::default();
+                appearance.nom = "Aldric".to_string();
+                ui.legend = Some(Legend { appearance, class: herocraft_common::PlayerClass::Adventurer });
+                for id in ["ironPlateHelmet", "ironPlateChestplate", "hideLeggings", "boneBoots", "flintSword", "hideHelmet"] {
+                    ui.inventory.add(items().find(id).unwrap());
+                }
+                ui.inventory.add_many(herocraft_common::BlockId::STONE, 40);
+                ui.set_inventory_open(true);
+                for i in 0..4 {
+                    ui.inventory.quick_move(i);
+                }
+                // Le heaume de cuir en main : la case de la tête s'éclaire
+                ui.inventory.click(5);
+            }, true, Some(egui::pos2(900.0, 600.0))),
         ];
         let mut all: Vec<(&str, fn(&mut UiState), bool, Option<egui::Pos2>)> = scenes.to_vec();
         all.push(("hud", |_| {}, true, None));
+        // Ventre presque vide, du pain en main : jauge de satiété qui clignote et avertissement
+        all.push((
+            "hud_faim",
+            |ui| {
+                ui.player.stats.satiety = 0.15 * ui.player.stats.max_satiety;
+                if let Some(bread) = items().find("pain") {
+                    ui.inventory.add_many(bread, 5);
+                }
+            },
+            true,
+            None,
+        ));
 
         for (name, setup, ground, pointer) in all {
             let mut ui = UiState::new(424242);

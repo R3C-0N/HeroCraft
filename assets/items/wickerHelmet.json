@@ -3,6 +3,7 @@
   "name": "Casque en osier",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/wickerHelmet.png",
   "stats": {"Protection": 1, "Durabilité": 80},
   "recipes": [

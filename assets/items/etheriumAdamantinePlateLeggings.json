@@ -3,6 +3,7 @@
   "name": "Grèves d'étherium (adamantine)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/etheriumAdamantinePlateLeggings.png",
   "stats": {"Protection": 28, "Durabilité": 5000},
   "recipes": [

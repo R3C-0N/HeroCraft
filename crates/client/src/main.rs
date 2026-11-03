@@ -318,10 +318,20 @@ fn main() {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
                                 // Clic droit sur un établi : il s'ouvre (accroupi, on pose contre lui)
                                 let station = block_interaction.aimed_station().filter(|_| action == block_interaction::BlockAction::Place && !camera.is_crouching());
+                                // Clic droit, un aliment en main : le joueur le mange
+                                let food = ui_state.inventory.selected_food().filter(|_| action == block_interaction::BlockAction::Place && station.is_none());
                                 if let Some(at) = station {
                                     camera.release_inputs();
                                     block_interaction.reset();
                                     ui_state.open_station(at);
+                                } else if let Some((item, satiety)) = food {
+                                    if ui_state.player.eat(satiety) {
+                                        ui_state.inventory.consume_selected();
+                                        audio.eat(&ui_state.audio_settings);
+                                        if let Some(client) = net.as_mut() {
+                                            client.send_eat(item);
+                                        }
+                                    }
                                 } else if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
                                     block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
                                     drop_broken_block(&mut dropped_items, &camera, pos, block, previous);

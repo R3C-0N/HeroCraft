@@ -3,6 +3,7 @@
   "name": "Chausses d'étherium (mithril)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/etheriumMithrilScaleLeggings.png",
   "stats": {"Protection": 25, "Durabilité": 5000},
   "recipes": [

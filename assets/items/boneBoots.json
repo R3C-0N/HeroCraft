@@ -3,6 +3,7 @@
   "name": "Solerets d'os",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/boneBoots.png",
   "stats": {"Protection": 3, "Durabilité": 150},
   "recipes": [

@@ -3,6 +3,7 @@
   "name": "Brigandine de silex",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/boneStuddedChestplate.png",
   "stats": {"Protection": 5, "Durabilité": 220},
   "recipes": [

@@ -3,6 +3,7 @@
   "name": "Cuirasse d'étherium (orichalque)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/etheriumOrichalcumPlateChestplate.png",
   "stats": {"Protection": 38, "Durabilité": 5000},
   "recipes": [
