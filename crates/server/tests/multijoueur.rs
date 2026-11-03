@@ -48,9 +48,9 @@ fn test_server() -> Server {
 /// Bloc de surface d'une colonne de terre ferme, et les pieds d'un joueur posé dessus
 fn land(server: &Server) -> (BlockPos, Vec3) {
     let face = PlanetFace::PosZ;
-    let (x, z, top) = (0..1024)
+    let (x, z, top) = (0..herocraft_world::FACE_BLOCKS)
         .step_by(37)
-        .flat_map(|x| (0..1024).step_by(37).map(move |z| (x, z)))
+        .flat_map(|x| (0..herocraft_world::FACE_BLOCKS).step_by(37).map(move |z| (x, z)))
         .find_map(|(x, z)| {
             let top = (0..WORLD_HEIGHT).rev().find(|&y| !server.block(BlockPos::new(face, x, y, z)).is_air())?;
             (server.block(BlockPos::new(face, x, top, z)) != BlockId::WATER).then_some((x, z, top))
@@ -116,7 +116,7 @@ fn deux_joueurs_partagent_les_blocs_et_les_positions() {
     assert!(state.position.distance(feet) < 1e-3);
 
     // Un bloc hors de portée (en plein ciel, loin de Bob) est refusé
-    let far = BlockPos::new(face, (x + 200) % 1024, WORLD_HEIGHT - 1, z);
+    let far = BlockPos::new(face, (x + 200) % herocraft_world::FACE_BLOCKS, WORLD_HEIGHT - 1, z);
     bob.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
     bob.send(&ClientPacket::InteractBlock { block: far.into(), action: BlockInteractionAction::Place(1) });
     let id = wait_for(&bob, |p| match p {

@@ -224,7 +224,7 @@ fn sd_cloud_3d_nb(p: vec3<f32>, nb: u32, cell: f32, half_depth: f32, r: f32) -> 
     let rh = clamp(max(r * 1.3, 0.35), 0.0, 0.48 * cell);
     let d_core = sd_mask_2d_nb(p.xy, nb, cell, rh) + r;
     // Dalle courbée pour suivre la sphère (les grands nuages ne remontent plus aux bords)
-    let curv_r = camera.planet_radius + 8.8 * (camera.planet_radius / 25.0);
+    let curv_r = camera.planet_radius + 8.8 * camera.scales.x;
     let z = p.z + dot(p.xy, p.xy) / (2.0 * curv_r);
     let d_z = abs(z) - (half_depth - r);
     let w = max(vec2<f32>(d_core, d_z), vec2<f32>(0.0));
@@ -257,7 +257,7 @@ fn get_cloud_normal(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f
     let g_core = vec3<f32>(gx, gy, 0.0) / (2.0 * eps);
     let d_core = sd_mask_2d_nb(p.xy, nb0, cell, rh) + r;
 
-    let curv_r = camera.planet_radius + 8.8 * (camera.planet_radius / 25.0);
+    let curv_r = camera.planet_radius + 8.8 * camera.scales.x;
     let z = p.z + dot(p.xy, p.xy) / (2.0 * curv_r);
     let d_z = abs(z) - (half_depth - r);
     let g_z = select(-1.0, 1.0, z >= 0.0) * vec3<f32>(p.xy / curv_r, 1.0);
@@ -306,7 +306,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 
     let half_depth = in.config.y;
     // Mêmes marges que la boîte du maillage (cloud_mesh.rs), à l'échelle de la planète
-    let planet_scale = camera.planet_radius / 25.0;
+    let planet_scale = camera.scales.x;
     let pad_xy = 0.65 * planet_scale;
     let pad_z = 0.50 * planet_scale;
 
@@ -519,7 +519,7 @@ fn fs_cloud_shadow(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @
 
     let half_depth = in.config.y;
     let roundness = clamp(camera.cloud_params.x, 0.05, min(0.55, half_depth - 0.04));
-    let planet_scale = camera.planet_radius / 25.0;
+    let planet_scale = camera.scales.x;
 
     // Même boîte serrée que fs_cloud : la marge de la boîte du maillage ne contient aucune surface
     let margin = 0.05 * planet_scale;

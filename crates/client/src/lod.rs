@@ -10,8 +10,7 @@ use herocraft_voxel_engine::cache::WorldChunkCache;
 use crate::planet_mesh::PlanetMesh;
 use crate::voxel_mesh::{VoxelColumnMesh, VoxelMeshBuilder};
 
-/// Niveau du QuadTree des feuilles voxel : une colonne de chunks
-const VOXEL_LEVEL: u8 = 5;
+use herocraft_world::VOXEL_LEVEL;
 
 use rayon::prelude::*;
 
@@ -171,14 +170,7 @@ impl PlanetLodManager {
             crate::ui::LodDistanceSetting::Normale => 1.0,
             crate::ui::LodDistanceSetting::Elevee => 1.25,
         };
-        let scale = self.base_radius as f64 / herocraft_world::REFERENCE_BASE_RADIUS;
-        self.quadtree.split_distances = vec![
-            95.0 * mult * scale,
-            60.0 * mult * scale,
-            38.0 * mult * scale,
-            18.0 * mult * scale,
-            3.8 * mult * scale,
-        ];
+        self.quadtree.split_distances = herocraft_world::split_distances(self.base_radius as f64, mult);
         // Force la réévaluation du QuadTree au prochain frame
         self.last_evaluated_pos = Vec3::splat(f32::NAN);
         self.last_camera_pos = Vec3::splat(f32::NAN);
@@ -340,7 +332,7 @@ impl PlanetLodManager {
             (camera_pos - self.last_evaluated_pos).length()
         };
 
-        let scale = (self.base_radius as f64 / herocraft_world::REFERENCE_BASE_RADIUS) as f32;
+        let scale = herocraft_world::block_scale(self.base_radius as f64) as f32;
         // Évaluation QuadTree temporisée : réévalué si déplacement >= 15 cm (adapté à l'échelle) ou toutes les 80 ms si déplacement >= 2 cm
         let should_re_eval = self.last_evaluated_pos.is_nan()
             || moved_dist > 0.15 * scale
@@ -535,7 +527,7 @@ mod tests {
         };
         let generator = PlanetWorldGenerator::new(desc);
         let mut cache = herocraft_voxel_engine::WorldChunkCache::new(None, 64);
-        let mut lod_manager = PlanetLodManager::new(25.0, 2026);
+        let mut lod_manager = PlanetLodManager::new(crate::camera::DEFAULT_RADIUS, 2026);
 
         let cam_pos = Vec3::new(25.5, 0.0, 0.0);
 
@@ -577,7 +569,7 @@ mod tests {
         };
         let generator = PlanetWorldGenerator::new(desc);
         let mut cache = herocraft_voxel_engine::WorldChunkCache::new(None, 64);
-        let mut lod_manager = PlanetLodManager::new(25.0, 2026);
+        let mut lod_manager = PlanetLodManager::new(crate::camera::DEFAULT_RADIUS, 2026);
 
         let mut cam_pos = Vec3::new(25.5, 0.0, 0.0);
         lod_manager.update(cam_pos, &generator, &mut cache, 0.0, None);
@@ -607,9 +599,9 @@ mod tests {
             ..Default::default()
         };
         let generator = PlanetWorldGenerator::new(desc);
-        let mut camera = crate::camera::OrbitCamera::new(165.0, 25.0, &generator);
+        let mut camera = crate::camera::OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
         let mut cache = herocraft_voxel_engine::WorldChunkCache::new(None, 64);
-        let mut lod = PlanetLodManager::new(25.0, 2026);
+        let mut lod = PlanetLodManager::new(crate::camera::DEFAULT_RADIUS, 2026);
 
         println!("Spawn player_pos: {:?}", camera.player_pos);
         println!("Spawn eye: {:?}", camera.eye_position());
@@ -669,9 +661,9 @@ mod tests {
             ..Default::default()
         };
         let generator = PlanetWorldGenerator::new(desc);
-        let mut camera = crate::camera::OrbitCamera::new(330.0, 50.0, &generator);
+        let mut camera = crate::camera::OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
         let mut cache = herocraft_voxel_engine::WorldChunkCache::new(None, 64);
-        let mut lod = PlanetLodManager::new(50.0, 2026);
+        let mut lod = PlanetLodManager::new(crate::camera::DEFAULT_RADIUS, 2026);
 
         // 1. En orbite (distance = 330.0), la planète entière est en patchs LOD
         lod.update(camera.eye_position(), &generator, &mut cache, 0.0, None);

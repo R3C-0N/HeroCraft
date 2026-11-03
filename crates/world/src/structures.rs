@@ -1,9 +1,12 @@
 //! Villes, villages et ruines posés par le générateur de terrain.
 //!
-//! Chaque face du cube est découpée en cases de `CELL` × `CELL` blocs. La graine du monde décide,
-//! case par case et une fois pour toutes, si elle reçoit une ville, un village, des ruines ou rien,
-//! puis cherche dans la case un site qui s'y prête (terre ferme, relief assez plat, biome) et y
-//! dessine le plan : rues, maisons, puits, champs, remparts, colonnes effondrées… Un plan ne sort
+//! Chaque face du cube est découpée en cases de `CELL` × `CELL` blocs, regroupées en régions de
+//! `REGION_CELLS` × `REGION_CELLS` cases (2 048 blocs de côté). Chaque région accueille au plus une
+//! ville ou un village, dans une case tirée au sort près de son centre : deux établissements voisins
+//! sont ainsi à 1 300 à 2 800 blocs l'un de l'autre, 4 à 9 minutes de marche. Les autres cases
+//! reçoivent parfois des ruines. La graine du monde décide de tout, une fois pour toutes ; le
+//! générateur cherche ensuite dans la case un site qui s'y prête (terre ferme, relief assez plat,
+//! biome) et y dessine le plan : rues, maisons, puits, champs, remparts, colonnes effondrées… Un plan ne sort
 //! jamais de sa case, ni donc de sa face : il n'y a jamais de structure à cheval sur une arête du cube.
 //!
 //! Le plan est calculé à la première lecture d'un bloc de la case, puis gardé. Il ne dépend que de la
@@ -21,10 +24,21 @@ use herocraft_common::{BlockId, PlanetFace};
 
 use crate::generator::{BiomeType, PlanetWorldGenerator, SEA_LEVEL_BLOCKS};
 
-/// Côté d'une case de structures, en blocs (8 × 8 cases par face)
+/// Côté d'une case de structures, en blocs : le plus grand plan (une ville) y tient
 pub const CELL: i32 = 128;
 /// Cases par arête de face
-pub const CELLS_PER_FACE: i32 = 1024 / CELL;
+pub const CELLS_PER_FACE: i32 = crate::edits::FACE_BLOCKS / CELL;
+/// Cases par côté d'une région, qui accueille au plus une ville ou un village (2 048 blocs : à
+/// 5,2 blocs par seconde, de 4 à 9 minutes de marche d'un établissement au suivant)
+pub const REGION_CELLS: i32 = 16;
+/// Les villes et villages s'installent à au moins tant de cases du bord de leur région : deux
+/// établissements de régions voisines restent à `2 × REGION_MARGIN` cases l'un de l'autre au moins
+const REGION_MARGIN: i32 = 5;
+/// Cases essayées par région pour sa ville ou son village (la première peut tomber en mer)
+const REGION_CANDIDATES: usize = 4;
+/// Chance qu'une case hors des sites de villes et villages reçoive des ruines (environ trois
+/// par région)
+const RUINS_CHANCE: f64 = 0.014;
 
 /// Blocs des structures, par leur numéro de fiche (`assets/blocks/`, numéros figés)
 pub mod block {
@@ -1564,19 +1578,66 @@ fn cell_seed(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
 /// Écart minimal, en blocs, entre deux établissements voisins
 const MIN_GAP: i32 = 48;
 
+/// Cases où la région (rx, rz) d'une face essaie, dans l'ordre, de poser sa ville ou son village :
+/// tirées dans le centre de la région, jamais côte à côte (le plan d'une case candidate ne dépend
+/// ainsi d'aucune autre candidate)
+fn region_candidates(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i32) -> Vec<(i32, i32)> {
+    let mut dice = Dice(mix(generator.planet.seed ^ 0x9E61_0A5E_0000_0000 ^ ((face_index(face) as u64) << 40) ^ hash2(0x2E61, rx, rz)));
+    // Région rognée par le bord de la face (si la face n'en contient pas un nombre entier)
+    let (x0, z0) = (rx * REGION_CELLS, rz * REGION_CELLS);
+    let (x1, z1) = ((x0 + REGION_CELLS).min(CELLS_PER_FACE), (z0 + REGION_CELLS).min(CELLS_PER_FACE));
+    let margin = |lo: i32, hi: i32| REGION_MARGIN.min((hi - lo - 1) / 2);
+    let (mx, mz) = (margin(x0, x1), margin(z0, z1));
+    let mut found: Vec<(i32, i32)> = Vec::with_capacity(REGION_CANDIDATES);
+    for _ in 0..REGION_CANDIDATES * 8 {
+        if found.len() == REGION_CANDIDATES {
+            break;
+        }
+        let c = (dice.range(x0 + mx, x1 - mx), dice.range(z0 + mz, z1 - mz));
+        if found.iter().all(|f| (f.0 - c.0).abs() > 1 || (f.1 - c.1).abs() > 1) {
+            found.push(c);
+        }
+    }
+    found
+}
+
+/// Ce que la graine destine à une case : le rang de ville ou de village de sa région qu'elle
+/// essaie (`Some(rang)`), des ruines (`None`), ou rien (`Err`)
+fn cell_role(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i32) -> Result<Option<usize>, ()> {
+    let candidates = region_candidates(generator, face, cx.div_euclid(REGION_CELLS), cz.div_euclid(REGION_CELLS));
+    if let Some(rank) = candidates.iter().position(|&c| c == (cx, cz)) {
+        return Ok(Some(rank));
+    }
+    // Rien autour des sites de villes et villages : ils ne dépendent ainsi d'aucune case voisine
+    if candidates.iter().any(|c| (c.0 - cx).abs() <= 1 && (c.1 - cz).abs() <= 1) {
+        return Err(());
+    }
+    if unit(cell_seed(generator, face, cx, cz) ^ 0x2A1E) < RUINS_CHANCE {
+        Ok(None)
+    } else {
+        Err(())
+    }
+}
+
 /// Dessine l'établissement d'une case, s'il y en a un
 fn plan_cell(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i32) -> Option<Settlement> {
     herocraft_common::prof_scope!("world::structures::plan_cell");
     let mut dice = Dice(cell_seed(generator, face, cx, cz));
-    let roll = unit(dice.next());
-    let wanted = if roll < 0.22 {
-        SettlementKind::Town
-    } else if roll < 0.48 {
-        SettlementKind::Village
-    } else if roll < 0.68 {
-        SettlementKind::Ruins
-    } else {
-        return None;
+    let wanted = match cell_role(generator, face, cx, cz) {
+        Err(()) => return None,
+        Ok(None) => SettlementKind::Ruins,
+        Ok(Some(rank)) => {
+            // La région a déjà sa ville ou son village dans une case candidate précédente
+            let earlier = region_candidates(generator, face, cx.div_euclid(REGION_CELLS), cz.div_euclid(REGION_CELLS));
+            if earlier[..rank].iter().any(|&(px, pz)| generator.structures.cell(generator, face, px, pz).is_some()) {
+                return None;
+            }
+            if unit(dice.next()) < 0.46 {
+                SettlementKind::Town
+            } else {
+                SettlementKind::Village
+            }
+        }
     };
     let cell = Rect::sized(cx * CELL, cz * CELL, CELL, CELL);
     // Les établissements des cases voisines qui passent avant celle-ci (rang tiré de leur graine) :
@@ -1593,7 +1654,7 @@ fn plan_cell(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
     // Un site refusé à une ville peut accueillir un village, puis des ruines
     let kinds: &[SettlementKind] = match wanted {
         SettlementKind::Town => &[SettlementKind::Town, SettlementKind::Village],
-        SettlementKind::Village => &[SettlementKind::Village, SettlementKind::Ruins],
+        SettlementKind::Village => &[SettlementKind::Village],
         SettlementKind::Ruins => &[SettlementKind::Ruins],
     };
     for &kind in kinds {
@@ -2161,7 +2222,10 @@ mod tests {
     #[test]
     fn test_no_vegetation_on_buildings_streets_and_fields() {
         let generator = generator(2026);
-        let settlements: Vec<_> = all_settlements(&generator).into_iter().filter(|s| s.kind != SettlementKind::Ruins).take(6).collect();
+        let all: Vec<_> = all_settlements(&generator).into_iter().filter(|s| s.kind != SettlementKind::Ruins).collect();
+        // La première ville et les cinq premiers villages
+        let town = all.iter().copied().find(|s| s.kind == SettlementKind::Town);
+        let settlements: Vec<_> = town.into_iter().chain(all.iter().copied().filter(|s| s.kind == SettlementKind::Village).take(5)).collect();
         assert!(settlements.iter().any(|s| s.kind == SettlementKind::Town));
         let mut checked = 0;
         for s in settlements {
@@ -2270,5 +2334,29 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_towns_and_villages_are_minutes_apart() {
+        let generator = generator(2026);
+        let places: Vec<&Settlement> = all_settlements(&generator).into_iter().filter(|s| s.kind != SettlementKind::Ruins).collect();
+        let mut nearest_gaps = Vec::new();
+        for a in &places {
+            let nearest = places
+                .iter()
+                .filter(|b| b.face == a.face && b.center != a.center)
+                .map(|b| (((a.center.0 - b.center.0) as f64).powi(2) + ((a.center.1 - b.center.1) as f64).powi(2)).sqrt())
+                .fold(f64::INFINITY, f64::min);
+            if nearest.is_finite() {
+                // Deux régions voisines : au moins 2 × REGION_MARGIN cases, moins les bords des plans
+                assert!(nearest >= (2 * REGION_MARGIN * CELL - CELL) as f64, "{:?} à {nearest:.0} blocs de son voisin", a.center);
+                nearest_gaps.push(nearest);
+            }
+        }
+        nearest_gaps.sort_by(f64::total_cmp);
+        let median = nearest_gaps[nearest_gaps.len() / 2];
+        println!("{} villes et villages, écart médian au plus proche : {median:.0} blocs", places.len());
+        assert!(places.len() >= 20, "seulement {} villes et villages", places.len());
+        assert!((1300.0..3000.0).contains(&median), "écart médian {median:.0} blocs");
     }
 }

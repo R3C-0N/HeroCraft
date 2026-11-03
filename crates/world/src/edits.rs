@@ -17,8 +17,11 @@ use crate::caves::carvable_range;
 use crate::generator::{ColumnSample, PlanetWorldGenerator};
 use crate::vegetation::{Tree, VEGETATION_SPAN};
 
-/// Chunks par arête de face du cube
-pub const FACE_CHUNKS: i32 = 32;
+/// Chunks par arête de face du cube : LE réglage de la taille de la planète. Une face fait
+/// `FACE_CHUNKS × 32` blocs de côté (256 : 8 192 blocs, ~26 min de marche d'une arête à l'autre).
+/// Tout le reste en découle : rayon (`DEFAULT_PLANET_SCALE`), niveaux du QuadTree, cases de
+/// structures, zones de créatures. Doit être une puissance de deux (le QuadTree divise par 2).
+pub const FACE_CHUNKS: i32 = 256;
 /// Blocs par arête de face du cube
 pub const FACE_BLOCKS: i32 = FACE_CHUNKS * CHUNK_SIZE as i32;
 /// Couches de chunks en altitude (celles que le maillage sait afficher)
@@ -557,8 +560,9 @@ mod tests {
     /// Une colonne de la face -Z (graine 42) avec une grotte sous la surface : (x, z, altitude d'un bloc creusé)
     fn column_with_cave(generator: &PlanetWorldGenerator) -> (i32, i32, i32) {
         let face = PlanetFace::NegZ;
-        for z in (160..400).step_by(3) {
-            for x in (640..900).step_by(3) {
+        let center = FACE_BLOCKS / 2;
+        for z in (center - 1500..center + 1500).step_by(7) {
+            for x in (center - 1500..center + 1500).step_by(7) {
                 let column = generator.sample_block_column(face, x, z);
                 let top = column.elevation.floor() as i32;
                 if let Some(y) = (top - 40..top - 6).find(|&y| generator.is_cave(&column, face, x, y, z)) {

@@ -1,5 +1,5 @@
 use crate::caves::{block_carved, carvable_range, CaveField};
-use crate::cubed_sphere::{base_solar_temperature, unit_sphere_to_lat_lon, PlanetDescriptor};
+use crate::cubed_sphere::{base_solar_temperature, unit_sphere_to_lat_lon, PlanetDescriptor, FACE_SCALE};
 use crate::ocean_currents::OceanicCurrentSimulation;
 use crate::structures::{Rect, Settlement, StructureMap};
 use crate::tectonics::TectonicSimulation;
@@ -21,6 +21,18 @@ pub enum VisualizationFilter {
 
 /// Niveau de la mer de référence en blocs
 pub const SEA_LEVEL_BLOCKS: f64 = 100.0;
+
+// Échelle du relief. Les bruits sont lus sur la sphère unité : ceux qui dessinent la planète entière
+// (continents, plaques, massifs, climat) grandissent avec elle, ce qui éloigne villes et rivages.
+// Ceux du relief local (collines, affleurements) sont multipliés par `FACE_SCALE` pour garder leur
+// taille en blocs, et les détails des côtes et des biomes reçoivent des octaves de plus pour ne
+// pas s'adoucir en grandissant.
+
+/// Octaves de plus pour les détails qui grandissent avec la planète (3 pour 8 192 blocs par face)
+const EXTRA_OCTAVES: usize = (crate::edits::FACE_CHUNKS / 32).trailing_zeros() as usize;
+/// Fréquence des crêtes de montagne : moitié moins resserrées que sur le prototype à 1 024 blocs
+/// (sommets espacés d'environ 300 blocs), une octave de plus gardant le détail des arêtes
+const MOUNTAIN_SCALE: f64 = if FACE_SCALE > 2.0 { FACE_SCALE / 2.0 } else { FACE_SCALE };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BiomeType {
@@ -141,7 +153,7 @@ impl PlanetWorldGenerator {
     /// Ces colonnes sont communes à toutes les couches d'altitude du chunk.
     pub fn sample_chunk_columns(&self, face: PlanetFace, chunk_x: i32, chunk_y: i32, border: i32) -> Vec<ColumnSample> {
         herocraft_common::prof_scope!("world::sample_chunk_columns");
-        let chunk_span_uv = 2.0 / 32.0;
+        let chunk_span_uv = 2.0 / crate::edits::FACE_CHUNKS as f64;
         let voxel_span_uv = chunk_span_uv / (CHUNK_SIZE as f64);
         let base_u = -1.0 + (chunk_x as f64) * chunk_span_uv;
         let base_v = -1.0 + (chunk_y as f64) * chunk_span_uv;
@@ -173,7 +185,7 @@ impl PlanetWorldGenerator {
                         // Versants rocailleux des montagnes :
                         // - Au-dessus de 220 : crêtes et parois de roche massive (BlockId::STONE)
                         // - Entre 170 et 220 : alternance réaliste d'affleurements rocheux et d'alpages
-                        let rock_noise = fbm_3d(sphere_dir * 16.0, 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
+                        let rock_noise = fbm_3d(sphere_dir * (16.0 * FACE_SCALE), 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
                         if global_y > 220.0 || rock_noise > -0.05 {
                             BlockId::STONE
                         } else {
@@ -188,7 +200,7 @@ impl PlanetWorldGenerator {
             BlockId::STONE
         } else if global_y + 4.0 >= elev_floor {
             if biome == BiomeType::Mountains {
-                let rock_noise = fbm_3d(sphere_dir * 16.0, 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
+                let rock_noise = fbm_3d(sphere_dir * (16.0 * FACE_SCALE), 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
                 if global_y > 215.0 || rock_noise > -0.05 {
                     BlockId::STONE
                 } else {
@@ -283,7 +295,7 @@ impl PlanetWorldGenerator {
         block_carved(self.planet.seed, face, column, x, y, z)
     }
 
-    /// Bloc généré en (x, y, z) d'une face : x le long de u, z le long de v (0..1024), y l'altitude
+    /// Bloc généré en (x, y, z) d'une face : x le long de u, z le long de v (0..FACE_BLOCKS), y l'altitude
     pub fn block_at(&self, face: PlanetFace, x: i32, y: i32, z: i32) -> BlockId {
         self.column_block(&self.sample_block_column(face, x, z), face, x, y, z)
     }
@@ -319,7 +331,7 @@ impl PlanetWorldGenerator {
 
     /// Colonne de la grille voxel (x, z) d'une face, échantillonnée au même point que `sample_chunk_columns`
     pub fn sample_block_column(&self, face: PlanetFace, x: i32, z: i32) -> ColumnSample {
-        let voxel_span_uv = 2.0 / (32.0 * CHUNK_SIZE as f64);
+        let voxel_span_uv = 2.0 / crate::edits::FACE_BLOCKS as f64;
         self.sample_column(face, -1.0 + x as f64 * voxel_span_uv, -1.0 + z as f64 * voxel_span_uv)
     }
 
@@ -554,7 +566,7 @@ impl PlanetWorldGenerator {
         // L'intérieur des continents et des océans reste ainsi 100% plein et solide
         let coastal_detail = if macro_continent.abs() < 0.14 {
             let factor = 1.0 - (macro_continent.abs() / 0.14);
-            let fine = fbm_3d(dir * 4.2, 2, 2.0, 0.50, seed.wrapping_add(9999));
+            let fine = fbm_3d(dir * 4.2, 2 + EXTRA_OCTAVES, 2.0, 0.50, seed.wrapping_add(9999));
             fine * 0.07 * factor
         } else {
             0.0
@@ -617,16 +629,16 @@ impl PlanetWorldGenerator {
             let massif = smoothstep(-0.10, 0.45, massif_noise) * inland;
 
             // Crêtes : bruit ridged normalisé pour des pics aigus séparés par des vallées
-            let ridge = ridged_fbm(dir * 4.5, 4, seed.wrapping_add(10101));
+            let ridge = ridged_fbm(dir * (4.5 * MOUNTAIN_SCALE), 4 + EXTRA_OCTAVES.min(1), seed.wrapping_add(10101));
             let standard_mountains = ridge * (35.0 + 165.0 * massif) * massif;
 
             // 2. Plateaux continentaux et collines douces
             let plateau = inland * 22.0 + massif * 30.0;
-            let hills = fbm_3d(dir * 10.0, 3, 2.0, 0.50, seed.wrapping_add(20202)) / FBM_SPAN * 9.0 * inland;
+            let hills = fbm_3d(dir * (10.0 * FACE_SCALE), 3, 2.0, 0.50, seed.wrapping_add(20202)) / FBM_SPAN * 9.0 * inland;
 
             // 3. SUPER-CHAÎNES TECTONIQUES : Orogenèse colossale le long des collisions de plaques (Himalaya, Andes)
             let super_chain = if tectonic_sample.orogeny_strength > 0.02 {
-                let super_ridge = ridged_fbm(dir * 6.0, 4, seed.wrapping_add(88888));
+                let super_ridge = ridged_fbm(dir * (6.0 * MOUNTAIN_SCALE), 4 + EXTRA_OCTAVES.min(1), seed.wrapping_add(88888));
                 let strength = smoothstep(0.02, 0.6, tectonic_sample.orogeny_strength);
                 (0.35 + super_ridge * 0.65) * 190.0 * strength * inland
             } else {
@@ -684,7 +696,7 @@ impl PlanetWorldGenerator {
             let temp = (solar_temp - altitude_cooling).clamp(0.0, 1.0);
 
             // Humidité procédurale, ramenée sur [0, 1] (le bruit brut reste dans ±FBM_SPAN)
-            let moisture_noise = fbm_3d(dir * 2.2, 3, 2.0, 0.50, self.planet.seed.wrapping_add(77777));
+            let moisture_noise = fbm_3d(dir * 2.2, 3 + EXTRA_OCTAVES.saturating_sub(1), 2.0, 0.50, self.planet.seed.wrapping_add(77777));
             let moisture = ((moisture_noise / FBM_SPAN).clamp(-1.0, 1.0) * 0.5 + 0.5).clamp(0.0, 1.0);
 
             // Enneigement strict au-dessus de 300 blocs

@@ -31,6 +31,9 @@ pub struct CameraUniform {
     /// rayon du globe apparent, (k - 1) × rayon de la mer, y = k (0 et 1 : vraie courbure),
     /// z et w = distances au sol depuis la caméra où il commence et devient complet.
     pub flatten: [f32; 4],
+    /// x = échelle des dimensions mesurées en blocs (`herocraft_world::block_scale`), y = taille
+    /// d'un bloc en unités du monde
+    pub scales: [f32; 4],
 }
 
 /// Plus haut relief (en blocs au-dessus de la mer) pris en compte pour borner l'aplatissement
@@ -59,7 +62,7 @@ const FLATTEN_ARM_BLOCKS: f32 = 4.0;
 /// au-dessus de la mer (`FLATTEN_FADE_BLOCKS`). `strength` (0..1) va de la vraie courbure (0) à
 /// ce maximum (1), en progression géométrique.
 pub fn planet_flattening(eye_radius: f32, base_radius: f32, strength: f32) -> f32 {
-    let block = base_radius * std::f32::consts::FRAC_PI_4 * (2.0 / 1024.0);
+    let block = base_radius * std::f32::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f32);
     let sea_radius = base_radius + herocraft_world::SEA_LEVEL_BLOCKS as f32 * block;
     // Au moins la hauteur des yeux : k varierait sinon très vite au ras de l'eau
     let h = (eye_radius - sea_radius).max(2.0 * block);
@@ -356,6 +359,12 @@ impl State {
             lighting_params2: [1.0, 1.0, 0.0, 0.0],
             cloud_params: [0.45, 1.0, 1.0, 0.0],
             flatten: [0.0, 1.0, 0.0, 0.0],
+            scales: [
+                herocraft_world::block_scale(default_radius as f64) as f32,
+                herocraft_world::block_size(default_radius as f64) as f32,
+                0.0,
+                0.0,
+            ],
         };
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -729,7 +738,7 @@ impl State {
         self.clouds_visible = effective_cloud_density > 0.01;
 
         let k = planet_flattening(eye.length(), camera.base_radius, flatten_strength);
-        let block = camera.base_radius * std::f32::consts::FRAC_PI_4 * (2.0 / 1024.0);
+        let block = camera.base_radius * std::f32::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f32);
         let sea_radius = camera.base_radius + herocraft_world::SEA_LEVEL_BLOCKS as f32 * block;
         // Rien n'est déplacé à portée de visée, comptée depuis la tête du joueur (la caméra est
         // derrière elle en troisième personne)
@@ -762,6 +771,7 @@ impl State {
                 clouds.micro_noise,
             ],
             flatten: [(k - 1.0) * sea_radius, k, flatten_start, flatten_start + FLATTEN_BLEND_BLOCKS * block],
+            scales: [herocraft_world::block_scale(camera.base_radius as f64) as f32, block, 0.0, 0.0],
         };
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
@@ -1213,7 +1223,7 @@ mod tests {
     #[test]
     fn test_planet_flattening_bounds() {
         let r = 50.0_f32;
-        let block = r * std::f32::consts::FRAC_PI_4 * (2.0 / 1024.0);
+        let block = r * std::f32::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f32);
         let sea = r + herocraft_world::SEA_LEVEL_BLOCKS as f32 * block;
         // Réglage à 0 : vraie courbure à toute altitude
         assert_eq!(planet_flattening(sea + 2.0 * block, r, 0.0), 1.0);
@@ -1243,7 +1253,7 @@ mod tests {
 
     #[test]
     fn test_camera_uniform_size_and_alignment() {
-        assert_eq!(std::mem::size_of::<CameraUniform>(), 224);
+        assert_eq!(std::mem::size_of::<CameraUniform>(), 240);
         assert_eq!(std::mem::align_of::<CameraUniform>(), 16);
     }
 
@@ -1340,7 +1350,7 @@ mod tests {
         let gen = herocraft_world::PlanetWorldGenerator::new(desc);
 
         // 1. Vue Satellite (distance par défaut = 165.0)
-        let mut cam = OrbitCamera::new(165.0, 25.0, &gen);
+        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &gen);
         assert_eq!(cam.view_mode(), CameraViewMode::SatelliteOrbit);
 
         let calc_vis = |cam: &OrbitCamera| {

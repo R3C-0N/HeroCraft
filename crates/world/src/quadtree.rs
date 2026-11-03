@@ -8,6 +8,31 @@ use serde::{Deserialize, Serialize};
 use crate::cubed_sphere::unit_sphere_to_lat_lon;
 use crate::generator::{PlanetWorldGenerator, SEA_LEVEL_BLOCKS};
 
+/// Niveau du QuadTree des feuilles voxel : un nœud y couvre exactement une colonne de chunks
+/// (5 pour 32 chunks par face, 8 pour 256)
+pub const VOXEL_LEVEL: u8 = crate::edits::FACE_CHUNKS.trailing_zeros() as u8;
+
+/// Distance de subdivision d'un nœud, en multiple de son côté, selon son nombre de niveaux au-dessus
+/// des feuilles voxel (index 1 : le nœud dont les enfants sont des chunks). Réglée sur le prototype
+/// à 32 chunks par face ; les niveaux plus hauts d'une planète plus grande reprennent le dernier.
+const SPLIT_RATIOS: [f64; 6] = [0.0, 1.55, 3.67, 3.87, 3.06, 2.42];
+
+/// Seuils de distance caméra-nœud qui déclenchent la subdivision de chaque niveau (index = niveau),
+/// pour une planète de rayon `base_radius`, multipliés par `mult` (préréglage de distance de vue).
+/// Un nœud se divise quand la caméra est à moins de quelques fois son côté : les niveaux proches
+/// du sol gardent ainsi la même portée en blocs quelle que soit la taille de la planète.
+pub fn split_distances(base_radius: f64, mult: f64) -> Vec<f64> {
+    let block = base_radius * std::f64::consts::FRAC_PI_2 / crate::edits::FACE_BLOCKS as f64;
+    (0..VOXEL_LEVEL)
+        .map(|level| {
+            let depth = (VOXEL_LEVEL - level) as usize;
+            let ratio = SPLIT_RATIOS[depth.min(SPLIT_RATIOS.len() - 1)];
+            let side = (crate::edits::FACE_BLOCKS >> level) as f64;
+            ratio * side * block * mult
+        })
+        .collect()
+}
+
 /// Identifiant unique d'un nœud dans le QuadTree de la Cubed-Sphere
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct QuadNodeKey {
@@ -41,9 +66,9 @@ impl QuadNodeKey {
         self.face.uv_to_sphere_direction(u_mid, v_mid)
     }
 
-    /// Convertit un nœud de niveau 5 (feuille voxel maximale) en coordonnée de chunk voxel
+    /// Convertit un nœud de niveau `VOXEL_LEVEL` (feuille voxel) en coordonnée de chunk voxel
     pub fn to_chunk_coord(&self, altitude_layer: i32) -> Option<PlanetChunkCoord> {
-        if self.level == 5 {
+        if self.level == VOXEL_LEVEL {
             Some(PlanetChunkCoord::new(
                 self.face,
                 self.x as i32,
@@ -186,7 +211,7 @@ pub struct PlanetQuadTree {
 }
 
 /// Résolution de la grille de cache d'élévation (une cellule par colonne de voxels)
-const ELEVATION_CACHE_GRID: f64 = 1024.0;
+const ELEVATION_CACHE_GRID: f64 = crate::edits::FACE_BLOCKS as f64;
 const ELEVATION_CACHE_MAX_ENTRIES: usize = 1 << 18;
 
 #[derive(Default)]
@@ -198,26 +223,10 @@ struct ElevationCache {
 impl PlanetQuadTree {
     /// Crée un QuadTree configuré pour un rayon de planète donné
     pub fn new(base_radius: f64) -> Self {
-        // On conserve tous les niveaux du QuadTree (Level 0 à 5),
-        // mais avec une finesse de maillage adaptative par niveau (finesse élevée dès l'orbite).
+        // Du nœud racine (une face) jusqu'aux colonnes de chunks voxel (VOXEL_LEVEL)
         let min_level = 0;
-        let max_level = 5;
-
-        // Seuils de distance caméra-nœud pour déclencher la subdivision :
-        // Level 0 (face globale) : split si distance < 95.0
-        // Level 1 (quadrant)     : split si distance < 60.0
-        // Level 2 (région)       : split si distance < 38.0
-        // Level 3 (zone)         : split si distance < 18.0
-        // Level 4 (local)        : split si distance < 3.8 (passage aux voxels 3D Level 5 locaux au sol)
-        // Échelle proportionnelle au rayon de la planète par rapport au rayon de référence
-        let scale = base_radius / crate::cubed_sphere::REFERENCE_BASE_RADIUS;
-        let split_distances = vec![
-            95.0 * scale,
-            60.0 * scale,
-            38.0 * scale,
-            18.0 * scale,
-            3.8 * scale,
-        ];
+        let max_level = VOXEL_LEVEL;
+        let split_distances = split_distances(base_radius, 1.0);
 
         Self {
             base_radius,
@@ -289,7 +298,7 @@ impl PlanetQuadTree {
         leaves: &mut Vec<QuadLeaf>,
     ) {
         let center_dir = node.center_direction();
-        let altitude_scale = self.base_radius * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0);
+        let altitude_scale = self.base_radius * std::f64::consts::FRAC_PI_4 * (2.0 / crate::edits::FACE_BLOCKS as f64);
 
         let cam_r = camera_pos.length();
         let cam_dir = if cam_r > 1e-6 {
@@ -376,6 +385,12 @@ impl PlanetQuadTree {
 mod tests {
     use super::*;
 
+    /// QuadTree de la planète par défaut et taille d'un bloc
+    fn default_tree() -> (PlanetQuadTree, f64) {
+        let radius = crate::cubed_sphere::REFERENCE_BASE_RADIUS * crate::cubed_sphere::DEFAULT_PLANET_SCALE;
+        (PlanetQuadTree::new(radius), radius * std::f64::consts::FRAC_PI_2 / crate::edits::FACE_BLOCKS as f64)
+    }
+
     #[test]
     fn test_quadnode_uv_bounds() {
         let root = QuadNodeKey::new(PlanetFace::PosZ, 0, 0, 0);
@@ -393,22 +408,22 @@ mod tests {
 
     #[test]
     fn test_level_5_maps_to_chunk_coord() {
-        let node_lvl5 = QuadNodeKey::new(PlanetFace::PosX, 5, 12, 18);
+        let node_lvl5 = QuadNodeKey::new(PlanetFace::PosX, VOXEL_LEVEL, 12, 18);
         let coord = node_lvl5.to_chunk_coord(0).unwrap();
         assert_eq!(coord.face, PlanetFace::PosX);
         assert_eq!(coord.x, 12);
         assert_eq!(coord.y, 18);
         assert_eq!(coord.altitude_layer, 0);
 
-        let node_lvl4 = QuadNodeKey::new(PlanetFace::PosX, 4, 6, 9);
+        let node_lvl4 = QuadNodeKey::new(PlanetFace::PosX, VOXEL_LEVEL - 1, 6, 9);
         assert!(node_lvl4.to_chunk_coord(0).is_none());
     }
 
     #[test]
     fn test_quadtree_evaluation_distant_camera() {
-        let qt = PlanetQuadTree::new(25.0);
-        // Caméra très éloignée dans l'espace (distance 150)
-        let cam_pos = DVec3::new(0.0, 0.0, 150.0);
+        let (qt, _) = default_tree();
+        // Caméra très éloignée dans l'espace (6 rayons)
+        let cam_pos = DVec3::new(0.0, 0.0, 6.0 * qt.base_radius);
         let leaves = qt.evaluate(cam_pos);
 
         // Toutes les 6 faces doivent être présentes au niveau racine (Level 0)
@@ -421,9 +436,9 @@ mod tests {
 
     #[test]
     fn test_quadtree_evaluation_close_surface_camera() {
-        let qt = PlanetQuadTree::new(25.0);
-        // Caméra très proche de la surface sur l'axe +Z (rayon 25.0 + 1.5 = 26.5)
-        let cam_pos = DVec3::new(0.0, 0.0, 26.5);
+        let (qt, block) = default_tree();
+        // Caméra au ras de la mer sur l'axe +Z
+        let cam_pos = DVec3::new(0.0, 0.0, qt.base_radius + 102.0 * block);
         let leaves = qt.evaluate(cam_pos);
 
         // Il doit y avoir des feuilles VoxelChunk (level 5) directement sous la caméra
@@ -443,24 +458,24 @@ mod tests {
 
     #[test]
     fn test_quadtree_evaluation_real_ground_elevation() {
-        let qt = PlanetQuadTree::new(25.0);
-        // Altitude de la mer (100 blocs) : rayon ~28.84
-        let cam_sea = DVec3::new(0.0, 0.0, 28.9);
+        let (qt, block) = default_tree();
+        // Altitude de la mer (100 blocs)
+        let cam_sea = DVec3::new(0.0, 0.0, qt.base_radius + 101.5 * block);
         let leaves_sea = qt.evaluate(cam_sea);
         let voxels_sea = leaves_sea.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).count();
-        println!("Leaves at sea (r=28.9): total={}, voxels={}", leaves_sea.len(), voxels_sea);
+        println!("Leaves at sea : total={}, voxels={}", leaves_sea.len(), voxels_sea);
 
-        // Altitude d'une colline (180 blocs) : rayon ~31.90
-        let cam_hill = DVec3::new(0.0, 0.0, 32.0);
+        // Altitude d'une colline (180 blocs) : le QuadTree sans générateur suppose le sol à la caméra
+        let cam_hill = DVec3::new(0.0, 0.0, qt.base_radius + 180.0 * block);
         let leaves_hill = qt.evaluate(cam_hill);
         let voxels_hill = leaves_hill.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).count();
-        println!("Leaves on hill (r=32.0): total={}, voxels={}", leaves_hill.len(), voxels_hill);
+        println!("Leaves on hill : total={}, voxels={}", leaves_hill.len(), voxels_hill);
 
-        // Altitude d'une montagne (280 blocs) : rayon ~35.74
-        let cam_mountain = DVec3::new(0.0, 0.0, 35.8);
+        // Altitude d'une montagne (280 blocs)
+        let cam_mountain = DVec3::new(0.0, 0.0, qt.base_radius + 280.0 * block);
         let leaves_mountain = qt.evaluate(cam_mountain);
         let voxels_mountain = leaves_mountain.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).count();
-        println!("Leaves on mountain (r=35.8): total={}, voxels={}", leaves_mountain.len(), voxels_mountain);
+        println!("Leaves on mountain : total={}, voxels={}", leaves_mountain.len(), voxels_mountain);
 
         assert!(voxels_sea > 0, "Les voxels doivent apparaître au niveau de la mer");
         assert!(voxels_hill > 0, "Les voxels doivent apparaître sur les collines");
@@ -471,9 +486,9 @@ mod tests {
         let dir = DVec3::new(0.0, 0.0, 1.0);
         let (lat, lon) = unit_sphere_to_lat_lon(dir);
         let elev = gen.sample_elevation(dir, lat, lon).max(SEA_LEVEL_BLOCKS);
-        let altitude_scale = qt.base_radius * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0);
+        let altitude_scale = qt.base_radius * std::f64::consts::FRAC_PI_4 * (2.0 / crate::edits::FACE_BLOCKS as f64);
         let ground_r = qt.base_radius + elev * altitude_scale;
-        let cam_ground = dir * (ground_r + 0.065);
+        let cam_ground = dir * (ground_r + 1.7 * altitude_scale);
         let leaves_gen = qt.evaluate_with_generator(cam_ground, Some(&gen));
         let voxels_gen = leaves_gen.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).count();
         assert!(voxels_gen > 0, "Les voxels doivent être générés au sol avec le générateur planétaire");
@@ -481,7 +496,7 @@ mod tests {
 
     #[test]
     fn test_high_mountain_subdivision_without_holes() {
-        let qt = PlanetQuadTree::new(25.0);
+        let (qt, _) = default_tree();
         let desc = crate::PlanetDescriptor::default();
         let gen = PlanetWorldGenerator::new(desc);
 
@@ -504,9 +519,9 @@ mod tests {
         }
 
         println!("Highest found elevation on PosZ: {:.1} blocks", highest_elev);
-        let altitude_scale = qt.base_radius * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0);
+        let altitude_scale = qt.base_radius * std::f64::consts::FRAC_PI_4 * (2.0 / crate::edits::FACE_BLOCKS as f64);
         let peak_r = qt.base_radius + highest_elev * altitude_scale;
-        let cam_peak = peak_dir * (peak_r + 0.065);
+        let cam_peak = peak_dir * (peak_r + 1.7 * altitude_scale);
 
         let leaves = qt.evaluate_with_generator(cam_peak, Some(&gen));
         let voxel_leaves: Vec<_> = leaves.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).collect();

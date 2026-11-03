@@ -70,7 +70,7 @@ fn god_rays(pixel: vec2<f32>, noise_pixel: vec2<f32>, depth: f32, size: vec2<f32
     let t_start = max(top.x, 0.0);
     // Arrêt un peu avant la surface : sa propre profondeur dans la carte d'ombre la marquerait
     // à moitié à l'ombre (points sombres sur l'eau vue en rasant)
-    let margin = 0.03 * camera.planet_radius / 25.0 + 0.03 * surface_dist;
+    let margin = 0.03 * camera.scales.x + 0.03 * surface_dist;
     let t_end = min(min(surface_dist - margin, atmosphere.params.z), max(top.y, 0.0));
     if (t_end <= t_start) {
         return vec4<f32>(0.0);

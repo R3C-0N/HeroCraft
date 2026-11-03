@@ -334,7 +334,8 @@ impl Shadows {
         ground_factor: f32,
         clouds_visible: bool,
     ) {
-        let scale = planet_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
+        // Portées des ombres mesurées en blocs
+        let scale = herocraft_world::block_scale(planet_radius as f64) as f32;
         let up = focus.normalize_or_zero();
         let sun_up = sun_dir.dot(up);
         self.light_dir = sun_dir.normalize();
