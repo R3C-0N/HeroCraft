@@ -13,7 +13,7 @@ pub mod tectonics;
 pub mod vegetation;
 
 pub use caves::{carvable_range, CaveField, CAVE_DEPTH};
-pub use creatures::{Creature, CreatureWorld, PlayerHit, PlayerPresence, CREATURE_RANGE_BLOCKS};
+pub use creatures::{Creature, CreatureWorld, Feeding, PlayerHit, PlayerPresence, CREATURE_RANGE_BLOCKS};
 pub use cubed_sphere::*;
 pub use edits::*;
 pub use farming::{tilled_block, Fields, FIELDS_FILE};

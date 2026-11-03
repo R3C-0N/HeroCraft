@@ -57,8 +57,36 @@ pub struct CreatureSpecies {
     /// Comportement agressif (aucun : la bête est paisible et s'enfuit quand on la frappe)
     #[serde(default)]
     pub attack: Option<CreatureAttack>,
+    /// Élevage : ce qu'elle mange, ce qu'il faut pour l'apprivoiser, le temps que met un petit à
+    /// grandir (aucun : elle ne s'élève pas)
+    #[serde(default)]
+    pub breeding: Option<Breeding>,
     /// Modèle 3D
     pub model: CreatureModel,
+}
+
+/// Élevage d'une espèce : nourrie de ce qu'elle aime, une bête sauvage finit par s'apprivoiser ;
+/// apprivoisée et nourrie, elle cherche un partenaire apprivoisé de son espèce, et le couple donne
+/// un petit, qui grandit
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Breeding {
+    /// Ce qu'elle mange (identifiants d'objets ou de blocs) : tenu en main, il l'attire
+    pub food: Vec<String>,
+    /// Nombre de repas, au moins et au plus (tiré pour chaque bête), qui l'apprivoisent
+    #[serde(default = "default_taming")]
+    pub taming: [u32; 2],
+    /// Temps qu'il faut à un petit pour devenir adulte, en minutes
+    #[serde(default = "default_growth_minutes")]
+    pub growth_minutes: f32,
+}
+
+fn default_taming() -> [u32; 2] {
+    [2, 5]
+}
+
+fn default_growth_minutes() -> f32 {
+    10.0
 }
 
 /// Façon d'attaquer d'une bête agressive
@@ -439,6 +467,11 @@ impl CreatureSpecies {
                 return Err("attaque invalide (dégâts, délai, vue et allure positifs, meute d'au moins 1)".into());
             }
         }
+        if let Some(b) = &species.breeding {
+            if b.food.is_empty() || b.taming[0] == 0 || b.taming[1] < b.taming[0] || !(b.growth_minutes > 0.0) {
+                return Err("élevage invalide (au moins une nourriture, 1 ≤ repas min ≤ repas max, croissance positive)".into());
+            }
+        }
         for (name, animation) in &species.model.animations {
             if !(animation.cycle > 0.0 && animation.foulee.is_none_or(|f| f > 0.0)) {
                 return Err(format!("animation {name} : cycle et foulée doivent être positifs"));
@@ -479,7 +512,18 @@ pub struct CreatureState {
     pub death: f32,
     /// Ce qu'elle fait, pour choisir son animation
     pub action: CreatureAction,
+    /// Taille par rapport à un adulte : un petit grandit de 0,5 à 1
+    pub scale: f32,
+    /// Humeur d'élevage, en bits `MOOD_*`
+    pub mood: u8,
 }
+
+/// Des cœurs flottent au-dessus d'elle (amoureuse, ou tout juste apprivoisée)
+pub const MOOD_HEARTS: u8 = 1;
+/// Apprivoisée
+pub const MOOD_TAMED: u8 = 2;
+/// Elle ne mange pas pour l'instant (amoureuse, ou vient d'avoir un petit)
+pub const MOOD_SATED: u8 = 4;
 
 #[cfg(test)]
 mod tests {

@@ -10,6 +10,7 @@
     {"biome": "Mountains", "weight": 1.0}
   ],
   "activity": "diurnal",
+  "breeding": {"food": ["ble"], "taming": [2, 4], "growth_minutes": 10},
   "model": {
     "mesh": "modeles/mouflon.gltf",
     "texture": "modeles/mouflon.png",

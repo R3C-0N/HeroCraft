@@ -10,6 +10,7 @@
     {"biome": "Plains", "weight": 1.0}
   ],
   "activity": "diurnal",
+  "breeding": {"food": ["ble"], "taming": [2, 4], "growth_minutes": 10},
   "model": {
     "mesh": "modeles/vache.gltf",
     "texture": "modeles/vache.png",

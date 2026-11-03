@@ -37,7 +37,7 @@ use std::sync::Arc;
 use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
-use herocraft_common::{tangent_frame, AttackMode, BlockId, CreatureAction, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
+use herocraft_common::{blocks, items, tangent_frame, AttackMode, BlockId, ItemId, MOOD_HEARTS, MOOD_SATED, MOOD_TAMED, CreatureAction, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -155,6 +155,23 @@ const SHORE_DIRECTIONS: usize = 16;
 const SHORE_SEARCH_INTERVAL: f32 = 1.0;
 /// Pas de simulation le plus long, en secondes
 const MAX_STEP: f32 = 0.1;
+/// Une bête suit le joueur qui tient sa nourriture à moins de tant de blocs, jusqu'à tant de blocs de lui
+const LURE_RADIUS_BLOCKS: f32 = 10.0;
+const LURE_STOP_BLOCKS: f32 = 2.0;
+/// Durée pendant laquelle une bête nourrie cherche un partenaire, en secondes
+const LOVE_TIME: f32 = 30.0;
+/// Délai avant qu'une bête qui vient d'avoir un petit puisse de nouveau aimer, en secondes
+const BREED_COOLDOWN: f32 = 300.0;
+/// Une bête amoureuse va vers le partenaire le plus proche à moins de tant de blocs ; à moins de
+/// `MATE_DISTANCE_BLOCKS`, le petit naît
+const MATE_RADIUS_BLOCKS: f32 = 8.0;
+const MATE_DISTANCE_BLOCKS: f32 = 1.3;
+/// Durée des cœurs d'une bête tout juste apprivoisée, en secondes
+const HEARTS_TIME: f32 = 3.0;
+/// Part de sa croissance qu'un petit gagne à chaque repas
+const MEAL_GROWTH: f32 = 0.1;
+/// Taille d'un nouveau-né par rapport à un adulte
+const NEWBORN_SCALE: f32 = 0.5;
 /// Au-delà, le cache de colonnes est vidé
 const MAX_CACHED_COLUMNS: usize = 4096;
 
@@ -210,6 +227,39 @@ pub struct Creature {
     /// Temps restant de répit après avoir tué une proie, en secondes
     sated: f32,
     charge: Charge,
+    /// Apprivoisée par un joueur
+    pub tamed: bool,
+    /// Petit : secondes depuis sa naissance (`None` : adulte)
+    age: Option<f32>,
+    /// Temps qu'il faut à un petit de son espèce pour grandir, en secondes
+    growth_seconds: f32,
+    /// Repas reçus, et repas qu'il lui faut pour s'apprivoiser
+    meals: u32,
+    meals_needed: u32,
+    /// Temps restant amoureuse (elle cherche un partenaire)
+    love: f32,
+    /// Temps restant avant de pouvoir de nouveau aimer, après un petit
+    breed_cooldown: f32,
+    /// Temps restant des cœurs d'une bête tout juste apprivoisée
+    hearts: f32,
+    /// Partenaire vers qui elle marche
+    mate: Option<Vec3>,
+}
+
+/// Ce que fait un repas donné à une bête
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Feeding {
+    /// Elle n'en veut pas (pas sa nourriture, déjà amoureuse ou trop tôt après un petit) : l'objet
+    /// n'est pas dépensé
+    Refused,
+    /// Sauvage : un repas de plus vers son apprivoisement
+    Taming,
+    /// Elle vient d'être apprivoisée
+    Tamed,
+    /// Apprivoisée et adulte : elle cherche un partenaire
+    InLove,
+    /// Petit : il grandit plus vite
+    Grew,
 }
 
 /// Étape d'une charge
@@ -254,7 +304,34 @@ impl Creature {
             hurt: (self.hurt / CREATURE_HURT_TIME).clamp(0.0, 1.0),
             death: self.dead_for.map_or(0.0, |t| (t / CREATURE_DEATH_TIME).clamp(1e-3, 1.0)),
             action: self.action(),
+            scale: self.scale(),
+            mood: self.mood(),
         }
+    }
+
+    /// Taille par rapport à un adulte : un petit grandit de `NEWBORN_SCALE` à 1
+    pub fn scale(&self) -> f32 {
+        self.age.map_or(1.0, |age| NEWBORN_SCALE + (1.0 - NEWBORN_SCALE) * (age / self.growth_seconds).clamp(0.0, 1.0))
+    }
+
+    /// Humeur d'élevage (bits `MOOD_*`)
+    pub fn mood(&self) -> u8 {
+        let mut mood = 0;
+        if self.is_alive() && (self.love > 0.0 || self.hearts > 0.0) {
+            mood |= MOOD_HEARTS;
+        }
+        if self.tamed {
+            mood |= MOOD_TAMED;
+        }
+        if self.love > 0.0 || self.breed_cooldown > 0.0 {
+            mood |= MOOD_SATED;
+        }
+        mood
+    }
+
+    /// Petit qui n'a pas encore grandi
+    pub fn is_young(&self) -> bool {
+        self.age.is_some()
     }
 
     /// Ce qu'elle fait, pour choisir son animation
@@ -330,11 +407,13 @@ pub struct PlayerPresence {
     pub feet: Vec3,
     /// Accroupi : il approche sans bruit, les bêtes craintives le remarquent de moins loin
     pub crouching: bool,
+    /// Ce qu'il tient en main : sa nourriture attire une bête qui s'élève
+    pub holding: Option<ItemId>,
 }
 
 impl PlayerPresence {
     pub fn standing(feet: Vec3) -> Self {
-        Self { feet, crouching: false }
+        Self { feet, crouching: false, holding: None }
     }
 }
 
@@ -347,6 +426,8 @@ pub struct CreatureWorld {
     spawn_table: HashMap<BiomeType, Vec<SpawnCandidate>>,
     /// Rangs des espèces que chaque espèce chasse
     prey_table: Vec<Vec<usize>>,
+    /// Ce que mange chaque espèce qui s'élève (vide : elle ne s'élève pas)
+    food_table: Vec<Vec<ItemId>>,
     geometry: BlockGeometry,
     /// Graine du monde : elle décide de la population de chaque zone
     seed: u64,
@@ -403,6 +484,21 @@ impl CreatureWorld {
                     .collect()
             })
             .collect();
+        let food_table = registry
+            .iter()
+            .map(|species| {
+                let food = species.breeding.as_ref().map_or(&[][..], |b| &b.food[..]);
+                food.iter()
+                    .filter_map(|id| {
+                        let found = items().find(id).or_else(|| blocks().find(id).map(ItemId::from));
+                        if found.is_none() {
+                            log::warn!("Créature {} : nourriture « {id} » inconnue.", species.id);
+                        }
+                        found
+                    })
+                    .collect()
+            })
+            .collect();
         let geometry = BlockGeometry::new(base_radius);
         let half = ZONE_BLOCKS as f64 / 2.0;
         let mut groups: HashMap<(PlanetFace, i32, i32), Vec<(ZoneKey, Vec3)>> = HashMap::new();
@@ -425,6 +521,7 @@ impl CreatureWorld {
             registry,
             spawn_table,
             prey_table,
+            food_table,
             geometry,
             seed,
             creatures: Vec::new(),
@@ -500,12 +597,16 @@ impl CreatureWorld {
         self.next_id += 1;
         let health = self.registry.get(species).map_or(1.0, |s| s.health);
         let yaw = self.rng.gen_range(0.0..TAU);
-        self.wake_creature(id, species, herd.unwrap_or(id), feet, yaw, health);
+        self.wake_creature(id, species, herd.unwrap_or(id), feet, yaw, health, false, None);
         id
     }
 
-    fn wake_creature(&mut self, id: u64, species: usize, herd: u64, feet: Vec3, yaw: f32, health: f32) {
+    #[allow(clippy::too_many_arguments)]
+    fn wake_creature(&mut self, id: u64, species: usize, herd: u64, feet: Vec3, yaw: f32, health: f32, tamed: bool, age: Option<f32>) {
         let timer = self.rng.gen_range(0.5..3.0);
+        let breeding = self.registry.get(species).and_then(|s| s.breeding.as_ref());
+        let growth_seconds = breeding.map_or(600.0, |b| b.growth_minutes * 60.0);
+        let meals_needed = breeding.map_or(1, |b| self.rng.gen_range(b.taming[0]..=b.taming[1]));
         self.creatures.push(Creature {
             id,
             species,
@@ -534,7 +635,116 @@ impl CreatureWorld {
             striking: 0.0,
             sated: 0.0,
             charge: Charge::Idle,
+            tamed,
+            age,
+            growth_seconds,
+            meals: 0,
+            meals_needed,
+            love: 0.0,
+            breed_cooldown: 0.0,
+            hearts: 0.0,
+            mate: None,
         });
+    }
+
+    /// Donne `item` à manger à la créature `id`. Une bête sauvage s'apprivoise au bout de quelques
+    /// repas ; apprivoisée et adulte, elle devient amoureuse et cherche un partenaire apprivoisé de
+    /// son espèce ; petite, elle grandit plus vite. Refusé si ce n'est pas sa nourriture, si elle est
+    /// déjà amoureuse ou vient d'avoir un petit.
+    pub fn feed(&mut self, id: u64, item: ItemId) -> Feeding {
+        let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) else { return Feeding::Refused };
+        if !self.food_table.get(c.species).is_some_and(|food| food.contains(&item)) {
+            return Feeding::Refused;
+        }
+        // Un repas la réveille et la calme
+        c.sleeping = false;
+        c.panic = 0.0;
+        if let Some(age) = c.age.as_mut() {
+            *age += c.growth_seconds * MEAL_GROWTH;
+            c.hearts = HEARTS_TIME * 0.5;
+            return Feeding::Grew;
+        }
+        if !c.tamed {
+            c.meals += 1;
+            if c.meals < c.meals_needed {
+                return Feeding::Taming;
+            }
+            c.tamed = true;
+            c.hearts = HEARTS_TIME;
+            return Feeding::Tamed;
+        }
+        if c.love > 0.0 || c.breed_cooldown > 0.0 {
+            return Feeding::Refused;
+        }
+        c.love = LOVE_TIME;
+        Feeding::InLove
+    }
+
+    /// Nom de l'espèce de la créature `id`
+    pub fn species_name(&self, id: u64) -> Option<&str> {
+        let c = self.creatures.iter().find(|c| c.id == id)?;
+        self.registry.get(c.species).map(|s| s.name.as_str())
+    }
+
+    /// Ce que mange l'espèce de rang `species` (vide : elle ne s'élève pas)
+    pub fn food_of(&self, species: usize) -> &[ItemId] {
+        self.food_table.get(species).map_or(&[], |f| &f[..])
+    }
+
+    /// Avance l'âge des petits et l'humeur d'élevage ; chaque bête amoureuse va vers le partenaire
+    /// amoureux de son espèce le plus proche, et le couple réuni donne un petit, apprivoisé, de leur
+    /// troupeau
+    fn rear(&mut self, dt: f32) {
+        let block = self.geometry.block_height as f32;
+        for c in self.creatures.iter_mut() {
+            c.love = (c.love - dt).max(0.0);
+            c.breed_cooldown = (c.breed_cooldown - dt).max(0.0);
+            c.hearts = (c.hearts - dt).max(0.0);
+            if let Some(age) = c.age.as_mut() {
+                *age += dt;
+                if *age >= c.growth_seconds {
+                    c.age = None;
+                }
+            }
+            c.mate = None;
+        }
+        let lovers: Vec<usize> = (0..self.creatures.len()).filter(|&i| self.creatures[i].love > 0.0 && self.creatures[i].is_alive()).collect();
+        let mut births = Vec::new();
+        for (k, &i) in lovers.iter().enumerate() {
+            if self.creatures[i].love <= 0.0 {
+                // Elle vient d'avoir un petit avec une autre
+                continue;
+            }
+            let here = self.creatures[i].position;
+            let partner = lovers[k + 1..]
+                .iter()
+                .chain(&lovers[..k])
+                .copied()
+                .filter(|&j| self.creatures[j].love > 0.0 && self.creatures[j].species == self.creatures[i].species)
+                .map(|j| (j, self.creatures[j].position.distance(here) / block))
+                .filter(|&(_, d)| d <= MATE_RADIUS_BLOCKS)
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            let Some((j, distance)) = partner else { continue };
+            if distance <= MATE_DISTANCE_BLOCKS {
+                let there = self.creatures[j].position;
+                for n in [i, j] {
+                    let c = &mut self.creatures[n];
+                    c.love = 0.0;
+                    c.breed_cooldown = BREED_COOLDOWN;
+                    c.hearts = HEARTS_TIME;
+                }
+                births.push((self.creatures[i].species, self.creatures[i].herd, (here + there) * 0.5));
+            } else {
+                self.creatures[i].mate = Some(self.creatures[j].position);
+            }
+        }
+        for (species, herd, feet) in births {
+            let id = self.next_id;
+            self.next_id += 1;
+            let health = self.registry.get(species).map_or(1.0, |s| s.health);
+            let yaw = self.rng.gen_range(0.0..TAU);
+            self.wake_creature(id, species, herd, feet, yaw, health, true, Some(0.0));
+        }
     }
 
     /// Un joueur dont la tête est en `from` frappe la créature `id` : elle perd de la vie, se réveille
@@ -807,13 +1017,15 @@ impl CreatureWorld {
         let mut query = TerrainQuery::with_columns(generator, edits, columns);
         self.update_zones(&mut query, players);
         let hits = self.hunt(dt, players);
+        self.rear(dt);
 
         let herds = herd_pulls(&self.creatures, self.geometry.block_height as f32);
         let mut walker = Walker { geometry: self.geometry, query: &mut query, sun_dir: self.sun_dir };
         for (creature, herd) in self.creatures.iter_mut().zip(herds) {
             if let Some(species) = self.registry.get(creature.species) {
                 let nearest = presences.iter().copied().min_by(|a, b| a.feet.distance_squared(creature.position).total_cmp(&b.feet.distance_squared(creature.position)));
-                walker.step(creature, species, nearest, herd, &mut self.rng, dt);
+                let food = self.food_table.get(creature.species).map_or(&[][..], |f| &f[..]);
+                walker.step(creature, species, food, nearest, herd, &mut self.rng, dt);
             }
         }
 
@@ -865,7 +1077,7 @@ impl CreatureWorld {
             };
             for c in creatures {
                 match self.registry.find(&c.species) {
-                    Some(species) => self.wake_creature(c.id, species, c.herd.unwrap_or(c.id), c.position, c.yaw, c.health),
+                    Some(species) => self.wake_creature(c.id, species, c.herd.unwrap_or(c.id), c.position, c.yaw, c.health, c.tamed, c.age),
                     None => log::warn!("Créature {} : espèce « {} » inconnue, laissée de côté.", c.id, c.species),
                 }
             }
@@ -894,7 +1106,7 @@ impl CreatureWorld {
     /// La bête telle qu'elle sera gardée endormie
     fn sleeping_creature(&self, c: &Creature) -> Option<SleepingCreature> {
         let species = self.registry.get(c.species)?.id.clone();
-        Some(SleepingCreature { id: c.id, species, herd: Some(c.herd), position: c.position, yaw: c.yaw, health: c.health })
+        Some(SleepingCreature { id: c.id, species, herd: Some(c.herd), position: c.position, yaw: c.yaw, health: c.health, tamed: c.tamed, age: c.age })
     }
 
     /// Bêtes que la graine du monde destine à cette zone : au plus un groupe, d'une espèce de son
@@ -927,10 +1139,19 @@ impl CreatureWorld {
                 let id = (zone.index() << 16) | n as u64;
                 // Le groupe d'une zone forme un troupeau
                 let herd = Some(zone.index() << 16);
-                population.push(SleepingCreature { id, species: info.id.clone(), herd, position: feet, yaw, health: info.health });
+                population.push(SleepingCreature { id, species: info.id.clone(), herd, position: feet, yaw, health: info.health, tamed: false, age: None });
             }
         }
         population
+    }
+}
+
+/// Tempérament d'une bête envers les joueurs : apprivoisée, une bête craintive ne fuit plus, elle
+/// regarde
+fn tamed_temperament(c: &Creature, temperament: Temperament) -> Temperament {
+    match temperament {
+        Temperament::Craintif if c.tamed => Temperament::Placide,
+        t => t,
     }
 }
 
@@ -1128,6 +1349,27 @@ impl Walker<'_, '_> {
         }
     }
 
+    /// Marche vers `goal` et s'arrête à `stop` blocs de lui (dans le plan tangent). Renvoie la
+    /// distance en blocs, ou rien si `goal` est juste au-dessus ou au-dessous d'elle.
+    fn approach(&self, c: &mut Creature, goal: Vec3, stop: f32) -> Option<f32> {
+        let up = c.position.normalize_or_zero();
+        let (east, north) = tangent_frame(up);
+        let towards = goal - c.position;
+        let towards = towards - up * towards.dot(up);
+        let distance = towards.length() / self.block();
+        if distance < 0.25 {
+            c.walking = false;
+            return None;
+        }
+        c.target_yaw = towards.dot(east).atan2(towards.dot(north)).rem_euclid(TAU);
+        // Elle ne repart que si le but s'éloigne franchement
+        let stop = if c.walking { stop } else { stop + 1.0 };
+        c.walking = distance > stop;
+        c.pause = None;
+        c.timer = c.timer.min(1.5);
+        Some(distance)
+    }
+
     /// Où poser les pieds à la place de `p`, en venant de pieds à `altitude` : rien si un mur
     /// barre la route, si c'est une falaise, de la lave, ou si le corps n'y tient pas
     fn footing(&mut self, p: Vec3, altitude: f32, height: f32) -> Option<(f32, Footing)> {
@@ -1213,7 +1455,8 @@ impl Walker<'_, '_> {
         None
     }
 
-    fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, nearest_player: Option<PlayerPresence>, herd: HerdPull, rng: &mut StdRng, dt: f32) {
+    #[allow(clippy::too_many_arguments)]
+    fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, food: &[ItemId], nearest_player: Option<PlayerPresence>, herd: HerdPull, rng: &mut StdRng, dt: f32) {
         let block = self.block();
         let base_radius = self.geometry.base_radius as f32;
         let radius_of = move |altitude: f32| base_radius + altitude * block;
@@ -1242,7 +1485,15 @@ impl Walker<'_, '_> {
                     c.target_yaw = yaw;
                 }
             }
-        } else if !c.sleeping && nearest_player.is_some_and(|player| self.react(c, species.temperament, player, rng)) {
+        } else if let Some(mate) = c.mate.filter(|_| !c.sleeping) {
+            // Amoureuse : elle va droit vers son partenaire
+            self.approach(c, mate, 0.0);
+        } else if let Some(player) = nearest_player.filter(|p| {
+            !c.sleeping && p.holding.is_some_and(|item| food.contains(&item)) && p.feet.distance(c.position) < LURE_RADIUS_BLOCKS * block
+        }) {
+            // Le joueur tient sa nourriture : elle le suit au lieu de fuir
+            self.approach(c, player.feet, LURE_STOP_BLOCKS);
+        } else if !c.sleeping && nearest_player.is_some_and(|player| self.react(c, tamed_temperament(c, species.temperament), player, rng)) {
             // Éveillée, elle s'occupe du joueur ; endormie, elle ne le remarque pas (un coup la réveille)
         } else {
             // Humeur : marcher un moment dans une direction, puis s'arrêter brouter. Au sein d'un
@@ -1709,7 +1960,7 @@ mod tests {
         let c = &mut world.creatures[0];
         (c.walking, c.timer) = (false, 100.0);
         let start = world.creatures()[0].position;
-        let crouching = PlayerPresence { feet: player, crouching: true };
+        let crouching = PlayerPresence { feet: player, crouching: true, holding: None };
         for _ in 0..40 {
             world.tick_with_presences(0.05, &generator, &edits, &[crouching]);
         }
@@ -1719,7 +1970,7 @@ mod tests {
 
         // Accroupi tout près, il finit par le remarquer
         let (east, _) = tangent_frame(c.position.normalize());
-        let close = PlayerPresence { feet: c.position + east * 2.0 * geometry.block_height as f32, crouching: true };
+        let close = PlayerPresence { feet: c.position + east * 2.0 * geometry.block_height as f32, crouching: true, holding: None };
         world.tick_with_presences(0.05, &generator, &edits, &[close]);
         assert!(world.creatures()[0].panic > 0.0, "le lapin ne fuit pas un joueur accroupi à 2 blocs");
     }
@@ -2288,5 +2539,95 @@ mod tests {
             assert!(b.2.distance(a.2) < 1e-3);
         }
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn fed_animals_get_tamed_then_breed_a_growing_young() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 9, registry());
+        world.populate = false;
+        let cow = world.registry().find("vache").unwrap();
+        let wheat = items().find("ble").unwrap();
+        let (east, _) = tangent_frame(feet.normalize());
+        let a = world.spawn(cow, feet);
+        let b = world.spawn(cow, feet + east * 4.0 * geometry.block_height as f32);
+
+        // Pas sa nourriture : refusé
+        assert_eq!(world.feed(a, items().find("carotte").unwrap()), Feeding::Refused);
+        // Quelques repas l'apprivoisent
+        for id in [a, b] {
+            let mut meals = 0;
+            loop {
+                meals += 1;
+                match world.feed(id, wheat) {
+                    Feeding::Taming => assert!(meals < 10),
+                    Feeding::Tamed => break,
+                    other => panic!("{other:?}"),
+                }
+            }
+        }
+        assert!(world.creatures().iter().all(|c| c.tamed && c.mood() & MOOD_TAMED != 0 && c.mood() & MOOD_HEARTS != 0));
+        // Apprivoisées : un repas de plus les rend amoureuses, pas deux
+        assert_eq!(world.feed(a, wheat), Feeding::InLove);
+        assert_eq!(world.feed(a, wheat), Feeding::Refused);
+        assert_eq!(world.feed(b, wheat), Feeding::InLove);
+
+        // Elles se rejoignent et donnent un petit, petit et apprivoisé
+        let far = feet - east * 30.0 * geometry.block_height as f32;
+        for _ in 0..400 {
+            world.tick(0.05, &generator, &edits, &[far]);
+            if world.creatures().len() == 3 {
+                break;
+            }
+        }
+        assert_eq!(world.creatures().len(), 3, "aucun petit n'est né");
+        let young = world.creatures().iter().find(|c| c.is_young()).expect("un petit");
+        assert!(young.tamed && (young.scale() - NEWBORN_SCALE).abs() < 0.05);
+        assert_eq!(young.state().scale, young.scale());
+        let young = young.id;
+        // Les parents ne veulent plus manger pour un moment
+        assert_eq!(world.feed(a, wheat), Feeding::Refused);
+        // Nourri, le petit grandit plus vite, puis devient adulte
+        let before = world.creatures().iter().find(|c| c.id == young).unwrap().scale();
+        assert_eq!(world.feed(young, wheat), Feeding::Grew);
+        assert!(world.creatures().iter().find(|c| c.id == young).unwrap().scale() > before);
+        world.creatures.iter_mut().find(|c| c.id == young).unwrap().age = Some(1e9);
+        world.tick(0.05, &generator, &edits, &[far]);
+        assert!(!world.creatures().iter().find(|c| c.id == young).unwrap().is_young());
+
+        // Apprivoisement et âge sont gardés quand la zone s'endort
+        let sleeping = world.sleeping_creature(&world.creatures()[0]).unwrap();
+        assert!(sleeping.tamed);
+    }
+
+    #[test]
+    fn holding_its_food_lures_a_shy_animal() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 11, registry());
+        world.populate = false;
+        let rabbit = world.registry().find("lapin").unwrap();
+        world.spawn(rabbit, feet);
+        let (east, _) = tangent_frame(feet.normalize());
+        let player = feet + east * 6.0 * geometry.block_height as f32;
+        let distance = |w: &CreatureWorld| w.creatures()[0].position.distance(player) / geometry.block_height as f32;
+        // Mains vides : le lapin fuit
+        let empty = PlayerPresence::standing(player);
+        for _ in 0..40 {
+            world.tick_with_presences(0.05, &generator, &edits, &[empty]);
+        }
+        assert!(distance(&world) > 6.5, "le lapin devait fuir ({} blocs)", distance(&world));
+        // Une carotte en main : il approche
+        let start = distance(&world);
+        let lure = PlayerPresence { holding: items().find("carotte"), ..empty };
+        for _ in 0..200 {
+            world.tick_with_presences(0.05, &generator, &edits, &[lure]);
+        }
+        assert!(distance(&world) < start.min(LURE_RADIUS_BLOCKS) - 1.0, "le lapin devait approcher ({start} puis {} blocs)", distance(&world));
     }
 }

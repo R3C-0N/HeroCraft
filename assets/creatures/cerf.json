@@ -10,6 +10,7 @@
     {"biome": "Forest", "weight": 1.0}
   ],
   "activity": "crepuscular",
+  "breeding": {"food": ["carotte", "pommeDeTerre"], "taming": [4, 8], "growth_minutes": 12},
   "model": {
     "mesh": "modeles/cerf.gltf",
     "texture": "modeles/cerf.png",
