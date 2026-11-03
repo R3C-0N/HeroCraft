@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/copperTotem.png",
-  "stats": {"Dégâts": 6, "Durabilité": 300}
+  "stats": {"Dégâts": 6, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"flintTotem": 1, "copperIngot": 3, "fibre": 2}, "repair": {"copperIngot": 1}}
+  ]
 }

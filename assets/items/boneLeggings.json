@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/boneLeggings.png",
-  "stats": {"Protection": 5, "Durabilité": 150}
+  "stats": {"Protection": 5, "Durabilité": 150},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bone": 3, "stone|cobbleStone": 2, "hide": 1, "rope": 2}}
+  ]
 }

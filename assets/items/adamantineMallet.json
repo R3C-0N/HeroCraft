@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/adamantineMallet.png",
-  "stats": {"Dégâts": 24, "Durabilité": 3000}
+  "stats": {"Dégâts": 24, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"adamantineIngot": 4, "stick": 2}, "repair": {"adamantineIngot": 1}}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/adamantineDagger.png",
-  "stats": {"Dégâts": 16, "Durabilité": 3000}
+  "stats": {"Dégâts": 16, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"adamantineIngot": 2, "stick": 1}, "repair": {"adamantineIngot": 1}}
+  ]
 }

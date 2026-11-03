@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/mithrilScaleChestplate.png",
-  "stats": {"Protection": 25, "Durabilité": 3000}
+  "stats": {"Protection": 25, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"mithrilIngot": 9, "rope": 2}, "repair": {"mithrilIngot": 3}}
+  ]
 }

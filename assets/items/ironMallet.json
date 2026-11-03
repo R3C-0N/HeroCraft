@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/ironMallet.png",
-  "stats": {"Dégâts": 11, "Durabilité": 900}
+  "stats": {"Dégâts": 11, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"ironIngot": 4, "stick": 2}, "repair": {"ironIngot": 1}}
+  ]
 }

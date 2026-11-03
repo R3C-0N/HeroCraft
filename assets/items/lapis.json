@@ -3,5 +3,8 @@
   "name": "Lapis-lazuli",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/lapis.png"
+  "icon": "icones/lapis.png",
+  "recipes": [
+    {"station": "lapidary", "ingredients": {"lapisOre": 1}, "count": 2}
+  ]
 }

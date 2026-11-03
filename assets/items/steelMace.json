@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/steelMace.png",
-  "stats": {"Dégâts": 15, "Durabilité": 2000}
+  "stats": {"Dégâts": 15, "Durabilité": 2000},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"steelIngot": 3, "stick": 2}, "repair": {"steelIngot": 1}}
+  ]
 }

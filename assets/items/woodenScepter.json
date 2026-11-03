@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/woodenScepter.png",
-  "stats": {"Dégâts": 1, "Durabilité": 80}
+  "stats": {"Dégâts": 1, "Durabilité": 80},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"plank": 1, "stick": 2, "fibre": 3}}
+  ]
 }

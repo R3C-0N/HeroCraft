@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/etheriumOrichalcumBattleAxe.png",
-  "stats": {"Dégâts": 27, "Durabilité": 5000}
+  "stats": {"Dégâts": 27, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"etheriumOrichalcumIngot": 5, "stick": 2, "rope": 1}, "repair": {"etheriumOrichalcumIngot": 2}}
+  ]
 }

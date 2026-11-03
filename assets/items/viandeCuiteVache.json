@@ -5,5 +5,8 @@
   "category": "Nourriture",
   "max_stack": 99,
   "icon": "icones/viandeCuiteVache.png",
-  "stats": {"Satiété": 40}
+  "stats": {"Satiété": 40},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"viandeVache": 1, "coal|plank": 1}}
+  ]
 }

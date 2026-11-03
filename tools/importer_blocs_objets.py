@@ -147,9 +147,19 @@ def couleur_moyenne(png, teinte=None):
 
 
 def ecrire(chemin, fiche):
-    """Une ligne par champ : facile à relire et à retoucher"""
+    """Une ligne par champ : facile à relire et à retoucher. Les recettes d'une fiche déjà écrite
+    (`tools/importer_recettes.py`, ou à la main) sont gardées."""
+    if "recipes" not in fiche and chemin.exists():
+        try:
+            recettes = json.loads(chemin.read_text(encoding="utf-8")).get("recipes")
+        except ValueError:
+            recettes = None
+        if recettes:
+            fiche = {**fiche, "recipes": recettes}
     c = lambda v: json.dumps(v, ensure_ascii=False, separators=(", ", ": "))
-    lignes = ["{"] + [f'  "{k}": {c(v)}' + ("," if i < len(fiche) - 1 else "") for i, (k, v) in enumerate(fiche.items())] + ["}"]
+    # Les recettes, une par ligne
+    v = lambda k, v: "[\n" + ",\n".join(f"    {c(r)}" for r in v) + "\n  ]" if k == "recipes" and v else c(v)
+    lignes = ["{"] + [f'  "{k}": {v(k, x)}' + ("," if i < len(fiche) - 1 else "") for i, (k, x) in enumerate(fiche.items())] + ["}"]
     chemin.write_text("\n".join(lignes) + "\n", encoding="utf-8")
 
 

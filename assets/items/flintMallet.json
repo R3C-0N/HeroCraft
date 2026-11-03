@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/flintMallet.png",
-  "stats": {"Dégâts": 5, "Durabilité": 150}
+  "stats": {"Dégâts": 5, "Durabilité": 150},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"flint": 3, "oakTrunk|birchTrunk|pineTrunk": 1, "rope": 1}}
+  ]
 }

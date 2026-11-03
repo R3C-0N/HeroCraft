@@ -4,5 +4,8 @@
   "category": "Outils",
   "max_stack": 1,
   "icon": "icones/bronzeAxe.png",
-  "stats": {"Dégâts": 4, "Durabilité": 500}
+  "stats": {"Dégâts": 4, "Durabilité": 500},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bronzeIngot": 3, "stick": 2, "rope": 1}, "repair": {"bronzeIngot": 1}}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/etheriumAdamantineShield.png",
-  "stats": {"Dégâts": 12, "Durabilité": 5000}
+  "stats": {"Dégâts": 12, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"etheriumAdamantineIngot": 4, "plank": 2}, "repair": {"etheriumAdamantineIngot": 1}}
+  ]
 }

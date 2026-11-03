@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/orichalcumTotem.png",
-  "stats": {"Dégâts": 18, "Durabilité": 3000}
+  "stats": {"Dégâts": 18, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"steelTotem": 1, "orichalcumIngot": 3, "fibre": 2}, "repair": {"orichalcumIngot": 1}}
+  ]
 }

@@ -3,5 +3,8 @@
   "name": "Ambre",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/amber.png"
+  "icon": "icones/amber.png",
+  "recipes": [
+    {"station": "lapidary", "ingredients": {"amberOre": 1}, "count": 2}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/etheriumMithrilDagger.png",
-  "stats": {"Dégâts": 22, "Durabilité": 5000}
+  "stats": {"Dégâts": 22, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"etheriumMithrilIngot": 2, "stick": 1}, "repair": {"etheriumMithrilIngot": 1}}
+  ]
 }

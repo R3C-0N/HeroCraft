@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/handCrossbow.png",
-  "stats": {"Dégâts": 2, "Durabilité": 80}
+  "stats": {"Dégâts": 2, "Durabilité": 80},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"plank": 2, "stick": 1, "rope": 2}}
+  ]
 }

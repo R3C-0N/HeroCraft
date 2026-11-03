@@ -4,5 +4,8 @@
   "category": "Outils",
   "max_stack": 1,
   "icon": "icones/flintPickaxe.png",
-  "stats": {"Dégâts": 2, "Durabilité": 150}
+  "stats": {"Dégâts": 2, "Durabilité": 150},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"flint": 3, "stick": 2, "rope": 1}}
+  ]
 }

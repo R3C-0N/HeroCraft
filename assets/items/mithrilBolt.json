@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 99,
   "icon": "icones/mithrilBolt.png",
-  "stats": {"Dégâts": 11}
+  "stats": {"Dégâts": 11},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"mithrilIngot": 1, "stick": 1, "fibre": 1}, "count": 6}
+  ]
 }

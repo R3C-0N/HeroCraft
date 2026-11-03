@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/mithrilTotem.png",
-  "stats": {"Dégâts": 17, "Durabilité": 3000}
+  "stats": {"Dégâts": 17, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"steelTotem": 1, "mithrilIngot": 3, "fibre": 2}, "repair": {"mithrilIngot": 1}}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/flintBattleAxe.png",
-  "stats": {"Dégâts": 6, "Durabilité": 150}
+  "stats": {"Dégâts": 6, "Durabilité": 150},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"flint": 4, "oakTrunk|birchTrunk|pineTrunk": 1, "rope": 2}}
+  ]
 }

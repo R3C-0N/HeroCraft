@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/adamantineTinkerKit.png",
-  "stats": {"Dégâts": 8, "Durabilité": 3000}
+  "stats": {"Dégâts": 8, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"adamantineIngot": 3, "stick": 2, "rope": 2}, "repair": {"adamantineIngot": 1}}
+  ]
 }

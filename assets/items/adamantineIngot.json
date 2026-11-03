@@ -3,5 +3,8 @@
   "name": "Lingot d'adamantine",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/adamantineIngot.png"
+  "icon": "icones/adamantineIngot.png",
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"steelIngot": 2, "diamond": 1}}
+  ]
 }

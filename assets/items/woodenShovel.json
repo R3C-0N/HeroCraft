@@ -4,5 +4,8 @@
   "category": "Outils",
   "max_stack": 1,
   "icon": "icones/woodenShovel.png",
-  "stats": {"Dégâts": 2, "Durabilité": 80}
+  "stats": {"Dégâts": 2, "Durabilité": 80},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"plank": 1, "stick": 2, "rope": 1}}
+  ]
 }

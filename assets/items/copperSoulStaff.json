@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/copperSoulStaff.png",
-  "stats": {"Dégâts": 5, "Durabilité": 300}
+  "stats": {"Dégâts": 5, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"flintSoulStaff": 1, "copperIngot": 3, "rope": 1}, "repair": {"copperIngot": 1}}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/ironMailBoots.png",
-  "stats": {"Protection": 5, "Durabilité": 900}
+  "stats": {"Protection": 5, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"ironIngot": 2, "rope": 1}, "repair": {"ironIngot": 1}}
+  ]
 }

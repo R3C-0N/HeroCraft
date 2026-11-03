@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/etheriumOrichalcumPlateChestplate.png",
-  "stats": {"Protection": 38, "Durabilité": 5000}
+  "stats": {"Protection": 38, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"etheriumOrichalcumIngot": 13, "rope": 2}, "repair": {"etheriumOrichalcumIngot": 4}}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/copperBattleAxe.png",
-  "stats": {"Dégâts": 9, "Durabilité": 300}
+  "stats": {"Dégâts": 9, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperIngot": 5, "stick": 2, "rope": 1}, "repair": {"copperIngot": 2}}
+  ]
 }

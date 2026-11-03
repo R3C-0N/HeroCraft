@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/rizSauteAuLezard.png",
-  "stats": {"Satiété": 36}
+  "stats": {"Satiété": 36},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"riz": 1, "viandeLezard": 1, "coal|plank": 1}}
+  ]
 }

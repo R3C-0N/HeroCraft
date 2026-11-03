@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/mithrilScepter.png",
-  "stats": {"Dégâts": 11, "Durabilité": 3000}
+  "stats": {"Dégâts": 11, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"steelScepter": 1, "mithrilIngot": 2, "rope": 1}, "repair": {"mithrilIngot": 1}}
+  ]
 }

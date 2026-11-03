@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/oignonsConfits.png",
-  "stats": {"Satiété": 8}
+  "stats": {"Satiété": 8},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"oignon": 2, "coal|plank": 1}}
+  ]
 }

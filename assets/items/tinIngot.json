@@ -3,5 +3,8 @@
   "name": "Lingot d'étain",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/tinIngot.png"
+  "icon": "icones/tinIngot.png",
+  "recipes": [
+    {"station": "furnace", "ingredients": {"tinOre": 2, "coal": 1}}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/copperScaleLeggings.png",
-  "stats": {"Protection": 6, "Durabilité": 300}
+  "stats": {"Protection": 6, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperIngot": 4, "rope": 1}, "repair": {"copperIngot": 1}}
+  ]
 }

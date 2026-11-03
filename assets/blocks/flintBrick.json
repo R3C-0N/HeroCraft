@@ -4,5 +4,8 @@
   "category": "Construction",
   "hardness": 14,
   "color": {"side": "#3f434a"},
-  "textures": {"side": "textures/FlintBrick.png"}
+  "textures": {"side": "textures/FlintBrick.png"},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"flint": 4, "stone|cobbleStone": 1}, "count": 4}
+  ]
 }

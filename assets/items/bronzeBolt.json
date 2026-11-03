@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 99,
   "icon": "icones/bronzeBolt.png",
-  "stats": {"Dégâts": 6}
+  "stats": {"Dégâts": 6},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bronzeIngot": 1, "stick": 1, "fibre": 1}, "count": 6}
+  ]
 }

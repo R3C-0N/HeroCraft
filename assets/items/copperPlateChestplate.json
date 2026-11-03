@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/copperPlateChestplate.png",
-  "stats": {"Protection": 11, "Durabilité": 300}
+  "stats": {"Protection": 11, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperIngot": 7, "rope": 2}, "repair": {"copperIngot": 2}}
+  ]
 }

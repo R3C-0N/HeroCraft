@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/boulettesDeLoup.png",
-  "stats": {"Satiété": 52}
+  "stats": {"Satiété": 52},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"riz": 1, "viandeLoup": 1, "oignon": 1, "coal|plank": 1}}
+  ]
 }

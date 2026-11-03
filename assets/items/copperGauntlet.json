@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/copperGauntlet.png",
-  "stats": {"Dégâts": 6, "Durabilité": 300}
+  "stats": {"Dégâts": 6, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"flintGauntlet": 1, "copperIngot": 3, "rope": 1}, "repair": {"copperIngot": 1}}
+  ]
 }

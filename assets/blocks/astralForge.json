@@ -5,5 +5,8 @@
   "hardness": 10,
   "color": {"top": "#3e414f", "side": "#2b303e"},
   "textures": {"top": "textures/AstralForgeTop.png", "side": "textures/AstralForge.png"},
-  "sound": "wood"
+  "sound": "wood",
+  "recipes": [
+    {"station": "lapidary", "ingredients": {"steelIngot": 8, "diamond": 2, "lapis": 4, "hardStone": 4}}
+  ]
 }

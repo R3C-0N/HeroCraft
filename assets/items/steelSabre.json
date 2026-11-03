@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/steelSabre.png",
-  "stats": {"Dégâts": 13, "Durabilité": 2000}
+  "stats": {"Dégâts": 13, "Durabilité": 2000},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"steelIngot": 3, "stick": 1, "rope": 1}, "repair": {"steelIngot": 1}}
+  ]
 }
