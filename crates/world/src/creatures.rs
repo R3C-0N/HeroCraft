@@ -262,6 +262,15 @@ pub enum Feeding {
     Grew,
 }
 
+/// Ce qu'on dit au joueur après un repas donné à `name` (nom de l'espèce), s'il y a lieu
+pub fn feeding_message(feeding: Feeding, name: &str) -> Option<String> {
+    match feeding {
+        Feeding::Tamed => Some(format!("Apprivoisé : {name}")),
+        Feeding::InLove => Some(format!("{name} cherche un partenaire")),
+        _ => None,
+    }
+}
+
 /// Étape d'une charge
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Charge {

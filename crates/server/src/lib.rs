@@ -18,7 +18,7 @@ use glam::Vec3;
 use herocraft_common::lan::{LanAnnounce, LanAnnouncer};
 use herocraft_common::net::{encode_frame, Connection};
 use herocraft_common::{
-    fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, PlayerClass, PlayerState,
+    fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, ItemId, PlayerClass, PlayerState,
     ServerPacket, SkillWheel, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
@@ -81,6 +81,8 @@ pub struct ConnectedPlayer {
     pub sprinting: bool,
     /// Accroupi, d'après le dernier `PlayerMove`
     pub crouching: bool,
+    /// Ce qu'il tient en main : sa nourriture attire les bêtes
+    pub holding: Option<ItemId>,
     /// Créatures que son client affiche (celles qui lui ont été annoncées)
     known_creatures: HashSet<u64>,
     connection: ClientConnection,
@@ -274,7 +276,7 @@ impl Server {
         }
 
         let (ids, presences): (Vec<u64>, Vec<herocraft_world::PlayerPresence>) =
-            self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching }))).unzip();
+            self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching, holding: p.holding }))).unzip();
         for hit in self.creatures.tick_with_presences(dt, &self.generator, &self.edits, &presences) {
             self.creature_attack(ids[hit.player], hit.species, hit.damage);
         }
@@ -435,6 +437,7 @@ impl Server {
                 pitch: 0.0,
                 sprinting: false,
                 crouching: false,
+                holding: None,
                 known_creatures: HashSet::new(),
                 connection,
             },
@@ -461,7 +464,7 @@ impl Server {
     fn handle_packet(&mut self, id: u64, packet: ClientPacket) {
         match packet {
             ClientPacket::Connect { .. } => {}
-            ClientPacket::PlayerMove { position, yaw, pitch, sprinting, crouching } => {
+            ClientPacket::PlayerMove { position, yaw, pitch, sprinting, crouching, holding } => {
                 if !(position.is_finite() && yaw.is_finite() && pitch.is_finite()) {
                     return;
                 }
@@ -471,11 +474,13 @@ impl Server {
                     player.pitch = pitch;
                     player.sprinting = sprinting;
                     player.crouching = crouching;
+                    player.holding = holding.map(ItemId);
                 }
             }
             ClientPacket::Fall { blocks } => self.fall(id, blocks),
             ClientPacket::InteractBlock { block, action } => self.interact_block(id, block.into(), action),
             ClientPacket::HitCreature { creature_id } => self.hit_creature(id, creature_id),
+            ClientPacket::FeedCreature { creature_id, item } => self.feed_creature(id, creature_id, ItemId(item)),
             ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
             ClientPacket::ChatMessage(text) => {
@@ -632,6 +637,20 @@ impl Server {
         let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
         if self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
             self.creatures.hit(creature_id, feet);
+        }
+    }
+
+    /// Repas donné par un joueur à une créature à sa portée : il la prévient de ce qu'il a obtenu
+    fn feed_creature(&mut self, id: u64, creature_id: u64, item: ItemId) {
+        let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
+        let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
+        if !self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
+            return;
+        }
+        let feeding = self.creatures.feed(creature_id, item);
+        let name = self.creatures.species_name(creature_id).unwrap_or("La bête").to_string();
+        if let (Some(player), Some(message)) = (self.players.get(&id), herocraft_world::creatures::feeding_message(feeding, &name)) {
+            tell(player, &message);
         }
     }
 

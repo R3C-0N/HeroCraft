@@ -290,6 +290,9 @@ pub struct RemoteCreature {
     pub death: f32,
     /// Ce qu'elle fait (`CreatureState::action`), au même rythme que la position
     pub action: CreatureAction,
+    /// Taille et humeur d'élevage (`CreatureState::scale`, `mood`), les dernières reçues
+    pub scale: f32,
+    pub mood: u8,
     track: Track,
     /// Derniers coups, morts et actions reçus, avec leur instant, pour les montrer au rythme des
     /// positions
@@ -298,11 +301,12 @@ pub struct RemoteCreature {
 
 impl RemoteCreature {
     fn new(species: String) -> Self {
-        Self { species, position: None, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, track: Track::default(), effects: VecDeque::new() }
+        Self { species, position: None, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, track: Track::default(), effects: VecDeque::new() }
     }
 
     fn push(&mut self, at: Instant, state: &CreatureState) {
         self.track.push(at, state.position, state.yaw);
+        (self.scale, self.mood) = (state.scale, state.mood);
         self.effects.push_back((at, state.hurt, state.death, state.action));
         while self.effects.len() > MAX_SNAPSHOTS {
             self.effects.pop_front();
@@ -340,19 +344,20 @@ pub struct NetClient {
     players: HashMap<u64, RemotePlayer>,
     creatures: HashMap<u64, RemoteCreature>,
     last_move_sent: Option<Instant>,
-    last_move: Option<(Vec3, f32, f32, bool, bool)>,
+    last_move: Option<(Vec3, f32, f32, bool, bool, Option<u16>)>,
 }
 
 impl NetClient {
-    /// Envoie la position du joueur (au plus 20 fois par seconde, et seulement si elle a changé)
-    pub fn send_move(&mut self, camera: &OrbitCamera) {
-        let state = (camera.player_pos, camera.player_yaw, camera.player_pitch, camera.is_running(), camera.is_crouching());
+    /// Envoie la position du joueur et ce qu'il tient en main (au plus 20 fois par seconde, et
+    /// seulement si elle a changé)
+    pub fn send_move(&mut self, camera: &OrbitCamera, holding: Option<herocraft_common::ItemId>) {
+        let state = (camera.player_pos, camera.player_yaw, camera.player_pitch, camera.is_running(), camera.is_crouching(), holding.map(|i| i.0));
         if self.last_move == Some(state) || self.last_move_sent.is_some_and(|t| t.elapsed() < MOVE_SEND_INTERVAL) {
             return;
         }
         self.last_move = Some(state);
         self.last_move_sent = Some(Instant::now());
-        self.connection.send(&ClientPacket::PlayerMove { position: state.0, yaw: state.1, pitch: state.2, sprinting: state.3, crouching: state.4 });
+        self.connection.send(&ClientPacket::PlayerMove { position: state.0, yaw: state.1, pitch: state.2, sprinting: state.3, crouching: state.4, holding: state.5 });
     }
 
     /// Légende du héros : le serveur en vérifie chaque choix et en prend la voie
@@ -363,6 +368,11 @@ impl NetClient {
     /// Signale au serveur une chute de `blocks` blocs, qui en tire les dommages
     pub fn send_fall(&mut self, blocks: f32) {
         self.connection.send(&ClientPacket::Fall { blocks });
+    }
+
+    /// Donne à manger à une créature (l'objet est déjà retiré de l'inventaire)
+    pub fn send_feed_creature(&mut self, creature_id: u64, item: herocraft_common::ItemId) {
+        self.connection.send(&ClientPacket::FeedCreature { creature_id, item: item.0 });
     }
 
     /// Signale au serveur un bloc changé par le joueur (déjà appliqué localement)
@@ -538,7 +548,7 @@ impl NetClient {
             .iter()
             .filter_map(|(&id, c)| {
                 let (feet, yaw) = c.position?;
-                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw, hurt: c.hurt, death: c.death, action: c.action })
+                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw, hurt: c.hurt, death: c.death, action: c.action, scale: c.scale, mood: c.mood })
             })
             .collect()
     }

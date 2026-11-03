@@ -309,7 +309,11 @@ fn main() {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
                                 // Clic droit sur un établi : il s'ouvre (accroupi, on pose contre lui)
                                 let station = block_interaction.aimed_station().filter(|_| action == block_interaction::BlockAction::Place && !camera.is_crouching());
-                                if let Some(at) = station {
+                                // Clic droit sur une bête avec sa nourriture en main : elle la mange
+                                let fed = action == block_interaction::BlockAction::Place
+                                    && feed_aimed_creature(&camera, &block_interaction, &creature_views, &creature_registry, net.as_mut(), &mut solo_creatures, &mut ui_state, &mut audio);
+                                if fed {
+                                } else if let Some(at) = station {
                                     camera.release_inputs();
                                     block_interaction.reset();
                                     ui_state.open_station(at);
@@ -592,7 +596,7 @@ fn main() {
                         // Partie en ligne : position envoyée, blocs des autres appliqués, autres joueurs affichés
                         if let Some(client) = net.as_mut() {
                             herocraft_common::prof_scope!("reseau");
-                            client.send_move(&camera);
+                            client.send_move(&camera, ui_state.inventory.selected_item());
                             let mut lost = None;
                             for event in client.poll() {
                                 match event {
@@ -646,7 +650,7 @@ fn main() {
                                     if !ui_state.is_settings_open && creature_mode != benchmark::CreatureMode::Off {
                                         // L'heure du ciel règle le sommeil et les apparitions
                                         solo_creatures.set_sun_dir(state.sun_dir());
-                                        let player = herocraft_world::PlayerPresence { feet: camera.player_pos, crouching: camera.is_crouching() };
+                                        let player = herocraft_world::PlayerPresence { feet: camera.player_pos, crouching: camera.is_crouching(), holding: ui_state.inventory.selected_item() };
                                         // Les plantes semées poussent (le serveur s'en charge en ligne)
                                         for (pos, block) in solo_fields.tick(dt, &generator, lod_manager.terrain_edits(), |_| 1.0) {
                                             terrain_edited |= lod_manager.set_block(&generator, pos, block);
@@ -1420,6 +1424,47 @@ fn aimed_creature(camera: &OrbitCamera, interaction: &BlockInteraction, views: &
     let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
     let reach = interaction.target().map_or(arm + block_interaction::REACH_BLOCKS as f32 * block, |hit| hit.distance as f32);
     creatures::aimed_creature(views, registry, eye, dir, reach, block).map(|(id, _)| id)
+}
+
+/// Donne à la bête visée ce que le joueur tient en main, si c'est sa nourriture et qu'elle en veut :
+/// la simulation solo, ou le serveur en ligne, l'apprivoise, la rend amoureuse ou fait grandir le
+/// petit. Renvoie vrai si elle a mangé (l'objet est retiré de l'inventaire).
+#[allow(clippy::too_many_arguments)]
+fn feed_aimed_creature(
+    camera: &OrbitCamera,
+    interaction: &BlockInteraction,
+    views: &[creatures::CreatureView],
+    registry: &herocraft_common::CreatureRegistry,
+    net: Option<&mut network::NetClient>,
+    solo: &mut herocraft_world::CreatureWorld,
+    ui_state: &mut UiState,
+    audio: &mut audio::Audio,
+) -> bool {
+    let Some(item) = ui_state.inventory.selected_item() else { return false };
+    let Some(id) = aimed_creature(camera, interaction, views, registry) else { return false };
+    let Some(view) = views.iter().find(|v| v.id == id) else { return false };
+    let Some(species) = view.species else { return false };
+    // Un adulte apprivoisé déjà amoureux, ou qui vient d'avoir un petit, n'en veut pas
+    let sated = view.mood & herocraft_common::MOOD_SATED != 0 && view.scale >= 1.0;
+    if sated || !solo.food_of(species).contains(&item) {
+        return false;
+    }
+    match net {
+        Some(client) => client.send_feed_creature(id, item),
+        None => {
+            let feeding = solo.feed(id, item);
+            if feeding == herocraft_world::Feeding::Refused {
+                return false;
+            }
+            let name = registry.get(species).map_or("La bête", |s| s.name.as_str());
+            if let Some(message) = herocraft_world::creatures::feeding_message(feeding, name) {
+                ui_state.chat.info(message);
+            }
+        }
+    }
+    ui_state.inventory.consume_selected();
+    audio.block_placed(audio::synth::Material::Grass, 0.0, &ui_state.audio_settings);
+    true
 }
 
 /// Blessure du joueur de force `hurt` (0 : sans mal) : vue secouée, cri et, s'il en est mort,
