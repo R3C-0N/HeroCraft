@@ -1,0 +1,27 @@
+{
+  "name": "Voyageur armé",
+  "description": "Voyage l'épée au côté : il se défend contre les bêtes qui l'attaquent au lieu de fuir.",
+  "body": {"half_width": 0.3, "half_length": 0.3, "height": 1.85},
+  "walk_speed": 1.6,
+  "health": 24,
+  "temperament": "placide",
+  "activity": "diurnal",
+  "humanoid": true,
+  "attack": {
+    "mode": "solo",
+    "damage": 3.5,
+    "cooldown": 1.1,
+    "sight": 10,
+    "reach": 1.0,
+    "chase_speed": 1.6,
+    "hunts_players": false,
+    "prey": ["loup", "sanglier", "chien", "brute", "gorgone", "millepattes", "rampant"]
+  },
+  "model": {
+    "animations": {
+      "travaille": {"cycle": 0.8, "pause": {"poids": 1, "duree": [4, 10]}},
+      "discute": {"cycle": 1.6, "pause": {"poids": 1, "duree": [3, 8]}},
+      "sommeil": {"cycle": 4, "pause": {"poids": 0, "duree": [10, 20]}}
+    }
+  }
+}

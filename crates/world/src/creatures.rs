@@ -153,6 +153,17 @@ const SWIM_SINK: f32 = 0.5;
 const SHORE_RANGE_BLOCKS: usize = 12;
 const SHORE_DIRECTIONS: usize = 16;
 const SHORE_SEARCH_INTERVAL: f32 = 1.0;
+/// Distance de son but à laquelle une créature menée s'arrête, en blocs
+const GUIDE_ARRIVAL_BLOCKS: f32 = 0.6;
+/// Temps entre deux visées d'une créature menée vers son but, en secondes (entre-temps, elle
+/// contourne ce qui la gêne)
+const GUIDE_AIM_INTERVAL: f32 = 0.3;
+/// Distance à laquelle une créature remarque une bête qu'elle craint, en blocs
+const FEAR_RADIUS_BLOCKS: f32 = 10.0;
+/// Durée d'une fuite devant une bête crainte, renouvelée tant qu'elle est près
+const FEAR_TIME: f32 = 2.5;
+/// Premier identifiant des créatures menées par la simulation des villages
+const MANAGED_ID_BASE: u64 = 1 << 56;
 /// Pas de simulation le plus long, en secondes
 const MAX_STEP: f32 = 0.1;
 /// Au-delà, le cache de colonnes est vidé
@@ -174,22 +185,22 @@ pub struct Creature {
     vertical_speed: f32,
     /// Recul d'un coup reçu, dans le plan tangent, en blocs par seconde
     push: Vec3,
-    walking: bool,
+    pub(crate) walking: bool,
     /// Inactivité choisie à l'arrêt (rang dans `CreatureSpecies::pauses`)
-    pause: Option<u8>,
+    pub(crate) pause: Option<u8>,
     /// Temps restant avant de changer d'humeur (s'arrêter, repartir), en secondes
     timer: f32,
-    health: f32,
+    pub(crate) health: f32,
     /// Temps restant de la teinte rouge d'un coup, en secondes
     hurt: f32,
     /// Temps restant de fuite après un coup, en secondes
-    panic: f32,
+    pub(crate) panic: f32,
     /// Allure de la fuite par rapport à la marche : plus vive pour la bête frappée que pour ses voisines
     panic_speed: f32,
     /// Temps écoulé depuis sa mort (`None` : vivante), en secondes
     dead_for: Option<f32>,
     /// Endormie : elle ne bouge plus jusqu'au retour de son heure, ou jusqu'à un coup
-    sleeping: bool,
+    pub(crate) sleeping: bool,
     /// Côté par lequel elle contourne les obstacles (1 : à droite, -1 : à gauche), gardé d'un
     /// obstacle à l'autre pour longer un mur sans hésiter
     detour_side: f32,
@@ -198,7 +209,7 @@ pub struct Creature {
     /// Enfoncement du corps dans l'eau, en unités du monde
     sink: f32,
     /// Elle poursuit une cible : la promenade est suspendue
-    hunting: bool,
+    pub(crate) hunting: bool,
     /// Allure de la poursuite, par rapport à la marche
     pace: f32,
     /// Temps restant de colère contre les joueurs, après un coup, en secondes
@@ -210,6 +221,17 @@ pub struct Creature {
     /// Temps restant de répit après avoir tué une proie, en secondes
     sated: f32,
     charge: Charge,
+    /// Menée par la simulation des villages (`villagers`) : ni rangée dans une zone, ni enregistrée
+    pub(crate) managed: bool,
+    /// Rentrée chez elle : ni simulée, ni montrée aux joueurs
+    pub(crate) hidden: bool,
+    /// Où elle se rend (direction depuis le centre de la planète), en marchant à l'allure `guide_pace`
+    pub(crate) guide: Option<Vec3>,
+    pub(crate) guide_pace: f32,
+    /// Arrivée au bout de son dernier trajet
+    pub(crate) arrived: bool,
+    /// Point qu'elle regarde, arrêtée (interlocuteur, établi, comptoir)
+    pub(crate) look: Option<Vec3>,
 }
 
 /// Étape d'une charge
@@ -321,6 +343,11 @@ impl Creature {
     pub fn is_sleeping(&self) -> bool {
         self.sleeping
     }
+
+    /// Rentrée chez elle : à ne pas montrer
+    pub fn is_hidden(&self) -> bool {
+        self.hidden
+    }
 }
 
 /// Un joueur tel que les créatures le perçoivent
@@ -347,6 +374,12 @@ pub struct CreatureWorld {
     spawn_table: HashMap<BiomeType, Vec<SpawnCandidate>>,
     /// Rangs des espèces que chaque espèce chasse
     prey_table: Vec<Vec<usize>>,
+    /// Rangs des espèces que chaque espèce fuit
+    fear_table: Vec<Vec<usize>>,
+    /// Habitants des villes et des villages, voyageurs (voir `villagers`)
+    pub(crate) villages: crate::villagers::Villages,
+    /// Prochain identifiant d'une créature menée par les villages
+    next_managed_id: u64,
     geometry: BlockGeometry,
     /// Graine du monde : elle décide de la population de chaque zone
     seed: u64,
@@ -388,21 +421,20 @@ impl CreatureWorld {
                 }
             }
         }
-        let prey_table = registry
-            .iter()
-            .map(|species| {
-                let prey = species.attack.as_ref().map_or(&[][..], |a| &a.prey[..]);
-                prey.iter()
-                    .filter_map(|id| {
-                        let found = registry.find(id);
-                        if found.is_none() {
-                            log::warn!("Créature {} : proie « {id} » inconnue.", species.id);
-                        }
-                        found
-                    })
-                    .collect()
-            })
-            .collect();
+        let resolve = |species: &CreatureSpecies, ids: &[String], what: &str| -> Vec<usize> {
+            ids.iter()
+                .filter_map(|id| {
+                    let found = registry.find(id);
+                    if found.is_none() {
+                        log::warn!("Créature {} : {what} « {id} » inconnue.", species.id);
+                    }
+                    found
+                })
+                .collect()
+        };
+        let prey_table = registry.iter().map(|species| resolve(species, species.attack.as_ref().map_or(&[][..], |a| &a.prey[..]), "proie")).collect();
+        let fear_table = registry.iter().map(|species| resolve(species, &species.afraid_of, "bête crainte")).collect();
+        let villages = crate::villagers::Villages::new(seed, &registry);
         let geometry = BlockGeometry::new(base_radius);
         let half = ZONE_BLOCKS as f64 / 2.0;
         let mut groups: HashMap<(PlanetFace, i32, i32), Vec<(ZoneKey, Vec3)>> = HashMap::new();
@@ -425,6 +457,9 @@ impl CreatureWorld {
             registry,
             spawn_table,
             prey_table,
+            fear_table,
+            villages,
+            next_managed_id: MANAGED_ID_BASE,
             geometry,
             seed,
             creatures: Vec::new(),
@@ -480,7 +515,7 @@ impl CreatureWorld {
         for zone in &self.awake {
             zones.entry(*zone).or_default();
         }
-        for c in self.creatures.iter().filter(|c| c.is_alive()) {
+        for c in self.creatures.iter().filter(|c| c.is_alive() && !c.managed) {
             if let (Some(zone), Some(sleeping)) = (self.zone_of(c.position), self.sleeping_creature(c)) {
                 zones.entry(zone).or_default().push(sleeping);
             }
@@ -534,6 +569,12 @@ impl CreatureWorld {
             striking: 0.0,
             sated: 0.0,
             charge: Charge::Idle,
+            managed: false,
+            hidden: false,
+            guide: None,
+            guide_pace: 1.0,
+            arrived: false,
+            look: None,
         });
     }
 
@@ -565,6 +606,18 @@ impl CreatureWorld {
             let (position, radius) = (self.creatures[index].position, PACK_RADIUS * self.geometry.block_height as f32);
             for other in self.creatures.iter_mut().filter(|o| o.is_alive() && o.species == species && o.position.distance(position) <= radius) {
                 other.anger = ANGER_TIME;
+            }
+        }
+
+        if by_player {
+            // Les gardes de son troupeau proches s'en prennent au joueur
+            let (herd, position, radius) = (self.creatures[index].herd, self.creatures[index].position, ALARM_RADIUS_BLOCKS * 2.0 * self.geometry.block_height as f32);
+            let registry = &self.registry;
+            for other in self.creatures.iter_mut().filter(|o| o.is_alive() && o.herd == herd && o.position.distance(position) <= radius) {
+                if registry.get(other.species).and_then(|s| s.attack.as_ref()).is_some_and(|a| a.defends_herd) {
+                    other.anger = ANGER_TIME;
+                    other.sleeping = false;
+                }
             }
         }
 
@@ -609,8 +662,12 @@ impl CreatureWorld {
     /// de l'attaquant en `from`, sans prendre de coup : fuite courte et modérée
     fn alarm_herd(&mut self, victim: u64, herd: u64, center: Vec3, from: Vec3) {
         let radius = ALARM_RADIUS_BLOCKS * self.geometry.block_height as f32;
+        let registry = &self.registry;
         for c in &mut self.creatures {
-            if c.id == victim || c.herd != herd || !c.is_alive() || c.position.distance(center) > radius {
+            if c.id == victim || c.herd != herd || !c.is_alive() || c.hidden || c.position.distance(center) > radius {
+                continue;
+            }
+            if c.anger > 0.0 && registry.get(c.species).is_some_and(|s| s.attack.is_some()) {
                 continue;
             }
             // Déjà en fuite plus longue (frappée elle-même, ou déjà alertée) : elle la garde
@@ -635,7 +692,7 @@ impl CreatureWorld {
     /// Renvoie les coups portés aux joueurs ; ceux portés aux proies sont appliqués ici.
     fn hunt(&mut self, dt: f32, players: &[Vec3]) -> Vec<PlayerHit> {
         let block = self.geometry.block_height as f32;
-        let snapshot: Vec<(u64, usize, Vec3, bool, bool)> = self.creatures.iter().map(|c| (c.id, c.species, c.position, c.is_alive(), c.hunting)).collect();
+        let snapshot: Vec<(u64, usize, Vec3, bool, bool)> = self.creatures.iter().map(|c| (c.id, c.species, c.position, c.is_alive() && !c.hidden, c.hunting)).collect();
         let mut player_hits = Vec::new();
         // Coups portés aux proies : proie, d'où, dégâts, rang du prédateur
         let mut bites = Vec::new();
@@ -648,7 +705,7 @@ impl CreatureWorld {
             let Some(species) = registry.get(c.species) else { continue };
             let Some(attack) = &species.attack else { continue };
             // Endormie, elle ne chasse pas, sauf si un coup l'a réveillée en colère
-            if !c.is_alive() || c.panic > 0.0 || (c.sleeping && c.anger <= 0.0) {
+            if !c.is_alive() || c.hidden || c.panic > 0.0 || (c.sleeping && c.anger <= 0.0) {
                 c.hunting = false;
                 continue;
             }
@@ -778,7 +835,9 @@ impl CreatureWorld {
             }
         }
         for (prey, from, damage, hunter) in bites {
-            if self.strike(prey, from, damage, false) == Some(true) {
+            // Un garde reste sur le qui-vive ; une bête repue laisse les proies un moment
+            let defends = self.registry.get(self.creatures[hunter].species).and_then(|s| s.attack.as_ref()).is_some_and(|a| a.defends_herd || !a.hunts_players);
+            if self.strike(prey, from, damage, false) == Some(true) && !defends {
                 self.creatures[hunter].sated = SATED_TIME;
             }
         }
@@ -806,7 +865,11 @@ impl CreatureWorld {
         let columns = std::mem::take(&mut self.columns);
         let mut query = TerrainQuery::with_columns(generator, edits, columns);
         self.update_zones(&mut query, players);
+        let mut villages = std::mem::take(&mut self.villages);
+        villages.tick(self, &mut query, generator, players, dt);
+        self.villages = villages;
         let hits = self.hunt(dt, players);
+        self.scare();
 
         let herds = herd_pulls(&self.creatures, self.geometry.block_height as f32);
         let mut walker = Walker { geometry: self.geometry, query: &mut query, sun_dir: self.sun_dir };
@@ -877,7 +940,7 @@ impl CreatureWorld {
         while index < self.creatures.len() {
             let c = &self.creatures[index];
             let zone = self.zone_of(c.position);
-            if zone.is_some_and(|z| self.awake.contains(&z)) {
+            if c.managed || zone.is_some_and(|z| self.awake.contains(&z)) {
                 index += 1;
                 continue;
             }
@@ -931,6 +994,72 @@ impl CreatureWorld {
             }
         }
         population
+    }
+}
+
+impl CreatureWorld {
+    /// Les créatures qui craignent une espèce s'enfuient quand une bête de cette espèce s'approche
+    fn scare(&mut self) {
+        let radius = FEAR_RADIUS_BLOCKS * self.geometry.block_height as f32;
+        let threats: Vec<(usize, Vec3)> = self.creatures.iter().filter(|c| c.is_alive() && !c.hidden).map(|c| (c.species, c.position)).collect();
+        for c in &mut self.creatures {
+            let fears = &self.fear_table[c.species];
+            if fears.is_empty() || !c.is_alive() || c.hidden || c.hunting {
+                continue;
+            }
+            let nearest = threats
+                .iter()
+                .filter(|(species, p)| fears.contains(species) && p.distance(c.position) <= radius)
+                .min_by(|a, b| a.1.distance_squared(c.position).total_cmp(&b.1.distance_squared(c.position)));
+            let Some(&(_, threat)) = nearest else { continue };
+            let up = c.position.normalize_or_zero();
+            let (east, north) = tangent_frame(up);
+            let away = c.position - threat;
+            let away = away - up * away.dot(up);
+            if away.length_squared() > 1e-12 {
+                c.target_yaw = away.dot(east).atan2(away.dot(north)).rem_euclid(TAU);
+            }
+            c.panic = FEAR_TIME;
+            c.panic_speed = PANIC_SPEED;
+            c.walking = true;
+            c.sleeping = false;
+            c.guide = None;
+        }
+    }
+
+    /// Fait apparaître une créature menée par les villages, dans le troupeau `herd`
+    pub(crate) fn spawn_managed(&mut self, species: usize, feet: Vec3, yaw: f32, herd: u64) -> u64 {
+        let id = self.next_managed_id;
+        self.next_managed_id += 1;
+        let health = self.registry.get(species).map_or(1.0, |s| s.health);
+        self.wake_creature(id, species, herd, feet, yaw, health);
+        if let Some(c) = self.creatures.last_mut() {
+            c.managed = true;
+            c.timer = 0.0;
+        }
+        id
+    }
+
+    /// Retire une créature (elle rentre chez elle pour de bon, ou s'éloigne de tous les joueurs)
+    pub(crate) fn remove(&mut self, id: u64) {
+        self.creatures.retain(|c| c.id != id);
+    }
+
+    pub(crate) fn creature_mut(&mut self, id: u64) -> Option<&mut Creature> {
+        self.creatures.iter_mut().find(|c| c.id == id)
+    }
+
+    pub(crate) fn geometry(&self) -> &BlockGeometry {
+        &self.geometry
+    }
+
+    pub(crate) fn sun_dir(&self) -> Option<Vec3> {
+        self.sun_dir
+    }
+
+    /// Fiche de l'habitant ou du voyageur qu'incarne la créature `id`, si c'en est un
+    pub fn villager_card(&self, id: u64) -> Option<&std::sync::Arc<herocraft_common::VillagerCard>> {
+        self.villages.card(id)
     }
 }
 
@@ -990,7 +1119,7 @@ fn herd_pulls(creatures: &[Creature], block: f32) -> Vec<HerdPull> {
     creatures
         .iter()
         .map(|c| {
-            if !c.is_alive() {
+            if !c.is_alive() || c.managed {
                 return HerdPull::default();
             }
             let (mut sum, mut count, mut heading, mut walkers) = (Vec3::ZERO, 0, Vec3::ZERO, 0);
@@ -1213,11 +1342,64 @@ impl Walker<'_, '_> {
         None
     }
 
+    /// Une créature menée par les villages : elle marche vers son but, ou, arrêtée, regarde ce
+    /// qu'on lui a dit de regarder (sinon le joueur qui passe, selon son tempérament)
+    fn follow_guide(&self, c: &mut Creature, species: &CreatureSpecies, nearest_player: Option<PlayerPresence>, rng: &mut StdRng, dt: f32) {
+        c.timer -= dt;
+        let up = c.position.normalize_or_zero();
+        let (east, north) = tangent_frame(up);
+        let flat_to = |dir: Vec3| {
+            let to = dir * c.position.length() - c.position;
+            to - up * to.dot(up)
+        };
+        let yaw_of = |v: Vec3| v.dot(east).atan2(v.dot(north)).rem_euclid(TAU);
+        if c.sleeping {
+            c.walking = false;
+            return;
+        }
+        if let Some(dir) = c.guide {
+            let flat = flat_to(dir);
+            if flat.length() / self.block() < GUIDE_ARRIVAL_BLOCKS {
+                c.guide = None;
+                c.arrived = true;
+                c.walking = false;
+                c.pace = 1.0;
+            } else {
+                let was_walking = c.walking;
+                c.walking = true;
+                c.pace = c.guide_pace;
+                c.pause = None;
+                if c.timer <= 0.0 || !was_walking {
+                    c.target_yaw = yaw_of(flat);
+                    c.timer = GUIDE_AIM_INTERVAL;
+                }
+            }
+            return;
+        }
+        c.walking = false;
+        match c.look {
+            Some(dir) => {
+                let flat = flat_to(dir.normalize_or_zero());
+                if flat.length() / self.block() > 0.05 {
+                    c.target_yaw = yaw_of(flat);
+                }
+            }
+            None => {
+                if let Some(player) = nearest_player {
+                    self.react(c, species.temperament, player, rng);
+                }
+            }
+        }
+    }
+
     fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, nearest_player: Option<PlayerPresence>, herd: HerdPull, rng: &mut StdRng, dt: f32) {
         let block = self.block();
         let base_radius = self.geometry.base_radius as f32;
         let radius_of = move |altitude: f32| base_radius + altitude * block;
 
+        if c.hidden {
+            return;
+        }
         c.hurt = (c.hurt - dt).max(0.0);
         if let Some(t) = c.dead_for.as_mut() {
             *t += dt;
@@ -1242,6 +1424,8 @@ impl Walker<'_, '_> {
                     c.target_yaw = yaw;
                 }
             }
+        } else if c.managed {
+            self.follow_guide(c, species, nearest_player, rng, dt);
         } else if !c.sleeping && nearest_player.is_some_and(|player| self.react(c, species.temperament, player, rng)) {
             // Éveillée, elle s'occupe du joueur ; endormie, elle ne le remarque pas (un coup la réveille)
         } else {

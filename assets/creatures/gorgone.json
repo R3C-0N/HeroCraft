@@ -7,7 +7,7 @@
   "max_group": 1,
   "spawn": [],
   "activity": "nocturnal",
-  "attack": {"mode": "solo", "damage": 6, "cooldown": 1.6, "sight": 8, "chase_speed": 1.2, "reach": 1.5},
+  "attack": {"mode": "solo", "damage": 6, "cooldown": 1.6, "sight": 8, "chase_speed": 1.2, "reach": 1.5, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
   "model": {
     "mesh": "modeles/gorgone.gltf",
     "texture": "modeles/gorgone.png",

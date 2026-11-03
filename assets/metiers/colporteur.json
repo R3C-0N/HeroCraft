@@ -1,0 +1,18 @@
+{
+  "name": "Colporteur",
+  "description": "Va de ville en ville, sa marchandise sur le dos.",
+  "voyageur": true,
+  "espece": "voyageur",
+  "poids": 1.2,
+  "tenues": ["gilet", "cuir", "jerkin"],
+  "couleurs": ["#6b4a2a", "#4a5a3a", "#5a3a5a"],
+  "echanges": [
+    {"donne": {"copperIngot": 2}, "recoit": {"grainesRiz": 4}},
+    {"donne": {"copperIngot": 2}, "recoit": {"grainesSoja": 4}},
+    {"donne": {"copperIngot": 2}, "recoit": {"grainesOignon": 4}},
+    {"donne": {"ironIngot": 2}, "recoit": {"amber": 1}},
+    {"donne": {"fourrure": 4}, "recoit": {"ironIngot": 1}},
+    {"donne": {"laine": 6}, "recoit": {"copperIngot": 2}}
+  ],
+  "repliques": ["J'arrive de loin, et je repars demain.", "Des graines d'ailleurs, ça t'intéresse ?", "La route est longue jusqu'au prochain village."]
+}

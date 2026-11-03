@@ -57,7 +57,15 @@ pub struct CreatureSpecies {
     /// Comportement agressif (aucun : la bête est paisible et s'enfuit quand on la frappe)
     #[serde(default)]
     pub attack: Option<CreatureAttack>,
-    /// Modèle 3D
+    /// Espèces qu'elle fuit dès qu'elle en voit une approcher (identifiants de leurs fichiers)
+    #[serde(default)]
+    pub afraid_of: Vec<String>,
+    /// Humanoïde (habitant, voyageur) : dessiné avec le corps des héros et l'apparence que lui donne
+    /// la simulation des villages, sans modèle glTF
+    #[serde(default)]
+    pub humanoid: bool,
+    /// Modèle 3D (absent pour un humanoïde)
+    #[serde(default)]
     pub model: CreatureModel,
 }
 
@@ -105,6 +113,10 @@ pub struct CreatureAttack {
     /// En meute : nombre de bêtes de son espèce, elle comprise, qu'il lui faut autour d'elle pour oser
     #[serde(default = "default_pack_size")]
     pub pack_size: u32,
+    /// Elle défend son troupeau : quand un joueur frappe l'une des bêtes de son troupeau près
+    /// d'elle, elle s'en prend à lui (les gardes d'un village)
+    #[serde(default)]
+    pub defends_herd: bool,
 }
 
 /// Volume du corps, en blocs
@@ -186,12 +198,14 @@ pub struct SpawnRule {
 /// Modèle 3D : un maillage glTF à squelette et sa texture, chemins depuis `assets/creatures/`.
 /// Le modèle est en blocs, y vers le haut, la tête vers +z ; le point le plus bas de sa pose de repos
 /// est posé sur les pieds de la créature.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreatureModel {
-    /// Fichier `.gltf` (données embarquées), un seul maillage à squelette
+    /// Fichier `.gltf` (données embarquées), un seul maillage à squelette (absent : humanoïde)
+    #[serde(default)]
     pub mesh: String,
     /// Texture PNG, lue au plus proche texel
+    #[serde(default)]
     pub texture: String,
     /// Animations de la bête, par nom : `repos`, `marche`, `course`, `attaque`, `coup`, et ses
     /// inactivités (celles qui ont une `pause` : `broute`, `sommeil`…). Rangées par nom, le même
@@ -428,6 +442,9 @@ impl CreatureSpecies {
         if !(body.half_width > 0.0 && body.half_length > 0.0 && body.height > 0.0 && species.walk_speed >= 0.0 && species.health > 0.0) {
             return Err("corps, vitesse ou vie invalides (valeurs positives attendues)".into());
         }
+        if !species.humanoid && (species.model.mesh.is_empty() || species.model.texture.is_empty()) {
+            return Err("modèle manquant (`model.mesh` et `model.texture`)".into());
+        }
         if species.min_group == 0 || species.max_group < species.min_group {
             return Err("taille de groupe invalide (1 ≤ min_group ≤ max_group)".into());
         }
@@ -508,7 +525,7 @@ mod tests {
         let activity = |id| registry.get(registry.find(id).unwrap()).unwrap().activity;
         assert_eq!(activity("vache"), Activity::Diurnal);
         assert_eq!(activity("loup"), Activity::Nocturnal);
-        for species in registry.iter() {
+        for species in registry.iter().filter(|s| !s.humanoid) {
             assert!(registry.asset_path(&species.model.mesh).is_file(), "{} : modèle manquant", species.id);
             assert!(registry.asset_path(&species.model.texture).is_file(), "{} : texture manquante", species.id);
         }

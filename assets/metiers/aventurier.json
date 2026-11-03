@@ -1,0 +1,15 @@
+{
+  "name": "Aventurier",
+  "description": "Armé, il voyage seul et ne craint pas les bêtes de la nuit.",
+  "voyageur": true,
+  "espece": "voyageurArme",
+  "poids": 1,
+  "tenues": ["cuir", "gambison", "mailles", "ecailles"],
+  "couleurs": ["#4a3a2a", "#3a4a5a", "#5a2a2a"],
+  "echanges": [
+    {"donne": {"ironIngot": 2}, "recoit": {"crocsEffiles": 2}},
+    {"donne": {"copperIngot": 3}, "recoit": {"ironArrow": 8}},
+    {"donne": {"ironIngot": 6}, "recoit": {"ironMailChestplate": 1}}
+  ],
+  "repliques": ["J'ai vu des ruines à deux jours de marche.", "Les loups ne me font pas peur.", "Si tu cherches de l'aventure, suis le chemin vers le nord."]
+}

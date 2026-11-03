@@ -1,0 +1,22 @@
+{
+  "name": "Marchand",
+  "description": "Tient un étal au marché : il achète les peaux et le butin, vend graines et babioles.",
+  "lieu": "etal",
+  "tenues": ["pourpoint", "gilet", "chemise"],
+  "couleurs": ["#7a2e2e", "#2e4a7a", "#6b5a1e", "#3f6b3a"],
+  "echanges": [
+    {"donne": {"fourrure": 3}, "recoit": {"copperIngot": 1}},
+    {"donne": {"cuirEpais": 2}, "recoit": {"copperIngot": 1}},
+    {"donne": {"hide": 4}, "recoit": {"copperIngot": 1}},
+    {"donne": {"griffesOurs": 1}, "recoit": {"ironIngot": 2}},
+    {"donne": {"crocsEffiles": 2}, "recoit": {"ironIngot": 1}},
+    {"donne": {"cornesMouflon": 1}, "recoit": {"ironIngot": 1}},
+    {"donne": {"copperIngot": 1}, "recoit": {"grainesBle": 6}},
+    {"donne": {"copperIngot": 1}, "recoit": {"grainesCarotte": 4}},
+    {"donne": {"copperIngot": 2}, "recoit": {"torch": 16}},
+    {"donne": {"ironIngot": 1}, "recoit": {"glass": 8}},
+    {"donne": {"amber": 1}, "recoit": {"ironIngot": 2}},
+    {"donne": {"lapis": 2}, "recoit": {"ironIngot": 1}}
+  ],
+  "repliques": ["Approchez, approchez ! Tout est à vendre.", "Des peaux ? J'en prends toujours.", "Le marché est bon aujourd'hui."]
+}

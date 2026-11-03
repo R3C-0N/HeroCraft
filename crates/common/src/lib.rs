@@ -10,6 +10,7 @@ pub mod net;
 pub mod profiler;
 pub mod protocol;
 pub mod skills;
+pub mod villager;
 pub mod voxel;
 
 pub use blocks::*;
@@ -20,4 +21,5 @@ pub use items::*;
 pub use math::*;
 pub use protocol::*;
 pub use skills::{LearnError, SkillWheel};
+pub use villager::{professions, Profession, ProfessionRegistry, Trade, VillagerCard, Workplace};
 pub use voxel::*;

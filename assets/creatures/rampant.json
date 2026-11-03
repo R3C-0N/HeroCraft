@@ -7,7 +7,7 @@
   "max_group": 1,
   "spawn": [],
   "activity": "always",
-  "attack": {"mode": "solo", "damage": 7, "cooldown": 1.4, "sight": 10, "chase_speed": 1.8},
+  "attack": {"mode": "solo", "damage": 7, "cooldown": 1.4, "sight": 10, "chase_speed": 1.8, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
   "model": {
     "mesh": "modeles/rampant.gltf",
     "texture": "modeles/rampant.png",

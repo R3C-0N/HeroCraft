@@ -7,7 +7,7 @@
   "max_group": 1,
   "spawn": [],
   "activity": "nocturnal",
-  "attack": {"mode": "charge", "damage": 10, "cooldown": 2.5, "sight": 12, "chase_speed": 2.8},
+  "attack": {"mode": "charge", "damage": 10, "cooldown": 2.5, "sight": 12, "chase_speed": 2.8, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
   "model": {
     "mesh": "modeles/brute.gltf",
     "texture": "modeles/brute.png",

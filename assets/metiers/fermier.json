@@ -1,0 +1,17 @@
+{
+  "name": "Fermier",
+  "description": "Cultive les champs autour du village et troque ses récoltes.",
+  "lieu": "champ",
+  "par_lieu": 1,
+  "tenues": ["chemise", "tunique", "tablier"],
+  "couleurs": ["#7d6a43", "#5f6b3a", "#8a7a5a"],
+  "echanges": [
+    {"donne": {"copperIngot": 1}, "recoit": {"ble": 12}},
+    {"donne": {"copperIngot": 1}, "recoit": {"carotte": 8}},
+    {"donne": {"copperIngot": 1}, "recoit": {"courge": 4}},
+    {"donne": {"copperIngot": 1}, "recoit": {"pommeDeTerre": 8}},
+    {"donne": {"bone": 6}, "recoit": {"grainesCourge": 3}},
+    {"donne": {"ble": 16}, "recoit": {"copperIngot": 1}}
+  ],
+  "repliques": ["La terre est bonne cette année.", "Il faudrait de la pluie.", "Prends garde aux sangliers, ils ravagent mes champs."]
+}
