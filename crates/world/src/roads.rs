@@ -351,7 +351,7 @@ impl Trunk {
     /// Un peu au-delà du carrefour : les branches partent dans le prolongement du tronc
     fn ahead(&self) -> (f64, f64) {
         let j = self.junction();
-        (j.0 + self.dir.0 * 24.0, j.1 + self.dir.1 * 24.0)
+        (j.0 + self.dir.0 * 64.0, j.1 + self.dir.1 * 64.0)
     }
 }
 
@@ -475,13 +475,18 @@ fn plan_road(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i3
     let mut points = Vec::new();
     // Le tronc ondule selon sa propre graine : il est identique pour tous les chemins qui le suivent
     let trunk_seed = |t: &Trunk| mix(generator.planet.seed ^ 0x7A0C ^ hash2(0x7A0C, t.junction().0 as i32, t.junction().1 as i32));
+    // Le tronc serpente dans la région de son établissement seule : sa forme ne dépend pas de la liaison
+    let region_rect = |r: (i32, i32)| {
+        let size = REGION_BLOCKS;
+        Rect::new(r.0 * size, r.1 * size, ((r.0 + 1) * size).min(FACE_BLOCKS), ((r.1 + 1) * size).min(FACE_BLOCKS))
+    };
     if let Some(t) = &trunk_a {
-        let wavy = meander(generator, face, &t.points, trunk_seed(t));
+        let wavy = meander(generator, face, &t.points, trunk_seed(t), &region_rect(ra));
         points.extend_from_slice(&wavy[..wavy.len() - 1]);
     }
-    points.extend(meander(generator, face, &middle, seed));
+    points.extend(meander(generator, face, &middle, seed, &area));
     if let Some(t) = &trunk_b {
-        let wavy = meander(generator, face, &t.points, trunk_seed(t));
+        let wavy = meander(generator, face, &t.points, trunk_seed(t), &region_rect(rb));
         points.extend(wavy.iter().rev().skip(1));
     }
     let columns = rasterize(&points, &area, generator.planet.seed);
@@ -630,36 +635,71 @@ fn smooth_curve(generator: &PlanetWorldGenerator, face: PlanetFace, head: [(f64,
 }
 
 /// Écart latéral maximal des ondulations du chemin, en blocs
-const MEANDER: f64 = 4.0;
+const MEANDER: f64 = 55.0;
 
-/// Fait onduler l'axe : repris tous les 4 blocs, chaque point est écarté sur le côté d'une
-/// quantité qui varie doucement le long du chemin (deux longueurs d'onde mêlées). Les ondulations
-/// s'éteignent près des deux bouts de rue, et ne poussent jamais le chemin dans l'eau.
-fn meander(generator: &PlanetWorldGenerator, face: PlanetFace, points: &[(f64, f64)], seed: u64) -> Vec<(f64, f64)> {
+/// Fait serpenter l'axe : repris tous les 4 blocs, chaque point est écarté sur le côté d'une
+/// quantité qui varie doucement le long du chemin (grandes courbes de 300 blocs environ, plus
+/// petites par-dessus) : le chemin tourne sans cesse, sans jamais faire de coude. Les courbes
+/// s'éteignent près des deux bouts, se resserrent là où elles pousseraient le chemin dans l'eau, sur
+/// une pente ou hors de sa zone, et ce resserrement est lui-même lissé.
+fn meander(generator: &PlanetWorldGenerator, face: PlanetFace, points: &[(f64, f64)], seed: u64, area: &Rect) -> Vec<(f64, f64)> {
     let even = resample(points);
     let n = even.len();
     if n < 4 {
         return points.to_vec();
     }
-    let fade = |s: f64| fade_near_ends(s, (n - 1) as f64 * RESAMPLE, 12.0, 48.0);
-    let mut out = Vec::with_capacity(n);
-    out.push(even[0]);
-    for k in 1..n - 1 {
-        let s = k as f64 * 4.0;
+    let total = (n - 1) as f64 * RESAMPLE;
+    let inside = area.expand(-6);
+    let ground = |p: (f64, f64)| generator.sample_block_column(face, p.0.floor() as i32, p.1.floor() as i32).elevation.floor();
+    // Écart voulu et direction de chaque point
+    let mut wanted = vec![(0.0, (0.0, 0.0)); n];
+    for (k, w) in wanted.iter_mut().enumerate().take(n - 1).skip(1) {
+        let s = k as f64 * RESAMPLE;
         let (prev, next) = (even[k - 1], even[k + 1]);
         let (tx, tz) = (next.0 - prev.0, next.1 - prev.1);
         let tl = (tx * tx + tz * tz).sqrt().max(1e-9);
-        let (nx, nz) = (-tz / tl, tx / tl);
-        let offset = MEANDER * fade(s) * (0.75 * noise_1d(seed ^ 0x3EA1, s / 160.0) + 0.25 * noise_1d(seed ^ 0x3EA2, s / 60.0));
-        let p = even[k];
-        let moved = (p.0 + nx * offset, p.1 + nz * offset);
-        let wet = offset.abs() > 0.5 && {
-            let column = generator.sample_block_column(face, moved.0 as i32, moved.1 as i32);
-            column.elevation.floor() <= SEA_LEVEL_BLOCKS + 1.0
-        };
-        out.push(if wet { p } else { moved });
+        let swing = 0.7 * noise_1d(seed ^ 0x3EA1, s / 320.0) + 0.3 * noise_1d(seed ^ 0x3EA2, s / 130.0);
+        // Le bruit reste souvent loin de ses extrêmes : on l'étire un peu
+        let swing = (swing * 1.6).clamp(-1.0, 1.0);
+        *w = (MEANDER * fade_near_ends(s, total, 12.0, 140.0) * swing, (-tz / tl, tx / tl));
     }
-    out.push(even[n - 1]);
+    // Part de l'écart que le terrain permet, testée tous les 4 points
+    let mut allowed = vec![1.0f64; n];
+    for k in (1..n - 1).step_by(4) {
+        let (offset, (nx, nz)) = wanted[k];
+        if offset.abs() < 2.0 {
+            continue;
+        }
+        let p = even[k];
+        let base = ground(p);
+        allowed[k] = [1.0, 0.6, 0.3, 0.0]
+            .into_iter()
+            .find(|&f| {
+                let q = (p.0 + nx * offset * f, p.1 + nz * offset * f);
+                if f == 0.0 {
+                    return true;
+                }
+                let g = ground(q);
+                inside.contains(q.0 as i32, q.1 as i32) && g > SEA_LEVEL_BLOCKS + 1.0 && (g - base).abs() <= 8.0
+            })
+            .unwrap_or(0.0);
+        for j in k + 1..(k + 4).min(n - 1) {
+            allowed[j] = allowed[k];
+        }
+    }
+    // Lissage du resserrement : un minimum glissant (on reste prudent autour d'un obstacle), puis une moyenne
+    let window = 16usize;
+    let eroded: Vec<f64> = (0..n).map(|k| allowed[k.saturating_sub(window)..(k + window + 1).min(n)].iter().copied().fold(1.0, f64::min)).collect();
+    let mut out = Vec::with_capacity(n);
+    for k in 0..n {
+        let slice = &eroded[k.saturating_sub(window)..(k + window + 1).min(n)];
+        let f = slice.iter().sum::<f64>() / slice.len() as f64;
+        let (offset, (nx, nz)) = wanted[k];
+        let p = even[k];
+        out.push((p.0 + nx * offset * f, p.1 + nz * offset * f));
+    }
+    out[0] = even[0];
+    out[n - 1] = even[n - 1];
     out
 }
 
