@@ -50,6 +50,11 @@ pub enum ClientPacket {
     HitCreature {
         creature_id: u64,
     },
+    /// Le joueur investit un point dans une compétence de la roue (le serveur vérifie points et
+    /// prérequis, puis renvoie ses statistiques)
+    LearnSkill {
+        id: String,
+    },
     /// Légende du héros, envoyée à la connexion et au baptême : le serveur vérifie chaque choix
     /// contre l'atlas et en prend la voie (ses jauges et ses gains de niveau en dépendent)
     Legend(Box<crate::hero::Legend>),

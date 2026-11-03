@@ -9,6 +9,7 @@ pub mod math;
 pub mod net;
 pub mod profiler;
 pub mod protocol;
+pub mod skills;
 pub mod voxel;
 
 pub use blocks::*;
@@ -18,4 +19,5 @@ pub use creature::*;
 pub use items::*;
 pub use math::*;
 pub use protocol::*;
+pub use skills::{LearnError, SkillWheel};
 pub use voxel::*;

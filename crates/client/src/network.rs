@@ -376,6 +376,11 @@ impl NetClient {
         self.connection.send(&ClientPacket::HitCreature { creature_id });
     }
 
+    /// Demande au serveur d'investir un point dans une compétence (il renvoie les statistiques)
+    pub fn send_learn_skill(&mut self, id: String) {
+        self.connection.send(&ClientPacket::LearnSkill { id });
+    }
+
     /// Envoie un message dans le chat ; le serveur le renvoie à tous, nous compris
     pub fn send_chat(&mut self, message: &str) {
         self.connection.send(&ClientPacket::ChatMessage(message.to_string()));

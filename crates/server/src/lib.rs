@@ -19,7 +19,7 @@ use herocraft_common::lan::{LanAnnounce, LanAnnouncer};
 use herocraft_common::net::{encode_frame, Connection};
 use herocraft_common::{
     fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, PlayerClass, PlayerState,
-    ServerPacket, PROTOCOL_VERSION,
+    ServerPacket, SkillWheel, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
 use herocraft_world::{BlockGeometry, BlockPos, CreatureWorld, PlanetDescriptor, PlanetWorldGenerator, TerrainEdits, CREATURE_RANGE_BLOCKS};
@@ -103,6 +103,11 @@ pub struct Server {
     players: HashMap<u64, ConnectedPlayer>,
     /// Dernière position connue de chaque joueur passé sur le serveur (par nom), pour le replacer
     last_positions: HashMap<String, Vec3>,
+    /// Statistiques (niveau, points et compétences) de chaque joueur parti, par nom, rendues s'il
+    /// revient pendant la vie du serveur
+    last_stats: HashMap<String, CharacterStats>,
+    /// Roue des compétences, juge des points que les joueurs investissent
+    skill_wheel: SkillWheel,
     next_player_id: u64,
     tick_counter: u64,
     /// Annonce de la partie sur le réseau local, avec son nom
@@ -144,6 +149,8 @@ impl Server {
             pending: Vec::new(),
             players: HashMap::new(),
             last_positions: HashMap::new(),
+            last_stats: HashMap::new(),
+            skill_wheel: SkillWheel::standard(),
             next_player_id: 1,
             tick_counter: 0,
             lan: None,
@@ -397,12 +404,14 @@ impl Server {
         info!("{name} a rejoint la partie (joueur #{id}, {}).", connection.peer_addr());
         self.broadcast(&ServerPacket::PlayerJoined { player_id: id, name: name.clone() });
         self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{name} a rejoint la partie") });
+        let stats = self.last_stats.remove(&name).unwrap_or_else(|| CharacterStats::new(PlayerClass::Adventurer));
+        connection.send(&ServerPacket::StatsUpdate(stats.clone()));
         self.players.insert(
             id,
             ConnectedPlayer {
                 id,
                 name,
-                stats: CharacterStats::new(PlayerClass::Adventurer),
+                stats,
                 position: None,
                 yaw: 0.0,
                 pitch: 0.0,
@@ -449,6 +458,7 @@ impl Server {
             ClientPacket::Fall { blocks } => self.fall(id, blocks),
             ClientPacket::InteractBlock { block, action } => self.interact_block(id, block.into(), action),
             ClientPacket::HitCreature { creature_id } => self.hit_creature(id, creature_id),
+            ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
             ClientPacket::ChatMessage(text) => {
                 let text: String = text.trim().chars().filter(|c| !c.is_control()).take(MAX_CHAT_CHARS).collect();
@@ -613,12 +623,23 @@ impl Server {
         })
     }
 
+    /// Investit un point du joueur dans une compétence, si la roue l'accepte, puis lui renvoie
+    /// ses statistiques (inchangées en cas de refus, ce qui défait ce que son client a affiché)
+    fn learn_skill(&mut self, id: u64, skill: &str) {
+        let Some(player) = self.players.get_mut(&id) else { return };
+        if let Err(error) = self.skill_wheel.learn(&mut player.stats, skill) {
+            warn!("{} n'apprend pas {skill} : {}.", player.name, error.message());
+        }
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+    }
+
     fn leave(&mut self, id: u64, reason: &str) {
         let Some(player) = self.players.remove(&id) else { return };
         info!("{} a quitté la partie ({reason}).", player.name);
         if let Some(position) = player.position {
             self.last_positions.insert(player.name.clone(), position);
         }
+        self.last_stats.insert(player.name.clone(), player.stats);
         self.broadcast(&ServerPacket::PlayerLeft { player_id: id });
         self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{} a quitté la partie", player.name) });
     }

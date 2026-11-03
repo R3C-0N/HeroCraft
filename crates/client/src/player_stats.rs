@@ -2,6 +2,7 @@
 //! En solo, le jeu les fait évoluer lui-même ; en ligne, il applique les mêmes règles en attendant
 //! le serveur, dont chaque `StatsUpdate` fait foi.
 
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use herocraft_common::{fall_damage, CharacterStats, PlayerClass};
@@ -29,16 +30,69 @@ pub struct PlayerStats {
     pub hurt_strength: f32,
     /// Le joueur est mort et attend de réapparaître
     pub death: Option<Death>,
+    /// Fichier où la progression (niveau, expérience, points, compétences) du monde solo est
+    /// gardée ; `None` en ligne, où le serveur la tient
+    progress_path: Option<PathBuf>,
+}
+
+/// Ce qui se garde d'une partie solo à l'autre
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedProgress {
+    level: u32,
+    experience: u64,
+    #[serde(default)]
+    skill_points: u32,
+    #[serde(default)]
+    skills: std::collections::BTreeMap<String, u8>,
 }
 
 impl Default for PlayerStats {
     /// Même personnage que celui que le serveur donne à chaque nouveau joueur
     fn default() -> Self {
-        Self { stats: CharacterStats::new(PlayerClass::Adventurer), hurt_at: None, hurt_strength: 0.0, death: None }
+        Self { stats: CharacterStats::new(PlayerClass::Adventurer), hurt_at: None, hurt_strength: 0.0, death: None, progress_path: None }
     }
 }
 
 impl PlayerStats {
+    /// Nouveau personnage dont la progression est reprise de `path` (s'il existe) et y sera
+    /// enregistrée ; sans chemin (en ligne), un personnage neuf en attendant le serveur
+    pub fn load_or_default(path: Option<PathBuf>) -> Self {
+        let mut player = Self::default();
+        if let Some(saved) = path.as_deref().and_then(read_progress) {
+            let stats = &mut player.stats;
+            // Les gains d'attributs se rejouent niveau par niveau, comme en jeu
+            for _ in 1..saved.level.max(1) {
+                stats.add_experience(stats.exp_for_next_level());
+            }
+            stats.experience = saved.experience;
+            stats.skill_points = saved.skill_points;
+            stats.skills = saved.skills;
+            stats.revive();
+        }
+        player.progress_path = path;
+        player
+    }
+
+    /// Enregistre la progression du monde solo (rien en ligne)
+    pub fn save(&self) {
+        let Some(path) = &self.progress_path else { return };
+        let saved = SavedProgress {
+            level: self.stats.level,
+            experience: self.stats.experience,
+            skill_points: self.stats.skill_points,
+            skills: self.stats.skills.clone(),
+        };
+        let result = (|| -> std::io::Result<()> {
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(path, serde_json::to_string_pretty(&saved).map_err(std::io::Error::other)?)
+        })();
+        if let Err(e) = result {
+            log::warn!("Impossible d'enregistrer la progression dans {} : {}", path.display(), e);
+        }
+    }
+
     /// Avance les jauges de `dt` secondes (le sprint consomme l'endurance) et coupe le sprint du
     /// joueur épuisé jusqu'à ce qu'il ait repris son souffle
     pub fn tick(&mut self, dt: f32, camera: &mut OrbitCamera) {
@@ -110,10 +164,42 @@ impl PlayerStats {
     }
 }
 
+fn read_progress(path: &Path) -> Option<SavedProgress> {
+    let text = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text)
+        .map_err(|e| log::warn!("Progression illisible dans {} ({}), personnage neuf.", path.display(), e))
+        .ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use herocraft_common::SAFE_FALL_BLOCKS;
+
+    #[test]
+    fn test_solo_progress_is_saved_and_reloaded() {
+        let dir = std::env::temp_dir().join(format!("herocraft_progression_{}", std::process::id()));
+        let path = dir.join("progression.json");
+        let mut player = PlayerStats::load_or_default(Some(path.clone()));
+        assert_eq!((player.stats.level, player.stats.skill_points), (1, 0));
+        player.stats.add_experience(350);
+        let wheel = herocraft_common::SkillWheel::standard();
+        let id = wheel.nodes[0].id.clone();
+        wheel.learn(&mut player.stats, &id).unwrap();
+        player.save();
+
+        let loaded = PlayerStats::load_or_default(Some(path));
+        assert_eq!(loaded.stats.level, 3);
+        assert_eq!(loaded.stats.experience, 50);
+        assert_eq!(loaded.stats.skill_points, 1);
+        assert_eq!(loaded.stats.skills.get(&id), Some(&1));
+        assert_eq!(loaded.stats.max_hp, player.stats.max_hp, "les gains de niveau sont rejoués");
+        assert_eq!(loaded.stats.hp, loaded.stats.max_hp);
+
+        // En ligne, rien n'est écrit
+        PlayerStats::load_or_default(None).save();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn test_fall_hurts_then_kills_until_respawn() {
