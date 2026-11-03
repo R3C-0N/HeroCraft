@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -58,6 +58,11 @@ pub enum ClientPacket {
     /// Légende du héros, envoyée à la connexion et au baptême : le serveur vérifie chaque choix
     /// contre l'atlas et en prend la voie (ses jauges et ses gains de niveau en dépendent)
     Legend(Box<crate::hero::Legend>),
+    /// Le joueur mange un aliment (numéro d'objet) : le serveur en lit la satiété et renvoie ses
+    /// statistiques
+    Eat {
+        item: u16,
+    },
     /// Envoi d'un message dans le chat
     ChatMessage(String),
     /// Commande `/summon` : `count` créatures de l'espèce `species` (nom de son fichier) aux pieds

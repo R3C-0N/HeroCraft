@@ -391,6 +391,11 @@ impl NetClient {
         self.connection.send(&ClientPacket::Summon { species: species.to_string(), count, feet });
     }
 
+    /// Le joueur mange l'aliment `item` (le serveur lui renvoie ses jauges)
+    pub fn send_eat(&mut self, item: herocraft_common::ItemId) {
+        self.connection.send(&ClientPacket::Eat { item: item.0 });
+    }
+
     pub fn send_heal(&mut self) {
         self.connection.send(&ClientPacket::Heal);
     }
