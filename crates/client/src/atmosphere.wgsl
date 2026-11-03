@@ -46,7 +46,8 @@ struct Atmosphere {
     // z : distance de marche des rayons crépusculaires, w : altitude du bas des nuages
     params: vec4<f32>,
     // x : gain de la lumière du ciel (curseur Jour), y : rayon de la planète virtuelle des tables,
-    // z : densité de l'air pour la perspective aérienne des surfaces, w : inutilisé
+    // z : densité de l'air pour la perspective aérienne des surfaces, w : rapport entre l'image
+    // et la marche des rayons crépusculaires (2 : fins, 4 : allégés)
     sky: vec4<f32>,
 };
 

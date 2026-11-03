@@ -43,6 +43,7 @@ mod shaders;
 mod shadow;
 mod skills_screen;
 mod skinned_model;
+mod terrain_cull;
 mod ui;
 mod ui_skin;
 #[cfg(test)]
@@ -193,6 +194,8 @@ fn main() {
 
     // Initialisation du moteur WGPU
     let mut state = pollster::block_on(State::new(window.clone(), &ui_state));
+    // Puce intégrée : ombres et rayons allégés, MSAA coupé (réglables dans les options)
+    ui_state.adapt_to_gpu(state.integrated_gpu());
     state.set_creature_textures(&creature_textures);
     state.sync_lod_meshes(&lod_manager);
 
@@ -540,6 +543,7 @@ fn main() {
                         }
                         state.update_camera(&camera, &ui_state.lighting_settings, &ui_state.cloud_settings, ui_state.video_settings.flattening);
                         state.update_post(&ui_state.post_settings);
+                        state.set_msaa(ui_state.video_settings.msaa);
                         state.update_shadows(&camera, &ui_state.shadow_settings);
                         state.update_atmosphere(&camera, &ui_state.atmosphere_settings, &ui_state.lighting_settings);
 

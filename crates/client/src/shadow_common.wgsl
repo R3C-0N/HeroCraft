@@ -10,7 +10,8 @@ struct ShadowUniform {
     cloud_view_proj: mat4x4<f32>,
     // xyz : demi-largeur monde de chaque cascade, w : taille d'un texel de cascade en uv
     extents: vec4<f32>,
-    // x : force des ombres du relief, y : force des ombres des nuages, z : 1 si actives,
+    // x : force des ombres du relief, y : force des ombres des nuages, z : 0 si coupées, sinon
+    // filtrage du terrain (1 : 3x3, ombres fines ; 2 : 2x2, ombres allégées),
     // w : décalage maximal le long de la normale (face rasante), en fraction de la demi-largeur de la cascade
     params: vec4<f32>,
 };
@@ -65,22 +66,36 @@ fn sun_visibility(world_pos: vec3<f32>, n: vec3<f32>, l: vec3<f32>) -> f32 {
     // Décalage seulement utile sur les faces rasantes (acné), nul face au soleil
     let slope = sqrt(clamp(1.0 - ndotl * ndotl, 0.0, 1.0));
 
-    // Relief : première cascade qui contient le point (PCF 3x3, comparaisons filtrées)
+    // Relief : première cascade qui contient le point. PCF 3x3 de comparaisons filtrées (fines),
+    // ou 2x2 décalées d'un demi-texel (allégées) : 4 lectures au lieu de 9, sur la même empreinte
+    // de 3x3 texels grâce au filtrage bilinéaire des comparaisons, avec un bord un peu moins doux
     var relief = 1.0;
     let texel = shadow.extents.w;
+    let light_filter = shadow.params.z > 1.5;
     for (var i = 0; i < 3; i = i + 1) {
         let offset = n * (shadow.extents[i] * shadow.params.w * slope);
         let uvz = to_shadow_uv(shadow.cascades[i] * vec4<f32>(world_pos + offset, 1.0));
         let edge = max(abs(uvz.x - 0.5), abs(uvz.y - 0.5)) * 2.0;
         if (edge < 0.98 && uvz.z > 0.0 && uvz.z < 1.0) {
-            var sum = 0.0;
-            for (var y = -1; y <= 1; y = y + 1) {
-                for (var x = -1; x <= 1; x = x + 1) {
-                    let uv = uvz.xy + vec2<f32>(f32(x), f32(y)) * texel;
-                    sum += textureSampleCompareLevel(shadow_maps, shadow_sampler, uv, i, uvz.z - 0.0002);
+            if (light_filter) {
+                var sum = 0.0;
+                for (var y = 0; y < 2; y = y + 1) {
+                    for (var x = 0; x < 2; x = x + 1) {
+                        let uv = uvz.xy + (vec2<f32>(f32(x), f32(y)) - 0.5) * texel;
+                        sum += textureSampleCompareLevel(shadow_maps, shadow_sampler, uv, i, uvz.z - 0.0002);
+                    }
                 }
+                relief = sum * 0.25;
+            } else {
+                var sum = 0.0;
+                for (var y = -1; y <= 1; y = y + 1) {
+                    for (var x = -1; x <= 1; x = x + 1) {
+                        let uv = uvz.xy + vec2<f32>(f32(x), f32(y)) * texel;
+                        sum += textureSampleCompareLevel(shadow_maps, shadow_sampler, uv, i, uvz.z - 0.0002);
+                    }
+                }
+                relief = sum / 9.0;
             }
-            relief = sum / 9.0;
             // Fondu au bord de la dernière cascade : pas de limite nette au loin
             if (i == 2) {
                 relief = mix(relief, 1.0, smoothstep(0.80, 0.98, edge));

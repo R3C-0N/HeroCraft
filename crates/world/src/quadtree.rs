@@ -14,8 +14,10 @@ pub const VOXEL_LEVEL: u8 = crate::edits::FACE_CHUNKS.trailing_zeros() as u8;
 
 /// Distance de subdivision d'un nœud, en multiple de son côté, selon son nombre de niveaux au-dessus
 /// des feuilles voxel (index 1 : le nœud dont les enfants sont des chunks). Réglée sur le prototype
-/// à 32 chunks par face ; les niveaux plus hauts d'une planète plus grande reprennent le dernier.
-const SPLIT_RATIOS: [f64; 6] = [0.0, 1.55, 3.67, 3.87, 3.06, 2.42];
+/// à 32 chunks par face (1.55, 3.67, 3.87, 3.06, 2.42), puis allégée au-delà des chunks voisins
+/// pour la planète à 256 chunks par face : 22 % de morceaux de terrain en moins à hauteur d'homme,
+/// pour des triangles lointains un peu plus grands. Les niveaux plus hauts reprennent le dernier.
+const SPLIT_RATIOS: [f64; 6] = [0.0, 1.55, 3.0, 3.0, 2.6, 2.0];
 
 /// Seuils de distance caméra-nœud qui déclenchent la subdivision de chaque niveau (index = niveau),
 /// pour une planète de rayon `base_radius`, multipliés par `mult` (préréglage de distance de vue).
@@ -539,3 +541,4 @@ mod tests {
         assert!(found_under_camera, "Le chunk directement sous le joueur au sommet de la montagne doit être maillé en voxels (pas de trou)");
     }
 }
+

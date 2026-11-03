@@ -1,4 +1,4 @@
-//! Post-traitement HDR : la passe 3D écrit dans une cible `Rgba16Float`, puis le bloom
+//! Post-traitement HDR : la passe 3D écrit dans une cible HDR (`SceneTarget`), puis le bloom
 //! (chaîne de mips à demi-résolution) et la composition (exposition + tonemapper) produisent
 //! l'image finale dans la swapchain, sur laquelle egui dessine ensuite.
 
@@ -6,8 +6,46 @@ use wgpu::util::DeviceExt;
 
 use crate::ui::PostSettings;
 
-/// Format de la cible HDR et des niveaux du bloom
+/// Format HDR complet : niveaux du bloom, rayons crépusculaires, et passe 3D avec MSAA
 pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
+/// Format HDR allégé de la passe 3D : 4 octets par pixel au lieu de 8, sans alpha, avec une
+/// mantisse de 6 bits (5 pour le bleu). Les shaders tramant leur couleur avant de l'y écrire
+/// (`quantization_dither` dans common.wgsl), les dégradés du ciel ne font pas de bandes.
+pub const COMPACT_HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg11b10Ufloat;
+
+/// Cible de la passe 3D : échantillonnage (MSAA ou non) et format HDR. Les pipelines qui y
+/// dessinent en dépendent, et sont recréés quand elle change (`State::set_msaa`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SceneTarget {
+    pub sample_count: u32,
+    pub format: wgpu::TextureFormat,
+}
+
+impl SceneTarget {
+    /// Format allégé quand le device sait y dessiner, et sans MSAA : la résolution d'une cible
+    /// multiéchantillonnée à ce format n'est pas garantie. `Rgba16Float` sinon.
+    pub fn new(device_features: wgpu::Features, sample_count: u32) -> Self {
+        let compact = sample_count == 1 && device_features.contains(wgpu::Features::RG11B10UFLOAT_RENDERABLE);
+        Self { sample_count, format: if compact { COMPACT_HDR_FORMAT } else { HDR_FORMAT } }
+    }
+
+    /// Amplitude relative du tramage avant l'écriture dans la cible (`camera.screen.z`) : un pas
+    /// de la mantisse de 6 bits du format allégé, rien en `Rgba16Float`
+    pub fn dither_amplitude(&self) -> f32 {
+        if self.format == COMPACT_HDR_FORMAT {
+            1.0 / 64.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Pour le rapport du banc d'essai
+    pub fn describe(&self) -> String {
+        let bytes = self.format.block_copy_size(None).unwrap_or(0);
+        format!("{:?}, {} octets par pixel{}", self.format, bytes, if self.sample_count > 1 { format!(", MSAA {}×", self.sample_count) } else { String::new() })
+    }
+}
 
 /// Nombre maximal de niveaux du bloom (le premier est à demi-résolution)
 const MAX_BLOOM_LEVELS: u32 = 6;
@@ -34,7 +72,7 @@ struct Targets {
 }
 
 pub struct PostProcess {
-    sample_count: u32,
+    target: SceneTarget,
     output_is_srgb: bool,
     sampler: wgpu::Sampler,
     uniform_buffer: wgpu::Buffer,
@@ -71,7 +109,7 @@ impl PostProcess {
         }
     }
 
-    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, sample_count: u32) -> Self {
+    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, target: SceneTarget) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Post Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("post_shader.wgsl").into()),
@@ -166,10 +204,10 @@ impl PostProcess {
         let upsample_pipeline = pipeline("Bloom Upsample Pipeline", &blur_layout, "fs_upsample", HDR_FORMAT, additive);
         let composite_pipeline = pipeline("Composite Pipeline", &composite_layout, "fs_composite", config.format, wgpu::BlendState::REPLACE);
 
-        let targets = Self::create_targets(device, config, sample_count, &sampler, &uniform_buffer, &blur_layout, &composite_layout);
+        let targets = Self::create_targets(device, config, target, &sampler, &uniform_buffer, &blur_layout, &composite_layout);
 
         Self {
-            sample_count,
+            target,
             output_is_srgb: config.format.is_srgb(),
             sampler,
             uniform_buffer,
@@ -197,7 +235,7 @@ impl PostProcess {
     fn create_targets(
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
-        sample_count: u32,
+        target: SceneTarget,
         sampler: &wgpu::Sampler,
         uniform_buffer: &wgpu::Buffer,
         blur_layout: &wgpu::BindGroupLayout,
@@ -210,21 +248,21 @@ impl PostProcess {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: HDR_FORMAT,
+            format: target.format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
         let hdr_view = hdr.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let hdr_msaa_view = (sample_count > 1).then(|| {
+        let hdr_msaa_view = (target.sample_count > 1).then(|| {
             device
                 .create_texture(&wgpu::TextureDescriptor {
                     label: Some("HDR MSAA Color Texture"),
                     size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
                     mip_level_count: 1,
-                    sample_count,
+                    sample_count: target.sample_count,
                     dimension: wgpu::TextureDimension::D2,
-                    format: HDR_FORMAT,
+                    format: target.format,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                     view_formats: &[],
                 })
@@ -287,12 +325,19 @@ impl PostProcess {
         self.targets = Self::create_targets(
             device,
             config,
-            self.sample_count,
+            self.target,
             &self.sampler,
             &self.uniform_buffer,
             &self.blur_layout,
             &self.composite_layout,
         );
+    }
+
+    /// Cible de la passe 3D changée (MSAA coupé ou rétabli, format HDR) : la cible HDR est
+    /// recréée, avec ou sans sa version multiéchantillonnée
+    pub fn set_target(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, target: SceneTarget) {
+        self.target = target;
+        self.resize(device, config);
     }
 
     /// Cible couleur de la passe 3D : (attachement, cible de résolution MSAA éventuelle)

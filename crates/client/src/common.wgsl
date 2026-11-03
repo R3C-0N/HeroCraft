@@ -1,7 +1,7 @@
 // =========================================================================
 // HeroCraft - Module WGSL partagé (naga_oil)
-// Uniforme caméra et orbite lunaire communs au ciel, au terrain et aux nuages : une seule
-// définition garantit que la position de la Lune reste cohérente.
+// Uniforme caméra commun au ciel, au terrain et aux nuages. La Lune y est calculée une fois par
+// image (renderer.rs, `compute_moon_data`) : sa position reste la même partout.
 // =========================================================================
 #define_import_path herocraft::common
 
@@ -18,6 +18,12 @@ struct CameraUniform {
     // x : surcroît de rayon du globe apparent, (k - 1) × rayon de la mer (0 = vraie courbure), y : k,
     // z et w : distances au sol depuis la caméra où l'aplatissement commence et devient complet
     flatten: vec4<f32>,
+    // Direction de la Lune (xyz) et sa phase éclairée (w, 0 à 1)
+    moon: vec4<f32>,
+    // x, y : inverse de la taille de l'image en pixels ; z : amplitude relative du tramage avant
+    // l'écriture dans une cible HDR à mantisse courte (0 en Rgba16Float) ; w : part de vue
+    // orbitale (0 au sol, 1 en orbite haute)
+    screen: vec4<f32>,
     // x : échelle des dimensions mesurées en blocs (rayon / 25 sur le prototype de 1 024 blocs par
     // face, 2 aujourd'hui), y : taille d'un bloc en unités du monde
     scales: vec4<f32>,
@@ -25,6 +31,21 @@ struct CameraUniform {
 
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
+
+// Position à l'écran (NDC) d'un pixel de la passe 3D, depuis @builtin(position)
+fn screen_ndc(pixel: vec2<f32>) -> vec2<f32> {
+    let uv = pixel * camera.screen.xy;
+    return vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+}
+
+// Tramage avant l'écriture dans la cible HDR : en Rg11b10Ufloat, la mantisse n'a que 6 bits (5
+// pour le bleu) et les dégradés lisses (ciel, brume) feraient des bandes. Un bruit de gradient
+// entrelacé (Jimenez 2014), d'un pas de mantisse d'amplitude, les change en grain invisible.
+// Sans effet en Rgba16Float (amplitude nulle).
+fn quantization_dither(color: vec3<f32>, pixel: vec2<f32>) -> vec3<f32> {
+    let noise = fract(52.9829189 * fract(dot(pixel, vec2<f32>(0.06711056, 0.00583715)))) - 0.5;
+    return color * (1.0 + noise * camera.screen.z * vec3<f32>(1.0, 1.0, 2.0));
+}
 
 // --- Aplatissement de la planète vue du sol (renderer.rs, `planet_flattening`) ---
 
@@ -94,27 +115,6 @@ fn rotate_by(v: vec3<f32>, rv: vec3<f32>) -> vec3<f32> {
 // (atmosphere.wgsl). La scène est rendue en Rgba16Float puis convertie par le tonemapper (AgX par
 // défaut) : seul le disque solaire, assez intense pour un bloom marqué, garde une échelle à part.
 const HDR_SUN_DISK: f32 = 6.0;
-
-struct MoonData {
-    dir: vec3<f32>,
-    phase: f32,
-};
-
-fn get_moon_data(time: f32, light_dir: vec3<f32>) -> MoonData {
-    let l_sun = normalize(light_dir);
-    let moon_tilt = 0.497;
-    let u_moon = vec3<f32>(cos(moon_tilt), sin(moon_tilt), 0.0);
-    let v_moon = vec3<f32>(0.0, 0.0, 1.0);
-    let moon_period = 1260.0;
-    let moon_angle = (time / moon_period) * 6.2831853 + 3.69;
-    let moon_dir = normalize(u_moon * cos(moon_angle) + v_moon * sin(moon_angle));
-    let sun_moon_dot = dot(moon_dir, l_sun);
-    let moon_phase = clamp((-sun_moon_dot + 1.0) * 0.5, 0.0, 1.0);
-    var data: MoonData;
-    data.dir = moon_dir;
-    data.phase = moon_phase;
-    return data;
-}
 
 // Clarté du jour et facteur de crépuscule vus depuis le sol, selon la hauteur du soleil
 struct SkyFactors {

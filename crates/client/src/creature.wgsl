@@ -5,17 +5,18 @@
 // Les os sont déjà appliqués (creatures.rs) : les sommets arrivent dans le repère du monde.
 // =========================================================================
 
-#import herocraft::common::{camera, flatten_point, rotate_by}
+#import herocraft::common::{camera, flatten_point, rotate_by, screen_ndc}
 #import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective}
 #import herocraft::shadow::sun_visibility
 
 @group(2) @binding(0) var creature_texture: texture_2d<f32>;
 @group(2) @binding(1) var creature_sampler: sampler;
 
+// Mêmes tampons que le relief (planet_mesh.rs) : position, puis attributs tassés sur 8 bits
+// (la normale n'est pas lue : celle de la facette sert), puis coordonnées de texture
 struct VertexInput {
     @location(0) position: vec3<f32>,
-    @location(1) normal: vec3<f32>,
-    // Teinte multipliée à la texture (blanc, ou gris pour une espèce sans modèle)
+    // Racine carrée de la teinte multipliée à la texture (blanc, ou gris pour une espèce sans modèle)
     @location(2) color: vec4<f32>,
     @location(3) uv: vec2<f32>,
 };
@@ -27,8 +28,8 @@ struct VertexOutput {
     @location(2) world_pos: vec3<f32>,
     // Du point vers la caméra, dans le repère vrai du point (planète aplatie : common.wgsl)
     @location(3) to_eye: vec3<f32>,
-    @location(4) screen_clip: vec4<f32>,
-    @location(5) flat_rot: vec3<f32>,
+    // Direction du Soleil vue du point comme sur la planète aplatie, tournée par sommet
+    @location(4) light_dir: vec3<f32>,
 };
 
 @vertex
@@ -36,12 +37,11 @@ fn vs_creature(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     let flat = flatten_point(in.position);
     out.world_pos = in.position;
-    out.color = in.color;
+    out.color = vec4<f32>(in.color.rgb * in.color.rgb, 1.0);
     out.uv = in.uv;
     out.to_eye = rotate_by(camera.camera_pos - flat.pos, -flat.rot);
     out.clip_position = camera.view_proj * vec4<f32>(flat.pos, 1.0);
-    out.screen_clip = out.clip_position;
-    out.flat_rot = flat.rot;
+    out.light_dir = rotate_by(normalize(camera.light_dir), -flat.rot);
     return out;
 }
 
@@ -58,7 +58,7 @@ fn fs_creature(in: VertexOutput) -> @location(0) vec4<f32> {
     let cross_norm = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
     let n = select(cross_norm, -cross_norm, dot(cross_norm, in.to_eye) < 0.0);
     let n_sphere = normalize(in.world_pos);
-    let l = rotate_by(normalize(camera.light_dir), -in.flat_rot);
+    let l = normalize(in.light_dir);
     let view_dir = normalize(in.to_eye);
 
     // Jour et nuit, comme le relief
@@ -74,7 +74,7 @@ fn fs_creature(in: VertexOutput) -> @location(0) vec4<f32> {
     var lit_rgb = albedo * light;
 
     let dist = length(in.to_eye);
-    let aerial = aerial_perspective_screen(camera.camera_pos, -view_dir, in.screen_clip.xy / in.screen_clip.w, dist, normalize(camera.light_dir), 12);
+    let aerial = aerial_perspective_screen(camera.camera_pos, -view_dir, screen_ndc(in.clip_position.xy), dist, normalize(camera.light_dir), 12);
     lit_rgb = apply_aerial_perspective(lit_rgb, aerial);
     return vec4<f32>(lit_rgb, 1.0);
 }

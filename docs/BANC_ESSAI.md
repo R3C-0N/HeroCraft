@@ -27,12 +27,15 @@ rapport le signale en tête.
 
 | Phase | Ce qui change |
 |---|---|
-| Référence | tout activé, vue à la première personne |
+| Référence | tout activé, vue à la première personne ; sur une puce intégrée, ombres et rayons allégés et MSAA coupé (réglages par défaut) |
 | Sans ombres du relief | coupe aussi les ombres des nuages et les rayons, qui en dépendent |
 | Sans ombres des nuages | |
 | Sans nuages | |
 | Sans rayons crépusculaires | |
 | Sans bloom | |
+| Ombres fines ↔ allégées | cascades 2048 / 1024, filtrage 3×3 / 2×2 ; sur puce intégrée, un coût négatif est ce qu'ajoutent les ombres fines |
+| Rayons fins ↔ allégés | demi-résolution et 28 pas / quart de résolution et 14 pas |
+| MSAA basculé | MSAA 4× coupé (ou activé sur puce intégrée) ; avec le MSAA, l'image HDR de la passe 3D passe aussi de 4 à 8 octets par pixel (`Rg11b10Ufloat` n'est pris que sans MSAA, quand la carte sait y dessiner : voir « Cible HDR » en tête du rapport) |
 | Créatures simulées, non dessinées | coût de l'animation par os, du maillage et du dessin |
 | Sans créatures | ni simulation, ni dessin |
 | Distance LOD courte / élevée | |
