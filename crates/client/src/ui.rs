@@ -7,6 +7,8 @@ use crate::inventory::{can_hold, Inventory, ItemStack, HOTBAR_SLOTS, TOTAL_SLOTS
 use crate::item_icons::ItemIcons;
 use herocraft_common::{blocks, items, ItemId};
 use crate::player_stats::PlayerStats;
+use crate::hero_creator::{CreatorEvent, HeroCreator};
+use herocraft_common::hero::Legend;
 use crate::ui_skin::{ButtonKind, SkinButton};
 
 /// Actions déclenchées par l'interface utilisateur
@@ -36,6 +38,9 @@ pub enum UiAction {
     PreviewSound,
     /// Écran de mort : revenir à la vie au point d'apparition
     Respawn,
+    /// Le créateur vient de sceller la légende du héros (`UiState::take_sealed_legend`) : elle est
+    /// à enregistrer
+    LegendSealed,
 }
 
 /// État de la partie en ligne, affiché dans la page Multijoueur
@@ -474,6 +479,12 @@ pub struct UiState {
     pub inventory_open: bool,
     /// Jauges, classe et niveau du joueur
     pub player: PlayerStats,
+    /// Légende du héros dans ce monde ; `None` tant qu'il n'est pas baptisé
+    pub legend: Option<Legend>,
+    /// Créateur de légende ouvert (à la première arrivée au sol d'un héros sans légende)
+    pub creator: Option<HeroCreator>,
+    /// Légende que le créateur vient de sceller, en attente du jeu
+    sealed_legend: Option<Legend>,
     /// Chat et commandes (touche Entrée)
     pub chat: crate::chat::Chat,
 }
@@ -518,8 +529,38 @@ impl UiState {
             icons: ItemIcons::default(),
             inventory_open: false,
             player: PlayerStats::default(),
+            legend: None,
+            creator: None,
+            sealed_legend: None,
             chat: crate::chat::Chat::default(),
         }
+    }
+
+    /// Le créateur de légende tient l'écran
+    pub fn creator_open(&self) -> bool {
+        self.creator.is_some()
+    }
+
+    /// Ouvre le créateur, si le héros n'a pas encore de légende
+    pub fn open_creator(&mut self) {
+        if self.legend.is_none() && self.creator.is_none() {
+            self.set_inventory_open(false);
+            self.creator = Some(HeroCreator::new());
+        }
+    }
+
+    /// Légende du héros dans le monde en cours : le créateur se referme quand elle est là
+    pub fn set_legend(&mut self, legend: Option<Legend>) {
+        if legend.is_some() {
+            self.creator = None;
+        }
+        self.player.stats.class = legend.as_ref().map_or(herocraft_common::PlayerClass::Adventurer, |l| l.class);
+        self.legend = legend;
+    }
+
+    /// La légende que le créateur vient de sceller (une seule fois)
+    pub fn take_sealed_legend(&mut self) -> Option<Legend> {
+        self.sealed_legend.take()
     }
 
     /// Applique le thème de l'ancien Terasology : textures de bois et de fer, polices Grenze et
@@ -833,7 +874,7 @@ impl UiState {
         let egui_ctx = self.ctx.clone();
         let full_output = egui_ctx.run(raw_input, |ctx| {
             // 1. Réticule de visée en mode FPS (quand le menu est fermé)
-            if is_ground && !self.is_settings_open && !self.inventory_open && !self.player.is_dead() {
+            if is_ground && !self.is_settings_open && !self.inventory_open && self.creator.is_none() && !self.player.is_dead() {
                 let center = ctx.screen_rect().center();
                 let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("crosshair")));
                 let stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_white_alpha(180));
@@ -856,7 +897,18 @@ impl UiState {
 
             // Au sol : classe en bas à gauche, jauges en bas à droite, voile rouge après une
             // blessure, barre d'objets au centre et écran d'inventaire par-dessus le jeu
-            if is_ground && !self.is_settings_open {
+            // Créateur de légende : il tient tout l'écran, menu de pause excepté
+            if self.creator.is_some() && !self.is_settings_open {
+                let event = self.creator.as_mut().and_then(|creator| creator.show(ctx));
+                match event {
+                    Some(CreatorEvent::Sealed(legend)) => {
+                        self.sealed_legend = Some(*legend);
+                        action = Some(UiAction::LegendSealed);
+                    }
+                    Some(CreatorEvent::Enter) => self.creator = None,
+                    None => {}
+                }
+            } else if is_ground && !self.is_settings_open {
                 self.draw_vitals_hud(ctx);
                 if self.player.is_dead() {
                     self.draw_death_screen(ctx, &mut action);
@@ -868,7 +920,7 @@ impl UiState {
             }
 
             // Chat : dernières lignes, ou saisie ouverte par Entrée
-            if !self.is_settings_open {
+            if !self.is_settings_open && self.creator.is_none() {
                 self.chat.draw(ctx);
             }
 
@@ -1081,6 +1133,9 @@ impl UiState {
             .show(ctx, |ui| {
                 hud_frame(egui::Margin::symmetric(12.0_f32, 8.0_f32)).show(ui, |ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(8.0_f32, 4.0_f32);
+                    if let Some(legend) = &self.legend {
+                        ui.label(egui::RichText::new(&legend.appearance.nom).size(15.0_f32).strong().color(TEXT_SOFT));
+                    }
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(stats.class.label()).strong().color(GOLD_BRIGHT));
                         ui.label(egui::RichText::new(format!("Niv. {}", stats.level)).color(TEXT_SOFT));

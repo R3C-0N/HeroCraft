@@ -34,7 +34,7 @@ pub struct PlayerStats {
 impl Default for PlayerStats {
     /// Même personnage que celui que le serveur donne à chaque nouveau joueur
     fn default() -> Self {
-        Self { stats: CharacterStats::new(PlayerClass::Warrior), hurt_at: None, hurt_strength: 0.0, death: None }
+        Self { stats: CharacterStats::new(PlayerClass::Adventurer), hurt_at: None, hurt_strength: 0.0, death: None }
     }
 }
 
@@ -139,7 +139,7 @@ mod tests {
         let mut camera = OrbitCamera::default();
         player.tick(10.0, &mut camera);
         assert_eq!(player.stats.hp, 0.0);
-        player.sync(CharacterStats::new(PlayerClass::Warrior), &mut camera);
+        player.sync(CharacterStats::new(PlayerClass::Adventurer), &mut camera);
         assert!(player.is_dead());
         assert_eq!(player.stats.hp, 0.0);
 

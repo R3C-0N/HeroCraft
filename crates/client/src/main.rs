@@ -26,6 +26,8 @@ mod creature_render;
 mod creatures;
 mod dropped_items;
 mod gpu_timer;
+mod hero_creator;
+mod hero_model;
 mod input;
 mod inventory;
 mod item_icons;
@@ -143,6 +145,8 @@ fn main() {
     ui_state.set_screen_size(size.width as f32, size.height as f32);
     ui_state.controls = input::Controls::load_or_default(input::CONTROLS_FILE);
     ui_state.inventory = inventory::Inventory::load_or_default(inventory_file(current_seed, false));
+    ui_state.set_legend(load_legend(&legend_file(current_seed, false)));
+    camera.hero_height = hero_height(&ui_state);
     ui_state.audio_settings = audio::AudioSettings::load_or_default(audio::AUDIO_FILE);
     // Son : bruitages du joueur et des blocs, ambiance (muet sans carte son)
     let mut audio = audio::Audio::new();
@@ -177,6 +181,7 @@ fn main() {
     let mut next_planet_seed: Option<u64> = None;
     let mut creatures_seed = current_seed;
     let mut creature_animator = creatures::CreatureAnimator::default();
+    let mut hero_gait = hero_model::HeroGait::default();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
     // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
     // prochain coup qu'on peut leur porter
@@ -314,7 +319,7 @@ fn main() {
 
                     // Déplacement curseur visible (survol des boutons UI et rotation de la planète)
                     WindowEvent::CursorMoved { position, .. } => {
-                        if is_dragging && !cursor_captured && !ui_state.is_settings_open && !ui_state.inventory_open {
+                        if is_dragging && !cursor_captured && !ui_state.is_settings_open && !ui_state.inventory_open && !ui_state.creator_open() {
                             let dx = (position.x - last_mouse_pos.0) as f32;
                             let dy = (position.y - last_mouse_pos.1) as f32;
                             camera.orbit(dx, dy);
@@ -330,6 +335,7 @@ fn main() {
                         } else {
                             !(ui_state.is_settings_open
                                 || ui_state.inventory_open
+                                || ui_state.creator_open()
                                 || ui_state.chat.open
                                 || ui_state.ctx.is_pointer_over_area()
                                 || ui_state.ctx.wants_pointer_input())
@@ -394,6 +400,8 @@ fn main() {
                             }
                         } else if key_code == KeyCode::F9 && is_pressed {
                             write_profile_report();
+                        } else if ui_state.creator_open() {
+                            // Créateur de légende : le clavier ne sert qu'à écrire le nom
                         } else if ui_state.chat.open {
                             // Chat ouvert : les touches vont à la saisie (egui), pas au joueur
                         } else if ui_state.inventory_open {
@@ -453,7 +461,7 @@ fn main() {
 
                         // Touches prises aux autres programmes par le crochet clavier depuis l'image précédente
                         for hooked in keyboard_hook::drain() {
-                            let in_game = !ui_state.is_settings_open && !ui_state.inventory_open && !ui_state.chat.open;
+                            let in_game = !ui_state.is_settings_open && !ui_state.inventory_open && !ui_state.creator_open() && !ui_state.chat.open;
                             if let (true, Some(action)) = (in_game, ui_state.controls.action_for(hooked.key)) {
                                 let first_press = hooked.pressed && !hooked.repeat;
                                 game_key(action, hooked.pressed, first_press, &mut camera, &mut ui_state, &mut pending_actions, &mut jump_tap, &mut zoom_modifier_held);
@@ -466,6 +474,10 @@ fn main() {
                         if ui_state.inventory_open && camera.target_distance > camera.base_radius {
                             ui_state.set_inventory_open(false);
                         }
+                        // Première arrivée au sol d'un héros sans légende : le créateur s'ouvre
+                        if bench.is_none() && ui_state.legend.is_none() && !ui_state.creator_open() && camera.target_distance <= camera.base_radius && !ui_state.player.is_dead() {
+                            ui_state.open_creator();
+                        }
                         // Mort : la souris est libérée pour le bouton de réapparition
                         // Banc d'essai : la souris reste libre (le jeu se pilote seul, la fenêtre peut
                         // être déplacée sur un autre écran pendant la mesure)
@@ -474,6 +486,7 @@ fn main() {
                             && !ui_state.player.is_dead()
                             && !ui_state.is_settings_open
                             && !ui_state.inventory_open
+                            && !ui_state.creator_open()
                             && !ui_state.chat.open
                             && camera.target_distance <= camera.base_radius;
                         if want_capture != cursor_captured {
@@ -630,7 +643,13 @@ fn main() {
                             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
                             let anim_dt = if ui_state.is_settings_open { 0.0 } else { dt };
                             creature_animator.update(&creature_views, &creature_registry, &creature_models, anim_dt, block);
-                            let frame = creatures::build_frame(&creature_views, &creature_registry, &creature_models, &creature_animator, block);
+                            let mut frame = creatures::build_frame(&creature_views, &creature_registry, &creature_models, &creature_animator, block);
+                            // Le héros, vu de dehors à la troisième personne
+                            hero_gait.update(camera.player_pos, anim_dt, block);
+                            if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson) {
+                                state.set_hero_sheet(&legend.appearance);
+                                hero_model::push_hero(&mut frame, &legend.appearance, camera.player_pos, camera.player_yaw, hero_gait.swing(), block);
+                            }
                             state.set_creature_frame(&frame);
                             creature_vertices = frame.vertices.len();
                             probe.section("créatures : animation et maillage", section);
@@ -666,7 +685,13 @@ fn main() {
                                     ui_state.multiplayer.notice = None;
                                     block_interaction.invalidate();
                                     terrain_edited = true;
-                                    net = Some(world.client);
+                                    let mut client = world.client;
+                                    // Le serveur apprend la voie du héros (ses jauges en dépendent)
+                                    if let Some(legend) = &ui_state.legend {
+                                        client.send_legend(legend);
+                                    }
+                                    camera.hero_height = hero_height(&ui_state);
+                                    net = Some(client);
                                 }
                                 Err(e) => {
                                     warn!("Connexion à {} impossible : {}", addr, e);
@@ -788,6 +813,29 @@ fn main() {
                             herocraft_common::prof_scope!("frame::ui_action");
                             match action {
                                 UiAction::PreviewSound => audio.preview(&ui_state.audio_settings),
+                                UiAction::LegendSealed => {
+                                    let Some(legend) = ui_state.take_sealed_legend() else { continue };
+                                    let online = ui_state.multiplayer.status != NetStatus::Solo && hosted.is_none();
+                                    let file = legend_file(current_seed, online);
+                                    if let Err(e) = save_legend(&file, &legend) {
+                                        warn!("Légende non enregistrée dans {} : {}", file.display(), e);
+                                    }
+                                    if let Some(client) = net.as_mut() {
+                                        client.send_legend(&legend);
+                                    }
+                                    info!(
+                                        "Légende scellée : {} ({} · {}, {:.2} m).",
+                                        legend.appearance.nom,
+                                        legend.appearance.species().nom,
+                                        legend.class.label(),
+                                        legend.appearance.taille
+                                    );
+                                    // Le créateur reste ouvert sur « Entrer dans le monde »
+                                    let creator = ui_state.creator.take();
+                                    ui_state.set_legend(Some(legend));
+                                    ui_state.creator = creator;
+                                    camera.hero_height = hero_height(&ui_state);
+                                }
                                 UiAction::Respawn => {
                                     ui_state.player.respawn();
                                     camera.spawn_on_ground(&generator);
@@ -1108,6 +1156,44 @@ fn inventory_file(seed: u64, online: bool) -> std::path::PathBuf {
     std::path::Path::new(&dir).join("inventaire.json")
 }
 
+/// Légende du héros sur une planète, à côté de son inventaire
+fn legend_file(seed: u64, online: bool) -> std::path::PathBuf {
+    inventory_file(seed, online).with_file_name("heros.json")
+}
+
+/// La légende enregistrée, si le héros a été baptisé dans ce monde (une légende qui ne passe plus
+/// la vérification est ignorée : le créateur se rouvre)
+fn load_legend(file: &std::path::Path) -> Option<herocraft_common::hero::Legend> {
+    let text = std::fs::read_to_string(file).ok()?;
+    let mut legend: herocraft_common::hero::Legend = match serde_json::from_str(&text) {
+        Ok(legend) => legend,
+        Err(e) => {
+            warn!("Légende illisible dans {} : {}", file.display(), e);
+            return None;
+        }
+    };
+    match legend.verify() {
+        Ok(()) => Some(legend),
+        Err(e) => {
+            warn!("Légende de {} refusée : {}", file.display(), e);
+            None
+        }
+    }
+}
+
+fn save_legend(file: &std::path::Path, legend: &herocraft_common::hero::Legend) -> std::io::Result<()> {
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let text = serde_json::to_string_pretty(legend).map_err(std::io::Error::other)?;
+    std::fs::write(file, text)
+}
+
+/// Taille du héros en mètres (celle d'un aventurier sans légende par défaut)
+fn hero_height(ui_state: &UiState) -> f32 {
+    ui_state.legend.as_ref().map_or(camera::PLAYER_HEIGHT, |l| l.appearance.taille as f32)
+}
+
 /// Stockage d'un monde solo et ses blocs modifiés, repris de la sauvegarde
 fn solo_terrain(seed: u64) -> (Option<herocraft_voxel_engine::ChunkStorage>, Arc<herocraft_world::TerrainEdits>) {
     let storage = herocraft_voxel_engine::ChunkStorage::new(solo_save_dir(seed)).ok();
@@ -1147,6 +1233,8 @@ fn switch_planet(
     ui_state.set_inventory_open(false);
     ui_state.inventory.save();
     ui_state.inventory = inventory::Inventory::load_or_default(inventory_file(seed, online));
+    ui_state.set_legend(load_legend(&legend_file(seed, online)));
+    camera.hero_height = hero_height(ui_state);
 }
 
 /// Touche attribuée à une action, en jeu (menu fermé) : lue par la fenêtre ou par le crochet clavier
