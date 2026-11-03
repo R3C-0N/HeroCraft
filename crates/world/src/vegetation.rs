@@ -44,7 +44,47 @@ struct Flora {
     /// Fleurs des régions froides et des alpages
     cold_flowers: [BlockId; 2],
     shrooms: [BlockId; 2],
+    /// Plantes sauvages mûres, par taches d'une même espèce (`WildCrop`)
+    wild_crops: [BlockId; WildCrop::COUNT],
 }
+
+/// Plantes cultivées qui poussent aussi à l'état sauvage : on les cueille pour leur récolte et
+/// leurs graines (voir le champ `loot` de leurs fiches)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WildCrop {
+    Wheat,
+    Carrot,
+    Potato,
+    Onion,
+    Squash,
+    Soy,
+    Rice,
+    Cotton,
+}
+
+impl WildCrop {
+    const COUNT: usize = 8;
+
+    /// Espèces sauvages d'un biome
+    fn of_biome(biome: BiomeType) -> &'static [WildCrop] {
+        use WildCrop::*;
+        match biome {
+            BiomeType::Plains => &[Wheat, Carrot, Potato, Onion],
+            BiomeType::Forest => &[Squash, Potato, Soy],
+            BiomeType::Jungle => &[Rice, Soy],
+            BiomeType::Savanna => &[Cotton, Soy],
+            BiomeType::Taiga | BiomeType::Mountains => &[Potato, Onion],
+            _ => &[],
+        }
+    }
+}
+
+/// Taches de plantes sauvages : côté des cases du bruit qui les place, en blocs
+const WILD_CROP_CELL: i32 = 24;
+/// Valeurs du bruit où une tache commence, puis est pleine (les plus hautes : des taches rares)
+const WILD_CROP_PATCH: (f64, f64) = (0.82, 0.90);
+/// Part des colonnes d'une tache pleine qui portent une plante
+const WILD_CROP_DENSITY: f64 = 0.25;
 
 fn flora() -> &'static Flora {
     static FLORA: OnceLock<Flora> = OnceLock::new();
@@ -64,6 +104,16 @@ fn flora() -> &'static Flora {
             meadow_flowers: [find("dandelion"), find("yellowFlower"), find("redFlower"), find("tulip"), find("redClover")],
             cold_flowers: [find("iris"), find("lavender")],
             shrooms: [find("brownShroom"), find("redShroom")],
+            wild_crops: [
+                find("bleStade4"),
+                find("carotteStade4"),
+                find("pommeDeTerreStade4"),
+                find("oignonStade4"),
+                find("courgeStade4"),
+                find("sojaStade4"),
+                find("rizStade4"),
+                find("cotton6"),
+            ],
         }
     })
 }
@@ -543,6 +593,15 @@ impl PlanetWorldGenerator {
         };
         let cold = || f.cold_flowers[(patch(seed, face, x, z, 12, 0xC01D) * 2.0) as usize % 2];
         let shroom = || f.shrooms[pick % 2];
+        // Taches de plantes sauvages mûres, une espèce par tache
+        let wild = WildCrop::of_biome(column.biome);
+        if !wild.is_empty() && roll < WILD_CROP_DENSITY {
+            let zone = smooth(WILD_CROP_PATCH.0, WILD_CROP_PATCH.1, patch(seed, face, x, z, WILD_CROP_CELL, 0x5A1D));
+            if roll < WILD_CROP_DENSITY * zone {
+                let species = (patch(seed, face, x, z, WILD_CROP_CELL, 0x5EED) * wild.len() as f64) as usize;
+                return Some(f.wild_crops[wild[species.min(wild.len() - 1)] as usize]);
+            }
+        }
         let plant = match column.biome {
             BiomeType::Plains => {
                 let bloom = smooth(0.58, 0.72, patch(seed, face, x, z, 22, 0xB100));
@@ -719,6 +778,36 @@ mod tests {
         assert!(share(BiomeType::Forest) > 0.35, "forêt : {:.2}", share(BiomeType::Forest));
         assert!(share(BiomeType::Plains) < 0.15, "plaine : {:.2}", share(BiomeType::Plains));
         assert!(share(BiomeType::Ocean) < 0.01, "océan : {:.3}", share(BiomeType::Ocean));
+    }
+
+    /// Des plantes sauvages mûres poussent par taches dans les prairies, assez pour en trouver en
+    /// se promenant, sans couvrir la plaine
+    #[test]
+    fn wild_crops_grow_in_rare_patches() {
+        let generator = generator();
+        let crops = flora().wild_crops;
+        assert!(crops.iter().all(|c| !c.is_air()), "chaque plante sauvage a sa fiche");
+        let (mut plains, mut wild, mut kinds) = (0usize, 0usize, std::collections::HashSet::new());
+        for face in [PlanetFace::PosX, PlanetFace::NegZ, PlanetFace::PosZ] {
+            for z in (2000..2600).step_by(3) {
+                for x in (2000..2600).step_by(3) {
+                    let column = generator.sample_block_column(face, x, z);
+                    if column.biome != BiomeType::Plains {
+                        continue;
+                    }
+                    plains += 1;
+                    if let Some(plant) = generator.ground_plant(&column, face, x, z).filter(|p| crops.contains(p)) {
+                        wild += 1;
+                        kinds.insert(plant);
+                    }
+                }
+            }
+        }
+        let share = wild as f64 / plains.max(1) as f64;
+        println!("{wild} plantes sauvages sur {plains} colonnes de prairie ({:.2} %), {} espèces", 100.0 * share, kinds.len());
+        assert!(plains > 1000, "pas assez de prairie échantillonnée : {plains}");
+        assert!(share > 0.001 && share < 0.03, "part de plantes sauvages : {share}");
+        assert!(kinds.len() >= 2, "plusieurs espèces : {kinds:?}");
     }
 
     #[test]

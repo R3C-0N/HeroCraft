@@ -13,6 +13,13 @@
   ],
   "activity": "nocturnal",
   "attack": {"mode": "pack", "damage": 4, "cooldown": 1.0, "sight": 14, "chase_speed": 1.6, "pack_size": 3, "prey": ["lapin", "cerf", "faisan", "mouflon", "mouflonTondu"]},
+  "loot": [
+    {"item": "viandeLoup"},
+    {"item": "hide"},
+    {"item": "fourrure"},
+    {"item": "crocsEffiles", "chance": 0.4},
+    {"item": "bone", "chance": 0.5}
+  ],
   "model": {
     "mesh": "modeles/loup.gltf",
     "texture": "modeles/loup.png",

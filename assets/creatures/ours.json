@@ -12,6 +12,13 @@
   ],
   "activity": "diurnal",
   "attack": {"mode": "solo", "damage": 12, "cooldown": 1.8, "sight": 10, "chase_speed": 1.8, "provoked_only": true},
+  "loot": [
+    {"item": "viandeOurs", "count": [2, 3]},
+    {"item": "hide", "count": [1, 2]},
+    {"item": "fourrureDouce"},
+    {"item": "griffesOurs", "chance": 0.5},
+    {"item": "bone", "count": [1, 2]}
+  ],
   "model": {
     "mesh": "modeles/ours.gltf",
     "texture": "modeles/ours.png",

@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -142,6 +142,12 @@ pub enum ServerPacket {
         damage: f32,
         /// Nom de l'espèce qui l'a frappé, pour l'écran de mort
         cause: String,
+    },
+    /// Le joueur vient de tuer une créature : son butin tombe au sol à ses pieds (`position`),
+    /// objets et nombres (`ItemId`), tirés par le serveur
+    CreatureLoot {
+        position: Vec3,
+        items: Vec<(u16, u16)>,
     },
     /// Message de chat ou notification système
     ChatMessage {

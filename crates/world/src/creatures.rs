@@ -545,6 +545,16 @@ impl CreatureWorld {
         self.strike(id, from, PLAYER_HIT_DAMAGE, true).is_some()
     }
 
+    /// Comme `hit`, et renvoie l'espèce (rang dans le registre) et les pieds de la bête si le coup
+    /// l'a tuée : c'est là que tombe son butin
+    pub fn hit_to_kill(&mut self, id: u64, from: Vec3) -> Option<(usize, Vec3)> {
+        if self.strike(id, from, PLAYER_HIT_DAMAGE, true)? {
+            let c = self.creatures.iter().find(|c| c.id == id)?;
+            return Some((c.species, c.position));
+        }
+        None
+    }
+
     /// Bêtes vivantes de l'espèce de la créature de rang `index` autour d'elle, elle comprise
     fn pack_count(&self, index: usize) -> usize {
         let c = &self.creatures[index];
@@ -1647,9 +1657,13 @@ mod tests {
         // Assez de coups : elle bascule, puis disparaît
         let health = world.registry().get(rabbit).unwrap().health;
         let hits = (health / PLAYER_HIT_DAMAGE).ceil() as usize;
-        for _ in 1..hits {
+        for _ in 1..hits - 1 {
             assert!(world.hit(id, attacker));
         }
+        // Le coup fatal dit quelle bête est tombée, et où (pour son butin)
+        let at = world.creatures()[0].position;
+        assert_eq!(world.hit_to_kill(id, attacker).map(|(species, _)| species), Some(rabbit));
+        assert!(world.creatures()[0].position.distance(at) < 1.0);
         assert!(world.creatures()[0].state().death > 0.0);
         assert!(!world.hit(id, attacker), "une bête morte ne se frappe plus");
         for _ in 0..((CREATURE_DEATH_TIME / 0.05) as usize + 2) {

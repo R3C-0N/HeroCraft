@@ -560,7 +560,7 @@ fn main() {
                             let striking = aimed.filter(|_| block_interaction.is_breaking_held());
                             if let Some(id) = striking {
                                 block_interaction.pause_mining();
-                                hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut audio, &ui_state.audio_settings);
+                                hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut dropped_items, &mut audio, &ui_state.audio_settings);
                             }
                             let action = if striking.is_some() { None } else { block_interaction.tick(dt) };
                             if let Some(block) = block_interaction.take_hit() {
@@ -604,6 +604,7 @@ fn main() {
                                         let hurt = ui_state.player.bitten(damage, &cause);
                                         show_wound(hurt, &cause, &mut camera, &mut ui_state, &mut audio);
                                     }
+                                    NetEvent::Loot { position, items } => drop_loot(&mut dropped_items, &camera, position, &items),
                                     NetEvent::Chat { sender, message } if sender.is_empty() => ui_state.chat.server(&message),
                                     NetEvent::Chat { sender, message } => ui_state.chat.player(&sender, &message),
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
@@ -1428,6 +1429,7 @@ fn hit_creature(
     camera: &OrbitCamera,
     net: Option<&mut NetClient>,
     solo: &mut herocraft_world::CreatureWorld,
+    dropped: &mut dropped_items::DroppedItems,
     audio: &mut audio::Audio,
     settings: &audio::AudioSettings,
 ) {
@@ -1436,20 +1438,47 @@ fn hit_creature(
     }
     *cooldown = ATTACK_COOLDOWN;
     match net {
+        // En ligne, le serveur tire le butin et l'envoie (`NetEvent::Loot`)
         Some(client) => client.send_hit_creature(id),
         None => {
-            solo.hit(id, camera.player_pos);
+            if let Some((species, feet)) = solo.hit_to_kill(id, camera.player_pos) {
+                let loot = herocraft_common::loot::creature_loot(solo.registry(), species).roll(&mut herocraft_common::LootRng::from_clock());
+                drop_loot(dropped, camera, feet, &loot);
+            }
         }
     }
     // Coup sourd
     audio.block_placed(audio::synth::Material::Dirt, 0.0, settings);
 }
 
-/// Le bloc cassé tombe au sol (s'il se ramasse : ni eau, ni lave)
+/// Le bloc cassé tombe au sol (s'il se ramasse : ni eau, ni lave), avec le butin de sa fiche
+/// (fibre des herbes hautes, silex du gravier, récolte d'une plante mûre…)
 fn drop_broken_block(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, pos: herocraft_world::BlockPos, block: herocraft_common::BlockId, previous: herocraft_common::BlockId) {
-    let Some(item) = inventory::drop_for(previous).filter(|_| block.is_air()) else { return };
+    if !block.is_air() {
+        return;
+    }
     let height = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
-    dropped.spawn(item, BlockInteraction::block_center(camera, pos), height);
+    let center = BlockInteraction::block_center(camera, pos);
+    if let Some(item) = inventory::drop_for(previous) {
+        dropped.spawn(item, center, height);
+    }
+    let loot = herocraft_common::loot::block_loot(previous).roll(&mut herocraft_common::LootRng::from_clock());
+    for (item, count) in loot {
+        for _ in 0..count {
+            dropped.spawn(item, center, height);
+        }
+    }
+}
+
+/// Le butin d'une bête tuée tombe à ses pieds (`feet`), un peu au-dessus du sol
+fn drop_loot(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, feet: glam::Vec3, loot: &[(herocraft_common::ItemId, u16)]) {
+    let height = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+    let center = feet + feet.normalize_or_zero() * 0.6 * height;
+    for &(item, count) in loot {
+        for _ in 0..count {
+            dropped.spawn(item, center, height);
+        }
+    }
 }
 
 /// Enregistre les chunks modifiés par le joueur depuis le dernier enregistrement

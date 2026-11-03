@@ -147,18 +147,20 @@ def couleur_moyenne(png, teinte=None):
 
 
 def ecrire(chemin, fiche):
-    """Une ligne par champ : facile à relire et à retoucher. Les recettes d'une fiche déjà écrite
-    (`tools/importer_recettes.py`, ou à la main) sont gardées."""
-    if "recipes" not in fiche and chemin.exists():
+    """Une ligne par champ : facile à relire et à retoucher. Les champs écrits à la main dans une
+    fiche déjà là (recettes de `tools/importer_recettes.py`, ce que donne le bloc cassé, son butin)
+    sont gardés."""
+    if chemin.exists():
         try:
-            recettes = json.loads(chemin.read_text(encoding="utf-8")).get("recipes")
+            ancienne = json.loads(chemin.read_text(encoding="utf-8"))
         except ValueError:
-            recettes = None
-        if recettes:
-            fiche = {**fiche, "recipes": recettes}
+            ancienne = {}
+        for champ in ("drop", "loot", "recipes"):
+            if champ not in fiche and champ in ancienne and (ancienne[champ] or champ == "drop"):
+                fiche = {**fiche, champ: ancienne[champ]}
     c = lambda v: json.dumps(v, ensure_ascii=False, separators=(", ", ": "))
-    # Les recettes, une par ligne
-    v = lambda k, v: "[\n" + ",\n".join(f"    {c(r)}" for r in v) + "\n  ]" if k == "recipes" and v else c(v)
+    # Les recettes et le butin, une ligne par entrée
+    v = lambda k, v: "[\n" + ",\n".join(f"    {c(r)}" for r in v) + "\n  ]" if k in ("recipes", "loot") and v else c(v)
     lignes = ["{"] + [f'  "{k}": {v(k, x)}' + ("," if i < len(fiche) - 1 else "") for i, (k, x) in enumerate(fiche.items())] + ["}"]
     chemin.write_text("\n".join(lignes) + "\n", encoding="utf-8")
 

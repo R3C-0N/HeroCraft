@@ -8,6 +8,11 @@
   "temperament": "craintif",
   "spawn": [],
   "activity": "diurnal",
+  "loot": [
+    {"item": "viandePure", "count": [1, 2]},
+    {"item": "hide"},
+    {"item": "boisCristallins", "chance": 0.6}
+  ],
   "model": {
     "mesh": "modeles/cerfCristal.gltf",
     "texture": "modeles/cerfCristal.png",
