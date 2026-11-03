@@ -221,29 +221,56 @@ fn nearby_places(generator: &PlanetWorldGenerator, seed: u64, center: DVec3) -> 
     places_in_cells(generator, seed, &cells)
 }
 
-/// Couleur d'une colonne vue de haut, avant l'ombrage du relief
+/// Lavis d'une colonne, comme peint à l'aquarelle sur le parchemin (avant les traits d'encre)
 fn ground_color(biome: BiomeType, elevation: f64) -> [f32; 3] {
     let h = elevation - SEA_LEVEL_BLOCKS;
     if h < 0.0 {
-        // Eau : plus sombre avec la profondeur
-        let t = (-h / 70.0).clamp(0.0, 1.0) as f32;
-        let shallow = [0.30_f32, 0.58, 0.74];
-        let deep = [0.07_f32, 0.17, 0.40];
+        // Eau : lavis bleu-vert, un peu plus soutenu au large
+        let t = (-h / 80.0).clamp(0.0, 1.0) as f32;
+        let shallow = [0.66_f32, 0.77, 0.74];
+        let deep = [0.47_f32, 0.60, 0.65];
         return std::array::from_fn(|i| shallow[i] * (1.0 - t) + deep[i] * t);
     }
-    let base = crate::planet_mesh::PlanetMesh::biome_color(if biome.is_water() { BiomeType::Beach } else { biome });
-    // Les hauteurs pâlissent un peu, comme sur une carte en relief
-    let lift = ((h / 260.0).clamp(0.0, 1.0) * 0.35) as f32;
-    std::array::from_fn(|i| base[i] * (1.0 - lift) + 0.92 * lift)
+    let base: [f32; 3] = match biome {
+        BiomeType::Beach => [0.91, 0.84, 0.64],
+        BiomeType::Plains => [0.80, 0.82, 0.58],
+        BiomeType::Forest => [0.60, 0.68, 0.45],
+        BiomeType::Jungle => [0.50, 0.64, 0.40],
+        BiomeType::Taiga => [0.55, 0.62, 0.50],
+        BiomeType::Savanna => [0.87, 0.80, 0.55],
+        BiomeType::Desert => [0.93, 0.82, 0.58],
+        BiomeType::Mountains => [0.73, 0.67, 0.57],
+        BiomeType::SnowPeaks => [0.96, 0.95, 0.91],
+        BiomeType::Tundra => [0.82, 0.81, 0.71],
+        BiomeType::DeepOcean | BiomeType::Ocean | BiomeType::Sea => [0.91, 0.84, 0.64],
+    };
+    // Les hauteurs pâlissent, comme sur une carte en relief
+    let lift = ((h / 300.0).clamp(0.0, 1.0) * 0.30) as f32;
+    std::array::from_fn(|i| base[i] * (1.0 - lift) + 0.94 * lift)
 }
 
 /// Couleur d'une colonne bâtie, selon le type d'établissement
 fn footprint_color(kind: SettlementKind) -> [f32; 3] {
     match kind {
-        SettlementKind::Town => [0.62, 0.36, 0.26],
-        SettlementKind::Village => [0.70, 0.50, 0.30],
-        SettlementKind::Ruins => [0.52, 0.50, 0.46],
+        SettlementKind::Town => [0.66, 0.38, 0.28],
+        SettlementKind::Village => [0.72, 0.52, 0.34],
+        SettlementKind::Ruins => [0.58, 0.54, 0.48],
     }
+}
+
+/// Encre brune des traits de la carte
+const INK: [f32; 3] = [0.29, 0.20, 0.13];
+
+fn mix(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    std::array::from_fn(|i| a[i] * (1.0 - t) + b[i] * t)
+}
+
+/// Bruit déterministe d'une colonne (pointillés des forêts)
+fn column_hash(f: usize, x: i32, z: i32) -> u32 {
+    let mut h = (f as u32).wrapping_mul(0x9e37_79b1) ^ (x as u32).wrapping_mul(0x85eb_ca6b) ^ (z as u32).wrapping_mul(0xc2b2_ae35);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2c1b_3c6d);
+    h ^ (h >> 12)
 }
 
 /// Résultat du relief : l'image, et les cases et régions qu'elle couvre
@@ -259,7 +286,7 @@ fn render_terrain(generator: &PlanetWorldGenerator, center: DVec3, bpp: f64) -> 
     let n = MAP_PIXELS;
     let half = n as f64 / 2.0;
     // Altitude et couleur de chaque pixel, ligne par ligne en parallèle
-    type Pixel = (f64, [f32; 3], bool, (usize, i32, i32));
+    type Pixel = (f64, [f32; 3], bool, BiomeType, (usize, i32, i32));
     let rows: Vec<Vec<Pixel>> = (0..n)
         .into_par_iter()
         .map(|py| {
@@ -278,28 +305,86 @@ fn render_terrain(generator: &PlanetWorldGenerator, center: DVec3, bpp: f64) -> 
                             }
                         }
                     }
-                    (column.elevation, color, built, (face_index(face), x, z))
+                    (column.elevation, color, built, column.biome, (face_index(face), x, z))
                 })
                 .collect()
         })
         .collect();
+    let at = |px: usize, py: usize| &rows[py][px];
+    let is_water = |px: usize, py: usize| rows[py][px].0 < SEA_LEVEL_BLOCKS;
+    // Distance au rivage (en pixels) des pixels d'eau, pour les lignes d'eau parallèles à la côte
+    const RIPPLES: [u16; 3] = [3, 6, 10];
+    let mut shore = vec![u16::MAX; n * n];
+    let mut queue = std::collections::VecDeque::new();
+    let neighbours = |px: usize, py: usize| {
+        [(px.wrapping_sub(1), py), (px + 1, py), (px, py.wrapping_sub(1)), (px, py + 1)].into_iter().filter(move |&(x, y)| x < n && y < n)
+    };
+    for py in 0..n {
+        for px in 0..n {
+            if is_water(px, py) && neighbours(px, py).any(|(x, y)| !is_water(x, y)) {
+                shore[py * n + px] = 1;
+                queue.push_back((px, py));
+            }
+        }
+    }
+    while let Some((px, py)) = queue.pop_front() {
+        let d = shore[py * n + px];
+        if d >= RIPPLES[2] {
+            continue;
+        }
+        for (x, y) in neighbours(px, py) {
+            if is_water(x, y) && shore[y * n + x] == u16::MAX {
+                shore[y * n + x] = d + 1;
+                queue.push_back((x, y));
+            }
+        }
+    }
+    // Courbes de niveau : un trait d'encre fin tous les `step` blocs d'altitude
+    let step = (bpp * 5.0).clamp(10.0, 160.0);
+    let level = |h: f64| ((h - SEA_LEVEL_BLOCKS) / step).floor() as i64;
     let mut pixels = Vec::with_capacity(n * n);
     let mut cells = HashSet::new();
     let mut regions = HashSet::new();
     for py in 0..n {
         for px in 0..n {
-            let (elevation, color, built, (f, x, z)) = rows[py][px];
+            let &(elevation, color, built, biome, (f, x, z)) = at(px, py);
             cells.insert((f, x.div_euclid(CELL), z.div_euclid(CELL)));
             regions.insert((f, x.div_euclid(REGION_BLOCKS), z.div_euclid(REGION_BLOCKS)));
-            // Ombrage : la lumière vient du nord-ouest
-            let lit = if elevation >= SEA_LEVEL_BLOCKS && !built && px > 0 && py > 0 {
-                let nw = rows[py - 1][px - 1].0.max(SEA_LEVEL_BLOCKS);
-                let slope = (elevation - nw) / (bpp * std::f64::consts::SQRT_2);
-                (1.0 + slope * 0.9).clamp(0.62, 1.38) as f32
-            } else {
-                1.0
-            };
-            let c = color.map(|v| ((v * lit).clamp(0.0, 1.0) * 255.0) as u8);
+            let water = elevation < SEA_LEVEL_BLOCKS;
+            let mut c = color;
+            if water {
+                let d = shore[py * n + px];
+                if d == 1 {
+                    // Bord de l'eau : un liseré plus soutenu
+                    c = mix(c, [0.36, 0.48, 0.52], 0.45);
+                } else if RIPPLES.contains(&d) {
+                    c = mix(c, [0.36, 0.48, 0.52], if d == RIPPLES[2] { 0.18 } else { 0.30 });
+                }
+            } else if !built {
+                // Ombrage adouci : la lumière vient du nord-ouest
+                if px > 0 && py > 0 {
+                    let nw = at(px - 1, py - 1).0.max(SEA_LEVEL_BLOCKS);
+                    let slope = (elevation - nw) / (bpp * std::f64::consts::SQRT_2);
+                    let lit = (1.0 + slope * 0.5).clamp(0.80, 1.14) as f32;
+                    c = c.map(|v| v * lit);
+                }
+                // Trait de côte
+                if neighbours(px, py).any(|(x, y)| is_water(x, y)) {
+                    c = mix(c, INK, 0.85);
+                } else {
+                    // Courbes de niveau
+                    let here = level(elevation);
+                    let crosses = (px + 1 < n && level(at(px + 1, py).0.max(SEA_LEVEL_BLOCKS)) != here)
+                        || (py + 1 < n && level(at(px, py + 1).0.max(SEA_LEVEL_BLOCKS)) != here);
+                    if crosses {
+                        c = mix(c, INK, 0.28);
+                    } else if matches!(biome, BiomeType::Forest | BiomeType::Jungle | BiomeType::Taiga) && column_hash(f, x, z) % 9 == 0 {
+                        // Forêts : pointillés d'encre verte
+                        c = mix(c, [0.22, 0.32, 0.18], 0.45);
+                    }
+                }
+            }
+            let c = c.map(|v| (v.clamp(0.0, 1.0) * 255.0) as u8);
             pixels.push(egui::Color32::from_rgb(c[0], c[1], c[2]));
         }
     }
@@ -428,6 +513,8 @@ pub struct WorldMap {
     pub waypoint: Option<DVec3>,
     /// Position du joueur, mise à jour par le jeu au sol
     pub navigation: Option<Navigation>,
+    /// Parchemin du fond de la carte, et le même en cadre dont le centre est transparent
+    parchment: Option<(egui::TextureHandle, egui::TextureHandle)>,
 }
 
 impl Default for WorldMap {
@@ -460,6 +547,7 @@ impl WorldMap {
             scroll: 0.0,
             waypoint: None,
             navigation: None,
+            parchment: None,
         }
     }
 
@@ -560,6 +648,10 @@ impl WorldMap {
                         });
                     });
                     ui.add_space(4.0);
+                    if self.parchment.is_none() {
+                        let load = |name: &str, edge: bool| ctx.load_texture(name, parchment_image(PARCHMENT_PIXELS, edge), egui::TextureOptions::LINEAR);
+                        self.parchment = Some((load("carte_parchemin", false), load("carte_bords", true)));
+                    }
                     let (rect, response) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click_and_drag());
                     self.map_input(ui, rect, &response);
                     self.paint_map(ui, rect, response.hover_pos());
@@ -653,30 +745,37 @@ impl WorldMap {
 
     fn paint_map(&self, ui: &egui::Ui, rect: egui::Rect, hover: Option<egui::Pos2>) {
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(22, 30, 42));
+        let full_uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+        // Parchemin
+        if let Some((paper, _)) = &self.parchment {
+            painter.image(paper.id(), rect, full_uv, egui::Color32::WHITE);
+        } else {
+            painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(232, 214, 170));
+        }
         let frame = Frame::at(self.center);
         let scale = self.screen_scale(rect.width());
         // Relief : l'image reçue, placée et mise à l'échelle sur la vue en cours (pendant un glissé
-        // ou un zoom, en attendant la suivante)
+        // ou un zoom, en attendant la suivante). Un peu transparente : le grain du papier transparaît.
         if let Some(tex) = &self.texture {
             let c = self.to_screen(&frame, rect, tex.center);
             let half = (MAP_PIXELS as f64 * tex.bpp * scale / 2.0) as f32;
             let r = egui::Rect::from_center_size(c, egui::vec2(half * 2.0, half * 2.0));
-            painter.image(tex.texture.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+            painter.image(tex.texture.id(), r, full_uv, egui::Color32::from_white_alpha(212));
         }
         // Vue d'au plus un demi-tour de planète : au-delà, la projection replie le monde sur lui-même
         let view_radius = (rect.width() as f64 / scale) * 0.75;
         let visible = |dir: DVec3| frame.up.angle_between(dir) * planet_radius_blocks() < view_radius;
+        let ink = egui::Color32::from_rgb(74, 50, 32);
 
-        // Chemins
-        let road_width = (1.0 + 2.5 * scale as f32).clamp(1.5, 6.0);
+        // Chemins : pointillés d'encre
+        let road_width = (0.8 + 1.5 * scale as f32).clamp(1.3, 3.5);
         for points in self.roads.values() {
             if !points.iter().step_by(8).any(|&d| visible(d)) {
                 continue;
             }
             let line: Vec<egui::Pos2> = points.iter().map(|&d| self.to_screen(&frame, rect, d)).collect();
-            painter.add(egui::Shape::line(line.clone(), egui::Stroke::new(road_width + 1.5, egui::Color32::from_rgba_unmultiplied(40, 24, 12, 160))));
-            painter.add(egui::Shape::line(line, egui::Stroke::new(road_width, egui::Color32::from_rgb(196, 160, 104))));
+            let dash = road_width * 3.0;
+            painter.extend(egui::Shape::dashed_line(&line, egui::Stroke::new(road_width, egui::Color32::from_rgb(120, 70, 38)), dash, dash * 0.6));
         }
 
         // Établissements, des ruines aux villes (les villes par-dessus)
@@ -703,9 +802,18 @@ impl WorldMap {
                 SettlementKind::Ruins => bpp <= 8.0,
             };
             if labelled {
-                let size = if place.kind == SettlementKind::Town { 14.0 } else { 12.0 };
-                shadowed_text(&painter, pos + egui::vec2(0.0, 9.0), egui::Align2::CENTER_TOP, &place.name, size, TEXT_SOFT);
+                let font = match place.kind {
+                    SettlementKind::Town => crate::ui_skin::title_font(15.0),
+                    SettlementKind::Village => crate::ui_skin::strong_font(12.5),
+                    SettlementKind::Ruins => egui::FontId::proportional(11.5),
+                };
+                ink_text(&painter, pos + egui::vec2(0.0, 9.0), egui::Align2::CENTER_TOP, &place.name, font, ink);
             }
+        }
+
+        // Bords du parchemin : la carte s'y fond
+        if let Some((_, edges)) = &self.parchment {
+            painter.image(edges.id(), rect, full_uv, egui::Color32::WHITE);
         }
 
         // Repère
@@ -717,30 +825,23 @@ impl WorldMap {
         // Joueur : flèche dans le sens du regard
         if let Some(nav) = self.navigation {
             let pos = self.to_screen(&frame, rect, nav.up);
-            if rect.contains(pos) {
+            if rect.shrink(6.0).contains(pos) {
                 paint_player_arrow(&painter, pos, nav.yaw as f32, 9.0);
             } else {
                 // Hors de la carte : une flèche au bord indique où il est
                 let d = (pos - rect.center()).normalized();
-                let edge = rect.center() + d * (rect.width() / 2.0 - 14.0);
+                let edge = rect.center() + d * (rect.width() / 2.0 - 16.0);
                 let angle = d.x.atan2(-d.y);
                 paint_player_arrow(&painter, edge, angle, 7.0);
             }
         }
 
-        // Rose des vents
-        let rose = rect.right_top() + egui::vec2(-28.0, 40.0);
-        painter.circle_filled(rose, 17.0, egui::Color32::from_black_alpha(130));
-        painter.circle_stroke(rose, 17.0, egui::Stroke::new(1.0_f32, GOLD));
-        let needle = [rose + egui::vec2(0.0, -13.0), rose + egui::vec2(4.5, 0.0), rose + egui::vec2(-4.5, 0.0)];
-        painter.add(egui::Shape::convex_polygon(needle.to_vec(), egui::Color32::from_rgb(214, 64, 52), egui::Stroke::NONE));
-        let tail = [rose + egui::vec2(0.0, 13.0), rose + egui::vec2(-4.5, 0.0), rose + egui::vec2(4.5, 0.0)];
-        painter.add(egui::Shape::convex_polygon(tail.to_vec(), TEXT_SOFT, egui::Stroke::NONE));
-        painter.text(rose + egui::vec2(0.0, -19.0), egui::Align2::CENTER_BOTTOM, "N", egui::FontId::proportional(11.0), GOLD_BRIGHT);
+        // Rose des vents, à l'encre
+        paint_compass_rose(&painter, rect.right_top() + egui::vec2(-42.0, 46.0), 22.0, ink);
 
         // Chargement
         if self.loading {
-            shadowed_text(&painter, rect.left_bottom() + egui::vec2(8.0, -8.0), egui::Align2::LEFT_BOTTOM, "Relevé du terrain…", 12.0, TEXT_SOFT);
+            ink_text(&painter, rect.left_bottom() + egui::vec2(24.0, -22.0), egui::Align2::LEFT_BOTTOM, "Relevé du terrain…", egui::FontId::proportional(12.5), ink);
         }
 
         // Fiche du lieu survolé, ou distance au point survolé
@@ -771,8 +872,6 @@ impl WorldMap {
                 painter.galley(r.min + egui::vec2(5.0, 5.0), galley, TEXT_SOFT);
             }
         }
-        // Cadre
-        painter.rect_stroke(rect, 0.0, egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(23, 13, 8)));
     }
 
     /// Barre d'échelle : une longueur ronde de blocs
@@ -971,12 +1070,117 @@ fn paint_player_arrow(painter: &egui::Painter, pos: egui::Pos2, angle: f32, r: f
     // Le contour n'est pas convexe : deux moitiés convexes
     let left = vec![points[0], points[2], points[3]];
     let right = vec![points[0], points[1], points[2]];
-    let fill = egui::Color32::WHITE;
+    let fill = egui::Color32::from_rgb(196, 48, 36);
     painter.add(egui::Shape::convex_polygon(left, fill, egui::Stroke::NONE));
     painter.add(egui::Shape::convex_polygon(right, fill, egui::Stroke::NONE));
     let mut outline = points.clone();
     outline.push(points[0]);
-    painter.add(egui::Shape::line(outline, egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(20, 20, 20))));
+    painter.add(egui::Shape::line(outline, egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(60, 36, 20))));
+}
+
+/// Côté des images du parchemin
+const PARCHMENT_PIXELS: usize = 384;
+
+fn lattice(x: i32, y: i32, seed: u32) -> f32 {
+    let mut h = (x as u32).wrapping_mul(0x8da6_b343) ^ (y as u32).wrapping_mul(0xd816_3841) ^ seed.wrapping_mul(0xcb1a_b31f);
+    h ^= h >> 13;
+    h = h.wrapping_mul(0x5bd1_e995);
+    h ^= h >> 15;
+    (h & 0xffff) as f32 / 65535.0
+}
+
+/// Bruit de valeur lissé
+fn value_noise(x: f32, y: f32, seed: u32) -> f32 {
+    let (x0, y0) = (x.floor(), y.floor());
+    let (tx, ty) = (x - x0, y - y0);
+    let (sx, sy) = (tx * tx * (3.0 - 2.0 * tx), ty * ty * (3.0 - 2.0 * ty));
+    let (ix, iy) = (x0 as i32, y0 as i32);
+    let a = lattice(ix, iy, seed) + (lattice(ix + 1, iy, seed) - lattice(ix, iy, seed)) * sx;
+    let b = lattice(ix, iy + 1, seed) + (lattice(ix + 1, iy + 1, seed) - lattice(ix, iy + 1, seed)) * sx;
+    a + (b - a) * sy
+}
+
+fn fbm2(x: f32, y: f32, seed: u32) -> f32 {
+    let (mut sum, mut amp, mut freq, mut norm) = (0.0, 0.5, 1.0, 0.0);
+    for octave in 0..5 {
+        sum += value_noise(x * freq, y * freq, seed + octave) * amp;
+        norm += amp;
+        amp *= 0.5;
+        freq *= 2.0;
+    }
+    sum / norm
+}
+
+fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Couleur du parchemin en (u, v) ∈ [0, 1]² : papier crème, grain, taches, bords roussis
+fn parchment_color(u: f32, v: f32) -> [f32; 3] {
+    let grain = fbm2(u * 40.0, v * 40.0, 11);
+    let cloud = fbm2(u * 4.0, v * 4.0, 23);
+    let stain = fbm2(u * 2.5 + 3.0, v * 2.5 + 7.0, 37);
+    let mut c = mix([0.86, 0.77, 0.58], [0.95, 0.89, 0.73], cloud);
+    c = c.map(|x| x * (0.94 + 0.08 * grain));
+    c = mix(c, [0.74, 0.58, 0.38], smoothstep(0.58, 0.78, stain) * 0.35);
+    // Bords roussis, irréguliers
+    let d = u.min(1.0 - u).min(v).min(1.0 - v);
+    let wobble = (fbm2(u * 9.0, v * 9.0, 51) - 0.5) * 0.05;
+    let burn = 1.0 - smoothstep(0.0, 0.05 + wobble * 0.6, d);
+    mix(c, [0.52, 0.36, 0.20], burn * 0.6)
+}
+
+/// Image du parchemin. `edge` : seul le pourtour est opaque, le centre transparent, avec un
+/// fondu irrégulier, pour que la carte se perde dans le papier.
+fn parchment_image(size: usize, edge: bool) -> egui::ColorImage {
+    let mut pixels = Vec::with_capacity(size * size);
+    for y in 0..size {
+        for x in 0..size {
+            let (u, v) = ((x as f32 + 0.5) / size as f32, (y as f32 + 0.5) / size as f32);
+            let c = parchment_color(u, v).map(|x| (x.clamp(0.0, 1.0) * 255.0) as u8);
+            let alpha = if edge {
+                let d = u.min(1.0 - u).min(v).min(1.0 - v);
+                let wobble = (fbm2(u * 6.0, v * 6.0, 77) - 0.5) * 0.08;
+                1.0 - smoothstep(0.02 + wobble * 0.4, 0.10 + wobble, d)
+            } else {
+                1.0
+            };
+            pixels.push(egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], (alpha * 255.0) as u8));
+        }
+    }
+    egui::ColorImage { size: [size, size], pixels }
+}
+
+/// Texte à l'encre, détouré de papier clair pour rester lisible sur le relief
+fn ink_text(painter: &egui::Painter, pos: egui::Pos2, align: egui::Align2, text: &str, font: egui::FontId, color: egui::Color32) {
+    let halo = egui::Color32::from_rgba_unmultiplied(244, 232, 200, 150);
+    for d in [egui::vec2(-1.0, 0.0), egui::vec2(1.0, 0.0), egui::vec2(0.0, -1.0), egui::vec2(0.0, 1.0)] {
+        painter.text(pos + d, align, text, font.clone(), halo);
+    }
+    painter.text(pos, align, text, font, color);
+}
+
+/// Rose des vents à l'encre : étoile à huit branches, le nord en rouge
+fn paint_compass_rose(painter: &egui::Painter, c: egui::Pos2, r: f32, ink: egui::Color32) {
+    let stroke = egui::Stroke::new(1.0_f32, ink);
+    painter.circle_stroke(c, r * 0.62, stroke);
+    painter.circle_stroke(c, r * 0.56, egui::Stroke::new(0.6_f32, ink));
+    let point = |angle: f32, len: f32| c + egui::vec2(angle.sin(), -angle.cos()) * len;
+    for k in 0..8 {
+        let a = k as f32 * std::f32::consts::FRAC_PI_4;
+        let len = if k % 2 == 0 { r } else { r * 0.55 };
+        let w = if k % 2 == 0 { 0.16 } else { 0.22 };
+        let tip = point(a, len);
+        let left = point(a - std::f32::consts::FRAC_PI_2, r * w);
+        let right = point(a + std::f32::consts::FRAC_PI_2, r * w);
+        let dark = if k == 0 { egui::Color32::from_rgb(170, 52, 38) } else { ink };
+        let light = egui::Color32::from_rgb(238, 226, 196);
+        // Chaque branche : une moitié pleine, une moitié claire, comme gravée
+        painter.add(egui::Shape::convex_polygon(vec![c, left, tip], dark, egui::Stroke::NONE));
+        painter.add(egui::Shape::convex_polygon(vec![c, tip, right], light, stroke));
+    }
+    painter.text(point(0.0, r + 2.0), egui::Align2::CENTER_BOTTOM, "N", crate::ui_skin::title_font(13.0), egui::Color32::from_rgb(150, 44, 32));
 }
 
 #[cfg(test)]
