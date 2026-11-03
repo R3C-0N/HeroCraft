@@ -727,6 +727,13 @@ mod apercu {
                     if d >= depth[y * w + x] {
                         continue;
                     }
+                    // Les cœurs n'ont pas de texture : leur couleur seule
+                    let color = frame.vertices[ids[0]].color;
+                    if color == HEART_COLOR {
+                        depth[y * w + x] = d;
+                        img[y * w + x] = [0, 1, 2].map(|c| (color[c] * 255.0 * shade).min(255.0) as u8);
+                        continue;
+                    }
                     let uv = [0, 1].map(|c| w0 * frame.uvs[ids[0]][c] + w1 * frame.uvs[ids[1]][c] + w2 * frame.uvs[ids[2]][c]);
                     let tx = ((uv[0] * tex.width as f32) as u32).min(tex.width - 1);
                     let ty = ((uv[1] * tex.height as f32) as u32).min(tex.height - 1);
@@ -777,6 +784,32 @@ mod apercu {
             }
             let frame = build_frame(&[CreatureView { feet, ..v }], &registry, &models, &animator, 1.0);
             rasterize(&mut img, &mut depth, w, &frame, textures[i].as_ref().unwrap(), feet, ((i % cols) * cell, (i / cols) * cell, cell), scale_for(species, cell));
+        }
+        save(&img, w, h);
+    }
+
+    /// Élevage : chaque bête qui s'élève, adulte amoureuse (cœurs) à côté de son petit
+    /// nouveau-né, puis à mi-croissance
+    #[test]
+    #[ignore]
+    fn apercu_elevage() {
+        let registry = CreatureRegistry::load_default();
+        let (models, textures) = CreatureModels::load(&registry);
+        let bred: Vec<usize> = (0..registry.len()).filter(|&i| registry.get(i).unwrap().breeding.is_some()).collect();
+        let (cols, cell) = (3usize, 220usize);
+        let (w, h) = (cols * cell, bred.len() * cell);
+        let mut img = vec![[200u8, 222, 236]; w * h];
+        let mut depth = vec![f32::MAX; w * h];
+        let feet = Vec3::new(0.0, 0.0, 1000.0);
+        let animator = CreatureAnimator::default();
+        for (row, &i) in bred.iter().enumerate() {
+            let species = registry.get(i).unwrap();
+            for (col, (scale, mood)) in [(1.0, MOOD_HEARTS), (0.5, 0), (0.75, MOOD_HEARTS)].into_iter().enumerate() {
+                let view = CreatureView { id: i as u64, species: Some(i), feet, yaw: 0.6, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale, mood };
+                let frame = build_frame(&[view], &registry, &models, &animator, 1.0);
+                // Même échelle pour l'adulte et ses petits, cœurs compris
+                rasterize(&mut img, &mut depth, w, &frame, textures[i].as_ref().unwrap(), feet, (col * cell, row * cell, cell), scale_for(species, cell) * 0.8);
+            }
         }
         save(&img, w, h);
     }
