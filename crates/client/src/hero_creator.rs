@@ -7,7 +7,7 @@
 //! cours. Rien n'est définitif avant le baptême, qui vérifie chaque choix contre l'atlas
 //! ([`Legend::verify`]) et scelle le héros pour de bon.
 
-use crate::hero_model::{figure, Piece};
+use crate::hero_model::{Figure, FigureCache};
 use herocraft_common::hero::{self, atlas, Appearance, ClassSheet, Dice, Family, Legend, CLASSES, NAME_MAX, SHEET_SIZE};
 use herocraft_common::PlayerClass;
 
@@ -182,7 +182,8 @@ impl HeroCreator {
         }
         self.preview.held = response.dragged();
         let texture = self.preview.texture(ui.ctx(), &self.cfg);
-        draw_figure(ui.painter(), well, &texture, &self.cfg, self.preview.angle, self.preview.tilt);
+        let figure = self.preview.figure.get(&self.cfg);
+        draw_figure(ui.painter(), well, &texture, &self.cfg, figure, self.preview.angle, self.preview.tilt);
         if response.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
         }
@@ -532,11 +533,13 @@ struct Preview {
     /// Planche peinte et la clé de l'apparence qui l'a peinte : elle n'est repeinte que si ce qui
     /// s'y voit change
     texture: Option<(String, egui::TextureHandle)>,
+    /// Le corps en relief de cette même planche
+    figure: FigureCache,
 }
 
 impl Default for Preview {
     fn default() -> Self {
-        Self { angle: 46.0_f32.to_radians(), tilt: (-4.0_f32).to_radians(), turning: true, held: false, last_time: None, texture: None }
+        Self { angle: 46.0_f32.to_radians(), tilt: (-4.0_f32).to_radians(), turning: true, held: false, last_time: None, texture: None, figure: FigureCache::default() }
     }
 }
 
@@ -568,52 +571,53 @@ impl Preview {
 }
 
 /// Dessine la figure tournée de `angle` et inclinée de `tilt` dans le cadre : à la taille de son
-/// espèce contre un cadre de deux mètres, pieds sur la même ligne, élargie par sa carrure
-fn draw_figure(painter: &egui::Painter, frame: egui::Rect, texture: &egui::TextureHandle, cfg: &Appearance, angle: f32, tilt: f32) {
+/// espèce contre un cadre de deux mètres (agrandi si cornes ou bois dépassent), pieds sur la même
+/// ligne, élargie par sa carrure
+fn draw_figure(painter: &egui::Painter, frame: egui::Rect, texture: &egui::TextureHandle, cfg: &Appearance, figure: &Figure, angle: f32, tilt: f32) {
     let rotation = glam::Quat::from_rotation_x(-tilt) * glam::Quat::from_rotation_y(-angle);
     let width = cfg.width_scale();
-    let px_per_metre = frame.height() * 0.84_f32 / FRAME_METRES;
-    let units = px_per_metre * cfg.taille as f32 / 32.0_f32;
+    // Mètres par unité du patron : la taille va des pieds au sommet du crâne
+    let metres_per_unit = cfg.taille as f32 / figure.body_height;
+    let tallest = FRAME_METRES.max((figure.top + figure.hover) * metres_per_unit + 0.05_f32);
+    let px_per_metre = frame.height() * 0.84_f32 / tallest;
+    let units = px_per_metre * metres_per_unit;
     let feet = egui::pos2(frame.center().x, frame.bottom() - frame.height() * 0.07_f32);
     let light = glam::vec3(-0.45_f32, 0.75_f32, 0.55_f32).normalize();
 
-    // Ombre au sol
+    // Ombre au sol, plus pâle sous un héros qui flotte
     let shadow = egui::Rect::from_center_size(feet, egui::vec2(14.0_f32 * units * width, 3.5_f32 * units));
-    painter.add(egui::Shape::ellipse_filled(shadow.center(), shadow.size() / 2.0_f32, egui::Color32::from_black_alpha(110)));
+    let darkness = if figure.hover > 0.0 { 70 } else { 110 };
+    painter.add(egui::Shape::ellipse_filled(shadow.center(), shadow.size() / 2.0_f32, egui::Color32::from_black_alpha(darkness)));
 
-    // Pièces de la plus lointaine à la plus proche ; dans une même pièce, la couche 1 avant la 2
-    let mut pieces: Vec<(f32, u8, Piece)> = figure()
-        .into_iter()
-        .map(|p| {
-            let c = rotation * (p.centre * glam::vec3(width, 1.0, width));
-            (c.z, p.layer, p)
+    // Faces tournées vers l'œil, de la plus lointaine à la plus proche : le relief se recouvre
+    // comme il faut et les texels translucides (sylphe, ailes) laissent voir ce qui est derrière
+    let mut quads: Vec<(f32, [glam::Vec3; 4], [f32; 4], f32)> = figure
+        .posed(0.0_f32, width)
+        .filter_map(|q| {
+            let c = q.corners.map(|p| rotation * p);
+            let normal = (c[1] - c[0]).cross(c[3] - c[0]).normalize_or_zero();
+            if normal.z <= 1e-4 {
+                return None;
+            }
+            let depth = (c[0] + c[1] + c[2] + c[3]).z * 0.25_f32;
+            Some((depth, c, q.uv, 0.5_f32 + 0.5_f32 * normal.dot(light).max(0.0_f32)))
         })
         .collect();
-    pieces.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    quads.sort_by(|a, b| a.0.total_cmp(&b.0));
 
     let mut mesh = egui::Mesh::with_texture(texture.id());
     let sheet = SHEET_SIZE as f32;
     let margin = 0.01_f32;
-    for (_, _, piece) in &pieces {
-        for quad in &piece.quads {
-            let c = quad.corners.map(|p| rotation * (p * glam::vec3(width, 1.0, width)));
-            let normal = (c[1] - c[0]).cross(c[3] - c[0]).normalize_or_zero();
-            // Faces tournées vers l'arrière : cachées
-            if normal.z <= 1e-4 {
-                continue;
-            }
-            let shade = 0.5_f32 + 0.5_f32 * normal.dot(light).max(0.0_f32);
-            let g = (255.0_f32 * shade) as u8;
-            let color = egui::Color32::from_rgb(g, g, g);
-            let [u, v, w, h] = quad.uv;
-            let (u0, v0, u1, v1) = ((u + margin) / sheet, (v + margin) / sheet, (u + w - margin) / sheet, (v + h - margin) / sheet);
-            let uvs = [egui::pos2(u0, v1), egui::pos2(u1, v1), egui::pos2(u1, v0), egui::pos2(u0, v0)];
-            let base = mesh.vertices.len() as u32;
-            for (p, uv) in c.iter().zip(uvs) {
-                mesh.vertices.push(egui::epaint::Vertex { pos: egui::pos2(feet.x + p.x * units, feet.y - p.y * units), uv, color });
-            }
-            mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    for (_, c, [u, v, w, h], shade) in &quads {
+        let g = (255.0_f32 * shade) as u8;
+        let color = egui::Color32::from_rgb(g, g, g);
+        let (u0, v0, u1, v1) = ((u + margin) / sheet, (v + margin) / sheet, (u + w - margin) / sheet, (v + h - margin) / sheet);
+        let uvs = [egui::pos2(u0, v1), egui::pos2(u1, v1), egui::pos2(u1, v0), egui::pos2(u0, v0)];
+        let base = mesh.vertices.len() as u32;
+        for (p, uv) in c.iter().zip(uvs) {
+            mesh.vertices.push(egui::epaint::Vertex { pos: egui::pos2(feet.x + p.x * units, feet.y - p.y * units), uv, color });
         }
+        mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
     painter.add(egui::Shape::mesh(mesh));
 }
@@ -876,5 +880,60 @@ mod tests {
         assert_eq!(legend.class, PlayerClass::Berserker);
         creator.go(0);
         assert_eq!(creator.step, 0, "une fiche scellée ne bouge plus");
+    }
+
+    /// Planche des héros en relief, rendue sur le processeur : une case par variante, de trois
+    /// quarts puis de dos.
+    /// `HEROCRAFT_CAPTURES=dossier cargo test -p herocraft_client snapshot_figures -- --ignored`
+    #[test]
+    #[ignore]
+    fn snapshot_figures() {
+        let Ok(dir) = std::env::var("HEROCRAFT_CAPTURES") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        let a = hero::atlas();
+        let mut heroes = Vec::new();
+        for id in &a.ORDRE_ESPECES {
+            for v in 0..a.espece(id).variantes.len() {
+                let mut cfg = a.defaut(id);
+                cfg.variante = v as i32;
+                cfg.retouch(true);
+                heroes.push(cfg);
+            }
+        }
+        let close: Vec<Appearance> = [("humain", 1), ("nain", 2), ("hautElfe", 3), ("hommeBete", 2), ("aasimar", 0)]
+            .iter()
+            .map(|(id, v)| heroes.iter().find(|c| c.espece == *id && c.variante == *v).cloned().expect("variante connue"))
+            .collect();
+        let all = heroes.clone();
+        for (name, angle, heroes, cols, cell) in [
+            ("figures-trois-quarts", 46.0_f32, &all, 10_usize, egui::vec2(150.0, 230.0)),
+            ("figures-dos", 200.0, &all, 10, egui::vec2(150.0, 230.0)),
+            ("figures-gros-plan", 30.0, &close, 5, egui::vec2(320.0, 480.0)),
+            ("figures-gros-plan-dos", 215.0, &close, 5, egui::vec2(320.0, 480.0)),
+        ] {
+            let rows = heroes.len().div_ceil(cols);
+            let (width, height) = ((cols as f32 * cell.x) as usize, (rows as f32 * cell.y) as usize);
+            let ctx = egui::Context::default();
+            let mut snapshot = crate::ui_snapshot::Snapshot::new(width, height);
+            snapshot.set_background(None);
+            let mut previews: Vec<Preview> = heroes.iter().map(|_| Preview::default()).collect();
+            let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))), ..Default::default() };
+            let output = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                    for (i, (cfg, preview)) in heroes.iter().zip(previews.iter_mut()).enumerate() {
+                        let min = egui::pos2((i % cols) as f32 * cell.x, (i / cols) as f32 * cell.y);
+                        let rect = egui::Rect::from_min_size(min, cell).shrink(4.0);
+                        ui.painter().rect_filled(rect, 0.0, egui::Color32::from_rgb(58, 46, 36));
+                        let texture = preview.texture(ui.ctx(), cfg);
+                        let figure = preview.figure.get(cfg);
+                        draw_figure(ui.painter(), rect, &texture, cfg, figure, angle.to_radians(), (-4.0_f32).to_radians());
+                    }
+                });
+            });
+            snapshot.apply_textures(&output.textures_delta);
+            let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);
+            snapshot.paint(&primitives, output.pixels_per_point);
+            snapshot.save(&dir.join(format!("{name}.png")));
+        }
     }
 }
