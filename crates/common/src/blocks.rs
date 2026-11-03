@@ -78,6 +78,10 @@ pub struct BlockSheet {
     /// Lumière émise, de 0 à 15 (pas encore rendue)
     #[serde(default)]
     pub light: u8,
+    /// Texture « connectée » (verre) : le cadre de la texture n'est dessiné que sur les bords qui ne
+    /// touchent pas un bloc du même genre, deux blocs côte à côte forment un seul panneau encadré
+    #[serde(default)]
+    pub connected: bool,
     /// Son des pas et des blocs cassés ou posés
     #[serde(default)]
     pub sound: BlockSound,

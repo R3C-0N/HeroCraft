@@ -8,7 +8,7 @@ Le projet est structuré sous forme de **Cargo Workspace** modulaire :
 
 - `crates/common` : Types partagés (blocs, RPG, protocoles réseau, maths planétaires).
 - `crates/voxel_engine` : Structures de données des chunks (32x32x32), palette compression, maillage glouton (Greedy Meshing).
-- `crates/world` : Génération procédurale de planète (Cubed-Sphere, climats, biomes, grottes).
+- `crates/world` : Génération procédurale de planète (Cubed-Sphere, climats, biomes, grottes, villes, villages et ruines).
 - `crates/server` : Serveur de jeu dédié autonome (60 Hz tickrate, autorité serveur).
 - `crates/client` : Client graphique (moteur de rendu WGPU / Bevy, caméra, interface).
 
@@ -51,6 +51,16 @@ Les menus et le HUD reprennent l'habillage de l'ancien Terasology (branche `deve
 
 #### Créateur de héros :
 À la première arrivée au sol dans un monde, le créateur de légende (repris du module `HeroClasses` de la branche `develop`) s'ouvre en plein écran. Trois étapes : **le corps** à la forge (10 espèces et leurs sous-races, taille, corpulence, peau, visage, pilosité, tenue, ou « Tirer au sort »), **la voie** au râtelier (15 voies en trois familles), puis **le nom**. Le héros tourne à gauche dans son aperçu (glisser pour le tourner à la main), peint texel par texel comme la maquette de référence. Le baptême vérifie chaque choix, scelle la légende dans `saves/<monde>/heros.json` et règle la hauteur des yeux sur la taille du héros ; il part les mains vides. En vue à la troisième personne (premier cran de molette depuis la vue subjective, la caméra se tient à quelques blocs derrière lui), le héros est dessiné avec sa planche, sa taille et sa carrure, bras et jambes balancés par la marche. En ligne, le serveur vérifie la légende à son tour et en prend la voie. Les données viennent de `assets/heros/atlas.json`.
+
+#### Villes, villages et ruines :
+La planète porte des villes fortifiées, des villages et des ruines, posés par le générateur selon la graine : chaque face est découpée en cases de 128 × 128 blocs, et chaque case reçoit une ville, un village, des ruines ou rien, sur un site qui s'y prête (terre ferme, relief assez plat, biome). Une graine donne près d'une centaine d'établissements, toujours les mêmes, pour le client, le serveur et tous les joueurs en ligne.
+- **Villes** : un damier de rues pavées entre des remparts crénelés, une tour à chaque angle, une porte au milieu de chaque côté, une grand-place avec sa fontaine et ses étals de marché, des lampadaires aux carrefours, une église à clocher donnant sur la place, une ou deux tavernes, une forge et une vingtaine de maisons de briques ou de planches, souvent à étage (une échelle y monte).
+- **Villages** : un puits couvert sur une petite place, deux à quatre chemins de gravier bordés de maisons, souvent une chapelle, une taverne ou une forge, des lampadaires, des champs irrigués (blé, carottes, pommes de terre, courges) et parfois une grange à grande porte.
+- **Bâtiments** : maisons de 5 à 9 blocs de côté, à toit à deux ou quatre pans, avec ou sans cheminée ni porche ; l'église a des bancs, un autel et un clocher à abat-sons ; la taverne, des tables et une cheminée ; la forge est un appentis ouvert avec âtre, fourneau et enclume ; la grange abrite des bottes de blé.
+- **Ruines** : temple sur podium aux colonnes brisées et à l'autel orné d'un cristal, vieille tour ronde éventrée, ou hameau de maisons effondrées.
+
+Les matériaux suivent le climat : maisons à toits plats blanchis à la chaux dans les déserts et les savanes, rondins de pin et toits de pavés dans la taïga et la toundra, planches et toits d'escaliers ailleurs. Chaque bâtiment a un plancher plat : des fondations comblent la pente, et le relief est dégagé au-dessus. Rues, champs et remparts suivent le terrain. Tout se casse et se construit comme le reste du terrain. Les structures ne se voient que dans la zone de blocs autour du joueur, pas encore sur le relief lointain.
+Pour aller voir : `-- --visiter ville` (ou `village`, `ruines`, suivi au besoin d'un numéro : `--visiter village 3`) fait apparaître au bord de l'établissement de ce genre. `cargo run -p herocraft_world --release --example settlements -- <graine>` les liste tous, et `-- <graine> <n°>` dessine le plan de l'un d'eux vu de dessus.
 
 #### Blocs et objets :
 Les 135 blocs et 523 objets des modules de la branche `develop` (`CoreAssets`, `HeroSurvival`, `HeroCrafting`, `HeroEquipment`, `HeroBestiary`…) sont décrits chacun par une fiche JSON, lue au lancement : `assets/blocks/` pour les blocs (nom, couleurs, textures, forme, passage, son, ce qu'il donne une fois cassé), `assets/items/` pour les objets (nom, description, taille de pile, icône, caractéristiques). Ajouter un bloc ou un objet, c'est ajouter une fiche. Fleurs, herbes, pousses et torches sont dessinées en deux panneaux croisés qu'on traverse ; le verre et la glace laissent voir les faces derrière eux. Les objets se rangent dans l'inventaire mais ne servent à rien pour l'instant (pas encore de combat, d'artisanat ni de nourriture). Voir [assets/blocks/README.md](assets/blocks/README.md) et [assets/items/README.md](assets/items/README.md).
