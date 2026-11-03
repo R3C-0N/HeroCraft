@@ -22,6 +22,7 @@ use std::sync::OnceLock;
 
 use herocraft_common::{BlockId, PlanetFace};
 
+use crate::culture::Culture;
 use crate::generator::{BiomeType, PlanetWorldGenerator, SEA_LEVEL_BLOCKS};
 
 /// Côté d'une case de structures, en blocs : le plus grand plan (une ville) y tient
@@ -79,9 +80,18 @@ pub mod block {
     pub const COBBLE_STAIRS: BlockId = BlockId(139);
     pub const BRICK_SLAB: BlockId = BlockId(140);
     pub const BRICK_STAIRS: BlockId = BlockId(141);
+    pub const GREEN_LEAF: BlockId = BlockId(9);
+    pub const DARK_LEAF: BlockId = BlockId(15);
+    pub const LIGHT_LEAF: BlockId = BlockId(16);
+    pub const BRONZE_PLATE: BlockId = BlockId(29);
+    pub const FLINT_BRICK: BlockId = BlockId(40);
+    pub const GOLD_BAR: BlockId = BlockId(42);
+    pub const MITHRIL_PLATE: BlockId = BlockId(48);
+    pub const GLOWBELL_BLOOM: BlockId = BlockId(105);
+    pub const BASALT: BlockId = BlockId(118);
 
     /// Tous les blocs que posent les structures (pour vérifier qu'ils ont leur fiche)
-    pub const ALL: [(BlockId, &str); 31] = [
+    pub const ALL: [(BlockId, &str); 40] = [
         (IRON_PLATE, "ironPlate"),
         (STONE, "stone"),
         (WATER, "water"),
@@ -113,6 +123,15 @@ pub mod block {
         (COBBLE_STAIRS, "cobbleStoneStairs"),
         (BRICK_SLAB, "brickSlab"),
         (BRICK_STAIRS, "brickStairs"),
+        (GREEN_LEAF, "greenLeaf"),
+        (DARK_LEAF, "darkLeaf"),
+        (LIGHT_LEAF, "lightLeaf"),
+        (BRONZE_PLATE, "bronzePlate"),
+        (FLINT_BRICK, "flintBrick"),
+        (GOLD_BAR, "goldBar"),
+        (MITHRIL_PLATE, "mithrilPlate"),
+        (GLOWBELL_BLOOM, "glowbellBloom"),
+        (BASALT, "basalt"),
     ];
 }
 
@@ -128,6 +147,16 @@ fn facing(b: BlockId, back: Side) -> BlockId {
         Side::East => 3,
     };
     BlockId(b.0 | (rotation << BlockId::ROTATION_SHIFT))
+}
+
+/// Pan de toit : l'escalier `b` tourné vers `back`, ou `b` tel quel si ce n'est pas un escalier
+/// (toit de feuillage des Elfes des bois)
+fn roofing(b: BlockId, back: Side) -> BlockId {
+    if [PLANK_STAIRS, COBBLE_STAIRS, BRICK_STAIRS].contains(&b) {
+        facing(b, back)
+    } else {
+        b
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -292,8 +321,31 @@ pub struct Style {
 }
 
 impl Style {
-    /// Maison de village, selon le climat
-    fn village(biome: BiomeType, dice: &mut Dice) -> Style {
+    /// Maison de village, selon la culture et le climat
+    fn village(culture: Culture, biome: BiomeType, dice: &mut Dice) -> Style {
+        match culture {
+            Culture::Humains => Self::human_village(biome, dice),
+            // Pierre taillée ou silex, angles de pierre dure, toit d'ardoise et faîte de basalte
+            Culture::Nains => {
+                let wall = if dice.chance(0.4) { FLINT_BRICK } else { CUT_STONE };
+                Style { wall, corner: HARD_STONE, floor: CUT_STONE, foundation: HARD_STONE, roof: Some(COBBLE_STAIRS), ridge: BASALT }
+            }
+            // Bois clair, troncs aux angles, toit de feuillage vivant
+            Culture::ElfesDesBois => Self::sylvan(dice),
+            // Murs blanchis, angles de mithril, toit d'ardoise au faîte d'argent
+            Culture::HautsElfes => Style {
+                wall: WHITE_BRICK,
+                corner: MITHRIL_PLATE,
+                floor: PLANK,
+                foundation: CUT_STONE,
+                roof: Some(COBBLE_STAIRS),
+                ridge: MITHRIL_PLATE,
+            },
+        }
+    }
+
+    /// Maison de village humaine, selon le climat
+    fn human_village(biome: BiomeType, dice: &mut Dice) -> Style {
         match biome {
             BiomeType::Desert | BiomeType::Savanna => Style {
                 wall: WHITE_BRICK,
@@ -329,16 +381,154 @@ impl Style {
         }
     }
 
-    /// Maison de ville : briques, pierre taillée
-    fn town(biome: BiomeType, dice: &mut Dice) -> Style {
-        if matches!(biome, BiomeType::Desert | BiomeType::Savanna) {
-            return Style { wall: WHITE_BRICK, corner: CUT_STONE, floor: PLANK, foundation: CUT_STONE, roof: None, ridge: WHITE_BRICK };
+    /// Maison des Elfes des bois : panneaux ou rondins de bouleau, troncs de chêne, feuillage
+    fn sylvan(dice: &mut Dice) -> Style {
+        let wall = dice.pick(&[WOOD_PANEL, BIRCH_LOG, WOOD_PANEL]);
+        let corner = if wall == BIRCH_LOG { OAK_LOG } else { dice.pick(&[OAK_LOG, BIRCH_LOG]) };
+        let leaf = dice.pick(&[GREEN_LEAF, DARK_LEAF, LIGHT_LEAF]);
+        Style { wall, corner, floor: PLANK, foundation: OAK_LOG, roof: Some(leaf), ridge: leaf }
+    }
+
+    /// Maison de ville, selon la culture et le climat
+    fn town(culture: Culture, biome: BiomeType, dice: &mut Dice) -> Style {
+        match culture {
+            Culture::Humains => {
+                if matches!(biome, BiomeType::Desert | BiomeType::Savanna) {
+                    return Style { wall: WHITE_BRICK, corner: CUT_STONE, floor: PLANK, foundation: CUT_STONE, roof: None, ridge: WHITE_BRICK };
+                }
+                match dice.range(0, 3) {
+                    0 => Style { wall: BRICK, corner: CUT_STONE, floor: PLANK, foundation: CUT_STONE, roof: Some(COBBLE_STAIRS), ridge: COBBLE },
+                    1 => Style { wall: WHITE_BRICK, corner: OAK_LOG, floor: PLANK, foundation: COBBLE, roof: Some(BRICK_STAIRS), ridge: BRICK },
+                    _ => Style { wall: PLANK, corner: CUT_STONE, floor: WOOD_PANEL, foundation: COBBLE, roof: Some(BRICK_STAIRS), ridge: BRICK },
+                }
+            }
+            // Ville naine : pierre massive, angles de bronze ou de fer, terrasses de pierre
+            Culture::Nains => match dice.range(0, 3) {
+                0 => Style { wall: CUT_STONE, corner: BRONZE_PLATE, floor: CUT_STONE, foundation: HARD_STONE, roof: Some(COBBLE_STAIRS), ridge: BASALT },
+                1 => Style { wall: FLINT_BRICK, corner: CUT_STONE, floor: CUT_STONE, foundation: HARD_STONE, roof: Some(COBBLE_STAIRS), ridge: BRONZE_PLATE },
+                _ => Style { wall: HARD_STONE, corner: IRON_PLATE, floor: CUT_STONE, foundation: BASALT, roof: None, ridge: CUT_STONE },
+            },
+            Culture::ElfesDesBois => Self::sylvan(dice),
+            // Cité des Hauts Elfes : blanc, mithril et or
+            Culture::HautsElfes => {
+                let ridge = if dice.chance(0.5) { GOLD_BAR } else { MITHRIL_PLATE };
+                let corner = if dice.chance(0.5) { MITHRIL_PLATE } else { CUT_STONE };
+                Style { wall: WHITE_BRICK, corner, floor: PLANK, foundation: CUT_STONE, roof: Some(COBBLE_STAIRS), ridge }
+            }
         }
-        match dice.range(0, 3) {
-            0 => Style { wall: BRICK, corner: CUT_STONE, floor: PLANK, foundation: CUT_STONE, roof: Some(COBBLE_STAIRS), ridge: COBBLE },
-            1 => Style { wall: WHITE_BRICK, corner: OAK_LOG, floor: PLANK, foundation: COBBLE, roof: Some(BRICK_STAIRS), ridge: BRICK },
-            _ => Style { wall: PLANK, corner: CUT_STONE, floor: WOOD_PANEL, foundation: COBBLE, roof: Some(BRICK_STAIRS), ridge: BRICK },
+    }
+}
+
+/// Façon de bâtir d'une culture : hauteur des maisons, forme des toits
+#[derive(Debug, Clone, Copy)]
+struct Habits {
+    /// Chance qu'une maison ait un étage, au village et en ville
+    upstairs: (f64, f64),
+    /// Chance d'un toit à quatre pans
+    hip: f64,
+    /// Chance d'un porche
+    porch: f64,
+    /// Chance d'une forge au village
+    forge: f64,
+}
+
+impl Habits {
+    fn of(culture: Culture) -> Habits {
+        match culture {
+            Culture::Humains => Habits { upstairs: (0.15, 0.55), hip: 0.35, porch: 0.3, forge: 0.6 },
+            // Maisons basses et trapues, une forge partout
+            Culture::Nains => Habits { upstairs: (0.05, 0.25), hip: 0.8, porch: 0.1, forge: 1.0 },
+            Culture::ElfesDesBois => Habits { upstairs: (0.25, 0.5), hip: 0.5, porch: 0.6, forge: 0.3 },
+            // Demeures élancées, toits pointus
+            Culture::HautsElfes => Habits { upstairs: (0.4, 0.85), hip: 0.75, porch: 0.35, forge: 0.4 },
         }
+    }
+}
+
+/// Matériaux des remparts, des tours et des lampadaires d'une culture
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Masonry {
+    /// Corps du mur
+    pub wall: BlockId,
+    /// Pierres ou rondins semés dans le mur
+    pub accent: BlockId,
+    /// Créneaux, linteau des portes, haut des tours
+    pub cap: BlockId,
+    /// Plancher du haut des tours
+    pub deck: BlockId,
+    /// Poteau des lampadaires
+    pub post: BlockId,
+    /// Lumière au sommet des lampadaires
+    pub light: BlockId,
+    /// Palissade de pieux plutôt que mur crénelé
+    pub palisade: bool,
+    /// Flèche coiffant les tours (`None` : terrasse crénelée)
+    pub spire: Option<BlockId>,
+    /// Hauteur du rempart et des tours
+    pub height: i32,
+    pub tower_height: i32,
+}
+
+impl Masonry {
+    pub fn of(culture: Culture) -> Masonry {
+        match culture {
+            Culture::Humains => Masonry {
+                wall: COBBLE,
+                accent: HARD_STONE,
+                cap: CUT_STONE,
+                deck: PLANK,
+                post: OAK_LOG,
+                light: TORCH,
+                palisade: false,
+                spire: None,
+                height: 5,
+                tower_height: 9,
+            },
+            // Haut mur de pierre dure, cerclé de bronze
+            Culture::Nains => Masonry {
+                wall: HARD_STONE,
+                accent: BASALT,
+                cap: CUT_STONE,
+                deck: CUT_STONE,
+                post: CUT_STONE,
+                light: TORCH,
+                palisade: false,
+                spire: None,
+                height: 6,
+                tower_height: 10,
+            },
+            // Palissade de troncs, tours de guet coiffées de feuillage
+            Culture::ElfesDesBois => Masonry {
+                wall: OAK_LOG,
+                accent: BIRCH_LOG,
+                cap: OAK_LOG,
+                deck: PLANK,
+                post: BIRCH_LOG,
+                light: GLOWBELL_BLOOM,
+                palisade: true,
+                spire: Some(DARK_LEAF),
+                height: 5,
+                tower_height: 9,
+            },
+            // Mur blanc, couronne de mithril, flèches de cristal
+            Culture::HautsElfes => Masonry {
+                wall: WHITE_BRICK,
+                accent: CUT_STONE,
+                cap: MITHRIL_PLATE,
+                deck: PLANK,
+                post: MITHRIL_PLATE,
+                light: TORCH,
+                palisade: false,
+                spire: Some(CRYSTAL),
+                height: 5,
+                tower_height: 11,
+            },
+        }
+    }
+
+    /// Plus haut niveau (exclu) d'une tour au-dessus de son plancher
+    fn tower_top(&self) -> i32 {
+        self.tower_height + if self.spire.is_some() { 4 } else { 1 }
     }
 }
 
@@ -739,7 +929,7 @@ impl House {
             0 => Some(self.style.ridge),
             1 if (x, z) == (cx, cz) => Some(self.style.ridge),
             1 => Some(match self.style.roof {
-                Some(stairs) if middle => facing(stairs, if x < cx { Side::East } else if x > cx { Side::West } else if z < cz { Side::South } else { Side::North }),
+                Some(stairs) if middle => roofing(stairs, if x < cx { Side::East } else if x > cx { Side::West } else if z < cz { Side::South } else { Side::North }),
                 _ => BlockId::AIR,
             }),
             2 if (x, z) == (cx, cz) => Some(COBBLE_SLAB),
@@ -771,7 +961,7 @@ impl House {
 
     fn roof_block(&self, rising: Option<Side>) -> BlockId {
         match (self.style.roof, rising) {
-            (Some(stairs), Some(side)) => facing(stairs, side),
+            (Some(stairs), Some(side)) => roofing(stairs, side),
             _ => self.style.ridge,
         }
     }
@@ -1078,14 +1268,14 @@ pub enum Piece {
     Well { rect: Rect, floor: i32 },
     /// Fontaine de 5 × 5, une colonne au milieu
     Fountain { rect: Rect, floor: i32 },
-    /// Lampadaire : un poteau et une torche
-    Lamp { x: i32, z: i32 },
-    /// Pan de rempart d'un bloc d'épaisseur, crénelé, qui suit le terrain
-    Rampart { rect: Rect },
+    /// Lampadaire : un poteau et une lumière
+    Lamp { x: i32, z: i32, masonry: Masonry },
+    /// Pan de rempart d'un bloc d'épaisseur, crénelé (ou palissade de pieux), qui suit le terrain
+    Rampart { rect: Rect, masonry: Masonry },
     /// Porte de ville percée dans le rempart
-    Gate { rect: Rect },
+    Gate { rect: Rect, masonry: Masonry },
     /// Tour d'angle du rempart
-    Tower { rect: Rect, floor: i32 },
+    Tower { rect: Rect, floor: i32, masonry: Masonry },
     RuinHouse(RuinHouse),
     Temple(Temple),
     RuinTower(RuinTower),
@@ -1099,13 +1289,13 @@ impl Piece {
             | Piece::Field { rect, .. }
             | Piece::Well { rect, .. }
             | Piece::Fountain { rect, .. }
-            | Piece::Rampart { rect }
-            | Piece::Gate { rect }
+            | Piece::Rampart { rect, .. }
+            | Piece::Gate { rect, .. }
             | Piece::Tower { rect, .. } => *rect,
             Piece::House(house) => house.rect(),
             Piece::Forge(forge) => forge.foot,
             Piece::Stall(stall) => stall.rect,
-            Piece::Lamp { x, z } => Rect::sized(*x, *z, 1, 1),
+            Piece::Lamp { x, z, .. } => Rect::sized(*x, *z, 1, 1),
             Piece::RuinHouse(r) => r.foot,
             Piece::Temple(t) => t.foot,
             Piece::RuinTower(t) => Rect::around(t.center.0, t.center.1, t.radius),
@@ -1119,21 +1309,18 @@ impl Piece {
             Piece::Paving { .. } => ground - 1..ground,
             Piece::Field { .. } => ground - 1..ground + 1,
             Piece::Lamp { .. } => ground..ground + 3,
-            Piece::Rampart { .. } | Piece::Gate { .. } => ground - 1..ground + Self::RAMPART_HEIGHT + 1,
+            Piece::Rampart { masonry, .. } | Piece::Gate { masonry, .. } => ground - 1..ground + masonry.height + 1,
             Piece::House(h) => span(h.floor, 1, h.top()),
             Piece::Forge(forge) => span(forge.floor, 1, forge.top()),
             Piece::Stall(_) => ground - 1..ground + 3,
             Piece::Well { floor, .. } => span(*floor, 5, floor + 4),
             Piece::Fountain { floor, .. } => span(*floor, 3, floor + 3),
-            Piece::Tower { floor, .. } => span(*floor, 1, floor + Self::TOWER_HEIGHT + 1),
+            Piece::Tower { floor, masonry, .. } => span(*floor, 1, floor + masonry.tower_top()),
             Piece::RuinHouse(r) => span(r.floor, 1, r.top()),
             Piece::Temple(t) => span(t.floor, 3, t.top()),
             Piece::RuinTower(t) => span(t.floor, 1, t.top()),
         }
     }
-
-    const RAMPART_HEIGHT: i32 = 5;
-    const TOWER_HEIGHT: i32 = 9;
 
     fn block(&self, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
         match self {
@@ -1201,58 +1388,78 @@ impl Piece {
                 }
                 (y < ground || y == f).then_some(BlockId::AIR)
             }
-            Piece::Lamp { .. } => match y - ground {
-                0 | 1 => Some(OAK_LOG),
-                2 => Some(TORCH),
+            Piece::Lamp { masonry, .. } => match y - ground {
+                0 | 1 => Some(masonry.post),
+                2 => Some(masonry.light),
                 _ => None,
             },
-            Piece::Rampart { .. } => {
+            Piece::Rampart { masonry: m, .. } => {
                 let level = y - ground;
                 if level < 0 {
-                    return (level == -1).then_some(COBBLE);
+                    return (level == -1).then_some(if m.palisade { m.wall } else { COBBLE });
                 }
-                if level < Self::RAMPART_HEIGHT {
-                    return Some(if (x * 7 + y * 3 + z * 5).rem_euclid(11) == 0 { HARD_STONE } else { COBBLE });
+                if m.palisade {
+                    // Pieux jointifs, un sur deux dépassant en pointe
+                    if level < m.height {
+                        return Some(if (x + z).rem_euclid(5) == 0 { m.accent } else { m.wall });
+                    }
+                    return (level == m.height && (x + z) % 2 == 0).then_some(m.cap);
                 }
-                (level == Self::RAMPART_HEIGHT && (x + z) % 2 == 0).then_some(COBBLE)
+                if level < m.height {
+                    return Some(if (x * 7 + y * 3 + z * 5).rem_euclid(11) == 0 { m.accent } else { m.wall });
+                }
+                (level == m.height && (x + z) % 2 == 0).then_some(m.cap)
             }
-            Piece::Gate { .. } => {
+            Piece::Gate { masonry: m, .. } => {
                 let level = y - ground;
                 match level {
-                    -1 => Some(COBBLE),
+                    -1 => Some(if m.palisade { m.wall } else { COBBLE }),
                     0..=2 => Some(BlockId::AIR),
-                    3 => Some(CUT_STONE),
-                    4 => Some(COBBLE),
-                    l if l == Self::RAMPART_HEIGHT => ((x + z) % 2 == 0).then_some(COBBLE),
+                    3 => Some(m.cap),
+                    l if l < m.height => Some(m.wall),
+                    l if l == m.height => ((x + z) % 2 == 0).then_some(m.cap),
                     _ => None,
                 }
             }
-            Piece::Tower { rect, floor } => {
+            Piece::Tower { rect, floor, masonry: m } => {
                 let f = *floor;
-                let h = Self::TOWER_HEIGHT;
+                let h = m.tower_height;
                 if y < f - 1 {
-                    return (y >= ground).then_some(COBBLE);
+                    return (y >= ground).then_some(m.wall);
                 }
                 if y == f - 1 {
-                    return Some(COBBLE);
+                    return Some(m.wall);
                 }
                 let level = y - f;
+                let (cx, cz) = rect.center();
+                // Flèche : pyramide qui se resserre au-dessus du chemin de ronde, et sa pointe
+                if let (Some(spire), true) = (m.spire, level >= h) {
+                    let ring = (x - cx).abs().max((z - cz).abs());
+                    let k = level - h;
+                    let width = (rect.width() / 2 - k).max(0);
+                    if ring <= width && k < 3 {
+                        return Some(if k == 0 && rect.on_edge(x, z) { m.cap } else { spire });
+                    }
+                    if (x, z) == (cx, cz) && k == 3 {
+                        return Some(spire);
+                    }
+                    return (y < ground).then_some(BlockId::AIR);
+                }
                 if rect.on_edge(x, z) {
                     if level < h {
                         // Meurtrières au milieu de chaque côté
-                        let (cx, cz) = rect.center();
                         if (level == 3 || level == 6) && !rect.on_corner(x, z) && (x == cx || z == cz) {
                             return Some(BlockId::AIR);
                         }
-                        return Some(if level == h - 1 { CUT_STONE } else { COBBLE });
+                        return Some(if level == h - 1 { m.cap } else if rect.on_corner(x, z) && m.palisade { m.accent } else { m.wall });
                     }
                     if level == h {
-                        return Some(if (x + z) % 2 == 0 { COBBLE } else { BlockId::AIR });
+                        return Some(if (x + z) % 2 == 0 { m.cap } else { BlockId::AIR });
                     }
                     return (y < ground).then_some(BlockId::AIR);
                 }
                 if level == h - 1 {
-                    return Some(PLANK);
+                    return Some(m.deck);
                 }
                 if level < h + 1 {
                     return Some(BlockId::AIR);
@@ -1326,6 +1533,8 @@ pub struct Settlement {
     pub center: (i32, i32),
     /// Biome du centre, qui a choisi les matériaux
     pub biome: BiomeType,
+    /// Culture de la ville ou du village (`None` : ruines), qui a choisi son style et son peuple
+    pub culture: Option<Culture>,
     /// Toutes les colonnes que le plan peut changer
     pub bounds: Rect,
     /// Plus haut bloc (exclu) que le plan pose
@@ -1363,6 +1572,16 @@ impl Settlement {
     /// rien d'autre, un arbre par exemple, ne devrait pousser)
     pub fn occupies(&self, x: i32, z: i32, margin: i32) -> bool {
         self.bounds.expand(margin).contains(x, z) && self.pieces.iter().any(|p| p.rect().expand(margin).contains(x, z))
+    }
+
+    /// Culture du `n`-ième habitant : celle de la ville le plus souvent (`culture::NATIVE_SHARE`),
+    /// parfois une autre. Ne dépend que de l'établissement et de `n`. Des ruines n'ont pas
+    /// d'habitants : on y prend des Humains.
+    pub fn resident_culture(&self, n: u64) -> Culture {
+        let home = self.culture.unwrap_or(Culture::Humains);
+        let seed = mix(n ^ ((face_index(self.face) as u64) << 56) ^ 0x4AB1_7A47);
+        let h = hash2(seed, self.center.0, self.center.1);
+        home.resident(unit(h), unit(mix(h ^ 0x07E5)))
     }
 }
 
@@ -1492,6 +1711,8 @@ struct Planner<'a> {
     taken: Vec<Rect>,
     /// Bouts de rues où s'attachent les chemins (voir `Settlement::exits`)
     exits: Vec<((i32, i32), Side)>,
+    /// Culture de la ville ou du village (`None` : ruines)
+    culture: Option<Culture>,
 }
 
 impl<'a> Planner<'a> {
@@ -1571,7 +1792,7 @@ impl<'a> Planner<'a> {
         // Les pièces qui suivent le terrain restent à quelques blocs du relief : le plus haut bloc est
         // celui d'un bâtiment
         let top = self.pieces.iter().map(piece_floor_top).max()?;
-        Some(Settlement { kind, face: self.face, center, biome, bounds, top, pieces: self.pieces, exits: self.exits })
+        Some(Settlement { kind, face: self.face, center, biome, culture: self.culture, bounds, top, pieces: self.pieces, exits: self.exits })
     }
 }
 
@@ -1582,7 +1803,7 @@ fn piece_floor_top(piece: &Piece) -> i32 {
         Piece::Forge(f) => f.top(),
         Piece::Well { floor, .. } => floor + 4,
         Piece::Fountain { floor, .. } => floor + 3,
-        Piece::Tower { floor, .. } => floor + Piece::TOWER_HEIGHT + 1,
+        Piece::Tower { floor, masonry, .. } => floor + masonry.tower_top(),
         Piece::RuinHouse(r) => r.top(),
         Piece::Temple(t) => t.top(),
         Piece::RuinTower(t) => t.top(),
@@ -1694,7 +1915,8 @@ fn plan_cell(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
             if !site_fits(generator, face, x, z, kind.radius(), step, kind) {
                 continue;
             }
-            let planner = Planner { generator, face, area: cell.expand(-2), pieces: Vec::new(), taken: Vec::new(), exits: Vec::new() };
+            let culture = (kind != SettlementKind::Ruins).then(|| settlement_culture(generator, face, (x, z), biome));
+            let planner = Planner { generator, face, area: cell.expand(-2), pieces: Vec::new(), taken: Vec::new(), exits: Vec::new(), culture };
             let settlement = match kind {
                 SettlementKind::Town => plan_town(planner, (x, z), biome, &mut dice),
                 SettlementKind::Village => plan_village(planner, (x, z), biome, &mut dice),
@@ -1708,10 +1930,36 @@ fn plan_cell(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
     None
 }
 
+/// Culture d'une ville ou d'un village dont le centre est en `center`, au climat `biome` : tirée
+/// de sa propre graine (le plan n'en dépend pas), penchant vers celle de son royaume, un carré de
+/// `REALM_REGIONS` × `REALM_REGIONS` régions
+fn settlement_culture(generator: &PlanetWorldGenerator, face: PlanetFace, center: (i32, i32), biome: BiomeType) -> Culture {
+    let seed = generator.planet.seed ^ 0xC017_0BE5_0000_0000 ^ ((face_index(face) as u64) << 40);
+    let realm_size = REALM_REGIONS * REGION_BLOCKS;
+    let realm = hash2(seed ^ 0x8EA1, center.0.div_euclid(realm_size), center.1.div_euclid(realm_size));
+    let realm = Culture::ALL[(realm % Culture::ALL.len() as u64) as usize];
+    Culture::choose(biome, realm, unit(hash2(seed ^ 0xC1, center.0, center.1)))
+}
+
+/// Côté d'un royaume, en régions : ses villes penchent vers une même culture
+const REALM_REGIONS: i32 = 3;
+
+/// Pavé des rues d'une culture
+fn street_block(culture: Culture, biome: BiomeType, town: bool) -> BlockId {
+    match culture {
+        Culture::Humains if town => COBBLE,
+        Culture::Humains if matches!(biome, BiomeType::Desert | BiomeType::Savanna | BiomeType::Beach) => COBBLE,
+        Culture::Humains => GRAVEL,
+        Culture::Nains => if town { CUT_STONE } else { COBBLE },
+        Culture::ElfesDesBois => GRAVEL,
+        Culture::HautsElfes => if town { CUT_STONE } else { GRAVEL },
+    }
+}
+
 /// Maison ordinaire tirée au sort : toit à deux ou quatre pans, cheminée, porche
-fn random_home(dice: &mut Dice, storeys: i32, style: Style, porch: f64) -> House {
+fn random_home(dice: &mut Dice, storeys: i32, style: Style, porch: f64, hip: f64) -> House {
     let mut house = House::home(Rect::sized(0, 0, 1, 1), 0, storeys, Side::North, style);
-    if style.roof.is_some() && dice.chance(0.35) {
+    if style.roof.is_some() && dice.chance(hip) {
         house.roof = Roof::Hip;
     }
     house.chimney = dice.chance(0.35);
@@ -1777,7 +2025,9 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
     let well = Rect::around(x, z, 1);
     let floor = floor_for(p.generator, p.face, &well, 4)?;
     p.take(Piece::Well { rect: well, floor }, 0);
-    let path = if matches!(biome, BiomeType::Desert | BiomeType::Savanna | BiomeType::Beach) { COBBLE } else { GRAVEL };
+    let culture = p.culture.unwrap_or(Culture::Humains);
+    let (habits, masonry) = (Habits::of(culture), Masonry::of(culture));
+    let path = street_block(culture, biome, false);
     p.take(Piece::Paving { rect: Rect::around(x, z, 3), block: path }, 0);
 
     // Deux à quatre chemins partent de la place
@@ -1786,7 +2036,7 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
         arms = vec![Side::West, Side::East];
     }
     // Une chapelle, une taverne et une forge (chacune pas toujours), posées en premier le long des chemins
-    let mut specials: Vec<Special> = [(Special::Church, 0.75), (Special::Tavern, 0.6), (Special::Forge, 0.6)]
+    let mut specials: Vec<Special> = [(Special::Church, 0.75), (Special::Tavern, 0.6), (Special::Forge, habits.forge)]
         .into_iter()
         .filter(|&(_, p)| dice.chance(p))
         .map(|(s, _)| s)
@@ -1809,7 +2059,7 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
                 let at = (x + dx * t, z + dz * t);
                 if let Some(&special) = specials.first() {
                     let (w, d) = special.size(dice, false);
-                    let style = Style::village(biome, dice);
+                    let style = Style::village(culture, biome, dice);
                     let placed = match special.house(dice, style) {
                         Some(house) => p.house_along(at, along_x, side, 1, w, d, house),
                         None => {
@@ -1826,9 +2076,9 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
                     continue;
                 }
                 let (w, d) = (dice.range(5, 9), dice.range(5, 8));
-                let style = Style::village(biome, dice);
-                let storeys = if dice.chance(0.15) { 2 } else { 1 };
-                let house = random_home(dice, storeys, style, 0.3);
+                let style = Style::village(culture, biome, dice);
+                let storeys = if dice.chance(habits.upstairs.0) { 2 } else { 1 };
+                let house = random_home(dice, storeys, style, habits.porch, habits.hip);
                 if p.house_along(at, along_x, side, 1, w, d, house) {
                     houses += 1;
                 }
@@ -1839,7 +2089,7 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
                 let lamp = if along_x { (x + dx * t, z + side) } else { (x + side, z + dz * t) };
                 let rect = Rect::sized(lamp.0, lamp.1, 1, 1);
                 if p.free(&rect) {
-                    p.take(Piece::Lamp { x: lamp.0, z: lamp.1 }, 0);
+                    p.take(Piece::Lamp { x: lamp.0, z: lamp.1, masonry }, 0);
                 }
             }
             t += dice.range(7, 10);
@@ -1881,7 +2131,7 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
             } else {
                 Side::South
             };
-            let mut style = Style::village(biome, dice);
+            let mut style = Style::village(culture, biome, dice);
             if style.roof.is_none() {
                 style.roof = Some(PLANK_STAIRS);
                 style.ridge = PLANK;
@@ -1905,6 +2155,9 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
     const STEP: i32 = 14;
     const HALF: i32 = 42;
     let walls = Rect::new(x - HALF, z - HALF, x + HALF + 1, z + HALF + 1);
+    let culture = p.culture.unwrap_or(Culture::Humains);
+    let (habits, masonry) = (Habits::of(culture), Masonry::of(culture));
+    let street = street_block(culture, biome, true);
 
     // Fontaine au milieu de la grand-place (posée en premier : elle passe avant le pavage)
     let fountain = Rect::around(x, z, 2);
@@ -1914,7 +2167,7 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
     for (tx, tz) in [(walls.x0, walls.z0), (walls.x1 - 1, walls.z0), (walls.x0, walls.z1 - 1), (walls.x1 - 1, walls.z1 - 1)] {
         let rect = Rect::around(tx, tz, 2);
         let floor = floor_for(p.generator, p.face, &rect, 6)?;
-        p.take(Piece::Tower { rect, floor }, 0);
+        p.take(Piece::Tower { rect, floor, masonry }, 0);
     }
     let gates = [
         Rect::new(x - 1, walls.z0, x + 2, walls.z0 + 1),
@@ -1923,7 +2176,7 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         Rect::new(walls.x1 - 1, z - 1, walls.x1, z + 2),
     ];
     for gate in gates {
-        p.take(Piece::Gate { rect: gate }, 0);
+        p.take(Piece::Gate { rect: gate, masonry }, 0);
     }
     p.exits.extend([
         ((x, walls.z0 - 1), Side::North),
@@ -1937,7 +2190,7 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         Rect::new(walls.x0, walls.z0, walls.x0 + 1, walls.z1),
         Rect::new(walls.x1 - 1, walls.z0, walls.x1, walls.z1),
     ] {
-        p.pieces.push(Piece::Rampart { rect });
+        p.pieces.push(Piece::Rampart { rect, masonry });
     }
     // Les remparts et leurs abords sont pris, l'intérieur reste à bâtir
     for side in [
@@ -1963,7 +2216,7 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
     }
     // Grand-place pavée autour de la fontaine
     let plaza = Rect::around(x, z, STEP - 2);
-    p.pieces.push(Piece::Paving { rect: plaza, block: COBBLE });
+    p.pieces.push(Piece::Paving { rect: plaza, block: street });
     p.taken.push(plaza.expand(1));
     // Rues pavées
     let mut offset = -(HALF / STEP) * STEP;
@@ -1971,9 +2224,9 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         if offset.abs() < HALF {
             let street_x = Rect::new(walls.x0 + 1, z + offset - 1, walls.x1 - 1, z + offset + 2);
             let street_z = Rect::new(x + offset - 1, walls.z0 + 1, x + offset + 2, walls.z1 - 1);
-            for street in [street_x, street_z] {
-                p.pieces.push(Piece::Paving { rect: street, block: COBBLE });
-                p.taken.push(street);
+            for lane in [street_x, street_z] {
+                p.pieces.push(Piece::Paving { rect: lane, block: street });
+                p.taken.push(lane);
             }
         }
         offset += STEP;
@@ -2017,7 +2270,7 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         } else {
             Side::South
         };
-        let style = Style::town(biome, dice);
+        let style = Style::town(culture, biome, dice);
         // Emprise de `w` (le long de la rue) sur `d`, contre la rue de la porte, au hasard le long d'elle
         let place = |dice: &mut Dice, w: i32, d: i32, back: i32| {
             let along = dice.range(0, 10 - w);
@@ -2050,10 +2303,10 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         if !dice.chance(0.9) {
             continue;
         }
-        let storeys = if dice.chance(0.55) { 2 } else { 1 };
+        let storeys = if dice.chance(habits.upstairs.1) { 2 } else { 1 };
         // Maison de 5 à 9 de côté, avant-toits compris dans le pâté
         let (w, d) = (dice.range(5, 10), dice.range(5, 10));
-        let mut house = random_home(dice, storeys, style, 0.2);
+        let mut house = random_home(dice, storeys, style, 0.2 * habits.porch / 0.3, habits.hip);
         let back = if house.porch { 2 } else { dice.range(0, 2) };
         house.foot = place(dice, w, d, back);
         house.door = door;
@@ -2070,7 +2323,7 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         let mut lz = -(HALF / STEP) * STEP + STEP;
         while lz < HALF {
             if (lx, lz) != (0, 0) && dice.chance(0.7) {
-                p.pieces.push(Piece::Lamp { x: x + lx + 1, z: z + lz + 1 });
+                p.pieces.push(Piece::Lamp { x: x + lx + 1, z: z + lz + 1, masonry });
             }
             lz += STEP;
         }
@@ -2276,10 +2529,86 @@ mod tests {
     }
 
     #[test]
+    fn test_every_town_and_village_has_a_culture_that_shapes_it() {
+        let generator = generator(2026);
+        let all = all_settlements(&generator);
+        let mut seen = std::collections::HashMap::new();
+        for s in &all {
+            if s.kind == SettlementKind::Ruins {
+                assert_eq!(s.culture, None, "des ruines sans peuple");
+                continue;
+            }
+            let culture = s.culture.expect("une culture par ville et village");
+            *seen.entry(culture).or_insert(0) += 1;
+            let masonry = Masonry::of(culture);
+            for piece in &s.pieces {
+                match piece {
+                    Piece::Rampart { masonry: m, .. } | Piece::Gate { masonry: m, .. } | Piece::Tower { masonry: m, .. } | Piece::Lamp { masonry: m, .. } => {
+                        assert_eq!(*m, masonry, "{} {culture:?} : remparts d'une autre culture", s.kind.name())
+                    }
+                    Piece::House(h) if h.usage == Use::Home && culture == Culture::ElfesDesBois => {
+                        assert!(matches!(h.style.roof, Some(GREEN_LEAF | DARK_LEAF | LIGHT_LEAF)), "toit de feuillage elfe")
+                    }
+                    Piece::House(h) if h.usage == Use::Home && culture == Culture::HautsElfes => assert_eq!(h.style.wall, WHITE_BRICK),
+                    Piece::House(h) if h.usage == Use::Home && culture == Culture::Nains => {
+                        assert!([CUT_STONE, FLINT_BRICK, HARD_STONE].contains(&h.style.wall), "maison naine en {:?}", h.style.wall)
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Les quatre peuples se partagent la planète
+        assert_eq!(seen.len(), 4, "{seen:?}");
+        // Le tirage est stable : la même graine redonne les mêmes cultures
+        let again = generator2026_cultures();
+        assert_eq!(again, all.iter().map(|s| s.culture).collect::<Vec<_>>());
+    }
+
+    fn generator2026_cultures() -> Vec<Option<Culture>> {
+        let generator = generator(2026);
+        all_settlements(&generator).into_iter().map(|s| s.culture).collect()
+    }
+
+    #[test]
+    fn test_most_residents_share_the_culture_of_their_town() {
+        let generator = generator(2026);
+        let all = all_settlements(&generator);
+        let town = all.iter().find(|s| s.kind != SettlementKind::Ruins).unwrap();
+        let home = town.culture.unwrap();
+        let residents: Vec<Culture> = (0..400).map(|n| town.resident_culture(n)).collect();
+        let natives = residents.iter().filter(|&&c| c == home).count();
+        assert!((300..390).contains(&natives), "{natives} natifs sur 400");
+        assert!(residents.iter().any(|&c| c != home), "quelques étrangers");
+        assert_eq!(residents[17], town.resident_culture(17));
+    }
+
+    #[test]
+    fn test_spires_and_palisades_stand_on_towers() {
+        for culture in Culture::ALL {
+            let masonry = Masonry::of(culture);
+            let rect = Rect::around(0, 0, 2);
+            let tower = Piece::Tower { rect, floor: 50, masonry };
+            let span = tower.span(50);
+            assert!(span.end >= 50 + masonry.tower_top());
+            let block = |x, y, z| tower.block(x, y, z, 50).unwrap_or(BlockId::AIR);
+            assert_eq!(block(2, 50, 0), masonry.wall, "{culture:?}");
+            assert_eq!(block(0, 50 + masonry.tower_height - 1, 0), masonry.deck);
+            match masonry.spire {
+                Some(spire) => assert_eq!(block(0, 50 + masonry.tower_height + 3, 0), spire, "{culture:?} : pointe"),
+                None => assert!(block(0, 50 + masonry.tower_height + 1, 0).is_air()),
+            }
+            // Créneaux ou pieux, un sur deux
+            let wall = Piece::Rampart { rect: Rect::sized(0, 0, 4, 1), masonry };
+            let top: Vec<bool> = (0..4).map(|x| wall.block(x, 50 + masonry.height, 0, 50).is_some()).collect();
+            assert_eq!(top, [true, false, true, false]);
+        }
+    }
+
+    #[test]
     fn test_houses_have_walls_roof_and_open_door() {
         let generator = generator(2026);
         let village = all_settlements(&generator).into_iter().find(|s| s.kind == SettlementKind::Village).expect("un village");
-        let house = village.pieces.iter().find_map(|p| if let Piece::House(h) = p { Some(*h) } else { None }).unwrap();
+        let house = village.pieces.iter().find_map(|p| if let Piece::House(h) = p { (h.usage == Use::Home).then_some(*h) } else { None }).unwrap();
         let face = village.face;
         let block = |x: i32, y: i32, z: i32| generator.block_at(face, x, y, z);
         let (dx, dz) = house.door_column();
