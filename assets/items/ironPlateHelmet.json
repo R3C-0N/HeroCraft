@@ -3,6 +3,7 @@
   "name": "Heaume de fer",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/ironPlateHelmet.png",
   "stats": {"Protection": 10, "Durabilité": 900},
   "recipes": [

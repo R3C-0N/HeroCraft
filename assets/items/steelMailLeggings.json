@@ -3,6 +3,7 @@
   "name": "Braies d'acier",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/steelMailLeggings.png",
   "stats": {"Protection": 12, "Durabilité": 2000},
   "recipes": [

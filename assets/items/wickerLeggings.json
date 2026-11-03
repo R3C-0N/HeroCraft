@@ -3,6 +3,7 @@
   "name": "Jambières en osier",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/wickerLeggings.png",
   "stats": {"Protection": 1, "Durabilité": 80},
   "recipes": [

@@ -3,6 +3,7 @@
   "name": "Cuirasse de fer",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/ironPlateChestplate.png",
   "stats": {"Protection": 19, "Durabilité": 900},
   "recipes": [

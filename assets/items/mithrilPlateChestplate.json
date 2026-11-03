@@ -3,6 +3,7 @@
   "name": "Cuirasse de mithril",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/mithrilPlateChestplate.png",
   "stats": {"Protection": 23, "Durabilité": 3000},
   "recipes": [

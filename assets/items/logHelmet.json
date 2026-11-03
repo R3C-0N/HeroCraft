@@ -3,6 +3,7 @@
   "name": "Casque en rondins",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/logHelmet.png",
   "stats": {"Protection": 3, "Durabilité": 80},
   "recipes": [

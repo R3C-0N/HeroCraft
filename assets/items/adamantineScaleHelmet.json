@@ -3,6 +3,7 @@
   "name": "Camail d'adamantine",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/adamantineScaleHelmet.png",
   "stats": {"Protection": 15, "Durabilité": 3000},
   "recipes": [

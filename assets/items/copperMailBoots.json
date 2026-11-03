@@ -3,6 +3,7 @@
   "name": "Bottines de cuivre",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/copperMailBoots.png",
   "stats": {"Protection": 3, "Durabilité": 300},
   "recipes": [

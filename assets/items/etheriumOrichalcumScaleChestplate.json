@@ -3,6 +3,7 @@
   "name": "Brigandine d'étherium (orichalque)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/etheriumOrichalcumScaleChestplate.png",
   "stats": {"Protection": 35, "Durabilité": 5000},
   "recipes": [

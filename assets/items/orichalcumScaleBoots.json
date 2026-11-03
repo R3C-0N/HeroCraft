@@ -3,6 +3,7 @@
   "name": "Bottes d'orichalque",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/orichalcumScaleBoots.png",
   "stats": {"Protection": 11, "Durabilité": 3000},
   "recipes": [

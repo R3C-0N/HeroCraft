@@ -3,6 +3,7 @@
   "name": "Grèves de fer",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/ironPlateLeggings.png",
   "stats": {"Protection": 14, "Durabilité": 900},
   "recipes": [

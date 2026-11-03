@@ -3,6 +3,7 @@
   "name": "Braies de cuivre",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/copperMailLeggings.png",
   "stats": {"Protection": 5, "Durabilité": 300},
   "recipes": [

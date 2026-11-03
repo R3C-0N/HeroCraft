@@ -3,6 +3,7 @@
   "name": "Pourpoint de cuivre",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/copperMailChestplate.png",
   "stats": {"Protection": 7, "Durabilité": 300},
   "recipes": [

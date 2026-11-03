@@ -3,6 +3,7 @@
   "name": "Pourpoint d'adamantine",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/adamantineMailChestplate.png",
   "stats": {"Protection": 22, "Durabilité": 3000},
   "recipes": [
