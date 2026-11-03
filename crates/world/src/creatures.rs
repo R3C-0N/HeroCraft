@@ -50,6 +50,10 @@ use crate::population::{PopulationSave, SleepingCreature, ZoneKey, ZONE_BLOCKS};
 pub const CREATURE_RANGE_BLOCKS: f32 = 96.0;
 /// Demi-diagonale d'une zone, en blocs : une zone s'éveille dès qu'une partie peut être à portée
 const ZONE_HALF_DIAGONAL: f32 = ZONE_BLOCKS as f32 * std::f32::consts::FRAC_1_SQRT_2;
+/// Zones par côté d'un groupe de zones (recherche des zones proches des joueurs)
+const ZONE_GROUP: i32 = 8;
+/// Demi-diagonale d'un groupe de zones, en blocs
+const ZONE_GROUP_HALF_DIAGONAL: f32 = (ZONE_GROUP * ZONE_BLOCKS) as f32 * std::f32::consts::FRAC_1_SQRT_2;
 /// Marge avant qu'une zone éveillée ne se rendorme, en blocs : un joueur qui fait les cent pas à la
 /// limite ne la réveille et ne l'endort pas sans cesse
 const SLEEP_MARGIN_BLOCKS: f32 = 24.0;
@@ -353,8 +357,10 @@ pub struct CreatureWorld {
     /// Zones peuplées endormies, avec leurs bêtes. Une zone ni éveillée ni ici n'a encore jamais été
     /// peuplée.
     sleeping: HashMap<ZoneKey, Vec<SleepingCreature>>,
-    /// Direction du centre de chaque zone depuis le centre de la planète
-    zone_centers: Vec<(ZoneKey, Vec3)>,
+    /// Direction du centre de chaque zone depuis le centre de la planète, par groupes de
+    /// `ZONE_GROUP` × `ZONE_GROUP` zones (direction du centre du groupe, zones du groupe) : la
+    /// recherche des zones proches d'un joueur écarte d'un coup les groupes lointains
+    zone_groups: Vec<(Vec3, Vec<(ZoneKey, Vec3)>)>,
     /// Prochain identifiant d'une bête posée à la main
     next_id: u64,
     rng: StdRng,
@@ -399,12 +405,22 @@ impl CreatureWorld {
             .collect();
         let geometry = BlockGeometry::new(base_radius);
         let half = ZONE_BLOCKS as f64 / 2.0;
-        let zone_centers = ZoneKey::all()
-            .map(|zone| {
-                let (x, z) = ((zone.x * ZONE_BLOCKS) as f64 + half, (zone.z * ZONE_BLOCKS) as f64 + half);
-                (zone, geometry.corner(zone.face, x, 0.0, z).normalize().as_vec3())
+        let mut groups: HashMap<(PlanetFace, i32, i32), Vec<(ZoneKey, Vec3)>> = HashMap::new();
+        for zone in ZoneKey::all() {
+            let (x, z) = ((zone.x * ZONE_BLOCKS) as f64 + half, (zone.z * ZONE_BLOCKS) as f64 + half);
+            let center = geometry.corner(zone.face, x, 0.0, z).normalize().as_vec3();
+            groups.entry((zone.face, zone.x / ZONE_GROUP, zone.z / ZONE_GROUP)).or_default().push((zone, center));
+        }
+        let group_half = (ZONE_GROUP * ZONE_BLOCKS) as f64 / 2.0;
+        let mut zone_groups: Vec<(Vec3, Vec<(ZoneKey, Vec3)>)> = groups
+            .into_iter()
+            .map(|((face, gx, gz), zones)| {
+                let (x, z) = ((gx * ZONE_GROUP * ZONE_BLOCKS) as f64 + group_half, (gz * ZONE_GROUP * ZONE_BLOCKS) as f64 + group_half);
+                (geometry.corner(face, x, 0.0, z).normalize().as_vec3(), zones)
             })
             .collect();
+        // Ordre fixe (celui de `ZoneKey::all`) : les zones s'éveillent toujours dans le même ordre
+        zone_groups.sort_by_key(|(_, zones)| zones[0].0.index());
         Self {
             registry,
             spawn_table,
@@ -414,7 +430,7 @@ impl CreatureWorld {
             creatures: Vec::new(),
             awake: HashSet::new(),
             sleeping: HashMap::new(),
-            zone_centers,
+            zone_groups,
             next_id: MANUAL_ID_BASE,
             rng: StdRng::seed_from_u64(seed),
             sun_dir: None,
@@ -823,7 +839,13 @@ impl CreatureWorld {
         // Distance du joueur le plus proche au centre de chaque zone, à l'altitude du joueur
         let mut to_wake = Vec::new();
         let mut keep = HashSet::new();
-        for &(zone, center) in &self.zone_centers {
+        // Un groupe dont le centre est loin de tous les joueurs n'a aucune zone assez proche (marge
+        // de 1,5 pour l'étirement des cases vers les coins des faces)
+        let group_reach = sleep + 1.5 * ZONE_GROUP_HALF_DIAGONAL * block;
+        let near_groups = self.zone_groups.iter().filter(|(center, _)| {
+            players.iter().any(|p| (*center * p.length()).distance(*p) <= group_reach)
+        });
+        for &(zone, center) in near_groups.flat_map(|(_, zones)| zones) {
             let nearest = players.iter().map(|p| (center * p.length()).distance(*p)).fold(f32::INFINITY, f32::min);
             if nearest <= sleep && self.awake.contains(&zone) {
                 keep.insert(zone);
@@ -1383,9 +1405,11 @@ mod tests {
     fn grass_column(generator: &PlanetWorldGenerator, edits: &TerrainEdits) -> (BlockPos, Vec3) {
         let geometry = BlockGeometry::new(generator.base_radius());
         let mut query = TerrainQuery::new(generator, edits);
+        // Dans les prairies et les forêts, où vivent les bêtes de tous les tests
         (16..FACE_BLOCKS - 16)
             .step_by(23)
             .flat_map(|x| (16..FACE_BLOCKS - 16).step_by(23).map(move |z| (x, z)))
+            .filter(|&(x, z)| matches!(generator.sample_block_column(PlanetFace::PosZ, x, z).biome, BiomeType::Plains | BiomeType::Forest))
             .find_map(|(x, z)| {
                 let feet = surface_feet(&geometry, &mut query, PlanetFace::PosZ, x, z)?;
                 let top = query.support_top(PlanetFace::PosZ, x, z, WORLD_HEIGHT - 1);

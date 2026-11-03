@@ -20,7 +20,8 @@ const SKY_VIEW_SIZE: (u32, u32) = (192, 108);
 /// Volume de perspective aérienne : 32 tranches de distance de 32x32 directions, côte à côte
 const AERIAL_SIZE: (u32, u32) = (32 * 32, 32);
 
-/// Dimensions sur une planète de rayon 25, multipliées par l'échelle. Le bas de l'atmosphère est
+/// Dimensions sur le prototype de rayon 25 (1 024 blocs par face), multipliées par l'échelle en
+/// blocs (`herocraft_world::block_scale`). Le bas de l'atmosphère est
 /// le niveau de la mer ; les nuages flottent à 5 au-dessus, les plus hauts sommets à 9.6.
 const ATMOSPHERE_HEIGHT: f32 = 16.0;
 const RAYLEIGH_SCALE_HEIGHT: f32 = 2.0;
@@ -74,9 +75,11 @@ impl AtmosphereUniform {
     /// curseurs Brume (Mie), Soleil et Jour (gain de la lumière du ciel).
     pub fn new(planet_radius: f32, settings: &AtmosphereSettings, lighting: &LightingSettings, god_rays: bool) -> Self {
         let haze = lighting.fog_intensity;
-        let scale = planet_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
-        // Niveau de la mer : SEA_LEVEL_BLOCKS blocs de rayon × π/4 × 2/1024 au-dessus du rayon de base
-        let block = planet_radius * std::f32::consts::FRAC_PI_4 * (2.0 / 1024.0);
+        // Dimensions mesurées en blocs : le ciel vu du sol reste celui du prototype quelle que soit
+        // la taille de la planète (vue de l'espace, l'atmosphère est d'autant plus fine)
+        let scale = herocraft_world::block_scale(planet_radius as f64) as f32;
+        // Niveau de la mer : SEA_LEVEL_BLOCKS blocs de rayon × π/4 × 2/FACE_BLOCKS au-dessus du rayon de base
+        let block = planet_radius * std::f32::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f32);
         let sea_level = herocraft_world::generator::SEA_LEVEL_BLOCKS as f32 * block;
         let bottom_radius = planet_radius + sea_level;
         let h_r = RAYLEIGH_SCALE_HEIGHT * scale;
@@ -212,7 +215,7 @@ impl Atmosphere {
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Atmosphere Uniform Buffer"),
             contents: bytemuck::cast_slice(&[AtmosphereUniform::new(
-                50.0,
+                (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32,
                 &AtmosphereSettings::default(),
                 &LightingSettings::default(),
                 false,
@@ -471,7 +474,7 @@ impl Atmosphere {
             aerial,
             camera_lut_bind_group,
             lut_key: None,
-            wanted_key: AtmosphereUniform::new(50.0, &AtmosphereSettings::default(), &LightingSettings::default(), false).lut_key(),
+            wanted_key: AtmosphereUniform::new((herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32, &AtmosphereSettings::default(), &LightingSettings::default(), false).lut_key(),
             scene_layout,
             scene_bind_group,
             god_rays_trace_pipeline,
@@ -665,19 +668,23 @@ mod tests {
     fn test_atmosphere_scales_with_planet_and_whitens_noon_sun() {
         let settings = AtmosphereSettings::default();
         let lighting = LightingSettings::default();
-        let small = AtmosphereUniform::new(25.0, &settings, &lighting, true);
-        let big = AtmosphereUniform::new(50.0, &settings, &lighting, true);
+        let r = crate::camera::DEFAULT_RADIUS;
+        let small = AtmosphereUniform::new(r, &settings, &lighting, true);
+        let big = AtmosphereUniform::new(2.0 * r, &settings, &lighting, true);
         // Le bas de l'atmosphère est au niveau de la mer (100 blocs au-dessus du rayon de base)
-        assert!((small.bottom_radius - 25.0 - 3.835).abs() < 0.01, "{}", small.bottom_radius);
+        let block = herocraft_world::block_size(r as f64) as f32;
+        assert!((small.bottom_radius - r - 100.0 * block).abs() < 0.01, "{}", small.bottom_radius);
+        // Épaisseur mesurée en blocs : celle du prototype (16 × 2 unités de 1/13 de bloc)
+        assert!(((small.top_radius - small.bottom_radius) / block - 16.0 * 2.0 / 0.0767).abs() < 5.0);
         // Planète deux fois plus grande : atmosphère deux fois plus épaisse, coefficients deux fois plus faibles
         assert!(((big.top_radius - big.bottom_radius) / (small.top_radius - small.bottom_radius) - 2.0).abs() < 1e-4);
         assert!((small.rayleigh_scattering[2] / big.rayleigh_scattering[2] - 2.0).abs() < 1e-4);
         // L'éclairement hors atmosphère compense le bleu absorbé au zénith : plus fort en bleu
         assert!(small.sun_illuminance[2] > small.sun_illuminance[0]);
         // Les tables ne dépendent ni du soleil ni des rayons
-        let brighter = AtmosphereUniform::new(25.0, &settings, &LightingSettings { sun_intensity: 2.0, day_ambient: 1.5, ..lighting }, false);
+        let brighter = AtmosphereUniform::new(crate::camera::DEFAULT_RADIUS, &settings, &LightingSettings { sun_intensity: 2.0, day_ambient: 1.5, ..lighting }, false);
         assert_eq!(small.lut_key(), brighter.lut_key());
-        let hazier = AtmosphereUniform::new(25.0, &settings, &LightingSettings { fog_intensity: 2.0, ..lighting }, true);
+        let hazier = AtmosphereUniform::new(crate::camera::DEFAULT_RADIUS, &settings, &LightingSettings { fog_intensity: 2.0, ..lighting }, true);
         assert_ne!(small.lut_key(), hazier.lut_key());
     }
 }

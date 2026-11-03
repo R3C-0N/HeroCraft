@@ -65,7 +65,7 @@ pub struct ServerConfig {
 
 impl ServerConfig {
     pub fn new(bind: impl Into<String>, seed: u64) -> Self {
-        Self { bind: bind.into(), seed, save_dir: Some(PathBuf::from(format!("saves/serveur_monde_{seed}"))) }
+        Self { bind: bind.into(), seed, save_dir: Some(PathBuf::from(herocraft_world::save_dir_name("serveur_monde", seed))) }
     }
 }
 

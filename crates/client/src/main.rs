@@ -43,6 +43,7 @@ mod shaders;
 mod shadow;
 mod skills_screen;
 mod skinned_model;
+mod terrain_cull;
 mod ui;
 mod ui_skin;
 #[cfg(test)]
@@ -1196,13 +1197,13 @@ fn update_sound(
 
 /// Dossier de sauvegarde d'un monde solo (aussi celui du serveur qui l'ouvre au réseau local)
 fn solo_save_dir(seed: u64) -> String {
-    format!("saves/monde_{}", seed)
+    herocraft_world::save_dir_name("monde", seed)
 }
 
 /// Inventaire du joueur sur une planète : celui du monde solo, ou un inventaire à part pour la
 /// planète d'un serveur rejoint
 fn inventory_file(seed: u64, online: bool) -> std::path::PathBuf {
-    let dir = if online { format!("saves/en_ligne_{}", seed) } else { solo_save_dir(seed) };
+    let dir = if online { herocraft_world::save_dir_name("en_ligne", seed) } else { solo_save_dir(seed) };
     std::path::Path::new(&dir).join("inventaire.json")
 }
 

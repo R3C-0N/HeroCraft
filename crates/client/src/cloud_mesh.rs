@@ -95,7 +95,13 @@ impl CloudMeshGenerator {
     pub const CLOUD_HALF_DEPTH: f32 = 0.60;
 
     /// Nombre de secteurs par côté de face (au plus un groupe de nuages par secteur)
-    pub const SECTORS_PER_FACE: usize = 3;
+    /// 3 sur le prototype de 1 024 blocs par face. Sur une planète plus grande, la couche de nuages
+    /// (à altitude fixe en blocs) est relativement plus proche du sol et les secteurs y rétrécissent :
+    /// 3/4 de secteurs par bloc de face en plus gardent l'écart du prototype entre deux nuages
+    /// (330 blocs environ). Vers les coins des faces, où les secteurs se resserrent encore, les
+    /// nuages sont tirés plus petits (`sector_max_radius`) : deux nuages ne se touchent jamais.
+    pub const SECTORS_PER_FACE: usize =
+        if herocraft_world::FACE_SCALE <= 1.0 { 3 } else { (2.25 * herocraft_world::FACE_SCALE) as usize };
     /// Côté de la grille d'occupation d'un nuage
     pub const GRID: usize = 11;
     /// Taille d'une cellule de nuage
@@ -105,7 +111,8 @@ impl CloudMeshGenerator {
 
     pub fn generate_cloud_mesh(base_radius: f32, seed: u64) -> CloudMesh {
         herocraft_common::prof_scope!("clouds::generate_cloud_mesh");
-        let scale = base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
+        // Altitude et taille des nuages mesurées en blocs
+        let scale = herocraft_world::block_scale(base_radius as f64) as f32;
         let r_mid = base_radius + (Self::CLOUD_ALTITUDE_BOT + Self::CLOUD_ALTITUDE_TOP) * 0.5 * scale;
         let mut mesh = CloudMesh::default();
 
@@ -130,22 +137,25 @@ impl CloudMeshGenerator {
                 let mut rng = sector_hash;
 
                 // Rayon maximal d'un groupe pour ne jamais toucher les secteurs voisins
+                let max_radius = Self::sector_max_radius(face, sx, sy, r_mid, scale);
                 let mut mask = Self::random_mask(&mut rng);
                 for _ in 0..6 {
-                    if Self::mask_radius(mask) <= Self::MAX_RADIUS {
+                    if Self::mask_radius(mask) <= max_radius {
                         break;
                     }
                     mask = Self::random_mask(&mut rng);
                 }
-                if mask == 0 || Self::mask_radius(mask) > Self::MAX_RADIUS {
+                if mask == 0 || Self::mask_radius(mask) > max_radius {
                     continue;
                 }
 
                 // Centre du secteur dans [-0.9, 0.9] avec une légère gigue
-                let jitter_u = ((Self::next_rand(&mut rng) % 7) as f64 - 3.0) * 0.006;
-                let jitter_v = ((Self::next_rand(&mut rng) % 7) as f64 - 3.0) * 0.006;
-                let u_c = ((sx as f64 + 0.5) / sectors as f64 * 2.0 - 1.0) * 0.90 + jitter_u;
-                let v_c = ((sy as f64 + 0.5) / sectors as f64 * 2.0 - 1.0) * 0.90 + jitter_v;
+                // (gigue réglée pour 3 secteurs par face, réduite d'autant pour des secteurs plus petits)
+                let jitter = 0.006 * 3.0 / sectors as f64;
+                let jitter_u = ((Self::next_rand(&mut rng) % 7) as f64 - 3.0) * jitter;
+                let jitter_v = ((Self::next_rand(&mut rng) % 7) as f64 - 3.0) * jitter;
+                let (u_c, v_c) = Self::sector_uv(sx, sy);
+                let (u_c, v_c) = (u_c + jitter_u, v_c + jitter_v);
 
                 // Repère local aligné sur les axes (u, v) de la face : tous les nuages d'une face
                 // partagent la même orientation de grille, comme une couche nuageuse continue
@@ -212,6 +222,34 @@ impl CloudMeshGenerator {
                 }
             }
         }
+    }
+
+    /// Centre (sans gigue) du secteur (sx, sy) d'une face, en coordonnées (u, v)
+    fn sector_uv(sx: usize, sy: usize) -> (f64, f64) {
+        let sectors = Self::SECTORS_PER_FACE as f64;
+        (((sx as f64 + 0.5) / sectors * 2.0 - 1.0) * 0.90, ((sy as f64 + 0.5) / sectors * 2.0 - 1.0) * 0.90)
+    }
+
+    /// Plus grand rayon (en cellules) d'un nuage du secteur (sx, sy) : `MAX_RADIUS`, réduit là où
+    /// les secteurs voisins de la face sont plus proches que deux fois ce rayon (moins la gigue)
+    fn sector_max_radius(face: PlanetFace, sx: usize, sy: usize, r_mid: f32, scale: f32) -> f32 {
+        let n = Self::SECTORS_PER_FACE as i64;
+        let center = |sx: usize, sy: usize| {
+            let (u, v) = Self::sector_uv(sx, sy);
+            Self::dir(face, u, v) * r_mid
+        };
+        let here = center(sx, sy);
+        let nearest = (-1..=1i64)
+            .flat_map(|dx| (-1..=1i64).map(move |dy| (dx, dy)))
+            .filter(|&d| d != (0, 0))
+            .map(|(dx, dy)| (sx as i64 + dx, sy as i64 + dy))
+            .filter(|&(x, y)| (0..n).contains(&x) && (0..n).contains(&y))
+            .map(|(x, y)| center(x as usize, y as usize).distance(here))
+            .fold(f32::INFINITY, f32::min);
+        // Gigue d'au plus 3 pas de 0,018 / secteurs en u et en v, pour chacun des deux nuages
+        let jitter = 2.0 * 3.0 * 0.018 / n as f32 * std::f32::consts::FRAC_PI_4 * r_mid * std::f32::consts::SQRT_2;
+        let cell = Self::CELL * scale;
+        Self::MAX_RADIUS.min((nearest - jitter) / (2.0 * cell))
     }
 
     fn dir(face: PlanetFace, u: f64, v: f64) -> Vec3 {
@@ -398,16 +436,20 @@ impl CloudMeshGenerator {
 mod tests {
     use super::*;
 
+    /// Rayon de la planète par défaut et échelle en blocs
+    const R: f32 = (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32;
+    const S: f32 = herocraft_world::BLOCK_SCALE as f32;
+
     #[test]
     fn test_cloud_mesh_bounded_clusters_and_reasonable_sizes() {
-        let mesh = CloudMeshGenerator::generate_cloud_mesh(25.0, 2026);
+        let mesh = CloudMeshGenerator::generate_cloud_mesh(R, 2026);
 
         assert!(!mesh.vertices.is_empty(), "Le maillage de nuages ne doit pas être vide");
         assert_eq!(mesh.indices.len() % 3, 0, "Les indices doivent former des triangles complets");
 
         // Boîtes englobantes : épaisseur + marges + courbure de la dalle
-        let r_bot = 25.0 + CloudMeshGenerator::CLOUD_ALTITUDE_BOT - 2.0;
-        let r_top = 25.0 + CloudMeshGenerator::CLOUD_ALTITUDE_TOP + 1.5;
+        let r_bot = R + (CloudMeshGenerator::CLOUD_ALTITUDE_BOT - 2.0) * S;
+        let r_top = R + (CloudMeshGenerator::CLOUD_ALTITUDE_TOP + 1.5) * S;
         for v in &mesh.vertices {
             let r = Vec3::from(v.position).length();
             assert!(r >= r_bot && r <= r_top, "Sommet hors de la couche nuageuse : r = {r}");
@@ -420,22 +462,22 @@ mod tests {
     #[test]
     fn test_cloud_vertex_layout_and_frames() {
         assert_eq!(std::mem::size_of::<CloudVertex>(), 128);
-        let mesh = CloudMeshGenerator::generate_cloud_mesh(25.0, 2026);
+        let mesh = CloudMeshGenerator::generate_cloud_mesh(R, 2026);
         for v in &mesh.vertices {
             let u = Vec3::from(v.frame_u);
             let v_dir = Vec3::from(v.frame_v);
             let w = Vec3::from(v.frame_w);
             assert!((u.length() - 1.0).abs() < 1e-4 && (v_dir.length() - 1.0).abs() < 1e-4 && (w.length() - 1.0).abs() < 1e-4);
             assert!(u.dot(v_dir).abs() < 1e-4 && u.dot(w).abs() < 1e-4 && v_dir.dot(w).abs() < 1e-4);
-            assert_eq!(v.config[1], CloudMeshGenerator::CLOUD_HALF_DEPTH);
-            assert!(v.mask[0] != 0 || v.mask[1] != 0, "Chaque nuage doit avoir au moins une cellule");
+            assert_eq!(v.config[1], CloudMeshGenerator::CLOUD_HALF_DEPTH * S);
+            assert!(v.mask.iter().any(|&w| w != 0), "Chaque nuage doit avoir au moins une cellule");
             assert!(v.bbox[2] > v.bbox[0] && v.bbox[3] > v.bbox[1]);
         }
     }
 
     #[test]
     fn test_masks_clean_varied_and_spaced() {
-        let mesh = CloudMeshGenerator::generate_cloud_mesh(25.0, 2026);
+        let mesh = CloudMeshGenerator::generate_cloud_mesh(R, 2026);
         let clouds: Vec<&CloudVertex> = mesh.vertices.iter().step_by(8).collect();
         assert!(clouds.len() >= 6 * 6, "Le ciel doit compter assez de nuages (obtenu {})", clouds.len());
 
@@ -463,7 +505,7 @@ mod tests {
         for i in 0..clouds.len() {
             for j in i + 1..clouds.len() {
                 let d = (Vec3::from(clouds[i].cloud_center) - Vec3::from(clouds[j].cloud_center)).length();
-                assert!(d > radii[i] + radii[j], "Nuages {i} et {j} se chevauchent (d = {d})");
+                assert!(d > (radii[i] + radii[j]) * S, "Nuages {i} et {j} se chevauchent (d = {d})");
             }
         }
     }

@@ -160,7 +160,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // On applique une roche minérale sombre avec fines strates rocheuses étagées
     if (!is_water && cliff_factor > 0.01) {
         let rock_strata = vec3<f32>(0.26, 0.24, 0.23); // Roche ardoise minérale sombre
-        let alt_blocks = (length(in.world_pos) - camera.planet_radius) / (camera.planet_radius * 0.001534);
+        let alt_blocks = (length(in.world_pos) - camera.planet_radius) / camera.scales.y;
         // Micro-strates horizontales périodiques selon la hauteur des terrasses (6 blocs)
         let strata_band = sin(alt_blocks * (3.14159265 * 2.0 / 6.0));
         let strata_shading = 0.90 + strata_band * 0.12;

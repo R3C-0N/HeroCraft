@@ -156,7 +156,7 @@ impl VoxelMeshBuilder {
         let mut indices: Vec<u32> = Vec::new();
 
         // 32 chunks par face de cube
-        let face_chunks_count = 32.0;
+        let face_chunks_count = FACE_CHUNKS as f64;
         let chunk_span_uv = 2.0 / face_chunks_count;
         let voxel_span_uv = chunk_span_uv / (CHUNK_SIZE as f64);
         
@@ -171,8 +171,8 @@ impl VoxelMeshBuilder {
 
         for dy in 0..3 {
             for dx in 0..3 {
-                let cx = (start_cx + dx).min(31);
-                let cy = (start_cy + dy).min(31);
+                let cx = (start_cx + dx).min(FACE_CHUNKS - 1);
+                let cy = (start_cy + dy).min(FACE_CHUNKS - 1);
                 let coord = PlanetChunkCoord::new(face, cx, cy, 0);
                 let chunk = chunk_cache.get_or_load(&coord, || generator.generate_chunk(&coord));
                 chunks.push(chunk.clone());
@@ -420,7 +420,7 @@ impl VoxelMeshBuilder {
         filter: herocraft_world::VisualizationFilter,
     ) -> VoxelColumnSource {
         herocraft_common::prof_scope!("voxel_mesh::sample_column_source");
-        let face_chunks_count = 32.0;
+        let face_chunks_count = FACE_CHUNKS as f64;
         let chunk_span_uv = 2.0 / face_chunks_count;
         let voxel_span_uv = chunk_span_uv / (CHUNK_SIZE as f64);
 
@@ -591,7 +591,7 @@ impl VoxelMeshBuilder {
         let columns = &source.columns;
         let column_colors = &source.column_colors;
 
-        let face_chunks_count = 32.0;
+        let face_chunks_count = FACE_CHUNKS as f64;
         let chunk_span_uv = 2.0 / face_chunks_count;
         let voxel_span_uv = chunk_span_uv / (CHUNK_SIZE as f64);
         let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * voxel_span_uv) as f32;
@@ -1173,8 +1173,20 @@ mod tests {
         let cave_stone = VoxelMeshBuilder::block_color(BlockId::STONE, 0);
         let mut cave_vertices = 0;
         let mut below_relief = false;
-        for (cx, cy) in [(20, 5), (21, 5), (22, 6), (24, 7)] {
-            let source = Arc::new(VoxelMeshBuilder::sample_column_source(&generator, PlanetFace::NegZ, cx, cy, 50.0, VisualizationFilter::Standard));
+        // Quatre colonnes de chunks dont le centre est percé d'une grotte, autour du centre de la face
+        let mid = FACE_CHUNKS / 2;
+        let chunks: Vec<(i32, i32)> = (mid - 40..mid + 40)
+            .flat_map(|cx| (mid - 40..mid + 40).map(move |cy| (cx, cy)))
+            .filter(|&(cx, cy)| {
+                let (x, z) = (cx * 32 + 16, cy * 32 + 16);
+                let column = generator.sample_block_column(PlanetFace::NegZ, x, z);
+                let top = column.elevation.floor() as i32;
+                (top - 40..top - 8).any(|y| generator.is_cave(&column, PlanetFace::NegZ, x, y, z))
+            })
+            .take(4)
+            .collect();
+        for (cx, cy) in chunks {
+            let source = Arc::new(VoxelMeshBuilder::sample_column_source(&generator, PlanetFace::NegZ, cx, cy, crate::camera::DEFAULT_RADIUS, VisualizationFilter::Standard));
             let column = VoxelMeshBuilder::build_column(&generator, &edits, source.clone());
             // La couleur porte l'occlusion ambiante : on compare la teinte, pas la valeur exacte
             cave_vertices += column

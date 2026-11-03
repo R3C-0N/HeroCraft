@@ -134,6 +134,9 @@ pub struct OrbitCamera {
     death_fall: f32,
 }
 
+/// Rayon de base de la planète par défaut
+pub const DEFAULT_RADIUS: f32 = (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32;
+
 impl Default for OrbitCamera {
     fn default() -> Self {
         Self {
@@ -179,7 +182,7 @@ impl Default for OrbitCamera {
             auto_rotate: false,
             auto_rotate_speed: 0.2,
 
-            base_radius: (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32,
+            base_radius: DEFAULT_RADIUS,
 
             collider: None,
 
@@ -196,6 +199,7 @@ impl Default for OrbitCamera {
 
 impl OrbitCamera {
     pub fn new(distance: f32, base_radius: f32, generator: &PlanetWorldGenerator) -> Self {
+        // Recul maximal de l'orbite et portée de la vue : à l'échelle de la planète entière
         let scale = base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
         let mut cam = Self {
             distance,
@@ -286,7 +290,7 @@ impl OrbitCamera {
         };
         let face = settlement.face;
         let to_dir = |x: i32, z: i32| {
-            let span = 2.0 / 1024.0;
+            let span = 2.0 / herocraft_world::FACE_BLOCKS as f64;
             let d = face.uv_to_sphere_direction(-1.0 + (x as f64 + 0.5) * span, -1.0 + (z as f64 + 0.5) * span);
             Vec3::new(d.x as f32, d.y as f32, d.z as f32)
         };
@@ -358,7 +362,7 @@ impl OrbitCamera {
         let elevation = generator.sample_elevation(dir_dvec, lat, lon);
         let sea = herocraft_world::generator::SEA_LEVEL_BLOCKS;
         let eff_elev = elevation.max(sea);
-        let altitude_scale = (self.base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0)) as f32;
+        let altitude_scale = (self.base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f64)) as f32;
         self.base_radius + (eff_elev as f32) * altitude_scale
     }
 
@@ -456,12 +460,12 @@ impl OrbitCamera {
 
     /// Hauteur des yeux d'un héros de taille ordinaire debout, en unités du monde (~1,7 bloc)
     fn eye_height_standing(&self) -> f32 {
-        0.065 * self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32
+        0.065 * herocraft_world::block_scale(self.base_radius as f64) as f32
     }
 
     /// Hauteur des yeux au-dessus des pieds, en unités du monde : ~1,7 bloc debout, ~1,35 accroupi
     fn eye_height(&self) -> f32 {
-        let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
+        let scale = herocraft_world::block_scale(self.base_radius as f64) as f32;
         0.065 * scale * (self.hero_height / PLAYER_HEIGHT) * (1.0 - CROUCH_EYE_DROP * self.crouch_blend)
     }
 
@@ -579,7 +583,7 @@ impl OrbitCamera {
     /// Calcule la position de la caméra sans aucune pénétration sous le relief (Spring-Arm anti-collision)
     pub fn update_camera_bounds(&mut self, generator: &PlanetWorldGenerator) {
         herocraft_common::prof_scope!("camera::update_camera_bounds");
-        let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
+        let scale = herocraft_world::block_scale(self.base_radius as f64) as f32;
         let (up, _, _, look_dir) = self.look_vectors();
         let eye_height = self.eye_height();
         let head = self.player_pos + up * eye_height;
@@ -699,7 +703,7 @@ impl OrbitCamera {
         }
 
         let (_up, forward_tangent, right_tangent, _) = self.look_vectors();
-        let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
+        let scale = herocraft_world::block_scale(self.base_radius as f64) as f32;
 
         // 1. Déplacement horizontal ZQSD / WASD
         let mut move_dir = Vec3::ZERO;
@@ -916,7 +920,7 @@ impl OrbitCamera {
             return None;
         }
         let (up, _, _, look_dir) = self.look_vectors();
-        let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
+        let scale = herocraft_world::block_scale(self.base_radius as f64) as f32;
         let head = self.player_pos + up * 0.065 * scale;
         Some((self.effective_eye, look_dir, (self.effective_eye - head).length()))
     }
@@ -972,7 +976,7 @@ mod tests {
         cam.effective_distance = cam.base_radius + 0.1;
         assert_eq!(cam.view_mode(), CameraViewMode::SatelliteOrbit);
 
-        cam.effective_distance = 330.0;
+        cam.effective_distance = 6.6 * cam.base_radius;
         assert_eq!(cam.view_mode(), CameraViewMode::SatelliteOrbit);
     }
 
@@ -993,7 +997,7 @@ mod tests {
     #[test]
     fn test_matrices_finite_in_all_modes() {
         let mut cam = OrbitCamera::default();
-        let scale = cam.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
+        let scale = herocraft_world::block_scale(cam.base_radius as f64) as f32;
         let eye_height = 0.065 * scale;
         for &dist in &[0.0, 0.05, 1.0, 10.0, 25.0, 50.0, 165.0, 330.0] {
             cam.distance = dist;
@@ -1020,7 +1024,7 @@ mod tests {
             ..Default::default()
         };
         let gen = PlanetWorldGenerator::new(desc);
-        let mut cam = OrbitCamera::new(165.0, 25.0, &gen);
+        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &gen);
 
         // Test à différentes distances (FPS, TPS court, TPS long, Transition, Satellite)
         // et sous différents angles de tangage (regard en l'air, vers le sol, etc.)
@@ -1066,16 +1070,17 @@ mod tests {
             ..Default::default()
         };
         let gen = PlanetWorldGenerator::new(desc);
-        let mut cam = OrbitCamera::new(165.0, 25.0, &gen);
+        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &gen);
 
         // Au départ en orbite
-        assert_eq!(cam.target_distance, 165.0);
-        assert_eq!(cam.distance, 165.0);
+        let start = 6.6 * crate::camera::DEFAULT_RADIUS;
+        assert_eq!(cam.target_distance, start);
+        assert_eq!(cam.distance, start);
 
         // Déclenchement d'une transition vers le sol (FPS)
         cam.transition_to_ground(&gen);
         assert_eq!(cam.target_distance, 0.0);
-        assert_eq!(cam.distance, 165.0); // La distance ne se téléporte pas !
+        assert_eq!(cam.distance, start); // La distance ne se téléporte pas !
 
         // Simulation de quelques frames
         let mut intermediate_distances = Vec::new();
@@ -1085,11 +1090,11 @@ mod tests {
         }
 
         // Vérification de la continuité et de la progression fluide
-        assert!(intermediate_distances[0] < 165.0, "Camera should start descending");
+        assert!(intermediate_distances[0] < start, "Camera should start descending");
         assert!(intermediate_distances[10] < intermediate_distances[0]);
         assert!(intermediate_distances[30] < intermediate_distances[10]);
         let final_d = intermediate_distances.last().copied().unwrap();
-        assert!(final_d < 5.0, "Camera should have approached ground: final_d={}", final_d);
+        assert!(final_d < 0.01 * start, "Camera should have approached ground: final_d={}", final_d);
     }
 
     fn ground_test_camera() -> (OrbitCamera, PlanetWorldGenerator) {
@@ -1098,7 +1103,7 @@ mod tests {
             ..Default::default()
         };
         let gen = PlanetWorldGenerator::new(desc);
-        let mut cam = OrbitCamera::new(165.0, 25.0, &gen);
+        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &gen);
         cam.spawn_on_ground(&gen);
         cam.update(0.016, &gen);
         (cam, gen)
@@ -1231,11 +1236,14 @@ mod tests {
     /// Renvoie aussi l'altitude (en blocs) du dessus de l'aire.
     fn voxel_test_camera() -> (OrbitCamera, PlanetWorldGenerator, Arc<TerrainEdits>, i32) {
         let gen = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 2026, ..Default::default() });
-        let mut cam = OrbitCamera::new(165.0, 25.0, &gen);
+        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &gen);
         let edits = Arc::new(TerrainEdits::new(None));
         cam.set_terrain(edits.clone());
         cam.spawn_on_ground(&gen);
         let geometry = herocraft_world::BlockGeometry::new(cam.base_radius as f64);
+        // Au milieu de son bloc : le trou de 3 × 3 blocs creusé autour couvre toute son empreinte
+        let (pos, frac) = geometry.locate(cam.player_pos.as_dvec3()).unwrap();
+        cam.player_pos = geometry.corner(pos.face, pos.x as f64 + 0.5, pos.y as f64 + frac[1], pos.z as f64 + 0.5).as_vec3();
         let floor = ((cam.player_pos.length() as f64 - geometry.base_radius) / geometry.block_height).round() as i32;
         for (dx, dz) in (-4..=4).flat_map(|i| (-4..=4).map(move |j| (i as f32, j as f32))) {
             let column = cell_at(&cam, dx, dz, 0);
@@ -1401,7 +1409,7 @@ mod tests {
     fn test_voxel_wall_stops_the_player() {
         let (mut cam, gen, edits, floor) = voxel_test_camera();
         let start = cam.player_pos;
-        fill(&cam, &gen, &edits, &[1.5], &[floor, floor + 1], herocraft_common::BlockId::STONE);
+        fill(&cam, &gen, &edits, &[2.0], &[floor, floor + 1], herocraft_common::BlockId::STONE);
         walk(&mut cam, &gen, 1.0);
         let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
         let travelled = (cam.player_pos.normalize() - start.normalize()).length() * cam.base_radius / h;

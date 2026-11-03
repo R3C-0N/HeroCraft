@@ -3,13 +3,48 @@ use glam::DVec3;
 /// Rayon de base de référence du monde (1.0 = prototype initial à rayon 25.0)
 pub const REFERENCE_BASE_RADIUS: f64 = 25.0;
 
-/// Facteur d'échelle global de la planète (modifiable en un seul point !)
-/// - 1.0 : Rayon 25.0 (taille prototype initiale, circonférence ~157 m, ~4096 blocs)
-/// - 2.0 : Rayon 50.0 (taille doublée, circonférence ~314 m)
-/// - 4.0 : Rayon 100.0 (taille quadruplée, circonférence ~628 m)
-/// Modifier cette constante met à l'échelle instantanément toute la planète, les LODs, la caméra,
-/// les nuages et la physique du joueur.
-pub const DEFAULT_PLANET_SCALE: f64 = 2.0;
+/// Blocs par arête de face du prototype, pour lequel les dimensions du rendu (nuages, ombres,
+/// caméra, LOD…) ont été réglées en unités du monde
+pub const REFERENCE_FACE_BLOCKS: f64 = 1024.0;
+
+/// Agrandissement de la planète par rapport au prototype, en blocs par face (8 pour 8 192 blocs).
+/// Le bloc garde sa taille en unités du monde : c'est le rayon qui grandit.
+pub const FACE_SCALE: f64 = crate::edits::FACE_BLOCKS as f64 / REFERENCE_FACE_BLOCKS;
+
+/// Échelle des dimensions mesurées en blocs (hauteur des yeux, nuages, portée des ombres…) :
+/// celle du prototype de rayon 50 et de 1 024 blocs par face, que la taille de la planète ne change pas
+pub const BLOCK_SCALE: f64 = 2.0;
+
+/// Facteur d'échelle global de la planète (rayon = `REFERENCE_BASE_RADIUS` × ce facteur) :
+/// `BLOCK_SCALE` × `FACE_SCALE`, soit un rayon de 400 pour 8 192 blocs par face. Les dimensions qui
+/// suivent la planète entière (orbite, atmosphère vue de l'espace, QuadTree) s'y rapportent ; celles
+/// qui se mesurent en blocs se rapportent à `BLOCK_SCALE` (voir `block_scale`).
+pub const DEFAULT_PLANET_SCALE: f64 = BLOCK_SCALE * FACE_SCALE;
+
+/// Échelle « en blocs » d'une planète de rayon `base_radius` : le facteur par lequel multiplier
+/// une dimension réglée sur le prototype de rayon 25 pour qu'elle garde sa taille en blocs
+#[inline]
+pub fn block_scale(base_radius: f64) -> f64 {
+    base_radius / REFERENCE_BASE_RADIUS / FACE_SCALE
+}
+
+/// Taille d'un bloc (largeur au centre d'une face, et hauteur) en unités du monde, sur une planète
+/// de rayon `base_radius`
+#[inline]
+pub fn block_size(base_radius: f64) -> f64 {
+    base_radius * std::f64::consts::FRAC_PI_2 / crate::edits::FACE_BLOCKS as f64
+}
+
+/// Dossier de sauvegarde d'un monde : `saves/<prefixe>_<graine>`, suivi de la taille des faces
+/// quand elle n'est pas celle du prototype (une sauvegarde d'une autre taille de planète n'y est
+/// pas relue : ses blocs tomberaient ailleurs)
+pub fn save_dir_name(prefix: &str, seed: u64) -> String {
+    if crate::edits::FACE_BLOCKS == REFERENCE_FACE_BLOCKS as i32 {
+        format!("saves/{prefix}_{seed}")
+    } else {
+        format!("saves/{prefix}_{seed}_f{}", crate::edits::FACE_BLOCKS)
+    }
+}
 
 /// Graine tirée au hasard pour une nouvelle planète : entropie du système (clés aléatoires de
 /// `RandomState`) mélangée à l'horloge, bornée à 10 chiffres pour rester facile à recopier
@@ -37,7 +72,7 @@ impl Default for PlanetDescriptor {
     fn default() -> Self {
         Self {
             name: "Aethelgard".to_string(),
-            radius_blocks: 1024.0 * DEFAULT_PLANET_SCALE, // Rayon en voxels
+            radius_blocks: crate::edits::FACE_BLOCKS as f64 / std::f64::consts::FRAC_PI_2, // Rayon en voxels
             max_mountain_height: 120.0,
             sea_level: 0.0,
             seed: 42,
@@ -56,7 +91,7 @@ impl PlanetDescriptor {
     /// Échelle d'altitude (largeur et hauteur d'un voxel en unités monde)
     #[inline]
     pub fn altitude_scale(&self) -> f64 {
-        self.base_radius() * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0)
+        self.base_radius() * std::f64::consts::FRAC_PI_4 * (2.0 / crate::edits::FACE_BLOCKS as f64)
     }
 }
 

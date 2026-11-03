@@ -24,7 +24,7 @@ fn main() {
     let server = Server::bind(config).unwrap();
     let addr = server.local_addr().unwrap().to_string();
     let face = PlanetFace::PosZ;
-    let (x, z, top) = (0..1024).step_by(37).flat_map(|x| (0..1024).step_by(37).map(move |z| (x, z))).find_map(|(x, z)| {
+    let (x, z, top) = (0..herocraft_world::FACE_BLOCKS).step_by(37).flat_map(|x| (0..herocraft_world::FACE_BLOCKS).step_by(37).map(move |z| (x, z))).find_map(|(x, z)| {
         let top = (0..WORLD_HEIGHT).rev().find(|&y| !server.block(BlockPos::new(face, x, y, z)).is_air())?;
         (server.block(BlockPos::new(face, x, top, z)) != BlockId::WATER).then_some((x, z, top))
     }).unwrap();

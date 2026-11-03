@@ -318,7 +318,7 @@ impl PlanetMesh {
         let (u_min, u_max, v_min, v_max) = key.uv_bounds();
         let du = (u_max - u_min) / (n as f64);
         let dv = (v_max - v_min) / (n as f64);
-        let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / 1024.0)) as f32;
+        let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f64)) as f32;
 
         let sample_cell = |ci: i32, cj: i32| -> (f64, bool, [f32; 4]) {
             let u_mid = u_min + ((ci as f64) + 0.5) * du;
