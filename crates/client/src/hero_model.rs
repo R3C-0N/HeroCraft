@@ -11,6 +11,8 @@ use crate::planet_mesh::PlanetVertex;
 
 /// Indice de texture réservé à la planche du héros dans les plages du maillage des créatures
 pub const HERO_TEXTURE: usize = usize::MAX;
+/// Premier indice de texture des planches des habitants (`CreatureRenderer::villager_texture`)
+pub const VILLAGER_TEXTURE_BASE: usize = usize::MAX / 2;
 
 /// Un quadrilatère de la figure : coins vus de dehors (bas gauche, bas droit, haut droit, haut
 /// gauche) et le rectangle de la planche qu'il montre
@@ -134,6 +136,31 @@ impl HeroGait {
 /// Ajoute le héros au maillage des créatures, debout sur `feet` et tourné vers `yaw` (0 = nord) ;
 /// `block` : taille d'un bloc, `swing` : balancement des membres
 pub fn push_hero(frame: &mut CreatureFrame, cfg: &Appearance, feet: Vec3, yaw: f32, swing: f32, block: f32) {
+    push_figure(frame, cfg, feet, yaw, &FigurePose { swing, ..FigurePose::default() }, HERO_TEXTURE, block);
+}
+
+/// Posture d'une figure : balancement de la marche, bras levés, couchée, teinte
+#[derive(Debug, Clone, Copy)]
+pub struct FigurePose {
+    /// Balancement des bras et des jambes
+    pub swing: f32,
+    /// Bras droit et bras gauche levés vers l'avant, en radians, par-dessus le balancement
+    pub right_arm: f32,
+    pub left_arm: f32,
+    /// De 0 (debout) à 1 (couchée sur le dos)
+    pub lying: f32,
+    /// Couleur multipliée à la planche (rouge d'un coup reçu)
+    pub tint: [f32; 3],
+}
+
+impl Default for FigurePose {
+    fn default() -> Self {
+        Self { swing: 0.0, right_arm: 0.0, left_arm: 0.0, lying: 0.0, tint: [1.0; 3] }
+    }
+}
+
+/// Ajoute une figure humanoïde au maillage des créatures avec la planche d'indice `texture`
+pub fn push_figure(frame: &mut CreatureFrame, cfg: &Appearance, feet: Vec3, yaw: f32, pose: &FigurePose, texture: usize, block: f32) {
     let up = feet.normalize_or_zero();
     let (east, north) = tangent_frame(up);
     let forward = north * yaw.cos() + east * yaw.sin();
@@ -141,6 +168,9 @@ pub fn push_hero(frame: &mut CreatureFrame, cfg: &Appearance, feet: Vec3, yaw: f
     let width = cfg.width_scale();
     let unit = cfg.taille as f32 / 32.0 * block;
     let scale = vec3(width, 1.0, width) * unit;
+    // Couchée : la figure bascule en arrière autour de ses pieds, soulevée de l'épaisseur du corps
+    let lie = Quat::from_rotation_x(-pose.lying.clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2);
+    let lift = vec3(0.0, 2.0 * pose.lying.clamp(0.0, 1.0), 0.0);
     let to_world = |p: Vec3| feet + left * p.x + up * p.y + forward * p.z;
     let rotate = |n: Vec3| left * n.x + up * n.y + forward * n.z;
     let sheet = SHEET_SIZE as f32;
@@ -148,26 +178,29 @@ pub fn push_hero(frame: &mut CreatureFrame, cfg: &Appearance, feet: Vec3, yaw: f
 
     let start = frame.indices.len() as u32;
     for piece in figure() {
-        // Un membre tourne autour de l'axe des épaules ou des hanches
+        // Un membre tourne autour de l'axe des épaules ou des hanches ; les bras se lèvent en plus
         let (pivot, turn) = match piece.swing {
-            Some(s) => (vec3(0.0, s.pivot, 0.0), Quat::from_rotation_x(s.sign * swing)),
+            Some(s) => {
+                let raise = if s.pivot > 20.0 { if piece.centre.x < 0.0 { pose.right_arm } else { pose.left_arm } } else { 0.0 };
+                (vec3(0.0, s.pivot, 0.0), Quat::from_rotation_x(s.sign * pose.swing - raise))
+            }
             None => (Vec3::ZERO, Quat::IDENTITY),
         };
         for quad in &piece.quads {
-            let c = quad.corners.map(|p| (pivot + turn * (p - pivot)) * scale);
+            let c = quad.corners.map(|p| (lie * ((pivot + turn * (p - pivot)) * scale)) + lift * unit);
             let normal = rotate((c[1] - c[0]).cross(c[3] - c[0]).normalize_or_zero());
             let [u, v, w, h] = quad.uv;
             let (u0, v0, u1, v1) = ((u + margin) / sheet, (v + margin) / sheet, (u + w - margin) / sheet, (v + h - margin) / sheet);
             let uvs = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
             let base = frame.vertices.len() as u32;
             for (p, uv) in c.iter().zip(uvs) {
-                frame.vertices.push(PlanetVertex { position: to_world(*p).to_array(), normal: normal.to_array(), color: [1.0, 1.0, 1.0, 1.0], texture: PlanetVertex::UNTEXTURED });
+                frame.vertices.push(PlanetVertex { position: to_world(*p).to_array(), normal: normal.to_array(), color: [pose.tint[0], pose.tint[1], pose.tint[2], 1.0], texture: PlanetVertex::UNTEXTURED });
                 frame.uvs.push(uv);
             }
             frame.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
         }
     }
-    frame.draws.push((Some(HERO_TEXTURE), start..frame.indices.len() as u32));
+    frame.draws.push((Some(texture), start..frame.indices.len() as u32));
 }
 
 #[cfg(test)]

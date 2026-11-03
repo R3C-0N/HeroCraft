@@ -671,11 +671,15 @@ impl Server {
             let Some(feet) = player.position else { continue };
             let mut visible = HashSet::new();
             let mut states: Vec<CreatureState> = Vec::new();
-            for creature in creatures.iter().filter(|c| c.position.distance(feet) <= range) {
+            for creature in creatures.iter().filter(|c| !c.is_hidden() && c.position.distance(feet) <= range) {
                 visible.insert(creature.id);
                 if player.known_creatures.contains(&creature.id) {
                     states.push(creature.state());
                 } else {
+                    // Un habitant ou un voyageur : sa fiche d'abord, pour le dessiner
+                    if let Some(card) = self.creatures.villager_card(creature.id) {
+                        player.connection.send(&ServerPacket::VillagerCard { creature_id: creature.id, card: Box::new((**card).clone()) });
+                    }
                     let species = registry.get(creature.species).map(|s| s.id.clone()).unwrap_or_default();
                     player.connection.send(&ServerPacket::CreatureSpawned { species, state: creature.state() });
                 }

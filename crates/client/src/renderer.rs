@@ -1040,6 +1040,16 @@ impl State {
         self.creatures.set_hero_sheet(&self.device, &self.queue, appearance);
     }
 
+    /// Début d'une image de créatures : voir `CreatureRenderer::begin_villagers`
+    pub fn begin_villagers(&mut self) {
+        self.creatures.begin_villagers();
+    }
+
+    /// Indice de texture de la planche d'un habitant
+    pub fn villager_texture(&mut self, appearance: &herocraft_common::hero::Appearance) -> usize {
+        self.creatures.villager_texture(&self.device, &self.queue, appearance)
+    }
+
     /// Maillage des créatures de l'image (`creatures::build_frame`)
     pub fn set_creature_frame(&mut self, frame: &crate::creatures::CreatureFrame) {
         self.creatures.upload(&self.device, &self.queue, frame);
