@@ -44,6 +44,9 @@ struct SavedProgress {
     skill_points: u32,
     #[serde(default)]
     skills: std::collections::BTreeMap<String, u8>,
+    /// Jauge de faim au moment de quitter (pleine dans les sauvegardes d'avant la faim)
+    #[serde(default)]
+    satiety: Option<f32>,
 }
 
 impl Default for PlayerStats {
@@ -68,6 +71,9 @@ impl PlayerStats {
             stats.skill_points = saved.skill_points;
             stats.skills = saved.skills;
             stats.revive();
+            if let Some(satiety) = saved.satiety.filter(|s| s.is_finite()) {
+                stats.satiety = satiety.clamp(0.0, stats.max_satiety);
+            }
         }
         player.progress_path = path;
         player
@@ -81,6 +87,7 @@ impl PlayerStats {
             experience: self.stats.experience,
             skill_points: self.stats.skill_points,
             skills: self.stats.skills.clone(),
+            satiety: Some(self.stats.satiety),
         };
         let result = (|| -> std::io::Result<()> {
             if let Some(dir) = path.parent() {
@@ -109,6 +116,12 @@ impl PlayerStats {
         } else if self.stats.stamina >= SPRINT_RECOVERY * self.stats.max_stamina {
             camera.sprint_exhausted = false;
         }
+    }
+
+    /// Mange un aliment qui rend `satiety` points : faux si le joueur est mort ou n'a plus faim
+    /// (l'aliment reste alors dans l'inventaire)
+    pub fn eat(&mut self, satiety: f32) -> bool {
+        !self.is_dead() && self.stats.eat(satiety)
     }
 
     /// Dommages d'une chute de `blocks` blocs : renvoie la force de la blessure (0 si la chute
@@ -183,6 +196,7 @@ mod tests {
         let mut player = PlayerStats::load_or_default(Some(path.clone()));
         assert_eq!((player.stats.level, player.stats.skill_points), (1, 0));
         player.stats.add_experience(350);
+        player.stats.satiety = 42.0;
         let wheel = herocraft_common::SkillWheel::standard();
         let id = wheel.nodes[0].id.clone();
         wheel.learn(&mut player.stats, &id).unwrap();
@@ -195,6 +209,7 @@ mod tests {
         assert_eq!(loaded.stats.skills.get(&id), Some(&1));
         assert_eq!(loaded.stats.max_hp, player.stats.max_hp, "les gains de niveau sont rejoués");
         assert_eq!(loaded.stats.hp, loaded.stats.max_hp);
+        assert_eq!(loaded.stats.satiety, 42.0, "la faim est gardée d'une partie à l'autre");
 
         // En ligne, rien n'est écrit
         PlayerStats::load_or_default(None).save();
