@@ -283,11 +283,12 @@ impl Server {
         for hit in self.creatures.tick_with_presences(dt, &self.generator, &self.edits, &presences) {
             self.creature_attack(ids[hit.player], hit.species, hit.damage);
         }
-        // Œufs pondus : ils tombent chez le joueur le plus proche, qui les voit et les ramasse
+        // Œufs pondus, à la place de la bête : montrés au joueur le plus proche (les objets au sol
+        // sont propres à chaque client, un seul peut le ramasser)
         for (feet, item) in self.creatures.take_laid() {
             let nearest = presences.iter().zip(&ids).min_by(|a, b| a.0.feet.distance_squared(feet).total_cmp(&b.0.feet.distance_squared(feet)));
             if let Some(player) = nearest.and_then(|(_, id)| self.players.get(id)) {
-                player.connection.send(&ServerPacket::CreatureLoot { position: feet, items: vec![(item.0, 1)] });
+                player.connection.send(&ServerPacket::Laid { position: feet, item: item.0 });
             }
         }
 

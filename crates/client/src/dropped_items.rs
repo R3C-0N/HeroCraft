@@ -42,6 +42,9 @@ pub struct DroppedItem {
     age: f32,
     /// Phase de rotation et de flottement, pour que les objets voisins ne bougent pas en bloc
     phase: f32,
+    /// Attiré par le joueur proche ; sinon (œuf pondu) il reste là où il est posé, et ne se
+    /// ramasse qu'en marchant dessus
+    attracted: bool,
 }
 
 #[derive(Default)]
@@ -82,7 +85,19 @@ impl DroppedItems {
             velocity: (up * 3.5 + sideways) * block_height,
             age: 0.0,
             phase,
+            attracted: true,
         });
+        if self.items.len() > MAX_ITEMS {
+            self.items.remove(0);
+        }
+        self.dirty = true;
+    }
+
+    /// Pose `item` sans saut en `center` (un œuf pondu, aux pieds de la bête) : il tombe droit au
+    /// sol et y reste, sans être attiré par le joueur qui passe près (il se ramasse en marchant dessus)
+    pub fn lay(&mut self, item: impl Into<ItemId>, center: Vec3) {
+        let phase = (center.x * 12.9898 + center.y * 78.233 + center.z * 37.719).sin().fract().abs() * std::f32::consts::TAU;
+        self.items.push(DroppedItem { item: item.into(), position: center, velocity: Vec3::ZERO, age: 0.0, phase, attracted: false });
         if self.items.len() > MAX_ITEMS {
             self.items.remove(0);
         }
@@ -123,7 +138,7 @@ impl DroppedItems {
                     picked += 1;
                     return false;
                 }
-                if distance < ATTRACT_RADIUS && inventory.has_room_for(item.item) {
+                if item.attracted && distance < ATTRACT_RADIUS && inventory.has_room_for(item.item) {
                     let step = (ATTRACT_SPEED * h * dt).min(to_player.length());
                     item.position += to_player.normalize_or_zero() * step;
                     item.velocity = Vec3::ZERO;

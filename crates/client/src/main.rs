@@ -629,6 +629,7 @@ fn main() {
                                         show_wound(hurt, &cause, &mut camera, &mut ui_state, &mut audio);
                                     }
                                     NetEvent::Loot { position, items } => drop_loot(&mut dropped_items, &camera, position, &items),
+                                    NetEvent::Laid { position, item } => lay_egg(&mut dropped_items, &camera, position, item),
                                     NetEvent::Chat { sender, message } if sender.is_empty() => ui_state.chat.server(&message),
                                     NetEvent::Chat { sender, message } => ui_state.chat.player(&sender, &message),
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
@@ -678,7 +679,7 @@ fn main() {
                                         }
                                         // Œufs pondus par les bêtes apprivoisées, laissés à leurs pieds
                                         for (feet, item) in solo_creatures.take_laid() {
-                                            drop_loot(&mut dropped_items, &camera, feet, &[(item, 1)]);
+                                            lay_egg(&mut dropped_items, &camera, feet, item);
                                         }
                                     }
                                     match creature_mode {
@@ -1544,6 +1545,12 @@ fn drop_broken_block(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCa
             dropped.spawn(item, center, height);
         }
     }
+}
+
+/// Œuf pondu par une bête : posé à ses pieds, il y reste jusqu'à ce qu'on marche dessus
+fn lay_egg(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, feet: glam::Vec3, item: herocraft_common::ItemId) {
+    let height = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+    dropped.lay(item, feet + feet.normalize_or_zero() * 0.2 * height);
 }
 
 /// Le butin d'une bête tuée tombe à ses pieds (`feet`), un peu au-dessus du sol

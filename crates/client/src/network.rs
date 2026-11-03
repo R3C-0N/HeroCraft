@@ -334,6 +334,8 @@ pub enum NetEvent {
     Hurt { damage: f32, cause: String },
     /// Le joueur a tué une créature : son butin tombe en `position`
     Loot { position: Vec3, items: Vec<(ItemId, u16)> },
+    /// Œuf pondu par une bête aux pieds `position`
+    Laid { position: Vec3, item: ItemId },
     /// Message du chat (`sender` vide : annonce du serveur, ou réponse d'une commande)
     Chat { sender: String, message: String },
     /// Connexion perdue ou fermée par le serveur
@@ -502,6 +504,8 @@ impl NetClient {
             ServerPacket::ChunkData { coord, .. } => warn!("Chunk {coord:?} reçu hors de la connexion, ignoré."),
             ServerPacket::StatsUpdate(stats) => return Some(NetEvent::Stats(stats)),
             ServerPacket::PlayerHurt { damage, cause } => return Some(NetEvent::Hurt { damage, cause }),
+            ServerPacket::Laid { position, item } if ItemId(item).is_known() => return Some(NetEvent::Laid { position, item: ItemId(item) }),
+            ServerPacket::Laid { .. } => {}
             ServerPacket::CreatureLoot { position, items } => {
                 let items = items.into_iter().map(|(item, count)| (ItemId(item), count)).filter(|(item, _)| item.is_known()).collect();
                 return Some(NetEvent::Loot { position, items });

@@ -162,6 +162,12 @@ pub enum ServerPacket {
         position: Vec3,
         items: Vec<(u16, u16)>,
     },
+    /// Une bête apprivoisée vient de pondre `item` (`ItemId`) à ses pieds (`position`) : il reste
+    /// au sol jusqu'à ce qu'on marche dessus
+    Laid {
+        position: Vec3,
+        item: u16,
+    },
     /// Message de chat ou notification système
     ChatMessage {
         sender: String,
