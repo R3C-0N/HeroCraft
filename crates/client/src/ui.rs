@@ -559,6 +559,10 @@ pub struct UiState {
     pub skill_screen: SkillScreen,
     /// Demandes faites sur l'écran des compétences depuis la dernière image, que le jeu applique
     pub skill_requests: SkillScreenRequests,
+    /// Écran de carte ouvert (touche M)
+    pub map_open: bool,
+    /// Carte du monde et boussole
+    pub world_map: crate::world_map::WorldMap,
     /// Légende du héros dans ce monde ; `None` tant qu'il n'est pas baptisé
     pub legend: Option<Legend>,
     /// Créateur de légende ouvert (à la première arrivée au sol d'un héros sans légende)
@@ -615,6 +619,8 @@ impl UiState {
             skill_wheel: SkillWheel::standard(),
             skill_screen: SkillScreen::default(),
             skill_requests: SkillScreenRequests::default(),
+            map_open: false,
+            world_map: crate::world_map::WorldMap::new(),
             legend: None,
             creator: None,
             sealed_legend: None,
@@ -800,20 +806,32 @@ impl UiState {
             self.menu_page = MenuPage::Main;
             self.set_inventory_open(false);
             self.skills_open = false;
+            self.map_open = false;
         }
     }
 
     /// Un écran de jeu (inventaire, compétences, créateur de légende) est ouvert par-dessus la partie
     pub fn screen_open(&self) -> bool {
-        self.inventory_open || self.skills_open || self.creator_open()
+        self.inventory_open || self.skills_open || self.map_open || self.creator_open()
     }
 
     /// Ouvre ou referme l'écran de la roue des compétences (l'inventaire se referme)
     pub fn set_skills_open(&mut self, open: bool) {
         if open {
             self.set_inventory_open(false);
+            self.map_open = false;
         }
         self.skills_open = open;
+    }
+
+    /// Ouvre ou referme l'écran de carte, centré sur le joueur (les autres écrans se referment)
+    pub fn set_map_open(&mut self, open: bool) {
+        if open {
+            self.set_inventory_open(false);
+            self.skills_open = false;
+            self.world_map.recenter();
+        }
+        self.map_open = open;
     }
 
     /// Ouvre ou referme l'écran d'inventaire. Refermé, la pile tenue à la souris retourne dans
@@ -823,6 +841,7 @@ impl UiState {
             self.inventory.return_held();
         } else {
             self.skills_open = false;
+            self.map_open = false;
         }
         self.inventory_open = open;
         self.station = None;
@@ -854,6 +873,8 @@ impl UiState {
             self.set_inventory_open(false);
         } else if self.skills_open {
             self.set_skills_open(false);
+        } else if self.map_open {
+            self.set_map_open(false);
         } else if !self.is_settings_open {
             self.set_settings_open(true);
         } else if self.rebinding.is_some() {
@@ -1049,8 +1070,12 @@ impl UiState {
                         self.skill_requests.learn = requests.learn;
                     }
                     self.skill_requests.experience += requests.experience;
+                } else if self.map_open {
+                    let close_hint = self.controls.action_key_label(Action::OpenMap);
+                    self.world_map.draw_screen(ctx, &close_hint);
                 } else {
                     self.draw_hotbar(ctx);
+                    self.world_map.draw_compass(ctx, SCREEN_MARGIN);
                 }
             }
 
@@ -3121,6 +3146,60 @@ mod tests {
         assert_eq!(clouds.density, 1.0);
         assert_eq!(clouds.roundness, 0.45);
     }
+
+    /// Captures de la carte (à trois échelles) et de la boussole, sur la planète de graine 42 :
+    /// `HEROCRAFT_CAPTURES=dossier cargo test --release -p herocraft_client snapshot_carte -- --ignored`
+    #[test]
+    #[ignore]
+    fn snapshot_carte() {
+        let Ok(dir) = std::env::var("HEROCRAFT_CAPTURES") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        let background = std::env::var("HEROCRAFT_CAPTURES_FOND").ok().map(std::path::PathBuf::from);
+        let generator = herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 42, ..Default::default() });
+        // À 300 blocs au sud-ouest d'un établissement de la face 0, regard au nord-est
+        let up = crate::world_map::dir_of(herocraft_common::PlanetFace::ALL[0], 600.5, 1600.5);
+        let target = crate::world_map::dir_of(herocraft_common::PlanetFace::ALL[0], 900.5, 1200.5);
+        let scenes: [(&str, Option<usize>); 4] = [("carte", Some(2)), ("carte_proche", Some(0)), ("carte_large", Some(5)), ("boussole", None)];
+        for (name, zoom) in scenes {
+            let mut ui = UiState::new(42);
+            ui.set_screen_size(1280.0, 720.0);
+            ui.world_map.navigation = Some(crate::world_map::Navigation { up, yaw: 0.6 });
+            // Le premier passage prend la graine du monde (et oublie tout repère d'un autre monde)
+            let ctx = ui.ctx.clone();
+            ui.world_map.pump(&ctx, &generator, false);
+            ui.world_map.waypoint = Some(target);
+            if let Some(z) = zoom {
+                ui.world_map.zoom = z;
+                ui.set_map_open(true);
+            }
+            let mut snapshot = crate::ui_snapshot::Snapshot::new(1280, 720);
+            snapshot.set_background(background.as_deref());
+            // Attend le relief et quelques chemins
+            let start = std::time::Instant::now();
+            loop {
+                ui.world_map.pump(&ctx, &generator, ui.map_open);
+                let ready = if zoom.is_some() { ui.world_map.terrain_ready() && ui.world_map.road_count() > 0 } else { ui.world_map.places().count() > 0 };
+                if (ready && start.elapsed().as_secs_f32() > 2.0) || start.elapsed().as_secs() > 60 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            let mut last = None;
+            for _ in 0..12 {
+                ui.raw_input.events.push(egui::Event::PointerMoved(egui::pos2(700.0, 330.0)));
+                ui.raw_input.time = Some(ui.raw_input.time.unwrap_or(0.0) + 0.5);
+                ui.raw_input.predicted_dt = 0.5;
+                let (output, _) = ui.update_ui(true);
+                snapshot.apply_textures(&output.textures_delta);
+                last = Some(output);
+            }
+            let output = last.unwrap();
+            let primitives = ui.ctx.tessellate(output.shapes, output.pixels_per_point);
+            snapshot.paint(&primitives, output.pixels_per_point);
+            snapshot.save(&dir.join(format!("{name}.png")));
+        }
+    }
+
 
     /// Captures des menus en PNG, rendues sur le processeur :
     /// `HEROCRAFT_CAPTURES=dossier [HEROCRAFT_CAPTURES_FOND=image.png] cargo test -p herocraft_client snapshot_menus -- --ignored`

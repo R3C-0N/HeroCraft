@@ -32,11 +32,12 @@ pub enum Action {
     ToggleOceanCurrents,
     OpenInventory,
     OpenSkills,
+    OpenMap,
     OpenChat,
 }
 
 /// Groupes d'actions, dans l'ordre d'affichage de la page Commandes
-pub const ACTION_GROUPS: [(&str, &[Action]); 6] = [
+pub const ACTION_GROUPS: [(&str, &[Action]); 7] = [
     (
         "DÉPLACEMENT",
         &[
@@ -51,13 +52,14 @@ pub const ACTION_GROUPS: [(&str, &[Action]); 6] = [
     ),
     ("OBJETS", &[Action::OpenInventory]),
     ("HÉROS", &[Action::OpenSkills]),
+    ("EXPLORATION", &[Action::OpenMap]),
     ("CAMÉRA", &[Action::ZoomModifier, Action::ToggleView, Action::ResetView]),
     ("MONDE", &[Action::NewPlanet, Action::ToggleTectonics, Action::ToggleOceanCurrents]),
     ("CHAT", &[Action::OpenChat]),
 ];
 
 impl Action {
-    pub const ALL: [Action; 16] = [
+    pub const ALL: [Action; 17] = [
         Action::MoveForward,
         Action::MoveBackward,
         Action::MoveLeft,
@@ -73,6 +75,7 @@ impl Action {
         Action::ToggleOceanCurrents,
         Action::OpenInventory,
         Action::OpenSkills,
+        Action::OpenMap,
         Action::OpenChat,
     ];
 
@@ -93,6 +96,7 @@ impl Action {
             Action::ToggleOceanCurrents => "Filtre courants marins",
             Action::OpenInventory => "Ouvrir l'inventaire",
             Action::OpenSkills => "Ouvrir la roue des compétences",
+            Action::OpenMap => "Ouvrir la carte",
             Action::OpenChat => "Ouvrir le chat (messages et commandes /)",
         }
     }
@@ -115,6 +119,8 @@ impl Action {
             Action::ToggleOceanCurrents => KeyCode::KeyY,
             Action::OpenInventory => KeyCode::KeyE,
             Action::OpenSkills => KeyCode::KeyC,
+            // Touche M d'un clavier AZERTY (point-virgule en QWERTY)
+            Action::OpenMap => KeyCode::Semicolon,
             Action::OpenChat => KeyCode::Enter,
         }
     }
@@ -293,6 +299,9 @@ impl Controls {
             KeyCode::AltRight => "Alt Gr",
             KeyCode::SuperLeft | KeyCode::SuperRight => "Super",
             KeyCode::Tab => "Tab",
+            // Position de la touche M en AZERTY, la disposition des touches par défaut (le vrai
+            // caractère est retenu dès le premier appui)
+            KeyCode::Semicolon => "M",
             KeyCode::CapsLock => "Verr. Maj",
             KeyCode::Enter => "Entrée",
             KeyCode::NumpadEnter => "Entrée pavé",
