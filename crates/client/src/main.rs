@@ -186,6 +186,7 @@ fn main() {
     let mut creatures_seed = current_seed;
     let mut creature_animator = creatures::CreatureAnimator::default();
     let mut hero_gait = hero_model::HeroGait::default();
+    let mut hero_figure = hero_model::FigureCache::default();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
     // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
     // prochain coup qu'on peut leur porter
@@ -683,7 +684,8 @@ fn main() {
                             hero_gait.update(camera.player_pos, anim_dt, block);
                             if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson) {
                                 state.set_hero_sheet(&legend.appearance);
-                                hero_model::push_hero(&mut frame, &legend.appearance, camera.player_pos, camera.player_yaw, hero_gait.swing(), block);
+                                let figure = hero_figure.get(&legend.appearance);
+                                hero_model::push_hero(&mut frame, &legend.appearance, figure, camera.player_pos, camera.player_yaw, hero_gait.swing(), block);
                             }
                             state.set_creature_frame(&frame);
                             creature_vertices = frame.vertices.len();

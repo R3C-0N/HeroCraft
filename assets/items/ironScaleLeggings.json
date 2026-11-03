@@ -3,6 +3,7 @@
   "name": "Chausses de fer",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/ironScaleLeggings.png",
   "stats": {"Protection": 12, "Durabilité": 900},
   "recipes": [

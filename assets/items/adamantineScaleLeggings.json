@@ -3,6 +3,7 @@
   "name": "Chausses d'adamantine",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/adamantineScaleLeggings.png",
   "stats": {"Protection": 20, "Durabilité": 3000},
   "recipes": [

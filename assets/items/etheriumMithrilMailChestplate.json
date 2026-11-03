@@ -3,6 +3,7 @@
   "name": "Pourpoint d'étherium (mithril)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/etheriumMithrilMailChestplate.png",
   "stats": {"Protection": 33, "Durabilité": 5000},
   "recipes": [

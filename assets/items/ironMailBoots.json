@@ -3,6 +3,7 @@
   "name": "Bottines de fer",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/ironMailBoots.png",
   "stats": {"Protection": 5, "Durabilité": 900},
   "recipes": [

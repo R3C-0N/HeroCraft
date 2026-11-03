@@ -3,6 +3,7 @@
   "name": "Chausses de silex",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/boneStuddedLeggings.png",
   "stats": {"Protection": 3, "Durabilité": 220},
   "recipes": [

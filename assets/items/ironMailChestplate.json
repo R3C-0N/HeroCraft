@@ -3,6 +3,7 @@
   "name": "Pourpoint de fer",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/ironMailChestplate.png",
   "stats": {"Protection": 13, "Durabilité": 900},
   "recipes": [

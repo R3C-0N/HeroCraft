@@ -3,6 +3,7 @@
   "name": "Capuche d'acier",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/steelMailHelmet.png",
   "stats": {"Protection": 9, "Durabilité": 2000},
   "recipes": [

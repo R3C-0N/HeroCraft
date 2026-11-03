@@ -3,6 +3,7 @@
   "name": "Bottes de silex",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/boneStuddedBoots.png",
   "stats": {"Protection": 2, "Durabilité": 220},
   "recipes": [

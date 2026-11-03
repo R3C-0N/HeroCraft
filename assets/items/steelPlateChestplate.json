@@ -3,6 +3,7 @@
   "name": "Cuirasse d'acier",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/steelPlateChestplate.png",
   "stats": {"Protection": 24, "Durabilité": 2000},
   "recipes": [

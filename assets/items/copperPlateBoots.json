@@ -3,6 +3,7 @@
   "name": "Solerets de cuivre",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/copperPlateBoots.png",
   "stats": {"Protection": 5, "Durabilité": 300},
   "recipes": [

@@ -3,6 +3,7 @@
   "name": "Grèves d'os",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/boneLeggings.png",
   "stats": {"Protection": 5, "Durabilité": 150},
   "recipes": [

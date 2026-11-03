@@ -3,6 +3,7 @@
   "name": "Casque en planches",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/plankHelmet.png",
   "stats": {"Protection": 2, "Durabilité": 80},
   "recipes": [

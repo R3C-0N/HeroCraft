@@ -3,6 +3,7 @@
   "name": "Bottines d'acier",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/steelMailBoots.png",
   "stats": {"Protection": 6, "Durabilité": 2000},
   "recipes": [
