@@ -299,6 +299,26 @@ pub fn hurt_grunt(seed: u32) -> Vec<f32> {
     normalize(out, 0.75)
 }
 
+/// Bouchées croquées : trois craquements secs et étouffés, de plus en plus faibles
+pub fn eat_crunch(seed: u32) -> Vec<f32> {
+    let mut rng = Noise::new(seed ^ 0xEA7);
+    let length = 0.6;
+    let n = samples(length);
+    let mut out = vec![0.0; n];
+    let mut band = BandPass::new();
+    let mut soft = OnePole::new();
+    let bites: Vec<(f32, f32)> = (0..3).map(|i| (i as f32 * (0.17 + 0.03 * rng.unit()), 1.0 - 0.25 * i as f32)).collect();
+    for (i, s) in out.iter_mut().enumerate() {
+        let t = i as f32 / SAMPLE_RATE as f32;
+        let env: f32 = bites.iter().filter(|(o, _)| t >= *o).map(|(o, a)| a * envelope(t - o, 0.002, 0.035)).sum();
+        // Grain du croquant : bruit en bande médium, adouci par la bouche fermée
+        let crunch = soft.low(band.process(rng.next(), 1500.0 + 600.0 * rng.unit(), 0.9), 3500.0);
+        *s = crunch * env;
+    }
+    fade_tail(&mut out, 0.03);
+    normalize(out, 0.6)
+}
+
 /// Vent en boucle : bruit filtré dont le timbre et le volume ondulent en rafales.
 /// La fin se fond dans le début : la boucle n'a pas de raccord audible.
 pub fn wind_loop(seconds: f32, seed: u32) -> Vec<f32> {

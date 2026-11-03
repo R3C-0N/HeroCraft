@@ -486,6 +486,7 @@ impl Server {
             ClientPacket::FeedCreature { creature_id, item } => self.feed_creature(id, creature_id, ItemId(item)),
             ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
+            ClientPacket::Eat { item } => self.eat(id, ItemId(item)),
             ClientPacket::ChatMessage(text) => {
                 let text: String = text.trim().chars().filter(|c| !c.is_control()).take(MAX_CHAT_CHARS).collect();
                 if text.is_empty() {
@@ -506,6 +507,16 @@ impl Server {
             ClientPacket::GainExperience(amount) => self.grant_experience(id, amount.min(MAX_EXPERIENCE)),
             ClientPacket::Disconnect => self.leave(id, "déconnexion"),
         }
+    }
+
+    /// Le joueur mange : sa satiété remonte de ce que rend l'aliment, et ses jauges lui sont
+    /// renvoyées (même refusé, pour que son client se recale)
+    fn eat(&mut self, id: u64, item: ItemId) {
+        let Some(player) = self.players.get_mut(&id) else { return };
+        if let Some(satiety) = item.satiety() {
+            player.stats.eat(satiety);
+        }
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
     }
 
     /// Légende d'un héros : refusée si un choix sort de l'atlas, sinon sa voie devient celle du

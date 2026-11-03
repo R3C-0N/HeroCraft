@@ -311,12 +311,23 @@ fn main() {
                                 let station = block_interaction.aimed_station().filter(|_| action == block_interaction::BlockAction::Place && !camera.is_crouching());
                                 // Clic droit sur une bête avec sa nourriture en main : elle la mange
                                 let fed = action == block_interaction::BlockAction::Place
+                                    && station.is_none()
                                     && feed_aimed_creature(&camera, &block_interaction, &creature_views, &creature_registry, net.as_mut(), &mut solo_creatures, &mut ui_state, &mut audio);
+                                // Sinon, un aliment en main : le joueur le mange
+                                let food = ui_state.inventory.selected_food().filter(|_| action == block_interaction::BlockAction::Place && station.is_none() && !fed);
                                 if fed {
                                 } else if let Some(at) = station {
                                     camera.release_inputs();
                                     block_interaction.reset();
                                     ui_state.open_station(at);
+                                } else if let Some((item, satiety)) = food {
+                                    if ui_state.player.eat(satiety) {
+                                        ui_state.inventory.consume_selected();
+                                        audio.eat(&ui_state.audio_settings);
+                                        if let Some(client) = net.as_mut() {
+                                            client.send_eat(item);
+                                        }
+                                    }
                                 } else {
                                     let changes = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory);
                                     for &(pos, block, previous) in &changes {

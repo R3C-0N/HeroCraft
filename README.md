@@ -93,6 +93,8 @@ Les 135 blocs et 523 objets des modules de la branche `develop` (`CoreAssets`, `
 #### Blessures et mort :
 Une chute de plus de 5 blocs blesse : l'écran rougit, ses bords s'assombrissent de rouge et la vue penche un instant, avec un souffle coupé. Sous 30 % de vie, les bords de l'écran battent en rouge. À la mort, la vue s'effondre au sol et un écran « Vous êtes mort » donne la cause ; le bouton `Réapparaître` (ou `Espace`) ramène au point d'apparition, jauges pleines, après 2 secondes.
 
+La **faim** se lit sur la jauge de satiété, sous l'endurance. Elle baisse doucement avec le temps (un ventre plein tient 25 minutes) et plus vite au sprint (6 minutes de course). Sous 25 %, « Vous avez faim » : la jauge clignote, la vie ne remonte plus et l'endurance revient deux fois moins vite. À zéro, « Vous mourez de faim » : la vie baisse d'un demi-point par seconde, jusqu'à 10 % de son maximum (la faim affaiblit mais ne tue pas). Pour manger, prendre un aliment en main dans la barre d'objets et faire un clic droit : il rend la satiété indiquée dans sa bulle (`Satiété`, de 2 pour un oignon cru à 72 pour un ragoût). On ne mange pas le ventre plein. La satiété est enregistrée avec la progression du monde solo ; en ligne, c'est le serveur qui la tient. La mort et `/heal` la remplissent.
+
 #### Contrôles du prototype :
 Toutes les touches se changent dans `Échap > Commandes` (clic sur une touche, puis appui sur la nouvelle). Elles sont enregistrées dans `config/controles.json`.
 - **Souris** : en jeu au sol, le curseur est capturé et la souris oriente le regard. Le menu Échap et la vue satellite le font réapparaître.

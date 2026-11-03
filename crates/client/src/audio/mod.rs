@@ -118,6 +118,7 @@ struct SoundBank {
     jumps: Vec<SamplesBuffer>,
     landings: Vec<SamplesBuffer>,
     hurts: Vec<SamplesBuffer>,
+    bites: Vec<SamplesBuffer>,
     birds: Vec<SamplesBuffer>,
     crickets: Vec<SamplesBuffer>,
 }
@@ -143,6 +144,7 @@ impl SoundBank {
             jumps: variants(synth::jump_whoosh),
             landings: variants(synth::landing_thud),
             hurts: variants(synth::hurt_grunt),
+            bites: variants(synth::eat_crunch),
             birds: (0..8).map(|seed| buffer(synth::bird_song(seed))).collect(),
             crickets: variants(synth::cricket_chirps),
         }
@@ -256,6 +258,11 @@ impl Audio {
         let gain = settings.effects_gain();
         self.play(|b| &b.hurts, gain * (0.45 + 0.35 * strength), 0.06);
         self.play(|b| &b.landings, gain * 0.6 * strength, 0.08);
+    }
+
+    /// Le joueur mange : quelques bouchées croquées
+    pub fn eat(&mut self, settings: &AudioSettings) {
+        self.play(|b| &b.bites, settings.effects_gain() * 0.6, 0.08);
     }
 
     /// Coup porté au bloc que le joueur est en train de casser

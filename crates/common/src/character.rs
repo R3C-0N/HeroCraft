@@ -7,6 +7,19 @@ pub const FALL_DAMAGE_PER_BLOCK: f32 = 8.0;
 /// Endurance consommée par seconde de sprint
 pub const SPRINT_STAMINA_COST: f32 = 15.0;
 
+/// Satiété d'un ventre plein (la jauge de faim)
+pub const MAX_SATIETY: f32 = 100.0;
+/// Satiété perdue par seconde, au repos comme en marchant : un ventre plein tient 25 minutes
+pub const SATIETY_DRAIN: f32 = MAX_SATIETY / (25.0 * 60.0);
+/// Satiété perdue en plus par seconde de sprint (un ventre plein tient 6 minutes de course)
+pub const SPRINT_SATIETY_COST: f32 = 0.2;
+/// Sous cette fraction de la satiété, le joueur a faim : sa vie ne remonte plus
+pub const HUNGRY_FRACTION: f32 = 0.25;
+/// Le joueur affamé (satiété à zéro) perd autant de points de vie par seconde…
+pub const STARVATION_DAMAGE: f32 = 0.5;
+/// … jusqu'à cette fraction de sa vie : la faim affaiblit, mais ne tue pas
+pub const STARVATION_FLOOR: f32 = 0.1;
+
 /// Expérience du passage au niveau 2 ; chaque niveau suivant en coûte autant de plus
 pub const EXPERIENCE_STEP: u64 = 100;
 /// Points de compétence qu'apporte chaque niveau
@@ -55,6 +68,21 @@ pub fn fall_damage(blocks: f32) -> f32 {
     }
 }
 
+/// Ce que la faim fait au joueur, selon sa satiété
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hunger {
+    /// Rassasié : la vie et l'endurance remontent normalement
+    Fed,
+    /// Sous `HUNGRY_FRACTION` : la vie ne remonte plus, l'endurance deux fois moins vite
+    Hungry,
+    /// Satiété à zéro : en plus, la vie baisse jusqu'à `STARVATION_FLOOR`
+    Starving,
+}
+
+fn full_satiety() -> f32 {
+    MAX_SATIETY
+}
+
 /// Attributs primaires du RPG
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Attributes {
@@ -90,6 +118,12 @@ pub struct CharacterStats {
     pub max_mana: f32,
     pub stamina: f32,
     pub max_stamina: f32,
+    /// Jauge de faim : pleine, le joueur est rassasié ; elle baisse avec le temps et l'effort et se
+    /// remplit en mangeant
+    #[serde(default = "full_satiety")]
+    pub satiety: f32,
+    #[serde(default = "full_satiety")]
+    pub max_satiety: f32,
 
     /// Points de compétence gagnés et pas encore investis dans la roue (un par niveau)
     #[serde(default)]
@@ -112,6 +146,8 @@ impl CharacterStats {
             max_mana: 50.0,
             stamina: 100.0,
             max_stamina: 100.0,
+            satiety: MAX_SATIETY,
+            max_satiety: MAX_SATIETY,
             skill_points: 0,
             skills: std::collections::BTreeMap::new(),
         };
@@ -190,15 +226,54 @@ impl CharacterStats {
         self.hp == 0.0 // True si mort
     }
 
-    /// Avance les jauges de `dt` secondes : le sprint consomme l'endurance, qui se régénère
-    /// (+10 par sec) sinon ; la vie (+1 par sec) et le mana (+2 par sec) remontent toujours
+    /// Avance les jauges de `dt` secondes : la satiété baisse (plus vite au sprint), le sprint
+    /// consomme l'endurance, qui se régénère (+10 par sec) sinon, le mana remonte (+2 par sec).
+    /// La vie remonte (+1 par sec) tant que le joueur n'a pas faim ; affamé, il en perd.
     pub fn regenerate(&mut self, dt: f32, sprinting: bool) {
-        let stamina = if sprinting { -SPRINT_STAMINA_COST } else { 10.0 };
+        let drain = SATIETY_DRAIN + if sprinting { SPRINT_SATIETY_COST } else { 0.0 };
+        self.satiety = (self.satiety - drain * dt).clamp(0.0, self.max_satiety);
+        let hunger = self.hunger();
+
+        let stamina = match (sprinting, hunger) {
+            (true, _) => -SPRINT_STAMINA_COST,
+            (false, Hunger::Fed) => 10.0,
+            (false, _) => 5.0,
+        };
         self.stamina = (self.stamina + stamina * dt).clamp(0.0, self.max_stamina);
         self.mana = (self.mana + 2.0 * dt).min(self.max_mana);
         if self.hp > 0.0 {
-            self.hp = (self.hp + 1.0 * dt).min(self.max_hp);
+            match hunger {
+                Hunger::Fed => self.hp = (self.hp + 1.0 * dt).min(self.max_hp),
+                Hunger::Hungry => {}
+                Hunger::Starving => {
+                    let floor = STARVATION_FLOOR * self.max_hp;
+                    if self.hp > floor {
+                        self.hp = (self.hp - STARVATION_DAMAGE * dt).max(floor);
+                    }
+                }
+            }
         }
+    }
+
+    /// Ce que la faim fait au joueur en ce moment
+    pub fn hunger(&self) -> Hunger {
+        if self.satiety <= 0.0 {
+            Hunger::Starving
+        } else if self.satiety < HUNGRY_FRACTION * self.max_satiety {
+            Hunger::Hungry
+        } else {
+            Hunger::Fed
+        }
+    }
+
+    /// Mange un aliment qui rend `satiety` points : renvoie faux (rien n'est mangé) si ce n'est pas
+    /// un aliment ou si le joueur n'a plus faim
+    pub fn eat(&mut self, satiety: f32) -> bool {
+        if !(satiety > 0.0) || self.satiety >= self.max_satiety - 0.5 {
+            return false;
+        }
+        self.satiety = (self.satiety + satiety).min(self.max_satiety);
+        true
     }
 
     /// Retour à la vie après une mort : jauges pleines, niveau et expérience conservés
@@ -206,12 +281,67 @@ impl CharacterStats {
         self.hp = self.max_hp;
         self.mana = self.max_mana;
         self.stamina = self.max_stamina;
+        self.satiety = self.max_satiety;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_hunger_drains_slowly_and_faster_when_sprinting() {
+        let mut hero = CharacterStats::new(PlayerClass::Soldier);
+        assert_eq!(hero.hunger(), Hunger::Fed);
+        // Dix minutes de marche : il reste plus de la moitié
+        hero.regenerate(600.0, false);
+        assert!((55.0..65.0).contains(&hero.satiety), "{}", hero.satiety);
+        let mut runner = CharacterStats::new(PlayerClass::Soldier);
+        for _ in 0..600 {
+            runner.regenerate(1.0, true);
+        }
+        assert_eq!(runner.satiety, 0.0, "dix minutes de course vident le ventre");
+        assert_eq!(runner.hunger(), Hunger::Starving);
+    }
+
+    #[test]
+    fn test_hungry_player_stops_healing_then_weakens_without_dying() {
+        let mut hero = CharacterStats::new(PlayerClass::Soldier);
+        hero.take_damage(50.0);
+        let hurt = hero.hp;
+        hero.satiety = 0.2 * hero.max_satiety;
+        assert_eq!(hero.hunger(), Hunger::Hungry);
+        hero.regenerate(1.0, false);
+        assert_eq!(hero.hp, hurt, "affamé, la vie ne remonte plus");
+
+        hero.satiety = 0.0;
+        hero.regenerate(10.0, false);
+        assert!(hero.hp < hurt, "le ventre vide affaiblit");
+        for _ in 0..3600 {
+            hero.regenerate(1.0, false);
+        }
+        assert!((hero.hp - STARVATION_FLOOR * hero.max_hp).abs() < 1e-3, "{}", hero.hp);
+
+        // Un repas, et la vie remonte
+        assert!(hero.eat(40.0));
+        assert_eq!(hero.hunger(), Hunger::Fed);
+        let weak = hero.hp;
+        hero.regenerate(1.0, false);
+        assert!(hero.hp > weak);
+    }
+
+    #[test]
+    fn test_eating_fills_up_to_full_only() {
+        let mut hero = CharacterStats::new(PlayerClass::Soldier);
+        assert!(!hero.eat(10.0), "ventre plein : on ne mange pas");
+        hero.satiety = 90.0;
+        assert!(hero.eat(40.0));
+        assert_eq!(hero.satiety, hero.max_satiety);
+        hero.satiety = 10.0;
+        assert!(!hero.eat(0.0) && !hero.eat(f32::NAN));
+        hero.revive();
+        assert_eq!(hero.satiety, hero.max_satiety);
+    }
 
     #[test]
     fn test_level_up_progression() {
