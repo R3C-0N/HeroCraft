@@ -18,7 +18,7 @@ use glam::Vec3;
 use herocraft_common::lan::{LanAnnounce, LanAnnouncer};
 use herocraft_common::net::{encode_frame, Connection};
 use herocraft_common::{
-    fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, PlayerClass, PlayerState,
+    fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, ItemId, PlayerClass, PlayerState,
     ServerPacket, SkillWheel, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
@@ -460,6 +460,7 @@ impl Server {
             ClientPacket::HitCreature { creature_id } => self.hit_creature(id, creature_id),
             ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
+            ClientPacket::Eat { item } => self.eat(id, ItemId(item)),
             ClientPacket::ChatMessage(text) => {
                 let text: String = text.trim().chars().filter(|c| !c.is_control()).take(MAX_CHAT_CHARS).collect();
                 if text.is_empty() {
@@ -480,6 +481,16 @@ impl Server {
             ClientPacket::GainExperience(amount) => self.grant_experience(id, amount.min(MAX_EXPERIENCE)),
             ClientPacket::Disconnect => self.leave(id, "déconnexion"),
         }
+    }
+
+    /// Le joueur mange : sa satiété remonte de ce que rend l'aliment, et ses jauges lui sont
+    /// renvoyées (même refusé, pour que son client se recale)
+    fn eat(&mut self, id: u64, item: ItemId) {
+        let Some(player) = self.players.get_mut(&id) else { return };
+        if let Some(satiety) = item.satiety() {
+            player.stats.eat(satiety);
+        }
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
     }
 
     /// Légende d'un héros : refusée si un choix sort de l'atlas, sinon sa voie devient celle du
