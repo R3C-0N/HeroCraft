@@ -71,6 +71,8 @@ pub struct OrbitCamera {
 
     /// Vol libre (double appui sur Saut) : pas de gravité, Saut monte et Descendre descend
     pub is_flying: bool,
+    /// Multiplicateur de la vitesse de déplacement (commande `/speed`)
+    pub speed_multiplier: f32,
     pub ascend_held: bool,
     pub descend_held: bool,
     /// Accroupissement affiché, de 0 (debout) à 1 (accroupi) : les yeux descendent en douceur
@@ -146,6 +148,7 @@ impl Default for OrbitCamera {
             jump_requested: false,
 
             is_flying: false,
+            speed_multiplier: 1.0,
             ascend_held: false,
             descend_held: false,
             crouch_blend: 0.0,
@@ -238,6 +241,7 @@ impl OrbitCamera {
         }
 
         self.player_pos = spawn_dir * spawn_ground_r;
+        let visit_target = self.visit_settlement(generator);
         self.vertical_velocity = 0.0;
         self.is_grounded = true;
         self.is_flying = false;
@@ -249,7 +253,48 @@ impl OrbitCamera {
         self.sync_orbit_to_ground();
         self.distance = 0.0;
         self.target_distance = 0.0;
+        if let Some(target) = visit_target {
+            // Le regard tourné vers le centre de l'établissement, un peu plongeant
+            let (up, east, north) = self.local_frame();
+            let toward = (target - up * target.dot(up)).normalize_or_zero();
+            self.player_yaw = toward.dot(east).atan2(toward.dot(north));
+            self.player_pitch = -0.25;
+        }
         self.update_camera_bounds(generator);
+    }
+
+    /// `--visiter ville|village|ruines` : place le joueur au bord du premier établissement de ce
+    /// genre que porte la planète. Renvoie la direction de son centre.
+    fn visit_settlement(&mut self, generator: &PlanetWorldGenerator) -> Option<Vec3> {
+        use herocraft_world::structures::CELLS_PER_FACE;
+        let args: Vec<String> = std::env::args().collect();
+        let wanted = args.iter().position(|a| a == "--visiter").and_then(|i| args.get(i + 1))?;
+        let rank: usize = args.iter().position(|a| a == "--visiter").and_then(|i| args.get(i + 2)).and_then(|n| n.parse().ok()).unwrap_or(1);
+        let mut found = herocraft_common::PlanetFace::ALL.into_iter().flat_map(|face| {
+            (0..CELLS_PER_FACE * CELLS_PER_FACE).filter_map(move |i| generator.structures.cell(generator, face, i % CELLS_PER_FACE, i / CELLS_PER_FACE))
+        });
+        let Some(settlement) = found.find(|s| s.kind.name() == wanted.as_str()).and_then(|first| {
+            if rank <= 1 { Some(first) } else { found.filter(|s| s.kind == first.kind).nth(rank - 2) }
+        }) else {
+            log::warn!("--visiter {wanted} : aucun établissement de ce genre sur cette planète (ville, village ou ruines).");
+            return None;
+        };
+        let face = settlement.face;
+        let to_dir = |x: i32, z: i32| {
+            let span = 2.0 / 1024.0;
+            let d = face.uv_to_sphere_direction(-1.0 + (x as f64 + 0.5) * span, -1.0 + (z as f64 + 0.5) * span);
+            Vec3::new(d.x as f32, d.y as f32, d.z as f32)
+        };
+        let (cx, cz) = settlement.center;
+        let dir = to_dir(cx, settlement.bounds.z0 - 3).normalize();
+        self.player_pos = dir * self.ground_radius_at(dir, generator);
+        log::info!(
+            "Visite : {} n° {rank} sur la face {:?}, centre en ({cx}, {cz}), {} pièces.",
+            settlement.kind.name(),
+            face,
+            settlement.pieces.len()
+        );
+        Some(to_dir(cx, cz))
     }
 
     /// Mode de caméra déduit du continuum de distance effective
@@ -443,6 +488,29 @@ impl OrbitCamera {
         }
     }
 
+    /// Téléporte le joueur aux pieds `feet` (vue au sol) : en vol s'il n'est pas posé au sol, pour
+    /// qu'il ne fasse pas de chute
+    pub fn teleport(&mut self, feet: Vec3, generator: &PlanetWorldGenerator) {
+        let ground = self.ground_radius_at(feet.normalize_or_zero(), generator);
+        let block = self.block_height();
+        self.player_pos = feet;
+        self.vertical_velocity = 0.0;
+        self.jump_requested = false;
+        self.cancel_fall();
+        self.is_flying = feet.length() > ground + 0.5 * block;
+        self.is_grounded = !self.is_flying;
+        self.sync_orbit_to_ground();
+        self.distance = 0.0;
+        self.target_distance = 0.0;
+        self.update_camera_bounds(generator);
+    }
+
+    /// Pieds posés au sol à cette latitude et longitude (radians), `height_blocks` blocs au-dessus
+    pub fn ground_point(&self, lat: f32, lon: f32, height_blocks: f32, generator: &PlanetWorldGenerator) -> Vec3 {
+        let dir = Vec3::new(lat.cos() * lon.cos(), lat.sin(), lat.cos() * lon.sin());
+        dir * (self.ground_radius_at(dir, generator) + height_blocks * self.block_height())
+    }
+
     /// Zoom continu via la molette : passe sans couture de Satellite à TPS puis à FPS
     pub fn zoom(&mut self, delta_y: f32) {
         if self.target_distance <= 0.05 && delta_y < 0.0 {
@@ -630,7 +698,7 @@ impl OrbitCamera {
                 (false, true) => 0.45,
                 (true, false) => 0.50,
                 (true, true) => 1.10,
-            } * scale;
+            } * scale * self.speed_multiplier;
             let delta = move_dir * speed * dt;
             match &self.collider {
                 // Les murs arrêtent le joueur, qui glisse le long d'eux (axe est puis axe nord)

@@ -32,10 +32,11 @@ pub enum Action {
     ToggleOceanCurrents,
     OpenInventory,
     OpenSkills,
+    OpenChat,
 }
 
 /// Groupes d'actions, dans l'ordre d'affichage de la page Commandes
-pub const ACTION_GROUPS: [(&str, &[Action]); 5] = [
+pub const ACTION_GROUPS: [(&str, &[Action]); 6] = [
     (
         "DÉPLACEMENT",
         &[
@@ -52,10 +53,11 @@ pub const ACTION_GROUPS: [(&str, &[Action]); 5] = [
     ("HÉROS", &[Action::OpenSkills]),
     ("CAMÉRA", &[Action::ZoomModifier, Action::ToggleView, Action::ResetView]),
     ("MONDE", &[Action::NewPlanet, Action::ToggleTectonics, Action::ToggleOceanCurrents]),
+    ("CHAT", &[Action::OpenChat]),
 ];
 
 impl Action {
-    pub const ALL: [Action; 15] = [
+    pub const ALL: [Action; 16] = [
         Action::MoveForward,
         Action::MoveBackward,
         Action::MoveLeft,
@@ -71,6 +73,7 @@ impl Action {
         Action::ToggleOceanCurrents,
         Action::OpenInventory,
         Action::OpenSkills,
+        Action::OpenChat,
     ];
 
     pub fn label(self) -> &'static str {
@@ -90,6 +93,7 @@ impl Action {
             Action::ToggleOceanCurrents => "Filtre courants marins",
             Action::OpenInventory => "Ouvrir l'inventaire",
             Action::OpenSkills => "Ouvrir la roue des compétences",
+            Action::OpenChat => "Ouvrir le chat (messages et commandes /)",
         }
     }
 
@@ -111,6 +115,7 @@ impl Action {
             Action::ToggleOceanCurrents => KeyCode::KeyY,
             Action::OpenInventory => KeyCode::KeyE,
             Action::OpenSkills => KeyCode::KeyC,
+            Action::OpenChat => KeyCode::Enter,
         }
     }
 }

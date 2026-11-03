@@ -219,51 +219,84 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
 fn l_experience_donne_des_points_que_la_roue_juge() {
     let mut server = test_server();
     let addr = server.local_addr().unwrap().to_string();
-    // Le client se connecte et dépense ses points pendant que le serveur tourne ici, sur ce fil
-    let client_thread = std::thread::spawn(move || {
-        let (client, _, _) = connect(&addr, "Alice");
-        // Sans point, la roue refuse : les statistiques reviennent inchangées
-        client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
-        wait_for(&client, |p| match p {
-            ServerPacket::StatsUpdate(stats) if stats.skill_points == 2 => Some(()),
-            ServerPacket::StatsUpdate(stats) => {
-                assert!(stats.skills.is_empty(), "appris sans point : {:?}", stats.skills);
-                None
-            }
-            _ => None,
-        });
-        client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
-        client.send(&ClientPacket::LearnSkill { id: "tornadeEcrasante".into() });
-        let stats = wait_for(&client, |p| match p {
-            ServerPacket::StatsUpdate(stats) if stats.skill_points < 2 => Some(stats),
-            _ => None,
-        });
-        assert_eq!(stats.skills.get("frappeLourde"), Some(&1));
-        // Tornade écrasante est une fusion du niveau 2 : refusée, le point reste
-        let stats = wait_for(&client, |p| match p {
-            ServerPacket::StatsUpdate(stats) => Some(stats),
-            _ => None,
-        });
-        assert_eq!(stats.skill_points, 1);
-        assert!(!stats.skills.contains_key("tornadeEcrasante"));
-    });
+    let client = Client::connect(&addr, WAIT).unwrap();
+    client.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
 
-    let deadline = Instant::now() + WAIT;
-    let mut granted = false;
-    while !client_thread.is_finished() {
-        assert!(Instant::now() < deadline, "le client n'a pas fini à temps");
-        server.tick(0.05);
-        if !granted {
-            let first = server.players().next().map(|p| p.id);
-            if let Some(id) = first {
-                // Assez pour atteindre le niveau 3 (100 + 200) : deux points, après un premier refus
-                std::thread::sleep(Duration::from_millis(200));
-                server.tick(0.05);
-                granted = server.grant_experience(id, 300);
-            }
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    client_thread.join().unwrap();
-    assert!(granted);
+    // Sans point, la roue refuse : les statistiques reviennent inchangées
+    client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
+    let stats = pump(&mut server, &client, |p| match p {
+        ServerPacket::StatsUpdate(stats) => Some(stats),
+        _ => None,
+    });
+    assert!(stats.skills.is_empty(), "appris sans point : {:?}", stats.skills);
+
+    // /xp : de quoi atteindre le niveau 3 (100 + 200), soit deux points
+    client.send(&ClientPacket::GainExperience(300));
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.skill_points == 2).then_some(()));
+
+    client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
+    let stats = pump(&mut server, &client, |p| match p {
+        ServerPacket::StatsUpdate(stats) if stats.skill_points < 2 => Some(stats),
+        _ => None,
+    });
+    assert_eq!(stats.skills.get("frappeLourde"), Some(&1));
+    // Tornade écrasante est une fusion du niveau 2 : refusée, le point reste
+    client.send(&ClientPacket::LearnSkill { id: "tornadeEcrasante".into() });
+    server.tick(1.0 / 60.0);
+    let stats = pump(&mut server, &client, |p| match p {
+        ServerPacket::StatsUpdate(stats) => Some(stats),
+        _ => None,
+    });
+    assert_eq!(stats.skill_points, 1);
+    assert!(!stats.skills.contains_key("tornadeEcrasante"));
+}
+
+#[test]
+fn le_chat_et_les_commandes_passent_par_le_serveur() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let (_, feet) = land(&server);
+
+    let join = |server: &mut Server, name: &str| {
+        let client = Client::connect(&addr, WAIT).unwrap();
+        client.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION });
+        pump(server, &client, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
+        client
+    };
+    let alice = join(&mut server, "Alice");
+    let bob = join(&mut server, "Bob");
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
+
+    // Un message d'Alice arrive à Bob, et à Alice elle-même
+    alice.send(&ClientPacket::ChatMessage("  salut Bob  ".into()));
+    let chat = |p: ServerPacket| match p {
+        ServerPacket::ChatMessage { sender, message } if !sender.is_empty() => Some((sender, message)),
+        _ => None,
+    };
+    assert_eq!(pump(&mut server, &bob, chat), ("Alice".to_string(), "salut Bob".to_string()));
+    assert_eq!(pump(&mut server, &alice, chat), ("Alice".to_string(), "salut Bob".to_string()));
+
+    // /summon : trois loups à ses pieds, la réponse ne va qu'à elle
+    let before = server.creatures().creatures().len();
+    alice.send(&ClientPacket::Summon { species: "loup".into(), count: 3, feet });
+    let reply = |p: ServerPacket| match p {
+        ServerPacket::ChatMessage { sender, message } if sender.is_empty() && !message.contains("rejoint") => Some(message),
+        _ => None,
+    };
+    assert!(pump(&mut server, &alice, reply).starts_with("Summoned 3"));
+    assert_eq!(server.creatures().creatures().len(), before + 3);
+    // Trop loin d'elle : refusé
+    alice.send(&ClientPacket::Summon { species: "loup".into(), count: 1, feet: feet * 2.0 });
+    assert!(pump(&mut server, &alice, reply).contains("Too far"));
+
+    // /xp : de l'expérience, et le niveau qui va avec
+    alice.send(&ClientPacket::GainExperience(100_000));
+    pump(&mut server, &alice, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.level > 1).then_some(()));
+
+    // Console du serveur
+    assert_eq!(server.console_command("list"), vec!["2 player(s) online: Alice, Bob".to_string()]);
+    assert_eq!(server.console_command("seed"), vec!["Seed: 4242".to_string()]);
+    server.console_command("say Bonjour");
+    assert_eq!(pump(&mut server, &bob, chat), ("Server".to_string(), "Bonjour".to_string()));
 }

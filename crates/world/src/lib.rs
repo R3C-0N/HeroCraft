@@ -6,6 +6,7 @@ pub mod generator;
 pub mod ocean_currents;
 pub mod population;
 pub mod quadtree;
+pub mod structures;
 pub mod tectonics;
 pub mod vegetation;
 
@@ -16,5 +17,6 @@ pub use edits::*;
 pub use generator::*;
 pub use ocean_currents::*;
 pub use quadtree::*;
+pub use structures::{Settlement, SettlementKind, StructureMap};
 pub use tectonics::*;
 pub use vegetation::{Tree, TreeKind, VegetationField, TREE_CELL, TREE_REACH, VEGETATION_SPAN};

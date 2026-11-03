@@ -1,9 +1,12 @@
 use crate::caves::{block_carved, carvable_range, CaveField};
 use crate::cubed_sphere::{base_solar_temperature, unit_sphere_to_lat_lon, PlanetDescriptor};
 use crate::ocean_currents::OceanicCurrentSimulation;
+use crate::structures::{Rect, Settlement, StructureMap};
 use crate::tectonics::TectonicSimulation;
 use crate::vegetation::{VegetationField, VEGETATION_SPAN};
 use glam::DVec3;
+use std::ops::Range;
+use std::sync::Arc;
 use herocraft_common::{BlockId, PlanetChunkCoord, PlanetFace};
 use herocraft_voxel_engine::{ChunkData, CHUNK_SIZE};
 
@@ -90,6 +93,8 @@ pub struct PlanetWorldGenerator {
     pub planet: PlanetDescriptor,
     pub tectonics: TectonicSimulation,
     pub ocean_currents: OceanicCurrentSimulation,
+    /// Villes, villages et ruines, dessinés case par case à la première lecture
+    pub structures: Arc<StructureMap>,
 }
 
 impl PlanetWorldGenerator {
@@ -101,6 +106,7 @@ impl PlanetWorldGenerator {
             planet,
             tectonics,
             ocean_currents,
+            structures: Arc::new(StructureMap::new()),
         }
     }
 
@@ -216,6 +222,9 @@ impl PlanetWorldGenerator {
         if y < 0 {
             return BlockId::STONE;
         }
+        if let Some(block) = self.structure_block(column, face, x, y, z) {
+            return block;
+        }
         let global_y = y as f64;
         let elev_floor = column.elevation.floor();
         if global_y < elev_floor {
@@ -233,6 +242,40 @@ impl PlanetWorldGenerator {
         } else {
             BlockId::AIR
         }
+    }
+
+    /// La ville, le village ou les ruines dont le plan couvre la colonne (x, z) d'une face
+    pub fn settlement_at(&self, face: PlanetFace, x: i32, z: i32) -> Option<&Settlement> {
+        self.structures.at(self, face, x, z)
+    }
+
+    /// Bloc qu'une structure impose en (x, y, z) (`column` étant sa colonne), `None` si le terrain
+    /// naturel reste
+    #[inline]
+    pub fn structure_block(&self, column: &ColumnSample, face: PlanetFace, x: i32, y: i32, z: i32) -> Option<BlockId> {
+        self.settlement_at(face, x, z)?.block(x, y, z, column.elevation.floor() as i32)
+    }
+
+    /// Altitudes de la colonne (x, z) qu'une structure peut changer (vide si aucune n'y touche)
+    pub fn structure_span(&self, column: &ColumnSample, face: PlanetFace, x: i32, z: i32) -> Range<i32> {
+        match self.settlement_at(face, x, z) {
+            Some(s) => s.span(x, z, column.elevation.floor() as i32),
+            None => 0..0,
+        }
+    }
+
+    /// La colonne (x, z) est bâtie (rue, maison, champ, rempart…) ou à moins de `margin` colonnes
+    /// d'une construction : rien d'autre (un arbre par exemple) ne doit y pousser
+    pub fn is_built(&self, face: PlanetFace, x: i32, z: i32, margin: i32) -> bool {
+        let area = Rect::around(x, z, margin.max(0));
+        self.structures.touching(self, face, area).iter().any(|s| s.occupies(x, z, margin))
+    }
+
+    /// Plus haut bloc (exclu) que posent les structures d'un chunk et de sa bordure de `border` blocs
+    pub fn structures_top(&self, face: PlanetFace, chunk_x: i32, chunk_y: i32, border: i32) -> Option<i32> {
+        let size = CHUNK_SIZE as i32;
+        let area = Rect::new(chunk_x * size - border, chunk_y * size - border, (chunk_x + 1) * size + border, (chunk_y + 1) * size + border);
+        self.structures.touching(self, face, area).iter().map(|s| s.top).max()
     }
 
     /// Le bloc plein (x, y, z) d'une face est creusé par une grotte (`column` étant sa colonne)
@@ -371,6 +414,7 @@ impl PlanetWorldGenerator {
         }
 
         self.place_vegetation(&mut chunk, coord, columns, border, vegetation);
+        self.place_structures(coord, columns, border, &mut chunk);
         chunk
     }
 
@@ -432,6 +476,37 @@ impl PlanetWorldGenerator {
                 }
                 if let Some(plant) = self.ground_plant(column, coord.face, x0 + lx, z0 + lz) {
                     chunk.set_voxel(cx, cy, cz, plant);
+                }
+            }
+        }
+    }
+
+    /// Pose dans le chunk les blocs des villes, villages et ruines qui le touchent
+    fn place_structures(&self, coord: &PlanetChunkCoord, columns: &[ColumnSample], border: i32, chunk: &mut ChunkData) {
+        let size = CHUNK_SIZE as i32;
+        let (x0, z0) = (coord.x * size, coord.y * size);
+        let settlements = self.structures.touching(self, coord.face, Rect::sized(x0, z0, size, size));
+        if settlements.is_empty() {
+            return;
+        }
+        herocraft_common::prof_scope!("world::place_structures");
+        let side = size + 2 * border;
+        let layer_base = coord.altitude_layer * size;
+        for settlement in settlements {
+            for z in 0..size {
+                for x in 0..size {
+                    let (bx, bz) = (x0 + x, z0 + z);
+                    if !settlement.bounds.contains(bx, bz) {
+                        continue;
+                    }
+                    let column = &columns[((z + border) * side + x + border) as usize];
+                    let ground = column.elevation.floor() as i32;
+                    let span = settlement.span(bx, bz, ground);
+                    for y in span.start.max(layer_base)..span.end.min(layer_base + size) {
+                        if let Some(block) = settlement.block(bx, y, bz, ground) {
+                            chunk.set_voxel(x as u8, (y - layer_base) as u8, z as u8, block);
+                        }
+                    }
                 }
             }
         }

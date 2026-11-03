@@ -8,7 +8,7 @@ Le projet est structuré sous forme de **Cargo Workspace** modulaire :
 
 - `crates/common` : Types partagés (blocs, RPG, protocoles réseau, maths planétaires).
 - `crates/voxel_engine` : Structures de données des chunks (32x32x32), palette compression, maillage glouton (Greedy Meshing).
-- `crates/world` : Génération procédurale de planète (Cubed-Sphere, climats, biomes, grottes).
+- `crates/world` : Génération procédurale de planète (Cubed-Sphere, climats, biomes, grottes, villes, villages et ruines).
 - `crates/server` : Serveur de jeu dédié autonome (60 Hz tickrate, autorité serveur).
 - `crates/client` : Client graphique (moteur de rendu WGPU / Bevy, caméra, interface).
 
@@ -27,7 +27,7 @@ Tout passe par **`Échap > Multijoueur`** :
 ```bash
 cargo run --release --bin herocraft_server -- [--port 7777] [--seed 2026] [--name "Mon serveur"] [--no-lan]
 ```
-Le serveur écoute en TCP (port 7777 par défaut) à 60 TPS et s'annonce sur le réseau local (sauf `--no-lan`). Il fait autorité sur les blocs : il valide chaque bloc cassé ou posé (portée, contenu), l'enregistre dans `saves/serveur_monde_<graine>/` et le diffuse à tous les joueurs. Il relaie aussi leurs positions. Tapez `stop` dans sa console pour l'arrêter en enregistrant le monde.
+Le serveur écoute en TCP (port 7777 par défaut) à 60 TPS et s'annonce sur le réseau local (sauf `--no-lan`). Il fait autorité sur les blocs : il valide chaque bloc cassé ou posé (portée, contenu), l'enregistre dans `saves/serveur_monde_<graine>/` et le diffuse à tous les joueurs. Il relaie aussi leurs positions et le chat. Dans sa console : `stop` l'arrête en enregistrant le monde, `list` donne les joueurs en ligne, `seed` la graine, `say <message>` écrit à tous les joueurs, `help` rappelle ces commandes.
 
 ### Lancer le prototype client interactif :
 ```bash
@@ -47,6 +47,18 @@ Le générateur pose la végétation selon le biome : chênes, bouleaux et bosqu
 #### Créatures :
 Les 19 créatures du bestiaire (reprises du module `HeroBestiary` de la branche `develop`) sont dessinées avec leurs modèles glTF animés et leurs textures. Lapins, faisans, cerfs, loups, ours, sangliers, vaches et mouflons peuplent la planète selon le biome, sur l'herbe, la terre, le sable ou la neige : chaque zone de 32 × 32 blocs reçoit une fois pour toutes la population que lui destine la graine du monde, et plus rien n'apparaît ensuite. Une bête tuée ne revient pas. Les créatures des profondeurs et des mondes démoniaques n'apparaissent pas encore d'elles-mêmes. Toutes se promènent au hasard : elles franchissent les marches d'un bloc, évitent l'eau, les murs et les à-pics, et tombent dans les trous creusés sous elles. Leurs pattes bougent à la vitesse où elles avancent. Loin de tout joueur, une zone s'endort : ses bêtes ne bougent plus et reprennent là où elles étaient quand un joueur revient. La population (zones déjà peuplées, bêtes, positions, vie) est enregistrée dans `creatures.json`, dans la sauvegarde du monde. En solo, elles vivent dans le jeu et s'arrêtent avec le menu ; en ligne, c'est le serveur qui les fait vivre. Chaque espèce est décrite par un fichier de `assets/creatures/` : ajouter une bête, c'est ajouter un fichier et son modèle. Voir [assets/creatures/README.md](assets/creatures/README.md).
 
+Les menus et le HUD reprennent l'habillage de l'ancien Terasology (branche `develop`) : panneaux de planches cerclés de fer, boutons de bois, plaque de titre en métal, cases d'inventaire et cases à cocher en pixel art, polices Grenze et Uncial Antiqua. Les textures et les polices sont dans `crates/client/assets/ui/` (licences dans [LICENCE.md](crates/client/assets/ui/LICENCE.md)). Pour voir les menus sans lancer le jeu : `HEROCRAFT_CAPTURES=captures cargo test -p herocraft_client snapshot_menus -- --ignored` enregistre une capture PNG de chaque page (fond au choix avec `HEROCRAFT_CAPTURES_FOND=image.png`, taille avec `HEROCRAFT_CAPTURES_TAILLE=1280x720`).
+
+#### Villes, villages et ruines :
+La planète porte des villes fortifiées, des villages et des ruines, posés par le générateur selon la graine : chaque face est découpée en cases de 128 × 128 blocs, et chaque case reçoit une ville, un village, des ruines ou rien, sur un site qui s'y prête (terre ferme, relief assez plat, biome). Une graine donne près d'une centaine d'établissements, toujours les mêmes, pour le client, le serveur et tous les joueurs en ligne.
+- **Villes** : un damier de rues pavées entre des remparts crénelés, une tour à chaque angle, une porte au milieu de chaque côté, une grand-place avec sa fontaine et ses étals de marché, des lampadaires aux carrefours, une église à clocher donnant sur la place, une ou deux tavernes, une forge et une vingtaine de maisons de briques ou de planches, souvent à étage (une échelle y monte).
+- **Villages** : un puits couvert sur une petite place, deux à quatre chemins de gravier bordés de maisons, souvent une chapelle, une taverne ou une forge, des lampadaires, des champs irrigués (blé, carottes, pommes de terre, courges) et parfois une grange à grande porte.
+- **Bâtiments** : maisons de 5 à 9 blocs de côté, à toit à deux ou quatre pans, avec ou sans cheminée ni porche ; l'église a des bancs, un autel et un clocher à abat-sons ; la taverne, des tables et une cheminée ; la forge est un appentis ouvert avec âtre, fourneau et enclume ; la grange abrite des bottes de blé.
+- **Ruines** : temple sur podium aux colonnes brisées et à l'autel orné d'un cristal, vieille tour ronde éventrée, ou hameau de maisons effondrées.
+
+Les matériaux suivent le climat : maisons à toits plats blanchis à la chaux dans les déserts et les savanes, rondins de pin et toits de pavés dans la taïga et la toundra, planches et toits d'escaliers ailleurs. Chaque bâtiment a un plancher plat : des fondations comblent la pente, et le relief est dégagé au-dessus. Rues, champs et remparts suivent le terrain. Tout se casse et se construit comme le reste du terrain. Les structures ne se voient que dans la zone de blocs autour du joueur, pas encore sur le relief lointain.
+Pour aller voir : `-- --visiter ville` (ou `village`, `ruines`, suivi au besoin d'un numéro : `--visiter village 3`) fait apparaître au bord de l'établissement de ce genre. `cargo run -p herocraft_world --release --example settlements -- <graine>` les liste tous, et `-- <graine> <n°>` dessine le plan de l'un d'eux vu de dessus.
+
 #### Blocs et objets :
 Les 135 blocs et 523 objets des modules de la branche `develop` (`CoreAssets`, `HeroSurvival`, `HeroCrafting`, `HeroEquipment`, `HeroBestiary`…) sont décrits chacun par une fiche JSON, lue au lancement : `assets/blocks/` pour les blocs (nom, couleurs, textures, forme, passage, son, ce qu'il donne une fois cassé), `assets/items/` pour les objets (nom, description, taille de pile, icône, caractéristiques). Ajouter un bloc ou un objet, c'est ajouter une fiche. Fleurs, herbes, pousses et torches sont dessinées en deux panneaux croisés qu'on traverse ; le verre et la glace laissent voir les faces derrière eux. Les objets se rangent dans l'inventaire mais ne servent à rien pour l'instant (pas encore de combat, d'artisanat ni de nourriture). Voir [assets/blocks/README.md](assets/blocks/README.md) et [assets/items/README.md](assets/items/README.md).
 
@@ -63,7 +75,20 @@ Toutes les touches se changent dans `Échap > Commandes` (clic sur une touche, p
 - **`Alt` + molette** : zoom continu de la vue, du sol à l'orbite. En vue satellite, la molette seule suffit et clic + glisser tourne la planète.
 - **`F`** : vue au sol / satellite. **`R`** : réinitialiser la vue. **`G`** : nouvelle planète. **`T` / `Y`** : filtres plaques tectoniques / courants marins.
 - **`C`** : roue des compétences. Chaque niveau donne un point de compétence (100 xp pour le niveau 2, puis 100 de plus à chaque palier) ; un clic sur une compétence ouvre sa fiche, d'où l'on y investit un point (jusqu'au rang 3), pourvu que celles qu'elle demande soient apprises. La roue reprend celle du carnet Planner (fiche #138) : les 180 compétences des 15 classes, chaque classe de sa couleur, du niveau 1 au centre jusqu'à l'ultime au bord ; on peut apprendre dans toutes les classes. La roue fait loupe sur une classe : tournée en haut, elle prend près de la moitié du cercle avec ses compétences nommées, les autres se resserrent ; molette, flèches ou clic sur une part pour tourner. Elle est décrite dans `assets/competences/roue.json`, regénéré par `PLANNER_TOKEN=… python3 tools/importer_roue_competences.py`. En solo, la progression est enregistrée avec le monde (`saves/monde_<graine>/progression.json`) et un bouton d'essai donne 100 xp ; en ligne, c'est le serveur qui la tient.
-- **`Échap`** : menu de pause. **`F9`** : rapport de profilage.
+- **`Entrée`** : chat (voir plus bas). **`Échap`** : menu de pause. **`F9`** : rapport de profilage.
+
+#### Chat et commandes :
+**`Entrée`** ouvre le chat en bas à gauche (la souris est libérée, les touches ne pilotent plus le joueur). `Entrée` envoie, `Échap` referme. En ligne, le message part à tous les joueurs du serveur ; en solo, il reste à l'écran. Les dernières lignes restent affichées 10 secondes une fois le chat fermé. **`↑` / `↓`** rappellent les lignes déjà envoyées, **`Tab`** complète le nom d'une commande, d'un bloc ou objet (`/give`), d'une créature (`/summon`) ou d'un joueur (`/tp`), et passe d'une suite à l'autre.
+
+Une ligne qui commence par `/` est une commande (en anglais) :
+- `/help [command]` : liste des commandes, ou détail de l'une.
+- `/tp <latitude> <longitude> [height]` : téléportation au sol (degrés), éventuellement quelques blocs au-dessus (en vol). `/tp <player>` : à côté d'un autre joueur. `/spawn` : retour au point d'apparition. `/pos` : latitude, longitude, altitude et bloc.
+- `/time` : heure locale. `/time set <0-24|hh:mm|sunrise|day|noon|sunset|night|midnight>` : règle l'heure là où l'on est. `/time speed <factor>` : vitesse du ciel (1 : jour de 20 min, 0 : ciel figé). En ligne, le ciel reste propre à chaque joueur.
+- `/seed` : graine de la planète. `/planet [seed]` : nouvelle planète, au hasard ou de cette graine (solo).
+- `/give <item> [count]` : blocs ou objets dans l'inventaire (identifiant de la fiche, comme `cobbleStone`, ou nom affiché).
+- `/fly` : voler ou se poser. `/speed <factor>` : vitesse de déplacement (0,1 à 20, 1 : normale).
+- `/summon <creature> [count]` : créatures devant soi (`loup`, `vache`…). `/heal` : jauges pleines. `/xp <amount>` : expérience (chaque niveau gagné donne un point de compétence). En ligne, ces trois commandes passent par le serveur.
+- `/list` : joueurs en ligne. `/clear` : vide le chat.
 
 #### Son :
 Pas (selon le bloc sous les pieds : herbe, terre, pierre, sable, neige, bois, eau), saut, réception, blessure, coups portés au bloc qu'on casse, blocs cassés et posés (aussi ceux des autres joueurs proches), et ambiance : vent qui forcit en altitude, oiseaux le jour, grillons la nuit, étouffés sous un plafond. Les sons sont synthétisés au lancement, sans fichier audio. Les volumes (général, bruitages, ambiance) se règlent dans `Échap > Options > Son` et sont enregistrés dans `config/audio.json`. Sans sortie audio, le jeu tourne en silence.

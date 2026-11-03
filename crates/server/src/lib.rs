@@ -10,6 +10,7 @@ use std::io;
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -46,6 +47,11 @@ const MAX_REACH_BLOCKS: f64 = 12.0;
 /// Longueur maximale d'un nom de joueur et d'un message de chat, en caractères
 const MAX_NAME_CHARS: usize = 24;
 const MAX_CHAT_CHARS: usize = 256;
+/// `/summon` : créatures au plus par commande, et distance maximale au joueur, en blocs
+const MAX_SUMMON: u32 = 20;
+const MAX_SUMMON_BLOCKS: f64 = 32.0;
+/// `/xp` : points au plus par commande
+const MAX_EXPERIENCE: u64 = 1_000_000;
 
 type ClientConnection = Connection<ServerPacket, ClientPacket>;
 
@@ -108,6 +114,8 @@ pub struct Server {
     lan: Option<(LanAnnouncer, String)>,
     /// Identifiant de cette partie dans les annonces
     instance: u64,
+    /// Lignes tapées dans la console du serveur dédié (`set_console`)
+    console: Option<Receiver<String>>,
 }
 
 impl Server {
@@ -147,6 +155,7 @@ impl Server {
             tick_counter: 0,
             lan: None,
             instance,
+            console: None,
         })
     }
 
@@ -210,8 +219,44 @@ impl Server {
         self.shutdown("Arrêt du serveur");
     }
 
+    /// Les lignes reçues sur `console` sont exécutées comme des commandes de la console (`console_command`)
+    pub fn set_console(&mut self, console: Receiver<String>) {
+        self.console = Some(console);
+    }
+
+    /// Commande tapée dans la console du serveur : renvoie ce qu'elle affiche
+    pub fn console_command(&mut self, line: &str) -> Vec<String> {
+        let line = line.trim();
+        let (name, rest) = line.split_once(' ').map_or((line, ""), |(n, r)| (n, r.trim()));
+        match name.to_lowercase().as_str() {
+            "help" | "?" => vec![
+                "Commands: help, list, seed, say <message>, stop".to_string(),
+            ],
+            "list" | "who" => {
+                let mut names: Vec<&str> = self.players.values().map(|p| p.name.as_str()).collect();
+                names.sort_unstable();
+                vec![format!("{} player(s) online: {}", names.len(), names.join(", "))]
+            }
+            "seed" => vec![format!("Seed: {}", self.seed)],
+            "say" if !rest.is_empty() => {
+                let text: String = rest.chars().filter(|c| !c.is_control()).take(MAX_CHAT_CHARS).collect();
+                self.broadcast(&ServerPacket::ChatMessage { sender: "Server".to_string(), message: text.clone() });
+                vec![format!("<Server> {text}")]
+            }
+            "say" => vec!["Usage: say <message>".to_string()],
+            "" => Vec::new(),
+            other => vec![format!("Unknown command: {other} (type help)")],
+        }
+    }
+
     pub fn tick(&mut self, dt: f32) {
         self.tick_counter += 1;
+        let lines: Vec<String> = self.console.as_ref().map(|c| c.try_iter().collect()).unwrap_or_default();
+        for line in lines {
+            for reply in self.console_command(&line) {
+                info!("{reply}");
+            }
+        }
         self.accept_connections();
         self.process_handshakes();
         self.process_players();
@@ -424,7 +469,51 @@ impl Server {
                 let sender = player.name.clone();
                 self.broadcast(&ServerPacket::ChatMessage { sender, message: text });
             }
+            ClientPacket::Summon { species, count, feet } => self.summon(id, &species, count, feet),
+            ClientPacket::Heal => {
+                let Some(player) = self.players.get_mut(&id) else { return };
+                player.stats.revive();
+                player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+                tell(player, "Healed");
+            }
+            ClientPacket::GainExperience(amount) => self.grant_experience(id, amount.min(MAX_EXPERIENCE)),
             ClientPacket::Disconnect => self.leave(id, "déconnexion"),
+        }
+    }
+
+    /// `/xp` : le joueur gagne `amount` points d'expérience, ses nouvelles jauges lui sont envoyées
+    pub fn grant_experience(&mut self, id: u64, amount: u64) {
+        let Some(player) = self.players.get_mut(&id) else { return };
+        let level = player.stats.level;
+        player.stats.add_experience(amount);
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+        let gained = player.stats.level.saturating_sub(level);
+        let message = match gained {
+            0 => format!("+{amount} XP"),
+            n => format!("+{amount} XP, level {} (+{n})", player.stats.level),
+        };
+        tell(player, &message);
+    }
+
+    /// `/summon` : `count` créatures de l'espèce `species` aux pieds `feet`, s'ils sont près du joueur
+    fn summon(&mut self, id: u64, species: &str, count: u32, feet: Vec3) {
+        let Some(player) = self.players.get(&id) else { return };
+        let near = player.position.is_some_and(|p| p.distance(feet) as f64 <= MAX_SUMMON_BLOCKS * self.geometry.block_height);
+        let reply = match self.creatures.registry().find(species) {
+            _ if !feet.is_finite() || !near => "Too far away to summon there".to_string(),
+            None => format!("Unknown creature: {species}"),
+            Some(index) => {
+                let count = count.clamp(1, MAX_SUMMON);
+                for _ in 0..count {
+                    self.creatures.spawn(index, feet);
+                }
+                let name = self.creatures.registry().get(index).map_or(species.to_string(), |s| s.name.clone());
+                info!("{} a fait apparaître {count} × {name}.", player.name);
+                format!("Summoned {count} × {name}")
+            }
+        };
+        if let Some(player) = self.players.get(&id) {
+            tell(player, &reply);
         }
     }
 
@@ -530,15 +619,6 @@ impl Server {
         player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
     }
 
-    /// Donne de l'expérience à un joueur (commande `/xp`) ; chaque niveau gagné lui apporte un
-    /// point de compétence. Renvoie faux si ce joueur n'est pas là.
-    pub fn grant_experience(&mut self, id: u64, amount: u64) -> bool {
-        let Some(player) = self.players.get_mut(&id) else { return false };
-        player.stats.add_experience(amount);
-        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
-        true
-    }
-
     fn leave(&mut self, id: u64, reason: &str) {
         let Some(player) = self.players.remove(&id) else { return };
         info!("{} a quitté la partie ({reason}).", player.name);
@@ -604,6 +684,11 @@ impl Server {
             player.connection.send_frame(frame.clone());
         }
     }
+}
+
+/// Réponse d'une commande, au seul joueur qui l'a tapée
+fn tell(player: &ConnectedPlayer, message: &str) {
+    player.connection.send(&ServerPacket::ChatMessage { sender: String::new(), message: message.to_string() });
 }
 
 fn reject(connection: &ClientConnection, reason: &str) {
