@@ -1,6 +1,7 @@
 //! Trace les chemins entre villes et villages d'une face et dessine la carte vue de dessus (PPM).
 //! Usage : cargo run -p herocraft_world --release --example roads -- [graine] [face 0..6] [sortie.ppm] [blocs par pixel] [n° de chemin]
-//! Avec un n° de chemin, dessine plutôt, bloc par bloc, les abords du départ de ce chemin.
+//! Avec un n° de chemin, dessine plutôt, vue de dessus, les abords du départ de ce chemin
+//! (`blocs par pixel` vaut alors 1 : bloc par bloc ; au-delà, une vue plus large, centrée sur le chemin entier).
 use herocraft_common::PlanetFace;
 use herocraft_world::edits::FACE_BLOCKS;
 use herocraft_world::generator::{BiomeType, SEA_LEVEL_BLOCKS};
@@ -34,7 +35,7 @@ fn main() {
     };
     let scale: i32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(8);
     if let Some(road) = args.get(5).and_then(|n| n.parse::<usize>().ok()).and_then(|n| roads.get(n)) {
-        close_up(&generator, face, road, out);
+        close_up(&generator, face, road, out, scale);
         return;
     }
     let size = FACE_BLOCKS / scale;
@@ -100,20 +101,25 @@ fn main() {
 }
 
 /// Vue de dessus, un pixel par bloc, du plus haut bloc de chaque colonne autour du départ du chemin
-fn close_up(generator: &PlanetWorldGenerator, face: PlanetFace, road: &herocraft_world::Road, out: &str) {
+fn close_up(generator: &PlanetWorldGenerator, face: PlanetFace, road: &herocraft_world::Road, out: &str, scale: i32) {
     use herocraft_common::BlockId;
-    let size = 320;
-    let start = road.points[0];
-    let (x0, z0) = (start.0 as i32 - size / 2, start.1 as i32 - size / 2);
+    let scale = scale.max(1);
+    let (size, center) = if scale == 1 {
+        (320, (road.points[0].0 as i32, road.points[0].1 as i32))
+    } else {
+        let b = road.bounds;
+        ((b.width().max(b.depth()) + 160) / scale, b.center())
+    };
+    let (x0, z0) = (center.0 - size * scale / 2, center.1 - size * scale / 2);
     let top = generator.settlement_at(face, road.from.0, road.from.1).map_or(0, |s| s.top);
     let mut img = vec![0u8; (size * size * 3) as usize];
     let mut heights = vec![0i32; (size * size) as usize];
     for pz in 0..size {
         for px in 0..size {
-            let (x, z) = (x0 + px, z0 + pz);
+            let (x, z) = (x0 + px * scale, z0 + pz * scale);
             let column = generator.sample_block_column(face, x, z);
             let ground = column.elevation.floor() as i32;
-            let mut y = top.max(ground + 24);
+            let mut y = if generator.settlement_at(face, x, z).is_some() { top.max(ground + 24) } else { ground + 14 };
             let mut block = BlockId::AIR;
             while y >= ground - 2 {
                 let b = generator.column_block(&column, face, x, y, z);

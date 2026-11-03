@@ -280,7 +280,46 @@ fn plan_road(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i3
     let mut search = Search { generator, face, area: area.expand(-4), obstacles, seed, grounds: HashMap::new() };
     let start = search.snap(launch_a)?;
     let goal = search.snap(launch_b)?;
-    let nodes = search.run(start, goal)?;
+    // Étapes intermédiaires écartées de la ligne droite, une tous les 600 blocs environ : le chemin
+    // décrit de grandes courbes même en plaine, puis le A* et les ondulations font le reste
+    let (dx, dz) = ((goal.0 - start.0) as f64, (goal.1 - start.1) as f64);
+    let dist = (dx * dx + dz * dz).sqrt();
+    let stops = (dist * STEP as f64 / 600.0).floor() as i32;
+    let mut waypoints = Vec::new();
+    let start_ground = search.ground_any(start)? as f64;
+    let goal_ground = search.ground_any(goal)? as f64;
+    let mut side = if unit(hash2(seed, 0x57, 0)) < 0.5 { 1.0 } else { -1.0 };
+    for k in 1..=stops {
+        let r = |n: i32| unit(hash2(seed, k, n));
+        let t = (k as f64 + (r(1) - 0.5) * 0.4) / (stops + 1) as f64;
+        // Le plus souvent de l'autre côté que l'étape précédente : un S plutôt qu'un arc
+        if r(2) < 0.75 {
+            side = -side;
+        }
+        let offset = side * dist * (0.07 + 0.11 * r(3));
+        let (nx, nz) = (-dz / dist.max(1.0), dx / dist.max(1.0));
+        // Repli vers la ligne droite si l'étape tombe dans l'eau ou sur un obstacle
+        for shrink in [1.0, 0.6, 0.3] {
+            let w = ((start.0 as f64 + dx * t + nx * offset * shrink).round() as i32, (start.1 as f64 + dz * t + nz * offset * shrink).round() as i32);
+            // Pas d'étape perchée : elle ferait grimper le chemin pour rien
+            let expected = start_ground + (goal_ground - start_ground) * t;
+            if search.ground(w).is_some_and(|g| (g as f64 - expected).abs() < 24.0) {
+                waypoints.push(w);
+                break;
+            }
+        }
+    }
+    let mut nodes = vec![start];
+    for leg in waypoints.iter().copied().chain([goal]).collect::<Vec<_>>() {
+        let from = *nodes.last()?;
+        let mut part = match search.run(from, leg) {
+            Some(part) => part,
+            // L'étape est enclavée : on la saute
+            None if leg != goal => continue,
+            None => return None,
+        };
+        nodes.extend(part.drain(1..));
+    }
 
     let center = |p: (i32, i32)| (p.0 as f64 + 0.5, p.1 as f64 + 0.5);
     let mut points = vec![center(exit_a), center(launch_a)];
@@ -288,13 +327,145 @@ fn plan_road(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i3
     points.push(center(launch_b));
     points.push(center(exit_b));
     points.dedup();
-    // Arrondit les angles du tracé, en gardant les deux bouts de rue
-    for _ in 0..3 {
+    // Arrondit les angles du tracé, en gardant les deux bouts de rue, puis le fait onduler : un
+    // chemin tiré au cordeau sur des centaines de blocs ne ressemble à rien
+    for _ in 0..2 {
+        points = chaikin(&points);
+    }
+    points = relax(generator, face, &points);
+    points = meander(generator, face, &points, seed);
+    for _ in 0..2 {
         points = chaikin(&points);
     }
     let columns = rasterize(&points, &area, generator.planet.seed);
     let bounds = columns.keys().fold(Rect::new(i32::MAX, i32::MAX, i32::MIN, i32::MIN), |r, &(x, z)| Rect::new(r.x0.min(x), r.z0.min(z), r.x1.max(x + 1), r.z1.max(z + 1)));
     Some(Road { face, from: a.center, to: b.center, points, bounds, columns })
+}
+
+/// Bruit de valeur à une dimension, lissé, dans [-1, 1]
+fn noise_1d(seed: u64, t: f64) -> f64 {
+    let i = t.floor();
+    let f = t - i;
+    let at = |k: f64| unit(hash2(seed, k as i32, 0x3EA)) * 2.0 - 1.0;
+    let w = f * f * (3.0 - 2.0 * f);
+    at(i) + (at(i + 1.0) - at(i)) * w
+}
+
+/// Bruit de valeur à deux dimensions, lissé, dans [0, 1], de maille `scale` blocs
+fn noise_2d(seed: u64, x: f64, z: f64, scale: f64) -> f64 {
+    let (x, z) = (x / scale, z / scale);
+    let (i, j) = (x.floor(), z.floor());
+    let (fx, fz) = (x - i, z - j);
+    let at = |a: f64, b: f64| unit(hash2(seed, a as i32, b as i32));
+    let (wx, wz) = (fx * fx * (3.0 - 2.0 * fx), fz * fz * (3.0 - 2.0 * fz));
+    let top = at(i, j) + (at(i + 1.0, j) - at(i, j)) * wx;
+    let bottom = at(i, j + 1.0) + (at(i + 1.0, j + 1.0) - at(i, j + 1.0)) * wx;
+    top + (bottom - top) * wz
+}
+
+/// Pas de reprise de l'axe, en blocs
+const RESAMPLE: f64 = 4.0;
+
+/// L'axe repris à pas régulier (`RESAMPLE` blocs), bouts compris
+fn resample(points: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    let mut even = vec![points[0]];
+    let mut carry = 0.0;
+    for w in points.windows(2) {
+        let (p, q) = (w[0], w[1]);
+        let len = ((q.0 - p.0).powi(2) + (q.1 - p.1).powi(2)).sqrt();
+        let mut t = RESAMPLE - carry;
+        while t < len {
+            even.push((p.0 + (q.0 - p.0) * t / len, p.1 + (q.1 - p.1) * t / len));
+            t += RESAMPLE;
+        }
+        carry = len - (t - RESAMPLE);
+    }
+    even.push(points[points.len() - 1]);
+    even
+}
+
+/// 0 à moins de `keep` blocs d'un bout du chemin, 1 au-delà de `keep + ramp`, en douceur entre les deux
+fn fade_near_ends(s: f64, total: f64, keep: f64, ramp: f64) -> f64 {
+    let e = ((s.min(total - s) - keep) / ramp).clamp(0.0, 1.0);
+    e * e * (3.0 - 2.0 * e)
+}
+
+/// Lisse l'axe à grande échelle (moyenne glissante sur ±`SMOOTH_RADIUS` blocs) : les longues
+/// lignes droites et les coudes du tracé sur grille deviennent de larges courbes. Un point que le
+/// lissage mettrait dans l'eau, ou sur une pente bien plus raide que le tracé d'origine, reste où il
+/// était ; les abords des bouts de rue ne bougent pas.
+fn relax(generator: &PlanetWorldGenerator, face: PlanetFace, points: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    const SMOOTH_RADIUS: f64 = 64.0;
+    let even = resample(points);
+    let n = even.len();
+    let radius = (SMOOTH_RADIUS / RESAMPLE) as usize;
+    if n < 2 * radius + 2 {
+        return points.to_vec();
+    }
+    let total = (n - 1) as f64 * RESAMPLE;
+    let ground = |p: (f64, f64)| generator.sample_block_column(face, p.0.floor() as i32, p.1.floor() as i32).elevation.floor();
+    let mut out = even.clone();
+    for k in 1..n - 1 {
+        let weight = fade_near_ends(k as f64 * RESAMPLE, total, 16.0, 64.0);
+        if weight <= 0.0 {
+            continue;
+        }
+        let (lo, hi) = (k.saturating_sub(radius), (k + radius).min(n - 1));
+        let (mut sx, mut sz, mut sw) = (0.0, 0.0, 0.0);
+        for (j, p) in even.iter().enumerate().take(hi + 1).skip(lo) {
+            // Poids en triangle, symétrique : la fenêtre se resserre près des bouts
+            let w = (radius + 1 - k.abs_diff(j).min(radius)) as f64;
+            sx += p.0 * w;
+            sz += p.1 * w;
+            sw += w;
+        }
+        let p = even[k];
+        let moved = (p.0 + (sx / sw - p.0) * weight, p.1 + (sz / sw - p.1) * weight);
+        if (moved.0 - p.0).abs() + (moved.1 - p.1).abs() < 1.0 {
+            out[k] = moved;
+            continue;
+        }
+        let g = ground(moved);
+        if g <= SEA_LEVEL_BLOCKS + 1.0 || (g - ground(p)).abs() > 6.0 {
+            continue;
+        }
+        out[k] = moved;
+    }
+    out
+}
+
+/// Écart latéral maximal des ondulations du chemin, en blocs
+const MEANDER: f64 = 12.0;
+
+/// Fait onduler l'axe : repris tous les 4 blocs, chaque point est écarté sur le côté d'une
+/// quantité qui varie doucement le long du chemin (deux longueurs d'onde mêlées). Les ondulations
+/// s'éteignent près des deux bouts de rue, et ne poussent jamais le chemin dans l'eau.
+fn meander(generator: &PlanetWorldGenerator, face: PlanetFace, points: &[(f64, f64)], seed: u64) -> Vec<(f64, f64)> {
+    let even = resample(points);
+    let n = even.len();
+    if n < 4 {
+        return points.to_vec();
+    }
+    let fade = |s: f64| fade_near_ends(s, (n - 1) as f64 * RESAMPLE, 12.0, 48.0);
+    let mut out = Vec::with_capacity(n);
+    out.push(even[0]);
+    for k in 1..n - 1 {
+        let s = k as f64 * 4.0;
+        let (prev, next) = (even[k - 1], even[k + 1]);
+        let (tx, tz) = (next.0 - prev.0, next.1 - prev.1);
+        let tl = (tx * tx + tz * tz).sqrt().max(1e-9);
+        let (nx, nz) = (-tz / tl, tx / tl);
+        let offset = MEANDER * fade(s) * (0.75 * noise_1d(seed ^ 0x3EA1, s / 140.0) + 0.25 * noise_1d(seed ^ 0x3EA2, s / 45.0));
+        let p = even[k];
+        let moved = (p.0 + nx * offset, p.1 + nz * offset);
+        let wet = offset.abs() > 0.5 && {
+            let column = generator.sample_block_column(face, moved.0 as i32, moved.1 as i32);
+            column.elevation.floor() <= SEA_LEVEL_BLOCKS + 1.0
+        };
+        out.push(if wet { p } else { moved });
+    }
+    out.push(even[n - 1]);
+    out
 }
 
 /// Une passe de Chaikin : chaque segment est remplacé par ses points au quart et aux trois quarts,
@@ -440,8 +611,11 @@ impl Search<'_> {
                 if slope > MAX_SLOPE {
                     continue;
                 }
-                // Une montée coûte vite plus cher qu'un détour ; un peu de hasard fait serpenter le chemin
-                let wander = unit(hash2(self.seed, next.0, next.1)) * 0.35;
+                // Une montée coûte vite plus cher qu'un détour. Un bruit doux, à grande maille, rend
+                // certains terrains un peu moins commodes que d'autres : le chemin les contourne en
+                // larges courbes plutôt que de filer tout droit
+                let (wx, wz) = ((next.0 * STEP) as f64, (next.1 * STEP) as f64);
+                let wander = 0.7 * noise_2d(self.seed, wx, wz, 240.0) + 0.3 * noise_2d(self.seed ^ 0x5EED, wx, wz, 90.0);
                 let step = len * (1.0 + 14.0 * slope * slope + wander);
                 let total = cost + (step * 16.0) as i64;
                 if best.get(&next).is_none_or(|&(c, _)| total < c) {
@@ -451,6 +625,11 @@ impl Search<'_> {
             }
         }
         None
+    }
+
+    /// Sol d'un nœud, obstacles compris
+    fn ground_any(&self, node: (i32, i32)) -> Option<i32> {
+        Some(self.generator.sample_block_column(self.face, node.0 * STEP, node.1 * STEP).elevation.floor() as i32)
     }
 
     /// Sol d'un bout du tracé, sans tenir compte des obstacles (il touche son établissement)
