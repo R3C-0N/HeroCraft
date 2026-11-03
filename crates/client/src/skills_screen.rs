@@ -220,16 +220,25 @@ impl SkillScreen {
             let (start, end) = layout.sector(b);
             painter.add(sector_shape(centre, hub, outer, start, end, tint));
             painter.line_segment([layout.point(start, hub), layout.point(start, outer)], egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(22)));
-            // Nom de la classe le long du bord, quand sa part est assez large pour lui
+            // Nom de la classe le long du bord, jamais à l'envers ; sur deux lignes ou plus quand
+            // sa part resserrée est trop étroite pour lui (« Sorcier élémentaire »)
             let mid = (start + end) / 2.0;
             let color = egui::Color32::from_rgb(r, g, bl).gamma_multiply(1.3);
             let font = egui::FontId::proportional(11.0 + 3.0 * w);
-            let galley = painter.layout_no_wrap(branch.name.clone(), font, color);
-            if galley.size().x < (end - start) * (outer - 11.0) * 0.9 {
-                let angle = if mid.sin() > 0.0 { mid - PI / 2.0 } else { mid + PI / 2.0 };
+            let room = (end - start) * (outer - 12.0) * 0.9;
+            let lines = wrap_words(&branch.name, room, |text| painter.layout_no_wrap(text.to_string(), font.clone(), color).size().x);
+            let flipped = mid.sin() > 0.0;
+            let angle = if flipped { mid - PI / 2.0 } else { mid + PI / 2.0 };
+            let (sin, cos) = angle.sin_cos();
+            let line_height = font.size + 2.0;
+            for (i, line) in lines.iter().enumerate() {
+                // La première ligne se lit en premier : au bord en haut de la roue, vers le centre
+                // en bas, où le texte est retourné
+                let step = if flipped { lines.len() - 1 - i } else { i };
+                let galley = painter.layout_no_wrap(line.clone(), font.clone(), color);
                 let half = galley.size() / 2.0;
-                let (sin, cos) = angle.sin_cos();
-                let corner = layout.point(mid, outer - 12.0) - egui::vec2(half.x * cos - half.y * sin, half.x * sin + half.y * cos);
+                let at = layout.point(mid, outer - 12.0 - line_height * step as f32);
+                let corner = at - egui::vec2(half.x * cos - half.y * sin, half.x * sin + half.y * cos);
                 painter.add(egui::epaint::TextShape::new(corner, galley, color).with_angle(angle));
             }
         }
@@ -417,6 +426,22 @@ fn draw_sheet(ui: &mut egui::Ui, wheel: &SkillWheel, stats: &CharacterStats, nod
     clicked.then(|| node.id.clone())
 }
 
+/// Coupe `text` en lignes de mots qui tiennent dans `room` (mesurées par `width`) ; un mot trop
+/// long pour tenir seul garde sa ligne
+fn wrap_words(text: &str, room: f32, width: impl Fn(&str) -> f32) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for word in text.split_whitespace() {
+        match lines.last_mut() {
+            Some(line) if width(&format!("{line} {word}")) <= room => {
+                line.push(' ');
+                line.push_str(word);
+            }
+            _ => lines.push(word.to_string()),
+        }
+    }
+    lines
+}
+
 /// Géométrie de la roue : la part de chaque classe (celle sous la loupe tournée en haut) et le
 /// rayon des anneaux
 struct WheelLayout {
@@ -539,6 +564,15 @@ mod tests {
             // Le haut de la roue est dans la part sous la loupe
             assert_eq!(layout.sector_at(egui::pos2(0.0, -200.0)), Some(focus));
         }
+    }
+
+    #[test]
+    fn test_long_class_names_wrap() {
+        let width = |t: &str| t.chars().count() as f32 * 6.0;
+        assert_eq!(wrap_words("Sorcier élémentaire", 70.0, width), vec!["Sorcier", "élémentaire"]);
+        assert_eq!(wrap_words("Chasseur de monstre", 70.0, width), vec!["Chasseur de", "monstre"]);
+        assert_eq!(wrap_words("Soldat", 70.0, width), vec!["Soldat"]);
+        assert_eq!(wrap_words("Lame du vent", 200.0, width), vec!["Lame du vent"]);
     }
 
     #[test]
