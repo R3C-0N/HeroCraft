@@ -333,3 +333,56 @@ fn le_chat_et_les_commandes_passent_par_le_serveur() {
     server.console_command("say Bonjour");
     assert_eq!(pump(&mut server, &bob, chat), ("Server".to_string(), "Bonjour".to_string()));
 }
+
+#[test]
+fn le_serveur_accepte_le_labour_et_le_semis() {
+    let server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let face = PlanetFace::PosZ;
+    // Une colonne d'herbe
+    let (x, z, top) = (0..herocraft_world::FACE_BLOCKS)
+        .step_by(37)
+        .flat_map(|x| (0..herocraft_world::FACE_BLOCKS).step_by(37).map(move |z| (x, z)))
+        .find_map(|(x, z)| {
+            let top = (0..WORLD_HEIGHT).rev().find(|&y| !server.block(BlockPos::new(face, x, y, z)).is_air())?;
+            (server.block(BlockPos::new(face, x, top, z)) == BlockId::GRASS).then_some((x, z, top))
+        })
+        .expect("une colonne d'herbe");
+    let surface = BlockPos::new(face, x, top, z);
+    let above = BlockPos { y: top + 1, ..surface };
+    let geometry = BlockGeometry::new(herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 4242, ..Default::default() }).base_radius());
+    let feet = geometry.corner(face, x as f64 + 1.5, (top + 1) as f64, z as f64 + 0.5).as_vec3();
+
+    let running = Arc::new(AtomicBool::new(true));
+    let server_running = running.clone();
+    let server_thread = std::thread::spawn(move || {
+        let mut server = server;
+        server.run(&server_running);
+    });
+    let (alice, _, _) = connect(&addr, "Alice");
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: -0.5, sprinting: false, crouching: false });
+    let update = |pos: BlockPos| {
+        wait_for(&alice, |p| match p {
+            ServerPacket::VoxelUpdate { block, block_id } if block == pos.into() => Some(block_id),
+            _ => None,
+        })
+    };
+
+    // L'herbe ne devient pas de la pierre sans être cassée, mais se laboure
+    alice.send(&ClientPacket::InteractBlock { block: surface.into(), action: BlockInteractionAction::Place(BlockId::STONE.0) });
+    assert_eq!(update(surface), BlockId::GRASS.0);
+    let cultures = herocraft_common::cultures();
+    let farmland = cultures.farmland(false).unwrap();
+    alice.send(&ClientPacket::InteractBlock { block: surface.into(), action: BlockInteractionAction::Place(farmland.0) });
+    assert!(cultures.is_farmland(BlockId(update(surface))));
+
+    // Une herbe folle au-dessus est cassée, puis le blé est semé
+    alice.send(&ClientPacket::InteractBlock { block: above.into(), action: BlockInteractionAction::Break });
+    let _ = update(above);
+    let wheat = cultures.crop_of_seed(herocraft_common::items().find("grainesBle").unwrap()).unwrap().stages[0];
+    alice.send(&ClientPacket::InteractBlock { block: above.into(), action: BlockInteractionAction::Place(wheat.0) });
+    assert_eq!(update(above), wheat.0);
+
+    running.store(false, Ordering::Relaxed);
+    server_thread.join().unwrap();
+}

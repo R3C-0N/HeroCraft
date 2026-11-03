@@ -22,7 +22,7 @@ use herocraft_common::{
     ServerPacket, SkillWheel, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
-use herocraft_world::{BlockGeometry, BlockPos, CreatureWorld, PlanetDescriptor, PlanetWorldGenerator, TerrainEdits, CREATURE_RANGE_BLOCKS};
+use herocraft_world::{BlockGeometry, BlockPos, CreatureWorld, Fields, PlanetDescriptor, PlanetWorldGenerator, TerrainEdits, CREATURE_RANGE_BLOCKS};
 use log::{info, warn};
 
 /// Ticks de simulation par seconde
@@ -99,6 +99,8 @@ pub struct Server {
     geometry: BlockGeometry,
     edits: TerrainEdits,
     creatures: CreatureWorld,
+    /// Plantes semées par les joueurs, qui poussent
+    fields: Fields,
     pending: Vec<PendingClient>,
     players: HashMap<u64, ConnectedPlayer>,
     /// Dernière position connue de chaque joueur passé sur le serveur (par nom), pour le replacer
@@ -139,6 +141,11 @@ impl Server {
             None => CreatureWorld::new(generator.base_radius(), config.seed, registry),
         };
 
+        let fields = match &config.save_dir {
+            Some(dir) => Fields::with_save_dir(dir),
+            None => Fields::new(),
+        };
+
         Ok(Self {
             listener,
             seed: config.seed,
@@ -146,6 +153,7 @@ impl Server {
             geometry,
             edits,
             creatures,
+            fields,
             pending: Vec::new(),
             players: HashMap::new(),
             last_positions: HashMap::new(),
@@ -271,6 +279,13 @@ impl Server {
             self.creature_attack(ids[hit.player], hit.species, hit.damage);
         }
 
+        // Les plantes semées poussent : chaque stade est un bloc changé, diffusé à tous
+        for (pos, block) in self.fields.tick(dt, &self.generator, &self.edits, |_| 1.0) {
+            if self.edits.set_block(&self.generator, pos, block) {
+                self.broadcast(&ServerPacket::VoxelUpdate { block: pos.into(), block_id: block.0 });
+            }
+        }
+
         if self.tick_counter % STATE_BROADCAST_TICKS == 0 {
             self.broadcast_player_states();
         }
@@ -308,6 +323,9 @@ impl Server {
         }
         if let Err(e) = self.creatures.save() {
             warn!("Échec de l'enregistrement des créatures : {e}");
+        }
+        if let Err(e) = self.fields.save() {
+            warn!("Échec de l'enregistrement des cultures : {e}");
         }
     }
 
@@ -587,6 +605,8 @@ impl Server {
             {
                 Some(BlockId(block))
             }
+            // Labour à la houe (herbe ou terre en terre labourée), sans casser le bloc d'abord
+            BlockInteractionAction::Place(block) if herocraft_common::cultures().allows_change(current, BlockId(block)) => Some(BlockId(block)),
             _ => None,
         };
         let in_reach = player.position.is_some_and(|feet| {
@@ -596,6 +616,7 @@ impl Server {
 
         match target {
             Some(block) if in_reach && self.edits.set_block(&self.generator, pos, block) => {
+                self.fields.observe(pos, block);
                 self.broadcast(&ServerPacket::VoxelUpdate { block: pos.into(), block_id: block.0 });
             }
             _ => {

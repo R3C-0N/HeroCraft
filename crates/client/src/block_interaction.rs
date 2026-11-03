@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use glam::Vec3;
-use herocraft_common::{opposite_face, BlockId, BlockRotation, PlanetFace, ATTACHED_FACES, FACE_DIRS};
+use herocraft_common::{cultures, opposite_face, BlockId, BlockRotation, PlanetFace, ATTACHED_FACES, FACE_DIRS};
 use herocraft_world::generator::ColumnSample;
 use herocraft_world::{raycast_blocks, BlockGeometry, BlockPos, PlanetWorldGenerator, RayHit, TerrainEdits, TerrainQuery};
 use winit::event::MouseButton;
@@ -211,9 +211,11 @@ impl BlockInteraction {
     }
 
     /// Applique l'action au bloc visé, puis vise à nouveau. Le bloc posé est pris dans la case
-    /// choisie de la barre d'objets. Renvoie le bloc changé, son nouveau contenu et l'ancien (le
-    /// bloc cassé, à faire tomber au sol) si le terrain a changé (les maillages touchés sont déjà
-    /// refaits : il reste à les envoyer au GPU).
+    /// choisie de la barre d'objets ; une houe y laboure l'herbe ou la terre, une graine se sème sur
+    /// la terre labourée. Renvoie chaque bloc changé, son nouveau contenu et l'ancien (le bloc cassé,
+    /// à faire tomber au sol) : vide si le terrain n'a pas changé. Casser une terre labourée fait
+    /// tomber la plante qu'elle portait. Les maillages touchés sont déjà refaits : il reste à les
+    /// envoyer au GPU.
     pub fn apply(
         &mut self,
         action: BlockAction,
@@ -221,31 +223,82 @@ impl BlockInteraction {
         generator: &PlanetWorldGenerator,
         lod: &mut PlanetLodManager,
         inventory: &mut Inventory,
-    ) -> Option<(BlockPos, BlockId, BlockId)> {
+    ) -> Vec<(BlockPos, BlockId, BlockId)> {
         herocraft_common::prof_scope!("blocs::modification");
-        let hit = self.target?;
-        let (pos, block) = match action {
-            BlockAction::Break => (hit.block, BlockId::AIR),
-            // Une herbe folle visée laisse sa place au bloc posé
-            BlockAction::Place => match (if self.target_block.is_replaceable() { Some(hit.block) } else { hit.before }, inventory.selected_block()) {
-                // Une plante se pose même là où se tient le joueur : on la traverse
-                (Some(pos), Some(block)) if !block.is_solid() || !overlaps_player(camera, pos) => {
-                    (pos, block.with_rotation(placement_rotation(block, camera, &hit, pos)))
+        let Some(hit) = self.target else { return Vec::new() };
+        let mut wanted = Vec::new();
+        // Exemplaire de la case choisie à retirer si le terrain change (bloc posé, graine semée)
+        let mut consumes = false;
+        match action {
+            BlockAction::Break => {
+                wanted.push((hit.block, BlockId::AIR));
+                let above = BlockPos { y: hit.block.y + 1, ..hit.block };
+                if cultures().is_farmland(self.target_block) && cultures().is_crop(lod.terrain_edits().block(generator, above)) {
+                    wanted.push((above, BlockId::AIR));
                 }
-                _ => return None,
-            },
-        };
-        let previous = lod.terrain_edits().block(generator, pos);
-        if !lod.set_block(generator, pos, block) {
-            return None;
+            }
+            BlockAction::Place => {
+                if let Some((blocks, seed)) = self.farming_change(&hit, generator, lod, inventory) {
+                    wanted = blocks;
+                    consumes = seed;
+                } else {
+                    // Une herbe folle visée laisse sa place au bloc posé
+                    match (if self.target_block.is_replaceable() { Some(hit.block) } else { hit.before }, inventory.selected_block()) {
+                        // Une plante se pose même là où se tient le joueur : on la traverse
+                        (Some(pos), Some(block)) if !block.is_solid() || !overlaps_player(camera, pos) => {
+                            wanted.push((pos, block.with_rotation(placement_rotation(block, camera, &hit, pos))));
+                            consumes = true;
+                        }
+                        _ => return Vec::new(),
+                    }
+                }
+            }
         }
-        if action == BlockAction::Place {
-            inventory.take_selected();
+        let mut changed = Vec::new();
+        for (pos, block) in wanted {
+            let previous = lod.terrain_edits().block(generator, pos);
+            if lod.set_block(generator, pos, block) {
+                changed.push((pos, block, previous));
+            } else if changed.is_empty() {
+                // Le bloc visé n'a pas changé : rien d'autre ne change
+                return changed;
+            }
+        }
+        if consumes {
+            inventory.consume_selected();
         }
         let edits = lod.terrain_edits().clone();
         self.last_aim = None;
         self.update_target(camera, generator, &edits);
-        Some((pos, block, previous))
+        changed
+    }
+
+    /// Clic droit avec une houe sur de l'herbe ou de la terre (dégagée au-dessus, ou sous une herbe
+    /// folle visée, qui disparaît) : terre labourée, humide près de l'eau. Avec une graine sur une
+    /// terre labourée où sa plante pousse : son semis, juste au-dessus. Renvoie les blocs à changer,
+    /// le premier étant celui qui compte, et si l'objet tenu est dépensé (la graine, pas la houe).
+    fn farming_change(&self, hit: &RayHit, generator: &PlanetWorldGenerator, lod: &PlanetLodManager, inventory: &Inventory) -> Option<(Vec<(BlockPos, BlockId)>, bool)> {
+        let item = inventory.selected_item()?;
+        let registry = cultures();
+        let edits = lod.terrain_edits();
+        // Une herbe folle visée : c'est le sol dessous qu'on travaille
+        let weed = (self.target_block.is_replaceable() && !self.target_block.is_liquid()).then_some(hit.block);
+        let soil = match weed {
+            Some(pos) => BlockPos { y: pos.y - 1, ..pos },
+            None => hit.block,
+        };
+        let soil_block = if weed.is_some() { edits.block(generator, soil) } else { self.target_block };
+        let above = BlockPos { y: soil.y + 1, ..soil };
+        let free_above = weed.is_some() || edits.block(generator, above).is_air();
+        let clear_weed = weed.map(|pos| (pos, BlockId::AIR));
+        if registry.is_hoe(item) && registry.is_tillable(soil_block) && free_above {
+            let mut query = TerrainQuery::new(generator, edits);
+            let farmland = herocraft_world::tilled_block(&mut query, soil, registry)?;
+            return Some((std::iter::once((soil, farmland)).chain(clear_weed).collect(), false));
+        }
+        let crop = registry.crop_of_seed(item)?;
+        // Le semis prend la place de l'herbe folle
+        (crop.grows_on(soil_block, registry) && free_above).then(|| (vec![(above, crop.stages[0])], true))
     }
 
     /// Centre d'un bloc dans le repère du monde (là où tombe le bloc cassé)
@@ -417,10 +470,10 @@ mod tests {
         assert!(interaction.outline(&camera).is_some());
 
         // Inventaire vide : rien à poser
-        assert!(interaction.apply(BlockAction::Place, &camera, &generator, &mut lod, &mut inventory).is_none());
+        assert!(interaction.apply(BlockAction::Place, &camera, &generator, &mut lod, &mut inventory).is_empty());
 
         let broken = lod.terrain_edits().block(&generator, first.block);
-        let (_, air, previous) = interaction.apply(BlockAction::Break, &camera, &generator, &mut lod, &mut inventory).unwrap();
+        let (_, air, previous) = interaction.apply(BlockAction::Break, &camera, &generator, &mut lod, &mut inventory)[0];
         assert_eq!((air, previous), (BlockId::AIR, broken), "le bloc cassé est renvoyé pour tomber au sol");
         assert_eq!(lod.terrain_edits().block(&generator, first.block), BlockId::AIR);
         assert_eq!(inventory.selected_block(), None, "il n'entre pas directement dans l'inventaire");
@@ -431,7 +484,7 @@ mod tests {
 
         // Poser contre la face visée remet le bloc ramassé là où était l'air, et le retire de l'inventaire
         let before = second.before.expect("une face libre est visée");
-        assert!(interaction.apply(BlockAction::Place, &camera, &generator, &mut lod, &mut inventory).is_some());
+        assert!(!interaction.apply(BlockAction::Place, &camera, &generator, &mut lod, &mut inventory).is_empty());
         assert_eq!(lod.terrain_edits().block(&generator, before), gained);
         assert_eq!(interaction.target().map(|t| t.block), Some(before));
         assert_eq!(inventory.selected_block(), None);
