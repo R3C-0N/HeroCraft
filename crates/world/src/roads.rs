@@ -151,6 +151,7 @@ impl Road {
 #[derive(Debug)]
 pub struct RoadMap {
     links: Vec<OnceLock<Option<Road>>>,
+    guides: Vec<OnceLock<Option<Guide>>>,
 }
 
 impl Default for RoadMap {
@@ -161,16 +162,26 @@ impl Default for RoadMap {
 
 impl RoadMap {
     pub fn new() -> Self {
-        Self { links: (0..6 * REGIONS_PER_FACE * REGIONS_PER_FACE * Link::ALL.len() as i32).map(|_| OnceLock::new()).collect() }
+        let count = 6 * REGIONS_PER_FACE * REGIONS_PER_FACE * Link::ALL.len() as i32;
+        Self { links: (0..count).map(|_| OnceLock::new()).collect(), guides: (0..count).map(|_| OnceLock::new()).collect() }
     }
 
-    fn link(&self, generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i32, link: Link) -> Option<&Road> {
+    fn index(face: PlanetFace, rx: i32, rz: i32, link: Link) -> Option<usize> {
         if !(0..REGIONS_PER_FACE).contains(&rx) || !(0..REGIONS_PER_FACE).contains(&rz) {
             return None;
         }
         let slot = Link::ALL.iter().position(|l| *l == link)? as i32;
-        let index = ((face_index(face) * REGIONS_PER_FACE + rz) * REGIONS_PER_FACE + rx) * Link::ALL.len() as i32 + slot;
-        self.links[index as usize].get_or_init(|| plan_road(generator, face, rx, rz, link)).as_ref()
+        Some((((face_index(face) * REGIONS_PER_FACE + rz) * REGIONS_PER_FACE + rx) * Link::ALL.len() as i32 + slot) as usize)
+    }
+
+    fn link(&self, generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i32, link: Link) -> Option<&Road> {
+        let index = Self::index(face, rx, rz, link)?;
+        self.links[index].get_or_init(|| plan_road(generator, face, rx, rz, link)).as_ref()
+    }
+
+    fn guide(&self, generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i32, link: Link) -> Option<&Guide> {
+        let index = Self::index(face, rx, rz, link)?;
+        self.guides[index].get_or_init(|| plan_guide(generator, face, rx, rz, link)).as_ref()
     }
 
     /// Les chemins qui peuvent passer dans la région (rx, rz)
@@ -260,7 +271,14 @@ fn best_exit(s: &Settlement, target: (i32, i32)) -> Option<((i32, i32), (i32, i3
         .map(|(_, at, launch)| (at, launch))
 }
 
-fn plan_road(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i32, link: Link) -> Option<Road> {
+/// Tracé brut d'une liaison, d'un bout de rue à l'autre (courbe lisse, sans ondulations ni tronc
+/// commun) : sert de guide au chemin, et dit dans quelle direction il quitte chaque établissement
+#[derive(Debug, Clone)]
+struct Guide {
+    points: Vec<(f64, f64)>,
+}
+
+fn plan_guide(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i32, link: Link) -> Option<Guide> {
     let [ra, rb] = link.ends(rx, rz);
     let structures = &generator.structures;
     let a = structures.region_settlement(generator, face, ra.0, ra.1)?;
@@ -270,72 +288,201 @@ fn plan_road(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i3
             return None;
         }
     }
-    herocraft_common::prof_scope!("world::roads::plan_road");
-    let area = link.area(rx, rz);
+    herocraft_common::prof_scope!("world::roads::plan_guide");
     let (exit_a, launch_a) = best_exit(a, b.center)?;
     let (exit_b, launch_b) = best_exit(b, a.center)?;
-    // Les établissements de la zone (ceux qu'on relie compris) : le chemin les contourne
-    let obstacles: Vec<Rect> = structures.touching(generator, face, area).iter().map(|s| s.bounds.expand(SETTLEMENT_CLEARANCE)).collect();
-    let seed = mix(generator.planet.seed ^ 0x40AD_5000_0000_0000 ^ ((face_index(face) as u64) << 40) ^ hash2(0x40AD, rx * 4 + link as i32, rz));
-    let mut search = Search { generator, face, area: area.expand(-4), obstacles, seed, grounds: HashMap::new() };
+    let center = |p: (i32, i32)| (p.0 as f64 + 0.5, p.1 as f64 + 0.5);
+    let mut search = Search::for_area(generator, face, link.area(rx, rz), link_seed(generator, face, rx, rz, link));
     let start = search.snap(launch_a)?;
     let goal = search.snap(launch_b)?;
-    // Étapes intermédiaires écartées de la ligne droite, une tous les 600 blocs environ : le chemin
-    // décrit de grandes courbes même en plaine, puis le A* et les ondulations font le reste
-    let (dx, dz) = ((goal.0 - start.0) as f64, (goal.1 - start.1) as f64);
-    let dist = (dx * dx + dz * dz).sqrt();
-    let stops = (dist * STEP as f64 / 600.0).floor() as i32;
-    let mut waypoints = Vec::new();
-    let start_ground = search.ground_any(start)? as f64;
-    let goal_ground = search.ground_any(goal)? as f64;
-    let mut side = if unit(hash2(seed, 0x57, 0)) < 0.5 { 1.0 } else { -1.0 };
-    for k in 1..=stops {
-        let r = |n: i32| unit(hash2(seed, k, n));
-        let t = (k as f64 + (r(1) - 0.5) * 0.4) / (stops + 1) as f64;
-        // Le plus souvent de l'autre côté que l'étape précédente : un S plutôt qu'un arc
-        if r(2) < 0.75 {
-            side = -side;
-        }
-        let offset = side * dist * (0.07 + 0.11 * r(3));
-        let (nx, nz) = (-dz / dist.max(1.0), dx / dist.max(1.0));
-        // Repli vers la ligne droite si l'étape tombe dans l'eau ou sur un obstacle
-        for shrink in [1.0, 0.6, 0.3] {
-            let w = ((start.0 as f64 + dx * t + nx * offset * shrink).round() as i32, (start.1 as f64 + dz * t + nz * offset * shrink).round() as i32);
-            // Pas d'étape perchée : elle ferait grimper le chemin pour rien
-            let expected = start_ground + (goal_ground - start_ground) * t;
-            if search.ground(w).is_some_and(|g| (g as f64 - expected).abs() < 24.0) {
-                waypoints.push(w);
-                break;
-            }
-        }
-    }
-    let mut nodes = vec![start];
-    for leg in waypoints.iter().copied().chain([goal]).collect::<Vec<_>>() {
-        let from = *nodes.last()?;
-        let mut part = match search.run(from, leg) {
-            Some(part) => part,
-            // L'étape est enclavée : on la saute
-            None if leg != goal => continue,
-            None => return None,
-        };
-        nodes.extend(part.drain(1..));
+    let nodes = search.with_waypoints(start, goal)?;
+    let grid = grid_points(&nodes);
+    Some(Guide { points: smooth_curve(generator, face, [center(exit_a), center(launch_a)], &grid, [center(launch_b), center(exit_b)]) })
+}
+
+fn link_seed(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i32, link: Link) -> u64 {
+    mix(generator.planet.seed ^ 0x40AD_5000_0000_0000 ^ ((face_index(face) as u64) << 40) ^ hash2(0x40AD, rx * 4 + link as i32, rz))
+}
+
+fn grid_points(nodes: &[(i32, i32)]) -> Vec<(f64, f64)> {
+    nodes.iter().map(|&(i, j)| ((i * STEP) as f64 + 0.5, (j * STEP) as f64 + 0.5)).collect()
+}
+
+/// La liaison entre les régions `from` et `to` (voisines), et si elle va de `to` vers `from`
+fn link_between(from: (i32, i32), to: (i32, i32)) -> Option<(i32, i32, Link, bool)> {
+    let (x, z) = from;
+    Some(match (to.0 - x, to.1 - z) {
+        (1, 0) => (x, z, Link::East, false),
+        (-1, 0) => (x - 1, z, Link::East, true),
+        (0, 1) => (x, z, Link::South, false),
+        (0, -1) => (x, z - 1, Link::South, true),
+        (1, 1) => (x, z, Link::Down, false),
+        (-1, -1) => (x - 1, z - 1, Link::Down, true),
+        (-1, 1) => (x - 1, z, Link::Up, false),
+        (1, -1) => (x, z - 1, Link::Up, true),
+        _ => return None,
+    })
+}
+
+/// Angle sous lequel deux chemins quittent ensemble un établissement (en radians, environ 40°)
+const SHARED_ANGLE: f64 = 0.7;
+/// Distance, en blocs depuis le centre, à laquelle on mesure la direction de départ d'un chemin
+const DEPARTURE: f64 = 320.0;
+/// Deux guides plus proches que cela suivent le même tronc
+const SHARED_GAP: f64 = 28.0;
+/// Le tronc commun s'arrête au plus loin à tant de blocs (le long du chemin) de l'établissement
+const MAX_TRUNK: f64 = 900.0;
+
+/// Tronc commun aux chemins qui quittent un établissement dans la même direction : la partie du
+/// guide de référence jusqu'au carrefour où les guides se séparent
+#[derive(Debug, Clone)]
+struct Trunk {
+    /// Du bout de rue au carrefour
+    points: Vec<(f64, f64)>,
+    /// Direction du tronc au carrefour (unitaire)
+    dir: (f64, f64),
+}
+
+impl Trunk {
+    fn junction(&self) -> (f64, f64) {
+        self.points[self.points.len() - 1]
     }
 
-    let center = |p: (i32, i32)| (p.0 as f64 + 0.5, p.1 as f64 + 0.5);
-    let mut points = vec![center(exit_a), center(launch_a)];
-    points.extend(nodes.iter().map(|&(i, j)| ((i * STEP) as f64 + 0.5, (j * STEP) as f64 + 0.5)));
-    points.push(center(launch_b));
-    points.push(center(exit_b));
-    points.dedup();
-    // Arrondit les angles du tracé, en gardant les deux bouts de rue, puis le fait onduler : un
-    // chemin tiré au cordeau sur des centaines de blocs ne ressemble à rien
-    for _ in 0..2 {
-        points = chaikin(&points);
+    /// Un peu au-delà du carrefour : les branches partent dans le prolongement du tronc
+    fn ahead(&self) -> (f64, f64) {
+        let j = self.junction();
+        (j.0 + self.dir.0 * 24.0, j.1 + self.dir.1 * 24.0)
     }
-    points = relax(generator, face, &points);
-    points = meander(generator, face, &points, seed);
-    for _ in 0..2 {
-        points = chaikin(&points);
+}
+
+/// Le tronc que le chemin de la région `region` vers la région `target` partage avec les autres
+/// chemins qui partent du même établissement dans la même direction. Tout se décide sur les guides
+/// (qui ne dépendent d'aucun tronc) : chaque chemin du groupe trouve le même tronc.
+fn shared_trunk(generator: &PlanetWorldGenerator, face: PlanetFace, s: &Settlement, region: (i32, i32), target: (i32, i32)) -> Option<Trunk> {
+    use std::f64::consts::TAU;
+    let c = (s.center.0 as f64 + 0.5, s.center.1 as f64 + 0.5);
+    // Les guides des liaisons de l'établissement, orientés depuis lui, et leur direction de départ
+    // (angle de départ, région d'arrivée, guide orienté depuis l'établissement)
+    type Departure = (f64, (i32, i32), Vec<(f64, f64)>);
+    let mut guides: Vec<Departure> = Vec::new();
+    for dz in -1..=1 {
+        for dx in -1..=1 {
+            let other = (region.0 + dx, region.1 + dz);
+            let Some((lx, lz, link, reversed)) = link_between(region, other) else {
+                continue;
+            };
+            let Some(guide) = generator.roads.guide(generator, face, lx, lz, link) else {
+                continue;
+            };
+            let mut points = resample(&guide.points);
+            if reversed {
+                points.reverse();
+            }
+            let at = points.iter().copied().find(|p| (p.0 - c.0).hypot(p.1 - c.1) >= DEPARTURE).unwrap_or(points[points.len() - 1]);
+            guides.push(((at.1 - c.1).atan2(at.0 - c.0).rem_euclid(TAU), other, points));
+        }
+    }
+    if guides.len() < 2 {
+        return None;
+    }
+    guides.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+    // On coupe le cercle au plus grand écart, puis on enchaîne les départs proches
+    let n = guides.len();
+    let gap = |i: usize| (guides[(i + 1) % n].0 - guides[i].0).rem_euclid(TAU);
+    let cut = (0..n).max_by(|&i, &j| gap(i).total_cmp(&gap(j)).then(j.cmp(&i)))?;
+    let order: Vec<usize> = (1..=n).map(|k| (cut + k) % n).collect();
+    let mut groups: Vec<Vec<usize>> = vec![vec![order[0]]];
+    for w in order.windows(2) {
+        if gap(w[0]) < SHARED_ANGLE {
+            groups.last_mut()?.push(w[1]);
+        } else {
+            groups.push(vec![w[1]]);
+        }
+    }
+    let group = groups.into_iter().find(|g| g.iter().any(|&i| guides[i].1 == target))?;
+    if group.len() < 2 {
+        return None;
+    }
+    // Le guide de référence : celui de la région de plus petit numéro ; le carrefour est le dernier
+    // point de son début que tous les autres guides du groupe longent encore
+    let reference = *group.iter().min_by_key(|&&i| guides[i].1)?;
+    let main = &guides[reference].2;
+    let r = REGION_BLOCKS;
+    let inside = Rect::new(region.0 * r, region.1 * r, ((region.0 + 1) * r).min(FACE_BLOCKS), ((region.1 + 1) * r).min(FACE_BLOCKS)).expand(-32);
+    let clear = s.bounds.expand(24);
+    let max = ((MAX_TRUNK / RESAMPLE) as usize).min(main.len() * 2 / 5);
+    // Les guides peuvent partir de portes différentes avant de se rejoindre : on garde le dernier
+    // point que tous longent encore, ou à défaut un carrefour à quelque distance de l'établissement
+    let mut last = None;
+    let mut fallback = None;
+    for (k, &p) in main.iter().enumerate().take(max) {
+        if !inside.contains(p.0 as i32, p.1 as i32) {
+            break;
+        }
+        if clear.contains(p.0 as i32, p.1 as i32) {
+            continue;
+        }
+        if fallback.is_none() && (p.0 - c.0).hypot(p.1 - c.1) >= 220.0 {
+            fallback = Some(k);
+        }
+        if group.iter().filter(|&&i| i != reference).all(|&i| guides[i].2.iter().any(|q| (q.0 - p.0).hypot(q.1 - p.1) < SHARED_GAP)) {
+            last = Some(k);
+        }
+    }
+    let k = last.filter(|&k| k as f64 * RESAMPLE >= 120.0).or(fallback)?.max(2);
+    let (p, q) = (main[k - 2], main[k]);
+    let len = (q.0 - p.0).hypot(q.1 - p.1).max(1e-6);
+    Some(Trunk { points: main[..=k].to_vec(), dir: ((q.0 - p.0) / len, (q.1 - p.1) / len) })
+}
+
+fn plan_road(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i32, link: Link) -> Option<Road> {
+    let guide = generator.roads.guide(generator, face, rx, rz, link)?;
+    let [ra, rb] = link.ends(rx, rz);
+    let structures = &generator.structures;
+    let a = structures.region_settlement(generator, face, ra.0, ra.1)?;
+    let b = structures.region_settlement(generator, face, rb.0, rb.1)?;
+    herocraft_common::prof_scope!("world::roads::plan_road");
+    let area = link.area(rx, rz);
+    let seed = link_seed(generator, face, rx, rz, link);
+    let trunk_a = shared_trunk(generator, face, a, ra, rb);
+    let trunk_b = shared_trunk(generator, face, b, rb, ra);
+
+    let middle = if trunk_a.is_none() && trunk_b.is_none() {
+        guide.points.clone()
+    } else {
+        // Entre les carrefours (ou les bouts de rue), une nouvelle branche
+        let center = |p: (i32, i32)| (p.0 as f64 + 0.5, p.1 as f64 + 0.5);
+        let head = match &trunk_a {
+            Some(t) => [t.junction(), t.ahead()],
+            None => {
+                let (exit, launch) = best_exit(a, b.center)?;
+                [center(exit), center(launch)]
+            }
+        };
+        let tail = match &trunk_b {
+            Some(t) => [t.ahead(), t.junction()],
+            None => {
+                let (exit, launch) = best_exit(b, a.center)?;
+                [center(launch), center(exit)]
+            }
+        };
+        let mut search = Search::for_area(generator, face, area, seed);
+        let start = search.snap((head[1].0 as i32, head[1].1 as i32))?;
+        let goal = search.snap((tail[0].0 as i32, tail[0].1 as i32))?;
+        let nodes = search.with_waypoints(start, goal)?;
+        smooth_curve(generator, face, head, &grid_points(&nodes), tail)
+    };
+    let mut points = Vec::new();
+    // Le tronc ondule selon sa propre graine : il est identique pour tous les chemins qui le suivent
+    let trunk_seed = |t: &Trunk| mix(generator.planet.seed ^ 0x7A0C ^ hash2(0x7A0C, t.junction().0 as i32, t.junction().1 as i32));
+    if let Some(t) = &trunk_a {
+        let wavy = meander(generator, face, &t.points, trunk_seed(t));
+        points.extend_from_slice(&wavy[..wavy.len() - 1]);
+    }
+    points.extend(meander(generator, face, &middle, seed));
+    if let Some(t) = &trunk_b {
+        let wavy = meander(generator, face, &t.points, trunk_seed(t));
+        points.extend(wavy.iter().rev().skip(1));
     }
     let columns = rasterize(&points, &area, generator.planet.seed);
     let bounds = columns.keys().fold(Rect::new(i32::MAX, i32::MAX, i32::MIN, i32::MIN), |r, &(x, z)| Rect::new(r.x0.min(x), r.z0.min(z), r.x1.max(x + 1), r.z1.max(z + 1)));
@@ -390,52 +537,100 @@ fn fade_near_ends(s: f64, total: f64, keep: f64, ramp: f64) -> f64 {
     e * e * (3.0 - 2.0 * e)
 }
 
-/// Lisse l'axe à grande échelle (moyenne glissante sur ±`SMOOTH_RADIUS` blocs) : les longues
-/// lignes droites et les coudes du tracé sur grille deviennent de larges courbes. Un point que le
-/// lissage mettrait dans l'eau, ou sur une pente bien plus raide que le tracé d'origine, reste où il
-/// était ; les abords des bouts de rue ne bougent pas.
-fn relax(generator: &PlanetWorldGenerator, face: PlanetFace, points: &[(f64, f64)]) -> Vec<(f64, f64)> {
-    const SMOOTH_RADIUS: f64 = 64.0;
-    let even = resample(points);
-    let n = even.len();
-    let radius = (SMOOTH_RADIUS / RESAMPLE) as usize;
-    if n < 2 * radius + 2 {
-        return points.to_vec();
+/// Espacement, en blocs, des points du guide par lesquels passe la courbe du chemin
+const CONTROL_SPACING: usize = 120;
+
+/// Courbe de Catmull-Rom centripète par les points de contrôle, échantillonnée tous les blocs ou presque
+fn catmull_rom(controls: &[(f64, f64)]) -> Vec<Vec<(f64, f64)>> {
+    let n = controls.len();
+    let at = |i: isize| -> (f64, f64) {
+        if i < 0 {
+            // Points fantômes : prolongent les bouts en ligne droite
+            let (a, b) = (controls[0], controls[1]);
+            (2.0 * a.0 - b.0, 2.0 * a.1 - b.1)
+        } else if i as usize >= n {
+            let (a, b) = (controls[n - 1], controls[n - 2]);
+            (2.0 * a.0 - b.0, 2.0 * a.1 - b.1)
+        } else {
+            controls[i as usize]
+        }
+    };
+    let knot = |p: (f64, f64), q: (f64, f64)| ((q.0 - p.0).powi(2) + (q.1 - p.1).powi(2)).sqrt().sqrt().max(1e-6);
+    (0..n - 1)
+        .map(|i| {
+            let i = i as isize;
+            let (p0, p1, p2, p3) = (at(i - 1), at(i), at(i + 1), at(i + 2));
+            let (t1, t2, t3) = (knot(p0, p1), knot(p1, p2), knot(p2, p3));
+            let (t1, t2, t3) = (t1, t1 + t2, t1 + t2 + t3);
+            let len = ((p2.0 - p1.0).powi(2) + (p2.1 - p1.1).powi(2)).sqrt();
+            let steps = (len / 1.5).ceil().max(1.0) as usize;
+            let lerp = |a: (f64, f64), b: (f64, f64), ta: f64, tb: f64, t: f64| {
+                let w = if tb - ta == 0.0 { 0.0 } else { (t - ta) / (tb - ta) };
+                (a.0 + (b.0 - a.0) * w, a.1 + (b.1 - a.1) * w)
+            };
+            (0..steps)
+                .map(|k| {
+                    let t = t1 + (t2 - t1) * k as f64 / steps as f64;
+                    let a1 = lerp(p0, p1, 0.0, t1, t);
+                    let a2 = lerp(p1, p2, t1, t2, t);
+                    let a3 = lerp(p2, p3, t2, t3, t);
+                    let b1 = lerp(a1, a2, 0.0, t2, t);
+                    let b2 = lerp(a2, a3, t1, t3, t);
+                    lerp(b1, b2, t1, t2, t)
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Le chemin, courbe lisse qui part tout droit des deux bouts de rue (`head`, `tail` : la sortie et
+/// le point où l'on quitte les abords) et suit le guide `grid` du A* par des points espacés de
+/// `CONTROL_SPACING` blocs. Là où la courbe couperait par l'eau, un point du guide de plus la
+/// ramène vers lui.
+fn smooth_curve(generator: &PlanetWorldGenerator, face: PlanetFace, head: [(f64, f64); 2], grid: &[(f64, f64)], tail: [(f64, f64); 2]) -> Vec<(f64, f64)> {
+    let guide = if grid.len() >= 2 { resample(grid) } else { grid.to_vec() };
+    let spacing = CONTROL_SPACING / RESAMPLE as usize;
+    // Indices des points du guide retenus (ni trop près des bouts, où la courbe rejoint les rues)
+    let margin = (40.0 / RESAMPLE) as usize;
+    let mut picks: Vec<usize> = Vec::new();
+    if guide.len() > 2 * margin {
+        let count = ((guide.len() - 2 * margin) / spacing).max(1);
+        for k in 0..=count {
+            picks.push(margin + (guide.len() - 1 - 2 * margin) * k / count);
+        }
     }
-    let total = (n - 1) as f64 * RESAMPLE;
-    let ground = |p: (f64, f64)| generator.sample_block_column(face, p.0.floor() as i32, p.1.floor() as i32).elevation.floor();
-    let mut out = even.clone();
-    for k in 1..n - 1 {
-        let weight = fade_near_ends(k as f64 * RESAMPLE, total, 16.0, 64.0);
-        if weight <= 0.0 {
-            continue;
+    let wet = |p: (f64, f64)| generator.sample_block_column(face, p.0.floor() as i32, p.1.floor() as i32).elevation.floor() <= SEA_LEVEL_BLOCKS + 1.0;
+    for _ in 0..6 {
+        let controls: Vec<(f64, f64)> = head.iter().copied().chain(picks.iter().map(|&i| guide[i])).chain(tail).collect();
+        let segments = catmull_rom(&controls);
+        // Segments (entre deux points du guide) qui coupent par l'eau : un point de plus au milieu
+        let mut extra = Vec::new();
+        for (s, segment) in segments.iter().enumerate() {
+            if s < 2 || s >= 2 + picks.len().saturating_sub(1) {
+                continue;
+            }
+            let (i, j) = (picks[s - 2], picks[s - 1]);
+            if j > i + 1 && segment.iter().step_by(3).any(|&p| wet(p)) {
+                extra.push((i + j) / 2);
+            }
         }
-        let (lo, hi) = (k.saturating_sub(radius), (k + radius).min(n - 1));
-        let (mut sx, mut sz, mut sw) = (0.0, 0.0, 0.0);
-        for (j, p) in even.iter().enumerate().take(hi + 1).skip(lo) {
-            // Poids en triangle, symétrique : la fenêtre se resserre près des bouts
-            let w = (radius + 1 - k.abs_diff(j).min(radius)) as f64;
-            sx += p.0 * w;
-            sz += p.1 * w;
-            sw += w;
+        if extra.is_empty() {
+            let mut points: Vec<(f64, f64)> = segments.into_iter().flatten().collect();
+            points.push(tail[1]);
+            return points;
         }
-        let p = even[k];
-        let moved = (p.0 + (sx / sw - p.0) * weight, p.1 + (sz / sw - p.1) * weight);
-        if (moved.0 - p.0).abs() + (moved.1 - p.1).abs() < 1.0 {
-            out[k] = moved;
-            continue;
-        }
-        let g = ground(moved);
-        if g <= SEA_LEVEL_BLOCKS + 1.0 || (g - ground(p)).abs() > 6.0 {
-            continue;
-        }
-        out[k] = moved;
+        picks.extend(extra);
+        picks.sort_unstable();
+        picks.dedup();
     }
-    out
+    let controls: Vec<(f64, f64)> = head.iter().copied().chain(picks.iter().map(|&i| guide[i])).chain(tail).collect();
+    let mut points: Vec<(f64, f64)> = catmull_rom(&controls).into_iter().flatten().collect();
+    points.push(tail[1]);
+    points
 }
 
 /// Écart latéral maximal des ondulations du chemin, en blocs
-const MEANDER: f64 = 12.0;
+const MEANDER: f64 = 4.0;
 
 /// Fait onduler l'axe : repris tous les 4 blocs, chaque point est écarté sur le côté d'une
 /// quantité qui varie doucement le long du chemin (deux longueurs d'onde mêlées). Les ondulations
@@ -455,7 +650,7 @@ fn meander(generator: &PlanetWorldGenerator, face: PlanetFace, points: &[(f64, f
         let (tx, tz) = (next.0 - prev.0, next.1 - prev.1);
         let tl = (tx * tx + tz * tz).sqrt().max(1e-9);
         let (nx, nz) = (-tz / tl, tx / tl);
-        let offset = MEANDER * fade(s) * (0.75 * noise_1d(seed ^ 0x3EA1, s / 140.0) + 0.25 * noise_1d(seed ^ 0x3EA2, s / 45.0));
+        let offset = MEANDER * fade(s) * (0.75 * noise_1d(seed ^ 0x3EA1, s / 160.0) + 0.25 * noise_1d(seed ^ 0x3EA2, s / 60.0));
         let p = even[k];
         let moved = (p.0 + nx * offset, p.1 + nz * offset);
         let wet = offset.abs() > 0.5 && {
@@ -465,23 +660,6 @@ fn meander(generator: &PlanetWorldGenerator, face: PlanetFace, points: &[(f64, f
         out.push(if wet { p } else { moved });
     }
     out.push(even[n - 1]);
-    out
-}
-
-/// Une passe de Chaikin : chaque segment est remplacé par ses points au quart et aux trois quarts,
-/// les deux bouts restent
-fn chaikin(points: &[(f64, f64)]) -> Vec<(f64, f64)> {
-    if points.len() < 3 {
-        return points.to_vec();
-    }
-    let mut out = Vec::with_capacity(points.len() * 2);
-    out.push(points[0]);
-    for w in points.windows(2) {
-        let (p, q) = (w[0], w[1]);
-        out.push((0.75 * p.0 + 0.25 * q.0, 0.75 * p.1 + 0.25 * q.1));
-        out.push((0.25 * p.0 + 0.75 * q.0, 0.25 * p.1 + 0.75 * q.1));
-    }
-    out.push(points[points.len() - 1]);
     out
 }
 
@@ -530,7 +708,13 @@ struct Search<'a> {
     grounds: HashMap<(i32, i32), Option<i32>>,
 }
 
-impl Search<'_> {
+impl<'a> Search<'a> {
+    /// Recherche dans la zone `area`, qui contourne les établissements qui la touchent
+    fn for_area(generator: &'a PlanetWorldGenerator, face: PlanetFace, area: Rect, seed: u64) -> Self {
+        let obstacles: Vec<Rect> = generator.structures.touching(generator, face, area).iter().map(|s| s.bounds.expand(SETTLEMENT_CLEARANCE)).collect();
+        Search { generator, face, area: area.expand(-4), obstacles, seed, grounds: HashMap::new() }
+    }
+
     /// Le nœud de la grille le plus proche de la colonne, dans la zone
     fn snap(&self, at: (i32, i32)) -> Option<(i32, i32)> {
         let lo = |v: i32| (v + STEP - 1).div_euclid(STEP);
@@ -625,6 +809,49 @@ impl Search<'_> {
             }
         }
         None
+    }
+
+    /// Tracé de `start` à `goal` par des étapes écartées de la ligne droite, une tous les 600 blocs
+    /// environ : le chemin décrit de grandes courbes même en plaine. Une étape enclavée est sautée.
+    fn with_waypoints(&mut self, start: (i32, i32), goal: (i32, i32)) -> Option<Vec<(i32, i32)>> {
+        let seed = self.seed;
+        let (dx, dz) = ((goal.0 - start.0) as f64, (goal.1 - start.1) as f64);
+        let dist = (dx * dx + dz * dz).sqrt();
+        let stops = (dist * STEP as f64 / 600.0).floor() as i32;
+        let mut waypoints = Vec::new();
+        let start_ground = self.ground_any(start)? as f64;
+        let goal_ground = self.ground_any(goal)? as f64;
+        let mut side = if unit(hash2(seed, 0x57, 0)) < 0.5 { 1.0 } else { -1.0 };
+        for k in 1..=stops {
+            let r = |n: i32| unit(hash2(seed, k, n));
+            let t = (k as f64 + (r(1) - 0.5) * 0.4) / (stops + 1) as f64;
+            // Le plus souvent de l'autre côté que l'étape précédente : un S plutôt qu'un arc
+            if r(2) < 0.75 {
+                side = -side;
+            }
+            let offset = side * dist * (0.07 + 0.11 * r(3));
+            let (nx, nz) = (-dz / dist.max(1.0), dx / dist.max(1.0));
+            // Repli vers la ligne droite si l'étape tombe dans l'eau ou sur un obstacle
+            for shrink in [1.0, 0.6, 0.3] {
+                let w = ((start.0 as f64 + dx * t + nx * offset * shrink).round() as i32, (start.1 as f64 + dz * t + nz * offset * shrink).round() as i32);
+                // Pas d'étape perchée : elle ferait grimper le chemin pour rien
+                let expected = start_ground + (goal_ground - start_ground) * t;
+                if self.ground(w).is_some_and(|g| (g as f64 - expected).abs() < 24.0) {
+                    waypoints.push(w);
+                    break;
+                }
+            }
+        }
+        let mut nodes = vec![start];
+        for leg in waypoints.into_iter().chain([goal]) {
+            let from = *nodes.last()?;
+            match self.run(from, leg) {
+                Some(mut part) => nodes.extend(part.drain(1..)),
+                None if leg != goal => continue,
+                None => return None,
+            }
+        }
+        Some(nodes)
     }
 
     /// Sol d'un nœud, obstacles compris
@@ -730,6 +957,27 @@ mod tests {
         assert!(generator.is_built(face, bx, bz, 0));
         let column = generator.sample_block_column(face, bx, bz);
         assert_eq!(generator.ground_plant(&column, face, bx, bz), None);
+    }
+
+    #[test]
+    fn test_roads_leaving_together_share_a_trunk() {
+        let generator = generator(42);
+        let roads: Vec<&Road> = PlanetFace::ALL.iter().flat_map(|&f| generator.roads.all_on_face(&generator, f)).collect();
+        // Deux chemins d'un même établissement qui partagent un long tronc : les mêmes colonnes
+        let mut shared_pairs = 0;
+        for (i, r) in roads.iter().enumerate() {
+            for s in &roads[i + 1..] {
+                if r.face != s.face || ![r.from, r.to].iter().any(|c| *c == s.from || *c == s.to) {
+                    continue;
+                }
+                let common = r.columns.keys().filter(|k| s.columns.contains_key(k)).count();
+                if common > 400 {
+                    shared_pairs += 1;
+                }
+            }
+        }
+        println!("{shared_pairs} paires de chemins avec un tronc commun");
+        assert!(shared_pairs >= 3, "seulement {shared_pairs} troncs communs");
     }
 
     #[test]
