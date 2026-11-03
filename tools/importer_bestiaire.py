@@ -44,8 +44,8 @@ def ecrire(chemin, description):
     elements = list(description.items())
     for i, (cle, valeur) in enumerate(elements):
         fin = "," if i < len(elements) - 1 else ""
-        if cle == "spawn" and valeur:
-            lignes.append('  "spawn": [')
+        if cle in ("spawn", "loot") and valeur:
+            lignes.append(f'  "{cle}": [')
             lignes += ["    " + c(r) + ("," if j < len(valeur) - 1 else "") for j, r in enumerate(valeur)]
             lignes.append("  ]" + fin)
         elif cle == "model" and valeur.get("animations"):
@@ -112,6 +112,8 @@ def importer(module):
             **({"activity": activite} if activite else {}),
             # L'attaque n'existe pas dans le bestiaire : celle de la fiche actuelle est gardée
             **({"attack": a} if (a := ancien.get("attack")) else {}),
+            # Le butin est écrit à la main dans les fiches : une réimportation le garde
+            **({"loot": l} if (l := ancien.get("loot")) else {}),
             "model": {
                 "mesh": f"modeles/{ident}.gltf",
                 "texture": f"modeles/{ident}.png",

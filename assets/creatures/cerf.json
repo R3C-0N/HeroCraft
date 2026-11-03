@@ -11,6 +11,12 @@
   ],
   "activity": "crepuscular",
   "breeding": {"food": ["carotte", "pommeDeTerre"], "taming": [4, 8], "growth_minutes": 12},
+  "loot": [
+    {"item": "viandeCerf", "count": [1, 2]},
+    {"item": "hide", "count": [1, 2]},
+    {"item": "boisDeCerf", "chance": 0.5},
+    {"item": "bone", "chance": 0.5}
+  ],
   "model": {
     "mesh": "modeles/cerf.gltf",
     "texture": "modeles/cerf.png",

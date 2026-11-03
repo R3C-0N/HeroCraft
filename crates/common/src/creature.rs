@@ -61,6 +61,9 @@ pub struct CreatureSpecies {
     /// grandir (aucun : elle ne s'élève pas)
     #[serde(default)]
     pub breeding: Option<Breeding>,
+    /// Ce que la bête tuée laisse tomber (voir `loot`)
+    #[serde(default)]
+    pub loot: Vec<crate::loot::LootEntry>,
     /// Modèle 3D
     pub model: CreatureModel,
 }
@@ -395,6 +398,12 @@ impl CreatureRegistry {
         }
     }
 
+    /// Comme `load_default`, sans rien écrire dans la console (une espèce invalide est ignorée)
+    pub fn load_quiet() -> Self {
+        let candidates = [PathBuf::from(CREATURES_DIR), Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(CREATURES_DIR)];
+        candidates.iter().find(|dir| dir.is_dir()).and_then(|dir| Self::load_dir(dir).ok()).map_or_else(Self::default, |(registry, _)| registry)
+    }
+
     /// Lit chaque fichier `*.json` du dossier. Renvoie les espèces valides et les erreurs des autres.
     pub fn load_dir(dir: &Path) -> io::Result<(Self, Vec<String>)> {
         let mut registry = Self { species: Vec::new(), dir: dir.to_path_buf() };
@@ -486,6 +495,7 @@ impl CreatureSpecies {
                 return Err(format!("animation {name} : valeur d'os invalide"));
             }
         }
+        crate::loot::check_entries(&species.loot)?;
         if species.pauses().count() > u8::MAX as usize {
             return Err("trop d'inactivités".into());
         }

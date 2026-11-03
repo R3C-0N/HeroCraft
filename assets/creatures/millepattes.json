@@ -8,6 +8,10 @@
   "spawn": [],
   "activity": "nocturnal",
   "attack": {"mode": "solo", "damage": 5, "cooldown": 1.2, "sight": 4, "reach": 1.0},
+  "loot": [
+    {"item": "pocheVenin", "chance": 0.6},
+    {"item": "glandeAcide", "chance": 0.6}
+  ],
   "model": {
     "mesh": "modeles/millepattes.gltf",
     "texture": "modeles/millepattes.png",

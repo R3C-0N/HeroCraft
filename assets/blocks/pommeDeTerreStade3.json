@@ -7,5 +7,9 @@
   "textures": {"side": "textures/PommeDeTerreStade3.png"},
   "shape": "plant",
   "solid": false,
-  "sound": "grass"
+  "sound": "grass",
+  "drop": null,
+  "loot": [
+    {"item": "grainesPommeDeTerre"}
+  ]
 }

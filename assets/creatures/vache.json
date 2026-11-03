@@ -11,6 +11,12 @@
   ],
   "activity": "diurnal",
   "breeding": {"food": ["ble"], "taming": [2, 4], "growth_minutes": 10},
+  "loot": [
+    {"item": "viandeVache", "count": [1, 3]},
+    {"item": "hide", "count": [1, 2]},
+    {"item": "cuirEpais", "chance": 0.3},
+    {"item": "bone", "chance": 0.5}
+  ],
   "model": {
     "mesh": "modeles/vache.gltf",
     "texture": "modeles/vache.png",

@@ -12,6 +12,10 @@
   ],
   "activity": "diurnal",
   "breeding": {"food": ["grainesBle", "grainesRiz", "grainesSoja"], "taming": [3, 6], "growth_minutes": 6},
+  "loot": [
+    {"item": "viandeFaisan"},
+    {"item": "plumes", "count": [1, 3]}
+  ],
   "model": {
     "mesh": "modeles/faisan.gltf",
     "texture": "modeles/faisan.png",

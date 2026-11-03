@@ -51,6 +51,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 | `attack` | Comportement agressif (voir plus bas). Sans ce champ, la bête est paisible : frappée, elle s'enfuit. |
 | `spawn` | Les biomes où l'espèce apparaît d'elle-même (voir ci-dessous). Sans ce champ, elle n'apparaît jamais seule : c'est le cas des créatures des profondeurs, des mondes démoniaques et des bois féeriques, qui attendent leur monde. |
 | `activity` | Le rythme de vie de l'espèce (voir ci-dessous, `diurnal` par défaut). |
+| `loot` | Ce que la bête tuée laisse tomber à ses pieds, au format du champ `loot` des blocs (`assets/blocks/README.md`) : `[{"item": "viandeVache", "count": [1, 3]}, {"item": "bone", "chance": 0.5}]`. En ligne, le serveur tire le butin et l'envoie à celui qui a porté le coup fatal. |
 | `model` | Le modèle 3D (voir ci-dessous). |
 
 Chaque entrée de `spawn` a trois champs :

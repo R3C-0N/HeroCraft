@@ -11,6 +11,12 @@
   ],
   "activity": "diurnal",
   "breeding": {"food": ["ble"], "taming": [2, 4], "growth_minutes": 10},
+  "loot": [
+    {"item": "viandeMouflon", "count": [1, 2]},
+    {"item": "hide"},
+    {"item": "laine", "count": [1, 3]},
+    {"item": "cornesMouflon", "chance": 0.4}
+  ],
   "model": {
     "mesh": "modeles/mouflon.gltf",
     "texture": "modeles/mouflon.png",

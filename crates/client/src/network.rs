@@ -17,7 +17,7 @@ use glam::Vec3;
 use herocraft_common::net::Connection;
 use herocraft_server::{Server, ServerConfig};
 use herocraft_common::{
-    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureAction, CreatureRegistry, CreatureState, PlanetChunkCoord, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, ServerPacket, PROTOCOL_VERSION,
+    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, ItemId, CreatureAction, CreatureRegistry, CreatureState, PlanetChunkCoord, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, ServerPacket, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkData;
 use herocraft_world::{BlockGeometry, BlockPos};
@@ -332,6 +332,8 @@ pub enum NetEvent {
     Stats(CharacterStats),
     /// Le joueur vient d'être frappé par une créature (`cause` : son nom)
     Hurt { damage: f32, cause: String },
+    /// Le joueur a tué une créature : son butin tombe en `position`
+    Loot { position: Vec3, items: Vec<(ItemId, u16)> },
     /// Message du chat (`sender` vide : annonce du serveur, ou réponse d'une commande)
     Chat { sender: String, message: String },
     /// Connexion perdue ou fermée par le serveur
@@ -495,6 +497,10 @@ impl NetClient {
             ServerPacket::ChunkData { coord, .. } => warn!("Chunk {coord:?} reçu hors de la connexion, ignoré."),
             ServerPacket::StatsUpdate(stats) => return Some(NetEvent::Stats(stats)),
             ServerPacket::PlayerHurt { damage, cause } => return Some(NetEvent::Hurt { damage, cause }),
+            ServerPacket::CreatureLoot { position, items } => {
+                let items = items.into_iter().map(|(item, count)| (ItemId(item), count)).filter(|(item, _)| item.is_known()).collect();
+                return Some(NetEvent::Loot { position, items });
+            }
             ServerPacket::ConnectAck { .. } | ServerPacket::PlayerJoined { .. } => {}
         }
         None

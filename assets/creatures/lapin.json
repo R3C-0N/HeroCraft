@@ -12,6 +12,11 @@
   ],
   "activity": "crepuscular",
   "breeding": {"food": ["carotte", "redClover"], "taming": [3, 6], "growth_minutes": 6},
+  "loot": [
+    {"item": "viandeLapin"},
+    {"item": "peauFine"},
+    {"item": "hide", "chance": 0.5}
+  ],
   "model": {
     "mesh": "modeles/lapin.gltf",
     "texture": "modeles/lapin.png",

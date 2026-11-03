@@ -151,6 +151,12 @@ pub enum ServerPacket {
         /// Nom de l'espèce qui l'a frappé, pour l'écran de mort
         cause: String,
     },
+    /// Le joueur vient de tuer une créature : son butin tombe au sol à ses pieds (`position`),
+    /// objets et nombres (`ItemId`), tirés par le serveur
+    CreatureLoot {
+        position: Vec3,
+        items: Vec<(u16, u16)>,
+    },
     /// Message de chat ou notification système
     ChatMessage {
         sender: String,
