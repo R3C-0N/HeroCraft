@@ -52,7 +52,6 @@ pub mod block {
     pub const STONE: BlockId = BlockId::STONE;
     pub const WATER: BlockId = BlockId::WATER;
     pub const OAK_LOG: BlockId = BlockId::WOOD;
-    pub const CRYSTAL: BlockId = BlockId::CRYSTAL;
     pub const BIRCH_LOG: BlockId = BlockId(14);
     pub const PINE_LOG: BlockId = BlockId(17);
     pub const FURNACE: BlockId = BlockId(20);
@@ -60,7 +59,6 @@ pub mod block {
     pub const BRICK: BlockId = BlockId(26);
     pub const WHITE_BRICK: BlockId = BlockId(27);
     pub const GLASS: BlockId = BlockId(41);
-    pub const IRON_PLATE: BlockId = BlockId(46);
     pub const CUT_STONE: BlockId = BlockId(43);
     pub const PLANK: BlockId = BlockId(51);
     pub const WOOD_PANEL: BlockId = BlockId(55);
@@ -83,20 +81,25 @@ pub mod block {
     pub const GREEN_LEAF: BlockId = BlockId(9);
     pub const DARK_LEAF: BlockId = BlockId(15);
     pub const LIGHT_LEAF: BlockId = BlockId(16);
-    pub const BRONZE_PLATE: BlockId = BlockId(29);
     pub const FLINT_BRICK: BlockId = BlockId(40);
-    pub const GOLD_BAR: BlockId = BlockId(42);
-    pub const MITHRIL_PLATE: BlockId = BlockId(48);
     pub const GLOWBELL_BLOOM: BlockId = BlockId(105);
     pub const BASALT: BlockId = BlockId(118);
+    // Ornements : l'aspect des métaux et du cristal, sans leur valeur. Cassés, ils ne donnent
+    // qu'eux-mêmes et aucune recette ne les refond en lingots ni en minerai : piller une ville ne
+    // rapporte ni or, ni mithril, ni cristal.
+    pub const BRONZE_TRIM: BlockId = BlockId(142);
+    pub const SILVER_TRIM: BlockId = BlockId(143);
+    pub const GILDING: BlockId = BlockId(144);
+    pub const IRON_TRIM: BlockId = BlockId(145);
+    pub const CUT_CRYSTAL: BlockId = BlockId(146);
 
     /// Tous les blocs que posent les structures (pour vérifier qu'ils ont leur fiche)
     pub const ALL: [(BlockId, &str); 40] = [
-        (IRON_PLATE, "ironPlate"),
+        (IRON_TRIM, "ornementFer"),
         (STONE, "stone"),
         (WATER, "water"),
         (OAK_LOG, "oakTrunk"),
-        (CRYSTAL, "crystal"),
+        (CUT_CRYSTAL, "cristalTaille"),
         (BIRCH_LOG, "birchTrunk"),
         (PINE_LOG, "pineTrunk"),
         (FURNACE, "furnace"),
@@ -126,10 +129,10 @@ pub mod block {
         (GREEN_LEAF, "greenLeaf"),
         (DARK_LEAF, "darkLeaf"),
         (LIGHT_LEAF, "lightLeaf"),
-        (BRONZE_PLATE, "bronzePlate"),
+        (BRONZE_TRIM, "ornementBronze"),
         (FLINT_BRICK, "flintBrick"),
-        (GOLD_BAR, "goldBar"),
-        (MITHRIL_PLATE, "mithrilPlate"),
+        (GILDING, "ornementOr"),
+        (SILVER_TRIM, "ornementMithril"),
         (GLOWBELL_BLOOM, "glowbellBloom"),
         (BASALT, "basalt"),
     ];
@@ -335,11 +338,11 @@ impl Style {
             // Murs blanchis, angles de mithril, toit d'ardoise au faîte d'argent
             Culture::HautsElfes => Style {
                 wall: WHITE_BRICK,
-                corner: MITHRIL_PLATE,
+                corner: SILVER_TRIM,
                 floor: PLANK,
                 foundation: CUT_STONE,
                 roof: Some(COBBLE_STAIRS),
-                ridge: MITHRIL_PLATE,
+                ridge: SILVER_TRIM,
             },
         }
     }
@@ -404,15 +407,15 @@ impl Style {
             }
             // Ville naine : pierre massive, angles de bronze ou de fer, terrasses de pierre
             Culture::Nains => match dice.range(0, 3) {
-                0 => Style { wall: CUT_STONE, corner: BRONZE_PLATE, floor: CUT_STONE, foundation: HARD_STONE, roof: Some(COBBLE_STAIRS), ridge: BASALT },
-                1 => Style { wall: FLINT_BRICK, corner: CUT_STONE, floor: CUT_STONE, foundation: HARD_STONE, roof: Some(COBBLE_STAIRS), ridge: BRONZE_PLATE },
-                _ => Style { wall: HARD_STONE, corner: IRON_PLATE, floor: CUT_STONE, foundation: BASALT, roof: None, ridge: CUT_STONE },
+                0 => Style { wall: CUT_STONE, corner: BRONZE_TRIM, floor: CUT_STONE, foundation: HARD_STONE, roof: Some(COBBLE_STAIRS), ridge: BASALT },
+                1 => Style { wall: FLINT_BRICK, corner: CUT_STONE, floor: CUT_STONE, foundation: HARD_STONE, roof: Some(COBBLE_STAIRS), ridge: BRONZE_TRIM },
+                _ => Style { wall: HARD_STONE, corner: IRON_TRIM, floor: CUT_STONE, foundation: BASALT, roof: None, ridge: CUT_STONE },
             },
             Culture::ElfesDesBois => Self::sylvan(dice),
             // Cité des Hauts Elfes : blanc, mithril et or
             Culture::HautsElfes => {
-                let ridge = if dice.chance(0.5) { GOLD_BAR } else { MITHRIL_PLATE };
-                let corner = if dice.chance(0.5) { MITHRIL_PLATE } else { CUT_STONE };
+                let ridge = if dice.chance(0.5) { GILDING } else { SILVER_TRIM };
+                let corner = if dice.chance(0.5) { SILVER_TRIM } else { CUT_STONE };
                 Style { wall: WHITE_BRICK, corner, floor: PLANK, foundation: CUT_STONE, roof: Some(COBBLE_STAIRS), ridge }
             }
         }
@@ -514,12 +517,12 @@ impl Masonry {
             Culture::HautsElfes => Masonry {
                 wall: WHITE_BRICK,
                 accent: CUT_STONE,
-                cap: MITHRIL_PLATE,
+                cap: SILVER_TRIM,
                 deck: PLANK,
-                post: MITHRIL_PLATE,
+                post: SILVER_TRIM,
                 light: TORCH,
                 palisade: false,
-                spire: Some(CRYSTAL),
+                spire: Some(CUT_CRYSTAL),
                 height: 5,
                 tower_height: 11,
             },
@@ -1032,7 +1035,7 @@ impl Forge {
                 return Some(OAK_LOG);
             }
             if level == 0 && (x, z) == (cx, cz) {
-                return Some(IRON_PLATE);
+                return Some(IRON_TRIM);
             }
             if level == 0 && foot.on_edge(x, z) && !on_back && hash2(0xF0, x, z) % 3 == 0 {
                 return Some(WORKBENCH);
@@ -1182,7 +1185,7 @@ impl Temple {
         if (x, z) == (cx, cz) {
             match level {
                 0 => return Some(CUT_STONE),
-                1 => return Some(CRYSTAL),
+                1 => return Some(CUT_CRYSTAL),
                 _ => {}
             }
         }
@@ -2205,7 +2208,7 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
     // Étals de marché autour de la fontaine, tournés vers elle (posés avant le pavage de la place)
     let mut spots: [(i32, i32); 8] = [(-7, -7), (7, -7), (-7, 7), (7, 7), (-4, -9), (4, 9), (9, -4), (-9, 4)];
     shuffle(dice, &mut spots);
-    let goods = [WHEAT, CARROT, POTATO, SQUASH, PLANK, CRYSTAL];
+    let goods = [WHEAT, CARROT, POTATO, SQUASH, PLANK, CUT_CRYSTAL];
     for &(ox, oz) in &spots[..dice.range(4, 7) as usize] {
         let (rect, front) = if ox.abs() > oz.abs() {
             (Rect::sized(x + ox - (ox > 0) as i32, z + oz - 1, 2, 3), if ox > 0 { Side::West } else { Side::East })
@@ -2414,6 +2417,41 @@ mod tests {
         }
         assert!(herocraft_common::blocks().is_known(facing(PLANK_STAIRS, Side::West)));
         assert!(herocraft_common::blocks().is_known(facing(LADDER, Side::East)));
+    }
+
+    /// Piller une ville ne doit rapporter ni minerai ni métal : aucun bloc posé par les structures
+    /// n'est un minerai ou un bloc de métal, ni ne se casse en l'un d'eux, et aucune recette ne
+    /// prend un ornement pour ingrédient
+    #[test]
+    fn test_structures_yield_no_ore_nor_metal() {
+        let registry = herocraft_common::blocks();
+        let precious = ["crystal", "goldBar", "ironPlate", "bronzePlate", "mithrilPlate", "copperPlate", "steelPlate", "diamondBar", "ironBar", "copperBar", "obsidian"];
+        let valuable = |id: &str| precious.contains(&id) || id.ends_with("Ore") || id.contains("Ornate") || id.contains("Plate") || id.ends_with("Bar");
+        for (block, id) in block::ALL {
+            assert!(!valuable(id), "{id} est un minerai ou un métal");
+            if let Some(drop) = registry.drop_of(block) {
+                let dropped = registry.get(drop).unwrap();
+                assert!(!valuable(&dropped.id), "{id} se casse en {}", dropped.id);
+            }
+        }
+        // Les ornements ne figurent dans aucune fiche d'objet, de bloc ou d'établi, hors la leur
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let ornaments = ["ornementBronze", "ornementMithril", "ornementOr", "ornementFer", "cristalTaille"];
+        let mut stack = vec![root];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().is_some_and(|e| e == "json") {
+                    let text = std::fs::read_to_string(&path).unwrap();
+                    let own = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    for o in ornaments.iter().filter(|&&o| o != own) {
+                        assert!(!text.contains(&format!("\"{o}\"")), "{} cite {o}", path.display());
+                    }
+                }
+            }
+        }
     }
 
     #[test]

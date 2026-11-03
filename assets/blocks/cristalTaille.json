@@ -1,0 +1,13 @@
+{
+  "numeric_id": 146,
+  "name": "Cristal taillé",
+  "description": "Cristal poli des flèches elfiques et des étals. Purement décoratif : ce n'est pas du minerai.",
+  "category": "Construction",
+  "hardness": 40,
+  "color": {
+    "side": "#9edbf2"
+  },
+  "textures": {
+    "side": "textures/Crystal.png"
+  }
+}
