@@ -295,6 +295,12 @@ impl PostProcess {
         );
     }
 
+    /// MSAA coupé ou rétabli : la cible HDR multiéchantillonnée est recréée ou retirée
+    pub fn set_sample_count(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, sample_count: u32) {
+        self.sample_count = sample_count;
+        self.resize(device, config);
+    }
+
     /// Cible couleur de la passe 3D : (attachement, cible de résolution MSAA éventuelle)
     pub fn scene_attachment(&self) -> (&wgpu::TextureView, Option<&wgpu::TextureView>) {
         match &self.targets.hdr_msaa_view {

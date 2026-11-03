@@ -80,13 +80,30 @@ struct Setup {
     lod: LodDistanceSetting,
     view: View,
     motion: Motion,
+    /// Préréglage dont la phase prend la finesse des ombres et des rayons (qui dépend de la
+    /// carte graphique) ; `None` : réglages par défaut de cette carte
+    preset: Option<GraphicsQuality>,
+    /// Inverse la finesse des ombres du relief, des rayons, ou le MSAA par rapport à la
+    /// référence (allégés et sans MSAA par défaut sur une puce intégrée, fins et avec ailleurs)
+    flip_fine_shadows: bool,
+    flip_fine_god_rays: bool,
+    flip_msaa: bool,
 }
 
 impl Setup {
     /// La référence, avec les effets d'un préréglage de qualité
     fn quality(quality: GraphicsQuality) -> Setup {
-        let e = quality.effects();
-        Setup { shadows: e.shadows, cloud_shadows: e.cloud_shadows, god_rays: e.god_rays, bloom: e.bloom, lod: e.lod_distance, ..Setup::REFERENCE }
+        // Seule la finesse dépend de la carte, elle est lue au début de la phase
+        let e = quality.effects(false);
+        Setup {
+            shadows: e.shadows,
+            cloud_shadows: e.cloud_shadows,
+            god_rays: e.god_rays,
+            bloom: e.bloom,
+            lod: e.lod_distance,
+            preset: Some(quality),
+            ..Setup::REFERENCE
+        }
     }
 
     const REFERENCE: Setup = Setup {
@@ -99,6 +116,10 @@ impl Setup {
         lod: LodDistanceSetting::Normale,
         view: View::FirstPerson,
         motion: Motion::Still,
+        preset: None,
+        flip_fine_shadows: false,
+        flip_fine_god_rays: false,
+        flip_msaa: false,
     };
 }
 
@@ -126,6 +147,24 @@ fn phases() -> Vec<Phase> {
         p("Sans nuages", "nuages", Setup { clouds: false, ..r }, true),
         p("Sans rayons crépusculaires", "rayons crépusculaires", Setup { god_rays: false, ..r }, true),
         p("Sans bloom", "bloom", Setup { bloom: false, ..r }, true),
+        p(
+            "Ombres fines ↔ allégées",
+            "bascule des ombres du relief entre fines et allégées (sur puce intégrée, la référence est allégée : un coût négatif est ce qu'ajoutent les ombres fines)",
+            Setup { flip_fine_shadows: true, ..r },
+            true,
+        ),
+        p(
+            "Rayons fins ↔ allégés",
+            "bascule des rayons crépusculaires entre fins et allégés (sur puce intégrée, la référence est allégée : un coût négatif est ce qu'ajoutent les rayons fins)",
+            Setup { flip_fine_god_rays: true, ..r },
+            true,
+        ),
+        p(
+            "MSAA basculé",
+            "bascule du MSAA 4× (coupé par défaut sur puce intégrée : un coût négatif est ce qu'ajoute le MSAA)",
+            Setup { flip_msaa: true, ..r },
+            true,
+        ),
         p("Créatures simulées, non dessinées", "animation et dessin des créatures", Setup { creatures: CreatureMode::SimulationOnly, ..r }, true),
         p("Sans créatures", "créatures (simulation, animation et dessin)", Setup { creatures: CreatureMode::Off, ..r }, true),
         p("Distance LOD courte", "passage de la distance LOD normale à courte", Setup { lod: LodDistanceSetting::Courte, ..r }, true),
@@ -365,6 +404,17 @@ impl Benchmark {
         ui.cloud_settings.density = if setup.clouds { 1.0 } else { 0.0 };
         ui.atmosphere_settings.god_rays = setup.god_rays;
         ui.post_settings.bloom_enabled = setup.bloom;
+        let integrated = ui.integrated_gpu;
+        let (fine_shadows, fine_god_rays) = match setup.preset {
+            Some(q) => {
+                let e = q.effects(integrated);
+                (e.fine_shadows, e.fine_god_rays)
+            }
+            None => (!integrated, !integrated),
+        };
+        ui.shadow_settings.fine = fine_shadows != setup.flip_fine_shadows;
+        ui.atmosphere_settings.god_rays_fine = fine_god_rays != setup.flip_fine_god_rays;
+        ui.video_settings.msaa = !integrated != setup.flip_msaa;
         ui.lighting_settings.moon_speed = 0.0;
         if ui.is_settings_open {
             ui.set_settings_open(false);

@@ -118,12 +118,14 @@ const HITCH_DISPLAY_SECS: f32 = 5.0;
 
 /// Préréglage de qualité graphique : règle d'un coup les effets les plus chers pour le GPU
 /// (mesurés avec `--benchmark` sur un GPU intégré Iris Xe : ombres du relief ~4 ms par image,
-/// rayons crépusculaires 1 à 4 ms, ombres des nuages ~1 ms, bloom ~0,5 ms)
+/// rayons crépusculaires 1 à 4 ms, ombres des nuages ~1 ms, bloom ~0,5 ms ; sur une UHD 620 en
+/// 1600 × 900 : ombres du relief ~15 ms, rayons ~21 ms, nuages ~9 ms). Sur une puce intégrée,
+/// la qualité haute garde tous les effets mais en version allégée (ombres et rayons).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphicsQuality {
     /// Ni ombres, ni rayons, ni bloom, distance de détail courte
     Basse,
-    /// Ombres du relief, sans ombres des nuages ni rayons crépusculaires
+    /// Ombres du relief allégées, sans ombres des nuages ni rayons crépusculaires
     Moyenne,
     /// Tous les effets
     Haute,
@@ -137,6 +139,10 @@ pub struct QualityEffects {
     pub god_rays: bool,
     pub bloom: bool,
     pub lod_distance: LodDistanceSetting,
+    /// Ombres du relief fines (`ShadowSettings::fine`)
+    pub fine_shadows: bool,
+    /// Rayons crépusculaires fins (`AtmosphereSettings::god_rays_fine`)
+    pub fine_god_rays: bool,
 }
 
 impl GraphicsQuality {
@@ -150,11 +156,38 @@ impl GraphicsQuality {
         }
     }
 
-    pub fn effects(self) -> QualityEffects {
+    /// Effets du préréglage ; `integrated_gpu` : puce graphique intégrée, où même la qualité
+    /// haute garde les ombres et les rayons allégés
+    pub fn effects(self, integrated_gpu: bool) -> QualityEffects {
+        let fine = !integrated_gpu;
         match self {
-            Self::Basse => QualityEffects { shadows: false, cloud_shadows: false, god_rays: false, bloom: false, lod_distance: LodDistanceSetting::Courte },
-            Self::Moyenne => QualityEffects { shadows: true, cloud_shadows: false, god_rays: false, bloom: true, lod_distance: LodDistanceSetting::Normale },
-            Self::Haute => QualityEffects { shadows: true, cloud_shadows: true, god_rays: true, bloom: true, lod_distance: LodDistanceSetting::Normale },
+            Self::Basse => QualityEffects {
+                shadows: false,
+                cloud_shadows: false,
+                god_rays: false,
+                bloom: false,
+                lod_distance: LodDistanceSetting::Courte,
+                fine_shadows: false,
+                fine_god_rays: false,
+            },
+            Self::Moyenne => QualityEffects {
+                shadows: true,
+                cloud_shadows: false,
+                god_rays: false,
+                bloom: true,
+                lod_distance: LodDistanceSetting::Normale,
+                fine_shadows: false,
+                fine_god_rays: false,
+            },
+            Self::Haute => QualityEffects {
+                shadows: true,
+                cloud_shadows: true,
+                god_rays: true,
+                bloom: true,
+                lod_distance: LodDistanceSetting::Normale,
+                fine_shadows: fine,
+                fine_god_rays: fine,
+            },
         }
     }
 }
@@ -185,6 +218,9 @@ pub struct VideoSettings {
     /// Aplatissement de la planète vue du sol : 0 = vraie courbure, 1 = horizon le plus lointain
     /// possible sans voir les antipodes (renderer.rs, `planet_flattening`)
     pub flattening: f32,
+    /// Anticrénelage MSAA 4× de la passe 3D (si la carte le permet). Coupé par défaut sur les
+    /// puces intégrées, où il coûte cher en bande passante (`UiState::adapt_to_gpu`).
+    pub msaa: bool,
 }
 
 impl Default for VideoSettings {
@@ -195,6 +231,7 @@ impl Default for VideoSettings {
             lod_distance: LodDistanceSetting::Normale,
             fps_limit: FpsLimitSetting::Fps60,
             flattening: 1.0,
+            msaa: true,
         }
     }
 }
@@ -286,6 +323,10 @@ pub struct ShadowSettings {
     pub strength: f32,       // Part de la lumière directe retirée à l'ombre du relief [0.0 .. 1.0]
     pub cloud_shadows: bool,
     pub cloud_strength: f32, // Part de la lumière directe retirée sous un nuage [0.0 .. 1.0]
+    /// Ombres fines : cascades de 2048 texels filtrées sur 3x3, cascades lointaines redessinées
+    /// une image sur deux. Sinon (allégées) : 1024 texels, filtrage 2x2, la cascade du milieu
+    /// une image sur deux et la plus lointaine une sur quatre (shadow.rs).
+    pub fine: bool,
 }
 
 impl Default for ShadowSettings {
@@ -295,7 +336,15 @@ impl Default for ShadowSettings {
             strength: 1.0,
             cloud_shadows: true,
             cloud_strength: 0.7,
+            fine: true,
         }
+    }
+}
+
+impl ShadowSettings {
+    /// Réglages par défaut pour cette carte graphique (allégés sur une puce intégrée)
+    pub fn for_gpu(integrated_gpu: bool) -> Self {
+        Self { fine: !integrated_gpu, ..Self::default() }
     }
 }
 
@@ -307,6 +356,9 @@ pub struct AtmosphereSettings {
     pub sun_halo: f32,           // Anisotropie de la brume (g de Mie) : halo resserré autour du soleil [0.0 .. 0.95]
     pub god_rays: bool,
     pub god_rays_intensity: f32, // Accentuation de l'ombre de l'air (1 = physique) [0.0 .. 4.0]
+    /// Rayons fins : marche de 28 pas à demi-résolution. Sinon (allégés) : 14 pas au quart de
+    /// la résolution, environ 8 fois moins de calcul (god_rays.wgsl).
+    pub god_rays_fine: bool,
 }
 
 impl Default for AtmosphereSettings {
@@ -316,7 +368,15 @@ impl Default for AtmosphereSettings {
             sun_halo: 0.8,
             god_rays: true,
             god_rays_intensity: 2.5,
+            god_rays_fine: true,
         }
+    }
+}
+
+impl AtmosphereSettings {
+    /// Réglages par défaut pour cette carte graphique (rayons allégés sur une puce intégrée)
+    pub fn for_gpu(integrated_gpu: bool) -> Self {
+        Self { god_rays_fine: !integrated_gpu, ..Self::default() }
     }
 }
 
@@ -462,6 +522,8 @@ pub struct UiState {
     pub post_settings: PostSettings,
     pub shadow_settings: ShadowSettings,
     pub atmosphere_settings: AtmosphereSettings,
+    /// Puce graphique intégrée (Intel UHD, Iris…) : réglages par défaut allégés
+    pub integrated_gpu: bool,
     pub audio_settings: AudioSettings,
     pub controls: Controls,
     /// Action en attente d'une nouvelle touche dans la page Commandes
@@ -531,6 +593,7 @@ impl UiState {
             post_settings: PostSettings::default(),
             shadow_settings: ShadowSettings::default(),
             atmosphere_settings: AtmosphereSettings::default(),
+            integrated_gpu: false,
             audio_settings: AudioSettings::default(),
             controls: Controls::default(),
             rebinding: None,
@@ -673,30 +736,46 @@ impl UiState {
         self.auto_rotate = auto_rotate;
     }
 
-    /// Effets actuellement réglés, dans les termes des préréglages de qualité
-    fn quality_effects(&self) -> QualityEffects {
+    /// Règle les valeurs par défaut sur la carte graphique trouvée au lancement : sur une puce
+    /// intégrée, ombres et rayons allégés et MSAA coupé
+    pub fn adapt_to_gpu(&mut self, integrated_gpu: bool) {
+        self.integrated_gpu = integrated_gpu;
+        self.shadow_settings.fine = !integrated_gpu;
+        self.atmosphere_settings.god_rays_fine = !integrated_gpu;
+        self.video_settings.msaa = !integrated_gpu;
+    }
+
+    /// Effets actuellement réglés, dans les termes des préréglages de qualité. Ombres et rayons
+    /// coupés : leur finesse n'a pas d'effet, elle est lue comme celle du préréglage.
+    fn quality_effects(&self, quality: GraphicsQuality) -> QualityEffects {
+        let preset = quality.effects(self.integrated_gpu);
+        let shadows = self.shadow_settings.enabled;
+        let god_rays = self.atmosphere_settings.god_rays;
         QualityEffects {
-            shadows: self.shadow_settings.enabled,
+            shadows,
             cloud_shadows: self.shadow_settings.cloud_shadows,
-            god_rays: self.atmosphere_settings.god_rays,
+            god_rays,
             bloom: self.post_settings.bloom_enabled,
             lod_distance: self.video_settings.lod_distance,
+            fine_shadows: if shadows { self.shadow_settings.fine } else { preset.fine_shadows },
+            fine_god_rays: if god_rays { self.atmosphere_settings.god_rays_fine } else { preset.fine_god_rays },
         }
     }
 
     /// Préréglage de qualité qui correspond aux réglages actuels (`None` : réglages personnalisés)
     pub fn graphics_quality(&self) -> Option<GraphicsQuality> {
-        let current = self.quality_effects();
-        GraphicsQuality::ALL.into_iter().find(|q| q.effects() == current)
+        GraphicsQuality::ALL.into_iter().find(|&q| q.effects(self.integrated_gpu) == self.quality_effects(q))
     }
 
     /// Applique un préréglage de qualité. Renvoie vrai si la distance de détail a changé (le LOD
     /// est alors à recalculer).
     pub fn apply_graphics_quality(&mut self, quality: GraphicsQuality) -> bool {
-        let e = quality.effects();
+        let e = quality.effects(self.integrated_gpu);
         self.shadow_settings.enabled = e.shadows;
         self.shadow_settings.cloud_shadows = e.cloud_shadows;
+        self.shadow_settings.fine = e.fine_shadows;
         self.atmosphere_settings.god_rays = e.god_rays;
+        self.atmosphere_settings.god_rays_fine = e.fine_god_rays;
         self.post_settings.bloom_enabled = e.bloom;
         let lod_changed = self.video_settings.lod_distance != e.lod_distance;
         self.video_settings.lod_distance = e.lod_distance;
@@ -1614,6 +1693,10 @@ impl UiState {
             });
             ui.end_row();
 
+            row_label(ui, "Anticrénelage (MSAA 4×)", "Lisse les bords du relief ; coûteux sur une puce graphique intégrée, où il est coupé par défaut");
+            toggle_switch(ui, &mut self.video_settings.msaa);
+            ui.end_row();
+
             row_label(ui, "Synchronisation verticale", "Aligne les images sur l'écran pour éviter les déchirures");
             if toggle_switch(ui, &mut self.video_settings.vsync).changed() {
                 *action = Some(UiAction::ToggleVsync);
@@ -1743,9 +1826,13 @@ impl UiState {
 
             let clouds_on = s.enabled && s.cloud_shadows;
             slider_row_enabled(ui, clouds_on, "   Force sous les nuages", &mut s.cloud_strength, 0.0..=1.0, "Part de la lumière directe retirée sous un nuage");
+
+            row_label(ui, "Ombres fines", "Cartes d'ombre deux fois plus précises et bords plus doux ; coupé, les ombres coûtent bien moins cher (puces intégrées)");
+            ui.add_enabled_ui(s.enabled, |ui| toggle_switch(ui, &mut s.fine));
+            ui.end_row();
         });
         if reset_button(ui, "Réinitialiser les ombres") {
-            self.shadow_settings = ShadowSettings::default();
+            self.shadow_settings = ShadowSettings::for_gpu(self.integrated_gpu);
         }
     }
 
@@ -1762,9 +1849,13 @@ impl UiState {
             ui.end_row();
 
             slider_row_enabled(ui, a.god_rays, "   Intensité", &mut a.god_rays_intensity, 0.0..=4.0, "1 = physique ; au-delà, rayons accentués");
+
+            row_label(ui, "   Rayons fins", "Calcul à demi-résolution sur 28 pas ; coupé, au quart de la résolution sur 14 pas, environ 8 fois moins cher");
+            ui.add_enabled_ui(a.god_rays, |ui| toggle_switch(ui, &mut a.god_rays_fine));
+            ui.end_row();
         });
         if reset_button(ui, "Réinitialiser l'atmosphère") {
-            self.atmosphere_settings = AtmosphereSettings::default();
+            self.atmosphere_settings = AtmosphereSettings::for_gpu(self.integrated_gpu);
             self.lighting_settings.fog_intensity = LightingSettings::default().fog_intensity;
         }
     }
@@ -1814,8 +1905,8 @@ impl UiState {
                         self.lighting_settings = LightingSettings::default();
                         self.cloud_settings = CloudSettings::default();
                         self.post_settings = PostSettings::default();
-                        self.shadow_settings = ShadowSettings::default();
-                        self.atmosphere_settings = AtmosphereSettings::default();
+                        self.shadow_settings = ShadowSettings::for_gpu(self.integrated_gpu);
+                        self.atmosphere_settings = AtmosphereSettings::for_gpu(self.integrated_gpu);
                     }
                 }
                 MenuPage::Multiplayer => {
@@ -2594,6 +2685,27 @@ mod tests {
         // Un effet réglé à la main : réglages personnalisés
         ui.atmosphere_settings.god_rays = true;
         assert_eq!(ui.graphics_quality(), None);
+        // Ombres allégées en qualité moyenne et basse
+        assert!(!ui.shadow_settings.fine);
+        ui.apply_graphics_quality(GraphicsQuality::Haute);
+        assert!(ui.shadow_settings.fine && ui.atmosphere_settings.god_rays_fine);
+    }
+
+    #[test]
+    fn test_integrated_gpu_defaults() {
+        let mut ui = UiState::new(1);
+        ui.adapt_to_gpu(true);
+        // Puce intégrée : tous les effets, mais allégés, et sans MSAA ; c'est encore la qualité haute
+        assert!(!ui.video_settings.msaa && !ui.shadow_settings.fine && !ui.atmosphere_settings.god_rays_fine);
+        assert_eq!(ui.graphics_quality(), Some(GraphicsQuality::Haute));
+        // Ombres fines demandées à la main : réglages personnalisés
+        ui.shadow_settings.fine = true;
+        assert_eq!(ui.graphics_quality(), None);
+        ui.apply_graphics_quality(GraphicsQuality::Basse);
+        assert_eq!(ui.graphics_quality(), Some(GraphicsQuality::Basse));
+        // Les réinitialisations gardent les réglages de la puce
+        assert!(!ShadowSettings::for_gpu(true).fine && ShadowSettings::for_gpu(false).fine);
+        assert!(!AtmosphereSettings::for_gpu(true).god_rays_fine);
     }
 
     #[test]

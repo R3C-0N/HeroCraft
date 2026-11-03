@@ -125,6 +125,13 @@ pub struct State {
     pub depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
     pub sample_count: u32,
+    /// Échantillonnage avec MSAA (4 si l'adaptateur le permet, sinon 1)
+    max_sample_count: u32,
+    /// Puce graphique intégrée : réglages allégés par défaut
+    integrated_gpu: bool,
+    /// Gardés pour recréer les pipelines de la passe 3D quand le MSAA change
+    render_pipeline_layout: wgpu::PipelineLayout,
+    terrain_pipeline_layout: wgpu::PipelineLayout,
     /// Cible HDR de la passe 3D, bloom et composition vers la swapchain
     post: PostProcess,
     bloom_enabled: bool,
@@ -233,6 +240,163 @@ pub fn compute_moon_data(time: f32, sun_dir: glam::Vec3) -> (glam::Vec3, f32) {
     (moon_dir, moon_phase)
 }
 
+/// Pipelines de la passe 3D qui dépendent de son échantillonnage (MSAA ou non) : ciel, relief et
+/// nuages. Recréés quand le MSAA est coupé ou rétabli (`State::set_msaa`).
+struct ScenePipelines {
+    sky: wgpu::RenderPipeline,
+    terrain: wgpu::RenderPipeline,
+    cloud: wgpu::RenderPipeline,
+}
+
+impl ScenePipelines {
+    fn new(device: &wgpu::Device, render_layout: &wgpu::PipelineLayout, terrain_layout: &wgpu::PipelineLayout, sample_count: u32) -> Self {
+        let shader = crate::shaders::create_shader_module(device, "Planet Shader", include_str!("shader.wgsl"), "shader.wgsl");
+        // Pipeline Ciel & Atmosphère 3D (Étoiles, Soleil, Halo spatial, Ciel bleu)
+        let sky_shader = crate::shaders::create_shader_module(device, "Sky Shader", include_str!("sky_shader.wgsl"), "sky_shader.wgsl");
+
+        let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Sky Render Pipeline"),
+            layout: Some(render_layout),
+            vertex: wgpu::VertexState {
+                module: &sky_shader,
+                entry_point: Some("vs_sky"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &sky_shader,
+                entry_point: Some("fs_sky"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: post::HDR_FORMAT,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            // Dessiné après le terrain, seulement sur les pixels restés à la profondeur du fond :
+            // la marche dans l'atmosphère n'est pas calculée sous le relief
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Planet Render Pipeline"),
+            layout: Some(terrain_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[PlanetVertex::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: post::HDR_FORMAT,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+
+        // -------------------------------------------------------------
+        // Pipeline Nuages 3D physiques réels (traversables et visibles à leur altitude)
+        // -------------------------------------------------------------
+        let cloud_shader = crate::shaders::create_shader_module(device, "Cloud Shader", include_str!("cloud_shader.wgsl"), "cloud_shader.wgsl");
+
+        let cloud_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Cloud Render Pipeline"),
+            layout: Some(render_layout),
+            vertex: wgpu::VertexState {
+                module: &cloud_shader,
+                entry_point: Some("vs_cloud"),
+                buffers: &[crate::cloud_mesh::CloudVertex::desc()],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &cloud_shader,
+                entry_point: Some("fs_cloud"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: post::HDR_FORMAT,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None, // Visible des deux côtés pour pouvoir entrer et traverser les nuages
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+
+        Self { sky: sky_pipeline, terrain: render_pipeline, cloud: cloud_pipeline }
+    }
+}
+
 impl State {
     pub async fn new(window: Arc<Window>, _ui_state: &UiState) -> Self {
         herocraft_common::prof_scope!("render::State::new");
@@ -337,9 +501,6 @@ impl State {
         };
         surface.configure(&device, &config);
 
-        // 6. Shader 3D Planète
-        let shader = crate::shaders::create_shader_module(&device, "Planet Shader", include_str!("shader.wgsl"), "shader.wgsl");
-
         use wgpu::util::DeviceExt;
 
         // Uniform Camera
@@ -388,10 +549,26 @@ impl State {
             label: Some("camera_bind_group"),
         });
 
-        // Détection du support matériel MSAA 4x sur le format HDR de la passe 3D
-        let sample_count = PostProcess::sample_count(&adapter);
-        log::info!("Anti-Aliasing MSAA 4x : {} (sample_count = {})", sample_count == 4, sample_count);
+        // Détection du support matériel MSAA 4x sur le format HDR de la passe 3D. Coupé au
+        // lancement sur une puce intégrée (réglable ensuite, `VideoSettings::msaa`).
+        let integrated_gpu = adapter_info.device_type == wgpu::DeviceType::IntegratedGpu;
+        let max_sample_count = PostProcess::sample_count(&adapter);
+        let sample_count = if integrated_gpu { 1 } else { max_sample_count };
+        log::info!(
+            "Anti-Aliasing MSAA 4x : {} (sample_count = {}, puce intégrée : {})",
+            sample_count == 4,
+            sample_count,
+            integrated_gpu
+        );
         herocraft_common::profiler::set_meta("msaa_sample_count", sample_count.to_string());
+        crate::benchmark::set_meta(
+            "Réglages de référence",
+            if integrated_gpu {
+                "puce intégrée : ombres et rayons allégés, MSAA coupé".into()
+            } else {
+                format!("ombres et rayons fins, MSAA {}", if max_sample_count > 1 { "4×" } else { "non pris en charge" })
+            },
+        );
 
         let (depth_texture, depth_view) = Self::create_depth_texture(&device, &config, sample_count);
         let post = PostProcess::new(&device, &config, sample_count);
@@ -416,147 +593,7 @@ impl State {
                 push_constant_ranges: &[],
             });
 
-        // Pipeline Ciel & Atmosphère 3D (Étoiles, Soleil, Halo spatial, Ciel bleu)
-        let sky_shader = crate::shaders::create_shader_module(&device, "Sky Shader", include_str!("sky_shader.wgsl"), "sky_shader.wgsl");
-
-        let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Sky Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &sky_shader,
-                entry_point: Some("vs_sky"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &sky_shader,
-                entry_point: Some("fs_sky"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: post::HDR_FORMAT,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            // Dessiné après le terrain, seulement sur les pixels restés à la profondeur du fond :
-            // la marche dans l'atmosphère n'est pas calculée sous le relief
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: sample_count,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            cache: None,
-        });
-
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Planet Render Pipeline"),
-            layout: Some(&terrain_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[PlanetVertex::desc()],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: post::HDR_FORMAT,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: sample_count,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            cache: None,
-        });
-
-        // -------------------------------------------------------------
-        // Pipeline Nuages 3D physiques réels (traversables et visibles à leur altitude)
-        // -------------------------------------------------------------
-        let cloud_shader = crate::shaders::create_shader_module(&device, "Cloud Shader", include_str!("cloud_shader.wgsl"), "cloud_shader.wgsl");
-
-        let cloud_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Cloud Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &cloud_shader,
-                entry_point: Some("vs_cloud"),
-                buffers: &[crate::cloud_mesh::CloudVertex::desc()],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &cloud_shader,
-                entry_point: Some("fs_cloud"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: post::HDR_FORMAT,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None, // Visible des deux côtés pour pouvoir entrer et traverser les nuages
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: sample_count,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            cache: None,
-        });
+        let scene_pipelines = ScenePipelines::new(&device, &render_pipeline_layout, &terrain_pipeline_layout, sample_count);
 
         let cloud_mesh = crate::cloud_mesh::CloudMeshGenerator::generate_cloud_mesh(default_radius, 2026);
         let cloud_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -595,17 +632,21 @@ impl State {
             queue,
             config,
             size,
-            sky_pipeline,
-            cloud_pipeline,
+            sky_pipeline: scene_pipelines.sky,
+            cloud_pipeline: scene_pipelines.cloud,
             cloud_vertex_buffer,
             cloud_index_buffer,
             num_cloud_indices,
-            render_pipeline,
+            render_pipeline: scene_pipelines.terrain,
+            render_pipeline_layout,
+            terrain_pipeline_layout,
             camera_buffer,
             camera_bind_group,
             depth_texture,
             depth_view,
             sample_count,
+            max_sample_count,
+            integrated_gpu,
             post,
             bloom_enabled: true,
             shadows,
@@ -677,6 +718,34 @@ impl State {
             self.post.resize(&self.device, &self.config);
             self.atmosphere.resize(&self.device, &self.depth_view, (self.config.width, self.config.height));
         }
+    }
+
+    /// Carte graphique intégrée au processeur (Intel UHD, Iris…)
+    pub fn integrated_gpu(&self) -> bool {
+        self.integrated_gpu
+    }
+
+    /// Coupe ou rétablit le MSAA 4x : la profondeur, la cible HDR et tous les pipelines de la
+    /// passe 3D sont recréés avec le nouvel échantillonnage (rien à faire s'il ne change pas)
+    pub fn set_msaa(&mut self, enabled: bool) {
+        let sample_count = if enabled { self.max_sample_count } else { 1 };
+        if sample_count == self.sample_count {
+            return;
+        }
+        herocraft_common::prof_scope!("render::set_msaa");
+        self.sample_count = sample_count;
+        let device = &self.device;
+        (self.depth_texture, self.depth_view) = Self::create_depth_texture(device, &self.config, sample_count);
+        self.post.set_sample_count(device, &self.config, sample_count);
+        self.atmosphere.set_sample_count(device, &self.shadows.receiver_layout, &self.depth_view, sample_count);
+        let pipelines = ScenePipelines::new(device, &self.render_pipeline_layout, &self.terrain_pipeline_layout, sample_count);
+        (self.sky_pipeline, self.render_pipeline, self.cloud_pipeline) = (pipelines.sky, pipelines.terrain, pipelines.cloud);
+        self.creatures.set_sample_count(device, sample_count);
+        self.block_outline.set_sample_count(device, &self.render_pipeline_layout, sample_count);
+        self.player_outlines.set_sample_count(device, &self.render_pipeline_layout, sample_count);
+        self.block_cracks.set_sample_count(device, &self.render_pipeline_layout, sample_count);
+        log::info!("Anti-Aliasing MSAA : sample_count = {}", sample_count);
+        herocraft_common::profiler::set_meta("msaa_sample_count", sample_count.to_string());
     }
 
     pub fn set_vsync(&mut self, enabled: bool) {
@@ -771,6 +840,7 @@ impl State {
     pub fn update_shadows(&mut self, camera: &OrbitCamera, settings: &ShadowSettings) {
         let (_, _, _, forward) = camera.look_vectors();
         self.shadows.update(
+            &self.device,
             &self.queue,
             settings,
             camera.player_pos,
@@ -784,7 +854,7 @@ impl State {
 
     /// Paramètres de l'atmosphère, à appeler après `update_shadows` (les rayons suivent les ombres)
     pub fn update_atmosphere(&mut self, camera: &OrbitCamera, settings: &AtmosphereSettings, lighting: &LightingSettings) {
-        self.atmosphere.update(&self.queue, settings, lighting, camera.base_radius, self.shadows.is_active());
+        self.atmosphere.update(&self.device, &self.queue, settings, lighting, camera.base_radius, self.shadows.is_active());
     }
 
     pub fn update_post(&mut self, settings: &PostSettings) {
