@@ -591,18 +591,31 @@ fn draw_figure(painter: &egui::Painter, frame: egui::Rect, texture: &egui::Textu
 
     // Faces tournées vers l'œil, de la plus lointaine à la plus proche : le relief se recouvre
     // comme il faut et les texels translucides (sylphe, ailes) laissent voir ce qui est derrière
-    let mut quads: Vec<(f32, [glam::Vec3; 4], [f32; 4], f32)> = figure
-        .posed(0.0_f32, width)
-        .filter_map(|q| {
-            let c = q.corners.map(|p| rotation * p);
-            let normal = (c[1] - c[0]).cross(c[3] - c[0]).normalize_or_zero();
-            if normal.z <= 1e-4 {
-                return None;
+    // Sans tampon de profondeur, l'ordre se joue face par face : une grande face de la couche 1
+    // passerait devant les mèches en relief posées sur elle. Elle est donc découpée en texels,
+    // à la taille des pavés.
+    let mut quads: Vec<(f32, [glam::Vec3; 4], [f32; 4], f32)> = Vec::new();
+    for q in figure.posed(0.0_f32, width) {
+        let c = q.corners.map(|p| rotation * p);
+        let normal = (c[1] - c[0]).cross(c[3] - c[0]).normalize_or_zero();
+        if normal.z <= 1e-4 {
+            continue;
+        }
+        let shade = 0.5_f32 + 0.5_f32 * normal.dot(light).max(0.0_f32);
+        let [u, v, w, h] = q.uv;
+        let (cols, rows) = (w.round().max(1.0_f32) as usize, h.round().max(1.0_f32) as usize);
+        let (du, dv) = ((c[1] - c[0]) / cols as f32, (c[3] - c[0]) / rows as f32);
+        for j in 0..rows {
+            for i in 0..cols {
+                // Rang j compté depuis le bas de la face, le haut de la planche en v
+                let o = c[0] + du * i as f32 + dv * j as f32;
+                let cell = [o, o + du, o + du + dv, o + dv];
+                let uv = [u + i as f32 * w / cols as f32, v + (rows - 1 - j) as f32 * h / rows as f32, w / cols as f32, h / rows as f32];
+                let depth = (cell[0] + cell[1] + cell[2] + cell[3]).z * 0.25_f32;
+                quads.push((depth, cell, uv, shade));
             }
-            let depth = (c[0] + c[1] + c[2] + c[3]).z * 0.25_f32;
-            Some((depth, c, q.uv, 0.5_f32 + 0.5_f32 * normal.dot(light).max(0.0_f32)))
-        })
-        .collect();
+        }
+    }
     quads.sort_by(|a, b| a.0.total_cmp(&b.0));
 
     let mut mesh = egui::Mesh::with_texture(texture.id());
@@ -910,6 +923,8 @@ mod tests {
             ("figures-dos", 200.0, &all, 10, egui::vec2(150.0, 230.0)),
             ("figures-gros-plan", 30.0, &close, 5, egui::vec2(320.0, 480.0)),
             ("figures-gros-plan-dos", 215.0, &close, 5, egui::vec2(320.0, 480.0)),
+            ("figures-profil-gauche", 90.0, &close, 5, egui::vec2(320.0, 480.0)),
+            ("figures-profil-droit", 270.0, &close, 5, egui::vec2(320.0, 480.0)),
         ] {
             let rows = heroes.len().div_ceil(cols);
             let (width, height) = ((cols as f32 * cell.x) as usize, (rows as f32 * cell.y) as usize);

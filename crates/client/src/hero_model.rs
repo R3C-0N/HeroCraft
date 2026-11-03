@@ -164,29 +164,43 @@ fn peint(sheet: &Sheet, x: i32, y: i32) -> bool {
 /// La couche 2 d'une boîte en relief : chaque texel peint de ses faces devient un pavé de
 /// profondeur `t` posé sur la couche 1. Les faces sont prises sur la boîte gonflée de `t`, si
 /// bien que les pavés de deux faces voisines se rejoignent sur l'arête.
+///
+/// `taper` : sur les quatre côtés, les deux derniers rangs avant le bas d'une plage peinte
+/// s'amincissent. Une chevelure finit ainsi en lisière, plaquée sur la nuque et les tempes, au
+/// lieu d'une marche nette qui la ferait paraître coupée au couteau.
 #[allow(clippy::too_many_arguments)]
-fn relief(out: &mut Vec<Quad>, sheet: &Sheet, cx: f32, bottom: f32, size: Vec3, pat: [f32; 3], u: f32, v: f32, t: f32) {
-    for face in boite(cx, bottom, size, pat, u, v, t) {
+fn relief(out: &mut Vec<Quad>, sheet: &Sheet, cx: f32, bottom: f32, size: Vec3, pat: [f32; 3], u: f32, v: f32, t: f32, taper: bool) {
+    for (index, face) in boite(cx, bottom, size, pat, u, v, t).into_iter().enumerate() {
         let [fu, fv, fw, fh] = face.uv.map(|x| x as i32);
         let [c0, c1, _, c3] = face.corners;
         let (sx, sy) = ((c1 - c0) / fw as f32, (c3 - c0) / fh as f32);
-        let depth = face.normal().normalize_or_zero() * t;
+        let normal = face.normal().normalize_or_zero();
         let on = |i: i32, j: i32| (0..fw).contains(&i) && (0..fh).contains(&j) && peint(sheet, fu + i, fv + j);
+        // Épaisseur d'un texel, nulle s'il n'est pas peint
+        let thickness = |i: i32, j: i32| -> f32 {
+            if !on(i, j) {
+                return 0.0;
+            }
+            if !taper || index >= 4 {
+                return t;
+            }
+            let below = (1..=2).take_while(|d| on(i, j + d)).count();
+            t * [0.35, 0.7, 1.0][below]
+        };
         for j in 0..fh {
             for i in 0..fw {
-                if !on(i, j) {
+                let d = thickness(i, j);
+                if d <= 0.0 {
                     continue;
                 }
-                // Rang j compté du haut de la face, la face montée du bas
-                let o = c0 + sx * i as f32 + sy * (fh - 1 - j) as f32 - depth;
-                let show = [
-                    i > 0 && !on(i - 1, j),
-                    i < fw - 1 && !on(i + 1, j),
-                    j < fh - 1 && !on(i, j + 1),
-                    j > 0 && !on(i, j - 1),
-                    false,
-                    true,
-                ];
+                // Rang j compté du haut de la face, la face montée du bas ; le pavé part de la
+                // couche 1 et s'arrête à `d` au-dessus
+                let depth = normal * d;
+                let o = c0 + sx * i as f32 + sy * (fh - 1 - j) as f32 - normal * t;
+                // Un côté se voit s'il borde un texel vide ou plus mince (pas au bord de la face,
+                // que le pavé de la face voisine couvre)
+                let open = |ni: i32, nj: i32| (0..fw).contains(&ni) && (0..fh).contains(&nj) && thickness(ni, nj) < d;
+                let show = [open(i - 1, j), open(i + 1, j), open(i, j + 1), open(i, j - 1), false, true];
                 pave(out, o, sx, sy, depth, [(fu + i) as f32, (fv + j) as f32, 1.0, 1.0], show);
             }
         }
@@ -254,7 +268,7 @@ pub fn figure(cfg: &Appearance, sheet: &Sheet) -> Figure {
     for (cx, bottom, size, pat, (u1, v1), (u2, v2), t, swing, upper) in membres {
         piece(swing, upper, &|q| {
             q.extend(boite(cx, bottom, size, pat, u1, v1, 0.0));
-            relief(q, sheet, cx, bottom, size, pat, u2, v2, t);
+            relief(q, sheet, cx, bottom, size, pat, u2, v2, t, t == RELIEF_TETE);
         });
     }
 
