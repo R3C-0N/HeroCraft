@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/copperPlateLeggings.png",
-  "stats": {"Protection": 8, "Durabilité": 300}
+  "stats": {"Protection": 8, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperIngot": 5, "rope": 1}, "repair": {"copperIngot": 2}}
+  ]
 }

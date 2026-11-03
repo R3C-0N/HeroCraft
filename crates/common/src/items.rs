@@ -84,6 +84,9 @@ pub struct ItemSheet {
     /// Caractéristiques affichées (dégâts, durabilité, protection, satiété…)
     #[serde(default)]
     pub stats: BTreeMap<String, f32>,
+    /// Recettes qui le fabriquent (voir `crafting`)
+    #[serde(default)]
+    pub recipes: Vec<crate::crafting::RecipeSheet>,
 }
 
 fn max_stack() -> u16 {

@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/courgeFarcieAuTofu.png",
-  "stats": {"Satiété": 68}
+  "stats": {"Satiété": 68},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"courge": 1, "tofu": 1, "riz": 1, "coal|plank": 1}}
+  ]
 }

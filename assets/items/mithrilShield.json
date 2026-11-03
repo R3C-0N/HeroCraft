@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/mithrilShield.png",
-  "stats": {"Dégâts": 6, "Durabilité": 3000}
+  "stats": {"Dégâts": 6, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"mithrilIngot": 4, "plank": 2}, "repair": {"mithrilIngot": 1}}
+  ]
 }

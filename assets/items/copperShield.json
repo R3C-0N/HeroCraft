@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/copperShield.png",
-  "stats": {"Dégâts": 2, "Durabilité": 300}
+  "stats": {"Dégâts": 2, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperIngot": 4, "plank": 2}, "repair": {"copperIngot": 1}}
+  ]
 }

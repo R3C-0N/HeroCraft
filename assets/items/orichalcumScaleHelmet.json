@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/orichalcumScaleHelmet.png",
-  "stats": {"Protection": 16, "Durabilité": 3000}
+  "stats": {"Protection": 16, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"orichalcumIngot": 5, "rope": 1}, "repair": {"orichalcumIngot": 2}}
+  ]
 }

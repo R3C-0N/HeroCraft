@@ -5,5 +5,8 @@
   "hardness": 10,
   "color": {"side": "#c19e71"},
   "textures": {"side": "textures/Plank.png"},
-  "sound": "wood"
+  "sound": "wood",
+  "recipes": [
+    {"ingredients": {"oakTrunk|birchTrunk|pineTrunk": 1}, "count": 4}
+  ]
 }

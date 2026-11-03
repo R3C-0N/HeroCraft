@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 99,
   "icon": "icones/adamantineBolt.png",
-  "stats": {"Dégâts": 12}
+  "stats": {"Dégâts": 12},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"adamantineIngot": 1, "stick": 1, "fibre": 1}, "count": 6}
+  ]
 }

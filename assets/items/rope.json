@@ -3,5 +3,8 @@
   "name": "Corde",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/rope.png"
+  "icon": "icones/rope.png",
+  "recipes": [
+    {"ingredients": {"fibre": 3}}
+  ]
 }

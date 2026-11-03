@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/etheriumAdamantineTotem.png",
-  "stats": {"Dégâts": 21, "Durabilité": 5000}
+  "stats": {"Dégâts": 21, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"mithrilTotem|orichalcumTotem|adamantineTotem": 1, "etheriumAdamantineIngot": 3, "fibre": 2}, "repair": {"etheriumAdamantineIngot": 1}}
+  ]
 }

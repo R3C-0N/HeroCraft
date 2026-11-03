@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/orichalcumGauntlet.png",
-  "stats": {"Dégâts": 20, "Durabilité": 3000}
+  "stats": {"Dégâts": 20, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"steelGauntlet": 1, "orichalcumIngot": 3, "rope": 1}, "repair": {"orichalcumIngot": 1}}
+  ]
 }

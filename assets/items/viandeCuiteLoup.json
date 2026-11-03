@@ -5,5 +5,8 @@
   "category": "Nourriture",
   "max_stack": 99,
   "icon": "icones/viandeCuiteLoup.png",
-  "stats": {"Satiété": 25}
+  "stats": {"Satiété": 25},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"viandeLoup": 1, "coal|plank": 1}}
+  ]
 }

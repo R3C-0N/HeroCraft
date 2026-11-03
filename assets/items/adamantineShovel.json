@@ -4,5 +4,8 @@
   "category": "Outils",
   "max_stack": 1,
   "icon": "icones/adamantineShovel.png",
-  "stats": {"Dégâts": 9, "Durabilité": 3000}
+  "stats": {"Dégâts": 9, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"adamantineIngot": 2, "stick": 2}, "repair": {"adamantineIngot": 1}}
+  ]
 }

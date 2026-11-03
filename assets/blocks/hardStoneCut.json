@@ -4,5 +4,8 @@
   "category": "Construction",
   "hardness": 120,
   "color": {"side": "#696d71"},
-  "textures": {"side": "textures/HardStoneCut.png"}
+  "textures": {"side": "textures/HardStoneCut.png"},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"hardStone": 2}, "count": 2}
+  ]
 }

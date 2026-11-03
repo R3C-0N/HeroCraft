@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/adamantinePlateHelmet.png",
-  "stats": {"Protection": 18, "Durabilité": 3000}
+  "stats": {"Protection": 18, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"adamantineIngot": 6, "rope": 1}, "repair": {"adamantineIngot": 2}}
+  ]
 }

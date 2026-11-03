@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/steelShield.png",
-  "stats": {"Dégâts": 5, "Durabilité": 2000}
+  "stats": {"Dégâts": 5, "Durabilité": 2000},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"steelIngot": 4, "plank": 2}, "repair": {"steelIngot": 1}}
+  ]
 }

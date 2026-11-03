@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/boneStuddedLeggings.png",
-  "stats": {"Protection": 3, "Durabilité": 220}
+  "stats": {"Protection": 3, "Durabilité": 220},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"hide": 3, "bone": 3, "rope": 1}}
+  ]
 }

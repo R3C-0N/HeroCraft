@@ -4,5 +4,8 @@
   "category": "Outils",
   "max_stack": 1,
   "icon": "icones/mithrilShovel.png",
-  "stats": {"Dégâts": 8, "Durabilité": 3000}
+  "stats": {"Dégâts": 8, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"mithrilIngot": 2, "stick": 2}, "repair": {"mithrilIngot": 1}}
+  ]
 }

@@ -5,5 +5,8 @@
   "category": "Nourriture",
   "max_stack": 99,
   "icon": "icones/viandeCuiteFaisan.png",
-  "stats": {"Satiété": 15}
+  "stats": {"Satiété": 15},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"viandeFaisan": 1, "coal|plank": 1}}
+  ]
 }

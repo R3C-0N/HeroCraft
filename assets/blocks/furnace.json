@@ -4,5 +4,8 @@
   "category": "Ateliers",
   "hardness": 14,
   "color": {"top": "#a19e95", "side": "#aca9a0"},
-  "textures": {"top": "textures/FurnaceTopBottom.png", "side": "textures/FurnaceSides.png", "bottom": "textures/FurnaceTopBottom.png"}
+  "textures": {"top": "textures/FurnaceTopBottom.png", "side": "textures/FurnaceSides.png", "bottom": "textures/FurnaceTopBottom.png"},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"stone|cobbleStone": 8}}
+  ]
 }

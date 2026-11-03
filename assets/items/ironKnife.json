@@ -4,5 +4,8 @@
   "category": "Outils",
   "max_stack": 1,
   "icon": "icones/ironKnife.png",
-  "stats": {"Dégâts": 5, "Durabilité": 900}
+  "stats": {"Dégâts": 5, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"ironIngot": 1, "stick": 1, "rope": 1}, "repair": {"ironIngot": 1}}
+  ]
 }

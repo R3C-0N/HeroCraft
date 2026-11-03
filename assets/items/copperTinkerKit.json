@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/copperTinkerKit.png",
-  "stats": {"Dégâts": 3, "Durabilité": 300}
+  "stats": {"Dégâts": 3, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperIngot": 3, "stick": 2, "rope": 2}, "repair": {"copperIngot": 1}}
+  ]
 }

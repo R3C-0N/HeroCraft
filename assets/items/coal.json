@@ -3,5 +3,8 @@
   "name": "Carbone",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/coal.png"
+  "icon": "icones/coal.png",
+  "recipes": [
+    {"station": "workbench", "ingredients": {"coalOre": 1}, "count": 2}
+  ]
 }

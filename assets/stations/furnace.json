@@ -1,0 +1,5 @@
+{
+  "name": "Fourneau",
+  "description": "Le minerai y devient métal ; chaque fonte brûle du charbon.",
+  "levels": ["furnace"]
+}

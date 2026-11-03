@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/ironTotem.png",
-  "stats": {"Dégâts": 10, "Durabilité": 900}
+  "stats": {"Dégâts": 10, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bronzeTotem": 1, "ironIngot": 3, "fibre": 2}, "repair": {"ironIngot": 1}}
+  ]
 }

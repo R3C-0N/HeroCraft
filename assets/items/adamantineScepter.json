@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/adamantineScepter.png",
-  "stats": {"Dégâts": 10, "Durabilité": 3000}
+  "stats": {"Dégâts": 10, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"steelScepter": 1, "adamantineIngot": 2, "rope": 1}, "repair": {"adamantineIngot": 1}}
+  ]
 }

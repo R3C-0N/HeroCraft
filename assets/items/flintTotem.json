@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/flintTotem.png",
-  "stats": {"Dégâts": 4, "Durabilité": 150}
+  "stats": {"Dégâts": 4, "Durabilité": 150},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"woodenTotem": 1, "flint": 3, "fibre": 2}}
+  ]
 }

@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/lapinAuxCarottes.png",
-  "stats": {"Satiété": 30}
+  "stats": {"Satiété": 30},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"carotte": 1, "viandeLapin": 1, "coal|plank": 1}}
+  ]
 }

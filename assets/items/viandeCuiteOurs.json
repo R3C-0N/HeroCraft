@@ -5,5 +5,8 @@
   "category": "Nourriture",
   "max_stack": 99,
   "icon": "icones/viandeCuiteOurs.png",
-  "stats": {"Satiété": 45}
+  "stats": {"Satiété": 45},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"viandeOurs": 1, "coal|plank": 1}}
+  ]
 }

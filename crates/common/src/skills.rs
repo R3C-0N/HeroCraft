@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn test_points_come_from_levels_and_buy_ranks() {
         let wheel = SkillWheel::standard();
-        let mut hero = CharacterStats::new(PlayerClass::Warrior);
+        let mut hero = CharacterStats::new(PlayerClass::Soldier);
         assert_eq!(wheel.learn(&mut hero, "frappeLourde"), Err(LearnError::NoPoint));
 
         // Niveau 4 : trois points

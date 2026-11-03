@@ -253,6 +253,39 @@ fn l_experience_donne_des_points_que_la_roue_juge() {
 }
 
 #[test]
+fn la_legende_donne_sa_voie_et_une_legende_truquee_est_refusee() {
+    use herocraft_common::hero::{atlas, Legend};
+    use herocraft_common::PlayerClass;
+
+    let server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let running = Arc::new(AtomicBool::new(true));
+    let server_running = running.clone();
+    let server_thread = std::thread::spawn(move || {
+        let mut server = server;
+        server.run(&server_running);
+    });
+
+    let (client, _, _) = connect(&addr, "Bran");
+    let mut appearance = atlas().defaut("gnome");
+    appearance.nom = "Brandin".into();
+    // Un gnome de deux mètres n'existe pas : le serveur ne change rien
+    let mut truquee = Legend { appearance: appearance.clone(), class: PlayerClass::Archer };
+    truquee.appearance.taille = 2.0;
+    client.send(&ClientPacket::Legend(Box::new(truquee)));
+    let legend = Legend { appearance, class: PlayerClass::Druid };
+    client.send(&ClientPacket::Legend(Box::new(legend)));
+    let class = wait_for(&client, |p| match p {
+        ServerPacket::StatsUpdate(stats) if stats.class != PlayerClass::Adventurer => Some(stats.class),
+        _ => None,
+    });
+    assert_eq!(class, PlayerClass::Druid);
+
+    running.store(false, Ordering::SeqCst);
+    server_thread.join().unwrap();
+}
+
+#[test]
 fn le_chat_et_les_commandes_passent_par_le_serveur() {
     let mut server = test_server();
     let addr = server.local_addr().unwrap().to_string();

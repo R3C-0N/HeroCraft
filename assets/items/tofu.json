@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/tofu.png",
-  "stats": {"Satiété": 12}
+  "stats": {"Satiété": 12},
+  "recipes": [
+    {"ingredients": {"soja": 2}}
+  ]
 }

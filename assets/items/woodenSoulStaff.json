@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/woodenSoulStaff.png",
-  "stats": {"Dégâts": 2, "Durabilité": 80}
+  "stats": {"Dégâts": 2, "Durabilité": 80},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"stick": 2, "fibre": 2, "rope": 1}}
+  ]
 }

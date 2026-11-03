@@ -3,5 +3,8 @@
   "name": "Diamant taillé",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/diamond.png"
+  "icon": "icones/diamond.png",
+  "recipes": [
+    {"station": "lapidary", "ingredients": {"rawDiamond": 2}}
+  ]
 }

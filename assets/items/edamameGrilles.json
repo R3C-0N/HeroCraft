@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/edamameGrilles.png",
-  "stats": {"Satiété": 10}
+  "stats": {"Satiété": 10},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"soja": 1, "coal|plank": 1}}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/copperScaleBoots.png",
-  "stats": {"Protection": 4, "Durabilité": 300}
+  "stats": {"Protection": 4, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperIngot": 2, "rope": 1}, "repair": {"copperIngot": 1}}
+  ]
 }

@@ -3,5 +3,8 @@
   "name": "Lingot d'orichalque",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/orichalcumIngot.png"
+  "icon": "icones/orichalcumIngot.png",
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"bronzeIngot": 2, "topaz": 1}}
+  ]
 }

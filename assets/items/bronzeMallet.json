@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/bronzeMallet.png",
-  "stats": {"Dégâts": 9, "Durabilité": 500}
+  "stats": {"Dégâts": 9, "Durabilité": 500},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bronzeIngot": 4, "stick": 2}, "repair": {"bronzeIngot": 1}}
+  ]
 }

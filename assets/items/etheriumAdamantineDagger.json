@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/etheriumAdamantineDagger.png",
-  "stats": {"Dégâts": 22, "Durabilité": 5000}
+  "stats": {"Dégâts": 22, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"etheriumAdamantineIngot": 2, "stick": 1}, "repair": {"etheriumAdamantineIngot": 1}}
+  ]
 }

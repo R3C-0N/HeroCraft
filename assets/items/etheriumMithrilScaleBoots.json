@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/etheriumMithrilScaleBoots.png",
-  "stats": {"Protection": 13, "Durabilité": 5000}
+  "stats": {"Protection": 13, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"etheriumMithrilIngot": 5, "rope": 1}, "repair": {"etheriumMithrilIngot": 2}}
+  ]
 }

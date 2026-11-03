@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/orichalcumDagger.png",
-  "stats": {"Dégâts": 19, "Durabilité": 3000}
+  "stats": {"Dégâts": 19, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"orichalcumIngot": 2, "stick": 1}, "repair": {"orichalcumIngot": 1}}
+  ]
 }

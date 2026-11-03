@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/woodenSabre.png",
-  "stats": {"Dégâts": 3, "Durabilité": 80}
+  "stats": {"Dégâts": 3, "Durabilité": 80},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"plank": 3, "rope": 1}}
+  ]
 }

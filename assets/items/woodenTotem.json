@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/woodenTotem.png",
-  "stats": {"Dégâts": 2, "Durabilité": 80}
+  "stats": {"Dégâts": 2, "Durabilité": 80},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"oakTrunk|birchTrunk|pineTrunk": 1, "fibre": 6}}
+  ]
 }
