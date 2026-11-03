@@ -45,13 +45,13 @@ Copier `.env.example` en `.env` (non versionné). Les variables déjà définies
 Chaque face du cube fait 8 192 × 8 192 blocs (256 chunks de côté) : le tour de la planète fait 32 768 blocs, plus d'une heure et demie de marche, et une face se traverse en 26 minutes. La taille se règle en un seul point, `FACE_CHUNKS` dans `crates/world/src/edits.rs` (une puissance de deux : 32 redonne l'ancienne planète de 1 024 blocs par face) ; le rayon, les niveaux du relief lointain, les régions de villages, les nuages et les zones de créatures en découlent. Le bloc garde sa taille : seul le rayon grandit. Les continents, les plaques, les massifs et les climats grandissent avec la planète, tandis que les collines, les crêtes et les grottes gardent leur taille en blocs. Une sauvegarde est propre à une taille de planète (`saves/monde_<graine>_f8192/`), et un client ne rejoint qu'un serveur de même taille.
 
 #### Récolte des matières premières :
-Casser un bloc ou tuer une bête fait tomber son butin au sol, que l'on ramasse en passant (champ `loot` des fiches de blocs et de créatures) :
+Casser un bloc ou dépecer une bête fait tomber son butin au sol, que l'on ramasse en passant (champ `loot` des fiches de blocs et de créatures) :
 - **Fibre** : herbes hautes (une fois sur trois à deux fois sur trois), buissons morts (avec parfois des bâtons), coton mûr. Trois fibres font une corde, et deux cordes avec quatre planches un établi.
 - **Silex** : gravier (30 %), pierre (8 %) et pavés (5 %).
 - **Récoltes** : les plantes sauvages mûres donnent leur récolte et leurs graines ; une jeune pousse donne sa graine. Les herbes hautes donnent parfois des graines de blé.
-- **Bêtes** : viande, peaux, os, et ce qui leur est propre (laine du mouflon, plumes du faisan, fourrure et crocs du loup, griffes de l'ours, bois du cerf, défenses du sanglier…).
+- **Bêtes** : une bête tuée reste couchée à terre 10 minutes. Un clic droit sur elle, couteau ou dague en main, la dépèce : viande, peaux, os, et ce qui leur est propre (laine du mouflon, plumes du faisan, fourrure et crocs du loup, griffes de l'ours, bois du cerf, défenses du sanglier…).
 
-Un objet tombé au sol est dessiné en petite plaque tournante à son icône. En ligne, le serveur tire le butin des bêtes et l'envoie à celui qui porte le coup fatal.
+Un objet tombé au sol est dessiné en petite plaque tournante à son icône. En ligne, le serveur tire le butin des bêtes et l'envoie à celui qui les dépèce.
 
 #### Végétation :
 Le générateur pose la végétation selon le biome : chênes, bouleaux et bosquets roux en forêt, sapins en taïga et sur les alpages, grands arbres et sous-bois touffus dans la jungle, acacias en savane, cactus au désert, palmiers sur les plages chaudes, buissons un peu partout, et quelques bosquets dans les plaines. Au sol poussent des herbes hautes, des massifs de fleurs d'une même espèce dans les prairies, des iris et de la lavande en altitude et dans la toundra, des champignons sous les arbres et des buissons morts dans les régions sèches. Par taches rares poussent aussi des plantes sauvages mûres : blé, carottes, pommes de terre et oignons dans les prairies, courges et soja en forêt, riz dans la jungle, coton en savane. Tout se déduit de la graine, sans rien enregistrer : un arbre ne déborde que de 3 blocs de son tronc, au plus un par case de 6 × 6 blocs. On traverse les herbes et les fleurs (un bloc posé en visant une herbe haute prend sa place) ; on bute contre les troncs et les feuillages, et on peut marcher dessus. Le relief lointain ne montre pas encore les arbres : ils apparaissent avec les chunks voxel.
@@ -79,6 +79,8 @@ Les 135 blocs et 523 objets des modules de la branche `develop` (`CoreAssets`, `
 
 #### Blessures et mort :
 Une chute de plus de 5 blocs blesse : l'écran rougit, ses bords s'assombrissent de rouge et la vue penche un instant, avec un souffle coupé. Sous 30 % de vie, les bords de l'écran battent en rouge. À la mort, la vue s'effondre au sol et un écran « Vous êtes mort » donne la cause ; le bouton `Réapparaître` (ou `Espace`) ramène au point d'apparition, jauges pleines, après 2 secondes.
+
+La **faim** se lit sur la jauge de satiété, sous l'endurance. Elle baisse doucement avec le temps (un ventre plein tient 25 minutes) et plus vite au sprint (6 minutes de course). Sous 25 %, « Vous avez faim » : la jauge clignote, la vie ne remonte plus et l'endurance revient deux fois moins vite. À zéro, « Vous mourez de faim » : la vie baisse d'un demi-point par seconde, jusqu'à 10 % de son maximum (la faim affaiblit mais ne tue pas). Pour manger, prendre un aliment en main dans la barre d'objets et faire un clic droit : il rend la satiété indiquée dans sa bulle (`Satiété`, de 2 pour un oignon cru à 72 pour un ragoût). On ne mange pas le ventre plein. La satiété est enregistrée avec la progression du monde solo ; en ligne, c'est le serveur qui la tient. La mort et `/heal` la remplissent.
 
 #### Contrôles du prototype :
 Toutes les touches se changent dans `Échap > Commandes` (clic sur une touche, puis appui sur la nouvelle). Elles sont enregistrées dans `config/controles.json`.

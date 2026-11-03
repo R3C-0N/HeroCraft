@@ -21,6 +21,8 @@ pub const PLAYER_HIT_DAMAGE: f32 = 2.5;
 pub const CREATURE_HURT_TIME: f32 = 0.4;
 /// Durée de la chute sur le flanc d'une créature morte, avant qu'elle disparaisse, en secondes
 pub const CREATURE_DEATH_TIME: f32 = 0.8;
+/// Durée pendant laquelle une bête morte reste à terre, à dépecer, avant de disparaître, en secondes
+pub const CORPSE_TIME: f32 = 600.0;
 
 /// Une espèce de créature, telle que décrite par son fichier
 #[derive(Debug, Clone, Deserialize)]

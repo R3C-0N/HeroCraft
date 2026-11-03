@@ -18,7 +18,7 @@ use glam::Vec3;
 use herocraft_common::lan::{LanAnnounce, LanAnnouncer};
 use herocraft_common::net::{encode_frame, Connection};
 use herocraft_common::{
-    fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, PlayerClass, PlayerState,
+    fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, ItemId, PlayerClass, PlayerState,
     ServerPacket, SkillWheel, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
@@ -461,8 +461,10 @@ impl Server {
             ClientPacket::Fall { blocks } => self.fall(id, blocks),
             ClientPacket::InteractBlock { block, action } => self.interact_block(id, block.into(), action),
             ClientPacket::HitCreature { creature_id } => self.hit_creature(id, creature_id),
+            ClientPacket::SkinCreature { creature_id } => self.skin_creature(id, creature_id),
             ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
+            ClientPacket::Eat { item } => self.eat(id, ItemId(item)),
             ClientPacket::ChatMessage(text) => {
                 let text: String = text.trim().chars().filter(|c| !c.is_control()).take(MAX_CHAT_CHARS).collect();
                 if text.is_empty() {
@@ -483,6 +485,16 @@ impl Server {
             ClientPacket::GainExperience(amount) => self.grant_experience(id, amount.min(MAX_EXPERIENCE)),
             ClientPacket::Disconnect => self.leave(id, "déconnexion"),
         }
+    }
+
+    /// Le joueur mange : sa satiété remonte de ce que rend l'aliment, et ses jauges lui sont
+    /// renvoyées (même refusé, pour que son client se recale)
+    fn eat(&mut self, id: u64, item: ItemId) {
+        let Some(player) = self.players.get_mut(&id) else { return };
+        if let Some(satiety) = item.satiety() {
+            player.stats.eat(satiety);
+        }
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
     }
 
     /// Légende d'un héros : refusée si un choix sort de l'atlas, sinon sa voie devient celle du
@@ -612,11 +624,20 @@ impl Server {
     fn hit_creature(&mut self, id: u64, creature_id: u64) {
         let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
         let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
-        if !self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
+        if self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
+            self.creatures.hit(creature_id, feet);
+        }
+    }
+
+    /// Un joueur dépèce une bête morte à sa portée (son client a vérifié qu'il tient un couteau ou
+    /// une dague) : le butin tombe chez lui seul, les objets au sol étant propres à chaque client
+    fn skin_creature(&mut self, id: u64, creature_id: u64) {
+        let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
+        let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
+        if !self.creatures.creatures().iter().any(|c| c.id == creature_id && !c.is_alive() && c.position.distance(feet) <= reach) {
             return;
         }
-        // Tuée : son butin tombe chez celui qui l'a frappée (les objets au sol sont propres à chacun)
-        let Some((species, position)) = self.creatures.hit_to_kill(creature_id, feet) else { return };
+        let Some((species, position)) = self.creatures.skin(creature_id) else { return };
         let loot = herocraft_common::loot::creature_loot(self.creatures.registry(), species).roll(&mut self.loot_rng);
         if let (Some(player), false) = (self.players.get(&id), loot.is_empty()) {
             let items = loot.into_iter().map(|(item, count)| (item.0, count)).collect();

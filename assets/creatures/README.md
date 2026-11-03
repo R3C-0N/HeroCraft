@@ -45,13 +45,13 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 | `name`, `description` | Nom affiché et description. |
 | `body` | Volume utilisé pour les déplacements, en blocs : `half_width` (demi-largeur), `half_length` (demi-longueur, de la tête à la queue) et `height`. La créature ne passe que là où ce corps tient. |
 | `walk_speed` | Vitesse de promenade, en blocs par seconde. À 0, la créature ne bouge pas. |
-| `health` | Points de vie (10 par défaut). Un coup de joueur en retire 2,5 : la bête rougit, recule, puis s'enfuit ; à 0 elle bascule sur le flanc et disparaît. |
+| `health` | Points de vie (10 par défaut). Un coup de joueur en retire 2,5 : la bête rougit, recule, puis s'enfuit ; à 0 elle bascule sur le flanc et reste à terre 10 minutes, le temps qu'on la dépèce. |
 | `min_group`, `max_group` | Taille d'un groupe posé ensemble dans une zone (1 par défaut). |
 | `temperament` | Réaction au joueur le plus proche, tant qu'il ne l'a pas frappée : `craintif` (fuit quand il approche à moins de 8 blocs, ou de 3 blocs s'il est accroupi avec Maj), `placide` (s'arrête et le regarde à moins de 6 blocs), `curieux` (le suit à moins de 16 blocs et s'arrête à 3 blocs de lui) ou `indifferent` (l'ignore, par défaut). |
 | `attack` | Comportement agressif (voir plus bas). Sans ce champ, la bête est paisible : frappée, elle s'enfuit. |
 | `spawn` | Les biomes où l'espèce apparaît d'elle-même (voir ci-dessous). Sans ce champ, elle n'apparaît jamais seule : c'est le cas des créatures des profondeurs, des mondes démoniaques et des bois féeriques, qui attendent leur monde. |
 | `activity` | Le rythme de vie de l'espèce (voir ci-dessous, `diurnal` par défaut). |
-| `loot` | Ce que la bête tuée laisse tomber à ses pieds, au format du champ `loot` des blocs (`assets/blocks/README.md`) : `[{"item": "viandeVache", "count": [1, 3]}, {"item": "bone", "chance": 0.5}]`. En ligne, le serveur tire le butin et l'envoie à celui qui a porté le coup fatal. |
+| `loot` | Ce que donne la bête dépecée, au format du champ `loot` des blocs (`assets/blocks/README.md`) : `[{"item": "viandeVache", "count": [1, 3]}, {"item": "bone", "chance": 0.5}]`. Une bête tuée reste couchée à terre 10 minutes ; un clic droit sur elle, couteau ou dague en main, la dépèce : elle disparaît et son butin tombe à côté. En ligne, le serveur tire le butin et l'envoie à celui qui l'a dépecée. |
 | `model` | Le modèle 3D (voir ci-dessous). |
 
 Chaque entrée de `spawn` a trois champs :
