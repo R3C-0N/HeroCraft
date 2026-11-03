@@ -3,5 +3,8 @@
   "name": "Lingot d'étherium (adamantine)",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/etheriumAdamantineIngot.png"
+  "icon": "icones/etheriumAdamantineIngot.png",
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"adamantineIngot": 1, "voidShard": 1}}
+  ]
 }

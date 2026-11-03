@@ -216,6 +216,76 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
 }
 
 #[test]
+fn l_experience_donne_des_points_que_la_roue_juge() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let client = Client::connect(&addr, WAIT).unwrap();
+    client.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
+
+    // Sans point, la roue refuse : les statistiques reviennent inchangées
+    client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
+    let stats = pump(&mut server, &client, |p| match p {
+        ServerPacket::StatsUpdate(stats) => Some(stats),
+        _ => None,
+    });
+    assert!(stats.skills.is_empty(), "appris sans point : {:?}", stats.skills);
+
+    // /xp : de quoi atteindre le niveau 3 (100 + 200), soit deux points
+    client.send(&ClientPacket::GainExperience(300));
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.skill_points == 2).then_some(()));
+
+    client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
+    let stats = pump(&mut server, &client, |p| match p {
+        ServerPacket::StatsUpdate(stats) if stats.skill_points < 2 => Some(stats),
+        _ => None,
+    });
+    assert_eq!(stats.skills.get("frappeLourde"), Some(&1));
+    // Tornade écrasante est une fusion du niveau 2 : refusée, le point reste
+    client.send(&ClientPacket::LearnSkill { id: "tornadeEcrasante".into() });
+    server.tick(1.0 / 60.0);
+    let stats = pump(&mut server, &client, |p| match p {
+        ServerPacket::StatsUpdate(stats) => Some(stats),
+        _ => None,
+    });
+    assert_eq!(stats.skill_points, 1);
+    assert!(!stats.skills.contains_key("tornadeEcrasante"));
+}
+
+#[test]
+fn la_legende_donne_sa_voie_et_une_legende_truquee_est_refusee() {
+    use herocraft_common::hero::{atlas, Legend};
+    use herocraft_common::PlayerClass;
+
+    let server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let running = Arc::new(AtomicBool::new(true));
+    let server_running = running.clone();
+    let server_thread = std::thread::spawn(move || {
+        let mut server = server;
+        server.run(&server_running);
+    });
+
+    let (client, _, _) = connect(&addr, "Bran");
+    let mut appearance = atlas().defaut("gnome");
+    appearance.nom = "Brandin".into();
+    // Un gnome de deux mètres n'existe pas : le serveur ne change rien
+    let mut truquee = Legend { appearance: appearance.clone(), class: PlayerClass::Archer };
+    truquee.appearance.taille = 2.0;
+    client.send(&ClientPacket::Legend(Box::new(truquee)));
+    let legend = Legend { appearance, class: PlayerClass::Druid };
+    client.send(&ClientPacket::Legend(Box::new(legend)));
+    let class = wait_for(&client, |p| match p {
+        ServerPacket::StatsUpdate(stats) if stats.class != PlayerClass::Adventurer => Some(stats.class),
+        _ => None,
+    });
+    assert_eq!(class, PlayerClass::Druid);
+
+    running.store(false, Ordering::SeqCst);
+    server_thread.join().unwrap();
+}
+
+#[test]
 fn le_chat_et_les_commandes_passent_par_le_serveur() {
     let mut server = test_server();
     let addr = server.local_addr().unwrap().to_string();

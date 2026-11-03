@@ -3,5 +3,8 @@
   "name": "Lingot de bronze",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/bronzeIngot.png"
+  "icon": "icones/bronzeIngot.png",
+  "recipes": [
+    {"station": "furnace", "ingredients": {"copperIngot": 3, "tinIngot": 1, "coal": 1}}
+  ]
 }

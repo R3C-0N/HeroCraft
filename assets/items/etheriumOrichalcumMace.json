@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/etheriumOrichalcumMace.png",
-  "stats": {"Dégâts": 28, "Durabilité": 5000}
+  "stats": {"Dégâts": 28, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"etheriumOrichalcumIngot": 3, "stick": 2}, "repair": {"etheriumOrichalcumIngot": 1}}
+  ]
 }

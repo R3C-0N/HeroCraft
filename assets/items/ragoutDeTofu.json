@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/ragoutDeTofu.png",
-  "stats": {"Satiété": 72}
+  "stats": {"Satiété": 72},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"carotte": 1, "tofu": 1, "pommeDeTerre": 1, "coal|plank": 1}}
+  ]
 }

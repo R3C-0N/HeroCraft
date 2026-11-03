@@ -3,5 +3,8 @@
   "name": "Lingot de fer",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/ironIngot.png"
+  "icon": "icones/ironIngot.png",
+  "recipes": [
+    {"station": "furnace", "ingredients": {"ironOre": 2, "coal": 1}}
+  ]
 }

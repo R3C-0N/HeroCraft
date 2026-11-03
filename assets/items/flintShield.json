@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/flintShield.png",
-  "stats": {"Dégâts": 2, "Durabilité": 150}
+  "stats": {"Dégâts": 2, "Durabilité": 150},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"flint": 2, "plank": 4, "rope": 1}}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/logLeggings.png",
-  "stats": {"Protection": 4, "Durabilité": 80}
+  "stats": {"Protection": 4, "Durabilité": 80},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"oakTrunk|birchTrunk|pineTrunk": 2, "plank": 2, "rope": 2}}
+  ]
 }

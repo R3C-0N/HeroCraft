@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/bronzePlateChestplate.png",
-  "stats": {"Protection": 14, "Durabilité": 500}
+  "stats": {"Protection": 14, "Durabilité": 500},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bronzeIngot": 8, "rope": 2}, "repair": {"bronzeIngot": 3}}
+  ]
 }

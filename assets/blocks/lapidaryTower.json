@@ -5,5 +5,8 @@
   "hardness": 10,
   "color": {"top": "#8b8f9a", "side": "#64646e"},
   "textures": {"top": "textures/LapidaryTowerTop.png", "side": "textures/LapidaryTower.png"},
-  "sound": "wood"
+  "sound": "wood",
+  "recipes": [
+    {"station": "workbench", "ingredients": {"steelIngot": 4, "rawDiamond": 2, "hardStone": 4}}
+  ]
 }

@@ -355,6 +355,11 @@ impl NetClient {
         self.connection.send(&ClientPacket::PlayerMove { position: state.0, yaw: state.1, pitch: state.2, sprinting: state.3, crouching: state.4 });
     }
 
+    /// Légende du héros : le serveur en vérifie chaque choix et en prend la voie
+    pub fn send_legend(&mut self, legend: &herocraft_common::hero::Legend) {
+        self.connection.send(&ClientPacket::Legend(Box::new(legend.clone())));
+    }
+
     /// Signale au serveur une chute de `blocks` blocs, qui en tire les dommages
     pub fn send_fall(&mut self, blocks: f32) {
         self.connection.send(&ClientPacket::Fall { blocks });
@@ -369,6 +374,11 @@ impl NetClient {
     /// Signale au serveur un coup porté à une créature
     pub fn send_hit_creature(&mut self, creature_id: u64) {
         self.connection.send(&ClientPacket::HitCreature { creature_id });
+    }
+
+    /// Demande au serveur d'investir un point dans une compétence (il renvoie les statistiques)
+    pub fn send_learn_skill(&mut self, id: String) {
+        self.connection.send(&ClientPacket::LearnSkill { id });
     }
 
     /// Envoie un message dans le chat ; le serveur le renvoie à tous, nous compris

@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/adamantineTotem.png",
-  "stats": {"Dégâts": 16, "Durabilité": 3000}
+  "stats": {"Dégâts": 16, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"steelTotem": 1, "adamantineIngot": 3, "fibre": 2}, "repair": {"adamantineIngot": 1}}
+  ]
 }

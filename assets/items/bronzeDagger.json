@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/bronzeDagger.png",
-  "stats": {"Dégâts": 8, "Durabilité": 500}
+  "stats": {"Dégâts": 8, "Durabilité": 500},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bronzeIngot": 2, "stick": 1}, "repair": {"bronzeIngot": 1}}
+  ]
 }

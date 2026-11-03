@@ -1,18 +1,23 @@
 pub mod blocks;
 pub mod character;
+pub mod crafting;
 pub mod creature;
+pub mod hero;
 pub mod items;
 pub mod lan;
 pub mod math;
 pub mod net;
 pub mod profiler;
 pub mod protocol;
+pub mod skills;
 pub mod voxel;
 
 pub use blocks::*;
 pub use character::*;
+pub use crafting::*;
 pub use creature::*;
 pub use items::*;
 pub use math::*;
 pub use protocol::*;
+pub use skills::{LearnError, SkillWheel};
 pub use voxel::*;

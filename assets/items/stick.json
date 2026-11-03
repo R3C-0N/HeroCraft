@@ -3,5 +3,8 @@
   "name": "Bâton",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/stick.png"
+  "icon": "icones/stick.png",
+  "recipes": [
+    {"ingredients": {"plank": 2}, "count": 4}
+  ]
 }

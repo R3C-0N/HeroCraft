@@ -3,5 +3,8 @@
   "name": "Lingot de mithril",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/mithrilIngot.png"
+  "icon": "icones/mithrilIngot.png",
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"steelIngot": 2, "lapis": 1}}
+  ]
 }

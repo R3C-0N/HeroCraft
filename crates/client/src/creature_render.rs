@@ -22,6 +22,8 @@ pub struct CreatureRenderer {
     textures: Vec<Option<wgpu::BindGroup>>,
     /// Texture blanche des pavés gris
     plain: wgpu::BindGroup,
+    /// Planche du héros vu à la troisième personne, avec la clé de son apparence
+    hero: Option<(String, wgpu::BindGroup)>,
     buffers: Option<Buffers>,
     draws: Vec<(Option<usize>, Range<u32>)>,
     num_indices: u32,
@@ -116,7 +118,7 @@ impl CreatureRenderer {
         });
         let white = Texture { width: 1, height: 1, rgba: vec![255; 4] };
         let plain = texture_bind_group(device, queue, &texture_layout, &sampler, &white, "Creature Plain Texture");
-        Self { pipeline, texture_layout, sampler, textures: Vec::new(), plain, buffers: None, draws: Vec::new(), num_indices: 0, center: Vec3::ZERO, radius: 0.0 }
+        Self { pipeline, texture_layout, sampler, textures: Vec::new(), plain, hero: None, buffers: None, draws: Vec::new(), num_indices: 0, center: Vec3::ZERO, radius: 0.0 }
     }
 
     /// Textures des espèces, dans l'ordre du registre
@@ -125,6 +127,18 @@ impl CreatureRenderer {
             .iter()
             .map(|t| t.as_ref().map(|t| texture_bind_group(device, queue, &self.texture_layout, &self.sampler, t, "Creature Texture")))
             .collect();
+    }
+
+    /// Planche du héros (`hero_model::HERO_TEXTURE`), repeinte seulement quand son apparence change
+    pub fn set_hero_sheet(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, appearance: &herocraft_common::hero::Appearance) {
+        let key = appearance.sheet_key();
+        if self.hero.as_ref().is_some_and(|(k, _)| *k == key) {
+            return;
+        }
+        let size = herocraft_common::hero::SHEET_SIZE as u32;
+        let sheet = Texture { width: size, height: size, rgba: herocraft_common::hero::paint(appearance).rgba };
+        let bind_group = texture_bind_group(device, queue, &self.texture_layout, &self.sampler, &sheet, "Hero Sheet");
+        self.hero = Some((key, bind_group));
     }
 
     /// Envoie le maillage de l'image
@@ -175,7 +189,12 @@ impl CreatureRenderer {
         pass.set_vertex_buffer(1, b.uvs.slice(..));
         pass.set_index_buffer(b.indices.slice(..), wgpu::IndexFormat::Uint32);
         for (texture, range) in &self.draws {
-            let bind_group = texture.and_then(|t| self.textures.get(t)?.as_ref()).unwrap_or(&self.plain);
+            let bind_group = match texture {
+                Some(crate::hero_model::HERO_TEXTURE) => self.hero.as_ref().map(|(_, b)| b),
+                Some(t) => self.textures.get(*t).and_then(|b| b.as_ref()),
+                None => None,
+            }
+            .unwrap_or(&self.plain);
             pass.set_bind_group(2, bind_group, &[]);
             pass.draw_indexed(range.clone(), 0, 0..1);
         }

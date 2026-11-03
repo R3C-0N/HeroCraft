@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/soupeMiso.png",
-  "stats": {"Satiété": 34}
+  "stats": {"Satiété": 34},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"soja": 1, "riz": 1, "oignon": 1, "coal|plank": 1}}
+  ]
 }

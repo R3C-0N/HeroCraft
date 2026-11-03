@@ -3,5 +3,8 @@
   "name": "Topaze",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/topaz.png"
+  "icon": "icones/topaz.png",
+  "recipes": [
+    {"station": "lapidary", "ingredients": {"topazOre": 1}, "count": 2}
+  ]
 }

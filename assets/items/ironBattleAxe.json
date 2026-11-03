@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/ironBattleAxe.png",
-  "stats": {"Dégâts": 13, "Durabilité": 900}
+  "stats": {"Dégâts": 13, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"ironIngot": 5, "stick": 2, "rope": 1}, "repair": {"ironIngot": 2}}
+  ]
 }

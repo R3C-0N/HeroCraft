@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/steelScaleChestplate.png",
-  "stats": {"Protection": 20, "Durabilité": 2000}
+  "stats": {"Protection": 20, "Durabilité": 2000},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"steelIngot": 9, "rope": 2}, "repair": {"steelIngot": 3}}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Outils",
   "max_stack": 1,
   "icon": "icones/ironShovel.png",
-  "stats": {"Dégâts": 5, "Durabilité": 900}
+  "stats": {"Dégâts": 5, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"ironIngot": 2, "stick": 2}, "repair": {"ironIngot": 1}}
+  ]
 }

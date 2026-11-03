@@ -3,5 +3,8 @@
   "name": "Lingot d'étherium (orichalque)",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/etheriumOrichalcumIngot.png"
+  "icon": "icones/etheriumOrichalcumIngot.png",
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"orichalcumIngot": 1, "voidShard": 1}}
+  ]
 }

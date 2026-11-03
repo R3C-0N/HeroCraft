@@ -890,6 +890,11 @@ impl State {
         self.creatures.set_textures(&self.device, &self.queue, textures);
     }
 
+    /// Planche du héros vu à la troisième personne
+    pub fn set_hero_sheet(&mut self, appearance: &herocraft_common::hero::Appearance) {
+        self.creatures.set_hero_sheet(&self.device, &self.queue, appearance);
+    }
+
     /// Maillage des créatures de l'image (`creatures::build_frame`)
     pub fn set_creature_frame(&mut self, frame: &crate::creatures::CreatureFrame) {
         self.creatures.upload(&self.device, &self.queue, frame);

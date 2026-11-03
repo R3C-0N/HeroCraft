@@ -3,5 +3,8 @@
   "name": "Lingot d'acier",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/steelIngot.png"
+  "icon": "icones/steelIngot.png",
+  "recipes": [
+    {"station": "furnace", "ingredients": {"ironIngot": 2, "coal": 2}}
+  ]
 }

@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/tofuGrille.png",
-  "stats": {"Satiété": 30}
+  "stats": {"Satiété": 30},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"tofu": 1, "coal|plank": 1}}
+  ]
 }

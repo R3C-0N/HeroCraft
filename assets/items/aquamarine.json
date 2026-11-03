@@ -3,5 +3,8 @@
   "name": "Aigue-marine",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/aquamarine.png"
+  "icon": "icones/aquamarine.png",
+  "recipes": [
+    {"station": "lapidary", "ingredients": {"aquamarineOre": 1}, "count": 2}
+  ]
 }

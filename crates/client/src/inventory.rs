@@ -1,10 +1,10 @@
 //! Inventaire du joueur : 9 cases de barre d'objets (touches 1 à 9, molette) et 27 cases de sac.
-//! Les blocs ramassés au sol y entrent, comme les objets pris au catalogue ; le bloc posé au clic
-//! droit est pris dans la case choisie de la barre. Enregistré en JSON avec le monde.
+//! Les blocs ramassés au sol y entrent, comme ce qui est fabriqué ; le bloc posé au clic droit est
+//! pris dans la case choisie de la barre. Enregistré en JSON avec le monde.
 
 use std::path::{Path, PathBuf};
 
-use herocraft_common::{blocks, BlockId, ItemId};
+use herocraft_common::{blocks, BlockId, Ingredient, ItemId, Recipe};
 use serde::{Deserialize, Serialize};
 
 /// Cases de la barre d'objets, en bas de l'écran
@@ -152,10 +152,60 @@ impl Inventory {
     }
 
     /// Nombre total d'un bloc ou d'un objet dans l'inventaire
-    #[allow(dead_code)]
     pub fn count(&self, item: impl Into<ItemId>) -> u32 {
         let item = item.into();
         self.slots.iter().flatten().filter(|s| s.item == item).map(|s| s.count as u32).sum()
+    }
+
+    /// Exemplaires d'un ingrédient, toutes ses variantes comprises
+    pub fn count_ingredient(&self, ingredient: &Ingredient) -> u32 {
+        ingredient.options.iter().map(|&item| self.count(item)).sum()
+    }
+
+    /// Nombre de fois que la recette peut se faire avec ce que contient l'inventaire (sans
+    /// compter la place pour ce qu'elle donne)
+    pub fn craftable_times(&self, recipe: &Recipe) -> u32 {
+        recipe.ingredients.iter().map(|i| self.count_ingredient(i) / i.count as u32).min().unwrap_or(0)
+    }
+
+    /// Fabrique une fois la recette : retire ses ingrédients (le sac d'abord, la barre d'objets
+    /// ensuite) et range ce qu'elle donne. Renvoie faux, sans rien toucher, s'il manque un
+    /// ingrédient ou de la place. La pile tenue à la souris est d'abord rangée.
+    pub fn craft(&mut self, recipe: &Recipe) -> bool {
+        self.return_held();
+        let mut slots = self.slots.clone();
+        for ingredient in &recipe.ingredients {
+            let mut missing = ingredient.count;
+            for &option in &ingredient.options {
+                for slot in slots.iter_mut().rev() {
+                    if missing == 0 {
+                        break;
+                    }
+                    if let Some(stack) = slot.as_mut().filter(|s| s.item == option) {
+                        let taken = stack.count.min(missing);
+                        stack.count -= taken;
+                        missing -= taken;
+                        if stack.count == 0 {
+                            *slot = None;
+                        }
+                    }
+                }
+            }
+            if missing > 0 {
+                return false;
+            }
+        }
+        let mut after = Inventory { slots, ..Inventory::default() };
+        if after.add_many(recipe.result, recipe.count) < recipe.count {
+            return false;
+        }
+        self.slots = after.slots;
+        true
+    }
+
+    /// Fabrique jusqu'à `times` fois. Renvoie le nombre de fois fabriqué.
+    pub fn craft_many(&mut self, recipe: &Recipe, times: u32) -> u32 {
+        (0..times).take_while(|_| self.craft(recipe)).count() as u32
     }
 
     /// Pile tenue à la souris dans l'écran d'inventaire
@@ -389,6 +439,57 @@ mod tests {
         assert_eq!(inv.slot(1).map(|s| s.count), Some(MAX_STACK));
         assert_eq!(inv.selected(), HOTBAR_SLOTS - 1);
         assert_eq!(inv.slots.len(), TOTAL_SLOTS);
+    }
+
+    fn recipe(result: ItemId, count: u16, ingredients: &[(&[ItemId], u16)]) -> Recipe {
+        let ingredients = ingredients.iter().map(|(options, count)| Ingredient { options: options.to_vec(), count: *count }).collect();
+        Recipe { result, count, station: None, ingredients }
+    }
+
+    #[test]
+    fn test_crafting_takes_ingredients_and_gives_the_result() {
+        let oak = ItemId::from(BlockId::WOOD);
+        let birch = ItemId::from(blocks().find("birchTrunk").unwrap());
+        let plank = ItemId::from(blocks().find("plank").unwrap());
+        let planks = recipe(plank, 4, &[(&[oak, birch], 1)]);
+        let mut inv = Inventory::default();
+        assert_eq!(inv.craftable_times(&planks), 0);
+        assert!(!inv.craft(&planks), "rien à couper");
+        inv.add(birch);
+        inv.add_many(oak, 2);
+        assert_eq!(inv.craftable_times(&planks), 3, "chêne ou bouleau");
+        assert_eq!(inv.craft_many(&planks, 10), 3);
+        assert_eq!(inv.count(plank), 12);
+        assert_eq!(inv.count(oak) + inv.count(birch), 0);
+
+        // Plusieurs ingrédients : tous ou rien
+        let stick = herocraft_common::items().find("stick").unwrap();
+        let rope = herocraft_common::items().find("rope").unwrap();
+        let bench = ItemId::from(blocks().find("workbench").unwrap());
+        let workbench = recipe(bench, 1, &[(&[plank], 4), (&[rope], 2)]);
+        inv.add(rope);
+        assert!(!inv.craft(&workbench), "il manque une corde");
+        assert_eq!((inv.count(plank), inv.count(rope)), (12, 1), "rien n'a été pris");
+        inv.add(rope);
+        assert!(inv.craft(&workbench));
+        assert_eq!((inv.count(plank), inv.count(rope), inv.count(bench)), (8, 0, 1));
+        assert_eq!(inv.count(stick), 0);
+    }
+
+    #[test]
+    fn test_crafting_needs_room_for_the_result() {
+        let stone = ItemId::from(BlockId::STONE);
+        let sword = herocraft_common::items().find("flintSword").unwrap();
+        let mut full = Inventory::default();
+        for _ in 0..TOTAL_SLOTS {
+            full.add(sword);
+        }
+        let too_many = recipe(stone, 65, &[(&[sword], 1)]);
+        assert!(!full.craft(&too_many), "65 pierres ne tiennent pas dans la case libérée");
+        assert_eq!(full.count(sword), TOTAL_SLOTS as u32, "rien n'a été pris");
+        let swap = recipe(stone, 1, &[(&[sword], 1)]);
+        assert!(full.craft(&swap), "la case de l'épée prise se libère pour la pierre");
+        assert_eq!((full.count(sword), full.count(stone)), (TOTAL_SLOTS as u32 - 1, 1));
     }
 
     #[test]

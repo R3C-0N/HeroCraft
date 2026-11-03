@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/warMallet.png",
-  "stats": {"Dégâts": 4, "Durabilité": 80}
+  "stats": {"Dégâts": 4, "Durabilité": 80},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"oakTrunk|birchTrunk|pineTrunk": 1, "stick": 1, "rope": 1}}
+  ]
 }

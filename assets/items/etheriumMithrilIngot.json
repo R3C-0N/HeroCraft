@@ -3,5 +3,8 @@
   "name": "Lingot d'étherium (mithril)",
   "category": "Matériaux",
   "max_stack": 64,
-  "icon": "icones/etheriumMithrilIngot.png"
+  "icon": "icones/etheriumMithrilIngot.png",
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"mithrilIngot": 1, "voidShard": 1}}
+  ]
 }

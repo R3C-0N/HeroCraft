@@ -4,5 +4,8 @@
   "category": "Outils",
   "max_stack": 1,
   "icon": "icones/copperKnife.png",
-  "stats": {"Dégâts": 3, "Durabilité": 300}
+  "stats": {"Dégâts": 3, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperIngot": 1, "stick": 1, "rope": 1}, "repair": {"copperIngot": 1}}
+  ]
 }

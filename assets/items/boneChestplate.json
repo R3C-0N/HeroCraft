@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/boneChestplate.png",
-  "stats": {"Protection": 7, "Durabilité": 150}
+  "stats": {"Protection": 7, "Durabilité": 150},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bone": 4, "stone|cobbleStone": 2, "hide": 2, "rope": 2}}
+  ]
 }

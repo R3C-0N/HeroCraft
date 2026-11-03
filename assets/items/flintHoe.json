@@ -4,5 +4,8 @@
   "category": "Outils",
   "max_stack": 1,
   "icon": "icones/flintHoe.png",
-  "stats": {"Dégâts": 1, "Durabilité": 150}
+  "stats": {"Dégâts": 1, "Durabilité": 150},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"flint": 1, "stick": 3, "rope": 1}}
+  ]
 }

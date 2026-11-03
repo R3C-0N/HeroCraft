@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/ironPlateHelmet.png",
-  "stats": {"Protection": 10, "Durabilité": 900}
+  "stats": {"Protection": 10, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"ironIngot": 5, "rope": 1}, "repair": {"ironIngot": 2}}
+  ]
 }

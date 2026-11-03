@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/bronzeSoulStaff.png",
-  "stats": {"Dégâts": 7, "Durabilité": 500}
+  "stats": {"Dégâts": 7, "Durabilité": 500},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperSoulStaff": 1, "bronzeIngot": 3, "rope": 1}, "repair": {"bronzeIngot": 1}}
+  ]
 }

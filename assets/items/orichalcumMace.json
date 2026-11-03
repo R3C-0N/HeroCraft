@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/orichalcumMace.png",
-  "stats": {"Dégâts": 21, "Durabilité": 3000}
+  "stats": {"Dégâts": 21, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"orichalcumIngot": 3, "stick": 2}, "repair": {"orichalcumIngot": 1}}
+  ]
 }

@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/orichalcumTinkerKit.png",
-  "stats": {"Dégâts": 9, "Durabilité": 3000}
+  "stats": {"Dégâts": 9, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"orichalcumIngot": 3, "stick": 2, "rope": 2}, "repair": {"orichalcumIngot": 1}}
+  ]
 }

@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/velouteDeCourge.png",
-  "stats": {"Satiété": 26}
+  "stats": {"Satiété": 26},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"courge": 1, "carotte": 1, "coal|plank": 1}}
+  ]
 }

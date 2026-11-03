@@ -5,5 +5,8 @@
   "category": "Plats",
   "max_stack": 99,
   "icon": "icones/tofuSauteAuxLegumes.png",
-  "stats": {"Satiété": 58}
+  "stats": {"Satiété": 58},
+  "recipes": [
+    {"station": "furnace", "ingredients": {"tofu": 1, "carotte": 1, "oignon": 1, "coal|plank": 1}}
+  ]
 }

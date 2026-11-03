@@ -4,5 +4,8 @@
   "category": "Outils",
   "max_stack": 1,
   "icon": "icones/etheriumOrichalcumShovel.png",
-  "stats": {"Dégâts": 11, "Durabilité": 5000}
+  "stats": {"Dégâts": 11, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"etheriumOrichalcumIngot": 2, "stick": 2}, "repair": {"etheriumOrichalcumIngot": 1}}
+  ]
 }

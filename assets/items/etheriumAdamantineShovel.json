@@ -4,5 +4,8 @@
   "category": "Outils",
   "max_stack": 1,
   "icon": "icones/etheriumAdamantineShovel.png",
-  "stats": {"Dégâts": 11, "Durabilité": 5000}
+  "stats": {"Dégâts": 11, "Durabilité": 5000},
+  "recipes": [
+    {"station": "astralForge", "level": 2, "ingredients": {"etheriumAdamantineIngot": 2, "stick": 2}, "repair": {"etheriumAdamantineIngot": 1}}
+  ]
 }

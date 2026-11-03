@@ -4,5 +4,8 @@
   "category": "Armures",
   "max_stack": 1,
   "icon": "icones/ironPlateLeggings.png",
-  "stats": {"Protection": 14, "Durabilité": 900}
+  "stats": {"Protection": 14, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"ironIngot": 7, "rope": 1}, "repair": {"ironIngot": 2}}
+  ]
 }

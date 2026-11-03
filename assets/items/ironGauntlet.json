@@ -4,5 +4,8 @@
   "category": "Armes",
   "max_stack": 1,
   "icon": "icones/ironGauntlet.png",
-  "stats": {"Dégâts": 10, "Durabilité": 900}
+  "stats": {"Dégâts": 10, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bronzeGauntlet": 1, "ironIngot": 3, "rope": 1}, "repair": {"ironIngot": 1}}
+  ]
 }
