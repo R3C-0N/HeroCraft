@@ -2,6 +2,7 @@ pub mod blocks;
 pub mod character;
 pub mod crafting;
 pub mod creature;
+pub mod hero;
 pub mod items;
 pub mod lan;
 pub mod math;

@@ -319,6 +319,10 @@ impl PlanetWorldGenerator {
         if roll >= 0.92 {
             return None;
         }
+        // Ni dans une rue, ni contre une maison, un champ ou un rempart (feuillage compris)
+        if self.is_built(face, x, z, TREE_REACH) {
+            return None;
+        }
         let column = column(x, z);
         if !dry_ground(&column) || column_ground(&column) <= SEA_LEVEL_BLOCKS as i32 {
             return None;
@@ -498,6 +502,10 @@ impl PlanetWorldGenerator {
     /// Plante posée sur le sol de la colonne (herbe haute, fleur, champignon, buisson mort), selon
     /// le biome, si son dessus est de l'herbe (ou du sable au désert)
     pub fn ground_plant(&self, column: &ColumnSample, face: PlanetFace, x: i32, z: i32) -> Option<BlockId> {
+        // Rien ne pousse sur une rue, un champ ou dans une maison
+        if self.is_built(face, x, z, 0) {
+            return None;
+        }
         let plant = self.plant_choice(column, face, x, z)?;
         if plant.is_air() {
             return None;

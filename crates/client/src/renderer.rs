@@ -175,12 +175,44 @@ pub struct State {
 /// - Cycle diurne complet (jour / nuit) : 20 minutes (1200 secondes)
 /// - Inclinaison de l'écliptique : ~23.4° (0.409 rad)
 pub fn compute_sun_dir(time: f32) -> glam::Vec3 {
-    let tilt: f32 = 0.409;
-    let u_sun = glam::Vec3::new(tilt.cos(), tilt.sin(), 0.0);
-    let v_sun = glam::Vec3::new(0.0, 0.0, 1.0);
-    let sun_period = 1200.0_f32; // 20 minutes
-    let sun_angle = (time / sun_period) * std::f32::consts::TAU + 0.40;
+    let (u_sun, v_sun) = sun_plane();
+    let sun_angle = (time / SUN_PERIOD) * std::f32::consts::TAU + SUN_PHASE;
     (u_sun * sun_angle.cos() + v_sun * sun_angle.sin()).normalize()
+}
+
+/// Durée d'un jour (20 minutes à vitesse céleste 1) et angle du Soleil au temps 0
+pub const SUN_PERIOD: f32 = 1200.0;
+const SUN_PHASE: f32 = 0.40;
+
+/// Le Soleil tourne dans le plan de ces deux axes
+fn sun_plane() -> (glam::Vec3, glam::Vec3) {
+    let tilt: f32 = 0.409;
+    (glam::Vec3::new(tilt.cos(), tilt.sin(), 0.0), glam::Vec3::new(0.0, 0.0, 1.0))
+}
+
+/// Temps du ciel où le Soleil passe au plus haut au-dessus de `up` (midi local), entre 0 et
+/// `SUN_PERIOD` ; `None` si le Soleil ne s'y lève ni ne s'y couche (axe de sa course)
+fn local_noon(up: glam::Vec3) -> Option<f32> {
+    let (u, v) = sun_plane();
+    let (a, b) = (up.dot(u), up.dot(v));
+    if a.hypot(b) < 1e-3 {
+        return None;
+    }
+    let angle = b.atan2(a) - SUN_PHASE;
+    Some((angle / std::f32::consts::TAU * SUN_PERIOD).rem_euclid(SUN_PERIOD))
+}
+
+/// Heure locale (0 à 24, midi quand le Soleil est au plus haut) au point de verticale `up`
+pub fn local_hour(time: f32, up: glam::Vec3) -> Option<f32> {
+    let noon = local_noon(up)?;
+    Some((12.0 + (time - noon) / SUN_PERIOD * 24.0).rem_euclid(24.0))
+}
+
+/// Prochain temps du ciel, à partir de `time`, où il est `hour` heures au point de verticale `up`
+pub fn time_for_local_hour(time: f32, up: glam::Vec3, hour: f32) -> Option<f32> {
+    let noon = local_noon(up)?;
+    let target = noon + (hour - 12.0) / 24.0 * SUN_PERIOD;
+    Some(time + (target - time).rem_euclid(SUN_PERIOD))
 }
 
 /// Calcule la direction unitaire et la phase de la Lune en temps réel
@@ -848,6 +880,11 @@ impl State {
         self.creatures.set_textures(&self.device, &self.queue, textures);
     }
 
+    /// Planche du héros vu à la troisième personne
+    pub fn set_hero_sheet(&mut self, appearance: &herocraft_common::hero::Appearance) {
+        self.creatures.set_hero_sheet(&self.device, &self.queue, appearance);
+    }
+
     /// Maillage des créatures de l'image (`creatures::build_frame`)
     pub fn set_creature_frame(&mut self, frame: &crate::creatures::CreatureFrame) {
         self.creatures.upload(&self.device, &self.queue, frame);
@@ -1381,5 +1418,28 @@ mod tests {
             let combined_ground = alt_ground_factor.max(calc_ground_factor(&cam));
             assert_eq!(combined_ground, 1.0, "Le ciel doit être 100% visible en montagne au sol pour rayon {}", radius);
         }
+    }
+}
+
+#[cfg(test)]
+mod sky_tests {
+    use super::*;
+
+    /// À midi local le Soleil est au plus haut, à minuit au plus bas, et l'heure réglée se relit
+    #[test]
+    fn test_local_hour_follows_the_sun() {
+        let up = glam::Vec3::new(0.3, 0.2, -0.9).normalize();
+        let noon = time_for_local_hour(100.0, up, 12.0).unwrap();
+        let midnight = time_for_local_hour(100.0, up, 0.0).unwrap();
+        assert!(noon >= 100.0 && noon < 100.0 + SUN_PERIOD);
+        assert!(compute_sun_dir(noon).dot(up) > 0.9);
+        assert!(compute_sun_dir(midnight).dot(up) < -0.9);
+        for hour in [0.0, 6.5, 12.0, 18.25, 23.9] {
+            let t = time_for_local_hour(500.0, up, hour).unwrap();
+            assert!((local_hour(t, up).unwrap() - hour).abs() < 1e-2, "{hour}");
+        }
+        // Lever au matin, coucher le soir
+        assert!(compute_sun_dir(time_for_local_hour(0.0, up, 9.0).unwrap()).dot(up) > 0.0);
+        assert!(compute_sun_dir(time_for_local_hour(0.0, up, 21.0).unwrap()).dot(up) < 0.0);
     }
 }

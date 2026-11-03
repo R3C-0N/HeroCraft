@@ -18,12 +18,16 @@ mod block_interaction;
 mod block_outline;
 mod block_textures;
 mod camera;
+mod chat;
 mod cloud_mesh;
 mod collision;
+mod commands;
 mod creature_render;
 mod creatures;
 mod dropped_items;
 mod gpu_timer;
+mod hero_creator;
+mod hero_model;
 mod input;
 mod inventory;
 mod item_icons;
@@ -39,6 +43,9 @@ mod shaders;
 mod shadow;
 mod skinned_model;
 mod ui;
+mod ui_skin;
+#[cfg(test)]
+mod ui_snapshot;
 mod voxel_mesh;
 
 use block_interaction::BlockInteraction;
@@ -76,6 +83,7 @@ fn main() {
     info!(" • [ALT] + Molette                    : Zoom FPS (0m) -> TPS (1-25m) -> Satellite");
     info!(" • [F] / [R]                          : Vue sol <-> satellite / Réinitialiser la vue");
     info!(" • [G] / [T] / [C]                    : Nouvelle planète / Filtres tectonique, courants");
+    info!(" • [ENTRÉE]                           : Chat (messages, commandes /help)");
     info!(" • [ÉCHAP]                            : Menu de pause (libère la souris)");
     info!("==========================================================");
 
@@ -137,6 +145,8 @@ fn main() {
     ui_state.set_screen_size(size.width as f32, size.height as f32);
     ui_state.controls = input::Controls::load_or_default(input::CONTROLS_FILE);
     ui_state.inventory = inventory::Inventory::load_or_default(inventory_file(current_seed, false));
+    ui_state.set_legend(load_legend(&legend_file(current_seed, false)));
+    camera.hero_height = hero_height(&ui_state);
     ui_state.audio_settings = audio::AudioSettings::load_or_default(audio::AUDIO_FILE);
     // Son : bruitages du joueur et des blocs, ambiance (muet sans carte son)
     let mut audio = audio::Audio::new();
@@ -163,8 +173,15 @@ fn main() {
     // de chaque zone est tirée une fois pour toutes et gardée dans la sauvegarde du monde.
     let creature_registry = Arc::new(herocraft_common::CreatureRegistry::load_default());
     let mut solo_creatures = solo_creature_world(base_radius as f64, current_seed, &creature_registry);
+    // Chat : Tab complète les blocs et objets (`/give`) et les créatures (`/summon`)
+    ui_state.chat.items = commands_items();
+    ui_state.chat.creatures = creature_registry.iter().map(|s| s.id.clone()).collect();
+    ui_state.chat.info(format!("Press [{}] to chat, /help for the commands", ui_state.controls.action_key_label(Action::OpenChat)));
+    // Graine demandée par `/planet <graine>` pour la prochaine planète
+    let mut next_planet_seed: Option<u64> = None;
     let mut creatures_seed = current_seed;
     let mut creature_animator = creatures::CreatureAnimator::default();
+    let mut hero_gait = hero_model::HeroGait::default();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
     // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
     // prochain coup qu'on peut leur porter
@@ -299,6 +316,7 @@ fn main() {
                         }
                         if !cursor_captured && matches!(button, MouseButton::Left | MouseButton::Right) {
                             let is_over_ui = ui_state.is_settings_open
+                                || ui_state.chat.open
                                 || ui_state.ctx.is_pointer_over_area()
                                 || ui_state.ctx.wants_pointer_input();
                             is_dragging = *btn_state == ElementState::Pressed && !is_over_ui;
@@ -307,7 +325,7 @@ fn main() {
 
                     // Déplacement curseur visible (survol des boutons UI et rotation de la planète)
                     WindowEvent::CursorMoved { position, .. } => {
-                        if is_dragging && !cursor_captured && !ui_state.is_settings_open && !ui_state.inventory_open {
+                        if is_dragging && !cursor_captured && !ui_state.is_settings_open && !ui_state.inventory_open && !ui_state.creator_open() {
                             let dx = (position.x - last_mouse_pos.0) as f32;
                             let dy = (position.y - last_mouse_pos.1) as f32;
                             camera.orbit(dx, dy);
@@ -323,6 +341,8 @@ fn main() {
                         } else {
                             !(ui_state.is_settings_open
                                 || ui_state.inventory_open
+                                || ui_state.creator_open()
+                                || ui_state.chat.open
                                 || ui_state.ctx.is_pointer_over_area()
                                 || ui_state.ctx.wants_pointer_input())
                         };
@@ -366,7 +386,10 @@ fn main() {
                             ui_state.controls.learn_label(key_code, logical_key);
                         }
 
-                        if key_code == KeyCode::Escape && is_pressed {
+                        if key_code == KeyCode::Escape && is_pressed && ui_state.chat.open {
+                            // Échap referme d'abord le chat
+                            ui_state.chat.close();
+                        } else if key_code == KeyCode::Escape && is_pressed {
                             // Touche Échap : annule une saisie de touche, ouvre le menu de pause,
                             // remonte d'un sous-menu ou referme le menu
                             let new_open = ui_state.handle_escape();
@@ -383,6 +406,10 @@ fn main() {
                             }
                         } else if key_code == KeyCode::F9 && is_pressed {
                             write_profile_report();
+                        } else if ui_state.creator_open() {
+                            // Créateur de légende : le clavier ne sert qu'à écrire le nom
+                        } else if ui_state.chat.open {
+                            // Chat ouvert : les touches vont à la saisie (egui), pas au joueur
                         } else if ui_state.inventory_open {
                             // Écran d'inventaire : seule sa touche le referme, sauf pendant la saisie
                             // d'une recherche dans les recettes
@@ -440,7 +467,7 @@ fn main() {
 
                         // Touches prises aux autres programmes par le crochet clavier depuis l'image précédente
                         for hooked in keyboard_hook::drain() {
-                            let in_game = !ui_state.is_settings_open && !ui_state.inventory_open;
+                            let in_game = !ui_state.is_settings_open && !ui_state.inventory_open && !ui_state.creator_open() && !ui_state.chat.open;
                             if let (true, Some(action)) = (in_game, ui_state.controls.action_for(hooked.key)) {
                                 let first_press = hooked.pressed && !hooked.repeat;
                                 game_key(action, hooked.pressed, first_press, &mut camera, &mut ui_state, &mut pending_actions, &mut jump_tap, &mut zoom_modifier_held);
@@ -453,6 +480,10 @@ fn main() {
                         if ui_state.inventory_open && camera.target_distance > camera.base_radius {
                             ui_state.set_inventory_open(false);
                         }
+                        // Première arrivée au sol d'un héros sans légende : le créateur s'ouvre
+                        if bench.is_none() && ui_state.legend.is_none() && !ui_state.creator_open() && camera.target_distance <= camera.base_radius && !ui_state.player.is_dead() {
+                            ui_state.open_creator();
+                        }
                         // Mort : la souris est libérée pour le bouton de réapparition
                         // Banc d'essai : la souris reste libre (le jeu se pilote seul, la fenêtre peut
                         // être déplacée sur un autre écran pendant la mesure)
@@ -461,6 +492,8 @@ fn main() {
                             && !ui_state.player.is_dead()
                             && !ui_state.is_settings_open
                             && !ui_state.inventory_open
+                            && !ui_state.creator_open()
+                            && !ui_state.chat.open
                             && camera.target_distance <= camera.base_radius;
                         if want_capture != cursor_captured {
                             cursor_captured = want_capture;
@@ -559,9 +592,12 @@ fn main() {
                                         let hurt = ui_state.player.bitten(damage, &cause);
                                         show_wound(hurt, &cause, &mut camera, &mut ui_state, &mut audio);
                                     }
+                                    NetEvent::Chat { sender, message } if sender.is_empty() => ui_state.chat.server(&message),
+                                    NetEvent::Chat { sender, message } => ui_state.chat.player(&sender, &message),
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
                                 }
                             }
+                            ui_state.chat.players = client.player_names();
                             if let Some(reason) = lost {
                                 warn!("Déconnecté du serveur ({}) : retour à la partie solo.", reason);
                                 ui_state.multiplayer.notice = Some(format!("Déconnecté : {}", reason));
@@ -613,7 +649,13 @@ fn main() {
                             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
                             let anim_dt = if ui_state.is_settings_open { 0.0 } else { dt };
                             creature_animator.update(&creature_views, &creature_registry, &creature_models, anim_dt, block);
-                            let frame = creatures::build_frame(&creature_views, &creature_registry, &creature_models, &creature_animator, block);
+                            let mut frame = creatures::build_frame(&creature_views, &creature_registry, &creature_models, &creature_animator, block);
+                            // Le héros, vu de dehors à la troisième personne
+                            hero_gait.update(camera.player_pos, anim_dt, block);
+                            if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson) {
+                                state.set_hero_sheet(&legend.appearance);
+                                hero_model::push_hero(&mut frame, &legend.appearance, camera.player_pos, camera.player_yaw, hero_gait.swing(), block);
+                            }
                             state.set_creature_frame(&frame);
                             creature_vertices = frame.vertices.len();
                             probe.section("créatures : animation et maillage", section);
@@ -649,7 +691,13 @@ fn main() {
                                     ui_state.multiplayer.notice = None;
                                     block_interaction.invalidate();
                                     terrain_edited = true;
-                                    net = Some(world.client);
+                                    let mut client = world.client;
+                                    // Le serveur apprend la voie du héros (ses jauges en dépendent)
+                                    if let Some(legend) = &ui_state.legend {
+                                        client.send_legend(legend);
+                                    }
+                                    camera.hero_height = hero_height(&ui_state);
+                                    net = Some(client);
                                 }
                                 Err(e) => {
                                     warn!("Connexion à {} impossible : {}", addr, e);
@@ -730,12 +778,70 @@ fn main() {
                         let is_ground = camera.distance <= camera.base_radius;
                         let (full_output, maybe_action) = ui_state.update_ui(is_ground);
 
+                        // Chat : message envoyé aux autres (en ligne) ou commande exécutée ici
+                        for line in ui_state.chat.take_submitted() {
+                            if line.starts_with('/') {
+                                ui_state.chat.echo(&line);
+                                let result = commands::parse(&line).and_then(|command| {
+                                    let mut game = Game {
+                                        camera: &mut camera,
+                                        generator: &generator,
+                                        sky: &mut state,
+                                        ui: &mut ui_state,
+                                        net: net.as_mut(),
+                                        creatures: &mut solo_creatures,
+                                        registry: &creature_registry,
+                                        seed: current_seed,
+                                        pending_actions: &mut pending_actions,
+                                        next_planet_seed: &mut next_planet_seed,
+                                    };
+                                    run_command(command, &mut game)
+                                });
+                                match result {
+                                    Ok(lines) => lines.into_iter().for_each(|l| ui_state.chat.info(l)),
+                                    Err(e) => ui_state.chat.error(e),
+                                }
+                            } else if let Some(client) = net.as_mut() {
+                                // Le serveur renvoie le message à tous, nous compris
+                                client.send_chat(&line);
+                            } else {
+                                let pseudo = ui_state.multiplayer.pseudo.trim().to_string();
+                                ui_state.chat.player(&pseudo, &line);
+                            }
+                        }
+                        if net.is_none() {
+                            ui_state.chat.players.clear();
+                        }
+
                         // 2. Traitement des actions déclenchées par les boutons egui et le clavier
                         pending_actions.extend(maybe_action);
                         for action in pending_actions.drain(..) {
                             herocraft_common::prof_scope!("frame::ui_action");
                             match action {
                                 UiAction::PreviewSound => audio.preview(&ui_state.audio_settings),
+                                UiAction::LegendSealed => {
+                                    let Some(legend) = ui_state.take_sealed_legend() else { continue };
+                                    let online = ui_state.multiplayer.status != NetStatus::Solo && hosted.is_none();
+                                    let file = legend_file(current_seed, online);
+                                    if let Err(e) = save_legend(&file, &legend) {
+                                        warn!("Légende non enregistrée dans {} : {}", file.display(), e);
+                                    }
+                                    if let Some(client) = net.as_mut() {
+                                        client.send_legend(&legend);
+                                    }
+                                    info!(
+                                        "Légende scellée : {} ({} · {}, {:.2} m).",
+                                        legend.appearance.nom,
+                                        legend.appearance.species().nom,
+                                        legend.class.label(),
+                                        legend.appearance.taille
+                                    );
+                                    // Le créateur reste ouvert sur « Entrer dans le monde »
+                                    let creator = ui_state.creator.take();
+                                    ui_state.set_legend(Some(legend));
+                                    ui_state.creator = creator;
+                                    camera.hero_height = hero_height(&ui_state);
+                                }
                                 UiAction::Respawn => {
                                     ui_state.player.respawn();
                                     camera.spawn_on_ground(&generator);
@@ -852,7 +958,7 @@ fn main() {
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
                                     save_solo_creatures(&solo_creatures);
-                                    current_seed = herocraft_world::random_seed();
+                                    current_seed = next_planet_seed.take().unwrap_or_else(herocraft_world::random_seed);
                                     let (storage, edits) = solo_terrain(current_seed);
                                     switch_planet(current_seed, false, edits, storage, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state, &mut ui_state);
                                     dropped_items.clear();
@@ -1056,6 +1162,44 @@ fn inventory_file(seed: u64, online: bool) -> std::path::PathBuf {
     std::path::Path::new(&dir).join("inventaire.json")
 }
 
+/// Légende du héros sur une planète, à côté de son inventaire
+fn legend_file(seed: u64, online: bool) -> std::path::PathBuf {
+    inventory_file(seed, online).with_file_name("heros.json")
+}
+
+/// La légende enregistrée, si le héros a été baptisé dans ce monde (une légende qui ne passe plus
+/// la vérification est ignorée : le créateur se rouvre)
+fn load_legend(file: &std::path::Path) -> Option<herocraft_common::hero::Legend> {
+    let text = std::fs::read_to_string(file).ok()?;
+    let mut legend: herocraft_common::hero::Legend = match serde_json::from_str(&text) {
+        Ok(legend) => legend,
+        Err(e) => {
+            warn!("Légende illisible dans {} : {}", file.display(), e);
+            return None;
+        }
+    };
+    match legend.verify() {
+        Ok(()) => Some(legend),
+        Err(e) => {
+            warn!("Légende de {} refusée : {}", file.display(), e);
+            None
+        }
+    }
+}
+
+fn save_legend(file: &std::path::Path, legend: &herocraft_common::hero::Legend) -> std::io::Result<()> {
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let text = serde_json::to_string_pretty(legend).map_err(std::io::Error::other)?;
+    std::fs::write(file, text)
+}
+
+/// Taille du héros en mètres (celle d'un aventurier sans légende par défaut)
+fn hero_height(ui_state: &UiState) -> f32 {
+    ui_state.legend.as_ref().map_or(camera::PLAYER_HEIGHT, |l| l.appearance.taille as f32)
+}
+
 /// Stockage d'un monde solo et ses blocs modifiés, repris de la sauvegarde
 fn solo_terrain(seed: u64) -> (Option<herocraft_voxel_engine::ChunkStorage>, Arc<herocraft_world::TerrainEdits>) {
     let storage = herocraft_voxel_engine::ChunkStorage::new(solo_save_dir(seed)).ok();
@@ -1095,6 +1239,8 @@ fn switch_planet(
     ui_state.set_inventory_open(false);
     ui_state.inventory.save();
     ui_state.inventory = inventory::Inventory::load_or_default(inventory_file(seed, online));
+    ui_state.set_legend(load_legend(&legend_file(seed, online)));
+    camera.hero_height = hero_height(ui_state);
 }
 
 /// Touche attribuée à une action, en jeu (menu fermé) : lue par la fenêtre ou par le crochet clavier
@@ -1137,6 +1283,11 @@ fn game_key(
                     camera.jump_requested = true;
                 }
             }
+        }
+        Action::OpenChat if first_press => {
+            camera.release_inputs();
+            *zoom_modifier_held = false;
+            ui_state.chat.open();
         }
         Action::OpenInventory if first_press && is_ground_view => {
             camera.release_inputs();
@@ -1265,5 +1416,197 @@ fn save_solo_creatures(creatures: &herocraft_world::CreatureWorld) {
 fn write_profile_report() {
     if let Some(path) = herocraft_common::profiler::write_report() {
         info!("Rapport de profilage écrit : {}", path.display());
+    }
+}
+
+/// Identifiants des blocs et objets que `/give` peut donner (ceux du catalogue de l'inventaire)
+fn commands_items() -> Vec<String> {
+    let blocks = herocraft_common::blocks().iter().filter(|s| inventory::can_hold(herocraft_common::BlockId(s.numeric_id).into())).map(|s| s.id.clone());
+    let items = herocraft_common::items().iter().map(|s| s.id.clone());
+    blocks.chain(items).collect()
+}
+
+/// Bloc ou objet de `/give`, par identifiant de fiche, sinon par nom affiché (sans tenir compte de
+/// la casse)
+fn find_item(name: &str) -> Option<herocraft_common::ItemId> {
+    use herocraft_common::{blocks, items, BlockId, ItemId};
+    let block = |s: &herocraft_common::BlockSheet| ItemId::from(BlockId(s.numeric_id));
+    let holdable_blocks = || blocks().iter().filter(|s| inventory::can_hold(block(s)));
+    holdable_blocks()
+        .find(|s| s.id.eq_ignore_ascii_case(name))
+        .map(block)
+        .or_else(|| items().iter().find(|s| s.id.eq_ignore_ascii_case(name)).map(|s| s.item()))
+        .or_else(|| holdable_blocks().find(|s| s.name.eq_ignore_ascii_case(name)).map(block))
+        .or_else(|| items().iter().find(|s| s.name.eq_ignore_ascii_case(name)).map(|s| s.item()))
+}
+
+/// Ce que les commandes du chat peuvent changer
+struct Game<'a> {
+    camera: &'a mut OrbitCamera,
+    generator: &'a herocraft_world::PlanetWorldGenerator,
+    /// Le ciel (heure)
+    sky: &'a mut State,
+    ui: &'a mut UiState,
+    /// Partie en ligne : `/summon`, `/heal` et `/xp` passent par le serveur
+    net: Option<&'a mut NetClient>,
+    /// Créatures de la partie solo
+    creatures: &'a mut herocraft_world::CreatureWorld,
+    registry: &'a herocraft_common::CreatureRegistry,
+    seed: u64,
+    pending_actions: &'a mut Vec<UiAction>,
+    next_planet_seed: &'a mut Option<u64>,
+}
+
+/// Exécute une commande du chat : renvoie les lignes de réponse, ou l'erreur à afficher
+fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String>, String> {
+    use commands::{format_hour, Command};
+    let block = herocraft_world::BlockGeometry::new(game.camera.base_radius as f64).block_height as f32;
+    let online = game.ui.multiplayer.status != NetStatus::Solo;
+    let moves = matches!(command, Command::TeleportLatLon { .. } | Command::TeleportPlayer(_) | Command::Spawn | Command::Fly);
+    if moves && game.ui.player.is_dead() {
+        return Err("You are dead".into());
+    }
+    let one = |line: String| Ok(vec![line]);
+    match command {
+        Command::Help(name) => commands::help(name.as_deref()),
+        Command::TeleportLatLon { lat, lon, height } => {
+            let feet = game.camera.ground_point(lat.to_radians(), lon.to_radians(), height, game.generator);
+            game.camera.teleport(feet, game.generator);
+            let above = if height > 0.0 { format!(", {height:.0} blocks above the ground") } else { String::new() };
+            one(format!("Teleported to {lat:.2}°, {lon:.2}°{above}"))
+        }
+        Command::TeleportPlayer(name) => {
+            let client = game.net.as_deref().ok_or("No other players in single player")?;
+            let (name, feet) = client.player_position(&name).ok_or_else(|| format!("No player named {name}"))?;
+            let feet = feet.ok_or_else(|| format!("{name} has not moved yet"))?;
+            // Un bloc à côté de lui, pas dans lui
+            let (east, _) = crate::camera::tangent_frame(feet.normalize_or_zero());
+            game.camera.teleport(feet + east * block, game.generator);
+            one(format!("Teleported to {name}"))
+        }
+        Command::Spawn => {
+            game.camera.spawn_on_ground(game.generator);
+            one("Back at the spawn point".into())
+        }
+        Command::Position => {
+            let pos = game.camera.player_pos;
+            let up = pos.normalize_or_zero();
+            let lat = up.y.clamp(-1.0, 1.0).asin().to_degrees();
+            let lon = up.z.atan2(up.x).to_degrees();
+            let altitude = (pos.length() - game.camera.base_radius) / block - herocraft_world::generator::SEA_LEVEL_BLOCKS as f32;
+            let geometry = herocraft_world::BlockGeometry::new(game.camera.base_radius as f64);
+            let mut lines = vec![format!("Latitude {lat:.2}°, longitude {lon:.2}°, {altitude:.1} blocks above sea level")];
+            if let Some(b) = geometry.block_at_point((pos + up * 0.5 * block).as_dvec3()) {
+                lines.push(format!("Block: face {:?}, x {}, y {}, z {}", b.face, b.x, b.y, b.z));
+            }
+            Ok(lines)
+        }
+        Command::TimeQuery => {
+            let up = game.camera.player_pos.normalize_or_zero();
+            let hour = renderer::local_hour(game.sky.simulated_time, up).ok_or("The sun never rises nor sets here")?;
+            let speed = game.ui.lighting_settings.moon_speed;
+            let note = if online { " (your sky only)" } else { "" };
+            one(format!("Local time {}, sky speed {speed}{note}", format_hour(hour)))
+        }
+        Command::TimeSet(hour) => {
+            let up = game.camera.player_pos.normalize_or_zero();
+            let time = renderer::time_for_local_hour(game.sky.simulated_time, up, hour).ok_or("The sun never rises nor sets here")?;
+            game.sky.simulated_time = time;
+            let note = if online { " (your sky only)" } else { "" };
+            one(format!("Time set to {}{note}", format_hour(hour)))
+        }
+        Command::TimeSpeed(speed) => {
+            game.ui.lighting_settings.moon_speed = speed;
+            one(if speed == 0.0 { "Sky frozen".into() } else { format!("Sky speed set to {speed}") })
+        }
+        Command::Seed => one(format!("Seed: {}", game.seed)),
+        Command::Planet(_) if online => Err("The planet is the server's: leave the game to change it".into()),
+        Command::Planet(seed) => {
+            *game.next_planet_seed = seed;
+            game.pending_actions.push(UiAction::GenerateNewPlanet);
+            one(match seed {
+                Some(seed) => format!("Generating planet {seed}..."),
+                None => "Generating a new planet...".into(),
+            })
+        }
+        Command::Give { item, count } => {
+            let id = find_item(&item).ok_or_else(|| format!("Unknown item: {item} (Tab lists the names)"))?;
+            let given = game.ui.inventory.add_many(id, count);
+            match given {
+                0 => Err("Your inventory is full".into()),
+                n if n < count => one(format!("Gave {n} × {} (inventory full)", id.name())),
+                n => one(format!("Gave {n} × {}", id.name())),
+            }
+        }
+        Command::Fly => {
+            if game.camera.target_distance > game.camera.base_radius {
+                return Err("Go back to the ground view first".into());
+            }
+            game.camera.toggle_flight();
+            one(format!("Flight {}", if game.camera.is_flying { "on" } else { "off" }))
+        }
+        Command::Speed(factor) => {
+            game.camera.speed_multiplier = factor;
+            one(format!("Movement speed × {factor}"))
+        }
+        Command::Summon { species, count } => {
+            let index = game
+                .registry
+                .iter()
+                .position(|s| s.id.eq_ignore_ascii_case(&species) || s.name.eq_ignore_ascii_case(&species))
+                .ok_or_else(|| format!("Unknown creature: {species} (Tab lists the names)"))?;
+            let sheet = game.registry.get(index).ok_or("Unknown creature")?;
+            // Trois blocs devant le joueur, posé au sol
+            let (_, forward, _, _) = game.camera.look_vectors();
+            let ahead = (game.camera.player_pos + forward * 3.0 * block).normalize_or_zero();
+            let feet = ahead * game.camera.ground_radius_at(ahead, game.generator);
+            match game.net.as_deref_mut() {
+                Some(client) => {
+                    client.send_summon(&sheet.id, count, feet);
+                    Ok(Vec::new())
+                }
+                None => {
+                    for _ in 0..count {
+                        game.creatures.spawn(index, feet);
+                    }
+                    one(format!("Summoned {count} × {}", sheet.name))
+                }
+            }
+        }
+        Command::Heal => match game.net.as_deref_mut() {
+            Some(client) => {
+                client.send_heal();
+                Ok(Vec::new())
+            }
+            None if game.ui.player.is_dead() => Err("You are dead".into()),
+            None => {
+                game.ui.player.stats.revive();
+                one("Healed".into())
+            }
+        },
+        // /xp : en ligne, le serveur fait foi (`Server::grant_experience`)
+        Command::Experience(amount) => match game.net.as_deref_mut() {
+            Some(client) => {
+                client.send_experience(amount);
+                Ok(Vec::new())
+            }
+            None => {
+                let stats = &mut game.ui.player.stats;
+                let level = stats.level;
+                stats.add_experience(amount);
+                let gained = stats.level.saturating_sub(level);
+                one(if gained == 0 { format!("+{amount} XP") } else { format!("+{amount} XP, level {} (+{gained})", stats.level) })
+            }
+        },
+        Command::List => {
+            let me = game.ui.multiplayer.pseudo.trim().to_string();
+            let mut names = vec![format!("{me} (you)")];
+            names.extend(game.net.as_deref().map(|c| c.player_names()).unwrap_or_default());
+            one(format!("{} player(s) online: {}", names.len(), names.join(", ")))
+        }
+        Command::ClearChat => {
+            game.ui.chat.clear();
+            Ok(Vec::new())
+        }
     }
 }

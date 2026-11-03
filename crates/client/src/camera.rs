@@ -12,6 +12,8 @@ use crate::collision::VoxelCollider;
 pub const PLAYER_HALF_WIDTH: f32 = 0.3;
 /// Hauteur du corps testée contre les murs et plafonds, en blocs (le joueur mesure 1.8 bloc)
 pub const PLAYER_HEIGHT: f32 = 1.75;
+/// Distance de la vue TPS la plus proche, en blocs
+const TPS_CLOSE_BLOCKS: f32 = 4.5;
 /// Tolérance de contact avec le sol, en blocs : aucune marche n'est montée sans sauter
 const GROUND_TOLERANCE: f32 = 0.05;
 /// Marche que le joueur au sol monte sans sauter (une dalle), en blocs
@@ -51,6 +53,8 @@ pub enum CameraViewMode {
 pub struct OrbitCamera {
     /// Position 3D du joueur sur la sphère
     pub player_pos: Vec3,
+    /// Taille du héros, en mètres (en blocs) : ses yeux et le haut de sa tête en dépendent
+    pub hero_height: f32,
     /// Azimut horizontal du regard (en radians sur le plan tangentiel local)
     pub player_yaw: f32,
     /// Inclinaison verticale du regard (tangage en radians, -85° à +85°)
@@ -71,6 +75,8 @@ pub struct OrbitCamera {
 
     /// Vol libre (double appui sur Saut) : pas de gravité, Saut monte et Descendre descend
     pub is_flying: bool,
+    /// Multiplicateur de la vitesse de déplacement (commande `/speed`)
+    pub speed_multiplier: f32,
     pub ascend_held: bool,
     pub descend_held: bool,
     /// Accroupissement affiché, de 0 (debout) à 1 (accroupi) : les yeux descendent en douceur
@@ -146,9 +152,11 @@ impl Default for OrbitCamera {
             jump_requested: false,
 
             is_flying: false,
+            speed_multiplier: 1.0,
             ascend_held: false,
             descend_held: false,
             crouch_blend: 0.0,
+            hero_height: PLAYER_HEIGHT,
 
             distance: 330.0,
             target_distance: 330.0,
@@ -238,6 +246,7 @@ impl OrbitCamera {
         }
 
         self.player_pos = spawn_dir * spawn_ground_r;
+        let visit_target = self.visit_settlement(generator);
         self.vertical_velocity = 0.0;
         self.is_grounded = true;
         self.is_flying = false;
@@ -249,7 +258,48 @@ impl OrbitCamera {
         self.sync_orbit_to_ground();
         self.distance = 0.0;
         self.target_distance = 0.0;
+        if let Some(target) = visit_target {
+            // Le regard tourné vers le centre de l'établissement, un peu plongeant
+            let (up, east, north) = self.local_frame();
+            let toward = (target - up * target.dot(up)).normalize_or_zero();
+            self.player_yaw = toward.dot(east).atan2(toward.dot(north));
+            self.player_pitch = -0.25;
+        }
         self.update_camera_bounds(generator);
+    }
+
+    /// `--visiter ville|village|ruines` : place le joueur au bord du premier établissement de ce
+    /// genre que porte la planète. Renvoie la direction de son centre.
+    fn visit_settlement(&mut self, generator: &PlanetWorldGenerator) -> Option<Vec3> {
+        use herocraft_world::structures::CELLS_PER_FACE;
+        let args: Vec<String> = std::env::args().collect();
+        let wanted = args.iter().position(|a| a == "--visiter").and_then(|i| args.get(i + 1))?;
+        let rank: usize = args.iter().position(|a| a == "--visiter").and_then(|i| args.get(i + 2)).and_then(|n| n.parse().ok()).unwrap_or(1);
+        let mut found = herocraft_common::PlanetFace::ALL.into_iter().flat_map(|face| {
+            (0..CELLS_PER_FACE * CELLS_PER_FACE).filter_map(move |i| generator.structures.cell(generator, face, i % CELLS_PER_FACE, i / CELLS_PER_FACE))
+        });
+        let Some(settlement) = found.find(|s| s.kind.name() == wanted.as_str()).and_then(|first| {
+            if rank <= 1 { Some(first) } else { found.filter(|s| s.kind == first.kind).nth(rank - 2) }
+        }) else {
+            log::warn!("--visiter {wanted} : aucun établissement de ce genre sur cette planète (ville, village ou ruines).");
+            return None;
+        };
+        let face = settlement.face;
+        let to_dir = |x: i32, z: i32| {
+            let span = 2.0 / 1024.0;
+            let d = face.uv_to_sphere_direction(-1.0 + (x as f64 + 0.5) * span, -1.0 + (z as f64 + 0.5) * span);
+            Vec3::new(d.x as f32, d.y as f32, d.z as f32)
+        };
+        let (cx, cz) = settlement.center;
+        let dir = to_dir(cx, settlement.bounds.z0 - 3).normalize();
+        self.player_pos = dir * self.ground_radius_at(dir, generator);
+        log::info!(
+            "Visite : {} n° {rank} sur la face {:?}, centre en ({cx}, {cz}), {} pièces.",
+            settlement.kind.name(),
+            face,
+            settlement.pieces.len()
+        );
+        Some(to_dir(cx, cz))
     }
 
     /// Mode de caméra déduit du continuum de distance effective
@@ -404,10 +454,15 @@ impl OrbitCamera {
         self.descend_held && !self.is_flying && !self.is_dead && self.view_mode() != CameraViewMode::SatelliteOrbit
     }
 
+    /// Hauteur des yeux d'un héros de taille ordinaire debout, en unités du monde (~1,7 bloc)
+    fn eye_height_standing(&self) -> f32 {
+        0.065 * self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32
+    }
+
     /// Hauteur des yeux au-dessus des pieds, en unités du monde : ~1,7 bloc debout, ~1,35 accroupi
     fn eye_height(&self) -> f32 {
         let scale = self.base_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
-        0.065 * scale * (1.0 - CROUCH_EYE_DROP * self.crouch_blend)
+        0.065 * scale * (self.hero_height / PLAYER_HEIGHT) * (1.0 - CROUCH_EYE_DROP * self.crouch_blend)
     }
 
     /// Le joueur sprinte à pied (ce qui consomme son endurance)
@@ -443,17 +498,52 @@ impl OrbitCamera {
         }
     }
 
+    /// Téléporte le joueur aux pieds `feet` (vue au sol) : en vol s'il n'est pas posé au sol, pour
+    /// qu'il ne fasse pas de chute
+    pub fn teleport(&mut self, feet: Vec3, generator: &PlanetWorldGenerator) {
+        let ground = self.ground_radius_at(feet.normalize_or_zero(), generator);
+        let block = self.block_height();
+        self.player_pos = feet;
+        self.vertical_velocity = 0.0;
+        self.jump_requested = false;
+        self.cancel_fall();
+        self.is_flying = feet.length() > ground + 0.5 * block;
+        self.is_grounded = !self.is_flying;
+        self.sync_orbit_to_ground();
+        self.distance = 0.0;
+        self.target_distance = 0.0;
+        self.update_camera_bounds(generator);
+    }
+
+    /// Pieds posés au sol à cette latitude et longitude (radians), `height_blocks` blocs au-dessus
+    pub fn ground_point(&self, lat: f32, lon: f32, height_blocks: f32, generator: &PlanetWorldGenerator) -> Vec3 {
+        let dir = Vec3::new(lat.cos() * lon.cos(), lat.sin(), lat.cos() * lon.sin());
+        dir * (self.ground_radius_at(dir, generator) + height_blocks * self.block_height())
+    }
+
     /// Zoom continu via la molette : passe sans couture de Satellite à TPS puis à FPS
     pub fn zoom(&mut self, delta_y: f32) {
+        // Au plus près, la caméra se tient à quelques blocs du héros pour qu'on le voie en entier
+        let close = TPS_CLOSE_BLOCKS * self.eye_height_standing() / 1.7;
         if self.target_distance <= 0.05 && delta_y < 0.0 {
-            // Sortie du mode FPS vers TPS
-            self.target_distance = 1.2;
+            // Sortie du mode FPS vers TPS, juste derrière le héros
+            self.target_distance = close;
+            return;
+        }
+
+        if self.target_distance < 1.2 && delta_y < 0.0 {
+            // Recul par pas égaux jusqu'à la vue TPS d'ensemble, puis zoom proportionnel
+            self.target_distance = (self.target_distance - delta_y * 0.40).min(1.2);
             return;
         }
 
         if self.target_distance <= 2.5 && delta_y > 0.0 {
-            // Rentrée douce dans le mode FPS
-            self.target_distance = (self.target_distance - delta_y * 0.40).max(0.0);
+            // Rentrée douce : on s'arrête derrière le héros avant de rentrer dans ses yeux
+            let next = self.target_distance - delta_y * 0.40;
+            self.target_distance = if self.target_distance > close + 1e-3 { next.max(close) } else { next.max(0.0) };
+            if self.target_distance < 0.05 {
+                self.target_distance = 0.0;
+            }
             return;
         }
 
@@ -630,7 +720,7 @@ impl OrbitCamera {
                 (false, true) => 0.45,
                 (true, false) => 0.50,
                 (true, true) => 1.10,
-            } * scale;
+            } * scale * self.speed_multiplier;
             let delta = move_dir * speed * dt;
             match &self.collider {
                 // Les murs arrêtent le joueur, qui glisse le long d'eux (axe est puis axe nord)
@@ -716,12 +806,12 @@ impl OrbitCamera {
         if current_radius > previous_radius {
             if let Some(collider) = &self.collider {
                 let h = collider.block_height();
-                let head = new_up * (current_radius + PLAYER_HEIGHT * h);
+                let head = new_up * (current_radius + self.hero_height * h);
                 if collider.any_solid(generator, &footprint(head, h)) {
                     // Arrêt contre le dessous du bloc touché par la tête
                     let ceiling_altitude = ((head.length() - self.base_radius) / h).floor();
                     let ceiling_radius = self.base_radius + ceiling_altitude * h;
-                    current_radius = (ceiling_radius - (PLAYER_HEIGHT + 0.01) * h).clamp(previous_radius, current_radius);
+                    current_radius = (ceiling_radius - (self.hero_height + 0.01) * h).clamp(previous_radius, current_radius);
                     self.vertical_velocity = 0.0;
                 }
             }
@@ -948,6 +1038,25 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_wheel_stops_just_behind_the_hero_between_fps_and_tps() {
+        let mut cam = OrbitCamera::default();
+        let close = TPS_CLOSE_BLOCKS * cam.eye_height_standing() / 1.7;
+        cam.target_distance = 0.0;
+        cam.zoom(-1.0);
+        assert!((cam.target_distance - close).abs() < 1e-6, "sortie du FPS à {}", cam.target_distance);
+        cam.zoom(-1.0);
+        cam.zoom(-1.0);
+        cam.zoom(-1.0);
+        assert!((cam.target_distance - 1.2).abs() < 1e-6);
+        cam.zoom(1.0);
+        cam.zoom(1.0);
+        cam.zoom(1.0);
+        assert!((cam.target_distance - close).abs() < 1e-6, "arrêt derrière le héros à {}", cam.target_distance);
+        cam.zoom(1.0);
+        assert_eq!(cam.target_distance, 0.0);
     }
 
     #[test]

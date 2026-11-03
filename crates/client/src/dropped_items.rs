@@ -179,7 +179,8 @@ fn push_cube(mesh: &mut PlanetMesh, center: Vec3, axes: [Vec3; 3], block: BlockI
         let (u, v) = (axes[(axis + 1) % 3], axes[(axis + 2) % 3]);
         let face = center + axes[axis] * sign;
         let color = block_textures().face_color(block, dir).unwrap_or(if dir == 2 { top } else { side });
-        let layer = blocks().face_texture(block, dir);
+        // Bloc connecté (verre) : la variante encadrée sur ses quatre bords
+        let layer = block_textures().connected_layer(blocks().face_texture(block, dir), 0);
         let base = mesh.vertices.len() as u32;
         for (su, sv) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
             let corner = face + u * su + v * sv;

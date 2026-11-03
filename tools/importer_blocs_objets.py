@@ -284,6 +284,9 @@ def importer_blocs(modules):
             fiche["opaque"] = False
         if d.get("luminance"):
             fiche["light"] = d["luminance"]
+        if nom == "Glass":
+            # Verre connecté : un cadre autour de chaque panneau, pas de chaque bloc
+            fiche["connected"] = True
         son = "water" if liquide else "grass" if d.get("grass") else SONS.get(son)
         if son and son != "stone":
             fiche["sound"] = son
