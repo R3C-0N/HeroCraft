@@ -10,8 +10,8 @@ use crate::creature_render::CreatureRenderer;
 use crate::gpu_timer::{self, GpuTimer};
 use crate::lod::{LodMeshId, PlanetLodManager};
 use crate::block_textures::BlockTextureBinding;
-use crate::planet_mesh::PlanetVertex;
-use crate::post::{self, PostProcess};
+use crate::planet_mesh::{GpuMeshData, PlanetVertex};
+use crate::post::{PostProcess, SceneTarget};
 use crate::shadow::Shadows;
 use crate::ui::{AtmosphereSettings, CloudSettings, LightingSettings, PostSettings, ShadowSettings, UiState};
 
@@ -31,6 +31,22 @@ pub struct CameraUniform {
     /// rayon du globe apparent, (k - 1) × rayon de la mer, y = k (0 et 1 : vraie courbure),
     /// z et w = distances au sol depuis la caméra où il commence et devient complet.
     pub flatten: [f32; 4],
+    /// Direction de la Lune (xyz) et sa phase éclairée (w), calculées une fois par image plutôt
+    /// qu'à chaque pixel (`compute_moon_data`)
+    pub moon: [f32; 4],
+    /// x, y : inverse de la taille de l'image ; z : amplitude du tramage avant l'écriture dans
+    /// la cible HDR (`SceneTarget::dither_amplitude`) ; w : part de vue orbitale du relief
+    /// (`orbit_factor`)
+    pub screen: [f32; 4],
+}
+
+/// Part de vue orbitale (0 au sol, 1 en orbite haute), la même pour tout l'écran : l'eau y lisse
+/// ses facettes vers la sphère. Au sol (vues première et troisième personne, `ground_factor` à 1),
+/// toujours 0.
+fn orbit_factor(eye_distance: f32, planet_radius: f32, ground_factor: f32) -> f32 {
+    let scale = planet_radius / 25.0;
+    let altitude = eye_distance - planet_radius;
+    ((altitude - 3.0 * scale) / (12.0 * scale)).clamp(0.0, 1.0).min(1.0 - ground_factor)
 }
 
 /// Plus haut relief (en blocs au-dessus de la mer) pris en compte pour borner l'aplatissement
@@ -72,9 +88,13 @@ pub fn planet_flattening(eye_radius: f32, base_radius: f32, strength: f32) -> f3
     k_max.powf(strength.clamp(0.0, 1.0) * fade)
 }
 
+/// Maillage du relief sur le GPU : positions seules (lues aussi par les passes d'ombre), puis
+/// attributs tassés (`GpuMeshData`)
 struct GpuMesh {
-    vertex_buffer: wgpu::Buffer,
+    positions: wgpu::Buffer,
+    attributes: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    index_format: wgpu::IndexFormat,
     num_indices: u32,
     last_used_sync: u64,
     /// Centre de la boîte englobante, pour trier les draws du plus proche au plus lointain
@@ -96,6 +116,18 @@ fn mesh_bounds(vertices: &[PlanetVertex]) -> (glam::Vec3, f32) {
 
 /// Octets envoyés au GPU au plus par synchronisation (un gros ensemble est étalé sur plusieurs frames)
 const LOD_UPLOAD_BUDGET: usize = 6 * 1024 * 1024;
+
+/// Empreinte de l'ensemble des maillages affichés, sans dépendre de leur ordre (la liste est
+/// triée par distance à chaque image) : elle change quand un maillage apparaît ou disparaît, et
+/// les cartes d'ombre lointaines sont alors redessinées
+fn draw_set_fingerprint(ids: &[LodMeshId]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    ids.iter().fold(ids.len() as u64, |sum, id| {
+        let mut hasher = std::hash::DefaultHasher::new();
+        id.hash(&mut hasher);
+        sum.wrapping_add(hasher.finish())
+    })
+}
 
 /// Nombre de synchronisations après lequel un maillage non affiché est libéré du GPU
 const LOD_GPU_MESH_TTL: u64 = 120;
@@ -124,7 +156,8 @@ pub struct State {
     pub camera_bind_group: wgpu::BindGroup,
     pub depth_texture: wgpu::Texture,
     pub depth_view: wgpu::TextureView,
-    pub sample_count: u32,
+    /// Échantillonnage et format HDR de la passe 3D
+    scene_target: SceneTarget,
     /// Échantillonnage avec MSAA (4 si l'adaptateur le permet, sinon 1)
     max_sample_count: u32,
     /// Puce graphique intégrée : réglages allégés par défaut
@@ -146,6 +179,8 @@ pub struct State {
     lod_gpu_meshes: HashMap<LodMeshId, GpuMesh>,
     /// Maillages à dessiner cette frame, dans l'ordre des feuilles
     lod_draw_list: Vec<LodMeshId>,
+    /// Empreinte de cet ensemble (`draw_set_fingerprint`), lue par les ombres lointaines
+    terrain_fingerprint: u64,
     camera_eye: glam::Vec3,
     lod_sync_count: u64,
     lod_uploads_pending: bool,
@@ -222,11 +257,11 @@ pub fn time_for_local_hour(time: f32, up: glam::Vec3, hour: f32) -> Option<f32> 
     Some(time + (target - time).rem_euclid(SUN_PERIOD))
 }
 
-/// Calcule la direction unitaire et la phase de la Lune en temps réel
+/// Calcule la direction unitaire et la phase de la Lune en temps réel (une fois par image, pour
+/// tous les shaders : `CameraUniform::moon`)
 /// - Période orbitale : 21 minutes (1260 secondes)
 /// - Inclinaison orbitale lunaire : ~28.5° (0.497 rad)
 /// - Cycle synodique complet (retour à la même phase) : 21 jours de jeu (420 minutes)
-#[allow(dead_code)]
 pub fn compute_moon_data(time: f32, sun_dir: glam::Vec3) -> (glam::Vec3, f32) {
     let l_sun = sun_dir.normalize();
     let moon_tilt: f32 = 0.497;
@@ -240,8 +275,8 @@ pub fn compute_moon_data(time: f32, sun_dir: glam::Vec3) -> (glam::Vec3, f32) {
     (moon_dir, moon_phase)
 }
 
-/// Pipelines de la passe 3D qui dépendent de son échantillonnage (MSAA ou non) : ciel, relief et
-/// nuages. Recréés quand le MSAA est coupé ou rétabli (`State::set_msaa`).
+/// Pipelines de la passe 3D qui dépendent de sa cible (MSAA ou non, format HDR) : ciel, relief
+/// et nuages. Recréés quand le MSAA est coupé ou rétabli (`State::set_msaa`).
 struct ScenePipelines {
     sky: wgpu::RenderPipeline,
     terrain: wgpu::RenderPipeline,
@@ -249,7 +284,7 @@ struct ScenePipelines {
 }
 
 impl ScenePipelines {
-    fn new(device: &wgpu::Device, render_layout: &wgpu::PipelineLayout, terrain_layout: &wgpu::PipelineLayout, sample_count: u32) -> Self {
+    fn new(device: &wgpu::Device, render_layout: &wgpu::PipelineLayout, terrain_layout: &wgpu::PipelineLayout, target: SceneTarget) -> Self {
         let shader = crate::shaders::create_shader_module(device, "Planet Shader", include_str!("shader.wgsl"), "shader.wgsl");
         // Pipeline Ciel & Atmosphère 3D (Étoiles, Soleil, Halo spatial, Ciel bleu)
         let sky_shader = crate::shaders::create_shader_module(device, "Sky Shader", include_str!("sky_shader.wgsl"), "sky_shader.wgsl");
@@ -267,7 +302,7 @@ impl ScenePipelines {
                 module: &sky_shader,
                 entry_point: Some("fs_sky"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: post::HDR_FORMAT,
+                    format: target.format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -292,7 +327,7 @@ impl ScenePipelines {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState {
-                count: sample_count,
+                count: target.sample_count,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -306,14 +341,14 @@ impl ScenePipelines {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[PlanetVertex::desc()],
+                buffers: &[PlanetVertex::position_layout(), PlanetVertex::attribute_layout()],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: post::HDR_FORMAT,
+                    format: target.format,
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -336,7 +371,7 @@ impl ScenePipelines {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState {
-                count: sample_count,
+                count: target.sample_count,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -362,7 +397,7 @@ impl ScenePipelines {
                 module: &cloud_shader,
                 entry_point: Some("fs_cloud"),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: post::HDR_FORMAT,
+                    format: target.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -385,7 +420,7 @@ impl ScenePipelines {
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState {
-                count: sample_count,
+                count: target.sample_count,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -448,7 +483,9 @@ impl State {
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
-                    required_features: GpuTimer::wanted_features(adapter.features()),
+                    // Cible HDR allégée de la passe 3D quand la carte sait y dessiner (`SceneTarget`)
+                    required_features: GpuTimer::wanted_features(adapter.features())
+                        | (adapter.features() & wgpu::Features::RG11B10UFLOAT_RENDERABLE),
                     required_limits,
                     label: Some("HeroCraft Device"),
                     memory_hints: Default::default(),
@@ -517,6 +554,8 @@ impl State {
             lighting_params2: [1.0, 1.0, 0.0, 0.0],
             cloud_params: [0.45, 1.0, 1.0, 0.0],
             flatten: [0.0, 1.0, 0.0, 0.0],
+            moon: [0.0, 1.0, 0.0, 0.0],
+            screen: [1.0 / config.width as f32, 1.0 / config.height as f32, 0.0, 1.0],
         };
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -561,6 +600,9 @@ impl State {
             integrated_gpu
         );
         herocraft_common::profiler::set_meta("msaa_sample_count", sample_count.to_string());
+        let scene_target = SceneTarget::new(device.features(), sample_count);
+        log::info!("Cible HDR de la passe 3D : {}", scene_target.describe());
+        crate::benchmark::set_meta("Cible HDR", scene_target.describe());
         crate::benchmark::set_meta(
             "Réglages de référence",
             if integrated_gpu {
@@ -571,19 +613,19 @@ impl State {
         );
 
         let (depth_texture, depth_view) = Self::create_depth_texture(&device, &config, sample_count);
-        let post = PostProcess::new(&device, &config, sample_count);
+        let post = PostProcess::new(&device, &config, scene_target);
 
         // Groupe 0 du ciel, du terrain et des nuages : caméra et tables de l'atmosphère.
         // Le terrain lit en plus les cartes d'ombre (groupe 1).
         let shadows = Shadows::new(&device, &camera_bind_group_layout);
-        let atmosphere = Atmosphere::new(&device, &camera_buffer, &shadows.receiver_layout, &depth_view, sample_count, (config.width, config.height));
+        let atmosphere = Atmosphere::new(&device, &camera_buffer, &shadows.receiver_layout, &depth_view, scene_target, (config.width, config.height));
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[&atmosphere.scene_layout],
                 push_constant_ranges: &[],
             });
-        let creatures = CreatureRenderer::new(&device, &queue, &atmosphere.scene_layout, &shadows.receiver_layout, sample_count);
+        let creatures = CreatureRenderer::new(&device, &queue, &atmosphere.scene_layout, &shadows.receiver_layout, scene_target);
         // Le terrain lit aussi les textures des blocs (groupe 2)
         let block_textures = crate::block_textures::block_textures().upload(&device, &queue);
         let terrain_pipeline_layout =
@@ -593,7 +635,7 @@ impl State {
                 push_constant_ranges: &[],
             });
 
-        let scene_pipelines = ScenePipelines::new(&device, &render_pipeline_layout, &terrain_pipeline_layout, sample_count);
+        let scene_pipelines = ScenePipelines::new(&device, &render_pipeline_layout, &terrain_pipeline_layout, scene_target);
 
         let cloud_mesh = crate::cloud_mesh::CloudMeshGenerator::generate_cloud_mesh(default_radius, 2026);
         let cloud_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -611,11 +653,11 @@ impl State {
         // -------------------------------------------------------------
         // Rendu Interface Utilisateur egui
         // -------------------------------------------------------------
-        let block_outline = BlockOutline::new(&device, &render_pipeline_layout, sample_count);
-        let block_cracks = BlockCracks::new(&device, &render_pipeline_layout, sample_count);
+        let block_outline = BlockOutline::new(&device, &render_pipeline_layout, scene_target);
+        let block_cracks = BlockCracks::new(&device, &render_pipeline_layout, scene_target);
         let dropped_items = GrowableMesh::new(&device, "Dropped Items");
         let player_outlines =
-            BlockOutline::players(&device, &render_pipeline_layout, sample_count, crate::network::MAX_REMOTE_PLAYERS);
+            BlockOutline::players(&device, &render_pipeline_layout, scene_target, crate::network::MAX_REMOTE_PLAYERS);
 
         let egui_renderer = egui_wgpu::Renderer::new(
             &device,
@@ -644,7 +686,7 @@ impl State {
             camera_bind_group,
             depth_texture,
             depth_view,
-            sample_count,
+            scene_target,
             max_sample_count,
             integrated_gpu,
             post,
@@ -656,6 +698,7 @@ impl State {
             clouds_visible: false,
             lod_gpu_meshes: HashMap::new(),
             lod_draw_list: Vec::new(),
+            terrain_fingerprint: 0,
             camera_eye: glam::Vec3::ZERO,
             lod_sync_count: 0,
             lod_uploads_pending: false,
@@ -711,7 +754,7 @@ impl State {
             self.surface.configure(&self.device, &self.config);
 
             let (depth_texture, depth_view) =
-                Self::create_depth_texture(&self.device, &self.config, self.sample_count);
+                Self::create_depth_texture(&self.device, &self.config, self.scene_target.sample_count);
             self.depth_texture = depth_texture;
             self.depth_view = depth_view;
 
@@ -725,27 +768,30 @@ impl State {
         self.integrated_gpu
     }
 
-    /// Coupe ou rétablit le MSAA 4x : la profondeur, la cible HDR et tous les pipelines de la
-    /// passe 3D sont recréés avec le nouvel échantillonnage (rien à faire s'il ne change pas)
+    /// Coupe ou rétablit le MSAA 4x : la profondeur, la cible HDR (dont le format suit, voir
+    /// `SceneTarget::new`) et tous les pipelines de la passe 3D sont recréés (rien à faire si
+    /// l'échantillonnage ne change pas)
     pub fn set_msaa(&mut self, enabled: bool) {
         let sample_count = if enabled { self.max_sample_count } else { 1 };
-        if sample_count == self.sample_count {
+        if sample_count == self.scene_target.sample_count {
             return;
         }
         herocraft_common::prof_scope!("render::set_msaa");
-        self.sample_count = sample_count;
+        let target = SceneTarget::new(self.device.features(), sample_count);
+        self.scene_target = target;
         let device = &self.device;
         (self.depth_texture, self.depth_view) = Self::create_depth_texture(device, &self.config, sample_count);
-        self.post.set_sample_count(device, &self.config, sample_count);
-        self.atmosphere.set_sample_count(device, &self.shadows.receiver_layout, &self.depth_view, sample_count);
-        let pipelines = ScenePipelines::new(device, &self.render_pipeline_layout, &self.terrain_pipeline_layout, sample_count);
+        self.post.set_target(device, &self.config, target);
+        self.atmosphere.set_target(device, &self.shadows.receiver_layout, &self.depth_view, target);
+        let pipelines = ScenePipelines::new(device, &self.render_pipeline_layout, &self.terrain_pipeline_layout, target);
         (self.sky_pipeline, self.render_pipeline, self.cloud_pipeline) = (pipelines.sky, pipelines.terrain, pipelines.cloud);
-        self.creatures.set_sample_count(device, sample_count);
-        self.block_outline.set_sample_count(device, &self.render_pipeline_layout, sample_count);
-        self.player_outlines.set_sample_count(device, &self.render_pipeline_layout, sample_count);
-        self.block_cracks.set_sample_count(device, &self.render_pipeline_layout, sample_count);
-        log::info!("Anti-Aliasing MSAA : sample_count = {}", sample_count);
+        self.creatures.set_target(device, target);
+        self.block_outline.set_target(device, &self.render_pipeline_layout, target);
+        self.player_outlines.set_target(device, &self.render_pipeline_layout, target);
+        self.block_cracks.set_target(device, &self.render_pipeline_layout, target);
+        log::info!("Anti-Aliasing MSAA : sample_count = {}, cible HDR : {}", sample_count, target.describe());
         herocraft_common::profiler::set_meta("msaa_sample_count", sample_count.to_string());
+        crate::benchmark::set_meta("Cible HDR", target.describe());
     }
 
     pub fn set_vsync(&mut self, enabled: bool) {
@@ -775,6 +821,7 @@ impl State {
         let inv_view_proj = view_proj.inverse();
         let eye = camera.eye_position();
         let sun_dir = compute_sun_dir(self.simulated_time);
+        let (moon_dir, moon_phase) = compute_moon_data(self.simulated_time, sun_dir);
         self.camera_eye = eye;
 
         // Facteur de présence au sol (1.0 = plein sol FPS/TPS, 0.0 = orbite spatiale profonde)
@@ -831,6 +878,13 @@ impl State {
                 clouds.micro_noise,
             ],
             flatten: [(k - 1.0) * sea_radius, k, flatten_start, flatten_start + FLATTEN_BLEND_BLOCKS * block],
+            moon: [moon_dir.x, moon_dir.y, moon_dir.z, moon_phase],
+            screen: [
+                1.0 / self.config.width as f32,
+                1.0 / self.config.height as f32,
+                self.scene_target.dither_amplitude(),
+                orbit_factor(eye.length(), camera.base_radius, ground_factor),
+            ],
         };
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
@@ -849,6 +903,7 @@ impl State {
             camera.base_radius,
             self.ground_factor,
             self.clouds_visible,
+            self.terrain_fingerprint,
         );
     }
 
@@ -867,6 +922,7 @@ impl State {
     /// Les envois sont limités à `LOD_UPLOAD_BUDGET` octets par appel : tant que le nouvel ensemble
     /// n'est pas entièrement sur le GPU, l'ancien reste affiché (voir `has_pending_lod_uploads`).
     pub fn sync_lod_meshes(&mut self, lod: &PlanetLodManager) {
+        use rayon::prelude::*;
         use wgpu::util::DeviceExt;
         herocraft_common::prof_scope!("render::sync_lod_meshes");
         self.lod_sync_count += 1;
@@ -875,6 +931,7 @@ impl State {
         // Premier affichage : rien à garder à l'écran, tout est envoyé d'un coup
         let budget = if self.lod_draw_list.is_empty() { usize::MAX } else { LOD_UPLOAD_BUDGET };
         let mut new_list = Vec::new();
+        let mut to_upload = Vec::new();
         let mut complete = true;
 
         for (id, mesh) in lod.visible_meshes() {
@@ -884,32 +941,39 @@ impl State {
             if let Some(gpu_mesh) = self.lod_gpu_meshes.get_mut(&id) {
                 gpu_mesh.last_used_sync = sync;
             } else if uploaded_bytes < budget {
-                uploaded_bytes += mesh.vertices.len() * std::mem::size_of::<PlanetVertex>() + mesh.indices.len() * 4;
-                let (center, radius) = mesh_bounds(&mesh.vertices);
-                let gpu_mesh = GpuMesh {
-                    vertex_buffer: self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("LOD Vertex Buffer"),
-                        contents: bytemuck::cast_slice(&mesh.vertices),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-                    index_buffer: self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("LOD Index Buffer"),
-                        contents: bytemuck::cast_slice(&mesh.indices),
-                        usage: wgpu::BufferUsages::INDEX,
-                    }),
-                    num_indices: mesh.indices.len() as u32,
-                    last_used_sync: sync,
-                    center,
-                    radius,
-                };
-                self.lod_gpu_meshes.insert(id, gpu_mesh);
+                uploaded_bytes += GpuMeshData::upload_size(mesh);
+                to_upload.push((id, mesh));
             } else {
                 complete = false;
             }
             new_list.push(id);
         }
 
+        // Sommets tassés au format du GPU sur tous les cœurs (le plus long de l'envoi), puis
+        // tampons créés ici
+        let packed: Vec<_> = {
+            herocraft_common::prof_scope!("render::pack_lod_meshes");
+            to_upload.par_iter().map(|(id, mesh)| (*id, GpuMeshData::new(mesh), mesh_bounds(&mesh.vertices))).collect()
+        };
+        for (id, data, (center, radius)) in packed {
+            let buffer = |label: &str, contents: &[u8], usage| {
+                self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some(label), contents, usage })
+            };
+            let gpu_mesh = GpuMesh {
+                positions: buffer("LOD Position Buffer", bytemuck::cast_slice(&data.positions), wgpu::BufferUsages::VERTEX),
+                attributes: buffer("LOD Attribute Buffer", bytemuck::cast_slice(&data.attributes), wgpu::BufferUsages::VERTEX),
+                index_buffer: buffer("LOD Index Buffer", data.indices.bytes(), wgpu::BufferUsages::INDEX),
+                index_format: data.indices.format(),
+                num_indices: data.num_indices,
+                last_used_sync: sync,
+                center,
+                radius,
+            };
+            self.lod_gpu_meshes.insert(id, gpu_mesh);
+        }
+
         if complete {
+            self.terrain_fingerprint = draw_set_fingerprint(&new_list);
             self.lod_draw_list = new_list;
         } else {
             // Ensemble incomplet : l'ancien reste affiché, ses maillages sont protégés
@@ -1036,17 +1100,19 @@ impl State {
         self.atmosphere.encode_luts(&mut encoder);
         {
             herocraft_common::prof_scope!("render::encode_shadows");
-            // Les créatures portent leur ombre comme le relief
-            let meshes = self
-                .lod_draw_list
-                .iter()
-                .filter_map(|id| self.lod_gpu_meshes.get(id))
-                .map(|m| (m.center, m.radius, &m.vertex_buffer, &m.index_buffer, m.num_indices))
-                .chain(self.creatures.shadow_caster());
+            // Le relief, positions seules ; les créatures portent leur ombre dans la cascade proche
+            let terrain = self.lod_draw_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).map(|m| crate::shadow::Caster {
+                center: m.center,
+                radius: m.radius,
+                positions: &m.positions,
+                indices: &m.index_buffer,
+                index_format: m.index_format,
+                num_indices: m.num_indices,
+            });
             let clouds = (self.num_cloud_indices > 0)
                 .then_some((&self.cloud_vertex_buffer, &self.cloud_index_buffer, self.num_cloud_indices));
             let timestamps = timer_queries.map(|q| (q, gpu_timer::TS_SHADOW_BEGIN, gpu_timer::TS_SHADOW_END));
-            self.shadows.encode(&mut encoder, &self.camera_bind_group, meshes, clouds, timestamps);
+            self.shadows.encode(&mut encoder, &self.camera_bind_group, terrain, self.creatures.shadow_caster(), clouds, timestamps);
         }
 
         // 1. Passe 3D HDR (Ciel étoilé + Soleil + Halo atmosphérique + Planète & Voxels avec MSAA 4x si supporté)
@@ -1100,8 +1166,9 @@ impl State {
                 render_pass.set_bind_group(2, &self.block_textures.bind_group, &[]);
                 for id in &self.lod_draw_list {
                     if let Some(mesh) = self.lod_gpu_meshes.get(id) {
-                        render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                        render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                        render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
+                        render_pass.set_vertex_buffer(1, mesh.attributes.slice(..));
+                        render_pass.set_index_buffer(mesh.index_buffer.slice(..), mesh.index_format);
                         render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
                     }
                 }
@@ -1114,7 +1181,8 @@ impl State {
                 render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
                 render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
                 render_pass.set_bind_group(2, &self.block_textures.bind_group, &[]);
-                render_pass.set_vertex_buffer(0, self.dropped_items.vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(0, self.dropped_items.positions.slice(..));
+                render_pass.set_vertex_buffer(1, self.dropped_items.attributes.slice(..));
                 render_pass.set_index_buffer(self.dropped_items.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.draw_indexed(0..self.dropped_items.num_indices, 0, 0..1);
             }
@@ -1234,11 +1302,13 @@ pub struct RenderTimings {
     pub present: std::time::Duration,
 }
 
-/// Petit maillage réécrit souvent (blocs tombés au sol) : ses buffers ne sont recréés que s'il
-/// grossit au-delà de leur taille
+/// Petit maillage réécrit souvent (blocs tombés au sol), dans les tampons du relief (positions,
+/// attributs tassés) : ils ne sont recréés que s'il grossit au-delà de leur taille. Indices sur
+/// 32 bits : `write_buffer` veut des tailles multiples de 4 octets.
 struct GrowableMesh {
     label: &'static str,
-    vertex_buffer: wgpu::Buffer,
+    positions: wgpu::Buffer,
+    attributes: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     /// Sommets et indices que les buffers peuvent contenir
     capacity: (usize, usize),
@@ -1247,24 +1317,24 @@ struct GrowableMesh {
 
 impl GrowableMesh {
     fn new(device: &wgpu::Device, label: &'static str) -> Self {
-        let (vertex_buffer, index_buffer) = Self::buffers(device, label, (1, 1));
-        Self { label, vertex_buffer, index_buffer, capacity: (1, 1), num_indices: 0 }
+        let (positions, attributes, index_buffer) = Self::buffers(device, label, (1, 1));
+        Self { label, positions, attributes, index_buffer, capacity: (1, 1), num_indices: 0 }
     }
 
-    fn buffers(device: &wgpu::Device, label: &str, capacity: (usize, usize)) -> (wgpu::Buffer, wgpu::Buffer) {
-        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some(label),
-            size: (capacity.0 * std::mem::size_of::<PlanetVertex>()) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some(label),
-            size: (capacity.1 * std::mem::size_of::<u32>()) as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        (vertex_buffer, index_buffer)
+    fn buffers(device: &wgpu::Device, label: &str, capacity: (usize, usize)) -> (wgpu::Buffer, wgpu::Buffer, wgpu::Buffer) {
+        let buffer = |size: usize, usage| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: size as wgpu::BufferAddress,
+                usage: usage | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+        (
+            buffer(capacity.0 * std::mem::size_of::<[f32; 3]>(), wgpu::BufferUsages::VERTEX),
+            buffer(capacity.0 * std::mem::size_of::<crate::planet_mesh::PackedAttributes>(), wgpu::BufferUsages::VERTEX),
+            buffer(capacity.1 * std::mem::size_of::<u32>(), wgpu::BufferUsages::INDEX),
+        )
     }
 
     fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, mesh: &crate::planet_mesh::PlanetMesh) {
@@ -1274,9 +1344,11 @@ impl GrowableMesh {
         }
         if mesh.vertices.len() > self.capacity.0 || mesh.indices.len() > self.capacity.1 {
             self.capacity = (mesh.vertices.len().next_power_of_two(), mesh.indices.len().next_power_of_two());
-            (self.vertex_buffer, self.index_buffer) = Self::buffers(device, self.label, self.capacity);
+            (self.positions, self.attributes, self.index_buffer) = Self::buffers(device, self.label, self.capacity);
         }
-        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&mesh.vertices));
+        let (positions, attributes) = crate::planet_mesh::split_vertices(&mesh.vertices);
+        queue.write_buffer(&self.positions, 0, bytemuck::cast_slice(&positions));
+        queue.write_buffer(&self.attributes, 0, bytemuck::cast_slice(&attributes));
         queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&mesh.indices));
     }
 }
@@ -1317,8 +1389,40 @@ mod tests {
     }
 
     #[test]
+    fn test_draw_set_fingerprint_ignores_order() {
+        let id = |x: u32| LodMeshId {
+            generation: 3,
+            key: herocraft_world::quadtree::QuadNodeKey::new(herocraft_common::PlanetFace::PosX, 4, x, 1),
+            voxel: x % 2 == 0,
+            revision: 0,
+        };
+        let ids = [id(1), id(2), id(3)];
+        let shuffled = [id(3), id(1), id(2)];
+        assert_eq!(draw_set_fingerprint(&ids), draw_set_fingerprint(&shuffled));
+        // Un maillage en plus, en moins, ou remplacé : l'empreinte change
+        assert_ne!(draw_set_fingerprint(&ids), draw_set_fingerprint(&ids[..2]));
+        assert_ne!(draw_set_fingerprint(&ids), draw_set_fingerprint(&[id(1), id(2), id(4)]));
+        let mut edited = ids;
+        edited[1].revision = 1;
+        assert_ne!(draw_set_fingerprint(&ids), draw_set_fingerprint(&edited));
+    }
+
+    #[test]
+    fn test_orbit_factor_matches_former_shader() {
+        let r = 25.0_f32;
+        // Au sol : jamais orbital, quelle que soit l'altitude
+        assert_eq!(orbit_factor(r * 6.6, r, 1.0), 0.0);
+        // En orbite : de 3 à 15 « échelles » (r / 25) au-dessus du rayon
+        assert_eq!(orbit_factor(r + 2.0, r, 0.0), 0.0);
+        assert!((orbit_factor(r + 9.0, r, 0.0) - 0.5).abs() < 1e-5);
+        assert_eq!(orbit_factor(r * 6.6, r, 0.0), 1.0);
+        // Transition sol vers satellite : la présence au sol borne la part orbitale
+        assert!((orbit_factor(r * 6.6, r, 0.3) - 0.7).abs() < 1e-5);
+    }
+
+    #[test]
     fn test_camera_uniform_size_and_alignment() {
-        assert_eq!(std::mem::size_of::<CameraUniform>(), 224);
+        assert_eq!(std::mem::size_of::<CameraUniform>(), 256);
         assert_eq!(std::mem::align_of::<CameraUniform>(), 16);
     }
 

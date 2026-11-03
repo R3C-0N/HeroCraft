@@ -31,10 +31,11 @@ fn normal_offset(cascade_size: u32) -> f32 {
     2.0 / cascade_size as f32
 }
 
-/// Cascades redessinées à l'image `frame` (la proche à chaque image). Ombres fines : les deux
-/// lointaines en alternance, une image sur deux. Allégées : celle du milieu une image sur deux et
-/// la plus lointaine une sur quatre ; leurs texels couvrent assez de terrain pour qu'un retard de
-/// quelques images ne se voie pas.
+/// Cascades qui peuvent être redessinées à l'image `frame` (la proche à chaque image). Ombres
+/// fines : les deux lointaines en alternance, une image sur deux. Allégées : celle du milieu une
+/// image sur deux et la plus lointaine une sur quatre ; leurs texels couvrent assez de terrain pour
+/// qu'un retard de quelques images ne se voie pas. Une cascade lointaine n'est redessinée à son
+/// tour que si sa carte ne correspond plus à la scène (`FarCascadeState::is_stale`).
 fn cascade_refresh(frame: u64, fine: bool) -> [bool; CASCADE_COUNT] {
     if fine {
         [true, frame % 2 == 0, frame % 2 == 1]
@@ -51,6 +52,58 @@ fn cloud_refresh(frame: u64, fine: bool) -> bool {
     } else {
         frame % 4 == 3
     }
+}
+
+/// Hauteur d'ombre (en blocs) dont le bout ne doit pas se décaler de plus d'un demi-texel avant
+/// qu'une cascade lointaine soit redessinée quand le soleil tourne : arbres, falaises, maisons
+const SUN_LAG_CASTER_BLOCKS: f32 = 32.0;
+/// Déplacement du centre d'une cascade lointaine (en fraction de sa demi-largeur) au-delà duquel
+/// elle est redessinée : le bord de la carte gardée reste assez loin devant le joueur
+const FAR_CASCADE_MAX_SHIFT: f32 = 1.0 / 16.0;
+
+/// Ce qu'une cascade lointaine a dessiné : tant que la scène n'en est pas assez loin, sa carte est
+/// gardée telle quelle (elle ne contient que le relief, qui ne bouge pas seul)
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct FarCascadeState {
+    center: Vec3,
+    extent: f32,
+    light_dir: Vec3,
+    /// Empreinte des maillages du relief affichés (`Shadows::update`)
+    terrain: u64,
+}
+
+impl FarCascadeState {
+    /// La carte dessinée pour `self` ne convient plus à la scène `now`. `texel` : côté d'un texel
+    /// de la cascade, `sun_up` : sinus de la hauteur du soleil, `block` : taille d'un bloc.
+    ///
+    /// Le bout de l'ombre d'un objet de hauteur H avance de H·Δθ / sin²(e) quand le soleil, à la
+    /// hauteur e, tourne de Δθ : la carte est gardée tant que ce décalage reste sous un demi-texel
+    /// pour H = `SUN_LAG_CASTER_BLOCKS` (soleil bas : redessinée à chaque tour, comme avant).
+    fn is_stale(&self, now: &FarCascadeState, texel: f32, sun_up: f32, block: f32) -> bool {
+        if self.terrain != now.terrain || (self.extent - now.extent).abs() > now.extent * 1e-4 {
+            return true;
+        }
+        if self.center.distance(now.center) > now.extent * FAR_CASCADE_MAX_SHIFT {
+            return true;
+        }
+        let sin_e = sun_up.clamp(0.05, 1.0);
+        let max_angle = 0.5 * texel * sin_e * sin_e / (SUN_LAG_CASTER_BLOCKS * block);
+        // Angle entre les deux directions, précis aux petits angles (acos ne l'est pas)
+        let angle = 2.0 * (0.5 * (self.light_dir - now.light_dir).length()).min(1.0).asin();
+        angle > max_angle
+    }
+}
+
+/// Maillage qui porte une ombre : sa boîte englobante (centre, demi-diagonale) et ses tampons de
+/// positions (`PlanetVertex::position_layout`) et d'indices
+#[derive(Clone, Copy)]
+pub struct Caster<'a> {
+    pub center: Vec3,
+    pub radius: f32,
+    pub positions: &'a wgpu::Buffer,
+    pub indices: &'a wgpu::Buffer,
+    pub index_format: wgpu::IndexFormat,
+    pub num_indices: u32,
 }
 
 #[repr(C)]
@@ -78,6 +131,8 @@ struct CasterPass {
     extent: f32,
     /// Redessinée cette frame (sinon la carte et sa matrice de la frame précédente restent)
     refresh: bool,
+    /// Cascades lointaines : ce que la carte gardée a dessiné (aucune : à redessiner)
+    drawn: Option<FarCascadeState>,
 }
 
 /// Textures des cascades d'une taille donnée
@@ -205,7 +260,7 @@ impl Shadows {
                 layout: &pass_layout,
                 entries: &[wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }],
             });
-            CasterPass { buffer, bind_group, view, center: Vec3::ZERO, extent, refresh: true }
+            CasterPass { buffer, bind_group, view, center: Vec3::ZERO, extent, refresh: true, drawn: None }
         };
         // La vue des cascades est celle de `maps` (recréée avec elles), celle des nuages est gardée
         let cascades = (0..CASCADE_COUNT).map(|i| caster_pass("Shadow Cascade Pass", None, CASCADE_EXTENTS[i])).collect();
@@ -231,7 +286,8 @@ impl Shadows {
             vertex: wgpu::VertexState {
                 module: &terrain_shader,
                 entry_point: Some("vs_shadow"),
-                buffers: &[crate::planet_mesh::PlanetVertex::desc()],
+                // Les positions seules : 12 octets lus par sommet
+                buffers: &[crate::planet_mesh::PlanetVertex::position_layout()],
                 compilation_options: Default::default(),
             },
             fragment: None,
@@ -421,7 +477,9 @@ impl Shadows {
     }
 
     /// Place les cascades autour du joueur (décalées vers l'avant du regard) et met à jour
-    /// les matrices. `ground_factor` vaut 0 en orbite, où les ombres sont coupées.
+    /// les matrices. `ground_factor` vaut 0 en orbite, où les ombres sont coupées. `terrain` :
+    /// empreinte des maillages du relief affichés, qui change quand l'un d'eux apparaît ou part.
+    #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         device: &wgpu::Device,
@@ -433,6 +491,7 @@ impl Shadows {
         planet_radius: f32,
         ground_factor: f32,
         clouds_visible: bool,
+        terrain: u64,
     ) {
         self.set_fine(device, settings.fine);
         let scale = planet_radius / herocraft_world::REFERENCE_BASE_RADIUS as f32;
@@ -449,24 +508,32 @@ impl Shadows {
             return;
         }
 
-        // La cascade proche est redessinée à chaque frame, les lointaines et la carte des nuages
-        // moins souvent (`cascade_refresh`). Tout est redessiné à l'activation et quand les
-        // cartes viennent d'être recréées.
+        // La cascade proche, qui porte aussi les créatures, est redessinée à chaque frame. Les
+        // lointaines, qui n'ont que le relief, le sont à leur tour (`cascade_refresh`) et seulement
+        // si le soleil, le joueur ou le relief a assez bougé depuis leur dernier dessin. La carte
+        // des nuages suit son rythme. Tout est redessiné à l'activation et quand les cartes
+        // viennent d'être recréées.
         self.frame = self.frame.wrapping_add(1);
         let refresh_all = !was_active || std::mem::take(&mut self.refresh_all);
-        let refresh = cascade_refresh(self.frame, self.fine).map(|r| r || refresh_all);
+        let slots = cascade_refresh(self.frame, self.fine);
         let cascade_size = self.maps.size;
+        let block = planet_radius * std::f32::consts::FRAC_PI_4 * (2.0 / 1024.0);
 
         // Regard projeté sur le sol : la moitié de chaque cascade sert devant le joueur
         let flat_forward = (forward - up * forward.dot(up)).normalize_or_zero();
         for (i, pass) in self.cascades.iter_mut().enumerate() {
-            pass.refresh = refresh[i];
+            let extent = CASCADE_EXTENTS[i] * scale;
+            let center = focus + flat_forward * extent * 0.5;
+            let now = FarCascadeState { center, extent, light_dir: self.light_dir, terrain };
+            let texel = 2.0 * extent / cascade_size as f32;
+            let stale = i == 0 || pass.drawn.is_none_or(|drawn| drawn.is_stale(&now, texel, sun_up, block));
+            pass.refresh = refresh_all || (slots[i] && stale);
             if !pass.refresh {
                 continue;
             }
-            let extent = CASCADE_EXTENTS[i] * scale;
             pass.extent = extent;
-            pass.center = focus + flat_forward * extent * 0.5;
+            pass.center = center;
+            pass.drawn = (i > 0).then_some(now);
             let vp = light_view_proj(pass.center, self.light_dir, extent, cascade_size, scale);
             queue.write_buffer(&pass.buffer, 0, bytemuck::cast_slice(&[ShadowPassUniform { view_proj: vp.to_cols_array_2d() }]));
             self.uniform.cascades[i] = vp.to_cols_array_2d();
@@ -493,13 +560,16 @@ impl Shadows {
         queue.write_buffer(&self.receiver_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
     }
 
-    /// Encode les passes depuis le soleil. `meshes` donne (centre, rayon, buffers, indices) des
-    /// maillages du relief ; seuls ceux qui touchent une cascade y sont dessinés.
+    /// Encode les passes depuis le soleil. `terrain` : maillages du relief, dessinés dans toutes
+    /// les cascades ; `moving` : ce qui bouge seul (créatures), dans la cascade proche seulement,
+    /// la seule redessinée à chaque image. Seuls les maillages qui touchent une cascade y sont
+    /// dessinés.
     pub fn encode<'a>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         camera_bind_group: &wgpu::BindGroup,
-        meshes: impl Iterator<Item = (Vec3, f32, &'a wgpu::Buffer, &'a wgpu::Buffer, u32)> + Clone,
+        terrain: impl Iterator<Item = Caster<'a>> + Clone,
+        moving: Option<Caster<'a>>,
         clouds: Option<(&wgpu::Buffer, &wgpu::Buffer, u32)>,
         timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
     ) {
@@ -532,15 +602,16 @@ impl Shadows {
                 render_pass.set_pipeline(&self.terrain_pipeline);
                 render_pass.set_bind_group(0, camera_bind_group, &[]);
                 render_pass.set_bind_group(1, &pass.bind_group, &[]);
-                for (center, radius, vertex_buffer, index_buffer, num_indices) in meshes.clone() {
+                for caster in terrain.clone().chain(moving.filter(|_| i == 0)) {
                     // Test dans le plan de la lumière : la profondeur couvre déjà tout le volume
-                    let d = center - pass.center;
-                    if d.dot(right).abs() > pass.extent + radius || d.dot(up).abs() > pass.extent + radius {
+                    let d = caster.center - pass.center;
+                    let reach = pass.extent + caster.radius;
+                    if d.dot(right).abs() > reach || d.dot(up).abs() > reach {
                         continue;
                     }
-                    render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                    render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    render_pass.draw_indexed(0..num_indices, 0, 0..1);
+                    render_pass.set_vertex_buffer(0, caster.positions.slice(..));
+                    render_pass.set_index_buffer(caster.indices.slice(..), caster.index_format);
+                    render_pass.draw_indexed(0..caster.num_indices, 0, 0..1);
                 }
             }
         }
@@ -618,6 +689,28 @@ mod tests {
             let drawn = cascade_refresh(frame, false).iter().filter(|r| **r).count() + usize::from(cloud_refresh(frame, false));
             assert!(drawn <= 2, "image {frame} : {drawn} cartes");
         }
+    }
+
+    #[test]
+    fn test_far_cascade_kept_while_scene_is_still() {
+        let block = 25.0 * std::f32::consts::FRAC_PI_4 * (2.0 / 1024.0);
+        let extent = CASCADE_EXTENTS[1];
+        let texel = 2.0 * extent / CASCADE_SIZE_LIGHT as f32;
+        let sun = Vec3::new(0.2, 0.9, 0.3).normalize();
+        let drawn = FarCascadeState { center: Vec3::new(0.0, 25.0, 0.0), extent, light_dir: sun, terrain: 7 };
+        // Rien n'a bougé : la carte est gardée
+        assert!(!drawn.is_stale(&drawn, texel, 0.9, block));
+        // Relief changé, ou joueur parti assez loin : redessinée
+        assert!(drawn.is_stale(&FarCascadeState { terrain: 8, ..drawn }, texel, 0.9, block));
+        assert!(drawn.is_stale(&FarCascadeState { center: drawn.center + Vec3::X * extent * 0.1, ..drawn }, texel, 0.9, block));
+        assert!(!drawn.is_stale(&FarCascadeState { center: drawn.center + Vec3::X * extent * 0.01, ..drawn }, texel, 0.9, block));
+        // Le soleil tourne de 0,02° : gardée soleil haut, redessinée soleil bas
+        let turned = FarCascadeState { light_dir: glam::Quat::from_rotation_z(0.02_f32.to_radians()) * sun, ..drawn };
+        assert!(!drawn.is_stale(&turned, texel, 0.9, block));
+        assert!(drawn.is_stale(&turned, texel, 0.1, block));
+        // Soleil haut : un tour de 0,5° se voit
+        let far_turn = FarCascadeState { light_dir: glam::Quat::from_rotation_z(0.5_f32.to_radians()) * sun, ..drawn };
+        assert!(drawn.is_stale(&far_turn, texel, 0.9, block));
     }
 
     #[test]

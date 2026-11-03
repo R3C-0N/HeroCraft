@@ -34,8 +34,8 @@ pub struct BlockCracks {
     count: u32,
 }
 
-/// Pipeline des fissures, qui dépend de l'échantillonnage de la passe 3D (MSAA ou non)
-fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32) -> wgpu::RenderPipeline {
+/// Pipeline des fissures, qui dépend de la cible de la passe 3D (MSAA, format HDR)
+fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget) -> wgpu::RenderPipeline {
     let shader = crate::shaders::create_shader_module(device, "Block Cracks Shader", include_str!("block_cracks.wgsl"), "block_cracks.wgsl");
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Block Cracks Pipeline"),
@@ -54,7 +54,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_
             module: &shader,
             entry_point: Some("fs_cracks"),
             targets: &[Some(wgpu::ColorTargetState {
-                format: post::HDR_FORMAT,
+                format: target.format,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
@@ -73,7 +73,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState {
-            count: sample_count,
+            count: target.sample_count,
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
@@ -84,8 +84,8 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_
 
 impl BlockCracks {
     /// `layout` : celui du ciel et des nuages (groupe 0 = scène, dont la caméra)
-    pub fn new(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32) -> Self {
-        let pipeline = create_pipeline(device, layout, sample_count);
+    pub fn new(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget) -> Self {
+        let pipeline = create_pipeline(device, layout, target);
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Block Cracks Vertex Buffer"),
             size: (VERTICES * std::mem::size_of::<CrackVertex>()) as wgpu::BufferAddress,
@@ -95,9 +95,9 @@ impl BlockCracks {
         Self { pipeline, vertex_buffer, count: 0 }
     }
 
-    /// MSAA coupé ou rétabli : le pipeline est recréé
-    pub fn set_sample_count(&mut self, device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32) {
-        self.pipeline = create_pipeline(device, layout, sample_count);
+    /// Cible de la passe 3D changée (MSAA coupé ou rétabli, format HDR) : le pipeline est recréé
+    pub fn set_target(&mut self, device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget) {
+        self.pipeline = create_pipeline(device, layout, target);
     }
 
     /// Bloc de coins `corners` cassé à `progress` (0 à 1), vu de `eye` (aucun : rien n'est dessiné)

@@ -6,7 +6,7 @@
 //   jour, le coucher de soleil et le limbe de la planète en découlent
 // =========================================================================
 
-#import herocraft::common::{camera, get_moon_data, HDR_SUN_DISK}
+#import herocraft::common::{camera, HDR_SUN_DISK, quantization_dither}
 #import herocraft::atmosphere::{atmosphere, sky_scattering, ray_sphere, view_origin, view_extra, SUN_REFERENCE}
 
 struct SkyVertexOutput {
@@ -98,9 +98,10 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let moon_slider = camera.lighting_params.x;      // Multiplicateur Lune [0.0 .. 3.0]
     let night_amb_slider = camera.lighting_params.z; // Multiplicateur Nuit / Étoiles [0.0 .. 3.0]
 
-    // Données de la Lune orbitale
-    let moon = get_moon_data(camera.time, camera.light_dir);
-    let cos_moon = dot(ray_dir, moon.dir);
+    // Lune orbitale : direction et phase calculées une fois par image (renderer.rs)
+    let moon_dir = camera.moon.xyz;
+    let moon_phase = camera.moon.w;
+    let cos_moon = dot(ray_dir, moon_dir);
     let moon_radius_cos = 0.9988; // ~2.8° de diamètre apparent
     let is_moon_disk = cos_moon > moon_radius_cos;
 
@@ -123,12 +124,12 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     if (is_moon_disk) {
         let rho = sqrt(clamp((1.0 - cos_moon) / (1.0 - moon_radius_cos), 0.0, 1.0));
         let z_local = sqrt(max(1.0 - rho * rho, 0.0));
-        let v_tangent = ray_dir - moon.dir * cos_moon;
+        let v_tangent = ray_dir - moon_dir * cos_moon;
         let len_tangent = length(v_tangent);
         let d_tangent = select(vec3<f32>(0.0), v_tangent / max(len_tangent, 1e-6), len_tangent > 1e-6);
 
         // Normale sphérique extérieure de la surface de la Lune
-        let n_moon = normalize(d_tangent * rho - moon.dir * z_local);
+        let n_moon = normalize(d_tangent * rho - moon_dir * z_local);
 
         // Éclairage direct par le Soleil sur la surface de la Lune
         let sun_incidence = dot(n_moon, l);
@@ -136,7 +137,7 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
         let direct_lunar_light = smooth_terminator * pow(clamp(sun_incidence + 0.08, 0.0, 1.0), 0.6);
 
         // Lumière cendrée (Earthshine) éclairant la face non-ensoleillée de la Lune
-        let earthshine = 0.040 * (1.0 - moon.phase) * (1.0 - smooth_terminator);
+        let earthshine = 0.040 * (1.0 - moon_phase) * (1.0 - smooth_terminator);
         let lunar_illumination = direct_lunar_light + earthshine;
 
         // Texture procédurale : Mers lunaires (Maria) et cratères
@@ -152,8 +153,8 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Halo / aura argentée autour de la Lune
-    let moon_corona = pow(clamp(cos_moon, 0.0, 1.0), 128.0) * 0.25 * moon.phase;
-    let moon_wide_glow = pow(clamp(cos_moon, 0.0, 1.0), 24.0) * 0.06 * moon.phase;
+    let moon_corona = pow(clamp(cos_moon, 0.0, 1.0), 128.0) * 0.25 * moon_phase;
+    let moon_wide_glow = pow(clamp(cos_moon, 0.0, 1.0), 24.0) * 0.06 * moon_phase;
     let moon_aura = vec3<f32>(0.70, 0.82, 1.0) * (moon_corona + moon_wide_glow);
     let moon_color = (select(vec3<f32>(0.0), moon_disk_color, is_moon_disk) + moon_aura) * moon_slider;
 
@@ -174,5 +175,5 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let night_glow = vec3<f32>(0.008, 0.012, 0.024) * night_amb_slider * air_path;
 
     let sky = scattering.inscatter + night_glow + (sun_color + moon_color + visible_stars) * behind;
-    return vec4<f32>(sky, 1.0);
+    return vec4<f32>(quantization_dither(sky, in.clip_pos.xy), 1.0);
 }

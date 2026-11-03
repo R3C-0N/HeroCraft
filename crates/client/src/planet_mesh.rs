@@ -26,38 +26,115 @@ impl PlanetVertex {
         layer as u32 | (u as u32) << 16 | (v as u32) << 24
     }
 
-    pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+    /// Premier tampon envoyé au GPU : la position seule (12 octets), la seule donnée que lisent
+    /// les passes d'ombre
+    pub fn position_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
+        const ATTRIBUTES: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
         wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<PlanetVertex>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                // Position : 3 x Float32 = 12 octets
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                // Normale : 3 x Float32 = 12 octets
-                wgpu::VertexAttribute {
-                    offset: 12,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                // Couleur RGBA : 4 x Float32 = 16 octets
-                wgpu::VertexAttribute {
-                    offset: 24,
-                    shader_location: 2,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                // Texture : rang et coordonnées tassés dans un entier (emplacement 8, loin de
-                // ceux qu'ajoutent les créatures dans un second tampon)
-                wgpu::VertexAttribute {
-                    offset: 40,
-                    shader_location: 8,
-                    format: wgpu::VertexFormat::Uint32,
-                },
-            ],
+            attributes: &ATTRIBUTES,
         }
+    }
+
+    /// Second tampon : normale et opacité, couleur, texture, tassées en 12 octets
+    /// (`PackedAttributes`). La texture est à l'emplacement 8, loin de ceux qu'ajoutent les
+    /// créatures dans un troisième tampon.
+    pub fn attribute_layout<'a>() -> wgpu::VertexBufferLayout<'a> {
+        const ATTRIBUTES: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![1 => Snorm8x4, 2 => Unorm8x4, 8 => Uint32];
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<PackedAttributes>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &ATTRIBUTES,
+        }
+    }
+
+    /// Données du second tampon pour ce sommet. Arrondis faits à la main (`+ 0.5` puis
+    /// troncature) : `f32::round` appelle une fonction de la libm, trois fois plus lent ici.
+    pub fn packed_attributes(&self) -> PackedAttributes {
+        let snorm = |x: f32| (((x.clamp(-1.0, 1.0) + 1.0) * 127.0 + 0.5) as i32 - 127) as i8;
+        // Racine de la couleur : la précision des 8 bits va aux tons sombres (le shader l'élève
+        // au carré), où un pas linéaire de 1/255 se verrait
+        let unorm = |x: f32| (x.clamp(0.0, 1.0).sqrt() * 255.0 + 0.5) as u8;
+        let [nx, ny, nz] = self.normal;
+        let [r, g, b, a] = self.color;
+        PackedAttributes {
+            normal_alpha: [snorm(nx), snorm(ny), snorm(nz), snorm(a)],
+            color: [unorm(r), unorm(g), unorm(b), 255],
+            texture: self.texture,
+        }
+    }
+}
+
+/// Attributs d'un sommet tels que le GPU les lit (`PlanetVertex::attribute_layout`) : 12 octets au
+/// lieu de 32. La normale ne sert qu'à orienter l'eau (le shader du terrain prend la normale de la
+/// facette) : 8 bits lui suffisent.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PackedAttributes {
+    /// Normale (xyz) et opacité du sommet (w, négative pour un fondu sortant), de -127 à 127
+    pub normal_alpha: [i8; 4],
+    /// Racine carrée de la couleur (rgb), de 0 à 255
+    pub color: [u8; 4],
+    pub texture: u32,
+}
+
+/// Sommets d'un maillage dans les deux tampons du GPU : positions, puis attributs tassés
+pub fn split_vertices(vertices: &[PlanetVertex]) -> (Vec<[f32; 3]>, Vec<PackedAttributes>) {
+    (vertices.iter().map(|v| v.position).collect(), vertices.iter().map(PlanetVertex::packed_attributes).collect())
+}
+
+/// Indices d'un maillage tels que le GPU les lit : sur 16 bits quand il a au plus 65 536 sommets
+/// (deux fois moins de données à lire), sur 32 bits sinon
+pub enum PackedIndices {
+    U16(Vec<u16>),
+    U32(Vec<u32>),
+}
+
+impl PackedIndices {
+    pub fn new(indices: &[u32], vertex_count: usize) -> Self {
+        if vertex_count <= 1 << 16 {
+            Self::U16(indices.iter().map(|&i| i as u16).collect())
+        } else {
+            Self::U32(indices.to_vec())
+        }
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        match self {
+            Self::U16(i) => bytemuck::cast_slice(i),
+            Self::U32(i) => bytemuck::cast_slice(i),
+        }
+    }
+
+    pub fn format(&self) -> wgpu::IndexFormat {
+        match self {
+            Self::U16(_) => wgpu::IndexFormat::Uint16,
+            Self::U32(_) => wgpu::IndexFormat::Uint32,
+        }
+    }
+}
+
+/// Maillage prêt à envoyer au GPU (`PlanetVertex::position_layout` et `attribute_layout`) :
+/// 24 octets par sommet au lieu de 44, et des indices courts quand c'est possible
+pub struct GpuMeshData {
+    pub positions: Vec<[f32; 3]>,
+    pub attributes: Vec<PackedAttributes>,
+    pub indices: PackedIndices,
+    pub num_indices: u32,
+}
+
+impl GpuMeshData {
+    pub fn new(mesh: &PlanetMesh) -> Self {
+        let (positions, attributes) = split_vertices(&mesh.vertices);
+        let indices = PackedIndices::new(&mesh.indices, mesh.vertices.len());
+        Self { positions, attributes, indices, num_indices: mesh.indices.len() as u32 }
+    }
+
+    /// Octets envoyés au GPU pour ce maillage, sans le tasser
+    pub fn upload_size(mesh: &PlanetMesh) -> usize {
+        let index_size = if mesh.vertices.len() <= 1 << 16 { 2 } else { 4 };
+        mesh.vertices.len() * (std::mem::size_of::<[f32; 3]>() + std::mem::size_of::<PackedAttributes>()) + mesh.indices.len() * index_size
     }
 }
 
@@ -523,6 +600,40 @@ impl PlanetMesh {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_packed_vertex_round_trip() {
+        assert_eq!(std::mem::size_of::<PackedAttributes>(), 12);
+        let v = PlanetVertex { position: [1.0, 2.0, 3.0], normal: [0.6, -0.8, 0.0], color: [0.02, 0.5, 1.0, -0.5], texture: 7 };
+        let p = v.packed_attributes();
+        // Décodage du GPU : snorm8 = c / 127, unorm8 = c / 255 (puis au carré pour la couleur)
+        let n: Vec<f32> = p.normal_alpha.iter().map(|&c| (c as f32 / 127.0).max(-1.0)).collect();
+        let c: Vec<f32> = p.color.iter().map(|&c| (c as f32 / 255.0).powi(2)).collect();
+        assert!((n[0] - 0.6).abs() < 0.005 && (n[1] + 0.8).abs() < 0.005 && n[2] == 0.0);
+        assert!((n[3] + 0.5).abs() < 0.01, "opacité négative du fondu sortant gardée : {}", n[3]);
+        // Ton sombre : erreur relative faible grâce à la racine
+        assert!((c[0] - 0.02).abs() / 0.02 < 0.05, "{}", c[0]);
+        assert!((c[1] - 0.5).abs() < 0.005 && c[2] == 1.0);
+        assert_eq!(p.texture, 7);
+        // Opaque : exactement 1, que le shader distingue d'un fondu (seuil 0.999)
+        let opaque = PlanetVertex { color: [0.3, 0.3, 0.3, 1.0], ..v }.packed_attributes();
+        assert_eq!(opaque.normal_alpha[3], 127);
+    }
+
+    #[test]
+    fn test_short_indices_when_possible() {
+        let short = PackedIndices::new(&[0, 1, 65535], 65536);
+        assert_eq!((short.bytes().len(), short.format()), (6, wgpu::IndexFormat::Uint16));
+        assert_eq!(bytemuck::cast_slice::<u8, u16>(short.bytes()), &[0, 1, 65535]);
+        let long = PackedIndices::new(&[0, 70000], 70001);
+        assert_eq!((long.bytes().len(), long.format()), (8, wgpu::IndexFormat::Uint32));
+        // La taille annoncée avant le tassage est celle envoyée
+        let vertex = PlanetVertex { position: [0.0; 3], normal: [0.0, 1.0, 0.0], color: [1.0; 4], texture: 0 };
+        let mesh = PlanetMesh { vertices: vec![vertex; 4], indices: vec![0, 1, 2, 2, 3, 0] };
+        let data = GpuMeshData::new(&mesh);
+        let sent = data.positions.len() * 12 + data.attributes.len() * 12 + data.indices.bytes().len();
+        assert_eq!((sent, GpuMeshData::upload_size(&mesh)), (4 * 24 + 6 * 2, 4 * 24 + 6 * 2));
+    }
 
     #[test]
     fn test_relief_biome_color_trench_vs_shallow_water() {

@@ -28,7 +28,7 @@ struct OutlineVertex {
 
 pub struct BlockOutline {
     pipeline: wgpu::RenderPipeline,
-    /// Point d'entrée de couleur, gardé pour recréer le pipeline quand le MSAA change
+    /// Point d'entrée de couleur, gardé pour recréer le pipeline quand la cible de la passe 3D change
     fragment: &'static str,
     vertex_buffer: wgpu::Buffer,
     max_boxes: usize,
@@ -38,8 +38,8 @@ pub struct BlockOutline {
     uploaded: Option<(Vec<[Vec3; 8]>, Vec3)>,
 }
 
-/// Pipeline du contour, qui dépend de l'échantillonnage de la passe 3D (MSAA ou non)
-fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32, fragment: &str) -> wgpu::RenderPipeline {
+/// Pipeline du contour, qui dépend de la cible de la passe 3D (MSAA, format HDR)
+fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget, fragment: &str) -> wgpu::RenderPipeline {
     let shader = crate::shaders::create_shader_module(device, "Block Outline Shader", include_str!("block_outline.wgsl"), "block_outline.wgsl");
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Block Outline Pipeline"),
@@ -58,7 +58,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_
             module: &shader,
             entry_point: Some(fragment),
             targets: &[Some(wgpu::ColorTargetState {
-                format: post::HDR_FORMAT,
+                format: target.format,
                 blend: Some(wgpu::BlendState::REPLACE),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
@@ -77,7 +77,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState {
-            count: sample_count,
+            count: target.sample_count,
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
@@ -88,19 +88,19 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_
 
 impl BlockOutline {
     /// Contour du bloc visé (une boîte, blanche)
-    pub fn new(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32) -> Self {
-        Self::with_style(device, layout, sample_count, "fs_outline", 1)
+    pub fn new(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget) -> Self {
+        Self::with_style(device, layout, target, "fs_outline", 1)
     }
 
     /// Silhouettes des autres joueurs (jusqu'à `max_boxes`, dorées)
-    pub fn players(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32, max_boxes: usize) -> Self {
-        Self::with_style(device, layout, sample_count, "fs_player", max_boxes)
+    pub fn players(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget, max_boxes: usize) -> Self {
+        Self::with_style(device, layout, target, "fs_player", max_boxes)
     }
 
     /// `layout` : celui du ciel et des nuages (groupe 0 = scène, dont la caméra) ; `fragment` :
     /// point d'entrée de couleur dans `block_outline.wgsl`
-    fn with_style(device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32, fragment: &'static str, max_boxes: usize) -> Self {
-        let pipeline = create_pipeline(device, layout, sample_count, fragment);
+    fn with_style(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget, fragment: &'static str, max_boxes: usize) -> Self {
+        let pipeline = create_pipeline(device, layout, target, fragment);
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Block Outline Vertex Buffer"),
             size: (max_boxes * VERTICES * std::mem::size_of::<OutlineVertex>()) as wgpu::BufferAddress,
@@ -110,9 +110,9 @@ impl BlockOutline {
         Self { pipeline, fragment, vertex_buffer, max_boxes, count: 0, uploaded: None }
     }
 
-    /// MSAA coupé ou rétabli : le pipeline est recréé
-    pub fn set_sample_count(&mut self, device: &wgpu::Device, layout: &wgpu::PipelineLayout, sample_count: u32) {
-        self.pipeline = create_pipeline(device, layout, sample_count, self.fragment);
+    /// Cible de la passe 3D changée (MSAA coupé ou rétabli, format HDR) : le pipeline est recréé
+    pub fn set_target(&mut self, device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget) {
+        self.pipeline = create_pipeline(device, layout, target, self.fragment);
     }
 
     /// Contour des boîtes de coins `boxes` vues de `eye` (aucune : rien n'est dessiné)

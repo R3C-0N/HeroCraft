@@ -324,8 +324,10 @@ pub struct ShadowSettings {
     pub cloud_shadows: bool,
     pub cloud_strength: f32, // Part de la lumière directe retirée sous un nuage [0.0 .. 1.0]
     /// Ombres fines : cascades de 2048 texels filtrées sur 3x3, cascades lointaines redessinées
-    /// une image sur deux. Sinon (allégées) : 1024 texels, filtrage 2x2, la cascade du milieu
-    /// une image sur deux et la plus lointaine une sur quatre (shadow.rs).
+    /// au plus une image sur deux. Sinon (allégées) : 1024 texels, filtrage 2x2, la cascade du
+    /// milieu au plus une image sur deux et la plus lointaine une sur quatre. Dans les deux cas,
+    /// une cascade lointaine est gardée tant que le soleil, le joueur et le relief ne bougent
+    /// pas assez pour que ça se voie (shadow.rs).
     pub fine: bool,
 }
 

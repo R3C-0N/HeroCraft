@@ -10,7 +10,7 @@
 // - Écriture précise de la profondeur dans le Z-buffer (@builtin(frag_depth))
 // =========================================================================
 
-#import herocraft::common::{camera, get_moon_data, sky_factors, flatten_point, rotate_by}
+#import herocraft::common::{camera, sky_factors, flatten_point, rotate_by, quantization_dither}
 #import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective}
 
 struct VertexInput {
@@ -472,10 +472,11 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let day_col = (sky_ambient * 0.85 + sun_light) * shade * under_tint;
 
     // 4. Nuit : ambiance sombre et clair de lune argenté
-    var moon = get_moon_data(camera.time, camera.light_dir);
-    let moon_up = clamp((dot(moon.dir, cam_up) + 0.04) / 0.18, 0.0, 1.0);
-    let moon_wrap = clamp(dot(norm_world, rotate_by(moon.dir, -in.flat_rot)) * 0.5 + 0.5, 0.0, 1.0);
-    let moon_light = vec3<f32>(0.62, 0.74, 0.92) * (moon_wrap * 0.20 + 0.04) * moon.phase * moon_up * moon_slider;
+    // Lune : direction et phase calculées une fois par image (renderer.rs)
+    let moon_dir = camera.moon.xyz;
+    let moon_up = clamp((dot(moon_dir, cam_up) + 0.04) / 0.18, 0.0, 1.0);
+    let moon_wrap = clamp(dot(norm_world, rotate_by(moon_dir, -in.flat_rot)) * 0.5 + 0.5, 0.0, 1.0);
+    let moon_light = vec3<f32>(0.62, 0.74, 0.92) * (moon_wrap * 0.20 + 0.04) * camera.moon.w * moon_up * moon_slider;
     let night_ambient = vec3<f32>(0.020, 0.028, 0.055) * night_amb_slider * (0.7 + 0.3 * top);
 
     // Le jour s'éteint de lui-même avec l'atmosphère : la nuit s'y ajoute quand il disparaît
@@ -498,7 +499,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     let final_alpha = clamp(cloud_slider, 0.0, 1.0);
 
     var out: FragmentOutput;
-    out.color = vec4<f32>(final_color, final_alpha);
+    out.color = vec4<f32>(quantization_dither(final_color, in.clip_position.xy), final_alpha);
     out.depth = frag_depth;
     return out;
 }

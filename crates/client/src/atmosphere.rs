@@ -220,7 +220,7 @@ impl Atmosphere {
         camera_buffer: &wgpu::Buffer,
         shadow_layout: &wgpu::BindGroupLayout,
         depth_view: &wgpu::TextureView,
-        sample_count: u32,
+        target: crate::post::SceneTarget,
         size: (u32, u32),
     ) -> Self {
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -398,7 +398,7 @@ impl Atmosphere {
         });
 
         // Rayons crépusculaires : lit la profondeur de la passe 3D (échantillon 0 avec MSAA)
-        let multisampled = sample_count > 1;
+        let multisampled = target.sample_count > 1;
         let half_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("God Rays Half Layout"),
             entries: &[texture_entry(0)],
@@ -406,7 +406,7 @@ impl Atmosphere {
         let ray_divisor = 2;
         let (half_view, half_bind_group) = Self::create_half_target(device, &half_layout, size, ray_divisor);
         let (depth_layout, god_rays_trace_pipeline, god_rays_upsample_pipeline) =
-            Self::create_god_rays_pipelines(device, &scene_layout, shadow_layout, &half_layout, multisampled);
+            Self::create_god_rays_pipelines(device, &scene_layout, shadow_layout, &half_layout, target);
         let depth_bind_group = Self::create_depth_bind_group(device, &depth_layout, depth_view, multisampled);
 
         Self {
@@ -436,14 +436,16 @@ impl Atmosphere {
     }
 
     /// Groupe de la profondeur de la passe 3D et pipelines des rayons (marche, remontée), qui
-    /// dépendent de l'échantillonnage de cette profondeur (MSAA ou non)
+    /// dépendent de la cible de la passe 3D : échantillonnage de sa profondeur (MSAA ou non) et
+    /// format de l'image où la remontée retire la lumière
     fn create_god_rays_pipelines(
         device: &wgpu::Device,
         scene_layout: &wgpu::BindGroupLayout,
         shadow_layout: &wgpu::BindGroupLayout,
         half_layout: &wgpu::BindGroupLayout,
-        multisampled: bool,
+        target: crate::post::SceneTarget,
     ) -> (wgpu::BindGroupLayout, wgpu::RenderPipeline, wgpu::RenderPipeline) {
+        let multisampled = target.sample_count > 1;
         let depth_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("God Rays Depth Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -458,7 +460,7 @@ impl Atmosphere {
             }],
         });
         let god_rays_shader = crate::shaders::create_shader_module(device, "God Rays Shader", include_str!("god_rays.wgsl"), "god_rays.wgsl");
-        let fullscreen_pipeline = |label: &str, layouts: &[&wgpu::BindGroupLayout], entry_point: &str, blend: Option<wgpu::BlendState>| {
+        let fullscreen_pipeline = |label: &str, layouts: &[&wgpu::BindGroupLayout], entry_point: &str, format: wgpu::TextureFormat, blend: Option<wgpu::BlendState>| {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some(label),
                 bind_group_layouts: layouts,
@@ -477,7 +479,7 @@ impl Atmosphere {
                     module: &god_rays_shader,
                     entry_point: Some(entry_point),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: crate::post::HDR_FORMAT,
+                        format,
                         blend,
                         write_mask: if blend.is_some() { wgpu::ColorWrites::COLOR } else { wgpu::ColorWrites::ALL },
                     })],
@@ -494,6 +496,8 @@ impl Atmosphere {
             "God Rays Trace Pipeline",
             &[scene_layout, shadow_layout, &depth_layout],
             if multisampled { "fs_trace_ms" } else { "fs_trace" },
+            // Cible des rayons : l'alpha garde la distance (remontée bilatérale)
+            crate::post::HDR_FORMAT,
             None,
         );
         // Image - lumière perdue dans l'air à l'ombre
@@ -501,6 +505,7 @@ impl Atmosphere {
             "God Rays Upsample Pipeline",
             &[scene_layout, shadow_layout, &depth_layout, half_layout],
             if multisampled { "fs_upsample_ms" } else { "fs_upsample" },
+            target.format,
             Some(wgpu::BlendState {
                 color: wgpu::BlendComponent {
                     src_factor: wgpu::BlendFactor::One,
@@ -571,12 +576,12 @@ impl Atmosphere {
         (self.half_view, self.half_bind_group) = Self::create_half_target(device, &self.half_layout, size, self.ray_divisor);
     }
 
-    /// La passe 3D change d'échantillonnage (MSAA coupé ou rétabli) : nouvelle profondeur, et
-    /// pipelines des rayons qui la lisent
-    pub fn set_sample_count(&mut self, device: &wgpu::Device, shadow_layout: &wgpu::BindGroupLayout, depth_view: &wgpu::TextureView, sample_count: u32) {
-        self.multisampled = sample_count > 1;
+    /// La cible de la passe 3D change (MSAA coupé ou rétabli, format HDR) : nouvelle profondeur,
+    /// et pipelines des rayons qui la lisent et qui écrivent dans l'image
+    pub fn set_target(&mut self, device: &wgpu::Device, shadow_layout: &wgpu::BindGroupLayout, depth_view: &wgpu::TextureView, target: crate::post::SceneTarget) {
+        self.multisampled = target.sample_count > 1;
         (self.depth_layout, self.god_rays_trace_pipeline, self.god_rays_upsample_pipeline) =
-            Self::create_god_rays_pipelines(device, &self.scene_layout, shadow_layout, &self.half_layout, self.multisampled);
+            Self::create_god_rays_pipelines(device, &self.scene_layout, shadow_layout, &self.half_layout, target);
         self.depth_bind_group = Self::create_depth_bind_group(device, &self.depth_layout, depth_view, self.multisampled);
     }
 

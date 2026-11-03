@@ -10,7 +10,7 @@
 // - Textures des blocs : rapport à leur couleur moyenne, qui module la couleur du sommet
 // =========================================================================
 
-#import herocraft::common::{camera, get_moon_data, flatten_point, rotate_by}
+#import herocraft::common::{camera, flatten_point, rotate_by, screen_ndc, quantization_dither}
 #import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective}
 #import herocraft::shadow::sun_visibility
 
@@ -21,9 +21,13 @@
 // Rang d'une face sans texture (NO_TEXTURE)
 const NO_TEXTURE: u32 = 0xFFFFu;
 
+// Deux tampons (planet_mesh.rs) : la position seule, que lisent aussi les passes d'ombre, puis
+// les attributs tassés sur 8 bits
 struct VertexInput {
     @location(0) position: vec3<f32>,
-    @location(1) normal: vec3<f32>,
+    // Normale (xyz) et opacité du sommet (w : fondu, verre ; négative pour un fondu sortant)
+    @location(1) normal_alpha: vec4<f32>,
+    // Racine carrée de la couleur (rgb) : plus de précision dans les tons sombres
     @location(2) color: vec4<f32>,
     // Rang de la texture (16 bits bas), puis u et v en seizièmes (8 bits chacun)
     @location(8) texture: u32,
@@ -36,10 +40,10 @@ struct VertexOutput {
     @location(2) world_pos: vec3<f32>,
     // Du point vers la caméra, dans le repère vrai du point (planète aplatie : common.wgsl)
     @location(3) to_eye: vec3<f32>,
-    // Position à l'écran (clip) où le point est dessiné
-    @location(4) screen_clip: vec4<f32>,
-    // Rotation du repère vrai du point vers son repère dessiné (planète aplatie)
-    @location(5) flat_rot: vec3<f32>,
+    // Directions du Soleil et de la Lune vues du point comme sur la planète aplatie : le relief
+    // lointain est éclairé comme celui d'un monde presque plat. Tournées une fois par sommet.
+    @location(4) light_dir: vec3<f32>,
+    @location(5) moon_dir: vec3<f32>,
     @location(6) uv: vec2<f32>,
     @location(7) @interpolate(flat) texture_layer: u32,
 };
@@ -50,12 +54,12 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     // Éclairage et ombres dans la vraie géométrie, dessin sur la planète aplatie
     let flat = flatten_point(in.position);
     out.world_pos = in.position;
-    out.normal = in.normal;
-    out.color = in.color;
+    out.normal = in.normal_alpha.xyz;
+    out.color = vec4<f32>(in.color.rgb * in.color.rgb, in.normal_alpha.w);
     out.to_eye = rotate_by(camera.camera_pos - flat.pos, -flat.rot);
     out.clip_position = camera.view_proj * vec4<f32>(flat.pos, 1.0);
-    out.screen_clip = out.clip_position;
-    out.flat_rot = flat.rot;
+    out.light_dir = rotate_by(normalize(camera.light_dir), -flat.rot);
+    out.moon_dir = rotate_by(camera.moon.xyz, -flat.rot);
     out.texture_layer = in.texture & 0xFFFFu;
     out.uv = vec2<f32>(f32((in.texture >> 16u) & 0xFFu), f32(in.texture >> 24u)) / 16.0;
     return out;
@@ -128,13 +132,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Normale sphérique continue idéale pour la surface de l'océan
     let n_sphere = normalize(in.world_pos);
 
-    // Facteur d'altitude orbitale : transition fluide entre vue au sol et vue satellite
-    let scale = camera.planet_radius / 25.0;
-    let cam_dist = length(camera.camera_pos);
-    let cam_alt = cam_dist - camera.planet_radius;
-    let alt_orbit_factor = clamp((cam_alt - 3.0 * scale) / (12.0 * scale), 0.0, 1.0);
-    // Au sol (FPS/TPS), lighting_params_ext.w vaut 1.0, ce qui garantit qu'on n'est pas en orbite
-    let orbit_factor = min(alt_orbit_factor, 1.0 - camera.lighting_params_ext.w);
+    // Facteur d'altitude orbitale : transition fluide entre vue au sol et vue satellite (le même
+    // pour tout l'écran, calculé une fois par image : renderer.rs, `orbit_factor`)
+    let orbit_factor = camera.screen.w;
 
     // Pour l'eau : en vue satellite, on lisse les facettes des polygones en interpolant vers la normale sphérique,
     // garantissant un reflet spéculaire pur, doux et sans polygone visible.
@@ -142,9 +142,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let water_normal = normalize(mix(n_facet, n_sphere, orbit_factor));
     let n = select(n_facet, water_normal, is_water);
 
-    // Soleil et Lune vus du point comme sur la planète aplatie : le relief lointain est éclairé
-    // comme celui d'un monde presque plat, pas comme l'autre côté d'une petite planète
-    let l = rotate_by(normalize(camera.light_dir), -in.flat_rot);
+    // Soleil et Lune vus du point comme sur la planète aplatie (tournés dans le shader de sommet)
+    let l = normalize(in.light_dir);
     let view_dir = normalize(in.to_eye);
     let h = normalize(l + view_dir);
 
@@ -183,16 +182,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let moon_slider = camera.lighting_params.x;      // Multiplicateur Lune [0.0 .. 3.0]
     let night_amb_slider = camera.lighting_params.z; // Multiplicateur Nuit / Étoiles [0.0 .. 3.0]
 
-    // Données orbitales de la Lune (partagées avec le sky shader)
-    var moon = get_moon_data(camera.time, camera.light_dir);
-    moon.dir = rotate_by(moon.dir, -in.flat_rot);
-    let moon_elevation = dot(n_sphere, moon.dir);
+    // Lune : direction tournée par sommet, phase calculée une fois par image
+    let moon_dir = normalize(in.moon_dir);
+    let moon_phase = camera.moon.w;
+    let moon_elevation = dot(n_sphere, moon_dir);
     let moon_above_horizon = clamp((moon_elevation + 0.04) / 0.18, 0.0, 1.0);
     // Intensité effective du clair de lune : présent uniquement de nuit lorsque la Lune est levée
-    let moon_intensity = moon_above_horizon * moon.phase * night_factor * moon_slider;
+    let moon_intensity = moon_above_horizon * moon_phase * night_factor * moon_slider;
 
     // Lumière directe lunaire : faisceau directionnel argenté créant du relief et des ombres nocturnes
-    let ndotm = dot(n, moon.dir);
+    let ndotm = dot(n, moon_dir);
     let moon_direct = max(ndotm, 0.0);
     let moon_half_lambert = pow(clamp(ndotm * 0.5 + 0.5, 0.0, 1.0), 1.4);
     let direct_moon_level = 0.16 * mix(moon_half_lambert, moon_direct, 0.45) * moon_intensity;
@@ -239,7 +238,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let sky_reflection = sky_light(in.world_pos, n_sphere, l);
 
         // Reflet spéculaire lunaire sur l'océan (traînée argentée miroitante sous la Lune la nuit)
-        let h_moon = normalize(moon.dir + view_dir);
+        let h_moon = normalize(moon_dir + view_dir);
         let ndoth_moon = max(dot(n, h_moon), 0.0);
         let moon_spec = pow(ndoth_moon, spec_power) * 1.8 * clamp(ndotm * 2.0, 0.0, 1.0) * moon_intensity;
         let moon_spec_color = vec3<f32>(0.75, 0.88, 1.0);
@@ -251,7 +250,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     } else if (is_snow) {
         // Scintillement cristallin diffus sur les névés et glaciers (soleil de jour et lune la nuit)
         let snow_glint = pow(ndoth, 24.0) * 0.40 * clamp(ndotl * 2.0, 0.0, 1.0) * sun_vis;
-        let snow_moon_glint = pow(max(dot(n, normalize(moon.dir + view_dir)), 0.0), 20.0) * 0.15 * moon_intensity;
+        let snow_moon_glint = pow(max(dot(n, normalize(moon_dir + view_dir)), 0.0), 20.0) * 0.15 * moon_intensity;
         specular_light += sun_color * snow_glint + vec3<f32>(0.92, 0.95, 1.0) * snow_moon_glint;
     }
 
@@ -264,17 +263,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // l'atmosphère, elle est lue dans le volume précalculé pour la caméra.
     let dist = length(in.to_eye);
     // Air vu depuis la caméra : dans son propre repère, sans rotation
-    let aerial = aerial_perspective_screen(camera.camera_pos, -view_dir, in.screen_clip.xy / in.screen_clip.w, dist, normalize(camera.light_dir), 12);
+    let aerial = aerial_perspective_screen(camera.camera_pos, -view_dir, screen_ndc(in.clip_position.xy), dist, normalize(camera.light_dir), 12);
     lit_rgb = apply_aerial_perspective(lit_rgb, aerial);
 
     // Brume nocturne : l'air n'est plus éclairé par le soleil, une lueur bleutée argentée
     // (vers la Lune) remplace la diffusion là où l'air atténue la surface
     let haze = 1.0 - dot(aerial.transmittance, vec3<f32>(1.0 / 3.0));
-    let moon_scatter = pow(max(dot(view_dir, -moon.dir), 0.0), 3.0) * moon_intensity;
+    let moon_scatter = pow(max(dot(view_dir, -moon_dir), 0.0), 3.0) * moon_intensity;
     let base_night_fog = vec3<f32>(0.018, 0.024, 0.045) * night_amb_slider;
     let moonlit_fog = vec3<f32>(0.035, 0.050, 0.085) + vec3<f32>(0.05, 0.07, 0.11) * moon_scatter;
     let night_fog = mix(base_night_fog, moonlit_fog, clamp(moon_intensity, 0.0, 1.0));
     lit_rgb += night_fog * haze * night_factor;
 
-    return vec4<f32>(lit_rgb, 1.0);
+    return vec4<f32>(quantization_dither(lit_rgb, in.clip_position.xy), 1.0);
 }

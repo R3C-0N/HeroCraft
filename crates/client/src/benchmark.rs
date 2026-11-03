@@ -161,7 +161,7 @@ fn phases() -> Vec<Phase> {
         ),
         p(
             "MSAA basculé",
-            "bascule du MSAA 4× (coupé par défaut sur puce intégrée : un coût négatif est ce qu'ajoute le MSAA)",
+            "bascule du MSAA 4×, et avec lui de l'image HDR de 4 à 8 octets par pixel (coupé par défaut sur puce intégrée : un coût négatif est ce qu'ajoute le MSAA)",
             Setup { flip_msaa: true, ..r },
             true,
         ),
