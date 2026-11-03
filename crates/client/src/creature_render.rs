@@ -1,21 +1,23 @@
 //! Rendu des créatures : leur maillage de l'image (`creatures::build_frame`) dans des tampons
 //! réécrits à chaque image, une texture par espèce, et un pipeline éclairé comme le relief.
 //!
-//! Les sommets ont le format du relief (`PlanetVertex`) dans un premier tampon, les coordonnées de
-//! texture dans un second : la passe d'ombre du soleil lit le premier tel quel, et les créatures
-//! portent leur ombre comme le terrain.
+//! Les sommets ont les tampons du relief (`PlanetVertex::position_layout` et `attribute_layout`),
+//! les coordonnées de texture un troisième : la passe d'ombre du soleil lit les positions seules,
+//! et les créatures proches portent leur ombre comme le terrain.
 
 use std::ops::Range;
 
 use glam::Vec3;
 
 use crate::creatures::CreatureFrame;
-use crate::planet_mesh::PlanetVertex;
+use crate::planet_mesh::{PackedAttributes, PlanetVertex};
 use crate::post;
 use crate::skinned_model::Texture;
 
 pub struct CreatureRenderer {
     pipeline: wgpu::RenderPipeline,
+    /// Gardé pour recréer le pipeline quand la cible de la passe 3D change
+    pipeline_layout: wgpu::PipelineLayout,
     texture_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     /// Texture de chaque espèce, dans l'ordre du registre (`None` : sans modèle)
@@ -32,16 +34,61 @@ pub struct CreatureRenderer {
 }
 
 struct Buffers {
-    vertices: wgpu::Buffer,
+    positions: wgpu::Buffer,
+    attributes: wgpu::Buffer,
     uvs: wgpu::Buffer,
     indices: wgpu::Buffer,
     /// Sommets et indices qu'ils peuvent contenir
     capacity: (usize, usize),
 }
 
+/// Pipeline des créatures, qui dépend de la cible de la passe 3D (MSAA, format HDR)
+fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget) -> wgpu::RenderPipeline {
+    let shader = crate::shaders::create_shader_module(device, "Creature Shader", include_str!("creature.wgsl"), "creature.wgsl");
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Creature Pipeline"),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_creature"),
+            buffers: &[
+                PlanetVertex::position_layout(),
+                PlanetVertex::attribute_layout(),
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![3 => Float32x2],
+                },
+            ],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_creature"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: target.format,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: wgpu::TextureFormat::Depth32Float,
+            depth_write_enabled: true,
+            depth_compare: wgpu::CompareFunction::LessEqual,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState { count: target.sample_count, mask: !0, alpha_to_coverage_enabled: false },
+        multiview: None,
+        cache: None,
+    })
+}
+
 impl CreatureRenderer {
     /// `scene_layout` et `shadow_layout` : groupes 0 et 1 du relief
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, scene_layout: &wgpu::BindGroupLayout, shadow_layout: &wgpu::BindGroupLayout, sample_count: u32) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, scene_layout: &wgpu::BindGroupLayout, shadow_layout: &wgpu::BindGroupLayout, target: post::SceneTarget) -> Self {
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Creature Texture Layout"),
             entries: &[
@@ -68,45 +115,7 @@ impl CreatureRenderer {
             bind_group_layouts: &[scene_layout, shadow_layout, &texture_layout],
             push_constant_ranges: &[],
         });
-        let shader = crate::shaders::create_shader_module(device, "Creature Shader", include_str!("creature.wgsl"), "creature.wgsl");
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Creature Pipeline"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_creature"),
-                buffers: &[
-                    PlanetVertex::desc(),
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![3 => Float32x2],
-                    },
-                ],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_creature"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: post::HDR_FORMAT,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState { count: sample_count, mask: !0, alpha_to_coverage_enabled: false },
-            multiview: None,
-            cache: None,
-        });
+        let pipeline = create_pipeline(device, &layout, target);
         // Texels nets : la peinture du bestiaire est faite au texel près
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Creature Sampler"),
@@ -118,7 +127,13 @@ impl CreatureRenderer {
         });
         let white = Texture { width: 1, height: 1, rgba: vec![255; 4] };
         let plain = texture_bind_group(device, queue, &texture_layout, &sampler, &white, "Creature Plain Texture");
-        Self { pipeline, texture_layout, sampler, textures: Vec::new(), plain, hero: None, buffers: None, draws: Vec::new(), num_indices: 0, center: Vec3::ZERO, radius: 0.0 }
+        Self { pipeline, pipeline_layout: layout, texture_layout, sampler, textures: Vec::new(), plain, hero: None, buffers: None, draws: Vec::new(), num_indices: 0, center: Vec3::ZERO, radius: 0.0 }
+    }
+
+    /// Cible de la passe 3D changée (MSAA coupé ou rétabli, format HDR) : le pipeline est
+    /// recréé, textures et maillages sont gardés
+    pub fn set_target(&mut self, device: &wgpu::Device, target: post::SceneTarget) {
+        self.pipeline = create_pipeline(device, &self.pipeline_layout, target);
     }
 
     /// Textures des espèces, dans l'ordre du registre
@@ -155,14 +170,17 @@ impl CreatureRenderer {
                 device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: size as u64, usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false })
             };
             self.buffers = Some(Buffers {
-                vertices: buffer("Creature Vertex Buffer", capacity.0 * std::mem::size_of::<PlanetVertex>(), wgpu::BufferUsages::VERTEX),
+                positions: buffer("Creature Position Buffer", capacity.0 * std::mem::size_of::<[f32; 3]>(), wgpu::BufferUsages::VERTEX),
+                attributes: buffer("Creature Attribute Buffer", capacity.0 * std::mem::size_of::<PackedAttributes>(), wgpu::BufferUsages::VERTEX),
                 uvs: buffer("Creature UV Buffer", capacity.0 * std::mem::size_of::<[f32; 2]>(), wgpu::BufferUsages::VERTEX),
                 indices: buffer("Creature Index Buffer", capacity.1 * 4, wgpu::BufferUsages::INDEX),
                 capacity,
             });
         }
         if let Some(b) = &self.buffers {
-            queue.write_buffer(&b.vertices, 0, bytemuck::cast_slice(&frame.vertices));
+            let (positions, attributes) = crate::planet_mesh::split_vertices(&frame.vertices);
+            queue.write_buffer(&b.positions, 0, bytemuck::cast_slice(&positions));
+            queue.write_buffer(&b.attributes, 0, bytemuck::cast_slice(&attributes));
             queue.write_buffer(&b.uvs, 0, bytemuck::cast_slice(&frame.uvs));
             queue.write_buffer(&b.indices, 0, bytemuck::cast_slice(&frame.indices));
         }
@@ -173,10 +191,17 @@ impl CreatureRenderer {
         (self.center, self.radius) = ((min + max) * 0.5, (max - min).length() * 0.5);
     }
 
-    /// (centre, rayon, sommets, indices, nombre d'indices) pour la passe d'ombre, s'il y a des créatures
-    pub fn shadow_caster(&self) -> Option<(Vec3, f32, &wgpu::Buffer, &wgpu::Buffer, u32)> {
+    /// Maillage de l'image pour la passe d'ombre (cascade proche seulement), s'il y a des créatures
+    pub fn shadow_caster(&self) -> Option<crate::shadow::Caster<'_>> {
         let b = self.buffers.as_ref().filter(|_| self.num_indices > 0)?;
-        Some((self.center, self.radius, &b.vertices, &b.indices, self.num_indices))
+        Some(crate::shadow::Caster {
+            center: self.center,
+            radius: self.radius,
+            positions: &b.positions,
+            indices: &b.indices,
+            index_format: wgpu::IndexFormat::Uint32,
+            num_indices: self.num_indices,
+        })
     }
 
     /// À appeler dans la passe 3D, après le relief
@@ -185,8 +210,9 @@ impl CreatureRenderer {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, scene_bind_group, &[]);
         pass.set_bind_group(1, shadow_bind_group, &[]);
-        pass.set_vertex_buffer(0, b.vertices.slice(..));
-        pass.set_vertex_buffer(1, b.uvs.slice(..));
+        pass.set_vertex_buffer(0, b.positions.slice(..));
+        pass.set_vertex_buffer(1, b.attributes.slice(..));
+        pass.set_vertex_buffer(2, b.uvs.slice(..));
         pass.set_index_buffer(b.indices.slice(..), wgpu::IndexFormat::Uint32);
         for (texture, range) in &self.draws {
             let bind_group = match texture {
