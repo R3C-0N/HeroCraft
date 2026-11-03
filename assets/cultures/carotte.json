@@ -1,0 +1,6 @@
+{
+  "name": "Carotte",
+  "seed": "grainesCarotte",
+  "stages": ["carotteStade1", "carotteStade2", "carotteStade3", "carotteStade4"],
+  "stage_minutes": 2.5
+}

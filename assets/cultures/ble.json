@@ -1,0 +1,6 @@
+{
+  "name": "Blé",
+  "seed": "grainesBle",
+  "stages": ["bleStade1", "bleStade2", "bleStade3", "bleStade4"],
+  "stage_minutes": 2.0
+}
