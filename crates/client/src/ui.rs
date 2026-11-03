@@ -7,7 +7,7 @@ use crate::audio::AudioSettings;
 use crate::input::{is_reserved_key, Action, Controls, ACTION_GROUPS};
 use crate::inventory::{Inventory, ItemStack, HOTBAR_SLOTS, TOTAL_SLOTS};
 use crate::item_icons::ItemIcons;
-use herocraft_common::{blocks, crafting, items, ItemId, Recipe, StationAt};
+use herocraft_common::{blocks, crafting, items, Hunger, ItemId, Recipe, StationAt};
 use crate::player_stats::PlayerStats;
 use crate::skills_screen::{SkillScreen, SkillScreenRequests};
 use herocraft_common::SkillWheel;
@@ -496,6 +496,8 @@ const GAUGE_WIDTH: f32 = 150.0;
 const HURT_FLASH_SECS: f32 = 0.9;
 /// Sous cette fraction de la vie, le bord de l'écran rougit et bat comme un cœur
 const LOW_HP_FRACTION: f32 = 0.3;
+/// Jauge de satiété d'un ventre rassasié, couleur de croûte de pain
+const SATIETY_COLOR: egui::Color32 = egui::Color32::from_rgb(200, 135, 50);
 /// Marge intérieure du cadre du menu de pause
 pub(crate) const MENU_PADDING: f32 = 18.0;
 /// En dessous de cette largeur, les onglets des options passent au-dessus du contenu
@@ -1275,7 +1277,8 @@ impl UiState {
             });
     }
 
-    /// HUD du personnage : classe, niveau, expérience et jauges de vie, de mana et d'endurance
+    /// HUD du personnage : classe, niveau, expérience et jauges de vie, de mana, d'endurance et de
+    /// satiété
     fn draw_vitals_hud(&mut self, ctx: &egui::Context) {
         let stats = &self.player.stats;
         // Blessure : éclair rouge sur tout l'écran et bords rougis qui s'estompent
@@ -1336,14 +1339,29 @@ impl UiState {
             .interactable(false)
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(0.0_f32, 5.0_f32);
+                // Faim : la jauge de satiété clignote quand le ventre crie famine
+                let hunger = stats.hunger();
+                let satiety_color = match hunger {
+                    Hunger::Fed => SATIETY_COLOR,
+                    Hunger::Hungry | Hunger::Starving => {
+                        let speed = if hunger == Hunger::Starving { 6.0_f32 } else { 3.0_f32 };
+                        let blink = 0.5_f32 + 0.5_f32 * (ctx.input(|i| i.time) as f32 * speed).sin();
+                        lerp_color(SATIETY_COLOR, egui::Color32::from_rgb(235, 70, 40), blink)
+                    }
+                };
                 let gauges = [
                     ("Vie", stats.hp, stats.max_hp, egui::Color32::from_rgb(200, 45, 45)),
                     ("Mana", stats.mana, stats.max_mana, egui::Color32::from_rgb(55, 105, 220)),
                     ("Endurance", stats.stamina, stats.max_stamina, egui::Color32::from_rgb(70, 175, 70)),
+                    ("Satiété", stats.satiety, stats.max_satiety, satiety_color),
                 ];
                 for (name, value, max, color) in gauges {
                     let text = format!("{name}  {:.0} / {:.0}", value.max(0.0_f32).ceil(), max);
                     gauge(ui, GAUGE_WIDTH, 16.0_f32, value / max.max(1.0_f32), color, Some(&text));
+                }
+                if hunger != Hunger::Fed && !self.player.is_dead() {
+                    let warning = if hunger == Hunger::Starving { "Vous mourez de faim" } else { "Vous avez faim" };
+                    ui.label(egui::RichText::new(warning).size(12.0_f32).color(egui::Color32::from_rgb(240, 150, 110)));
                 }
             });
     }
@@ -2025,6 +2043,15 @@ fn item_tooltip(ui: &mut egui::Ui, item: ItemId, count: Option<u16>) {
     for (name, value) in stats.into_iter().flatten() {
         ui.label(egui::RichText::new(format!("{name} : {value}")).size(12.0_f32).color(TEXT_SOFT));
     }
+    if item.satiety().is_some() {
+        ui.label(egui::RichText::new("Clic droit en main : manger").size(11.0_f32).color(TEXT_DIM));
+    }
+}
+
+/// Couleur entre `a` (t = 0) et `b` (t = 1)
+fn lerp_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let mix = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t.clamp(0.0_f32, 1.0_f32)).round() as u8;
+    egui::Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
 }
 
 /// Onglet du panneau de fabrication : la rubrique de ce que fabrique la recette
@@ -3229,6 +3256,18 @@ mod tests {
         ];
         let mut all: Vec<(&str, fn(&mut UiState), bool, Option<egui::Pos2>)> = scenes.to_vec();
         all.push(("hud", |_| {}, true, None));
+        // Ventre presque vide, du pain en main : jauge de satiété qui clignote et avertissement
+        all.push((
+            "hud_faim",
+            |ui| {
+                ui.player.stats.satiety = 0.15 * ui.player.stats.max_satiety;
+                if let Some(bread) = items().find("pain") {
+                    ui.inventory.add_many(bread, 5);
+                }
+            },
+            true,
+            None,
+        ));
 
         for (name, setup, ground, pointer) in all {
             let mut ui = UiState::new(424242);

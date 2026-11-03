@@ -109,6 +109,24 @@ impl Inventory {
         self.slot(self.selected).and_then(|s| s.item.block())
     }
 
+    /// Aliment de la case choisie et la satiété qu'il rend, à manger au clic droit
+    pub fn selected_food(&self) -> Option<(ItemId, f32)> {
+        let item = self.slot(self.selected)?.item;
+        Some((item, item.satiety()?))
+    }
+
+    /// Retire un objet de la case choisie (aliment mangé)
+    pub fn consume_selected(&mut self) -> Option<ItemId> {
+        let slot = &mut self.slots[self.selected];
+        let stack = slot.as_mut()?;
+        let item = stack.item;
+        stack.count -= 1;
+        if stack.count == 0 {
+            *slot = None;
+        }
+        Some(item)
+    }
+
     /// Retire un bloc de la case choisie (bloc posé)
     pub fn take_selected(&mut self) -> Option<BlockId> {
         let slot = &mut self.slots[self.selected];
@@ -318,6 +336,23 @@ pub fn item_colors(block: BlockId) -> ([f32; 4], [f32; 4]) {
 mod tests {
     use super::*;
     use herocraft_common::BLOCK_STACK as MAX_STACK;
+
+    #[test]
+    fn test_food_in_hand_is_eaten_one_at_a_time() {
+        let bread = herocraft_common::items().find("pain").unwrap();
+        let mut inv = Inventory::default();
+        inv.add(BlockId::STONE);
+        assert_eq!(inv.selected_food(), None, "un bloc ne se mange pas");
+        inv.add_many(bread, 2);
+        inv.select(1);
+        assert_eq!(inv.selected_food(), Some((bread, 12.0)));
+        assert_eq!(inv.consume_selected(), Some(bread));
+        assert_eq!(inv.count(bread), 1);
+        inv.consume_selected();
+        assert_eq!(inv.slot(1), None);
+        assert_eq!(inv.selected_food(), None);
+        assert_eq!(inv.consume_selected(), None);
+    }
 
     #[test]
     fn test_add_stacks_then_fills_hotbar_then_bag() {
