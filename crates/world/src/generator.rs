@@ -1,6 +1,7 @@
 use crate::caves::{block_carved, carvable_range, CaveField};
 use crate::cubed_sphere::{base_solar_temperature, unit_sphere_to_lat_lon, PlanetDescriptor, FACE_SCALE};
 use crate::ocean_currents::OceanicCurrentSimulation;
+use crate::roads::{road_block, RoadMap};
 use crate::structures::{Rect, Settlement, StructureMap};
 use crate::tectonics::TectonicSimulation;
 use crate::vegetation::{VegetationField, VEGETATION_SPAN};
@@ -107,6 +108,8 @@ pub struct PlanetWorldGenerator {
     pub ocean_currents: OceanicCurrentSimulation,
     /// Villes, villages et ruines, dessinés case par case à la première lecture
     pub structures: Arc<StructureMap>,
+    /// Chemins entre villes et villages, tracés liaison par liaison à la première lecture
+    pub roads: Arc<RoadMap>,
 }
 
 impl PlanetWorldGenerator {
@@ -119,6 +122,7 @@ impl PlanetWorldGenerator {
             tectonics,
             ocean_currents,
             structures: Arc::new(StructureMap::new()),
+            roads: Arc::new(RoadMap::new()),
         }
     }
 
@@ -265,14 +269,33 @@ impl PlanetWorldGenerator {
     /// naturel reste
     #[inline]
     pub fn structure_block(&self, column: &ColumnSample, face: PlanetFace, x: i32, y: i32, z: i32) -> Option<BlockId> {
-        self.settlement_at(face, x, z)?.block(x, y, z, column.elevation.floor() as i32)
+        let ground = column.elevation.floor() as i32;
+        if let Some(s) = self.settlement_at(face, x, z) {
+            // Le plan passe avant les chemins qui l'abordent
+            if !s.span(x, z, ground).is_empty() {
+                return s.block(x, y, z, ground);
+            }
+        }
+        // Un chemin ne change que le dessus du sol : les autres altitudes n'ont rien à chercher
+        if y != ground - 1 {
+            return None;
+        }
+        road_block(self.roads.surface(self, face, x, z)?, y, ground)
     }
 
     /// Altitudes de la colonne (x, z) qu'une structure peut changer (vide si aucune n'y touche)
     pub fn structure_span(&self, column: &ColumnSample, face: PlanetFace, x: i32, z: i32) -> Range<i32> {
-        match self.settlement_at(face, x, z) {
-            Some(s) => s.span(x, z, column.elevation.floor() as i32),
-            None => 0..0,
+        let ground = column.elevation.floor() as i32;
+        if let Some(s) = self.settlement_at(face, x, z) {
+            let span = s.span(x, z, ground);
+            if !span.is_empty() {
+                return span;
+            }
+        }
+        if self.roads.surface(self, face, x, z).is_some() {
+            ground - 1..ground
+        } else {
+            0..0
         }
     }
 
@@ -280,7 +303,7 @@ impl PlanetWorldGenerator {
     /// d'une construction : rien d'autre (un arbre par exemple) ne doit y pousser
     pub fn is_built(&self, face: PlanetFace, x: i32, z: i32, margin: i32) -> bool {
         let area = Rect::around(x, z, margin.max(0));
-        self.structures.touching(self, face, area).iter().any(|s| s.occupies(x, z, margin))
+        self.structures.touching(self, face, area).iter().any(|s| s.occupies(x, z, margin)) || self.roads.near(self, face, x, z, margin.max(0))
     }
 
     /// Plus haut bloc (exclu) que posent les structures d'un chunk et de sa bordure de `border` blocs
@@ -498,13 +521,14 @@ impl PlanetWorldGenerator {
         let size = CHUNK_SIZE as i32;
         let (x0, z0) = (coord.x * size, coord.y * size);
         let settlements = self.structures.touching(self, coord.face, Rect::sized(x0, z0, size, size));
-        if settlements.is_empty() {
+        let roads = self.roads.touching(self, coord.face, Rect::sized(x0, z0, size, size));
+        if settlements.is_empty() && roads.is_empty() {
             return;
         }
         herocraft_common::prof_scope!("world::place_structures");
         let side = size + 2 * border;
         let layer_base = coord.altitude_layer * size;
-        for settlement in settlements {
+        for &settlement in &settlements {
             for z in 0..size {
                 for x in 0..size {
                     let (bx, bz) = (x0 + x, z0 + z);
@@ -518,6 +542,26 @@ impl PlanetWorldGenerator {
                         if let Some(block) = settlement.block(bx, y, bz, ground) {
                             chunk.set_voxel(x as u8, (y - layer_base) as u8, z as u8, block);
                         }
+                    }
+                }
+            }
+        }
+        // Les chemins, hors des colonnes que les plans changent
+        for road in roads {
+            for z in 0..size {
+                for x in 0..size {
+                    let (bx, bz) = (x0 + x, z0 + z);
+                    let Some(surface) = road.surface(bx, bz) else {
+                        continue;
+                    };
+                    let column = &columns[((z + border) * side + x + border) as usize];
+                    let ground = column.elevation.floor() as i32;
+                    let y = ground - 1;
+                    if !(layer_base..layer_base + size).contains(&y) || settlements.iter().any(|s| !s.span(bx, bz, ground).is_empty()) {
+                        continue;
+                    }
+                    if let Some(block) = road_block(surface, y, ground) {
+                        chunk.set_voxel(x as u8, (y - layer_base) as u8, z as u8, block);
                     }
                 }
             }
