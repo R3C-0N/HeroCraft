@@ -10,7 +10,7 @@
     {"biome": "Plains", "weight": 1.0}
   ],
   "activity": "diurnal",
-  "breeding": {"food": ["ble"], "taming": [2, 4], "growth_minutes": 10},
+  "breeding": {"food": ["ble"], "growth_minutes": 10},
   "loot": [
     {"item": "viandeVache", "count": [1, 3]},
     {"item": "hide", "count": [1, 2]},

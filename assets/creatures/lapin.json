@@ -11,7 +11,7 @@
     {"biome": "Forest", "weight": 1.2}
   ],
   "activity": "crepuscular",
-  "breeding": {"food": ["carotte", "redClover"], "taming": [3, 6], "growth_minutes": 6},
+  "breeding": {"food": ["carotte", "redClover"], "growth_minutes": 6},
   "loot": [
     {"item": "viandeLapin"},
     {"item": "peauFine"},

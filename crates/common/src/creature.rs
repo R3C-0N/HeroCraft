@@ -76,16 +76,29 @@ pub struct CreatureSpecies {
 pub struct Breeding {
     /// Ce qu'elle mange (identifiants d'objets ou de blocs) : tenu en main, il l'attire
     pub food: Vec<String>,
-    /// Nombre de repas, au moins et au plus (tiré pour chaque bête), qui l'apprivoisent
-    #[serde(default = "default_taming")]
-    pub taming: [u32; 2],
+    /// Chance qu'un repas apprivoise une bête sauvage (une sur trois par défaut)
+    #[serde(default = "default_taming_chance")]
+    pub taming_chance: f32,
     /// Temps qu'il faut à un petit pour devenir adulte, en minutes
     #[serde(default = "default_growth_minutes")]
     pub growth_minutes: f32,
+    /// Ponte d'une bête apprivoisée et adulte (aucune : elle ne pond pas)
+    #[serde(default)]
+    pub lays: Option<Laying>,
 }
 
-fn default_taming() -> [u32; 2] {
-    [2, 5]
+/// Ce que pond une bête apprivoisée, et à quel rythme
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Laying {
+    /// Objet pondu (identifiant de sa fiche)
+    pub item: String,
+    /// Temps entre deux pontes, au moins et au plus (tiré à chaque ponte), en minutes
+    pub minutes: [f32; 2],
+}
+
+fn default_taming_chance() -> f32 {
+    1.0 / 3.0
 }
 
 fn default_growth_minutes() -> f32 {
@@ -477,8 +490,13 @@ impl CreatureSpecies {
             }
         }
         if let Some(b) = &species.breeding {
-            if b.food.is_empty() || b.taming[0] == 0 || b.taming[1] < b.taming[0] || !(b.growth_minutes > 0.0) {
-                return Err("élevage invalide (au moins une nourriture, 1 ≤ repas min ≤ repas max, croissance positive)".into());
+            if b.food.is_empty() || !(b.taming_chance > 0.0 && b.taming_chance <= 1.0) || !(b.growth_minutes > 0.0) {
+                return Err("élevage invalide (au moins une nourriture, chance d'apprivoiser entre 0 et 1, croissance positive)".into());
+            }
+            if let Some(Laying { minutes: [min, max], .. }) = b.lays {
+                if !(min > 0.0 && max >= min) {
+                    return Err("ponte invalide (0 < minutes min ≤ minutes max)".into());
+                }
             }
         }
         for (name, animation) in &species.model.animations {

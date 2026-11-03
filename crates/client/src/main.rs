@@ -676,6 +676,10 @@ fn main() {
                                             let hurt = ui_state.player.bitten(hit.damage, cause);
                                             show_wound(hurt, cause, &mut camera, &mut ui_state, &mut audio);
                                         }
+                                        // Œufs pondus par les bêtes apprivoisées, laissés à leurs pieds
+                                        for (feet, item) in solo_creatures.take_laid() {
+                                            drop_loot(&mut dropped_items, &camera, feet, &[(item, 1)]);
+                                        }
                                     }
                                     match creature_mode {
                                         benchmark::CreatureMode::Full | benchmark::CreatureMode::Stress => solo_creatures

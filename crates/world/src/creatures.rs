@@ -233,9 +233,8 @@ pub struct Creature {
     age: Option<f32>,
     /// Temps qu'il faut à un petit de son espèce pour grandir, en secondes
     growth_seconds: f32,
-    /// Repas reçus, et repas qu'il lui faut pour s'apprivoiser
-    meals: u32,
-    meals_needed: u32,
+    /// Temps restant avant sa prochaine ponte, en secondes (apprivoisée et adulte seulement)
+    lay_in: f32,
     /// Temps restant amoureuse (elle cherche un partenaire)
     love: f32,
     /// Temps restant avant de pouvoir de nouveau aimer, après un petit
@@ -252,7 +251,7 @@ pub enum Feeding {
     /// Elle n'en veut pas (pas sa nourriture, déjà amoureuse ou trop tôt après un petit) : l'objet
     /// n'est pas dépensé
     Refused,
-    /// Sauvage : un repas de plus vers son apprivoisement
+    /// Sauvage : elle a mangé sans s'apprivoiser cette fois
     Taming,
     /// Elle vient d'être apprivoisée
     Tamed,
@@ -437,6 +436,10 @@ pub struct CreatureWorld {
     prey_table: Vec<Vec<usize>>,
     /// Ce que mange chaque espèce qui s'élève (vide : elle ne s'élève pas)
     food_table: Vec<Vec<ItemId>>,
+    /// Ce que pond chaque espèce, et le temps entre deux pontes en minutes
+    lay_table: Vec<Option<(ItemId, [f32; 2])>>,
+    /// Œufs pondus pas encore ramassés par `take_laid`
+    laid: Vec<(Vec3, ItemId)>,
     geometry: BlockGeometry,
     /// Graine du monde : elle décide de la population de chaque zone
     seed: u64,
@@ -508,6 +511,17 @@ impl CreatureWorld {
                     .collect()
             })
             .collect();
+        let lay_table = registry
+            .iter()
+            .map(|species| {
+                let lays = species.breeding.as_ref()?.lays.as_ref()?;
+                let item = items().find(&lays.item).or_else(|| blocks().find(&lays.item).map(ItemId::from));
+                if item.is_none() {
+                    log::warn!("Créature {} : ponte « {} » inconnue.", species.id, lays.item);
+                }
+                Some((item?, lays.minutes))
+            })
+            .collect();
         let geometry = BlockGeometry::new(base_radius);
         let half = ZONE_BLOCKS as f64 / 2.0;
         let mut groups: HashMap<(PlanetFace, i32, i32), Vec<(ZoneKey, Vec3)>> = HashMap::new();
@@ -531,6 +545,8 @@ impl CreatureWorld {
             spawn_table,
             prey_table,
             food_table,
+            lay_table,
+            laid: Vec::new(),
             geometry,
             seed,
             creatures: Vec::new(),
@@ -615,7 +631,7 @@ impl CreatureWorld {
         let timer = self.rng.gen_range(0.5..3.0);
         let breeding = self.registry.get(species).and_then(|s| s.breeding.as_ref());
         let growth_seconds = breeding.map_or(600.0, |b| b.growth_minutes * 60.0);
-        let meals_needed = breeding.map_or(1, |b| self.rng.gen_range(b.taming[0]..=b.taming[1]));
+        let lay_in = self.next_laying(species);
         self.creatures.push(Creature {
             id,
             species,
@@ -647,8 +663,7 @@ impl CreatureWorld {
             tamed,
             age,
             growth_seconds,
-            meals: 0,
-            meals_needed,
+            lay_in,
             love: 0.0,
             breed_cooldown: 0.0,
             hearts: 0.0,
@@ -656,8 +671,8 @@ impl CreatureWorld {
         });
     }
 
-    /// Donne `item` à manger à la créature `id`. Une bête sauvage s'apprivoise au bout de quelques
-    /// repas ; apprivoisée et adulte, elle devient amoureuse et cherche un partenaire apprivoisé de
+    /// Donne `item` à manger à la créature `id`. Une bête sauvage s'apprivoise une fois sur trois
+    /// (`Breeding::taming_chance`) ; apprivoisée et adulte, elle devient amoureuse et cherche un partenaire apprivoisé de
     /// son espèce ; petite, elle grandit plus vite. Refusé si ce n'est pas sa nourriture, si elle est
     /// déjà amoureuse ou vient d'avoir un petit.
     pub fn feed(&mut self, id: u64, item: ItemId) -> Feeding {
@@ -674,8 +689,8 @@ impl CreatureWorld {
             return Feeding::Grew;
         }
         if !c.tamed {
-            c.meals += 1;
-            if c.meals < c.meals_needed {
+            let chance = self.registry.get(c.species).and_then(|s| s.breeding.as_ref()).map_or(1.0, |b| b.taming_chance);
+            if !self.rng.gen_bool(chance.clamp(0.0, 1.0) as f64) {
                 return Feeding::Taming;
             }
             c.tamed = true;
@@ -695,6 +710,21 @@ impl CreatureWorld {
         self.registry.get(c.species).map(|s| s.name.as_str())
     }
 
+    /// Délai avant la prochaine ponte d'une bête de l'espèce `species`, en secondes (infini si
+    /// elle ne pond pas)
+    fn next_laying(&mut self, species: usize) -> f32 {
+        match self.lay_table.get(species).copied().flatten() {
+            Some((_, [min, max])) if max > min => self.rng.gen_range(min..max) * 60.0,
+            Some((_, [min, _])) => min * 60.0,
+            None => f32::INFINITY,
+        }
+    }
+
+    /// Œufs pondus depuis le dernier appel : où, et quel objet (à faire tomber au sol)
+    pub fn take_laid(&mut self) -> Vec<(Vec3, ItemId)> {
+        std::mem::take(&mut self.laid)
+    }
+
     /// Ce que mange l'espèce de rang `species` (vide : elle ne s'élève pas)
     pub fn food_of(&self, species: usize) -> &[ItemId] {
         self.food_table.get(species).map_or(&[], |f| &f[..])
@@ -705,6 +735,23 @@ impl CreatureWorld {
     /// troupeau
     fn rear(&mut self, dt: f32) {
         let block = self.geometry.block_height as f32;
+        // Les bêtes apprivoisées et adultes qui pondent laissent leur œuf à leurs pieds
+        let mut layers = Vec::new();
+        for (i, c) in self.creatures.iter_mut().enumerate() {
+            if c.tamed && c.age.is_none() && c.is_alive() && c.lay_in.is_finite() {
+                c.lay_in -= dt;
+                if c.lay_in <= 0.0 {
+                    layers.push(i);
+                }
+            }
+        }
+        for i in layers {
+            let (species, position) = (self.creatures[i].species, self.creatures[i].position);
+            if let Some((item, _)) = self.lay_table[species] {
+                self.laid.push((position, item));
+            }
+            self.creatures[i].lay_in = self.next_laying(species);
+        }
         for c in self.creatures.iter_mut() {
             c.love = (c.love - dt).max(0.0);
             c.breed_cooldown = (c.breed_cooldown - dt).max(0.0);
@@ -2586,7 +2633,7 @@ mod tests {
             loop {
                 meals += 1;
                 match world.feed(id, wheat) {
-                    Feeding::Taming => assert!(meals < 10),
+                    Feeding::Taming => assert!(meals < 60, "une chance sur trois à chaque repas"),
                     Feeding::Tamed => break,
                     other => panic!("{other:?}"),
                 }
@@ -2652,5 +2699,53 @@ mod tests {
             world.tick_with_presences(0.05, &generator, &edits, &[lure]);
         }
         assert!(distance(&world) < start.min(LURE_RADIUS_BLOCKS) - 1.0, "le lapin devait approcher ({start} puis {} blocs)", distance(&world));
+    }
+
+    #[test]
+    fn a_meal_tames_one_time_in_three() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 13, registry());
+        world.populate = false;
+        let cow = world.registry().find("vache").unwrap();
+        let wheat = items().find("ble").unwrap();
+        let tamed = (0..600).filter(|_| {
+            let id = world.spawn(cow, feet);
+            world.feed(id, wheat) == Feeding::Tamed
+        });
+        let tamed = tamed.count();
+        assert!((150..250).contains(&tamed), "{tamed} vaches apprivoisées sur 600 au premier repas");
+    }
+
+    #[test]
+    fn a_tame_pheasant_lays_eggs_but_not_a_wild_one() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 17, registry());
+        world.populate = false;
+        let pheasant = world.registry().find("faisan").unwrap();
+        let egg = items().find("oeufFaisan").expect("l'œuf de faisan");
+        let wild = world.spawn(pheasant, feet);
+        let tame = world.spawn(pheasant, feet);
+        world.creatures.iter_mut().find(|c| c.id == tame).unwrap().tamed = true;
+        // Pas d'œuf avant 5 minutes ; avant 10, un seul, de la bête apprivoisée, à ses pieds
+        for c in world.creatures.iter_mut() {
+            c.lay_in = c.lay_in.min(300.0);
+        }
+        world.creatures.iter_mut().find(|c| c.id == wild).unwrap().lay_in = 1.0;
+        world.rear(299.0);
+        assert!(world.take_laid().is_empty(), "rien avant l'heure, et rien de la bête sauvage");
+        world.rear(2.0);
+        let laid = world.take_laid();
+        assert_eq!(laid.len(), 1);
+        assert_eq!(laid[0].1, egg);
+        let at = world.creatures().iter().find(|c| c.id == tame).unwrap().position;
+        assert!(laid[0].0.distance(at) < 1e-3);
+        assert!(world.take_laid().is_empty());
+        // Elle repond plus tard, entre 5 et 10 minutes après
+        let next = world.creatures().iter().find(|c| c.id == tame).unwrap().lay_in;
+        assert!((300.0..=600.0).contains(&next), "{next}");
     }
 }

@@ -61,8 +61,9 @@ Un objet tombé au sol est dessiné en petite plaque tournante à son icône. En
 
 #### Élevage :
 - **Attirer** : vaches et mouflons suivent le joueur qui tient du blé, lapins et cerfs des carottes (le lapin aime aussi le trèfle, le cerf les pommes de terre), faisans des graines. Ils approchent jusqu'à 2 blocs et ne fuient plus tant qu'on la tient, à moins de 10 blocs.
-- **Apprivoiser** : clic droit sur la bête avec sa nourriture en main, plusieurs fois (2 à 4 repas pour une vache, jusqu'à 8 pour un cerf) : des cœurs s'élèvent au-dessus d'elle et le chat l'annonce. Une bête craintive apprivoisée ne fuit plus, elle regarde.
-- **Reproduire** : une bête apprivoisée et adulte nourrie devient amoureuse pendant 30 secondes (cœurs) et va vers la bête amoureuse de son espèce la plus proche, à moins de 8 blocs. Réunies, elles donnent un petit apprivoisé, de leur troupeau, puis ne peuvent plus aimer pendant 5 minutes.
+- **Apprivoiser** : clic droit sur la bête avec sa nourriture en main. Chaque repas a une chance sur trois de l'apprivoiser : des cœurs s'élèvent au-dessus d'elle et le chat l'annonce. Une bête craintive apprivoisée ne fuit plus, elle regarde.
+- **Reproduire** : une bête apprivoisée et adulte nourrie devient amoureuse pendant 30 secondes (cœurs) et va vers la bête amoureuse de son espèce la plus proche, à moins de 8 blocs. Réunies, elles donnent un petit, apprivoisé d'office et de leur troupeau, puis ne peuvent plus aimer pendant 5 minutes.
+- **Pondre** : un faisan apprivoisé et adulte pond un œuf de faisan toutes les 5 à 10 minutes, laissé à ses pieds (il se mange et rassasie de 2).
 - **Grandir** : le petit naît à la moitié de la taille d'un adulte et grandit en 6 à 12 minutes selon l'espèce ; chaque repas lui fait gagner un dixième de sa croissance.
 - Apprivoisement et âge sont enregistrés avec la population (`creatures.json`) ; en ligne, le serveur tient l'élevage et voit ce que chaque joueur tient en main. Chaque espèce qui s'élève le décrit dans le champ `breeding` de sa fiche (voir [assets/creatures/README.md](assets/creatures/README.md)).
 

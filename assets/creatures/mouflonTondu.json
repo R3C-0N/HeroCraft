@@ -8,7 +8,7 @@
   "temperament": "placide",
   "spawn": [],
   "activity": "diurnal",
-  "breeding": {"food": ["ble"], "taming": [2, 4], "growth_minutes": 10},
+  "breeding": {"food": ["ble"], "growth_minutes": 10},
   "loot": [
     {"item": "viandeMouflon", "count": [1, 2]},
     {"item": "hide"},
