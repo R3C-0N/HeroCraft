@@ -55,7 +55,7 @@ fn main() {
             Err(e) => warn!("Annonce sur le réseau local impossible : {e}"),
         }
     }
-    info!("Planète de graine #{seed}, sauvegarde dans saves/serveur_monde_{seed}/.");
+    info!("Planète de graine #{seed}, sauvegarde dans {}/.", herocraft_world::save_dir_name("serveur_monde", seed));
     info!("En écoute sur {} à {TICK_RATE} TPS. Tapez « stop » pour arrêter le serveur proprement, « help » pour les autres commandes.", server.local_addr().map(|a| a.to_string()).unwrap_or(bind));
 
     // Console : « stop » arrête la boucle, qui enregistre le monde avant de rendre la main

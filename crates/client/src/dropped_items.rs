@@ -207,10 +207,10 @@ mod tests {
     #[test]
     fn test_item_falls_then_is_picked_up_nearby() {
         let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
-        let mut camera = OrbitCamera::new(165.0, 50.0, &generator);
+        let mut camera = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
         camera.set_terrain(std::sync::Arc::new(herocraft_world::TerrainEdits::new(None)));
         let collider = camera.collider.as_ref().unwrap();
-        let geometry = BlockGeometry::new(50.0);
+        let geometry = BlockGeometry::new(crate::camera::DEFAULT_RADIUS as f64);
         let h = geometry.block_height as f32;
         let feet = camera.player_pos;
         let up = feet.normalize();
@@ -246,10 +246,10 @@ mod tests {
     #[test]
     fn test_item_stays_when_inventory_is_full() {
         let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
-        let mut camera = OrbitCamera::new(165.0, 50.0, &generator);
+        let mut camera = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
         camera.set_terrain(std::sync::Arc::new(herocraft_world::TerrainEdits::new(None)));
         let collider = camera.collider.as_ref().unwrap();
-        let h = BlockGeometry::new(50.0).block_height as f32;
+        let h = BlockGeometry::new(crate::camera::DEFAULT_RADIUS as f64).block_height as f32;
         let mut inventory = Inventory::default();
         while inventory.add(BlockId::SAND) {}
         let mut drops = DroppedItems::new();

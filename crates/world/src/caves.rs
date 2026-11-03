@@ -27,7 +27,7 @@ pub const CAVE_FLOOR: i32 = 4;
 pub const CAVE_DEPTH: f64 = 40.0;
 
 /// Blocs par arête de face
-const FACE_BLOCKS: f64 = 1024.0;
+const FACE_BLOCKS: f64 = crate::edits::FACE_BLOCKS as f64;
 /// Rayon de la planète en blocs (projection équiangulaire : une face couvre un quart de tour)
 const BLOCK_RADIUS: f64 = FACE_BLOCKS / std::f64::consts::FRAC_PI_2;
 
@@ -305,9 +305,16 @@ mod tests {
     #[test]
     fn field_and_single_block_agree() {
         let generator = PlanetWorldGenerator::new(PlanetDescriptor::default());
-        // Collines sous le massif de la face -Z (graine 42), percées de tunnels
+        // Un chunk de la face -Z (graine 42) percé de tunnels entre les altitudes 60 et 200
         let face = PlanetFace::NegZ;
-        let (x0, z0) = (20 * 32, 5 * 32);
+        let center = crate::edits::FACE_BLOCKS / 2;
+        let (x0, z0) = (0..64)
+            .flat_map(|i| (0..64).map(move |j| (center + (i - 32) * 32, center + (j - 32) * 32)))
+            .find(|&(x, z)| {
+                let column = generator.sample_block_column(face, x + 16, z + 16);
+                (60..200).any(|y| (y as f64) < column.elevation && block_carved(generator.planet.seed, face, &column, x + 16, y, z + 16))
+            })
+            .expect("un chunk percé de grottes");
         let field = CaveField::new(generator.planet.seed, face, x0 - 1..x0 + 33, 60..200, z0 - 1..z0 + 33);
         let mut carved = 0;
         for z in z0 - 1..z0 + 33 {

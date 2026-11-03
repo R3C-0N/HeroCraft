@@ -38,6 +38,9 @@ pub struct CameraUniform {
     /// la cible HDR (`SceneTarget::dither_amplitude`) ; w : part de vue orbitale du relief
     /// (`orbit_factor`)
     pub screen: [f32; 4],
+    /// x = échelle des dimensions mesurées en blocs (`herocraft_world::block_scale`), y = taille
+    /// d'un bloc en unités du monde
+    pub scales: [f32; 4],
 }
 
 /// Part de vue orbitale (0 au sol, 1 en orbite haute), la même pour tout l'écran : l'eau y lisse
@@ -75,7 +78,7 @@ const FLATTEN_ARM_BLOCKS: f32 = 4.0;
 /// au-dessus de la mer (`FLATTEN_FADE_BLOCKS`). `strength` (0..1) va de la vraie courbure (0) à
 /// ce maximum (1), en progression géométrique.
 pub fn planet_flattening(eye_radius: f32, base_radius: f32, strength: f32) -> f32 {
-    let block = base_radius * std::f32::consts::FRAC_PI_4 * (2.0 / 1024.0);
+    let block = base_radius * std::f32::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f32);
     let sea_radius = base_radius + herocraft_world::SEA_LEVEL_BLOCKS as f32 * block;
     // Au moins la hauteur des yeux : k varierait sinon très vite au ras de l'eau
     let h = (eye_radius - sea_radius).max(2.0 * block);
@@ -101,17 +104,20 @@ struct GpuMesh {
     center: glam::Vec3,
     /// Demi-diagonale de la boîte englobante (tri des maillages par cascade d'ombre)
     radius: f32,
+    /// Distance au centre de la planète du sommet le plus haut (horizon, `terrain_cull`)
+    max_radius: f32,
 }
 
-fn mesh_bounds(vertices: &[PlanetVertex]) -> (glam::Vec3, f32) {
-    let (min, max) = vertices.iter().fold(
-        (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN)),
-        |(lo, hi), v| {
+/// Centre et demi-diagonale de la boîte englobante, et distance au centre du sommet le plus haut
+fn mesh_bounds(vertices: &[PlanetVertex]) -> (glam::Vec3, f32, f32) {
+    let (min, max, max_r2) = vertices.iter().fold(
+        (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN), 0.0_f32),
+        |(lo, hi, r2), v| {
             let p = glam::Vec3::from(v.position);
-            (lo.min(p), hi.max(p))
+            (lo.min(p), hi.max(p), r2.max(p.length_squared()))
         },
     );
-    ((min + max) * 0.5, (max - min).length() * 0.5)
+    ((min + max) * 0.5, (max - min).length() * 0.5, max_r2.sqrt())
 }
 
 /// Octets envoyés au GPU au plus par synchronisation (un gros ensemble est étalé sur plusieurs frames)
@@ -181,6 +187,10 @@ pub struct State {
     lod_draw_list: Vec<LodMeshId>,
     /// Empreinte de cet ensemble (`draw_set_fingerprint`), lue par les ombres lointaines
     terrain_fingerprint: u64,
+    /// Morceaux de `lod_draw_list` visibles depuis la caméra, du plus proche au plus lointain
+    lod_visible_list: Vec<LodMeshId>,
+    /// Champ de vision et horizon de la dernière caméra (`update_camera`)
+    terrain_cull: Option<crate::terrain_cull::TerrainCull>,
     camera_eye: glam::Vec3,
     lod_sync_count: u64,
     lod_uploads_pending: bool,
@@ -556,6 +566,12 @@ impl State {
             flatten: [0.0, 1.0, 0.0, 0.0],
             moon: [0.0, 1.0, 0.0, 0.0],
             screen: [1.0 / config.width as f32, 1.0 / config.height as f32, 0.0, 1.0],
+            scales: [
+                herocraft_world::block_scale(default_radius as f64) as f32,
+                herocraft_world::block_size(default_radius as f64) as f32,
+                0.0,
+                0.0,
+            ],
         };
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -699,6 +715,8 @@ impl State {
             lod_gpu_meshes: HashMap::new(),
             lod_draw_list: Vec::new(),
             terrain_fingerprint: 0,
+            lod_visible_list: Vec::new(),
+            terrain_cull: None,
             camera_eye: glam::Vec3::ZERO,
             lod_sync_count: 0,
             lod_uploads_pending: false,
@@ -845,7 +863,7 @@ impl State {
         self.clouds_visible = effective_cloud_density > 0.01;
 
         let k = planet_flattening(eye.length(), camera.base_radius, flatten_strength);
-        let block = camera.base_radius * std::f32::consts::FRAC_PI_4 * (2.0 / 1024.0);
+        let block = camera.base_radius * std::f32::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f32);
         let sea_radius = camera.base_radius + herocraft_world::SEA_LEVEL_BLOCKS as f32 * block;
         // Rien n'est déplacé à portée de visée, comptée depuis la tête du joueur (la caméra est
         // derrière elle en troisième personne)
@@ -885,7 +903,9 @@ impl State {
                 self.scene_target.dither_amplitude(),
                 orbit_factor(eye.length(), camera.base_radius, ground_factor),
             ],
+            scales: [herocraft_world::block_scale(camera.base_radius as f64) as f32, block, 0.0, 0.0],
         };
+        self.terrain_cull = Some(crate::terrain_cull::TerrainCull::new(view_proj, eye, sea_radius, uniform.flatten, block));
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
@@ -955,7 +975,7 @@ impl State {
             herocraft_common::prof_scope!("render::pack_lod_meshes");
             to_upload.par_iter().map(|(id, mesh)| (*id, GpuMeshData::new(mesh), mesh_bounds(&mesh.vertices))).collect()
         };
-        for (id, data, (center, radius)) in packed {
+        for (id, data, (center, radius, max_radius)) in packed {
             let buffer = |label: &str, contents: &[u8], usage| {
                 self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some(label), contents, usage })
             };
@@ -968,6 +988,7 @@ impl State {
                 last_used_sync: sync,
                 center,
                 radius,
+                max_radius,
             };
             self.lod_gpu_meshes.insert(id, gpu_mesh);
         }
@@ -1155,16 +1176,22 @@ impl State {
 
             // 1.a. Relief planétaire & Voxels, du plus proche au plus lointain : le test de
             // profondeur précoce élimine les fragments cachés avant d'exécuter le shader
-            let (meshes, eye) = (&self.lod_gpu_meshes, self.camera_eye);
-            self.lod_draw_list.sort_by_cached_key(|id| {
+            // Les morceaux hors du champ de vision ou sous l'horizon ne sont pas dessinés
+            let (meshes, eye, cull) = (&self.lod_gpu_meshes, self.camera_eye, self.terrain_cull);
+            self.lod_visible_list.clear();
+            self.lod_visible_list.extend(self.lod_draw_list.iter().copied().filter(|id| {
+                meshes.get(id).is_some_and(|m| cull.is_none_or(|c| c.is_visible(m.center, m.radius, m.max_radius)))
+            }));
+            self.lod_visible_list.sort_by_cached_key(|id| {
                 meshes.get(id).map_or(u32::MAX, |m| m.center.distance_squared(eye).to_bits())
             });
-            if !self.lod_draw_list.is_empty() {
+            herocraft_common::prof_value!("render.draws_terrain_visibles", self.lod_visible_list.len());
+            if !self.lod_visible_list.is_empty() {
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
                 render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
                 render_pass.set_bind_group(2, &self.block_textures.bind_group, &[]);
-                for id in &self.lod_draw_list {
+                for id in &self.lod_visible_list {
                     if let Some(mesh) = self.lod_gpu_meshes.get(id) {
                         render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
                         render_pass.set_vertex_buffer(1, mesh.attributes.slice(..));
@@ -1360,7 +1387,7 @@ mod tests {
     #[test]
     fn test_planet_flattening_bounds() {
         let r = 50.0_f32;
-        let block = r * std::f32::consts::FRAC_PI_4 * (2.0 / 1024.0);
+        let block = r * std::f32::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f32);
         let sea = r + herocraft_world::SEA_LEVEL_BLOCKS as f32 * block;
         // Réglage à 0 : vraie courbure à toute altitude
         assert_eq!(planet_flattening(sea + 2.0 * block, r, 0.0), 1.0);
@@ -1422,7 +1449,7 @@ mod tests {
 
     #[test]
     fn test_camera_uniform_size_and_alignment() {
-        assert_eq!(std::mem::size_of::<CameraUniform>(), 256);
+        assert_eq!(std::mem::size_of::<CameraUniform>(), 272);
         assert_eq!(std::mem::align_of::<CameraUniform>(), 16);
     }
 
@@ -1519,7 +1546,7 @@ mod tests {
         let gen = herocraft_world::PlanetWorldGenerator::new(desc);
 
         // 1. Vue Satellite (distance par défaut = 165.0)
-        let mut cam = OrbitCamera::new(165.0, 25.0, &gen);
+        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &gen);
         assert_eq!(cam.view_mode(), CameraViewMode::SatelliteOrbit);
 
         let calc_vis = |cam: &OrbitCamera| {

@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn test_slabs_lie_against_the_aimed_face_and_stairs_turn_upside_down() {
         let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
-        let mut camera = OrbitCamera::new(165.0, 50.0, &generator);
+        let mut camera = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
         camera.distance = 0.0;
         camera.target_distance = 0.0;
         camera.update_camera_bounds(&generator);
@@ -396,18 +396,18 @@ mod tests {
     #[test]
     fn test_break_then_place_at_the_crosshair() {
         let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
-        let mut camera = OrbitCamera::new(165.0, 50.0, &generator);
+        let mut camera = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
         camera.distance = 0.0;
         camera.target_distance = 0.0;
         camera.player_pitch = -0.6; // regard vers le sol, quelques blocs devant
         // Les pieds posés sur le dessus des blocs de leur colonne (la physique suit le relief lissé)
-        let geometry = BlockGeometry::new(50.0);
+        let geometry = BlockGeometry::new(crate::camera::DEFAULT_RADIUS as f64);
         let column = geometry.block_at_point(camera.player_pos.as_dvec3()).unwrap();
         let top = (0..528).rev().find(|&y| !generator.block_at(column.face, column.x, y, column.z).is_air()).unwrap() + 1;
         let centre = geometry.block_corners(BlockPos { y: top, ..column }).iter().sum::<glam::DVec3>() / 8.0;
         camera.player_pos = (centre.normalize() * (geometry.base_radius + (top as f64 + 0.01) * geometry.block_height)).as_vec3();
         camera.update_camera_bounds(&generator);
-        let mut lod = PlanetLodManager::new(50.0, 2026);
+        let mut lod = PlanetLodManager::new(crate::camera::DEFAULT_RADIUS, 2026);
         let mut interaction = BlockInteraction::new();
         let mut inventory = Inventory::default();
 
@@ -440,7 +440,7 @@ mod tests {
     #[test]
     fn test_held_left_button_breaks_the_block_over_time() {
         let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
-        let mut camera = OrbitCamera::new(165.0, 50.0, &generator);
+        let mut camera = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
         camera.distance = 0.0;
         camera.target_distance = 0.0;
         camera.player_pitch = -0.6;
@@ -482,8 +482,8 @@ mod tests {
     #[test]
     fn test_no_block_is_placed_inside_the_player() {
         let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
-        let camera = OrbitCamera::new(165.0, 50.0, &generator);
-        let geometry = BlockGeometry::new(50.0);
+        let camera = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
+        let geometry = BlockGeometry::new(crate::camera::DEFAULT_RADIUS as f64);
         let feet = camera.player_pos.as_dvec3();
         let up = feet.normalize();
         let at_feet = geometry.block_at_point(feet + up * 0.5 * geometry.block_height).unwrap();

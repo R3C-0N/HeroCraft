@@ -24,6 +24,9 @@ struct CameraUniform {
     // l'écriture dans une cible HDR à mantisse courte (0 en Rgba16Float) ; w : part de vue
     // orbitale (0 au sol, 1 en orbite haute)
     screen: vec4<f32>,
+    // x : échelle des dimensions mesurées en blocs (rayon / 25 sur le prototype de 1 024 blocs par
+    // face, 2 aujourd'hui), y : taille d'un bloc en unités du monde
+    scales: vec4<f32>,
 };
 
 @group(0) @binding(0)
