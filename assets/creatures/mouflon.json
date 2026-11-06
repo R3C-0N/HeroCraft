@@ -10,6 +10,7 @@
     {"biome": "Mountains", "weight": 1.0}
   ],
   "activity": "diurnal",
+  "breeding": {"food": ["ble"], "growth_minutes": 10},
   "loot": [
     {"item": "viandeMouflon", "count": [1, 2]},
     {"item": "hide"},

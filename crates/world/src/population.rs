@@ -75,6 +75,12 @@ pub struct SleepingCreature {
     pub position: Vec3,
     pub yaw: f32,
     pub health: f32,
+    /// Apprivoisée par un joueur
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tamed: bool,
+    /// Petit : secondes depuis sa naissance (absent : adulte)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub age: Option<f32>,
 }
 
 /// Zones dont la population a déjà été tirée, et bêtes des zones endormies
@@ -134,7 +140,7 @@ mod tests {
         let zone = ZoneKey { face: PlanetFace::NegY, x: 3, z: 9 };
         let save = PopulationSave {
             next_id: 42,
-            zones: vec![(zone, vec![SleepingCreature { id: 7, species: "vache".into(), herd: Some(7), position: Vec3::new(1.0, 2.0, 3.0), yaw: 0.5, health: 4.0 }])],
+            zones: vec![(zone, vec![SleepingCreature { id: 7, species: "vache".into(), herd: Some(7), position: Vec3::new(1.0, 2.0, 3.0), yaw: 0.5, health: 4.0, tamed: true, age: Some(12.0) }])],
         };
         save.save(&path).unwrap();
         let back = PopulationSave::load(&path).unwrap().unwrap();

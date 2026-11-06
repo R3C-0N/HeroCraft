@@ -168,7 +168,7 @@ mod tests {
         let species = registry.find("villageois").unwrap();
         let s = registry.get(species).unwrap();
         let pause = |name: &str| CreatureAction::Pause(s.pauses().position(|(n, _)| n == name).unwrap() as u8);
-        let view = |action| CreatureView { id: 1, species: Some(species), feet: Vec3::new(0.0, 0.0, 1000.0), yaw: 0.0, hurt: 0.0, death: 0.0, action };
+        let view = |action| CreatureView { id: 1, species: Some(species), feet: Vec3::new(0.0, 0.0, 1000.0), yaw: 0.0, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0 };
         let mut animator = VillagerAnimator::default();
         assert!(is_humanoid(&view(CreatureAction::Repos), &registry));
         let still = animator.pose(&view(CreatureAction::Repos), &registry);

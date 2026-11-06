@@ -29,7 +29,7 @@ fn main() {
         let top = query.support_top(PlanetFace::PosZ, x as i32, z as i32, 255);
         let feet = geometry.corner(PlanetFace::PosZ, x as f64, top as f64, z as f64).as_vec3();
         let t = Instant::now();
-        world.tick_with_presences(dt, &generator, &edits, &[PlayerPresence { feet, crouching: false }]);
+        world.tick_with_presences(dt, &generator, &edits, &[PlayerPresence::standing(feet)]);
         times.push(t.elapsed().as_secs_f64() * 1000.0);
         max_creatures = max_creatures.max(world.creatures().len());
     }

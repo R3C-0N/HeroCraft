@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 13;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -36,6 +36,8 @@ pub enum ClientPacket {
         pitch: f32,
         sprinting: bool,
         crouching: bool,
+        /// Ce qu'il tient en main (numéro d'`ItemId`) : sa nourriture attire les bêtes
+        holding: Option<u16>,
     },
     /// Le joueur vient de retomber au sol après une chute de `blocks` blocs
     Fall {
@@ -49,6 +51,12 @@ pub enum ClientPacket {
     /// Le joueur frappe une créature (dégâts, recul et fuite décidés par le serveur)
     HitCreature {
         creature_id: u64,
+    },
+    /// Le joueur donne à manger à une créature l'objet `item` (numéro d'`ItemId`), déjà retiré de son
+    /// inventaire : le serveur l'apprivoise, la rend amoureuse ou fait grandir le petit
+    FeedCreature {
+        creature_id: u64,
+        item: u16,
     },
     /// Le joueur dépèce une bête morte à sa portée, couteau ou dague en main : le serveur tire son
     /// butin (`ServerPacket::CreatureLoot`) et la retire
@@ -171,6 +179,12 @@ pub enum ServerPacket {
     CreatureLoot {
         position: Vec3,
         items: Vec<(u16, u16)>,
+    },
+    /// Une bête apprivoisée vient de pondre `item` (`ItemId`) à ses pieds (`position`) : il reste
+    /// au sol jusqu'à ce qu'on marche dessus
+    Laid {
+        position: Vec3,
+        item: u16,
     },
     /// Message de chat ou notification système
     ChatMessage {

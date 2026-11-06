@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use glam::{EulerRot, Quat, Vec3};
-use herocraft_common::{tangent_frame, CreatureAction, CreatureRegistry, CreatureSpecies, CreatureState};
+use herocraft_common::{tangent_frame, CreatureAction, CreatureRegistry, CreatureSpecies, CreatureState, MOOD_HEARTS};
 use log::warn;
 
 use crate::planet_mesh::PlanetVertex;
@@ -41,11 +41,25 @@ pub struct CreatureView {
     pub death: f32,
     /// Ce qu'elle fait, pour choisir son animation
     pub action: CreatureAction,
+    /// Taille par rapport à un adulte (un petit est plus petit)
+    pub scale: f32,
+    /// Humeur d'élevage (bits `MOOD_*` : cœurs, apprivoisée, rassasiée)
+    pub mood: u8,
 }
 
 impl CreatureView {
     pub fn new(species: Option<usize>, state: &CreatureState) -> Self {
-        Self { id: state.creature_id, species, feet: state.position, yaw: state.yaw, hurt: state.hurt, death: state.death, action: state.action }
+        Self {
+            id: state.creature_id,
+            species,
+            feet: state.position,
+            yaw: state.yaw,
+            hurt: state.hurt,
+            death: state.death,
+            action: state.action,
+            scale: state.scale,
+            mood: state.mood,
+        }
     }
 }
 
@@ -321,6 +335,7 @@ pub struct CreatureFrame {
 /// Construit le maillage de toutes les créatures ; `block` : taille d'un bloc
 pub fn build_frame(views: &[CreatureView], registry: &CreatureRegistry, models: &CreatureModels, animator: &CreatureAnimator, block: f32) -> CreatureFrame {
     let mut frame = CreatureFrame::default();
+    let mut hearts = Vec::new();
     let mut views = views.to_vec();
     // Une espèce sans modèle passe avec les pavés gris : une plage par texture
     let texture_of = |v: &CreatureView| v.species.filter(|_| models.get(v.species).is_some());
@@ -338,7 +353,9 @@ pub fn build_frame(views: &[CreatureView], registry: &CreatureRegistry, models: 
         let (left, up) = (left * roll.cos() - up * roll.sin(), up * roll.cos() + left * roll.sin());
         let hurt = view.hurt.clamp(0.0, 1.0);
         let tint = [0, 1, 2].map(|i| 1.0 + (HURT_TINT[i] - 1.0) * hurt);
-        let to_world = |p: Vec3| view.feet + (left * p.x + up * p.y + forward * p.z) * block;
+        // Un petit est dessiné plus petit
+        let size = block * view.scale.clamp(0.1, 1.0);
+        let to_world = |p: Vec3| view.feet + (left * p.x + up * p.y + forward * p.z) * size;
         let rotate = |n: Vec3| (left * n.x + up * n.y + forward * n.z).normalize_or_zero();
 
         match (models.get(texture), texture.and_then(|s| registry.get(s))) {
@@ -362,8 +379,64 @@ pub fn build_frame(views: &[CreatureView], registry: &CreatureRegistry, models: 
             Some((last, range)) if *last == texture && range.end == start => range.end = end,
             _ => frame.draws.push((texture, start..end)),
         }
+        if view.mood & MOOD_HEARTS != 0 && view.death <= 0.0 {
+            let height = texture.and_then(|s| registry.get(s)).map_or(PLACEHOLDER_SIZE, |s| s.body.height);
+            hearts.push((view.feet + up * (height * view.scale + HEART_GAP) * block, up, forward));
+        }
+    }
+    // Cœurs des bêtes amoureuses ou tout juste apprivoisées, sans texture, après tout le reste
+    if !hearts.is_empty() {
+        let start = frame.indices.len() as u32;
+        for (base, up, forward) in hearts {
+            push_heart(&mut frame, base, up, forward, block);
+        }
+        frame.draws.push((None, start..frame.indices.len() as u32));
     }
     frame
+}
+
+/// Hauteur des cœurs au-dessus du dos d'une bête, et côté d'un de leurs pixels, en blocs
+const HEART_GAP: f32 = 0.35;
+const HEART_PIXEL: f32 = 0.07;
+/// Rouge des cœurs
+const HEART_COLOR: [f32; 4] = [0.9, 0.12, 0.2, 1.0];
+/// Dessin d'un cœur, ligne du haut d'abord
+const HEART: [&str; 4] = [".X.X.", "XXXXX", ".XXX.", "..X.."];
+
+/// Cœur en pixels de relief posé en `base` (le bas de la pointe), deux fois, croisés : il se voit
+/// de face comme de profil
+fn push_heart(frame: &mut CreatureFrame, base: Vec3, up: Vec3, forward: Vec3, block: f32) {
+    let side = up.cross(forward);
+    let px = HEART_PIXEL * block;
+    // Repères directs (de travers, haut, profondeur) : les faces regardent vers l'extérieur
+    for (across, depth) in [(side, forward), (forward, -side)] {
+        for (row, line) in HEART.iter().enumerate() {
+            for (col, _) in line.char_indices().filter(|&(_, c)| c == 'X') {
+                let center = base + across * (col as f32 - 2.0) * px + up * (HEART.len() - 1 - row) as f32 * px;
+                push_cube(frame, center, [across * px * 0.5, up * px * 0.5, depth * px * 0.5]);
+            }
+        }
+    }
+}
+
+/// Cube rouge de centre `center` et de demi-axes `axes` (le deuxième vers le haut)
+fn push_cube(frame: &mut CreatureFrame, center: Vec3, axes: [Vec3; 3]) {
+    for axis in 0..3 {
+        for sign in [1.0, -1.0] {
+            let normal = axes[axis].normalize_or_zero() * sign;
+            let (u, v) = (axes[(axis + 1) % 3], axes[(axis + 2) % 3]);
+            let face = center + axes[axis] * sign;
+            let base = frame.vertices.len() as u32;
+            // Sens des sommets selon le côté : la face regarde vers l'extérieur
+            let corners = if sign > 0.0 { [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] } else { [(-1.0, -1.0), (-1.0, 1.0), (1.0, 1.0), (1.0, -1.0)] };
+            for (su, sv) in corners {
+                let p = face + u * su + v * sv;
+                frame.vertices.push(PlanetVertex { position: p.to_array(), normal: normal.to_array(), color: HEART_COLOR, texture: PlanetVertex::UNTEXTURED });
+                frame.uvs.push([0.0, 0.0]);
+            }
+            frame.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+    }
 }
 
 /// Créature vivante sous le réticule : la première que touche le rayon parti de `eye` dans la
@@ -387,6 +460,8 @@ fn aimed_body<'a>(views: impl Iterator<Item = &'a CreatureView>, registry: &Crea
             let body = view.species.and_then(|s| registry.get(s)).map(|s| s.body);
             let (half_width, half_length, height) = body.map_or((PLACEHOLDER_SIZE * 0.5, PLACEHOLDER_SIZE * 0.5, PLACEHOLDER_SIZE), |b| (b.half_width, b.half_length, b.height));
             let (half_width, height) = if view.death > 0.0 { (height * 0.5, (half_width * 2.0).max(0.4)) } else { (half_width, height) };
+            let k = view.scale.clamp(0.1, 1.0);
+            let (half_width, half_length, height) = (half_width * k, half_length * k, height * k);
             let up = view.feet.normalize_or_zero();
             let (east, north) = tangent_frame(up);
             let forward = north * view.yaw.cos() + east * view.yaw.sin();
@@ -455,7 +530,7 @@ mod tests {
         let (east, north) = tangent_frame(feet.normalize());
         let animator = CreatureAnimator::default();
         for (yaw, heading) in [(0.0, north), (std::f32::consts::FRAC_PI_2, east)] {
-            let view = CreatureView { id: 1, species: Some(boar), feet, yaw, hurt: 0.0, death: 0.0, action: CreatureAction::Repos };
+            let view = CreatureView { id: 1, species: Some(boar), feet, yaw, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
             let frame = build_frame(&[view], &registry, &models, &animator, 1.0);
             assert_eq!(frame.draws, vec![(Some(boar), 0..frame.indices.len() as u32)]);
             assert_eq!(frame.vertices.len(), frame.uvs.len());
@@ -482,7 +557,7 @@ mod tests {
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let (_, north) = tangent_frame(feet.normalize());
         let mut animator = CreatureAnimator::default();
-        let mut view = CreatureView { id: 7, species: Some(boar), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos };
+        let mut view = CreatureView { id: 7, species: Some(boar), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
         let mesh = |animator: &CreatureAnimator, view: CreatureView| build_frame(&[view], &registry, &models, animator, 1.0).vertices;
         let still = mesh(&animator, view);
 
@@ -520,7 +595,7 @@ mod tests {
         let play = |id: &str, action: CreatureAction, speed: f32| {
             let species = registry.find(id).unwrap();
             let mut animator = CreatureAnimator::default();
-            let mut view = CreatureView { id: 1, species: Some(species), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action };
+            let mut view = CreatureView { id: 1, species: Some(species), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0 };
             for _ in 0..10 {
                 view.feet += north * speed * 0.05;
                 animator.update(&[view], &registry, &models, 0.05, 1.0);
@@ -545,7 +620,7 @@ mod tests {
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let height = |vertices: &[PlanetVertex]| vertices.iter().map(|v| Vec3::from(v.position).z - feet.z).fold(0.0, f32::max);
         let mut animator = CreatureAnimator::default();
-        let mut view = CreatureView { id: 2, species: Some(cow), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos };
+        let mut view = CreatureView { id: 2, species: Some(cow), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
         animator.update(&[view], &registry, &models, 0.05, 1.0);
         let standing = height(&build_frame(&[view], &registry, &models, &animator, 1.0).vertices);
         view.action = CreatureAction::Pause(sleep);
@@ -582,8 +657,8 @@ mod tests {
     fn test_unknown_species_gets_a_placeholder() {
         let (registry, models) = setup();
         let views = [
-            CreatureView { id: 3, species: None, feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos },
-            CreatureView { id: 4, species: registry.find("lapin"), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos },
+            CreatureView { id: 3, species: None, feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 },
+            CreatureView { id: 4, species: registry.find("lapin"), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 },
         ];
         let frame = build_frame(&views, &registry, &models, &CreatureAnimator::default(), 1.0);
         assert_eq!(frame.draws.len(), 2);
@@ -597,7 +672,7 @@ mod tests {
         let cow = registry.find("vache").unwrap();
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let animator = CreatureAnimator::default();
-        let view = CreatureView { id: 1, species: Some(cow), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos };
+        let view = CreatureView { id: 1, species: Some(cow), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
         let frame = |view: CreatureView| build_frame(&[view], &registry, &models, &animator, 1.0).vertices;
         assert!(frame(view).iter().all(|v| v.color == [1.0; 4]));
         assert!(frame(CreatureView { hurt: 1.0, ..view }).iter().all(|v| v.color[0] == 1.0 && v.color[1] < 0.5));
@@ -615,7 +690,7 @@ mod tests {
         let boar = registry.find("sanglier").unwrap();
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let (_, north) = tangent_frame(feet.normalize());
-        let near = CreatureView { id: 1, species: Some(boar), feet: feet + north * 3.0, yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos };
+        let near = CreatureView { id: 1, species: Some(boar), feet: feet + north * 3.0, yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
         let far = CreatureView { id: 2, feet: feet + north * 5.0, ..near };
         let eye = feet + Vec3::Z * 0.4;
         assert_eq!(aimed_creature(&[far, near], &registry, eye, north, 6.0, 1.0).map(|(id, _)| id), Some(1));
@@ -671,6 +746,13 @@ mod apercu {
                     if d >= depth[y * w + x] {
                         continue;
                     }
+                    // Les cœurs n'ont pas de texture : leur couleur seule
+                    let color = frame.vertices[ids[0]].color;
+                    if color == HEART_COLOR {
+                        depth[y * w + x] = d;
+                        img[y * w + x] = [0, 1, 2].map(|c| (color[c] * 255.0 * shade).min(255.0) as u8);
+                        continue;
+                    }
                     let uv = [0, 1].map(|c| w0 * frame.uvs[ids[0]][c] + w1 * frame.uvs[ids[1]][c] + w2 * frame.uvs[ids[2]][c]);
                     let tx = ((uv[0] * tex.width as f32) as u32).min(tex.width - 1);
                     let ty = ((uv[1] * tex.height as f32) as u32).min(tex.height - 1);
@@ -712,7 +794,7 @@ mod apercu {
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let mut animator = CreatureAnimator::default();
         for (i, species) in registry.iter().enumerate() {
-            let mut v = CreatureView { id: i as u64, species: Some(i), feet, yaw: 0.6, hurt: 0.0, death: 0.0, action: CreatureAction::Marche };
+            let mut v = CreatureView { id: i as u64, species: Some(i), feet, yaw: 0.6, hurt: 0.0, death: 0.0, action: CreatureAction::Marche, scale: 1.0, mood: 0 };
             // Un peu de marche pour une pose animée
             let (_, north) = tangent_frame(feet.normalize());
             for _ in 0..7 {
@@ -721,6 +803,32 @@ mod apercu {
             }
             let frame = build_frame(&[CreatureView { feet, ..v }], &registry, &models, &animator, 1.0);
             rasterize(&mut img, &mut depth, w, &frame, textures[i].as_ref().unwrap(), feet, ((i % cols) * cell, (i / cols) * cell, cell), scale_for(species, cell));
+        }
+        save(&img, w, h);
+    }
+
+    /// Élevage : chaque bête qui s'élève, adulte amoureuse (cœurs) à côté de son petit
+    /// nouveau-né, puis à mi-croissance
+    #[test]
+    #[ignore]
+    fn apercu_elevage() {
+        let registry = CreatureRegistry::load_default();
+        let (models, textures) = CreatureModels::load(&registry);
+        let bred: Vec<usize> = (0..registry.len()).filter(|&i| registry.get(i).unwrap().breeding.is_some()).collect();
+        let (cols, cell) = (3usize, 220usize);
+        let (w, h) = (cols * cell, bred.len() * cell);
+        let mut img = vec![[200u8, 222, 236]; w * h];
+        let mut depth = vec![f32::MAX; w * h];
+        let feet = Vec3::new(0.0, 0.0, 1000.0);
+        let animator = CreatureAnimator::default();
+        for (row, &i) in bred.iter().enumerate() {
+            let species = registry.get(i).unwrap();
+            for (col, (scale, mood)) in [(1.0, MOOD_HEARTS), (0.5, 0), (0.75, MOOD_HEARTS)].into_iter().enumerate() {
+                let view = CreatureView { id: i as u64, species: Some(i), feet, yaw: 0.6, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale, mood };
+                let frame = build_frame(&[view], &registry, &models, &animator, 1.0);
+                // Même échelle pour l'adulte et ses petits, cœurs compris
+                rasterize(&mut img, &mut depth, w, &frame, textures[i].as_ref().unwrap(), feet, (col * cell, row * cell, cell), scale_for(species, cell) * 0.8);
+            }
         }
         save(&img, w, h);
     }
@@ -748,7 +856,7 @@ mod apercu {
                 let mut animator = CreatureAnimator::default();
                 let coup = name == "coup";
                 animator.gaits.insert(1, Gait { last_feet: feet, speed: 0.0, current: if coup { "repos".into() } else { name.clone() }, phase, previous: None, blend: 1.0 });
-                let view = CreatureView { id: 1, species: Some(i), feet, yaw: 1.2, hurt: if coup { 1.0 - phase } else { 0.0 }, death: 0.0, action: CreatureAction::Repos };
+                let view = CreatureView { id: 1, species: Some(i), feet, yaw: 1.2, hurt: if coup { 1.0 - phase } else { 0.0 }, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
                 let frame = build_frame(&[view], &registry, &models, &animator, 1.0);
                 rasterize(&mut img, &mut depth, w, &frame, textures[i].as_ref().unwrap(), feet, (col * cell, row * cell, cell), scale_for(s, cell));
             }

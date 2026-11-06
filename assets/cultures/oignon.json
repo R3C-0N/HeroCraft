@@ -1,0 +1,6 @@
+{
+  "name": "Oignon",
+  "seed": "grainesOignon",
+  "stages": ["oignonStade1", "oignonStade2", "oignonStade3", "oignonStade4"],
+  "stage_minutes": 2.5
+}

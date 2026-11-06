@@ -1,0 +1,7 @@
+{
+  "name": "Riz",
+  "seed": "grainesRiz",
+  "stages": ["rizStade1", "rizStade2", "rizStade3", "rizStade4"],
+  "stage_minutes": 3.0,
+  "needs_water": true
+}

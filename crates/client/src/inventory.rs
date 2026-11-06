@@ -158,13 +158,18 @@ impl Inventory {
         self.slot(self.selected).and_then(|s| s.item.block())
     }
 
+    /// Bloc ou objet de la case choisie
+    pub fn selected_item(&self) -> Option<ItemId> {
+        self.slot(self.selected).map(|s| s.item)
+    }
+
     /// Aliment de la case choisie et la satiété qu'il rend, à manger au clic droit
     pub fn selected_food(&self) -> Option<(ItemId, f32)> {
         let item = self.slot(self.selected)?.item;
         Some((item, item.satiety()?))
     }
 
-    /// Retire un objet de la case choisie (aliment mangé)
+    /// Retire un exemplaire de la case choisie, bloc ou objet (graine semée, aliment mangé ou donné)
     pub fn consume_selected(&mut self) -> Option<ItemId> {
         let slot = &mut self.slots[self.selected];
         let stack = slot.as_mut()?;
@@ -176,7 +181,8 @@ impl Inventory {
         Some(item)
     }
 
-    /// Retire un bloc de la case choisie (bloc posé)
+    /// Retire un bloc de la case choisie (rien si elle tient un objet)
+    #[cfg(test)]
     pub fn take_selected(&mut self) -> Option<BlockId> {
         let slot = &mut self.slots[self.selected];
         let stack = slot.as_mut()?;

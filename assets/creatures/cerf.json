@@ -10,6 +10,7 @@
     {"biome": "Forest", "weight": 1.0}
   ],
   "activity": "crepuscular",
+  "breeding": {"food": ["carotte", "pommeDeTerre"], "growth_minutes": 12},
   "loot": [
     {"item": "viandeCerf", "count": [1, 2]},
     {"item": "hide", "count": [1, 2]},
