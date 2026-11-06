@@ -736,6 +736,10 @@ impl Server {
         let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
         if self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
             self.creatures.hit_by(creature_id, feet, id);
+            let name = self.players.get(&id).map(|p| p.name.clone()).unwrap_or_default();
+            for murder in self.creatures.take_murders() {
+                self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
+            }
         }
     }
 

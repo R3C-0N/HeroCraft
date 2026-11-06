@@ -279,6 +279,27 @@ pub struct Creature {
     calm: f32,
 }
 
+/// Un joueur a tué un habitant ou un voyageur : de quoi l'annoncer
+#[derive(Debug, Clone, PartialEq)]
+pub struct Murder {
+    /// Clé du joueur (celle de `hit_by`)
+    pub player: u64,
+    /// Nom et métier de la victime
+    pub victim: String,
+    pub profession: String,
+    /// Ville ou village où c'est arrivé (`None` : sur les routes)
+    pub town: Option<String>,
+}
+
+impl Murder {
+    /// Phrase du chat : « Mat a tué Aude (Fermière) à Brumeval : les gardes sont à ses trousses ! »
+    pub fn announce(&self, player: &str) -> String {
+        let victim = if self.profession.is_empty() { self.victim.clone() } else { format!("{} ({})", self.victim, self.profession) };
+        let place = self.town.as_ref().map_or_else(|| "sur les routes".to_string(), |t| format!("à {t}"));
+        format!("{player} a tué {victim} {place} : les gardes sont à ses trousses !")
+    }
+}
+
 /// Ce que fait un repas donné à une bête
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Feeding {
@@ -487,6 +508,8 @@ pub struct CreatureWorld {
     laid: Vec<(Vec3, ItemId)>,
     /// Joueurs recherchés par les gardes : clé du joueur, troupeau des gardes, temps restant
     wanted: Vec<(u64, u64, f32)>,
+    /// Meurtres pas encore annoncés (voir `take_murders`)
+    murders: Vec<Murder>,
     geometry: BlockGeometry,
     /// Graine du monde : elle décide de la population de chaque zone
     seed: u64,
@@ -600,6 +623,7 @@ impl CreatureWorld {
             lay_table,
             laid: Vec::new(),
             wanted: Vec::new(),
+            murders: Vec::new(),
             geometry,
             seed,
             creatures: Vec::new(),
@@ -890,7 +914,11 @@ impl CreatureWorld {
     /// environs le recherchent longtemps
     pub fn hit_by(&mut self, id: u64, from: Vec3, player: u64) -> bool {
         let victim = self.creatures.iter().find(|c| c.id == id && c.is_alive()).map(|c| (c.herd, c.position, c.managed && self.registry.get(c.species).is_some_and(|s| s.humanoid)));
+        let who = self.villages.card(id).map(|card| (card.name.clone(), card.profession.clone(), self.villages.town_of(id).map(str::to_string)));
         let Some(killed) = self.strike(id, from, PLAYER_HIT_DAMAGE, true) else { return false };
+        if let (true, Some((victim, profession, town))) = (killed, who) {
+            self.murders.push(Murder { player, victim, profession, town });
+        }
         if let Some((herd, position, true)) = victim {
             let (time, radius) = if killed { (WANTED_TIME, WANTED_RADIUS_BLOCKS) } else { (ANGER_TIME, ALARM_RADIUS_BLOCKS * 2.0) };
             let radius = radius * self.geometry.block_height as f32;
@@ -912,6 +940,11 @@ impl CreatureWorld {
             }
         }
         true
+    }
+
+    /// Les meurtres d'habitants depuis le dernier appel, à annoncer dans le chat
+    pub fn take_murders(&mut self) -> Vec<Murder> {
+        std::mem::take(&mut self.murders)
     }
 
     /// Le joueur de clé `player` est recherché par les gardes du troupeau `herd`
@@ -2527,6 +2560,8 @@ mod tests {
         assert!(hits.is_empty(), "le garde frappe sans raison");
         while world.hit_by(victim, killer, 1) {}
         assert!(world.is_wanted(1, herd) && !world.is_wanted(2, herd));
+        // Hors des villages, la victime n'a pas de fiche : rien à annoncer
+        assert!(world.take_murders().is_empty());
         for _ in 0..400 {
             hits.extend(world.tick_players(0.05, &generator, &edits, &presences, &[1, 2]));
         }

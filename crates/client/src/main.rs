@@ -677,6 +677,11 @@ fn main() {
                             if let Some(id) = striking {
                                 block_interaction.pause_mining();
                                 hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut audio, &ui_state.audio_settings);
+                                // Un habitant tué en solo : le chat l'annonce (en ligne, c'est le serveur)
+                                let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
+                                for murder in solo_creatures.take_murders() {
+                                    ui_state.chat.server(&murder.announce(&name));
+                                }
                             }
                             let action = if striking.is_some() { None } else { block_interaction.tick(dt) };
                             if let Some(block) = block_interaction.take_hit() {

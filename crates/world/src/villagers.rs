@@ -225,6 +225,8 @@ struct Town {
     plaza: Cell,
     /// Seuil de la taverne, où les voyageurs passent la nuit
     inn: Option<Home>,
+    /// Nom de la ville ou du village
+    name: String,
     active: bool,
 }
 
@@ -396,6 +398,32 @@ fn appearance_for(culture: Culture, profession: &Profession, feminine: bool, rng
     look
 }
 
+/// « de Brumeval », « d'Ithilien »
+fn of_town(name: &str) -> String {
+    if name.starts_with(['A', 'E', 'I', 'O', 'U', 'Y', 'É']) {
+        format!("d'{name}")
+    } else {
+        format!("de {name}")
+    }
+}
+
+/// Nom d'une ville ou d'un village, tiré de sa place et de sa culture
+pub fn town_name(s: &Settlement) -> String {
+    let h = mix(hash2(0x0A3E ^ ((face_index(s.face) as u64) << 40), s.center.0, s.center.1));
+    let (starts, ends): (&[&str], &[&str]) = match s.culture.unwrap_or(Culture::Humains) {
+        Culture::Humains => (
+            &["Brume", "Clair", "Haut", "Roche", "Beau", "Vert", "Fonte", "Mont", "Pierre", "Saule", "Bois", "Val", "Gué", "Champ", "Chêne", "Loup"],
+            &["val", "fort", "mont", "bourg", "lieu", "ville", "fontaine", "pré", "combe", "brune", "rive", "croix"],
+        ),
+        Culture::Nains => (&["Khaz", "Dur", "Bar", "Grim", "Thor", "Kar", "Ered", "Bram", "Gund", "Orm"], &["ak", "dum", "heim", "grund", "bar", "zar", "dor", "hold", "karak"]),
+        Culture::ElfesDesBois => (&["Syl", "Lor", "Fael", "Eryn", "Thal", "Nim", "Aer", "Linde"], &["wen", "lindë", "dor", "lóme", "anor", "thil", "nost", "lad"]),
+        Culture::HautsElfes => (&["Ith", "Caer", "Vael", "Sil", "Aer", "Lum", "Tir", "Ela"], &["ilien", "andor", "esse", "marë", "athil", "ion", "orië", "vanyar"]),
+    };
+    let start = starts[(h % starts.len() as u64) as usize];
+    let end = ends[(h / 97 % ends.len() as u64) as usize];
+    format!("{start}{end}")
+}
+
 /// Quelques échanges du métier (de trois à cinq), tirés pour cette personne
 fn trades_for(profession: &Profession, rng: &mut StdRng) -> Vec<herocraft_common::Trade> {
     let mut trades = profession.trades.clone();
@@ -429,6 +457,10 @@ fn card_of_sex(culture: Culture, profession: &Profession, origin: String, femini
     appearance.nom = name.clone();
     let greeting = if profession.lines.is_empty() { "Bonjour.".to_string() } else { profession.lines[rng.gen_range(0..profession.lines.len())].clone() };
     let profession_name = profession.name_for(looks_feminine(&appearance)).to_string();
+    let origin = match origin.strip_prefix("Habitant ") {
+        Some(rest) if looks_feminine(&appearance) => format!("Habitante {rest}"),
+        _ => origin,
+    };
     Arc::new(VillagerCard { name, profession: profession_name, culture: culture.name().to_string(), origin, appearance, trades: trades_for(profession, rng), greeting })
 }
 
@@ -575,7 +607,7 @@ impl Town {
             }).collect()
         };
         work.insert(Workplace::Rempart, posts);
-        Town { nav: Arc::new(nav), homes, work, customers, wander, plaza, inn, active: false }
+        Town { nav: Arc::new(nav), homes, work, customers, wander, plaza, inn, name: town_name(s), active: false }
     }
 
     fn random_street(&self, rng: &mut StdRng) -> Cell {
@@ -659,6 +691,17 @@ impl Villages {
     }
 
     /// Fiche de la personne qu'incarne la créature `id`
+    /// Nom de la ville où vit (ou séjourne) la personne qu'incarne la créature `id` ; `None` sur
+    /// les routes
+    pub fn town_of(&self, id: u64) -> Option<&str> {
+        let person = self.people.iter().find(|p| p.creature == Some(id))?;
+        let key = match &person.role {
+            Role::Resident { town, .. } => *town,
+            Role::Traveller(trip) => trip.visiting?.0,
+        };
+        self.towns.get(&key).map(|t| t.name.as_str())
+    }
+
     pub fn card(&self, id: u64) -> Option<&Arc<VillagerCard>> {
         self.cards.get(&id)
     }
@@ -794,10 +837,7 @@ impl Villages {
         let town = Town::new(s);
         let mut rng = StdRng::seed_from_u64(town_seed);
         let registry = professions();
-        let origin = match s.kind {
-            SettlementKind::Town => "Habitant de la ville",
-            _ => "Habitant du village",
-        };
+        let origin = format!("Habitant {}", of_town(&town.name));
         // Les métiers dont le lieu est dans le plan, un poste après l'autre
         let mut jobs: Vec<(usize, Spot)> = Vec::new();
         for (index, profession) in registry.iter().enumerate() {
@@ -827,7 +867,7 @@ impl Villages {
             };
             let p = registry.get(profession).unwrap();
             let culture = s.resident_culture(n as u64);
-            let card = card_for(culture, p, origin.to_string(), &mut rng);
+            let card = card_for(culture, p, origin.clone(), &mut rng);
             let guard = p.workplace == Workplace::Rempart;
             if guard {
                 guards += 1;
@@ -1729,6 +1769,34 @@ mod tests {
             world.tick(0.1, &generator, &edits, &[feet]);
         }
         assert!(humanoids(&world) > out / 2);
+    }
+
+    #[test]
+    fn killing_a_resident_is_announced_with_the_town_and_the_guards_hunt_the_killer() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (s, feet) = settlement(&generator);
+        let registry = Arc::new(CreatureRegistry::load_default());
+        let mut world = CreatureWorld::new(generator.base_radius(), 2026, registry.clone());
+        world.set_sun_dir(feet.normalize());
+        world.tick(0.05, &generator, &edits, &[feet]);
+        let name = town_name(&s);
+        let (id, herd, position, card) = world
+            .creatures()
+            .iter()
+            .filter(|c| c.managed && c.is_alive())
+            .find_map(|c| world.villager_card(c.id).filter(|card| card.origin.starts_with("Habitant") && card.profession != "Garde").map(|card| (c.id, c.herd, c.position, card.clone())))
+            .expect("un habitant dehors");
+        assert!(card.origin.ends_with(&name), "{} / {name}", card.origin);
+        while world.hit_by(id, position, 5) {}
+        let murders = world.take_murders();
+        assert_eq!(murders.len(), 1);
+        assert_eq!(murders[0].town.as_deref(), Some(name.as_str()));
+        let line = murders[0].announce("Mat");
+        println!("{line}");
+        assert!(line.starts_with(&format!("Mat a tué {}", card.name)) && line.contains(&name) && line.contains("gardes"), "{line}");
+        assert!(world.is_wanted(5, herd));
+        assert!(world.take_murders().is_empty(), "annoncé deux fois");
     }
 
     #[test]
