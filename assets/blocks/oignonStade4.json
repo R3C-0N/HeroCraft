@@ -7,5 +7,10 @@
   "textures": {"side": "textures/OignonStade4.png"},
   "shape": "plant",
   "solid": false,
-  "sound": "grass"
+  "sound": "grass",
+  "drop": null,
+  "loot": [
+    {"item": "oignon", "count": [1, 3]},
+    {"item": "grainesOignon", "count": [1, 2]}
+  ]
 }

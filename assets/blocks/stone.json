@@ -4,5 +4,8 @@
   "category": "Minéraux",
   "hardness": 14,
   "color": {"side": "#85807a"},
-  "textures": {"side": "textures/Stone.png"}
+  "textures": {"side": "textures/Stone.png"},
+  "loot": [
+    {"item": "flint", "chance": 0.08}
+  ]
 }

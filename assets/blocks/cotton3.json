@@ -7,5 +7,6 @@
   "textures": {"side": "textures/Cotton3.png"},
   "shape": "plant",
   "solid": false,
-  "sound": "grass"
+  "sound": "grass",
+  "drop": null
 }

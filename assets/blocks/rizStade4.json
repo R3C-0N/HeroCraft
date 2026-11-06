@@ -7,5 +7,10 @@
   "textures": {"side": "textures/RizStade4.png"},
   "shape": "plant",
   "solid": false,
-  "sound": "grass"
+  "sound": "grass",
+  "drop": null,
+  "loot": [
+    {"item": "riz", "count": [1, 3]},
+    {"item": "grainesRiz", "count": [1, 2]}
+  ]
 }

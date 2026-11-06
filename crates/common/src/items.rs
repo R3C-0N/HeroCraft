@@ -62,6 +62,11 @@ impl ItemId {
         items().get(self)?.stats.get(SATIETY_STAT).copied().filter(|s| *s > 0.0)
     }
 
+    /// Couteau ou dague (identifiant finissant par `Knife` ou `Dagger`) : dépèce une bête morte
+    pub fn can_skin(self) -> bool {
+        self.block().is_none() && items().get(self).is_some_and(|sheet| sheet.id.ends_with("Knife") || sheet.id.ends_with("Dagger"))
+    }
+
     /// Nombre au plus par case
     pub fn max_stack(self) -> u16 {
         match self.block() {

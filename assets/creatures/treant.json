@@ -8,6 +8,10 @@
   "spawn": [],
   "activity": "always",
   "attack": {"mode": "solo", "damage": 15, "cooldown": 2.5, "sight": 10, "chase_speed": 2.0, "reach": 1.2, "provoked_only": true},
+  "loot": [
+    {"item": "boisEnchante", "count": [1, 3]},
+    {"item": "lianesEpineuses", "chance": 0.5}
+  ],
   "model": {
     "mesh": "modeles/treant.gltf",
     "texture": "modeles/treant.png",

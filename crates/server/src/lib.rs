@@ -114,6 +114,8 @@ pub struct Server {
     last_stats: HashMap<String, CharacterStats>,
     /// Roue des compétences, juge des points que les joueurs investissent
     skill_wheel: SkillWheel,
+    /// Tirage du butin des bêtes tuées
+    loot_rng: herocraft_common::LootRng,
     next_player_id: u64,
     tick_counter: u64,
     /// Annonce de la partie sur le réseau local, avec son nom
@@ -164,6 +166,7 @@ impl Server {
             last_positions: HashMap::new(),
             last_stats: HashMap::new(),
             skill_wheel: SkillWheel::standard(),
+            loot_rng: herocraft_common::LootRng::from_clock(),
             next_player_id: 1,
             tick_counter: 0,
             lan: None,
@@ -530,6 +533,7 @@ impl Server {
             ClientPacket::Fall { blocks } => self.fall(id, blocks),
             ClientPacket::InteractBlock { block, action } => self.interact_block(id, block.into(), action),
             ClientPacket::HitCreature { creature_id } => self.hit_creature(id, creature_id),
+            ClientPacket::SkinCreature { creature_id } => self.skin_creature(id, creature_id),
             ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
             ClientPacket::Eat { item } => self.eat(id, ItemId(item)),
@@ -699,6 +703,22 @@ impl Server {
         let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
         if self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
             self.creatures.hit(creature_id, feet);
+        }
+    }
+
+    /// Un joueur dépèce une bête morte à sa portée (son client a vérifié qu'il tient un couteau ou
+    /// une dague) : le butin tombe chez lui seul, les objets au sol étant propres à chaque client
+    fn skin_creature(&mut self, id: u64, creature_id: u64) {
+        let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
+        let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
+        if !self.creatures.creatures().iter().any(|c| c.id == creature_id && !c.is_alive() && c.position.distance(feet) <= reach) {
+            return;
+        }
+        let Some((species, position)) = self.creatures.skin(creature_id) else { return };
+        let loot = herocraft_common::loot::creature_loot(self.creatures.registry(), species).roll(&mut self.loot_rng);
+        if let (Some(player), false) = (self.players.get(&id), loot.is_empty()) {
+            let items = loot.into_iter().map(|(item, count)| (item.0, count)).collect();
+            player.connection.send(&ServerPacket::CreatureLoot { position, items });
         }
     }
 

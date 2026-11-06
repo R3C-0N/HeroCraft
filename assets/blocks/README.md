@@ -44,6 +44,7 @@ Les 135 premiers blocs viennent des modules de la branche `develop` (`CoreAssets
 | `light` | Lumière émise, de 0 à 15. Pas encore rendue. |
 | `sound` | Matière des pas et des blocs cassés ou posés : `stone` (par défaut), `dirt`, `grass`, `sand`, `snow`, `wood` ou `water`. |
 | `drop` | Ce que donne le bloc cassé : lui-même si le champ est absent, l'identifiant d'un autre bloc (l'herbe donne `dirt`), ou `null` pour rien. |
+| `loot` | Butin tiré en plus de `drop` quand le bloc est cassé : une liste d'objets ou de blocs, chacun avec `count` (un nombre, ou `[min, max]` tiré au hasard ; 1 par défaut) et `chance` (probabilité de tomber, 1 par défaut). Exemple, les herbes hautes : `[{"item": "fibre", "chance": 0.5}, {"item": "grainesBle", "chance": 0.05}]`. |
 | `recipes` | Recettes qui le fabriquent : établi et niveau, ingrédients, nombre fabriqué. Voir [assets/stations/README.md](../stations/README.md). |
 
 ## Formes

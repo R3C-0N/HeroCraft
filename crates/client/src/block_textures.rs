@@ -9,7 +9,7 @@
 
 use std::sync::OnceLock;
 
-use herocraft_common::{blocks, BlockId};
+use herocraft_common::{blocks, items, BlockId, ItemId};
 
 use crate::skinned_model::Texture;
 
@@ -33,6 +33,9 @@ pub struct BlockTextureSet {
     /// Pour chaque texture d'un bloc connecté (verre) : la première de ses 16 variantes, une par
     /// combinaison de bords reliés (`CONNECTED_*`)
     connected: Vec<Option<u16>>,
+    /// Icônes des objets qui peuvent tomber au sol (`loot::droppable_items`), ajoutées en dernier :
+    /// l'objet et sa couche
+    icons: Vec<(ItemId, u16)>,
 }
 
 /// Bords d'une face reliés à un bloc du même genre (bits du masque d'une texture connectée), dans
@@ -78,7 +81,25 @@ impl BlockTextureSet {
                 layers.extend((0..16).map(|mask| Layer::connected(image, mean, mask)));
             }
         }
-        Self { layers, connected }
+        // Icônes des objets qui tombent au sol (butin), dessinées sur une plaque tournante
+        let mut icons = Vec::new();
+        for &item in herocraft_common::loot::droppable_items() {
+            let Some(sheet) = items().get(item) else { continue };
+            let path = items().asset_path(&sheet.icon);
+            match Texture::load(&path) {
+                Ok(image) => {
+                    icons.push((item, layers.len() as u16));
+                    layers.push(Layer::from_image(&image));
+                }
+                Err(e) => log::warn!("Icône {} illisible : {e}", path.display()),
+            }
+        }
+        Self { layers, connected, icons }
+    }
+
+    /// Couche de l'icône d'un objet qui peut tomber au sol
+    pub fn icon_layer(&self, item: ItemId) -> Option<u16> {
+        self.icons.iter().find(|(i, _)| *i == item).map(|&(_, layer)| layer)
     }
 
     /// Couche à montrer pour la texture `layer` d'un bloc connecté dont les bords `mask` touchent un
@@ -399,7 +420,11 @@ mod tests {
     fn test_every_block_texture_loads() {
         let set = block_textures();
         let variants = set.connected.iter().flatten().count() * 16;
-        assert_eq!(set.layers.len(), blocks().texture_files().len() + variants);
+        assert_eq!(set.layers.len(), blocks().texture_files().len() + variants + set.icons.len());
+        // Le tableau de textures tient dans la limite par défaut des cartes graphiques
+        assert!(set.layers.len() <= 256, "{} couches", set.layers.len());
+        let fibre = items().find("fibre").unwrap();
+        assert!(set.icon_layer(fibre).is_some(), "la fibre tombe des herbes hautes : son icône est chargée");
         assert!(set.layers.len() > 100);
         for layer in &set.layers {
             assert_eq!(layer.mips.len(), MIP_LEVELS as usize);

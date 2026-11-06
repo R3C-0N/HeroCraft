@@ -1,0 +1,13 @@
+{
+  "numeric_id": 142,
+  "name": "Ornement de bronze",
+  "description": "Garniture de bronze martelée par les Nains. Purement décorative : elle ne se fond pas en lingots.",
+  "category": "Construction",
+  "hardness": 26,
+  "color": {
+    "side": "#a3772c"
+  },
+  "textures": {
+    "side": "textures/BronzePlate.png"
+  }
+}
