@@ -1,0 +1,10 @@
+{
+  "name": "Garde",
+  "description": "Monte la garde aux portes, patrouille le long des remparts et défend la ville contre les bêtes et les brigands.",
+  "lieu": "rempart",
+  "espece": "garde",
+  "par_lieu": 2,
+  "tenues": ["mailles", "tabard", "plastron"],
+  "couleurs": ["#7a1f1f", "#1f3a7a", "#5a5a5a"],
+  "repliques": ["Circulez.", "Rien à signaler.", "Gardez vos armes au fourreau dans nos murs.", "Les loups rôdent la nuit, restez sur le chemin."]
+}

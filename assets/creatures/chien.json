@@ -7,7 +7,7 @@
   "max_group": 2,
   "spawn": [],
   "activity": "nocturnal",
-  "attack": {"mode": "pack", "damage": 6, "cooldown": 1.0, "sight": 18, "chase_speed": 1.5, "pack_size": 2},
+  "attack": {"mode": "pack", "damage": 6, "cooldown": 1.0, "sight": 18, "chase_speed": 1.5, "pack_size": 2, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
   "loot": [
     {"item": "crocsIncandescents", "chance": 0.6},
     {"item": "cendresDemoniaques", "count": [1, 2]},

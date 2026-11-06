@@ -14,6 +14,9 @@ use crate::planet_mesh::{PackedAttributes, PlanetVertex};
 use crate::post;
 use crate::skinned_model::Texture;
 
+/// Planches d'habitants gardées au plus avant d'oublier les plus anciennes
+const MAX_VILLAGER_SHEETS: usize = 96;
+
 pub struct CreatureRenderer {
     pipeline: wgpu::RenderPipeline,
     /// Gardé pour recréer le pipeline quand la cible de la passe 3D change
@@ -26,6 +29,10 @@ pub struct CreatureRenderer {
     plain: wgpu::BindGroup,
     /// Planche du héros vu à la troisième personne, avec la clé de son apparence
     hero: Option<(String, wgpu::BindGroup)>,
+    /// Planches des habitants et des voyageurs, par apparence, et l'image où chacune a servi pour
+    /// la dernière fois
+    villagers: Vec<(String, wgpu::BindGroup, u64)>,
+    frame_number: u64,
     buffers: Option<Buffers>,
     draws: Vec<(Option<usize>, Range<u32>)>,
     num_indices: u32,
@@ -127,7 +134,7 @@ impl CreatureRenderer {
         });
         let white = Texture { width: 1, height: 1, rgba: vec![255; 4] };
         let plain = texture_bind_group(device, queue, &texture_layout, &sampler, &white, "Creature Plain Texture");
-        Self { pipeline, pipeline_layout: layout, texture_layout, sampler, textures: Vec::new(), plain, hero: None, buffers: None, draws: Vec::new(), num_indices: 0, center: Vec3::ZERO, radius: 0.0 }
+        Self { pipeline, pipeline_layout: layout, texture_layout, sampler, textures: Vec::new(), plain, hero: None, villagers: Vec::new(), frame_number: 0, buffers: None, draws: Vec::new(), num_indices: 0, center: Vec3::ZERO, radius: 0.0 }
     }
 
     /// Cible de la passe 3D changée (MSAA coupé ou rétabli, format HDR) : le pipeline est
@@ -154,6 +161,33 @@ impl CreatureRenderer {
         let sheet = Texture { width: size, height: size, rgba: herocraft_common::hero::paint(appearance).rgba };
         let bind_group = texture_bind_group(device, queue, &self.texture_layout, &self.sampler, &sheet, "Hero Sheet");
         self.hero = Some((key, bind_group));
+    }
+
+    /// Début d'une image : les planches d'habitants inutilisées depuis longtemps sont oubliées (les
+    /// indices des autres changent, à demander de nouveau avec `villager_texture`)
+    pub fn begin_villagers(&mut self) {
+        self.frame_number += 1;
+        if self.villagers.len() > MAX_VILLAGER_SHEETS {
+            let now = self.frame_number;
+            self.villagers.retain(|(_, _, used)| now - used < 600);
+        }
+    }
+
+    /// Indice de texture de la planche d'un habitant (peinte la première fois qu'on la demande)
+    pub fn villager_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, appearance: &herocraft_common::hero::Appearance) -> usize {
+        let key = appearance.sheet_key();
+        let slot = match self.villagers.iter().position(|(k, _, _)| *k == key) {
+            Some(slot) => slot,
+            None => {
+                let size = herocraft_common::hero::SHEET_SIZE as u32;
+                let sheet = Texture { width: size, height: size, rgba: herocraft_common::hero::paint(appearance).rgba };
+                let bind_group = texture_bind_group(device, queue, &self.texture_layout, &self.sampler, &sheet, "Villager Sheet");
+                self.villagers.push((key, bind_group, 0));
+                self.villagers.len() - 1
+            }
+        };
+        self.villagers[slot].2 = self.frame_number;
+        crate::hero_model::VILLAGER_TEXTURE_BASE + slot
     }
 
     /// Envoie le maillage de l'image
@@ -217,6 +251,7 @@ impl CreatureRenderer {
         for (texture, range) in &self.draws {
             let bind_group = match texture {
                 Some(crate::hero_model::HERO_TEXTURE) => self.hero.as_ref().map(|(_, b)| b),
+                Some(t) if *t >= crate::hero_model::VILLAGER_TEXTURE_BASE => self.villagers.get(t - crate::hero_model::VILLAGER_TEXTURE_BASE).map(|(_, b, _)| b),
                 Some(t) => self.textures.get(*t).and_then(|b| b.as_ref()),
                 None => None,
             }

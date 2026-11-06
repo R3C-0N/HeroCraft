@@ -190,6 +190,7 @@ pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
         player_id,
         players: HashMap::new(),
         creatures: HashMap::new(),
+        villager_cards: HashMap::new(),
         last_move_sent: None,
         last_move: None,
     };
@@ -349,6 +350,8 @@ pub struct NetClient {
     player_id: u64,
     players: HashMap<u64, RemotePlayer>,
     creatures: HashMap<u64, RemoteCreature>,
+    /// Fiches des habitants et des voyageurs du voisinage, par créature
+    villager_cards: HashMap<u64, std::sync::Arc<herocraft_common::VillagerCard>>,
     last_move_sent: Option<Instant>,
     last_move: Option<(Vec3, f32, f32, bool, bool, Option<u16>)>,
 }
@@ -492,9 +495,13 @@ impl NetClient {
                 creature.push(at, &state);
                 self.creatures.insert(state.creature_id, creature);
             }
+            ServerPacket::VillagerCard { creature_id, card } => {
+                self.villager_cards.insert(creature_id, std::sync::Arc::new(*card));
+            }
             ServerPacket::CreaturesDespawned(ids) => {
                 for id in ids {
                     self.creatures.remove(&id);
+                    self.villager_cards.remove(&id);
                 }
             }
             ServerPacket::CreatureStates(states) => {
@@ -571,6 +578,11 @@ impl NetClient {
     }
 
     /// Créatures du voisinage à dessiner, leur espèce cherchée dans `registry`
+    /// Fiche de l'habitant ou du voyageur qu'incarne la créature `id`
+    pub fn villager_card(&self, id: u64) -> Option<&std::sync::Arc<herocraft_common::VillagerCard>> {
+        self.villager_cards.get(&id)
+    }
+
     pub fn creature_views(&self, registry: &CreatureRegistry) -> Vec<CreatureView> {
         self.creatures
             .iter()

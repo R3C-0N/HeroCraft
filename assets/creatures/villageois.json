@@ -1,0 +1,18 @@
+{
+  "name": "Villageois",
+  "description": "Habitant d'une ville ou d'un village. Paisible : frappé, il s'enfuit et les gardes accourent.",
+  "body": {"half_width": 0.3, "half_length": 0.3, "height": 1.8},
+  "walk_speed": 1.6,
+  "health": 10,
+  "temperament": "placide",
+  "activity": "diurnal",
+  "humanoid": true,
+  "afraid_of": ["loup", "ours", "sanglier", "chien", "brute", "champion", "gorgone", "millepattes", "rampant", "treant"],
+  "model": {
+    "animations": {
+      "travaille": {"cycle": 0.8, "pause": {"poids": 1, "duree": [4, 10]}},
+      "discute": {"cycle": 1.6, "pause": {"poids": 1, "duree": [3, 8]}},
+      "sommeil": {"cycle": 4, "pause": {"poids": 0, "duree": [10, 20]}}
+    }
+  }
+}

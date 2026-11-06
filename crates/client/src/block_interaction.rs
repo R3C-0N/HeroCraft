@@ -210,6 +210,18 @@ impl BlockInteraction {
         self.columns = query.into_columns();
     }
 
+    /// Distance libre sous le réticule, jusqu'au premier bloc solide et au plus `blocks` blocs
+    /// au-delà du bras : ce que le joueur voit (pour lire le nom d'un habitant visé de loin)
+    pub fn sight(&mut self, camera: &OrbitCamera, generator: &PlanetWorldGenerator, edits: &TerrainEdits, blocks: f64) -> Option<f32> {
+        let (eye, dir, arm) = camera.view_ray()?;
+        let geometry = BlockGeometry::new(camera.base_radius as f64);
+        let reach = arm as f64 + blocks * geometry.block_height;
+        let mut query = TerrainQuery::with_columns(generator, edits, std::mem::take(&mut self.columns));
+        let hit = raycast_blocks(&geometry, eye.as_dvec3(), dir.as_dvec3(), reach, |pos| Some(query.block(pos)).filter(|&b| is_targetable(b)));
+        self.columns = query.into_columns();
+        Some(hit.map_or(reach, |h| h.distance) as f32)
+    }
+
     /// Applique l'action au bloc visé, puis vise à nouveau. Le bloc posé est pris dans la case
     /// choisie de la barre d'objets ; une houe y laboure l'herbe ou la terre, une graine se sème sur
     /// la terre labourée. Renvoie chaque bloc changé, son nouveau contenu et l'ancien (le bloc cassé,

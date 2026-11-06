@@ -470,7 +470,7 @@ mod tests {
     fn test_bestiary_models_load() {
         let registry = CreatureRegistry::load_default();
         assert!(registry.len() >= 19);
-        for species in registry.iter() {
+        for species in registry.iter().filter(|s| !s.humanoid) {
             let model = SkinnedModel::load(&registry.asset_path(&species.model.mesh)).unwrap_or_else(|e| panic!("{} : {e}", species.id));
             let animation = model.animation("repos").unwrap_or_else(|| panic!("{} : pas d'animation", species.id));
             assert!(animation.duration > 0.0);

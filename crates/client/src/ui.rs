@@ -504,6 +504,15 @@ pub(crate) const MENU_PADDING: f32 = 18.0;
 const OPTIONS_SIDEBAR_MIN_WIDTH: f32 = 560.0;
 const OPTIONS_SIDEBAR_WIDTH: f32 = 150.0;
 
+/// Échanges ouverts avec un habitant ou un voyageur
+pub struct TradeScreen {
+    /// Créature qui l'incarne (les échanges se ferment s'il s'éloigne)
+    pub creature_id: u64,
+    pub card: std::sync::Arc<herocraft_common::VillagerCard>,
+    /// Résultat du dernier échange
+    notice: Option<String>,
+}
+
 pub struct UiState {
     pub ctx: egui::Context,
     pub raw_input: egui::RawInput,
@@ -552,6 +561,8 @@ pub struct UiState {
     pub icons: ItemIcons,
     /// Écran d'inventaire ouvert (la souris est libérée pour déplacer les piles)
     pub inventory_open: bool,
+    /// Échanges ouverts avec un habitant ou un voyageur
+    pub trade: Option<TradeScreen>,
     /// Jauges, classe et niveau du joueur
     pub player: PlayerStats,
     /// Écran de la roue des compétences ouvert (la souris est libérée pour choisir)
@@ -618,6 +629,7 @@ impl UiState {
             station: None,
             icons: ItemIcons::default(),
             inventory_open: false,
+            trade: None,
             player: PlayerStats::default(),
             skills_open: false,
             skill_wheel: SkillWheel::standard(),
@@ -811,13 +823,22 @@ impl UiState {
             self.menu_page = MenuPage::Main;
             self.set_inventory_open(false);
             self.skills_open = false;
+            self.trade = None;
             self.map_open = false;
         }
     }
 
     /// Un écran de jeu (inventaire, compétences, créateur de légende) est ouvert par-dessus la partie
     pub fn screen_open(&self) -> bool {
-        self.inventory_open || self.skills_open || self.map_open || self.creator_open()
+        self.inventory_open || self.skills_open || self.trade.is_some() || self.map_open || self.creator_open()
+    }
+
+    /// Ouvre les échanges avec l'habitant qu'incarne la créature `creature_id`
+    pub fn open_trade(&mut self, creature_id: u64, card: std::sync::Arc<herocraft_common::VillagerCard>) {
+        self.set_inventory_open(false);
+        self.skills_open = false;
+        self.map_open = false;
+        self.trade = Some(TradeScreen { creature_id, card, notice: None });
     }
 
     /// Ouvre ou referme l'écran de la roue des compétences (l'inventaire se referme)
@@ -874,7 +895,9 @@ impl UiState {
     /// Touche Échap : ouvre le menu, remonte d'un sous-menu vers l'accueil, ou referme le menu
     /// depuis l'accueil. Renvoie l'état d'ouverture du menu.
     pub fn handle_escape(&mut self) -> bool {
-        if self.inventory_open {
+        if self.trade.is_some() {
+            self.trade = None;
+        } else if self.inventory_open {
             self.set_inventory_open(false);
         } else if self.skills_open {
             self.set_skills_open(false);
@@ -1065,6 +1088,8 @@ impl UiState {
                 self.draw_vitals_hud(ctx);
                 if self.player.is_dead() {
                     self.draw_death_screen(ctx, &mut action);
+                } else if self.trade.is_some() {
+                    self.draw_trade_screen(ctx);
                 } else if self.inventory_open {
                     self.draw_inventory_screen(ctx);
                 } else if self.skills_open {
@@ -1143,6 +1168,93 @@ impl UiState {
                     });
                 });
             });
+    }
+
+    /// Écran des échanges : qui est l'habitant, ce qu'il dit, et chacun de ses échanges avec le
+    /// bouton pour le faire (grisé s'il manque quelque chose)
+    fn draw_trade_screen(&mut self, ctx: &egui::Context) {
+        let Some(trade) = self.trade.as_ref() else { return };
+        let card = trade.card.clone();
+        let notice = trade.notice.clone();
+        let mut done: Option<usize> = None;
+        let mut close = false;
+        let mut hovered: Option<(ItemId, Option<u16>)> = None;
+        egui::Area::new(egui::Id::new("trade_screen"))
+            .order(egui::Order::Middle)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                crate::ui_skin::SkinFrame::panel().show(ui, |ui| {
+                    ui.set_min_width(380.0_f32);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(&card.name).font(crate::ui_skin::title_font(20.0_f32)).color(GOLD_BRIGHT));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.add(SkinButton::new("Fermer").kind(ButtonKind::Secondary).small()).on_hover_text("Fermer (Échap)").clicked() {
+                                close = true;
+                            }
+                        });
+                    });
+                    let who = [card.profession.as_str(), card.culture.as_str(), card.origin.as_str()].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" · ");
+                    ui.label(egui::RichText::new(who).size(12.0_f32).color(TEXT_DIM));
+                    ui.add_space(6.0_f32);
+                    ui.label(egui::RichText::new(format!("« {} »", card.greeting)).italics().color(egui::Color32::from_rgb(232, 220, 196)));
+                    ui.add_space(8.0_f32);
+                    if card.trades.is_empty() {
+                        ui.label(egui::RichText::new("Il n'a rien à échanger.").size(12.0_f32).color(TEXT_DIM));
+                    } else {
+                        caption(ui, "ÉCHANGES");
+                    }
+                    for (index, offer) in card.trades.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+                            let mut slot = |ui: &mut egui::Ui, item: ItemId, count: u16| {
+                                let size = egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE);
+                                let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
+                                paint_slot(ui.painter(), &self.icons, rect, Some(ItemStack { item, count }), false, response.hovered());
+                                if response.hovered() {
+                                    hovered = Some((item, Some(count)));
+                                }
+                            };
+                            for &(item, count) in &offer.give {
+                                slot(ui, item, count);
+                            }
+                            ui.label(egui::RichText::new("»").size(22.0_f32).color(GOLD_BRIGHT));
+                            slot(ui, offer.get.0, offer.get.1);
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let can = self.inventory.can_trade(offer);
+                                let button = ui.add_enabled(can, SkinButton::new("Échanger").kind(ButtonKind::Secondary).small());
+                                if button.clicked() {
+                                    done = Some(index);
+                                }
+                                if !can {
+                                    button.on_disabled_hover_text("Il te manque de quoi payer");
+                                }
+                            });
+                        });
+                    }
+                    if let Some(notice) = notice {
+                        ui.add_space(4.0_f32);
+                        ui.label(egui::RichText::new(notice).size(12.0_f32).color(TEXT_DIM));
+                    }
+                });
+            });
+        if let Some((item, count)) = hovered {
+            egui::show_tooltip_at_pointer(ctx, egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("trade_tip")), egui::Id::new("trade_tip"), |ui| item_tooltip(ui, item, count));
+        }
+        if let Some(index) = done {
+            let offer = &card.trades[index];
+            let notice = if self.inventory.trade(offer) {
+                self.inventory.save();
+                format!("Échangé : {} × {}", offer.get.0.name(), offer.get.1)
+            } else {
+                "Plus de place dans le sac.".to_string()
+            };
+            if let Some(t) = self.trade.as_mut() {
+                t.notice = Some(notice);
+            }
+        }
+        if close {
+            self.trade = None;
+        }
     }
 
     /// Écran d'inventaire : à gauche le héros entre ses huit cases d'équipement (tête, torse,
@@ -3347,7 +3459,7 @@ mod tests {
             .and_then(|t| t.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
             .unwrap_or((1280_usize, 720_usize));
 
-        let scenes: [(&str, fn(&mut UiState), bool, Option<egui::Pos2>); 8] = [
+        let scenes: [(&str, fn(&mut UiState), bool, Option<egui::Pos2>); 9] = [
             ("menu", |ui| ui.open_menu_at(MenuPage::Main), true, None),
             ("menu_survol", |ui| ui.open_menu_at(MenuPage::Main), true, Some(egui::pos2(640.0, 372.0))),
             ("options", |ui| ui.open_menu_at(MenuPage::Options), true, None),
@@ -3358,6 +3470,25 @@ mod tests {
             ("commandes", |ui| ui.open_menu_at(MenuPage::Controls), true, None),
             ("multijoueur", |ui| ui.open_menu_at(MenuPage::Multiplayer), true, None),
             ("inventaire", |ui| ui.set_inventory_open(true), true, None),
+            ("echanges", |ui| {
+                let registry = herocraft_common::professions();
+                let forgeron = registry.get(registry.find("forgeron").unwrap()).unwrap();
+                let mut look = herocraft_common::hero::atlas().defaut("nain");
+                look.tenue = "tablier".into();
+                let card = herocraft_common::VillagerCard {
+                    name: "Thorgrim".into(),
+                    profession: forgeron.name.clone(),
+                    culture: "Nains".into(),
+                    origin: "Habitant de la ville".into(),
+                    appearance: look,
+                    trades: forgeron.trades.iter().take(4).cloned().collect(),
+                    greeting: forgeron.lines[0].clone(),
+                };
+                let (ingot, coal) = (herocraft_common::villager::find_item("ironIngot").unwrap(), herocraft_common::villager::find_item("coal").unwrap());
+                ui.inventory.add_many(ingot, 5);
+                ui.inventory.add_many(coal, 3);
+                ui.open_trade(1, std::sync::Arc::new(card));
+            }, true, None),
             ("inventaire_equipe", |ui| {
                 let mut appearance = herocraft_common::hero::Appearance::default();
                 appearance.nom = "Aldric".to_string();

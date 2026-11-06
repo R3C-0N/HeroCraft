@@ -28,6 +28,7 @@ mod dropped_items;
 mod gpu_timer;
 mod hero_creator;
 mod hero_model;
+mod villagers;
 mod input;
 mod inventory;
 mod item_icons;
@@ -190,6 +191,7 @@ fn main() {
     let mut next_planet_seed: Option<u64> = None;
     let mut creatures_seed = current_seed;
     let mut creature_animator = creatures::CreatureAnimator::default();
+    let mut villager_animator = villagers::VillagerAnimator::default();
     let mut hero_gait = hero_model::HeroGait::default();
     let mut hero_figure = hero_model::FigureCache::default();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
@@ -318,7 +320,19 @@ fn main() {
                             // Pose appliquée et remaillée sur-le-champ : le bloc change dans la frame qui
                             // suit le clic. Le clic gauche (casse, coup à une bête) avance à chaque frame.
                             let pressed = *btn_state == ElementState::Pressed;
-                            if let Some(action) = block_interaction.on_mouse_button(*button, pressed) {
+                            // Clic droit sur un habitant ou un voyageur : ses échanges s'ouvrent
+                            let villager = (pressed && *button == MouseButton::Right)
+                                .then(|| aimed_creature(&camera, &block_interaction, &creature_views, &creature_registry))
+                                .flatten()
+                                .and_then(|id| match net.as_ref() {
+                                    Some(client) => client.villager_card(id).cloned(),
+                                    None => solo_creatures.villager_card(id).cloned(),
+                                }.map(|card| (id, card)));
+                            if let Some((id, card)) = villager {
+                                camera.release_inputs();
+                                block_interaction.reset();
+                                ui_state.open_trade(id, card);
+                            } else if let Some(action) = block_interaction.on_mouse_button(*button, pressed) {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
                                 // Clic droit sur un établi : il s'ouvre (accroupi, on pose contre lui)
                                 let station = block_interaction.aimed_station().filter(|_| action == block_interaction::BlockAction::Place && !camera.is_crouching());
@@ -459,6 +473,11 @@ fn main() {
                             // Créateur de légende : le clavier ne sert qu'à écrire le nom
                         } else if ui_state.chat.open {
                             // Chat ouvert : les touches vont à la saisie (egui), pas au joueur
+                        } else if ui_state.trade.is_some() {
+                            // Échanges avec un habitant : la touche de l'inventaire les referme aussi
+                            if is_pressed && !*repeat && ui_state.controls.action_for(key_code) == Some(Action::OpenInventory) {
+                                ui_state.trade = None;
+                            }
                         } else if ui_state.inventory_open {
                             // Écran d'inventaire : seule sa touche le referme, sauf pendant la saisie
                             // d'une recherche dans les recettes
@@ -539,6 +558,7 @@ fn main() {
                         if ui_state.screen_open() && camera.target_distance > camera.base_radius {
                             ui_state.set_inventory_open(false);
                             ui_state.set_skills_open(false);
+                            ui_state.trade = None;
                             ui_state.set_map_open(false);
                         }
                         // Première arrivée au sol d'un héros sans légende : le créateur s'ouvre
@@ -640,16 +660,28 @@ fn main() {
                         let mut terrain_edited = false;
                         attack_cooldown = (attack_cooldown - dt).max(0.0);
                         let mut aimed = None;
+                        let mut looked_at = None;
                         if cursor_captured {
                             let edits = lod_manager.terrain_edits().clone();
                             block_interaction.update_target(&camera, &generator, &edits);
                             aimed = aimed_creature(&camera, &block_interaction, &creature_views, &creature_registry);
+                            // L'habitant sous le réticule, sans bloc devant lui : on lit son nom
+                            looked_at = block_interaction.sight(&camera, &generator, &edits, villagers::NAME_TAG_BLOCKS as f64).and_then(|sight| {
+                                let (eye, dir, _) = camera.view_ray()?;
+                                let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+                                creatures::aimed_creature(&creature_views, &creature_registry, eye, dir, sight, block).map(|(id, _)| id)
+                            });
                             // Une bête devant le bloc visé : c'est elle qu'on frappe, au rythme des
                             // coups, et le bloc derrière elle ne se fissure pas
                             let striking = aimed.filter(|_| block_interaction.is_breaking_held());
                             if let Some(id) = striking {
                                 block_interaction.pause_mining();
                                 hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut audio, &ui_state.audio_settings);
+                                // Un habitant tué en solo : le chat l'annonce (en ligne, c'est le serveur)
+                                let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
+                                for murder in solo_creatures.take_murders() {
+                                    ui_state.chat.server(&murder.announce(&name));
+                                }
                             }
                             let action = if striking.is_some() { None } else { block_interaction.tick(dt) };
                             if let Some(block) = block_interaction.take_hit() {
@@ -758,6 +790,7 @@ fn main() {
                                         benchmark::CreatureMode::Full | benchmark::CreatureMode::Stress => solo_creatures
                                             .creatures()
                                             .iter()
+                                            .filter(|c| !c.is_hidden())
                                             .map(|c| creatures::CreatureView::new(Some(c.species), &c.state()))
                                             .collect(),
                                         benchmark::CreatureMode::SimulationOnly | benchmark::CreatureMode::Off => Vec::new(),
@@ -768,8 +801,29 @@ fn main() {
                             let section = Instant::now();
                             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
                             let anim_dt = if ui_state.is_settings_open { 0.0 } else { dt };
-                            creature_animator.update(&creature_views, &creature_registry, &creature_models, anim_dt, block);
-                            let mut frame = creatures::build_frame(&creature_views, &creature_registry, &creature_models, &creature_animator, block);
+                            // Les bêtes d'après leur modèle, les habitants et les voyageurs avec le corps des héros
+                            let beasts: Vec<creatures::CreatureView> = creature_views.iter().filter(|v| !villagers::is_humanoid(v, &creature_registry)).copied().collect();
+                            creature_animator.update(&beasts, &creature_registry, &creature_models, anim_dt, block);
+                            let mut frame = creatures::build_frame(&beasts, &creature_registry, &creature_models, &creature_animator, block);
+                            villager_animator.update(&creature_views, &creature_registry, anim_dt, block);
+                            state.begin_villagers();
+                            {
+                                let card_of = |id: u64| match net.as_ref() {
+                                    Some(client) => client.villager_card(id).cloned(),
+                                    None => solo_creatures.villager_card(id).cloned(),
+                                };
+                                villagers::push_villagers(&mut frame, &creature_views, &creature_registry, card_of, &mut villager_animator, |a| state.villager_texture(a), block);
+                                let mut tags = net.as_ref().map(|c| c.name_tags(&camera, state.size.width as f32, state.size.height as f32)).unwrap_or_default();
+                                tags.extend(villagers::name_tags(&creature_views, card_of, looked_at, &camera, state.size.width as f32, state.size.height as f32));
+                                ui_state.name_tags = tags;
+                                // Les échanges se ferment quand l'habitant s'éloigne (ou disparaît)
+                                if let Some(trade) = ui_state.trade.as_ref() {
+                                    let near = villagers::feet_of(&creature_views, trade.creature_id).is_some_and(|f| f.distance(camera.player_pos) < 8.0 * block);
+                                    if !near {
+                                        ui_state.trade = None;
+                                    }
+                                }
+                            }
                             // Le héros, vu de dehors à la troisième personne
                             hero_gait.update(camera.player_pos, anim_dt, block);
                             if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson) {

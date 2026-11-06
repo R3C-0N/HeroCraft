@@ -1,0 +1,11 @@
+{
+  "name": "Pèlerin",
+  "nom_feminin": "Pèlerine",
+  "description": "Marche d'église en église.",
+  "voyageur": true,
+  "espece": "voyageur",
+  "poids": 0.7,
+  "tenues": ["robe", "toge"],
+  "couleurs": ["#8a7a5a", "#5a5a6a", "#e0d8c0"],
+  "repliques": ["Je marche vers le prochain sanctuaire.", "Que la route te soit douce.", "La nuit, je dors à la belle étoile."]
+}

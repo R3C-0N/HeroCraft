@@ -1,0 +1,19 @@
+{
+  "name": "Forgeron",
+  "nom_feminin": "Forgeronne",
+  "description": "Bat le fer à la forge du village et vend ses lames et ses outils.",
+  "lieu": "forge",
+  "tenues": ["tablier", "cuir"],
+  "couleurs": ["#5b4632", "#3e3a36", "#6e5440"],
+  "echanges": [
+    {"donne": {"ironIngot": 3, "coal": 2}, "recoit": {"ironSword": 1}},
+    {"donne": {"ironIngot": 3, "coal": 1}, "recoit": {"ironPickaxe": 1}},
+    {"donne": {"ironIngot": 3, "coal": 1}, "recoit": {"ironAxe": 1}},
+    {"donne": {"ironIngot": 2}, "recoit": {"ironHoe": 1}},
+    {"donne": {"ironIngot": 5, "coal": 2}, "recoit": {"ironShield": 1}},
+    {"donne": {"copperIngot": 2}, "recoit": {"copperSword": 1}},
+    {"donne": {"ironOre": 4, "coal": 2}, "recoit": {"ironIngot": 3}},
+    {"donne": {"copperOre": 4, "coal": 1}, "recoit": {"copperIngot": 3}}
+  ],
+  "repliques": ["Le fer se travaille tant qu'il est chaud.", "Une lame neuve ? J'en ai de bonnes.", "Apporte-moi du minerai, je t'en tire des lingots."]
+}

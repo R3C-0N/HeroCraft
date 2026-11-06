@@ -185,6 +185,12 @@ impl CreatureModels {
         let mut rigs = Vec::new();
         let mut textures = Vec::new();
         for species in registry.iter() {
+            if species.humanoid {
+                // Dessiné avec le corps des héros (`hero_model`)
+                rigs.push(None);
+                textures.push(None);
+                continue;
+            }
             let model = SkinnedModel::load(&registry.asset_path(&species.model.mesh));
             let texture = Texture::load(&registry.asset_path(&species.model.texture));
             match (model, texture) {
@@ -512,7 +518,7 @@ mod tests {
     fn setup() -> (CreatureRegistry, CreatureModels) {
         let registry = CreatureRegistry::load_default();
         let (models, textures) = CreatureModels::load(&registry);
-        assert!(textures.iter().all(Option::is_some));
+        assert!(registry.iter().zip(&textures).all(|(s, t)| s.humanoid || t.is_some()));
         (registry, models)
     }
 
@@ -633,6 +639,9 @@ mod tests {
     fn test_every_sheet_bone_exists_in_its_model() {
         let registry = CreatureRegistry::load_default();
         for species in registry.iter() {
+            if species.humanoid {
+                continue;
+            }
             let model = SkinnedModel::load(&registry.asset_path(&species.model.mesh)).unwrap();
             let (rig, missing) = Rig::new(model, species);
             assert!(missing.is_empty(), "{} : {missing:?}", species.id);

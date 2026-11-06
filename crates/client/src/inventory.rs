@@ -292,6 +292,44 @@ impl Inventory {
         true
     }
 
+    /// L'inventaire contient tout ce que demande un échange
+    pub fn can_trade(&self, trade: &herocraft_common::Trade) -> bool {
+        trade.give.iter().all(|&(item, count)| self.count(item) >= count as u32)
+    }
+
+    /// Fait un échange avec un habitant : donne ce qu'il demande (le sac d'abord) et range ce qu'il
+    /// donne. Renvoie faux, sans rien toucher, s'il manque un objet ou de la place.
+    pub fn trade(&mut self, trade: &herocraft_common::Trade) -> bool {
+        self.return_held();
+        let mut slots = self.slots.clone();
+        for &(item, count) in &trade.give {
+            let mut missing = count;
+            for slot in slots.iter_mut().rev() {
+                if missing == 0 {
+                    break;
+                }
+                if let Some(stack) = slot.as_mut().filter(|s| s.item == item) {
+                    let taken = stack.count.min(missing);
+                    stack.count -= taken;
+                    missing -= taken;
+                    if stack.count == 0 {
+                        *slot = None;
+                    }
+                }
+            }
+            if missing > 0 {
+                return false;
+            }
+        }
+        let mut after = Inventory { slots, ..Inventory::default() };
+        let (item, count) = trade.get;
+        if after.add_many(item, count) < count {
+            return false;
+        }
+        self.slots = after.slots;
+        true
+    }
+
     /// Fabrique jusqu'à `times` fois. Renvoie le nombre de fois fabriqué.
     pub fn craft_many(&mut self, recipe: &Recipe, times: u32) -> u32 {
         (0..times).take_while(|_| self.craft(recipe)).count() as u32
@@ -427,6 +465,24 @@ pub fn item_colors(block: BlockId) -> ([f32; 4], [f32; 4]) {
     match blocks().get(block) {
         Some(sheet) => (sheet.top_color(), sheet.side_color()),
         None => ([0.6, 0.6, 0.6, 1.0], [0.6, 0.6, 0.6, 1.0]),
+    }
+}
+
+#[cfg(test)]
+mod trade_tests {
+    use super::*;
+
+    #[test]
+    fn a_trade_takes_what_is_asked_and_gives_the_goods() {
+        let mut inventory = Inventory::default();
+        let (ingot, sword) = (ItemId(20000), ItemId(20001));
+        let trade = herocraft_common::Trade { give: vec![(ingot, 3)], get: (sword, 1) };
+        inventory.add_many(ingot, 2);
+        assert!(!inventory.can_trade(&trade) && !inventory.trade(&trade));
+        assert_eq!(inventory.count(ingot), 2);
+        inventory.add(ingot);
+        assert!(inventory.can_trade(&trade) && inventory.trade(&trade));
+        assert_eq!((inventory.count(ingot), inventory.count(sword)), (0, 1));
     }
 }
 

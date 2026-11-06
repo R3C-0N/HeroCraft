@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 13;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -155,6 +155,12 @@ pub enum ServerPacket {
         /// Identifiant de l'espèce (nom de son fichier dans `assets/creatures/`)
         species: String,
         state: CreatureState,
+    },
+    /// Fiche de l'habitant ou du voyageur qu'incarne une créature humanoïde, envoyée juste avant
+    /// son `CreatureSpawned`
+    VillagerCard {
+        creature_id: u64,
+        card: Box<crate::villager::VillagerCard>,
     },
     /// Créatures sorties du voisinage du joueur, ou disparues
     CreaturesDespawned(Vec<u64>),

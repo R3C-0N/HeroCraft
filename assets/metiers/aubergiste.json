@@ -1,0 +1,15 @@
+{
+  "name": "Aubergiste",
+  "description": "Sert à manger aux habitants et aux voyageurs dans la salle de la taverne.",
+  "lieu": "taverne",
+  "tenues": ["tablier", "gilet"],
+  "couleurs": ["#6b3d2a", "#4a3a2a", "#7a6a5a"],
+  "echanges": [
+    {"donne": {"copperIngot": 1}, "recoit": {"lapinAuxCarottes": 1}},
+    {"donne": {"copperIngot": 1}, "recoit": {"carottesRoties": 2}},
+    {"donne": {"copperIngot": 1}, "recoit": {"courgeRotie": 2}},
+    {"donne": {"ironIngot": 1}, "recoit": {"gratinDeSanglier": 1}},
+    {"donne": {"carotte": 6}, "recoit": {"carottesRoties": 2}}
+  ],
+  "repliques": ["Entre donc te réchauffer !", "Les voyageurs racontent de drôles d'histoires ce soir.", "Une assiette chaude ?"]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "Prêtre",
+  "nom_feminin": "Prêtresse",
+  "description": "Veille sur l'église et bénit les voyageurs.",
+  "lieu": "eglise",
+  "tenues": ["robe", "toge"],
+  "couleurs": ["#e8e2d0", "#3a3550", "#5a2a3a"],
+  "echanges": [
+    {"donne": {"amber": 2}, "recoit": {"bronzeTotem": 1}},
+    {"donne": {"diamond": 1}, "recoit": {"ironTotem": 1}}
+  ],
+  "repliques": ["Que la lumière guide tes pas.", "Les morts dorment en paix ici.", "Reviens quand tu veux, la porte est ouverte."]
+}

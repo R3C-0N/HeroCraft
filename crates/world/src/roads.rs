@@ -145,6 +145,12 @@ impl Road {
     pub fn columns(&self) -> usize {
         self.columns.len()
     }
+
+    /// Chemin d'essai réduit à son axe
+    #[cfg(test)]
+    pub(crate) fn for_tests(face: PlanetFace, from: (i32, i32), to: (i32, i32), points: Vec<(f64, f64)>) -> Self {
+        Road { face, from, to, points, bounds: Rect::new(0, 0, 0, 0), columns: HashMap::new() }
+    }
 }
 
 /// Les chemins d'une planète, liaison par liaison, tracés à la première lecture

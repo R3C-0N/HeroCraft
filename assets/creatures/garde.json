@@ -1,0 +1,30 @@
+{
+  "name": "Garde",
+  "description": "Défend sa ville : il chasse les bêtes à moins de dix blocs de lui, sans les poursuivre au-delà de trente, et s'en prend à qui frappe ou tue un habitant.",
+  "body": {"half_width": 0.3, "half_length": 0.3, "height": 1.85},
+  "walk_speed": 1.7,
+  "health": 30,
+  "temperament": "placide",
+  "activity": "always",
+  "humanoid": true,
+  "attack": {
+    "mode": "solo",
+    "damage": 4,
+    "cooldown": 1.0,
+    "sight": 18,
+    "engage": 10,
+    "leash": 30,
+    "reach": 1.0,
+    "chase_speed": 1.8,
+    "hunts_players": false,
+    "defends_herd": true,
+    "prey": ["loup", "ours", "sanglier", "chien", "brute", "champion", "gorgone", "millepattes", "rampant"]
+  },
+  "model": {
+    "animations": {
+      "travaille": {"cycle": 2.0, "pause": {"poids": 1, "duree": [4, 10]}},
+      "discute": {"cycle": 1.6, "pause": {"poids": 1, "duree": [3, 8]}},
+      "sommeil": {"cycle": 4, "pause": {"poids": 0, "duree": [10, 20]}}
+    }
+  }
+}
