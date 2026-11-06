@@ -1,6 +1,6 @@
 {
   "name": "Garde",
-  "description": "Défend sa ville : il chasse les bêtes qui s'en approchent et s'en prend à qui frappe un habitant.",
+  "description": "Défend sa ville : il chasse les bêtes à moins de dix blocs de lui, sans les poursuivre au-delà de trente, et s'en prend à qui frappe ou tue un habitant.",
   "body": {"half_width": 0.3, "half_length": 0.3, "height": 1.85},
   "walk_speed": 1.7,
   "health": 30,
@@ -12,6 +12,8 @@
     "damage": 4,
     "cooldown": 1.0,
     "sight": 18,
+    "engage": 10,
+    "leash": 30,
     "reach": 1.0,
     "chase_speed": 1.8,
     "hunts_players": false,

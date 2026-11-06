@@ -12,7 +12,7 @@
 //! flâne dans les rues, va au marché, s'arrête bavarder avec un voisin. Le soir venu, chacun à son
 //! heure, il rentre chez lui et disparaît derrière sa porte jusqu'au matin. Les gardes patrouillent
 //! d'une porte à l'autre ; la moitié d'entre eux veille la nuit. Ils chassent les bêtes qui
-//! approchent et s'en prennent au joueur qui frappe un habitant (`defends_herd`) ; les autres fuient
+//! approchent (à dix blocs, sans les poursuivre au-delà de trente) et s'en prennent au joueur qui frappe ou tue un habitant (`defends_herd`) ; les autres fuient
 //! les bêtes (`afraid_of`). Les rues sont parcourues sur une grille du plan qui contourne bâtiments,
 //! champs et remparts (`NavGrid`).
 //!

@@ -166,6 +166,12 @@ pub struct CreatureAttack {
     /// d'elle, elle s'en prend à lui (les gardes d'un village)
     #[serde(default)]
     pub defends_herd: bool,
+    /// Elle ne s'en prend qu'aux cibles à moins de tant de blocs d'elle (aucun : sa vue, `sight`)
+    #[serde(default)]
+    pub engage: Option<f32>,
+    /// Elle lâche sa cible à tant de blocs de là où la poursuite a commencé, et y revient
+    #[serde(default)]
+    pub leash: Option<f32>,
 }
 
 /// Volume du corps, en blocs

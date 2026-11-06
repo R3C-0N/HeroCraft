@@ -320,7 +320,7 @@ impl Server {
 
         let (ids, presences): (Vec<u64>, Vec<herocraft_world::PlayerPresence>) =
             self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching, holding: p.holding }))).unzip();
-        for hit in self.creatures.tick_with_presences(dt, &self.generator, &self.edits, &presences) {
+        for hit in self.creatures.tick_players(dt, &self.generator, &self.edits, &presences, &ids) {
             self.creature_attack(ids[hit.player], hit.species, hit.damage);
         }
         // Œufs pondus, à la place de la bête : montrés au joueur le plus proche (les objets au sol
@@ -735,7 +735,7 @@ impl Server {
         let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
         let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
         if self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
-            self.creatures.hit(creature_id, feet);
+            self.creatures.hit_by(creature_id, feet, id);
         }
     }
 
