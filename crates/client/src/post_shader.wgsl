@@ -8,7 +8,8 @@
 struct PostUniform {
     // x : exposition linéaire (2^EV), y : intensité du bloom, z : seuil, w : largeur du genou
     params: vec4<f32>,
-    // x : tonemapper (0 écrêtage, 1 épaule douce, 2 ACES, 3 AgX), y : 1 si la swapchain n'encode pas en sRGB
+    // x : tonemapper (0 écrêtage, 1 épaule douce, 2 ACES, 3 AgX), y : 1 si la swapchain n'encode pas en sRGB,
+    // z : ciel voilé par la météo (f32 en bits), qui ternit les couleurs
     mode: vec4<u32>,
 };
 
@@ -211,7 +212,10 @@ fn interleaved_gradient_noise(p: vec2<f32>) -> f32 {
 fn fs_composite(in: FullscreenOutput) -> @location(0) vec4<f32> {
     let hdr = sanitize(textureSampleLevel(src_tex, src_sampler, in.uv, 0.0).rgb);
     let bloom = textureSampleLevel(bloom_tex, src_sampler, in.uv, 0.0).rgb;
-    let c = (hdr + bloom * post.params.y) * post.params.x;
+    var c = (hdr + bloom * post.params.y) * post.params.x;
+    // Temps couvert : lumière grise et diffuse, couleurs ternies (le ciel bleu devient gris)
+    let overcast = bitcast<f32>(post.mode.z);
+    c = mix(c, vec3<f32>(dot(c, vec3<f32>(0.3, 0.5, 0.2))) * vec3<f32>(0.95, 0.98, 1.0), 0.6 * overcast);
 
     var mapped: vec3<f32>;
     switch post.mode.x {

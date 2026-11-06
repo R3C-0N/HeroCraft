@@ -20,6 +20,59 @@
 @group(2) @binding(1) var block_sampler: sampler;
 // Rang d'une face sans texture (NO_TEXTURE)
 const NO_TEXTURE: u32 = 0xFFFFu;
+// Genre de végétation de chaque couche (block_textures.rs, `foliage_classes`), 2 bits par couche :
+// 0 = autre, 1 = feuillus, 2 = conifères, 3 = herbe. Les saisons les colorent.
+@group(2) @binding(2) var<uniform> foliage: array<vec4<u32>, 64>;
+const FOLIAGE_DECIDUOUS: u32 = 1u;
+const FOLIAGE_CONIFER: u32 = 2u;
+const FOLIAGE_GRASS: u32 = 3u;
+
+fn foliage_class(layer: u32) -> u32 {
+    if (layer >= 4096u) {
+        return 0u;
+    }
+    let word = layer / 16u;
+    let bits = foliage[word / 4u][word % 4u];
+    return (bits >> ((layer % 16u) * 2u)) & 3u;
+}
+
+// Couleurs des saisons : rougeur d'automne et dépouillement d'hiver des feuillus, herbe qui jaunit
+// puis brunit. Les tropiques n'ont presque pas de saisons. La lumière reste celle de la couleur
+// d'origine (même luminance), seule la teinte change.
+fn season_color(color: vec3<f32>, kind: u32, world_pos: vec3<f32>, greenness: f32) -> vec3<f32> {
+    let up = normalize(world_pos);
+    let strength = smoothstep(0.2, 0.68, abs(up.y));
+    let north = up.y >= 0.0;
+    let autumn = select(camera.season.z, camera.season.x, north) * strength;
+    let winter = select(camera.season.w, camera.season.y, north) * strength;
+    if (autumn + winter < 0.001) {
+        return color;
+    }
+    let luma = dot(color, vec3<f32>(0.3, 0.59, 0.11));
+    var out = color;
+    if (kind == FOLIAGE_DECIDUOUS) {
+        // Chaque arbre (cellule de 6 blocs) prend sa couleur : orange, rouge ou or
+        let cell = vec3<i32>(floor(world_pos / (camera.scales.y * 6.0)));
+        var h = u32(cell.x) * 73856093u ^ u32(cell.y) * 19349663u ^ u32(cell.z) * 83492791u;
+        h = (h ^ (h >> 13u)) * 1274126177u;
+        let pick = f32((h >> 8u) & 1023u) / 1023.0;
+        var tint = vec3<f32>(1.0, 0.30, 0.05);
+        if (pick < 0.35) {
+            tint = vec3<f32>(0.85, 0.08, 0.04);
+        } else if (pick > 0.72) {
+            tint = vec3<f32>(1.0, 0.62, 0.08);
+        }
+        out = mix(out, tint * luma * 2.4, autumn * 0.95);
+        out = mix(out, vec3<f32>(0.42, 0.33, 0.24) * luma * 2.3, winter * 0.85);
+    } else if (kind == FOLIAGE_GRASS) {
+        let amount = select(greenness, 1.0, greenness < 0.0);
+        out = mix(out, vec3<f32>(0.80, 0.68, 0.30) * luma * 1.9, autumn * 0.45 * amount);
+        out = mix(out, vec3<f32>(0.55, 0.45, 0.32) * luma * 2.0, winter * 0.55 * amount);
+    } else if (kind == FOLIAGE_CONIFER) {
+        out = out * (1.0 - 0.15 * winter);
+    }
+    return out;
+}
 
 // Deux tampons (planet_mesh.rs) : la position seule, que lisent aussi les passes d'ombre, puis
 // les attributs tassés sur 8 bits
@@ -155,6 +208,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var base_color = in.color.rgb * texture_ratio;
 
+    // Saisons : feuillages et herbe ; le relief lointain sans texture suit l'herbe là où il est vert
+    if (!is_water) {
+        let green = in.color.rgb;
+        let greenness = clamp((green.g - max(green.r, green.b)) * 6.0, 0.0, 1.0);
+        let kind = select(FOLIAGE_GRASS, foliage_class(in.texture_layer), textured);
+        base_color = season_color(base_color, kind, in.world_pos, select(greenness, -1.0, textured));
+    }
+
+    // Météo : neige tombée sur le dessus des blocs, sol mouillé plus sombre, jusqu'à quelques
+    // centaines de blocs du joueur (au-delà, le temps qu'il fait n'est plus le même)
+    let blocks_away = length(in.to_eye) / camera.scales.y;
+    let local_weather = 1.0 - smoothstep(600.0, 1400.0, blocks_away);
+    let facing_up = smoothstep(0.7, 0.9, dot(n_facet, n_sphere));
+    if (!is_water) {
+        base_color *= 1.0 - 0.28 * camera.weather.y * facing_up * local_weather;
+        base_color = mix(base_color, vec3<f32>(0.90, 0.93, 0.98), camera.weather.z * facing_up * local_weather);
+    }
+
     // Si on est sur une falaise terrestre en vue orbitale :
     // On applique une roche minérale sombre avec fines strates rocheuses étagées
     if (!is_water && cliff_factor > 0.01) {
@@ -221,7 +292,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let direct_level = mix(half_lambert, direct, 0.65) * water_diffuse * sun_vis;
 
     // Éclairage combiné : ambiance (ciel / nuit étoilée / clair de lune) + soleil direct + lune directe
-    let total_light = night_ambient_total * night_factor + sun_ambient + sun_color * direct_level + moon_direct_color;
+    // Éclair : un instant, tout s'éclaire d'une lumière blanc bleuté
+    let flash_light = vec3<f32>(1.3, 1.4, 1.7) * camera.weather.w * (0.4 + 0.6 * facing_up);
+    let total_light = night_ambient_total * night_factor + sun_ambient + sun_color * direct_level + moon_direct_color + flash_light;
 
     // 5. Reflets spéculaires d'eau et de glace
     var specular_light = vec3<f32>(0.0);

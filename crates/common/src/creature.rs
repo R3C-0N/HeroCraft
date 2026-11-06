@@ -59,6 +59,9 @@ pub struct CreatureSpecies {
     /// Comportement agressif (aucun : la bête est paisible et s'enfuit quand on la frappe)
     #[serde(default)]
     pub attack: Option<CreatureAttack>,
+    /// Elle dort tout l'hiver (ours), là où les saisons sont marquées
+    #[serde(default)]
+    pub hibernation: bool,
     /// Ce que la bête tuée laisse tomber (voir `loot`)
     #[serde(default)]
     pub loot: Vec<crate::loot::LootEntry>,
