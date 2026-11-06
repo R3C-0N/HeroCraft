@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 12;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -89,6 +89,13 @@ pub enum ClientPacket {
     Heal,
     /// Commande `/xp` : points d'expérience gagnés
     GainExperience(u64),
+    /// Commandes `/time set`, `/season` et `/weather` : le ciel est celui du serveur, pour tous.
+    /// `time` : nouveau temps du ciel ; `forced` : nouveau temps imposé (`Some(None)` : le temps
+    /// naturel revient)
+    SetSky {
+        time: Option<f64>,
+        forced: Option<Option<crate::WeatherKind>>,
+    },
     /// Le joueur quitte la partie
     Disconnect,
 }
@@ -177,6 +184,12 @@ pub enum ServerPacket {
     ChatMessage {
         sender: String,
         message: String,
+    },
+    /// Horloge du ciel du serveur (heure, saison, météo), à la connexion puis à intervalle régulier
+    Clock {
+        time: f64,
+        /// Temps imposé par `/weather`, ou `None` pour le temps naturel
+        forced: Option<crate::WeatherKind>,
     },
     /// Erreur ou déconnexion
     Disconnect(String),

@@ -18,8 +18,13 @@ use std::path::{Path, PathBuf};
 use herocraft_common::{cultures, BlockAddress, BlockId, CropRegistry, WATER_REACH_BLOCKS};
 use serde::{Deserialize, Serialize};
 
-use crate::edits::{BlockPos, TerrainEdits, TerrainQuery};
-use crate::generator::PlanetWorldGenerator;
+use crate::edits::{BlockPos, TerrainEdits, TerrainQuery, FACE_BLOCKS};
+use crate::generator::{PlanetWorldGenerator, SEA_LEVEL_BLOCKS};
+use crate::weather::{crop_growth_factor, WeatherModel};
+
+/// Côté, en blocs, d'une parcelle où le temps est le même pour toutes les plantes (le temps ne
+/// change pas d'un bloc à l'autre : inutile de le calculer pour chacune)
+const WEATHER_PATCH_BLOCKS: i32 = 32;
 
 /// Fichier du registre, dans le dossier de sauvegarde du monde
 pub const FIELDS_FILE: &str = "cultures.json";
@@ -142,6 +147,25 @@ impl Fields {
         }
         grown
     }
+
+    /// `tick` sous le temps qu'il fait : la saison et la météo de `model` au temps du ciel `time`
+    /// règlent la pousse de chaque plante (rien sous la neige ni dans le gel, moins en automne et
+    /// en hiver, un peu plus sous la pluie)
+    pub fn tick_in_weather(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, model: &WeatherModel, time: f64) -> Vec<(BlockPos, BlockId)> {
+        let mut patches: HashMap<(u8, i32, i32, i32), f32> = HashMap::new();
+        self.tick(dt, generator, edits, |pos| {
+            let s = WEATHER_PATCH_BLOCKS;
+            let key = (pos.face as u8, pos.x.div_euclid(s), pos.z.div_euclid(s), pos.y.div_euclid(s));
+            *patches.entry(key).or_insert_with(|| crop_weather_factor(model, time, pos))
+        })
+    }
+}
+
+/// Multiplicateur de pousse du temps qu'il fait sur la plante en `pos`
+pub fn crop_weather_factor(model: &WeatherModel, time: f64, pos: BlockPos) -> f32 {
+    let span = 2.0 / FACE_BLOCKS as f64;
+    let dir = pos.face.uv_to_sphere_direction(-1.0 + (pos.x as f64 + 0.5) * span, -1.0 + (pos.z as f64 + 0.5) * span);
+    crop_growth_factor(&model.sample(dir, pos.y as f64 - SEA_LEVEL_BLOCKS, time))
 }
 
 /// Terre labourée que donne la houe en `pos` : humide s'il y a de l'eau à moins de
@@ -204,6 +228,24 @@ mod tests {
         edits.set_block(&generator, pos, BlockId::AIR);
         assert!(fields.tick(1.0, &generator, &edits, |_| 1.0).is_empty());
         assert!(fields.is_empty());
+    }
+
+    #[test]
+    fn test_crops_do_not_grow_under_snow() {
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
+        let edits = TerrainEdits::new(None);
+        let registry = cultures();
+        let wheat = registry.crop_of_seed(items().find("grainesBle").unwrap()).unwrap().clone();
+        let soil = BlockPos::new(PlanetFace::PosX, 100, 300, 100);
+        let pos = BlockPos { y: soil.y + 1, ..soil };
+        edits.set_block(&generator, soil, registry.farmland(true).unwrap());
+        edits.set_block(&generator, pos, wheat.stages[0]);
+        let mut fields = Fields::new();
+        fields.observe(pos, wheat.stages[0]);
+        let mut model = WeatherModel::new(2026);
+        model.forced = Some(crate::WeatherKind::Snow);
+        assert!(fields.tick_in_weather(wheat.stage_seconds * 10.0, &generator, &edits, &model, 0.0).is_empty());
+        assert_eq!(fields.progress(pos), Some(0.0));
     }
 
     #[test]

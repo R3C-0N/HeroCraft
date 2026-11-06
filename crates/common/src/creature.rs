@@ -63,6 +63,9 @@ pub struct CreatureSpecies {
     /// grandir (aucun : elle ne s'élève pas)
     #[serde(default)]
     pub breeding: Option<Breeding>,
+    /// Elle dort tout l'hiver (ours), là où les saisons sont marquées
+    #[serde(default)]
+    pub hibernation: bool,
     /// Ce que la bête tuée laisse tomber (voir `loot`)
     #[serde(default)]
     pub loot: Vec<crate::loot::LootEntry>,

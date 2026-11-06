@@ -13,6 +13,7 @@ pub mod profiler;
 pub mod protocol;
 pub mod skills;
 pub mod voxel;
+pub mod weather;
 
 pub use blocks::*;
 pub use character::*;
@@ -25,3 +26,4 @@ pub use math::*;
 pub use protocol::*;
 pub use skills::{LearnError, SkillWheel};
 pub use voxel::*;
+pub use weather::WeatherKind;

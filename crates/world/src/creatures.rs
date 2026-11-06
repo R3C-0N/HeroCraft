@@ -460,6 +460,9 @@ pub struct CreatureWorld {
     /// Direction du soleil (repère du centre de la planète), d'où l'heure en chaque lieu. `None` :
     /// pas d'horloge, toutes les espèces restent éveillées.
     sun_dir: Option<Vec3>,
+    /// Météo et temps du ciel : sous l'orage les bêtes s'abritent, l'hiver les ours hibernent.
+    /// `None` : pas de météo.
+    climate: Option<(crate::weather::WeatherModel, f64)>,
     /// Faux : les zones restent vides (tests d'une bête seule)
     populate: bool,
     /// Fichier où la population est enregistrée, ou `None` pour ne rien enregistrer
@@ -556,6 +559,7 @@ impl CreatureWorld {
             next_id: MANUAL_ID_BASE,
             rng: StdRng::seed_from_u64(seed),
             sun_dir: None,
+            climate: None,
             populate: true,
             save_path: None,
             columns: HashMap::new(),
@@ -592,6 +596,17 @@ impl CreatureWorld {
     /// Règle l'heure : la direction du soleil, vue du centre de la planète
     pub fn set_sun_dir(&mut self, sun_dir: Vec3) {
         self.sun_dir = Some(sun_dir.normalize_or_zero());
+    }
+
+    /// Règle la météo et le temps du ciel (saisons) : à appeler à chaque image avec `set_sun_dir`
+    pub fn set_climate(&mut self, model: &crate::weather::WeatherModel, time: f64) {
+        match &mut self.climate {
+            Some((m, t)) => {
+                m.forced = model.forced;
+                *t = time;
+            }
+            None => self.climate = Some((model.clone(), time)),
+        }
     }
 
     /// Enregistre la population : zones déjà peuplées, bêtes endormies et éveillées. Sans effet pour
@@ -1085,7 +1100,7 @@ impl CreatureWorld {
         self.rear(dt);
 
         let herds = herd_pulls(&self.creatures, self.geometry.block_height as f32);
-        let mut walker = Walker { geometry: self.geometry, query: &mut query, sun_dir: self.sun_dir };
+        let mut walker = Walker { geometry: self.geometry, query: &mut query, sun_dir: self.sun_dir, climate: self.climate.as_ref() };
         for (creature, herd) in self.creatures.iter_mut().zip(herds) {
             if let Some(species) = self.registry.get(creature.species) {
                 let nearest = presences.iter().copied().min_by(|a, b| a.feet.distance_squared(creature.position).total_cmp(&b.feet.distance_squared(creature.position)));
@@ -1340,6 +1355,7 @@ struct Walker<'q, 'a> {
     geometry: BlockGeometry,
     query: &'q mut TerrainQuery<'a>,
     sun_dir: Option<Vec3>,
+    climate: Option<&'q (crate::weather::WeatherModel, f64)>,
 }
 
 impl Walker<'_, '_> {
@@ -1350,6 +1366,17 @@ impl Walker<'_, '_> {
     /// Altitude des pieds, en blocs depuis le fond du monde
     fn altitude(&self, p: Vec3) -> f32 {
         ((p.length() as f64 - self.geometry.base_radius) / self.geometry.block_height) as f32
+    }
+
+    /// La météo garde la bête couchée : l'orage ou une forte averse (elle se tapit là où elle est,
+    /// sauf les espèces toujours éveillées), ou l'hiver pour une espèce qui hiberne
+    fn weather_keeps_asleep(&self, p: Vec3, species: &CreatureSpecies) -> bool {
+        let Some((model, time)) = self.climate else { return false };
+        let altitude = self.altitude(p) as f64 - crate::generator::SEA_LEVEL_BLOCKS;
+        let sample = model.sample(p.as_dvec3(), altitude, *time);
+        let hibernating = species.hibernation && sample.season == crate::weather::Season::Winter && sample.season_strength > 0.3;
+        let sheltering = species.activity != herocraft_common::Activity::Always && (sample.storm > 0.3 || (sample.precipitation > 0.8 && !sample.snow));
+        hibernating || sheltering
     }
 
     /// Altitude du sol sous `p` pour des pieds à `altitude` : dessus du plus haut bloc porteur qui ne
@@ -1574,7 +1601,8 @@ impl Walker<'_, '_> {
                 c.timer = c.timer.min(0.5);
             }
             if c.timer <= 0.0 {
-                let awake = sun_height(self.sun_dir, c.position).is_none_or(|height| species.activity.is_awake(height));
+                let awake = sun_height(self.sun_dir, c.position).is_none_or(|height| species.activity.is_awake(height))
+                    && !self.weather_keeps_asleep(c.position, species);
                 // Au repos, elle emboîte volontiers le pas des voisines qui marchent
                 let follow = herd.heading.filter(|_| awake && !c.sleeping && !c.walking && rng.gen_bool(HERD_FOLLOW_CHANCE));
                 if !awake {
@@ -2167,6 +2195,48 @@ mod tests {
         }
         assert!(!get(&world, cow_id).0, "la vache dort en plein jour");
         assert!(get(&world, wolf_id).0, "le loup ne dort pas en plein jour");
+    }
+
+    #[test]
+    fn animals_shelter_from_storms_and_bears_hibernate() {
+        use crate::weather::{Season, WeatherKind, WeatherModel};
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, feet) = grass_column(&generator, &edits);
+        let up = feet.normalize();
+        let mut world = CreatureWorld::new(generator.base_radius(), 3, registry());
+        let cow = world.spawn(world.registry().find("vache").unwrap(), feet);
+        let bear = world.spawn(world.registry().find("ours").unwrap(), feet + up * 0.01);
+        let sleeping = |world: &CreatureWorld, id| world.creatures().iter().find(|c| c.id == id).unwrap().is_sleeping();
+        let run = |world: &mut CreatureWorld| {
+            for _ in 0..600 {
+                world.tick(0.05, &generator, &edits, &[feet]);
+            }
+        };
+        // Midi, en plein orage : la vache se couche
+        world.set_sun_dir(up);
+        let mut model = WeatherModel::new(3);
+        model.forced = Some(WeatherKind::Storm);
+        let lat = (up.y as f64).clamp(-1.0, 1.0).asin();
+        // Saison chaude à cette latitude : l'ours ne dort que pour l'orage
+        let summer = crate::weather::time_for_season(0.0, if lat >= 0.0 { Season::Summer } else { Season::Winter });
+        world.set_climate(&model, summer);
+        run(&mut world);
+        assert!(sleeping(&world, cow), "la vache reste debout sous l'orage");
+        // Beau temps : elle se relève
+        model.forced = Some(WeatherKind::Clear);
+        world.set_climate(&model, summer);
+        run(&mut world);
+        assert!(!sleeping(&world, cow), "la vache dort par beau temps");
+        assert!(!sleeping(&world, bear), "l'ours dort en été");
+        // L'hiver, l'ours hiberne là où les saisons sont marquées
+        let winter = crate::weather::time_for_season(0.0, if lat >= 0.0 { Season::Winter } else { Season::Summer });
+        world.set_climate(&model, winter);
+        run(&mut world);
+        if crate::weather::season_strength(lat) > 0.3 {
+            assert!(sleeping(&world, bear), "l'ours ne dort pas l'hiver");
+        }
+        assert!(!sleeping(&world, cow), "la vache hiberne");
     }
 
     /// Plus grand écart au centre d'un troupeau, en blocs

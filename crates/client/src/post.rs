@@ -353,11 +353,12 @@ impl PostProcess {
         &self.targets.hdr_view
     }
 
-    pub fn update(&self, queue: &wgpu::Queue, settings: &PostSettings) {
+    /// `overcast` : ciel voilé par la météo (0 à 1), qui ternit les couleurs de toute l'image
+    pub fn update(&self, queue: &wgpu::Queue, settings: &PostSettings, overcast: f32) {
         let bloom = if settings.bloom_enabled { settings.bloom_intensity } else { 0.0 };
         let uniform = PostUniform {
             params: [2f32.powf(settings.exposure_ev), bloom, settings.bloom_threshold, settings.bloom_knee],
-            mode: [settings.tonemapper.shader_index(), u32::from(!self.output_is_srgb), 0, 0],
+            mode: [settings.tonemapper.shader_index(), u32::from(!self.output_is_srgb), overcast.clamp(0.0, 1.0).to_bits(), 0],
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
