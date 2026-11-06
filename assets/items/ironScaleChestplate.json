@@ -3,6 +3,7 @@
   "name": "Brigandine de fer",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/ironScaleChestplate.png",
   "stats": {"Protection": 16, "Durabilité": 900},
   "recipes": [

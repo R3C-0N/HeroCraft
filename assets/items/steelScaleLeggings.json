@@ -3,6 +3,7 @@
   "name": "Chausses d'acier",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/steelScaleLeggings.png",
   "stats": {"Protection": 15, "Durabilité": 2000},
   "recipes": [

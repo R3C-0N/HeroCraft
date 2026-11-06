@@ -3,6 +3,7 @@
   "name": "Solerets d'étherium (mithril)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/etheriumMithrilPlateBoots.png",
   "stats": {"Protection": 14, "Durabilité": 5000},
   "recipes": [

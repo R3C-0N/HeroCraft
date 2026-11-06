@@ -3,6 +3,7 @@
   "name": "Pourpoint d'acier",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/steelMailChestplate.png",
   "stats": {"Protection": 17, "Durabilité": 2000},
   "recipes": [

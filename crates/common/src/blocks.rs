@@ -88,6 +88,9 @@ pub struct BlockSheet {
     /// Ce que donne le bloc cassé : lui-même (champ absent), un autre bloc (son identifiant) ou rien (`null`)
     #[serde(default)]
     pub drop: BlockDrop,
+    /// Butin tiré en plus de `drop` quand le bloc est cassé (voir `loot`)
+    #[serde(default)]
+    pub loot: Vec<crate::loot::LootEntry>,
     /// Recettes qui le fabriquent (voir `crafting`)
     #[serde(default)]
     pub recipes: Vec<crate::crafting::RecipeSheet>,
@@ -428,6 +431,7 @@ impl BlockSheet {
         if let ShapeSpec::Boxes { boxes, texture } = &sheet.shape {
             BlockShape::new(boxes, *texture)?;
         }
+        crate::loot::check_entries(&sheet.loot)?;
         Ok(sheet)
     }
 

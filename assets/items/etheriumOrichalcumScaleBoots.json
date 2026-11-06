@@ -3,6 +3,7 @@
   "name": "Bottes d'étherium (orichalque)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/etheriumOrichalcumScaleBoots.png",
   "stats": {"Protection": 13, "Durabilité": 5000},
   "recipes": [

@@ -3,6 +3,7 @@
   "name": "Grèves d'orichalque",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/orichalcumPlateLeggings.png",
   "stats": {"Protection": 19, "Durabilité": 3000},
   "recipes": [

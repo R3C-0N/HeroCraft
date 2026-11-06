@@ -8,6 +8,11 @@
   "temperament": "placide",
   "spawn": [],
   "activity": "diurnal",
+  "loot": [
+    {"item": "viandeMouflon", "count": [1, 2]},
+    {"item": "hide"},
+    {"item": "cornesMouflon", "chance": 0.4}
+  ],
   "model": {
     "mesh": "modeles/mouflonTondu.gltf",
     "texture": "modeles/mouflonTondu.png",

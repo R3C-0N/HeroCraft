@@ -216,6 +216,55 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
 }
 
 #[test]
+fn une_bete_morte_reste_a_terre_et_se_depece() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let (_, feet) = land(&server);
+    let alice = Client::connect(&addr, WAIT).unwrap();
+    alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
+    pump(&mut server, &alice, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
+    let deadline = Instant::now() + WAIT;
+    while server.players().all(|p| p.position.is_none()) {
+        assert!(Instant::now() < deadline, "position d'Alice non reçue");
+        server.tick(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let cow = server.spawn_creature("vache", feet).expect("espèce vache");
+    server.tick(1.0 / 60.0);
+
+    // Vivante, elle ne se dépèce pas
+    alice.send(&ClientPacket::SkinCreature { creature_id: cow });
+    for _ in 0..10 {
+        server.tick(1.0 / 60.0);
+    }
+    assert!(server.creatures().creatures().iter().any(|c| c.id == cow));
+
+    // Tuée, elle reste à terre ; dépecée, son butin arrive à Alice et elle disparaît
+    let mut blows = 0;
+    while server.creatures().creatures().iter().any(|c| c.id == cow && c.is_alive()) {
+        alice.send(&ClientPacket::HitCreature { creature_id: cow });
+        for _ in 0..5 {
+            server.tick(1.0 / 60.0);
+        }
+        blows += 1;
+        assert!(blows < 50, "la vache ne meurt pas");
+    }
+    for _ in 0..120 {
+        server.tick(1.0 / 60.0);
+    }
+    assert!(server.creatures().creatures().iter().any(|c| c.id == cow), "la bête morte reste à terre");
+    alice.send(&ClientPacket::SkinCreature { creature_id: cow });
+    let items = pump(&mut server, &alice, |p| match p {
+        ServerPacket::CreatureLoot { items, .. } => Some(items),
+        _ => None,
+    });
+    let meat = herocraft_common::items().find("viandeVache").unwrap();
+    assert!(items.iter().any(|&(item, count)| item == meat.0 && count >= 1), "{items:?}");
+    assert!(server.creatures().creatures().iter().all(|c| c.id != cow));
+}
+
+#[test]
 fn l_experience_donne_des_points_que_la_roue_juge() {
     let mut server = test_server();
     let addr = server.local_addr().unwrap().to_string();

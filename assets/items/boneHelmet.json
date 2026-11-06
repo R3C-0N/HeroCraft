@@ -3,6 +3,7 @@
   "name": "Heaume d'os",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/boneHelmet.png",
   "stats": {"Protection": 4, "Durabilité": 150},
   "recipes": [

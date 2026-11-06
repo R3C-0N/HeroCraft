@@ -3,6 +3,7 @@
   "name": "Brigandine de bronze",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/bronzeScaleChestplate.png",
   "stats": {"Protection": 12, "Durabilité": 500},
   "recipes": [

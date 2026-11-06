@@ -5,5 +5,8 @@
   "hardness": 9,
   "color": {"side": "#a7a49b"},
   "textures": {"side": "textures/Gravel.png"},
-  "sound": "dirt"
+  "sound": "dirt",
+  "loot": [
+    {"item": "flint", "chance": 0.3}
+  ]
 }

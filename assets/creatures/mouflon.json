@@ -10,6 +10,12 @@
     {"biome": "Mountains", "weight": 1.0}
   ],
   "activity": "diurnal",
+  "loot": [
+    {"item": "viandeMouflon", "count": [1, 2]},
+    {"item": "hide"},
+    {"item": "laine", "count": [1, 3]},
+    {"item": "cornesMouflon", "chance": 0.4}
+  ],
   "model": {
     "mesh": "modeles/mouflon.gltf",
     "texture": "modeles/mouflon.png",

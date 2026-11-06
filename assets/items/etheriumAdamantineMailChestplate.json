@@ -3,6 +3,7 @@
   "name": "Pourpoint d'étherium (adamantine)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/etheriumAdamantineMailChestplate.png",
   "stats": {"Protection": 33, "Durabilité": 5000},
   "recipes": [

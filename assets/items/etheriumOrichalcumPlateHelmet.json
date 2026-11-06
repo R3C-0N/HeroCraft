@@ -3,6 +3,7 @@
   "name": "Heaume d'étherium (orichalque)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/etheriumOrichalcumPlateHelmet.png",
   "stats": {"Protection": 21, "Durabilité": 5000},
   "recipes": [

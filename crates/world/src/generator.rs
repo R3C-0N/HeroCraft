@@ -740,8 +740,7 @@ impl PlanetWorldGenerator {
             let temp = (solar_temp - altitude_cooling).clamp(0.0, 1.0);
 
             // Humidité procédurale, ramenée sur [0, 1] (le bruit brut reste dans ±FBM_SPAN)
-            let moisture_noise = fbm_3d(dir * 2.2, 3 + EXTRA_OCTAVES.saturating_sub(1), 2.0, 0.50, self.planet.seed.wrapping_add(77777));
-            let moisture = ((moisture_noise / FBM_SPAN).clamp(-1.0, 1.0) * 0.5 + 0.5).clamp(0.0, 1.0);
+            let moisture = moisture_at(self.planet.seed, dir);
 
             // Enneigement strict au-dessus de 300 blocs
             if elevation >= 300.0 {
@@ -832,11 +831,18 @@ pub fn gradient_noise_3d(p: DVec3, seed: u64) -> f64 {
     result
 }
 
+/// Humidité du climat au point `dir` de la sphère unité, de 0 (désert) à 1 (jungle) : celle qui
+/// choisit les biomes, et que la météo reprend (il pleut plus souvent là où l'air est humide)
+pub fn moisture_at(seed: u64, dir: DVec3) -> f64 {
+    let noise = fbm_3d(dir * 2.2, 3 + EXTRA_OCTAVES.saturating_sub(1), 2.0, 0.50, seed.wrapping_add(77777));
+    ((noise / FBM_SPAN).clamp(-1.0, 1.0) * 0.5 + 0.5).clamp(0.0, 1.0)
+}
+
 /// Amplitude typique d'un `fbm_3d` (valeurs observées quasi toujours dans ±0.35) :
 /// sert à ramener le bruit vers [-1, 1] avant de l'utiliser comme masque ou relief.
-const FBM_SPAN: f64 = 0.35;
+pub(crate) const FBM_SPAN: f64 = 0.35;
 
-fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
+pub(crate) fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
     let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }

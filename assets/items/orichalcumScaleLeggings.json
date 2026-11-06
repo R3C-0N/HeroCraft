@@ -3,6 +3,7 @@
   "name": "Chausses d'orichalque",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/orichalcumScaleLeggings.png",
   "stats": {"Protection": 21, "Durabilité": 3000},
   "recipes": [

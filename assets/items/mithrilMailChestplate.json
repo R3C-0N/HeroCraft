@@ -3,6 +3,7 @@
   "name": "Pourpoint de mithril",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/mithrilMailChestplate.png",
   "stats": {"Protection": 29, "Durabilité": 3000},
   "recipes": [

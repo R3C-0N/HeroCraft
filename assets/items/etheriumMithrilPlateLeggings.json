@@ -3,6 +3,7 @@
   "name": "Grèves d'étherium (mithril)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/etheriumMithrilPlateLeggings.png",
   "stats": {"Protection": 28, "Durabilité": 5000},
   "recipes": [

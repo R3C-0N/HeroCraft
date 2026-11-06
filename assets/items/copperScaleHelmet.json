@@ -3,6 +3,7 @@
   "name": "Camail de cuivre",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/copperScaleHelmet.png",
   "stats": {"Protection": 5, "Durabilité": 300},
   "recipes": [

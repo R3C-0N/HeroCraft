@@ -3,6 +3,7 @@
   "name": "Brigandine d'adamantine",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/adamantineScaleChestplate.png",
   "stats": {"Protection": 27, "Durabilité": 3000},
   "recipes": [

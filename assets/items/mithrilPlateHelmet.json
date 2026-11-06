@@ -3,6 +3,7 @@
   "name": "Heaume de mithril",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/mithrilPlateHelmet.png",
   "stats": {"Protection": 13, "Durabilité": 3000},
   "recipes": [

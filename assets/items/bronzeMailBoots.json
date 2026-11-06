@@ -3,6 +3,7 @@
   "name": "Bottines de bronze",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/bronzeMailBoots.png",
   "stats": {"Protection": 4, "Durabilité": 500},
   "recipes": [

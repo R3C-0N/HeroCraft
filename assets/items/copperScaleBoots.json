@@ -3,6 +3,7 @@
   "name": "Bottes de cuivre",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/copperScaleBoots.png",
   "stats": {"Protection": 4, "Durabilité": 300},
   "recipes": [

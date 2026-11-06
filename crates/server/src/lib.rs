@@ -38,6 +38,8 @@ const STATS_TICKS: u64 = TICK_RATE as u64;
 const AUTOSAVE_TICKS: u64 = 5 * TICK_RATE as u64;
 /// La partie est annoncée sur le réseau local tous les N ticks (toutes les secondes)
 const LAN_ANNOUNCE_TICKS: u64 = TICK_RATE as u64;
+/// Horloge du ciel envoyée à tous toutes les 5 secondes
+const CLOCK_TICKS: u64 = 5 * TICK_RATE as u64;
 /// Délai pour envoyer `Connect` après l'ouverture de la connexion
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Distance maximale entre les pieds d'un joueur et le centre d'un bloc qu'il modifie, en blocs
@@ -99,6 +101,10 @@ pub struct Server {
     geometry: BlockGeometry,
     edits: TerrainEdits,
     creatures: CreatureWorld,
+    /// Horloge du ciel (heure, saison) et temps imposé, enregistrés avec le monde
+    clock: herocraft_world::SkyClock,
+    weather: herocraft_world::WeatherModel,
+    save_dir: Option<PathBuf>,
     pending: Vec<PendingClient>,
     players: HashMap<u64, ConnectedPlayer>,
     /// Dernière position connue de chaque joueur passé sur le serveur (par nom), pour le replacer
@@ -108,6 +114,8 @@ pub struct Server {
     last_stats: HashMap<String, CharacterStats>,
     /// Roue des compétences, juge des points que les joueurs investissent
     skill_wheel: SkillWheel,
+    /// Tirage du butin des bêtes tuées
+    loot_rng: herocraft_common::LootRng,
     next_player_id: u64,
     tick_counter: u64,
     /// Annonce de la partie sur le réseau local, avec son nom
@@ -139,8 +147,15 @@ impl Server {
             None => CreatureWorld::new(generator.base_radius(), config.seed, registry),
         };
 
+        let clock = config.save_dir.as_ref().map(herocraft_world::SkyClock::load).unwrap_or_default();
+        let mut weather = herocraft_world::WeatherModel::new(config.seed);
+        weather.forced = clock.forced;
+
         Ok(Self {
             listener,
+            clock,
+            weather,
+            save_dir: config.save_dir.clone(),
             seed: config.seed,
             generator,
             geometry,
@@ -151,6 +166,7 @@ impl Server {
             last_positions: HashMap::new(),
             last_stats: HashMap::new(),
             skill_wheel: SkillWheel::standard(),
+            loot_rng: herocraft_common::LootRng::from_clock(),
             next_player_id: 1,
             tick_counter: 0,
             lan: None,
@@ -230,7 +246,7 @@ impl Server {
         let (name, rest) = line.split_once(' ').map_or((line, ""), |(n, r)| (n, r.trim()));
         match name.to_lowercase().as_str() {
             "help" | "?" => vec![
-                "Commands: help, list, seed, say <message>, stop".to_string(),
+                "Commands: help, list, seed, say <message>, weather [clear|cloudy|rain|storm|snow|auto], season [spring|summer|autumn|winter], stop".to_string(),
             ],
             "list" | "who" => {
                 let mut names: Vec<&str> = self.players.values().map(|p| p.name.as_str()).collect();
@@ -244,6 +260,29 @@ impl Server {
                 vec![format!("<Server> {text}")]
             }
             "say" => vec!["Usage: say <message>".to_string()],
+            "weather" if rest.is_empty() => {
+                let season = herocraft_world::weather::season_at(self.clock.time, 0.8).0;
+                let forced = self.clock.forced.map_or("natural".to_string(), |k| format!("forced to {}", k.command_word()));
+                vec![format!("Weather {forced}, northern {:?}, day {:.0}", season, self.clock.time / herocraft_world::sky::SUN_PERIOD as f64 + 1.0)]
+            }
+            "weather" if rest.eq_ignore_ascii_case("auto") => {
+                self.set_sky(None, Some(None));
+                vec!["Natural weather is back".to_string()]
+            }
+            "weather" => match herocraft_common::WeatherKind::parse(rest) {
+                Some(kind) => {
+                    self.set_sky(None, Some(Some(kind)));
+                    vec![format!("Weather forced to {}", kind.command_word())]
+                }
+                None => vec!["Usage: weather [clear|cloudy|rain|storm|snow|auto]".to_string()],
+            },
+            "season" => match herocraft_world::Season::parse(rest) {
+                Some(season) => {
+                    self.set_sky(Some(herocraft_world::weather::time_for_season(self.clock.time, season)), None);
+                    vec![format!("Northern hemisphere: {:?} begins", season)]
+                }
+                None => vec!["Usage: season <spring|summer|autumn|winter>".to_string()],
+            },
             "" => Vec::new(),
             other => vec![format!("Unknown command: {other} (type help)")],
         }
@@ -265,6 +304,11 @@ impl Server {
             player.stats.regenerate(dt, player.sprinting);
         }
 
+        // Le ciel avance pour tous : sommeil des bêtes, saisons et météo
+        self.clock.time += dt as f64;
+        self.creatures.set_sun_dir(herocraft_world::sky::compute_sun_dir(self.clock.time as f32));
+        self.creatures.set_climate(&self.weather, self.clock.time);
+
         let (ids, presences): (Vec<u64>, Vec<herocraft_world::PlayerPresence>) =
             self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching }))).unzip();
         for hit in self.creatures.tick_with_presences(dt, &self.generator, &self.edits, &presences) {
@@ -279,6 +323,9 @@ impl Server {
         }
         if self.tick_counter % LAN_ANNOUNCE_TICKS == 0 {
             self.announce_lan();
+        }
+        if self.tick_counter % CLOCK_TICKS == 0 {
+            self.broadcast(&self.clock_packet());
         }
         if self.tick_counter % STATS_TICKS == 0 {
             for player in self.players.values() {
@@ -309,6 +356,33 @@ impl Server {
         if let Err(e) = self.creatures.save() {
             warn!("Échec de l'enregistrement des créatures : {e}");
         }
+        if let Some(dir) = &self.save_dir {
+            if let Err(e) = self.clock.save(dir) {
+                warn!("Échec de l'enregistrement de l'horloge du ciel : {e}");
+            }
+        }
+    }
+
+    fn clock_packet(&self) -> ServerPacket {
+        ServerPacket::Clock { time: self.clock.time, forced: self.clock.forced }
+    }
+
+    /// Horloge du ciel du serveur : temps, en secondes
+    pub fn sky_time(&self) -> f64 {
+        self.clock.time
+    }
+
+    /// Change l'heure ou le temps imposé pour tous (`/time set`, `/season`, `/weather`), et le
+    /// fait savoir à chacun
+    pub fn set_sky(&mut self, time: Option<f64>, forced: Option<Option<herocraft_common::WeatherKind>>) {
+        if let Some(time) = time.filter(|t| t.is_finite() && *t >= 0.0) {
+            self.clock.time = time;
+        }
+        if let Some(forced) = forced {
+            self.clock.forced = forced;
+            self.weather.forced = forced;
+        }
+        self.broadcast(&self.clock_packet());
     }
 
     /// Prévient les joueurs, les déconnecte et enregistre le monde
@@ -400,6 +474,7 @@ impl Server {
         for other in self.players.values() {
             connection.send(&ServerPacket::PlayerJoined { player_id: other.id, name: other.name.clone() });
         }
+        connection.send(&self.clock_packet());
 
         info!("{name} a rejoint la partie (joueur #{id}, {}).", connection.peer_addr());
         self.broadcast(&ServerPacket::PlayerJoined { player_id: id, name: name.clone() });
@@ -458,6 +533,7 @@ impl Server {
             ClientPacket::Fall { blocks } => self.fall(id, blocks),
             ClientPacket::InteractBlock { block, action } => self.interact_block(id, block.into(), action),
             ClientPacket::HitCreature { creature_id } => self.hit_creature(id, creature_id),
+            ClientPacket::SkinCreature { creature_id } => self.skin_creature(id, creature_id),
             ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
             ClientPacket::Eat { item } => self.eat(id, ItemId(item)),
@@ -479,6 +555,11 @@ impl Server {
                 tell(player, "Healed");
             }
             ClientPacket::GainExperience(amount) => self.grant_experience(id, amount.min(MAX_EXPERIENCE)),
+            ClientPacket::SetSky { time, forced } => {
+                let Some(player) = self.players.get(&id) else { return };
+                info!("{} change le ciel (temps {:?}, météo {:?}).", player.name, time, forced);
+                self.set_sky(time, forced);
+            }
             ClientPacket::Disconnect => self.leave(id, "déconnexion"),
         }
     }
@@ -622,6 +703,22 @@ impl Server {
         let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
         if self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
             self.creatures.hit(creature_id, feet);
+        }
+    }
+
+    /// Un joueur dépèce une bête morte à sa portée (son client a vérifié qu'il tient un couteau ou
+    /// une dague) : le butin tombe chez lui seul, les objets au sol étant propres à chaque client
+    fn skin_creature(&mut self, id: u64, creature_id: u64) {
+        let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
+        let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
+        if !self.creatures.creatures().iter().any(|c| c.id == creature_id && !c.is_alive() && c.position.distance(feet) <= reach) {
+            return;
+        }
+        let Some((species, position)) = self.creatures.skin(creature_id) else { return };
+        let loot = herocraft_common::loot::creature_loot(self.creatures.registry(), species).roll(&mut self.loot_rng);
+        if let (Some(player), false) = (self.players.get(&id), loot.is_empty()) {
+            let items = loot.into_iter().map(|(item, count)| (item.0, count)).collect();
+            player.connection.send(&ServerPacket::CreatureLoot { position, items });
         }
     }
 
