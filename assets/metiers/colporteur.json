@@ -1,5 +1,6 @@
 {
   "name": "Colporteur",
+  "nom_feminin": "Colporteuse",
   "description": "Va de ville en ville, sa marchandise sur le dos.",
   "voyageur": true,
   "espece": "voyageur",

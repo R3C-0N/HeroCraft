@@ -3,6 +3,7 @@
   "name": "Brigandine de cuivre",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/copperScaleChestplate.png",
   "stats": {"Protection": 9, "Durabilité": 300},
   "recipes": [

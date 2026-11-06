@@ -3,6 +3,7 @@
   "name": "Camail d'étherium (orichalque)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/etheriumOrichalcumScaleHelmet.png",
   "stats": {"Protection": 19, "Durabilité": 5000},
   "recipes": [

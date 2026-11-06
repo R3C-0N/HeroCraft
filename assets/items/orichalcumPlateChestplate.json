@@ -3,6 +3,7 @@
   "name": "Cuirasse d'orichalque",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/orichalcumPlateChestplate.png",
   "stats": {"Protection": 26, "Durabilité": 3000},
   "recipes": [

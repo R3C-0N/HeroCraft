@@ -2,7 +2,8 @@
 //! (`hero_model`) et l'apparence de leur fiche (`VillagerCard`), qui viennent du serveur en ligne
 //! et de la simulation des villages en solo. Leur action choisit leurs gestes : bras qui frappent
 //! l'enclume au travail, mains qui parlent en bavardant, couchés pour dormir au bord du chemin.
-//! Leur nom et leur métier flottent au-dessus de leur tête quand on est près.
+//! Leur nom et leur métier flottent au-dessus de leur tête quand on les vise de près, sans bloc
+//! entre eux et le joueur.
 
 use std::collections::HashMap;
 use std::f32::consts::TAU;
@@ -14,10 +15,12 @@ use herocraft_common::{CreatureAction, CreatureRegistry, VillagerCard};
 
 use crate::camera::{CameraViewMode, OrbitCamera};
 use crate::creatures::{CreatureFrame, CreatureView};
-use crate::hero_model::{push_figure, FigurePose, HeroGait};
+use crate::hero_model::{figure, push_figure, Figure, FigurePose, HeroGait};
 
 /// Distance jusqu'où l'on lit le nom d'un habitant, en blocs
-const NAME_TAG_BLOCKS: f32 = 10.0;
+pub const NAME_TAG_BLOCKS: f32 = 10.0;
+/// Figures gardées en mémoire (une par apparence)
+const MAX_FIGURES: usize = 128;
 /// Rouge d'un habitant qui vient d'être frappé
 const HURT_TINT: [f32; 3] = [1.0, 0.35, 0.35];
 
@@ -36,6 +39,8 @@ fn stranger() -> &'static Appearance {
 #[derive(Default)]
 pub struct VillagerAnimator {
     gaits: HashMap<u64, HeroGait>,
+    /// Corps de chaque apparence (selon sa planche), et l'instant où il a servi
+    figures: HashMap<String, (Figure, f32)>,
     time: f32,
 }
 
@@ -48,6 +53,24 @@ impl VillagerAnimator {
             seen.push(view.id);
         }
         self.gaits.retain(|id, _| seen.contains(id));
+    }
+
+    /// Corps de l'apparence, taillé une fois pour toutes
+    fn figure(&mut self, appearance: &Appearance) -> &Figure {
+        let key = appearance.sheet_key();
+        if !self.figures.contains_key(&key) {
+            if self.figures.len() >= MAX_FIGURES {
+                // Oublie le corps resté le plus longtemps sans servir
+                if let Some(old) = self.figures.iter().min_by(|a, b| a.1 .1.total_cmp(&b.1 .1)).map(|(k, _)| k.clone()) {
+                    self.figures.remove(&old);
+                }
+            }
+            let sheet = herocraft_common::hero::paint(appearance);
+            self.figures.insert(key.clone(), (figure(appearance, &sheet), self.time));
+        }
+        let entry = self.figures.get_mut(&key).expect("corps taillé juste au-dessus");
+        entry.1 = self.time;
+        &entry.0
     }
 
     /// Posture de l'humanoïde selon ce qu'il fait
@@ -85,7 +108,7 @@ pub fn push_villagers(
     views: &[CreatureView],
     registry: &CreatureRegistry,
     card: impl Fn(u64) -> Option<Arc<VillagerCard>>,
-    animator: &VillagerAnimator,
+    animator: &mut VillagerAnimator,
     mut texture: impl FnMut(&Appearance) -> usize,
     block: f32,
 ) {
@@ -93,21 +116,23 @@ pub fn push_villagers(
         let card = card(view.id);
         let appearance = card.as_ref().map_or(stranger(), |c| &c.appearance);
         let pose = animator.pose(view, registry);
-        push_figure(frame, appearance, view.feet, view.yaw, &pose, texture(appearance), block);
+        let slot = texture(appearance);
+        push_figure(frame, appearance, animator.figure(appearance), view.feet, view.yaw, &pose, slot, block);
     }
 }
 
-/// Nom et métier des humanoïdes proches, à l'écran (position, texte)
-pub fn name_tags(views: &[CreatureView], card: impl Fn(u64) -> Option<Arc<VillagerCard>>, camera: &OrbitCamera, width: f32, height: f32) -> Vec<(egui::Pos2, String)> {
-    if camera.view_mode() == CameraViewMode::SatelliteOrbit {
+/// Nom et métier de l'humanoïde visé (`looked_at`, qu'aucun bloc ne cache), à l'écran
+/// (position, texte)
+pub fn name_tags(views: &[CreatureView], card: impl Fn(u64) -> Option<Arc<VillagerCard>>, looked_at: Option<u64>, camera: &OrbitCamera, width: f32, height: f32) -> Vec<(egui::Pos2, String)> {
+    let Some(looked_at) = looked_at.filter(|_| camera.view_mode() != CameraViewMode::SatelliteOrbit) else {
         return Vec::new();
-    }
+    };
     let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
     let view_proj = camera.build_view_projection_matrix();
     let eye = camera.eye_position();
     views
         .iter()
-        .filter(|v| v.death <= 0.0)
+        .filter(|v| v.id == looked_at && v.death <= 0.0)
         .filter_map(|view| {
             let card = card(view.id)?;
             let head = view.feet + view.feet.normalize_or_zero() * (card.appearance.taille as f32 + 0.35) * block;
@@ -144,14 +169,14 @@ mod tests {
         let s = registry.get(species).unwrap();
         let pause = |name: &str| CreatureAction::Pause(s.pauses().position(|(n, _)| n == name).unwrap() as u8);
         let view = |action| CreatureView { id: 1, species: Some(species), feet: Vec3::new(0.0, 0.0, 1000.0), yaw: 0.0, hurt: 0.0, death: 0.0, action };
-        let animator = VillagerAnimator::default();
+        let mut animator = VillagerAnimator::default();
         assert!(is_humanoid(&view(CreatureAction::Repos), &registry));
         let still = animator.pose(&view(CreatureAction::Repos), &registry);
         assert_eq!((still.right_arm, still.lying), (0.0, 0.0));
         assert!(animator.pose(&view(pause("travaille")), &registry).right_arm > 0.3);
         assert_eq!(animator.pose(&view(pause("sommeil")), &registry).lying, 1.0);
         let mut frame = CreatureFrame::default();
-        push_villagers(&mut frame, &[view(CreatureAction::Marche)], &registry, |_| None, &animator, |_| 7, 1.0);
+        push_villagers(&mut frame, &[view(CreatureAction::Marche)], &registry, |_| None, &mut animator, |_| 7, 1.0);
         assert_eq!(frame.draws.len(), 1);
         assert_eq!(frame.draws[0].0, Some(7));
     }

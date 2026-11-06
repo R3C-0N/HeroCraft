@@ -1,5 +1,6 @@
 {
   "name": "Forgeron",
+  "nom_feminin": "Forgeronne",
   "description": "Bat le fer à la forge du village et vend ses lames et ses outils.",
   "lieu": "forge",
   "tenues": ["tablier", "cuir"],

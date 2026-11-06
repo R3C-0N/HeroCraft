@@ -333,26 +333,57 @@ impl Default for Villages {
     }
 }
 
-/// Noms tirés par culture : un début et une fin
-fn random_name(culture: Culture, rng: &mut StdRng) -> String {
-    let (starts, ends): (&[&str], &[&str]) = match culture {
-        Culture::Humains => (
-            &["Jeh", "Aud", "Thib", "Isab", "Perr", "Gaut", "Marg", "Bertr", "Clém", "Ren", "Arn", "Blanch", "Guill", "Mahi", "Ysol", "Hug", "Agn", "Colin", "Ermen", "Rob"],
-            &["an", "e", "aut", "eau", "in", "ier", "ot", "and", "ence", "aud", "ette", "ine", "on", "ert", "elle"],
+/// Coiffures qui se lisent comme celles d'une femme
+const FEMININE_HAIR: [&str; 7] = ["chignon", "longue", "lisse", "afro", "tresse", "nattes", "couettes"];
+/// Coiffures d'homme (aucune ne se lit comme celle d'une femme)
+const MASCULINE_HAIR: [&str; 13] = ["rasee", "courte", "brosse", "degrade", "frange", "bol", "raie", "arriere", "herisse", "tonsure", "mi", "queue", "mulet"];
+
+/// L'apparence se lit comme celle d'une femme : sans barbe (les naines ont la leur) et coiffée en
+/// femme
+pub fn looks_feminine(look: &herocraft_common::hero::Appearance) -> bool {
+    let beardless = look.barbe == "aucune" || look.espece == "nain";
+    beardless && FEMININE_HAIR.contains(&look.coiffure.as_str())
+}
+
+/// Noms tirés par culture : un début et une fin, au féminin ou au masculin
+fn random_name(culture: Culture, feminine: bool, rng: &mut StdRng) -> String {
+    let (starts, ends): (&[&str], &[&str]) = match (culture, feminine) {
+        (Culture::Humains, false) => (
+            &["Jeh", "Thib", "Perr", "Gaut", "Bertr", "Ren", "Arn", "Guill", "Hug", "Colin", "Rob", "Gerv", "Bald", "Eud", "Lamb"],
+            &["an", "aut", "in", "ier", "ot", "and", "aud", "on", "ert", "ard", "ric"],
         ),
-        Culture::Nains => (&["Thor", "Bram", "Dur", "Grim", "Kar", "Bor", "Hal", "Dag", "Brun", "Orm", "Gund", "Sto"], &["grim", "in", "dak", "rik", "na", "hild", "dun", "ra", "gar", "li", "bek"]),
-        Culture::ElfesDesBois => (&["Ael", "Syl", "Fae", "Lin", "Eir", "Thal", "Nim", "Ari", "Fen", "Ilv", "Oro"], &["wen", "rien", "dil", "las", "iel", "or", "wyn", "ith", "anna", "eth"]),
-        Culture::HautsElfes => (&["Cael", "Ithi", "Vael", "Elo", "Ser", "Ara", "Lumi", "Ilo", "Sae", "Tir"], &["andor", "riel", "thas", "dris", "eon", "lise", "marin", "nael", "ion", "esse"]),
+        (Culture::Humains, true) => (
+            &["Aud", "Isab", "Marg", "Clém", "Blanch", "Mahi", "Ysol", "Agn", "Ermen", "Berth", "Ali", "Ros", "Jeann", "Perrin", "Gaut"],
+            &["e", "ette", "ine", "elle", "ence", "otte", "aude", "ise", "ie", "eline"],
+        ),
+        (Culture::Nains, false) => (&["Thor", "Bram", "Dur", "Grim", "Kar", "Bor", "Dag", "Orm", "Gund", "Sto"], &["grim", "in", "dak", "rik", "dun", "gar", "bek", "rak", "nar"]),
+        (Culture::Nains, true) => (&["Hal", "Brun", "Dis", "Hel", "Sig", "Ast", "Gunn", "Thyr", "Ingr", "Bryn"], &["na", "hild", "ra", "li", "dis", "run", "veig", "ja", "dra"]),
+        (Culture::ElfesDesBois, false) => (&["Ael", "Thal", "Fen", "Oro", "Lin", "Eir", "Syl", "Ilv"], &["dil", "las", "or", "ion", "ir", "andir", "oth", "ael"]),
+        (Culture::ElfesDesBois, true) => (&["Syl", "Fae", "Nim", "Ari", "Ilv", "Lin", "Eir", "Ael"], &["wen", "rien", "iel", "wyn", "ith", "anna", "eth", "ia"]),
+        (Culture::HautsElfes, false) => (&["Cael", "Vael", "Ser", "Tir", "Elo", "Ilo"], &["andor", "thas", "dris", "eon", "marin", "nael", "ion"]),
+        (Culture::HautsElfes, true) => (&["Ithi", "Ara", "Lumi", "Sae", "Elo", "Ser"], &["riel", "lise", "esse", "wyn", "anne", "iel", "ena"]),
     };
     format!("{}{}", starts[rng.gen_range(0..starts.len())], ends[rng.gen_range(0..ends.len())])
 }
 
-/// Apparence d'une personne de cette culture et de ce métier : tirée au hasard, puis vêtue selon
-/// le métier
-fn appearance_for(culture: Culture, profession: &Profession, name: &str, rng: &mut StdRng) -> herocraft_common::hero::Appearance {
-    let mut draw = || rng.gen::<f64>();
-    let mut look = atlas().aleatoire(&mut draw, Some(culture.espece_id()));
-    look.nom = name.to_string();
+/// Apparence d'une personne de cette culture et de ce métier : tirée au hasard, accordée à son
+/// sexe (barbe et coiffure), puis vêtue selon le métier
+fn appearance_for(culture: Culture, profession: &Profession, feminine: bool, rng: &mut StdRng) -> herocraft_common::hero::Appearance {
+    let mut look = {
+        let mut draw = || rng.gen::<f64>();
+        atlas().aleatoire(&mut draw, Some(culture.espece_id()))
+    };
+    if feminine {
+        // Les naines gardent la barbe de leur peuple
+        if look.espece != "nain" {
+            look.barbe = "aucune".to_string();
+        }
+        if !FEMININE_HAIR.contains(&look.coiffure.as_str()) {
+            look.coiffure = FEMININE_HAIR[rng.gen_range(0..FEMININE_HAIR.len())].to_string();
+        }
+    } else if !MASCULINE_HAIR.contains(&look.coiffure.as_str()) {
+        look.coiffure = MASCULINE_HAIR[rng.gen_range(0..MASCULINE_HAIR.len())].to_string();
+    }
     if !profession.outfits.is_empty() {
         look.tenue = profession.outfits[rng.gen_range(0..profession.outfits.len())].clone();
     } else if ["nu", "harnais", "bandes", "plastron", "cuirasse", "ecailles", "mailles", "robeMage"].contains(&look.tenue.as_str()) {
@@ -376,10 +407,14 @@ fn trades_for(profession: &Profession, rng: &mut StdRng) -> Vec<herocraft_common
 }
 
 fn card_for(culture: Culture, profession: &Profession, origin: String, rng: &mut StdRng) -> Arc<VillagerCard> {
-    let name = random_name(culture, rng);
-    let appearance = appearance_for(culture, profession, &name, rng);
+    let feminine = rng.gen_bool(0.5);
+    let mut appearance = appearance_for(culture, profession, feminine, rng);
+    // Le nom suit ce que l'apparence montre
+    let name = random_name(culture, looks_feminine(&appearance), rng);
+    appearance.nom = name.clone();
     let greeting = if profession.lines.is_empty() { "Bonjour.".to_string() } else { profession.lines[rng.gen_range(0..profession.lines.len())].clone() };
-    Arc::new(VillagerCard { name, profession: profession.name.clone(), culture: culture.name().to_string(), origin, appearance, trades: trades_for(profession, rng), greeting })
+    let profession_name = profession.name_for(looks_feminine(&appearance)).to_string();
+    Arc::new(VillagerCard { name, profession: profession_name, culture: culture.name().to_string(), origin, appearance, trades: trades_for(profession, rng), greeting })
 }
 
 /// Colonne de la porte d'une maison (au milieu du mur de la porte) et celle juste devant
@@ -534,16 +569,6 @@ impl Town {
         } else {
             self.wander[rng.gen_range(0..self.wander.len())]
         }
-    }
-}
-
-/// Culture de la ville (en attendant celle du plan) : celle du `n`-ième habitant
-fn resident_culture(s: &Settlement, n: u64) -> Culture {
-    let h = mix(n ^ hash2(0xC417 ^ ((face_index(s.face) as u64) << 40), s.center.0, s.center.1));
-    if h % 100 < 85 {
-        Culture::Humains
-    } else {
-        Culture::ALL[1 + (h / 100 % 3) as usize]
     }
 }
 
@@ -786,7 +811,7 @@ impl Villages {
                 None => (idle[rng.gen_range(0..idle.len())], None),
             };
             let p = registry.get(profession).unwrap();
-            let culture = resident_culture(s, n as u64);
+            let culture = s.resident_culture(n as u64);
             let card = card_for(culture, p, origin.to_string(), &mut rng);
             let guard = p.workplace == Workplace::Rempart;
             if guard {

@@ -3,6 +3,7 @@
   "name": "Heaume d'adamantine",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/adamantinePlateHelmet.png",
   "stats": {"Protection": 18, "Durabilité": 3000},
   "recipes": [

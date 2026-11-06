@@ -3,6 +3,7 @@
   "name": "Braies d'orichalque",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/orichalcumMailLeggings.png",
   "stats": {"Protection": 17, "Durabilité": 3000},
   "recipes": [

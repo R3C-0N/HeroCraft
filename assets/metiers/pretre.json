@@ -1,5 +1,6 @@
 {
   "name": "Prêtre",
+  "nom_feminin": "Prêtresse",
   "description": "Veille sur l'église et bénit les voyageurs.",
   "lieu": "eglise",
   "tenues": ["robe", "toge"],

@@ -3,6 +3,7 @@
   "name": "Bottes d'étherium (mithril)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/etheriumMithrilScaleBoots.png",
   "stats": {"Protection": 13, "Durabilité": 5000},
   "recipes": [

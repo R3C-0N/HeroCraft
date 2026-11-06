@@ -3,6 +3,7 @@
   "name": "Grèves d'étherium (orichalque)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/etheriumOrichalcumPlateLeggings.png",
   "stats": {"Protection": 28, "Durabilité": 5000},
   "recipes": [

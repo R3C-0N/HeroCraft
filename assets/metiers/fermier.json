@@ -1,5 +1,6 @@
 {
   "name": "Fermier",
+  "nom_feminin": "Fermière",
   "description": "Cultive les champs autour du village et troque ses récoltes.",
   "lieu": "champ",
   "par_lieu": 1,

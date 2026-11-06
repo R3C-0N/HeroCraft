@@ -41,8 +41,9 @@ fn main() {
             String::new()
         };
         println!(
-            "{i:3} {:8} face {:?} centre ({}, {}) {:?}, {} pièces{buildings}, {}×{} blocs",
+            "{i:3} {:8} {:15} face {:?} centre ({}, {}) {:?}, {} pièces{buildings}, {}×{} blocs",
             s.kind.name(),
+            s.culture.map_or("-", |c| c.name()),
             s.face,
             s.center.0,
             s.center.1,

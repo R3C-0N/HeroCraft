@@ -62,6 +62,9 @@ struct TradeSheet {
 #[serde(deny_unknown_fields)]
 struct ProfessionSheet {
     name: String,
+    /// Nom du métier au féminin ; vide : le même qu'au masculin
+    #[serde(default)]
+    nom_feminin: String,
     #[serde(default)]
     description: String,
     #[serde(default)]
@@ -97,6 +100,8 @@ pub struct Profession {
     /// Identifiant : le nom du fichier sans `.json`
     pub id: String,
     pub name: String,
+    /// Nom du métier exercé par une femme
+    pub name_feminine: String,
     pub description: String,
     pub workplace: Workplace,
     pub species: String,
@@ -127,6 +132,15 @@ pub fn find_item(id: &str) -> Option<ItemId> {
 }
 
 impl Profession {
+    /// Nom du métier accordé à qui l'exerce
+    pub fn name_for(&self, feminine: bool) -> &str {
+        if feminine {
+            &self.name_feminine
+        } else {
+            &self.name
+        }
+    }
+
     /// Lit la fiche JSON d'un métier ; `find` donne le numéro d'un objet d'après son identifiant
     pub fn parse(id: &str, json: &str, find: &impl Fn(&str) -> Option<ItemId>) -> Result<Self, String> {
         let sheet: ProfessionSheet = serde_json::from_str(json).map_err(|e| e.to_string())?;
@@ -153,6 +167,7 @@ impl Profession {
         }
         Ok(Profession {
             id: id.to_string(),
+            name_feminine: if sheet.nom_feminin.is_empty() { sheet.name.clone() } else { sheet.nom_feminin },
             name: sheet.name,
             description: sheet.description,
             workplace: sheet.lieu,

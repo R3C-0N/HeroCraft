@@ -16,6 +16,8 @@ use crate::voxel::BlockId;
 
 /// Dossier des fiches d'objets, depuis le dossier de lancement
 pub const ITEMS_DIR: &str = "assets/items";
+/// Caractéristique des aliments : la satiété qu'ils rendent
+pub const SATIETY_STAT: &str = "Satiété";
 /// Taille de pile d'un bloc
 pub const BLOCK_STACK: u16 = 64;
 
@@ -52,11 +54,53 @@ impl ItemId {
         }
     }
 
+    /// Satiété que rend l'aliment, `None` si ça ne se mange pas
+    pub fn satiety(self) -> Option<f32> {
+        if self.block().is_some() {
+            return None;
+        }
+        items().get(self)?.stats.get(SATIETY_STAT).copied().filter(|s| *s > 0.0)
+    }
+
     /// Nombre au plus par case
     pub fn max_stack(self) -> u16 {
         match self.block() {
             Some(_) => BLOCK_STACK,
             None => items().get(self).map_or(1, |item| item.max_stack),
+        }
+    }
+
+    /// Emplacement d'équipement où il se porte, s'il se porte
+    pub fn equip_slot(self) -> Option<EquipSlot> {
+        self.block().is_none().then(|| items().get(self).and_then(|item| item.slot)).flatten()
+    }
+}
+
+/// Emplacement d'équipement : ce qu'une pièce d'armure ou un bijou couvre. Les huit cases de
+/// l'écran d'inventaire en prennent chacune un (les anneaux, deux).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EquipSlot {
+    Head,
+    Chest,
+    Legs,
+    Feet,
+    Cape,
+    Amulet,
+    Ring,
+}
+
+impl EquipSlot {
+    /// Nom affiché, sur la case vide et dans la bulle de l'objet
+    pub fn name(self) -> &'static str {
+        match self {
+            EquipSlot::Head => "Tête",
+            EquipSlot::Chest => "Torse",
+            EquipSlot::Legs => "Jambes",
+            EquipSlot::Feet => "Pieds",
+            EquipSlot::Cape => "Cape",
+            EquipSlot::Amulet => "Amulette",
+            EquipSlot::Ring => "Anneau",
         }
     }
 }
@@ -81,6 +125,10 @@ pub struct ItemSheet {
     pub max_stack: u16,
     /// Icône PNG, chemin depuis `assets/items/`
     pub icon: String,
+    /// Emplacement d'équipement où il se porte (`head`, `chest`, `legs`, `feet`, `cape`, `amulet`
+    /// ou `ring`), pour une armure ou un bijou
+    #[serde(default)]
+    pub slot: Option<EquipSlot>,
     /// Caractéristiques affichées (dégâts, durabilité, protection, satiété…)
     #[serde(default)]
     pub stats: BTreeMap<String, f32>,
@@ -103,6 +151,9 @@ impl ItemSheet {
         }
         if !(1..=999).contains(&sheet.max_stack) {
             return Err("taille de pile invalide (de 1 à 999)".into());
+        }
+        if sheet.slot.is_some() && sheet.max_stack != 1 {
+            return Err("un objet qui se porte (`slot`) ne s'empile pas : `max_stack` doit valoir 1".into());
         }
         Ok(sheet)
     }
@@ -224,6 +275,24 @@ mod tests {
         assert_eq!(sword.max_stack(), 1);
         assert_eq!(sword.block(), None);
         assert_eq!(items().get(sword).unwrap().stats["Dégâts"], 4.0);
+        assert_eq!(sword.equip_slot(), None, "une arme se tient en main");
+        assert_eq!(sword.satiety(), None);
+        assert_eq!(items().find("pain").unwrap().satiety(), Some(12.0));
+        assert_eq!(ItemId::from(BlockId::STONE).satiety(), None);
+    }
+
+    #[test]
+    fn test_armor_has_its_slot() {
+        let piece = |id: &str| items().find(id).unwrap().equip_slot();
+        assert_eq!(piece("boneHelmet"), Some(EquipSlot::Head));
+        assert_eq!(piece("ironPlateChestplate"), Some(EquipSlot::Chest));
+        assert_eq!(piece("hideLeggings"), Some(EquipSlot::Legs));
+        assert_eq!(piece("wickerBoots"), Some(EquipSlot::Feet));
+        assert_eq!(ItemId::from(BlockId::STONE).equip_slot(), None);
+        // Toute armure se porte quelque part
+        for sheet in items().iter().filter(|s| s.category == "Armures") {
+            assert!(sheet.slot.is_some(), "{} : armure sans emplacement", sheet.id);
+        }
     }
 
     #[test]
@@ -245,5 +314,9 @@ mod tests {
         assert!(ItemSheet::parse("caillou", &ok.replace("icon", "icone")).unwrap_err().contains("icone"));
         let empty = ok.replace(r#""icon""#, r#""max_stack": 0, "icon""#);
         assert!(ItemSheet::parse("caillou", &empty).is_err());
+        let ring = ok.replace(r#""icon""#, r#""slot": "ring", "max_stack": 1, "icon""#);
+        assert_eq!(ItemSheet::parse("anneau", &ring).unwrap().slot, Some(EquipSlot::Ring));
+        assert!(ItemSheet::parse("anneau", &ring.replace(r#""max_stack": 1"#, r#""max_stack": 4"#)).unwrap_err().contains("max_stack"));
+        assert!(ItemSheet::parse("anneau", &ring.replace("ring", "doigt")).is_err());
     }
 }

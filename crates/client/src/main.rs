@@ -188,6 +188,7 @@ fn main() {
     let mut creature_animator = creatures::CreatureAnimator::default();
     let mut villager_animator = villagers::VillagerAnimator::default();
     let mut hero_gait = hero_model::HeroGait::default();
+    let mut hero_figure = hero_model::FigureCache::default();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
     // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
     // prochain coup qu'on peut leur porter
@@ -321,10 +322,20 @@ fn main() {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
                                 // Clic droit sur un établi : il s'ouvre (accroupi, on pose contre lui)
                                 let station = block_interaction.aimed_station().filter(|_| action == block_interaction::BlockAction::Place && !camera.is_crouching());
+                                // Clic droit, un aliment en main : le joueur le mange
+                                let food = ui_state.inventory.selected_food().filter(|_| action == block_interaction::BlockAction::Place && station.is_none());
                                 if let Some(at) = station {
                                     camera.release_inputs();
                                     block_interaction.reset();
                                     ui_state.open_station(at);
+                                } else if let Some((item, satiety)) = food {
+                                    if ui_state.player.eat(satiety) {
+                                        ui_state.inventory.consume_selected();
+                                        audio.eat(&ui_state.audio_settings);
+                                        if let Some(client) = net.as_mut() {
+                                            client.send_eat(item);
+                                        }
+                                    }
                                 } else if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
                                     block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
                                     drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
@@ -571,10 +582,17 @@ fn main() {
                         let mut terrain_edited = false;
                         attack_cooldown = (attack_cooldown - dt).max(0.0);
                         let mut aimed = None;
+                        let mut looked_at = None;
                         if cursor_captured {
                             let edits = lod_manager.terrain_edits().clone();
                             block_interaction.update_target(&camera, &generator, &edits);
                             aimed = aimed_creature(&camera, &block_interaction, &creature_views, &creature_registry);
+                            // L'habitant sous le réticule, sans bloc devant lui : on lit son nom
+                            looked_at = block_interaction.sight(&camera, &generator, &edits, villagers::NAME_TAG_BLOCKS as f64).and_then(|sight| {
+                                let (eye, dir, _) = camera.view_ray()?;
+                                let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+                                creatures::aimed_creature(&creature_views, &creature_registry, eye, dir, sight, block).map(|(id, _)| id)
+                            });
                             // Une bête devant le bloc visé : c'est elle qu'on frappe, au rythme des
                             // coups, et le bloc derrière elle ne se fissure pas
                             let striking = aimed.filter(|_| block_interaction.is_breaking_held());
@@ -692,9 +710,9 @@ fn main() {
                                     Some(client) => client.villager_card(id).cloned(),
                                     None => solo_creatures.villager_card(id).cloned(),
                                 };
-                                villagers::push_villagers(&mut frame, &creature_views, &creature_registry, card_of, &villager_animator, |a| state.villager_texture(a), block);
+                                villagers::push_villagers(&mut frame, &creature_views, &creature_registry, card_of, &mut villager_animator, |a| state.villager_texture(a), block);
                                 let mut tags = net.as_ref().map(|c| c.name_tags(&camera, state.size.width as f32, state.size.height as f32)).unwrap_or_default();
-                                tags.extend(villagers::name_tags(&creature_views, card_of, &camera, state.size.width as f32, state.size.height as f32));
+                                tags.extend(villagers::name_tags(&creature_views, card_of, looked_at, &camera, state.size.width as f32, state.size.height as f32));
                                 ui_state.name_tags = tags;
                                 // Les échanges se ferment quand l'habitant s'éloigne (ou disparaît)
                                 if let Some(trade) = ui_state.trade.as_ref() {
@@ -708,7 +726,8 @@ fn main() {
                             hero_gait.update(camera.player_pos, anim_dt, block);
                             if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson) {
                                 state.set_hero_sheet(&legend.appearance);
-                                hero_model::push_hero(&mut frame, &legend.appearance, camera.player_pos, camera.player_yaw, hero_gait.swing(), block);
+                                let figure = hero_figure.get(&legend.appearance);
+                                hero_model::push_hero(&mut frame, &legend.appearance, figure, camera.player_pos, camera.player_yaw, hero_gait.swing(), block);
                             }
                             state.set_creature_frame(&frame);
                             creature_vertices = frame.vertices.len();

@@ -1,5 +1,6 @@
 {
   "name": "Pèlerin",
+  "nom_feminin": "Pèlerine",
   "description": "Marche d'église en église.",
   "voyageur": true,
   "espece": "voyageur",

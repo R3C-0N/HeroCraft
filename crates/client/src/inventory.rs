@@ -1,17 +1,52 @@
-//! Inventaire du joueur : 9 cases de barre d'objets (touches 1 à 9, molette) et 27 cases de sac.
-//! Les blocs ramassés au sol y entrent, comme ce qui est fabriqué ; le bloc posé au clic droit est
-//! pris dans la case choisie de la barre. Enregistré en JSON avec le monde.
+//! Inventaire du joueur : 9 cases de barre d'objets (touches 1 à 9, molette), 27 cases de sac et 8
+//! cases d'équipement (tête, torse, jambes, pieds, cape, amulette et deux anneaux). Les blocs
+//! ramassés au sol y entrent, comme ce qui est fabriqué ; le bloc posé au clic droit est pris dans
+//! la case choisie de la barre. Enregistré en JSON avec le monde.
+//!
+//! L'équipement n'est pas un second inventaire : ses cases suivent celles du sac, si bien que
+//! prendre, poser et échanger une pile y marchent comme ailleurs. Elles ne prennent que ce qui s'y
+//! porte, et ni le ramassage, ni la fabrication n'y touchent.
 
 use std::path::{Path, PathBuf};
 
-use herocraft_common::{blocks, BlockId, Ingredient, ItemId, Recipe};
+use herocraft_common::{blocks, items, BlockId, EquipSlot, Ingredient, ItemId, Recipe};
 use serde::{Deserialize, Serialize};
 
 /// Cases de la barre d'objets, en bas de l'écran
 pub const HOTBAR_SLOTS: usize = 9;
 /// Cases du sac, visibles dans l'écran d'inventaire
 pub const BAG_SLOTS: usize = 27;
-pub const TOTAL_SLOTS: usize = HOTBAR_SLOTS + BAG_SLOTS;
+/// Cases où vont les objets ramassés ou fabriqués : la barre d'objets puis le sac
+pub const STORAGE_SLOTS: usize = HOTBAR_SLOTS + BAG_SLOTS;
+/// Ce que porte chaque case d'équipement, dans l'ordre des cases (comme sur la branche `develop`)
+pub const EQUIPMENT: [EquipSlot; 8] = [
+    EquipSlot::Head,
+    EquipSlot::Chest,
+    EquipSlot::Legs,
+    EquipSlot::Feet,
+    EquipSlot::Cape,
+    EquipSlot::Amulet,
+    EquipSlot::Ring,
+    EquipSlot::Ring,
+];
+/// Première case d'équipement, juste après le sac
+pub const FIRST_EQUIPMENT: usize = STORAGE_SLOTS;
+pub const TOTAL_SLOTS: usize = STORAGE_SLOTS + EQUIPMENT.len();
+
+/// Emplacement d'équipement de la case `index`, si c'en est une
+pub fn equipment_kind(index: usize) -> Option<EquipSlot> {
+    index.checked_sub(FIRST_EQUIPMENT).and_then(|i| EQUIPMENT.get(i)).copied()
+}
+
+/// La case `index` peut recevoir `item` : toute case de rangement, ou la case d'équipement de son
+/// emplacement
+pub fn fits(index: usize, item: ItemId) -> bool {
+    match equipment_kind(index) {
+        Some(kind) => item.equip_slot() == Some(kind),
+        None => index < STORAGE_SLOTS,
+    }
+}
+
 /// Pile de blocs ou d'objets identiques dans une case
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemStack {
@@ -24,7 +59,7 @@ pub struct ItemStack {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Inventory {
-    /// Barre d'objets (cases 0 à 8) puis sac
+    /// Barre d'objets (cases 0 à 8), sac (9 à 35) puis équipement (36 à 43)
     slots: Vec<Option<ItemStack>>,
     /// Case choisie de la barre d'objets
     selected: usize,
@@ -58,14 +93,28 @@ impl Inventory {
         inventory
     }
 
-    /// Remet d'aplomb un fichier ancien ou édité à la main
+    /// Remet d'aplomb un fichier ancien ou édité à la main. Un inventaire d'avant l'équipement
+    /// gagne ses cases à la fin, sans que rien ne bouge ; ce qui ne va pas dans une case
+    /// d'équipement (fiche changée) rejoint le sac.
     fn repair(&mut self) {
         self.slots.resize(TOTAL_SLOTS, None);
-        for slot in &mut self.slots {
+        let mut misplaced = Vec::new();
+        for (index, slot) in self.slots.iter_mut().enumerate() {
             if slot.is_some_and(|s| s.count == 0 || !can_hold(s.item)) {
                 *slot = None;
             } else if let Some(stack) = slot {
                 stack.count = stack.count.min(stack.item.max_stack());
+                if !fits(index, stack.item) {
+                    misplaced.extend(slot.take());
+                } else if equipment_kind(index).is_some() {
+                    stack.count = 1;
+                }
+            }
+        }
+        for stack in misplaced {
+            let kept = self.add_many(stack.item, stack.count);
+            if kept < stack.count {
+                log::warn!("Inventaire plein : {} × {} perdus.", stack.count - kept, stack.item.name());
             }
         }
         self.selected = self.selected.min(HOTBAR_SLOTS - 1);
@@ -109,6 +158,24 @@ impl Inventory {
         self.slot(self.selected).and_then(|s| s.item.block())
     }
 
+    /// Aliment de la case choisie et la satiété qu'il rend, à manger au clic droit
+    pub fn selected_food(&self) -> Option<(ItemId, f32)> {
+        let item = self.slot(self.selected)?.item;
+        Some((item, item.satiety()?))
+    }
+
+    /// Retire un objet de la case choisie (aliment mangé)
+    pub fn consume_selected(&mut self) -> Option<ItemId> {
+        let slot = &mut self.slots[self.selected];
+        let stack = slot.as_mut()?;
+        let item = stack.item;
+        stack.count -= 1;
+        if stack.count == 0 {
+            *slot = None;
+        }
+        Some(item)
+    }
+
     /// Retire un bloc de la case choisie (bloc posé)
     pub fn take_selected(&mut self) -> Option<BlockId> {
         let slot = &mut self.slots[self.selected];
@@ -122,15 +189,15 @@ impl Inventory {
     }
 
     /// Range un bloc ou un objet : d'abord sur une pile du même, sinon dans la première case vide
-    /// (barre d'objets puis sac). Renvoie faux si l'inventaire est plein.
+    /// (barre d'objets puis sac, jamais l'équipement). Renvoie faux si l'inventaire est plein.
     pub fn add(&mut self, item: impl Into<ItemId>) -> bool {
         let item = item.into();
-        let stackable = self.slots.iter().position(|s| s.is_some_and(|s| s.item == item && s.count < item.max_stack()));
+        let stackable = self.slots[..STORAGE_SLOTS].iter().position(|s| s.is_some_and(|s| s.item == item && s.count < item.max_stack()));
         if let Some(stack) = stackable.and_then(|i| self.slots[i].as_mut()) {
             stack.count += 1;
             return true;
         }
-        match self.slots.iter().position(Option::is_none) {
+        match self.slots[..STORAGE_SLOTS].iter().position(Option::is_none) {
             Some(i) => {
                 self.slots[i] = Some(ItemStack { item, count: 1 });
                 true
@@ -148,13 +215,29 @@ impl Inventory {
     /// Un exemplaire de plus trouverait sa place
     pub fn has_room_for(&self, item: impl Into<ItemId>) -> bool {
         let item = item.into();
-        self.slots.iter().any(|s| s.is_none_or(|s| s.item == item && s.count < item.max_stack()))
+        self.slots[..STORAGE_SLOTS].iter().any(|s| s.is_none_or(|s| s.item == item && s.count < item.max_stack()))
     }
 
-    /// Nombre total d'un bloc ou d'un objet dans l'inventaire
+    /// Nombre total d'un bloc ou d'un objet dans la barre et le sac (ce qui est porté ne compte
+    /// pas : la fabrication n'y prend rien)
     pub fn count(&self, item: impl Into<ItemId>) -> u32 {
         let item = item.into();
-        self.slots.iter().flatten().filter(|s| s.item == item).map(|s| s.count as u32).sum()
+        self.slots[..STORAGE_SLOTS].iter().flatten().filter(|s| s.item == item).map(|s| s.count as u32).sum()
+    }
+
+    /// Ce que porte la case d'équipement `i` (de 0 à 7, dans l'ordre de `EQUIPMENT`)
+    pub fn equipped(&self, i: usize) -> Option<ItemStack> {
+        self.slot(FIRST_EQUIPMENT + i)
+    }
+
+    /// Protection totale de ce qui est porté : la somme de la caractéristique `Protection` des
+    /// pièces
+    pub fn protection(&self) -> u32 {
+        (0..EQUIPMENT.len())
+            .filter_map(|i| self.equipped(i))
+            .filter_map(|stack| items().get(stack.item).and_then(|sheet| sheet.stats.get("Protection")).copied())
+            .map(|p| p.max(0.0) as u32)
+            .sum()
     }
 
     /// Exemplaires d'un ingrédient, toutes ses variantes comprises
@@ -169,7 +252,7 @@ impl Inventory {
     }
 
     /// Fabrique une fois la recette : retire ses ingrédients (le sac d'abord, la barre d'objets
-    /// ensuite) et range ce qu'elle donne. Renvoie faux, sans rien toucher, s'il manque un
+    /// ensuite, jamais ce qui est porté) et range ce qu'elle donne. Renvoie faux, sans rien toucher, s'il manque un
     /// ingrédient ou de la place. La pile tenue à la souris est d'abord rangée.
     pub fn craft(&mut self, recipe: &Recipe) -> bool {
         self.return_held();
@@ -177,7 +260,7 @@ impl Inventory {
         for ingredient in &recipe.ingredients {
             let mut missing = ingredient.count;
             for &option in &ingredient.options {
-                for slot in slots.iter_mut().rev() {
+                for slot in slots[..STORAGE_SLOTS].iter_mut().rev() {
                     if missing == 0 {
                         break;
                     }
@@ -252,7 +335,8 @@ impl Inventory {
     }
 
     /// Clic gauche sur une case de l'écran d'inventaire : prend la pile, la pose dans une case
-    /// vide, la fusionne avec une pile du même objet ou l'échange avec la pile qui s'y trouve
+    /// vide, la fusionne avec une pile du même objet ou l'échange avec la pile qui s'y trouve. Une
+    /// case d'équipement refuse ce qui ne s'y porte pas.
     pub fn click(&mut self, index: usize) {
         if index >= TOTAL_SLOTS {
             return;
@@ -261,6 +345,10 @@ impl Inventory {
             self.held = self.slots[index].take().map(|stack| (stack, index));
             return;
         };
+        if !fits(index, held.item) {
+            self.held = Some((held, origin));
+            return;
+        }
         match self.slots[index].as_mut() {
             None => self.slots[index] = Some(held),
             Some(stack) if stack.item == held.item => {
@@ -280,7 +368,7 @@ impl Inventory {
 
     /// Clic droit : prend la moitié d'une pile, ou pose un seul exemplaire de la pile tenue
     pub fn click_secondary(&mut self, index: usize) {
-        if index >= TOTAL_SLOTS {
+        if index >= TOTAL_SLOTS || self.held.is_some_and(|(held, _)| !fits(index, held.item)) {
             return;
         }
         match (self.held.as_mut(), self.slots[index].as_mut()) {
@@ -305,6 +393,28 @@ impl Inventory {
             }
             (None, None) => {}
         }
+    }
+
+    /// Maj + clic : enfile ce qui se porte dans sa case d'équipement (une case libre d'abord, sinon
+    /// à la place de la pièce portée, qui prend sa place), ou range dans la barre ou le sac ce qui
+    /// était porté. Renvoie vrai si quelque chose a bougé.
+    pub fn quick_move(&mut self, index: usize) -> bool {
+        if self.held.is_some() {
+            return false;
+        }
+        let Some(stack) = self.slot(index) else { return false };
+        if equipment_kind(index).is_some() {
+            if !self.add(stack.item) {
+                return false;
+            }
+            self.slots[index] = None;
+            return true;
+        }
+        let Some(kind) = stack.item.equip_slot() else { return false };
+        let targets: Vec<usize> = (FIRST_EQUIPMENT..TOTAL_SLOTS).filter(|&i| equipment_kind(i) == Some(kind)).collect();
+        let Some(&target) = targets.iter().find(|&&i| self.slots[i].is_none()).or(targets.first()) else { return false };
+        self.slots.swap(index, target);
+        true
     }
 
     /// Écran d'inventaire refermé : la pile tenue revient à sa case d'origine, ou à défaut
@@ -376,6 +486,23 @@ mod tests {
     use herocraft_common::BLOCK_STACK as MAX_STACK;
 
     #[test]
+    fn test_food_in_hand_is_eaten_one_at_a_time() {
+        let bread = herocraft_common::items().find("pain").unwrap();
+        let mut inv = Inventory::default();
+        inv.add(BlockId::STONE);
+        assert_eq!(inv.selected_food(), None, "un bloc ne se mange pas");
+        inv.add_many(bread, 2);
+        inv.select(1);
+        assert_eq!(inv.selected_food(), Some((bread, 12.0)));
+        assert_eq!(inv.consume_selected(), Some(bread));
+        assert_eq!(inv.count(bread), 1);
+        inv.consume_selected();
+        assert_eq!(inv.slot(1), None);
+        assert_eq!(inv.selected_food(), None);
+        assert_eq!(inv.consume_selected(), None);
+    }
+
+    #[test]
     fn test_add_stacks_then_fills_hotbar_then_bag() {
         let mut inv = Inventory::default();
         for _ in 0..MAX_STACK + 1 {
@@ -389,7 +516,7 @@ mod tests {
 
         // Toutes les cases prises par des piles pleines : plus rien n'entre
         let mut full = Inventory::default();
-        for _ in 0..TOTAL_SLOTS * MAX_STACK as usize {
+        for _ in 0..STORAGE_SLOTS * MAX_STACK as usize {
             assert!(full.add(BlockId::SAND));
         }
         assert!(full.slot(HOTBAR_SLOTS).is_some(), "le sac prend la suite de la barre");
@@ -537,15 +664,15 @@ mod tests {
         let stone = ItemId::from(BlockId::STONE);
         let sword = herocraft_common::items().find("flintSword").unwrap();
         let mut full = Inventory::default();
-        for _ in 0..TOTAL_SLOTS {
+        for _ in 0..STORAGE_SLOTS {
             full.add(sword);
         }
         let too_many = recipe(stone, 65, &[(&[sword], 1)]);
         assert!(!full.craft(&too_many), "65 pierres ne tiennent pas dans la case libérée");
-        assert_eq!(full.count(sword), TOTAL_SLOTS as u32, "rien n'a été pris");
+        assert_eq!(full.count(sword), STORAGE_SLOTS as u32, "rien n'a été pris");
         let swap = recipe(stone, 1, &[(&[sword], 1)]);
         assert!(full.craft(&swap), "la case de l'épée prise se libère pour la pierre");
-        assert_eq!((full.count(sword), full.count(stone)), (TOTAL_SLOTS as u32 - 1, 1));
+        assert_eq!((full.count(sword), full.count(stone)), (STORAGE_SLOTS as u32 - 1, 1));
     }
 
     #[test]
@@ -567,5 +694,115 @@ mod tests {
         loaded.repair();
         assert_eq!(loaded.slot(0).map(|s| s.item), Some(sword));
         assert_eq!(loaded.slot(1), None);
+    }
+
+    fn item(id: &str) -> ItemId {
+        herocraft_common::items().find(id).unwrap()
+    }
+
+    /// Case d'équipement de l'emplacement `kind` (la première, pour les anneaux)
+    fn equipment(kind: EquipSlot) -> usize {
+        FIRST_EQUIPMENT + EQUIPMENT.iter().position(|&k| k == kind).unwrap()
+    }
+
+    #[test]
+    fn test_equipment_slots_only_take_what_is_worn_there() {
+        let helmet = item("boneHelmet");
+        let boots = item("hideBoots");
+        let mut inv = Inventory::default();
+        inv.add(BlockId::STONE);
+        inv.add(helmet);
+        inv.add(boots);
+        let head = equipment(EquipSlot::Head);
+        assert_eq!(head, FIRST_EQUIPMENT, "la tête d'abord, après le sac");
+
+        // La pierre n'entre pas dans la case de la tête
+        inv.click(0);
+        inv.click(head);
+        assert_eq!(inv.slot(head), None);
+        assert_eq!(inv.held().and_then(|s| s.item.block()), Some(BlockId::STONE), "elle reste en main");
+        inv.click(0);
+        // Les bottes non plus, le heaume si
+        inv.click(2);
+        inv.click(head);
+        assert_eq!(inv.slot(head), None);
+        inv.click(2);
+        inv.click(1);
+        inv.click(head);
+        assert_eq!(inv.slot(head).map(|s| s.item), Some(helmet));
+        assert_eq!(inv.held(), None);
+        assert_eq!(inv.equipped(0).map(|s| s.item), Some(helmet));
+        // Clic droit en tenant les bottes : refusé aussi
+        inv.click(2);
+        inv.click_secondary(head);
+        assert_eq!(inv.slot(head).map(|s| s.item), Some(helmet));
+        inv.click(equipment(EquipSlot::Feet));
+        assert_eq!(inv.slot(equipment(EquipSlot::Feet)).map(|s| s.item), Some(boots));
+        assert_eq!(inv.protection(), 4 + 1, "heaume d'os et bottes de cuir");
+    }
+
+    #[test]
+    fn test_worn_items_are_kept_out_of_pickup_and_crafting() {
+        let helmet = item("boneHelmet");
+        let mut inv = Inventory::default();
+        inv.add(helmet);
+        assert!(inv.quick_move(0), "Maj + clic : le heaume se porte");
+        assert_eq!(inv.slot(0), None);
+        assert_eq!(inv.equipped(0).map(|s| s.item), Some(helmet));
+        assert_eq!(inv.count(helmet), 0, "ce qui est porté ne compte pas pour la fabrication");
+        let melt = recipe(ItemId::from(BlockId::STONE), 1, &[(&[helmet], 1)]);
+        assert!(!inv.craft(&melt), "la fabrication ne prend pas ce qui est porté");
+        assert_eq!(inv.equipped(0).map(|s| s.item), Some(helmet));
+
+        // Barre et sac pleins : rien ne tombe dans l'équipement
+        while inv.add(BlockId::SAND) {}
+        assert!(inv.slots[FIRST_EQUIPMENT + 1..].iter().all(Option::is_none));
+        assert!(!inv.has_room_for(BlockId::SAND));
+        assert!(!inv.quick_move(FIRST_EQUIPMENT), "plus de place pour l'ôter");
+        assert_eq!(inv.equipped(0).map(|s| s.item), Some(helmet));
+    }
+
+    #[test]
+    fn test_quick_move_swaps_and_takes_off() {
+        let bone = item("boneHelmet");
+        let iron = item("ironPlateHelmet");
+        let ring_slots = (FIRST_EQUIPMENT..TOTAL_SLOTS).filter(|&i| equipment_kind(i) == Some(EquipSlot::Ring)).count();
+        assert_eq!(ring_slots, 2, "deux anneaux");
+        let mut inv = Inventory::default();
+        inv.add(bone);
+        inv.add(iron);
+        inv.add(BlockId::DIRT);
+        assert!(inv.quick_move(0));
+        // Un second heaume prend la place du premier, qui revient dans sa case
+        assert!(inv.quick_move(1));
+        assert_eq!(inv.equipped(0).map(|s| s.item), Some(iron));
+        assert_eq!(inv.slot(1).map(|s| s.item), Some(bone));
+        assert!(!inv.quick_move(2), "la terre ne se porte pas");
+        // Ôter : retour dans la première case libre
+        assert!(inv.quick_move(FIRST_EQUIPMENT));
+        assert_eq!(inv.equipped(0), None);
+        assert_eq!(inv.slot(0).map(|s| s.item), Some(iron));
+    }
+
+    #[test]
+    fn test_old_saves_gain_equipment_slots_and_misplaced_items_move_out() {
+        let helmet = item("boneHelmet");
+        // Inventaire d'avant l'équipement : 36 cases
+        let mut slots = vec![serde_json::Value::Null; STORAGE_SLOTS];
+        slots[3] = serde_json::json!({ "item": 1, "count": 5 });
+        let json = serde_json::json!({ "slots": slots, "selected": 2 }).to_string();
+        let mut inv: Inventory = serde_json::from_str(&json).unwrap();
+        inv.repair();
+        assert_eq!(inv.slots.len(), TOTAL_SLOTS);
+        assert_eq!(inv.slot(3).map(|s| s.count), Some(5), "rien n'a bougé");
+        assert!((0..EQUIPMENT.len()).all(|i| inv.equipped(i).is_none()));
+
+        // Une pierre glissée à la main dans la case des pieds rejoint le sac ; le heaume reste
+        inv.slots[FIRST_EQUIPMENT] = Some(ItemStack { item: helmet, count: 1 });
+        inv.slots[equipment(EquipSlot::Feet)] = Some(ItemStack { item: BlockId::STONE.into(), count: 7 });
+        inv.repair();
+        assert_eq!(inv.equipped(0).map(|s| s.item), Some(helmet));
+        assert_eq!(inv.slot(equipment(EquipSlot::Feet)), None);
+        assert_eq!(inv.count(BlockId::STONE), 12);
     }
 }

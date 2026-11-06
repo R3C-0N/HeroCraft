@@ -1,5 +1,6 @@
 {
   "name": "Marchand",
+  "nom_feminin": "Marchande",
   "description": "Tient un étal au marché : il achète les peaux et le butin, vend graines et babioles.",
   "lieu": "etal",
   "tenues": ["pourpoint", "gilet", "chemise"],

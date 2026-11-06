@@ -3,6 +3,7 @@
   "name": "Cuirasse d'os",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/boneChestplate.png",
   "stats": {"Protection": 7, "Durabilité": 150},
   "recipes": [

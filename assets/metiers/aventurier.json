@@ -1,5 +1,6 @@
 {
   "name": "Aventurier",
+  "nom_feminin": "Aventurière",
   "description": "Armé, il voyage seul et ne craint pas les bêtes de la nuit.",
   "voyageur": true,
   "espece": "voyageurArme",
