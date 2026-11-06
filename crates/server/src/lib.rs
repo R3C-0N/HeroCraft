@@ -22,7 +22,7 @@ use herocraft_common::{
     ServerPacket, SkillWheel, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
-use herocraft_world::{BlockGeometry, BlockPos, CreatureWorld, PlanetDescriptor, PlanetWorldGenerator, TerrainEdits, CREATURE_RANGE_BLOCKS};
+use herocraft_world::{BlockGeometry, BlockPos, CreatureWorld, Fields, PlanetDescriptor, PlanetWorldGenerator, TerrainEdits, CREATURE_RANGE_BLOCKS};
 use log::{info, warn};
 
 /// Ticks de simulation par seconde
@@ -83,6 +83,8 @@ pub struct ConnectedPlayer {
     pub sprinting: bool,
     /// Accroupi, d'après le dernier `PlayerMove`
     pub crouching: bool,
+    /// Ce qu'il tient en main : sa nourriture attire les bêtes
+    pub holding: Option<ItemId>,
     /// Créatures que son client affiche (celles qui lui ont été annoncées)
     known_creatures: HashSet<u64>,
     connection: ClientConnection,
@@ -101,6 +103,8 @@ pub struct Server {
     geometry: BlockGeometry,
     edits: TerrainEdits,
     creatures: CreatureWorld,
+    /// Plantes semées par les joueurs, qui poussent
+    fields: Fields,
     /// Horloge du ciel (heure, saison) et temps imposé, enregistrés avec le monde
     clock: herocraft_world::SkyClock,
     weather: herocraft_world::WeatherModel,
@@ -147,6 +151,10 @@ impl Server {
             None => CreatureWorld::new(generator.base_radius(), config.seed, registry),
         };
 
+        let fields = match &config.save_dir {
+            Some(dir) => Fields::with_save_dir(dir),
+            None => Fields::new(),
+        };
         let clock = config.save_dir.as_ref().map(herocraft_world::SkyClock::load).unwrap_or_default();
         let mut weather = herocraft_world::WeatherModel::new(config.seed);
         weather.forced = clock.forced;
@@ -161,6 +169,7 @@ impl Server {
             geometry,
             edits,
             creatures,
+            fields,
             pending: Vec::new(),
             players: HashMap::new(),
             last_positions: HashMap::new(),
@@ -310,9 +319,24 @@ impl Server {
         self.creatures.set_climate(&self.weather, self.clock.time);
 
         let (ids, presences): (Vec<u64>, Vec<herocraft_world::PlayerPresence>) =
-            self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching }))).unzip();
+            self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching, holding: p.holding }))).unzip();
         for hit in self.creatures.tick_with_presences(dt, &self.generator, &self.edits, &presences) {
             self.creature_attack(ids[hit.player], hit.species, hit.damage);
+        }
+        // Œufs pondus, à la place de la bête : montrés au joueur le plus proche (les objets au sol
+        // sont propres à chaque client, un seul peut le ramasser)
+        for (feet, item) in self.creatures.take_laid() {
+            let nearest = presences.iter().zip(&ids).min_by(|a, b| a.0.feet.distance_squared(feet).total_cmp(&b.0.feet.distance_squared(feet)));
+            if let Some(player) = nearest.and_then(|(_, id)| self.players.get(id)) {
+                player.connection.send(&ServerPacket::Laid { position: feet, item: item.0 });
+            }
+        }
+
+        // Les plantes semées poussent : chaque stade est un bloc changé, diffusé à tous
+        for (pos, block) in self.fields.tick_in_weather(dt, &self.generator, &self.edits, &self.weather, self.clock.time) {
+            if self.edits.set_block(&self.generator, pos, block) {
+                self.broadcast(&ServerPacket::VoxelUpdate { block: pos.into(), block_id: block.0 });
+            }
         }
 
         if self.tick_counter % STATE_BROADCAST_TICKS == 0 {
@@ -355,6 +379,9 @@ impl Server {
         }
         if let Err(e) = self.creatures.save() {
             warn!("Échec de l'enregistrement des créatures : {e}");
+        }
+        if let Err(e) = self.fields.save() {
+            warn!("Échec de l'enregistrement des cultures : {e}");
         }
         if let Some(dir) = &self.save_dir {
             if let Err(e) = self.clock.save(dir) {
@@ -492,6 +519,7 @@ impl Server {
                 pitch: 0.0,
                 sprinting: false,
                 crouching: false,
+                holding: None,
                 known_creatures: HashSet::new(),
                 connection,
             },
@@ -518,7 +546,7 @@ impl Server {
     fn handle_packet(&mut self, id: u64, packet: ClientPacket) {
         match packet {
             ClientPacket::Connect { .. } => {}
-            ClientPacket::PlayerMove { position, yaw, pitch, sprinting, crouching } => {
+            ClientPacket::PlayerMove { position, yaw, pitch, sprinting, crouching, holding } => {
                 if !(position.is_finite() && yaw.is_finite() && pitch.is_finite()) {
                     return;
                 }
@@ -528,11 +556,13 @@ impl Server {
                     player.pitch = pitch;
                     player.sprinting = sprinting;
                     player.crouching = crouching;
+                    player.holding = holding.map(ItemId);
                 }
             }
             ClientPacket::Fall { blocks } => self.fall(id, blocks),
             ClientPacket::InteractBlock { block, action } => self.interact_block(id, block.into(), action),
             ClientPacket::HitCreature { creature_id } => self.hit_creature(id, creature_id),
+            ClientPacket::FeedCreature { creature_id, item } => self.feed_creature(id, creature_id, ItemId(item)),
             ClientPacket::SkinCreature { creature_id } => self.skin_creature(id, creature_id),
             ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
@@ -679,6 +709,8 @@ impl Server {
             {
                 Some(BlockId(block))
             }
+            // Labour à la houe (herbe ou terre en terre labourée), sans casser le bloc d'abord
+            BlockInteractionAction::Place(block) if herocraft_common::cultures().allows_change(current, BlockId(block)) => Some(BlockId(block)),
             _ => None,
         };
         let in_reach = player.position.is_some_and(|feet| {
@@ -688,6 +720,7 @@ impl Server {
 
         match target {
             Some(block) if in_reach && self.edits.set_block(&self.generator, pos, block) => {
+                self.fields.observe(pos, block);
                 self.broadcast(&ServerPacket::VoxelUpdate { block: pos.into(), block_id: block.0 });
             }
             _ => {
@@ -719,6 +752,20 @@ impl Server {
         if let (Some(player), false) = (self.players.get(&id), loot.is_empty()) {
             let items = loot.into_iter().map(|(item, count)| (item.0, count)).collect();
             player.connection.send(&ServerPacket::CreatureLoot { position, items });
+        }
+    }
+
+    /// Repas donné par un joueur à une créature à sa portée : il la prévient de ce qu'il a obtenu
+    fn feed_creature(&mut self, id: u64, creature_id: u64, item: ItemId) {
+        let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
+        let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
+        if !self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
+            return;
+        }
+        let feeding = self.creatures.feed(creature_id, item);
+        let name = self.creatures.species_name(creature_id).unwrap_or("La bête").to_string();
+        if let (Some(player), Some(message)) = (self.players.get(&id), herocraft_world::creatures::feeding_message(feeding, &name)) {
+            tell(player, &message);
         }
     }
 

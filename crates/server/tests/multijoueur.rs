@@ -98,7 +98,7 @@ fn deux_joueurs_partagent_les_blocs_et_les_positions() {
     assert_ne!(restored, 0);
 
     // Posée sur la colonne, Alice casse le bloc sous ses pieds : les deux joueurs le voient
-    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.3, pitch: -0.2, sprinting: false, crouching: false });
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.3, pitch: -0.2, sprinting: false, crouching: false, holding: None });
     alice.send(&ClientPacket::InteractBlock { block: surface.into(), action: BlockInteractionAction::Break });
     for client in [&alice, &bob] {
         let id = wait_for(client, |p| match p {
@@ -117,7 +117,7 @@ fn deux_joueurs_partagent_les_blocs_et_les_positions() {
 
     // Un bloc hors de portée (en plein ciel, loin de Bob) est refusé
     let far = BlockPos::new(face, (x + 200) % herocraft_world::FACE_BLOCKS, WORLD_HEIGHT - 1, z);
-    bob.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
+    bob.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
     bob.send(&ClientPacket::InteractBlock { block: far.into(), action: BlockInteractionAction::Place(1) });
     let id = wait_for(&bob, |p| match p {
         ServerPacket::VoxelUpdate { block, block_id } if block == far.into() => Some(block_id),
@@ -173,7 +173,7 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
     let alice = Client::connect(&addr, WAIT).unwrap();
     alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
     pump(&mut server, &alice, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
-    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
     let deadline = Instant::now() + WAIT;
     while server.players().all(|p| p.position.is_none()) {
         assert!(Instant::now() < deadline, "position d'Alice non reçue");
@@ -207,7 +207,7 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
     });
 
     // Alice part à l'autre bout de la planète : la vache, seule, disparaît de son affichage
-    alice.send(&ClientPacket::PlayerMove { position: -feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
+    alice.send(&ClientPacket::PlayerMove { position: -feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
     pump(&mut server, &alice, |p| match p {
         ServerPacket::CreaturesDespawned(ids) => ids.contains(&sheep).then_some(()),
         _ => None,
@@ -223,7 +223,7 @@ fn une_bete_morte_reste_a_terre_et_se_depece() {
     let alice = Client::connect(&addr, WAIT).unwrap();
     alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
     pump(&mut server, &alice, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
-    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
     let deadline = Instant::now() + WAIT;
     while server.players().all(|p| p.position.is_none()) {
         assert!(Instant::now() < deadline, "position d'Alice non reçue");
@@ -348,7 +348,7 @@ fn le_chat_et_les_commandes_passent_par_le_serveur() {
     };
     let alice = join(&mut server, "Alice");
     let bob = join(&mut server, "Bob");
-    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false });
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
 
     // Un message d'Alice arrive à Bob, et à Alice elle-même
     alice.send(&ClientPacket::ChatMessage("  salut Bob  ".into()));
@@ -381,4 +381,57 @@ fn le_chat_et_les_commandes_passent_par_le_serveur() {
     assert_eq!(server.console_command("seed"), vec!["Seed: 4242".to_string()]);
     server.console_command("say Bonjour");
     assert_eq!(pump(&mut server, &bob, chat), ("Server".to_string(), "Bonjour".to_string()));
+}
+
+#[test]
+fn le_serveur_accepte_le_labour_et_le_semis() {
+    let server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let face = PlanetFace::PosZ;
+    // Une colonne d'herbe
+    let (x, z, top) = (0..herocraft_world::FACE_BLOCKS)
+        .step_by(37)
+        .flat_map(|x| (0..herocraft_world::FACE_BLOCKS).step_by(37).map(move |z| (x, z)))
+        .find_map(|(x, z)| {
+            let top = (0..WORLD_HEIGHT).rev().find(|&y| !server.block(BlockPos::new(face, x, y, z)).is_air())?;
+            (server.block(BlockPos::new(face, x, top, z)) == BlockId::GRASS).then_some((x, z, top))
+        })
+        .expect("une colonne d'herbe");
+    let surface = BlockPos::new(face, x, top, z);
+    let above = BlockPos { y: top + 1, ..surface };
+    let geometry = BlockGeometry::new(herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 4242, ..Default::default() }).base_radius());
+    let feet = geometry.corner(face, x as f64 + 1.5, (top + 1) as f64, z as f64 + 0.5).as_vec3();
+
+    let running = Arc::new(AtomicBool::new(true));
+    let server_running = running.clone();
+    let server_thread = std::thread::spawn(move || {
+        let mut server = server;
+        server.run(&server_running);
+    });
+    let (alice, _, _) = connect(&addr, "Alice");
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: -0.5, sprinting: false, crouching: false, holding: None });
+    let update = |pos: BlockPos| {
+        wait_for(&alice, |p| match p {
+            ServerPacket::VoxelUpdate { block, block_id } if block == pos.into() => Some(block_id),
+            _ => None,
+        })
+    };
+
+    // L'herbe ne devient pas de la pierre sans être cassée, mais se laboure
+    alice.send(&ClientPacket::InteractBlock { block: surface.into(), action: BlockInteractionAction::Place(BlockId::STONE.0) });
+    assert_eq!(update(surface), BlockId::GRASS.0);
+    let cultures = herocraft_common::cultures();
+    let farmland = cultures.farmland(false).unwrap();
+    alice.send(&ClientPacket::InteractBlock { block: surface.into(), action: BlockInteractionAction::Place(farmland.0) });
+    assert!(cultures.is_farmland(BlockId(update(surface))));
+
+    // Une herbe folle au-dessus est cassée, puis le blé est semé
+    alice.send(&ClientPacket::InteractBlock { block: above.into(), action: BlockInteractionAction::Break });
+    let _ = update(above);
+    let wheat = cultures.crop_of_seed(herocraft_common::items().find("grainesBle").unwrap()).unwrap().stages[0];
+    alice.send(&ClientPacket::InteractBlock { block: above.into(), action: BlockInteractionAction::Place(wheat.0) });
+    assert_eq!(update(above), wheat.0);
+
+    running.store(false, Ordering::Relaxed);
+    server_thread.join().unwrap();
 }

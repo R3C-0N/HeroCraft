@@ -1,0 +1,6 @@
+{
+  "name": "Pomme de terre",
+  "seed": "grainesPommeDeTerre",
+  "stages": ["pommeDeTerreStade1", "pommeDeTerreStade2", "pommeDeTerreStade3", "pommeDeTerreStade4"],
+  "stage_minutes": 2.5
+}

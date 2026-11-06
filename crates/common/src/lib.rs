@@ -1,6 +1,7 @@
 pub mod blocks;
 pub mod character;
 pub mod crafting;
+pub mod farming;
 pub mod creature;
 pub mod hero;
 pub mod items;
@@ -17,6 +18,7 @@ pub mod weather;
 pub use blocks::*;
 pub use character::*;
 pub use crafting::*;
+pub use farming::*;
 pub use creature::*;
 pub use items::*;
 pub use loot::{LootRng, LootTable};

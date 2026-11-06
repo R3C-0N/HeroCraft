@@ -11,6 +11,7 @@
     {"biome": "Plains", "weight": 0.8}
   ],
   "activity": "diurnal",
+  "breeding": {"food": ["grainesBle", "grainesRiz", "grainesSoja"], "growth_minutes": 6, "lays": {"item": "oeufFaisan", "minutes": [5, 10]}},
   "loot": [
     {"item": "viandeFaisan"},
     {"item": "plumes", "count": [1, 3]}

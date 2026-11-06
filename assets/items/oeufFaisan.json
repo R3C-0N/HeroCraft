@@ -1,0 +1,9 @@
+{
+  "numeric_id": 16907,
+  "name": "Œuf de faisan",
+  "description": "Pondu par un faisan apprivoisé. Se mange au clic droit. Rassasie de 2.",
+  "category": "Récoltes",
+  "max_stack": 16,
+  "icon": "icones/oeufFaisan.png",
+  "stats": {"Satiété": 2}
+}

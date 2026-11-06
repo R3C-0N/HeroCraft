@@ -180,6 +180,8 @@ fn main() {
     // de chaque zone est tirée une fois pour toutes et gardée dans la sauvegarde du monde.
     let creature_registry = Arc::new(herocraft_common::CreatureRegistry::load_default());
     let mut solo_creatures = solo_creature_world(base_radius as f64, current_seed, &creature_registry);
+    // Plantes semées de la partie solo, qui poussent ici (en ligne, sur le serveur)
+    let mut solo_fields = solo_fields_of(current_seed);
     // Chat : Tab complète les blocs et objets (`/give`) et les créatures (`/summon`)
     ui_state.chat.items = commands_items();
     ui_state.chat.creatures = creature_registry.iter().map(|s| s.id.clone()).collect();
@@ -262,7 +264,7 @@ fn main() {
                     WindowEvent::CloseRequested => {
                         // En ligne, la population est celle du serveur : celle du solo est déjà enregistrée
                         if net.is_none() && hosted.is_none() {
-                            save_solo_creatures(&solo_creatures);
+                            save_solo_creatures(&solo_creatures, &solo_fields);
                             save_sky_clock(current_seed, &state, &client_weather);
                         }
                         if let Some(client) = net.as_mut() {
@@ -323,11 +325,17 @@ fn main() {
                                 // Clic droit sur une bête morte, couteau ou dague en main : on la dépèce
                                 let knife = action == block_interaction::BlockAction::Place && ui_state.inventory.slot(ui_state.inventory.selected()).is_some_and(|s| s.item.can_skin());
                                 let corpse = if knife { aimed_corpse(&camera, &block_interaction, &creature_views, &creature_registry) } else { None };
-                                // Clic droit, un aliment en main : le joueur le mange
-                                let food = ui_state.inventory.selected_food().filter(|_| action == block_interaction::BlockAction::Place && station.is_none());
+                                // Clic droit sur une bête vivante avec sa nourriture en main : elle la mange
+                                let fed = corpse.is_none()
+                                    && action == block_interaction::BlockAction::Place
+                                    && station.is_none()
+                                    && feed_aimed_creature(&camera, &block_interaction, &creature_views, &creature_registry, net.as_mut(), &mut solo_creatures, &mut ui_state, &mut audio);
+                                // Sinon, un aliment en main : le joueur le mange
+                                let food = ui_state.inventory.selected_food().filter(|_| action == block_interaction::BlockAction::Place && station.is_none() && !fed);
                                 if let Some(id) = corpse {
                                     skin_creature(id, net.as_mut(), &mut solo_creatures, &mut dropped_items, &camera);
                                     audio.block_placed(audio::synth::Material::Dirt, 0.0, &ui_state.audio_settings);
+                                } else if fed {
                                 } else if let Some(at) = station {
                                     camera.release_inputs();
                                     block_interaction.reset();
@@ -340,12 +348,18 @@ fn main() {
                                             client.send_eat(item);
                                         }
                                     }
-                                } else if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
-                                    block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
-                                    drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
-                                    state.sync_lod_meshes(&lod_manager);
-                                    if let Some(client) = net.as_mut() {
-                                        client.send_block_change(pos, block);
+                                } else {
+                                    let changes = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory);
+                                    for &(pos, block, previous) in &changes {
+                                        block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
+                                        drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
+                                        match net.as_mut() {
+                                            Some(client) => client.send_block_change(pos, block),
+                                            None => solo_fields.observe(pos, block),
+                                        }
+                                    }
+                                    if !changes.is_empty() {
+                                        state.sync_lod_meshes(&lod_manager);
                                     }
                                 }
                             }
@@ -642,12 +656,13 @@ fn main() {
                                 audio.block_hit(audio::synth::Material::of(block), &ui_state.audio_settings);
                             }
                             if let Some(action) = action {
-                                if let Some((pos, block, previous)) = block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
+                                for (pos, block, previous) in block_interaction.apply(action, &camera, &generator, &mut lod_manager, &mut ui_state.inventory) {
                                     block_sound(&mut audio, Some(previous), block, 0.0, &ui_state.audio_settings);
                                     drop_broken_block(&mut dropped_items, &camera, pos, block, previous);
                                     terrain_edited = true;
-                                    if let Some(client) = net.as_mut() {
-                                        client.send_block_change(pos, block);
+                                    match net.as_mut() {
+                                        Some(client) => client.send_block_change(pos, block),
+                                        None => solo_fields.observe(pos, block),
                                     }
                                 }
                             }
@@ -658,7 +673,7 @@ fn main() {
                         // Partie en ligne : position envoyée, blocs des autres appliqués, autres joueurs affichés
                         if let Some(client) = net.as_mut() {
                             herocraft_common::prof_scope!("reseau");
-                            client.send_move(&camera);
+                            client.send_move(&camera, ui_state.inventory.selected_item());
                             let mut lost = None;
                             for event in client.poll() {
                                 match event {
@@ -680,6 +695,7 @@ fn main() {
                                         show_wound(hurt, &cause, &mut camera, &mut ui_state, &mut audio);
                                     }
                                     NetEvent::Loot { position, items } => drop_loot(&mut dropped_items, &camera, position, &items),
+                                    NetEvent::Laid { position, item } => lay_egg(&mut dropped_items, &camera, position, item),
                                     NetEvent::Chat { sender, message } if sender.is_empty() => ui_state.chat.server(&message),
                                     NetEvent::Chat { sender, message } => ui_state.chat.player(&sender, &message),
                                     NetEvent::Clock { time, forced } => {
@@ -711,6 +727,7 @@ fn main() {
                                 None => {
                                     if creatures_seed != current_seed {
                                         solo_creatures = solo_creature_world(camera.base_radius as f64, current_seed, &creature_registry);
+                                        solo_fields = solo_fields_of(current_seed);
                                         creatures_seed = current_seed;
                                     }
                                     if !ui_state.is_settings_open && creature_mode != benchmark::CreatureMode::Off {
@@ -718,7 +735,12 @@ fn main() {
                                         solo_creatures.set_sun_dir(state.sun_dir());
                                         // Sous l'orage les bêtes s'abritent, l'hiver les ours hibernent
                                         solo_creatures.set_climate(&client_weather.model, state.simulated_time as f64);
-                                        let player = herocraft_world::PlayerPresence { feet: camera.player_pos, crouching: camera.is_crouching() };
+                                        let player = herocraft_world::PlayerPresence { feet: camera.player_pos, crouching: camera.is_crouching(), holding: ui_state.inventory.selected_item() };
+                                        // Les plantes semées poussent (le serveur s'en charge en ligne)
+                                        for (pos, block) in solo_fields.tick_in_weather(dt, &generator, lod_manager.terrain_edits(), &client_weather.model, state.simulated_time as f64) {
+                                            terrain_edited |= lod_manager.set_block(&generator, pos, block);
+                                            block_interaction.invalidate();
+                                        }
                                         // Morsures et charges des bêtes agressives
                                         let hits = solo_creatures.tick_with_presences(dt, &generator, lod_manager.terrain_edits(), &[player]);
                                         // Banc d'essai : les bêtes ne blessent pas le joueur
@@ -726,6 +748,10 @@ fn main() {
                                             let cause = creature_registry.get(hit.species).map_or("Une créature", |s| s.name.as_str());
                                             let hurt = ui_state.player.bitten(hit.damage, cause);
                                             show_wound(hurt, cause, &mut camera, &mut ui_state, &mut audio);
+                                        }
+                                        // Œufs pondus par les bêtes apprivoisées, laissés à leurs pieds
+                                        for (feet, item) in solo_creatures.take_laid() {
+                                            lay_egg(&mut dropped_items, &camera, feet, item);
                                         }
                                     }
                                     match creature_mode {
@@ -857,7 +883,7 @@ fn main() {
                         if last_autosave.elapsed().as_secs() >= 30 && bench.is_none() {
                             save_terrain_edits(&lod_manager);
                             if net.is_none() && hosted.is_none() {
-                                save_solo_creatures(&solo_creatures);
+                                save_solo_creatures(&solo_creatures, &solo_fields);
                                 save_sky_clock(current_seed, &state, &client_weather);
                             }
                             ui_state.inventory.save();
@@ -989,7 +1015,7 @@ fn main() {
                                 }
                                 UiAction::QuitGame => {
                                     if net.is_none() && hosted.is_none() {
-                                        save_solo_creatures(&solo_creatures);
+                                        save_solo_creatures(&solo_creatures, &solo_fields);
                                         save_sky_clock(current_seed, &state, &client_weather);
                                     }
                                     if let Some(client) = net.as_mut() {
@@ -1032,7 +1058,7 @@ fn main() {
                                     // Le serveur reprend la sauvegarde du monde : elle est d'abord mise à jour
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
-                                    save_solo_creatures(&solo_creatures);
+                                    save_solo_creatures(&solo_creatures, &solo_fields);
                                     save_sky_clock(current_seed, &state, &client_weather);
                                     solo_seed = current_seed;
                                     let pseudo = ui_state.multiplayer.pseudo.trim().to_string();
@@ -1054,7 +1080,7 @@ fn main() {
                                 UiAction::JoinServer => {
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
-                                    save_solo_creatures(&solo_creatures);
+                                    save_solo_creatures(&solo_creatures, &solo_fields);
                                     save_sky_clock(current_seed, &state, &client_weather);
                                     solo_seed = current_seed;
                                     let addr = network::server_address(&ui_state.multiplayer.join_target);
@@ -1077,6 +1103,7 @@ fn main() {
                                     // Le serveur ouvert ici a pu faire vivre (et tuer) les bêtes du monde
                                     // solo : elles sont reprises de la sauvegarde qu'il vient d'écrire
                                     solo_creatures = solo_creature_world(camera.base_radius as f64, solo_seed, &creature_registry);
+                                    solo_fields = solo_fields_of(solo_seed);
                                     creatures_seed = solo_seed;
                                     if was_hosting && current_seed == solo_seed {
                                         // Même planète : le joueur reste où il est, avec les blocs des autres
@@ -1104,7 +1131,7 @@ fn main() {
                                 UiAction::GenerateNewPlanet => {
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
-                                    save_solo_creatures(&solo_creatures);
+                                    save_solo_creatures(&solo_creatures, &solo_fields);
                                     save_sky_clock(current_seed, &state, &client_weather);
                                     current_seed = next_planet_seed.take().unwrap_or_else(herocraft_world::random_seed);
                                     let (storage, edits) = solo_terrain(current_seed);
@@ -1538,6 +1565,47 @@ fn aimed_creature(camera: &OrbitCamera, interaction: &BlockInteraction, views: &
     creatures::aimed_creature(views, registry, eye, dir, reach, block).map(|(id, _)| id)
 }
 
+/// Donne à la bête visée ce que le joueur tient en main, si c'est sa nourriture et qu'elle en veut :
+/// la simulation solo, ou le serveur en ligne, l'apprivoise, la rend amoureuse ou fait grandir le
+/// petit. Renvoie vrai si elle a mangé (l'objet est retiré de l'inventaire).
+#[allow(clippy::too_many_arguments)]
+fn feed_aimed_creature(
+    camera: &OrbitCamera,
+    interaction: &BlockInteraction,
+    views: &[creatures::CreatureView],
+    registry: &herocraft_common::CreatureRegistry,
+    net: Option<&mut network::NetClient>,
+    solo: &mut herocraft_world::CreatureWorld,
+    ui_state: &mut UiState,
+    audio: &mut audio::Audio,
+) -> bool {
+    let Some(item) = ui_state.inventory.selected_item() else { return false };
+    let Some(id) = aimed_creature(camera, interaction, views, registry) else { return false };
+    let Some(view) = views.iter().find(|v| v.id == id) else { return false };
+    let Some(species) = view.species else { return false };
+    // Un adulte apprivoisé déjà amoureux, ou qui vient d'avoir un petit, n'en veut pas
+    let sated = view.mood & herocraft_common::MOOD_SATED != 0 && view.scale >= 1.0;
+    if sated || !solo.food_of(species).contains(&item) {
+        return false;
+    }
+    match net {
+        Some(client) => client.send_feed_creature(id, item),
+        None => {
+            let feeding = solo.feed(id, item);
+            if feeding == herocraft_world::Feeding::Refused {
+                return false;
+            }
+            let name = registry.get(species).map_or("La bête", |s| s.name.as_str());
+            if let Some(message) = herocraft_world::creatures::feeding_message(feeding, name) {
+                ui_state.chat.info(message);
+            }
+        }
+    }
+    ui_state.inventory.consume_selected();
+    audio.block_placed(audio::synth::Material::Grass, 0.0, &ui_state.audio_settings);
+    true
+}
+
 /// Blessure du joueur de force `hurt` (0 : sans mal) : vue secouée, cri et, s'il en est mort,
 /// écran de mort (`what` : ce qui l'a blessé, pour le journal)
 fn show_wound(hurt: f32, what: &str, camera: &mut OrbitCamera, ui_state: &mut UiState, audio: &mut audio::Audio) {
@@ -1596,6 +1664,12 @@ fn drop_broken_block(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCa
     }
 }
 
+/// Œuf pondu par une bête : posé à ses pieds, il y reste jusqu'à ce qu'on marche dessus
+fn lay_egg(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, feet: glam::Vec3, item: herocraft_common::ItemId) {
+    let height = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+    dropped.lay(item, feet + feet.normalize_or_zero() * 0.2 * height);
+}
+
 /// Dépèce la bête morte `id` : en solo, son butin tombe aussitôt ; en ligne, le serveur le tire et
 /// l'envoie (`NetEvent::Loot`)
 fn skin_creature(id: u64, net: Option<&mut NetClient>, solo: &mut herocraft_world::CreatureWorld, dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera) {
@@ -1635,10 +1709,19 @@ fn solo_creature_world(base_radius: f64, seed: u64, registry: &Arc<herocraft_com
     herocraft_world::CreatureWorld::with_save_dir(base_radius, seed, registry.clone(), solo_save_dir(seed))
 }
 
-/// Enregistre la population de créatures du monde solo (bêtes tuées comprises, qui ne reviennent pas)
-fn save_solo_creatures(creatures: &herocraft_world::CreatureWorld) {
+/// Plantes semées d'un monde solo, reprises de sa sauvegarde
+fn solo_fields_of(seed: u64) -> herocraft_world::Fields {
+    herocraft_world::Fields::with_save_dir(solo_save_dir(seed))
+}
+
+/// Enregistre la population de créatures du monde solo (bêtes tuées comprises, qui ne reviennent
+/// pas) et les plantes qui y poussent
+fn save_solo_creatures(creatures: &herocraft_world::CreatureWorld, fields: &herocraft_world::Fields) {
     if let Err(e) = creatures.save() {
         log::warn!("Échec de l'enregistrement des créatures : {}", e);
+    }
+    if let Err(e) = fields.save() {
+        log::warn!("Échec de l'enregistrement des cultures : {}", e);
     }
 }
 
