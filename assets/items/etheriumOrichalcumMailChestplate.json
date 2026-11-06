@@ -3,6 +3,7 @@
   "name": "Pourpoint d'étherium (orichalque)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/etheriumOrichalcumMailChestplate.png",
   "stats": {"Protection": 33, "Durabilité": 5000},
   "recipes": [

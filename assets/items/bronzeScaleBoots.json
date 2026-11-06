@@ -3,6 +3,7 @@
   "name": "Bottes de bronze",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/bronzeScaleBoots.png",
   "stats": {"Protection": 5, "Durabilité": 500},
   "recipes": [

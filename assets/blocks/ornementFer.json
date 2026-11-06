@@ -1,0 +1,13 @@
+{
+  "numeric_id": 145,
+  "name": "Ferrure",
+  "description": "Bandes de fer clouées des maisons naines et des enclumes. Purement décorative : elle ne se fond pas en lingots.",
+  "category": "Construction",
+  "hardness": 30,
+  "color": {
+    "side": "#83868b"
+  },
+  "textures": {
+    "side": "textures/IronPlate.png"
+  }
+}

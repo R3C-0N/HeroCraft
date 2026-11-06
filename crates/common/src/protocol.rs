@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 11;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -57,6 +57,11 @@ pub enum ClientPacket {
     FeedCreature {
         creature_id: u64,
         item: u16,
+    },
+    /// Le joueur dépèce une bête morte à sa portée, couteau ou dague en main : le serveur tire son
+    /// butin (`ServerPacket::CreatureLoot`) et la retire
+    SkinCreature {
+        creature_id: u64,
     },
     /// Le joueur investit un point dans une compétence de la roue (le serveur vérifie points et
     /// prérequis, puis renvoie ses statistiques)
@@ -156,7 +161,7 @@ pub enum ServerPacket {
         /// Nom de l'espèce qui l'a frappé, pour l'écran de mort
         cause: String,
     },
-    /// Le joueur vient de tuer une créature : son butin tombe au sol à ses pieds (`position`),
+    /// Le joueur vient de dépecer une bête morte : son butin tombe au sol à côté d'elle (`position`),
     /// objets et nombres (`ItemId`), tirés par le serveur
     CreatureLoot {
         position: Vec3,

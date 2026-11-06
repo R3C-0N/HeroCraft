@@ -3,6 +3,7 @@
   "name": "Grèves d'acier",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/steelPlateLeggings.png",
   "stats": {"Protection": 18, "Durabilité": 2000},
   "recipes": [

@@ -3,6 +3,7 @@
   "name": "Capuche de fer",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/ironMailHelmet.png",
   "stats": {"Protection": 7, "Durabilité": 900},
   "recipes": [

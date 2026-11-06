@@ -3,6 +3,7 @@
   "name": "Camail de silex",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/boneStuddedHelmet.png",
   "stats": {"Protection": 3, "Durabilité": 220},
   "recipes": [

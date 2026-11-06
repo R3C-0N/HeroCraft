@@ -492,6 +492,7 @@ impl Server {
             ClientPacket::InteractBlock { block, action } => self.interact_block(id, block.into(), action),
             ClientPacket::HitCreature { creature_id } => self.hit_creature(id, creature_id),
             ClientPacket::FeedCreature { creature_id, item } => self.feed_creature(id, creature_id, ItemId(item)),
+            ClientPacket::SkinCreature { creature_id } => self.skin_creature(id, creature_id),
             ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
             ClientPacket::Eat { item } => self.eat(id, ItemId(item)),
@@ -657,11 +658,20 @@ impl Server {
     fn hit_creature(&mut self, id: u64, creature_id: u64) {
         let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
         let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
-        if !self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
+        if self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
+            self.creatures.hit(creature_id, feet);
+        }
+    }
+
+    /// Un joueur dépèce une bête morte à sa portée (son client a vérifié qu'il tient un couteau ou
+    /// une dague) : le butin tombe chez lui seul, les objets au sol étant propres à chaque client
+    fn skin_creature(&mut self, id: u64, creature_id: u64) {
+        let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
+        let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
+        if !self.creatures.creatures().iter().any(|c| c.id == creature_id && !c.is_alive() && c.position.distance(feet) <= reach) {
             return;
         }
-        // Tuée : son butin tombe chez celui qui l'a frappée (les objets au sol sont propres à chacun)
-        let Some((species, position)) = self.creatures.hit_to_kill(creature_id, feet) else { return };
+        let Some((species, position)) = self.creatures.skin(creature_id) else { return };
         let loot = herocraft_common::loot::creature_loot(self.creatures.registry(), species).roll(&mut self.loot_rng);
         if let (Some(player), false) = (self.players.get(&id), loot.is_empty()) {
             let items = loot.into_iter().map(|(item, count)| (item.0, count)).collect();

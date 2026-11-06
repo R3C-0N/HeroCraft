@@ -3,6 +3,7 @@
   "name": "Capuche de bronze",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/bronzeMailHelmet.png",
   "stats": {"Protection": 5, "Durabilité": 500},
   "recipes": [

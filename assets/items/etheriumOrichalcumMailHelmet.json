@@ -3,6 +3,7 @@
   "name": "Capuche d'étherium (orichalque)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/etheriumOrichalcumMailHelmet.png",
   "stats": {"Protection": 18, "Durabilité": 5000},
   "recipes": [

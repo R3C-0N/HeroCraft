@@ -279,9 +279,18 @@ impl OrbitCamera {
         let args: Vec<String> = std::env::args().collect();
         let wanted = args.iter().position(|a| a == "--visiter").and_then(|i| args.get(i + 1))?;
         let rank: usize = args.iter().position(|a| a == "--visiter").and_then(|i| args.get(i + 2)).and_then(|n| n.parse().ok()).unwrap_or(1);
+        // `--culture nain|humain|elfeBois|hautElfe` : seulement les établissements de cette culture
+        let culture = args.iter().position(|a| a == "--culture").and_then(|i| args.get(i + 1)).and_then(|c| {
+            let found = herocraft_world::Culture::ALL.into_iter().find(|k| k.espece_id().eq_ignore_ascii_case(c));
+            if found.is_none() {
+                log::warn!("--culture {c} : culture inconnue (humain, nain, elfeBois, hautElfe).");
+            }
+            found
+        });
         let mut found = herocraft_common::PlanetFace::ALL.into_iter().flat_map(|face| {
             (0..CELLS_PER_FACE * CELLS_PER_FACE).filter_map(move |i| generator.structures.cell(generator, face, i % CELLS_PER_FACE, i / CELLS_PER_FACE))
         });
+        let mut found = found.filter(|s| culture.is_none() || s.culture == culture);
         let Some(settlement) = found.find(|s| s.kind.name() == wanted.as_str()).and_then(|first| {
             if rank <= 1 { Some(first) } else { found.filter(|s| s.kind == first.kind).nth(rank - 2) }
         }) else {
@@ -298,8 +307,9 @@ impl OrbitCamera {
         let dir = to_dir(cx, settlement.bounds.z0 - 3).normalize();
         self.player_pos = dir * self.ground_radius_at(dir, generator);
         log::info!(
-            "Visite : {} n° {rank} sur la face {:?}, centre en ({cx}, {cz}), {} pièces.",
+            "Visite : {} n° {rank} ({}) sur la face {:?}, centre en ({cx}, {cz}), {} pièces.",
             settlement.kind.name(),
+            settlement.culture.map_or("sans peuple", |c| c.name()),
             face,
             settlement.pieces.len()
         );

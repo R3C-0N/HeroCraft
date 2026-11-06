@@ -438,12 +438,22 @@ fn push_cube(frame: &mut CreatureFrame, center: Vec3, axes: [Vec3; 3]) {
 /// Chaque bête est une boîte de son corps (`CreatureSpecies::body`), tournée selon son cap ; `block`
 /// : taille d'un bloc.
 pub fn aimed_creature(views: &[CreatureView], registry: &CreatureRegistry, eye: Vec3, dir: Vec3, max_distance: f32, block: f32) -> Option<(u64, f32)> {
+    aimed_body(views.iter().filter(|v| v.death <= 0.0), registry, eye, dir, max_distance, block)
+}
+
+/// Bête morte, couchée sur le flanc, sous le réticule (à dépecer), comme `aimed_creature`
+pub fn aimed_corpse(views: &[CreatureView], registry: &CreatureRegistry, eye: Vec3, dir: Vec3, max_distance: f32, block: f32) -> Option<(u64, f32)> {
+    aimed_body(views.iter().filter(|v| v.death > 0.0), registry, eye, dir, max_distance, block)
+}
+
+/// Bête de `views` que touche en premier le rayon. Une bête morte est couchée sur le flanc : sa
+/// boîte a la hauteur et la largeur échangées.
+fn aimed_body<'a>(views: impl Iterator<Item = &'a CreatureView>, registry: &CreatureRegistry, eye: Vec3, dir: Vec3, max_distance: f32, block: f32) -> Option<(u64, f32)> {
     views
-        .iter()
-        .filter(|v| v.death <= 0.0)
         .filter_map(|view| {
             let body = view.species.and_then(|s| registry.get(s)).map(|s| s.body);
             let (half_width, half_length, height) = body.map_or((PLACEHOLDER_SIZE * 0.5, PLACEHOLDER_SIZE * 0.5, PLACEHOLDER_SIZE), |b| (b.half_width, b.half_length, b.height));
+            let (half_width, height) = if view.death > 0.0 { (height * 0.5, (half_width * 2.0).max(0.4)) } else { (half_width, height) };
             let k = view.scale.clamp(0.1, 1.0);
             let (half_width, half_length, height) = (half_width * k, half_length * k, height * k);
             let up = view.feet.normalize_or_zero();

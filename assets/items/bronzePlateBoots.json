@@ -3,6 +3,7 @@
   "name": "Solerets de bronze",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/bronzePlateBoots.png",
   "stats": {"Protection": 6, "Durabilité": 500},
   "recipes": [

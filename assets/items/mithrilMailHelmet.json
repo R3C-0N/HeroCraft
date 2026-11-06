@@ -3,6 +3,7 @@
   "name": "Capuche de mithril",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "head",
   "icon": "icones/mithrilMailHelmet.png",
   "stats": {"Protection": 16, "Durabilité": 3000},
   "recipes": [

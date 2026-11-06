@@ -3,6 +3,7 @@
   "name": "Braies de bronze",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/bronzeMailLeggings.png",
   "stats": {"Protection": 7, "Durabilité": 500},
   "recipes": [

@@ -3,6 +3,7 @@
   "name": "Cuirasse de cuivre",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "chest",
   "icon": "icones/copperPlateChestplate.png",
   "stats": {"Protection": 11, "Durabilité": 300},
   "recipes": [

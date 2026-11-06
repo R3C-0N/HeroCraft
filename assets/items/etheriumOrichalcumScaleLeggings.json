@@ -3,6 +3,7 @@
   "name": "Chausses d'étherium (orichalque)",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "legs",
   "icon": "icones/etheriumOrichalcumScaleLeggings.png",
   "stats": {"Protection": 25, "Durabilité": 5000},
   "recipes": [

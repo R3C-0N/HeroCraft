@@ -188,6 +188,7 @@ fn main() {
     let mut creatures_seed = current_seed;
     let mut creature_animator = creatures::CreatureAnimator::default();
     let mut hero_gait = hero_model::HeroGait::default();
+    let mut hero_figure = hero_model::FigureCache::default();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
     // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
     // prochain coup qu'on peut leur porter
@@ -309,13 +310,20 @@ fn main() {
                                 block_interaction.update_target(&camera, &generator, &lod_manager.terrain_edits().clone());
                                 // Clic droit sur un établi : il s'ouvre (accroupi, on pose contre lui)
                                 let station = block_interaction.aimed_station().filter(|_| action == block_interaction::BlockAction::Place && !camera.is_crouching());
-                                // Clic droit sur une bête avec sa nourriture en main : elle la mange
-                                let fed = action == block_interaction::BlockAction::Place
+                                // Clic droit sur une bête morte, couteau ou dague en main : on la dépèce
+                                let knife = action == block_interaction::BlockAction::Place && ui_state.inventory.slot(ui_state.inventory.selected()).is_some_and(|s| s.item.can_skin());
+                                let corpse = if knife { aimed_corpse(&camera, &block_interaction, &creature_views, &creature_registry) } else { None };
+                                // Clic droit sur une bête vivante avec sa nourriture en main : elle la mange
+                                let fed = corpse.is_none()
+                                    && action == block_interaction::BlockAction::Place
                                     && station.is_none()
                                     && feed_aimed_creature(&camera, &block_interaction, &creature_views, &creature_registry, net.as_mut(), &mut solo_creatures, &mut ui_state, &mut audio);
                                 // Sinon, un aliment en main : le joueur le mange
                                 let food = ui_state.inventory.selected_food().filter(|_| action == block_interaction::BlockAction::Place && station.is_none() && !fed);
-                                if fed {
+                                if let Some(id) = corpse {
+                                    skin_creature(id, net.as_mut(), &mut solo_creatures, &mut dropped_items, &camera);
+                                    audio.block_placed(audio::synth::Material::Dirt, 0.0, &ui_state.audio_settings);
+                                } else if fed {
                                 } else if let Some(at) = station {
                                     camera.release_inputs();
                                     block_interaction.reset();
@@ -583,7 +591,7 @@ fn main() {
                             let striking = aimed.filter(|_| block_interaction.is_breaking_held());
                             if let Some(id) = striking {
                                 block_interaction.pause_mining();
-                                hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut dropped_items, &mut audio, &ui_state.audio_settings);
+                                hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut audio, &ui_state.audio_settings);
                             }
                             let action = if striking.is_some() { None } else { block_interaction.tick(dt) };
                             if let Some(block) = block_interaction.take_hit() {
@@ -702,7 +710,8 @@ fn main() {
                             hero_gait.update(camera.player_pos, anim_dt, block);
                             if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson) {
                                 state.set_hero_sheet(&legend.appearance);
-                                hero_model::push_hero(&mut frame, &legend.appearance, camera.player_pos, camera.player_yaw, hero_gait.swing(), block);
+                                let figure = hero_figure.get(&legend.appearance);
+                                hero_model::push_hero(&mut frame, &legend.appearance, figure, camera.player_pos, camera.player_yaw, hero_gait.swing(), block);
                             }
                             state.set_creature_frame(&frame);
                             creature_vertices = frame.vertices.len();
@@ -1435,6 +1444,14 @@ fn set_cursor_captured(window: &Window, captured: bool) {
 /// Délai entre deux coups portés à une créature, en secondes
 const ATTACK_COOLDOWN: f32 = 0.4;
 
+/// Bête morte sous le réticule, à portée et devant le bloc visé : à dépecer
+fn aimed_corpse(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<u64> {
+    let (eye, dir, arm) = camera.view_ray()?;
+    let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+    let reach = interaction.target().map_or(arm + block_interaction::REACH_BLOCKS as f32 * block, |hit| hit.distance as f32);
+    creatures::aimed_corpse(views, registry, eye, dir, reach, block).map(|(id, _)| id)
+}
+
 /// Créature vivante sous le réticule, à portée et devant le bloc visé
 fn aimed_creature(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<u64> {
     let (eye, dir, arm) = camera.view_ray()?;
@@ -1506,7 +1523,6 @@ fn hit_creature(
     camera: &OrbitCamera,
     net: Option<&mut NetClient>,
     solo: &mut herocraft_world::CreatureWorld,
-    dropped: &mut dropped_items::DroppedItems,
     audio: &mut audio::Audio,
     settings: &audio::AudioSettings,
 ) {
@@ -1515,13 +1531,9 @@ fn hit_creature(
     }
     *cooldown = ATTACK_COOLDOWN;
     match net {
-        // En ligne, le serveur tire le butin et l'envoie (`NetEvent::Loot`)
         Some(client) => client.send_hit_creature(id),
         None => {
-            if let Some((species, feet)) = solo.hit_to_kill(id, camera.player_pos) {
-                let loot = herocraft_common::loot::creature_loot(solo.registry(), species).roll(&mut herocraft_common::LootRng::from_clock());
-                drop_loot(dropped, camera, feet, &loot);
-            }
+            solo.hit(id, camera.player_pos);
         }
     }
     // Coup sourd
@@ -1553,7 +1565,21 @@ fn lay_egg(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, feet
     dropped.lay(item, feet + feet.normalize_or_zero() * 0.2 * height);
 }
 
-/// Le butin d'une bête tuée tombe à ses pieds (`feet`), un peu au-dessus du sol
+/// Dépèce la bête morte `id` : en solo, son butin tombe aussitôt ; en ligne, le serveur le tire et
+/// l'envoie (`NetEvent::Loot`)
+fn skin_creature(id: u64, net: Option<&mut NetClient>, solo: &mut herocraft_world::CreatureWorld, dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera) {
+    match net {
+        Some(client) => client.send_skin_creature(id),
+        None => {
+            if let Some((species, feet)) = solo.skin(id) {
+                let loot = herocraft_common::loot::creature_loot(solo.registry(), species).roll(&mut herocraft_common::LootRng::from_clock());
+                drop_loot(dropped, camera, feet, &loot);
+            }
+        }
+    }
+}
+
+/// Le butin d'une bête dépecée tombe à ses pieds (`feet`), un peu au-dessus du sol
 fn drop_loot(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, feet: glam::Vec3, loot: &[(herocraft_common::ItemId, u16)]) {
     let height = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
     let center = feet + feet.normalize_or_zero() * 0.6 * height;

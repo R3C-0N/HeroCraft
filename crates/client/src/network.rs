@@ -390,6 +390,11 @@ impl NetClient {
         self.connection.send(&ClientPacket::HitCreature { creature_id });
     }
 
+    /// Dépèce la bête morte `creature_id` (le serveur renvoie son butin)
+    pub fn send_skin_creature(&mut self, creature_id: u64) {
+        self.connection.send(&ClientPacket::SkinCreature { creature_id });
+    }
+
     /// Demande au serveur d'investir un point dans une compétence (il renvoie les statistiques)
     pub fn send_learn_skill(&mut self, id: String) {
         self.connection.send(&ClientPacket::LearnSkill { id });

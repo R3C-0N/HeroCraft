@@ -3,6 +3,7 @@
   "name": "Bottes en planches",
   "category": "Armures",
   "max_stack": 1,
+  "slot": "feet",
   "icon": "icones/plankBoots.png",
   "stats": {"Protection": 1, "Durabilité": 80},
   "recipes": [
