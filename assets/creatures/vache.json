@@ -10,6 +10,12 @@
     {"biome": "Plains", "weight": 1.0}
   ],
   "activity": "diurnal",
+  "loot": [
+    {"item": "viandeVache", "count": [1, 3]},
+    {"item": "hide", "count": [1, 2]},
+    {"item": "cuirEpais", "chance": 0.3},
+    {"item": "bone", "chance": 0.5}
+  ],
   "model": {
     "mesh": "modeles/vache.gltf",
     "texture": "modeles/vache.png",

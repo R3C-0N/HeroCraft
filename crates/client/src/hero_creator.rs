@@ -558,7 +558,9 @@ impl Preview {
         self.last_time = Some(now);
         self.update(dt);
         let texture = self.texture(painter.ctx(), cfg);
-        draw_figure(painter, frame, &texture, cfg, self.angle, self.tilt);
+        let (angle, tilt) = (self.angle, self.tilt);
+        let figure = self.figure.get(cfg);
+        draw_figure(painter, frame, &texture, cfg, figure, angle, tilt);
         painter.ctx().request_repaint();
     }
 

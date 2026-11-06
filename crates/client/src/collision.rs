@@ -11,7 +11,7 @@ use herocraft_world::generator::ColumnSample;
 use herocraft_world::{BlockGeometry, BlockPos, PlanetWorldGenerator, TerrainEdits, TerrainQuery, WORLD_HEIGHT};
 
 /// Au-delà, le cache de colonnes est vidé (le joueur ne touche qu'une poignée de colonnes par image)
-const MAX_CACHED_COLUMNS: usize = 4096;
+const MAX_CACHED_COLUMNS: usize = 8192;
 
 pub struct VoxelCollider {
     edits: Arc<TerrainEdits>,
@@ -85,6 +85,13 @@ impl VoxelCollider {
         };
         let top = self.with_query(generator, |q| q.support_top(pos.face, pos.x, pos.z, WORLD_HEIGHT - 1));
         self.radius_of_altitude(top)
+    }
+
+    /// Rayon du dessus du plus haut bloc porteur de chaque colonne `(x, z)` de la face `face`
+    /// (là où s'arrête la pluie), en une seule lecture du terrain
+    pub fn support_tops(&self, generator: &PlanetWorldGenerator, face: PlanetFace, columns: &[(i32, i32)]) -> Vec<f32> {
+        let tops: Vec<i32> = self.with_query(generator, |q| columns.iter().map(|&(x, z)| q.support_top(face, x, z, WORLD_HEIGHT - 1)).collect());
+        tops.into_iter().map(|y| self.radius_of_altitude(y)).collect()
     }
 
     /// Rayon du sol pour un point libre (caméra) : s'il est dans un bloc porteur, le dessus de la pile

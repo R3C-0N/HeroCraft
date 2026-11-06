@@ -1575,6 +1575,37 @@ mod tests {
     }
 
     #[test]
+    fn names_follow_what_the_appearance_shows() {
+        let registry = herocraft_common::professions();
+        let smith = registry.get(registry.find("forgeron").unwrap()).unwrap();
+        let mut rng = StdRng::seed_from_u64(7);
+        let (mut women, mut men) = (0, 0);
+        for i in 0..200 {
+            let culture = Culture::ALL[i % 4];
+            let card = card_for(culture, smith, String::new(), &mut rng);
+            let feminine = looks_feminine(&card.appearance);
+            assert_eq!(card.appearance.nom, card.name);
+            if feminine {
+                women += 1;
+                assert_eq!(card.profession, "Forgeronne");
+                if card.appearance.espece != "nain" {
+                    assert_eq!(card.appearance.barbe, "aucune", "{}", card.name);
+                }
+            } else {
+                men += 1;
+                assert_eq!(card.profession, "Forgeron");
+                assert!(MASCULINE_HAIR.contains(&card.appearance.coiffure.as_str()), "{}", card.appearance.coiffure);
+            }
+        }
+        assert!(women > 60 && men > 60, "{women} femmes, {men} hommes");
+        // Les mêmes tirages donnent des noms différents selon le sexe
+        let (mut a, mut b) = (StdRng::seed_from_u64(1), StdRng::seed_from_u64(1));
+        let she: Vec<String> = (0..20).map(|_| random_name(Culture::Humains, true, &mut a)).collect();
+        let he: Vec<String> = (0..20).map(|_| random_name(Culture::Humains, false, &mut b)).collect();
+        assert_ne!(she, he);
+    }
+
+    #[test]
     fn the_nav_grid_finds_a_way_around_a_wall() {
         let mut nav = NavGrid::new(Rect::new(0, 0, 20, 20));
         nav.set_rect(Rect::new(10, 0, 11, 18), true);

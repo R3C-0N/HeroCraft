@@ -21,6 +21,8 @@ pub const PLAYER_HIT_DAMAGE: f32 = 2.5;
 pub const CREATURE_HURT_TIME: f32 = 0.4;
 /// Durée de la chute sur le flanc d'une créature morte, avant qu'elle disparaisse, en secondes
 pub const CREATURE_DEATH_TIME: f32 = 0.8;
+/// Durée pendant laquelle une bête morte reste à terre, à dépecer, avant de disparaître, en secondes
+pub const CORPSE_TIME: f32 = 600.0;
 
 /// Une espèce de créature, telle que décrite par son fichier
 #[derive(Debug, Clone, Deserialize)]
@@ -64,6 +66,12 @@ pub struct CreatureSpecies {
     /// la simulation des villages, sans modèle glTF
     #[serde(default)]
     pub humanoid: bool,
+    /// Elle dort tout l'hiver (ours), là où les saisons sont marquées
+    #[serde(default)]
+    pub hibernation: bool,
+    /// Ce que la bête tuée laisse tomber (voir `loot`)
+    #[serde(default)]
+    pub loot: Vec<crate::loot::LootEntry>,
     /// Modèle 3D (absent pour un humanoïde)
     #[serde(default)]
     pub model: CreatureModel,
@@ -381,6 +389,12 @@ impl CreatureRegistry {
         }
     }
 
+    /// Comme `load_default`, sans rien écrire dans la console (une espèce invalide est ignorée)
+    pub fn load_quiet() -> Self {
+        let candidates = [PathBuf::from(CREATURES_DIR), Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(CREATURES_DIR)];
+        candidates.iter().find(|dir| dir.is_dir()).and_then(|dir| Self::load_dir(dir).ok()).map_or_else(Self::default, |(registry, _)| registry)
+    }
+
     /// Lit chaque fichier `*.json` du dossier. Renvoie les espèces valides et les erreurs des autres.
     pub fn load_dir(dir: &Path) -> io::Result<(Self, Vec<String>)> {
         let mut registry = Self { species: Vec::new(), dir: dir.to_path_buf() };
@@ -470,6 +484,7 @@ impl CreatureSpecies {
                 return Err(format!("animation {name} : valeur d'os invalide"));
             }
         }
+        crate::loot::check_entries(&species.loot)?;
         if species.pauses().count() > u8::MAX as usize {
             return Err("trop d'inactivités".into());
         }

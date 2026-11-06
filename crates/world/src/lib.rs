@@ -8,10 +8,12 @@ pub mod ocean_currents;
 pub mod population;
 pub mod quadtree;
 pub mod roads;
+pub mod sky;
 pub mod structures;
 pub mod tectonics;
 pub mod vegetation;
 pub mod villagers;
+pub mod weather;
 
 pub use caves::{carvable_range, CaveField, CAVE_DEPTH};
 pub use creatures::{Creature, CreatureWorld, PlayerHit, PlayerPresence, CREATURE_RANGE_BLOCKS};
@@ -25,3 +27,4 @@ pub use culture::Culture;
 pub use structures::{Settlement, SettlementKind, StructureMap};
 pub use tectonics::*;
 pub use vegetation::{Tree, TreeKind, VegetationField, TREE_CELL, TREE_REACH, VEGETATION_SPAN};
+pub use weather::{crop_growth_factor, Season, SkyClock, WeatherKind, WeatherModel, WeatherSample};

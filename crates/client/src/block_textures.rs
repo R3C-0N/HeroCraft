@@ -9,7 +9,7 @@
 
 use std::sync::OnceLock;
 
-use herocraft_common::{blocks, BlockId};
+use herocraft_common::{blocks, items, BlockId, ItemId};
 
 use crate::skinned_model::Texture;
 
@@ -33,6 +33,9 @@ pub struct BlockTextureSet {
     /// Pour chaque texture d'un bloc connecté (verre) : la première de ses 16 variantes, une par
     /// combinaison de bords reliés (`CONNECTED_*`)
     connected: Vec<Option<u16>>,
+    /// Icônes des objets qui peuvent tomber au sol (`loot::droppable_items`), ajoutées en dernier :
+    /// l'objet et sa couche
+    icons: Vec<(ItemId, u16)>,
 }
 
 /// Bords d'une face reliés à un bloc du même genre (bits du masque d'une texture connectée), dans
@@ -78,7 +81,25 @@ impl BlockTextureSet {
                 layers.extend((0..16).map(|mask| Layer::connected(image, mean, mask)));
             }
         }
-        Self { layers, connected }
+        // Icônes des objets qui tombent au sol (butin), dessinées sur une plaque tournante
+        let mut icons = Vec::new();
+        for &item in herocraft_common::loot::droppable_items() {
+            let Some(sheet) = items().get(item) else { continue };
+            let path = items().asset_path(&sheet.icon);
+            match Texture::load(&path) {
+                Ok(image) => {
+                    icons.push((item, layers.len() as u16));
+                    layers.push(Layer::from_image(&image));
+                }
+                Err(e) => log::warn!("Icône {} illisible : {e}", path.display()),
+            }
+        }
+        Self { layers, connected, icons }
+    }
+
+    /// Couche de l'icône d'un objet qui peut tomber au sol
+    pub fn icon_layer(&self, item: ItemId) -> Option<u16> {
+        self.icons.iter().find(|(i, _)| *i == item).map(|&(_, layer)| layer)
     }
 
     /// Couche à montrer pour la texture `layer` d'un bloc connecté dont les bords `mask` touchent un
@@ -109,6 +130,22 @@ impl BlockTextureSet {
     }
 
     /// Envoie les couches à la carte graphique : le groupe de liaison 2 du shader du terrain
+    /// Genre de végétation de chaque couche, d'après le nom de sa texture : feuillus, conifères,
+    /// herbe ou autre (`Foliage`). Les variantes des textures connectées (verre) sont « autre ».
+    pub fn foliage_classes(&self) -> Vec<Foliage> {
+        let files = blocks().texture_files();
+        (0..self.layers.len()).map(|i| files.get(i).map_or(Foliage::Other, |f| Foliage::of_texture(f))).collect()
+    }
+
+    /// `foliage_classes` tassés pour le shader : 16 couches par mot de 32 bits, `FOLIAGE_WORDS` mots
+    fn foliage_words(&self) -> Vec<u32> {
+        let mut words = vec![0u32; FOLIAGE_WORDS];
+        for (i, class) in self.foliage_classes().into_iter().enumerate().take(FOLIAGE_WORDS * 16) {
+            words[i / 16] |= (class as u32) << ((i % 16) * 2);
+        }
+        words
+    }
+
     pub fn upload(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> BlockTextureBinding {
         // Au moins une couche : le shader lit le tableau même quand aucun bloc n'a de texture
         let fallback = [Layer::flat()];
@@ -154,6 +191,13 @@ impl BlockTextureSet {
             mipmap_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        // Genre de végétation de chaque couche, pour les saisons (2 bits par couche)
+        let classes = self.foliage_words();
+        let foliage = wgpu::util::DeviceExt::create_buffer_init(device, &wgpu::util::BufferInitDescriptor {
+            label: Some("Block Foliage Classes"),
+            contents: bytemuck::cast_slice(&classes),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Block Texture Bind Group Layout"),
             entries: &[
@@ -173,6 +217,12 @@ impl BlockTextureSet {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
             ],
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -181,9 +231,42 @@ impl BlockTextureSet {
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: foliage.as_entire_binding() },
             ],
         });
         BlockTextureBinding { layout, bind_group }
+    }
+}
+
+/// Mots du tableau des genres de végétation (shader.wgsl, `foliage` : 64 vec4<u32>, 4 096 couches)
+const FOLIAGE_WORDS: usize = 256;
+
+/// Genre de végétation d'une texture, que les saisons colorent (shader.wgsl, `season_color`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum Foliage {
+    Other = 0,
+    /// Feuillus : roux à l'automne, dépouillés l'hiver
+    Deciduous = 1,
+    /// Conifères : restent verts, un peu plus sombres l'hiver
+    Conifer = 2,
+    /// Herbe : jaunit à l'automne, brunit l'hiver
+    Grass = 3,
+}
+
+impl Foliage {
+    /// D'après le nom du fichier de la texture
+    pub fn of_texture(file: &str) -> Foliage {
+        let name = file.rsplit('/').next().unwrap_or(file).to_lowercase();
+        if name.contains("darkgreenleaf") || name.contains("needle") || name.contains("spruce") {
+            Foliage::Conifer
+        } else if name.contains("leaf") && !name.contains("redleaf") {
+            Foliage::Deciduous
+        } else if name.starts_with("grass.") || name.starts_with("grasssides") || name.starts_with("tallgrass") {
+            Foliage::Grass
+        } else {
+            Foliage::Other
+        }
     }
 }
 
@@ -315,13 +398,33 @@ pub fn face_uv(dir: usize, corner: [u8; 3]) -> (u8, u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn foliage_follows_the_texture_names() {
+        assert_eq!(Foliage::of_texture("textures/GreenLeaf.png"), Foliage::Deciduous);
+        assert_eq!(Foliage::of_texture("textures/LightGreenLeaf.png"), Foliage::Deciduous);
+        assert_eq!(Foliage::of_texture("textures/DarkGreenLeaf.png"), Foliage::Conifer);
+        assert_eq!(Foliage::of_texture("textures/RedLeaf.png"), Foliage::Other);
+        assert_eq!(Foliage::of_texture("textures/Grass.png"), Foliage::Grass);
+        assert_eq!(Foliage::of_texture("textures/TallGrass2.png"), Foliage::Grass);
+        assert_eq!(Foliage::of_texture("textures/GrassBottom.png"), Foliage::Other);
+        assert_eq!(Foliage::of_texture("textures/Stone.png"), Foliage::Other);
+        let set = block_textures();
+        let classes = set.foliage_classes();
+        assert!(classes.contains(&Foliage::Deciduous) && classes.contains(&Foliage::Grass));
+        assert!(set.foliage_words().iter().any(|&w| w != 0));
+    }
     use herocraft_common::NO_TEXTURE;
 
     #[test]
     fn test_every_block_texture_loads() {
         let set = block_textures();
         let variants = set.connected.iter().flatten().count() * 16;
-        assert_eq!(set.layers.len(), blocks().texture_files().len() + variants);
+        assert_eq!(set.layers.len(), blocks().texture_files().len() + variants + set.icons.len());
+        // Le tableau de textures tient dans la limite par défaut des cartes graphiques
+        assert!(set.layers.len() <= 256, "{} couches", set.layers.len());
+        let fibre = items().find("fibre").unwrap();
+        assert!(set.icon_layer(fibre).is_some(), "la fibre tombe des herbes hautes : son icône est chargée");
         assert!(set.layers.len() > 100);
         for layer in &set.layers {
             assert_eq!(layer.mips.len(), MIP_LEVELS as usize);

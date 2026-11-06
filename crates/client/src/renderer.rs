@@ -41,6 +41,12 @@ pub struct CameraUniform {
     /// x = échelle des dimensions mesurées en blocs (`herocraft_world::block_scale`), y = taille
     /// d'un bloc en unités du monde
     pub scales: [f32; 4],
+    /// Météo au joueur (`WeatherVisual::weather_uniform`) : x = ciel voilé, y = sol mouillé,
+    /// z = neige tombée sur le dessus des blocs, w = éclair
+    pub weather: [f32; 4],
+    /// Saisons (`weather::season_uniform`) : rougeur d'automne et dépouillement d'hiver des
+    /// feuillus, au nord (x, y) puis au sud (z, w)
+    pub season: [f32; 4],
 }
 
 /// Part de vue orbitale (0 au sol, 1 en orbite haute), la même pour tout l'écran : l'eau y lisse
@@ -155,6 +161,11 @@ pub struct State {
     pub cloud_vertex_buffer: wgpu::Buffer,
     pub cloud_index_buffer: wgpu::Buffer,
     pub num_cloud_indices: u32,
+    /// Temps qu'il fait sous chaque nuage (visibilité, noirceur), un couple par sommet
+    cloud_weather_buffer: wgpu::Buffer,
+    cloud_weather: crate::weather::CloudWeather,
+    /// Pluie et neige autour du joueur
+    precipitation: crate::precipitation::Precipitation,
 
     // Pipeline Planète & Voxels 3D
     pub render_pipeline: wgpu::RenderPipeline,
@@ -223,49 +234,9 @@ pub struct State {
     view_mode: CameraViewMode,
 }
 
-/// Calcule la direction unitaire vers le Soleil en temps réel
-/// - Cycle diurne complet (jour / nuit) : 20 minutes (1200 secondes)
-/// - Inclinaison de l'écliptique : ~23.4° (0.409 rad)
-pub fn compute_sun_dir(time: f32) -> glam::Vec3 {
-    let (u_sun, v_sun) = sun_plane();
-    let sun_angle = (time / SUN_PERIOD) * std::f32::consts::TAU + SUN_PHASE;
-    (u_sun * sun_angle.cos() + v_sun * sun_angle.sin()).normalize()
-}
-
-/// Durée d'un jour (20 minutes à vitesse céleste 1) et angle du Soleil au temps 0
-pub const SUN_PERIOD: f32 = 1200.0;
-const SUN_PHASE: f32 = 0.40;
-
-/// Le Soleil tourne dans le plan de ces deux axes
-fn sun_plane() -> (glam::Vec3, glam::Vec3) {
-    let tilt: f32 = 0.409;
-    (glam::Vec3::new(tilt.cos(), tilt.sin(), 0.0), glam::Vec3::new(0.0, 0.0, 1.0))
-}
-
-/// Temps du ciel où le Soleil passe au plus haut au-dessus de `up` (midi local), entre 0 et
-/// `SUN_PERIOD` ; `None` si le Soleil ne s'y lève ni ne s'y couche (axe de sa course)
-fn local_noon(up: glam::Vec3) -> Option<f32> {
-    let (u, v) = sun_plane();
-    let (a, b) = (up.dot(u), up.dot(v));
-    if a.hypot(b) < 1e-3 {
-        return None;
-    }
-    let angle = b.atan2(a) - SUN_PHASE;
-    Some((angle / std::f32::consts::TAU * SUN_PERIOD).rem_euclid(SUN_PERIOD))
-}
-
-/// Heure locale (0 à 24, midi quand le Soleil est au plus haut) au point de verticale `up`
-pub fn local_hour(time: f32, up: glam::Vec3) -> Option<f32> {
-    let noon = local_noon(up)?;
-    Some((12.0 + (time - noon) / SUN_PERIOD * 24.0).rem_euclid(24.0))
-}
-
-/// Prochain temps du ciel, à partir de `time`, où il est `hour` heures au point de verticale `up`
-pub fn time_for_local_hour(time: f32, up: glam::Vec3, hour: f32) -> Option<f32> {
-    let noon = local_noon(up)?;
-    let target = noon + (hour - 12.0) / 24.0 * SUN_PERIOD;
-    Some(time + (target - time).rem_euclid(SUN_PERIOD))
-}
+pub use herocraft_world::sky::{compute_sun_dir, local_hour, time_for_local_hour};
+#[cfg(test)]
+use herocraft_world::sky::SUN_PERIOD;
 
 /// Calcule la direction unitaire et la phase de la Lune en temps réel (une fois par image, pour
 /// tous les shaders : `CameraUniform::moon`)
@@ -400,7 +371,7 @@ impl ScenePipelines {
             vertex: wgpu::VertexState {
                 module: &cloud_shader,
                 entry_point: Some("vs_cloud"),
-                buffers: &[crate::cloud_mesh::CloudVertex::desc()],
+                buffers: &[crate::cloud_mesh::CloudVertex::desc(), crate::cloud_mesh::CLOUD_WEATHER_LAYOUT],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -572,6 +543,8 @@ impl State {
                 0.0,
                 0.0,
             ],
+            weather: [0.0; 4],
+            season: [0.0; 4],
         };
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -665,6 +638,13 @@ impl State {
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
         });
         let num_cloud_indices = cloud_mesh.indices.len() as u32;
+        let cloud_weather = crate::weather::CloudWeather::new(cloud_mesh.centers, cloud_mesh.ranks);
+        let cloud_weather_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cloud Weather Buffer"),
+            contents: bytemuck::cast_slice(&cloud_weather.vertex_values()),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let precipitation = crate::precipitation::Precipitation::new(&device, &atmosphere.scene_layout, scene_target, integrated_gpu);
 
         // -------------------------------------------------------------
         // Rendu Interface Utilisateur egui
@@ -695,6 +675,9 @@ impl State {
             cloud_vertex_buffer,
             cloud_index_buffer,
             num_cloud_indices,
+            cloud_weather_buffer,
+            cloud_weather,
+            precipitation,
             render_pipeline: scene_pipelines.terrain,
             render_pipeline_layout,
             terrain_pipeline_layout,
@@ -807,6 +790,7 @@ impl State {
         self.block_outline.set_target(device, &self.render_pipeline_layout, target);
         self.player_outlines.set_target(device, &self.render_pipeline_layout, target);
         self.block_cracks.set_target(device, &self.render_pipeline_layout, target);
+        self.precipitation.set_target(device, target);
         log::info!("Anti-Aliasing MSAA : sample_count = {}, cible HDR : {}", sample_count, target.describe());
         herocraft_common::profiler::set_meta("msaa_sample_count", sample_count.to_string());
         crate::benchmark::set_meta("Cible HDR", target.describe());
@@ -827,7 +811,14 @@ impl State {
         }
     }
 
-    pub fn update_camera(&mut self, camera: &OrbitCamera, lighting: &LightingSettings, clouds: &CloudSettings, flatten_strength: f32) {
+    pub fn update_camera(
+        &mut self,
+        camera: &OrbitCamera,
+        lighting: &LightingSettings,
+        clouds: &CloudSettings,
+        flatten_strength: f32,
+        weather: &crate::weather::WeatherVisual,
+    ) {
         herocraft_common::prof_scope!("render::update_camera");
         let now = std::time::Instant::now();
         let dt = now.duration_since(self.last_uniform_time).as_secs_f32();
@@ -904,6 +895,8 @@ impl State {
                 orbit_factor(eye.length(), camera.base_radius, ground_factor),
             ],
             scales: [herocraft_world::block_scale(camera.base_radius as f64) as f32, block, 0.0, 0.0],
+            weather: weather.weather_uniform(),
+            season: weather.season,
         };
         self.terrain_cull = Some(crate::terrain_cull::TerrainCull::new(view_proj, eye, sea_radius, uniform.flatten, block));
         self.queue
@@ -932,9 +925,10 @@ impl State {
         self.atmosphere.update(&self.device, &self.queue, settings, lighting, camera.base_radius, self.shadows.is_active());
     }
 
-    pub fn update_post(&mut self, settings: &PostSettings) {
+    /// `overcast` : ciel voilé par la météo au joueur (0 à 1)
+    pub fn update_post(&mut self, settings: &PostSettings, overcast: f32) {
         self.bloom_enabled = settings.bloom_enabled && settings.bloom_intensity > 0.0;
-        self.post.update(&self.queue, settings);
+        self.post.update(&self.queue, settings, overcast);
     }
 
     /// Synchronise les buffers GPU avec les feuilles LOD affichées : seuls les nouveaux maillages
@@ -1085,6 +1079,30 @@ impl State {
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
         });
         self.num_cloud_indices = cloud_mesh.indices.len() as u32;
+        self.cloud_weather = crate::weather::CloudWeather::new(cloud_mesh.centers, cloud_mesh.ranks);
+        self.cloud_weather_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cloud Weather Buffer"),
+            contents: bytemuck::cast_slice(&self.cloud_weather.vertex_values()),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+    }
+
+    /// Relit le temps qu'il fait sous quelques nuages ; le tampon est renvoyé à chaque tour complet
+    pub fn update_cloud_weather(&mut self, model: &herocraft_world::WeatherModel) {
+        herocraft_common::prof_scope!("render::update_cloud_weather");
+        if self.cloud_weather.advance(model, self.simulated_time as f64) {
+            self.queue.write_buffer(&self.cloud_weather_buffer, 0, bytemuck::cast_slice(&self.cloud_weather.vertex_values()));
+        }
+    }
+
+    /// Dessus des colonnes où s'arrête la pluie
+    pub fn set_precipitation_columns(&mut self, columns: &[crate::precipitation::Column]) {
+        self.precipitation.set_columns(&self.queue, columns);
+    }
+
+    /// Averse de cette image (`None` : rien ne tombe)
+    pub fn update_precipitation(&mut self, frame: Option<crate::precipitation::PrecipFrame>) {
+        self.precipitation.update(&self.queue, frame);
     }
 
     pub fn render(
@@ -1141,7 +1159,7 @@ impl State {
                 num_indices: m.num_indices,
             });
             let clouds = (self.num_cloud_indices > 0)
-                .then_some((&self.cloud_vertex_buffer, &self.cloud_index_buffer, self.num_cloud_indices));
+                .then_some((&self.cloud_vertex_buffer, &self.cloud_weather_buffer, &self.cloud_index_buffer, self.num_cloud_indices));
             let timestamps = timer_queries.map(|q| (q, gpu_timer::TS_SHADOW_BEGIN, gpu_timer::TS_SHADOW_END));
             self.shadows.encode(&mut encoder, &self.camera_bind_group, terrain, self.creatures.shadow_caster(), clouds, timestamps);
         }
@@ -1244,12 +1262,16 @@ impl State {
                 render_pass.set_pipeline(&self.cloud_pipeline);
                 render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.cloud_vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, self.cloud_weather_buffer.slice(..));
                 render_pass.set_index_buffer(self.cloud_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.draw_indexed(0..self.num_cloud_indices, 0, 0..1);
             }
+
+            // 1.d. Pluie et neige, transparentes, devant le relief et les nuages
+            self.precipitation.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
         }
 
-        // 1.d. Rayons crépusculaires : l'air à l'ombre du relief et des nuages ne diffuse pas le soleil
+        // 1.e. Rayons crépusculaires : l'air à l'ombre du relief et des nuages ne diffuse pas le soleil
         {
             herocraft_common::prof_scope!("render::encode_god_rays");
             let timestamps = timer_queries.map(|q| (q, gpu_timer::TS_GOD_RAYS_BEGIN, gpu_timer::TS_GOD_RAYS_END));
@@ -1459,7 +1481,7 @@ mod tests {
 
     #[test]
     fn test_camera_uniform_size_and_alignment() {
-        assert_eq!(std::mem::size_of::<CameraUniform>(), 272);
+        assert_eq!(std::mem::size_of::<CameraUniform>(), 304);
         assert_eq!(std::mem::align_of::<CameraUniform>(), 16);
     }
 
@@ -1476,6 +1498,7 @@ mod tests {
         let block_outline = include_str!("block_outline.wgsl");
         let block_cracks = include_str!("block_cracks.wgsl");
         let creature = include_str!("creature.wgsl");
+        let precipitation = include_str!("precipitation.wgsl");
 
         for (name, source) in [
             ("sky_shader.wgsl", sky_shader),
@@ -1489,6 +1512,7 @@ mod tests {
             ("block_outline.wgsl", block_outline),
             ("block_cracks.wgsl", block_cracks),
             ("creature.wgsl", creature),
+            ("precipitation.wgsl", precipitation),
         ] {
             // Assemblage naga_oil (imports de common.wgsl) puis validation complète
             let module = if matches!(name, "ui_shader.wgsl" | "post_shader.wgsl" | "shadow_caster.wgsl") {

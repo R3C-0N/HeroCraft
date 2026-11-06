@@ -1,9 +1,10 @@
-//! Blocs tombés au sol : un bloc cassé laisse un petit cube qui tombe, se pose sur le relief et
-//! tourne sur lui-même. Le joueur qui passe à proximité l'attire puis le ramasse dans son
+//! Objets tombés au sol : un bloc cassé laisse un petit cube, un objet (butin d'une plante ou
+//! d'une bête) une petite plaque à son icône. Il tombe, se pose sur le relief et tourne sur
+//! lui-même. Le joueur qui passe à proximité l'attire puis le ramasse dans son
 //! inventaire (s'il y a de la place). Un objet oublié disparaît au bout de quelques minutes.
 
 use glam::{Quat, Vec3};
-use herocraft_common::{blocks, BlockId};
+use herocraft_common::{blocks, BlockId, ItemId};
 use herocraft_world::PlanetWorldGenerator;
 
 use crate::block_textures::{block_textures, face_uv};
@@ -27,12 +28,14 @@ const ATTRACT_SPEED: f32 = 9.0;
 const LIFETIME: f32 = 300.0;
 /// Au-delà, les plus anciens objets disparaissent
 const MAX_ITEMS: usize = 512;
+/// Taille de la plaque d'un objet, rapportée au cube d'un bloc
+const ICON_SCALE: f32 = 1.4;
 /// Vitesse de rotation, en radians par seconde
 const SPIN_SPEED: f32 = 1.6;
 
 #[derive(Debug, Clone, Copy)]
 pub struct DroppedItem {
-    pub block: BlockId,
+    pub item: ItemId,
     /// Centre du cube, dans le repère du monde
     pub position: Vec3,
     velocity: Vec3,
@@ -64,15 +67,17 @@ impl DroppedItems {
         self.items.clear();
     }
 
-    /// Fait tomber `block` du bloc cassé dont le centre est `center`, avec un petit saut vers le haut
-    pub fn spawn(&mut self, block: BlockId, center: Vec3, block_height: f32) {
+    /// Fait tomber `item` depuis `center` (le centre du bloc cassé, ou le flanc de la bête tuée),
+    /// avec un petit saut vers le haut
+    pub fn spawn(&mut self, item: impl Into<ItemId>, center: Vec3, block_height: f32) {
+        let item = item.into();
         let up = center.normalize_or_zero();
         // Phase pseudo-aléatoire tirée de la position : deux objets ne tournent pas à l'unisson
         let phase = (center.x * 12.9898 + center.y * 78.233 + center.z * 37.719).sin().fract().abs() * std::f32::consts::TAU;
         let (t1, t2) = crate::camera::tangent_frame(up);
         let sideways = (t1 * phase.cos() + t2 * phase.sin()) * 0.8;
         self.items.push(DroppedItem {
-            block,
+            item,
             position: center,
             velocity: (up * 3.5 + sideways) * block_height,
             age: 0.0,
@@ -114,11 +119,11 @@ impl DroppedItems {
             if let Some(center) = player_center.filter(|_| item.age >= PICKUP_DELAY) {
                 let to_player = center - item.position;
                 let distance = to_player.length() / h;
-                if distance < PICKUP_RADIUS && inventory.add(item.block) {
+                if distance < PICKUP_RADIUS && inventory.add(item.item) {
                     picked += 1;
                     return false;
                 }
-                if distance < ATTRACT_RADIUS && inventory.has_room_for(item.block) {
+                if distance < ATTRACT_RADIUS && inventory.has_room_for(item.item) {
                     let step = (ATTRACT_SPEED * h * dt).min(to_player.length());
                     item.position += to_player.normalize_or_zero() * step;
                     item.velocity = Vec3::ZERO;
@@ -163,9 +168,35 @@ impl DroppedItems {
             // Léger flottement au-dessus du sol, comme un objet à ramasser
             let bob = (0.5 + 0.5 * (item.phase + time * 2.5).sin()) * 0.12 * block_height;
             let center = item.position + up * bob;
-            push_cube(&mut mesh, center, [ax * half, up * half, az * half], item.block);
+            match item.item.block() {
+                Some(block) => push_cube(&mut mesh, center, [ax * half, up * half, az * half], block),
+                None => push_icon(&mut mesh, center, ax * half * ICON_SCALE, up * half * ICON_SCALE, item.item),
+            }
         }
         Some(mesh)
+    }
+}
+
+/// Plaque verticale de l'icône de l'objet `item`, centrée en `center`, de demi-largeur `right` et
+/// de demi-hauteur `up`, dessinée des deux côtés. Un objet sans icône chargée reste un cube gris.
+fn push_icon(mesh: &mut PlanetMesh, center: Vec3, right: Vec3, up: Vec3, item: ItemId) {
+    let Some(layer) = block_textures().icon_layer(item) else {
+        push_cube(mesh, center, [right / ICON_SCALE, up / ICON_SCALE, right.cross(up).normalize_or_zero() * right.length() / ICON_SCALE], BlockId::AIR);
+        return;
+    };
+    let mean = block_textures().mean(layer).unwrap_or([1.0; 3]);
+    let normal = right.cross(up).normalize_or_zero();
+    for side in [1.0f32, -1.0] {
+        let base = mesh.vertices.len() as u32;
+        // Coins dans l'ordre bas-gauche, bas-droite, haut-droite, haut-gauche, vus du côté `side`
+        for (su, sv) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            let corner = center + right * su * side + up * sv;
+            let tu = if su * side > 0.0 { 16 } else { 0 };
+            let tv = if sv > 0.0 { 0 } else { 16 };
+            let texture = PlanetVertex::pack_texture(layer, tu, tv);
+            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: (normal * side).to_array(), color: [mean[0], mean[1], mean[2], 1.0], texture });
+        }
+        mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
 }
 

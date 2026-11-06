@@ -22,6 +22,8 @@ struct VertexInput {
     @location(5) bbox: vec4<f32>,
     @location(6) mask: vec4<u32>,
     @location(7) config: vec4<f32>,
+    // Temps qu'il fait sous le nuage (weather.rs, `CloudWeather`) : x = visibilité, y = noirceur
+    @location(8) weather: vec2<f32>,
 };
 
 struct VertexOutput {
@@ -38,6 +40,7 @@ struct VertexOutput {
     // du repère vrai vers le repère dessiné. Le reste de la sortie est dans la vraie géométrie.
     @location(8) @interpolate(flat) flat_center: vec3<f32>,
     @location(9) @interpolate(flat) flat_rot: vec3<f32>,
+    @location(10) @interpolate(flat) weather: vec2<f32>,
 };
 
 // Passe d'ombre des nuages : projection orthographique depuis le soleil (shadow.rs)
@@ -118,8 +121,23 @@ fn cloud_vertex(in: VertexInput, view_proj: mat4x4<f32>, flatten: bool) -> Verte
     out.bbox = in.bbox;
     out.mask = in.mask;
     out.config = in.config;
+    out.weather = in.weather;
+    // Nuage que la météo cache : la boîte se réduit à un point, aucun pixel n'est dessiné
+    if (in.weather.x <= 0.0) {
+        out.clip_position = vec4<f32>(0.0, 0.0, -1.0, 1.0);
+    }
 
     return out;
+}
+
+// Nuage en train d'apparaître ou de disparaître avec la météo : une part des pixels, tirée par
+// un bruit entrelacé, est écartée (fondu sans transparence, la profondeur reste exacte)
+fn weather_fade_out(visibility: f32, pixel: vec2<f32>) -> bool {
+    if (visibility >= 0.999) {
+        return false;
+    }
+    let noise = fract(52.9829189 * fract(dot(pixel, vec2<f32>(0.06711056, 0.00583715))));
+    return noise >= visibility;
 }
 
 // Cellule (x, y) du masque 11x11 occupée ? (bit = y * 11 + x, sur 4 mots de 32 bits)
@@ -280,7 +298,7 @@ struct FragmentOutput {
 fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> FragmentOutput {
     // Multiplicateur de densité / visibilité des nuages (0.0 en vue satellite)
     let cloud_slider = camera.lighting_params_ext.z;
-    if (cloud_slider < 0.01) {
+    if (cloud_slider < 0.01 || weather_fade_out(in.weather.x, in.clip_position.xy)) {
         discard;
     }
 
@@ -482,6 +500,12 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
     // Le jour s'éteint de lui-même avec l'atmosphère : la nuit s'y ajoute quand il disparaît
     var col = (night_ambient + moon_light) * (1.0 - daylight) + day_col;
 
+    // Nuage de pluie ou d'orage : gris sombre, éclairé de l'intérieur par l'éclair
+    let dark = in.weather.y;
+    let grey = dot(col, vec3<f32>(0.3, 0.5, 0.2));
+    col = mix(col, vec3<f32>(grey) * vec3<f32>(0.95, 0.97, 1.0), 0.6 * dark) * (1.0 - 0.55 * dark);
+    col += vec3<f32>(1.4, 1.5, 1.8) * camera.weather.w * (0.4 + 0.6 * dark);
+
     // 5. Micro-texture optionnelle (désactivée par défaut)
     if (micro_noise_slider > 0.01) {
         let p_grid = floor(hit_local_p * 18.0);
@@ -509,7 +533,7 @@ fn fs_cloud(in: VertexOutput, @builtin(front_facing) is_front: bool) -> Fragment
 @fragment
 fn fs_cloud_shadow(in: VertexOutput, @builtin(front_facing) is_front: bool) -> @location(0) vec4<f32> {
     let cloud_slider = camera.lighting_params_ext.z;
-    if (cloud_slider < 0.01 || !is_front) {
+    if (cloud_slider < 0.01 || !is_front || weather_fade_out(in.weather.x, in.clip_position.xy)) {
         discard;
     }
 

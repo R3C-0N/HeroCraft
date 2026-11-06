@@ -9,5 +9,10 @@
   "shape": "plant",
   "solid": false,
   "replaceable": true,
-  "sound": "grass"
+  "sound": "grass",
+  "drop": null,
+  "loot": [
+    {"item": "fibre", "chance": 0.35},
+    {"item": "grainesBle", "chance": 0.04}
+  ]
 }

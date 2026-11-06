@@ -350,6 +350,63 @@ pub fn wind_loop(seconds: f32, seed: u32) -> Vec<f32> {
     normalize(out, 0.6)
 }
 
+/// Pluie en boucle : un souffle doux (bruit filtré) semé de petits impacts de gouttes. Comme le
+/// vent, la fin se fond dans le début.
+pub fn rain_loop(seconds: f32, seed: u32) -> Vec<f32> {
+    let mut rng = Noise::new(seed ^ 0x4A1F);
+    let n = samples(seconds);
+    let fade = samples(1.0).min(n / 4);
+    let total = n + fade;
+    let mut raw = vec![0.0; total];
+    let mut hiss = BandPass::new();
+    let mut body = OnePole::new();
+    let mut drop_env = 0.0_f32;
+    let mut drop_band = BandPass::new();
+    let mut drop_centre = 3000.0_f32;
+    for s in raw.iter_mut() {
+        let noise = rng.next();
+        let wash = hiss.process(noise, 5200.0, 0.5) * 0.5 + body.low(noise, 900.0) * 0.6;
+        // Gouttes : environ 120 par seconde, chacune un claquement bref à sa hauteur
+        if rng.unit() < 120.0 / SAMPLE_RATE as f32 {
+            drop_env = 0.4 + 0.6 * rng.unit();
+            drop_centre = 1800.0 + 4500.0 * rng.unit();
+        }
+        drop_env *= 0.9965;
+        let drop = drop_band.process(rng.next(), drop_centre, 4.0) * drop_env;
+        *s = wash + drop * 0.9;
+    }
+    let mut out = raw[..n].to_vec();
+    for i in 0..fade {
+        let k = i as f32 / fade as f32;
+        out[i] = out[i] * k + raw[n + i] * (1.0 - k);
+    }
+    normalize(out, 0.55)
+}
+
+/// Coup de tonnerre : un craquement bref puis un grondement grave qui roule et s'éteint
+pub fn thunder(seed: u32) -> Vec<f32> {
+    let mut rng = Noise::new(seed ^ 0x7D3E);
+    let length = 4.5 + 1.5 * rng.unit();
+    let n = samples(length);
+    let mut low = OnePole::new();
+    let mut low2 = OnePole::new();
+    let mut crack = BandPass::new();
+    // Roulements : quelques bouffées décalées
+    let rolls: Vec<(f32, f32)> = (0..4).map(|i| (0.25 + i as f32 * (0.5 + 0.6 * rng.unit()), 0.5 + 0.5 * rng.unit())).collect();
+    let mut out = vec![0.0; n];
+    for (i, s) in out.iter_mut().enumerate() {
+        let t = i as f32 / SAMPLE_RATE as f32;
+        let noise = rng.next();
+        let rumble = low2.low(low.low(noise, 120.0), 70.0) * 9.0;
+        let roll = rolls.iter().map(|&(at, gain)| if t >= at { gain * (-(t - at) / 0.9).exp() } else { 0.0 }).sum::<f32>();
+        let swell = envelope(t, 0.15, 1.6);
+        let snap = crack.process(noise, 2400.0, 0.7) * envelope(t, 0.005, 0.12) * 0.8;
+        *s = rumble * (0.5 * swell + 0.6 * roll) + snap;
+    }
+    fade_tail(&mut out, 0.8);
+    normalize(out, 0.9)
+}
+
 /// Chant d'oiseau : quelques notes sifflées qui glissent, avec un léger trémolo
 pub fn bird_song(seed: u32) -> Vec<f32> {
     let mut rng = Noise::new(seed ^ 0xB12D);

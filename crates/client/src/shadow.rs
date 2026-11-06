@@ -312,7 +312,7 @@ impl Shadows {
             vertex: wgpu::VertexState {
                 module: &cloud_shader,
                 entry_point: Some("vs_cloud_shadow"),
-                buffers: &[crate::cloud_mesh::CloudVertex::desc()],
+                buffers: &[crate::cloud_mesh::CloudVertex::desc(), crate::cloud_mesh::CLOUD_WEATHER_LAYOUT],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -571,7 +571,7 @@ impl Shadows {
         camera_bind_group: &wgpu::BindGroup,
         terrain: impl Iterator<Item = Caster<'a>> + Clone,
         moving: Option<Caster<'a>>,
-        clouds: Option<(&wgpu::Buffer, &wgpu::Buffer, u32)>,
+        clouds: Option<(&wgpu::Buffer, &wgpu::Buffer, &wgpu::Buffer, u32)>,
         timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
     ) {
         let begin_ts = |query_set| wgpu::RenderPassTimestampWrites {
@@ -638,11 +638,12 @@ impl Shadows {
                 writes
             }),
         });
-        if let Some((vertex_buffer, index_buffer, num_indices)) = clouds.filter(|_| self.clouds_active && redraw_clouds) {
+        if let Some((vertex_buffer, weather_buffer, index_buffer, num_indices)) = clouds.filter(|_| self.clouds_active && redraw_clouds) {
             render_pass.set_pipeline(&self.cloud_pipeline);
             render_pass.set_bind_group(0, camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.cloud.bind_group, &[]);
             render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, weather_buffer.slice(..));
             render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             render_pass.draw_indexed(0..num_indices, 0, 0..1);
         }

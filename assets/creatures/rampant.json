@@ -8,6 +8,10 @@
   "spawn": [],
   "activity": "always",
   "attack": {"mode": "solo", "damage": 7, "cooldown": 1.4, "sight": 10, "chase_speed": 1.8, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
+  "loot": [
+    {"item": "sangVisqueux", "count": [1, 2]},
+    {"item": "glandeAcide", "chance": 0.4}
+  ],
   "model": {
     "mesh": "modeles/rampant.gltf",
     "texture": "modeles/rampant.png",
