@@ -181,3 +181,56 @@ mod tests {
         assert_eq!(frame.draws[0].0, Some(7));
     }
 }
+
+/// Portraits d'habitants tirés comme dans les villages, trois femmes puis trois hommes, avec leur
+/// nom : `HEROCRAFT_CAPTURES=dossier cargo test -p herocraft_client portraits_habitants -- --ignored`
+#[cfg(test)]
+mod portraits {
+    use crate::hero_creator::Preview;
+
+    #[test]
+    #[ignore]
+    fn portraits_habitants() {
+        let Ok(dir) = std::env::var("HEROCRAFT_CAPTURES") else { return };
+        let seed: u64 = std::env::var("HEROCRAFT_GRAINE").ok().and_then(|s| s.parse().ok()).unwrap_or(2026);
+        let cards: Vec<_> = (0..6u64).filter_map(|i| herocraft_world::villagers::sample_villager(seed * 31 + i, i < 3)).collect();
+        let (width, height) = (1200_usize, 560_usize);
+        let ctx = egui::Context::default();
+        let mut previews: Vec<Preview> = cards.iter().map(|_| Preview::default()).collect();
+        let mut snapshot = crate::ui_snapshot::Snapshot::new(width, height);
+        let mut last = None;
+        for frame in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))),
+                time: Some(frame as f64),
+                ..Default::default()
+            };
+            let output = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().frame(egui::Frame::none().fill(egui::Color32::from_rgb(52, 58, 66))).show(ctx, |ui| {
+                    let painter = ui.painter().clone();
+                    let cell = width as f32 / cards.len() as f32;
+                    for (i, (card, preview)) in cards.iter().zip(previews.iter_mut()).enumerate() {
+                        let x = i as f32 * cell;
+                        let frame = egui::Rect::from_min_size(egui::pos2(x + 8.0, 20.0), egui::vec2(cell - 16.0, 420.0));
+                        painter.rect_filled(frame, 6.0, egui::Color32::from_rgb(72, 80, 90));
+                        preview.paint(&painter, frame, &card.appearance);
+                        let sex = if i < 3 { "Femme" } else { "Homme" };
+                        painter.text(egui::pos2(x + cell / 2.0, 462.0), egui::Align2::CENTER_CENTER, &card.name, egui::FontId::proportional(24.0), egui::Color32::WHITE);
+                        painter.text(egui::pos2(x + cell / 2.0, 494.0), egui::Align2::CENTER_CENTER, format!("{} · {}", card.profession, card.culture), egui::FontId::proportional(16.0), egui::Color32::from_rgb(220, 210, 180));
+                        painter.text(egui::pos2(x + cell / 2.0, 520.0), egui::Align2::CENTER_CENTER, sex, egui::FontId::proportional(14.0), egui::Color32::from_rgb(170, 180, 190));
+                    }
+                });
+            });
+            snapshot.apply_textures(&output.textures_delta);
+            last = Some(output);
+        }
+        let output = last.unwrap();
+        let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);
+        snapshot.paint(&primitives, output.pixels_per_point);
+        std::fs::create_dir_all(&dir).unwrap();
+        snapshot.save(&std::path::Path::new(&dir).join("habitants.png"));
+        for card in &cards {
+            println!("{} · {} · {} · barbe {} · coiffure {}", card.name, card.profession, card.culture, card.appearance.barbe, card.appearance.coiffure);
+        }
+    }
+}

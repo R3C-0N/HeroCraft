@@ -408,6 +408,21 @@ fn trades_for(profession: &Profession, rng: &mut StdRng) -> Vec<herocraft_common
 
 fn card_for(culture: Culture, profession: &Profession, origin: String, rng: &mut StdRng) -> Arc<VillagerCard> {
     let feminine = rng.gen_bool(0.5);
+    card_of_sex(culture, profession, origin, feminine, rng)
+}
+
+/// Un habitant tiré comme dans les villages, d'une culture et d'un métier pris au hasard de
+/// `seed`, femme ou homme (pour les aperçus)
+pub fn sample_villager(seed: u64, feminine: bool) -> Option<Arc<VillagerCard>> {
+    let mut rng = StdRng::seed_from_u64(seed);
+    let registry = herocraft_common::professions();
+    let residents: Vec<&Profession> = registry.iter().filter(|p| !p.traveller && !p.name.is_empty()).collect();
+    let profession = *residents.get(rng.gen_range(0..residents.len().max(1)))?;
+    let culture = Culture::ALL[rng.gen_range(0..Culture::ALL.len())];
+    Some(card_of_sex(culture, profession, "Habitant".to_string(), feminine, &mut rng))
+}
+
+fn card_of_sex(culture: Culture, profession: &Profession, origin: String, feminine: bool, rng: &mut StdRng) -> Arc<VillagerCard> {
     let mut appearance = appearance_for(culture, profession, feminine, rng);
     // Le nom suit ce que l'apparence montre
     let name = random_name(culture, looks_feminine(&appearance), rng);
