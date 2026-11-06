@@ -51,6 +51,7 @@ mod ui_skin;
 mod ui_snapshot;
 mod voxel_mesh;
 mod weather;
+mod world_map;
 
 use block_interaction::BlockInteraction;
 use camera::OrbitCamera;
@@ -470,6 +471,11 @@ fn main() {
                             if is_pressed && !*repeat && ui_state.controls.action_for(key_code) == Some(Action::OpenSkills) {
                                 ui_state.set_skills_open(false);
                             }
+                        } else if ui_state.map_open {
+                            // Carte : sa touche la referme
+                            if is_pressed && !*repeat && ui_state.controls.action_for(key_code) == Some(Action::OpenMap) {
+                                ui_state.set_map_open(false);
+                            }
                         } else if !ui_state.is_settings_open {
                             // En jeu normal (menu fermé) : barre d'objets (1 à 9), déplacements et
                             // raccourcis selon les touches attribuées
@@ -533,6 +539,7 @@ fn main() {
                         if ui_state.screen_open() && camera.target_distance > camera.base_radius {
                             ui_state.set_inventory_open(false);
                             ui_state.set_skills_open(false);
+                            ui_state.set_map_open(false);
                         }
                         // Première arrivée au sol d'un héros sans légende : le créateur s'ouvre
                         if bench.is_none() && ui_state.legend.is_none() && !ui_state.creator_open() && camera.target_distance <= camera.base_radius && !ui_state.player.is_dead() {
@@ -898,6 +905,13 @@ fn main() {
                         // 1. Mise à jour de l'interface egui
                         let ui_section = Instant::now();
                         let is_ground = camera.distance <= camera.base_radius;
+                        // Carte et boussole : position du joueur, demandes au fil de la carte
+                        ui_state.world_map.navigation = is_ground.then(|| world_map::Navigation {
+                            up: camera.player_pos.as_dvec3().normalize(),
+                            yaw: camera.player_yaw as f64,
+                        });
+                        let map_ctx = ui_state.ctx.clone();
+                        ui_state.world_map.pump(&map_ctx, &generator, ui_state.map_open);
                         let (full_output, maybe_action) = ui_state.update_ui(is_ground);
 
                         // Roue des compétences : point investi et expérience d'essai. En ligne, le
@@ -1426,6 +1440,7 @@ fn switch_planet(
     ui_state.inventory = inventory::Inventory::load_or_default(inventory_file(seed, online));
     // En ligne, la progression est celle que tient le serveur
     ui_state.set_skills_open(false);
+    ui_state.set_map_open(false);
     ui_state.player.save();
     ui_state.player = player_stats::PlayerStats::load_or_default((!online).then(|| progress_file(seed)));
     ui_state.set_legend(load_legend(&legend_file(seed, online)));
@@ -1485,6 +1500,10 @@ fn game_key(
         Action::OpenSkills if first_press && is_ground_view => {
             camera.release_inputs();
             ui_state.set_skills_open(true);
+        }
+        Action::OpenMap if first_press && is_ground_view => {
+            camera.release_inputs();
+            ui_state.set_map_open(true);
         }
         Action::ToggleView if first_press => pending_actions.push(UiAction::ToggleGroundCamera),
         Action::ResetView if first_press => pending_actions.push(UiAction::ResetCamera),
