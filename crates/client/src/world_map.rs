@@ -631,49 +631,81 @@ impl WorldMap {
     // Écran de carte
     // -----------------------------------------------------------------------
 
-    /// Dessine l'écran de carte
+    /// Dessine l'écran de carte : une feuille de parchemin entière, titre, carte et légende à l'encre
     pub fn draw_screen(&mut self, ctx: &egui::Context, close_hint: &str) {
         let screen = ctx.screen_rect();
-        let side = (screen.height() - 190.0).min(screen.width() - 140.0).clamp(220.0, 760.0);
+        let side = ((screen.height() - 24.0) / SHEET_H).min((screen.width() - 24.0) / SHEET_W).clamp(220.0, 760.0);
+        if self.parchment.is_none() {
+            let w = (SHEET_W * SHEET_TEXELS) as usize;
+            let h = (SHEET_H * SHEET_TEXELS) as usize;
+            let load = |name: &str, hole: bool| ctx.load_texture(name, sheet_image(w, h, hole), egui::TextureOptions::LINEAR);
+            self.parchment = Some((load("carte_feuille", false), load("carte_feuille_ajouree", true)));
+        }
+        let ink = egui::Color32::from_rgb(74, 50, 32);
+        let faded = egui::Color32::from_rgb(120, 92, 62);
         egui::Area::new(egui::Id::new("map_screen"))
             .order(egui::Order::Middle)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
-                crate::ui_skin::SkinFrame::panel().show(ui, |ui| {
-                    ui.set_width(side);
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("Carte").font(crate::ui_skin::title_font(20.0)).color(GOLD_BRIGHT));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(egui::RichText::new(format!("[{close_hint}] ou [Échap] pour fermer")).size(11.0).color(TEXT_DIM));
-                        });
-                    });
-                    ui.add_space(4.0);
-                    if self.parchment.is_none() {
-                        let load = |name: &str, edge: bool| ctx.load_texture(name, parchment_image(PARCHMENT_PIXELS, edge), egui::TextureOptions::LINEAR);
-                        self.parchment = Some((load("carte_parchemin", false), load("carte_bords", true)));
-                    }
-                    let (rect, response) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click_and_drag());
-                    self.map_input(ui, rect, &response);
-                    self.paint_map(ui, rect, response.hover_pos());
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        self.scale_bar(ui, side);
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add(crate::ui_skin::SkinButton::new("Recentrer").small()).clicked() {
-                                self.recenter();
-                            }
-                            if let Some(nav) = self.navigation {
-                                let (lat, lon) = lat_lon(nav.up);
-                                ui.label(egui::RichText::new(format!("{lat}  {lon}")).size(12.0).color(TEXT_SOFT));
-                            }
-                        });
-                    });
-                    ui.label(
-                        egui::RichText::new("Molette : zoom · Glisser : déplacer · Clic droit : poser ou retirer un repère")
-                            .size(11.0)
-                            .color(TEXT_DIM),
+                let (sheet, _) = ui.allocate_exact_size(egui::vec2(SHEET_W * side, SHEET_H * side), egui::Sense::hover());
+                let painter = ui.painter();
+                let full_uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                if let Some((paper, _)) = &self.parchment {
+                    // Ombre portée, puis la feuille
+                    painter.image(paper.id(), sheet.translate(egui::vec2(5.0, 8.0)), full_uv, egui::Color32::from_black_alpha(110));
+                    painter.image(paper.id(), sheet, full_uv, egui::Color32::WHITE);
+                }
+                let u = side;
+                let map_rect = egui::Rect::from_min_size(sheet.min + egui::vec2(SHEET_MARGIN * u, SHEET_HEADER * u), egui::vec2(u, u));
+                // En-tête : titre calligraphié, fermeture discrète, filet orné
+                let title_y = sheet.top() + SHEET_HEADER * u * 0.52;
+                ink_text(painter, egui::pos2(sheet.center().x, title_y), egui::Align2::CENTER_CENTER, "Carte du monde", crate::ui_skin::title_font((u * 0.052).clamp(18.0, 30.0)), ink);
+                let flourish_y = title_y + (u * 0.032).clamp(12.0, 20.0);
+                paint_flourish(painter, egui::pos2(sheet.center().x, flourish_y), (u * 0.22).clamp(90.0, 170.0), ink);
+                painter.text(
+                    egui::pos2(map_rect.right(), sheet.top() + SHEET_HEADER * u * 0.34),
+                    egui::Align2::RIGHT_CENTER,
+                    format!("[{close_hint}] ou [Échap]"),
+                    egui::FontId::proportional(11.0),
+                    faded,
+                );
+
+                // Carte
+                let response = ui.interact(map_rect, egui::Id::new("map_canvas"), egui::Sense::click_and_drag());
+                self.map_input(ui, map_rect, &response);
+                self.paint_map(ui, map_rect, sheet, response.hover_pos());
+
+                // Pied de page : échelle, position, recentrer, aide
+                let row_y = map_rect.bottom() + SHEET_FOOTER * u * 0.30;
+                self.scale_bar(painter, egui::pos2(map_rect.left() + 4.0, row_y), u, ink);
+                let recenter = painter.layout_no_wrap("⌖ Recentrer".to_string(), crate::ui_skin::strong_font(13.0), ink);
+                let r = egui::Rect::from_min_size(egui::pos2(map_rect.right() - recenter.size().x, row_y - recenter.size().y / 2.0), recenter.size()).expand(3.0);
+                let button = ui.interact(r, egui::Id::new("map_recenter"), egui::Sense::click());
+                let color = if button.hovered() { egui::Color32::from_rgb(150, 44, 32) } else { ink };
+                ink_text(painter, r.center(), egui::Align2::CENTER_CENTER, "⌖ Recentrer", crate::ui_skin::strong_font(13.0), color);
+                if button.hovered() {
+                    painter.line_segment([r.left_bottom() + egui::vec2(3.0, -2.0), r.right_bottom() - egui::vec2(3.0, 2.0)], egui::Stroke::new(1.0_f32, color));
+                }
+                if button.clicked() {
+                    self.recenter();
+                }
+                if let Some(nav) = self.navigation {
+                    let (lat, lon) = lat_lon(nav.up);
+                    painter.text(
+                        egui::pos2(r.left() - 16.0, row_y),
+                        egui::Align2::RIGHT_CENTER,
+                        format!("{lat}   {lon}"),
+                        egui::FontId::proportional(12.5),
+                        ink,
                     );
-                });
+                }
+                painter.text(
+                    egui::pos2(sheet.center().x, map_rect.bottom() + SHEET_FOOTER * u * 0.68),
+                    egui::Align2::CENTER_CENTER,
+                    "Molette : zoom  ·  Glisser : déplacer  ·  Clic droit : poser ou retirer un repère",
+                    egui::FontId::proportional(11.0),
+                    faded,
+                );
             });
     }
 
@@ -743,15 +775,9 @@ impl WorldMap {
         }
     }
 
-    fn paint_map(&self, ui: &egui::Ui, rect: egui::Rect, hover: Option<egui::Pos2>) {
+    fn paint_map(&self, ui: &egui::Ui, rect: egui::Rect, sheet: egui::Rect, hover: Option<egui::Pos2>) {
         let painter = ui.painter_at(rect);
         let full_uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-        // Parchemin
-        if let Some((paper, _)) = &self.parchment {
-            painter.image(paper.id(), rect, full_uv, egui::Color32::WHITE);
-        } else {
-            painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(232, 214, 170));
-        }
         let frame = Frame::at(self.center);
         let scale = self.screen_scale(rect.width());
         // Relief : l'image reçue, placée et mise à l'échelle sur la vue en cours (pendant un glissé
@@ -792,7 +818,7 @@ impl WorldMap {
             if !rect.expand(20.0).contains(pos) || (place.kind == SettlementKind::Ruins && bpp > 16.0) {
                 continue;
             }
-            paint_place_icon(&painter, pos, place.kind, 1.0);
+            paint_place_icon(&painter, pos, place.kind, 1.0, true);
             if hover.is_some_and(|h| h.distance(pos) < 10.0) {
                 hovered = Some(place);
             }
@@ -811,28 +837,28 @@ impl WorldMap {
             }
         }
 
-        // Bords du parchemin : la carte s'y fond
-        if let Some((_, edges)) = &self.parchment {
-            painter.image(edges.id(), rect, full_uv, egui::Color32::WHITE);
+        // La feuille ajourée par-dessus : la carte se fond dans le parchemin sur ses bords
+        if let Some((_, holed)) = &self.parchment {
+            painter.image(holed.id(), sheet, full_uv, egui::Color32::WHITE);
         }
 
         // Repère
         if let Some(w) = self.waypoint {
             let pos = self.to_screen(&frame, rect, w);
-            paint_waypoint(&painter, pos, 7.0);
+            paint_waypoint(&painter, pos, 7.0, true);
         }
 
         // Joueur : flèche dans le sens du regard
         if let Some(nav) = self.navigation {
             let pos = self.to_screen(&frame, rect, nav.up);
             if rect.shrink(6.0).contains(pos) {
-                paint_player_arrow(&painter, pos, nav.yaw as f32, 9.0);
+                paint_player_arrow(&painter, pos, nav.yaw as f32, 11.0);
             } else {
                 // Hors de la carte : une flèche au bord indique où il est
                 let d = (pos - rect.center()).normalized();
                 let edge = rect.center() + d * (rect.width() / 2.0 - 16.0);
                 let angle = d.x.atan2(-d.y);
-                paint_player_arrow(&painter, edge, angle, 7.0);
+                paint_player_arrow(&painter, edge, angle, 9.0);
             }
         }
 
@@ -859,7 +885,8 @@ impl WorldMap {
                 text.push_str(&format!("{} · {}", format_distance(dist), cardinal(bearing)));
             }
             if !text.is_empty() {
-                let galley = painter.layout(text, egui::FontId::proportional(12.5), TEXT_SOFT, 260.0);
+                let ink = egui::Color32::from_rgb(74, 50, 32);
+                let galley = painter.layout(text, egui::FontId::proportional(12.5), ink, 260.0);
                 let mut r = egui::Rect::from_min_size(h + egui::vec2(14.0, 12.0), galley.size()).expand(5.0);
                 if r.right() > rect.right() {
                     r = r.translate(egui::vec2(-r.width() - 28.0, 0.0));
@@ -867,15 +894,16 @@ impl WorldMap {
                 if r.bottom() > rect.bottom() {
                     r = r.translate(egui::vec2(0.0, -r.height() - 24.0));
                 }
-                painter.rect_filled(r, 3.0, egui::Color32::from_black_alpha(190));
-                painter.rect_stroke(r, 3.0, egui::Stroke::new(1.0_f32, GOLD.gamma_multiply(0.6)));
-                painter.galley(r.min + egui::vec2(5.0, 5.0), galley, TEXT_SOFT);
+                painter.rect_filled(r.translate(egui::vec2(2.0, 3.0)), 2.0, egui::Color32::from_black_alpha(60));
+                painter.rect_filled(r, 2.0, egui::Color32::from_rgb(243, 232, 204));
+                painter.rect_stroke(r, 2.0, egui::Stroke::new(1.0_f32, ink));
+                painter.galley(r.min + egui::vec2(5.0, 5.0), galley, ink);
             }
         }
     }
 
-    /// Barre d'échelle : une longueur ronde de blocs
-    fn scale_bar(&self, ui: &mut egui::Ui, side: f32) {
+    /// Barre d'échelle à l'encre : une longueur ronde de blocs, en cases alternées
+    fn scale_bar(&self, painter: &egui::Painter, left: egui::Pos2, side: f32, ink: egui::Color32) {
         let px_per_block = self.screen_scale(side) as f32;
         let target = 110.0 / px_per_block;
         let nice = [10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0]
@@ -884,20 +912,14 @@ impl WorldMap {
             .find(|&n| n <= target)
             .unwrap_or(10.0);
         let width = nice * px_per_block;
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(width + 90.0, 18.0), egui::Sense::hover());
-        let y = rect.center().y + 3.0;
-        let x0 = rect.left();
-        let stroke = egui::Stroke::new(2.0_f32, TEXT_SOFT);
-        ui.painter().line_segment([egui::pos2(x0, y), egui::pos2(x0 + width, y)], stroke);
-        ui.painter().line_segment([egui::pos2(x0, y - 4.0), egui::pos2(x0, y + 1.0)], stroke);
-        ui.painter().line_segment([egui::pos2(x0 + width, y - 4.0), egui::pos2(x0 + width, y + 1.0)], stroke);
-        ui.painter().text(
-            egui::pos2(x0 + width + 8.0, y),
-            egui::Align2::LEFT_CENTER,
-            format_distance(nice as f64),
-            egui::FontId::proportional(12.0),
-            TEXT_SOFT,
-        );
+        let stroke = egui::Stroke::new(1.0_f32, ink);
+        let bar = egui::Rect::from_min_size(left - egui::vec2(0.0, 2.5), egui::vec2(width, 5.0));
+        for k in 0..4 {
+            let cell = egui::Rect::from_min_size(bar.min + egui::vec2(width * k as f32 / 4.0, 0.0), egui::vec2(width / 4.0, 5.0));
+            painter.rect_filled(cell, 0.0, if k % 2 == 0 { ink } else { egui::Color32::from_rgb(238, 226, 196) });
+        }
+        painter.rect_stroke(bar, 0.0, stroke);
+        painter.text(bar.right_center() + egui::vec2(8.0, 0.0), egui::Align2::LEFT_CENTER, format_distance(nice as f64), egui::FontId::proportional(12.5), ink);
     }
 
     // -----------------------------------------------------------------------
@@ -947,7 +969,7 @@ impl WorldMap {
                 continue;
             }
             if let Some(x) = x_of(bearing) {
-                paint_place_icon(&clip, egui::pos2(x, rect.top() + 7.0), place.kind, 0.85);
+                paint_place_icon(&clip, egui::pos2(x, rect.top() + 8.0), place.kind, 0.7, false);
                 consider((bearing - nav.yaw + PI).rem_euclid(TAU) - PI, place.name.clone(), dist);
             }
         }
@@ -955,14 +977,14 @@ impl WorldMap {
             let (bearing, dist) = frame.bearing_distance(w);
             match x_of(bearing) {
                 Some(x) => {
-                    paint_waypoint(&clip, egui::pos2(x, rect.top() + 7.0), 5.0);
+                    paint_waypoint(&clip, egui::pos2(x, rect.top() + 8.0), 4.5, false);
                     consider((bearing - nav.yaw + PI).rem_euclid(TAU) - PI, "Repère".to_string(), dist);
                 }
                 None => {
                     // Derrière le joueur : une pointe au bord du côté où tourner
                     let rel = (bearing - nav.yaw + PI).rem_euclid(TAU) - PI;
                     let x = if rel > 0.0 { rect.right() - 7.0 } else { rect.left() + 7.0 };
-                    paint_waypoint(&clip, egui::pos2(x, rect.center().y), 4.0);
+                    paint_waypoint(&clip, egui::pos2(x, rect.center().y), 4.0, false);
                 }
             }
         }
@@ -1022,64 +1044,145 @@ fn shadowed_text(painter: &egui::Painter, pos: egui::Pos2, align: egui::Align2, 
     painter.text(pos, align, text, font, color);
 }
 
-/// Icône d'un établissement : tour crénelée pour une ville, maison pour un village, colonne brisée
-/// pour des ruines
-fn paint_place_icon(painter: &egui::Painter, pos: egui::Pos2, kind: SettlementKind, scale: f32) {
+/// Encre des icônes
+const ICON_INK: egui::Color32 = egui::Color32::from_rgb(58, 38, 22);
+
+/// Contour fermé à l'encre
+fn ink_outline(painter: &egui::Painter, points: &[egui::Pos2], width: f32, color: egui::Color32) {
+    let mut closed = points.to_vec();
+    closed.push(points[0]);
+    painter.add(egui::Shape::line(closed, egui::Stroke::new(width, color)));
+}
+
+/// Lavis d'une forme convexe, puis son contour à l'encre
+fn washed(painter: &egui::Painter, points: Vec<egui::Pos2>, fill: egui::Color32, width: f32) {
+    painter.add(egui::Shape::convex_polygon(points.clone(), fill, egui::Stroke::NONE));
+    ink_outline(painter, &points, width, ICON_INK);
+}
+
+/// Icône d'un établissement, à la plume comme sur une carte ancienne : château à deux tours pour
+/// une ville, deux maisons pour un village, arche brisée pour des ruines. `halo` : un voile de
+/// papier clair dessous, pour la lire sur le relief.
+fn paint_place_icon(painter: &egui::Painter, pos: egui::Pos2, kind: SettlementKind, scale: f32, halo: bool) {
     let s = scale;
-    let outline = egui::Stroke::new(1.2_f32, egui::Color32::from_rgb(30, 18, 10));
+    let p = |x: f32, y: f32| pos + egui::vec2(x * s, y * s);
+    let w = (1.1 * s).max(0.8);
+    if halo {
+        painter.circle_filled(pos + egui::vec2(0.0, 0.5 * s), 9.5 * s, egui::Color32::from_rgba_unmultiplied(243, 232, 204, 55));
+    }
     match kind {
         SettlementKind::Town => {
-            let fill = egui::Color32::from_rgb(222, 84, 62);
-            let body = egui::Rect::from_center_size(pos + egui::vec2(0.0, 1.0 * s), egui::vec2(12.0 * s, 9.0 * s));
-            painter.rect(body, 0.0, fill, outline);
-            for i in 0..3 {
-                let x = body.left() + (i as f32 * 4.5 + 0.5) * s;
-                let merlon = egui::Rect::from_min_size(egui::pos2(x, body.top() - 3.0 * s), egui::vec2(3.0 * s, 3.0 * s));
-                painter.rect(merlon, 0.0, fill, outline);
+            let wall = egui::Color32::from_rgb(214, 186, 140);
+            let roof = egui::Color32::from_rgb(170, 62, 44);
+            // Courtine entre deux tours, porte en arc
+            washed(painter, vec![p(-5.0, -1.0), p(5.0, -1.0), p(5.0, 7.0), p(-5.0, 7.0)], wall, w);
+            for x in [-3.0, 0.0, 3.0] {
+                washed(painter, vec![p(x - 0.9, -2.8), p(x + 0.9, -2.8), p(x + 0.9, -1.0), p(x - 0.9, -1.0)], wall, w * 0.8);
             }
+            for x in [-7.5, 7.5] {
+                washed(painter, vec![p(x - 2.6, -3.0), p(x + 2.6, -3.0), p(x + 2.6, 7.0), p(x - 2.6, 7.0)], wall, w);
+                washed(painter, vec![p(x - 3.3, -3.0), p(x, -9.5), p(x + 3.3, -3.0)], roof, w);
+                painter.line_segment([p(x, -9.5), p(x, -11.5)], egui::Stroke::new(w * 0.8, ICON_INK));
+                painter.add(egui::Shape::convex_polygon(vec![p(x, -11.5), p(x + 2.4, -10.9), p(x, -10.3)], roof, egui::Stroke::NONE));
+            }
+            let gate: Vec<egui::Pos2> = (0..=8)
+                .map(|k| {
+                    let a = std::f32::consts::PI * k as f32 / 8.0;
+                    p(-1.8 * a.cos(), 3.2 - 1.8 * a.sin())
+                })
+                .chain([p(1.8, 7.0), p(-1.8, 7.0)])
+                .collect();
+            painter.add(egui::Shape::convex_polygon(gate.clone(), ICON_INK, egui::Stroke::NONE));
         }
         SettlementKind::Village => {
-            let fill = egui::Color32::from_rgb(244, 200, 80);
-            let body = egui::Rect::from_center_size(pos + egui::vec2(0.0, 2.0 * s), egui::vec2(9.0 * s, 6.0 * s));
-            let roof = vec![pos + egui::vec2(-6.0 * s, -s), pos + egui::vec2(0.0, -6.5 * s), pos + egui::vec2(6.0 * s, -s)];
-            painter.rect(body, 0.0, fill, outline);
-            painter.add(egui::Shape::convex_polygon(roof, egui::Color32::from_rgb(190, 82, 52), outline));
+            let wall = egui::Color32::from_rgb(226, 200, 150);
+            let roof = egui::Color32::from_rgb(186, 96, 54);
+            // Maison du fond, plus petite
+            washed(painter, vec![p(0.5, -1.5), p(7.5, -1.5), p(7.5, 4.0), p(0.5, 4.0)], wall, w * 0.9);
+            washed(painter, vec![p(-0.5, -1.5), p(4.0, -6.0), p(8.5, -1.5)], roof, w * 0.9);
+            // Maison de devant, avec sa porte
+            washed(painter, vec![p(-7.0, 0.0), p(1.5, 0.0), p(1.5, 6.5), p(-7.0, 6.5)], wall, w);
+            washed(painter, vec![p(-8.3, 0.0), p(-2.75, -6.0), p(2.8, 0.0)], roof, w);
+            painter.rect_filled(egui::Rect::from_min_max(p(-3.8, 3.0), p(-1.8, 6.5)), 0.0, ICON_INK);
+            painter.line_segment([p(5.5, -4.0), p(5.5, -6.5)], egui::Stroke::new(w * 1.4, ICON_INK));
         }
         SettlementKind::Ruins => {
-            let fill = egui::Color32::from_rgb(170, 166, 156);
-            let a = egui::Rect::from_min_size(pos + egui::vec2(-5.0 * s, -4.0 * s), egui::vec2(3.0 * s, 9.0 * s));
-            let b = egui::Rect::from_min_size(pos + egui::vec2(2.0 * s, -s), egui::vec2(3.0 * s, 6.0 * s));
-            painter.rect(a, 0.0, fill, outline);
-            painter.rect(b, 0.0, fill, outline);
+            let stone = egui::Color32::from_rgb(196, 186, 168);
+            // Une arche dont il ne reste qu'un pilier entier, et un tronçon
+            washed(painter, vec![p(-6.0, -5.0), p(-2.5, -5.0), p(-2.5, 6.0), p(-6.0, 6.0)], stone, w);
+            washed(painter, vec![p(-6.5, -6.6), p(-2.0, -6.6), p(-2.0, -5.0), p(-6.5, -5.0)], stone, w);
+            washed(painter, vec![p(2.5, 1.0), p(6.0, 0.0), p(6.0, 6.0), p(2.5, 6.0)], stone, w);
+            let arch: Vec<egui::Pos2> = (0..=5)
+                .map(|k| {
+                    let a = std::f32::consts::PI * (1.0 - k as f32 / 10.0);
+                    p(2.0 + 4.3 * a.cos(), -2.0 - 3.2 * a.sin())
+                })
+                .collect();
+            painter.add(egui::Shape::line(arch, egui::Stroke::new(w * 1.6, ICON_INK)));
+            // Moellons tombés
+            painter.circle_filled(p(0.2, 5.6), 0.9 * s, ICON_INK);
+            painter.circle_filled(p(8.0, 5.4), 0.8 * s, ICON_INK);
         }
     }
 }
 
-fn paint_waypoint(painter: &egui::Painter, pos: egui::Pos2, r: f32) {
-    let diamond = vec![pos + egui::vec2(0.0, -r), pos + egui::vec2(r * 0.7, 0.0), pos + egui::vec2(0.0, r), pos + egui::vec2(-r * 0.7, 0.0)];
-    painter.add(egui::Shape::convex_polygon(diamond, egui::Color32::from_rgb(120, 200, 255), egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(10, 30, 60))));
+/// Repère : une croix rouge à la plume, comme sur une carte au trésor. `halo` : sur la carte.
+fn paint_waypoint(painter: &egui::Painter, pos: egui::Pos2, r: f32, halo: bool) {
+    let red = egui::Color32::from_rgb(178, 40, 30);
+    if halo {
+        painter.circle_filled(pos, r * 1.5, egui::Color32::from_rgba_unmultiplied(243, 232, 204, 140));
+        painter.circle_stroke(pos, r * 1.35, egui::Stroke::new(0.8_f32, red.gamma_multiply(0.7)));
+    }
+    let width = (r * 0.42).max(1.6);
+    painter.line_segment([pos + egui::vec2(-r, -r), pos + egui::vec2(r, r)], egui::Stroke::new(width, red));
+    painter.line_segment([pos + egui::vec2(r * 0.9, -r * 1.05), pos + egui::vec2(-r * 0.95, r * 0.95)], egui::Stroke::new(width, red));
 }
 
-/// Flèche du joueur, pointée selon `angle` (0 : vers le haut de la carte, sens horaire)
+/// Joueur : une aiguille de boussole, moitié rouge moitié papier, pointée selon `angle`
+/// (0 : vers le haut de la carte, sens horaire)
 fn paint_player_arrow(painter: &egui::Painter, pos: egui::Pos2, angle: f32, r: f32) {
     let rot = |x: f32, y: f32| {
         let (s, c) = angle.sin_cos();
         pos + egui::vec2(x * c - y * s, x * s + y * c)
     };
-    let points = vec![rot(0.0, -r), rot(r * 0.7, r * 0.75), rot(0.0, r * 0.35), rot(-r * 0.7, r * 0.75)];
-    // Le contour n'est pas convexe : deux moitiés convexes
-    let left = vec![points[0], points[2], points[3]];
-    let right = vec![points[0], points[1], points[2]];
-    let fill = egui::Color32::from_rgb(196, 48, 36);
-    painter.add(egui::Shape::convex_polygon(left, fill, egui::Stroke::NONE));
-    painter.add(egui::Shape::convex_polygon(right, fill, egui::Stroke::NONE));
-    let mut outline = points.clone();
-    outline.push(points[0]);
-    painter.add(egui::Shape::line(outline, egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(60, 36, 20))));
+    let tip = rot(0.0, -r * 1.25);
+    let tail = rot(0.0, r * 0.8);
+    let left = rot(-r * 0.48, r * 0.05);
+    let right = rot(r * 0.48, r * 0.05);
+    let red = egui::Color32::from_rgb(182, 44, 32);
+    let pale = egui::Color32::from_rgb(240, 226, 192);
+    painter.add(egui::Shape::convex_polygon(vec![tip, right, pos], red, egui::Stroke::NONE));
+    painter.add(egui::Shape::convex_polygon(vec![tip, pos, left], egui::Color32::from_rgb(140, 30, 22), egui::Stroke::NONE));
+    painter.add(egui::Shape::convex_polygon(vec![left, pos, tail], pale, egui::Stroke::NONE));
+    painter.add(egui::Shape::convex_polygon(vec![pos, right, tail], egui::Color32::from_rgb(214, 196, 158), egui::Stroke::NONE));
+    ink_outline(painter, &[tip, right, tail, left], 1.2, ICON_INK);
+    painter.circle_filled(pos, r * 0.16, ICON_INK);
 }
 
-/// Côté des images du parchemin
-const PARCHMENT_PIXELS: usize = 384;
+/// Filet orné sous le titre : un trait qui s'affine, un losange au centre
+fn paint_flourish(painter: &egui::Painter, c: egui::Pos2, half: f32, ink: egui::Color32) {
+    for side in [-1.0_f32, 1.0] {
+        let points: Vec<egui::Pos2> = (0..=12)
+            .map(|k| {
+                let t = k as f32 / 12.0;
+                c + egui::vec2(side * (8.0 + t * half), (t * std::f32::consts::TAU).sin() * 1.6 * (1.0 - t))
+            })
+            .collect();
+        painter.add(egui::Shape::line(points, egui::Stroke::new(1.2_f32, ink)));
+        painter.circle_filled(c + egui::vec2(side * (half + 10.0), 0.0), 1.4, ink);
+    }
+    let d = 4.0;
+    painter.add(egui::Shape::convex_polygon(vec![c + egui::vec2(0.0, -d), c + egui::vec2(d, 0.0), c + egui::vec2(0.0, d), c + egui::vec2(-d, 0.0)], ink, egui::Stroke::NONE));
+}
+
+/// Feuille de l'écran de carte, en côtés de carte : marges, en-tête et pied de page autour d'elle
+const SHEET_MARGIN: f32 = 0.06;
+const SHEET_HEADER: f32 = 0.12;
+const SHEET_FOOTER: f32 = 0.11;
+const SHEET_W: f32 = 1.0 + 2.0 * SHEET_MARGIN;
+const SHEET_H: f32 = SHEET_HEADER + 1.0 + SHEET_FOOTER;
+/// Texels de l'image de la feuille par côté de carte
+const SHEET_TEXELS: f32 = 420.0;
 
 fn lattice(x: i32, y: i32, seed: u32) -> f32 {
     let mut h = (x as u32).wrapping_mul(0x8da6_b343) ^ (y as u32).wrapping_mul(0xd816_3841) ^ seed.wrapping_mul(0xcb1a_b31f);
@@ -1116,40 +1219,53 @@ fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Couleur du parchemin en (u, v) ∈ [0, 1]² : papier crème, grain, taches, bords roussis
-fn parchment_color(u: f32, v: f32) -> [f32; 3] {
-    let grain = fbm2(u * 40.0, v * 40.0, 11);
-    let cloud = fbm2(u * 4.0, v * 4.0, 23);
-    let stain = fbm2(u * 2.5 + 3.0, v * 2.5 + 7.0, 37);
+/// Couleur du parchemin au point (x, y) de la feuille (en côtés de carte) : papier crème,
+/// grain, taches, bords roussis
+fn parchment_color(x: f32, y: f32) -> [f32; 3] {
+    let grain = fbm2(x * 40.0, y * 40.0, 11);
+    let cloud = fbm2(x * 4.0, y * 4.0, 23);
+    let stain = fbm2(x * 2.5 + 3.0, y * 2.5 + 7.0, 37);
     let mut c = mix([0.86, 0.77, 0.58], [0.95, 0.89, 0.73], cloud);
-    c = c.map(|x| x * (0.94 + 0.08 * grain));
+    c = c.map(|v| v * (0.94 + 0.08 * grain));
     c = mix(c, [0.74, 0.58, 0.38], smoothstep(0.58, 0.78, stain) * 0.35);
-    // Bords roussis, irréguliers
-    let d = u.min(1.0 - u).min(v).min(1.0 - v);
-    let wobble = (fbm2(u * 9.0, v * 9.0, 51) - 0.5) * 0.05;
-    let burn = 1.0 - smoothstep(0.0, 0.05 + wobble * 0.6, d);
+    let d = sheet_edge_distance(x, y);
+    let wobble = (fbm2(x * 9.0, y * 9.0, 51) - 0.5) * 0.04;
+    let burn = 1.0 - smoothstep(0.0, 0.05 + wobble, d);
     mix(c, [0.52, 0.36, 0.20], burn * 0.6)
 }
 
-/// Image du parchemin. `edge` : seul le pourtour est opaque, le centre transparent, avec un
-/// fondu irrégulier, pour que la carte se perde dans le papier.
-fn parchment_image(size: usize, edge: bool) -> egui::ColorImage {
-    let mut pixels = Vec::with_capacity(size * size);
-    for y in 0..size {
-        for x in 0..size {
-            let (u, v) = ((x as f32 + 0.5) / size as f32, (y as f32 + 0.5) / size as f32);
-            let c = parchment_color(u, v).map(|x| (x.clamp(0.0, 1.0) * 255.0) as u8);
-            let alpha = if edge {
-                let d = u.min(1.0 - u).min(v).min(1.0 - v);
-                let wobble = (fbm2(u * 6.0, v * 6.0, 77) - 0.5) * 0.08;
-                1.0 - smoothstep(0.02 + wobble * 0.4, 0.10 + wobble, d)
-            } else {
-                1.0
-            };
-            pixels.push(egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], (alpha * 255.0) as u8));
-        }
-    }
-    egui::ColorImage { size: [size, size], pixels }
+/// Distance d'un point de la feuille à son bord, bord rongé par le bruit
+fn sheet_edge_distance(x: f32, y: f32) -> f32 {
+    let d = x.min(SHEET_W - x).min(y).min(SHEET_H - y);
+    d + (fbm2(x * 14.0, y * 14.0, 63) - 0.5) * 0.022
+}
+
+/// Image de la feuille. `hole` : la même, ajourée à l'emplacement de la carte avec un fondu
+/// irrégulier, à poser par-dessus la carte pour qu'elle se perde dans le papier.
+fn sheet_image(w: usize, h: usize, hole: bool) -> egui::ColorImage {
+    let rows: Vec<Vec<egui::Color32>> = (0..h)
+        .into_par_iter()
+        .map(|py| {
+            (0..w)
+                .map(|px| {
+                    let (x, y) = ((px as f32 + 0.5) / w as f32 * SHEET_W, (py as f32 + 0.5) / h as f32 * SHEET_H);
+                    let c = parchment_color(x, y).map(|v| (v.clamp(0.0, 1.0) * 255.0) as u8);
+                    // Bord de la feuille, déchiré
+                    let mut alpha = smoothstep(0.0, 0.008, sheet_edge_distance(x, y));
+                    if hole {
+                        let (mx, my) = (x - SHEET_MARGIN, y - SHEET_HEADER);
+                        let inside = mx.min(1.0 - mx).min(my).min(1.0 - my);
+                        if inside > 0.0 {
+                            let wobble = (fbm2(mx * 6.0, my * 6.0, 77) - 0.5) * 0.07;
+                            alpha *= 1.0 - smoothstep(0.012 + wobble * 0.4, 0.085 + wobble, inside);
+                        }
+                    }
+                    egui::Color32::from_rgba_unmultiplied(c[0], c[1], c[2], (alpha * 255.0) as u8)
+                })
+                .collect()
+        })
+        .collect();
+    egui::ColorImage { size: [w, h], pixels: rows.into_iter().flatten().collect() }
 }
 
 /// Texte à l'encre, détouré de papier clair pour rester lisible sur le relief
