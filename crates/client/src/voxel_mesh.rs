@@ -798,7 +798,7 @@ impl VoxelMeshBuilder {
                             let (c2, c3) = (corner(b.0, 1.0, b.1), corner(a.0, 1.0, a.1));
                             let front = [tex(0, 16), tex(16, 16), tex(16, 0), tex(0, 0)];
                             let back = [tex(16, 16), tex(0, 16), tex(0, 0), tex(16, 0)];
-                            let glow = [block_light::intensity(light_at(gx, gy, gz)); 4];
+                            let glow = [if block.light() > 0 { block_light::EMISSIVE } else { block_light::intensity(light_at(gx, gy, gz)) }; 4];
                             Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, [1.0; 4], glow, front);
                             Self::add_quad(&mut vertices, &mut indices, c1, c0, c3, c2, color, [1.0; 4], glow, back);
                         }
@@ -845,7 +845,8 @@ impl VoxelMeshBuilder {
                                 };
                                 let tex = face_texture(block, dir, uv_corners);
                                 let d = FACE_DIRS[dir];
-                                let glow = [block_light::intensity(own_light.max(light_at(gx + d.0, gy + d.1, gz + d.2))); 4];
+                                // Torche, lanterne : leurs faces brillent
+                                let glow = [if block.light() > 0 { block_light::EMISSIVE } else { block_light::intensity(own_light.max(light_at(gx + d.0, gy + d.1, gz + d.2))) }; 4];
                                 Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, [1.0; 4], glow, tex);
                             }
                         }
@@ -874,9 +875,10 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, at(s1), at(s2), at(c))
                             })
                         };
+                        let emissive = block.light() > 0 && !block.is_liquid();
                         let glow = face.ao.map(|offsets| {
                             let at = |o: (i32, i32, i32)| (gx + o.0, gy + o.1, gz + o.2);
-                            block_light::intensity(corner_light(at(d), offsets.map(at)))
+                            if emissive { block_light::EMISSIVE } else { block_light::intensity(corner_light(at(d), offsets.map(at))) }
                         });
                         let mut tex = face_texture(block, dir, face.corners.map(|o| [o.0 * 16, o.1 * 16, o.2 * 16]));
                         if blocks().get(block).is_some_and(|sheet| sheet.connected) {

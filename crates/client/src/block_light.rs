@@ -108,6 +108,11 @@ impl LightField {
     }
 }
 
+/// Intensité portée par un sommet qui ne brille pas lui-même : au plus juste sous `EMISSIVE`
+pub const LIT_MAX: f32 = 0.96;
+/// Intensité des faces d'un bloc qui éclaire : le shader les fait briller (flamme, lanterne)
+pub const EMISSIVE: f32 = 1.0;
+
 /// Intensité rendue d'un niveau de lumière (moyen, d'où les fractions) : chaque niveau en moins
 /// éclaire d'un cinquième de moins, et l'éclat tombe à zéro au niveau 0
 pub fn intensity(level: f32) -> f32 {
@@ -115,7 +120,7 @@ pub fn intensity(level: f32) -> f32 {
         return 0.0;
     }
     let fade = (level / 1.5).min(1.0);
-    0.8f32.powf(MAX_LIGHT as f32 - level) * fade
+    (0.8f32.powf(MAX_LIGHT as f32 - level) * fade).min(LIT_MAX)
 }
 
 #[cfg(test)]
@@ -158,7 +163,8 @@ mod tests {
     #[test]
     fn intensity_fades_out() {
         assert_eq!(intensity(0.0), 0.0);
-        assert!((intensity(15.0) - 1.0).abs() < 1e-6);
+        assert_eq!(intensity(15.0), LIT_MAX);
+        assert!(intensity(15.0) < EMISSIVE);
         assert!(intensity(14.0) < intensity(15.0));
         assert!(intensity(0.5) < intensity(1.0));
     }

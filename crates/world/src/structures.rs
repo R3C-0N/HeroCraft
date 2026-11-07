@@ -89,6 +89,7 @@ pub mod block {
     pub const BIRCH_FENCE: BlockId = BlockId(149);
     pub const CUT_STONE_FENCE: BlockId = BlockId(154);
     pub const SILVER_FENCE: BlockId = BlockId(161);
+    pub const LANTERN: BlockId = BlockId(163);
     // Ornements : l'aspect des métaux et du cristal, sans leur valeur. Cassés, ils ne donnent
     // qu'eux-mêmes et aucune recette ne les refond en lingots ni en minerai : piller une ville ne
     // rapporte ni or, ni mithril, ni cristal.
@@ -99,7 +100,8 @@ pub mod block {
     pub const CUT_CRYSTAL: BlockId = BlockId(146);
 
     /// Tous les blocs que posent les structures (pour vérifier qu'ils ont leur fiche)
-    pub const ALL: [(BlockId, &str); 44] = [
+    pub const ALL: [(BlockId, &str); 45] = [
+        (LANTERN, "lanterne"),
         (OAK_FENCE, "barriereChene"),
         (BIRCH_FENCE, "barriereBouleau"),
         (CUT_STONE_FENCE, "barrierePierreTaillee"),
@@ -457,6 +459,9 @@ impl Habits {
     }
 }
 
+/// Hauteur de la lumière d'un lampadaire au-dessus du sol : un socle, deux barrières, la lanterne
+const LAMP_LIGHT: i32 = 3;
+
 /// Matériaux des remparts, des tours et des lampadaires d'une culture
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Masonry {
@@ -468,7 +473,7 @@ pub struct Masonry {
     pub cap: BlockId,
     /// Plancher du haut des tours
     pub deck: BlockId,
-    /// Poteau des lampadaires (une barrière)
+    /// Poteau des lampadaires (une barrière), posé sur un socle de la pierre `accent`
     pub post: BlockId,
     /// Lumière au sommet des lampadaires
     pub light: BlockId,
@@ -490,7 +495,7 @@ impl Masonry {
                 cap: CUT_STONE,
                 deck: PLANK,
                 post: OAK_FENCE,
-                light: TORCH,
+                light: LANTERN,
                 palisade: false,
                 spire: None,
                 height: 5,
@@ -503,7 +508,7 @@ impl Masonry {
                 cap: CUT_STONE,
                 deck: CUT_STONE,
                 post: CUT_STONE_FENCE,
-                light: TORCH,
+                light: LANTERN,
                 palisade: false,
                 spire: None,
                 height: 6,
@@ -516,7 +521,7 @@ impl Masonry {
                 cap: OAK_LOG,
                 deck: PLANK,
                 post: BIRCH_FENCE,
-                light: GLOWBELL_BLOOM,
+                light: LANTERN,
                 palisade: true,
                 spire: Some(DARK_LEAF),
                 height: 5,
@@ -529,7 +534,7 @@ impl Masonry {
                 cap: SILVER_TRIM,
                 deck: PLANK,
                 post: SILVER_FENCE,
-                light: TORCH,
+                light: LANTERN,
                 palisade: false,
                 spire: Some(CUT_CRYSTAL),
                 height: 5,
@@ -1364,7 +1369,7 @@ impl Piece {
         match self {
             Piece::Paving { .. } => ground - 1..ground,
             Piece::Field { .. } => ground - 1..ground + 1,
-            Piece::Lamp { .. } => ground..ground + 3,
+            Piece::Lamp { .. } => ground..ground + LAMP_LIGHT + 1,
             Piece::Ladder { top, .. } => ground..(*top).max(ground),
             Piece::Rampart { masonry, .. } | Piece::Gate { masonry, .. } => ground - 1..ground + masonry.height + 1,
             Piece::House(h) => span(h.floor, 1, h.top()),
@@ -1446,8 +1451,10 @@ impl Piece {
                 (y < ground || y == f).then_some(BlockId::AIR)
             }
             Piece::Lamp { masonry, .. } => match y - ground {
-                0 | 1 => Some(masonry.post),
-                2 => Some(masonry.light),
+                // Socle, fût de barrière, lanterne au sommet
+                0 => Some(masonry.accent),
+                1..LAMP_LIGHT => Some(masonry.post),
+                LAMP_LIGHT => Some(masonry.light),
                 _ => None,
             },
             Piece::Ladder { back, .. } => Some(facing(LADDER, *back)),
@@ -1635,7 +1642,7 @@ impl Settlement {
         for piece in self.pieces.iter().filter(|p| p.rect().intersects(&area)) {
             let mut spots: Vec<(i32, i32, i32)> = Vec::new();
             match piece {
-                Piece::Lamp { x, z, .. } => spots.push((*x, ground(*x, *z) + 2, *z)),
+                Piece::Lamp { x, z, .. } => spots.push((*x, ground(*x, *z) + LAMP_LIGHT, *z)),
                 Piece::Fountain { rect, floor } => {
                     let (cx, cz) = rect.center();
                     spots.push((cx, floor + 2, cz));
@@ -2604,8 +2611,8 @@ mod tests {
                     Piece::Lamp { x, z, masonry } => {
                         // Le poteau est une barrière, la lumière au-dessus
                         let ground = 100;
-                        assert!(piece.block(*x, ground, *z, ground).unwrap().is_fence());
-                        assert!(piece.block(*x, ground + 2, *z, ground).unwrap().light() > 0, "{masonry:?}");
+                        assert!(piece.block(*x, ground + 1, *z, ground).unwrap().is_fence());
+                        assert!(piece.block(*x, ground + LAMP_LIGHT, *z, ground).unwrap().light() > 0, "{masonry:?}");
                         lamps += 1;
                     }
                     _ => {}

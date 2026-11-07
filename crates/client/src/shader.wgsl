@@ -21,6 +21,8 @@
 // Lumière des blocs qui éclairent, à pleine force (au pied d'une torche)
 const TORCH_COLOR: vec3<f32> = vec3<f32>(1.0, 0.68, 0.38);
 const TORCH_INTENSITY: f32 = 1.6;
+// Éclat propre des faces d'un bloc qui éclaire (flamme, lanterne), qui les fait briller la nuit
+const EMISSIVE_GLOW: f32 = 0.8;
 
 // Rang d'une face sans texture (NO_TEXTURE)
 const NO_TEXTURE: u32 = 0xFFFFu;
@@ -309,7 +311,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let flash_light = vec3<f32>(1.3, 1.4, 1.7) * camera.weather.w * (0.4 + 0.6 * facing_up);
     // Torches, lampadaires, lave : une lumière chaude qui ne dépend ni du soleil ni des ombres
     // (répandue bloc à bloc au maillage : voxel_mesh.rs, block_light.rs)
+    // Les faces d'un bloc qui éclaire (1 tout rond, les autres s'arrêtent à 0,96) brillent en plus
     let torch_light = TORCH_COLOR * (in.block_light * in.block_light * TORCH_INTENSITY);
+    let emissive = TORCH_COLOR * select(0.0, EMISSIVE_GLOW, in.block_light > 0.98);
     let total_light = night_ambient_total * night_factor + sun_ambient + sun_color * direct_level + moon_direct_color + flash_light + torch_light;
 
     // 5. Reflets spéculaires d'eau et de glace
@@ -344,7 +348,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Couleur éclairée de base avec Ambient Occlusion (AO) per-vertex interpolé
-    var lit_rgb = base_color * total_light + specular_light;
+    var lit_rgb = base_color * (total_light + emissive) + specular_light;
 
     // 6. Perspective aérienne : l'air entre la caméra et la surface diffuse la lumière du soleil
     // et du ciel (bleu au loin, doré face au soleil couchant) et atténue la surface. Le même
