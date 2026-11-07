@@ -1,5 +1,5 @@
 use glam::{DVec3, Vec3};
-use herocraft_common::PlanetFace;
+use herocraft_common::{BlockId, PlanetFace};
 use herocraft_world::{
     cubed_sphere::unit_sphere_to_lat_lon,
     generator::{BiomeType, PlanetWorldGenerator, SEA_LEVEL_BLOCKS},
@@ -141,6 +141,146 @@ impl GpuMeshData {
     }
 }
 
+/// Arbres d'un patch de relief lointain
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TreeDetail {
+    /// Aucun
+    None,
+    /// Un pavé de feuillage et un tronc par arbre, sans texture
+    Boxes,
+    /// Bloc par bloc et texturés, comme dans les chunks voxel
+    Blocks,
+}
+
+/// Finesse d'un patch de relief lointain
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PatchDetail {
+    /// Cellules par côté
+    pub resolution: usize,
+    /// Hauteur des terrasses en blocs (1 : relief au bloc près)
+    pub terrace_step: f64,
+    /// Textures des blocs sur le dessus et les flancs (relief au bloc près seulement)
+    pub textured: bool,
+    pub trees: TreeDetail,
+}
+
+impl PatchDetail {
+    /// Couleurs seules, sans arbres
+    pub const fn plain(resolution: usize, terrace_step: f64) -> Self {
+        Self { resolution, terrace_step, textured: false, trees: TreeDetail::None }
+    }
+}
+
+/// Une cellule de patch : hauteur de son dessus, couleur, et matières pour les textures
+#[derive(Debug, Clone, Copy)]
+struct LodCell {
+    height: f64,
+    water: bool,
+    color: [f32; 4],
+    /// Bloc du dessus (`None` : couleur seule)
+    top: Option<BlockId>,
+    /// Bloc sous le dessus, pour le bas des falaises
+    under: Option<BlockId>,
+}
+
+/// Matière sous un bloc de surface, visible au flanc des falaises
+fn subsoil(surface: BlockId) -> BlockId {
+    match surface {
+        BlockId::GRASS | BlockId::DIRT => BlockId::DIRT,
+        BlockId::SAND => BlockId::SAND,
+        _ => BlockId::STONE,
+    }
+}
+
+/// Bornes d'un arbre (dx, dy, dz relatifs au pied du tronc) : tous ses blocs, puis son feuillage
+fn tree_extent(tree: &herocraft_world::Tree) -> Vec<(i32, i32, i32, BlockId, bool)> {
+    let r = tree.reach();
+    let mut blocks = Vec::new();
+    for y in tree.ground..tree.top() {
+        for dz in -r..=r {
+            for dx in -r..=r {
+                if let Some((block, trunk)) = tree.block(tree.x + dx, y, tree.z + dz) {
+                    blocks.push((dx, y - tree.ground, dz, block, trunk));
+                }
+            }
+        }
+    }
+    blocks
+}
+
+/// Arbre bloc par bloc : les faces de ses blocs que l'arbre ne cache pas lui-même, texturées comme
+/// dans les chunks voxel. `lift` : décalage vertical (en blocs) vers le dessus de la cellule.
+fn emit_tree_blocks(vertices: &mut Vec<PlanetVertex>, indices: &mut Vec<u32>, tree: &herocraft_world::Tree, lift: f64, corner: &impl Fn(f64, f64, f64) -> Vec3) {
+    let blocks = tree_extent(tree);
+    let occupied: std::collections::HashSet<(i32, i32, i32)> = blocks.iter().map(|b| (b.0, b.1, b.2)).collect();
+    for &(dx, dy, dz, block, _) in &blocks {
+        for (dir, face) in crate::voxel_mesh::CUBE_FACES.iter().enumerate() {
+            let d = herocraft_common::FACE_DIRS[dir];
+            if occupied.contains(&(dx + d.0, dy + d.1, dz + d.2)) {
+                continue;
+            }
+            let layer = herocraft_common::blocks().face_texture(block, dir);
+            let shade = if dir == 2 { 1.0 } else { 0.78 };
+            let c = crate::voxel_mesh::VoxelMeshBuilder::block_color(block, dir);
+            let color = [c[0] * shade, c[1] * shade, c[2] * shade, c[3]];
+            let p = face.corners.map(|(cx, cy, cz)| {
+                corner(
+                    (tree.x + dx) as f64 + cx as f64,
+                    (tree.ground + dy) as f64 + lift + cy as f64,
+                    (tree.z + dz) as f64 + cz as f64,
+                )
+            });
+            let texture = face.corners.map(|(cx, cy, cz)| {
+                let (u, v) = crate::block_textures::face_uv(dir, [cx * 16, cy * 16, cz * 16]);
+                PlanetVertex::pack_texture(layer, u, v)
+            });
+            crate::voxel_mesh::VoxelMeshBuilder::add_quad(vertices, indices, p[0], p[1], p[2], p[3], color, [1.0; 4], [0.0; 4], texture);
+        }
+    }
+}
+
+/// Arbre simplifié : un pavé de feuillage (ses bornes) sur un tronc d'un bloc de section
+fn emit_tree_boxes(vertices: &mut Vec<PlanetVertex>, indices: &mut Vec<u32>, tree: &herocraft_world::Tree, lift: f64, corner: &impl Fn(f64, f64, f64) -> Vec3) {
+    let blocks = tree_extent(tree);
+    let mut boxes: Vec<(BlockId, [i32; 6])> = Vec::with_capacity(2);
+    for want_trunk in [true, false] {
+        let mut bounds: Option<(BlockId, [i32; 6])> = None;
+        for &(dx, dy, dz, block, trunk) in &blocks {
+            if trunk != want_trunk {
+                continue;
+            }
+            let b = bounds.get_or_insert((block, [dx, dy, dz, dx + 1, dy + 1, dz + 1]));
+            b.1 = [b.1[0].min(dx), b.1[1].min(dy), b.1[2].min(dz), b.1[3].max(dx + 1), b.1[4].max(dy + 1), b.1[5].max(dz + 1)];
+        }
+        boxes.extend(bounds);
+    }
+    for (block, [ax, ay, az, bx, by, bz]) in boxes {
+        for (dir, face) in crate::voxel_mesh::CUBE_FACES.iter().enumerate() {
+            let shade = if dir == 2 { 1.0 } else { 0.78 };
+            let c = crate::voxel_mesh::VoxelMeshBuilder::block_color(block, dir);
+            let color = [c[0] * shade, c[1] * shade, c[2] * shade, 1.0];
+            let p = face.corners.map(|(cx, cy, cz)| {
+                let pick = |lo: i32, hi: i32, c: u8| if c == 0 { lo } else { hi } as f64;
+                corner(
+                    tree.x as f64 + pick(ax, bx, cx),
+                    tree.ground as f64 + lift + pick(ay, by, cy),
+                    tree.z as f64 + pick(az, bz, cz),
+                )
+            });
+            crate::voxel_mesh::VoxelMeshBuilder::add_quad(vertices, indices, p[0], p[1], p[2], p[3], color, [1.0; 4], [0.0; 4], [PlanetVertex::UNTEXTURED; 4]);
+        }
+    }
+}
+
+/// Plus longue rangée (en blocs) de dessus fusionnés en un quad : la texture y est répétée, en
+/// seizièmes sur 8 bits (15 × 16 = 240)
+const MAX_MERGED_BLOCKS: f64 = 15.0;
+
+/// Plus grande cellule de patch (en blocs de côté) où les villes et villages sont dessinés
+const MAX_SETTLEMENT_CELL_BLOCKS: f64 = 4.0;
+/// Plus grande cellule de patch (en blocs de côté) où les chemins sont dessinés
+const MAX_ROAD_CELL_BLOCKS: f64 = 2.0;
+
 /// Maillage indexé prêt pour WGPU
 #[derive(Clone, Default)]
 pub struct PlanetMesh {
@@ -152,15 +292,15 @@ impl PlanetMesh {
     /// Hauteur d'un palier pour le relief orbital étagé en strates / terrasses (en blocs)
     pub const ORBIT_TERRACE_STEP_HEIGHT: f64 = 6.0;
 
-    /// Discrétise une altitude continue en terrasses géologiques étagées pour la vue orbitale
+    /// Discrétise une altitude en paliers de `step` blocs au-dessus de la mer. Avec un pas d'un
+    /// bloc, le dessus d'une cellule est exactement celui des voxels (`floor` de l'élévation).
     #[inline]
-    pub fn quantize_terrace_elevation(elevation: f64) -> f64 {
+    pub fn quantize_elevation(elevation: f64, step: f64) -> f64 {
         if elevation <= SEA_LEVEL_BLOCKS {
-            elevation
+            if step <= 1.0 { elevation.floor() } else { elevation }
         } else {
             let diff = elevation - SEA_LEVEL_BLOCKS;
-            let step = (diff / Self::ORBIT_TERRACE_STEP_HEIGHT).floor() * Self::ORBIT_TERRACE_STEP_HEIGHT;
-            SEA_LEVEL_BLOCKS + step
+            SEA_LEVEL_BLOCKS + (diff / step).floor() * step
         }
     }
 
@@ -390,8 +530,60 @@ impl PlanetMesh {
         grid_resolution: usize,
         filter: herocraft_world::VisualizationFilter,
     ) -> Self {
+        Self::generate_lod_patch_stepped(generator, key, base_radius, PatchDetail::plain(grid_resolution, Self::ORBIT_TERRACE_STEP_HEIGHT), filter)
+    }
+
+    /// Plus haut bloc posé par une ville, un village, des ruines (si `settlements`) ou un chemin
+    /// (si `roads`) dans la colonne (x, z) d'une face : altitude de son dessus et couleur de sa
+    /// face du haut. `None` : le terrain naturel reste.
+    fn structure_top(
+        generator: &PlanetWorldGenerator,
+        face: PlanetFace,
+        x: i32,
+        z: i32,
+        elevation: f64,
+        settlements: bool,
+        roads: bool,
+    ) -> Option<(i32, BlockId)> {
+        let ground = elevation.floor() as i32;
+        if settlements {
+            if let Some(s) = generator.settlement_at(face, x, z) {
+                let span = s.span(x, z, ground);
+                if !span.is_empty() {
+                    for y in span.rev() {
+                        match s.block(x, y, z, ground) {
+                            Some(b) if !b.is_air() => {
+                                return Some((y + 1, b));
+                            }
+                            _ => {}
+                        }
+                    }
+                    // Le plan ne fait que creuser cette colonne (une cour, une rue) : sol naturel
+                    return None;
+                }
+            }
+        }
+        if roads {
+            if let Some(b) = generator.roads.surface(generator, face, x, z) {
+                return Some((ground, b));
+            }
+        }
+        None
+    }
+
+    /// Construit le maillage d'un patch selon `detail` : grille, terrasses, textures des blocs et
+    /// arbres. Au plus fin (une cellule par bloc, textures, arbres en blocs), un patch a l'allure
+    /// des chunks voxel, sans grottes ni plantes.
+    pub fn generate_lod_patch_stepped(
+        generator: &PlanetWorldGenerator,
+        key: &herocraft_world::QuadNodeKey,
+        base_radius: f32,
+        detail: PatchDetail,
+        filter: herocraft_world::VisualizationFilter,
+    ) -> Self {
         herocraft_common::prof_scope!("mesh::generate_lod_patch");
-        let n = grid_resolution.max(2);
+        let n = detail.resolution.max(2);
+        let terrace_step = detail.terrace_step;
         let mut vertices: Vec<PlanetVertex> = Vec::with_capacity(n * n * 8);
         let mut indices: Vec<u32> = Vec::with_capacity(n * n * 12);
 
@@ -399,8 +591,19 @@ impl PlanetMesh {
         let du = (u_max - u_min) / (n as f64);
         let dv = (v_max - v_min) / (n as f64);
         let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f64)) as f32;
+        let block_uv = 2.0 / herocraft_world::FACE_BLOCKS as f64;
+        let standard = filter == herocraft_world::VisualizationFilter::Standard;
+        let precise = terrace_step <= 1.0 && standard;
+        let textured = detail.textured && precise;
 
-        let sample_cell = |ci: i32, cj: i32| -> (f64, bool, [f32; 4]) {
+        // Côté d'une cellule en blocs : les villes n'apparaissent que si elle est assez fine pour
+        // que leurs bâtiments (5 à 10 blocs) ne deviennent pas des pavés, les chemins (1 à 3 blocs)
+        // seulement près du bloc
+        let cell_blocks = du / block_uv;
+        let show_settlements = precise && cell_blocks <= MAX_SETTLEMENT_CELL_BLOCKS;
+        let show_roads = precise && cell_blocks <= MAX_ROAD_CELL_BLOCKS;
+
+        let sample_cell = |ci: i32, cj: i32| -> LodCell {
             let u_mid = u_min + ((ci as f64) + 0.5) * du;
             let v_mid = v_min + ((cj as f64) + 0.5) * dv;
             let sphere_dir: DVec3 = key.face.uv_to_sphere_direction(u_mid, v_mid);
@@ -410,8 +613,19 @@ impl PlanetMesh {
             let stepped = if is_water {
                 SEA_LEVEL_BLOCKS
             } else {
-                Self::quantize_terrace_elevation(raw_elevation)
+                Self::quantize_elevation(raw_elevation, terrace_step)
             };
+            let to_block = |t: f64| ((t + 1.0) / block_uv).floor() as i32;
+            let (bx, bz) = (to_block(u_mid), to_block(v_mid));
+            // Ville, village ou chemin sous le centre de la cellule : dessus et matière du plus
+            // haut bloc qu'ils posent dans cette colonne
+            if (show_settlements || show_roads) && !is_water {
+                if let Some((top, block)) = Self::structure_top(generator, key.face, bx, bz, raw_elevation, show_settlements, show_roads) {
+                    let color = crate::voxel_mesh::VoxelMeshBuilder::block_color(block, 2);
+                    let material = textured.then_some(block);
+                    return LodCell { height: top as f64, water: false, color, top: material, under: material };
+                }
+            }
             let color = match filter {
                 herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, stepped),
                 herocraft_world::VisualizationFilter::Tectonics => {
@@ -424,7 +638,18 @@ impl PlanetMesh {
                     generator.ocean_currents.sample(sphere_dir, is_water, continental).color
                 }
             };
-            (stepped, is_water, color)
+            // Matière du dessus du sol (herbe, sable, neige, roche) et celle qu'elle recouvre,
+            // pour les textures
+            let (top, under) = if textured && !is_water {
+                let column = herocraft_world::ColumnSample { dir: sphere_dir, lat, elevation: raw_elevation, biome };
+                match generator.surface_block(&column, key.face, bx, bz) {
+                    Some(b) => (Some(b), Some(subsoil(b))),
+                    None => (None, None),
+                }
+            } else {
+                (None, None)
+            };
+            LodCell { height: stepped, water: is_water, color, top, under }
         };
 
         // Pré-échantillonnage de la grille n x n
@@ -441,24 +666,46 @@ impl PlanetMesh {
 
         // Helper pour ajouter un quad (4 sommets + 2 triangles CCW)
         let add_quad = |verts: &mut Vec<PlanetVertex>, inds: &mut Vec<u32>,
-                        p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3,
-                        normal: Vec3, color: [f32; 4]| {
+                        p: [Vec3; 4],
+                        normal: Vec3, color: [f32; 4], texture: [u32; 4]| {
             let base_idx = verts.len() as u32;
             let norm_arr = normal.to_array();
-            verts.push(PlanetVertex { position: p0.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
-            verts.push(PlanetVertex { position: p1.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
-            verts.push(PlanetVertex { position: p2.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
-            verts.push(PlanetVertex { position: p3.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
-
-            // Triangle 1 CCW: (0, 1, 2)
-            inds.push(base_idx);
-            inds.push(base_idx + 1);
-            inds.push(base_idx + 2);
-
-            // Triangle 2 CCW: (0, 2, 3)
-            inds.push(base_idx);
-            inds.push(base_idx + 2);
-            inds.push(base_idx + 3);
+            for k in 0..4 {
+                verts.push(PlanetVertex { position: p[k].to_array(), normal: norm_arr, color, texture: texture[k], light: 0.0 });
+            }
+            inds.extend_from_slice(&[base_idx, base_idx + 1, base_idx + 2, base_idx, base_idx + 2, base_idx + 3]);
+        };
+        let untextured = [PlanetVertex::UNTEXTURED; 4];
+        // Texture d'un mur : u le long du bord, v vers le bas
+        let wall_texture = |block: BlockId, dir: usize| {
+            let layer = herocraft_common::blocks().face_texture(block, dir);
+            [(0, 0), (0, 16), (16, 16), (16, 0)].map(|(u, v)| PlanetVertex::pack_texture(layer, u, v))
+        };
+        let radius = |h: f64| base_radius + (h as f32) * altitude_scale;
+        // Mur vertical entre les directions a et b (unitaires), du haut `h_top` au bas `h_bot` (en
+        // blocs) ; `dir` : sa direction dans `FACE_DIRS`. Avec textures : un bloc de la matière du
+        // dessus (le flanc de l'herbe), puis celle d'en dessous.
+        let emit_wall = |verts: &mut Vec<PlanetVertex>, inds: &mut Vec<u32>, a: Vec3, b: Vec3, h_top: f64, h_bot: f64, cell: &LodCell, dir: usize| {
+            let quad = |hi: f64, lo: f64| [a * radius(hi), a * radius(lo), b * radius(lo), b * radius(hi)];
+            let top = quad(h_top, h_bot);
+            let normal = (top[3] - top[0]).cross(top[0] - top[1]).normalize_or_zero();
+            match (cell.top, cell.under) {
+                (Some(top_block), Some(under_block)) => {
+                    let shade = |block: BlockId| {
+                        let c = crate::voxel_mesh::VoxelMeshBuilder::block_color(block, dir);
+                        [c[0] * 0.78, c[1] * 0.78, c[2] * 0.78, 1.0]
+                    };
+                    let split = (h_top - 1.0).max(h_bot);
+                    add_quad(verts, inds, quad(h_top, split), normal, shade(top_block), wall_texture(top_block, dir));
+                    if split > h_bot {
+                        add_quad(verts, inds, quad(split, h_bot), normal, shade(under_block), wall_texture(under_block, dir));
+                    }
+                }
+                _ => {
+                    let c = cell.color;
+                    add_quad(verts, inds, top, normal, [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3]], untextured);
+                }
+            }
         };
 
         let skirt_depth = (base_radius * 0.015).max(0.25);
@@ -471,127 +718,131 @@ impl PlanetMesh {
                 let u0 = u_min + (i as f64) * du;
                 let u1 = u_min + ((i + 1) as f64) * du;
 
-                let (stepped, _is_water, color) = grid_cells[j * n + i];
-                let r_top = base_radius + (stepped as f32) * altitude_scale;
+                let cell = grid_cells[j * n + i];
+                let stepped = cell.height;
+                let color = cell.color;
 
                 // 4 directions des coins de la cellule sur la sphère
-                let d00 = key.face.uv_to_sphere_direction(u0, v0);
-                let d10 = key.face.uv_to_sphere_direction(u1, v0);
-                let d11 = key.face.uv_to_sphere_direction(u1, v1);
-                let d01 = key.face.uv_to_sphere_direction(u0, v1);
+                let to_vec = |d: DVec3| Vec3::new(d.x as f32, d.y as f32, d.z as f32);
+                let v00 = to_vec(key.face.uv_to_sphere_direction(u0, v0));
+                let v10 = to_vec(key.face.uv_to_sphere_direction(u1, v0));
+                let v11 = to_vec(key.face.uv_to_sphere_direction(u1, v1));
+                let v01 = to_vec(key.face.uv_to_sphere_direction(u0, v1));
 
-                let v00 = Vec3::new(d00.x as f32, d00.y as f32, d00.z as f32);
-                let v10 = Vec3::new(d10.x as f32, d10.y as f32, d10.z as f32);
-                let v11 = Vec3::new(d11.x as f32, d11.y as f32, d11.z as f32);
-                let v01 = Vec3::new(d01.x as f32, d01.y as f32, d01.z as f32);
-
-                let v_center = (v00 + v10 + v11 + v01).normalize();
-
-                // 1. Face supérieure horizontale de la colonne (plateau plat à hauteur H)
-                let p00_top = v00 * r_top;
-                let p10_top = v10 * r_top;
-                let p11_top = v11 * r_top;
-                let p01_top = v01 * r_top;
-
-                add_quad(&mut vertices, &mut indices, p00_top, p10_top, p11_top, p01_top, v_center, color);
-
-                // Couleur de roche / falaise pour les murs verticaux
+                // 1. Le dessus de la colonne est posé plus bas, par rangées (voir `MAX_MERGED_TOPS`)
                 let cliff_color = [color[0] * 0.55, color[1] * 0.55, color[2] * 0.55, color[3]];
 
-                // 2. Murs verticaux à 90° (les falaises perpendiculaires aux plateaux)
-
-                // Voisin Est (+U)
-                let (h_east, _, _) = if i + 1 < n {
-                    grid_cells[j * n + (i + 1)]
-                } else {
-                    sample_cell(i as i32 + 1, j as i32)
+                // 2. Murs verticaux à 90° vers les voisins plus bas (+U, -U, +V, -V)
+                let neighbor = |di: i32, dj: i32| -> f64 {
+                    let (ni, nj) = (i as i32 + di, j as i32 + dj);
+                    if (0..n as i32).contains(&ni) && (0..n as i32).contains(&nj) {
+                        grid_cells[nj as usize * n + ni as usize].height
+                    } else {
+                        sample_cell(ni, nj).height
+                    }
                 };
+                let h_east = neighbor(1, 0);
+                let h_west = neighbor(-1, 0);
+                let h_north = neighbor(0, 1);
+                let h_south = neighbor(0, -1);
                 if stepped > h_east {
-                    let r_bot = base_radius + (h_east as f32) * altitude_scale;
-                    let p10_bot = v10 * r_bot;
-                    let p11_bot = v11 * r_bot;
-                    let wall_norm = (p11_top - p10_top).cross(p10_top - p10_bot).normalize_or_zero();
-                    add_quad(&mut vertices, &mut indices, p10_top, p10_bot, p11_bot, p11_top, wall_norm, cliff_color);
+                    emit_wall(&mut vertices, &mut indices, v10, v11, stepped, h_east, &cell, 0);
                 }
-
-                // Voisin Ouest (-U)
-                let (h_west, _, _) = if i > 0 {
-                    grid_cells[j * n + (i - 1)]
-                } else {
-                    sample_cell(i as i32 - 1, j as i32)
-                };
                 if stepped > h_west {
-                    let r_bot = base_radius + (h_west as f32) * altitude_scale;
-                    let p01_bot = v01 * r_bot;
-                    let p00_bot = v00 * r_bot;
-                    let wall_norm = (p00_top - p01_top).cross(p01_top - p01_bot).normalize_or_zero();
-                    add_quad(&mut vertices, &mut indices, p01_top, p01_bot, p00_bot, p00_top, wall_norm, cliff_color);
+                    emit_wall(&mut vertices, &mut indices, v01, v00, stepped, h_west, &cell, 1);
                 }
-
-                // Voisin Nord (+V)
-                let (h_north, _, _) = if j + 1 < n {
-                    grid_cells[(j + 1) * n + i]
-                } else {
-                    sample_cell(i as i32, j as i32 + 1)
-                };
                 if stepped > h_north {
-                    let r_bot = base_radius + (h_north as f32) * altitude_scale;
-                    let p11_bot = v11 * r_bot;
-                    let p01_bot = v01 * r_bot;
-                    let wall_norm = (p01_top - p11_top).cross(p11_top - p11_bot).normalize_or_zero();
-                    add_quad(&mut vertices, &mut indices, p11_top, p11_bot, p01_bot, p01_top, wall_norm, cliff_color);
+                    emit_wall(&mut vertices, &mut indices, v11, v01, stepped, h_north, &cell, 4);
                 }
-
-                // Voisin Sud (-V)
-                let (h_south, _, _) = if j > 0 {
-                    grid_cells[(j - 1) * n + i]
-                } else {
-                    sample_cell(i as i32, j as i32 - 1)
-                };
                 if stepped > h_south {
-                    let r_bot = base_radius + (h_south as f32) * altitude_scale;
-                    let p00_bot = v00 * r_bot;
-                    let p10_bot = v10 * r_bot;
-                    let wall_norm = (p10_top - p00_top).cross(p00_top - p00_bot).normalize_or_zero();
-                    add_quad(&mut vertices, &mut indices, p00_top, p00_bot, p10_bot, p10_top, wall_norm, cliff_color);
+                    emit_wall(&mut vertices, &mut indices, v00, v10, stepped, h_south, &cell, 5);
                 }
 
                 // Jupes de bordure extérieure (Skirts) pour garantir l'absence de fissure entre niveaux de LOD
+                let mut skirt = |a: Vec3, b: Vec3, h_other: f64| {
+                    let r_base = radius(stepped.min(h_other));
+                    let q = [a * r_base, a * (r_base - skirt_depth), b * (r_base - skirt_depth), b * r_base];
+                    let normal = (q[3] - q[0]).cross(q[0] - q[1]).normalize_or_zero();
+                    add_quad(&mut vertices, &mut indices, q, normal, cliff_color, untextured);
+                };
                 if i == 0 {
-                    let r_base_west = base_radius + (stepped.min(h_west) as f32) * altitude_scale;
-                    let p_top_a = v01 * r_base_west;
-                    let p_top_b = v00 * r_base_west;
-                    let p_bot_a = v01 * (r_base_west - skirt_depth);
-                    let p_bot_b = v00 * (r_base_west - skirt_depth);
-                    let skirt_norm = (p_top_b - p_top_a).cross(p_top_a - p_bot_a).normalize_or_zero();
-                    add_quad(&mut vertices, &mut indices, p_top_a, p_bot_a, p_bot_b, p_top_b, skirt_norm, cliff_color);
+                    skirt(v01, v00, h_west);
                 }
                 if i == n - 1 {
-                    let r_base_east = base_radius + (stepped.min(h_east) as f32) * altitude_scale;
-                    let p_top_a = v10 * r_base_east;
-                    let p_top_b = v11 * r_base_east;
-                    let p_bot_a = v10 * (r_base_east - skirt_depth);
-                    let p_bot_b = v11 * (r_base_east - skirt_depth);
-                    let skirt_norm = (p_top_b - p_top_a).cross(p_top_a - p_bot_a).normalize_or_zero();
-                    add_quad(&mut vertices, &mut indices, p_top_a, p_bot_a, p_bot_b, p_top_b, skirt_norm, cliff_color);
+                    skirt(v10, v11, h_east);
                 }
                 if j == 0 {
-                    let r_base_south = base_radius + (stepped.min(h_south) as f32) * altitude_scale;
-                    let p_top_a = v00 * r_base_south;
-                    let p_top_b = v10 * r_base_south;
-                    let p_bot_a = v00 * (r_base_south - skirt_depth);
-                    let p_bot_b = v10 * (r_base_south - skirt_depth);
-                    let skirt_norm = (p_top_b - p_top_a).cross(p_top_a - p_bot_a).normalize_or_zero();
-                    add_quad(&mut vertices, &mut indices, p_top_a, p_bot_a, p_bot_b, p_top_b, skirt_norm, cliff_color);
+                    skirt(v00, v10, h_south);
                 }
                 if j == n - 1 {
-                    let r_base_north = base_radius + (stepped.min(h_north) as f32) * altitude_scale;
-                    let p_top_a = v11 * r_base_north;
-                    let p_top_b = v01 * r_base_north;
-                    let p_bot_a = v11 * (r_base_north - skirt_depth);
-                    let p_bot_b = v01 * (r_base_north - skirt_depth);
-                    let skirt_norm = (p_top_b - p_top_a).cross(p_top_a - p_bot_a).normalize_or_zero();
-                    add_quad(&mut vertices, &mut indices, p_top_a, p_bot_a, p_bot_b, p_top_b, skirt_norm, cliff_color);
+                    skirt(v11, v01, h_north);
+                }
+            }
+        }
+
+        // Dessus des colonnes : les cellules voisines d'une rangée de même hauteur et même matière
+        // forment un seul quad, qui répète la texture une fois par cellule
+        {
+            herocraft_common::prof_scope!("mesh::lod_patch::tops");
+            let to_vec = |d: DVec3| Vec3::new(d.x as f32, d.y as f32, d.z as f32);
+            // Au plus 15 blocs : la texture répétée tient sur 8 bits, et le quad plat ne s'écarte
+            // de la courbure que d'un centième de bloc
+            let max_run = ((MAX_MERGED_BLOCKS / cell_blocks) as usize).clamp(1, MAX_MERGED_BLOCKS as usize);
+            let same = |a: &LodCell, b: &LodCell| a.height == b.height && a.water == b.water && a.top == b.top && a.color == b.color;
+            for j in 0..n {
+                let v0 = v_min + (j as f64) * dv;
+                let v1 = v_min + ((j + 1) as f64) * dv;
+                let mut i = 0;
+                while i < n {
+                    let start = i;
+                    let cell = grid_cells[j * n + i];
+                    let max_run = max_run;
+                    while i + 1 < n && i + 1 - start < max_run && same(&grid_cells[j * n + i + 1], &cell) {
+                        i += 1;
+                    }
+                    let run = i + 1 - start;
+                    let (u0, u1) = (u_min + start as f64 * du, u_min + (i + 1) as f64 * du);
+                    let d = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)].map(|(u, v)| to_vec(key.face.uv_to_sphere_direction(u, v)));
+                    let r_top = radius(cell.height);
+                    let texture = match cell.top {
+                        Some(block) => {
+                            let layer = herocraft_common::blocks().face_texture(block, 2);
+                            let len = (16 * run) as u8;
+                            [(0, 0), (len, 0), (len, 16), (0, 16)].map(|(u, v)| PlanetVertex::pack_texture(layer, u, v))
+                        }
+                        None => untextured,
+                    };
+                    let normal = (d[0] + d[1] + d[2] + d[3]).normalize();
+                    add_quad(&mut vertices, &mut indices, d.map(|x| x * r_top), normal, cell.color, texture);
+                    i += 1;
+                }
+            }
+        }
+
+        // 3. Arbres dont le tronc est dans le patch, posés sur la cellule sous leur tronc
+        if detail.trees != TreeDetail::None && standard {
+            herocraft_common::prof_scope!("mesh::lod_patch::trees");
+            let to_block = |t: f64| ((t + 1.0) / block_uv).round() as i32;
+            let (x0, x1, z0, z1) = (to_block(u_min), to_block(u_max), to_block(v_min), to_block(v_max));
+            let field = generator.vegetation_field(key.face, x0..x1, z0..z1, None);
+            let corner = |x: f64, y: f64, z: f64| -> Vec3 {
+                let d = key.face.uv_to_sphere_direction(-1.0 + x * block_uv, -1.0 + z * block_uv);
+                Vec3::new(d.x as f32, d.y as f32, d.z as f32) * radius(y)
+            };
+            for tree in field.trees() {
+                if !(x0..x1).contains(&tree.x) || !(z0..z1).contains(&tree.z) {
+                    continue;
+                }
+                let ci = (((tree.x - x0) as f64 / cell_blocks) as usize).min(n - 1);
+                let cj = (((tree.z - z0) as f64 / cell_blocks) as usize).min(n - 1);
+                let cell = &grid_cells[cj * n + ci];
+                if cell.water || cell.top.is_none() && textured {
+                    continue;
+                }
+                let lift = cell.height - tree.ground as f64;
+                match detail.trees {
+                    TreeDetail::Blocks => emit_tree_blocks(&mut vertices, &mut indices, tree, lift, &corner),
+                    _ => emit_tree_boxes(&mut vertices, &mut indices, tree, lift, &corner),
                 }
             }
         }
@@ -603,6 +854,86 @@ impl PlanetMesh {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Les patchs fins montrent les villes : une colonne de rempart ou de maison dépasse le sol
+    #[test]
+    fn structure_top_sees_town_buildings() {
+        let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 42, ..Default::default() });
+        let face = PlanetFace::PosZ;
+        let regions = herocraft_world::FACE_BLOCKS / 2048;
+        let town = (0..regions * regions)
+            .filter_map(|r| generator.structures.region_settlement(&generator, face, r % regions, r / regions))
+            .next()
+            .expect("un établissement sur la face");
+        let b = town.bounds;
+        let raised = (b.z0..b.z1).step_by(2).flat_map(|z| (b.x0..b.x1).step_by(2).map(move |x| (x, z))).any(|(x, z)| {
+            let column = generator.sample_block_column(face, x, z);
+            let ground = column.elevation.floor() as i32;
+            PlanetMesh::structure_top(&generator, face, x, z, column.elevation, true, false).is_some_and(|(top, _)| top > ground)
+        });
+        assert!(raised, "au moins un bâtiment doit dépasser du sol");
+    }
+
+    /// Vue de dessus des patchs au-dessus d'une ville : ancienne précision normale, fine et 1:1.
+    /// `HEROCRAFT_CAPTURES=dossier cargo test --release -p herocraft_client apercu_villes_lod -- --ignored`
+    #[test]
+    #[ignore]
+    fn apercu_villes_lod() {
+        let Ok(dir) = std::env::var("HEROCRAFT_CAPTURES") else { return };
+        let seed: u64 = std::env::var("HEROCRAFT_GRAINE").ok().and_then(|s| s.parse().ok()).unwrap_or(42);
+        let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed, ..Default::default() });
+        let face = PlanetFace::PosZ;
+        let regions = herocraft_world::FACE_BLOCKS / 2048;
+        let town = (0..regions * regions)
+            .filter_map(|r| generator.structures.region_settlement(&generator, face, r % regions, r / regions))
+            .find(|s| s.kind == herocraft_world::SettlementKind::Town)
+            .expect("une ville sur la face");
+        // Nœud de 128 blocs de côté centré au mieux sur la ville
+        let level = herocraft_world::VOXEL_LEVEL - 2;
+        let side = herocraft_world::FACE_BLOCKS >> level;
+        let key = herocraft_world::QuadNodeKey::new(face, level, (town.center.0 / side) as u32, (town.center.1 / side) as u32);
+        let configs = [PatchDetail::plain(16, PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT), PatchDetail { textured: true, trees: TreeDetail::Boxes, ..PatchDetail::plain(side as usize / 2, 1.0) }, PatchDetail { textured: true, trees: TreeDetail::Blocks, ..PatchDetail::plain(side as usize, 1.0) }];
+        let px = 4usize;
+        let panel = side as usize * px;
+        let (w, h) = (panel * configs.len() + 8 * (configs.len() - 1), panel);
+        let mut img = vec![30u8; w * h * 3];
+        let (u0, u1, v0, v1) = key.uv_bounds();
+        for (n, &detail) in configs.iter().enumerate() {
+            let mesh = PlanetMesh::generate_lod_patch_stepped(&generator, &key, 1.0, detail, herocraft_world::VisualizationFilter::Standard);
+            let ox = n * (panel + 8);
+            let base = 1.0f32;
+            for quad in mesh.vertices.chunks(4) {
+                let c = (Vec3::from(quad[0].position) + Vec3::from(quad[2].position)) * 0.5;
+                let up = c.normalize();
+                if Vec3::from(quad[0].normal).dot(up) < 0.95 {
+                    continue;
+                }
+                let (Some((a, b)), Some((e, f))) = (
+                    face.project_to_face_uv(Vec3::from(quad[0].position).as_dvec3().normalize()),
+                    face.project_to_face_uv(Vec3::from(quad[2].position).as_dvec3().normalize()),
+                ) else { continue };
+                let to_px = |t: f64, lo: f64, hi: f64| (((t - lo) / (hi - lo)) * panel as f64).round().clamp(0.0, panel as f64) as usize;
+                let (x0, x1) = (to_px(a.min(e), u0, u1), to_px(a.max(e), u0, u1));
+                let (y0, y1) = (to_px(b.min(f), v0, v1), to_px(b.max(f), v0, v1));
+                let height = (c.length() - base) / (base * std::f32::consts::FRAC_PI_4 * 2.0 / herocraft_world::FACE_BLOCKS as f32);
+                let shade = (0.55 + (height - 100.0) / 120.0).clamp(0.45, 1.15);
+                let col = quad[0].color;
+                let rgb = [0, 1, 2].map(|k| ((col[k] * shade).clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0) as u8);
+                for y in y0..y1 {
+                    for x in x0..x1 {
+                        let i = ((h - 1 - y) * w + ox + x) * 3;
+                        img[i..i + 3].copy_from_slice(&rgb);
+                    }
+                }
+            }
+        }
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = std::fs::File::create(std::path::Path::new(&dir).join(format!("villes-lod-{seed}.png"))).unwrap();
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w as u32, h as u32);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(&img).unwrap();
+    }
 
     #[test]
     fn test_packed_vertex_round_trip() {

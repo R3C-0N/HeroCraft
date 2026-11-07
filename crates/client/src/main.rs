@@ -546,6 +546,7 @@ fn main() {
                         if let Some(b) = bench.as_mut() {
                             if let Some(start) = b.before_frame(dt, &mut camera, &mut ui_state, &generator) {
                                 lod_manager.set_distance_preset(ui_state.video_settings.lod_distance);
+                                lod_manager.set_precision(ui_state.video_settings.lod_precision);
                                 if start.reset_creatures {
                                     solo_creatures = herocraft_world::CreatureWorld::new(camera.base_radius as f64, current_seed, creature_registry.clone());
                                     creature_animator = creatures::CreatureAnimator::default();
@@ -1128,7 +1129,12 @@ fn main() {
                                 }
                                 UiAction::SetLodDistance => {
                                     lod_manager.set_distance_preset(ui_state.video_settings.lod_distance);
+                                    lod_manager.set_precision(ui_state.video_settings.lod_precision);
                                     info!("Paramètre Distance LOD mis à jour : {:?}", ui_state.video_settings.lod_distance);
+                                }
+                                UiAction::SetLodPrecision => {
+                                    lod_manager.set_precision(ui_state.video_settings.lod_precision);
+                                    info!("Paramètre Précision LOD mis à jour : {:?}", ui_state.video_settings.lod_precision);
                                 }
                                 UiAction::SetFpsLimit => {
                                     info!("Paramètre Limite FPS mis à jour : {:?}", ui_state.video_settings.fps_limit);

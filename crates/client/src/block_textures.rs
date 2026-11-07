@@ -181,11 +181,12 @@ impl BlockTextureSet {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
         });
-        // Texels nets de près, fondus de loin (sans scintillement)
+        // Texels nets de près, fondus de loin (sans scintillement). Répétée : le dessus d'une rangée
+        // de blocs semblables du relief lointain est un seul quad qui répète la texture.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Block Texture Sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Linear,

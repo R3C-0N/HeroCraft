@@ -27,6 +27,7 @@ pub enum UiAction {
     // Actions du sous-menu Options > Affichage
     ToggleVsync,
     SetLodDistance,
+    SetLodPrecision,
     ToggleFullscreen,
     SetFpsLimit,
     ResumeGame,
@@ -113,6 +114,30 @@ impl LodDistanceSetting {
     }
 }
 
+/// Précision du relief lointain (patchs polygonaux au-delà des chunks voxel)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LodPrecisionSetting {
+    /// Couleurs seules, cellules de 4 blocs et plus (léger)
+    Normale,
+    /// Allure des voxels (blocs texturés, arbres) jusqu'à ~380 blocs, cellules de 2 blocs et
+    /// arbres simplifiés jusqu'à ~770, couleurs au-delà (qualité ultra)
+    Ultra,
+    /// Test : allure des voxels jusqu'à ~1 300 blocs (très lourd)
+    Exacte,
+}
+
+impl LodPrecisionSetting {
+    pub const ALL: [LodPrecisionSetting; 3] = [Self::Normale, Self::Ultra, Self::Exacte];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Normale => "Normale",
+            Self::Ultra => "Ultra",
+            Self::Exacte => "1:1 (test)",
+        }
+    }
+}
+
 /// Durée d'affichage du dernier à-coup sous le compteur FPS, en secondes
 const HITCH_DISPLAY_SECS: f32 = 5.0;
 
@@ -129,6 +154,8 @@ pub enum GraphicsQuality {
     Moyenne,
     /// Tous les effets
     Haute,
+    /// Tous les effets, et le relief lointain vu du sol avec l'allure des blocs proches
+    Ultra,
 }
 
 /// Effets réglés par un préréglage de qualité
@@ -139,6 +166,7 @@ pub struct QualityEffects {
     pub god_rays: bool,
     pub bloom: bool,
     pub lod_distance: LodDistanceSetting,
+    pub lod_precision: LodPrecisionSetting,
     /// Ombres du relief fines (`ShadowSettings::fine`)
     pub fine_shadows: bool,
     /// Rayons crépusculaires fins (`AtmosphereSettings::god_rays_fine`)
@@ -146,13 +174,14 @@ pub struct QualityEffects {
 }
 
 impl GraphicsQuality {
-    pub const ALL: [GraphicsQuality; 3] = [GraphicsQuality::Basse, GraphicsQuality::Moyenne, GraphicsQuality::Haute];
+    pub const ALL: [GraphicsQuality; 4] = [GraphicsQuality::Basse, GraphicsQuality::Moyenne, GraphicsQuality::Haute, GraphicsQuality::Ultra];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Basse => "Basse",
             Self::Moyenne => "Moyenne",
             Self::Haute => "Haute",
+            Self::Ultra => "Ultra",
         }
     }
 
@@ -167,6 +196,7 @@ impl GraphicsQuality {
                 god_rays: false,
                 bloom: false,
                 lod_distance: LodDistanceSetting::Courte,
+                lod_precision: LodPrecisionSetting::Normale,
                 fine_shadows: false,
                 fine_god_rays: false,
             },
@@ -176,6 +206,7 @@ impl GraphicsQuality {
                 god_rays: false,
                 bloom: true,
                 lod_distance: LodDistanceSetting::Normale,
+                lod_precision: LodPrecisionSetting::Normale,
                 fine_shadows: false,
                 fine_god_rays: false,
             },
@@ -185,9 +216,11 @@ impl GraphicsQuality {
                 god_rays: true,
                 bloom: true,
                 lod_distance: LodDistanceSetting::Normale,
+                lod_precision: LodPrecisionSetting::Normale,
                 fine_shadows: fine,
                 fine_god_rays: fine,
             },
+            Self::Ultra => QualityEffects { lod_precision: LodPrecisionSetting::Ultra, ..Self::Haute.effects(integrated_gpu) },
         }
     }
 }
@@ -214,6 +247,8 @@ pub struct VideoSettings {
     pub vsync: bool,
     pub fullscreen: bool,
     pub lod_distance: LodDistanceSetting,
+    /// Précision des patchs du relief lointain (`PlanetLodManager::set_precision`)
+    pub lod_precision: LodPrecisionSetting,
     pub fps_limit: FpsLimitSetting,
     /// Aplatissement de la planète vue du sol : 0 = vraie courbure, 1 = horizon le plus lointain
     /// possible sans voir les antipodes (renderer.rs, `planet_flattening`)
@@ -229,6 +264,7 @@ impl Default for VideoSettings {
             vsync: true,
             fullscreen: false,
             lod_distance: LodDistanceSetting::Normale,
+            lod_precision: LodPrecisionSetting::Normale,
             fps_limit: FpsLimitSetting::Fps60,
             flattening: 1.0,
             msaa: true,
@@ -782,6 +818,7 @@ impl UiState {
             god_rays,
             bloom: self.post_settings.bloom_enabled,
             lod_distance: self.video_settings.lod_distance,
+            lod_precision: self.video_settings.lod_precision,
             fine_shadows: if shadows { self.shadow_settings.fine } else { preset.fine_shadows },
             fine_god_rays: if god_rays { self.atmosphere_settings.god_rays_fine } else { preset.fine_god_rays },
         }
@@ -792,8 +829,8 @@ impl UiState {
         GraphicsQuality::ALL.into_iter().find(|&q| q.effects(self.integrated_gpu) == self.quality_effects(q))
     }
 
-    /// Applique un préréglage de qualité. Renvoie vrai si la distance de détail a changé (le LOD
-    /// est alors à recalculer).
+    /// Applique un préréglage de qualité. Renvoie vrai si la distance ou la précision du relief a
+    /// changé (le LOD est alors à recalculer).
     pub fn apply_graphics_quality(&mut self, quality: GraphicsQuality) -> bool {
         let e = quality.effects(self.integrated_gpu);
         self.shadow_settings.enabled = e.shadows;
@@ -802,8 +839,9 @@ impl UiState {
         self.atmosphere_settings.god_rays = e.god_rays;
         self.atmosphere_settings.god_rays_fine = e.fine_god_rays;
         self.post_settings.bloom_enabled = e.bloom;
-        let lod_changed = self.video_settings.lod_distance != e.lod_distance;
+        let lod_changed = self.video_settings.lod_distance != e.lod_distance || self.video_settings.lod_precision != e.lod_precision;
         self.video_settings.lod_distance = e.lod_distance;
+        self.video_settings.lod_precision = e.lod_precision;
         lod_changed
     }
 
@@ -1959,6 +1997,13 @@ impl UiState {
             }
             ui.end_row();
 
+            row_label(ui, "Précision du relief lointain", "Distance jusqu'à laquelle le terrain lointain garde l'allure des blocs proches (textures, arbres) : Normale : couleurs seules (léger), Ultra : ~380 blocs puis arbres simplifiés jusqu'à ~770, 1:1 : ~1 300 (test, très lourd)");
+            let precision_choices = LodPrecisionSetting::ALL.map(|p| (p, p.label()));
+            if choice_row(ui, &mut self.video_settings.lod_precision, &precision_choices) {
+                *action = Some(UiAction::SetLodPrecision);
+            }
+            ui.end_row();
+
             row_label(ui, "Limite d'images", "Plafond d'images par seconde (s'ajoute à la V-Sync)");
             let fps_choices = [FpsLimitSetting::Fps60, FpsLimitSetting::Fps120, FpsLimitSetting::Unlimited].map(|f| (f, f.label()));
             if choice_row(ui, &mut self.video_settings.fps_limit, &fps_choices) {
@@ -2948,6 +2993,11 @@ mod tests {
         let mut ui = UiState::new(1);
         // Par défaut : tous les effets, c'est la qualité haute
         assert_eq!(ui.graphics_quality(), Some(GraphicsQuality::Haute));
+        assert!(ui.apply_graphics_quality(GraphicsQuality::Ultra), "le relief lointain passe en précision ultra");
+        assert_eq!(ui.video_settings.lod_precision, LodPrecisionSetting::Ultra);
+        assert_eq!(ui.graphics_quality(), Some(GraphicsQuality::Ultra));
+        assert!(ui.apply_graphics_quality(GraphicsQuality::Haute), "retour à la précision normale");
+        assert_eq!(ui.video_settings.lod_precision, LodPrecisionSetting::Normale);
         assert!(ui.apply_graphics_quality(GraphicsQuality::Basse), "la distance de détail passe à courte");
         assert_eq!(ui.graphics_quality(), Some(GraphicsQuality::Basse));
         assert!(!ui.shadow_settings.enabled && !ui.atmosphere_settings.god_rays && !ui.post_settings.bloom_enabled);
