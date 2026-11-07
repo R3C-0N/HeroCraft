@@ -21,7 +21,10 @@ pub struct VoxelBuildResult {
     /// Version des patchs au lancement (incrémentée par `set_precision`)
     pub patch_epoch: u32,
     pub key: QuadNodeKey,
-    pub mesh: PlanetMesh,
+    /// `None` : patch détaillé abandonné, sa feuille n'étant plus affichée
+    pub mesh: Option<PlanetMesh>,
+    /// Patch détaillé (`patch_detail`), sinon patch rapide (`quick_detail`)
+    pub detailed: bool,
 }
 
 /// Colonne de chunks voxel maillée en tâche de fond
@@ -79,6 +82,12 @@ pub fn patch_detail(level: u8, precision: crate::ui::LodPrecisionSetting) -> Pat
     }
 }
 
+/// Patch rapide d'un niveau : couleurs seules, calculé en ~1 ms. Le terrain bascule dès que les
+/// patchs rapides de ses nouvelles feuilles sont prêts, les détaillés les remplacent ensuite un à un.
+fn quick_detail(level: u8) -> PatchDetail {
+    PatchDetail::plain(patch_resolution(level), 1.0)
+}
+
 /// Patchs gardés en cache avant nettoyage : moins quand ils sont lourds
 fn lod_cache_limit(precision: crate::ui::LodPrecisionSetting) -> usize {
     match precision {
@@ -104,6 +113,14 @@ pub struct PlanetLodManager {
     stale_patches: HashMap<QuadNodeKey, (u32, PlanetMesh)>,
     /// Redemander les patchs de toutes les feuilles à la prochaine mise à jour
     refresh_patches: bool,
+    /// Patchs du cache déjà à leur finesse définitive
+    detailed: HashSet<QuadNodeKey>,
+    /// Patchs détaillés en cours de calcul
+    pending_details: HashSet<QuadNodeKey>,
+    /// Pool des patchs détaillés, pour qu'ils ne retardent pas les patchs rapides
+    detail_pool: rayon::ThreadPool,
+    /// Feuilles affichées ou attendues : un patch détaillé qui n'en fait plus partie est abandonné
+    wanted: Arc<std::sync::RwLock<HashSet<QuadNodeKey>>>,
     last_camera_pos: Vec3,
     last_evaluated_pos: Vec3,
     time_since_eval: f32,
@@ -148,6 +165,11 @@ impl PlanetLodManager {
             .build()
             .expect("Échec d'initialisation du pool de patchs Rayon");
         let (patch_tx, patch_rx) = std::sync::mpsc::channel::<VoxelBuildResult>();
+        let detail_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads((num_cpus / 3).clamp(1, 3))
+            .thread_name(|idx| format!("herocraft-detail-{}", idx))
+            .build()
+            .expect("Échec d'initialisation du pool de patchs détaillés Rayon");
 
         let mut mgr = Self {
             quadtree: PlanetQuadTree::new(base_radius as f64),
@@ -161,6 +183,10 @@ impl PlanetLodManager {
             patch_epoch: 0,
             stale_patches: HashMap::new(),
             refresh_patches: false,
+            detailed: HashSet::new(),
+            pending_details: HashSet::new(),
+            detail_pool,
+            wanted: Arc::new(std::sync::RwLock::new(HashSet::new())),
             last_camera_pos: Vec3::splat(f32::NAN),
             last_evaluated_pos: Vec3::splat(f32::NAN),
             time_since_eval: 0.0,
@@ -224,8 +250,11 @@ impl PlanetLodManager {
         self.patch_epoch = self.patch_epoch.wrapping_add(1);
         // Changements rapprochés : les patchs les plus récents remplacent les plus anciens
         let old = std::mem::take(&mut self.lod_cache);
-        self.stale_patches.extend(old.into_iter().map(|(key, mesh)| (key, (old_epoch, mesh))));
+        let revisions: Vec<u32> = old.keys().map(|k| Self::patch_revision(old_epoch, self.detailed.contains(k))).collect();
+        self.stale_patches.extend(old.into_iter().zip(revisions).map(|((key, mesh), rev)| (key, (rev, mesh))));
         self.pending_patches.clear();
+        self.pending_details.clear();
+        self.detailed.clear();
         self.refresh_patches = true;
     }
 
@@ -254,6 +283,8 @@ impl PlanetLodManager {
         self.pending_leaves = None;
         self.stale_patches.clear();
         self.refresh_patches = false;
+        self.detailed.clear();
+        self.pending_details.clear();
         self.generation += 1;
         self.column_edits.clear();
         self.revisions.clear();
@@ -383,9 +414,22 @@ impl PlanetLodManager {
             self.spawn_voxel_task(key, generator);
         }
         while let Ok(res) = self.patch_rx.try_recv() {
-            if res.generation == self.generation && res.patch_epoch == self.patch_epoch {
+            if res.generation != self.generation || res.patch_epoch != self.patch_epoch {
+                continue;
+            }
+            if res.detailed {
+                self.pending_details.remove(&res.key);
+                // Le patch rapide est remplacé sur place : même feuille, nouveau maillage
+                if let Some(mesh) = res.mesh {
+                    if self.lod_cache.contains_key(&res.key) {
+                        self.lod_cache.insert(res.key, mesh);
+                        self.detailed.insert(res.key);
+                        received_new_mesh = true;
+                    }
+                }
+            } else if let Some(mesh) = res.mesh {
                 self.pending_patches.remove(&res.key);
-                self.lod_cache.insert(res.key, res.mesh);
+                self.lod_cache.insert(res.key, mesh);
             }
         }
 
@@ -431,7 +475,6 @@ impl PlanetLodManager {
         if let Some(new_leaves) = changed_leaves {
             herocraft_common::prof_value!("lod.feuilles", new_leaves.len());
             let filter = self.active_filter;
-            let precision = self.precision;
             let base_radius = self.base_radius;
             let generation = self.generation;
             let patch_epoch = self.patch_epoch;
@@ -453,7 +496,7 @@ impl PlanetLodManager {
                     missing_patch_keys
                         .into_par_iter()
                         .map(|key| {
-                            let patch = PlanetMesh::generate_lod_patch_stepped(&gen, &key, base_radius, patch_detail(key.level, precision), filter);
+                            let patch = PlanetMesh::generate_lod_patch_stepped(&gen, &key, base_radius, quick_detail(key.level), filter);
                             (key, patch)
                         })
                         .collect()
@@ -471,8 +514,8 @@ impl PlanetLodManager {
                         let tx = self.patch_tx.clone();
                         let task_gen = generator.clone();
                         self.patch_pool.spawn(move || {
-                            let mesh = PlanetMesh::generate_lod_patch_stepped(&task_gen, &key, base_radius, patch_detail(key.level, precision), filter);
-                            let _ = tx.send(VoxelBuildResult { generation, patch_epoch, key, mesh });
+                            let mesh = PlanetMesh::generate_lod_patch_stepped(&task_gen, &key, base_radius, quick_detail(key.level), filter);
+                            let _ = tx.send(VoxelBuildResult { generation, patch_epoch, key, mesh: Some(mesh), detailed: false });
                         });
                     }
                 }
@@ -487,6 +530,7 @@ impl PlanetLodManager {
             }
 
             self.pending_leaves = Some(new_leaves);
+            self.update_wanted();
         }
 
         // 3. Bascule vers les nouvelles feuilles dès que tous leurs patchs sont prêts
@@ -497,6 +541,8 @@ impl PlanetLodManager {
                 leaves_switched = true;
                 // Plus aucune feuille affichée n'a besoin des patchs de l'ancienne précision
                 self.stale_patches.clear();
+                self.update_wanted();
+                self.spawn_detail_tasks(generator);
             }
         }
 
@@ -518,6 +564,8 @@ impl PlanetLodManager {
                     .collect();
                 if self.lod_cache.len() > lod_limit {
                     self.lod_cache.retain(|k, _| active_keys.contains(k) || k.level == 0);
+                    let cache = &self.lod_cache;
+                    self.detailed.retain(|k| cache.contains_key(k));
                 }
                 if self.voxel_cache.len() > 200 {
                     self.voxel_cache.retain(|k, _| active_keys.contains(k));
@@ -526,6 +574,49 @@ impl PlanetLodManager {
         }
 
         true
+    }
+
+    /// Révision d'un patch dans `LodMeshId` : sa version (précision) et sa finesse, pour que le GPU
+    /// ne confonde pas un patch refait avec l'ancien
+    fn patch_revision(epoch: u32, detailed: bool) -> u32 {
+        epoch.wrapping_mul(2) | detailed as u32
+    }
+
+    /// Feuilles affichées ou attendues, lues par les tâches de patchs détaillés
+    fn update_wanted(&mut self) {
+        let keys: HashSet<QuadNodeKey> = self.current_leaves.iter().chain(self.pending_leaves.iter().flatten()).map(|l| l.key).collect();
+        if let Ok(mut wanted) = self.wanted.write() {
+            *wanted = keys;
+        }
+    }
+
+    /// Demande les patchs détaillés des feuilles affichées qui ne le sont pas encore, des plus
+    /// fins (les plus proches) aux plus grossiers
+    fn spawn_detail_tasks(&mut self, generator: &PlanetWorldGenerator) {
+        let mut keys: Vec<QuadNodeKey> = self
+            .current_leaves
+            .iter()
+            .map(|l| l.key)
+            .filter(|k| self.lod_cache.contains_key(k) && !self.detailed.contains(k) && !self.pending_details.contains(k))
+            .collect();
+        keys.sort_by_key(|k| std::cmp::Reverse(k.level));
+        let (generation, patch_epoch, precision) = (self.generation, self.patch_epoch, self.precision);
+        let (base_radius, filter) = (self.base_radius, self.active_filter);
+        for key in keys {
+            let detail = patch_detail(key.level, precision);
+            if detail == quick_detail(key.level) {
+                // Le patch rapide est déjà le définitif
+                self.detailed.insert(key);
+                continue;
+            }
+            self.pending_details.insert(key);
+            let (tx, gen, wanted) = (self.patch_tx.clone(), generator.clone(), self.wanted.clone());
+            self.detail_pool.spawn(move || {
+                let still_wanted = wanted.read().map(|w| w.contains(&key)).unwrap_or(true);
+                let mesh = still_wanted.then(|| PlanetMesh::generate_lod_patch_stepped(&gen, &key, base_radius, detail, filter));
+                let _ = tx.send(VoxelBuildResult { generation, patch_epoch, key, mesh, detailed: true });
+            });
+        }
     }
 
     /// Lance le maillage d'une colonne voxel en tâche de fond (sauf s'il est déjà en cours)
@@ -570,9 +661,12 @@ impl PlanetLodManager {
                     // La révision d'un patch est sa version (précision) : un patch refait n'est
                     // pas confondu avec l'ancien déjà envoyé au GPU.
                     None => match self.lod_cache.get(&leaf.key) {
-                        Some(mesh) => Some((LodMeshId { generation, key: leaf.key, voxel: false, revision: self.patch_epoch }, mesh)),
-                        None => self.stale_patches.get(&leaf.key).map(|(epoch, mesh)| {
-                            (LodMeshId { generation, key: leaf.key, voxel: false, revision: *epoch }, mesh)
+                        Some(mesh) => {
+                            let revision = Self::patch_revision(self.patch_epoch, self.detailed.contains(&leaf.key));
+                            Some((LodMeshId { generation, key: leaf.key, voxel: false, revision }, mesh))
+                        }
+                        None => self.stale_patches.get(&leaf.key).map(|(revision, mesh)| {
+                            (LodMeshId { generation, key: leaf.key, voxel: false, revision: *revision }, mesh)
                         }),
                     },
                 }
@@ -815,6 +909,11 @@ mod tests {
         let shown = lod.visible_meshes().len();
         assert!(leaves > 6);
 
+        let start = Instant::now();
+        while !lod.pending_details.is_empty() && start.elapsed().as_secs() < 120 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            lod.update(eye, &generator, &mut cache, 0.016, None);
+        }
         let mid = lod.current_leaves.iter().find(|l| l.kind == QuadLeafKind::LodPatch && l.key.level == VOXEL_LEVEL - 2).unwrap().key;
         let before_mid = lod.lod_cache[&mid].vertices.len();
         lod.set_precision(P::Fine);
@@ -828,6 +927,11 @@ mod tests {
             lod.update(eye, &generator, &mut cache, 0.016, None);
         }
         assert!(lod.pending_leaves.is_none(), "les patchs fins finissent par remplacer les anciens");
+        while !lod.pending_details.is_empty() && start.elapsed().as_secs() < 120 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            lod.update(eye, &generator, &mut cache, 0.016, None);
+        }
+        assert!(lod.pending_details.is_empty(), "les patchs détaillés finissent par arriver");
         assert!(lod.stale_patches.is_empty());
         // Les patchs de 128 blocs sont passés d'une cellule pour 2 blocs à une par bloc : plus de sommets
         let mid = lod.current_leaves.iter().find(|l| l.kind == QuadLeafKind::LodPatch && l.key.level == VOXEL_LEVEL - 2).unwrap();
