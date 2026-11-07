@@ -26,6 +26,6 @@ pub use loot::{LootRng, LootTable};
 pub use math::*;
 pub use protocol::*;
 pub use skills::{LearnError, SkillWheel};
-pub use villager::{professions, Profession, ProfessionRegistry, Trade, VillagerCard, Workplace};
+pub use villager::{professions, Profession, ProfessionRegistry, Trade, VillagerCard, Workplace, VILLAGER_HEARING_BLOCKS};
 pub use voxel::*;
 pub use weather::WeatherKind;

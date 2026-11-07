@@ -38,6 +38,8 @@ pub enum LineKind {
     Error,
     /// Commande tapée par le joueur, rappelée en gris
     Echo,
+    /// Réplique d'un habitant à qui l'on parle
+    Villager,
 }
 
 #[derive(Debug, Clone)]
@@ -100,6 +102,11 @@ impl Chat {
     /// Message d'un joueur
     pub fn player(&mut self, sender: &str, text: &str) {
         self.push(Some(sender.to_string()), text, LineKind::Player);
+    }
+
+    /// Réplique d'un habitant (`sender` : son nom, et son métier)
+    pub fn villager(&mut self, sender: &str, text: &str) {
+        self.push(Some(sender.to_string()), text, LineKind::Villager);
     }
 
     /// Annonce du serveur
@@ -322,7 +329,12 @@ fn line_text(line: &ChatLine, alpha: f32) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     job.wrap.max_width = CHAT_WIDTH - 24.0;
     if let Some(sender) = &line.sender {
-        job.append(&format!("<{sender}> "), 0.0, format(egui::Color32::from_rgb(255, 215, 0)));
+        // Un habitant parle en vert, entre crochets, pour ne pas le prendre pour un joueur
+        if line.kind == LineKind::Villager {
+            job.append(&format!("[{sender}] "), 0.0, format(egui::Color32::from_rgb(140, 210, 120)));
+        } else {
+            job.append(&format!("<{sender}> "), 0.0, format(egui::Color32::from_rgb(255, 215, 0)));
+        }
     }
     let color = match line.kind {
         LineKind::Player => egui::Color32::WHITE,
@@ -330,6 +342,7 @@ fn line_text(line: &ChatLine, alpha: f32) -> egui::text::LayoutJob {
         LineKind::Info => egui::Color32::from_rgb(170, 220, 255),
         LineKind::Error => egui::Color32::from_rgb(255, 110, 100),
         LineKind::Echo => egui::Color32::from_gray(190),
+        LineKind::Villager => egui::Color32::from_rgb(225, 240, 210),
     };
     job.append(&line.text, 0.0, format(color));
     job

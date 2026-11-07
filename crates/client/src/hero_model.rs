@@ -351,7 +351,12 @@ impl FigureCache {
 /// Ampleur du balancement des membres à pleine allure, en radians
 const SWING_MAX: f32 = 0.7;
 /// Allure (blocs par seconde) à laquelle le balancement atteint son ampleur
-const FULL_STRIDE_SPEED: f32 = 4.0;
+const FULL_STRIDE_SPEED: f32 = 2.5;
+/// Longueur d'un cycle de marche (un pas de chaque pied) à l'arrêt, en blocs, et ce qu'elle gagne
+/// par bloc par seconde d'allure : on allonge le pas en pressant l'allure. Un habitant qui marche à
+/// 1,6 bloc par seconde fait ainsi près d'un cycle par seconde (deux pas), comme un marcheur.
+const STRIDE_BASE_BLOCKS: f32 = 1.1;
+const STRIDE_PER_SPEED: f32 = 0.3;
 
 /// La marche du héros : le balancement de ses membres suit son déplacement
 #[derive(Default)]
@@ -359,6 +364,8 @@ pub struct HeroGait {
     last_feet: Option<Vec3>,
     phase: f32,
     amplitude: f32,
+    /// Allure lissée, en blocs par seconde (les positions reçues du réseau arrivent par à-coups)
+    speed: f32,
 }
 
 impl HeroGait {
@@ -372,9 +379,12 @@ impl HeroGait {
         let step = feet - last;
         // Seul le pas sur le sol compte ; un saut d'un monde à l'autre ne fait pas courir
         let ground = (step - up * step.dot(up)).length() / block;
-        let speed = if ground > 50.0 { 0.0 } else { ground / dt };
-        self.phase = (self.phase + ground * 0.9) % std::f32::consts::TAU;
-        let target = (speed / FULL_STRIDE_SPEED).min(1.0) * SWING_MAX;
+        let (ground, speed) = if ground > 50.0 { (0.0, 0.0) } else { (ground, ground / dt) };
+        self.speed += (speed - self.speed) * (dt * 8.0).min(1.0);
+        // Le balancement avance d'un cycle à chaque longueur de pas parcourue
+        let stride = STRIDE_BASE_BLOCKS + STRIDE_PER_SPEED * self.speed;
+        self.phase = (self.phase + ground * std::f32::consts::TAU / stride) % std::f32::consts::TAU;
+        let target = (self.speed / FULL_STRIDE_SPEED).min(1.0) * SWING_MAX;
         // Les bras retombent en douceur à l'arrêt
         self.amplitude += (target - self.amplitude) * (dt * 10.0).min(1.0);
     }
@@ -561,5 +571,29 @@ mod tests {
             gait.update(feet, 1.0 / 60.0, 1.0);
         }
         assert!(gait.swing().abs() < 0.01);
+    }
+
+    /// Nombre de cycles de marche par seconde à l'allure `speed` (blocs par seconde)
+    fn cadence(speed: f32) -> f32 {
+        let mut gait = HeroGait::default();
+        let mut feet = Vec3::new(0.0, 0.0, 1000.0);
+        let mut turns = 0.0;
+        for _ in 0..600 {
+            feet += Vec3::X * (speed / 60.0);
+            let before = gait.phase;
+            gait.update(feet, 1.0 / 60.0, 1.0);
+            turns += (gait.phase - before).rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
+        }
+        turns / 10.0
+    }
+
+    #[test]
+    fn the_limbs_keep_pace_with_the_walk() {
+        // Un habitant (1,6 bloc/s) : un peu moins d'un cycle par seconde, soit près de deux pas
+        let walk = cadence(1.6);
+        assert!((0.8..1.1).contains(&walk), "{walk} cycles par seconde");
+        // Plus vite, le pas s'allonge et la cadence monte sans s'emballer
+        let run = cadence(5.0);
+        assert!(run > walk && run < 2.2, "{run} cycles par seconde");
     }
 }

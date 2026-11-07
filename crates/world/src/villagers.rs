@@ -10,8 +10,8 @@
 //! Tant qu'un joueur est près, chaque habitant est une créature humanoïde que la simulation des
 //! créatures fait marcher ; ce module lui dit où aller. Le jour, il sort de chez lui, travaille,
 //! flâne dans les rues, va au marché, s'arrête bavarder avec un voisin. Le soir venu, chacun à son
-//! heure, il rentre chez lui et disparaît derrière sa porte jusqu'au matin. Les gardes patrouillent
-//! d'une porte à l'autre ; la moitié d'entre eux veille la nuit. Ils chassent les bêtes qui
+//! heure, il rentre chez lui et disparaît derrière sa porte jusqu'au matin. Les gardes se tiennent
+//! de part et d'autre des portes, sans les quitter ; la moitié d'entre eux veille la nuit. Ils chassent les bêtes qui
 //! approchent (à dix blocs, sans les poursuivre au-delà de trente) et s'en prennent au joueur qui frappe ou tue un habitant (`defends_herd`) ; les autres fuient
 //! les bêtes (`afraid_of`). Les rues sont parcourues sur une grille du plan qui contourne bâtiments,
 //! champs et remparts (`NavGrid`).
@@ -223,6 +223,10 @@ struct Town {
     wander: Vec<Cell>,
     /// Place centrale (fontaine, puits)
     plaza: Cell,
+    /// Zone de rassemblement autour de la fontaine ou du puits : des colonnes où se tenir, chacun
+    /// la sienne, de la plus proche à la plus lointaine, et le centre vers lequel on se tourne
+    gathering: Vec<Cell>,
+    gathering_center: Cell,
     /// Seuil de la taverne, où les voyageurs passent la nuit
     inn: Option<Home>,
     /// Nom de la ville ou du village
@@ -256,7 +260,6 @@ enum Goal {
     Wander,
     Shop,
     Chat,
-    Patrol,
     Camp,
 }
 
@@ -502,6 +505,7 @@ impl Town {
         let mut wander = Vec::new();
         let mut plaza = None;
         let mut inn = None;
+        let mut landmark: Option<Rect> = None;
         let mut doors = Vec::new();
         let mut gates = Vec::new();
         let mut passages = Vec::new();
@@ -568,6 +572,7 @@ impl Town {
                     nav.set_rect(*rect, true);
                     let (_, out) = edge_of(rect, Side::South);
                     plaza.get_or_insert(out);
+                    landmark.get_or_insert(*rect);
                 }
                 Piece::Tower { rect, .. } | Piece::Rampart { rect, .. } => nav.set_rect(*rect, true),
                 Piece::Gate { rect, walk: false, .. } => gates.push(*rect),
@@ -593,24 +598,43 @@ impl Town {
         }
         wander.retain(|c| nav.walkable(*c));
         let plaza = plaza.unwrap_or(s.center);
-        // Les gardes : aux portes de la ville, ou près du puits du village
+        let landmark = landmark.unwrap_or(Rect::around(plaza.0, plaza.1, 0));
+        let gathering_center = landmark.center();
+        let gathering = gathering_cells(&nav, landmark);
+        // Les gardes : de part et d'autre de chaque porte de la ville, juste en dedans et tournés vers
+        // dehors ; ou des deux côtés du puits du village. Chacun a sa colonne : ils ne s'empilent pas.
         let away = |cell: Cell| {
             let (dx, dz) = (cell.0 - s.center.0, cell.1 - s.center.1);
             (cell.0 + dx.signum() * 4, cell.1 + dz.signum() * 4)
         };
-        let posts: Vec<Spot> = if gates.is_empty() {
-            vec![Spot { cell: plaza, look: away(plaza), floor: None }]
+        let mut posts: Vec<Spot> = Vec::new();
+        if gates.is_empty() {
+            for side in [-2, 2] {
+                let cell = nav.nearest_walkable((plaza.0 + side, plaza.1)).unwrap_or(plaza);
+                if posts.iter().all(|p| p.cell != cell) {
+                    posts.push(Spot { cell, look: away(cell), floor: None });
+                }
+            }
         } else {
-            gates.iter().map(|g| {
+            for g in &gates {
                 let c = g.center();
-                // Juste en dedans de la porte, à regarder dehors
-                let inward = ((s.center.0 - c.0).signum() * 2, (s.center.1 - c.1).signum() * 2);
-                let cell = (c.0 + inward.0, c.1 + inward.1);
-                Spot { cell, look: away(c), floor: None }
-            }).collect()
-        };
+                // Vers le centre (en dedans), et le long du mur
+                let inward = ((s.center.0 - c.0).signum(), (s.center.1 - c.1).signum());
+                let along = if g.width() > g.depth() { (1, 0) } else { (0, 1) };
+                let half = g.width().max(g.depth()) / 2 + 1;
+                for side in [-1, 1] {
+                    let wanted = (c.0 + inward.0 + along.0 * half * side, c.1 + inward.1 + along.1 * half * side);
+                    let Some(cell) = nav.nearest_walkable(wanted) else { continue };
+                    if posts.iter().all(|p| p.cell != cell) {
+                        posts.push(Spot { cell, look: away(c), floor: None });
+                    }
+                }
+            }
+        }
+        // Les gardes gardent leur poste libre des badauds
+        let gathering = gathering.into_iter().filter(|c| posts.iter().all(|p| p.cell != *c)).collect();
         work.insert(Workplace::Rempart, posts);
-        Town { nav: Arc::new(nav), homes, work, customers, wander, plaza, inn, name: town_name(s), active: false }
+        Town { nav: Arc::new(nav), homes, work, customers, wander, plaza, gathering, gathering_center, inn, name: town_name(s), active: false }
     }
 
     fn random_street(&self, rng: &mut StdRng) -> Cell {
@@ -620,6 +644,24 @@ impl Town {
             self.wander[rng.gen_range(0..self.wander.len())]
         }
     }
+}
+
+/// Rayon de la zone de rassemblement autour de la fontaine ou du puits, en blocs
+const GATHERING_RADIUS: i32 = 6;
+
+/// Colonnes praticables autour de `landmark` (fontaine, puits) jusqu'à `GATHERING_RADIUS` blocs de
+/// son bord, de la plus proche à la plus lointaine
+fn gathering_cells(nav: &NavGrid, landmark: Rect) -> Vec<Cell> {
+    let ring = |(x, z): Cell| {
+        let dx = (landmark.x0 - x).max(x - (landmark.x1 - 1)).max(0);
+        let dz = (landmark.z0 - z).max(z - (landmark.z1 - 1)).max(0);
+        dx.max(dz)
+    };
+    let around = landmark.expand(GATHERING_RADIUS);
+    let mut cells: Vec<Cell> = (around.z0..around.z1).flat_map(|z| (around.x0..around.x1).map(move |x| (x, z))).filter(|&c| ring(c) >= 1 && nav.walkable(c)).collect();
+    let (cx, cz) = landmark.center();
+    cells.sort_by_key(|&(x, z)| (ring((x, z)), (x - cx).abs() + (z - cz).abs(), x, z));
+    cells
 }
 
 /// Direction (depuis le centre de la planète) du milieu de la colonne (x, z) d'une face
@@ -1236,11 +1278,11 @@ impl Villages {
                 }
                 self.people[i].task = Task::Camping;
             }
-            Goal::Wander | Goal::Patrol => {
+            Goal::Wander => {
                 self.set_pause(world, id, species, None, look);
                 let person = &mut self.people[i];
                 person.task = Task::Idle;
-                person.timer = if goal == Goal::Patrol { self.rng.gen_range(6.0..16.0) } else { self.rng.gen_range(2.0..8.0) };
+                person.timer = self.rng.gen_range(2.0..8.0);
             }
         }
     }
@@ -1277,13 +1319,10 @@ impl Villages {
         let roll: f64 = self.rng.gen();
         let person = &self.people[i];
         let guard = person.guard;
-        // Un garde va de poste en poste
+        // Un garde ne quitte pas l'entrée qu'il garde : il y revient (après une poursuite) et y reste
         if guard {
-            let posts = self.towns[&key].work.get(&Workplace::Rempart).cloned().unwrap_or_default();
-            let spot = if roll < 0.5 || posts.is_empty() { work } else { Some(posts[self.rng.gen_range(0..posts.len())]) };
-            if let Some(spot) = spot {
-                let goal = if Some(spot) == work { Goal::Work } else { Goal::Patrol };
-                if self.send(i, &nav, here, spot.cell, goal, Some(spot)) {
+            if let Some(spot) = work {
+                if self.send(i, &nav, here, spot.cell, Goal::Work, Some(spot)) {
                     return;
                 }
             }
@@ -1308,12 +1347,46 @@ impl Villages {
                 return;
             }
         }
-        let town = &self.towns[&key];
-        let target = if roll < 0.93 { town.plaza } else { town.random_street(&mut self.rng) };
+        if roll < 0.93 {
+            if let Some(spot) = self.gathering_spot(i, key, world) {
+                if self.send(i, &nav, here, spot.cell, Goal::Wander, Some(spot)) {
+                    return;
+                }
+            }
+        }
+        let target = self.towns[&key].random_street(&mut self.rng);
         if !self.send(i, &nav, here, target, Goal::Wander, None) {
             self.people[i].task = Task::Idle;
             self.people[i].timer = self.rng.gen_range(2.0..6.0);
         }
+    }
+
+    /// Une colonne libre de la zone de rassemblement de l'établissement `key` pour la personne `i` :
+    /// ni occupée par quelqu'un, ni promise à quelqu'un qui s'y rend. Tirée parmi les plus proches de
+    /// la fontaine encore libres, pour que la foule se forme autour d'elle, chacun sur son bloc.
+    fn gathering_spot(&mut self, i: usize, key: TownKey, world: &CreatureWorld) -> Option<Spot> {
+        let town = self.towns.get(&key)?;
+        let in_town = |p: &Person| match &p.role {
+            Role::Resident { town, .. } => *town == key,
+            Role::Traveller(t) => t.visiting.is_some_and(|(k, _)| k == key),
+        };
+        let mut taken: Vec<Cell> = Vec::new();
+        for (j, p) in self.people.iter().enumerate() {
+            if j == i || !p.alive || !in_town(p) {
+                continue;
+            }
+            let Some(c) = p.creature.and_then(|id| world.creatures().iter().find(|c| c.id == id)) else { continue };
+            if let Some((_, cell)) = Self::cell_of(world, c.position) {
+                taken.push(cell);
+            }
+            // Le poste où il va, ou celui où il se tient
+            if let Some(spot) = p.destination {
+                taken.push(spot.cell);
+            }
+        }
+        let free: Vec<Cell> = town.gathering.iter().copied().filter(|c| !taken.contains(c)).take(12).collect();
+        let cell = *free.get(self.rng.gen_range(0..free.len().max(1)))?;
+        Some(Spot { cell, look: town.gathering_center, floor: None })
     }
 
     /// Cherche un voisin désœuvré à qui parler ; s'il en trouve un, le rejoint
@@ -1430,9 +1503,12 @@ impl Villages {
                     if roll < 0.5 && self.people[i].chat_cooldown <= 0.0 && self.find_chat(i, key, here, world) {
                         return;
                     }
-                    let town = &self.towns[&key];
-                    let target = if roll < 0.75 { town.plaza } else { town.random_street(&mut self.rng) };
-                    if !self.send(i, &nav, here, target, Goal::Wander, None) {
+                    let spot = if roll < 0.75 { self.gathering_spot(i, key, world) } else { None };
+                    let (target, spot) = match spot {
+                        Some(spot) => (spot.cell, Some(spot)),
+                        None => (self.towns[&key].random_street(&mut self.rng), None),
+                    };
+                    if !self.send(i, &nav, here, target, Goal::Wander, spot) {
                         self.people[i].task = Task::Idle;
                         self.people[i].timer = 3.0;
                     }
@@ -1791,7 +1867,14 @@ mod tests {
             .find_map(|c| world.villager_card(c.id).filter(|card| card.origin.starts_with("Habitant") && card.profession != "Garde").map(|card| (c.id, c.herd, c.position, card.clone())))
             .expect("un habitant dehors");
         assert!(card.origin.ends_with(&name), "{} / {name}", card.origin);
+        // Le premier coup est signalé à son auteur, une fois, avec la ville
+        assert!(world.hit_by(id, position, 5));
+        let assaults = world.take_assaults();
+        assert_eq!(assaults.len(), 1);
+        let warning = assaults[0].warning();
+        assert!(warning.contains(&card.name) && warning.contains(&name) && warning.contains("gardes"), "{warning}");
         while world.hit_by(id, position, 5) {}
+        assert!(world.take_assaults().is_empty(), "averti à chaque coup");
         let murders = world.take_murders();
         assert_eq!(murders.len(), 1);
         assert_eq!(murders[0].town.as_deref(), Some(name.as_str()));
@@ -1800,6 +1883,102 @@ mod tests {
         assert!(line.starts_with(&format!("Mat a tué {}", card.name)) && line.contains(&name) && line.contains("gardes"), "{line}");
         assert!(world.is_wanted(5, herd));
         assert!(world.take_murders().is_empty(), "annoncé deux fois");
+    }
+
+    /// Une ville fortifiée de la graine 2026
+    fn walled_town(generator: &PlanetWorldGenerator) -> Settlement {
+        for face in PlanetFace::ALL {
+            for rz in 0..crate::structures::REGIONS_PER_FACE {
+                for rx in 0..crate::structures::REGIONS_PER_FACE {
+                    if let Some(s) = generator.structures.region_settlement(generator, face, rx, rz).filter(|s| s.kind == SettlementKind::Town) {
+                        return s.clone();
+                    }
+                }
+            }
+        }
+        panic!("aucune ville fortifiée");
+    }
+
+    #[test]
+    fn guards_each_hold_their_own_post_beside_a_gate() {
+        let generator = generator();
+        let s = walled_town(&generator);
+        let town = Town::new(&s);
+        let gates: Vec<Rect> = s.pieces.iter().filter_map(|p| if let Piece::Gate { rect, .. } = p { Some(*rect) } else { None }).collect();
+        let posts = &town.work[&Workplace::Rempart];
+        assert!(posts.len() >= gates.len() * 2 - 1, "{} postes pour {} portes", posts.len(), gates.len());
+        for (k, post) in posts.iter().enumerate() {
+            assert!(town.nav.walkable(post.cell));
+            // Chacun le sien, et tout près d'une porte
+            assert!(posts[..k].iter().all(|p| p.cell != post.cell), "deux gardes sur {:?}", post.cell);
+            let near = gates.iter().any(|g| g.expand(4).contains(post.cell.0, post.cell.1));
+            assert!(near, "poste {:?} loin des portes", post.cell);
+        }
+        // Les gardes ont chacun un poste, et un garde désœuvré y retourne au lieu de patrouiller
+        let registry = Arc::new(CreatureRegistry::load_default());
+        let mut villages = Villages::new(1, &registry);
+        villages.found_town(&s, &generator);
+        let guards: Vec<Spot> = villages.people.iter().filter(|p| p.guard).filter_map(|p| match p.role {
+            Role::Resident { work, .. } => work,
+            _ => None,
+        }).collect();
+        assert!(!guards.is_empty());
+        for (k, g) in guards.iter().enumerate() {
+            assert!(guards[..k].iter().all(|o| o.cell != g.cell), "deux gardes au même poste");
+        }
+    }
+
+    #[test]
+    fn guards_stay_at_the_gates_by_day() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let s = walled_town(&generator);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let mut query = TerrainQuery::new(&generator, &edits);
+        let feet = feet_at(&geometry, &mut query, s.face, s.center, None).unwrap();
+        let registry = Arc::new(CreatureRegistry::load_default());
+        let mut world = CreatureWorld::new(generator.base_radius(), 2026, registry.clone());
+        world.set_sun_dir(feet.normalize());
+        for _ in 0..900 {
+            world.tick(0.1, &generator, &edits, &[feet]);
+        }
+        let block = geometry.block_height as f32;
+        let mut checked = 0;
+        for p in world.villages.people.iter().filter(|p| p.guard) {
+            let (Some(id), Role::Resident { work: Some(post), .. }) = (p.creature, &p.role) else { continue };
+            let Some(c) = world.creatures().iter().find(|c| c.id == id).filter(|c| !c.is_hunting()) else { continue };
+            let at = cell_dir(&geometry, s.face, post.cell) * c.position.length();
+            let off = at.distance(c.position) / block;
+            assert!(off < 4.0, "garde à {off:.1} blocs de son poste");
+            checked += 1;
+        }
+        assert!(checked >= 4, "{checked} gardes à leur poste");
+    }
+
+    #[test]
+    fn a_gathering_gives_everyone_a_free_block_of_their_own() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (s, feet) = settlement(&generator);
+        let registry = Arc::new(CreatureRegistry::load_default());
+        let mut world = CreatureWorld::new(generator.base_radius(), 2026, registry.clone());
+        world.set_sun_dir(feet.normalize());
+        world.tick(0.05, &generator, &edits, &[feet]);
+        let key = (s.face, s.center.0, s.center.1);
+        let mut villages = std::mem::take(&mut world.villages);
+        let out: Vec<usize> = (0..villages.people.len()).filter(|&i| villages.people[i].creature.is_some() && matches!(villages.people[i].role, Role::Resident { town, .. } if town == key)).collect();
+        assert!(out.len() > 3, "{} habitants dehors", out.len());
+        // Tous se rendent au rassemblement l'un après l'autre : chacun reçoit sa colonne
+        let mut cells = Vec::new();
+        for &i in &out {
+            let spot = villages.gathering_spot(i, key, &world).expect("rassemblement plein");
+            assert!(!cells.contains(&spot.cell), "{:?} donnée deux fois", spot.cell);
+            assert!(villages.towns[&key].gathering.contains(&spot.cell));
+            cells.push(spot.cell);
+            villages.people[i].destination = Some(spot);
+            villages.people[i].task = Task::Going(Goal::Wander);
+        }
+        world.villages = villages;
     }
 
     #[test]
