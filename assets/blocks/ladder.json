@@ -7,5 +7,6 @@
   "textures": {"side": "textures/Ladder.png"},
   "shape": "panneau",
   "rotation": "horizontal",
-  "opaque": false
+  "opaque": false,
+  "climbable": true
 }

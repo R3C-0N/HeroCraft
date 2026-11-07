@@ -40,6 +40,7 @@ Les 135 premiers blocs viennent des modules de la branche `develop` (`CoreAssets
 | `opaque` | `false` : il laisse voir les faces des blocs derrière lui (verre, glace, feuillages). Vrai par défaut. |
 | `liquid` | `true` : un liquide (eau, lave). Il n'est ni solide, ni opaque, ni visé par le réticule, ni ramassé ; un bloc posé le remplace. |
 | `replaceable` | `true` : une herbe folle (herbes hautes, buisson mort). Un bloc posé en la visant prend sa place, au lieu de se poser par-dessus. |
+| `climbable` | `true` : il se grimpe (l'échelle). Le joueur qui s'y frotte monte en avançant ou en sautant, descend en reculant ou accroupi, et glisse doucement sinon. |
 | `connected` | `true` : texture « connectée » (le verre). Son cadre n'est dessiné que sur les bords qui ne touchent pas un bloc du même genre : deux blocs côte à côte forment un seul panneau, encadré d'un seul tenant. Le dedans de la texture reste transparent, sauf ses reflets. |
 | `light` | Lumière émise, de 0 à 15. Pas encore rendue. |
 | `sound` | Matière des pas et des blocs cassés ou posés : `stone` (par défaut), `dirt`, `grass`, `sand`, `snow`, `wood` ou `water`. |

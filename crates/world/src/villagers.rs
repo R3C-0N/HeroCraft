@@ -504,6 +504,7 @@ impl Town {
         let mut inn = None;
         let mut doors = Vec::new();
         let mut gates = Vec::new();
+        let mut passages = Vec::new();
         for piece in &s.pieces {
             match piece {
                 Piece::House(h) => {
@@ -569,8 +570,10 @@ impl Town {
                     plaza.get_or_insert(out);
                 }
                 Piece::Tower { rect, .. } | Piece::Rampart { rect, .. } => nav.set_rect(*rect, true),
-                Piece::Gate { rect, .. } => gates.push(*rect),
-                Piece::Lamp { x, z, .. } => nav.set((*x, *z), true),
+                Piece::Gate { rect, walk: false, .. } => gates.push(*rect),
+                // Sous le chemin de ronde, le passage de la porte reste ouvert
+                Piece::Gate { rect, walk: true, .. } => passages.push(*rect),
+                Piece::Lamp { x, z, .. } | Piece::Ladder { x, z, .. } => nav.set((*x, *z), true),
                 Piece::Paving { rect, .. } => {
                     for z in (rect.z0..rect.z1).step_by(2) {
                         for x in (rect.x0..rect.x1).step_by(2) {
@@ -582,7 +585,7 @@ impl Town {
             }
         }
         // Les portes de la ville et des maisons se franchissent
-        for gate in &gates {
+        for gate in gates.iter().chain(&passages) {
             nav.set_rect(*gate, false);
         }
         for door in doors {

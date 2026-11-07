@@ -20,6 +20,8 @@ const GROUND_TOLERANCE: f32 = 0.05;
 const STEP_UP: f32 = 0.55;
 /// Hauteur d'un saut sur place, en blocs : de quoi franchir une marche d'un bloc, pas deux
 const JUMP_HEIGHT: f32 = 1.3;
+/// Vitesse sur une échelle, en blocs par seconde
+const CLIMB_SPEED: f32 = 3.0;
 /// Gravité, en blocs par seconde au carré : un saut reste en l'air ~0,65 s
 const GRAVITY: f32 = 25.0;
 /// Vitesse de chute maximale, en blocs par seconde (atteinte après ~30 blocs de chute)
@@ -715,6 +717,13 @@ impl OrbitCamera {
         let (_up, forward_tangent, right_tangent, _) = self.look_vectors();
         let scale = herocraft_world::block_scale(self.base_radius as f64) as f32;
 
+        // Accroché à une échelle : direction (tangente) vers sa plaque
+        let ladder = match &self.collider {
+            Some(collider) if !self.is_flying && !self.is_dead => ladder_contact(collider, generator, self.player_pos),
+            _ => None,
+        };
+        let climbing = ladder.is_some();
+
         // 1. Déplacement horizontal ZQSD / WASD
         let mut move_dir = Vec3::ZERO;
         if self.move_forward { move_dir += forward_tangent; }
@@ -741,11 +750,20 @@ impl OrbitCamera {
                 Some(collider) => {
                     let (_, east, north) = self.local_frame();
                     let start = self.player_pos;
-                    let step = if self.is_grounded && !self.is_flying { STEP_UP } else { GROUND_TOLERANCE };
+                    // Sur une échelle, on prend pied en haut comme sur une marche
+                    let step = if (self.is_grounded || climbing) && !self.is_flying { STEP_UP } else { GROUND_TOLERANCE };
                     let trapped = body_blocked(collider, generator, start, step);
+                    // Pendu à une échelle, on ne la lâche pas en marchant dans le vide : on la quitte
+                    // en prenant pied (en haut sur le mur, en bas au sol)
+                    let holds = |candidate: Vec3| {
+                        !climbing
+                            || self.is_grounded
+                            || ladder_contact(collider, generator, candidate).is_some()
+                            || footprint_ground(collider, generator, candidate, STEP_UP) >= start.length() - STEP_UP * collider.block_height()
+                    };
                     let moved = [delta, east * delta.dot(east), north * delta.dot(north)].into_iter().find_map(|d| {
                         let candidate = (start + d).normalize() * start.length();
-                        (trapped || !body_blocked(collider, generator, candidate, step)).then_some(candidate)
+                        ((trapped || !body_blocked(collider, generator, candidate, step)) && holds(candidate)).then_some(candidate)
                     });
                     if let Some(pos) = moved {
                         self.player_pos = pos;
@@ -761,7 +779,7 @@ impl OrbitCamera {
             // Dessus des blocs sous l'empreinte du joueur, jamais plus haut que ses pieds
             // Au sol, le joueur monte de lui-même une demi-marche (dalle, escalier)
             Some(collider) => {
-                let step = if self.is_grounded && !self.is_flying { STEP_UP } else { GROUND_TOLERANCE };
+                let step = if (self.is_grounded || climbing) && !self.is_flying { STEP_UP } else { GROUND_TOLERANCE };
                 footprint_ground(collider, generator, self.player_pos, step)
             }
             None => self.ground_radius_at(new_up, generator),
@@ -786,6 +804,27 @@ impl OrbitCamera {
                 if climb < 0.0 {
                     self.is_flying = false;
                 }
+            } else {
+                self.is_grounded = false;
+            }
+        } else if let Some(toward) = ladder {
+            // Échelle : Saut ou pousser contre elle fait monter, Descendre ou s'en écarter fait
+            // descendre ; sans rien toucher, le joueur reste accroché
+            let push = if move_dir.length_squared() > 0.001 { move_dir.dot(toward) } else { 0.0 };
+            let climb = if self.ascend_held || push > 0.3 {
+                1.0
+            } else if self.descend_held || push < -0.3 {
+                -1.0
+            } else {
+                0.0
+            };
+            self.jump_requested = false;
+            self.vertical_velocity = climb * CLIMB_SPEED * self.block_height();
+            current_radius += self.vertical_velocity * dt;
+            if current_radius <= ground_radius {
+                current_radius = ground_radius;
+                self.vertical_velocity = 0.0;
+                self.is_grounded = true;
             } else {
                 self.is_grounded = false;
             }
@@ -833,8 +872,8 @@ impl OrbitCamera {
 
         self.player_pos = new_up * current_radius;
 
-        // Chute : du point le plus haut atteint en l'air jusqu'au contact du sol
-        if self.is_flying {
+        // Chute : du point le plus haut atteint en l'air jusqu'au contact du sol (l'échelle la remet à zéro)
+        if self.is_flying || climbing {
             self.fall_peak = None;
         } else if self.is_grounded {
             if let Some(peak) = self.fall_peak.take() {
@@ -950,6 +989,17 @@ fn footprint_ground(collider: &VoxelCollider, generator: &PlanetWorldGenerator, 
         .iter()
         .map(|&p| collider.ground_radius(generator, p, step))
         .fold(f32::MIN, f32::max)
+}
+
+/// Le corps du joueur aux pieds `feet` touche une échelle (de ses pieds, ou juste dessous pour
+/// la reprendre d'en haut, à sa tête) : la direction tangente des pieds vers sa plaque
+fn ladder_contact(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3) -> Option<Vec3> {
+    let h = collider.block_height();
+    let up = feet.normalize();
+    let points: Vec<Vec3> = [-0.3, GROUND_TOLERANCE, 0.6, 1.2].iter().flat_map(|&height| footprint(feet + up * height * h, h)).collect();
+    let plate = collider.climbable_at(generator, &points)?;
+    let to = plate - feet;
+    Some((to - up * to.dot(up)).normalize_or_zero())
 }
 
 /// Le corps du joueur, posé sur le sol qu'il trouverait aux pieds `feet`, entre dans un bloc solide
@@ -1374,6 +1424,84 @@ mod tests {
         } else {
             3
         }
+    }
+
+    /// Mur de pierre de 4 blocs devant le joueur, une échelle plaquée contre lui
+    fn ladder_test_camera() -> (OrbitCamera, PlanetWorldGenerator, i32) {
+        let (cam, gen, edits, floor) = voxel_test_camera();
+        let ys: Vec<i32> = (floor..floor + 4).collect();
+        fill(&cam, &gen, &edits, &[2.5, 3.5], &ys, herocraft_common::BlockId::STONE);
+        let ladder = herocraft_common::blocks().find("ladder").unwrap();
+        for r in [-1.0, 0.0, 1.0] {
+            for &y in &ys {
+                let pos = cell_at(&cam, 1.5, r, y);
+                edits.set_block(&gen, pos, ladder.with_rotation(facing(&cam, pos)));
+            }
+        }
+        (cam, gen, floor)
+    }
+
+    #[test]
+    fn test_voxel_ladder_is_climbed_to_the_top_of_the_wall() {
+        let (mut cam, gen, floor) = ladder_test_camera();
+        // Pousser contre l'échelle fait monter, jusqu'à prendre pied sur le mur
+        cam.move_forward = true;
+        for _ in 0..300 {
+            cam.update(0.016, &gen);
+            if cam.is_grounded && altitude_blocks(&cam) > floor as f32 + 3.5 {
+                break;
+            }
+        }
+        cam.move_forward = false;
+        for _ in 0..30 {
+            cam.update(0.016, &gen);
+        }
+        assert!(cam.is_grounded);
+        assert!((altitude_blocks(&cam) - (floor + 4) as f32).abs() < 1e-2, "en haut du mur : pieds à {}", altitude_blocks(&cam));
+        assert!(cam.take_landing().unwrap_or(0.0) < 1.0, "l'échelle ne compte pas comme une chute");
+
+        // Demi-tour : s'écarter du mur au-dessus de l'échelle fait descendre, sans chute
+        cam.player_yaw += std::f32::consts::PI;
+        walk(&mut cam, &gen, 0.3);
+        cam.move_forward = true;
+        for _ in 0..200 {
+            cam.update(0.016, &gen);
+            if altitude_blocks(&cam) < floor as f32 + 0.01 {
+                break;
+            }
+        }
+        cam.move_forward = false;
+        assert!((altitude_blocks(&cam) - floor as f32).abs() < 1e-2, "redescendu : pieds à {}", altitude_blocks(&cam));
+        assert!(cam.take_landing().unwrap_or(0.0) < 1.0, "descendre l'échelle ne doit pas faire chuter");
+    }
+
+    #[test]
+    fn test_voxel_player_hangs_on_a_ladder() {
+        let (mut cam, gen, floor) = ladder_test_camera();
+        // Contre l'échelle (pousser contre elle fait déjà monter un peu), puis Saut maintenu
+        walk(&mut cam, &gen, 0.3);
+        assert!(cam.collider.as_ref().is_some_and(|c| ladder_contact(c, &gen, cam.player_pos).is_some()), "contre l'échelle");
+        let start = altitude_blocks(&cam);
+        cam.ascend_held = true;
+        cam.jump_requested = true;
+        for _ in 0..25 {
+            cam.update(0.016, &gen);
+        }
+        cam.ascend_held = false;
+        let hanging = altitude_blocks(&cam);
+        // ~`CLIMB_SPEED` blocs par seconde
+        assert!((hanging - start - 0.4 * CLIMB_SPEED).abs() < 0.2, "monté de {} blocs en 0,4 s", hanging - start);
+        // Rien d'appuyé : le joueur reste accroché
+        for _ in 0..60 {
+            cam.update(0.016, &gen);
+        }
+        assert!((altitude_blocks(&cam) - hanging).abs() < 1e-3, "accroché, il ne doit pas glisser");
+        // Descendre maintenu : retour au sol
+        cam.descend_held = true;
+        for _ in 0..120 {
+            cam.update(0.016, &gen);
+        }
+        assert!(cam.is_grounded && (altitude_blocks(&cam) - floor as f32).abs() < 1e-2, "au pied de l'échelle : pieds à {}", altitude_blocks(&cam));
     }
 
     #[test]
