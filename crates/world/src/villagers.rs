@@ -623,8 +623,10 @@ impl Town {
                 let along = if g.width() > g.depth() { (1, 0) } else { (0, 1) };
                 let half = g.width().max(g.depth()) / 2 + 1;
                 for side in [-1, 1] {
-                    let wanted = (c.0 + inward.0 + along.0 * half * side, c.1 + inward.1 + along.1 * half * side);
-                    let Some(cell) = nav.nearest_walkable(wanted) else { continue };
+                    // Le premier pas libre en dedans, passé l'épaisseur du rempart et de son chemin de ronde
+                    let beside = |d: i32| (c.0 + inward.0 * d + along.0 * half * side, c.1 + inward.1 * d + along.1 * half * side);
+                    let free = (1..=4).map(beside).find(|&cell| nav.walkable(cell));
+                    let Some(cell) = free.or_else(|| nav.nearest_walkable(beside(1))) else { continue };
                     if posts.iter().all(|p| p.cell != cell) {
                         posts.push(Spot { cell, look: away(c), floor: None });
                     }
@@ -1904,7 +1906,9 @@ mod tests {
         let generator = generator();
         let s = walled_town(&generator);
         let town = Town::new(&s);
-        let gates: Vec<Rect> = s.pieces.iter().filter_map(|p| if let Piece::Gate { rect, .. } = p { Some(*rect) } else { None }).collect();
+        // Les portes du rempart (pas les passages sous le chemin de ronde, qui les doublent en dedans)
+        let gates: Vec<Rect> = s.pieces.iter().filter_map(|p| if let Piece::Gate { rect, walk: false, .. } = p { Some(*rect) } else { None }).collect();
+        let openings: Vec<Rect> = s.pieces.iter().filter_map(|p| if let Piece::Gate { rect, .. } = p { Some(*rect) } else { None }).collect();
         let posts = &town.work[&Workplace::Rempart];
         assert!(posts.len() >= gates.len() * 2 - 1, "{} postes pour {} portes", posts.len(), gates.len());
         for (k, post) in posts.iter().enumerate() {
@@ -1913,6 +1917,8 @@ mod tests {
             assert!(posts[..k].iter().all(|p| p.cell != post.cell), "deux gardes sur {:?}", post.cell);
             let near = gates.iter().any(|g| g.expand(4).contains(post.cell.0, post.cell.1));
             assert!(near, "poste {:?} loin des portes", post.cell);
+            // À côté du passage, pas dedans : les gardes ne bouchent pas la porte
+            assert!(openings.iter().all(|g| !g.contains(post.cell.0, post.cell.1)), "poste {:?} dans le passage", post.cell);
         }
         // Les gardes ont chacun un poste, et un garde désœuvré y retourne au lieu de patrouiller
         let registry = Arc::new(CreatureRegistry::load_default());
