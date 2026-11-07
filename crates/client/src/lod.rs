@@ -69,7 +69,7 @@ pub fn patch_detail(level: u8, precision: crate::ui::LodPrecisionSetting) -> (us
     let depth = VOXEL_LEVEL.saturating_sub(level);
     let fine = normal.max(FINE_RESOLUTION);
     match precision {
-        P::Normale => (normal, PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT),
+        P::Normale => (normal, 1.0),
         P::Fine => (fine, 1.0),
         P::Exacte if depth <= EXACT_LEVELS => (side_blocks, 1.0),
         P::Exacte if depth == EXACT_LEVELS + 1 => (EXACT_NEXT_RESOLUTION.max(fine), 1.0),
@@ -177,7 +177,7 @@ impl PlanetLodManager {
         let generator = PlanetWorldGenerator::new(desc);
         for &face in &herocraft_common::PlanetFace::ALL {
             let key = QuadNodeKey::new(face, 0, 0, 0);
-            let patch = PlanetMesh::generate_lod_patch(&generator, &key, base_radius, 24, mgr.active_filter);
+            let patch = PlanetMesh::generate_lod_patch_stepped(&generator, &key, base_radius, 24, 1.0, mgr.active_filter);
             mgr.lod_cache.insert(key, patch);
         }
 
@@ -253,7 +253,7 @@ impl PlanetLodManager {
                     let generator = &generator;
                     scope.spawn(move || {
                         let key = QuadNodeKey::new(face, 0, 0, 0);
-                        (key, PlanetMesh::generate_lod_patch(generator, &key, base_radius, 24, filter))
+                        (key, PlanetMesh::generate_lod_patch_stepped(generator, &key, base_radius, 24, 1.0, filter))
                     })
                 })
                 .collect();
@@ -700,7 +700,7 @@ mod tests {
         let near = VOXEL_LEVEL - 1;
         let side = (herocraft_world::FACE_BLOCKS >> near) as usize;
         assert_eq!(patch_detail(near, P::Exacte), (side, 1.0));
-        assert_eq!(patch_detail(near, P::Normale), (16, PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT));
+        assert_eq!(patch_detail(near, P::Normale), (16, 1.0));
         assert_eq!(patch_detail(near - 1, P::Exacte), (2 * side, 1.0));
         // Les grilles restent bornées loin du joueur, et jamais plus grossières qu'en normal
         for level in 0..VOXEL_LEVEL - EXACT_LEVELS {
@@ -714,7 +714,7 @@ mod tests {
     }
 
     /// Coût de chaque précision au sol : feuilles par niveau, sommets, mémoire GPU et temps de
-    /// génération de tous les patchs (plus une variante « grille normale, relief au bloc près »).
+    /// génération de tous les patchs (plus l'ancienne précision normale, en terrasses de 6 blocs).
     /// `cargo test --release -p herocraft_client mesure_precision_lod -- --ignored --nocapture`
     #[test]
     #[ignore]
@@ -729,8 +729,8 @@ mod tests {
         let leaves = lod.quadtree.evaluate_with_generator(camera.eye_position().as_dvec3(), Some(&generator));
         let patches: Vec<QuadNodeKey> = leaves.iter().filter(|l| l.kind == QuadLeafKind::LodPatch).map(|l| l.key).collect();
         let configs: [(&str, Box<dyn Fn(u8) -> (usize, f64) + Sync>); 4] = [
+            ("Normale avec terrasses (ancienne)", Box::new(|l| (patch_resolution(l), PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT))),
             ("Normale", Box::new(|l| patch_detail(l, P::Normale))),
-            ("Normale sans terrasses", Box::new(|l| (patch_resolution(l), 1.0))),
             ("Fine", Box::new(|l| patch_detail(l, P::Fine))),
             ("1:1", Box::new(|l| patch_detail(l, P::Exacte))),
         ];
