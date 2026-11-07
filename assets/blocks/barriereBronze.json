@@ -1,0 +1,13 @@
+{
+  "numeric_id": 160,
+  "name": "Barrière de bronze",
+  "description": "Un poteau qui se relie de lui-même aux barrières et aux murs voisins. On ne passe pas entre deux poteaux reliés.",
+  "category": "Construction",
+  "hardness": 26,
+  "color": {"side": "#a3772c"},
+  "textures": {"side": "textures/BronzePlate.png"},
+  "shape": "barriere",
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bronzeIngot": 3}, "count": 3}
+  ]
+}

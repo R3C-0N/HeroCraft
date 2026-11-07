@@ -84,6 +84,12 @@ pub mod block {
     pub const FLINT_BRICK: BlockId = BlockId(40);
     pub const GLOWBELL_BLOOM: BlockId = BlockId(105);
     pub const BASALT: BlockId = BlockId(118);
+    // Barrières, dont les poteaux des lampadaires
+    pub const OAK_FENCE: BlockId = BlockId(148);
+    pub const BIRCH_FENCE: BlockId = BlockId(149);
+    pub const CUT_STONE_FENCE: BlockId = BlockId(154);
+    pub const SILVER_FENCE: BlockId = BlockId(161);
+    pub const LANTERN: BlockId = BlockId(163);
     // Ornements : l'aspect des métaux et du cristal, sans leur valeur. Cassés, ils ne donnent
     // qu'eux-mêmes et aucune recette ne les refond en lingots ni en minerai : piller une ville ne
     // rapporte ni or, ni mithril, ni cristal.
@@ -94,7 +100,12 @@ pub mod block {
     pub const CUT_CRYSTAL: BlockId = BlockId(146);
 
     /// Tous les blocs que posent les structures (pour vérifier qu'ils ont leur fiche)
-    pub const ALL: [(BlockId, &str); 40] = [
+    pub const ALL: [(BlockId, &str); 45] = [
+        (LANTERN, "lanterne"),
+        (OAK_FENCE, "barriereChene"),
+        (BIRCH_FENCE, "barriereBouleau"),
+        (CUT_STONE_FENCE, "barrierePierreTaillee"),
+        (SILVER_FENCE, "barriereMithril"),
         (IRON_TRIM, "ornementFer"),
         (STONE, "stone"),
         (WATER, "water"),
@@ -448,6 +459,9 @@ impl Habits {
     }
 }
 
+/// Hauteur de la lumière d'un lampadaire au-dessus du sol : un socle, deux barrières, la lanterne
+const LAMP_LIGHT: i32 = 3;
+
 /// Matériaux des remparts, des tours et des lampadaires d'une culture
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Masonry {
@@ -459,7 +473,7 @@ pub struct Masonry {
     pub cap: BlockId,
     /// Plancher du haut des tours
     pub deck: BlockId,
-    /// Poteau des lampadaires
+    /// Poteau des lampadaires (une barrière), posé sur un socle de la pierre `accent`
     pub post: BlockId,
     /// Lumière au sommet des lampadaires
     pub light: BlockId,
@@ -480,8 +494,8 @@ impl Masonry {
                 accent: HARD_STONE,
                 cap: CUT_STONE,
                 deck: PLANK,
-                post: OAK_LOG,
-                light: TORCH,
+                post: OAK_FENCE,
+                light: LANTERN,
                 palisade: false,
                 spire: None,
                 height: 5,
@@ -493,8 +507,8 @@ impl Masonry {
                 accent: BASALT,
                 cap: CUT_STONE,
                 deck: CUT_STONE,
-                post: CUT_STONE,
-                light: TORCH,
+                post: CUT_STONE_FENCE,
+                light: LANTERN,
                 palisade: false,
                 spire: None,
                 height: 6,
@@ -506,8 +520,8 @@ impl Masonry {
                 accent: BIRCH_LOG,
                 cap: OAK_LOG,
                 deck: PLANK,
-                post: BIRCH_LOG,
-                light: GLOWBELL_BLOOM,
+                post: BIRCH_FENCE,
+                light: LANTERN,
                 palisade: true,
                 spire: Some(DARK_LEAF),
                 height: 5,
@@ -519,8 +533,8 @@ impl Masonry {
                 accent: CUT_STONE,
                 cap: SILVER_TRIM,
                 deck: PLANK,
-                post: SILVER_TRIM,
-                light: TORCH,
+                post: SILVER_FENCE,
+                light: LANTERN,
                 palisade: false,
                 spire: Some(CUT_CRYSTAL),
                 height: 5,
@@ -823,10 +837,54 @@ impl House {
         (y < ground).then_some(BlockId::AIR)
     }
 
+    /// Torches posées au sol à l'intérieur (colonne, niveau au-dessus du plancher) : dans un coin du
+    /// côté de la porte à chaque étage, dans les deux coins pour une taverne ou une église, et
+    /// devant l'autel d'une église
+    pub fn torches(&self) -> impl Iterator<Item = (i32, i32, i32)> {
+        let foot = &self.foot;
+        // Les deux coins intérieurs le long du mur de la porte
+        let corners = match self.door {
+            Side::North => [(foot.x0 + 1, foot.z0 + 1), (foot.x1 - 2, foot.z0 + 1)],
+            Side::South => [(foot.x0 + 1, foot.z1 - 2), (foot.x1 - 2, foot.z1 - 2)],
+            Side::West => [(foot.x0 + 1, foot.z0 + 1), (foot.x0 + 1, foot.z1 - 2)],
+            Side::East => [(foot.x1 - 2, foot.z0 + 1), (foot.x1 - 2, foot.z1 - 2)],
+        };
+        let both = matches!(self.usage, Use::Tavern | Use::Church);
+        let pick = (hash2(self.floor as u64 ^ 0x70C4, foot.x0, foot.z0) % 2) as usize;
+        let storeys = if self.storeys > 1 { 2 } else { 1 };
+        let in_corners = (0..storeys).flat_map(move |storey| {
+            corners.into_iter().enumerate().filter(move |(i, _)| both || *i == pick).map(move |(_, (x, z))| (x, 4 * storey, z))
+        });
+        in_corners.chain(self.altar_column().map(|(x, z)| (x, 1, z)))
+    }
+
+    /// Colonne de l'autel d'une église : sur l'axe de la porte, devant le clocher
+    fn altar_column(&self) -> Option<(i32, i32)> {
+        if self.usage != Use::Church {
+            return None;
+        }
+        let foot = &self.foot;
+        let (dx, dz) = self.door_column();
+        let inner_depth = match self.door {
+            Side::North | Side::South => foot.depth(),
+            _ => foot.width(),
+        };
+        let depth = inner_depth - 5;
+        Some(match self.door {
+            Side::North => (dx, foot.z0 + depth),
+            Side::South => (dx, foot.z1 - 1 - depth),
+            Side::West => (foot.x0 + depth, dz),
+            Side::East => (foot.x1 - 1 - depth, dz),
+        })
+    }
+
     /// Intérieur, au niveau `level` au-dessus du plancher
     fn interior(&self, x: i32, z: i32, level: i32) -> BlockId {
         let foot = &self.foot;
         let back = self.door.opposite();
+        if self.torches().any(|t| t == (x, level, z)) {
+            return TORCH;
+        }
         if self.storeys > 1 {
             let ladder = self.ladder_column();
             if (x, z) == ladder.0 && level < 4 {
@@ -892,9 +950,6 @@ impl House {
                     return FURNACE;
                 }
             }
-        }
-        if level == 1 && self.usage == Use::Church && depth == inner_depth - 5 && offset == 0 {
-            return TORCH;
         }
         BlockId::AIR
     }
@@ -1314,7 +1369,7 @@ impl Piece {
         match self {
             Piece::Paving { .. } => ground - 1..ground,
             Piece::Field { .. } => ground - 1..ground + 1,
-            Piece::Lamp { .. } => ground..ground + 3,
+            Piece::Lamp { .. } => ground..ground + LAMP_LIGHT + 1,
             Piece::Ladder { top, .. } => ground..(*top).max(ground),
             Piece::Rampart { masonry, .. } | Piece::Gate { masonry, .. } => ground - 1..ground + masonry.height + 1,
             Piece::House(h) => span(h.floor, 1, h.top()),
@@ -1396,8 +1451,10 @@ impl Piece {
                 (y < ground || y == f).then_some(BlockId::AIR)
             }
             Piece::Lamp { masonry, .. } => match y - ground {
-                0 | 1 => Some(masonry.post),
-                2 => Some(masonry.light),
+                // Socle, fût de barrière, lanterne au sommet
+                0 => Some(masonry.accent),
+                1..LAMP_LIGHT => Some(masonry.post),
+                LAMP_LIGHT => Some(masonry.light),
                 _ => None,
             },
             Piece::Ladder { back, .. } => Some(facing(LADDER, *back)),
@@ -1571,6 +1628,40 @@ impl Settlement {
             return None;
         }
         self.pieces_at(x, z).find_map(|p| if p.span(ground).contains(&y) { p.block(x, y, z, ground) } else { None })
+    }
+
+    /// Blocs qui éclairent (torches, lampadaires, fontaines) posés par le plan dans les colonnes
+    /// `area` : position et bloc. `ground(x, z)` donne l'altitude du premier bloc d'air au-dessus
+    /// du relief naturel de la colonne (le pied d'un lampadaire). Seuls ceux que le plan pose
+    /// vraiment à cet endroit sont gardés.
+    pub fn lights(&self, area: Rect, ground: impl Fn(i32, i32) -> i32) -> Vec<(i32, i32, i32, BlockId)> {
+        let mut found = Vec::new();
+        if !self.bounds.intersects(&area) {
+            return found;
+        }
+        for piece in self.pieces.iter().filter(|p| p.rect().intersects(&area)) {
+            let mut spots: Vec<(i32, i32, i32)> = Vec::new();
+            match piece {
+                Piece::Lamp { x, z, .. } => spots.push((*x, ground(*x, *z) + LAMP_LIGHT, *z)),
+                Piece::Fountain { rect, floor } => {
+                    let (cx, cz) = rect.center();
+                    spots.push((cx, floor + 2, cz));
+                }
+                Piece::House(house) => spots.extend(house.torches().map(|(x, level, z)| (x, house.floor + level, z))),
+                _ => continue,
+            }
+            for (x, y, z) in spots {
+                if !area.contains(x, z) {
+                    continue;
+                }
+                if let Some(block) = self.block(x, y, z, ground(x, z)) {
+                    if block.light() > 0 {
+                        found.push((x, y, z, block));
+                    }
+                }
+            }
+        }
+        found
     }
 
     /// Altitudes que le plan peut changer dans la colonne (x, z) (vide s'il n'y touche pas)
@@ -2495,6 +2586,46 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_houses_and_lamps_are_lit() {
+        let generator = generator(2026);
+        let settlements = all_settlements(&generator);
+        let (mut houses, mut lamps) = (0, 0);
+        for s in settlements.iter().filter(|s| s.culture.is_some()) {
+            for piece in &s.pieces {
+                match piece {
+                    Piece::House(h) if !matches!(h.usage, Use::Barn) => {
+                        // Chaque étage a sa torche, posée sur le plancher, à l'intérieur des murs
+                        let torches: Vec<_> = h.torches().collect();
+                        assert!(torches.len() >= h.storeys as usize, "{h:?}");
+                        for (x, level, z) in torches {
+                            assert!(h.foot.contains(x, z) && !h.foot.on_edge(x, z));
+                            assert_eq!(h.block(x, h.floor + level, z, h.floor), Some(TORCH), "{h:?}");
+                            let below = h.block(x, h.floor + level - 1, z, h.floor).unwrap();
+                            assert!(below.is_solid(), "torche posée sur {below:?}");
+                        }
+                        houses += 1;
+                    }
+                    Piece::Lamp { x, z, masonry } => {
+                        // Le poteau est une barrière, la lumière au-dessus
+                        let ground = 100;
+                        assert!(piece.block(*x, ground + 1, *z, ground).unwrap().is_fence());
+                        assert!(piece.block(*x, ground + LAMP_LIGHT, *z, ground).unwrap().light() > 0, "{masonry:?}");
+                        lamps += 1;
+                    }
+                    _ => {}
+                }
+            }
+            // Les lumières que le plan annonce sont bien celles qu'il pose
+            let lights = s.lights(s.bounds, |_, _| 100);
+            assert!(!lights.is_empty());
+            for (x, y, z, block) in lights {
+                assert_eq!(s.block(x, y, z, 100), Some(block));
+            }
+        }
+        assert!(houses > 50 && lamps > 20, "{houses} maisons, {lamps} lampadaires");
     }
 
     #[test]

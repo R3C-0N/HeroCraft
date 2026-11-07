@@ -449,7 +449,7 @@ pub fn push_figure(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure,
         let uvs = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
         let base = frame.vertices.len() as u32;
         for (p, uv) in c.iter().zip(uvs) {
-            frame.vertices.push(PlanetVertex { position: to_world(*p).to_array(), normal: normal.to_array(), color, texture: PlanetVertex::UNTEXTURED });
+            frame.vertices.push(PlanetVertex { position: to_world(*p).to_array(), normal: normal.to_array(), color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
             frame.uvs.push(uv);
         }
         frame.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);

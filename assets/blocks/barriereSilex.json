@@ -1,0 +1,13 @@
+{
+  "numeric_id": 158,
+  "name": "Barrière de briques de silex",
+  "description": "Un poteau qui se relie de lui-même aux barrières et aux murs voisins. On ne passe pas entre deux poteaux reliés.",
+  "category": "Construction",
+  "hardness": 14,
+  "color": {"side": "#3f434a"},
+  "textures": {"side": "textures/FlintBrick.png"},
+  "shape": "barriere",
+  "recipes": [
+    {"station": "workbench", "ingredients": {"flintBrick": 3}, "count": 3}
+  ]
+}

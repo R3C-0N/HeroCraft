@@ -366,7 +366,7 @@ pub fn build_frame(views: &[CreatureView], registry: &CreatureRegistry, models: 
                 let base = frame.vertices.len() as u32;
                 for v in &model.vertices {
                     let p = skin_point(&matrices, v, v.position) + Vec3::Y * model.feet_height;
-                    frame.vertices.push(PlanetVertex { position: to_world(p).to_array(), normal: rotate(skin_normal(&matrices, v)).to_array(), color: [tint[0], tint[1], tint[2], 1.0], texture: PlanetVertex::UNTEXTURED });
+                    frame.vertices.push(PlanetVertex { position: to_world(p).to_array(), normal: rotate(skin_normal(&matrices, v)).to_array(), color: [tint[0], tint[1], tint[2], 1.0], texture: PlanetVertex::UNTEXTURED, light: 0.0 });
                     frame.uvs.push(v.uv);
                 }
                 frame.indices.extend(model.indices.iter().map(|i| base + i));
@@ -431,7 +431,7 @@ fn push_cube(frame: &mut CreatureFrame, center: Vec3, axes: [Vec3; 3]) {
             let corners = if sign > 0.0 { [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] } else { [(-1.0, -1.0), (-1.0, 1.0), (1.0, 1.0), (1.0, -1.0)] };
             for (su, sv) in corners {
                 let p = face + u * su + v * sv;
-                frame.vertices.push(PlanetVertex { position: p.to_array(), normal: normal.to_array(), color: HEART_COLOR, texture: PlanetVertex::UNTEXTURED });
+                frame.vertices.push(PlanetVertex { position: p.to_array(), normal: normal.to_array(), color: HEART_COLOR, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
                 frame.uvs.push([0.0, 0.0]);
             }
             frame.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -504,7 +504,7 @@ fn push_placeholder(frame: &mut CreatureFrame, to_world: impl Fn(Vec3) -> Vec3, 
     for (face, normal) in FACES {
         let base = frame.vertices.len() as u32;
         for corner in face {
-            frame.vertices.push(PlanetVertex { position: to_world(corners[corner]).to_array(), normal: rotate(normal).to_array(), color: [0.5 * tint[0], 0.5 * tint[1], 0.5 * tint[2], 1.0], texture: PlanetVertex::UNTEXTURED });
+            frame.vertices.push(PlanetVertex { position: to_world(corners[corner]).to_array(), normal: rotate(normal).to_array(), color: [0.5 * tint[0], 0.5 * tint[1], 0.5 * tint[2], 1.0], texture: PlanetVertex::UNTEXTURED, light: 0.0 });
             frame.uvs.push([0.0, 0.0]);
         }
         frame.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);

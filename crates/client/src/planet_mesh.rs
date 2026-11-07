@@ -15,6 +15,9 @@ pub struct PlanetVertex {
     /// Texture du bloc : rang dans la liste des textures (16 bits bas, `NO_TEXTURE` : couleur
     /// seule), puis u et v en seizièmes de la texture (8 bits chacun)
     pub texture: u32,
+    /// Lumière des torches et autres blocs qui éclairent reçue par le sommet, de 0 à 1
+    /// (`block_light::intensity`)
+    pub light: f32,
 }
 
 impl PlanetVertex {
@@ -60,7 +63,7 @@ impl PlanetVertex {
         let [r, g, b, a] = self.color;
         PackedAttributes {
             normal_alpha: [snorm(nx), snorm(ny), snorm(nz), snorm(a)],
-            color: [unorm(r), unorm(g), unorm(b), 255],
+            color: [unorm(r), unorm(g), unorm(b), (self.light.clamp(0.0, 1.0) * 255.0 + 0.5) as u8],
             texture: self.texture,
         }
     }
@@ -74,7 +77,7 @@ impl PlanetVertex {
 pub struct PackedAttributes {
     /// Normale (xyz) et opacité du sommet (w, négative pour un fondu sortant), de -127 à 127
     pub normal_alpha: [i8; 4],
-    /// Racine carrée de la couleur (rgb), de 0 à 255
+    /// Racine carrée de la couleur (rgb), de 0 à 255, puis la lumière des blocs (a)
     pub color: [u8; 4],
     pub texture: u32,
 }
@@ -442,10 +445,10 @@ impl PlanetMesh {
                         normal: Vec3, color: [f32; 4]| {
             let base_idx = verts.len() as u32;
             let norm_arr = normal.to_array();
-            verts.push(PlanetVertex { position: p0.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED });
-            verts.push(PlanetVertex { position: p1.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED });
-            verts.push(PlanetVertex { position: p2.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED });
-            verts.push(PlanetVertex { position: p3.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED });
+            verts.push(PlanetVertex { position: p0.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
+            verts.push(PlanetVertex { position: p1.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
+            verts.push(PlanetVertex { position: p2.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
+            verts.push(PlanetVertex { position: p3.to_array(), normal: norm_arr, color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
 
             // Triangle 1 CCW: (0, 1, 2)
             inds.push(base_idx);
@@ -604,7 +607,7 @@ mod tests {
     #[test]
     fn test_packed_vertex_round_trip() {
         assert_eq!(std::mem::size_of::<PackedAttributes>(), 12);
-        let v = PlanetVertex { position: [1.0, 2.0, 3.0], normal: [0.6, -0.8, 0.0], color: [0.02, 0.5, 1.0, -0.5], texture: 7 };
+        let v = PlanetVertex { position: [1.0, 2.0, 3.0], normal: [0.6, -0.8, 0.0], color: [0.02, 0.5, 1.0, -0.5], texture: 7, light: 0.0 };
         let p = v.packed_attributes();
         // Décodage du GPU : snorm8 = c / 127, unorm8 = c / 255 (puis au carré pour la couleur)
         let n: Vec<f32> = p.normal_alpha.iter().map(|&c| (c as f32 / 127.0).max(-1.0)).collect();
@@ -628,7 +631,7 @@ mod tests {
         let long = PackedIndices::new(&[0, 70000], 70001);
         assert_eq!((long.bytes().len(), long.format()), (8, wgpu::IndexFormat::Uint32));
         // La taille annoncée avant le tassage est celle envoyée
-        let vertex = PlanetVertex { position: [0.0; 3], normal: [0.0, 1.0, 0.0], color: [1.0; 4], texture: 0 };
+        let vertex = PlanetVertex { position: [0.0; 3], normal: [0.0, 1.0, 0.0], color: [1.0; 4], texture: 0, light: 0.0 };
         let mesh = PlanetMesh { vertices: vec![vertex; 4], indices: vec![0, 1, 2, 2, 3, 0] };
         let data = GpuMeshData::new(&mesh);
         let sent = data.positions.len() * 12 + data.attributes.len() * 12 + data.indices.bytes().len();

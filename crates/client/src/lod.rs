@@ -240,6 +240,8 @@ impl PlanetLodManager {
         let own_key = QuadNodeKey::new(coord.face, VOXEL_LEVEL, coord.x as u32, coord.y as u32);
         // Le chunk d'origine est tiré des colonnes déjà échantillonnées pour le maillage s'il y en a
         let source = self.voxel_cache.get(&own_key).map(|c| c.source.clone());
+        // Un bloc qui éclaire, posé ou retiré, change la lumière jusqu'à `LIGHT_REACH` blocs
+        let lit = block.light() > 0 || self.edits.block(generator, pos).light() > 0;
         let changed = self.edits.set_block_with(pos, block, |coord| match &source {
             Some(source) => source.generate_chunk(generator, coord.altitude_layer),
             None => generator.generate_chunk(coord),
@@ -250,10 +252,14 @@ impl PlanetLodManager {
         self.edit_count += 1;
 
         let (lx, ly, lz) = pos.local();
+        // Chunks voisins concernés : ceux que le bloc touche par une face (faces et ombrage), ou que
+        // sa lumière atteint
+        let reach = if lit { crate::block_light::LIGHT_REACH as u8 } else { 1 };
         let edge = |l: u8| -> &'static [i32] {
-            match l {
-                0 => &[0, -1],
-                31 => &[0, 1],
+            match (l < reach, l > 31 - reach) {
+                (true, true) => &[0, -1, 1],
+                (true, false) => &[0, -1],
+                (false, true) => &[0, 1],
                 _ => &[0],
             }
         };

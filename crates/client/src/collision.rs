@@ -68,6 +68,10 @@ impl VoxelCollider {
                 // Une échelle ne porte pas : on s'y tient en grimpant (`climbable_at`), pas debout dessus
                 let height = match block.shape() {
                     _ if block.is_climbable() => None,
+                    Some(_) if block.is_fence() => {
+                        let links = fence_links_at(q, BlockPos { y, ..pos });
+                        herocraft_common::boxes_top_at(&herocraft_common::fence_collision_boxes(links), local[0], local[2], limit - y as f64)
+                    }
                     Some(shape) => shape.top_at(block.shape_variant(), local[0], local[2], limit - y as f64),
                     None => Some(1.0),
                 };
@@ -149,9 +153,22 @@ impl VoxelCollider {
             points.iter().any(|p| {
                 self.geometry.locate(DVec3::new(p.x as f64, p.y as f64, p.z as f64)).is_some_and(|(pos, local)| {
                     let block = if pos.is_valid() { q.block(pos) } else { BlockId::AIR };
+                    if block.is_fence() {
+                        return herocraft_common::boxes_contain(&herocraft_common::fence_collision_boxes(fence_links_at(q, pos)), local);
+                    }
                     block.is_solid() && block.contains(local)
                 })
             })
         })
     }
+}
+
+/// Liaisons de la barrière en `pos` avec ses voisines de la même face (`herocraft_common::fence_links`)
+fn fence_links_at(q: &mut TerrainQuery, pos: BlockPos) -> u8 {
+    let neighbors = herocraft_common::FENCE_SIDES.map(|dir| {
+        let d = herocraft_common::FACE_DIRS[dir];
+        let n = BlockPos { x: pos.x + d.0, z: pos.z + d.2, ..pos };
+        (dir, if n.is_valid() { q.block(n) } else { BlockId::AIR })
+    });
+    herocraft_common::fence_links(|dir| neighbors.iter().find(|(d, _)| *d == dir).map_or(BlockId::AIR, |(_, b)| *b))
 }

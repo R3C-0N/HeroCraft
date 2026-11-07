@@ -283,6 +283,12 @@ impl PlanetWorldGenerator {
         road_block(self.roads.surface(self, face, x, z)?, y, ground)
     }
 
+    /// Blocs qui éclairent posés par les structures dans les colonnes `area` d'une face : position
+    /// et bloc. `ground(x, z)` : altitude du premier bloc d'air au-dessus du relief de la colonne.
+    pub fn structure_lights(&self, face: PlanetFace, area: crate::structures::Rect, ground: impl Fn(i32, i32) -> i32) -> Vec<(i32, i32, i32, BlockId)> {
+        self.structures.touching(self, face, area).into_iter().flat_map(|s| s.lights(area, &ground)).collect()
+    }
+
     /// Altitudes de la colonne (x, z) qu'une structure peut changer (vide si aucune n'y touche)
     pub fn structure_span(&self, column: &ColumnSample, face: PlanetFace, x: i32, z: i32) -> Range<i32> {
         let ground = column.elevation.floor() as i32;

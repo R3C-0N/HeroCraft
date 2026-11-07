@@ -1,0 +1,5 @@
+{
+  "name": "Lanterne",
+  "description": "Une lanterne à poser : un socle, une cage vitrée, un couvercle et une petite anse.",
+  "boxes": [[4, 0, 4, 12, 1, 12], [5, 1, 5, 11, 8, 11], [4, 8, 4, 12, 9, 12], [6, 9, 6, 10, 10, 10]]
+}

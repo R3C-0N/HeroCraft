@@ -1,0 +1,16 @@
+{
+  "numeric_id": 163,
+  "name": "Lanterne",
+  "description": "Une flamme à l'abri d'une cage de fer vitrée. Éclaire autant qu'une torche.",
+  "category": "Divers",
+  "hardness": 4,
+  "color": {"side": "#d89a4a"},
+  "textures": {"top": "textures/LanterneDessus.png", "side": "textures/Lanterne.png", "bottom": "textures/LanterneDessus.png"},
+  "shape": "lanterne",
+  "solid": false,
+  "opaque": false,
+  "light": 15,
+  "recipes": [
+    {"station": "workbench", "ingredients": {"ironIngot": 1, "torch": 1, "glass": 1}, "count": 1}
+  ]
+}

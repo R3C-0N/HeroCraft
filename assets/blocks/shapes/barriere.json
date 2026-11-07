@@ -1,0 +1,5 @@
+{
+  "name": "Barrière",
+  "description": "Un poteau carré au centre du bloc, relié par deux traverses à chaque barrière ou mur voisin (les traverses sont ajoutées au maillage et aux collisions selon les voisins).",
+  "boxes": [[6, 0, 6, 10, 16, 10]]
+}
