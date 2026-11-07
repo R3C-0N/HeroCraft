@@ -8,6 +8,7 @@ use herocraft_voxel_engine::chunk::{ChunkData, CHUNK_SIZE};
 use herocraft_world::generator::{ColumnSample, PlanetWorldGenerator};
 use herocraft_world::{carvable_range, TerrainEdits, VegetationField, ALTITUDE_LAYERS, FACE_CHUNKS};
 
+use crate::block_light::{self, LightField, LIGHT_REACH};
 use crate::block_textures::{block_textures, face_uv};
 use crate::planet_mesh::{PlanetMesh, PlanetVertex};
 
@@ -249,7 +250,7 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx, gy + 1, gz - 1), (gx + 1, gy + 1, gz - 1)),
                             ]
                         };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [PlanetVertex::UNTEXTURED; 4]);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [0.0; 4], [PlanetVertex::UNTEXTURED; 4]);
                     }
 
                     // 2. Face Bas (-Y) - uniquement pour blocs solides au-dessus d'une caverne d'air
@@ -267,7 +268,7 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, (gx + 1, gy - 1, gz), (gx, gy - 1, gz + 1), (gx + 1, gy - 1, gz + 1)),
                                 Self::calc_corner_ao(&get_voxel, (gx - 1, gy - 1, gz), (gx, gy - 1, gz + 1), (gx - 1, gy - 1, gz + 1)),
                             ];
-                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [PlanetVertex::UNTEXTURED; 4]);
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [0.0; 4], [PlanetVertex::UNTEXTURED; 4]);
                         }
                     }
 
@@ -294,7 +295,7 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, (gx - 1, gy + 1, gz), (gx - 1, gy, gz - 1), (gx - 1, gy + 1, gz - 1)),
                             ]
                         };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [PlanetVertex::UNTEXTURED; 4]);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [0.0; 4], [PlanetVertex::UNTEXTURED; 4]);
                     }
 
                     // 4. Face Droite (+X)
@@ -320,7 +321,7 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, (gx + 1, gy + 1, gz), (gx + 1, gy, gz + 1), (gx + 1, gy + 1, gz + 1)),
                             ]
                         };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [PlanetVertex::UNTEXTURED; 4]);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [0.0; 4], [PlanetVertex::UNTEXTURED; 4]);
                     }
 
                     // 5. Face Avant (+Z)
@@ -346,7 +347,7 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, (gx + 1, gy, gz + 1), (gx, gy + 1, gz + 1), (gx + 1, gy + 1, gz + 1)),
                             ]
                         };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [PlanetVertex::UNTEXTURED; 4]);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [0.0; 4], [PlanetVertex::UNTEXTURED; 4]);
                     }
 
                     // 6. Face Arrière (-Z)
@@ -372,7 +373,7 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, (gx - 1, gy, gz - 1), (gx, gy + 1, gz - 1), (gx - 1, gy + 1, gz - 1)),
                             ]
                         };
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [PlanetVertex::UNTEXTURED; 4]);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, [0.0; 4], [PlanetVertex::UNTEXTURED; 4]);
                     }
                 }
             }
@@ -688,6 +689,24 @@ impl VoxelMeshBuilder {
             (y as f64) < column.elevation.floor()
                 && caves.as_ref().is_some_and(|caves| caves.carved(column, block_x0 + gx, y, block_z0 + gz))
         };
+        let light = Self::light_field(generator, source, layer, &neighbours, &get_voxel);
+        // Lumière d'une case, et moyenne de celles qui entourent un coin de face (les blocs pleins
+        // n'y comptent pas, comme pour l'ombrage ambiant)
+        let light_at = |gx: i32, gy: i32, gz: i32| -> f32 { light.as_ref().map_or(0.0, |l| l.level(gx, gy, gz) as f32) };
+        let corner_light = |front: (i32, i32, i32), [s1, s2, c]: [(i32, i32, i32); 3]| -> f32 {
+            let Some(l) = light.as_ref() else { return 0.0 };
+            let full = |p: (i32, i32, i32)| l.is_full(p.0, p.1, p.2);
+            let level = |p: (i32, i32, i32)| l.level(p.0, p.1, p.2) as u32;
+            let (mut sum, mut count) = (level(front), 1);
+            for (p, counted) in [(s1, !full(s1)), (s2, !full(s2)), (c, !full(c) && !(full(s1) && full(s2)))] {
+                if counted {
+                    sum += level(p);
+                    count += 1;
+                }
+            }
+            sum as f32 / count as f32
+        };
+
         // `toward` : le voisin vers lequel la face regarde
         let get_color = |gx: i32, gy: i32, gz: i32, block: BlockId, dir: usize| -> [f32; 4] {
             let toward = FACE_DIRS[dir];
@@ -779,14 +798,26 @@ impl VoxelMeshBuilder {
                             let (c2, c3) = (corner(b.0, 1.0, b.1), corner(a.0, 1.0, a.1));
                             let front = [tex(0, 16), tex(16, 16), tex(16, 0), tex(0, 0)];
                             let back = [tex(16, 16), tex(0, 16), tex(0, 0), tex(16, 0)];
-                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, [1.0; 4], front);
-                            Self::add_quad(&mut vertices, &mut indices, c1, c0, c3, c2, color, [1.0; 4], back);
+                            let glow = [block_light::intensity(light_at(gx, gy, gz)); 4];
+                            Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, [1.0; 4], glow, front);
+                            Self::add_quad(&mut vertices, &mut indices, c1, c0, c3, c2, color, [1.0; 4], glow, back);
                         }
                         continue;
                     }
                     if let Some(shape) = block.shape() {
-                        // Dalle, escalier, échelle : les faces de chaque pavé que rien ne couvre
-                        let boxes = shape.boxes(block.shape_variant());
+                        // Dalle, escalier, échelle : les faces de chaque pavé que rien ne couvre. Une
+                        // barrière a en plus ses traverses vers les voisins auxquels elle se relie.
+                        let fence;
+                        let boxes = if block.is_fence() {
+                            fence = herocraft_common::fence_boxes(herocraft_common::fence_links(|dir| {
+                                let d = FACE_DIRS[dir];
+                                get_voxel(gx + d.0, gy + d.1, gz + d.2)
+                            }));
+                            &fence[..]
+                        } else {
+                            shape.boxes(block.shape_variant())
+                        };
+                        let own_light = light_at(gx, gy, gz);
                         for (i, b) in boxes.iter().enumerate() {
                             for (dir, face) in CUBE_FACES.iter().enumerate() {
                                 let axis = dir / 2;
@@ -813,7 +844,9 @@ impl VoxelMeshBuilder {
                                     ShapeTexture::Stretch => local.map(|c| std::array::from_fn(|k| ((c[k] - b[k]) as u32 * 16 / (b[k + 3] - b[k]) as u32) as u8)),
                                 };
                                 let tex = face_texture(block, dir, uv_corners);
-                                Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, [1.0; 4], tex);
+                                let d = FACE_DIRS[dir];
+                                let glow = [block_light::intensity(own_light.max(light_at(gx + d.0, gy + d.1, gz + d.2))); 4];
+                                Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, [1.0; 4], glow, tex);
                             }
                         }
                         continue;
@@ -841,6 +874,10 @@ impl VoxelMeshBuilder {
                                 Self::calc_corner_ao(&get_voxel, at(s1), at(s2), at(c))
                             })
                         };
+                        let glow = face.ao.map(|offsets| {
+                            let at = |o: (i32, i32, i32)| (gx + o.0, gy + o.1, gz + o.2);
+                            block_light::intensity(corner_light(at(d), offsets.map(at)))
+                        });
                         let mut tex = face_texture(block, dir, face.corners.map(|o| [o.0 * 16, o.1 * 16, o.2 * 16]));
                         if blocks().get(block).is_some_and(|sheet| sheet.connected) {
                             // Verre : le cadre ne court que sur les bords qui ne touchent pas un bloc pareil
@@ -848,13 +885,117 @@ impl VoxelMeshBuilder {
                             let layer = block_textures().connected_layer(blocks().face_texture(block, dir), mask);
                             tex = tex.map(|t| (t & !0xFFFF) | layer as u32);
                         }
-                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, tex);
+                        Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, ao, glow, tex);
                     }
                 }
             }
         }
 
         PlanetMesh { vertices, indices }
+    }
+
+    /// Lumière des blocs autour de la couche `layer` de la colonne : celle des blocs qui éclairent
+    /// dans les chunks modifiés du voisinage (`neighbours`) et celle des torches et lampadaires
+    /// des structures ailleurs, répandue jusqu'à `LIGHT_REACH` blocs. Les cases lues par la
+    /// propagation viennent de `get_voxel` près du chunk et dans les chunks modifiés ; plus loin,
+    /// d'une estimation (le relief de la colonne de bordure la plus proche, sans grotte ni arbre,
+    /// et les structures) qui épargne l'échantillonnage du relief.
+    fn light_field(
+        generator: &PlanetWorldGenerator,
+        source: &VoxelColumnSource,
+        layer: i32,
+        neighbours: &[Option<Arc<ChunkData>>; 27],
+        get_voxel: &impl Fn(i32, i32, i32) -> BlockId,
+    ) -> Option<LightField> {
+        herocraft_common::prof_scope!("voxel_mesh::light");
+        let slot = |x: i32, y: i32, z: i32| ((y.div_euclid(32) + 1) * 9 + (z.div_euclid(32) + 1) * 3 + x.div_euclid(32) + 1) as usize;
+        let in_reach = |v: i32| (-LIGHT_REACH..32 + LIGHT_REACH).contains(&v);
+        let mut sources = Vec::new();
+        // Chunks modifiés : tous leurs blocs qui éclairent
+        for (i, chunk) in neighbours.iter().enumerate() {
+            let Some(chunk) = chunk else { continue };
+            let (ox, oy, oz) = (((i % 3) as i32 - 1) * 32, ((i / 9) as i32 - 1) * 32, (((i / 3) % 3) as i32 - 1) * 32);
+            for (n, block) in chunk.voxels.iter().enumerate() {
+                if block.is_air() {
+                    continue;
+                }
+                let level = block.light();
+                if level == 0 {
+                    continue;
+                }
+                let (x, z, y) = (ox + (n % 32) as i32, oz + ((n / 32) % 32) as i32, oy + (n / 1024) as i32);
+                if in_reach(x) && in_reach(y) && in_reach(z) {
+                    sources.push((x, y, z, level));
+                }
+            }
+        }
+        // Structures, là où le chunk n'est pas modifié (sinon il compte tel qu'il est)
+        let (face, block_x0, block_z0) = (source.face, source.chunk_x * CHUNK_SIZE as i32, source.chunk_y * CHUNK_SIZE as i32);
+        let face_chunks_count = FACE_CHUNKS as f64;
+        let voxel_span_uv = 2.0 / face_chunks_count / (CHUNK_SIZE as f64);
+        let base_u = -1.0 + (source.chunk_x as f64) * 2.0 / face_chunks_count;
+        let base_v = -1.0 + (source.chunk_y as f64) * 2.0 / face_chunks_count;
+        let border_column = |gx: i32, gz: i32| -> &ColumnSample {
+            let (cx, cz) = (gx.clamp(-COLUMN_BORDER, 31 + COLUMN_BORDER), gz.clamp(-COLUMN_BORDER, 31 + COLUMN_BORDER));
+            &source.columns[((cz + COLUMN_BORDER) * COLUMN_SIDE + cx + COLUMN_BORDER) as usize]
+        };
+        let ground = |x: i32, z: i32| -> i32 {
+            let (gx, gz) = (x - block_x0, z - block_z0);
+            let near = (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&gx) && (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&gz);
+            let elevation = if near {
+                border_column(gx, gz).elevation
+            } else {
+                generator.sample_column(face, base_u + gx as f64 * voxel_span_uv, base_v + gz as f64 * voxel_span_uv).elevation
+            };
+            elevation.floor() as i32
+        };
+        let area = herocraft_world::structures::Rect::new(block_x0 - LIGHT_REACH, block_z0 - LIGHT_REACH, block_x0 + 32 + LIGHT_REACH, block_z0 + 32 + LIGHT_REACH);
+        let y0 = layer * 32;
+        for (x, y, z, block) in generator.structure_lights(face, area, ground) {
+            let (lx, ly, lz) = (x - block_x0, y - y0, z - block_z0);
+            if in_reach(ly) && neighbours[slot(lx, ly, lz)].is_none() {
+                sources.push((lx, ly, lz, block.light()));
+            }
+        }
+        if sources.is_empty() {
+            return None;
+        }
+        let covers = |block: BlockId| -> u8 {
+            if block.is_opaque() {
+                block_light::FULL
+            } else if block.shape().is_some() {
+                (0..6).filter(|&dir| block.hides_face(dir)).fold(0, |mask, dir| mask | (1 << dir))
+            } else {
+                0
+            }
+        };
+        // Altitudes que les structures changent dans chaque colonne lointaine, lues une fois par colonne
+        let side = (32 + 2 * LIGHT_REACH) as usize;
+        let mut spans: Vec<Option<std::ops::Range<i32>>> = vec![None; side * side];
+        LightField::compute(&sources, |x, y, z| {
+            let near = (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&x) && (-COLUMN_BORDER..32 + COLUMN_BORDER).contains(&z);
+            if near || neighbours[slot(x, y, z)].is_some() || (layer == 0 && y < 0) {
+                return covers(get_voxel(x, y, z));
+            }
+            // Loin du chunk : le relief de la colonne de bordure la plus proche, et les structures
+            let column = border_column(x, z);
+            let (bx, by, bz) = (block_x0 + x, y0 + y, block_z0 + z);
+            if by < 0 {
+                return block_light::FULL;
+            }
+            let span = spans[(z + LIGHT_REACH) as usize * side + (x + LIGHT_REACH) as usize]
+                .get_or_insert_with(|| generator.structure_span(column, face, bx, bz));
+            if span.contains(&by) {
+                if let Some(block) = generator.structure_block(column, face, bx, by, bz) {
+                    return covers(block);
+                }
+            }
+            if (by as f64) < column.elevation.floor() {
+                block_light::FULL
+            } else {
+                0
+            }
+        })
     }
 
     /// Bords de la face `dir` (dans le repère de sa texture, `face_uv`) qui touchent un bloc du même
@@ -935,6 +1076,7 @@ impl VoxelMeshBuilder {
         c3: Vec3,
         color: [f32; 4],
         ao: [f32; 4],
+        light: [f32; 4],
         texture: [u32; 4],
     ) {
         let base_idx = vertices.len() as u32;
@@ -944,7 +1086,7 @@ impl VoxelMeshBuilder {
         let e2 = c2 - c0;
         let normal = e1.cross(e2).normalize_or_zero().to_array();
 
-        let make_vert = |pos: Vec3, ao_factor: f32, texture: u32| PlanetVertex {
+        let make_vert = |pos: Vec3, ao_factor: f32, light: f32, texture: u32| PlanetVertex {
             position: pos.to_array(),
             normal,
             color: [
@@ -954,12 +1096,13 @@ impl VoxelMeshBuilder {
                 color[3],
             ],
             texture,
+            light,
         };
 
-        vertices.push(make_vert(c0, ao[0], texture[0]));
-        vertices.push(make_vert(c1, ao[1], texture[1]));
-        vertices.push(make_vert(c2, ao[2], texture[2]));
-        vertices.push(make_vert(c3, ao[3], texture[3]));
+        vertices.push(make_vert(c0, ao[0], light[0], texture[0]));
+        vertices.push(make_vert(c1, ao[1], light[1], texture[1]));
+        vertices.push(make_vert(c2, ao[2], light[2], texture[2]));
+        vertices.push(make_vert(c3, ao[3], light[3], texture[3]));
 
         // Inversion de diagonale selon la direction du gradient AO (élimine le pli d'anisotropie)
         if ao[0] + ao[2] > ao[1] + ao[3] {
@@ -1165,6 +1308,44 @@ mod tests {
     }
 
     #[test]
+    fn test_fences_link_and_torches_light() {
+        use herocraft_world::BlockPos;
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
+        let (face, cx, cy) = (PlanetFace::PosX, 16, 16);
+        let source = Arc::new(VoxelMeshBuilder::sample_column_source(&generator, face, cx, cy, 50.0, VisualizationFilter::Standard));
+        let edits = TerrainEdits::new(None);
+        let at = |x: i32, y: i32, z: i32| BlockPos::new(face, cx * 32 + x, y, cy * 32 + z);
+        let sky_layer = |layer: i32| {
+            let column = VoxelMeshBuilder::build_column(&generator, &edits, source.clone());
+            let range = column.layers.iter().find(|r| r.layer == layer).unwrap().vertices.clone();
+            column.mesh.vertices[range].to_vec()
+        };
+        // Barrière seule dans le ciel : le poteau, 6 faces
+        let fence = blocks().find("barriereChene").unwrap();
+        edits.set_block(&generator, at(20, 500, 10), fence);
+        assert_eq!(sky_layer(15).len(), 24);
+        // Deux barrières côte à côte : chacune son poteau et deux traverses vers l'autre (le bout
+        // d'une traverse collé à son poteau n'est pas dessiné)
+        edits.set_block(&generator, at(21, 500, 10), fence);
+        let two = sky_layer(15);
+        assert_eq!(two.len(), 2 * (24 + 2 * 5 * 4), "{} faces", two.len() / 4);
+        assert!(two.iter().all(|v| v.light == 0.0), "rien n'éclaire encore");
+        // Une torche à côté : les faces proches sont éclairées, d'autant moins qu'elles sont loin
+        let torch = blocks().find("torch").unwrap();
+        edits.set_block(&generator, at(20, 501, 10), torch);
+        let lit = sky_layer(15);
+        let max = lit.iter().map(|v| v.light).fold(0.0, f32::max);
+        assert!(max > 0.8, "{max}");
+        // Un cube de pierre à 10 blocs de la torche reçoit moins de lumière qu'au pied de la torche
+        edits.set_block(&generator, at(30, 501, 10), BlockId::STONE);
+        let far = sky_layer(15).iter().filter(|v| v.texture & 0xFFFF == blocks().face_texture(BlockId::STONE, 0) as u32).map(|v| v.light).fold(0.0, f32::max);
+        assert!(far > 0.0 && far < 0.3, "{far}");
+        // La torche retirée, plus rien ne brille
+        edits.set_block(&generator, at(20, 501, 10), BlockId::AIR);
+        assert!(sky_layer(15).iter().all(|v| v.light == 0.0));
+    }
+
+    #[test]
     fn test_cave_walls_are_meshed_below_the_surface() {
         // Collines de la face -Z (graine 42) percées de tunnels : leurs parois sont maillées, couleur
         // de la roche et non du biome, jusque dans les couches entièrement sous le relief
@@ -1229,5 +1410,3 @@ mod tests {
     }
 
 }
-
-

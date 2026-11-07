@@ -33,7 +33,7 @@ Les 135 premiers blocs viennent des modules de la branche `develop` (`CoreAssets
 | `color` | Couleur des faces sans texture : `side` pour les côtés et le dessous, `top` pour le dessus (celle des côtés à défaut). `#rrggbb`, ou `#rrggbbaa` pour une face translucide. |
 | `textures` | Textures PNG des faces, chemins depuis ce dossier : `side`, et au besoin `top` et `bottom`. 16 x 16 texels (une image plus grande est ramenée à 16 x 16, une bande d'images réduite à la première). Les texels transparents sont des trous (fleurs, feuillages, échelle). Elles couvrent les blocs du terrain et dessinent l'icône de l'inventaire. Les liquides gardent leur couleur. |
 | `texture_tint` | Teinte appliquée aux textures grises (herbe, feuillages), `#rrggbb` : sur le dessus, et sur les côtés qui ont la texture du dessus. |
-| `shape` | Forme du bloc : `cube` (par défaut), `plant` (deux panneaux croisés en diagonale, pour les fleurs, les herbes et les pousses), le nom d'une forme de `shapes/` (`dalle`, `escalier`, `panneau`, `poteau`, `colonne`, `torche`), ou des pavés décrits sur place (voir plus bas). Une plante ou une forme ne cache que ce que ses faces couvrent entièrement. |
+| `shape` | Forme du bloc : `cube` (par défaut), `plant` (deux panneaux croisés en diagonale, pour les fleurs, les herbes et les pousses), le nom d'une forme de `shapes/` (`dalle`, `escalier`, `panneau`, `poteau`, `colonne`, `torche`, `barriere`), ou des pavés décrits sur place (voir plus bas). Une plante ou une forme ne cache que ce que ses faces couvrent entièrement. |
 | `rotation` | Orientation choisie à la pose, pour un bloc qui a une forme. `none` (par défaut) : toujours posé pareil. `horizontal` : il se tourne d'un quart de tour en quart de tour pour que l'avant de sa forme regarde le joueur (escaliers, échelle). `face` : il se couche contre la face visée, le dessous de sa forme collé au bloc visé (une dalle posée au sol est basse, sous un plafond haute, contre un mur verticale). |
 | `upside_down` | Avec `rotation: horizontal` : `true` pour qu'il se pose à l'envers quand on vise le dessous d'un bloc ou la moitié haute d'un côté (escaliers). |
 | `solid` | `false` : on le traverse (plantes, torche). Vrai par défaut. Un bloc qu'on traverse se pose aussi là où se tient le joueur. |
@@ -41,7 +41,7 @@ Les 135 premiers blocs viennent des modules de la branche `develop` (`CoreAssets
 | `liquid` | `true` : un liquide (eau, lave). Il n'est ni solide, ni opaque, ni visé par le réticule, ni ramassé ; un bloc posé le remplace. |
 | `replaceable` | `true` : une herbe folle (herbes hautes, buisson mort). Un bloc posé en la visant prend sa place, au lieu de se poser par-dessus. |
 | `connected` | `true` : texture « connectée » (le verre). Son cadre n'est dessiné que sur les bords qui ne touchent pas un bloc du même genre : deux blocs côte à côte forment un seul panneau, encadré d'un seul tenant. Le dedans de la texture reste transparent, sauf ses reflets. |
-| `light` | Lumière émise, de 0 à 15. Pas encore rendue. |
+| `light` | Lumière émise, de 0 à 15 (torche, lave : 15). Elle se répand de proche en proche en perdant un niveau par bloc, passe par l'air, l'eau, le verre et les feuillages, et s'arrête aux blocs pleins et aux faces pleines d'une forme (le dessous d'une dalle, le toit d'escaliers). Calculée au maillage du terrain, elle éclaire d'une lumière chaude, de jour comme de nuit, jusqu'à 14 blocs. |
 | `sound` | Matière des pas et des blocs cassés ou posés : `stone` (par défaut), `dirt`, `grass`, `sand`, `snow`, `wood` ou `water`. |
 | `drop` | Ce que donne le bloc cassé : lui-même si le champ est absent, l'identifiant d'un autre bloc (l'herbe donne `dirt`), ou `null` pour rien. |
 | `loot` | Butin tiré en plus de `drop` quand le bloc est cassé : une liste d'objets ou de blocs, chacun avec `count` (un nombre, ou `[min, max]` tiré au hasard ; 1 par défaut) et `chance` (probabilité de tomber, 1 par défaut). Exemple, les herbes hautes : `[{"item": "fibre", "chance": 0.5}, {"item": "grainesBle", "chance": 0.05}]`. |
@@ -77,4 +77,7 @@ Tout en découle :
 | `panneau` | plaque de 2 seizièmes au fond | échelle |
 | `colonne` | bloc aminci de deux seizièmes de chaque côté, à la mesure des textures du cactus | cactus |
 | `torche` | bâton de 2 x 10 x 2, texture étirée | torche |
-| `poteau` | poteau de 4 x 16 x 4 | (pour de futures clôtures) |
+| `poteau` | poteau de 4 x 16 x 4 | |
+| `barriere` | poteau de 4 x 16 x 4, relié par deux traverses à chaque barrière ou bloc plein voisin | barrières de planches, de chêne, de bouleau, de pin, de pavés, de pierre, de pierre dure, de pierre taillée, de briques, de briques blanchies, de basalte, de briques de silex, de fer, de bronze, d'argent elfique, dorée |
+
+Les traverses d'une barrière ne sont pas dans sa fiche : le maillage et les collisions les ajoutent selon ses quatre voisins (`fence_boxes` dans `crates/common/src/blocks.rs`). On ne passe pas entre deux poteaux reliés (un pan plein de toute la hauteur les sépare pour les collisions) ; le réticule ne vise que le poteau. Elles se fabriquent à l'établi, trois à la fois : deux troncs ou deux planches et deux bâtons pour le bois, trois blocs pour la pierre et les briques, trois lingots pour le fer, le bronze et l'argent elfique, un lingot d'or pour la dorée.

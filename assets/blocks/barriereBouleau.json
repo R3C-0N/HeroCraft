@@ -1,0 +1,14 @@
+{
+  "numeric_id": 149,
+  "name": "Barrière de bouleau",
+  "description": "Un poteau qui se relie de lui-même aux barrières et aux murs voisins. On ne passe pas entre deux poteaux reliés.",
+  "category": "Construction",
+  "hardness": 10,
+  "color": {"side": "#d9d3c5"},
+  "textures": {"side": "textures/BirchTrunkSides.png"},
+  "shape": "barriere",
+  "sound": "wood",
+  "recipes": [
+    {"station": "workbench", "ingredients": {"birchTrunk": 2, "stick": 2}, "count": 3}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "numeric_id": 154,
+  "name": "Barrière de pierre taillée",
+  "description": "Un poteau qui se relie de lui-même aux barrières et aux murs voisins. On ne passe pas entre deux poteaux reliés.",
+  "category": "Construction",
+  "hardness": 120,
+  "color": {"side": "#696d71"},
+  "textures": {"side": "textures/HardStoneCut.png"},
+  "shape": "barriere",
+  "recipes": [
+    {"station": "workbench", "ingredients": {"hardStoneCut": 3}, "count": 3}
+  ]
+}

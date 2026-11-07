@@ -209,7 +209,7 @@ fn push_icon(mesh: &mut PlanetMesh, center: Vec3, right: Vec3, up: Vec3, item: I
             let tu = if su * side > 0.0 { 16 } else { 0 };
             let tv = if sv > 0.0 { 0 } else { 16 };
             let texture = PlanetVertex::pack_texture(layer, tu, tv);
-            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: (normal * side).to_array(), color: [mean[0], mean[1], mean[2], 1.0], texture });
+            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: (normal * side).to_array(), color: [mean[0], mean[1], mean[2], 1.0], texture, light: 0.0 });
         }
         mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
@@ -237,7 +237,7 @@ fn push_cube(mesh: &mut PlanetMesh, center: Vec3, axes: [Vec3; 3], block: BlockI
             }
             let (tu, tv) = face_uv(dir, local);
             let texture = PlanetVertex::pack_texture(layer, tu, tv);
-            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: normal.to_array(), color: [color[0], color[1], color[2], 1.0], texture });
+            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: normal.to_array(), color: [color[0], color[1], color[2], 1.0], texture, light: 0.0 });
         }
         mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }

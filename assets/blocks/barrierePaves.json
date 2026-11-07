@@ -1,0 +1,13 @@
+{
+  "numeric_id": 151,
+  "name": "Barrière de pavés",
+  "description": "Un poteau qui se relie de lui-même aux barrières et aux murs voisins. On ne passe pas entre deux poteaux reliés.",
+  "category": "Construction",
+  "hardness": 14,
+  "color": {"side": "#a9a69d"},
+  "textures": {"side": "textures/CobbleStone.png"},
+  "shape": "barriere",
+  "recipes": [
+    {"station": "workbench", "ingredients": {"cobbleStone": 3}, "count": 3}
+  ]
+}

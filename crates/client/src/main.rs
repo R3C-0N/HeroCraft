@@ -15,6 +15,7 @@ mod audio;
 mod benchmark;
 mod block_cracks;
 mod block_interaction;
+mod block_light;
 mod block_outline;
 mod block_textures;
 mod camera;
