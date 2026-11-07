@@ -18,6 +18,8 @@ use rayon::prelude::*;
 pub struct VoxelBuildResult {
     /// Génération des caches au lancement de la tâche (incrémentée par `clear`) : un résultat périmé est ignoré
     pub generation: u64,
+    /// Version des patchs au lancement (incrémentée par `set_precision`)
+    pub patch_epoch: u32,
     pub key: QuadNodeKey,
     pub mesh: PlanetMesh,
 }
@@ -96,6 +98,12 @@ pub struct PlanetLodManager {
     pub active_filter: herocraft_world::VisualizationFilter,
     /// Précision des patchs polygonaux (voir `patch_detail`)
     pub precision: crate::ui::LodPrecisionSetting,
+    /// Version des patchs : change avec la précision, pour que le GPU ne réaffiche pas les anciens
+    patch_epoch: u32,
+    /// Patchs de l'ancienne précision, affichés tant que leurs remplaçants ne sont pas prêts
+    stale_patches: HashMap<QuadNodeKey, (u32, PlanetMesh)>,
+    /// Redemander les patchs de toutes les feuilles à la prochaine mise à jour
+    refresh_patches: bool,
     last_camera_pos: Vec3,
     last_evaluated_pos: Vec3,
     time_since_eval: f32,
@@ -150,6 +158,9 @@ impl PlanetLodManager {
             current_leaves: Vec::new(),
             active_filter: herocraft_world::VisualizationFilter::Standard,
             precision: crate::ui::LodPrecisionSetting::Normale,
+            patch_epoch: 0,
+            stale_patches: HashMap::new(),
+            refresh_patches: false,
             last_camera_pos: Vec3::splat(f32::NAN),
             last_evaluated_pos: Vec3::splat(f32::NAN),
             time_since_eval: 0.0,
@@ -201,12 +212,21 @@ impl PlanetLodManager {
         }
     }
 
-    /// Change la précision des patchs polygonaux : tous les patchs sont refaits
+    /// Change la précision des patchs polygonaux : tous les patchs sont refaits en tâche de fond,
+    /// les anciens restent affichés jusqu'à ce que les nouveaux soient tous prêts (les chunks
+    /// voxel ne bougent pas)
     pub fn set_precision(&mut self, precision: crate::ui::LodPrecisionSetting) {
-        if self.precision != precision {
-            self.precision = precision;
-            self.clear(self.current_seed);
+        if self.precision == precision {
+            return;
         }
+        self.precision = precision;
+        let old_epoch = self.patch_epoch;
+        self.patch_epoch = self.patch_epoch.wrapping_add(1);
+        // Changements rapprochés : les patchs les plus récents remplacent les plus anciens
+        let old = std::mem::take(&mut self.lod_cache);
+        self.stale_patches.extend(old.into_iter().map(|(key, mesh)| (key, (old_epoch, mesh))));
+        self.pending_patches.clear();
+        self.refresh_patches = true;
     }
 
     /// Ajuste les seuils de distance du QuadTree selon le préréglage vidéo sélectionné
@@ -232,6 +252,8 @@ impl PlanetLodManager {
         self.pending_requests.clear();
         self.pending_patches.clear();
         self.pending_leaves = None;
+        self.stale_patches.clear();
+        self.refresh_patches = false;
         self.generation += 1;
         self.column_edits.clear();
         self.revisions.clear();
@@ -361,7 +383,7 @@ impl PlanetLodManager {
             self.spawn_voxel_task(key, generator);
         }
         while let Ok(res) = self.patch_rx.try_recv() {
-            if res.generation == self.generation {
+            if res.generation == self.generation && res.patch_epoch == self.patch_epoch {
                 self.pending_patches.remove(&res.key);
                 self.lod_cache.insert(res.key, res.mesh);
             }
@@ -380,7 +402,8 @@ impl PlanetLodManager {
 
         let scale = herocraft_world::block_scale(self.base_radius as f64) as f32;
         // Évaluation QuadTree temporisée : réévalué si déplacement >= 15 cm (adapté à l'échelle) ou toutes les 80 ms si déplacement >= 2 cm
-        let should_re_eval = self.last_evaluated_pos.is_nan()
+        let should_re_eval = self.refresh_patches
+            || self.last_evaluated_pos.is_nan()
             || moved_dist > 0.15 * scale
             || (moved_dist > 0.02 * scale && self.time_since_eval > 0.08);
 
@@ -394,7 +417,8 @@ impl PlanetLodManager {
             let leaves = self.quadtree.evaluate_with_generator(cam_dvec, Some(generator));
             // Comparaison avec le dernier ensemble demandé (en attente ou affiché)
             let target = self.pending_leaves.as_ref().unwrap_or(&self.current_leaves);
-            let changed = leaves.len() != target.len()
+            let changed = std::mem::take(&mut self.refresh_patches)
+                || leaves.len() != target.len()
                 || leaves.iter().zip(target).any(|(a, b)| a.key != b.key);
             self.last_evaluated_pos = camera_pos;
             self.time_since_eval = 0.0;
@@ -410,6 +434,7 @@ impl PlanetLodManager {
             let precision = self.precision;
             let base_radius = self.base_radius;
             let generation = self.generation;
+            let patch_epoch = self.patch_epoch;
 
             // Patchs nécessaires non encore en cache
             // (couvre à la fois les feuilles LodPatch et les patchs de secours immédiat des VoxelChunks)
@@ -449,7 +474,7 @@ impl PlanetLodManager {
                         self.patch_pool.spawn(move || {
                             let (resolution, step) = patch_detail(key.level, precision);
                             let mesh = PlanetMesh::generate_lod_patch_stepped(&task_gen, &key, base_radius, resolution, step, filter);
-                            let _ = tx.send(VoxelBuildResult { generation, key, mesh });
+                            let _ = tx.send(VoxelBuildResult { generation, patch_epoch, key, mesh });
                         });
                     }
                 }
@@ -472,6 +497,8 @@ impl PlanetLodManager {
             if pending.iter().all(|l| self.lod_cache.contains_key(&l.key)) {
                 self.current_leaves = self.pending_leaves.take().unwrap_or_default();
                 leaves_switched = true;
+                // Plus aucune feuille affichée n'a besoin des patchs de l'ancienne précision
+                self.stale_patches.clear();
             }
         }
 
@@ -541,11 +568,15 @@ impl PlanetLodManager {
                         let revision = self.revisions.get(&leaf.key).copied().unwrap_or(0);
                         Some((LodMeshId { generation, key: leaf.key, voxel: true, revision }, &column.mesh))
                     }
-                    // Voxel chunk encore en calcul : affichage immédiat de son patch dédié sans trou
-                    None => self
-                        .lod_cache
-                        .get(&leaf.key)
-                        .map(|mesh| (LodMeshId { generation, key: leaf.key, voxel: false, revision: 0 }, mesh)),
+                    // Voxel chunk encore en calcul : affichage immédiat de son patch dédié sans trou.
+                    // La révision d'un patch est sa version (précision) : un patch refait n'est
+                    // pas confondu avec l'ancien déjà envoyé au GPU.
+                    None => match self.lod_cache.get(&leaf.key) {
+                        Some(mesh) => Some((LodMeshId { generation, key: leaf.key, voxel: false, revision: self.patch_epoch }, mesh)),
+                        None => self.stale_patches.get(&leaf.key).map(|(epoch, mesh)| {
+                            (LodMeshId { generation, key: leaf.key, voxel: false, revision: *epoch }, mesh)
+                        }),
+                    },
                 }
             })
             .collect()
@@ -764,6 +795,42 @@ mod tests {
                 println!("  niveau {level} : {n} patchs, {res}² cellules ({block_per_cell} blocs/cellule), {v} sommets");
             }
         }
+    }
+
+    /// Changer de précision ne vide pas l'écran : les feuilles et leurs anciens patchs restent
+    /// affichés (pas de retour aux 6 faces de la vue satellite), puis les nouveaux les remplacent
+    #[test]
+    fn precision_change_keeps_terrain_displayed() {
+        use crate::ui::LodPrecisionSetting as P;
+        let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 42, ..Default::default() });
+        let mut camera = crate::camera::OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
+        camera.distance = 0.0;
+        camera.target_distance = 0.0;
+        camera.update_camera_bounds(&generator);
+        let eye = camera.eye_position();
+        let mut cache = herocraft_voxel_engine::WorldChunkCache::new(None, 64);
+        let mut lod = PlanetLodManager::new(crate::camera::DEFAULT_RADIUS, 42);
+        lod.update(eye, &generator, &mut cache, 0.0, None);
+        let leaves = lod.current_leaves.len();
+        let shown = lod.visible_meshes().len();
+        assert!(leaves > 6);
+
+        lod.set_precision(P::Fine);
+        lod.update(eye, &generator, &mut cache, 0.016, None);
+        assert_eq!(lod.current_leaves.len(), leaves, "les feuilles détaillées restent affichées");
+        assert!(lod.visible_meshes().len() >= shown, "chaque feuille garde un maillage pendant le calcul");
+
+        let start = Instant::now();
+        while lod.pending_leaves.is_some() && start.elapsed().as_secs() < 60 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            lod.update(eye, &generator, &mut cache, 0.016, None);
+        }
+        assert!(lod.pending_leaves.is_none(), "les patchs fins finissent par remplacer les anciens");
+        assert!(lod.stale_patches.is_empty());
+        let (res, _) = patch_detail(VOXEL_LEVEL - 1, P::Fine);
+        let near = lod.current_leaves.iter().find(|l| l.kind == QuadLeafKind::LodPatch && l.key.level == VOXEL_LEVEL - 1).unwrap();
+        // Une cellule pleine au moins par case de la grille fine : 4 sommets par dessus
+        assert!(lod.lod_cache[&near.key].vertices.len() >= res * res * 4);
     }
 
     /// Profil du relief devant le joueur : hauteur des voxels et du dessus des patchs de chaque
