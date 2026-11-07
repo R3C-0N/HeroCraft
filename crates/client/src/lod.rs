@@ -70,12 +70,10 @@ pub fn patch_detail(level: u8, precision: crate::ui::LodPrecisionSetting) -> Pat
     let quarter = PatchDetail { resolution: side_blocks / 4, terrace_step: 1.0, textured: true, trees: TreeDetail::Boxes };
     let far = |res: usize| PatchDetail::plain(res.max(normal), 1.0);
     match (precision, depth) {
-        (P::Normale, 1) => exact,
-        (P::Normale, 2) => half,
-        (P::Normale, _) => far(normal),
-        (P::Fine, 1 | 2) => exact,
-        (P::Fine, 3) => quarter,
-        (P::Fine, _) => far(32),
+        (P::Normale, _) => quick_detail(level),
+        (P::Ultra, 1) => exact,
+        (P::Ultra, 2) => half,
+        (P::Ultra, _) => far(normal),
         (P::Exacte, 1..=3) => exact,
         (P::Exacte, 4) => quarter,
         (P::Exacte, _) => far(32),
@@ -824,7 +822,8 @@ mod tests {
         use crate::ui::LodPrecisionSetting as P;
         let near = VOXEL_LEVEL - 1;
         let side = (herocraft_world::FACE_BLOCKS >> near) as usize;
-        for p in P::ALL {
+        assert_eq!(patch_detail(near, P::Normale), quick_detail(near));
+        for p in [P::Ultra, P::Exacte] {
             let d = patch_detail(near, p);
             assert_eq!((d.resolution, d.terrace_step, d.textured, d.trees), (side, 1.0, true, TreeDetail::Blocks), "{p:?}");
         }
@@ -857,7 +856,7 @@ mod tests {
         let configs: [(&str, Box<dyn Fn(u8) -> PatchDetail + Sync>); 4] = [
             ("Ancienne (couleurs, terrasses)", Box::new(|l| PatchDetail::plain(patch_resolution(l), PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT))),
             ("Normale", Box::new(|l| patch_detail(l, P::Normale))),
-            ("Fine", Box::new(|l| patch_detail(l, P::Fine))),
+            ("Ultra", Box::new(|l| patch_detail(l, P::Ultra))),
             ("1:1", Box::new(|l| patch_detail(l, P::Exacte))),
         ];
         for (name, detail) in &configs {
@@ -916,7 +915,7 @@ mod tests {
         }
         let mid = lod.current_leaves.iter().find(|l| l.kind == QuadLeafKind::LodPatch && l.key.level == VOXEL_LEVEL - 2).unwrap().key;
         let before_mid = lod.lod_cache[&mid].vertices.len();
-        lod.set_precision(P::Fine);
+        lod.set_precision(P::Ultra);
         lod.update(eye, &generator, &mut cache, 0.016, None);
         assert_eq!(lod.current_leaves.len(), leaves, "les feuilles détaillées restent affichées");
         assert!(lod.visible_meshes().len() >= shown, "chaque feuille garde un maillage pendant le calcul");

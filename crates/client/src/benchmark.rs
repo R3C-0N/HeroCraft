@@ -102,6 +102,7 @@ impl Setup {
             god_rays: e.god_rays,
             bloom: e.bloom,
             lod: e.lod_distance,
+            lod_precision: e.lod_precision,
             preset: Some(quality),
             ..Setup::REFERENCE
         }
@@ -171,14 +172,14 @@ fn phases() -> Vec<Phase> {
         p("Sans créatures", "créatures (simulation, animation et dessin)", Setup { creatures: CreatureMode::Off, ..r }, true),
         p("Distance LOD courte", "passage de la distance LOD normale à courte", Setup { lod: LodDistanceSetting::Courte, ..r }, true),
         p("Distance LOD élevée", "passage de la distance LOD normale à élevée", Setup { lod: LodDistanceSetting::Elevee, ..r }, true),
-        p("Précision LOD fine", "passage du relief lointain de la précision normale à fine (cellules de 2 blocs, relief au bloc près ; coût négatif : ce qu'elle ajoute)", Setup { lod_precision: LodPrecisionSetting::Fine, ..r }, true),
-        p("Précision LOD 1:1", "passage du relief lointain de la précision normale à 1:1 (un bloc par cellule jusqu'à ~1 300 blocs ; coût négatif : ce qu'elle ajoute)", Setup { lod_precision: LodPrecisionSetting::Exacte, ..r }, true),
+        p("Précision LOD 1:1", "passage du relief lointain de la précision normale à 1:1 (allure des blocs jusqu'à ~1 300 blocs ; coût négatif : ce qu'elle ajoute)", Setup { lod_precision: LodPrecisionSetting::Exacte, ..r }, true),
         p(
             "Minimum (tout coupé)",
             "tous les effets et les créatures",
             Setup { shadows: false, cloud_shadows: false, clouds: false, god_rays: false, bloom: false, creatures: CreatureMode::Off, ..r },
             true,
         ),
+        p("Qualité ultra", "passage de la qualité haute à ultra (relief lointain avec l'allure des blocs ; coût négatif : ce qu'elle ajoute)", Setup::quality(GraphicsQuality::Ultra), true),
         p("Qualité moyenne", "passage de la qualité haute à moyenne", Setup::quality(GraphicsQuality::Moyenne), true),
         p("Qualité basse", "passage de la qualité haute à basse", Setup::quality(GraphicsQuality::Basse), true),
         p("Beaucoup de créatures (+60)", "60 créatures de plus (coût négatif : ce qu'elles ajoutent)", Setup { creatures: CreatureMode::Stress, ..r }, true),

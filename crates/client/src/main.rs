@@ -1100,6 +1100,7 @@ fn main() {
                                 }
                                 UiAction::SetLodDistance => {
                                     lod_manager.set_distance_preset(ui_state.video_settings.lod_distance);
+                                    lod_manager.set_precision(ui_state.video_settings.lod_precision);
                                     info!("Paramètre Distance LOD mis à jour : {:?}", ui_state.video_settings.lod_distance);
                                 }
                                 UiAction::SetLodPrecision => {
