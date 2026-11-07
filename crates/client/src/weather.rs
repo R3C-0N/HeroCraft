@@ -282,7 +282,7 @@ impl CloudWeather {
         if self.centers.is_empty() {
             return false;
         }
-        let angle = (time * 0.0035) as f32;
+        let angle = (time * crate::cloud_mesh::CloudMeshGenerator::WIND_SPEED as f64) as f32;
         let (sin, cos) = angle.sin_cos();
         for _ in 0..CLOUDS_PER_FRAME.min(self.centers.len()) {
             let i = self.cursor;
