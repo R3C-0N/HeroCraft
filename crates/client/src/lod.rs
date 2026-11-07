@@ -166,7 +166,7 @@ impl PlanetLodManager {
             .expect("Échec d'initialisation du pool de patchs Rayon");
         let (patch_tx, patch_rx) = std::sync::mpsc::channel::<VoxelBuildResult>();
         let detail_pool = rayon::ThreadPoolBuilder::new()
-            .num_threads((num_cpus / 3).clamp(1, 3))
+            .num_threads((num_cpus / 2).clamp(1, 4))
             .thread_name(|idx| format!("herocraft-detail-{}", idx))
             .build()
             .expect("Échec d'initialisation du pool de patchs détaillés Rayon");
