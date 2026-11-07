@@ -138,6 +138,11 @@ impl GpuMeshData {
     }
 }
 
+/// Plus grande cellule de patch (en blocs de côté) où les villes et villages sont dessinés
+const MAX_SETTLEMENT_CELL_BLOCKS: f64 = 4.0;
+/// Plus grande cellule de patch (en blocs de côté) où les chemins sont dessinés
+const MAX_ROAD_CELL_BLOCKS: f64 = 2.0;
+
 /// Maillage indexé prêt pour WGPU
 #[derive(Clone, Default)]
 pub struct PlanetMesh {
@@ -390,6 +395,44 @@ impl PlanetMesh {
         Self::generate_lod_patch_stepped(generator, key, base_radius, grid_resolution, Self::ORBIT_TERRACE_STEP_HEIGHT, filter)
     }
 
+    /// Plus haut bloc posé par une ville, un village, des ruines (si `settlements`) ou un chemin
+    /// (si `roads`) dans la colonne (x, z) d'une face : altitude de son dessus et couleur de sa
+    /// face du haut. `None` : le terrain naturel reste.
+    fn structure_top(
+        generator: &PlanetWorldGenerator,
+        face: PlanetFace,
+        x: i32,
+        z: i32,
+        elevation: f64,
+        settlements: bool,
+        roads: bool,
+    ) -> Option<(i32, [f32; 4])> {
+        let ground = elevation.floor() as i32;
+        if settlements {
+            if let Some(s) = generator.settlement_at(face, x, z) {
+                let span = s.span(x, z, ground);
+                if !span.is_empty() {
+                    for y in span.rev() {
+                        match s.block(x, y, z, ground) {
+                            Some(b) if !b.is_air() => {
+                                return Some((y + 1, crate::voxel_mesh::VoxelMeshBuilder::block_color(b, 2)));
+                            }
+                            _ => {}
+                        }
+                    }
+                    // Le plan ne fait que creuser cette colonne (une cour, une rue) : sol naturel
+                    return None;
+                }
+            }
+        }
+        if roads {
+            if let Some(b) = generator.roads.surface(generator, face, x, z) {
+                return Some((ground, crate::voxel_mesh::VoxelMeshBuilder::block_color(b, 2)));
+            }
+        }
+        None
+    }
+
     /// `generate_lod_patch` avec des terrasses de `terrace_step` blocs (1 : relief au bloc près)
     pub fn generate_lod_patch_stepped(
         generator: &PlanetWorldGenerator,
@@ -409,6 +452,13 @@ impl PlanetMesh {
         let dv = (v_max - v_min) / (n as f64);
         let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f64)) as f32;
 
+        // Côté d'une cellule en blocs : les villes n'apparaissent que si elle est assez fine pour
+        // que leurs bâtiments (5 à 10 blocs) ne deviennent pas des pavés, les chemins (1 à 3 blocs)
+        // seulement près du bloc
+        let cell_blocks = du * 0.5 * herocraft_world::FACE_BLOCKS as f64;
+        let show_settlements = terrace_step <= 1.0 && cell_blocks <= MAX_SETTLEMENT_CELL_BLOCKS;
+        let show_roads = terrace_step <= 1.0 && cell_blocks <= MAX_ROAD_CELL_BLOCKS;
+
         let sample_cell = |ci: i32, cj: i32| -> (f64, bool, [f32; 4]) {
             let u_mid = u_min + ((ci as f64) + 0.5) * du;
             let v_mid = v_min + ((cj as f64) + 0.5) * dv;
@@ -421,6 +471,15 @@ impl PlanetMesh {
             } else {
                 Self::quantize_elevation(raw_elevation, terrace_step)
             };
+            // Ville, village ou chemin sous le centre de la cellule : dessus et couleur du plus
+            // haut bloc qu'ils posent dans cette colonne
+            if (show_settlements || show_roads) && !is_water && filter == herocraft_world::VisualizationFilter::Standard {
+                let to_block = |t: f64| ((t + 1.0) * 0.5 * herocraft_world::FACE_BLOCKS as f64).floor() as i32;
+                let (bx, bz) = (to_block(u_mid), to_block(v_mid));
+                if let Some(top) = Self::structure_top(generator, key.face, bx, bz, raw_elevation, show_settlements, show_roads) {
+                    return (top.0 as f64, false, top.1);
+                }
+            }
             let color = match filter {
                 herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, stepped),
                 herocraft_world::VisualizationFilter::Tectonics => {
@@ -612,6 +671,86 @@ impl PlanetMesh {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Les patchs fins montrent les villes : une colonne de rempart ou de maison dépasse le sol
+    #[test]
+    fn structure_top_sees_town_buildings() {
+        let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 42, ..Default::default() });
+        let face = PlanetFace::PosZ;
+        let regions = herocraft_world::FACE_BLOCKS / 2048;
+        let town = (0..regions * regions)
+            .filter_map(|r| generator.structures.region_settlement(&generator, face, r % regions, r / regions))
+            .next()
+            .expect("un établissement sur la face");
+        let b = town.bounds;
+        let raised = (b.z0..b.z1).step_by(2).flat_map(|z| (b.x0..b.x1).step_by(2).map(move |x| (x, z))).any(|(x, z)| {
+            let column = generator.sample_block_column(face, x, z);
+            let ground = column.elevation.floor() as i32;
+            PlanetMesh::structure_top(&generator, face, x, z, column.elevation, true, false).is_some_and(|(top, _)| top > ground)
+        });
+        assert!(raised, "au moins un bâtiment doit dépasser du sol");
+    }
+
+    /// Vue de dessus des patchs au-dessus d'une ville : ancienne précision normale, fine et 1:1.
+    /// `HEROCRAFT_CAPTURES=dossier cargo test --release -p herocraft_client apercu_villes_lod -- --ignored`
+    #[test]
+    #[ignore]
+    fn apercu_villes_lod() {
+        let Ok(dir) = std::env::var("HEROCRAFT_CAPTURES") else { return };
+        let seed: u64 = std::env::var("HEROCRAFT_GRAINE").ok().and_then(|s| s.parse().ok()).unwrap_or(42);
+        let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed, ..Default::default() });
+        let face = PlanetFace::PosZ;
+        let regions = herocraft_world::FACE_BLOCKS / 2048;
+        let town = (0..regions * regions)
+            .filter_map(|r| generator.structures.region_settlement(&generator, face, r % regions, r / regions))
+            .find(|s| s.kind == herocraft_world::SettlementKind::Town)
+            .expect("une ville sur la face");
+        // Nœud de 128 blocs de côté centré au mieux sur la ville
+        let level = herocraft_world::VOXEL_LEVEL - 2;
+        let side = herocraft_world::FACE_BLOCKS >> level;
+        let key = herocraft_world::QuadNodeKey::new(face, level, (town.center.0 / side) as u32, (town.center.1 / side) as u32);
+        let configs = [(16usize, PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT), (32, 1.0), (side as usize, 1.0)];
+        let px = 4usize;
+        let panel = side as usize * px;
+        let (w, h) = (panel * configs.len() + 8 * (configs.len() - 1), panel);
+        let mut img = vec![30u8; w * h * 3];
+        let (u0, u1, v0, v1) = key.uv_bounds();
+        for (n, &(res, step)) in configs.iter().enumerate() {
+            let mesh = PlanetMesh::generate_lod_patch_stepped(&generator, &key, 1.0, res, step, herocraft_world::VisualizationFilter::Standard);
+            let ox = n * (panel + 8);
+            let base = 1.0f32;
+            for quad in mesh.vertices.chunks(4) {
+                let c = (Vec3::from(quad[0].position) + Vec3::from(quad[2].position)) * 0.5;
+                let up = c.normalize();
+                if Vec3::from(quad[0].normal).dot(up) < 0.95 {
+                    continue;
+                }
+                let (Some((a, b)), Some((e, f))) = (
+                    face.project_to_face_uv(Vec3::from(quad[0].position).as_dvec3().normalize()),
+                    face.project_to_face_uv(Vec3::from(quad[2].position).as_dvec3().normalize()),
+                ) else { continue };
+                let to_px = |t: f64, lo: f64, hi: f64| (((t - lo) / (hi - lo)) * panel as f64).round().clamp(0.0, panel as f64) as usize;
+                let (x0, x1) = (to_px(a.min(e), u0, u1), to_px(a.max(e), u0, u1));
+                let (y0, y1) = (to_px(b.min(f), v0, v1), to_px(b.max(f), v0, v1));
+                let height = (c.length() - base) / (base * std::f32::consts::FRAC_PI_4 * 2.0 / herocraft_world::FACE_BLOCKS as f32);
+                let shade = (0.55 + (height - 100.0) / 120.0).clamp(0.45, 1.15);
+                let col = quad[0].color;
+                let rgb = [0, 1, 2].map(|k| ((col[k] * shade).clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0) as u8);
+                for y in y0..y1 {
+                    for x in x0..x1 {
+                        let i = ((h - 1 - y) * w + ox + x) * 3;
+                        img[i..i + 3].copy_from_slice(&rgb);
+                    }
+                }
+            }
+        }
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = std::fs::File::create(std::path::Path::new(&dir).join(format!("villes-lod-{seed}.png"))).unwrap();
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w as u32, h as u32);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(&img).unwrap();
+    }
 
     #[test]
     fn test_packed_vertex_round_trip() {
