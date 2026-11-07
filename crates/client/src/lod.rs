@@ -7,7 +7,7 @@ use herocraft_world::{
 };
 use herocraft_voxel_engine::cache::WorldChunkCache;
 
-use crate::planet_mesh::PlanetMesh;
+use crate::planet_mesh::{PatchDetail, PlanetMesh, TreeDetail};
 use crate::voxel_mesh::{VoxelColumnMesh, VoxelMeshBuilder};
 
 use herocraft_world::VOXEL_LEVEL;
@@ -52,30 +52,30 @@ fn patch_resolution(level: u8) -> usize {
     }
 }
 
-/// Patchs à une cellule par bloc en précision 1:1 : les deux niveaux au-delà des chunks voxel
-/// (nœuds de 64 et 128 blocs de côté, jusqu'à ~770 blocs du joueur). Plus loin, une cellule
-/// d'un bloc fait moins d'un pixel et coûterait des dizaines de millions de sommets.
-const EXACT_LEVELS: u8 = 2;
-/// Grille minimale des patchs en précision fine ou 1:1 (deux fois plus fine que la normale)
-const FINE_RESOLUTION: usize = 32;
-/// Grille du niveau juste après les patchs 1:1, pour adoucir le passage
-const EXACT_NEXT_RESOLUTION: usize = 64;
-
-/// Grille d'un patch (cellules par côté) et hauteur de ses terrasses (en blocs) selon la précision.
-/// Une cellule par bloc et des terrasses d'un bloc donnent exactement le dessus des voxels.
-pub fn patch_detail(level: u8, precision: crate::ui::LodPrecisionSetting) -> (usize, f64) {
+/// Finesse d'un patch selon son niveau et la précision choisie. Les niveaux juste au-delà des
+/// chunks voxel (vus du sol, de ~130 à ~770 blocs) ont l'allure des voxels : une cellule par bloc,
+/// textures et arbres bloc par bloc ; plus loin, cellules plus grandes et arbres simplifiés, puis
+/// couleurs seules.
+pub fn patch_detail(level: u8, precision: crate::ui::LodPrecisionSetting) -> PatchDetail {
     use crate::ui::LodPrecisionSetting as P;
     let side_blocks = (herocraft_world::FACE_BLOCKS >> level).max(1) as usize;
     let normal = patch_resolution(level);
     // Niveaux au-dessus des chunks voxel (1 : nœuds de 2 × 2 chunks)
     let depth = VOXEL_LEVEL.saturating_sub(level);
-    let fine = normal.max(FINE_RESOLUTION);
-    match precision {
-        P::Normale => (normal, 1.0),
-        P::Fine => (fine, 1.0),
-        P::Exacte if depth <= EXACT_LEVELS => (side_blocks, 1.0),
-        P::Exacte if depth == EXACT_LEVELS + 1 => (EXACT_NEXT_RESOLUTION.max(fine), 1.0),
-        P::Exacte => (fine, 1.0),
+    let exact = PatchDetail { resolution: side_blocks, terrace_step: 1.0, textured: true, trees: TreeDetail::Blocks };
+    let half = PatchDetail { resolution: side_blocks / 2, terrace_step: 1.0, textured: true, trees: TreeDetail::Boxes };
+    let quarter = PatchDetail { resolution: side_blocks / 4, terrace_step: 1.0, textured: true, trees: TreeDetail::Boxes };
+    let far = |res: usize| PatchDetail::plain(res.max(normal), 1.0);
+    match (precision, depth) {
+        (P::Normale, 1) => exact,
+        (P::Normale, 2) => half,
+        (P::Normale, _) => far(normal),
+        (P::Fine, 1 | 2) => exact,
+        (P::Fine, 3) => quarter,
+        (P::Fine, _) => far(32),
+        (P::Exacte, 1..=3) => exact,
+        (P::Exacte, 4) => quarter,
+        (P::Exacte, _) => far(32),
     }
 }
 
@@ -188,7 +188,7 @@ impl PlanetLodManager {
         let generator = PlanetWorldGenerator::new(desc);
         for &face in &herocraft_common::PlanetFace::ALL {
             let key = QuadNodeKey::new(face, 0, 0, 0);
-            let patch = PlanetMesh::generate_lod_patch_stepped(&generator, &key, base_radius, 24, 1.0, mgr.active_filter);
+            let patch = PlanetMesh::generate_lod_patch_stepped(&generator, &key, base_radius, PatchDetail::plain(24, 1.0), mgr.active_filter);
             mgr.lod_cache.insert(key, patch);
         }
 
@@ -275,7 +275,7 @@ impl PlanetLodManager {
                     let generator = &generator;
                     scope.spawn(move || {
                         let key = QuadNodeKey::new(face, 0, 0, 0);
-                        (key, PlanetMesh::generate_lod_patch_stepped(generator, &key, base_radius, 24, 1.0, filter))
+                        (key, PlanetMesh::generate_lod_patch_stepped(generator, &key, base_radius, PatchDetail::plain(24, 1.0), filter))
                     })
                 })
                 .collect();
@@ -453,8 +453,7 @@ impl PlanetLodManager {
                     missing_patch_keys
                         .into_par_iter()
                         .map(|key| {
-                            let (resolution, step) = patch_detail(key.level, precision);
-                            let patch = PlanetMesh::generate_lod_patch_stepped(&gen, &key, base_radius, resolution, step, filter);
+                            let patch = PlanetMesh::generate_lod_patch_stepped(&gen, &key, base_radius, patch_detail(key.level, precision), filter);
                             (key, patch)
                         })
                         .collect()
@@ -472,8 +471,7 @@ impl PlanetLodManager {
                         let tx = self.patch_tx.clone();
                         let task_gen = generator.clone();
                         self.patch_pool.spawn(move || {
-                            let (resolution, step) = patch_detail(key.level, precision);
-                            let mesh = PlanetMesh::generate_lod_patch_stepped(&task_gen, &key, base_radius, resolution, step, filter);
+                            let mesh = PlanetMesh::generate_lod_patch_stepped(&task_gen, &key, base_radius, patch_detail(key.level, precision), filter);
                             let _ = tx.send(VoxelBuildResult { generation, patch_epoch, key, mesh });
                         });
                     }
@@ -724,20 +722,23 @@ mod tests {
         println!("Leaves breakdown: using_self={}, using_ancestor={}", using_self, using_ancestor);
     }
 
-    /// Une cellule par bloc et des terrasses d'un bloc : le dessus d'un patch 1:1 est celui des voxels
+    /// Juste au-delà des chunks voxel, les patchs ont l'allure des voxels : une cellule par bloc,
+    /// textures et arbres en blocs ; plus loin, ils s'allègent sans jamais être plus grossiers
+    /// qu'avant
     #[test]
-    fn exact_precision_matches_blocks_near_the_player() {
+    fn near_patches_look_like_voxels() {
         use crate::ui::LodPrecisionSetting as P;
         let near = VOXEL_LEVEL - 1;
         let side = (herocraft_world::FACE_BLOCKS >> near) as usize;
-        assert_eq!(patch_detail(near, P::Exacte), (side, 1.0));
-        assert_eq!(patch_detail(near, P::Normale), (16, 1.0));
-        assert_eq!(patch_detail(near - 1, P::Exacte), (2 * side, 1.0));
-        // Les grilles restent bornées loin du joueur, et jamais plus grossières qu'en normal
-        for level in 0..VOXEL_LEVEL - EXACT_LEVELS {
+        for p in P::ALL {
+            let d = patch_detail(near, p);
+            assert_eq!((d.resolution, d.terrace_step, d.textured, d.trees), (side, 1.0, true, TreeDetail::Blocks), "{p:?}");
+        }
+        for level in 0..VOXEL_LEVEL {
             for p in P::ALL {
-                let (res, _) = patch_detail(level, p);
-                assert!(res >= patch_resolution(level) && res <= EXACT_NEXT_RESOLUTION, "niveau {level} {p:?} : {res}");
+                let d = patch_detail(level, p);
+                assert!(d.resolution >= patch_resolution(level) && d.resolution <= 256, "niveau {level} {p:?} : {}", d.resolution);
+                assert_eq!(d.terrace_step, 1.0);
             }
         }
         assert_eq!(PlanetMesh::quantize_elevation(137.8, 1.0), 137.0);
@@ -759,8 +760,8 @@ mod tests {
         let lod = PlanetLodManager::new(crate::camera::DEFAULT_RADIUS, 42);
         let leaves = lod.quadtree.evaluate_with_generator(camera.eye_position().as_dvec3(), Some(&generator));
         let patches: Vec<QuadNodeKey> = leaves.iter().filter(|l| l.kind == QuadLeafKind::LodPatch).map(|l| l.key).collect();
-        let configs: [(&str, Box<dyn Fn(u8) -> (usize, f64) + Sync>); 4] = [
-            ("Normale avec terrasses (ancienne)", Box::new(|l| (patch_resolution(l), PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT))),
+        let configs: [(&str, Box<dyn Fn(u8) -> PatchDetail + Sync>); 4] = [
+            ("Ancienne (couleurs, terrasses)", Box::new(|l| PatchDetail::plain(patch_resolution(l), PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT))),
             ("Normale", Box::new(|l| patch_detail(l, P::Normale))),
             ("Fine", Box::new(|l| patch_detail(l, P::Fine))),
             ("1:1", Box::new(|l| patch_detail(l, P::Exacte))),
@@ -771,8 +772,7 @@ mod tests {
                 patches
                     .par_iter()
                     .map(|key| {
-                        let (res, step) = detail(key.level);
-                        let m = PlanetMesh::generate_lod_patch_stepped(&generator, key, crate::camera::DEFAULT_RADIUS, res, step, lod.active_filter);
+                        let m = PlanetMesh::generate_lod_patch_stepped(&generator, key, crate::camera::DEFAULT_RADIUS, detail(key.level), lod.active_filter);
                         (key.level, m.vertices.len(), m.indices.len() / 3)
                     })
                     .collect()
@@ -790,7 +790,7 @@ mod tests {
                 e.1 += v;
             }
             for (level, (n, v)) in per_level {
-                let (res, _) = detail(level);
+                let res = detail(level).resolution;
                 let block_per_cell = (herocraft_world::FACE_BLOCKS >> level) as f64 / res as f64;
                 println!("  niveau {level} : {n} patchs, {res}² cellules ({block_per_cell} blocs/cellule), {v} sommets");
             }
@@ -815,6 +815,8 @@ mod tests {
         let shown = lod.visible_meshes().len();
         assert!(leaves > 6);
 
+        let mid = lod.current_leaves.iter().find(|l| l.kind == QuadLeafKind::LodPatch && l.key.level == VOXEL_LEVEL - 2).unwrap().key;
+        let before_mid = lod.lod_cache[&mid].vertices.len();
         lod.set_precision(P::Fine);
         lod.update(eye, &generator, &mut cache, 0.016, None);
         assert_eq!(lod.current_leaves.len(), leaves, "les feuilles détaillées restent affichées");
@@ -827,10 +829,9 @@ mod tests {
         }
         assert!(lod.pending_leaves.is_none(), "les patchs fins finissent par remplacer les anciens");
         assert!(lod.stale_patches.is_empty());
-        let (res, _) = patch_detail(VOXEL_LEVEL - 1, P::Fine);
-        let near = lod.current_leaves.iter().find(|l| l.kind == QuadLeafKind::LodPatch && l.key.level == VOXEL_LEVEL - 1).unwrap();
-        // Une cellule pleine au moins par case de la grille fine : 4 sommets par dessus
-        assert!(lod.lod_cache[&near.key].vertices.len() >= res * res * 4);
+        // Les patchs de 128 blocs sont passés d'une cellule pour 2 blocs à une par bloc : plus de sommets
+        let mid = lod.current_leaves.iter().find(|l| l.kind == QuadLeafKind::LodPatch && l.key.level == VOXEL_LEVEL - 2).unwrap();
+        assert!(lod.lod_cache[&mid.key].vertices.len() > before_mid);
     }
 
     /// Profil du relief devant le joueur : hauteur des voxels et du dessus des patchs de chaque
@@ -878,7 +879,7 @@ mod tests {
                 let h = if leaf.kind == QuadLeafKind::VoxelChunk {
                     truth
                 } else {
-                    let (res, step) = patch_detail(leaf.key.level, p);
+                    let PatchDetail { resolution: res, terrace_step: step, .. } = patch_detail(leaf.key.level, p);
                     let (a, b, c, e) = leaf.key.uv_bounds();
                     let (cu, cv) = ((b - a) / res as f64, (e - c) / res as f64);
                     let (ci, cj) = (((u - a) / cu).floor(), ((v - c) / cv).floor());

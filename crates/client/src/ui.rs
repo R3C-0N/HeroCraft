@@ -117,11 +117,12 @@ impl LodDistanceSetting {
 /// Précision du relief lointain (patchs polygonaux au-delà des chunks voxel)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LodPrecisionSetting {
-    /// Cellules de 4 à plusieurs centaines de blocs, relief au bloc près
+    /// Allure des voxels (blocs texturés, arbres) jusqu'à ~380 blocs, cellules de 2 blocs et
+    /// arbres simplifiés jusqu'à ~770, couleurs au-delà
     Normale,
-    /// Cellules de 2 blocs près du joueur, relief au bloc près
+    /// Allure des voxels jusqu'à ~770 blocs, cellules de 4 blocs et arbres simplifiés jusqu'à ~1 300
     Fine,
-    /// Test : une cellule par bloc jusqu'à ~1 300 blocs, relief au bloc près
+    /// Test : allure des voxels jusqu'à ~1 300 blocs (très lourd)
     Exacte,
 }
 
@@ -1986,7 +1987,7 @@ impl UiState {
             }
             ui.end_row();
 
-            row_label(ui, "Précision du relief lointain", "Taille des cellules du terrain au-delà des chunks voxel : Normale (4 blocs et plus), Fine (2 blocs), 1:1 (un bloc par cellule, pour tester ; plus lourd)");
+            row_label(ui, "Précision du relief lointain", "Distance jusqu'à laquelle le terrain lointain garde l'allure des blocs proches (textures, arbres) : Normale ~380 blocs, Fine ~770, 1:1 ~1 300 (test, très lourd)");
             let precision_choices = LodPrecisionSetting::ALL.map(|p| (p, p.label()));
             if choice_row(ui, &mut self.video_settings.lod_precision, &precision_choices) {
                 *action = Some(UiAction::SetLodPrecision);

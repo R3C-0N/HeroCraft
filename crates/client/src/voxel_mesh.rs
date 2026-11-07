@@ -13,13 +13,13 @@ use crate::planet_mesh::{PlanetMesh, PlanetVertex};
 
 /// Une face de cube : ses coins (cycliques) et, pour l'occlusion ambiante de chacun, ses deux
 /// voisins de côté et son voisin de coin
-struct CubeFace {
-    corners: [(u8, u8, u8); 4],
+pub(crate) struct CubeFace {
+    pub(crate) corners: [(u8, u8, u8); 4],
     ao: [[(i32, i32, i32); 3]; 4],
 }
 
 /// Les six faces, dans l'ordre de `FACE_DIRS` (+X, -X, +Y, -Y, +Z, -Z)
-const CUBE_FACES: [CubeFace; 6] = [
+pub(crate) const CUBE_FACES: [CubeFace; 6] = [
     CubeFace {
         corners: [(1, 0, 1), (1, 0, 0), (1, 1, 0), (1, 1, 1)],
         ao: [[(1, -1, 0), (1, 0, 1), (1, -1, 1)], [(1, -1, 0), (1, 0, -1), (1, -1, -1)], [(1, 1, 0), (1, 0, -1), (1, 1, -1)], [(1, 1, 0), (1, 0, 1), (1, 1, 1)]],
@@ -926,7 +926,7 @@ impl VoxelMeshBuilder {
         }
     }
 
-    fn add_quad(
+    pub(crate) fn add_quad(
         vertices: &mut Vec<PlanetVertex>,
         indices: &mut Vec<u32>,
         c0: Vec3,
