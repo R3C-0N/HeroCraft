@@ -11,6 +11,12 @@
 // =========================================================================
 
 #import herocraft::common::{camera, sky_factors, flatten_point, rotate_by, quantization_dither}
+
+// Vitesse angulaire du vent (rad/s) et milieu de la couche au-dessus du rayon de base, en unités du
+// prototype : copies de `CloudMeshGenerator::WIND_SPEED` et `CLOUD_ALTITUDE_MID` (cloud_mesh.rs,
+// vérifiées par un test)
+const WIND_SPEED: f32 = 0.0003;
+const CLOUD_LAYER_MID: f32 = 15.0;
 #import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective}
 
 struct VertexInput {
@@ -67,8 +73,7 @@ fn cloud_vertex(in: VertexInput, view_proj: mat4x4<f32>, flatten: bool) -> Verte
     var out: VertexOutput;
 
     // Dérive douce du vent autour de l'axe planétaire (Y)
-    let wind_speed = 0.0035; // ~30 minutes pour une révolution planétaire complète
-    let angle = camera.time * wind_speed;
+    let angle = camera.time * WIND_SPEED;
     let cos_a = cos(angle);
     let sin_a = sin(angle);
 
@@ -242,7 +247,7 @@ fn sd_cloud_3d_nb(p: vec3<f32>, nb: u32, cell: f32, half_depth: f32, r: f32) -> 
     let rh = clamp(max(r * 1.3, 0.35), 0.0, 0.48 * cell);
     let d_core = sd_mask_2d_nb(p.xy, nb, cell, rh) + r;
     // Dalle courbée pour suivre la sphère (les grands nuages ne remontent plus aux bords)
-    let curv_r = camera.planet_radius + 8.8 * camera.scales.x;
+    let curv_r = camera.planet_radius + CLOUD_LAYER_MID * camera.scales.x;
     let z = p.z + dot(p.xy, p.xy) / (2.0 * curv_r);
     let d_z = abs(z) - (half_depth - r);
     let w = max(vec2<f32>(d_core, d_z), vec2<f32>(0.0));
@@ -275,7 +280,7 @@ fn get_cloud_normal(p: vec3<f32>, m: vec4<u32>, cell: f32, half_depth: f32, r: f
     let g_core = vec3<f32>(gx, gy, 0.0) / (2.0 * eps);
     let d_core = sd_mask_2d_nb(p.xy, nb0, cell, rh) + r;
 
-    let curv_r = camera.planet_radius + 8.8 * camera.scales.x;
+    let curv_r = camera.planet_radius + CLOUD_LAYER_MID * camera.scales.x;
     let z = p.z + dot(p.xy, p.xy) / (2.0 * curv_r);
     let d_z = abs(z) - (half_depth - r);
     let g_z = select(-1.0, 1.0, z >= 0.0) * vec3<f32>(p.xy / curv_r, 1.0);

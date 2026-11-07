@@ -22,7 +22,8 @@ const AERIAL_SIZE: (u32, u32) = (32 * 32, 32);
 
 /// Dimensions sur le prototype de rayon 25 (1 024 blocs par face), multipliées par l'échelle en
 /// blocs (`herocraft_world::block_scale`). Le bas de l'atmosphère est
-/// le niveau de la mer ; les nuages flottent à 5 au-dessus, les plus hauts sommets à 9.6.
+/// le niveau de la mer (3.8 au-dessus du rayon de base) ; les nuages flottent à 15 au-dessus du
+/// rayon de base, au-dessus des plus hauts sommets (13.4).
 const ATMOSPHERE_HEIGHT: f32 = 16.0;
 const RAYLEIGH_SCALE_HEIGHT: f32 = 2.0;
 const MIE_SCALE_HEIGHT: f32 = 1.0;
@@ -32,7 +33,7 @@ const LUT_CURVATURE_SCALE: f32 = 5.0;
 /// Densité de l'air pour la perspective aérienne du relief et des nuages
 const AERIAL_PERSPECTIVE_DENSITY: f32 = 0.35;
 /// Altitude du centre de la couche de nuages au-dessus du rayon de base (cloud_shader.wgsl)
-const CLOUD_LAYER_HEIGHT: f32 = 8.8;
+const CLOUD_LAYER_HEIGHT: f32 = crate::cloud_mesh::CloudMeshGenerator::CLOUD_ALTITUDE_MID;
 /// Portée de la marche des rayons crépusculaires (la carte des nuages couvre 10 autour du joueur)
 const GOD_RAYS_DISTANCE: f32 = 12.0;
 

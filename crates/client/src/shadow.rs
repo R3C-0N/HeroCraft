@@ -22,9 +22,14 @@ const CASCADE_EXTENTS: [f32; CASCADE_COUNT] = [0.8, 2.6, 8.0];
 /// Demi-largeur couverte par la carte des nuages (au-delà, le brouillard masque le sol)
 const CLOUD_EXTENT: f32 = 10.0;
 /// Distance de la caméra soleil au centre, et profondeur totale du volume capturé : contient
-/// les sommets du relief et la couche de nuages (8.8 au-dessus du rayon)
+/// les sommets du relief
 const LIGHT_DISTANCE: f32 = 14.0;
 const LIGHT_DEPTH: f32 = 28.0;
+/// Même chose pour la carte des nuages, dont la couche flotte à 15 au-dessus du rayon de base,
+/// environ 11 au-dessus du joueur : le long d'un soleil bas (17° au-dessus de l'horizon), elle est
+/// à près de 40 du sol qu'elle ombre
+const CLOUD_LIGHT_DISTANCE: f32 = 40.0;
+const CLOUD_LIGHT_DEPTH: f32 = 80.0;
 /// Décalage maximal le long de la normale à la lecture (faces rasantes), en fraction de la
 /// demi-largeur : 1 texel. Plus grand, il sortait le haut des faces à l'ombre de leur bloc.
 fn normal_offset(cascade_size: u32) -> f32 {
@@ -211,13 +216,17 @@ fn light_basis(light_dir: Vec3) -> (Vec3, Vec3) {
 /// Matrice vue-projection orthographique centrée sur `center`, recalée sur la grille de texels
 /// pour que les bords des ombres ne scintillent pas quand le joueur se déplace
 fn light_view_proj(center: Vec3, light_dir: Vec3, extent: f32, map_size: u32, scale: f32) -> Mat4 {
+    light_view_proj_depth(center, light_dir, extent, map_size, LIGHT_DISTANCE * scale, LIGHT_DEPTH * scale)
+}
+
+fn light_view_proj_depth(center: Vec3, light_dir: Vec3, extent: f32, map_size: u32, distance: f32, depth: f32) -> Mat4 {
     let (right, up) = light_basis(light_dir);
     let texel = 2.0 * extent / map_size as f32;
     let snap = |v: f32| (v / texel).round() * texel;
     let snapped = right * snap(center.dot(right)) + up * snap(center.dot(up)) + light_dir * center.dot(light_dir);
-    let eye = snapped + light_dir * LIGHT_DISTANCE * scale;
+    let eye = snapped + light_dir * distance;
     let view = Mat4::look_at_rh(eye, snapped, up);
-    let proj = Mat4::orthographic_rh(-extent, extent, -extent, extent, 0.0, LIGHT_DEPTH * scale);
+    let proj = Mat4::orthographic_rh(-extent, extent, -extent, extent, 0.0, depth);
     proj * view
 }
 
@@ -545,7 +554,14 @@ impl Shadows {
             let cloud_extent = CLOUD_EXTENT * scale;
             self.cloud.extent = cloud_extent;
             self.cloud.center = focus;
-            let cloud_vp = light_view_proj(focus, self.light_dir, cloud_extent, CLOUD_MAP_SIZE, scale);
+            let cloud_vp = light_view_proj_depth(
+                focus,
+                self.light_dir,
+                cloud_extent,
+                CLOUD_MAP_SIZE,
+                CLOUD_LIGHT_DISTANCE * scale,
+                CLOUD_LIGHT_DEPTH * scale,
+            );
             queue.write_buffer(&self.cloud.buffer, 0, bytemuck::cast_slice(&[ShadowPassUniform { view_proj: cloud_vp.to_cols_array_2d() }]));
             self.uniform.cloud_view_proj = cloud_vp.to_cols_array_2d();
         }
