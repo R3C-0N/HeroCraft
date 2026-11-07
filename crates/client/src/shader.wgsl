@@ -104,7 +104,12 @@ struct VertexOutput {
     @location(5) moon_dir: vec3<f32>,
     @location(6) uv: vec2<f32>,
     @location(7) @interpolate(flat) texture_layer: u32,
-    @location(8) block_light: f32,
+    // Position par rapport à la caméra, pour la normale de la facette : la position absolue (à
+    // ~400 unités du centre, un bloc en fait 0,077) n'a qu'une trentaine de millièmes de bloc de
+    // précision en f32, et ses écarts d'un pixel à l'autre, bruités, faisaient vibrer la normale
+    // de quelques degrés : des motifs moirés sur les faces que le soleil frôle
+    @location(8) eye_rel: vec3<f32>,
+    @location(9) block_light: f32,
 };
 
 @vertex
@@ -113,6 +118,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     // Éclairage et ombres dans la vraie géométrie, dessin sur la planète aplatie
     let flat = flatten_point(in.position);
     out.world_pos = in.position;
+    out.eye_rel = in.position - camera.camera_pos;
     out.normal = in.normal_alpha.xyz;
     out.color = vec4<f32>(in.color.rgb * in.color.rgb, in.normal_alpha.w);
     out.to_eye = rotate_by(camera.camera_pos - flat.pos, -flat.rot);
@@ -180,8 +186,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let is_snow = in.color.r > 0.82 && in.color.g > 0.84 && in.color.b > 0.88;
 
     // Normale géométrique pure de la facette (style Voxel et Low-Poly franc et net pour le sol terrestre)
-    let dpx = dpdx(in.world_pos);
-    let dpy = dpdy(in.world_pos);
+    let dpx = dpdx(in.eye_rel);
+    let dpy = dpdy(in.eye_rel);
     let cross_norm = normalize(cross(dpx, dpy));
     // Orientée vers la caméra : la face visible d'un solide regarde toujours l'observateur. La normale
     // de sommet n'est pas fiable sur les contremarches (parfois inversée, la face s'éclairait alors

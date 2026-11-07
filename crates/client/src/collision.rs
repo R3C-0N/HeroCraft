@@ -65,7 +65,9 @@ impl VoxelCollider {
                 }
                 let y = top - 1;
                 let block = q.block(BlockPos { y, ..pos });
+                // Une échelle ne porte pas : on s'y tient en grimpant (`climbable_at`), pas debout dessus
                 let height = match block.shape() {
+                    _ if block.is_climbable() => None,
                     Some(_) if block.is_fence() => {
                         let links = fence_links_at(q, BlockPos { y, ..pos });
                         herocraft_common::boxes_top_at(&herocraft_common::fence_collision_boxes(links), local[0], local[2], limit - y as f64)
@@ -120,6 +122,28 @@ impl VoxelCollider {
             Some(pos) if pos.is_valid() => self.with_query(generator, |q| q.block(pos)),
             _ => BlockId::AIR,
         }
+    }
+
+    /// Premier bloc qui se grimpe (échelle) contenant l'un des points : le centre de sa plaque, dans
+    /// l'espace monde (le joueur grimpe en la poussant)
+    pub fn climbable_at(&self, generator: &PlanetWorldGenerator, points: &[Vec3]) -> Option<Vec3> {
+        self.with_query(generator, |q| {
+            points.iter().find_map(|p| {
+                let pos = self.geometry.block_at_point(p.as_dvec3()).filter(|pos| pos.is_valid())?;
+                let block = q.block(pos);
+                if !block.is_climbable() {
+                    return None;
+                }
+                let (cx, cz) = match block.shape() {
+                    Some(shape) => {
+                        let b = shape.bounds(block.shape_variant());
+                        ((b[0] + b[3]) as f64 / 32.0, (b[2] + b[5]) as f64 / 32.0)
+                    }
+                    None => (0.5, 0.5),
+                };
+                Some(self.geometry.corner(pos.face, pos.x as f64 + cx, pos.y as f64 + 0.5, pos.z as f64 + cz).as_vec3())
+            })
+        })
     }
 
     /// Un des points est dans la matière d'un bloc qui arrête le corps (ni air, ni eau ; les

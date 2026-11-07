@@ -331,6 +331,8 @@ pub enum NetEvent {
     BlockChanged(BlockPos, BlockId),
     /// Statistiques RPG du joueur, qui font foi
     Stats(CharacterStats),
+    /// Un habitant proche parle (quelqu'un, peut-être nous, lui a adressé la parole)
+    VillagerSays { speaker: String, line: String },
     /// Le joueur vient d'être frappé par une créature (`cause` : son nom)
     Hurt { damage: f32, cause: String },
     /// Le joueur a tué une créature : son butin tombe en `position`
@@ -388,6 +390,12 @@ impl NetClient {
     pub fn send_block_change(&mut self, pos: BlockPos, block: BlockId) {
         let action = if block.is_air() { BlockInteractionAction::Break } else { BlockInteractionAction::Place(block.0) };
         self.connection.send(&ClientPacket::InteractBlock { block: pos.into(), action });
+    }
+
+    /// Parle à l'habitant `creature_id` (sans rien à échanger) : le serveur renvoie sa réplique à tous
+    /// les joueurs proches de lui
+    pub fn send_talk_to_villager(&mut self, creature_id: u64) {
+        self.connection.send(&ClientPacket::TalkToVillager { creature_id });
     }
 
     /// Signale au serveur un coup porté à une créature
@@ -519,6 +527,7 @@ impl NetClient {
                 }
                 return Some(NetEvent::Chat { sender, message });
             }
+            ServerPacket::VillagerSays { speaker, line } => return Some(NetEvent::VillagerSays { speaker, line }),
             ServerPacket::Disconnect(reason) => return Some(NetEvent::Disconnected(reason)),
             ServerPacket::Clock { time, forced } => return Some(NetEvent::Clock { time, forced }),
             ServerPacket::ChunkData { coord, .. } => warn!("Chunk {coord:?} reçu hors de la connexion, ignoré."),

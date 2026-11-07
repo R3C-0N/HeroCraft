@@ -200,6 +200,10 @@ fn main() {
     // prochain coup qu'on peut leur porter
     let mut creature_views: Vec<creatures::CreatureView> = Vec::new();
     let mut attack_cooldown = 0.0_f32;
+    // Humanoïde visé quand le clic gauche a été enfoncé : seul lui se frappe tant que le clic est tenu
+    let mut strike_lock: Option<u64> = None;
+    // En solo, combien de fois on a parlé à chaque habitant (il enchaîne ses répliques)
+    let mut solo_talks: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
 
     // Initialisation du moteur WGPU
     let mut state = pollster::block_on(State::new(window.clone(), &ui_state));
@@ -329,7 +333,17 @@ fn main() {
                                     Some(client) => client.villager_card(id).cloned(),
                                     None => solo_creatures.villager_card(id).cloned(),
                                 }.map(|card| (id, card)));
-                            if let Some((id, card)) = villager {
+                            if let Some((id, card)) = villager.as_ref().filter(|(_, card)| card.chats_only()) {
+                                // Rien à échanger : il répond dans le chat, que lisent les joueurs proches
+                                match net.as_mut() {
+                                    Some(client) => client.send_talk_to_villager(*id),
+                                    None => {
+                                        let turn = solo_talks.entry(*id).or_insert(0);
+                                        ui_state.chat.villager(&card.speaker(), &card.line(*turn, herocraft_common::professions().lines_of(card)));
+                                        *turn += 1;
+                                    }
+                                }
+                            } else if let Some((id, card)) = villager {
                                 camera.release_inputs();
                                 block_interaction.reset();
                                 ui_state.open_trade(id, card);
@@ -674,7 +688,17 @@ fn main() {
                             });
                             // Une bête devant le bloc visé : c'est elle qu'on frappe, au rythme des
                             // coups, et le bloc derrière elle ne se fissure pas
-                            let striking = aimed.filter(|_| block_interaction.is_breaking_held());
+                            // Un habitant, un garde ou un voyageur ne se frappe que si le clic a commencé
+                            // sur lui : celui qui passe devant un bloc en train de casser n'est pas
+                            // frappé par mégarde (les gardes s'en prendraient au joueur)
+                            if block_interaction.take_fresh_press() {
+                                strike_lock = aimed;
+                            }
+                            if !block_interaction.is_breaking_held() {
+                                strike_lock = None;
+                            }
+                            let humanoid = |id: u64| creature_views.iter().find(|v| v.id == id).is_some_and(|v| villagers::is_humanoid(v, &creature_registry));
+                            let striking = aimed.filter(|_| block_interaction.is_breaking_held()).filter(|&id| strike_lock == Some(id) || !humanoid(id));
                             if let Some(id) = striking {
                                 block_interaction.pause_mining();
                                 hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut audio, &ui_state.audio_settings);
@@ -682,6 +706,9 @@ fn main() {
                                 let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
                                 for murder in solo_creatures.take_murders() {
                                     ui_state.chat.server(&murder.announce(&name));
+                                }
+                                for assault in solo_creatures.take_assaults() {
+                                    ui_state.chat.server(&assault.warning());
                                 }
                             }
                             let action = if striking.is_some() { None } else { block_interaction.tick(dt) };
@@ -731,6 +758,7 @@ fn main() {
                                     NetEvent::Laid { position, item } => lay_egg(&mut dropped_items, &camera, position, item),
                                     NetEvent::Chat { sender, message } if sender.is_empty() => ui_state.chat.server(&message),
                                     NetEvent::Chat { sender, message } => ui_state.chat.player(&sender, &message),
+                                    NetEvent::VillagerSays { speaker, line } => ui_state.chat.villager(&speaker, &line),
                                     NetEvent::Clock { time, forced } => {
                                         state.simulated_time = time as f32;
                                         client_weather.model.forced = forced;

@@ -120,6 +120,8 @@ pub struct Server {
     skill_wheel: SkillWheel,
     /// Tirage du butin des bêtes tuées
     loot_rng: herocraft_common::LootRng,
+    /// Combien de fois on a parlé à chaque habitant (il enchaîne ses répliques)
+    talks: HashMap<u64, usize>,
     next_player_id: u64,
     tick_counter: u64,
     /// Annonce de la partie sur le réseau local, avec son nom
@@ -176,6 +178,7 @@ impl Server {
             last_stats: HashMap::new(),
             skill_wheel: SkillWheel::standard(),
             loot_rng: herocraft_common::LootRng::from_clock(),
+            talks: HashMap::new(),
             next_player_id: 1,
             tick_counter: 0,
             lan: None,
@@ -562,6 +565,7 @@ impl Server {
             ClientPacket::Fall { blocks } => self.fall(id, blocks),
             ClientPacket::InteractBlock { block, action } => self.interact_block(id, block.into(), action),
             ClientPacket::HitCreature { creature_id } => self.hit_creature(id, creature_id),
+            ClientPacket::TalkToVillager { creature_id } => self.talk_to_villager(id, creature_id),
             ClientPacket::FeedCreature { creature_id, item } => self.feed_creature(id, creature_id, ItemId(item)),
             ClientPacket::SkinCreature { creature_id } => self.skin_creature(id, creature_id),
             ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
@@ -739,6 +743,33 @@ impl Server {
             let name = self.players.get(&id).map(|p| p.name.clone()).unwrap_or_default();
             for murder in self.creatures.take_murders() {
                 self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
+            }
+            // Un habitant frappé : son auteur, lui seul, apprend que les gardes vont s'en prendre à lui
+            for assault in self.creatures.take_assaults() {
+                if let Some(player) = self.players.get(&assault.player) {
+                    tell(player, &assault.warning());
+                }
+            }
+        }
+    }
+
+    /// Un joueur parle à un habitant à sa portée : sa réplique va, dans le chat, à tous les joueurs
+    /// qui l'entendent (à moins de `VILLAGER_HEARING_BLOCKS` de lui), et à eux seuls
+    fn talk_to_villager(&mut self, id: u64, creature_id: u64) {
+        let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
+        let block = self.geometry.block_height as f32;
+        let Some(at) = self.creatures.creatures().iter().find(|c| c.id == creature_id && c.is_alive() && c.position.distance(feet) <= MAX_REACH_BLOCKS as f32 * block).map(|c| c.position) else { return };
+        let Some(card) = self.creatures.villager_card(creature_id).cloned() else { return };
+        // Les habitants disparus sont oubliés
+        let alive: Vec<u64> = self.creatures.creatures().iter().map(|c| c.id).collect();
+        self.talks.retain(|k, _| alive.contains(k));
+        let turn = self.talks.entry(creature_id).or_insert(0);
+        let line = card.line(*turn, herocraft_common::professions().lines_of(&card));
+        *turn += 1;
+        let packet = ServerPacket::VillagerSays { speaker: card.speaker(), line };
+        for player in self.players.values() {
+            if player.position.is_some_and(|p| p.distance(at) <= herocraft_common::VILLAGER_HEARING_BLOCKS * block) {
+                player.connection.send(&packet);
             }
         }
     }

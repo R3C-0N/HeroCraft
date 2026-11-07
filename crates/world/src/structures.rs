@@ -1323,10 +1323,13 @@ pub enum Piece {
     Fountain { rect: Rect, floor: i32 },
     /// Lampadaire : un poteau et une lumière
     Lamp { x: i32, z: i32, masonry: Masonry },
-    /// Pan de rempart d'un bloc d'épaisseur, crénelé (ou palissade de pieux), qui suit le terrain
-    Rampart { rect: Rect, masonry: Masonry },
-    /// Porte de ville percée dans le rempart
-    Gate { rect: Rect, masonry: Masonry },
+    /// Pan de rempart d'un bloc d'épaisseur, crénelé (ou palissade de pieux), qui suit le terrain.
+    /// `walk` : la rangée intérieure, sans créneaux, dont le dessus est le chemin de ronde
+    Rampart { rect: Rect, masonry: Masonry, walk: bool },
+    /// Porte de ville percée dans le rempart (`walk` : sous le chemin de ronde, voir `Rampart`)
+    Gate { rect: Rect, masonry: Masonry, walk: bool },
+    /// Échelle collée au mur `back` de sa colonne, du sol jusque sous l'altitude `top` (exclue)
+    Ladder { x: i32, z: i32, back: Side, top: i32 },
     /// Tour d'angle du rempart
     Tower { rect: Rect, floor: i32, masonry: Masonry },
     RuinHouse(RuinHouse),
@@ -1348,7 +1351,7 @@ impl Piece {
             Piece::House(house) => house.rect(),
             Piece::Forge(forge) => forge.foot,
             Piece::Stall(stall) => stall.rect,
-            Piece::Lamp { x, z, .. } => Rect::sized(*x, *z, 1, 1),
+            Piece::Lamp { x, z, .. } | Piece::Ladder { x, z, .. } => Rect::sized(*x, *z, 1, 1),
             Piece::RuinHouse(r) => r.foot,
             Piece::Temple(t) => t.foot,
             Piece::RuinTower(t) => Rect::around(t.center.0, t.center.1, t.radius),
@@ -1362,6 +1365,7 @@ impl Piece {
             Piece::Paving { .. } => ground - 1..ground,
             Piece::Field { .. } => ground - 1..ground + 1,
             Piece::Lamp { .. } => ground..ground + 3,
+            Piece::Ladder { top, .. } => ground..(*top).max(ground),
             Piece::Rampart { masonry, .. } | Piece::Gate { masonry, .. } => ground - 1..ground + masonry.height + 1,
             Piece::House(h) => span(h.floor, 1, h.top()),
             Piece::Forge(forge) => span(forge.floor, 1, forge.top()),
@@ -1446,10 +1450,15 @@ impl Piece {
                 2 => Some(masonry.light),
                 _ => None,
             },
-            Piece::Rampart { masonry: m, .. } => {
+            Piece::Ladder { back, .. } => Some(facing(LADDER, *back)),
+            Piece::Rampart { masonry: m, walk, .. } => {
                 let level = y - ground;
                 if level < 0 {
                     return (level == -1).then_some(if m.palisade { m.wall } else { COBBLE });
+                }
+                // Chemin de ronde : le dessus plat de la rangée intérieure, sous le ciel
+                if *walk && level >= m.height {
+                    return Some(BlockId::AIR);
                 }
                 if m.palisade {
                     // Pieux jointifs, un sur deux dépassant en pointe
@@ -1463,9 +1472,10 @@ impl Piece {
                 }
                 (level == m.height && (x + z) % 2 == 0).then_some(m.cap)
             }
-            Piece::Gate { masonry: m, .. } => {
+            Piece::Gate { masonry: m, walk, .. } => {
                 let level = y - ground;
                 match level {
+                    l if *walk && l >= m.height => Some(BlockId::AIR),
                     -1 => Some(if m.palisade { m.wall } else { COBBLE }),
                     0..=2 => Some(BlockId::AIR),
                     3 => Some(m.cap),
@@ -2263,7 +2273,7 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         Rect::new(walls.x1 - 1, z - 1, walls.x1, z + 2),
     ];
     for gate in gates {
-        p.take(Piece::Gate { rect: gate, masonry }, 0);
+        p.take(Piece::Gate { rect: gate, masonry, walk: false }, 0);
     }
     p.exits.extend([
         ((x, walls.z0 - 1), Side::North),
@@ -2277,7 +2287,40 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         Rect::new(walls.x0, walls.z0, walls.x0 + 1, walls.z1),
         Rect::new(walls.x1 - 1, walls.z0, walls.x1, walls.z1),
     ] {
-        p.pieces.push(Piece::Rampart { rect, masonry });
+        p.pieces.push(Piece::Rampart { rect, masonry, walk: false });
+    }
+    // Chemin de ronde : une seconde rangée contre le mur, en dedans, sans créneaux (le passage des
+    // portes reste ouvert dessous)
+    for gate in [
+        Rect::new(x - 1, walls.z0 + 1, x + 2, walls.z0 + 2),
+        Rect::new(x - 1, walls.z1 - 2, x + 2, walls.z1 - 1),
+        Rect::new(walls.x0 + 1, z - 1, walls.x0 + 2, z + 2),
+        Rect::new(walls.x1 - 2, z - 1, walls.x1 - 1, z + 2),
+    ] {
+        p.take(Piece::Gate { rect: gate, masonry, walk: true }, 0);
+    }
+    for rect in [
+        Rect::new(walls.x0 + 1, walls.z0 + 1, walls.x1 - 1, walls.z0 + 2),
+        Rect::new(walls.x0 + 1, walls.z1 - 2, walls.x1 - 1, walls.z1 - 1),
+        Rect::new(walls.x0 + 1, walls.z0 + 1, walls.x0 + 2, walls.z1 - 1),
+        Rect::new(walls.x1 - 2, walls.z0 + 1, walls.x1 - 1, walls.z1 - 1),
+    ] {
+        p.pieces.push(Piece::Rampart { rect, masonry, walk: true });
+    }
+    // Échelles vers le chemin de ronde, au bout des rues qui butent contre le rempart (sur le bord
+    // de la rue, qui garde deux blocs de passage)
+    for offset in [-2 * STEP, -STEP, STEP, 2 * STEP] {
+        for (ladder, wall, back) in [
+            ((walls.x0 + 2, z + offset + 1), (walls.x0 + 1, z + offset + 1), Side::West),
+            ((walls.x1 - 3, z + offset + 1), (walls.x1 - 2, z + offset + 1), Side::East),
+            ((x + offset + 1, walls.z0 + 2), (x + offset + 1, walls.z0 + 1), Side::North),
+            ((x + offset + 1, walls.z1 - 3), (x + offset + 1, walls.z1 - 2), Side::South),
+        ] {
+            let top = ground_at(p.generator, p.face, wall.0, wall.1).0 + masonry.height;
+            if ground_at(p.generator, p.face, ladder.0, ladder.1).0 < top {
+                p.pieces.push(Piece::Ladder { x: ladder.0, z: ladder.1, back, top });
+            }
+        }
     }
     // Les remparts et leurs abords sont pris, l'intérieur reste à bâtir
     for side in [
@@ -2760,7 +2803,7 @@ mod tests {
                 None => assert!(block(0, 50 + masonry.tower_height + 1, 0).is_air()),
             }
             // Créneaux ou pieux, un sur deux
-            let wall = Piece::Rampart { rect: Rect::sized(0, 0, 4, 1), masonry };
+            let wall = Piece::Rampart { rect: Rect::sized(0, 0, 4, 1), masonry, walk: false };
             let top: Vec<bool> = (0..4).map(|x| wall.block(x, 50 + masonry.height, 0, 50).is_some()).collect();
             assert_eq!(top, [true, false, true, false]);
         }
@@ -2837,6 +2880,46 @@ mod tests {
             }
         }
         assert!(checked > 20, "{checked} bâtiments vérifiés");
+    }
+
+    /// Des échelles mènent au chemin de ronde : plat, libre au-dessus, ouvert sous les portes
+    #[test]
+    fn test_town_ramparts_have_ladders_up_to_a_wall_walk() {
+        let generator = generator(2026);
+        let towns: Vec<_> = all_settlements(&generator).into_iter().filter(|s| s.kind == SettlementKind::Town).collect();
+        assert!(!towns.is_empty());
+        let ladder = herocraft_common::blocks().find("ladder").unwrap();
+        for town in towns {
+            let block = |x: i32, y: i32, z: i32| generator.block_at(town.face, x, y, z);
+            let ground = |x: i32, z: i32| generator.sample_block_column(town.face, x, z).elevation.floor() as i32;
+            let mut ladders = 0;
+            for piece in &town.pieces {
+                match *piece {
+                    Piece::Ladder { x, z, back, top } => {
+                        for y in ground(x, z)..top {
+                            assert_eq!(block(x, y, z).kind(), ladder, "échelle interrompue en ({x}, {y}, {z})");
+                        }
+                        // Le mur derrière elle porte le chemin de ronde, libre jusqu'au ciel
+                        let (dx, dz) = back.delta();
+                        let (wx, wz) = (x + dx, z + dz);
+                        assert!(block(wx, top - 1, wz).is_solid(), "pas de chemin de ronde derrière l'échelle ({x}, {z})");
+                        for y in top..top + 2 {
+                            assert!(block(wx, y, wz).is_air(), "chemin de ronde encombré en ({wx}, {y}, {wz})");
+                        }
+                        ladders += 1;
+                    }
+                    Piece::Gate { rect, masonry, walk: true } => {
+                        for (x, z) in [(rect.x0, rect.z0), (rect.x1 - 1, rect.z1 - 1)] {
+                            let g = ground(x, z);
+                            assert!((g..g + 3).all(|y| block(x, y, z).is_air()), "porte bouchée sous le chemin de ronde");
+                            assert!(block(x, g + masonry.height - 1, z).is_solid() && block(x, g + masonry.height, z).is_air());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            assert!(ladders >= 8, "seulement {ladders} échelles");
+        }
     }
 
     #[test]

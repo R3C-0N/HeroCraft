@@ -75,6 +75,9 @@ pub struct BlockSheet {
     /// Herbe folle : un bloc posé dessus prend sa place, comme dans l'air
     #[serde(default)]
     pub replaceable: bool,
+    /// Se grimpe (échelle) : le joueur qui s'y frotte monte ou descend le long de lui
+    #[serde(default)]
+    pub climbable: bool,
     /// Lumière émise, de 0 à 15 : elle se répand de proche en proche dans l'air, perdant un niveau
     /// par bloc, et s'arrête aux blocs pleins
     #[serde(default)]
@@ -536,6 +539,7 @@ struct BlockFlags {
     liquid: bool,
     plant: bool,
     replaceable: bool,
+    climbable: bool,
     /// Fait de pavés (dalle, escalier…)
     shaped: bool,
     /// Matière qui ne laisse pas voir à travers (pour les faces couvertes d'une forme)
@@ -551,9 +555,9 @@ struct BlockFlags {
 
 /// Bloc sans fiche (fichier retiré d'un monde existant) : un cube plein
 const UNKNOWN: BlockFlags =
-    BlockFlags { known: false, solid: true, opaque: true, liquid: false, plant: false, replaceable: false, shaped: false, material_opaque: true, rotation: BlockRotation::None, orientations: 1, light: 0, fence: false };
+    BlockFlags { known: false, solid: true, opaque: true, liquid: false, plant: false, replaceable: false, climbable: false, shaped: false, material_opaque: true, rotation: BlockRotation::None, orientations: 1, light: 0, fence: false };
 const AIR: BlockFlags =
-    BlockFlags { known: false, solid: false, opaque: false, liquid: false, plant: false, replaceable: false, shaped: false, material_opaque: false, rotation: BlockRotation::None, orientations: 1, light: 0, fence: false };
+    BlockFlags { known: false, solid: false, opaque: false, liquid: false, plant: false, replaceable: false, climbable: false, shaped: false, material_opaque: false, rotation: BlockRotation::None, orientations: 1, light: 0, fence: false };
 
 /// Tous les blocs connus
 #[derive(Debug, Clone)]
@@ -701,6 +705,7 @@ impl BlockRegistry {
                 liquid: sheet.liquid,
                 plant: sheet.shape.is_named("plant"),
                 replaceable: sheet.replaceable || sheet.liquid,
+                climbable: sheet.climbable,
                 shaped: shape.is_some(),
                 material_opaque: sheet.opaque,
                 rotation: if shape.is_some() { sheet.rotation } else { BlockRotation::None },
@@ -925,6 +930,12 @@ impl BlockId {
     pub fn is_replaceable(&self) -> bool {
         self.is_air() || blocks().flags(*self).replaceable
     }
+
+    /// Se grimpe (échelle)
+    #[inline(always)]
+    pub fn is_climbable(&self) -> bool {
+        blocks().flags(*self).climbable
+    }
 }
 
 #[cfg(test)]
@@ -1049,6 +1060,9 @@ mod tests {
         assert!(!ladder.can_be_upside_down() && ladder.with_rotation(5) == ladder);
         // L'échelle, aux texels découpés, ne cache rien
         assert!(registry.shape(ladder).is_some() && !ladder.hides_face(4));
+        // Elle se grimpe, quelle que soit son orientation ; un mur, non
+        assert!(ladder.is_climbable() && ladder.with_rotation(2).is_climbable());
+        assert!(!registry.find("stone").unwrap().is_climbable());
         // Textures des faces : chacune une fois dans la liste
         let files = registry.texture_files();
         assert_eq!(files[registry.face_texture(slab, 0) as usize], "textures/Plank.png");
