@@ -75,7 +75,11 @@ pub struct BlockSheet {
     /// Herbe folle : un bloc posé dessus prend sa place, comme dans l'air
     #[serde(default)]
     pub replaceable: bool,
-    /// Lumière émise, de 0 à 15 (pas encore rendue)
+    /// Se grimpe (échelle) : le joueur qui s'y frotte monte ou descend le long de lui
+    #[serde(default)]
+    pub climbable: bool,
+    /// Lumière émise, de 0 à 15 : elle se répand de proche en proche dans l'air, perdant un niveau
+    /// par bloc, et s'arrête aux blocs pleins
     #[serde(default)]
     pub light: u8,
     /// Texture « connectée » (verre) : le cadre de la texture n'est dessiné que sur les bords qui ne
@@ -221,6 +225,61 @@ impl BlockRotation {
     }
 }
 
+/// Nom de la forme des barrières (`shapes/barriere.json`) : son poteau est complété, au maillage et
+/// aux collisions, par des traverses vers chaque voisin auquel il se relie (`fence_boxes`)
+pub const FENCE_SHAPE: &str = "barriere";
+
+/// Côtés horizontaux d'une barrière, dans l'ordre des bits de son masque de liaisons : les faces
+/// +X, -X, +Z, -Z (index de `FACE_DIRS`)
+pub const FENCE_SIDES: [usize; 4] = [0, 1, 4, 5];
+
+/// Pavés dessinés d'une barrière reliée vers les côtés du masque `links` (bit `i` : `FENCE_SIDES[i]`) :
+/// le poteau, et deux traverses vers chaque côté relié
+pub fn fence_boxes(links: u8) -> Vec<ShapeBox> {
+    let mut boxes = vec![[6, 0, 6, 10, 16, 10]];
+    for (i, &dir) in FENCE_SIDES.iter().enumerate() {
+        if links & (1 << i) == 0 {
+            continue;
+        }
+        for (y0, y1) in [(6, 9), (12, 15)] {
+            boxes.push(match dir {
+                0 => [10, y0, 7, 16, y1, 9],
+                1 => [0, y0, 7, 6, y1, 9],
+                4 => [7, y0, 10, 9, y1, 16],
+                _ => [7, y0, 0, 9, y1, 6],
+            });
+        }
+    }
+    boxes
+}
+
+/// Pavés qui arrêtent le corps : le poteau et, vers chaque côté relié, un pan plein de toute la
+/// hauteur (on ne se glisse pas entre deux traverses)
+pub fn fence_collision_boxes(links: u8) -> Vec<ShapeBox> {
+    let mut boxes = vec![[6, 0, 6, 10, 16, 10]];
+    for (i, &dir) in FENCE_SIDES.iter().enumerate() {
+        if links & (1 << i) != 0 {
+            boxes.push(match dir {
+                0 => [10, 0, 6, 16, 16, 10],
+                1 => [0, 0, 6, 6, 16, 10],
+                4 => [6, 0, 10, 10, 16, 16],
+                _ => [6, 0, 0, 10, 16, 6],
+            });
+        }
+    }
+    boxes
+}
+
+/// Masque des liaisons d'une barrière : `neighbor(dir)` donne le voisin du côté `dir` (`FACE_DIRS`)
+pub fn fence_links(neighbor: impl Fn(usize) -> BlockId) -> u8 {
+    FENCE_SIDES.iter().enumerate().fold(0, |mask, (i, &dir)| {
+        let other = neighbor(dir);
+        // Une autre barrière, ou un mur plein contre lequel elle s'appuie
+        let links = other.is_fence() || (other.is_opaque() && other.is_solid());
+        if links { mask | (1 << i) } else { mask }
+    })
+}
+
 /// Variantes horizontales d'une forme : quatre quarts de tour, à l'endroit puis à l'envers
 const HORIZONTAL_VARIANTS: usize = 8;
 /// Toutes les variantes : les horizontales, puis couchée contre chacune des six faces
@@ -289,19 +348,12 @@ impl BlockShape {
 
     /// Le point local (de 0 à 1 dans chaque axe) est dans un pavé
     pub fn contains(&self, variant: usize, local: [f64; 3]) -> bool {
-        let p = local.map(|v| v * 16.0);
-        self.boxes(variant).iter().any(|b| (0..3).all(|i| p[i] >= b[i] as f64 && p[i] < b[i + 3] as f64))
+        boxes_contain(self.boxes(variant), local)
     }
 
     /// Hauteur (de 0 à 1) du dessus du plus haut pavé au-dessus du point local (x, z), au plus `max_y`
     pub fn top_at(&self, variant: usize, x: f64, z: f64, max_y: f64) -> Option<f64> {
-        let (x, z) = (x * 16.0, z * 16.0);
-        self.boxes(variant)
-            .iter()
-            .filter(|b| x >= b[0] as f64 && x < b[3] as f64 && z >= b[2] as f64 && z < b[5] as f64)
-            .map(|b| b[4] as f64 / 16.0)
-            .filter(|&top| top <= max_y)
-            .fold(None, |best: Option<f64>, top| Some(best.map_or(top, |b| b.max(top))))
+        boxes_top_at(self.boxes(variant), x, z, max_y)
     }
 
     /// Boîte englobante (seizièmes)
@@ -310,6 +362,23 @@ impl BlockShape {
             [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2]), a[3].max(b[3]), a[4].max(b[4]), a[5].max(b[5])]
         })
     }
+}
+
+/// Le point local (de 0 à 1 dans chaque axe) est dans l'un des pavés
+pub fn boxes_contain(boxes: &[ShapeBox], local: [f64; 3]) -> bool {
+    let p = local.map(|v| v * 16.0);
+    boxes.iter().any(|b| (0..3).all(|i| p[i] >= b[i] as f64 && p[i] < b[i + 3] as f64))
+}
+
+/// Hauteur (de 0 à 1) du dessus du plus haut des pavés au-dessus du point local (x, z), au plus `max_y`
+pub fn boxes_top_at(boxes: &[ShapeBox], x: f64, z: f64, max_y: f64) -> Option<f64> {
+    let (x, z) = (x * 16.0, z * 16.0);
+    boxes
+        .iter()
+        .filter(|b| x >= b[0] as f64 && x < b[3] as f64 && z >= b[2] as f64 && z < b[5] as f64)
+        .map(|b| b[4] as f64 / 16.0)
+        .filter(|&top| top <= max_y)
+        .fold(None, |best: Option<f64>, top| Some(best.map_or(top, |b| b.max(top))))
 }
 
 /// Tourne un pavé de `r` quarts de tour autour de la verticale : l'avant (z = 0) passe à +X, puis
@@ -470,6 +539,7 @@ struct BlockFlags {
     liquid: bool,
     plant: bool,
     replaceable: bool,
+    climbable: bool,
     /// Fait de pavés (dalle, escalier…)
     shaped: bool,
     /// Matière qui ne laisse pas voir à travers (pour les faces couvertes d'une forme)
@@ -477,13 +547,17 @@ struct BlockFlags {
     /// Comment le bloc s'oriente, et le nombre de ses orientations (1 s'il ne s'oriente pas)
     rotation: BlockRotation,
     orientations: u8,
+    /// Lumière émise, de 0 à 15
+    light: u8,
+    /// Barrière : un poteau qui se relie par des traverses aux barrières et aux murs voisins
+    fence: bool,
 }
 
 /// Bloc sans fiche (fichier retiré d'un monde existant) : un cube plein
 const UNKNOWN: BlockFlags =
-    BlockFlags { known: false, solid: true, opaque: true, liquid: false, plant: false, replaceable: false, shaped: false, material_opaque: true, rotation: BlockRotation::None, orientations: 1 };
+    BlockFlags { known: false, solid: true, opaque: true, liquid: false, plant: false, replaceable: false, climbable: false, shaped: false, material_opaque: true, rotation: BlockRotation::None, orientations: 1, light: 0, fence: false };
 const AIR: BlockFlags =
-    BlockFlags { known: false, solid: false, opaque: false, liquid: false, plant: false, replaceable: false, shaped: false, material_opaque: false, rotation: BlockRotation::None, orientations: 1 };
+    BlockFlags { known: false, solid: false, opaque: false, liquid: false, plant: false, replaceable: false, climbable: false, shaped: false, material_opaque: false, rotation: BlockRotation::None, orientations: 1, light: 0, fence: false };
 
 /// Tous les blocs connus
 #[derive(Debug, Clone)]
@@ -631,10 +705,13 @@ impl BlockRegistry {
                 liquid: sheet.liquid,
                 plant: sheet.shape.is_named("plant"),
                 replaceable: sheet.replaceable || sheet.liquid,
+                climbable: sheet.climbable,
                 shaped: shape.is_some(),
                 material_opaque: sheet.opaque,
                 rotation: if shape.is_some() { sheet.rotation } else { BlockRotation::None },
                 orientations: if shape.is_some() { sheet.rotation.count(sheet.upside_down) } else { 1 },
+                light: sheet.light,
+                fence: sheet.shape.is_named(FENCE_SHAPE) && shape.is_some(),
             };
             shapes[n] = shape;
             // Les liquides gardent leur couleur : la mer garde ses dégradés de profondeur
@@ -812,6 +889,18 @@ impl BlockId {
         blocks().flags(*self).opaque
     }
 
+    /// Barrière (forme `barriere`), reliée à ses voisines
+    #[inline(always)]
+    pub fn is_fence(&self) -> bool {
+        blocks().flags(*self).fence
+    }
+
+    /// Lumière émise par le bloc, de 0 à 15
+    #[inline(always)]
+    pub fn light(&self) -> u8 {
+        blocks().flags(*self).light
+    }
+
     /// Arrête le joueur et les créatures
     #[inline(always)]
     pub fn is_solid(&self) -> bool {
@@ -840,6 +929,12 @@ impl BlockId {
     #[inline(always)]
     pub fn is_replaceable(&self) -> bool {
         self.is_air() || blocks().flags(*self).replaceable
+    }
+
+    /// Se grimpe (échelle)
+    #[inline(always)]
+    pub fn is_climbable(&self) -> bool {
+        blocks().flags(*self).climbable
     }
 }
 
@@ -965,6 +1060,9 @@ mod tests {
         assert!(!ladder.can_be_upside_down() && ladder.with_rotation(5) == ladder);
         // L'échelle, aux texels découpés, ne cache rien
         assert!(registry.shape(ladder).is_some() && !ladder.hides_face(4));
+        // Elle se grimpe, quelle que soit son orientation ; un mur, non
+        assert!(ladder.is_climbable() && ladder.with_rotation(2).is_climbable());
+        assert!(!registry.find("stone").unwrap().is_climbable());
         // Textures des faces : chacune une fois dans la liste
         let files = registry.texture_files();
         assert_eq!(files[registry.face_texture(slab, 0) as usize], "textures/Plank.png");
@@ -974,6 +1072,39 @@ mod tests {
         unique.sort();
         unique.dedup();
         assert_eq!(unique.len(), files.len());
+    }
+
+    #[test]
+    fn test_fences_link_to_fences_and_walls() {
+        let registry = bundled();
+        let fences: Vec<_> = registry.iter().filter(|s| s.id.starts_with("barriere")).map(|s| BlockId(s.numeric_id)).collect();
+        assert!(fences.len() >= 16);
+        let oak = registry.find("barriereChene").unwrap();
+        assert!(fences.iter().all(|f| f.is_fence() && f.is_solid() && !f.is_opaque()));
+        assert!(!BlockId::STONE.is_fence() && !registry.find("plankSlab").unwrap().is_fence());
+        // Une barrière seule : le poteau ; reliée à l'est (une autre barrière) et au nord (un mur)
+        assert_eq!(fence_links(|_| BlockId::AIR), 0);
+        let links = fence_links(|dir| match dir {
+            0 => oak,
+            5 => BlockId::STONE,
+            _ => BlockId::AIR,
+        });
+        assert_eq!(links, 0b1001);
+        assert_eq!(fence_boxes(0).len(), 1);
+        assert_eq!(fence_boxes(links).len(), 5);
+        // On ne passe pas entre deux poteaux reliés, mais on passe à côté d'un poteau seul
+        let blocking = fence_collision_boxes(links);
+        assert!(boxes_contain(&blocking, [0.9, 0.2, 0.5]) && boxes_contain(&blocking, [0.5, 0.9, 0.1]));
+        assert!(!boxes_contain(&blocking, [0.1, 0.5, 0.5]) && !boxes_contain(&fence_collision_boxes(0), [0.9, 0.2, 0.5]));
+        assert_eq!(boxes_top_at(&blocking, 0.9, 0.5, 2.0), Some(1.0));
+    }
+
+    #[test]
+    fn test_lights() {
+        let registry = bundled();
+        assert_eq!(registry.find("torch").unwrap().light(), 15);
+        assert_eq!(BlockId::STONE.light(), 0);
+        assert_eq!(BlockId::AIR.light(), 0);
     }
 
     #[test]

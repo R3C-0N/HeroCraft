@@ -1,0 +1,13 @@
+{
+  "numeric_id": 156,
+  "name": "Barrière de briques blanchies",
+  "description": "Un poteau qui se relie de lui-même aux barrières et aux murs voisins. On ne passe pas entre deux poteaux reliés.",
+  "category": "Construction",
+  "hardness": 14,
+  "color": {"side": "#d9d2c3"},
+  "textures": {"side": "textures/BrickWhitewashed.png"},
+  "shape": "barriere",
+  "recipes": [
+    {"station": "workbench", "ingredients": {"brickWhitewashed": 3}, "count": 3}
+  ]
+}

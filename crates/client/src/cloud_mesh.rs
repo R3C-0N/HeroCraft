@@ -106,10 +106,23 @@ pub type CloudMask = u128;
 pub struct CloudMeshGenerator;
 
 impl CloudMeshGenerator {
-    /// Rayon inférieur de la couche nuageuse (au-dessus du niveau de la mer et des collines)
-    pub const CLOUD_ALTITUDE_BOT: f32 = 8.2;
-    /// Rayon supérieur de la couche nuageuse
-    pub const CLOUD_ALTITUDE_TOP: f32 = 9.4;
+    /// Hauteur d'un bloc dans les unités du prototype (rayon 25, 1 024 blocs par face), celles de
+    /// toutes les altitudes ci-dessous (multipliées ensuite par `block_scale`)
+    pub const BLOCK_HEIGHT: f32 = std::f32::consts::PI * 25.0 / 2048.0;
+    /// Milieu de la couche nuageuse au-dessus du rayon de base : 391 blocs au-dessus du fond du
+    /// monde, la dalle commençant à 375. Les plus hauts sommets plafonnent à 350 blocs
+    /// (`generator.rs`) : les nuages ne traversent plus les montagnes. Repris en dur dans
+    /// cloud_shader.wgsl (`CLOUD_LAYER_MID`).
+    pub const CLOUD_ALTITUDE_MID: f32 = 15.0;
+    /// Bas de la couche nuageuse
+    pub const CLOUD_ALTITUDE_BOT: f32 = Self::CLOUD_ALTITUDE_MID - Self::CLOUD_HALF_DEPTH;
+    /// Haut de la couche nuageuse (dalle de 1.2, soit 31 blocs d'épaisseur)
+    pub const CLOUD_ALTITUDE_TOP: f32 = Self::CLOUD_ALTITUDE_MID + Self::CLOUD_HALF_DEPTH;
+
+    /// Vitesse angulaire du vent qui fait tourner la couche autour de l'axe Y, en radians par
+    /// seconde de ciel (cloud_shader.wgsl et weather.rs). 0,0003 : environ 1,7 bloc par seconde
+    /// à l'équateur sur la planète de 8 192 blocs par face (0,0035 en faisait près de 20).
+    pub const WIND_SPEED: f32 = 0.0003;
 
     /// Demi-épaisseur des nuages (dalle de 1.2)
     pub const CLOUD_HALF_DEPTH: f32 = 0.60;
@@ -133,7 +146,7 @@ impl CloudMeshGenerator {
         herocraft_common::prof_scope!("clouds::generate_cloud_mesh");
         // Altitude et taille des nuages mesurées en blocs
         let scale = herocraft_world::block_scale(base_radius as f64) as f32;
-        let r_mid = base_radius + (Self::CLOUD_ALTITUDE_BOT + Self::CLOUD_ALTITUDE_TOP) * 0.5 * scale;
+        let r_mid = base_radius + Self::CLOUD_ALTITUDE_MID * scale;
         let mut mesh = CloudMesh::default();
 
         for &face in &PlanetFace::ALL {
@@ -460,6 +473,30 @@ mod tests {
     /// Rayon de la planète par défaut et échelle en blocs
     const R: f32 = (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32;
     const S: f32 = herocraft_world::BLOCK_SCALE as f32;
+
+    #[test]
+    fn test_cloud_layer_above_highest_peaks_and_shader_constants() {
+        // Le relief plafonne à 350 blocs (generator.rs) ; arbres et bâtiments en plus, le bas des
+        // nuages, arrondis compris, reste au-dessus
+        let bottom_blocks = CloudMeshGenerator::CLOUD_ALTITUDE_BOT / CloudMeshGenerator::BLOCK_HEIGHT;
+        assert!(bottom_blocks > 370.0, "Bas des nuages à {bottom_blocks} blocs");
+        let top_blocks = CloudMeshGenerator::CLOUD_ALTITUDE_TOP / CloudMeshGenerator::BLOCK_HEIGHT;
+        assert!(top_blocks < herocraft_world::WORLD_HEIGHT as f32, "Haut des nuages à {top_blocks} blocs");
+        // Vent lent : moins de 3 blocs par seconde au milieu de la couche
+        let r_mid = R + CloudMeshGenerator::CLOUD_ALTITUDE_MID * S;
+        let block = herocraft_world::block_size(R as f64) as f32;
+        let blocks_per_s = CloudMeshGenerator::WIND_SPEED * r_mid / block;
+        assert!(blocks_per_s > 0.5 && blocks_per_s < 3.0, "Vent à {blocks_per_s} blocs/s");
+
+        // Les copies du shader suivent les constantes
+        let shader = include_str!("cloud_shader.wgsl");
+        let wgsl_const = |name: &str| -> f32 {
+            let line = shader.lines().find(|l| l.starts_with(&format!("const {name}: f32 = "))).expect(name);
+            line.trim_end_matches(';').rsplit(' ').next().unwrap().parse().unwrap()
+        };
+        assert_eq!(wgsl_const("WIND_SPEED"), CloudMeshGenerator::WIND_SPEED);
+        assert_eq!(wgsl_const("CLOUD_LAYER_MID"), CloudMeshGenerator::CLOUD_ALTITUDE_MID);
+    }
 
     #[test]
     fn test_cloud_mesh_bounded_clusters_and_reasonable_sizes() {

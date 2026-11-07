@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 13;
+pub const PROTOCOL_VERSION: u32 = 14;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -57,6 +57,11 @@ pub enum ClientPacket {
     FeedCreature {
         creature_id: u64,
         item: u16,
+    },
+    /// Le joueur parle à un habitant sans rien à échanger (clic droit) : le serveur choisit sa
+    /// réplique et l'envoie aux joueurs qui l'entendent (`ServerPacket::VillagerSays`)
+    TalkToVillager {
+        creature_id: u64,
     },
     /// Le joueur dépèce une bête morte à sa portée, couteau ou dague en main : le serveur tire son
     /// butin (`ServerPacket::CreatureLoot`) et la retire
@@ -185,6 +190,12 @@ pub enum ServerPacket {
     Laid {
         position: Vec3,
         item: u16,
+    },
+    /// Un habitant parle (on vient de lui adresser la parole) : seuls les joueurs proches de lui le
+    /// reçoivent, et le lisent dans le chat
+    VillagerSays {
+        speaker: String,
+        line: String,
     },
     /// Message de chat ou notification système
     ChatMessage {

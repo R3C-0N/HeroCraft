@@ -1,0 +1,13 @@
+{
+  "numeric_id": 155,
+  "name": "Barrière de briques",
+  "description": "Un poteau qui se relie de lui-même aux barrières et aux murs voisins. On ne passe pas entre deux poteaux reliés.",
+  "category": "Construction",
+  "hardness": 14,
+  "color": {"side": "#c4937d"},
+  "textures": {"side": "textures/Brick.png"},
+  "shape": "barriere",
+  "recipes": [
+    {"station": "workbench", "ingredients": {"brick": 3}, "count": 3}
+  ]
+}

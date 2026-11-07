@@ -281,6 +281,49 @@ pub struct VillagerCard {
     pub greeting: String,
 }
 
+/// Distance jusqu'où l'on entend un habitant parler, en blocs : seuls les joueurs aussi proches
+/// lisent dans le chat ce qu'il dit
+pub const VILLAGER_HEARING_BLOCKS: f32 = 16.0;
+
+impl VillagerCard {
+    /// N'a rien à échanger : on bavarde avec lui dans le chat au lieu d'ouvrir l'écran des échanges
+    pub fn chats_only(&self) -> bool {
+        self.trades.is_empty()
+    }
+
+    /// Nom sous lequel il parle dans le chat : « Aude » ou « Bertrand (Garde) »
+    pub fn speaker(&self) -> String {
+        if self.profession.is_empty() {
+            self.name.clone()
+        } else {
+            format!("{} ({})", self.name, self.profession)
+        }
+    }
+
+    /// Ce qu'il dit la `turn`-ième fois qu'on lui parle : d'abord son bonjour, puis, à chaque fois,
+    /// une autre réplique de son métier (`lines`, celles de sa fiche), et l'on y revient en boucle
+    pub fn line(&self, turn: usize, lines: &[String]) -> String {
+        let others: Vec<&String> = lines.iter().filter(|l| **l != self.greeting).collect();
+        if turn == 0 || others.is_empty() {
+            return self.greeting.clone();
+        }
+        // Chacun commence ailleurs dans la liste, pour que deux voisins ne se répètent pas
+        let start = self.name.bytes().fold(0usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize));
+        others[(start + turn - 1) % others.len()].clone()
+    }
+}
+
+impl ProfessionRegistry {
+    /// Répliques du métier d'un habitant, d'après le nom de métier de sa fiche (au masculin ou au
+    /// féminin ; vide : sans métier)
+    pub fn lines_of(&self, card: &VillagerCard) -> &[String] {
+        self.professions
+            .iter()
+            .find(|p| p.name == card.profession || p.name_feminine == card.profession)
+            .map_or(&[], |p| &p.lines)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,6 +348,37 @@ mod tests {
                 assert!(atlas.tenue(t).is_some(), "{} : tenue {t} inconnue", p.id);
             }
         }
+    }
+
+    #[test]
+    fn a_villager_greets_then_says_the_other_lines_of_his_trade() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(PROFESSIONS_DIR);
+        let (registry, _) = ProfessionRegistry::load_dir(&dir, &find_item).unwrap();
+        let idle = registry.get(registry.find("sansMetier").unwrap()).unwrap();
+        let card = VillagerCard {
+            name: "Aude".into(),
+            profession: String::new(),
+            culture: "Humains".into(),
+            origin: "Habitante de Brumeval".into(),
+            appearance: crate::hero::atlas().defaut("humain"),
+            trades: Vec::new(),
+            greeting: idle.lines[0].clone(),
+        };
+        assert!(card.chats_only());
+        assert_eq!(card.speaker(), "Aude");
+        let lines = registry.lines_of(&card);
+        assert_eq!(lines, idle.lines.as_slice());
+        assert_eq!(card.line(0, lines), card.greeting);
+        let said: Vec<String> = (1..idle.lines.len()).map(|t| card.line(t, lines)).collect();
+        // Chaque autre réplique une fois, sans redire le bonjour
+        assert!(said.iter().all(|l| *l != card.greeting));
+        let mut unique = said.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), idle.lines.len() - 1, "{said:?}");
+        let guard = VillagerCard { name: "Bertrand".into(), profession: "Garde".into(), greeting: "Circulez.".into(), ..card };
+        assert_eq!(guard.speaker(), "Bertrand (Garde)");
+        assert!(registry.lines_of(&guard).iter().any(|l| l == "Rien à signaler."));
     }
 
     #[test]

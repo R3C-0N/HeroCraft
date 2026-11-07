@@ -30,6 +30,8 @@ struct VertexOutput {
     @location(3) to_eye: vec3<f32>,
     // Direction du Soleil vue du point comme sur la planète aplatie, tournée par sommet
     @location(4) light_dir: vec3<f32>,
+    // Position par rapport à la caméra, pour la normale de la facette (précise en f32 : shader.wgsl)
+    @location(5) eye_rel: vec3<f32>,
 };
 
 @vertex
@@ -37,6 +39,7 @@ fn vs_creature(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     let flat = flatten_point(in.position);
     out.world_pos = in.position;
+    out.eye_rel = in.position - camera.camera_pos;
     out.color = vec4<f32>(in.color.rgb * in.color.rgb, 1.0);
     out.uv = in.uv;
     out.to_eye = rotate_by(camera.camera_pos - flat.pos, -flat.rot);
@@ -55,7 +58,7 @@ fn fs_creature(in: VertexOutput) -> @location(0) vec4<f32> {
     let albedo = texel.rgb * in.color.rgb;
 
     // Normale de la facette, tournée vers l'œil : des pavés nets, comme les blocs
-    let cross_norm = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
+    let cross_norm = normalize(cross(dpdx(in.eye_rel), dpdy(in.eye_rel)));
     let n = select(cross_norm, -cross_norm, dot(cross_norm, in.to_eye) < 0.0);
     let n_sphere = normalize(in.world_pos);
     let l = normalize(in.light_dir);

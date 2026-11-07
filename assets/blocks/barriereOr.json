@@ -1,0 +1,13 @@
+{
+  "numeric_id": 162,
+  "name": "Barrière dorée",
+  "description": "Un poteau qui se relie de lui-même aux barrières et aux murs voisins. On ne passe pas entre deux poteaux reliés.",
+  "category": "Construction",
+  "hardness": 22,
+  "color": {"side": "#dfb65e"},
+  "textures": {"side": "textures/GoldBar.png"},
+  "shape": "barriere",
+  "recipes": [
+    {"station": "workbench", "ingredients": {"goldBar": 1}, "count": 3}
+  ]
+}

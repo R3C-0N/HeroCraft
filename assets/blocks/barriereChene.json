@@ -1,0 +1,14 @@
+{
+  "numeric_id": 148,
+  "name": "Barrière de chêne",
+  "description": "Un poteau qui se relie de lui-même aux barrières et aux murs voisins. On ne passe pas entre deux poteaux reliés.",
+  "category": "Construction",
+  "hardness": 10,
+  "color": {"side": "#6b4729"},
+  "textures": {"side": "textures/OakTrunkSides.png"},
+  "shape": "barriere",
+  "sound": "wood",
+  "recipes": [
+    {"station": "workbench", "ingredients": {"oakTrunk": 2, "stick": 2}, "count": 3}
+  ]
+}

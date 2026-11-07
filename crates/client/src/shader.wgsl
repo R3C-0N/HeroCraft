@@ -18,6 +18,12 @@
 // couleur moyenne (et par 4 pour tenir dans un octet), sa transparence découpée en 0 ou 1
 @group(2) @binding(0) var block_textures: texture_2d_array<f32>;
 @group(2) @binding(1) var block_sampler: sampler;
+// Lumière des blocs qui éclairent, à pleine force (au pied d'une torche)
+const TORCH_COLOR: vec3<f32> = vec3<f32>(1.0, 0.68, 0.38);
+const TORCH_INTENSITY: f32 = 1.6;
+// Éclat propre des faces d'un bloc qui éclaire (flamme, lanterne), qui les fait briller la nuit
+const EMISSIVE_GLOW: f32 = 0.8;
+
 // Rang d'une face sans texture (NO_TEXTURE)
 const NO_TEXTURE: u32 = 0xFFFFu;
 // Genre de végétation de chaque couche (block_textures.rs, `foliage_classes`), 2 bits par couche :
@@ -80,7 +86,8 @@ struct VertexInput {
     @location(0) position: vec3<f32>,
     // Normale (xyz) et opacité du sommet (w : fondu, verre ; négative pour un fondu sortant)
     @location(1) normal_alpha: vec4<f32>,
-    // Racine carrée de la couleur (rgb) : plus de précision dans les tons sombres
+    // Racine carrée de la couleur (rgb) : plus de précision dans les tons sombres ; lumière des
+    // torches et autres blocs qui éclairent (a, de 0 à 1)
     @location(2) color: vec4<f32>,
     // Rang de la texture (16 bits bas), puis u et v en seizièmes (8 bits chacun)
     @location(8) texture: u32,
@@ -99,6 +106,12 @@ struct VertexOutput {
     @location(5) moon_dir: vec3<f32>,
     @location(6) uv: vec2<f32>,
     @location(7) @interpolate(flat) texture_layer: u32,
+    // Position par rapport à la caméra, pour la normale de la facette : la position absolue (à
+    // ~400 unités du centre, un bloc en fait 0,077) n'a qu'une trentaine de millièmes de bloc de
+    // précision en f32, et ses écarts d'un pixel à l'autre, bruités, faisaient vibrer la normale
+    // de quelques degrés : des motifs moirés sur les faces que le soleil frôle
+    @location(8) eye_rel: vec3<f32>,
+    @location(9) block_light: f32,
 };
 
 @vertex
@@ -107,6 +120,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     // Éclairage et ombres dans la vraie géométrie, dessin sur la planète aplatie
     let flat = flatten_point(in.position);
     out.world_pos = in.position;
+    out.eye_rel = in.position - camera.camera_pos;
     out.normal = in.normal_alpha.xyz;
     out.color = vec4<f32>(in.color.rgb * in.color.rgb, in.normal_alpha.w);
     out.to_eye = rotate_by(camera.camera_pos - flat.pos, -flat.rot);
@@ -114,6 +128,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.light_dir = rotate_by(normalize(camera.light_dir), -flat.rot);
     out.moon_dir = rotate_by(camera.moon.xyz, -flat.rot);
     out.texture_layer = in.texture & 0xFFFFu;
+    out.block_light = in.color.a;
     out.uv = vec2<f32>(f32((in.texture >> 16u) & 0xFFu), f32(in.texture >> 24u)) / 16.0;
     return out;
 }
@@ -173,8 +188,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let is_snow = in.color.r > 0.82 && in.color.g > 0.84 && in.color.b > 0.88;
 
     // Normale géométrique pure de la facette (style Voxel et Low-Poly franc et net pour le sol terrestre)
-    let dpx = dpdx(in.world_pos);
-    let dpy = dpdy(in.world_pos);
+    let dpx = dpdx(in.eye_rel);
+    let dpy = dpdy(in.eye_rel);
     let cross_norm = normalize(cross(dpx, dpy));
     // Orientée vers la caméra : la face visible d'un solide regarde toujours l'observateur. La normale
     // de sommet n'est pas fiable sur les contremarches (parfois inversée, la face s'éclairait alors
@@ -294,7 +309,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Éclairage combiné : ambiance (ciel / nuit étoilée / clair de lune) + soleil direct + lune directe
     // Éclair : un instant, tout s'éclaire d'une lumière blanc bleuté
     let flash_light = vec3<f32>(1.3, 1.4, 1.7) * camera.weather.w * (0.4 + 0.6 * facing_up);
-    let total_light = night_ambient_total * night_factor + sun_ambient + sun_color * direct_level + moon_direct_color + flash_light;
+    // Torches, lampadaires, lave : une lumière chaude qui ne dépend ni du soleil ni des ombres
+    // (répandue bloc à bloc au maillage : voxel_mesh.rs, block_light.rs)
+    // Les faces d'un bloc qui éclaire (1 tout rond, les autres s'arrêtent à 0,96) brillent en plus
+    let torch_light = TORCH_COLOR * (in.block_light * in.block_light * TORCH_INTENSITY);
+    let emissive = TORCH_COLOR * select(0.0, EMISSIVE_GLOW, in.block_light > 0.98);
+    let total_light = night_ambient_total * night_factor + sun_ambient + sun_color * direct_level + moon_direct_color + flash_light + torch_light;
 
     // 5. Reflets spéculaires d'eau et de glace
     var specular_light = vec3<f32>(0.0);
@@ -328,7 +348,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Couleur éclairée de base avec Ambient Occlusion (AO) per-vertex interpolé
-    var lit_rgb = base_color * total_light + specular_light;
+    var lit_rgb = base_color * (total_light + emissive) + specular_light;
 
     // 6. Perspective aérienne : l'air entre la caméra et la surface diffuse la lumière du soleil
     // et du ciel (bleu au loin, doré face au soleil couchant) et atténue la surface. Le même

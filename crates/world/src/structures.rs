@@ -84,6 +84,12 @@ pub mod block {
     pub const FLINT_BRICK: BlockId = BlockId(40);
     pub const GLOWBELL_BLOOM: BlockId = BlockId(105);
     pub const BASALT: BlockId = BlockId(118);
+    // Barrières, dont les poteaux des lampadaires
+    pub const OAK_FENCE: BlockId = BlockId(148);
+    pub const BIRCH_FENCE: BlockId = BlockId(149);
+    pub const CUT_STONE_FENCE: BlockId = BlockId(154);
+    pub const SILVER_FENCE: BlockId = BlockId(161);
+    pub const LANTERN: BlockId = BlockId(163);
     // Ornements : l'aspect des métaux et du cristal, sans leur valeur. Cassés, ils ne donnent
     // qu'eux-mêmes et aucune recette ne les refond en lingots ni en minerai : piller une ville ne
     // rapporte ni or, ni mithril, ni cristal.
@@ -94,7 +100,12 @@ pub mod block {
     pub const CUT_CRYSTAL: BlockId = BlockId(146);
 
     /// Tous les blocs que posent les structures (pour vérifier qu'ils ont leur fiche)
-    pub const ALL: [(BlockId, &str); 40] = [
+    pub const ALL: [(BlockId, &str); 45] = [
+        (LANTERN, "lanterne"),
+        (OAK_FENCE, "barriereChene"),
+        (BIRCH_FENCE, "barriereBouleau"),
+        (CUT_STONE_FENCE, "barrierePierreTaillee"),
+        (SILVER_FENCE, "barriereMithril"),
         (IRON_TRIM, "ornementFer"),
         (STONE, "stone"),
         (WATER, "water"),
@@ -448,6 +459,9 @@ impl Habits {
     }
 }
 
+/// Hauteur de la lumière d'un lampadaire au-dessus du sol : un socle, deux barrières, la lanterne
+const LAMP_LIGHT: i32 = 3;
+
 /// Matériaux des remparts, des tours et des lampadaires d'une culture
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Masonry {
@@ -459,7 +473,7 @@ pub struct Masonry {
     pub cap: BlockId,
     /// Plancher du haut des tours
     pub deck: BlockId,
-    /// Poteau des lampadaires
+    /// Poteau des lampadaires (une barrière), posé sur un socle de la pierre `accent`
     pub post: BlockId,
     /// Lumière au sommet des lampadaires
     pub light: BlockId,
@@ -480,8 +494,8 @@ impl Masonry {
                 accent: HARD_STONE,
                 cap: CUT_STONE,
                 deck: PLANK,
-                post: OAK_LOG,
-                light: TORCH,
+                post: OAK_FENCE,
+                light: LANTERN,
                 palisade: false,
                 spire: None,
                 height: 5,
@@ -493,8 +507,8 @@ impl Masonry {
                 accent: BASALT,
                 cap: CUT_STONE,
                 deck: CUT_STONE,
-                post: CUT_STONE,
-                light: TORCH,
+                post: CUT_STONE_FENCE,
+                light: LANTERN,
                 palisade: false,
                 spire: None,
                 height: 6,
@@ -506,8 +520,8 @@ impl Masonry {
                 accent: BIRCH_LOG,
                 cap: OAK_LOG,
                 deck: PLANK,
-                post: BIRCH_LOG,
-                light: GLOWBELL_BLOOM,
+                post: BIRCH_FENCE,
+                light: LANTERN,
                 palisade: true,
                 spire: Some(DARK_LEAF),
                 height: 5,
@@ -519,8 +533,8 @@ impl Masonry {
                 accent: CUT_STONE,
                 cap: SILVER_TRIM,
                 deck: PLANK,
-                post: SILVER_TRIM,
-                light: TORCH,
+                post: SILVER_FENCE,
+                light: LANTERN,
                 palisade: false,
                 spire: Some(CUT_CRYSTAL),
                 height: 5,
@@ -823,10 +837,54 @@ impl House {
         (y < ground).then_some(BlockId::AIR)
     }
 
+    /// Torches posées au sol à l'intérieur (colonne, niveau au-dessus du plancher) : dans un coin du
+    /// côté de la porte à chaque étage, dans les deux coins pour une taverne ou une église, et
+    /// devant l'autel d'une église
+    pub fn torches(&self) -> impl Iterator<Item = (i32, i32, i32)> {
+        let foot = &self.foot;
+        // Les deux coins intérieurs le long du mur de la porte
+        let corners = match self.door {
+            Side::North => [(foot.x0 + 1, foot.z0 + 1), (foot.x1 - 2, foot.z0 + 1)],
+            Side::South => [(foot.x0 + 1, foot.z1 - 2), (foot.x1 - 2, foot.z1 - 2)],
+            Side::West => [(foot.x0 + 1, foot.z0 + 1), (foot.x0 + 1, foot.z1 - 2)],
+            Side::East => [(foot.x1 - 2, foot.z0 + 1), (foot.x1 - 2, foot.z1 - 2)],
+        };
+        let both = matches!(self.usage, Use::Tavern | Use::Church);
+        let pick = (hash2(self.floor as u64 ^ 0x70C4, foot.x0, foot.z0) % 2) as usize;
+        let storeys = if self.storeys > 1 { 2 } else { 1 };
+        let in_corners = (0..storeys).flat_map(move |storey| {
+            corners.into_iter().enumerate().filter(move |(i, _)| both || *i == pick).map(move |(_, (x, z))| (x, 4 * storey, z))
+        });
+        in_corners.chain(self.altar_column().map(|(x, z)| (x, 1, z)))
+    }
+
+    /// Colonne de l'autel d'une église : sur l'axe de la porte, devant le clocher
+    fn altar_column(&self) -> Option<(i32, i32)> {
+        if self.usage != Use::Church {
+            return None;
+        }
+        let foot = &self.foot;
+        let (dx, dz) = self.door_column();
+        let inner_depth = match self.door {
+            Side::North | Side::South => foot.depth(),
+            _ => foot.width(),
+        };
+        let depth = inner_depth - 5;
+        Some(match self.door {
+            Side::North => (dx, foot.z0 + depth),
+            Side::South => (dx, foot.z1 - 1 - depth),
+            Side::West => (foot.x0 + depth, dz),
+            Side::East => (foot.x1 - 1 - depth, dz),
+        })
+    }
+
     /// Intérieur, au niveau `level` au-dessus du plancher
     fn interior(&self, x: i32, z: i32, level: i32) -> BlockId {
         let foot = &self.foot;
         let back = self.door.opposite();
+        if self.torches().any(|t| t == (x, level, z)) {
+            return TORCH;
+        }
         if self.storeys > 1 {
             let ladder = self.ladder_column();
             if (x, z) == ladder.0 && level < 4 {
@@ -892,9 +950,6 @@ impl House {
                     return FURNACE;
                 }
             }
-        }
-        if level == 1 && self.usage == Use::Church && depth == inner_depth - 5 && offset == 0 {
-            return TORCH;
         }
         BlockId::AIR
     }
@@ -1273,10 +1328,13 @@ pub enum Piece {
     Fountain { rect: Rect, floor: i32 },
     /// Lampadaire : un poteau et une lumière
     Lamp { x: i32, z: i32, masonry: Masonry },
-    /// Pan de rempart d'un bloc d'épaisseur, crénelé (ou palissade de pieux), qui suit le terrain
-    Rampart { rect: Rect, masonry: Masonry },
-    /// Porte de ville percée dans le rempart
-    Gate { rect: Rect, masonry: Masonry },
+    /// Pan de rempart d'un bloc d'épaisseur, crénelé (ou palissade de pieux), qui suit le terrain.
+    /// `walk` : la rangée intérieure, sans créneaux, dont le dessus est le chemin de ronde
+    Rampart { rect: Rect, masonry: Masonry, walk: bool },
+    /// Porte de ville percée dans le rempart (`walk` : sous le chemin de ronde, voir `Rampart`)
+    Gate { rect: Rect, masonry: Masonry, walk: bool },
+    /// Échelle collée au mur `back` de sa colonne, du sol jusque sous l'altitude `top` (exclue)
+    Ladder { x: i32, z: i32, back: Side, top: i32 },
     /// Tour d'angle du rempart
     Tower { rect: Rect, floor: i32, masonry: Masonry },
     RuinHouse(RuinHouse),
@@ -1298,7 +1356,7 @@ impl Piece {
             Piece::House(house) => house.rect(),
             Piece::Forge(forge) => forge.foot,
             Piece::Stall(stall) => stall.rect,
-            Piece::Lamp { x, z, .. } => Rect::sized(*x, *z, 1, 1),
+            Piece::Lamp { x, z, .. } | Piece::Ladder { x, z, .. } => Rect::sized(*x, *z, 1, 1),
             Piece::RuinHouse(r) => r.foot,
             Piece::Temple(t) => t.foot,
             Piece::RuinTower(t) => Rect::around(t.center.0, t.center.1, t.radius),
@@ -1311,7 +1369,8 @@ impl Piece {
         match self {
             Piece::Paving { .. } => ground - 1..ground,
             Piece::Field { .. } => ground - 1..ground + 1,
-            Piece::Lamp { .. } => ground..ground + 3,
+            Piece::Lamp { .. } => ground..ground + LAMP_LIGHT + 1,
+            Piece::Ladder { top, .. } => ground..(*top).max(ground),
             Piece::Rampart { masonry, .. } | Piece::Gate { masonry, .. } => ground - 1..ground + masonry.height + 1,
             Piece::House(h) => span(h.floor, 1, h.top()),
             Piece::Forge(forge) => span(forge.floor, 1, forge.top()),
@@ -1392,14 +1451,21 @@ impl Piece {
                 (y < ground || y == f).then_some(BlockId::AIR)
             }
             Piece::Lamp { masonry, .. } => match y - ground {
-                0 | 1 => Some(masonry.post),
-                2 => Some(masonry.light),
+                // Socle, fût de barrière, lanterne au sommet
+                0 => Some(masonry.accent),
+                1..LAMP_LIGHT => Some(masonry.post),
+                LAMP_LIGHT => Some(masonry.light),
                 _ => None,
             },
-            Piece::Rampart { masonry: m, .. } => {
+            Piece::Ladder { back, .. } => Some(facing(LADDER, *back)),
+            Piece::Rampart { masonry: m, walk, .. } => {
                 let level = y - ground;
                 if level < 0 {
                     return (level == -1).then_some(if m.palisade { m.wall } else { COBBLE });
+                }
+                // Chemin de ronde : le dessus plat de la rangée intérieure, sous le ciel
+                if *walk && level >= m.height {
+                    return Some(BlockId::AIR);
                 }
                 if m.palisade {
                     // Pieux jointifs, un sur deux dépassant en pointe
@@ -1413,9 +1479,10 @@ impl Piece {
                 }
                 (level == m.height && (x + z) % 2 == 0).then_some(m.cap)
             }
-            Piece::Gate { masonry: m, .. } => {
+            Piece::Gate { masonry: m, walk, .. } => {
                 let level = y - ground;
                 match level {
+                    l if *walk && l >= m.height => Some(BlockId::AIR),
                     -1 => Some(if m.palisade { m.wall } else { COBBLE }),
                     0..=2 => Some(BlockId::AIR),
                     3 => Some(m.cap),
@@ -1561,6 +1628,40 @@ impl Settlement {
             return None;
         }
         self.pieces_at(x, z).find_map(|p| if p.span(ground).contains(&y) { p.block(x, y, z, ground) } else { None })
+    }
+
+    /// Blocs qui éclairent (torches, lampadaires, fontaines) posés par le plan dans les colonnes
+    /// `area` : position et bloc. `ground(x, z)` donne l'altitude du premier bloc d'air au-dessus
+    /// du relief naturel de la colonne (le pied d'un lampadaire). Seuls ceux que le plan pose
+    /// vraiment à cet endroit sont gardés.
+    pub fn lights(&self, area: Rect, ground: impl Fn(i32, i32) -> i32) -> Vec<(i32, i32, i32, BlockId)> {
+        let mut found = Vec::new();
+        if !self.bounds.intersects(&area) {
+            return found;
+        }
+        for piece in self.pieces.iter().filter(|p| p.rect().intersects(&area)) {
+            let mut spots: Vec<(i32, i32, i32)> = Vec::new();
+            match piece {
+                Piece::Lamp { x, z, .. } => spots.push((*x, ground(*x, *z) + LAMP_LIGHT, *z)),
+                Piece::Fountain { rect, floor } => {
+                    let (cx, cz) = rect.center();
+                    spots.push((cx, floor + 2, cz));
+                }
+                Piece::House(house) => spots.extend(house.torches().map(|(x, level, z)| (x, house.floor + level, z))),
+                _ => continue,
+            }
+            for (x, y, z) in spots {
+                if !area.contains(x, z) {
+                    continue;
+                }
+                if let Some(block) = self.block(x, y, z, ground(x, z)) {
+                    if block.light() > 0 {
+                        found.push((x, y, z, block));
+                    }
+                }
+            }
+        }
+        found
     }
 
     /// Altitudes que le plan peut changer dans la colonne (x, z) (vide s'il n'y touche pas)
@@ -2179,7 +2280,7 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         Rect::new(walls.x1 - 1, z - 1, walls.x1, z + 2),
     ];
     for gate in gates {
-        p.take(Piece::Gate { rect: gate, masonry }, 0);
+        p.take(Piece::Gate { rect: gate, masonry, walk: false }, 0);
     }
     p.exits.extend([
         ((x, walls.z0 - 1), Side::North),
@@ -2193,7 +2294,40 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         Rect::new(walls.x0, walls.z0, walls.x0 + 1, walls.z1),
         Rect::new(walls.x1 - 1, walls.z0, walls.x1, walls.z1),
     ] {
-        p.pieces.push(Piece::Rampart { rect, masonry });
+        p.pieces.push(Piece::Rampart { rect, masonry, walk: false });
+    }
+    // Chemin de ronde : une seconde rangée contre le mur, en dedans, sans créneaux (le passage des
+    // portes reste ouvert dessous)
+    for gate in [
+        Rect::new(x - 1, walls.z0 + 1, x + 2, walls.z0 + 2),
+        Rect::new(x - 1, walls.z1 - 2, x + 2, walls.z1 - 1),
+        Rect::new(walls.x0 + 1, z - 1, walls.x0 + 2, z + 2),
+        Rect::new(walls.x1 - 2, z - 1, walls.x1 - 1, z + 2),
+    ] {
+        p.take(Piece::Gate { rect: gate, masonry, walk: true }, 0);
+    }
+    for rect in [
+        Rect::new(walls.x0 + 1, walls.z0 + 1, walls.x1 - 1, walls.z0 + 2),
+        Rect::new(walls.x0 + 1, walls.z1 - 2, walls.x1 - 1, walls.z1 - 1),
+        Rect::new(walls.x0 + 1, walls.z0 + 1, walls.x0 + 2, walls.z1 - 1),
+        Rect::new(walls.x1 - 2, walls.z0 + 1, walls.x1 - 1, walls.z1 - 1),
+    ] {
+        p.pieces.push(Piece::Rampart { rect, masonry, walk: true });
+    }
+    // Échelles vers le chemin de ronde, au bout des rues qui butent contre le rempart (sur le bord
+    // de la rue, qui garde deux blocs de passage)
+    for offset in [-2 * STEP, -STEP, STEP, 2 * STEP] {
+        for (ladder, wall, back) in [
+            ((walls.x0 + 2, z + offset + 1), (walls.x0 + 1, z + offset + 1), Side::West),
+            ((walls.x1 - 3, z + offset + 1), (walls.x1 - 2, z + offset + 1), Side::East),
+            ((x + offset + 1, walls.z0 + 2), (x + offset + 1, walls.z0 + 1), Side::North),
+            ((x + offset + 1, walls.z1 - 3), (x + offset + 1, walls.z1 - 2), Side::South),
+        ] {
+            let top = ground_at(p.generator, p.face, wall.0, wall.1).0 + masonry.height;
+            if ground_at(p.generator, p.face, ladder.0, ladder.1).0 < top {
+                p.pieces.push(Piece::Ladder { x: ladder.0, z: ladder.1, back, top });
+            }
+        }
     }
     // Les remparts et leurs abords sont pris, l'intérieur reste à bâtir
     for side in [
@@ -2455,6 +2589,46 @@ mod tests {
     }
 
     #[test]
+    fn test_houses_and_lamps_are_lit() {
+        let generator = generator(2026);
+        let settlements = all_settlements(&generator);
+        let (mut houses, mut lamps) = (0, 0);
+        for s in settlements.iter().filter(|s| s.culture.is_some()) {
+            for piece in &s.pieces {
+                match piece {
+                    Piece::House(h) if !matches!(h.usage, Use::Barn) => {
+                        // Chaque étage a sa torche, posée sur le plancher, à l'intérieur des murs
+                        let torches: Vec<_> = h.torches().collect();
+                        assert!(torches.len() >= h.storeys as usize, "{h:?}");
+                        for (x, level, z) in torches {
+                            assert!(h.foot.contains(x, z) && !h.foot.on_edge(x, z));
+                            assert_eq!(h.block(x, h.floor + level, z, h.floor), Some(TORCH), "{h:?}");
+                            let below = h.block(x, h.floor + level - 1, z, h.floor).unwrap();
+                            assert!(below.is_solid(), "torche posée sur {below:?}");
+                        }
+                        houses += 1;
+                    }
+                    Piece::Lamp { x, z, masonry } => {
+                        // Le poteau est une barrière, la lumière au-dessus
+                        let ground = 100;
+                        assert!(piece.block(*x, ground + 1, *z, ground).unwrap().is_fence());
+                        assert!(piece.block(*x, ground + LAMP_LIGHT, *z, ground).unwrap().light() > 0, "{masonry:?}");
+                        lamps += 1;
+                    }
+                    _ => {}
+                }
+            }
+            // Les lumières que le plan annonce sont bien celles qu'il pose
+            let lights = s.lights(s.bounds, |_, _| 100);
+            assert!(!lights.is_empty());
+            for (x, y, z, block) in lights {
+                assert_eq!(s.block(x, y, z, 100), Some(block));
+            }
+        }
+        assert!(houses > 50 && lamps > 20, "{houses} maisons, {lamps} lampadaires");
+    }
+
+    #[test]
     fn test_planet_has_towns_villages_and_ruins() {
         for seed in [2026, 1234567890] {
             let generator = generator(seed);
@@ -2636,7 +2810,7 @@ mod tests {
                 None => assert!(block(0, 50 + masonry.tower_height + 1, 0).is_air()),
             }
             // Créneaux ou pieux, un sur deux
-            let wall = Piece::Rampart { rect: Rect::sized(0, 0, 4, 1), masonry };
+            let wall = Piece::Rampart { rect: Rect::sized(0, 0, 4, 1), masonry, walk: false };
             let top: Vec<bool> = (0..4).map(|x| wall.block(x, 50 + masonry.height, 0, 50).is_some()).collect();
             assert_eq!(top, [true, false, true, false]);
         }
@@ -2713,6 +2887,46 @@ mod tests {
             }
         }
         assert!(checked > 20, "{checked} bâtiments vérifiés");
+    }
+
+    /// Des échelles mènent au chemin de ronde : plat, libre au-dessus, ouvert sous les portes
+    #[test]
+    fn test_town_ramparts_have_ladders_up_to_a_wall_walk() {
+        let generator = generator(2026);
+        let towns: Vec<_> = all_settlements(&generator).into_iter().filter(|s| s.kind == SettlementKind::Town).collect();
+        assert!(!towns.is_empty());
+        let ladder = herocraft_common::blocks().find("ladder").unwrap();
+        for town in towns {
+            let block = |x: i32, y: i32, z: i32| generator.block_at(town.face, x, y, z);
+            let ground = |x: i32, z: i32| generator.sample_block_column(town.face, x, z).elevation.floor() as i32;
+            let mut ladders = 0;
+            for piece in &town.pieces {
+                match *piece {
+                    Piece::Ladder { x, z, back, top } => {
+                        for y in ground(x, z)..top {
+                            assert_eq!(block(x, y, z).kind(), ladder, "échelle interrompue en ({x}, {y}, {z})");
+                        }
+                        // Le mur derrière elle porte le chemin de ronde, libre jusqu'au ciel
+                        let (dx, dz) = back.delta();
+                        let (wx, wz) = (x + dx, z + dz);
+                        assert!(block(wx, top - 1, wz).is_solid(), "pas de chemin de ronde derrière l'échelle ({x}, {z})");
+                        for y in top..top + 2 {
+                            assert!(block(wx, y, wz).is_air(), "chemin de ronde encombré en ({wx}, {y}, {wz})");
+                        }
+                        ladders += 1;
+                    }
+                    Piece::Gate { rect, masonry, walk: true } => {
+                        for (x, z) in [(rect.x0, rect.z0), (rect.x1 - 1, rect.z1 - 1)] {
+                            let g = ground(x, z);
+                            assert!((g..g + 3).all(|y| block(x, y, z).is_air()), "porte bouchée sous le chemin de ronde");
+                            assert!(block(x, g + masonry.height - 1, z).is_solid() && block(x, g + masonry.height, z).is_air());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            assert!(ladders >= 8, "seulement {ladders} échelles");
+        }
     }
 
     #[test]
