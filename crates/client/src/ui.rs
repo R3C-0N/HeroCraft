@@ -27,6 +27,7 @@ pub enum UiAction {
     // Actions du sous-menu Options > Affichage
     ToggleVsync,
     SetLodDistance,
+    SetLodPrecision,
     ToggleFullscreen,
     SetFpsLimit,
     ResumeGame,
@@ -109,6 +110,29 @@ impl LodDistanceSetting {
             Self::Courte => "Courte (Rapide)",
             Self::Normale => "Normale (Équilibrée)",
             Self::Elevee => "Élevée (Haute Fidélité)",
+        }
+    }
+}
+
+/// Précision du relief lointain (patchs polygonaux au-delà des chunks voxel)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LodPrecisionSetting {
+    /// Cellules de 4 à plusieurs centaines de blocs, relief en terrasses de 6 blocs
+    Normale,
+    /// Cellules de 2 blocs près du joueur, relief au bloc près
+    Fine,
+    /// Test : une cellule par bloc jusqu'à ~1 300 blocs, relief au bloc près
+    Exacte,
+}
+
+impl LodPrecisionSetting {
+    pub const ALL: [LodPrecisionSetting; 3] = [Self::Normale, Self::Fine, Self::Exacte];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Normale => "Normale",
+            Self::Fine => "Fine",
+            Self::Exacte => "1:1 (test)",
         }
     }
 }
@@ -214,6 +238,8 @@ pub struct VideoSettings {
     pub vsync: bool,
     pub fullscreen: bool,
     pub lod_distance: LodDistanceSetting,
+    /// Précision des patchs du relief lointain (`PlanetLodManager::set_precision`)
+    pub lod_precision: LodPrecisionSetting,
     pub fps_limit: FpsLimitSetting,
     /// Aplatissement de la planète vue du sol : 0 = vraie courbure, 1 = horizon le plus lointain
     /// possible sans voir les antipodes (renderer.rs, `planet_flattening`)
@@ -229,6 +255,7 @@ impl Default for VideoSettings {
             vsync: true,
             fullscreen: false,
             lod_distance: LodDistanceSetting::Normale,
+            lod_precision: LodPrecisionSetting::Normale,
             fps_limit: FpsLimitSetting::Fps60,
             flattening: 1.0,
             msaa: true,
@@ -1956,6 +1983,13 @@ impl UiState {
             ];
             if choice_row(ui, &mut self.video_settings.lod_distance, &lod_choices) {
                 *action = Some(UiAction::SetLodDistance);
+            }
+            ui.end_row();
+
+            row_label(ui, "Précision du relief lointain", "Taille des cellules du terrain au-delà des chunks voxel : Normale (4 blocs et plus, terrasses de 6 blocs), Fine (2 blocs, relief au bloc près), 1:1 (un bloc par cellule, pour tester ; plus lourd)");
+            let precision_choices = LodPrecisionSetting::ALL.map(|p| (p, p.label()));
+            if choice_row(ui, &mut self.video_settings.lod_precision, &precision_choices) {
+                *action = Some(UiAction::SetLodPrecision);
             }
             ui.end_row();
 

@@ -149,15 +149,15 @@ impl PlanetMesh {
     /// Hauteur d'un palier pour le relief orbital étagé en strates / terrasses (en blocs)
     pub const ORBIT_TERRACE_STEP_HEIGHT: f64 = 6.0;
 
-    /// Discrétise une altitude continue en terrasses géologiques étagées pour la vue orbitale
+    /// Discrétise une altitude en paliers de `step` blocs au-dessus de la mer. Avec un pas d'un
+    /// bloc, le dessus d'une cellule est exactement celui des voxels (`floor` de l'élévation).
     #[inline]
-    pub fn quantize_terrace_elevation(elevation: f64) -> f64 {
+    pub fn quantize_elevation(elevation: f64, step: f64) -> f64 {
         if elevation <= SEA_LEVEL_BLOCKS {
-            elevation
+            if step <= 1.0 { elevation.floor() } else { elevation }
         } else {
             let diff = elevation - SEA_LEVEL_BLOCKS;
-            let step = (diff / Self::ORBIT_TERRACE_STEP_HEIGHT).floor() * Self::ORBIT_TERRACE_STEP_HEIGHT;
-            SEA_LEVEL_BLOCKS + step
+            SEA_LEVEL_BLOCKS + (diff / step).floor() * step
         }
     }
 
@@ -387,6 +387,18 @@ impl PlanetMesh {
         grid_resolution: usize,
         filter: herocraft_world::VisualizationFilter,
     ) -> Self {
+        Self::generate_lod_patch_stepped(generator, key, base_radius, grid_resolution, Self::ORBIT_TERRACE_STEP_HEIGHT, filter)
+    }
+
+    /// `generate_lod_patch` avec des terrasses de `terrace_step` blocs (1 : relief au bloc près)
+    pub fn generate_lod_patch_stepped(
+        generator: &PlanetWorldGenerator,
+        key: &herocraft_world::QuadNodeKey,
+        base_radius: f32,
+        grid_resolution: usize,
+        terrace_step: f64,
+        filter: herocraft_world::VisualizationFilter,
+    ) -> Self {
         herocraft_common::prof_scope!("mesh::generate_lod_patch");
         let n = grid_resolution.max(2);
         let mut vertices: Vec<PlanetVertex> = Vec::with_capacity(n * n * 8);
@@ -407,7 +419,7 @@ impl PlanetMesh {
             let stepped = if is_water {
                 SEA_LEVEL_BLOCKS
             } else {
-                Self::quantize_terrace_elevation(raw_elevation)
+                Self::quantize_elevation(raw_elevation, terrace_step)
             };
             let color = match filter {
                 herocraft_world::VisualizationFilter::Standard => Self::relief_biome_color(biome, stepped),

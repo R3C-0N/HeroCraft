@@ -41,12 +41,47 @@ pub struct LodMeshId {
     pub revision: u32,
 }
 
-/// Résolution de la grille d'un patch polygonal selon son niveau
+/// Résolution de la grille d'un patch polygonal selon son niveau (précision normale)
 fn patch_resolution(level: u8) -> usize {
     match level {
         0 => 32,
         1 => 24,
         _ => 16,
+    }
+}
+
+/// Patchs à une cellule par bloc en précision 1:1 : les deux niveaux au-delà des chunks voxel
+/// (nœuds de 64 et 128 blocs de côté, jusqu'à ~770 blocs du joueur). Plus loin, une cellule
+/// d'un bloc fait moins d'un pixel et coûterait des dizaines de millions de sommets.
+const EXACT_LEVELS: u8 = 2;
+/// Grille minimale des patchs en précision fine ou 1:1 (deux fois plus fine que la normale)
+const FINE_RESOLUTION: usize = 32;
+/// Grille du niveau juste après les patchs 1:1, pour adoucir le passage
+const EXACT_NEXT_RESOLUTION: usize = 64;
+
+/// Grille d'un patch (cellules par côté) et hauteur de ses terrasses (en blocs) selon la précision.
+/// Une cellule par bloc et des terrasses d'un bloc donnent exactement le dessus des voxels.
+pub fn patch_detail(level: u8, precision: crate::ui::LodPrecisionSetting) -> (usize, f64) {
+    use crate::ui::LodPrecisionSetting as P;
+    let side_blocks = (herocraft_world::FACE_BLOCKS >> level).max(1) as usize;
+    let normal = patch_resolution(level);
+    // Niveaux au-dessus des chunks voxel (1 : nœuds de 2 × 2 chunks)
+    let depth = VOXEL_LEVEL.saturating_sub(level);
+    let fine = normal.max(FINE_RESOLUTION);
+    match precision {
+        P::Normale => (normal, PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT),
+        P::Fine => (fine, 1.0),
+        P::Exacte if depth <= EXACT_LEVELS => (side_blocks, 1.0),
+        P::Exacte if depth == EXACT_LEVELS + 1 => (EXACT_NEXT_RESOLUTION.max(fine), 1.0),
+        P::Exacte => (fine, 1.0),
+    }
+}
+
+/// Patchs gardés en cache avant nettoyage : moins quand ils sont lourds
+fn lod_cache_limit(precision: crate::ui::LodPrecisionSetting) -> usize {
+    match precision {
+        crate::ui::LodPrecisionSetting::Normale => 1500,
+        _ => 800,
     }
 }
 
@@ -59,6 +94,8 @@ pub struct PlanetLodManager {
     pub voxel_cache: HashMap<QuadNodeKey, VoxelColumnMesh>,
     pub current_leaves: Vec<QuadLeaf>,
     pub active_filter: herocraft_world::VisualizationFilter,
+    /// Précision des patchs polygonaux (voir `patch_detail`)
+    pub precision: crate::ui::LodPrecisionSetting,
     last_camera_pos: Vec3,
     last_evaluated_pos: Vec3,
     time_since_eval: f32,
@@ -112,6 +149,7 @@ impl PlanetLodManager {
             voxel_cache: HashMap::new(),
             current_leaves: Vec::new(),
             active_filter: herocraft_world::VisualizationFilter::Standard,
+            precision: crate::ui::LodPrecisionSetting::Normale,
             last_camera_pos: Vec3::splat(f32::NAN),
             last_evaluated_pos: Vec3::splat(f32::NAN),
             time_since_eval: 0.0,
@@ -159,6 +197,14 @@ impl PlanetLodManager {
     pub fn set_filter(&mut self, filter: herocraft_world::VisualizationFilter) {
         if self.active_filter != filter {
             self.active_filter = filter;
+            self.clear(self.current_seed);
+        }
+    }
+
+    /// Change la précision des patchs polygonaux : tous les patchs sont refaits
+    pub fn set_precision(&mut self, precision: crate::ui::LodPrecisionSetting) {
+        if self.precision != precision {
+            self.precision = precision;
             self.clear(self.current_seed);
         }
     }
@@ -361,6 +407,7 @@ impl PlanetLodManager {
         if let Some(new_leaves) = changed_leaves {
             herocraft_common::prof_value!("lod.feuilles", new_leaves.len());
             let filter = self.active_filter;
+            let precision = self.precision;
             let base_radius = self.base_radius;
             let generation = self.generation;
 
@@ -381,13 +428,8 @@ impl PlanetLodManager {
                     missing_patch_keys
                         .into_par_iter()
                         .map(|key| {
-                            let patch = PlanetMesh::generate_lod_patch(
-                                &gen,
-                                &key,
-                                base_radius,
-                                patch_resolution(key.level),
-                                filter,
-                            );
+                            let (resolution, step) = patch_detail(key.level, precision);
+                            let patch = PlanetMesh::generate_lod_patch_stepped(&gen, &key, base_radius, resolution, step, filter);
                             (key, patch)
                         })
                         .collect()
@@ -405,13 +447,8 @@ impl PlanetLodManager {
                         let tx = self.patch_tx.clone();
                         let task_gen = generator.clone();
                         self.patch_pool.spawn(move || {
-                            let mesh = PlanetMesh::generate_lod_patch(
-                                &task_gen,
-                                &key,
-                                base_radius,
-                                patch_resolution(key.level),
-                                filter,
-                            );
+                            let (resolution, step) = patch_detail(key.level, precision);
+                            let mesh = PlanetMesh::generate_lod_patch_stepped(&task_gen, &key, base_radius, resolution, step, filter);
                             let _ = tx.send(VoxelBuildResult { generation, key, mesh });
                         });
                     }
@@ -446,14 +483,15 @@ impl PlanetLodManager {
         // Nettoyage périodique des caches (les feuilles en attente restent protégées)
         {
             herocraft_common::prof_scope!("lod::cache_cleanup");
-            if self.lod_cache.len() > 1500 || self.voxel_cache.len() > 200 {
+            let lod_limit = lod_cache_limit(self.precision);
+            if self.lod_cache.len() > lod_limit || self.voxel_cache.len() > 200 {
                 let active_keys: HashSet<_> = self
                     .current_leaves
                     .iter()
                     .chain(self.pending_leaves.iter().flatten())
                     .map(|l| l.key)
                     .collect();
-                if self.lod_cache.len() > 1500 {
+                if self.lod_cache.len() > lod_limit {
                     self.lod_cache.retain(|k, _| active_keys.contains(k) || k.level == 0);
                 }
                 if self.voxel_cache.len() > 200 {
@@ -518,6 +556,7 @@ impl PlanetLodManager {
 mod tests {
     use super::*;
     use std::time::Instant;
+    const SEA_LEVEL_BLOCKS_F: f64 = herocraft_world::SEA_LEVEL_BLOCKS;
 
     #[test]
     fn test_lod_update_performance_when_stationary() {
@@ -652,6 +691,139 @@ mod tests {
             }
         }
         println!("Leaves breakdown: using_self={}, using_ancestor={}", using_self, using_ancestor);
+    }
+
+    /// Une cellule par bloc et des terrasses d'un bloc : le dessus d'un patch 1:1 est celui des voxels
+    #[test]
+    fn exact_precision_matches_blocks_near_the_player() {
+        use crate::ui::LodPrecisionSetting as P;
+        let near = VOXEL_LEVEL - 1;
+        let side = (herocraft_world::FACE_BLOCKS >> near) as usize;
+        assert_eq!(patch_detail(near, P::Exacte), (side, 1.0));
+        assert_eq!(patch_detail(near, P::Normale), (16, PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT));
+        assert_eq!(patch_detail(near - 1, P::Exacte), (2 * side, 1.0));
+        // Les grilles restent bornées loin du joueur, et jamais plus grossières qu'en normal
+        for level in 0..VOXEL_LEVEL - EXACT_LEVELS {
+            for p in P::ALL {
+                let (res, _) = patch_detail(level, p);
+                assert!(res >= patch_resolution(level) && res <= EXACT_NEXT_RESOLUTION, "niveau {level} {p:?} : {res}");
+            }
+        }
+        assert_eq!(PlanetMesh::quantize_elevation(137.8, 1.0), 137.0);
+        assert_eq!(PlanetMesh::quantize_elevation(97.4, 1.0), 97.0);
+    }
+
+    /// Coût de chaque précision au sol : feuilles par niveau, sommets, mémoire GPU et temps de
+    /// génération de tous les patchs (plus une variante « grille normale, relief au bloc près »).
+    /// `cargo test --release -p herocraft_client mesure_precision_lod -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn mesure_precision_lod() {
+        use crate::ui::LodPrecisionSetting as P;
+        let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 42, ..Default::default() });
+        let mut camera = crate::camera::OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
+        camera.distance = 0.0;
+        camera.target_distance = 0.0;
+        camera.update_camera_bounds(&generator);
+        let lod = PlanetLodManager::new(crate::camera::DEFAULT_RADIUS, 42);
+        let leaves = lod.quadtree.evaluate_with_generator(camera.eye_position().as_dvec3(), Some(&generator));
+        let patches: Vec<QuadNodeKey> = leaves.iter().filter(|l| l.kind == QuadLeafKind::LodPatch).map(|l| l.key).collect();
+        let configs: [(&str, Box<dyn Fn(u8) -> (usize, f64) + Sync>); 4] = [
+            ("Normale", Box::new(|l| patch_detail(l, P::Normale))),
+            ("Normale sans terrasses", Box::new(|l| (patch_resolution(l), 1.0))),
+            ("Fine", Box::new(|l| patch_detail(l, P::Fine))),
+            ("1:1", Box::new(|l| patch_detail(l, P::Exacte))),
+        ];
+        for (name, detail) in &configs {
+            let start = Instant::now();
+            let meshes: Vec<(u8, usize, usize)> = lod.thread_pool.install(|| {
+                patches
+                    .par_iter()
+                    .map(|key| {
+                        let (res, step) = detail(key.level);
+                        let m = PlanetMesh::generate_lod_patch_stepped(&generator, key, crate::camera::DEFAULT_RADIUS, res, step, lod.active_filter);
+                        (key.level, m.vertices.len(), m.indices.len() / 3)
+                    })
+                    .collect()
+            });
+            let elapsed = start.elapsed();
+            let verts: usize = meshes.iter().map(|m| m.1).sum();
+            let tris: usize = meshes.iter().map(|m| m.2).sum();
+            // Position (12 o) + attributs compactés (12 o) par sommet, index de 4 o
+            let gpu_mb = (verts * 24 + tris * 3 * 4) as f64 / 1e6;
+            println!("{name} : {} patchs, {verts} sommets, {tris} triangles, ~{gpu_mb:.0} Mo GPU, génération {elapsed:.2?} ({} fils)", patches.len(), lod.thread_pool.current_num_threads());
+            let mut per_level = std::collections::BTreeMap::new();
+            for (level, v, _) in meshes {
+                let e = per_level.entry(level).or_insert((0usize, 0usize));
+                e.0 += 1;
+                e.1 += v;
+            }
+            for (level, (n, v)) in per_level {
+                let (res, _) = detail(level);
+                let block_per_cell = (herocraft_world::FACE_BLOCKS >> level) as f64 / res as f64;
+                println!("  niveau {level} : {n} patchs, {res}² cellules ({block_per_cell} blocs/cellule), {v} sommets");
+            }
+        }
+    }
+
+    /// Profil du relief devant le joueur : hauteur des voxels et du dessus des patchs de chaque
+    /// précision, bloc par bloc, en CSV.
+    /// `HEROCRAFT_CAPTURES=dossier cargo test --release -p herocraft_client profil_precision_lod -- --ignored`
+    #[test]
+    #[ignore]
+    fn profil_precision_lod() {
+        use crate::ui::LodPrecisionSetting as P;
+        let Ok(dir) = std::env::var("HEROCRAFT_CAPTURES") else { return };
+        let seed: u64 = std::env::var("HEROCRAFT_GRAINE").ok().and_then(|s| s.parse().ok()).unwrap_or(42);
+        let angle: f64 = std::env::var("HEROCRAFT_PROFIL_ANGLE").ok().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+        let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed, ..Default::default() });
+        let mut camera = crate::camera::OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
+        camera.distance = 0.0;
+        camera.target_distance = 0.0;
+        camera.update_camera_bounds(&generator);
+        let eye = camera.eye_position();
+        let lod = PlanetLodManager::new(crate::camera::DEFAULT_RADIUS, seed);
+        let leaves = lod.quadtree.evaluate_with_generator(eye.as_dvec3(), Some(&generator));
+        let (face, u0, v0) = herocraft_common::PlanetFace::sphere_direction_to_face_uv(camera.player_pos.as_dvec3().normalize());
+        let block_uv = 2.0 / herocraft_world::FACE_BLOCKS as f64;
+        let height = |u: f64, v: f64, step: f64| {
+            let dir = face.uv_to_sphere_direction(u, v);
+            let (lat, _) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
+            let (e, biome) = generator.sample_elevation_and_biome(dir, lat);
+            if biome.is_water() { SEA_LEVEL_BLOCKS_F } else { PlanetMesh::quantize_elevation(e, step) }
+        };
+        let mut csv = String::from("distance;niveau;voxels;normale;fine;exacte\n");
+        for d in 0..1600 {
+            let u = u0 + (d as f64 + 0.5) * block_uv * angle.cos();
+            let v = v0 + (d as f64 + 0.5) * block_uv * angle.sin();
+            if !(-1.0..1.0).contains(&u) || !(-1.0..1.0).contains(&v) {
+                break;
+            }
+            let Some(leaf) = leaves.iter().find(|l| {
+                let (a, b, c, e) = l.key.uv_bounds();
+                l.key.face == face && (a..b).contains(&u) && (c..e).contains(&v)
+            }) else { continue };
+            // Colonne de voxels réelle : centre du bloc, dessus à `floor` de l'élévation
+            let (iu, iv) = (((u + 1.0) / block_uv).floor(), ((v + 1.0) / block_uv).floor());
+            let truth = height(-1.0 + (iu + 0.5) * block_uv, -1.0 + (iv + 0.5) * block_uv, 1.0);
+            let mut row = format!("{d};{};{truth}", leaf.key.level);
+            for p in P::ALL {
+                let h = if leaf.kind == QuadLeafKind::VoxelChunk {
+                    truth
+                } else {
+                    let (res, step) = patch_detail(leaf.key.level, p);
+                    let (a, b, c, e) = leaf.key.uv_bounds();
+                    let (cu, cv) = ((b - a) / res as f64, (e - c) / res as f64);
+                    let (ci, cj) = (((u - a) / cu).floor(), ((v - c) / cv).floor());
+                    height(a + (ci + 0.5) * cu, c + (cj + 0.5) * cv, step)
+                };
+                row += &format!(";{h}");
+            }
+            csv += &row;
+            csv.push('\n');
+        }
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(std::path::Path::new(&dir).join(format!("profil-lod-{seed}.csv")), csv).unwrap();
     }
 
     #[test]

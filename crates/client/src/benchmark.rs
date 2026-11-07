@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 use glam::Vec3;
 
 use crate::camera::OrbitCamera;
-use crate::ui::{GraphicsQuality, LodDistanceSetting, UiState};
+use crate::ui::{GraphicsQuality, LodDistanceSetting, LodPrecisionSetting, UiState};
 
 /// Graine par défaut : la même planète d'un banc d'essai à l'autre
 pub const DEFAULT_SEED: u64 = 2026;
@@ -78,6 +78,7 @@ struct Setup {
     bloom: bool,
     creatures: CreatureMode,
     lod: LodDistanceSetting,
+    lod_precision: LodPrecisionSetting,
     view: View,
     motion: Motion,
     /// Préréglage dont la phase prend la finesse des ombres et des rayons (qui dépend de la
@@ -114,6 +115,7 @@ impl Setup {
         bloom: true,
         creatures: CreatureMode::Full,
         lod: LodDistanceSetting::Normale,
+        lod_precision: LodPrecisionSetting::Normale,
         view: View::FirstPerson,
         motion: Motion::Still,
         preset: None,
@@ -169,6 +171,8 @@ fn phases() -> Vec<Phase> {
         p("Sans créatures", "créatures (simulation, animation et dessin)", Setup { creatures: CreatureMode::Off, ..r }, true),
         p("Distance LOD courte", "passage de la distance LOD normale à courte", Setup { lod: LodDistanceSetting::Courte, ..r }, true),
         p("Distance LOD élevée", "passage de la distance LOD normale à élevée", Setup { lod: LodDistanceSetting::Elevee, ..r }, true),
+        p("Précision LOD fine", "passage du relief lointain de la précision normale à fine (cellules de 2 blocs, relief au bloc près ; coût négatif : ce qu'elle ajoute)", Setup { lod_precision: LodPrecisionSetting::Fine, ..r }, true),
+        p("Précision LOD 1:1", "passage du relief lointain de la précision normale à 1:1 (un bloc par cellule jusqu'à ~1 300 blocs ; coût négatif : ce qu'elle ajoute)", Setup { lod_precision: LodPrecisionSetting::Exacte, ..r }, true),
         p(
             "Minimum (tout coupé)",
             "tous les effets et les créatures",
@@ -399,6 +403,7 @@ impl Benchmark {
         ui.video_settings.vsync = false;
         ui.video_settings.fps_limit = crate::ui::FpsLimitSetting::Unlimited;
         ui.video_settings.lod_distance = setup.lod;
+        ui.video_settings.lod_precision = setup.lod_precision;
         ui.shadow_settings.enabled = setup.shadows;
         ui.shadow_settings.cloud_shadows = setup.cloud_shadows;
         ui.cloud_settings.density = if setup.clouds { 1.0 } else { 0.0 };
