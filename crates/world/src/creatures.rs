@@ -300,6 +300,29 @@ impl Murder {
     }
 }
 
+/// Un joueur a frappé (sans le tuer) un habitant ou un voyageur : de quoi l'avertir, lui seul, que
+/// les gardes vont s'en prendre à lui
+#[derive(Debug, Clone, PartialEq)]
+pub struct Assault {
+    /// Clé du joueur (celle de `hit_by`)
+    pub player: u64,
+    pub victim: String,
+    pub profession: String,
+    pub town: Option<String>,
+}
+
+impl Assault {
+    /// Phrase du chat, pour l'auteur du coup : « Tu as frappé Aude (Fermière) à Brumeval : les
+    /// gardes s'en prennent à toi pendant 20 secondes ! »
+    pub fn warning(&self) -> String {
+        let victim = if self.profession.is_empty() { self.victim.clone() } else { format!("{} ({})", self.victim, self.profession) };
+        match &self.town {
+            Some(town) => format!("Tu as frappé {victim} à {town} : les gardes s'en prennent à toi pendant {:.0} secondes !", ANGER_TIME),
+            None => format!("Tu as frappé {victim} sur les routes : gare à sa riposte !"),
+        }
+    }
+}
+
 /// Ce que fait un repas donné à une bête
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Feeding {
@@ -510,6 +533,8 @@ pub struct CreatureWorld {
     wanted: Vec<(u64, u64, f32)>,
     /// Meurtres pas encore annoncés (voir `take_murders`)
     murders: Vec<Murder>,
+    /// Coups portés aux habitants, pas encore signalés à leur auteur (voir `take_assaults`)
+    assaults: Vec<Assault>,
     geometry: BlockGeometry,
     /// Graine du monde : elle décide de la population de chaque zone
     seed: u64,
@@ -624,6 +649,7 @@ impl CreatureWorld {
             laid: Vec::new(),
             wanted: Vec::new(),
             murders: Vec::new(),
+            assaults: Vec::new(),
             geometry,
             seed,
             creatures: Vec::new(),
@@ -916,10 +942,15 @@ impl CreatureWorld {
         let victim = self.creatures.iter().find(|c| c.id == id && c.is_alive()).map(|c| (c.herd, c.position, c.managed && self.registry.get(c.species).is_some_and(|s| s.humanoid)));
         let who = self.villages.card(id).map(|card| (card.name.clone(), card.profession.clone(), self.villages.town_of(id).map(str::to_string)));
         let Some(killed) = self.strike(id, from, PLAYER_HIT_DAMAGE, true) else { return false };
-        if let (true, Some((victim, profession, town))) = (killed, who) {
-            self.murders.push(Murder { player, victim, profession, town });
-        }
         if let Some((herd, position, true)) = victim {
+            // Le premier coup (pas ceux qui suivent tant que les gardes lui en veulent) est signalé
+            // à son auteur : il sait pourquoi on l'attaque
+            let already = self.is_wanted(player, herd);
+            match who {
+                Some((victim, profession, town)) if killed => self.murders.push(Murder { player, victim, profession, town }),
+                Some((victim, profession, town)) if !already => self.assaults.push(Assault { player, victim, profession, town }),
+                _ => {}
+            }
             let (time, radius) = if killed { (WANTED_TIME, WANTED_RADIUS_BLOCKS) } else { (ANGER_TIME, ALARM_RADIUS_BLOCKS * 2.0) };
             let radius = radius * self.geometry.block_height as f32;
             let registry = &self.registry;
@@ -945,6 +976,11 @@ impl CreatureWorld {
     /// Les meurtres d'habitants depuis le dernier appel, à annoncer dans le chat
     pub fn take_murders(&mut self) -> Vec<Murder> {
         std::mem::take(&mut self.murders)
+    }
+
+    /// Les coups portés aux habitants depuis le dernier appel, à signaler à leur auteur
+    pub fn take_assaults(&mut self) -> Vec<Assault> {
+        std::mem::take(&mut self.assaults)
     }
 
     /// Le joueur de clé `player` est recherché par les gardes du troupeau `herd`
@@ -1115,7 +1151,9 @@ impl CreatureWorld {
             };
             for (k, &player) in players.iter().enumerate() {
                 let key = keys.get(k).copied().unwrap_or(0);
-                if attack.hunts_players || angry || wanted.iter().any(|w| w.0 == key && w.1 == c.herd) {
+                // Un humanoïde (garde, voyageur armé) ne s'en prend qu'au joueur qui a frappé l'un des
+                // siens (`wanted`), jamais à son voisin ; une bête en colère, à tous
+                if attack.hunts_players || (angry && !species.humanoid) || wanted.iter().any(|w| w.0 == key && w.1 == c.herd) {
                     consider(Target::Player(k), player);
                 }
             }
@@ -2566,6 +2604,32 @@ mod tests {
             hits.extend(world.tick_players(0.05, &generator, &edits, &presences, &[1, 2]));
         }
         assert!(hits.iter().any(|h| h.creature_id == guard_id && h.player == 0), "le garde laisse filer le meurtrier");
+        assert!(hits.iter().all(|h| h.player == 0), "le garde frappe le passant");
+    }
+
+    #[test]
+    fn a_hit_guard_strikes_back_at_the_striker_only() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let block = geometry.block_height as f32;
+        let (_, feet) = grass_column(&generator, &edits);
+        let (east, north) = tangent_frame(feet.normalize());
+        let mut world = CreatureWorld::new(generator.base_radius(), 9, registry());
+        let guard = world.registry().find("garde").unwrap();
+        let herd = 79;
+        let guard_id = world.spawn_managed(guard, feet, 0.0, herd);
+        // Le passant (clé 2) est plus près du garde que celui qui le frappe (clé 1)
+        let striker = feet + east * 3.0 * block;
+        let bystander = feet - north * 1.5 * block;
+        assert!(world.hit_by(guard_id, striker, 1));
+        assert!(world.is_wanted(1, herd) && !world.is_wanted(2, herd));
+        let presences = [PlayerPresence::standing(striker), PlayerPresence::standing(bystander)];
+        let mut hits = Vec::new();
+        for _ in 0..200 {
+            hits.extend(world.tick_players(0.05, &generator, &edits, &presences, &[1, 2]));
+        }
+        assert!(hits.iter().any(|h| h.player == 0), "le garde ne riposte pas");
         assert!(hits.iter().all(|h| h.player == 0), "le garde frappe le passant");
     }
 

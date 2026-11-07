@@ -58,6 +58,8 @@ pub struct BlockInteraction {
     /// Contenu du bloc visé
     target_block: BlockId,
     held: Option<BlockAction>,
+    /// Le clic gauche vient d'être enfoncé, pas encore vu par `take_fresh_press`
+    fresh_press: bool,
     repeat_in: f32,
     mining: Option<Mining>,
     /// Coup porté au bloc en train de casser, pas encore entendu
@@ -92,6 +94,7 @@ impl BlockInteraction {
             match action {
                 BlockAction::Break => {
                     self.repeat_in = 0.0;
+                    self.fresh_press = true;
                     None
                 }
                 BlockAction::Place => {
@@ -114,6 +117,7 @@ impl BlockInteraction {
         self.held = None;
         self.mining = None;
         self.last_aim = None;
+        self.fresh_press = false;
     }
 
     /// Avance l'action dont le bouton reste enfoncé : renvoie `Break` quand le bloc visé finit de
@@ -166,6 +170,11 @@ impl BlockInteraction {
     /// Le clic gauche est tenu enfoncé (casse en cours, ou coup porté à une bête)
     pub fn is_breaking_held(&self) -> bool {
         self.held == Some(BlockAction::Break)
+    }
+
+    /// Le clic gauche a été enfoncé depuis le dernier appel (un nouveau clic, pas un bouton tenu)
+    pub fn take_fresh_press(&mut self) -> bool {
+        std::mem::take(&mut self.fresh_press)
     }
 
     /// Oublie l'avancement de la casse (le clic gauche frappe autre chose que le bloc)
