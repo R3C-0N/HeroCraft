@@ -573,6 +573,8 @@ pub struct UiState {
     pub atmosphere_settings: AtmosphereSettings,
     /// Puce graphique intégrée (Intel UHD, Iris…) : réglages par défaut allégés
     pub integrated_gpu: bool,
+    /// Coûts des réglages graphiques mesurés par le banc d'essai : estimation des FPS du menu
+    pub cost_profile: crate::fps_estimate::CostProfile,
     pub audio_settings: AudioSettings,
     pub controls: Controls,
     /// Action en attente d'une nouvelle touche dans la page Commandes
@@ -651,6 +653,7 @@ impl UiState {
             shadow_settings: ShadowSettings::default(),
             atmosphere_settings: AtmosphereSettings::default(),
             integrated_gpu: false,
+            cost_profile: crate::fps_estimate::CostProfile::default(),
             audio_settings: AudioSettings::default(),
             controls: Controls::default(),
             rebinding: None,
@@ -821,6 +824,38 @@ impl UiState {
             lod_precision: self.video_settings.lod_precision,
             fine_shadows: if shadows { self.shadow_settings.fine } else { preset.fine_shadows },
             fine_god_rays: if god_rays { self.atmosphere_settings.god_rays_fine } else { preset.fine_god_rays },
+        }
+    }
+
+    /// Réglages graphiques actuels, dans les termes de l'estimation des FPS
+    pub fn graphics_choice(&self) -> crate::fps_estimate::GraphicsChoice {
+        crate::fps_estimate::GraphicsChoice {
+            shadows: self.shadow_settings.enabled,
+            cloud_shadows: self.shadow_settings.cloud_shadows,
+            clouds: self.cloud_settings.density > 0.0,
+            god_rays: self.atmosphere_settings.god_rays,
+            bloom: self.post_settings.bloom_enabled,
+            fine_shadows: self.shadow_settings.fine,
+            fine_god_rays: self.atmosphere_settings.god_rays_fine,
+            msaa: self.video_settings.msaa,
+            lod_distance: self.video_settings.lod_distance,
+            lod_precision: self.video_settings.lod_precision,
+        }
+    }
+
+    /// Réglages qu'aurait ce préréglage de qualité (le reste inchangé)
+    fn graphics_choice_for(&self, quality: GraphicsQuality) -> crate::fps_estimate::GraphicsChoice {
+        let e = quality.effects(self.integrated_gpu);
+        crate::fps_estimate::GraphicsChoice {
+            shadows: e.shadows,
+            cloud_shadows: e.cloud_shadows,
+            god_rays: e.god_rays,
+            bloom: e.bloom,
+            fine_shadows: e.fine_shadows,
+            fine_god_rays: e.fine_god_rays,
+            lod_distance: e.lod_distance,
+            lod_precision: e.lod_precision,
+            ..self.graphics_choice()
         }
     }
 
@@ -1955,12 +1990,15 @@ impl UiState {
     fn draw_display_tab(&mut self, ui: &mut egui::Ui, action: &mut Option<UiAction>) {
         let quality = self.graphics_quality();
         let mut chosen = None;
+        self.draw_fps_estimate(ui);
+        let preset_fps = GraphicsQuality::ALL.map(|q| self.cost_profile.estimate(&self.graphics_choice_for(q)).fps());
         settings_grid(ui, "display_grid", |ui| {
             row_label(ui, "Qualité graphique", "Règle d'un coup les ombres, les rayons crépusculaires, le bloom et la distance de détail");
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0_f32;
-                for q in GraphicsQuality::ALL {
-                    if ui.add(SkinButton::new(q.label()).kind(ButtonKind::Secondary).selected(quality == Some(q)).small()).clicked() && quality != Some(q) {
+                for (q, fps) in GraphicsQuality::ALL.into_iter().zip(preset_fps) {
+                    let button = ui.add(SkinButton::new(q.label()).kind(ButtonKind::Secondary).selected(quality == Some(q)).small()).on_hover_text(format!("≈ {fps:.0} FPS estimés"));
+                    if button.clicked() && quality != Some(q) {
                         chosen = Some(q);
                     }
                 }
@@ -2026,6 +2064,68 @@ impl UiState {
         }
         ui.add_space(4.0_f32);
         ui.label(egui::RichText::new(format!("Détail actuel : {}", self.video_settings.lod_distance.label())).size(11.0_f32).color(TEXT_DIM));
+    }
+
+    /// FPS estimés avec les réglages graphiques actuels, et ce que coûte chacun
+    fn draw_fps_estimate(&self, ui: &mut egui::Ui) {
+        let profile = &self.cost_profile;
+        let estimate = profile.estimate(&self.graphics_choice());
+        let ms = |v: f32| format!("{v:+.2} ms").replace('.', ",");
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(format!("≈ {:.0} FPS estimés", estimate.fps())).size(16.0_f32).color(GOLD_BRIGHT));
+            ui.label(egui::RichText::new(format!("({} par image)", format!("{:.2} ms", estimate.frame_ms).replace('.', ","))).size(11.0_f32).color(TEXT_DIM));
+        })
+        .response
+        .on_hover_text("Sans V-Sync ni limite d'images, à la résolution du banc d'essai, avec les créatures d'une partie ordinaire. Les coûts de chaque réglage, mesurés un par un, sont additionnés.");
+        let gpu = profile.gpu.split(" (").next().unwrap_or(&profile.gpu);
+        let source = if profile.measured {
+            format!("Coûts mesurés sur {gpu} en {} (banc d'essai)", profile.resolution)
+        } else {
+            format!("Valeurs d'exemple ({gpu}, {}) : lancez le jeu avec --benchmark pour mesurer cette machine", profile.resolution)
+        };
+        ui.label(egui::RichText::new(source).size(11.0_f32).color(TEXT_DIM));
+        egui::CollapsingHeader::new(egui::RichText::new("Détail du calcul").size(12.0_f32).color(TEXT_SOFT)).id_salt("fps_estimate_detail").show(ui, |ui| {
+            egui::Grid::new("fps_estimate_grid").num_columns(2).spacing([16.0_f32, 2.0_f32]).show(ui, |ui| {
+                let row = |ui: &mut egui::Ui, label: &str, value: String| {
+                    ui.label(egui::RichText::new(label).size(11.0_f32).color(TEXT_SOFT));
+                    ui.label(egui::RichText::new(value).size(11.0_f32).monospace().color(TEXT_DIM));
+                    ui.end_row();
+                };
+                row(ui, "Référence (qualité haute)", format!("{:.2} ms", profile.reference_ms).replace('.', ","));
+                for line in &estimate.lines {
+                    row(ui, line.label, ms(line.ms));
+                }
+                row(ui, "Total", format!("{:.2} ms ≈ {:.0} FPS", estimate.frame_ms, estimate.fps()).replace('.', ","));
+            });
+            ui.add_space(2.0_f32);
+            ui.label(egui::RichText::new("Coût de chaque réglage par rapport à la qualité haute :").size(11.0_f32).color(TEXT_DIM));
+            egui::Grid::new("fps_costs_grid").num_columns(2).spacing([16.0_f32, 2.0_f32]).show(ui, |ui| {
+                let costs = [
+                    ("Ombres du relief (avec nuages et rayons)", -profile.no_shadows),
+                    ("Ombres des nuages", -profile.no_cloud_shadows),
+                    ("Nuages", -profile.no_clouds),
+                    ("Rayons crépusculaires", -profile.no_god_rays),
+                    ("Bloom", -profile.no_bloom),
+                    (if profile.integrated_gpu { "MSAA 4× ajouté" } else { "MSAA 4×" }, if profile.integrated_gpu { profile.flip_msaa } else { -profile.flip_msaa }),
+                    ("Distance de détail élevée", profile.lod_high),
+                    ("Distance de détail courte", profile.lod_short),
+                    ("Relief lointain ultra", profile.precision_ultra),
+                    ("Relief lointain 1:1", profile.precision_exact),
+                ];
+                for (label, v) in costs {
+                    ui.label(egui::RichText::new(label).size(11.0_f32).color(TEXT_SOFT));
+                    ui.label(egui::RichText::new(ms(v)).size(11.0_f32).monospace().color(TEXT_DIM));
+                    ui.end_row();
+                }
+                let (shadows_flip, rays_flip) = if profile.integrated_gpu { ("Ombres fines", "Rayons fins") } else { ("Ombres allégées", "Rayons allégés") };
+                for (label, v) in [(shadows_flip, profile.flip_fine_shadows), (rays_flip, profile.flip_fine_god_rays)] {
+                    ui.label(egui::RichText::new(label).size(11.0_f32).color(TEXT_SOFT));
+                    ui.label(egui::RichText::new(ms(v)).size(11.0_f32).monospace().color(TEXT_DIM));
+                    ui.end_row();
+                }
+            });
+        });
+        ui.add_space(4.0_f32);
     }
 
     fn draw_lighting_tab(&mut self, ui: &mut egui::Ui) {

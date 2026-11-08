@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use glam::Vec3;
 
 use crate::camera::OrbitCamera;
+use crate::fps_estimate::{CostProfile, GraphicsChoice, COSTS_FILE};
 use crate::ui::{GraphicsQuality, LodDistanceSetting, LodPrecisionSetting, UiState};
 
 /// Graine par défaut : la même planète d'un banc d'essai à l'autre
@@ -108,6 +109,29 @@ impl Setup {
         }
     }
 
+    /// Réglages graphiques de la phase, dans les termes de l'estimation des FPS
+    fn choice(&self, integrated: bool) -> GraphicsChoice {
+        let (fine_shadows, fine_god_rays) = match self.preset {
+            Some(q) => {
+                let e = q.effects(integrated);
+                (e.fine_shadows, e.fine_god_rays)
+            }
+            None => (!integrated, !integrated),
+        };
+        GraphicsChoice {
+            shadows: self.shadows,
+            cloud_shadows: self.cloud_shadows,
+            clouds: self.clouds,
+            god_rays: self.god_rays,
+            bloom: self.bloom,
+            fine_shadows: fine_shadows != self.flip_fine_shadows,
+            fine_god_rays: fine_god_rays != self.flip_fine_god_rays,
+            msaa: !integrated != self.flip_msaa,
+            lod_distance: self.lod,
+            lod_precision: self.lod_precision,
+        }
+    }
+
     const REFERENCE: Setup = Setup {
         shadows: true,
         cloud_shadows: true,
@@ -137,49 +161,100 @@ struct Phase {
     reference: bool,
     /// Mise en route, non mesurée
     startup: bool,
+    /// Coût de réglage que la phase mesure pour l'estimation des FPS du menu (`fps_estimate`)
+    cost: Option<CostKey>,
+}
+
+/// Coût de `CostProfile` mesuré par une phase
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CostKey {
+    NoShadows,
+    NoCloudShadows,
+    NoClouds,
+    NoGodRays,
+    NoBloom,
+    FlipFineShadows,
+    FlipFineGodRays,
+    FlipMsaa,
+    LodShort,
+    LodHigh,
+    PrecisionUltra,
+    PrecisionExact,
+}
+
+impl CostKey {
+    fn slot(self, p: &mut CostProfile) -> &mut f32 {
+        match self {
+            CostKey::NoShadows => &mut p.no_shadows,
+            CostKey::NoCloudShadows => &mut p.no_cloud_shadows,
+            CostKey::NoClouds => &mut p.no_clouds,
+            CostKey::NoGodRays => &mut p.no_god_rays,
+            CostKey::NoBloom => &mut p.no_bloom,
+            CostKey::FlipFineShadows => &mut p.flip_fine_shadows,
+            CostKey::FlipFineGodRays => &mut p.flip_fine_god_rays,
+            CostKey::FlipMsaa => &mut p.flip_msaa,
+            CostKey::LodShort => &mut p.lod_short,
+            CostKey::LodHigh => &mut p.lod_high,
+            CostKey::PrecisionUltra => &mut p.precision_ultra,
+            CostKey::PrecisionExact => &mut p.precision_exact,
+        }
+    }
 }
 
 fn phases() -> Vec<Phase> {
     let r = Setup::REFERENCE;
-    let p = |name, what, setup, comparable| Phase { name, what, setup, comparable, reference: false, startup: false };
+    let p = |name, what, setup, comparable| Phase { name, what, setup, comparable, reference: false, startup: false, cost: None };
+    let c = |key, phase: Phase| Phase { cost: Some(key), ..phase };
     vec![
         Phase { startup: true, ..p("Mise en route (non mesurée)", "", r, false) },
         Phase { reference: true, ..p("Référence (tout activé)", "", r, false) },
-        p("Sans ombres du relief", "ombres portées du relief (coupe aussi les ombres des nuages et les rayons, qui en dépendent)", Setup { shadows: false, ..r }, true),
-        p("Sans ombres des nuages", "ombres des nuages", Setup { cloud_shadows: false, ..r }, true),
-        p("Sans nuages", "nuages", Setup { clouds: false, ..r }, true),
-        p("Sans rayons crépusculaires", "rayons crépusculaires", Setup { god_rays: false, ..r }, true),
-        p("Sans bloom", "bloom", Setup { bloom: false, ..r }, true),
-        p(
-            "Ombres fines ↔ allégées",
-            "bascule des ombres du relief entre fines et allégées (sur puce intégrée, la référence est allégée : un coût négatif est ce qu'ajoutent les ombres fines)",
-            Setup { flip_fine_shadows: true, ..r },
-            true,
+        c(CostKey::NoShadows, p("Sans ombres du relief", "ombres portées du relief (coupe aussi les ombres des nuages et les rayons, qui en dépendent)", Setup { shadows: false, ..r }, true)),
+        c(CostKey::NoCloudShadows, p("Sans ombres des nuages", "ombres des nuages", Setup { cloud_shadows: false, ..r }, true)),
+        c(CostKey::NoClouds, p("Sans nuages", "nuages", Setup { clouds: false, ..r }, true)),
+        c(CostKey::NoGodRays, p("Sans rayons crépusculaires", "rayons crépusculaires", Setup { god_rays: false, ..r }, true)),
+        c(CostKey::NoBloom, p("Sans bloom", "bloom", Setup { bloom: false, ..r }, true)),
+        c(
+            CostKey::FlipFineShadows,
+            p(
+                "Ombres fines ↔ allégées",
+                "bascule des ombres du relief entre fines et allégées (sur puce intégrée, la référence est allégée : un coût négatif est ce qu'ajoutent les ombres fines)",
+                Setup { flip_fine_shadows: true, ..r },
+                true,
+            ),
         ),
-        p(
-            "Rayons fins ↔ allégés",
-            "bascule des rayons crépusculaires entre fins et allégés (sur puce intégrée, la référence est allégée : un coût négatif est ce qu'ajoutent les rayons fins)",
-            Setup { flip_fine_god_rays: true, ..r },
-            true,
+        c(
+            CostKey::FlipFineGodRays,
+            p(
+                "Rayons fins ↔ allégés",
+                "bascule des rayons crépusculaires entre fins et allégés (sur puce intégrée, la référence est allégée : un coût négatif est ce qu'ajoutent les rayons fins)",
+                Setup { flip_fine_god_rays: true, ..r },
+                true,
+            ),
         ),
-        p(
-            "MSAA basculé",
-            "bascule du MSAA 4×, et avec lui de l'image HDR de 4 à 8 octets par pixel (coupé par défaut sur puce intégrée : un coût négatif est ce qu'ajoute le MSAA)",
-            Setup { flip_msaa: true, ..r },
-            true,
+        c(
+            CostKey::FlipMsaa,
+            p(
+                "MSAA basculé",
+                "bascule du MSAA 4×, et avec lui de l'image HDR de 4 à 8 octets par pixel (coupé par défaut sur puce intégrée : un coût négatif est ce qu'ajoute le MSAA)",
+                Setup { flip_msaa: true, ..r },
+                true,
+            ),
         ),
         p("Créatures simulées, non dessinées", "animation et dessin des créatures", Setup { creatures: CreatureMode::SimulationOnly, ..r }, true),
         p("Sans créatures", "créatures (simulation, animation et dessin)", Setup { creatures: CreatureMode::Off, ..r }, true),
-        p("Distance LOD courte", "passage de la distance LOD normale à courte", Setup { lod: LodDistanceSetting::Courte, ..r }, true),
-        p("Distance LOD élevée", "passage de la distance LOD normale à élevée", Setup { lod: LodDistanceSetting::Elevee, ..r }, true),
-        p("Précision LOD 1:1", "passage du relief lointain de la précision normale à 1:1 (allure des blocs jusqu'à ~1 300 blocs ; coût négatif : ce qu'elle ajoute)", Setup { lod_precision: LodPrecisionSetting::Exacte, ..r }, true),
+        c(CostKey::LodShort, p("Distance LOD courte", "passage de la distance LOD normale à courte", Setup { lod: LodDistanceSetting::Courte, ..r }, true)),
+        c(CostKey::LodHigh, p("Distance LOD élevée", "passage de la distance LOD normale à élevée", Setup { lod: LodDistanceSetting::Elevee, ..r }, true)),
+        c(
+            CostKey::PrecisionExact,
+            p("Précision LOD 1:1", "passage du relief lointain de la précision normale à 1:1 (allure des blocs jusqu'à ~1 300 blocs ; coût négatif : ce qu'elle ajoute)", Setup { lod_precision: LodPrecisionSetting::Exacte, ..r }, true),
+        ),
         p(
             "Minimum (tout coupé)",
             "tous les effets et les créatures",
             Setup { shadows: false, cloud_shadows: false, clouds: false, god_rays: false, bloom: false, creatures: CreatureMode::Off, ..r },
             true,
         ),
-        p("Qualité ultra", "passage de la qualité haute à ultra (relief lointain avec l'allure des blocs ; coût négatif : ce qu'elle ajoute)", Setup::quality(GraphicsQuality::Ultra), true),
+        c(CostKey::PrecisionUltra, p("Qualité ultra", "passage de la qualité haute à ultra (relief lointain avec l'allure des blocs ; coût négatif : ce qu'elle ajoute)", Setup::quality(GraphicsQuality::Ultra), true)),
         p("Qualité moyenne", "passage de la qualité haute à moyenne", Setup::quality(GraphicsQuality::Moyenne), true),
         p("Qualité basse", "passage de la qualité haute à basse", Setup::quality(GraphicsQuality::Basse), true),
         p("Beaucoup de créatures (+60)", "60 créatures de plus (coût négatif : ce qu'elles ajoutent)", Setup { creatures: CreatureMode::Stress, ..r }, true),
@@ -357,6 +432,8 @@ pub struct Benchmark {
     pending_start: bool,
     pub seed: u64,
     began: std::time::SystemTime,
+    /// Puce graphique intégrée (lu sur l'interface à chaque image)
+    integrated: bool,
 }
 
 impl Benchmark {
@@ -385,6 +462,7 @@ impl Benchmark {
             pending_start: true,
             seed,
             began: std::time::SystemTime::now(),
+            integrated: false,
         }
     }
 
@@ -410,17 +488,11 @@ impl Benchmark {
         ui.cloud_settings.density = if setup.clouds { 1.0 } else { 0.0 };
         ui.atmosphere_settings.god_rays = setup.god_rays;
         ui.post_settings.bloom_enabled = setup.bloom;
-        let integrated = ui.integrated_gpu;
-        let (fine_shadows, fine_god_rays) = match setup.preset {
-            Some(q) => {
-                let e = q.effects(integrated);
-                (e.fine_shadows, e.fine_god_rays)
-            }
-            None => (!integrated, !integrated),
-        };
-        ui.shadow_settings.fine = fine_shadows != setup.flip_fine_shadows;
-        ui.atmosphere_settings.god_rays_fine = fine_god_rays != setup.flip_fine_god_rays;
-        ui.video_settings.msaa = !integrated != setup.flip_msaa;
+        self.integrated = ui.integrated_gpu;
+        let choice = setup.choice(self.integrated);
+        ui.shadow_settings.fine = choice.fine_shadows;
+        ui.atmosphere_settings.god_rays_fine = choice.fine_god_rays;
+        ui.video_settings.msaa = choice.msaa;
         ui.lighting_settings.moon_speed = 0.0;
         if ui.is_settings_open {
             ui.set_settings_open(false);
@@ -543,6 +615,41 @@ impl Benchmark {
                 Err(e) => log::warn!("Banc d'essai : {} impossible à écrire : {e}", path.display()),
             }
         }
+        // Coûts relus par le menu Options > Affichage pour estimer les FPS
+        match self.cost_profile().save(COSTS_FILE) {
+            Ok(()) => log::info!("Banc d'essai : coûts des réglages enregistrés dans {COSTS_FILE}."),
+            Err(e) => log::warn!("Banc d'essai : {COSTS_FILE} impossible à écrire : {e}"),
+        }
+    }
+
+    /// Moyenne des phases de référence (au début et à la fin), en ms
+    fn reference_ms(&self) -> f32 {
+        let references: Vec<f32> = self.phases.iter().zip(&self.stats).filter(|(p, _)| p.reference).map(|(_, s)| s.mean_ms()).collect();
+        references.iter().sum::<f32>() / references.len().max(1) as f32
+    }
+
+    /// Ce que change chaque réglage, pour l'estimation des FPS du menu
+    fn cost_profile(&self) -> CostProfile {
+        let meta = META.lock().map(|m| m.clone()).unwrap_or_default();
+        let find = |key: &str| meta.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone()).unwrap_or_default();
+        let ref_ms = self.reference_ms();
+        let mut profile = CostProfile {
+            measured: true,
+            gpu: find("Carte graphique"),
+            resolution: find("Résolution"),
+            timestamp: self.began.duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+            integrated_gpu: self.integrated,
+            reference_ms: ref_ms,
+            ..CostProfile::default()
+        };
+        for (phase, s) in self.phases.iter().zip(&self.stats) {
+            if let Some(key) = phase.cost {
+                if !s.frames.is_empty() {
+                    *key.slot(&mut profile) = s.mean_ms() - ref_ms;
+                }
+            }
+        }
+        profile
     }
 
     /// Phases mesurées, avec leurs mesures
@@ -560,7 +667,7 @@ impl Benchmark {
     fn markdown(&self) -> String {
         let mut out = String::new();
         let references: Vec<f32> = self.phases.iter().zip(&self.stats).filter(|(p, _)| p.reference).map(|(_, s)| s.mean_ms()).collect();
-        let ref_ms = references.iter().sum::<f32>() / references.len().max(1) as f32;
+        let ref_ms = self.reference_ms();
         let drift = references.iter().copied().fold(f32::MIN, f32::max) - references.iter().copied().fold(f32::MAX, f32::min);
         let _ = writeln!(out, "# Banc d'essai HeroCraft\n");
         if cfg!(debug_assertions) {
@@ -611,6 +718,34 @@ impl Benchmark {
         for (what, cost) in costs {
             let share = if ref_ms > 0.0 { cost / ref_ms * 100.0 } else { 0.0 };
             let _ = writeln!(out, "- {what} : {cost:+.2} ms ({share:+.0} % de l'image)");
+        }
+
+        // Les préréglages changent plusieurs réglages à la fois : ils disent si les coûts
+        // mesurés un par un s'additionnent, comme le suppose l'estimation du menu
+        let profile = self.cost_profile();
+        let _ = writeln!(out, "\n## Vérification de l'estimation des FPS\n");
+        let _ = writeln!(
+            out,
+            "Le menu Options > Affichage estime les FPS en additionnant les coûts ci-dessus (enregistrés dans `{COSTS_FILE}`). Les préréglages qui changent plusieurs réglages à la fois montrent si l'addition tient.\n"
+        );
+        let _ = writeln!(out, "| Phase | Estimé | Mesuré | Écart |");
+        let _ = writeln!(out, "|---|---:|---:|---:|");
+        for (phase, s) in self.measured() {
+            if phase.cost.is_some() || phase.setup.preset.is_none() || phase.setup.creatures != CreatureMode::Full || s.frames.is_empty() {
+                continue;
+            }
+            let estimate = profile.estimate(&phase.setup.choice(self.integrated));
+            let measured = s.mean_ms();
+            let _ = writeln!(
+                out,
+                "| {} | {:.0} FPS ({:.2} ms) | {:.0} FPS ({:.2} ms) | {:+.2} ms |",
+                phase.name,
+                estimate.fps(),
+                estimate.frame_ms,
+                1000.0 / measured.max(0.1),
+                measured,
+                estimate.frame_ms - measured
+            );
         }
 
         let _ = writeln!(out, "\n## Temps CPU par étape (ms par image)\n");

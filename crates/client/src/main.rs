@@ -26,6 +26,7 @@ mod commands;
 mod creature_render;
 mod creatures;
 mod dropped_items;
+mod fps_estimate;
 mod gpu_timer;
 mod hero_creator;
 mod hero_model;
@@ -157,6 +158,7 @@ fn main() {
     ui_state.set_legend(load_legend(&legend_file(current_seed, false)));
     camera.hero_height = hero_height(&ui_state);
     ui_state.audio_settings = audio::AudioSettings::load_or_default(audio::AUDIO_FILE);
+    ui_state.cost_profile = fps_estimate::CostProfile::load_or_default(fps_estimate::COSTS_FILE);
     // Son : bruitages du joueur et des blocs, ambiance (muet sans carte son)
     let mut audio = audio::Audio::new();
     // Le ciel au-dessus du joueur (grotte ou plein air) n'est relu que de temps en temps
