@@ -104,7 +104,6 @@ def bouclier(t, cx, cy, r, champ=(60, 110, 220), bord=ACIER, embleme=OR):
     m = t.masque(lambda d: d.polygon([(cx - r, cy - r), (cx + r, cy - r), (cx + r, cy + r * 0.2), (cx, cy + r * 1.3),
                                       (cx - r, cy + r * 0.2)], fill=1))
     t.objet(m, champ, melange(champ, BLANC, 0.4), melange(champ, (0, 0, 0), 0.5))
-    t.contour(m, bord) if False else None
     if embleme:
         e = t.masque(lambda d: (d.line([(cx, cy - r + 2), (cx, cy + r * 0.9)], fill=1, width=2),
                                 d.line([(cx - r + 2, cy - r * 0.3), (cx + r - 2, cy - r * 0.3)], fill=1, width=2)))
