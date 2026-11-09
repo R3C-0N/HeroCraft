@@ -1,0 +1,52 @@
+{
+  "description": "Arc tendu à bout de bras gauche, corde tirée jusqu'à la joue, puis lâchée.",
+  "duration": 1.0,
+  "legs": "free",
+  "impact": 0.7,
+  "keys": [
+    {"t": 0.0},
+    {
+      "t": 0.2,
+      "ease": "out",
+      "bones": {
+        "leftArm": {"rotation": [90, 0, 0]},
+        "head": {"rotation": [0, 60, 0]},
+        "rightArm": {"rotation": [80, 0, -10]},
+        "rightForearm": {"rotation": [40, 0, 0]},
+        "torso": {"rotation": [0, -60, 0]}
+      }
+    },
+    {
+      "t": 0.65,
+      "bones": {
+        "leftArm": {"rotation": [90, 0, 0]},
+        "head": {"rotation": [0, 60, 0]},
+        "rightArm": {"rotation": [90, 0, -30]},
+        "rightForearm": {"rotation": [130, 0, 0]},
+        "torso": {"rotation": [0, -60, 0]}
+      }
+    },
+    {
+      "t": 0.7,
+      "ease": "linear",
+      "bones": {
+        "leftArm": {"rotation": [90, 0, 0]},
+        "head": {"rotation": [0, 60, 0]},
+        "rightArm": {"rotation": [90, 0, 10]},
+        "rightForearm": {"rotation": [60, 0, 0]},
+        "torso": {"rotation": [0, -60, 0]}
+      }
+    },
+    {
+      "t": 0.85,
+      "bones": {
+        "leftArm": {"rotation": [85, 0, 0]},
+        "head": {"rotation": [0, 55, 0]},
+        "rightArm": {"rotation": [70, 0, 20]},
+        "rightForearm": {"rotation": [40, 0, 0]},
+        "torso": {"rotation": [0, -55, 0]}
+      }
+    },
+    {"t": 1.0}
+  ]
+}

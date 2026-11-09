@@ -1,0 +1,37 @@
+{
+  "description": "Boule de feu en vol, avec sa traînée de braises.",
+  "layers": [
+    {
+      "shape": "sprite",
+      "loop": true,
+      "size": 0.7,
+      "color": ["#FFC060", "#FFC060"],
+      "glow": 4,
+      "texture": "soft.png"
+    },
+    {
+      "shape": "trail",
+      "loop": true,
+      "width": [0.45, 0.0],
+      "life": 0.25,
+      "color": ["#FF8030C0", "#FF402000"],
+      "glow": 3
+    },
+    {
+      "loop": true,
+      "particles": {
+        "rate": 60,
+        "origin": "sphere",
+        "origin_radius": 0.25,
+        "direction": "random",
+        "speed": [0.2, 0.6],
+        "gravity": -1,
+        "life": [0.3, 0.6],
+        "size": [0.12, 0.02],
+        "color": ["#FFD070", "#FF302000"],
+        "glow": 3,
+        "texture": "flame.png"
+      }
+    }
+  ]
+}

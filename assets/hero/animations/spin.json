@@ -1,0 +1,36 @@
+{
+  "description": "Tourbillon d'un tour complet, bras tendus.",
+  "duration": 0.8,
+  "legs": "free",
+  "impact": 0.5,
+  "keys": [
+    {"t": 0.0},
+    {
+      "t": 0.15,
+      "bones": {
+        "rightArm": {"rotation": [90, 0, 70]},
+        "leftArm": {"rotation": [90, 0, 70]},
+        "body": {"rotation": [0, 0, 0]}
+      }
+    },
+    {
+      "t": 0.5,
+      "ease": "linear",
+      "bones": {
+        "rightArm": {"rotation": [90, 0, 70]},
+        "leftArm": {"rotation": [90, 0, 70]},
+        "body": {"rotation": [0, 180, 0]}
+      }
+    },
+    {
+      "t": 0.85,
+      "ease": "linear",
+      "bones": {
+        "rightArm": {"rotation": [90, 0, 70]},
+        "leftArm": {"rotation": [90, 0, 70]},
+        "body": {"rotation": [0, 360, 0]}
+      }
+    },
+    {"t": 1.0, "bones": {"body": {"rotation": [0, 360, 0]}}}
+  ]
+}

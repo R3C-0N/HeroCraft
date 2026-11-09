@@ -1,0 +1,13 @@
+{
+  "description": "Trait d'air vif dans l'axe d'un estoc.",
+  "layers": [
+    {
+      "shape": "streak",
+      "duration": 0.18,
+      "length": [0.5, 2.2],
+      "width": [0.18, 0.04],
+      "color": ["#FFFFFFE0", "#C8DCFF00"],
+      "glow": 2
+    }
+  ]
+}

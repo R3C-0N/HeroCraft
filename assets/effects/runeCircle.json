@@ -1,0 +1,18 @@
+{
+  "description": "Sceau magique qui tourne au sol.",
+  "unit": "area",
+  "layers": [
+    {
+      "shape": "disc",
+      "on_ground": true,
+      "loop": true,
+      "radius": 1.0,
+      "spin": 30,
+      "color": ["#9FC8FFC0", "#9FC8FFC0"],
+      "glow": 2.5,
+      "texture": "rune.png",
+      "fade_in": 0.3,
+      "fade_out": 0.3
+    }
+  ]
+}

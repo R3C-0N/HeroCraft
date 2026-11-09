@@ -1,0 +1,48 @@
+{
+  "description": "Torse bombé et bras écartés : cri, provocation, aura.",
+  "duration": 0.9,
+  "legs": "locked",
+  "impact": 0.4,
+  "keys": [
+    {"t": 0.0},
+    {
+      "t": 0.2,
+      "ease": "out",
+      "bones": {
+        "torso": {"rotation": [10, 0, 0]},
+        "head": {"rotation": [10, 0, 0]},
+        "rightArm": {"rotation": [20, 0, 10]},
+        "leftArm": {"rotation": [20, 0, 10]},
+        "rightLeg": {"rotation": [15, 0, 0]},
+        "leftLeg": {"rotation": [15, 0, 0]},
+        "rightShin": {"rotation": [25, 0, 0]},
+        "leftShin": {"rotation": [25, 0, 0]},
+        "body": {"translation": [0, -0.03, 0]}
+      }
+    },
+    {
+      "t": 0.4,
+      "ease": "out",
+      "bones": {
+        "torso": {"rotation": [-15, 0, 0]},
+        "head": {"rotation": [-20, 0, 0]},
+        "rightArm": {"rotation": [20, 0, 60]},
+        "leftArm": {"rotation": [20, 0, 60]},
+        "rightForearm": {"rotation": [40, 0, 0]},
+        "leftForearm": {"rotation": [40, 0, 0]}
+      }
+    },
+    {
+      "t": 0.75,
+      "bones": {
+        "torso": {"rotation": [-12, 0, 0]},
+        "head": {"rotation": [-15, 0, 0]},
+        "rightArm": {"rotation": [20, 0, 55]},
+        "leftArm": {"rotation": [20, 0, 55]},
+        "rightForearm": {"rotation": [40, 0, 0]},
+        "leftForearm": {"rotation": [40, 0, 0]}
+      }
+    },
+    {"t": 1.0}
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Flamme qui danse dans la main.",
+  "layers": [
+    {
+      "shape": "sprite",
+      "loop": true,
+      "size": 0.35,
+      "color": ["#FFB040C0", "#FFB040C0"],
+      "glow": 3,
+      "texture": "soft.png"
+    },
+    {
+      "loop": true,
+      "particles": {
+        "rate": 40,
+        "origin": "sphere",
+        "origin_radius": 0.08,
+        "direction": "up",
+        "speed": [0.4, 0.9],
+        "life": [0.25, 0.5],
+        "size": [0.16, 0.02],
+        "color": ["#FFE080", "#FF402000"],
+        "glow": 3.5,
+        "texture": "flame.png"
+      }
+    }
+  ]
+}

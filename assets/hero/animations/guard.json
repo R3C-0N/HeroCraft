@@ -1,0 +1,45 @@
+{
+  "description": "Bouclier ou arme levé devant soi, tenu tant que la touche est pressée.",
+  "duration": 0.6,
+  "legs": "free",
+  "loop": [0.4, 0.7],
+  "keys": [
+    {"t": 0.0},
+    {
+      "t": 0.3,
+      "ease": "out",
+      "bones": {
+        "leftArm": {"rotation": [80, 0, -10]},
+        "leftForearm": {"rotation": [70, 0, 0]},
+        "rightArm": {"rotation": [30, 0, 0]},
+        "rightForearm": {"rotation": [40, 0, 0]},
+        "torso": {"rotation": [8, 0, 0]},
+        "head": {"rotation": [-5, 0, 0]}
+      }
+    },
+    {
+      "t": 0.55,
+      "bones": {
+        "leftArm": {"rotation": [82, 0, -10]},
+        "leftForearm": {"rotation": [72, 0, 0]},
+        "rightArm": {"rotation": [30, 0, 0]},
+        "rightForearm": {"rotation": [40, 0, 0]},
+        "torso": {"rotation": [9, 0, 0]},
+        "head": {"rotation": [-5, 0, 0]},
+        "body": {"translation": [0, -0.02, 0]}
+      }
+    },
+    {
+      "t": 0.7,
+      "bones": {
+        "leftArm": {"rotation": [80, 0, -10]},
+        "leftForearm": {"rotation": [70, 0, 0]},
+        "rightArm": {"rotation": [30, 0, 0]},
+        "rightForearm": {"rotation": [40, 0, 0]},
+        "torso": {"rotation": [8, 0, 0]},
+        "head": {"rotation": [-5, 0, 0]}
+      }
+    },
+    {"t": 1.0}
+  ]
+}

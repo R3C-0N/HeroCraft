@@ -1,0 +1,21 @@
+{
+  "description": "Étoiles qui tournent au-dessus de la tête d'une cible étourdie.",
+  "layers": [
+    {
+      "loop": true,
+      "particles": {
+        "count": 4,
+        "origin": "ring",
+        "origin_radius": 0.35,
+        "orbit": 240,
+        "direction": "none",
+        "life": [99, 99],
+        "size": [0.14, 0.14],
+        "color": ["#FFF080", "#FFF080"],
+        "glow": 2,
+        "texture": "star.png",
+        "offset": [0, 0.35, 0]
+      }
+    }
+  ]
+}

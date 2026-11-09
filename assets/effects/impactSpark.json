@@ -1,0 +1,28 @@
+{
+  "description": "Gerbe d'étincelles au contact d'un coup.",
+  "layers": [
+    {
+      "shape": "sprite",
+      "duration": 0.12,
+      "size": [0.4, 0.9],
+      "color": ["#FFFFFFFF", "#FFD27000"],
+      "glow": 4,
+      "texture": "soft.png"
+    },
+    {
+      "particles": {
+        "count": 18,
+        "origin": "point",
+        "direction": "random",
+        "speed": [2, 5],
+        "gravity": 9,
+        "drag": 2,
+        "life": [0.2, 0.45],
+        "size": [0.07, 0.02],
+        "color": ["#FFF8E0", "#FF9A2000"],
+        "glow": 3,
+        "texture": "spark.png"
+      }
+    }
+  ]
+}
