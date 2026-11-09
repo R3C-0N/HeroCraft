@@ -34,12 +34,11 @@ ROOT = HERE.parents[1]
 CREATURES = ROOT / "assets/creatures"
 MODELS = ROOT / "assets/skills/models"
 
-CREATURE_MODELS = druide.ALL + necromancien.ALL[:2]
-OBJECT_MODELS = necromancien.ALL[2:] + ingenieur.ALL + greffes.ALL + humanoides.WEAPONS
+CREATURE_MODELS = druide.ALL + necromancien.ALL[:3]
+OBJECT_MODELS = necromancien.ALL[3:] + ingenieur.ALL + greffes.ALL + humanoides.WEAPONS
 
 # Les invocations humanoïdes : planche, espèce dont elles prennent les proportions, arme
 HUMANOIDS = {
-    "skeletonServant": {"name": "Serviteur Squelette", "sheet": "skeletonServant.png", "species": "revenant", "weapon": "boneSword"},
     "deathKnight": {"name": "Chevalier de la Mort", "sheet": "deathKnight.png", "species": "demiOrque", "weapon": "runeblade"},
     "lichLord": {"name": "Seigneur Liche", "sheet": "lichLord.png", "species": "revenant", "weapon": "lichStaff"},
 }
@@ -54,6 +53,10 @@ NECRO_SPECIES = {
     "fleshGolem": {
         "name": "Golem de Chair", "description": "Une masse de chairs recousues qui avance en écrasant tout.",
         "body": {"half_width": 0.75, "half_length": 0.5, "height": 2.7}, "walk_speed": 1.2, "health": 80,
+        "model": "biped"},
+    "skeletonServant": {
+        "name": "Serviteur Squelette", "description": "Des os rassemblés par la nécromancie, une épée rouillée à la main.",
+        "body": {"half_width": 0.3, "half_length": 0.3, "height": 1.95}, "walk_speed": 1.8, "health": 20,
         "model": "biped"},
     "boneBehemoth": {
         "name": "Béhémoth d'Os", "description": "Un colosse d'os assemblés, une âme verte prise dans la cage.",
@@ -79,6 +82,13 @@ def main():
     (CREATURES / "modeles").mkdir(parents=True, exist_ok=True)
     fiches = especes.species()
     fiches["fleshGolem"] = dict(NECRO_SPECIES["fleshGolem"], model=golem_animations())
+    skeleton = especes.biped(0.8, 28)
+    skeleton["attaque"] = {"cycle": 0.8, "os": {
+        "armR": {"rotation": [-50, 0, 0], "rotation_fixe": [-30, 0, 0]}, "chest": {"rotation": [0, 15, 0]},
+        "head": {"rotation": [6, 0, 0], "frequence": 2}}}
+    skeleton["claque"] = {"cycle": 1.2, "pause": {"poids": 0.5, "duree": [1, 2]}, "os": {
+        "head": {"rotation": [8, 0, 3], "frequence": 4}, "armL": {"rotation": [6, 0, 4], "frequence": 2}}}
+    fiches["skeletonServant"] = dict(NECRO_SPECIES["skeletonServant"], model=skeleton)
     fiches["boneBehemoth"] = dict(NECRO_SPECIES["boneBehemoth"], model=especes.quadruped(1.1, 18, extra={"charge": {
         "cycle": 1.6, "pause": {"poids": 0.3, "duree": [1.5, 2.5]}, "os": {
             "head": {"rotation": [6, 0, 0], "rotation_fixe": [25, 0, 0], "frequence": 2},

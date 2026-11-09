@@ -95,6 +95,57 @@ def bone_behemoth():
     return m
 
 
+def skeleton_servant():
+    """Serviteur Squelette : rien que les os, à la taille d'un héros (1,8 bloc). Crâne aux orbites
+    vertes, cage thoracique ajourée, os longs fins, épée courte rouillée dans la main droite.
+    Os : `root` (bassin), `chest`, `head`, `armR`, `armL`, `legR`, `legL`."""
+    m = Model("skeletonServant")
+    bone, dark, rust = BONE, BONE_DARK, "#8a5a32"
+    m.bone("root", None, (0, 14, 0))
+    # Bassin
+    m.box("root", (-3.5, 12.5, -1.5), (3.5, 15, 1.5), bone, "bone", {"front": [("rect", 2, 1, 3, 1, "#2a2420")]})
+    for name, x in (("legR", -2), ("legL", 2)):
+        m.bone(name, "root", (x, 13, 0))
+        m.beam(name, (x, 13, 0), (x, 7, 0.3), 1.3, color=bone, pattern="bone")      # fémur
+        m.box(name, (x - 1, 6, -0.7), (x + 1, 7.5, 1.2), dark, "bone")               # genou
+        m.beam(name, (x, 6.5, 0.3), (x, 1, 0), 1.1, color=bone, pattern="bone")      # tibia
+        m.box(name, (x - 1.1, 0, -1), (x + 1.1, 1, 2.2), bone, "bone")                # pied
+    m.bone("chest", "root", (0, 15, 0))
+    # Colonne et cage thoracique : quatre côtes en anneau, rien dedans
+    m.beam("chest", (0, 14.5, -1), (0, 25, -1), 1.2, color=dark, pattern="bone")
+    for k, y in enumerate((17.5, 19.5, 21.5, 23.2)):
+        w = 3.6 - abs(k - 2) * 0.4
+        m.box("chest", (-w, y, 1.6), (w, y + 0.9, 2.3), bone, "bone")                  # devant
+        m.box("chest", (-w, y, -1.6), (w, y + 0.9, -0.9), bone, "bone")                # dos
+        for sx in (-1, 1):
+            m.box("chest", (sx * w - 0.35, y, -1.6), (sx * w + 0.35, y + 0.9, 2.3), bone, "bone")
+    m.box("chest", (-0.5, 17.5, 1.4), (0.5, 24, 2.4), dark, "bone")                     # sternum
+    # Clavicules
+    m.box("chest", (-5, 24.2, -0.8), (5, 25.1, 0.6), bone, "bone")
+    m.bone("head", "chest", (0, 25.5, 0))
+    m.beam("head", (0, 24.8, -0.6), (0, 26.2, -0.4), 0.9, color=dark, pattern="bone")  # cou
+    m.box("head", (-3, 26, -2.6), (3, 31.5, 3), bone, "bone", {
+        "front": [("rect", 0, 1, 2, 2, "#120f0c"), ("rect", 4, 1, 2, 2, "#120f0c"), ("px", 1, 2, SOUL), ("px", 4, 2, SOUL),
+                  ("pixels", [(2, 3), (3, 3)], "#120f0c")], "back": [("px", 2, 1, dark)]})
+    m.box("head", (-2.4, 24.6, -1.2), (2.4, 26, 2.8), bone, "bone", {
+        "front": [("row", 0, "#2a2420"), ("pixels", [(0, 0), (2, 0), (4, 0)], "#f2ebdc")]})                     # mâchoire
+    for name, s in (("armR", -1), ("armL", 1)):
+        x = s * 4.8
+        m.bone(name, "chest", (x, 24, 0))
+        m.box(name, (x - 1, 23.4, -1), (x + 1, 25.2, 1), dark, "bone")                 # épaule
+        m.beam(name, (x, 23.6, 0), (x + s * 0.3, 18.2, 0), 1.1, color=bone, pattern="bone")   # humérus
+        m.beam(name, (x + s * 0.3, 18.4, 0), (x + s * 0.3, 13.6, 0.4), 0.9, color=bone, pattern="bone")  # avant-bras
+        m.box(name, (x + s * 0.3 - 0.8, 12, -0.4), (x + s * 0.3 + 0.8, 13.8, 1.4), bone, "bone")      # main
+    # Épée courte rouillée, tenue la pointe en avant
+    hx = -4.5
+    m.box("armR", (hx - 0.5, 12.2, -1.8), (hx + 0.5, 13.4, 1.6), "#4a3220", "wood")
+    m.box("armR", (hx - 1.8, 12.1, 1.6), (hx + 1.8, 13.5, 2.4), rust, "metal")
+    m.box("armR", (hx - 0.6, 12.3, 2.4), (hx + 0.6, 13.3, 11), "#a9a294", "metal", {"top": [("pixels", [(0, 2), (0, 5), (0, 7)], rust)]})
+    # Lambeau de pagne
+    m.box("root", (-3.6, 10.5, 1.5), (3.6, 13, 1.9), "#5a3e24", "plain", {"front": [("cut", [(0, -1), (3, -1), (4, -2), (6, -1)])]})
+    return m
+
+
 def bone_wall():
     """Mur d'Ossements : des os pointus surgis du sol, entrelacés de côtes, crânes à la base.
     5 blocs de long, 2,5 de haut. L'animation `rise` le fait jaillir du sol."""
@@ -121,4 +172,4 @@ def bone_wall():
     return m
 
 
-ALL = [flesh_golem, bone_behemoth, bone_wall]
+ALL = [flesh_golem, bone_behemoth, skeleton_servant, bone_wall]

@@ -57,34 +57,6 @@ def pixels(rows, palette):
     return fn
 
 
-BONE = "#ddd3bd"
-GAP = "#2b2622"
-
-
-def skeleton_servant():
-    s = Sheet("skeletonServant")
-    eye = "#7dff9a"
-    s.paint("tete", BONE, "bone", {
-        "front": [("rect", 1, 2, 2, 2, "#141110"), ("rect", 5, 2, 2, 2, "#141110"), ("px", 2, 3, eye), ("px", 5, 3, eye),
-                  ("px", 3, 5, "#141110"), ("px", 4, 5, "#141110"), ("row", 6, "#3a332c"), ("pixels", [(1, 6), (3, 6), (5, 6), (7, 6)], BONE),
-                  ("row", 7, "#c9bea4")],
-        "top": [("px", 2, 3, "#bfb294"), ("px", 3, 3, "#bfb294")]})
-    # Cage thoracique : côtes claires sur fond sombre, colonne au milieu
-    ribs = [("rect", 0, 0, 99, 99, GAP)] + [("row", y, BONE) for y in (1, 3, 5, 7)] + [("col", 3, BONE), ("col", 4, BONE), ("rect", 1, 9, 6, 2, "#c9bea4")]
-    s.paint("torse", BONE, "bone", {"front": ribs, "back": [("rect", 0, 0, 99, 99, GAP), ("col", 3, BONE), ("col", 4, BONE)] + [("row", y, "#c9bea4") for y in (1, 4, 7)],
-                                    "left": [("rect", 0, 0, 99, 99, GAP)] + [("row", y, BONE) for y in (1, 3, 5, 7)],
-                                    "right": [("rect", 0, 0, 99, 99, GAP)] + [("row", y, BONE) for y in (1, 3, 5, 7)]})
-    limb = {"sides": [("col", 0, GAP), ("col", 3, GAP), ("rect", 0, 4, 4, 1, "#c9bea4")]}
-    for part in ("brasD", "brasG", "jambeD", "jambeG"):
-        s.paint(part, BONE, "bone", limb)
-    # Couche 2 : pagne en lambeaux, ceinture, épaulière rouillée
-    s.paint("torse2", (0, 0, 0, 0), "flat", {
-        "front": [("rect", 0, 9, 8, 1, "#5a3e24"), ("pixels", [(0, 10), (1, 10), (2, 11), (5, 10), (6, 10), (6, 11)], "#6e4a2a")],
-        "back": [("rect", 0, 9, 8, 1, "#5a3e24"), ("pixels", [(1, 10), (3, 10), (3, 11), (6, 10)], "#6e4a2a")],
-        "left": [("rect", 0, 9, 4, 1, "#5a3e24")], "right": [("rect", 0, 9, 4, 1, "#5a3e24")]})
-    s.paint("brasD2", (0, 0, 0, 0), "flat", {"sides": [("rect", 0, 0, 4, 3, "#7a5a3a"), ("pixels", [(1, 1), (2, 2)], "#a0703a")],
-                                            "top": [("rect", 0, 0, 4, 4, "#7a5a3a")]})
-    return s
 
 
 def death_knight():
@@ -153,15 +125,6 @@ def lich_lord():
     return s
 
 
-def bone_sword():
-    """Épée courte du squelette, tenue dans la main droite."""
-    m = graft("boneSword", ["rightHand"])
-    m.box("rightHand", (-7, 12, -1), (-5, 13, 3), "#5a3e24", "wood")
-    m.box("rightHand", (-7.5, 12.5, 3), (-4.5, 13.5, 4), "#8a7a5a", "metal")
-    m.box("rightHand", (-6.5, 12.6, 4), (-5.5, 13.4, 13), "#b8bcc2", "metal", {"top": [("pixels", [(0, 2), (0, 5)], "#7a6a55")]})
-    return m
-
-
 def runeblade():
     """Grande épée runique du chevalier de la mort."""
     m = graft("runeblade", ["rightHand"])
@@ -181,5 +144,5 @@ def lich_staff():
     return m
 
 
-SHEETS = [skeleton_servant, death_knight, lich_lord]
-WEAPONS = [bone_sword, runeblade, lich_staff]
+SHEETS = [death_knight, lich_lord]
+WEAPONS = [runeblade, lich_staff]

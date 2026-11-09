@@ -133,7 +133,7 @@ fn grafts_and_weapons_hang_on_hero_bones() {
 #[test]
 fn humanoid_summons_are_hero_sheets_on_a_known_species() {
     let catalogue = catalogue();
-    assert_eq!(catalogue.humanoids.len(), 3);
+    assert_eq!(catalogue.humanoids.len(), 2);
     for (id, h) in &catalogue.humanoids {
         assert!(atlas().especes().any(|e| e.id == h.species), "{id} : espèce {}", h.species);
         let f = figure(&appearance(&h.species), &sheet(&h.sheet));
@@ -193,7 +193,7 @@ fn apercu_competences_heros() {
     for (k, (texture, cfg, f, graft, tint, pose)) in cells.into_iter().enumerate() {
         let pose = FigurePose { tint, ..pose };
         // Face à la caméra (au sud), de trois quarts
-        let yaw = std::f32::consts::PI + if k >= 5 { -0.5 } else { 0.5 };
+        let yaw = std::f32::consts::PI + if k >= 4 { -0.5 } else { 0.5 };
         let mut frame = CreatureFrame::default();
         push_figure(&mut frame, &cfg, &f, feet, yaw, &pose, 0, 1.0);
         let scale = cell as f32 * 0.8 / 2.2;

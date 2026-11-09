@@ -20,6 +20,7 @@ Les formes du Druide et les créatures invoquées par le Nécromancien sont des 
 | `wendigo` | Wendigo | `root`, `chest`, `head`, `armR`, `armL`, `legR`, `legL` |
 | `sylvanGriffin` | Griffon Sylvestre | comme le loup, plus `wingR`, `wingL` |
 | `voidChimera` | Avatar du Néant | idem |
+| `skeletonServant` | Serviteur Squelette (os seuls, épée dans la main droite) | `root`, `chest`, `head`, `armR`, `armL`, `legR`, `legL` |
 | `fleshGolem` | Golem de Chair | `root`, `torso`, `head`, `armR`, `armL`, `legR`, `legL` |
 | `boneBehemoth` | Béhémoth d'Os | comme le loup |
 
@@ -51,7 +52,7 @@ Les transformations partielles du Druide et les armes des invocations humanoïde
 | `bearHide` | Échine du Plantigrade | `torso`, `rightArm`, `leftArm` |
 | `elkLegs` | Jambes de l'Élan | `rightLeg`, `leftLeg`, `rightShin`, `leftShin` |
 | `galeFeathers` | Plumes de Bourrasque | bras, avant-bras et mains |
-| `boneSword`, `runeblade`, `lichStaff` | armes des invocations | `rightHand` |
+| `runeblade`, `lichStaff` | armes des invocations humanoïdes | `rightHand` |
 
 ## Invocations humanoïdes (`humanoids.json`)
 
@@ -59,7 +60,6 @@ Sur le corps du héros (13 os, gestes des compétences) : une planche 64 × 64 a
 
 | Identifiant | Planche | Espèce | Arme |
 |---|---|---|---|
-| `skeletonServant` | `skeletonServant.png` | `revenant` | `boneSword` |
 | `deathKnight` | `deathKnight.png` | `demiOrque` | `runeblade` |
 | `lichLord` | `lichLord.png` | `revenant` | `lichStaff` |
 
