@@ -184,14 +184,21 @@ def arc_tir(t, cx, cy, h, bois=BOIS, corde=BLANC, vers=1):
     t.peindre(t.masque(lambda d: d.line([(cx, cy - h / 2 + 1), (cx, cy + h / 2 - 1)], fill=1)), corde)
 
 
-def arbalete(t, x, y, couleur=(110, 70, 40), metal=ACIER, vers=1):
-    """Arbalète pointant vers `vers`, crosse en (x, y)"""
-    m = t.masque(lambda d: d.line([(x, y), (x + vers * 14, y)], fill=1, width=3))
-    t.objet(m, couleur, melange(couleur, BLANC, 0.3), melange(couleur, (0, 0, 0), 0.5))
-    a = t.masque(lambda d: d.arc([x + vers * 10 - 3, y - 7, x + vers * 10 + 3, y + 7],
-                                 -90 if vers > 0 else 90, 90 if vers > 0 else 270, fill=1, width=2))
-    t.objet(a, metal, BLANC, melange(metal, (30, 30, 60), 0.5))
-
+def arbalete(t, x, y, couleur=(110, 70, 40), metal=ACIER, vers=1, long=16, carreau=True):
+    """Arbalète vue de profil pointant vers `vers` : crosse en (x, y), arc d'acier tout à l'avant,
+    corde tendue vers l'arrière, carreau posé sur le fût"""
+    k = vers
+    xa = x + k * long          # bout avant, où se fixe l'arc
+    fut = t.masque(lambda d: (d.line([(x, y), (xa, y)], fill=1, width=3), d.line([(x + k * 5, y + 1), (x + k * 4, y + 5)], fill=1, width=2)))
+    t.objet(fut, couleur, melange(couleur, BLANC, 0.3), melange(couleur, (0, 0, 0), 0.5))
+    corde = t.masque(lambda d: d.line([(xa - k * 3, y - 7), (xa - k * 8, y), (xa - k * 3, y + 7)], fill=1))
+    t.peindre(corde, (230, 225, 210))
+    arc_m = t.masque(lambda d: d.line([(xa - k * 3, y - 7), (xa, y - 3), (xa, y + 3), (xa - k * 3, y + 7)], fill=1, width=2, joint="curve"))
+    t.objet(arc_m, metal, BLANC, melange(metal, (30, 30, 60), 0.5))
+    if carreau:
+        t.peindre(t.masque(lambda d: d.line([(xa - k * 8, y - 2), (xa + k * 3, y - 2)], fill=1)), (90, 60, 40))
+        t.peindre(t.masque(lambda d: d.polygon([(xa + k * 5, y - 2), (xa + k * 3, y - 4), (xa + k * 3, y)], fill=1)), metal)
+    return xa
 
 def fleche(t, x0, y0, x1, y1, couleur=ACIER, trainee=None, fut=BOIS, plumes=BLANC, epais=1):
     if trainee:
