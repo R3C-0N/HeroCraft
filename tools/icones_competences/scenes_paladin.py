@@ -32,17 +32,18 @@ def shieldFlash():
 def sealOfBravery():
     """Rouge royal : un sceau doré s'allume sous le paladin et ses alliés"""
     t = Toile()
-    t.fond_radial(24, 36, 44, [(250, 120, 100), (190, 30, 40), (110, 10, 30), (40, 4, 14)])
+    t.fond_radial(24, 30, 44, [(250, 120, 100), (190, 30, 40), (110, 10, 30), (40, 4, 14)])
     t.lueur(24, 38, 20, (255, 210, 120), 0.6, sy=0.5)
     anneau(t, 24, 39, 21, 6, OR, 2, clair=BLANC)
     anneau(t, 24, 39, 14, 4, OR_PALE, 1)
     for a in range(0, 360, 60):
         t.point(24 + 17.5 * math.cos(math.radians(a)), 39 + 5 * math.sin(math.radians(a)), BLANC)
-    heros(t, "debout", 11, 29, s=0.7, liseres=((OR_PALE, 0, 1),))
-    heros(t, "debout", 37, 29, s=0.7, liseres=((OR_PALE, 0, 1),))
-    m, _ = heros(t, "brasLeves", 24, 27, s=0.9, liseres=((OR_PALE, 0, 1), (OR_PALE, 0, -1)))
-    lame(t, 33, 10, 37, 2, garde=False)
-    t.vignette(0.4)
+    heros(t, "debout", 10, 30, s=0.8, couleur=(60, 20, 30), liseres=((OR_PALE, 0, -1),))
+    heros(t, "debout", 38, 30, s=0.8, couleur=(60, 20, 30), liseres=((OR_PALE, 0, -1),))
+    corps, q = heros(t, "brasLeves", 24, 28, s=0.9, liseres=((OR_PALE, 0, -1),))
+    mx, my = q["mainD"]
+    lame(t, mx, my + 2, mx + 3, my - 8, garde=True)
+    t.vignette(0.35)
     return t
 
 
@@ -104,12 +105,12 @@ def virtuousIntervention():
     """Lavande : le paladin atterrit dans un éclat de lumière devant l'allié"""
     t = Toile()
     t.fond_radial(28, 34, 44, [(250, 230, 255), (190, 160, 240), (120, 90, 190), (50, 34, 100), (16, 10, 36)])
-    explosion(t, 28, 40, 10, couleurs=(BLANC, (255, 240, 180), (230, 200, 255)), branches=10)
-    t.peindre(t.masque(lambda d: d.arc([4, 0, 50, 70], 200, 260, fill=1, width=2)), BLANC)
-    heros(t, "accroupi", 29, 31, liseres=((BLANC, 0, -1),))
-    bouclier(t, 38, 27, 5)
-    heros(t, "agenouille", 10, 35, s=0.6, couleur=(60, 40, 90), liseres=((BLANC, 0, -1),))
-    t.vignette(0.4)
+    explosion(t, 30, 40, 10, couleurs=(BLANC, (255, 240, 180), (230, 200, 255)), branches=10)
+    t.peindre(t.masque(lambda d: d.arc([6, 0, 52, 70], 200, 260, fill=1, width=2)), BLANC)
+    heros(t, "agenouille", 11, 31, s=0.8, couleur=(80, 56, 120), liseres=((BLANC, 0, -1),))
+    heros(t, "accroupi", 30, 31, liseres=((BLANC, 0, -1),))
+    bouclier(t, 39, 27, 5)
+    t.vignette(0.35)
     return t
 
 
@@ -132,15 +133,16 @@ def celestialPhalanx():
     t.fond_vertical([(30, 40, 100), (70, 100, 180), (150, 170, 220)], 0, 38)
     sol = t.masque(lambda d: d.rectangle([0, 38, 48, 48], fill=1))
     t.zone_verticale(sol, [(70, 70, 90), (24, 24, 36)], 38, 48)
-    mur_m = t.masque(lambda d: d.polygon([(26, 6), (32, 4), (32, 42), (26, 40)], fill=1))
+    heros(t, "garde", 11, 28, s=0.9, liseres=((OR_PALE, 1, 0),))
+    bouclier(t, 19, 23, 5)
+    mur_m = t.masque(lambda d: d.polygon([(25, 6), (30, 4), (30, 42), (25, 40)], fill=1))
     t.voile(mur_m, (255, 230, 140), 0.55)
-    t.peindre(t.masque(lambda d: d.line([(32, 4), (32, 42)], fill=1, width=2)), OR)
-    t.lueur(30, 24, 12, OR_PALE, 0.4, sy=2)
-    heros(t, "garde", 15, 28, s=0.9, liseres=((OR_PALE, 1, 0),))
-    heros(t, "tombe", 41, 37, s=0.6, couleur=(30, 20, 40), liseres=((OR_PALE, -1, 0),))
+    t.peindre(t.masque(lambda d: d.line([(30, 4), (30, 42)], fill=1, width=2)), OR)
+    t.lueur(28, 24, 12, OR_PALE, 0.4, sy=2)
+    heros(t, "course", 39, 28, s=0.75, couleur=(40, 30, 60), liseres=((OR_PALE, -1, 0),), retourne=True)
     for y in (12, 22, 32):
-        t.peindre(t.masque(lambda d, y=y: d.line([(35, y), (40, y)], fill=1)), (255, 240, 190))
-    t.vignette(0.4)
+        t.peindre(t.masque(lambda d, y=y: d.line([(32, y), (35, y)], fill=1)), (255, 240, 190))
+    t.vignette(0.35)
     return t
 
 
