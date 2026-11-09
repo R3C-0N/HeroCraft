@@ -8,12 +8,16 @@ CHAMP = (160, 40, 40)
 
 
 def shieldBash():
-    """Orange sec : un coup de bouclier, des étoiles tournent sur la cible"""
+    """Orange sec : le champion charge bouclier en avant, la cible est projetée, étourdie"""
     t = Toile()
     t.fond_radial(28, 22, 44, [(255, 220, 160), (230, 140, 60), (140, 60, 20), (50, 20, 6)])
-    heros(t, "tombe", 36, 30, s=0.7, couleur=(30, 14, 8), liseres=((OR_PALE, 0, -1),))
-    bouclier(t, 18, 22, 10, champ=CHAMP)
-    for x, y in ((32, 12), (40, 10), (44, 18)):
+    sol = t.masque(lambda d: d.rectangle([0, 42, 48, 48], fill=1))
+    t.peindre(sol, (60, 26, 8))
+    heros(t, "course", 37, 31, s=0.8, couleur=(60, 30, 16), liseres=((OR_PALE, 0, -1),), retourne=True)
+    heros(t, "garde", 11, 31, s=0.9, liseres=((OR_PALE, 1, 0),))
+    bouclier(t, 20, 24, 7, champ=CHAMP)
+    explosion(t, 28, 22, 4, couleurs=(BLANC, (255, 240, 180), (240, 180, 80)), branches=6)
+    for x, y in ((32, 8), (38, 5), (44, 9)):
         t.etincelle(x, y, (255, 240, 80), grande=True)
     t.vignette(0.4)
     return t
@@ -66,15 +70,20 @@ def phalanx():
 
 
 def armorBreaker():
-    """Acier sous la forge : un coup lourd fait voler des éclats d'armure"""
+    """Acier sous la forge : la lame fend l'armure de l'ennemi, les éclats volent"""
     t = Toile()
     t.fond_radial(28, 28, 44, [(255, 210, 160), (210, 110, 60), (120, 40, 20), (40, 10, 4)])
-    casque = t.masque(lambda d: (d.chord([22, 20, 42, 42], 180, 360, fill=1), d.rectangle([22, 30, 42, 38], fill=1)))
-    t.objet(casque, (170, 175, 190), BLANC, (80, 80, 100))
-    t.peindre(t.masque(lambda d: d.line([(26, 32), (38, 32)], fill=1, width=2)), (20, 14, 20))
-    for x, y in ((18, 16), (44, 18), (16, 30), (42, 10)):
-        t.peindre(t.masque(lambda d, x=x, y=y: d.polygon([(x, y), (x + 3, y - 1), (x + 2, y + 2)], fill=1)), (200, 205, 220))
-    lame(t, 6, 6, 30, 22, largeur=3)
+    sol = t.masque(lambda d: d.rectangle([0, 42, 48, 48], fill=1))
+    t.peindre(sol, (50, 16, 6))
+    corps, q = heros(t, "debout", 31, 30, s=1.15, couleur=(150, 155, 170), liseres=((BLANC, -1, -1), ((70, 70, 90), 1, 1)),
+                     retourne=True)
+    t.contour(corps, (30, 20, 30))
+    t.peindre(t.masque(lambda d: d.line([(27, 15), (31, 21), (29, 25), (34, 31)], fill=1, width=2)), (40, 10, 10))
+    t.peindre(t.masque(lambda d: d.line([(28, 15), (32, 21), (30, 25), (35, 31)], fill=1)), (255, 200, 120))
+    for x, y in ((16, 30), (44, 26), (42, 10), (18, 12), (45, 18)):
+        t.peindre(t.masque(lambda d, x=x, y=y: d.polygon([(x, y), (x + 3, y - 1), (x + 2, y + 2)], fill=1)), (210, 215, 230))
+    lame(t, 4, 4, 24, 24, largeur=3)
+    explosion(t, 27, 19, 4, couleurs=(BLANC, (255, 230, 170), (255, 160, 60)), branches=6)
     t.vignette(0.4)
     return t
 
@@ -120,11 +129,13 @@ def livingWall():
     """Gris-bleu : une ligne de front translucide avance devant le champion"""
     t = Toile()
     t.fond_radial(24, 26, 44, [(210, 220, 235), (120, 140, 170), (50, 64, 90), (14, 18, 30)])
-    front = t.masque(lambda d: d.rectangle([28, 6, 36, 42], fill=1))
+    sol = t.masque(lambda d: d.rectangle([0, 42, 48, 48], fill=1))
+    t.peindre(sol, (30, 36, 50))
+    heros(t, "garde", 13, 30, liseres=((BLANC, 1, 0),))
+    bouclier(t, 21, 25, 6, champ=CHAMP)
+    front = t.masque(lambda d: d.rectangle([29, 6, 37, 42], fill=1))
     t.voile(front, (200, 220, 255), 0.5)
-    t.peindre(t.masque(lambda d: d.line([(36, 6), (36, 42)], fill=1, width=2)), BLANC)
-    heros(t, "garde", 16, 28, liseres=((BLANC, 1, 0),))
-    bouclier(t, 24, 24, 6, champ=CHAMP)
+    t.peindre(t.masque(lambda d: d.line([(37, 6), (37, 42)], fill=1, width=2)), BLANC)
     for y in (12, 24, 36):
         t.peindre(t.masque(lambda d, y=y: d.line([(40, y), (45, y)], fill=1)), BLANC)
     t.vignette(0.4)

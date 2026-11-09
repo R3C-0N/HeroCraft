@@ -53,15 +53,17 @@ def frontalRush():
 
 
 def seismicWave():
-    """Terre brune : une ligne de débris court devant le soldat"""
+    """Terre brune : le soldat frappe le sol, une ligne de débris court devant lui"""
     t = Toile()
-    t.fond_vertical([(90, 80, 70), (160, 130, 100), (200, 170, 120)], 0, 34)
-    sol(t, haut=34)
-    for x in range(14, 46, 6):
-        h = 4 + (x % 4) * 2
-        t.peindre(t.masque(lambda d, x=x, h=h: d.polygon([(x - 3, 40), (x, 40 - h), (x + 3, 40)], fill=1)), (150, 110, 70))
-        t.liseré(t.masque(lambda d, x=x, h=h: d.polygon([(x - 3, 40), (x, 40 - h), (x + 3, 40)], fill=1)), (220, 180, 130), -1, -1)
-    heros(t, "frappeHaute", 8, 30, s=0.7, liseres=((OR_PALE, 1, 0),))
+    t.fond_vertical([(90, 80, 70), (160, 130, 100), (200, 170, 120)], 0, 36)
+    sol(t, haut=36)
+    for i, x in enumerate(range(22, 48, 6)):
+        h = 5 + i * 2
+        m = t.masque(lambda d, x=x, h=h: d.polygon([(x - 3, 40), (x - 1, 40 - h), (x + 1, 40 - h + 2), (x + 3, 40)], fill=1))
+        t.objet(m, (150, 110, 70), (220, 180, 130), (80, 56, 36))
+    corps, q = heros(t, "garde", 10, 29, s=1.0, liseres=((OR_PALE, 1, 0),))
+    mx, my = q["mainD"]
+    epee_lourde(t, mx - 1, my - 1, mx + 9, my + 9)
     t.vignette(0.4)
     return t
 
@@ -89,15 +91,19 @@ def rallyingCry():
 
 
 def divingStrike():
-    """Couchant rouge : un bond, puis un écrasement qui creuse un cratère"""
+    """Couchant rouge : le soldat retombe arme levée et creuse un cratère"""
     t = Toile()
     t.fond_vertical([(70, 30, 50), (200, 80, 60), (250, 170, 100)], 0, 38)
     sol(t)
-    cratere = t.masque(lambda d: d.chord([10, 34, 38, 46], 0, 180, fill=1))
+    cratere = t.masque(lambda d: d.chord([8, 34, 40, 46], 0, 180, fill=1))
     t.peindre(cratere, (40, 24, 20))
-    heros(t, "frappeHaute", 24, 18, s=0.85, liseres=((OR_PALE, 0, -1),))
-    for x in (8, 40):
-        t.peindre(t.masque(lambda d, x=x: d.line([(x, 36), (x + (4 if x < 24 else -4), 30)], fill=1)), POUSSIERE)
+    corps, q = heros(t, "frappeHaute", 22, 27, s=0.85, liseres=((OR_PALE, 0, -1),))
+    mx, my = q["mainD"]
+    epee_lourde(t, mx, my + 2, mx + 8, my - 10)
+    for x in (6, 42):
+        t.peindre(t.masque(lambda d, x=x: d.line([(x, 38), (x + (4 if x < 24 else -4), 30)], fill=1)), POUSSIERE)
+    for x in (12, 32):
+        t.peindre(t.masque(lambda d, x=x: d.line([(x, 4), (x, 12)], fill=1)), BLANC)
     t.vignette(0.4)
     return t
 
@@ -120,11 +126,14 @@ def seismicBreach():
     t = Toile()
     t.fond_vertical([(140, 150, 160), (210, 180, 130), (190, 140, 80)], 0, 38)
     sol(t)
-    t.peindre(t.masque(lambda d: d.line([(2, 40), (24, 40)], fill=1, width=2)), (255, 200, 120))
-    for x, y in ((30, 22), (36, 16), (40, 26), (34, 30)):
-        t.peindre(t.masque(lambda d, x=x, y=y: d.ellipse([x - 2, y - 2, x + 2, y + 2], fill=1)), (150, 110, 70))
-    heros(t, "course", 18, 26, s=0.9, liseres=((OR_PALE, 1, 0),))
-    epee_lourde(t, 26, 24, 28, 40)
+    t.peindre(t.masque(lambda d: d.line([(2, 40), (30, 40)], fill=1, width=2)), (255, 200, 120))
+    for x, y, r in ((36, 22, 2), (40, 14, 1.5), (43, 28, 2.5), (38, 33, 1.5)):
+        m = t.masque(lambda d, x=x, y=y, r=r: d.polygon([(x - r, y), (x, y - r), (x + r, y + 1), (x - 1, y + r)], fill=1))
+        t.objet(m, (150, 110, 70), (220, 180, 130), (80, 56, 36))
+    corps, q = heros(t, "course", 16, 28, s=0.9, liseres=((OR_PALE, 1, 0),))
+    mx, my = q["mainD"]
+    epee_lourde(t, mx - 2, my, mx + 14, my + 12)
+    t.etincelle(mx + 14, my + 12, (255, 220, 120))
     t.vignette(0.4)
     return t
 
@@ -145,12 +154,15 @@ def relentlessExecution():
     """Rouge et acier : l'armure éclate, puis la cible part au loin"""
     t = Toile()
     t.fond_radial(28, 24, 42, [(250, 190, 170), (190, 70, 60), (100, 20, 24), (30, 4, 8)])
-    croissant(t, 20, 28, 15, 100, 240, (255, 230, 210), epais=2)
-    croissant(t, 20, 22, 15, 250, 360, (255, 230, 210), epais=3)
-    for x, y in ((30, 18), (34, 24), (28, 28)):
+    croissant(t, 18, 26, 15, 250, 360, (255, 230, 210), epais=3)
+    for x, y in ((28, 18), (32, 26), (26, 30)):
         t.peindre(t.masque(lambda d, x=x, y=y: d.polygon([(x, y), (x + 3, y - 1), (x + 2, y + 2)], fill=1)), (180, 185, 200))
-    heros(t, "tombe", 40, 16, s=0.55, couleur=(30, 10, 14), liseres=((BLANC, 0, -1),))
-    epee_lourde(t, 6, 42, 20, 22)
+    heros(t, "tombe", 38, 20, s=0.75, couleur=(40, 14, 18), liseres=((BLANC, 0, -1),))
+    for y in (16, 22):
+        t.peindre(t.masque(lambda d, y=y: d.line([(28, y + 4), (32, y + 2)], fill=1)), BLANC)
+    corps, q = heros(t, "brasTendu", 9, 31, s=0.85, liseres=((OR_PALE, 1, 0),))
+    mx, my = q["mainD"]
+    epee_lourde(t, mx - 2, my + 1, mx + 10, my - 6)
     t.vignette(0.4)
     return t
 
