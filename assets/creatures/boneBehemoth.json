@@ -1,0 +1,53 @@
+{
+  "name": "Béhémoth d'Os",
+  "description": "Un colosse d'os assemblés, une âme verte prise dans la cage.",
+  "body": {"half_width": 0.8, "half_length": 2.3, "height": 3.3},
+  "walk_speed": 1.4,
+  "health": 140,
+  "model": {
+    "mesh": "modeles/boneBehemoth.gltf",
+    "texture": "modeles/boneBehemoth.png",
+    "animations": {
+      "repos": {"cycle": 3.5, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "head": {"rotation": [2, 0, 0]},
+        "root": {"translation": [0, 0.006, 0], "frequence": 2},
+        "tail": {"rotation": [0, 8, 0], "frequence": 2}
+      }},
+      "marche": {"foulee": 1.1, "os": {
+        "legFR": {"rotation": [18, 0, 0], "phase": 0},
+        "legFL": {"rotation": [18, 0, 0], "phase": 0.5},
+        "legBR": {"rotation": [18, 0, 0], "phase": 0.5},
+        "legBL": {"rotation": [18, 0, 0], "phase": 0},
+        "root": {"translation": [0, 0.015, 0], "phase": 0.25, "frequence": 2},
+        "head": {"rotation": [3, 0, 0], "phase": 0.1, "frequence": 2},
+        "tail": {"rotation": [0, 10, 0]}
+      }},
+      "course": {"foulee": 2.4640000000000004, "os": {
+        "legFR": {"rotation": [27.0, 0, 0], "phase": 0},
+        "legFL": {"rotation": [27.0, 0, 0], "phase": 0.1},
+        "legBR": {"rotation": [27.0, 0, 0], "phase": 0.5},
+        "legBL": {"rotation": [27.0, 0, 0], "phase": 0.6},
+        "root": {"rotation": [5, 0, 0], "translation": [0, 0.04, 0], "phase": 0.3},
+        "head": {"rotation": [6, 0, 0], "rotation_fixe": [8, 0, 0], "phase": 0.55},
+        "tail": {"rotation": [8, 0, 0], "rotation_fixe": [20, 0, 0], "phase": 0.3}
+      }},
+      "attaque": {"cycle": 0.8, "os": {
+        "root": {"rotation": [-7, 0, 0], "translation": [0, 0.03, 0.1], "phase": 0.75},
+        "head": {"rotation": [14, 0, 0], "rotation_fixe": [-8, 0, 0], "phase": 0.1, "frequence": 2},
+        "legFR": {"rotation": [-25, 0, 0], "phase": 0.75},
+        "legFL": {"rotation": [-25, 0, 0], "phase": 0.8}
+      }},
+      "coup": {"os": {
+        "root": {"rotation": [-9, 0, 0], "frequence": 0.5},
+        "head": {"rotation": [-14, 0, 0], "frequence": 0.5},
+        "tail": {"rotation": [25, 0, 0], "frequence": 0.5}
+      }},
+      "charge": {"cycle": 1.6, "pause": {"poids": 0.3, "duree": [1.5, 2.5]}, "os": {
+        "head": {"rotation": [6, 0, 0], "rotation_fixe": [25, 0, 0], "frequence": 2},
+        "root": {"rotation_fixe": [6, 0, 0]},
+        "legFR": {"rotation": [-20, 0, 0], "frequence": 2},
+        "legFL": {"rotation": [-20, 0, 0], "frequence": 2, "phase": 0.5}
+      }}
+    }
+  }
+}

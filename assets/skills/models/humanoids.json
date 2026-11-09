@@ -1,0 +1,36 @@
+{
+  "humanoids": {
+    "deathKnight": {
+      "name": "Chevalier de la Mort",
+      "sheet": "deathKnight.png",
+      "species": "demiOrque",
+      "weapon": "runeblade"
+    },
+    "lichLord": {
+      "name": "Seigneur Liche",
+      "sheet": "lichLord.png",
+      "species": "revenant",
+      "weapon": "lichStaff"
+    }
+  },
+  "tinted": {
+    "shadowDecoy": {
+      "name": "Leurre Obscur",
+      "copies": "caster",
+      "tint": [
+        0.16,
+        0.13,
+        0.22
+      ]
+    },
+    "etheriumShade": {
+      "name": "Ombre d'Étherium",
+      "copies": "corpse",
+      "tint": [
+        0.45,
+        0.62,
+        1.25
+      ]
+    }
+  }
+}

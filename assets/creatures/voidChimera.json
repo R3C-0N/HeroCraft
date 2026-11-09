@@ -1,0 +1,57 @@
+{
+  "name": "Chimère du Néant",
+  "description": "Forme colossale de l'Avatar du Néant, constellée de cristaux d'Étherium.",
+  "body": {"half_width": 0.9, "half_length": 2.0, "height": 3.4},
+  "walk_speed": 1.8,
+  "health": 150,
+  "model": {
+    "mesh": "modeles/voidChimera.gltf",
+    "texture": "modeles/voidChimera.png",
+    "animations": {
+      "repos": {"cycle": 3.5, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "head": {"rotation": [2, 0, 0]},
+        "root": {"translation": [0, 0.006, 0], "frequence": 2},
+        "tail": {"rotation": [0, 8, 0], "frequence": 2}
+      }},
+      "marche": {"foulee": 1.2, "os": {
+        "legFR": {"rotation": [22, 0, 0], "phase": 0},
+        "legFL": {"rotation": [22, 0, 0], "phase": 0.5},
+        "legBR": {"rotation": [22, 0, 0], "phase": 0.5},
+        "legBL": {"rotation": [22, 0, 0], "phase": 0},
+        "root": {"translation": [0, 0.015, 0], "phase": 0.25, "frequence": 2},
+        "head": {"rotation": [3, 0, 0], "phase": 0.1, "frequence": 2},
+        "tail": {"rotation": [0, 10, 0]}
+      }},
+      "course": {"foulee": 2.688, "os": {
+        "legFR": {"rotation": [33.0, 0, 0], "phase": 0},
+        "legFL": {"rotation": [33.0, 0, 0], "phase": 0.1},
+        "legBR": {"rotation": [33.0, 0, 0], "phase": 0.5},
+        "legBL": {"rotation": [33.0, 0, 0], "phase": 0.6},
+        "root": {"rotation": [5, 0, 0], "translation": [0, 0.04, 0], "phase": 0.3},
+        "head": {"rotation": [6, 0, 0], "rotation_fixe": [8, 0, 0], "phase": 0.55},
+        "tail": {"rotation": [8, 0, 0], "rotation_fixe": [20, 0, 0], "phase": 0.3},
+        "wingR": {"rotation": [0, 0, -30], "frequence": 1},
+        "wingL": {"rotation": [0, 0, 30], "frequence": 1}
+      }},
+      "attaque": {"cycle": 0.8, "os": {
+        "root": {"rotation": [-7, 0, 0], "translation": [0, 0.03, 0.1], "phase": 0.75},
+        "head": {"rotation": [14, 0, 0], "rotation_fixe": [-8, 0, 0], "phase": 0.1, "frequence": 2},
+        "legFR": {"rotation": [-25, 0, 0], "phase": 0.75},
+        "legFL": {"rotation": [-25, 0, 0], "phase": 0.8},
+        "wingR": {"rotation": [0, 0, -35], "frequence": 2},
+        "wingL": {"rotation": [0, 0, 35], "frequence": 2}
+      }},
+      "coup": {"os": {
+        "root": {"rotation": [-9, 0, 0], "frequence": 0.5},
+        "head": {"rotation": [-14, 0, 0], "frequence": 0.5},
+        "tail": {"rotation": [25, 0, 0], "frequence": 0.5}
+      }},
+      "rugit": {"cycle": 2.5, "pause": {"poids": 0.5, "duree": [2, 4]}, "os": {
+        "head": {"rotation": [4, 0, 0], "rotation_fixe": [-30, 0, 0], "frequence": 4},
+        "root": {"rotation_fixe": [-6, 0, 0]},
+        "wingR": {"rotation_fixe": [0, 0, -40]},
+        "wingL": {"rotation_fixe": [0, 0, 40]}
+      }}
+    }
+  }
+}

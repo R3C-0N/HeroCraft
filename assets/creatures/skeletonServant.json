@@ -1,0 +1,47 @@
+{
+  "name": "Serviteur Squelette",
+  "description": "Des os rassemblés par la nécromancie, une épée rouillée à la main.",
+  "body": {"half_width": 0.3, "half_length": 0.3, "height": 1.95},
+  "walk_speed": 1.8,
+  "health": 20,
+  "model": {
+    "mesh": "modeles/skeletonServant.gltf",
+    "texture": "modeles/skeletonServant.png",
+    "animations": {
+      "repos": {"cycle": 4, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "chest": {"rotation": [3, 0, 0]},
+        "head": {"rotation": [0, 12, 0], "frequence": 0.5},
+        "armR": {"rotation": [4, 0, 2]},
+        "armL": {"rotation": [4, 0, -2], "phase": 0.5}
+      }},
+      "marche": {"foulee": 0.8, "os": {
+        "legR": {"rotation": [28, 0, 0]},
+        "legL": {"rotation": [28, 0, 0], "phase": 0.5},
+        "armR": {"rotation": [22.400000000000002, 0, 0], "phase": 0.5},
+        "armL": {"rotation": [22.400000000000002, 0, 0]},
+        "root": {"translation": [0, 0.02, 0], "phase": 0.25, "frequence": 2}
+      }},
+      "course": {"foulee": 1.4400000000000002, "os": {
+        "legR": {"rotation": [42.0, 0, 0]},
+        "legL": {"rotation": [42.0, 0, 0], "phase": 0.5},
+        "armR": {"rotation": [33.6, 0, 0], "phase": 0.5},
+        "armL": {"rotation": [33.6, 0, 0]},
+        "chest": {"rotation_fixe": [10, 0, 0]},
+        "root": {"translation": [0, 0.05, 0], "phase": 0.25, "frequence": 2}
+      }},
+      "attaque": {"cycle": 0.8, "os": {
+        "armR": {"rotation": [-50, 0, 0], "rotation_fixe": [-30, 0, 0]},
+        "chest": {"rotation": [0, 15, 0]},
+        "head": {"rotation": [6, 0, 0], "frequence": 2}
+      }},
+      "coup": {"os": {
+        "chest": {"rotation": [-12, 0, 0], "frequence": 0.5},
+        "head": {"rotation": [-15, 0, 0], "frequence": 0.5}
+      }},
+      "claque": {"cycle": 1.2, "pause": {"poids": 0.5, "duree": [1, 2]}, "os": {
+        "head": {"rotation": [8, 0, 3], "frequence": 4},
+        "armL": {"rotation": [6, 0, 4], "frequence": 2}
+      }}
+    }
+  }
+}

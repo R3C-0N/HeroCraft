@@ -201,6 +201,13 @@ impl SkinnedModel {
         self.nodes.len()
     }
 
+    /// Nom de l'os de rang `joint` (celui des `joints` d'un sommet). Les pièces greffées sur le
+    /// héros (`assets/skills/models`) portent les noms de ses os.
+    #[allow(dead_code)] // lu par les pièces greffées des compétences
+    pub fn joint_name(&self, joint: u16) -> Option<&str> {
+        self.joints.get(joint as usize).map(|&node| self.nodes[node].name.as_str())
+    }
+
     /// Matrices de chaque os (pose de l'animation à l'instant `time`, ou de repos) : elles amènent
     /// un sommet de la pose de liaison à sa place dans le repère du modèle
     pub fn skin_matrices(&self, animation: Option<&Animation>, time: f32) -> Vec<Mat4> {
@@ -472,11 +479,16 @@ mod tests {
         assert!(registry.len() >= 19);
         for species in registry.iter().filter(|s| !s.humanoid) {
             let model = SkinnedModel::load(&registry.asset_path(&species.model.mesh)).unwrap_or_else(|e| panic!("{} : {e}", species.id));
-            let animation = model.animation("repos").unwrap_or_else(|| panic!("{} : pas d'animation", species.id));
-            assert!(animation.duration > 0.0);
-            assert_eq!(model.nodes_matching("racine").len(), 1, "{}", species.id);
-            // Les pieds sont sous l'origine, à la hauteur du corps à peu près
-            assert!(model.feet_height > 0.0 && model.feet_height < species.body.height * 1.5, "{} : {}", species.id, model.feet_height);
+            // Sans animations dans sa fiche, la bête joue l'animation `repos` du glTF
+            if species.model.animations.is_empty() {
+                let animation = model.animation("repos").unwrap_or_else(|| panic!("{} : pas d'animation", species.id));
+                assert!(animation.duration > 0.0);
+            }
+            // Un seul os porte tout le corps (`racine` dans le bestiaire, `root` dans les
+            // créatures des compétences)
+            assert_eq!(model.nodes_matching("racine").len() + model.nodes_matching("root").len(), 1, "{}", species.id);
+            // Les pieds sont sous l'origine (ou dessus), à la hauteur du corps à peu près
+            assert!(model.feet_height >= 0.0 && model.feet_height < species.body.height * 1.5, "{} : {}", species.id, model.feet_height);
             let texture = Texture::load(&registry.asset_path(&species.model.texture)).unwrap();
             assert_eq!(texture.rgba.len(), (texture.width * texture.height * 4) as usize);
         }
