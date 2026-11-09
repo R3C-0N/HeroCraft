@@ -332,52 +332,64 @@ def marque_etherium(t, x=40, y=8):
 
 
 def bete(t, espece, x, y, s=1.0, couleur=OMBRE, liseres=((OR_PALE, 0, -1),), retourne=False):
-    """Silhouettes de créatures, (x, y) au milieu du dos"""
+    """Silhouettes de créatures, (x, y) au milieu du corps ; les quadrupèdes regardent à droite"""
     k = -1 if retourne else 1
     P = lambda px, py: (x + k * px * s, y + py * s)
+    poly = lambda d, pts: d.polygon([P(*p) for p in pts], fill=1)
+    ell = lambda d, x0, y0, x1, y1: d.ellipse(sorted_box(P(x0, y0), P(x1, y1)), fill=1)
+    ligne = lambda d, pts, w: d.line([P(*p) for p in pts], fill=1, width=max(1, round(w * s)))
 
     def dessin(d):
-        if espece in ("loup", "ours", "cerf", "hibours", "wendigo_q"):
-            gros = {"loup": 1.0, "ours": 1.4, "cerf": 1.05, "hibours": 1.35}.get(espece, 1)
-            d.ellipse([*P(-10 * gros, -4 * gros), *P(8 * gros, 5 * gros)] if k > 0 else
-                      [*P(8 * gros, -4 * gros), *P(-10 * gros, 5 * gros)], fill=1)
-            for px in (-8, -4, 3, 6):
-                d.line([P(px * gros, 2), P(px * gros + 0.5, 11 * gros)], fill=1, width=max(2, round(2 * s * gros)))
-            hx = 10 * gros
-            d.polygon([P(hx - 4, -6 * gros), P(hx + 6, -2 * gros), P(hx + 6, 1), P(hx - 2, 3)], fill=1)
-            if espece == "loup":
-                d.polygon([P(hx - 2, -6), P(hx, -10), P(hx + 1, -5)], fill=1)
-                d.line([P(-10, -2), P(-16, -5), P(-18, -2)], fill=1, width=max(2, round(2 * s)))
-            if espece == "ours":
-                d.ellipse([*P(hx - 3, -9), *P(hx, -6)] if k > 0 else [*P(hx, -9), *P(hx - 3, -6)], fill=1)
-            if espece == "cerf":
-                for b in (-1, 1):
-                    d.line([P(hx - 1, -5), P(hx - 3 + b * 3, -14), P(hx - 7 + b * 4, -19)], fill=1, width=1)
-                    d.line([P(hx - 2 + b * 2, -11), P(hx + 2 + b * 2, -15)], fill=1, width=1)
+        if espece == "loup":
+            ell(d, -10, -4, 8, 4)
+            poly(d, [(4, -3), (8, -10), (12, -9), (9, 1)])
+            ell(d, 7, -13, 14, -7)
+            poly(d, [(12, -12), (19, -9), (12, -7)])
+            poly(d, [(8, -11), (9, -16), (11, -12)])
+            poly(d, [(-9, -2), (-16, -9), (-18, -6), (-10, 1)])
+            for a, b in (((-8, 2), (-9, 11)), ((-5, 2), (-4, 11)), ((4, 2), (3, 11)), ((7, 2), (8, 11))):
+                ligne(d, [a, b], 2)
+        elif espece in ("ours", "hibours"):
+            ell(d, -12, -7, 10, 6)
+            ell(d, 7, -7, 16, 2)
+            ell(d, 13, -4, 19, 1)
+            ell(d, 8, -9, 12, -5)
+            for a, b in (((-9, 3), (-9, 11)), ((-4, 3), (-4, 11)), ((3, 3), (3, 11)), ((7, 2), (8, 11))):
+                ligne(d, [a, b], 3)
             if espece == "hibours":
-                d.polygon([P(hx - 2, -6), P(hx, -12), P(hx + 2, -6)], fill=1)
-                d.polygon([P(hx + 5, -1), P(hx + 9, 0), P(hx + 5, 2)], fill=1)
-        elif espece == "oiseau":
-            d.ellipse([*P(-5, -2), *P(5, 3)] if k > 0 else [*P(5, -2), *P(-5, 3)], fill=1)
-            d.polygon([P(-2, 0), P(-14, -12), P(-6, -1)], fill=1)
-            d.polygon([P(2, 0), P(-4, -14), P(4, -1)], fill=1)
-            d.polygon([P(4, -2), P(9, -1), P(5, 1)], fill=1)
-            d.polygon([P(-5, 1), P(-10, 5), P(-5, 3)], fill=1)
-        elif espece == "griffon":
-            d.ellipse([*P(-9, -3), *P(7, 5)] if k > 0 else [*P(7, -3), *P(-9, 5)], fill=1)
-            d.polygon([P(-4, -1), P(-16, -16), P(4, -2)], fill=1)
-            d.polygon([P(6, -2), P(12, -8), P(14, -4), P(9, 1)], fill=1)
-            for px in (-7, 4):
-                d.line([P(px, 3), P(px, 11)], fill=1, width=2)
+                poly(d, [(9, -7), (9, -13), (12, -7)])
+                poly(d, [(17, -3), (21, -1), (17, 0)])
+        elif espece == "cerf":
+            ell(d, -10, -4, 8, 3)
+            poly(d, [(4, -2), (8, -12), (11, -11), (9, 1)])
+            ell(d, 7, -16, 12, -11)
+            poly(d, [(10, -15), (16, -13), (11, -11)])
+            for b in (-1, 1):
+                ligne(d, [(9, -15), (7 + b, -20), (4 + b * 2, -25)], 1)
+                ligne(d, [(8 + b, -19), (12 + b, -23)], 1)
+                ligne(d, [(6 + b, -22), (1 + b, -24)], 1)
+            for a, b in (((-8, 1), (-9, 12)), ((-5, 1), (-4, 12)), ((4, 1), (3, 12)), ((7, 1), (8, 12))):
+                ligne(d, [a, b], 1.5)
+        elif espece in ("oiseau", "griffon"):
+            g = 1.3 if espece == "griffon" else 1
+            ell(d, -2.5 * g, -6, 2.5 * g, 6 * g)
+            ell(d, -2, -10, 2, -5)
+            poly(d, [(1, -9), (4, -7), (1, -6)])
+            for c in (-1, 1):
+                poly(d, [(c * 1, -3), (c * 16, -12), (c * 15, -7), (c * 11, -5), (c * 12, -1), (c * 7, 0), (c * 1, 3)])
+            poly(d, [(-2, 5 * g), (-4, 11 * g), (4, 11 * g), (2, 5 * g)])
+            if espece == "griffon":
+                ligne(d, [(-2, 6), (-4, 12)], 2)
+                ligne(d, [(2, 6), (4, 12)], 2)
         elif espece == "squelette":
             silhouette(d, {n: P(px, py) for n, (px, py) in POSES["brasOuverts"].items()})
         elif espece == "golem":
-            d.ellipse([*P(-9, -12), *P(9, 6)], fill=1)
-            d.ellipse([*P(-3, -17), *P(3, -11)], fill=1)
-            d.line([P(-8, -8), P(-12, 4)], fill=1, width=4)
-            d.line([P(8, -8), P(12, 4)], fill=1, width=4)
-            d.line([P(-4, 4), P(-5, 12)], fill=1, width=4)
-            d.line([P(4, 4), P(5, 12)], fill=1, width=4)
+            ell(d, -9, -12, 9, 6)
+            ell(d, -3, -17, 3, -11)
+            ligne(d, [(-8, -8), (-12, 4)], 4)
+            ligne(d, [(8, -8), (12, 4)], 4)
+            ligne(d, [(-4, 4), (-5, 12)], 4)
+            ligne(d, [(4, 4), (5, 12)], 4)
 
     m = t.masque(dessin)
     if s > 1.3:
@@ -386,3 +398,7 @@ def bete(t, espece, x, y, s=1.0, couleur=OMBRE, liseres=((OR_PALE, 0, -1),), ret
     for c, dx, dy in liseres:
         t.liseré(m, c, dx, dy)
     return m
+
+
+def sorted_box(a, b):
+    return [min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])]
