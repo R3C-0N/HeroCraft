@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Icônes provisoires des compétences, en pixel art 32×32 (à afficher sans lissage) : le sprite
+"""Icônes des compétences en pixel art. Une compétence qui a sa scène dans
+`scenes_<classe>.py` (48×48, sa propre ambiance de couleur, voir `scenes.py`) est dessinée
+d'après elle ; les autres reçoivent l'icône provisoire en 32×32 (à afficher sans lissage) : le sprite
 du geste sur la couleur de la classe, avec
 dans le coin une pastille pour l'effet le plus parlant (celui qui distingue deux compétences au
 même geste). Les ultimes ont un cadre d'Étherium (noir, violet, éclats cyan).
@@ -26,7 +28,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 RACINE = pathlib.Path(__file__).resolve().parents[2]
 DONNEES = pathlib.Path(__file__).with_name("competences.json")
 SORTIE = RACINE / "assets/skills"
-TAILLE = 128          # taille d'une icône sur la planche (agrandie x4, pixels nets)
+TAILLE = 144          # taille d'une icône sur la planche (agrandie, pixels nets)
 S = 512               # taille de travail (suréchantillonnage x4)
 
 # Couleurs des classes (document des effets, « Couleurs ») : fond, accent
@@ -854,7 +856,26 @@ def poser_sprite(img, texte, cx, cy, contour):
                 px[X, Y] = contour + (255,)
 
 
+def scene(competence):
+    """La scène dessinée pour cette compétence, s'il y en a une (scenes_<classe>.py)"""
+    import importlib
+    sys.path.insert(0, str(pathlib.Path(__file__).parent))
+    try:
+        module = importlib.import_module(f"scenes_{competence['class']}")
+    except ModuleNotFoundError:
+        return None
+    fonction = getattr(module, competence["id"], None)
+    if fonction is None:
+        return None
+    toile = fonction()
+    toile.cadre(competence.get("ultimate", False))
+    return toile.image()
+
+
 def icone(competence):
+    dessinee = scene(competence)
+    if dessinee is not None:
+        return dessinee
     classe = competence["class"]
     base, accent = COULEURS[classe]
     if competence.get("element"):
@@ -970,7 +991,7 @@ def importer(md):
 
 def planche(competences, chemin):
     """Toutes les icônes d'une classe côte à côte, avec leur nom et leur geste"""
-    col, case = 4, 220
+    col, case = 4, 230
     lignes = math.ceil(len(competences) / col)
     img = Image.new("RGB", (col * case, lignes * case + 10), (30, 30, 36))
     d = ImageDraw.Draw(img)
@@ -984,7 +1005,7 @@ def planche(competences, chemin):
         img.paste(ic, (x + (case - TAILLE) // 2, y + 14), ic)
         for j, texte in enumerate((c["name"], f"{c['gesture']} · {badge_effet(c) or '—'}")):
             w = d.textlength(texte, font=police)
-            d.text((x + (case - w) / 2, y + 152 + j * 20), texte, fill=(235, 235, 235) if j == 0 else (150, 150, 160), font=police)
+            d.text((x + (case - w) / 2, y + 164 + j * 20), texte, fill=(235, 235, 235) if j == 0 else (150, 150, 160), font=police)
     img.save(chemin)
     print(f"planche : {chemin}")
 
