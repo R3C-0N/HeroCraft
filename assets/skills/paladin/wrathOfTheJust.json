@@ -1,0 +1,15 @@
+{
+  "name": "Courroux du Juste",
+  "description": "Sceau de Bravoure + Arme de l'Aube. Un enchaînement de mêlée surpuissant où chaque impact libère une étincelle qui soigne légèrement les alliés au contact.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "vigorAura",
+      "dawnWeapon"
+    ],
+    "max_rank": 3,
+    "planner": 403
+  }
+}

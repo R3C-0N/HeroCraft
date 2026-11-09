@@ -1,0 +1,16 @@
+{
+  "name": "Fureur d'Étherium",
+  "description": "Compétence ultime. Tu enduis la lame de ton épée et les carreaux de ton arbalète d'Étherium pur. Le temps d'action est drastiquement réduit : tes coups d'épée libèrent des ondes d'énergie massives et chaque tir traverse tous les obstacles sur la carte, broyant n'importe quel monstre sur ton passage.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "deadlyDance",
+      "deathblow",
+      "lightningAssault"
+    ],
+    "max_rank": 3,
+    "planner": 329
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Aura de Protection",
+  "description": "Protection. Crée un petit bouclier de lumière autour d'un allié, absorbant une faible quantité de dégâts.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 227
+  }
+}

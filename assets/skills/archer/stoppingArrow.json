@@ -1,0 +1,12 @@
+{
+  "name": "Flèche d'Arrêt",
+  "description": "Entrave. Un tir lourd visant les jambes pour ralentir fortement ou immobiliser brièvement une cible qui s'approche.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 287
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Frappe Sauvage",
+  "description": "Frappe. Un coup lourd et désordonné avec ton arme qui arrache la chair de l'ennemi, l'éclaboussure éveillant ta fureur.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 376
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Assaut fulgurant",
+  "description": "Esquive tactique + Carreau-harpon. Roulade arrière pour éviter un coup, harponnage immédiat, puis propulsion vers l'ennemi pour une frappe plongeante.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "crossRiposte",
+      "harpoonBolt"
+    ],
+    "max_rank": 3,
+    "planner": 328
+  }
+}

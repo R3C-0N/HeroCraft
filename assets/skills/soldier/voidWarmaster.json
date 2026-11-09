@@ -1,0 +1,16 @@
+{
+  "name": "Maître de guerre du Néant",
+  "description": "Compétence ultime. Tu imprègnes ton arme d'Étherium pur. Tu deviens totalement inarrêtable et tes attaques génèrent des ondes de choc gigantesques qui traversent toute la carte. La force libérée pulvérise tout sur son passage, quelle que soit la forme de l'arme que tu tiens entre tes mains.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "relentlessExecution",
+      "crushingTornado",
+      "seismicBreach"
+    ],
+    "max_rank": 3,
+    "planner": 359
+  }
+}

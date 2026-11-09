@@ -1,0 +1,14 @@
+{
+  "name": "Mur de Magma",
+  "description": "Feu / Terre : Rune Volcanique + Rempart Tellurique.\n\nLe mur surgit sur ta rune et devient incandescent. Il bloque le passage et laisse une flaque de lave persistante.",
+  "wheel": {
+    "tier": 3,
+    "ring": 2.5,
+    "slot": 0.625,
+    "requires": [
+      "fusion"
+    ],
+    "max_rank": 3,
+    "planner": 189
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Brise-armure",
+  "description": "Épée. Frappe lourde à l'épée qui détériore la protection de la cible.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "stoppingLunge"
+    ],
+    "max_rank": 3,
+    "planner": 367
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Traque Mortelle",
+  "description": "Œil de Faucon + Flèche Barbelée. Un tir de précision absolu qui trouve systématiquement le point faible. Applique un saignement critique qui s'aggrave drastiquement si l'ennemi tente de se déplacer.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "hawkEye",
+      "barbedArrow"
+    ],
+    "max_rank": 3,
+    "planner": 298
+  }
+}

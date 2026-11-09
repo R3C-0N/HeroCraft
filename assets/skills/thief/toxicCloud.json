@@ -1,0 +1,15 @@
+{
+  "name": "Nuage Toxique",
+  "description": "Carreau Empoisonné + Écran de Fumée. Le carreau libère un vaste brouillard empoisonné et opaque qui étouffe les ennemis pris dedans.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "grappleBolt",
+      "smokeScreen"
+    ],
+    "max_rank": 3,
+    "planner": 267
+  }
+}

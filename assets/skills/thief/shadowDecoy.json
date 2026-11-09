@@ -1,0 +1,12 @@
+{
+  "name": "Leurre Obscur",
+  "description": "Illusion. Invoque un double de toi-même fait d'ombres pour attirer les tirs.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 259
+  }
+}

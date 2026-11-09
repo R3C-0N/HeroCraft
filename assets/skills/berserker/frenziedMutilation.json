@@ -1,0 +1,14 @@
+{
+  "name": "Mutilation Frénétique",
+  "description": "Frappe. Une rafale de coups chaotiques. Chaque coup raté te blesse, mais chaque coup au but te soigne légèrement.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "savageStrike"
+    ],
+    "max_rank": 3,
+    "planner": 381
+  }
+}

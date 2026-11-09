@@ -22,7 +22,7 @@ use herocraft_common::{
     ServerPacket, SkillWheel, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
-use herocraft_world::{BlockGeometry, BlockPos, CreatureWorld, Fields, PlanetDescriptor, PlanetWorldGenerator, TerrainEdits, CREATURE_RANGE_BLOCKS};
+use herocraft_world::{BlockGeometry, BlockPos, CreatureWorld, Fields, PlanetDescriptor, PlanetWorldGenerator, SkillPlayers, SkillRunner, TerrainEdits, CREATURE_RANGE_BLOCKS};
 use log::{info, warn};
 
 /// Ticks de simulation par seconde
@@ -118,6 +118,8 @@ pub struct Server {
     last_stats: HashMap<String, CharacterStats>,
     /// Roue des compétences, juge des points que les joueurs investissent
     skill_wheel: SkillWheel,
+    /// Compétences lancées : recharges, frappes en attente, effets qui durent
+    skill_runner: SkillRunner,
     /// Tirage du butin des bêtes tuées
     loot_rng: herocraft_common::LootRng,
     /// Combien de fois on a parlé à chaque habitant (il enchaîne ses répliques)
@@ -177,6 +179,7 @@ impl Server {
             last_positions: HashMap::new(),
             last_stats: HashMap::new(),
             skill_wheel: SkillWheel::standard(),
+            skill_runner: SkillRunner::new(),
             loot_rng: herocraft_common::LootRng::from_clock(),
             talks: HashMap::new(),
             next_player_id: 1,
@@ -315,6 +318,7 @@ impl Server {
         for player in self.players.values_mut() {
             player.stats.regenerate(dt, player.sprinting);
         }
+        self.tick_skills(dt);
 
         // Le ciel avance pour tous : sommeil des bêtes, saisons et météo
         self.clock.time += dt as f64;
@@ -459,7 +463,7 @@ impl Server {
                 }
                 Err(_) => continue,
             };
-            let ClientPacket::Connect { player_name, protocol_version } = packet else {
+            let ClientPacket::Connect { player_name, protocol_version, skills } = packet else {
                 reject(&pending.connection, "Le premier paquet doit être Connect");
                 continue;
             };
@@ -468,6 +472,10 @@ impl Server {
                     &pending.connection,
                     &format!("Version du protocole incompatible (client {protocol_version}, serveur {PROTOCOL_VERSION})"),
                 );
+                continue;
+            }
+            if skills != herocraft_common::skills().fingerprint() {
+                reject(&pending.connection, "Fichiers de compétences différents de ceux du serveur (assets/skills/)");
                 continue;
             }
             let name: String = player_name.trim().chars().filter(|c| !c.is_control()).take(MAX_NAME_CHARS).collect();
@@ -509,7 +517,9 @@ impl Server {
         info!("{name} a rejoint la partie (joueur #{id}, {}).", connection.peer_addr());
         self.broadcast(&ServerPacket::PlayerJoined { player_id: id, name: name.clone() });
         self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{name} a rejoint la partie") });
-        let stats = self.last_stats.remove(&name).unwrap_or_else(|| CharacterStats::new(PlayerClass::Adventurer));
+        let mut stats = self.last_stats.remove(&name).unwrap_or_else(|| CharacterStats::new(PlayerClass::Adventurer));
+        // Compétences d'avant le passage aux identifiants anglais : oubliées, points rendus
+        herocraft_common::skills().forget_unknown(&mut stats);
         connection.send(&ServerPacket::StatsUpdate(stats.clone()));
         self.players.insert(
             id,
@@ -569,6 +579,7 @@ impl Server {
             ClientPacket::FeedCreature { creature_id, item } => self.feed_creature(id, creature_id, ItemId(item)),
             ClientPacket::SkinCreature { creature_id } => self.skin_creature(id, creature_id),
             ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
+            ClientPacket::CastSkill { skill, aim, aimed } => self.cast_skill(id, skill, aim, aimed),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
             ClientPacket::Eat { item } => self.eat(id, ItemId(item)),
             ClientPacket::ChatMessage(text) => {
@@ -681,6 +692,7 @@ impl Server {
     /// tue revient à la vie et ses nouvelles jauges lui sont envoyées aussitôt
     fn creature_attack(&mut self, id: u64, species: usize, damage: f32) {
         let cause = self.creatures.registry().get(species).map_or_else(|| "Une créature".to_string(), |s| s.name.clone());
+        let damage = damage * self.skill_runner.damage_taken_factor(id);
         let Some(player) = self.players.get_mut(&id) else { return };
         let died = player.stats.take_damage(damage);
         if died {
@@ -815,6 +827,51 @@ impl Server {
 
     /// Investit un point du joueur dans une compétence, si la roue l'accepte, puis lui renvoie
     /// ses statistiques (inchangées en cas de refus, ce qui défait ce que son client a affiché)
+    /// Le joueur lance une compétence : refusée (et il le sait), ou annoncée à tous ; elle frappera
+    /// à l'impact de son geste (`tick_skills`)
+    fn cast_skill(&mut self, id: u64, skill: String, aim: Vec3, aimed: Option<Vec3>) {
+        let Some(player) = self.players.get_mut(&id) else { return };
+        match self.skill_runner.cast(herocraft_common::skills(), id, &mut player.stats, &skill, aim, aimed) {
+            Ok(rank) => {
+                player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+                self.broadcast(&ServerPacket::SkillCast { player_id: id, skill, rank, aim, aimed });
+            }
+            Err(error) => {
+                player.connection.send(&ServerPacket::SkillRefused { skill, reason: error.message().to_string() });
+            }
+        }
+    }
+
+    /// Les compétences avancent : frappes annoncées à tous, jauges changées renvoyées à leurs joueurs
+    fn tick_skills(&mut self, dt: f32) {
+        let mut view = PlayersView(&mut self.players);
+        let tick = self.skill_runner.tick(dt, herocraft_common::skills(), &mut self.creatures, &mut view);
+        for impact in tick.impacts {
+            let name = self.players.get(&impact.caster).map(|p| p.name.clone()).unwrap_or_default();
+            self.broadcast(&ServerPacket::SkillHit {
+                player_id: impact.caster,
+                skill: impact.skill,
+                rank: impact.rank,
+                center: impact.center,
+                creatures: impact.creatures,
+                players: impact.players,
+            });
+            for murder in self.creatures.take_murders() {
+                self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
+            }
+            for assault in self.creatures.take_assaults() {
+                if let Some(player) = self.players.get(&assault.player) {
+                    tell(player, &assault.warning());
+                }
+            }
+        }
+        for id in tick.changed {
+            if let Some(player) = self.players.get(&id) {
+                player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+            }
+        }
+    }
+
     fn learn_skill(&mut self, id: u64, skill: &str) {
         let Some(player) = self.players.get_mut(&id) else { return };
         if let Err(error) = self.skill_wheel.learn(&mut player.stats, skill) {
@@ -825,6 +882,7 @@ impl Server {
 
     fn leave(&mut self, id: u64, reason: &str) {
         let Some(player) = self.players.remove(&id) else { return };
+        self.skill_runner.forget(id);
         info!("{} a quitté la partie ({reason}).", player.name);
         if let Some(position) = player.position {
             self.last_positions.insert(player.name.clone(), position);
@@ -895,6 +953,23 @@ impl Server {
 }
 
 /// Réponse d'une commande, au seul joueur qui l'a tapée
+/// Les joueurs connectés, tels que les compétences les voient
+struct PlayersView<'a>(&'a mut HashMap<u64, ConnectedPlayer>);
+
+impl SkillPlayers for PlayersView<'_> {
+    fn ids(&self) -> Vec<u64> {
+        self.0.keys().copied().collect()
+    }
+
+    fn feet(&self, id: u64) -> Option<Vec3> {
+        self.0.get(&id).and_then(|p| p.position)
+    }
+
+    fn stats_mut(&mut self, id: u64) -> Option<&mut CharacterStats> {
+        self.0.get_mut(&id).map(|p| &mut p.stats)
+    }
+}
+
 fn tell(player: &ConnectedPlayer, message: &str) {
     player.connection.send(&ServerPacket::ChatMessage { sender: String::new(), message: message.to_string() });
 }

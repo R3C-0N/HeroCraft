@@ -672,6 +672,11 @@ pub fn push_hero(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, f
     push_figure(frame, cfg, figure, feet, yaw, &FigurePose { swing, ..FigurePose::default() }, HERO_TEXTURE, block);
 }
 
+/// Comme `push_hero`, dans la pose `pose` (le geste d'une compétence)
+pub fn push_hero_posed(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, block: f32) {
+    push_figure(frame, cfg, figure, feet, yaw, pose, HERO_TEXTURE, block);
+}
+
 /// Posture d'une figure : balancement de la marche, pose de chaque os, couchée, teinte
 #[derive(Debug, Clone, Copy)]
 pub struct FigurePose {

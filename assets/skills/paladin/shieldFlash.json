@@ -1,0 +1,12 @@
+{
+  "name": "Éclat de Bouclier",
+  "description": "Bouclier. Une parade qui relâche un flash éblouissant pour repousser les assaillants.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 392
+  }
+}

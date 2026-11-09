@@ -606,6 +606,8 @@ pub struct UiState {
     /// Roue des compétences, la même que celle du serveur
     pub skill_wheel: SkillWheel,
     pub skill_screen: SkillScreen,
+    /// Compétences que le joueur vient de lancer (touches de la barre, `/cast`), que le jeu lance
+    pub skill_casts: Vec<String>,
     /// Demandes faites sur l'écran des compétences depuis la dernière image, que le jeu applique
     pub skill_requests: SkillScreenRequests,
     /// Écran de carte ouvert (touche M)
@@ -669,6 +671,7 @@ impl UiState {
             player: PlayerStats::default(),
             skills_open: false,
             skill_wheel: SkillWheel::standard(),
+            skill_casts: Vec::new(),
             skill_screen: SkillScreen::default(),
             skill_requests: SkillScreenRequests::default(),
             map_open: false,

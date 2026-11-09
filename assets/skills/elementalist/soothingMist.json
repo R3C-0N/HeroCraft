@@ -1,0 +1,14 @@
+{
+  "name": "Brume Apaisante",
+  "description": "Eau / Air : Voile Aquatique + Courant Ascendant.\n\nLe vent disperse ton bouclier aquatique pour créer un épais brouillard de zone qui te cache et te soigne en continu.",
+  "wheel": {
+    "tier": 3,
+    "ring": 2.5,
+    "slot": 0.875,
+    "requires": [
+      "fusion"
+    ],
+    "max_rank": 3,
+    "planner": 190
+  }
+}

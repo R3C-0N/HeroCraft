@@ -1,0 +1,12 @@
+{
+  "name": "Hurlement Viscéral",
+  "description": "Terreur. Un cri de pure souffrance qui terrorise les ennemis proches et brise leur posture.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 378
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Salve perforante",
+  "description": "Arbalète. Décoche trois carreaux d'affilée en éventail pour repousser un groupe.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "hinderingShot"
+    ],
+    "max_rank": 3,
+    "planner": 321
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Wendigo",
+  "description": "Cerf + Loup. Un prédateur bipède terrifiant aux bois acérés, spécialisé dans la furtivité et les attaques magiques provoquant de lourds saignements.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "ancientStag",
+      "forestWolf"
+    ],
+    "max_rank": 3,
+    "planner": 207
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Balles à Fragmentation",
+  "description": "Munition. Tes tirs explosent à l'impact, infligeant des dégâts magiques de zone.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "tracerRound"
+    ],
+    "max_rank": 3,
+    "planner": 276
+  }
+}

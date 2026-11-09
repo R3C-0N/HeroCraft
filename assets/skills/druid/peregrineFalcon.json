@@ -1,0 +1,14 @@
+{
+  "name": "Faucon Pèlerin",
+  "description": "Faucon. Forme de vol courte durée pour t'échapper, ignorer le terrain ou fondre sur une cible en piqué.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "galeFeathers"
+    ],
+    "max_rank": 3,
+    "planner": 204
+  }
+}

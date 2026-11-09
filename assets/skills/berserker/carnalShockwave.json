@@ -1,0 +1,14 @@
+{
+  "name": "Onde de Choc Charnelle",
+  "description": "Hurlement Viscéral + Plaie Béante. Tu frappes ton propre torse de ta main libre. Le choc magique résonne avec ton hurlement et paralyse totalement la zone.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "gapingWound"
+    ],
+    "max_rank": 3,
+    "planner": 388
+  }
+}

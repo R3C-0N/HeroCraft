@@ -1,0 +1,230 @@
+{
+  "_source": "Carnet Planner, fiche #138 « Classes » ; regénérer avec tools/importer_roue_competences.py",
+  "classes": [
+    {
+      "id": "warPriest",
+      "name": "Prêtre-guerrier",
+      "family": "magic",
+      "mix": [
+        40,
+        0,
+        60
+      ],
+      "color": [
+        224,
+        101,
+        183
+      ]
+    },
+    {
+      "id": "chaplain",
+      "name": "Chapelain",
+      "family": "magic",
+      "mix": [
+        5,
+        0,
+        95
+      ],
+      "color": [
+        186,
+        70,
+        194
+      ]
+    },
+    {
+      "id": "necromancer",
+      "name": "Nécromancien",
+      "family": "magic",
+      "mix": [
+        0,
+        0,
+        100
+      ],
+      "color": [
+        156,
+        79,
+        224
+      ]
+    },
+    {
+      "id": "druid",
+      "name": "Druide",
+      "family": "magic",
+      "mix": [
+        5,
+        0,
+        95
+      ],
+      "color": [
+        87,
+        70,
+        194
+      ]
+    },
+    {
+      "id": "elementalist",
+      "name": "Sorcier élémentaire",
+      "family": "magic",
+      "mix": [
+        0,
+        15,
+        85
+      ],
+      "color": [
+        87,
+        124,
+        224
+      ]
+    },
+    {
+      "id": "thief",
+      "name": "Voleur",
+      "family": "ranged",
+      "mix": [
+        15,
+        60,
+        25
+      ],
+      "color": [
+        87,
+        158,
+        194
+      ]
+    },
+    {
+      "id": "ranger",
+      "name": "Rôdeur",
+      "family": "ranged",
+      "mix": [
+        0,
+        75,
+        25
+      ],
+      "color": [
+        93,
+        224,
+        216
+      ]
+    },
+    {
+      "id": "archer",
+      "name": "Archer",
+      "family": "ranged",
+      "mix": [
+        0,
+        100,
+        0
+      ],
+      "color": [
+        68,
+        194,
+        135
+      ]
+    },
+    {
+      "id": "engineer",
+      "name": "Ingénieur",
+      "family": "ranged",
+      "mix": [
+        10,
+        90,
+        0
+      ],
+      "color": [
+        84,
+        224,
+        103
+      ]
+    },
+    {
+      "id": "monsterHunter",
+      "name": "Chasseur de monstre",
+      "family": "ranged",
+      "mix": [
+        45,
+        55,
+        0
+      ],
+      "color": [
+        117,
+        194,
+        90
+      ]
+    },
+    {
+      "id": "windBlade",
+      "name": "Lame du vent",
+      "family": "melee",
+      "mix": [
+        60,
+        25,
+        15
+      ],
+      "color": [
+        183,
+        224,
+        101
+      ]
+    },
+    {
+      "id": "soldier",
+      "name": "Soldat",
+      "family": "melee",
+      "mix": [
+        90,
+        10,
+        0
+      ],
+      "color": [
+        194,
+        186,
+        73
+      ]
+    },
+    {
+      "id": "champion",
+      "name": "Champion",
+      "family": "melee",
+      "mix": [
+        100,
+        0,
+        0
+      ],
+      "color": [
+        224,
+        156,
+        79
+      ]
+    },
+    {
+      "id": "berserker",
+      "name": "Berserker",
+      "family": "melee",
+      "mix": [
+        85,
+        0,
+        15
+      ],
+      "color": [
+        194,
+        91,
+        75
+      ]
+    },
+    {
+      "id": "paladin",
+      "name": "Paladin",
+      "family": "melee",
+      "mix": [
+        70,
+        0,
+        30
+      ],
+      "color": [
+        224,
+        95,
+        130
+      ]
+    }
+  ]
+}

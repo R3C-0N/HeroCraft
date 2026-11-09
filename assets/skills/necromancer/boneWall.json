@@ -1,0 +1,12 @@
+{
+  "name": "Mur d'Ossements",
+  "description": "Défense. Fait surgir une épaisse barricade d'os du sol pour bloquer les ennemis et les projectiles.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 213
+  }
+}

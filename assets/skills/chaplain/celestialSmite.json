@@ -1,0 +1,12 @@
+{
+  "name": "Châtiment Céleste",
+  "description": "Lumière offensive. Envoie un faible rayon de lumière sur un ennemi, infligeant de légers dégâts et le ralentissant brièvement (le seul sort offensif direct du niveau 1).",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 228
+  }
+}

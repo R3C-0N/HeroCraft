@@ -1,0 +1,12 @@
+{
+  "name": "Échine du Plantigrade",
+  "description": "Ours. Ton dos se couvre d'une épaisse fourrure protectrice pour absorber les dégâts lourds.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 197
+  }
+}

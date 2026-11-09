@@ -1,0 +1,12 @@
+{
+  "name": "Tourelle Balistique",
+  "description": "Tourelle. Déploie rapidement une tourelle automatisée qui tire des carreaux réguliers sur les ennemis proches.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 301
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Barricade Portative",
+  "description": "Défense. Jette un module qui se déplie en un large mur robuste, bloquant les projectiles et les charges ennemies.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "rescueGrapple"
+    ],
+    "max_rank": 3,
+    "planner": 308
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Parade Absolue",
+  "description": "Garde. Une posture défensive utilisant le manche de l'arme pour encaisser n'importe quel coup et riposter immédiatement avec une force doublée.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "guardBreaker"
+    ],
+    "max_rank": 3,
+    "planner": 354
+  }
+}

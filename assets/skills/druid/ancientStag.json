@@ -1,0 +1,14 @@
+{
+  "name": "Grand Cerf Ancien",
+  "description": "Cerf. Forme rapide spécialisée dans la charge perçante et la diffusion d'une aura de régénération.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "elkLegs"
+    ],
+    "max_rank": 3,
+    "planner": 203
+  }
+}

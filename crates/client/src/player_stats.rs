@@ -70,6 +70,8 @@ impl PlayerStats {
             stats.experience = saved.experience;
             stats.skill_points = saved.skill_points;
             stats.skills = saved.skills;
+            // Compétences d'avant le passage aux identifiants anglais : oubliées, points rendus
+            herocraft_common::skills().forget_unknown(stats);
             stats.revive();
             if let Some(satiety) = saved.satiety.filter(|s| s.is_finite()) {
                 stats.satiety = satiety.clamp(0.0, stats.max_satiety);

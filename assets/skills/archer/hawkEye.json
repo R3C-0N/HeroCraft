@@ -1,0 +1,14 @@
+{
+  "name": "Œil de Faucon",
+  "description": "Précision. Posture de concentration augmentant drastiquement la portée, la vitesse de visée et les chances de coup critique pendant quelques secondes.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "tacticalRetreat"
+    ],
+    "max_rank": 3,
+    "planner": 293
+  }
+}

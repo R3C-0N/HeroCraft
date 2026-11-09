@@ -1,0 +1,15 @@
+{
+  "name": "Seigneur Liche",
+  "description": "Squelette + Frappeur. Une entité supérieure qui attaque en mêlée tout en balançant des orbes explosifs à distance.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "deathKnight",
+      "spectralGrasp"
+    ],
+    "max_rank": 3,
+    "planner": 221
+  }
+}

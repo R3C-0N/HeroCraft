@@ -1,0 +1,14 @@
+{
+  "name": "Prise Écrasante",
+  "description": "Assaut. Ta main libre agrippe la gorge de l'ennemi par réflexe de survie, broyant ses os pendant que tu l'achèves avec ton arme.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "blindCharge"
+    ],
+    "max_rank": 3,
+    "planner": 384
+  }
+}

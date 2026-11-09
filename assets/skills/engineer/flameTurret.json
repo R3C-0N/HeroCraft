@@ -1,0 +1,14 @@
+{
+  "name": "Tourelle Incendiaire",
+  "description": "Explosif. Déploie un canon à courte portée qui crache un cône de flammes continu, idéal pour verrouiller un couloir.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "shrapnelMine"
+    ],
+    "max_rank": 3,
+    "planner": 306
+  }
+}

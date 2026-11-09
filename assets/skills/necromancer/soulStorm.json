@@ -1,0 +1,14 @@
+{
+  "name": "Tempête des Âmes",
+  "description": "Siphon + Miasme. Un vaste tourbillon spectral qui aspire massivement la vie de tous les ennemis piégés à l'intérieur pour régénérer tes invocations et toi-même.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "miasmaCloud"
+    ],
+    "max_rank": 3,
+    "planner": 223
+  }
+}

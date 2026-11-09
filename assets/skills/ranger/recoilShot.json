@@ -1,0 +1,12 @@
+{
+  "name": "Tir de Recul",
+  "description": "Contrôle. Tir lourd chargé d'énergie cinétique qui repousse violemment l'ennemi pour le maintenir à distance.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 274
+  }
+}

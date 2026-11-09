@@ -1,0 +1,14 @@
+{
+  "name": "Nova Sanctifiée",
+  "description": "Lumière Apaisante + Soins de Zone. Le Sceptre accumule l'énergie lumineuse et la libère en une explosion de soins massifs sur une large zone.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "areaHeal"
+    ],
+    "max_rank": 3,
+    "planner": 236
+  }
+}

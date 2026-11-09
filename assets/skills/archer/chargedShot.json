@@ -1,0 +1,12 @@
+{
+  "name": "Tir Chargé",
+  "description": "Puissance. Un tir puissant qui demande un court temps de tension de l'arc pour percer la première ligne ennemie.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 286
+  }
+}

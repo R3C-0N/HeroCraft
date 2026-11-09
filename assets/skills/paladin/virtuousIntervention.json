@@ -1,0 +1,14 @@
+{
+  "name": "Intervention Vertueuse",
+  "description": "Charge. Un bond instantané devant un allié ciblé pour encaisser la prochaine attaque lourde à sa place.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "wingedAssault"
+    ],
+    "max_rank": 3,
+    "planner": 399
+  }
+}

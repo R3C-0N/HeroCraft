@@ -1,0 +1,14 @@
+{
+  "name": "Cri de Ralliement",
+  "description": "Zone. Un hurlement de guerre qui ralentit les ennemis proches et augmente temporairement ta résistance aux dégâts physiques.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "seismicWave"
+    ],
+    "max_rank": 3,
+    "planner": 352
+  }
+}

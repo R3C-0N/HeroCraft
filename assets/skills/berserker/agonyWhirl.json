@@ -1,0 +1,15 @@
+{
+  "name": "Trombe d'Agonie",
+  "description": "Charge Aveugle + Mutilation Frénétique. Tu deviens une tornade inarrêtable. Tu tailles tout sur ton passage en ignorant la douleur, provoquant une grave hémorragie sur toi-même.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "frenziedMutilation",
+      "crushingGrip"
+    ],
+    "max_rank": 3,
+    "planner": 387
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Mur vivant",
+  "description": "Garde de fer + Phalange. Crée une véritable ligne de front impénétrable. Tu avances lentement tout en bloquant les projectiles et en écrasant les ennemis sous ton avancée.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "perfectRiposte",
+      "phalanx"
+    ],
+    "max_rank": 3,
+    "planner": 372
+  }
+}

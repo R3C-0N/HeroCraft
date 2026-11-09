@@ -1,0 +1,12 @@
+{
+  "name": "Ruée Frontale",
+  "description": "Assaut. Une charge à l'épaule très rapide pour réduire la distance et déséquilibrer l'adversaire.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 348
+  }
+}

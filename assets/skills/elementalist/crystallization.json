@@ -1,0 +1,15 @@
+{
+  "name": "Cristallisation",
+  "description": "Eau / Terre : Éclat Sismique + Voile Aquatique.\n\nTon rocher traverse ton bouclier d'eau, gèle instantanément, et explose à l'impact en projetant des éclats de givre acérés sur les ennemis proches.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.75,
+    "requires": [
+      "shrapnelStorm",
+      "soothingMist"
+    ],
+    "max_rank": 3,
+    "planner": 193
+  }
+}

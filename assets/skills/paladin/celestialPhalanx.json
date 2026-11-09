@@ -1,0 +1,15 @@
+{
+  "name": "Phalange Céleste",
+  "description": "Assaut Ailé + Garde Scintillante. Tu charges en générant un large mur de lumière frontal, bousculant les ennemis tout en abritant totalement les alliés dans ton sillage.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "glimmeringGuard",
+      "virtuousIntervention"
+    ],
+    "max_rank": 3,
+    "planner": 402
+  }
+}

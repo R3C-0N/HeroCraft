@@ -1,0 +1,15 @@
+{
+  "name": "Exécution Implacable",
+  "description": "Brise-Garde + Frappe Lourde. Un combo en deux temps inarrêtable : le premier coup pulvérise l'armure, le second expédie la cible à l'autre bout de la pièce.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "absoluteParry",
+      "circularSweep"
+    ],
+    "max_rank": 3,
+    "planner": 358
+  }
+}

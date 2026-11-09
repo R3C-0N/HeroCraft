@@ -1,0 +1,16 @@
+{
+  "name": "Air",
+  "description": "Une compétence, deux sorts.\n\n- Offensif : Lames de Vent, envoie des rafales très rapides et tranchantes.\n- Défensif : Courant Ascendant, te propulse rapidement en arrière pour fuir, tout en déséquilibrant les ennemis devant toi.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 178,
+    "grants": [
+      "galeBlades",
+      "updraft"
+    ]
+  }
+}

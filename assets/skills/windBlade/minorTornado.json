@@ -1,0 +1,12 @@
+{
+  "name": "Tornade Mineure",
+  "description": "Tourbillon. Un coup circulaire rapide qui crée un petit tourbillon autour de toi, déséquilibrant les ennemis très proches.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 334
+  }
+}

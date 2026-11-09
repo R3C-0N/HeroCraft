@@ -1,0 +1,12 @@
+{
+  "name": "Lumière Apaisante",
+  "description": "Soin. Un soin rapide et direct sur une cible unique (allié ou soi-même).",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 226
+  }
+}

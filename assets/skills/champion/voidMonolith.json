@@ -1,0 +1,16 @@
+{
+  "name": "Monolithe du Néant",
+  "description": "Compétence ultime. Tu incrustes de l'Étherium pur dans ton épée et ton bouclier. Tu frappes violemment le sol, créant une onde de choc qui enferme les ennemis proches dans un cratère. À l'intérieur, tu deviens totalement invulnérable et chacune de tes frappes à l'épée désintègre l'armure adverse.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "armoredBreach",
+      "livingWall",
+      "devastatingCounter"
+    ],
+    "max_rank": 3,
+    "planner": 374
+  }
+}

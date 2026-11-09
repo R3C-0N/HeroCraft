@@ -1,0 +1,17 @@
+{
+  "name": "Fusion",
+  "description": "Se débloque après les sorts de base. Combine deux sorts déjà connus en un seul. Cette compétence donne d'un coup les quatre fusions d'amplification (même élément × 2) ; chaque autre fusion est ensuite une compétence à part.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.5,
+    "requires": [
+      "fire",
+      "water",
+      "earth",
+      "air"
+    ],
+    "max_rank": 3,
+    "planner": 179
+  }
+}

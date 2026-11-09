@@ -1,0 +1,12 @@
+{
+  "name": "Entaille Sanglante",
+  "description": "Sacrifice. Tu t'entailles violemment la main libre pour enduire ton arme de sang bouillant, augmentant drastiquement tes dégâts au prix de ta propre santé.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 377
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Balle Traçante",
+  "description": "Munition. Munition lumineuse qui marque la cible, augmentant fortement tes chances de coup critique sur celle-ci.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 273
+  }
+}

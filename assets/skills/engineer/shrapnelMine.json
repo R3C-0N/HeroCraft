@@ -1,0 +1,12 @@
+{
+  "name": "Mine à Éclats",
+  "description": "Explosif. Un explosif de proximité qui projette des fragments métalliques dans un court rayon.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 303
+  }
+}

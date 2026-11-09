@@ -1,0 +1,14 @@
+{
+  "name": "Écran de Fumée",
+  "description": "Illusion. Déploie une large zone d'ombre qui aveugle les ennemis et te rend indétectable à l'intérieur.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "shadowDecoy"
+    ],
+    "max_rank": 3,
+    "planner": 264
+  }
+}

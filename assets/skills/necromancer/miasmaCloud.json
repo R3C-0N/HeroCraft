@@ -1,0 +1,14 @@
+{
+  "name": "Nuage Miasmatique",
+  "description": "Drain. Crée une large zone de décomposition persistante qui ronge la santé et l'armure des adversaires.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "soulSiphon"
+    ],
+    "max_rank": 3,
+    "planner": 217
+  }
+}

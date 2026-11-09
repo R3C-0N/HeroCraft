@@ -1,0 +1,14 @@
+{
+  "name": "Embuscade",
+  "description": "Ombre. Ta première attaque en sortant d'une disparition garantit des dégâts critiques massifs.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "shadowVeil"
+    ],
+    "max_rank": 3,
+    "planner": 263
+  }
+}

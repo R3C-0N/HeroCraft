@@ -1,0 +1,14 @@
+{
+  "name": "Salve Électrifiée",
+  "description": "Rafale. Tire des balles imprégnées de foudre qui rebondissent entre les ennemis proches.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "twinShot"
+    ],
+    "max_rank": 3,
+    "planner": 277
+  }
+}

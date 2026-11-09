@@ -1,0 +1,14 @@
+{
+  "name": "Croissant de Vent",
+  "description": "Projectile. Un grand coup vertical balayé à deux mains qui projette une haute lame d'air capable de traverser plusieurs ennemis sur une longue ligne.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "airBlade"
+    ],
+    "max_rank": 3,
+    "planner": 337
+  }
+}

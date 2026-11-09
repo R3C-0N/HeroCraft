@@ -175,7 +175,7 @@ pub struct JoinedWorld {
 /// Se connecte et attend l'accueil du serveur (bloquant)
 pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
     let connection = ServerConnection::connect(addr, CONNECT_TIMEOUT).map_err(|e| format!("connexion à {addr} impossible : {e}"))?;
-    connection.send(&ClientPacket::Connect { player_name: name.to_string(), protocol_version: PROTOCOL_VERSION });
+    connection.send(&ClientPacket::Connect { player_name: name.to_string(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
 
     let (player_id, seed, spawn_position, chunk_count) = match connection.recv_timeout(CONNECT_TIMEOUT)? {
         ServerPacket::ConnectAck { player_id, world_seed, spawn_position, edited_chunks, .. } => {
@@ -343,6 +343,12 @@ pub enum NetEvent {
     Chat { sender: String, message: String },
     /// Horloge du ciel du serveur et temps imposé, qui font foi
     Clock { time: f64, forced: Option<herocraft_common::WeatherKind> },
+    /// Un joueur (peut-être nous) lance une compétence
+    SkillCast { player_id: u64, skill: String, rank: u8, aim: Vec3, aimed: Option<Vec3> },
+    /// Le serveur refuse notre lancement de `skill`
+    SkillRefused { skill: String, reason: String },
+    /// Une compétence frappe : centre de sa zone et cibles touchées
+    SkillHit { player_id: u64, skill: String, rank: u8, center: Vec3, creatures: Vec<u64>, players: Vec<u64> },
     /// Connexion perdue ou fermée par le serveur
     Disconnected(String),
 }
@@ -406,6 +412,16 @@ impl NetClient {
     /// Dépèce la bête morte `creature_id` (le serveur renvoie son butin)
     pub fn send_skin_creature(&mut self, creature_id: u64) {
         self.connection.send(&ClientPacket::SkinCreature { creature_id });
+    }
+
+    /// Notre identifiant de joueur sur le serveur
+    pub fn player_id(&self) -> u64 {
+        self.player_id
+    }
+
+    /// Demande au serveur de lancer une compétence
+    pub fn send_cast_skill(&mut self, skill: &str, aim: Vec3, aimed: Option<Vec3>) {
+        self.connection.send(&ClientPacket::CastSkill { skill: skill.to_string(), aim, aimed });
     }
 
     /// Demande au serveur d'investir un point dans une compétence (il renvoie les statistiques)
@@ -539,6 +555,9 @@ impl NetClient {
                 let items = items.into_iter().map(|(item, count)| (ItemId(item), count)).filter(|(item, _)| item.is_known()).collect();
                 return Some(NetEvent::Loot { position, items });
             }
+            ServerPacket::SkillCast { player_id, skill, rank, aim, aimed } => return Some(NetEvent::SkillCast { player_id, skill, rank, aim, aimed }),
+            ServerPacket::SkillRefused { skill, reason } => return Some(NetEvent::SkillRefused { skill, reason }),
+            ServerPacket::SkillHit { player_id, skill, rank, center, creatures, players } => return Some(NetEvent::SkillHit { player_id, skill, rank, center, creatures, players }),
             ServerPacket::ConnectAck { .. } | ServerPacket::PlayerJoined { .. } => {}
         }
         None

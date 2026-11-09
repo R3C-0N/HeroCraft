@@ -1,0 +1,14 @@
+{
+  "name": "Balayage Circulaire",
+  "description": "Puissance. Une violente rotation sur toi-même qui fauche tous les ennemis dans un court rayon.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "heavyStrike"
+    ],
+    "max_rank": 3,
+    "planner": 351
+  }
+}

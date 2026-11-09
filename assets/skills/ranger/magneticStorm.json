@@ -1,0 +1,15 @@
+{
+  "name": "Tempête Magnétique",
+  "description": "Salve Électrifiée + Tir de Couverture. Le cône de tir devient un champ électrique continu qui étourdit et détruit l'armure.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "shockVolley",
+      "coveringFire"
+    ],
+    "max_rank": 3,
+    "planner": 282
+  }
+}

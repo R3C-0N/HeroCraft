@@ -1,0 +1,12 @@
+{
+  "name": "Siphon d'Âme",
+  "description": "Drain. Utilise ta main libre pour arracher la force vitale d'une cible et te soigner lentement.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 212
+  }
+}

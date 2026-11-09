@@ -1,0 +1,12 @@
+{
+  "name": "Brise-Garde",
+  "description": "Garde. Une frappe de bas en haut utilisant tout le poids du corps pour briser la posture et la parade de la cible.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 347
+  }
+}

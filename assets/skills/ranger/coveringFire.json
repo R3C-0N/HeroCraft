@@ -1,0 +1,14 @@
+{
+  "name": "Tir de Couverture",
+  "description": "Contrôle. Déluge continu dans un large cône frontal qui ralentit considérablement l'avancée ennemie.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "recoilShot"
+    ],
+    "max_rank": 3,
+    "planner": 278
+  }
+}

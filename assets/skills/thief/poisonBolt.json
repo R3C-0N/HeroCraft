@@ -1,0 +1,12 @@
+{
+  "name": "Carreau Empoisonné",
+  "description": "Munition. Une munition enduite de toxines pour des dégâts sur la durée.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 257
+  }
+}

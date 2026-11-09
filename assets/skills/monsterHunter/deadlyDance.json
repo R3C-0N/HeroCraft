@@ -1,0 +1,15 @@
+{
+  "name": "Danse mortelle",
+  "description": "Entaille vive + Salve perforante. Tu tailles dans le vif en avançant, tout en arrosant les flancs de tirs rapides d'arbalète.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "monsterSkewer",
+      "piercingVolley"
+    ],
+    "max_rank": 3,
+    "planner": 326
+  }
+}

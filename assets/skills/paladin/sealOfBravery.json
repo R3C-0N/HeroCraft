@@ -1,0 +1,12 @@
+{
+  "name": "Sceau de Bravoure",
+  "description": "Soutien. Un enchantement rapide augmentant tes dégâts de mêlée et ceux des alliés proches.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 393
+  }
+}

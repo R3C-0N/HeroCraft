@@ -1,0 +1,12 @@
+{
+  "name": "Lame d'Air",
+  "description": "Projectile. Tu fends l'air avec ton sabre pour envoyer un projectile tranchant magique à moyenne portée.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 332
+  }
+}

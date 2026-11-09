@@ -1,0 +1,15 @@
+{
+  "name": "Percée Sismique",
+  "description": "Ruée Frontale + Onde Sismique. Tu charges en raclant ton arme au sol, accumulant des gravats pour les projeter en un large cône dévastateur à la fin de ta course.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "divingStrike",
+      "soldierRallyingCry"
+    ],
+    "max_rank": 3,
+    "planner": 356
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Plumes de Bourrasque",
+  "description": "Faucon. Tes bras se dotent de plumes robustes pour repousser les adversaires d'un puissant battement.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 199
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Tir Multiple",
+  "description": "Volée. Décoche trois flèches simultanément dans un cône restreint pour repousser un groupe au corps à corps.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 289
+  }
+}

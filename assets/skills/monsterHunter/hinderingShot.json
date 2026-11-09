@@ -1,0 +1,12 @@
+{
+  "name": "Tir d'entrave",
+  "description": "Arbalète. Un carreau ciblé depuis ton arbalète de poing pour ralentir l'approche d'un monstre.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 317
+  }
+}

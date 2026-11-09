@@ -1,0 +1,14 @@
+{
+  "name": "Frappe Ascendante",
+  "description": "Tourbillon. Un puissant coup de sabre vers le haut qui soulève l'ennemi dans les airs et le laisse vulnérable.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "minorTornado"
+    ],
+    "max_rank": 3,
+    "planner": 339
+  }
+}

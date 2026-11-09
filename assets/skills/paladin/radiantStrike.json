@@ -1,0 +1,12 @@
+{
+  "name": "Frappe Rayonnante",
+  "description": "Arme. Un coup d'arme infusé de lumière qui aveugle brièvement la cible.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 391
+  }
+}

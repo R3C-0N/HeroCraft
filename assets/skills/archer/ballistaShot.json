@@ -1,0 +1,14 @@
+{
+  "name": "Tir de Baliste",
+  "description": "Flèche Perforante + Tir Chargé. Tu bandes ton arc à son maximum absolu. La flèche vole à une vitesse inouïe, brisant instantanément les armures lourdes et projetant les ennemis touchés en arrière.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "piercingArrow"
+    ],
+    "max_rank": 3,
+    "planner": 296
+  }
+}

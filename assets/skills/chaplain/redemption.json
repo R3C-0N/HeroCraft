@@ -1,0 +1,14 @@
+{
+  "name": "Rédemption",
+  "description": "Châtiment Céleste + Purification. Un rayon intense frappe une zone, soignant les alliés tout en aveuglant et affaiblissant les ennemis touchés.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "purification"
+    ],
+    "max_rank": 3,
+    "planner": 238
+  }
+}

@@ -131,6 +131,11 @@ pub struct CharacterStats {
     /// Compétences apprises dans la roue, par identifiant, et leur rang (1 à `SkillNode::max_rank`)
     #[serde(default)]
     pub skills: std::collections::BTreeMap<String, u8>,
+    /// Bouclier d'une compétence : points de dégâts qu'il absorbe encore, et temps qu'il dure
+    #[serde(default)]
+    pub shield: f32,
+    #[serde(default)]
+    pub shield_time: f32,
 }
 
 impl CharacterStats {
@@ -150,6 +155,8 @@ impl CharacterStats {
             max_satiety: MAX_SATIETY,
             skill_points: 0,
             skills: std::collections::BTreeMap::new(),
+            shield: 0.0,
+            shield_time: 0.0,
         };
         stats.recalculate();
         stats.hp = stats.max_hp;
@@ -222,6 +229,10 @@ impl CharacterStats {
     }
 
     pub fn take_damage(&mut self, amount: f32) -> bool {
+        // Le bouclier d'une compétence encaisse d'abord
+        let absorbed = amount.min(self.shield).max(0.0);
+        self.shield -= absorbed;
+        let amount = amount - absorbed;
         self.hp = (self.hp - amount).max(0.0);
         self.hp == 0.0 // True si mort
     }
@@ -230,6 +241,10 @@ impl CharacterStats {
     /// consomme l'endurance, qui se régénère (+10 par sec) sinon, le mana remonte (+2 par sec).
     /// La vie remonte (+1 par sec) tant que le joueur n'a pas faim ; affamé, il en perd.
     pub fn regenerate(&mut self, dt: f32, sprinting: bool) {
+        self.shield_time = (self.shield_time - dt).max(0.0);
+        if self.shield_time <= 0.0 {
+            self.shield = 0.0;
+        }
         let drain = SATIETY_DRAIN + if sprinting { SPRINT_SATIETY_COST } else { 0.0 };
         self.satiety = (self.satiety - drain * dt).clamp(0.0, self.max_satiety);
         let hunger = self.hunger();

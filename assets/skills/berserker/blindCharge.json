@@ -1,0 +1,12 @@
+{
+  "name": "Charge Aveugle",
+  "description": "Assaut. Tu fonces tête baissée, ignorant totalement la douleur pour percuter et renverser ta cible.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 379
+  }
+}

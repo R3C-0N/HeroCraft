@@ -1,0 +1,14 @@
+{
+  "name": "Carreau-harpon",
+  "description": "Contrôle. Projette un carreau câblé pour tracter un petit ennemi vers toi, ou te hisser rapidement vers une créature géante.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "pommelStrike"
+    ],
+    "max_rank": 3,
+    "planner": 323
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "name": "Aura de Dévotion",
+  "description": "Soin. Active une aura persistante qui augmente légèrement la régénération de santé de tous les alliés proches tant que le Prêtre-guerrier est en combat.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "healingBolt"
+    ],
+    "max_rank": 3,
+    "planner": 247
+  },
+  "cast": {
+    "cost": {
+      "mana": 20
+    },
+    "cooldown": 30,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": 8
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "over_time": {
+          "heal": [
+            1.5,
+            2,
+            2.5
+          ],
+          "duration": 12
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "auraRing",
+      "anchor": "feet",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Exécution Céleste",
+  "description": "Frappe Ascendante + Pas de Brise. Tu propulses l'ennemi en l'air avec ton sabre, le vent te téléporte instantanément au-dessus de lui, et tu le rabats violemment au sol d'un coup fracassant.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "risingStrike",
+      "zephyrMantle"
+    ],
+    "max_rank": 3,
+    "planner": 343
+  }
+}

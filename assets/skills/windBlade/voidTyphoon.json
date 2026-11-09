@@ -1,0 +1,16 @@
+{
+  "name": "Typhon du Néant",
+  "description": "Compétence ultime. Tu canalises la Pierre du néant directement dans la lame de ton sabre. Tu déclenches un coup d'une puissance colossale qui déchire l'espace lui-même. Une tornade géante d'Étherium noir avance sur le terrain, aspirant tous les ennemis sur son passage et les lacérant avec des milliers de coupures imblocables avant d'exploser.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "hurricaneDance",
+      "cuttingTempest",
+      "celestialExecution"
+    ],
+    "max_rank": 3,
+    "planner": 344
+  }
+}

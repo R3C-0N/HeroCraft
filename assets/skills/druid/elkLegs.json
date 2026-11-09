@@ -1,0 +1,12 @@
+{
+  "name": "Jambes de l'Élan",
+  "description": "Cerf. Tes jambes mutent, t'offrant un grand bonus de vitesse et un violent coup de sabot pour déséquilibrer l'ennemi.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 198
+  }
+}

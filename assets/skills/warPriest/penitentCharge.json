@@ -1,0 +1,65 @@
+{
+  "name": "Charge Pénitente",
+  "description": "Protection. Fonce sur un ennemi avec le bouclier (ou l'épaule), l'étourdissant brièvement et se rapprochant instantanément pour le corps à corps.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "faithArmor"
+    ],
+    "max_rank": 3,
+    "planner": 248
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 10,
+    "animation": "charge",
+    "area": {
+      "line": {
+        "length": 6,
+        "width": 2
+      }
+    },
+    "movement": {
+      "dash": 6
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": 0.6
+        }
+      },
+      {
+        "stun": {
+          "duration": [
+            1,
+            1.25,
+            1.5
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

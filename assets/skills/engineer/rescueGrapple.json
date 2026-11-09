@@ -1,0 +1,12 @@
+{
+  "name": "Grappin de Secours",
+  "description": "Défense. Utilise ta main libre pour lancer un câble qui te tracte instantanément vers une zone sûre, loin de la mêlée.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 304
+  }
+}

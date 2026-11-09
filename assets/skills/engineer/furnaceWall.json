@@ -1,0 +1,15 @@
+{
+  "name": "Mur Fournaise",
+  "description": "Tourelle Incendiaire + Barricade Portative. Le lance-flammes embrase ta propre barricade. Le mur bloque toujours les attaques, mais devient incandescent et calcine instantanément quiconque tente de le frapper au corps à corps.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "flameTurret",
+      "portableBarricade"
+    ],
+    "max_rank": 3,
+    "planner": 312
+  }
+}

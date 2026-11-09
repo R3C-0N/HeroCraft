@@ -1,0 +1,12 @@
+{
+  "name": "Griffes de la Meute",
+  "description": "Loup. Ton bras libre se transforme en patte de loup pour des attaques de mêlée très rapides.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 196
+  }
+}

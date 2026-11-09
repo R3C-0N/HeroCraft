@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 14;
+pub const PROTOCOL_VERSION: u32 = 15;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -26,6 +26,9 @@ pub enum ClientPacket {
     Connect {
         player_name: String,
         protocol_version: u32,
+        /// Empreinte des fichiers de compétences du client (`SkillCatalog::fingerprint`) : le
+        /// serveur refuse un client qui ne juge pas les compétences comme lui
+        skills: u64,
     },
     /// Position des pieds du joueur (repère du centre de la planète), orientation du regard et
     /// sprint en cours (il consomme l'endurance), posture accroupie (les bêtes craintives le
@@ -72,6 +75,14 @@ pub enum ClientPacket {
     /// prérequis, puis renvoie ses statistiques)
     LearnSkill {
         id: String,
+    },
+    /// Le joueur lance la compétence `skill`, en regardant dans la direction `aim` (repère du
+    /// centre de la planète) et en visant le point `aimed` au sol, s'il en vise un. Le serveur
+    /// vérifie rang, coût et recharge, puis l'annonce (`SkillCast`) ou la refuse (`SkillRefused`).
+    CastSkill {
+        skill: String,
+        aim: Vec3,
+        aimed: Option<Vec3>,
     },
     /// Légende du héros, envoyée à la connexion et au baptême : le serveur vérifie chaque choix
     /// contre l'atlas et en prend la voie (ses jauges et ses gains de niveau en dépendent)
@@ -207,6 +218,29 @@ pub enum ServerPacket {
         time: f64,
         /// Temps imposé par `/weather`, ou `None` pour le temps naturel
         forced: Option<crate::WeatherKind>,
+    },
+    /// Un joueur lance une compétence (envoyé à tous, lanceur compris : son client a déjà commencé
+    /// le geste et ne le rejoue pas)
+    SkillCast {
+        player_id: u64,
+        skill: String,
+        rank: u8,
+        aim: Vec3,
+        aimed: Option<Vec3>,
+    },
+    /// Le lancement de `skill` est refusé (`reason` : pourquoi, en clair) ; le client arrête le geste
+    SkillRefused {
+        skill: String,
+        reason: String,
+    },
+    /// La compétence frappe : centre de sa zone et cibles touchées, pour leurs effets visuels
+    SkillHit {
+        player_id: u64,
+        skill: String,
+        rank: u8,
+        center: Vec3,
+        creatures: Vec<u64>,
+        players: Vec<u64>,
     },
     /// Erreur ou déconnexion
     Disconnect(String),

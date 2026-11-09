@@ -1,0 +1,12 @@
+{
+  "name": "Assaut Ailé",
+  "description": "Charge. Une charge fulgurante, bouclier en avant, pour percuter l'ennemi et réduire la distance.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 394
+  }
+}

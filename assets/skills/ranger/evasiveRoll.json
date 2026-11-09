@@ -1,0 +1,12 @@
+{
+  "name": "Roulade Évasive",
+  "description": "Mobilité. Esquive lointaine qui recharge automatiquement tes deux arbalètes.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 272
+  }
+}

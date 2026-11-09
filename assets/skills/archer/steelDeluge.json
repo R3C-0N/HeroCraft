@@ -1,0 +1,14 @@
+{
+  "name": "Déluge d'Acier",
+  "description": "Pluie de Flèches + Tir Multiple. Tu tires plusieurs poignées de flèches en l'air à une vitesse folle, créant une zone de mort où les projectiles pleuvent en continu pendant plusieurs secondes.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "arrowRain"
+    ],
+    "max_rank": 3,
+    "planner": 297
+  }
+}

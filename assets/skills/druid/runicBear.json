@@ -1,0 +1,14 @@
+{
+  "name": "Ours Runique",
+  "description": "Ours. Transformation en tank massif qui encaisse les coups et renverse les ennemis avec son poids.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "bearHide"
+    ],
+    "max_rank": 3,
+    "planner": 202
+  }
+}

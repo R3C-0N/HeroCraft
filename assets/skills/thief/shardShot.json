@@ -1,0 +1,14 @@
+{
+  "name": "Tir à Éclats",
+  "description": "Arbalète. Le carreau explose à l'impact, projetant des fragments sur les cibles proches.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "quickShot"
+    ],
+    "max_rank": 3,
+    "planner": 261
+  }
+}

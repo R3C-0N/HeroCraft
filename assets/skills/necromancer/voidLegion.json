@@ -1,0 +1,16 @@
+{
+  "name": "Légion du Néant",
+  "description": "Compétence ultime. Tu plantes ton Bâton-lanterne d'âmes au sol et le surcharges avec l'énergie de la Pierre du néant. La réalité se déchire, transformant instantanément tous les cadavres de la zone (alliés comme ennemis) en ombres d'Étherium. Ces ombres sont totalement invulnérables, déchiquettent les ennemis survivants à une vitesse fulgurante, puis implosent en te conférant un bouclier de santé impénétrable.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "lichLord",
+      "boneBehemoth",
+      "soulStorm"
+    ],
+    "max_rank": 3,
+    "planner": 224
+  }
+}

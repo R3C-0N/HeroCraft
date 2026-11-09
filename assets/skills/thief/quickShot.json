@@ -1,0 +1,12 @@
+{
+  "name": "Tir Vif",
+  "description": "Arbalète. Un carreau ultra-rapide tiré depuis ton arbalète de poing.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 256
+  }
+}

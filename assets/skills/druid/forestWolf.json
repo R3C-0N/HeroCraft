@@ -1,0 +1,14 @@
+{
+  "name": "Loup des Bois",
+  "description": "Loup. Transformation totale axée sur l'agilité, l'esquive et les enchaînements critiques.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "packClaws"
+    ],
+    "max_rank": 3,
+    "planner": 201
+  }
+}

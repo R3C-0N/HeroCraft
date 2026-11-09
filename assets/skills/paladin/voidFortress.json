@@ -1,0 +1,16 @@
+{
+  "name": "Forteresse du Néant",
+  "description": "Compétence ultime. L'Étherium sature ton équipement. Ton bouclier déploie un immense dôme astral impénétrable. Tu deviens immobile et invincible, et ton arme projette des lances de lumière pure qui perforent toutes les défenses ennemies sur leur trajectoire.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "wrathOfTheJust",
+      "solarWave",
+      "celestialPhalanx"
+    ],
+    "max_rank": 3,
+    "planner": 404
+  }
+}

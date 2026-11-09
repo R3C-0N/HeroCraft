@@ -1,0 +1,14 @@
+{
+  "name": "Riposte parfaite",
+  "description": "Parade. Une parade au bouclier bien synchronisée déclenche un violent coup d'épée automatique.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "ironGuard"
+    ],
+    "max_rank": 3,
+    "planner": 369
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Danse de l'Ouragan",
+  "description": "Bourrasque Perçante + Lame d'Air. Tu enchaînes des frappes de mêlée à une vitesse folle, chaque coup de ton sabre générant des lames d'air perforantes qui partent dans toutes les directions.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "piercingGust",
+      "windCrescent"
+    ],
+    "max_rank": 3,
+    "planner": 341
+  }
+}

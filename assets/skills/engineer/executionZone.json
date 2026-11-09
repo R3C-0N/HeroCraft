@@ -1,0 +1,15 @@
+{
+  "name": "Zone d'Exécution",
+  "description": "Tourelle Balistique + Piège Magnétique. Les tirs de la tourelle sont magnétisés, ciblant automatiquement et transperçant la grappe d'ennemis regroupés par le piège.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "mechanicalOverload",
+      "magneticTrap"
+    ],
+    "max_rank": 3,
+    "planner": 311
+  }
+}

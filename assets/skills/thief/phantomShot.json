@@ -1,0 +1,15 @@
+{
+  "name": "Tir Fantôme",
+  "description": "Tir Vif + Voile Ténébreux. Tu décoches un carreau imprégné de magie. À l'impact, tu te téléportes instantanément dans le dos de la cible touchée.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "shardShot",
+      "ambush"
+    ],
+    "max_rank": 3,
+    "planner": 266
+  }
+}

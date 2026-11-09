@@ -17,7 +17,7 @@ const WAIT: Duration = Duration::from_secs(10);
 
 fn connect(addr: &str, name: &str) -> (Client, u64, u32) {
     let client = Client::connect(addr, WAIT).unwrap();
-    client.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION });
+    client.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
     match client.recv_timeout(WAIT).unwrap() {
         ServerPacket::ConnectAck { player_id, world_seed, edited_chunks, .. } => {
             assert_eq!(world_seed, 4242);
@@ -86,7 +86,7 @@ fn deux_joueurs_partagent_les_blocs_et_les_positions() {
 
     // Un deuxième « Alice » est refusé
     let dup = Client::connect(&addr, WAIT).unwrap();
-    dup.send(&ClientPacket::Connect { player_name: "alice".into(), protocol_version: PROTOCOL_VERSION });
+    dup.send(&ClientPacket::Connect { player_name: "alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
     assert!(matches!(dup.recv_timeout(WAIT).unwrap(), ServerPacket::Disconnect(_)));
 
     // Sans position connue, Alice ne peut rien casser : le serveur lui renvoie le vrai bloc
@@ -171,7 +171,7 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
     let (_, feet) = land(&server);
 
     let alice = Client::connect(&addr, WAIT).unwrap();
-    alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
+    alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
     pump(&mut server, &alice, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
     alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
     let deadline = Instant::now() + WAIT;
@@ -221,7 +221,7 @@ fn une_bete_morte_reste_a_terre_et_se_depece() {
     let addr = server.local_addr().unwrap().to_string();
     let (_, feet) = land(&server);
     let alice = Client::connect(&addr, WAIT).unwrap();
-    alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
+    alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
     pump(&mut server, &alice, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
     alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
     let deadline = Instant::now() + WAIT;
@@ -269,11 +269,11 @@ fn l_experience_donne_des_points_que_la_roue_juge() {
     let mut server = test_server();
     let addr = server.local_addr().unwrap().to_string();
     let client = Client::connect(&addr, WAIT).unwrap();
-    client.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
+    client.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
     pump(&mut server, &client, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
 
     // Sans point, la roue refuse : les statistiques reviennent inchangées
-    client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
+    client.send(&ClientPacket::LearnSkill { id: "heavyStrike".into() });
     let stats = pump(&mut server, &client, |p| match p {
         ServerPacket::StatsUpdate(stats) => Some(stats),
         _ => None,
@@ -284,21 +284,66 @@ fn l_experience_donne_des_points_que_la_roue_juge() {
     client.send(&ClientPacket::GainExperience(300));
     pump(&mut server, &client, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.skill_points == 2).then_some(()));
 
-    client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
+    client.send(&ClientPacket::LearnSkill { id: "heavyStrike".into() });
     let stats = pump(&mut server, &client, |p| match p {
         ServerPacket::StatsUpdate(stats) if stats.skill_points < 2 => Some(stats),
         _ => None,
     });
-    assert_eq!(stats.skills.get("frappeLourde"), Some(&1));
+    assert_eq!(stats.skills.get("heavyStrike"), Some(&1));
     // Tornade écrasante est une fusion du niveau 2 : refusée, le point reste
-    client.send(&ClientPacket::LearnSkill { id: "tornadeEcrasante".into() });
+    client.send(&ClientPacket::LearnSkill { id: "crushingTornado".into() });
     server.tick(1.0 / 60.0);
     let stats = pump(&mut server, &client, |p| match p {
         ServerPacket::StatsUpdate(stats) => Some(stats),
         _ => None,
     });
     assert_eq!(stats.skill_points, 1);
-    assert!(!stats.skills.contains_key("tornadeEcrasante"));
+    assert!(!stats.skills.contains_key("crushingTornado"));
+}
+
+#[test]
+fn une_competence_se_lance_frappe_et_se_recharge() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let client = Client::connect(&addr, WAIT).unwrap();
+    client.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
+    let me = pump(&mut server, &client, |p| match p {
+        ServerPacket::ConnectAck { player_id, .. } => Some(player_id),
+        _ => None,
+    });
+    let feet = Vec3::new(0.0, 1000.0, 0.0);
+    client.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
+
+    // Pas apprise : refusée
+    client.send(&ClientPacket::CastSkill { skill: "judgment".into(), aim: Vec3::NEG_Z, aimed: None });
+    let reason = pump(&mut server, &client, |p| match p {
+        ServerPacket::SkillRefused { reason, .. } => Some(reason),
+        _ => None,
+    });
+    assert!(reason.contains("pas apprise"), "{reason}");
+
+    client.send(&ClientPacket::GainExperience(100));
+    client.send(&ClientPacket::LearnSkill { id: "judgment".into() });
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.skills.contains_key("judgment")).then_some(()));
+    client.send(&ClientPacket::CastSkill { skill: "judgment".into(), aim: Vec3::NEG_Z, aimed: None });
+    let (caster, rank) = pump(&mut server, &client, |p| match p {
+        ServerPacket::SkillCast { player_id, rank, .. } => Some((player_id, rank)),
+        _ => None,
+    });
+    assert_eq!((caster, rank), (me, 1));
+    // La frappe arrive à l'impact du geste
+    let center = pump(&mut server, &client, |p| match p {
+        ServerPacket::SkillHit { center, .. } => Some(center),
+        _ => None,
+    });
+    assert!(center.distance(feet) < 1e-3, "Jugement frappe aux pieds du lanceur");
+    // Relancée aussitôt : pas encore rechargée
+    client.send(&ClientPacket::CastSkill { skill: "judgment".into(), aim: Vec3::NEG_Z, aimed: None });
+    let reason = pump(&mut server, &client, |p| match p {
+        ServerPacket::SkillRefused { reason, .. } => Some(reason),
+        _ => None,
+    });
+    assert!(reason.contains("rechargée"), "{reason}");
 }
 
 #[test]
@@ -342,7 +387,7 @@ fn le_chat_et_les_commandes_passent_par_le_serveur() {
 
     let join = |server: &mut Server, name: &str| {
         let client = Client::connect(&addr, WAIT).unwrap();
-        client.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION });
+        client.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
         pump(server, &client, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
         client
     };

@@ -1,0 +1,65 @@
+{
+  "name": "Sanctuaire",
+  "description": "Sol. Pose une zone bénie au sol. Les ennemis à l'intérieur subissent des dégâts continus, tandis que les alliés sont soignés.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "judgment"
+    ],
+    "max_rank": 3,
+    "planner": 249
+  },
+  "cast": {
+    "cost": {
+      "mana": 25
+    },
+    "cooldown": 20,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": 4,
+        "center": "aimed",
+        "distance": 10
+      }
+    },
+    "targets": "all",
+    "effects": [
+      {
+        "over_time": {
+          "damage": [
+            2,
+            2.5,
+            3
+          ],
+          "duration": 6
+        },
+        "to": "enemies"
+      },
+      {
+        "over_time": {
+          "heal": [
+            2,
+            2.5,
+            3
+          ],
+          "duration": 6
+        },
+        "to": "allies"
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "runeCircle",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "area",
+      "from": "impact"
+    }
+  ]
+}

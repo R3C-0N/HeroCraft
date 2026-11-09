@@ -1,0 +1,12 @@
+{
+  "name": "Coup de pommeau",
+  "description": "Contrôle. Frappe brutale au corps à corps pour étourdir brièvement.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 319
+  }
+}

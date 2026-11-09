@@ -1,0 +1,14 @@
+{
+  "name": "Flèche Perforante",
+  "description": "Puissance. Un tir à très haute tension, utilisant la force des deux mains, qui traverse tous les ennemis sur une longue ligne droite.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "chargedShot"
+    ],
+    "max_rank": 3,
+    "planner": 292
+  }
+}

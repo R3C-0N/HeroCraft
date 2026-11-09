@@ -1,0 +1,12 @@
+{
+  "name": "Esquive tactique",
+  "description": "Réflexe. Roulade de côté qui recharge ton arbalète instantanément.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 318
+  }
+}

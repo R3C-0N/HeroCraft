@@ -1,0 +1,15 @@
+{
+  "name": "Tornade Écrasante",
+  "description": "Balayage Circulaire + Frappe Plongeante. Tu tournoies dans les airs pendant ton saut pour t'écraser lourdement au centre du groupe ennemi, balayant toute la zone.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "circularSweep",
+      "divingStrike"
+    ],
+    "max_rank": 3,
+    "planner": 357
+  }
+}

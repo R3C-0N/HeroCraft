@@ -1,0 +1,14 @@
+{
+  "name": "Chevalier de la Mort",
+  "description": "Invocation. Invoque un mort-vivant en armure lourde qui force les ennemis à l'attaquer pour te protéger.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "skeletonServant"
+    ],
+    "max_rank": 3,
+    "planner": 216
+  }
+}

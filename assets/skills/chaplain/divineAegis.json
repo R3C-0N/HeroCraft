@@ -1,0 +1,14 @@
+{
+  "name": "Égide Divine",
+  "description": "Aura de Protection + Rempart Sacré. La main libre canalise un bouclier colossal autour du Chapelain, le rendant insensible aux dégâts, tout en repoussant fortement les ennemis proches.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "sacredRampart"
+    ],
+    "max_rank": 3,
+    "planner": 237
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Piège à Mâchoire",
+  "description": "Piège. Pose un piège dissimulé au sol qui immobilise le premier ennemi marchant dessus et lui inflige un lourd saignement.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 302
+  }
+}

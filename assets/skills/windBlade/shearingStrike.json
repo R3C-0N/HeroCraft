@@ -1,0 +1,12 @@
+{
+  "name": "Frappe Cisaillante",
+  "description": "Mêlée. Un coup de sabre ample et lourd au corps à corps qui repousse légèrement les adversaires.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 331
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Voile Ténébreux",
+  "description": "Ombre. Tu utilises ta main libre pour canaliser la magie de l'ombre et disparaître totalement pendant quelques secondes.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 258
+  }
+}

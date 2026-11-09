@@ -1,0 +1,14 @@
+{
+  "name": "Pluie de Flèches",
+  "description": "Volée. Tire une volée en cloche qui s'abat sur une large zone ciblée.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "multiShot"
+    ],
+    "max_rank": 3,
+    "planner": 291
+  }
+}

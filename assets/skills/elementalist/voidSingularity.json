@@ -1,0 +1,15 @@
+{
+  "name": "Singularité du Néant",
+  "description": "Compétence ultime. Tu surcharges tes deux gantelets runiques pour contourner les éléments classiques et déchirer la réalité, libérant une explosion d'énergie astrale pure.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "explosiveRetreat",
+      "crystallization"
+    ],
+    "max_rank": 3,
+    "planner": 194
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Éclipse du Néant",
+  "description": "Compétence ultime. Tu relies ton arbalète à la Pierre du néant. La zone plonge dans une obscurité totale. Tu deviens une ombre pure, rebondissant de cible en cible à la vitesse de l'éclair pour décocher des carreaux d'Étherium imperceptibles et mortels.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "phantomShot",
+      "toxicCloud",
+      "illusoryBarrage"
+    ],
+    "max_rank": 3,
+    "planner": 269
+  }
+}

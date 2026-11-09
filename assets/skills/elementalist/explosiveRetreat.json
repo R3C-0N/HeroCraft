@@ -1,0 +1,15 @@
+{
+  "name": "Retraite Explosive",
+  "description": "Feu / Air : Orbe Igné + Courant Ascendant.\n\nTon bond vers l'arrière attire l'orbe exactement là où tu te trouvais, déclenchant une violente explosion pour punir ceux qui te foncent dessus.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.25,
+    "requires": [
+      "scaldingTyphoon",
+      "magmaWall"
+    ],
+    "max_rank": 3,
+    "planner": 192
+  }
+}

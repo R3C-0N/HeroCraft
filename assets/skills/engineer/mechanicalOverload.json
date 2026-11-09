@@ -1,0 +1,14 @@
+{
+  "name": "Surcharge Mécanique",
+  "description": "Tourelle. Ta main libre envoie un signal qui booste temporairement la cadence de tir et la résistance de toutes tes tourelles actives.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "ballisticTurret"
+    ],
+    "max_rank": 3,
+    "planner": 309
+  }
+}

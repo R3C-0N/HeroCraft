@@ -1,0 +1,15 @@
+{
+  "name": "Percée cuirassée",
+  "description": "Coup de bouclier + Fente d'arrêt. Charge frontale avec le bouclier en avant, suivie immédiatement d'un empalement profond à l'épée.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "phalanx",
+      "armorBreaker"
+    ],
+    "max_rank": 3,
+    "planner": 371
+  }
+}

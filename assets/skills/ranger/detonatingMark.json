@@ -1,0 +1,14 @@
+{
+  "name": "Marque Détonante",
+  "description": "Balle Traçante + Balles à Fragmentation. Tes tirs explosifs cherchent désormais automatiquement les cibles verrouillées par tes balles traçantes.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "fragRounds"
+    ],
+    "max_rank": 3,
+    "planner": 281
+  }
+}

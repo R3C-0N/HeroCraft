@@ -1,0 +1,14 @@
+{
+  "name": "Purification",
+  "description": "Lumière offensive. Retire un effet négatif (poison, ralentissement) sur un allié et lui rend une petite portion de santé.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "celestialSmite"
+    ],
+    "max_rank": 3,
+    "planner": 233
+  }
+}

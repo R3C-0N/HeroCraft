@@ -1,0 +1,15 @@
+{
+  "name": "Contre dévastateur",
+  "description": "Brise-armure + Riposte parfaite. Tu encaisses volontairement une attaque lourde sur ton bouclier pour relâcher instantanément un coup d'épée circulaire massif qui fauche la zone.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "armorBreaker",
+      "perfectRiposte"
+    ],
+    "max_rank": 3,
+    "planner": 373
+  }
+}

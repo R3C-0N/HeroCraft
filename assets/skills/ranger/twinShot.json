@@ -1,0 +1,12 @@
+{
+  "name": "Tir Jumelé",
+  "description": "Rafale. Tire simultanément une balle magique de chaque arbalète pour des dégâts rapides.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 271
+  }
+}

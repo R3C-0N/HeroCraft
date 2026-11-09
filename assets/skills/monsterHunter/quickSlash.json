@@ -1,0 +1,12 @@
+{
+  "name": "Entaille vive",
+  "description": "Épée. Coup rapide avec ton épée à une main pour faire saigner la cible.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 316
+  }
+}

@@ -1,26 +1,79 @@
-//! Roue des compétences : les quinze classes se partagent le cercle, et dans chacune ses douze
-//! compétences sont posées sur des anneaux, du niveau 1 (au centre) à l'ultime (au bord), en
-//! passant par le niveau 2 et les fusions. Chaque niveau du héros donne un point de compétence ;
-//! un point apprend une compétence, de n'importe quelle classe, ou la renforce d'un rang, pourvu
-//! que celles qu'elle demande soient déjà apprises.
+//! Compétences : la roue des quinze classes et ce que fait chaque compétence quand on la lance.
 //!
-//! La roue est décrite dans `assets/competences/roue.json`, reprise du carnet Planner par
-//! `tools/importer_roue_competences.py`, et embarquée dans le jeu et le serveur pour que les deux
-//! jugent les mêmes règles.
+//! Chaque compétence est un fichier `assets/skills/<classe>/<id>.json` ; les classes sont dans
+//! `assets/skills/classes.json`. Le fichier dit sa place sur la roue (`wheel`), ses règles
+//! (`cast`, lues par le serveur) et ce que le client en montre (`visuals`, `sounds`). Une
+//! compétence sans `cast` s'apprend mais ne se lance pas encore.
+//!
+//! Chaque niveau du héros donne un point de compétence ; un point apprend une compétence, de
+//! n'importe quelle classe, ou la renforce d'un rang, pourvu que celles qu'elle demande soient
+//! déjà apprises. Un nœud de la roue peut donner plusieurs compétences (`grants`) : elles ont
+//! alors le rang du nœud.
+//!
+//! Les dossiers sont lus au premier appel de `skills()`, depuis le dossier de lancement, sinon
+//! celui des sources ; un fichier invalide est signalé et ignoré. Serveur et client lisent les
+//! mêmes fichiers ; `SkillCatalog::fingerprint` permet de vérifier qu'ils sont d'accord.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-use serde::Deserialize;
+use glam::Vec3;
+use serde::{Deserialize, Serialize};
 
 use crate::CharacterStats;
 
-/// Description de la roue, lue à la compilation
-const WHEEL_JSON: &str = include_str!("../../../assets/competences/roue.json");
-
-/// Rang maximal d'une compétence, sauf mention contraire dans la roue
+/// Dossier des compétences, depuis la racine du projet
+pub const SKILLS_DIR: &str = "assets/skills";
+/// Dossier des gestes du héros (le serveur n'en lit que la durée et l'impact)
+pub const GESTURES_DIR: &str = "assets/hero/animations";
+/// Rang maximal d'une compétence, sauf mention contraire
 pub const DEFAULT_MAX_RANK: u8 = 3;
+/// Dégâts d'une compétence de puissance 1, en attendant les dégâts propres aux armes
+pub const SKILL_BASE_DAMAGE: f32 = 5.0;
 
-/// Une part du cercle : une classe
+// ------------------------------------------------------------------------------------------------
+// Valeurs selon le rang
+
+/// Un nombre, ou un nombre par rang : `3` ou `[3, 3.5, 4]`. Au-delà de la liste, la dernière
+/// valeur vaut.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Ranked {
+    One(f32),
+    PerRank(Vec<f32>),
+}
+
+impl Default for Ranked {
+    fn default() -> Self {
+        Ranked::One(0.0)
+    }
+}
+
+impl Ranked {
+    /// La valeur au rang `rank` (1 pour le premier ; 0 compte comme 1)
+    pub fn at(&self, rank: u8) -> f32 {
+        match self {
+            Ranked::One(v) => *v,
+            Ranked::PerRank(values) => {
+                let i = (rank.max(1) as usize - 1).min(values.len().saturating_sub(1));
+                values.get(i).copied().unwrap_or(0.0)
+            }
+        }
+    }
+
+    fn is_finite(&self) -> bool {
+        match self {
+            Ranked::One(v) => v.is_finite(),
+            Ranked::PerRank(values) => !values.is_empty() && values.iter().all(|v| v.is_finite()),
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+// Format des fichiers
+
+/// Une classe : une part de la roue
 #[derive(Debug, Clone, Deserialize)]
 pub struct SkillBranch {
     pub id: String,
@@ -35,21 +88,20 @@ pub struct SkillBranch {
     pub color: [u8; 3],
 }
 
-/// Une compétence de la roue
 #[derive(Debug, Clone, Deserialize)]
-pub struct SkillNode {
-    pub id: String,
-    pub name: String,
-    #[serde(default)]
-    pub description: String,
-    /// Identifiant de la branche qui la porte
-    pub branch: String,
+struct ClassesFile {
+    classes: Vec<SkillBranch>,
+}
+
+/// Place d'une compétence sur la roue
+#[derive(Debug, Clone, Deserialize)]
+pub struct WheelPlace {
     /// Palier : 1 et 2 pour les niveaux 1 et 2, 3 pour les fusions, 4 pour l'ultime
     pub tier: u8,
-    /// Distance au centre sur la roue, en anneaux (1 : le plus proche) ; le palier par défaut
+    /// Distance au centre, en anneaux (1 : le plus proche) ; le palier par défaut
     #[serde(default)]
     pub ring: Option<f32>,
-    /// Position dans la part de sa branche, de 0 (début) à 1 (fin)
+    /// Position dans la part de sa classe, de 0 (début) à 1 (fin)
     #[serde(default = "half")]
     pub slot: f32,
     /// Compétences à connaître avant de pouvoir l'apprendre (toutes)
@@ -60,6 +112,772 @@ pub struct SkillNode {
     /// Numéro de la fiche du carnet Planner qui la décrit
     #[serde(default)]
     pub planner: Option<u32>,
+    /// Compétences que ce nœud donne au lieu de se lancer lui-même (les deux sorts d'un élément)
+    #[serde(default)]
+    pub grants: Vec<String>,
+}
+
+/// Ce qu'une compétence coûte
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Cost {
+    #[serde(default)]
+    pub mana: Ranked,
+    #[serde(default)]
+    pub stamina: Ranked,
+}
+
+/// Centre d'une zone circulaire
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Center {
+    /// Les pieds du lanceur
+    #[default]
+    #[serde(rename = "self")]
+    Caster,
+    /// Le point visé au sol, à `distance` blocs au plus
+    Aimed,
+}
+
+/// Où frappe une compétence
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Area {
+    /// Disque autour du lanceur ou du point visé
+    Circle {
+        radius: Ranked,
+        #[serde(default)]
+        center: Center,
+        /// Portée de la visée, pour `center: aimed`
+        #[serde(default = "default_aim_distance")]
+        distance: Ranked,
+    },
+    /// Secteur devant le lanceur : portée en blocs, ouverture en degrés
+    Arc { range: Ranked, angle: Ranked },
+    /// Rectangle droit devant le lanceur
+    Line { length: Ranked, width: Ranked },
+    /// Le lanceur seul
+    #[serde(rename = "self")]
+    Caster,
+}
+
+/// Déplacement du lanceur au lancement, en blocs : `dash` vers l'avant, `leap` (négatif : en
+/// arrière) en bondissant
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct Movement {
+    #[serde(default)]
+    pub dash: Option<Ranked>,
+    #[serde(default)]
+    pub leap: Option<Ranked>,
+}
+
+/// Qui subit les effets
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Targets {
+    #[default]
+    Enemies,
+    /// Les joueurs et les bêtes apprivoisées, lanceur compris
+    Allies,
+    #[serde(rename = "self")]
+    Caster,
+    All,
+}
+
+/// Ce que subit une cible
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Effect {
+    /// `power` × `SKILL_BASE_DAMAGE` points de vie retirés
+    Damage { power: Ranked },
+    /// Points de vie rendus
+    Heal { amount: Ranked },
+    /// Vitesse réduite de `strength` (0 à 1) pendant `duration` secondes
+    Slow { strength: Ranked, duration: Ranked },
+    /// Plus de mouvement ni d'attaque pendant `duration` secondes
+    Stun { duration: Ranked },
+    /// Repoussée loin du lanceur (vitesse de départ, en blocs par seconde)
+    Knockback { strength: Ranked },
+    /// Attirée vers le lanceur
+    Pull { strength: Ranked },
+    /// Points de dégâts absorbés pendant `duration` secondes
+    Shield { amount: Ranked, duration: Ranked },
+    /// Statistique augmentée de `value` (0,3 : +30 %) pendant `duration` secondes
+    Buff { stat: BuffStat, value: Ranked, duration: Ranked },
+    /// Dégâts (`damage`) ou soins (`heal`) par seconde pendant `duration` secondes
+    OverTime {
+        #[serde(default)]
+        damage: Option<Ranked>,
+        #[serde(default)]
+        heal: Option<Ranked>,
+        duration: Ranked,
+    },
+    /// Fait apparaître des créatures (espèce de `assets/creatures/`)
+    Summon {
+        species: String,
+        #[serde(default = "one")]
+        count: Ranked,
+    },
+    /// La créature s'en prend au lanceur pendant `duration` secondes
+    Taunt { duration: Ranked },
+}
+
+/// Statistique qu'un `buff` augmente
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BuffStat {
+    /// Dégâts des compétences et des coups
+    Damage,
+    /// Dégâts subis réduits
+    Defense,
+    /// Vitesse de déplacement
+    Speed,
+    /// Régénération de la vie
+    Regeneration,
+}
+
+/// Un effet, et à qui il s'applique s'il ne vise pas les cibles de la compétence (`to`)
+#[derive(Debug, Clone, Deserialize)]
+pub struct EffectEntry {
+    #[serde(flatten)]
+    pub effect: Effect,
+    #[serde(default)]
+    pub to: Option<Targets>,
+}
+
+/// Les règles d'une compétence, que le serveur applique
+#[derive(Debug, Clone, Deserialize)]
+pub struct Cast {
+    /// Types d'arme qui la réveillent (vide : toutes). Pas encore vérifié : les objets n'ont pas
+    /// de type d'arme.
+    #[serde(default)]
+    pub weapons: Vec<String>,
+    #[serde(default)]
+    pub cost: Cost,
+    /// Secondes avant de pouvoir la relancer
+    #[serde(default)]
+    pub cooldown: Ranked,
+    /// Geste du héros (`assets/hero/animations/<nom>.json`)
+    pub animation: String,
+    /// Instant du geste (0 à 1) où la zone frappe ; celui du geste par défaut
+    #[serde(default)]
+    pub impact: Option<f32>,
+    /// Le geste plus vite (2 : deux fois plus court) ou plus lentement
+    #[serde(default = "one_f32")]
+    pub speed: f32,
+    pub area: Area,
+    #[serde(default)]
+    pub movement: Option<Movement>,
+    #[serde(default)]
+    pub targets: Targets,
+    #[serde(default)]
+    pub effects: Vec<EffectEntry>,
+    /// Effets sur le lanceur, quelle que soit la zone
+    #[serde(default)]
+    pub self_effects: Vec<EffectEntry>,
+}
+
+/// Moment d'un visuel
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Moment {
+    /// Le geste commence
+    Start,
+    /// L'instant d'impact du geste
+    Impact,
+    /// Une cible est touchée
+    Hit,
+    /// Fin du geste
+    End,
+    /// Fin de l'effet sur la cible (ralenti, étourdi, bouclier…)
+    EffectEnd,
+}
+
+/// Où un visuel se joue
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Anchor {
+    RightHand,
+    LeftHand,
+    Weapon,
+    Head,
+    Body,
+    Feet,
+    /// Le point visé au sol
+    Aimed,
+    /// Chaque créature touchée
+    Target,
+    /// Le centre de la zone de la compétence
+    Area,
+}
+
+/// Un effet visuel joué par la compétence
+#[derive(Debug, Clone, Deserialize)]
+pub struct Visual {
+    /// Effet de `assets/effects/`
+    pub effect: String,
+    pub anchor: Anchor,
+    pub from: Moment,
+    /// Fin du visuel ; sans elle, il dure le temps de ses couches
+    #[serde(default)]
+    pub to: Option<Moment>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SkillFile {
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    icon: Option<String>,
+    #[serde(default)]
+    wheel: Option<WheelPlace>,
+    #[serde(default)]
+    cast: Option<Cast>,
+    #[serde(default)]
+    visuals: Vec<Visual>,
+    #[serde(default)]
+    sounds: BTreeMap<String, String>,
+    #[serde(default)]
+    special: Option<String>,
+}
+
+/// Une compétence lue dans son fichier
+#[derive(Debug, Clone)]
+pub struct SkillDef {
+    pub id: String,
+    /// Classe (nom du dossier)
+    pub class: String,
+    pub name: String,
+    pub description: String,
+    /// Chemin de l'icône, si le fichier existe
+    pub icon: Option<PathBuf>,
+    pub wheel: Option<WheelPlace>,
+    pub cast: Option<Cast>,
+    pub visuals: Vec<Visual>,
+    pub sounds: BTreeMap<String, String>,
+    /// Mécanique écrite en Rust, appelée par son nom (ultimes et cas uniques)
+    pub special: Option<String>,
+}
+
+impl SkillDef {
+    /// Se lance : elle a des règles
+    pub fn is_castable(&self) -> bool {
+        self.cast.is_some()
+    }
+}
+
+/// Durée et impact d'un geste, la seule partie des gestes que les règles lisent
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct GestureTiming {
+    pub duration: f32,
+    #[serde(default = "half")]
+    pub impact: f32,
+}
+
+fn half() -> f32 {
+    0.5
+}
+
+fn one() -> Ranked {
+    Ranked::One(1.0)
+}
+
+fn one_f32() -> f32 {
+    1.0
+}
+
+fn default_aim_distance() -> Ranked {
+    Ranked::One(12.0)
+}
+
+fn default_max_rank() -> u8 {
+    DEFAULT_MAX_RANK
+}
+
+// ------------------------------------------------------------------------------------------------
+// Catalogue
+
+/// Toutes les compétences, leurs classes et la durée des gestes
+#[derive(Debug, Clone, Default)]
+pub struct SkillCatalog {
+    pub classes: Vec<SkillBranch>,
+    skills: Vec<SkillDef>,
+    index: HashMap<String, usize>,
+    /// Nœud de la roue qui donne chaque compétence accordée (`grants`)
+    granted_by: HashMap<String, String>,
+    gestures: HashMap<String, GestureTiming>,
+    fingerprint: u64,
+}
+
+static SKILLS: OnceLock<SkillCatalog> = OnceLock::new();
+
+/// Les compétences du jeu, lues dans `assets/skills/` au premier appel
+pub fn skills() -> &'static SkillCatalog {
+    SKILLS.get_or_init(SkillCatalog::load_default)
+}
+
+/// Le dossier `dir` du projet : depuis le dossier de lancement, sinon celui des sources
+pub fn asset_dir(dir: &str) -> Option<PathBuf> {
+    [PathBuf::from(dir), Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(dir)].into_iter().find(|d| d.is_dir())
+}
+
+impl SkillCatalog {
+    /// Les compétences de `assets/skills/` et les gestes de `assets/hero/animations/`. Un fichier
+    /// invalide est signalé et ignoré.
+    pub fn load_default() -> Self {
+        let Some(dir) = asset_dir(SKILLS_DIR) else {
+            log::warn!("Dossier {SKILLS_DIR}/ introuvable : aucune compétence.");
+            return Self::default();
+        };
+        let gestures = asset_dir(GESTURES_DIR).unwrap_or_default();
+        let (catalog, errors) = Self::load_dirs(&dir, &gestures);
+        for error in &errors {
+            log::warn!("{error}");
+        }
+        log::info!("{} compétence(s) chargée(s) depuis {}.", catalog.skills.len(), dir.display());
+        catalog
+    }
+
+    /// Lit les classes et les compétences de `dir`, les gestes de `gestures`, et renvoie aussi les
+    /// erreurs trouvées (fichier illisible, référence inconnue) : les fichiers fautifs sont ignorés
+    pub fn load_dirs(dir: &Path, gestures: &Path) -> (Self, Vec<String>) {
+        let mut errors = Vec::new();
+        let mut hash = Fnv::default();
+        let classes = match std::fs::read_to_string(dir.join("classes.json")) {
+            Ok(text) => {
+                hash.write(text.as_bytes());
+                match serde_json::from_str::<ClassesFile>(&text) {
+                    Ok(file) => file.classes,
+                    Err(e) => {
+                        errors.push(format!("classes.json : {e}"));
+                        Vec::new()
+                    }
+                }
+            }
+            Err(e) => {
+                errors.push(format!("classes.json : {e}"));
+                Vec::new()
+            }
+        };
+
+        let mut timing = HashMap::new();
+        for path in json_files(gestures) {
+            let name = stem(&path);
+            match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| serde_json::from_str::<GestureTiming>(&t).map_err(|e| e.to_string())) {
+                Ok(t) if t.duration > 0.0 && t.duration.is_finite() => {
+                    timing.insert(name, t);
+                }
+                Ok(_) => errors.push(format!("geste {name} : durée invalide")),
+                Err(e) => errors.push(format!("geste {name} : {e}")),
+            }
+        }
+
+        let mut skills = Vec::new();
+        for class in &classes {
+            for path in json_files(&dir.join(&class.id)) {
+                let id = stem(&path);
+                let text = match std::fs::read_to_string(&path) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        errors.push(format!("{}/{id} : {e}", class.id));
+                        continue;
+                    }
+                };
+                match serde_json::from_str::<SkillFile>(&text) {
+                    Ok(file) => {
+                        hash.write(class.id.as_bytes());
+                        hash.write(id.as_bytes());
+                        hash.write(text.as_bytes());
+                        let icon = file.icon.clone().unwrap_or_else(|| format!("{id}.png"));
+                        let icon = Some(dir.join(&class.id).join(icon)).filter(|p| p.is_file());
+                        skills.push(SkillDef {
+                            id,
+                            class: class.id.clone(),
+                            name: file.name,
+                            description: file.description,
+                            icon,
+                            wheel: file.wheel,
+                            cast: file.cast,
+                            visuals: file.visuals,
+                            sounds: file.sounds,
+                            special: file.special,
+                        });
+                    }
+                    Err(e) => errors.push(format!("{}/{id}.json : {e}", class.id)),
+                }
+            }
+        }
+
+        let mut catalog = Self { classes, skills: Vec::new(), index: HashMap::new(), granted_by: HashMap::new(), gestures: timing, fingerprint: 0 };
+        // Les fichiers en double ou mal formés sont écartés, puis les références vérifiées
+        let mut seen = HashSet::new();
+        skills.retain(|s| {
+            let fresh = seen.insert(s.id.clone());
+            if !fresh {
+                errors.push(format!("{} : compétence en double", s.id));
+            }
+            fresh
+        });
+        let ids: HashSet<String> = skills.iter().map(|s| s.id.clone()).collect();
+        skills.retain(|s| match catalog.check(s, &ids) {
+            Ok(()) => true,
+            Err(e) => {
+                errors.push(format!("{}/{} : {e}", s.class, s.id));
+                false
+            }
+        });
+        for s in &skills {
+            for g in s.wheel.iter().flat_map(|w| &w.grants) {
+                catalog.granted_by.insert(g.clone(), s.id.clone());
+            }
+        }
+        // Une compétence ni sur la roue ni accordée par un nœud ne s'apprendrait jamais
+        for s in &skills {
+            if s.wheel.is_none() && !catalog.granted_by.contains_key(&s.id) {
+                errors.push(format!("{}/{} : ni sur la roue, ni donnée par un nœud", s.class, s.id));
+            }
+        }
+        catalog.index = skills.iter().enumerate().map(|(i, s)| (s.id.clone(), i)).collect();
+        catalog.skills = skills;
+        catalog.fingerprint = hash.finish();
+        (catalog, errors)
+    }
+
+    /// Ce qui cloche dans `skill` : nombres, références aux autres compétences et aux gestes
+    fn check(&self, skill: &SkillDef, ids: &HashSet<String>) -> Result<(), String> {
+        if let Some(w) = &skill.wheel {
+            if !(1..=4).contains(&w.tier) || w.max_rank == 0 || w.ring.unwrap_or(w.tier as f32) < 1.0 {
+                return Err("palier de 1 à 4, anneau et rang maximal à partir de 1".into());
+            }
+            if let Some(missing) = w.requires.iter().chain(&w.grants).find(|r| !ids.contains(*r)) {
+                return Err(format!("compétence inconnue {missing}"));
+            }
+        }
+        if let Some(cast) = &skill.cast {
+            if !self.gestures.contains_key(&cast.animation) {
+                return Err(format!("geste inconnu {}", cast.animation));
+            }
+            if !(cast.speed > 0.0 && cast.speed.is_finite()) || cast.impact.is_some_and(|i| !(0.0..=1.0).contains(&i)) {
+                return Err("speed positive, impact de 0 à 1".into());
+            }
+            let numbers: Vec<&Ranked> = match &cast.area {
+                Area::Circle { radius, distance, .. } => vec![radius, distance],
+                Area::Arc { range, angle } => vec![range, angle],
+                Area::Line { length, width } => vec![length, width],
+                Area::Caster => vec![],
+            };
+            if !numbers.iter().chain([&&cast.cooldown, &&cast.cost.mana, &&cast.cost.stamina]).all(|r| r.is_finite()) {
+                return Err("nombre invalide dans cast".into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Empreinte des fichiers lus : deux catalogues de même empreinte jugent de la même façon
+    pub fn fingerprint(&self) -> u64 {
+        self.fingerprint
+    }
+
+    pub fn len(&self) -> usize {
+        self.skills.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.skills.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &SkillDef> {
+        self.skills.iter()
+    }
+
+    pub fn get(&self, id: &str) -> Option<&SkillDef> {
+        self.index.get(id).map(|&i| &self.skills[i])
+    }
+
+    pub fn class(&self, id: &str) -> Option<&SkillBranch> {
+        self.classes.iter().find(|c| c.id == id)
+    }
+
+    /// Le nœud de la roue qui donne `id`, s'il en est un
+    pub fn granted_by(&self, id: &str) -> Option<&str> {
+        self.granted_by.get(id).map(String::as_str)
+    }
+
+    /// Rang de la compétence `id` chez ce personnage : celui de son nœud pour une compétence
+    /// accordée (0 : pas apprise)
+    pub fn rank(&self, stats: &CharacterStats, id: &str) -> u8 {
+        rank(stats, self.granted_by(id).unwrap_or(id))
+    }
+
+    /// Les compétences que ce personnage peut lancer, dans l'ordre du catalogue
+    pub fn castable<'a>(&'a self, stats: &'a CharacterStats) -> impl Iterator<Item = &'a SkillDef> + 'a {
+        self.skills.iter().filter(move |s| s.is_castable() && self.rank(stats, &s.id) > 0)
+    }
+
+    /// Durée et impact du geste `name`
+    pub fn gesture(&self, name: &str) -> Option<GestureTiming> {
+        self.gestures.get(name).copied()
+    }
+
+    /// Secondes entre le lancement de `cast` et sa frappe
+    pub fn impact_delay(&self, cast: &Cast) -> f32 {
+        let timing = self.gesture(&cast.animation).unwrap_or(GestureTiming { duration: 0.5, impact: 0.5 });
+        timing.duration / cast.speed * cast.impact.unwrap_or(timing.impact)
+    }
+
+    /// La roue, telle que l'écran des compétences la dessine
+    pub fn wheel(&self) -> SkillWheel {
+        let nodes = self
+            .skills
+            .iter()
+            .filter_map(|s| {
+                let w = s.wheel.as_ref()?;
+                Some(SkillNode {
+                    id: s.id.clone(),
+                    name: s.name.clone(),
+                    description: s.description.clone(),
+                    branch: s.class.clone(),
+                    tier: w.tier,
+                    ring: w.ring,
+                    slot: w.slot,
+                    requires: w.requires.clone(),
+                    max_rank: w.max_rank,
+                    planner: w.planner,
+                    grants: w.grants.clone(),
+                })
+            })
+            .collect();
+        SkillWheel { branches: self.classes.clone(), nodes }
+    }
+
+    /// Pourquoi ce personnage ne peut pas lancer `id` maintenant (`None` : il peut)
+    pub fn cast_check(&self, stats: &CharacterStats, id: &str, cooldown_left: f32) -> Option<CastError> {
+        let Some(skill) = self.get(id) else { return Some(CastError::Unknown) };
+        let Some(cast) = &skill.cast else { return Some(CastError::NotPlayable) };
+        let rank = self.rank(stats, id);
+        if rank == 0 {
+            return Some(CastError::NotLearned);
+        }
+        if cooldown_left > 0.0 {
+            return Some(CastError::Cooldown);
+        }
+        if stats.hp <= 0.0 {
+            return Some(CastError::Dead);
+        }
+        if stats.mana < cast.cost.mana.at(rank) {
+            return Some(CastError::NoMana);
+        }
+        if stats.stamina < cast.cost.stamina.at(rank) {
+            return Some(CastError::NoStamina);
+        }
+        None
+    }
+
+    /// Retire de ce personnage les compétences inconnues du catalogue (d'anciennes sauvegardes) et
+    /// lui rend les points qu'il y avait mis. Renvoie les identifiants retirés.
+    pub fn forget_unknown(&self, stats: &mut CharacterStats) -> Vec<String> {
+        let wheel_ids: HashSet<&str> = self.skills.iter().filter(|s| s.wheel.is_some()).map(|s| s.id.as_str()).collect();
+        let unknown: Vec<String> = stats.skills.keys().filter(|id| !wheel_ids.contains(id.as_str())).cloned().collect();
+        for id in &unknown {
+            if let Some(rank) = stats.skills.remove(id) {
+                stats.skill_points += rank as u32;
+            }
+        }
+        unknown
+    }
+}
+
+/// Pourquoi une compétence ne se lance pas
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CastError {
+    Unknown,
+    NotPlayable,
+    NotLearned,
+    Cooldown,
+    NoMana,
+    NoStamina,
+    Dead,
+}
+
+impl CastError {
+    pub fn message(self) -> &'static str {
+        match self {
+            CastError::Unknown => "compétence inconnue",
+            CastError::NotPlayable => "pas encore jouable",
+            CastError::NotLearned => "pas apprise",
+            CastError::Cooldown => "pas encore rechargée",
+            CastError::NoMana => "pas assez de mana",
+            CastError::NoStamina => "pas assez d'endurance",
+            CastError::Dead => "mort",
+        }
+    }
+}
+
+fn json_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .collect();
+    files.sort();
+    files
+}
+
+fn stem(path: &Path) -> String {
+    path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// Hachage FNV-1a, stable d'une machine à l'autre (celui de la bibliothèque standard ne l'est pas)
+#[derive(Debug)]
+struct Fnv(u64);
+
+impl Default for Fnv {
+    fn default() -> Self {
+        Fnv(0xcbf2_9ce4_8422_2325)
+    }
+}
+
+impl Fnv {
+    fn write(&mut self, bytes: &[u8]) {
+        for b in bytes {
+            self.0 = (self.0 ^ *b as u64).wrapping_mul(0x0100_0000_01b3);
+        }
+        // Sépare les morceaux : « ab » + « c » ne vaut pas « a » + « bc »
+        self.0 = (self.0 ^ 0xff).wrapping_mul(0x0100_0000_01b3);
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+// Zones
+
+/// Une zone posée dans le monde, au moment de la frappe. Les longueurs sont en unités du monde.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PlacedArea {
+    Circle { center: Vec3, radius: f32 },
+    /// Secteur : sommet, direction (unitaire, dans le plan du sol), portée, demi-ouverture en radians
+    Arc { apex: Vec3, forward: Vec3, range: f32, half_angle: f32 },
+    /// Rectangle : départ, direction (unitaire, dans le plan du sol), longueur, demi-largeur
+    Line { start: Vec3, forward: Vec3, length: f32, half_width: f32 },
+    /// Le lanceur seul
+    Caster,
+}
+
+/// Hauteur sous laquelle une zone attrape une cible au-dessus ou au-dessous du sol du lanceur, en
+/// blocs
+pub const AREA_HEIGHT_BLOCKS: f32 = 3.0;
+
+impl Area {
+    /// La zone posée aux pieds `feet` du lanceur, qui vise `aim` (direction quelconque) et
+    /// `aimed` (point au sol, s'il en vise un). `block` : taille d'un bloc en unités du monde.
+    pub fn place(&self, rank: u8, feet: Vec3, aim: Vec3, aimed: Option<Vec3>, block: f32) -> PlacedArea {
+        let up = feet.normalize_or_zero();
+        let flat = aim - up * aim.dot(up);
+        let forward = if flat.length_squared() > 1e-8 { flat.normalize() } else { crate::tangent_frame(up).1 };
+        match self {
+            Area::Circle { radius, center, distance } => {
+                let center = match (center, aimed) {
+                    (Center::Aimed, Some(point)) => {
+                        let reach = distance.at(rank) * block;
+                        let offset = point - feet;
+                        if offset.length() > reach {
+                            feet + offset.normalize() * reach
+                        } else {
+                            point
+                        }
+                    }
+                    (Center::Aimed, None) => feet + forward * distance.at(rank) * block,
+                    (Center::Caster, _) => feet,
+                };
+                PlacedArea::Circle { center, radius: radius.at(rank) * block }
+            }
+            Area::Arc { range, angle } => PlacedArea::Arc { apex: feet, forward, range: range.at(rank) * block, half_angle: (angle.at(rank) * 0.5).to_radians() },
+            Area::Line { length, width } => PlacedArea::Line { start: feet, forward, length: length.at(rank) * block, half_width: width.at(rank) * 0.5 * block },
+            Area::Caster => PlacedArea::Caster,
+        }
+    }
+
+    /// Taille de la zone en blocs (rayon, portée ou longueur), à laquelle les effets visuels en
+    /// `unit: area` se mesurent
+    pub fn size_blocks(&self, rank: u8) -> f32 {
+        match self {
+            Area::Circle { radius, .. } => radius.at(rank),
+            Area::Arc { range, .. } => range.at(rank),
+            Area::Line { length, .. } => length.at(rank),
+            Area::Caster => 1.0,
+        }
+    }
+}
+
+impl PlacedArea {
+    /// La cible aux pieds `point` est dans la zone. `block` : taille d'un bloc.
+    pub fn contains(&self, point: Vec3, block: f32) -> bool {
+        let height = AREA_HEIGHT_BLOCKS * block;
+        let split = |origin: Vec3| {
+            let up = origin.normalize_or_zero();
+            let d = point - origin;
+            let vertical = d.dot(up);
+            (d - up * vertical, vertical)
+        };
+        match *self {
+            PlacedArea::Circle { center, radius } => {
+                let (flat, vertical) = split(center);
+                flat.length() <= radius && vertical.abs() <= height.max(radius * 0.5)
+            }
+            PlacedArea::Arc { apex, forward, range, half_angle } => {
+                let (flat, vertical) = split(apex);
+                let distance = flat.length();
+                if distance > range || vertical.abs() > height {
+                    return false;
+                }
+                // Tout contre le lanceur, elle est touchée quel que soit l'angle
+                distance < 0.75 * block || flat.dot(forward) >= distance * half_angle.cos()
+            }
+            PlacedArea::Line { start, forward, length, half_width } => {
+                let (flat, vertical) = split(start);
+                let along = flat.dot(forward);
+                (0.0..=length).contains(&along) && (flat - forward * along).length() <= half_width && vertical.abs() <= height
+            }
+            PlacedArea::Caster => false,
+        }
+    }
+
+    /// Centre de la zone, où les visuels `area` se jouent
+    pub fn center(&self, feet: Vec3) -> Vec3 {
+        match *self {
+            PlacedArea::Circle { center, .. } => center,
+            PlacedArea::Arc { apex, forward, range, .. } => apex + forward * range * 0.5,
+            PlacedArea::Line { start, forward, length, .. } => start + forward * length * 0.5,
+            PlacedArea::Caster => feet,
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+// La roue
+
+/// Une compétence de la roue
+#[derive(Debug, Clone)]
+pub struct SkillNode {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    /// Identifiant de la classe qui la porte
+    pub branch: String,
+    /// Palier : 1 et 2 pour les niveaux 1 et 2, 3 pour les fusions, 4 pour l'ultime
+    pub tier: u8,
+    pub ring: Option<f32>,
+    pub slot: f32,
+    pub requires: Vec<String>,
+    pub max_rank: u8,
+    pub planner: Option<u32>,
+    /// Compétences que ce nœud donne
+    pub grants: Vec<String>,
 }
 
 impl SkillNode {
@@ -83,16 +901,8 @@ impl SkillNode {
     }
 }
 
-fn half() -> f32 {
-    0.5
-}
-
-fn default_max_rank() -> u8 {
-    DEFAULT_MAX_RANK
-}
-
 /// La roue entière
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SkillWheel {
     pub branches: Vec<SkillBranch>,
     pub nodes: Vec<SkillNode>,
@@ -119,33 +929,9 @@ impl LearnError {
 }
 
 impl SkillWheel {
-    /// La roue du jeu
+    /// La roue du jeu, lue dans `assets/skills/`
     pub fn standard() -> Self {
-        Self::parse(WHEEL_JSON).expect("assets/competences/roue.json invalide")
-    }
-
-    /// Lit une roue et vérifie qu'elle se tient : identifiants uniques, branches et prérequis
-    /// existants, anneaux à partir de 1
-    pub fn parse(json: &str) -> Result<Self, String> {
-        let wheel: SkillWheel = serde_json::from_str(json).map_err(|e| e.to_string())?;
-        let mut ids = HashSet::new();
-        for node in &wheel.nodes {
-            if !ids.insert(node.id.as_str()) {
-                return Err(format!("compétence en double : {}", node.id));
-            }
-            if !wheel.branches.iter().any(|b| b.id == node.branch) {
-                return Err(format!("{} : branche inconnue {}", node.id, node.branch));
-            }
-            if !(1..=4).contains(&node.tier) || node.max_rank == 0 || node.ring() < 1.0 {
-                return Err(format!("{} : palier de 1 à 4, anneau et rang maximal à partir de 1", node.id));
-            }
-        }
-        for node in &wheel.nodes {
-            if let Some(missing) = node.requires.iter().find(|r| !ids.contains(r.as_str())) {
-                return Err(format!("{} : prérequis inconnu {}", node.id, missing));
-            }
-        }
-        Ok(wheel)
+        skills().wheel()
     }
 
     pub fn node(&self, id: &str) -> Option<&SkillNode> {
@@ -188,7 +974,7 @@ impl SkillWheel {
     }
 }
 
-/// Rang de `id` chez ce personnage (0 : pas apprise)
+/// Rang du nœud `id` chez ce personnage (0 : pas appris)
 pub fn rank(stats: &CharacterStats, id: &str) -> u8 {
     stats.skills.get(id).copied().unwrap_or(0)
 }
@@ -198,9 +984,16 @@ mod tests {
     use super::*;
     use crate::PlayerClass;
 
+    fn catalog() -> SkillCatalog {
+        let (catalog, errors) = SkillCatalog::load_dirs(&asset_dir(SKILLS_DIR).unwrap(), &asset_dir(GESTURES_DIR).unwrap());
+        assert!(errors.is_empty(), "{errors:#?}");
+        catalog
+    }
+
     #[test]
-    fn test_standard_wheel_is_valid() {
-        let wheel = SkillWheel::standard();
+    fn test_skill_files_are_valid() {
+        let catalog = catalog();
+        let wheel = catalog.wheel();
         // Les 180 compétences des 15 classes, douze chacune
         assert_eq!(wheel.branches.len(), 15);
         assert_eq!(wheel.nodes.len(), 180);
@@ -218,46 +1011,119 @@ mod tests {
             }
         }
         assert_eq!(wheel.rings(), 4.0);
-        // Chaque classe a sa couleur
-        let colors: std::collections::HashSet<_> = wheel.branches.iter().map(|b| b.color).collect();
+        let colors: HashSet<_> = wheel.branches.iter().map(|b| b.color).collect();
         assert_eq!(colors.len(), wheel.branches.len());
+        // Les quatre éléments du Sorcier donnent chacun deux compétences
+        assert_eq!(catalog.granted_by("igneousOrb"), Some("fire"));
+        assert_eq!(catalog.granted_by.len(), 8);
+        // Identifiants en anglais : ni accent, ni nom de fichier hors de la convention
+        for skill in catalog.iter() {
+            assert!(skill.id.chars().all(|c| c.is_ascii_alphanumeric()) && skill.id.chars().next().unwrap().is_ascii_lowercase(), "{}", skill.id);
+        }
+        assert_ne!(catalog.fingerprint(), 0);
+    }
+
+    #[test]
+    fn test_visuals_and_gestures_exist() {
+        let catalog = catalog();
+        let effects = asset_dir("assets/effects").unwrap();
+        for skill in catalog.iter() {
+            for visual in &skill.visuals {
+                assert!(effects.join(format!("{}.json", visual.effect)).is_file(), "{} : effet inconnu {}", skill.id, visual.effect);
+            }
+        }
+        assert_eq!(catalog.gesture("groundSlam").map(|g| g.duration), Some(0.9));
     }
 
     #[test]
     fn test_points_come_from_levels_and_buy_ranks() {
-        let wheel = SkillWheel::standard();
+        let wheel = catalog().wheel();
         let mut hero = CharacterStats::new(PlayerClass::Soldier);
-        assert_eq!(wheel.learn(&mut hero, "frappeLourde"), Err(LearnError::NoPoint));
+        assert_eq!(wheel.learn(&mut hero, "heavyStrike"), Err(LearnError::NoPoint));
 
         // Niveau 4 : trois points
         hero.add_experience(600);
         assert_eq!(hero.skill_points, 3);
-        assert_eq!(wheel.learn(&mut hero, "balayageCirculaire"), Err(LearnError::MissingPrerequisite));
-        assert_eq!(wheel.learn(&mut hero, "frappeLourde"), Ok(1));
-        assert_eq!(wheel.learn(&mut hero, "balayageCirculaire"), Ok(1));
-        assert_eq!(wheel.learn(&mut hero, "frappeLourde"), Ok(2));
+        assert_eq!(wheel.learn(&mut hero, "circularSweep"), Err(LearnError::MissingPrerequisite));
+        assert_eq!(wheel.learn(&mut hero, "heavyStrike"), Ok(1));
+        assert_eq!(wheel.learn(&mut hero, "circularSweep"), Ok(1));
+        assert_eq!(wheel.learn(&mut hero, "heavyStrike"), Ok(2));
         assert_eq!(hero.skill_points, 0);
-        assert_eq!(wheel.learn(&mut hero, "frappeLourde"), Err(LearnError::NoPoint));
-        assert_eq!(wheel.learn(&mut hero, "inconnue"), Err(LearnError::Unknown));
+        assert_eq!(wheel.learn(&mut hero, "heavyStrike"), Err(LearnError::NoPoint));
+        assert_eq!(wheel.learn(&mut hero, "unknown"), Err(LearnError::Unknown));
 
         hero.skill_points = 10;
-        assert_eq!(wheel.learn(&mut hero, "frappeLourde"), Ok(3));
-        assert_eq!(wheel.learn(&mut hero, "frappeLourde"), Err(LearnError::MaxRank));
+        assert_eq!(wheel.learn(&mut hero, "heavyStrike"), Ok(3));
+        assert_eq!(wheel.learn(&mut hero, "heavyStrike"), Err(LearnError::MaxRank));
         // Une fusion demande les deux formes du niveau 2 qu'elle unit
-        assert_eq!(wheel.learn(&mut hero, "tornadeEcrasante"), Err(LearnError::MissingPrerequisite));
-        assert_eq!(wheel.learn(&mut hero, "rueeFrontale"), Ok(1));
-        assert_eq!(wheel.learn(&mut hero, "frappePlongeante"), Ok(1));
-        assert_eq!(wheel.learn(&mut hero, "tornadeEcrasante"), Ok(1));
+        assert_eq!(wheel.learn(&mut hero, "crushingTornado"), Err(LearnError::MissingPrerequisite));
+        assert_eq!(wheel.learn(&mut hero, "frontalRush"), Ok(1));
+        assert_eq!(wheel.learn(&mut hero, "divingStrike"), Ok(1));
+        assert_eq!(wheel.learn(&mut hero, "crushingTornado"), Ok(1));
         // Les compétences des autres classes s'apprennent aussi (#171)
-        assert_eq!(wheel.learn(&mut hero, "frappeDuJuste"), Ok(1));
+        assert_eq!(wheel.learn(&mut hero, "righteousStrike"), Ok(1));
+        // Un sort accordé n'est pas un nœud : il prend le rang de son élément
+        assert_eq!(wheel.learn(&mut hero, "igneousOrb"), Err(LearnError::Unknown));
+        let catalog = catalog();
+        assert_eq!(catalog.rank(&hero, "igneousOrb"), 0);
+        wheel.learn(&mut hero, "fire").unwrap();
+        assert_eq!((catalog.rank(&hero, "igneousOrb"), catalog.rank(&hero, "volcanicRune")), (1, 1));
     }
 
     #[test]
-    fn test_parse_rejects_broken_wheels() {
-        let branch = r#"{ "id": "a", "name": "A", "color": [0, 0, 0] }"#;
-        let bad_branch = format!(r#"{{ "branches": [{branch}], "nodes": [{{ "id": "x", "name": "X", "branch": "b", "tier": 1 }}] }}"#);
-        assert!(SkillWheel::parse(&bad_branch).is_err());
-        let bad_requires = format!(r#"{{ "branches": [{branch}], "nodes": [{{ "id": "x", "name": "X", "branch": "a", "tier": 1, "requires": ["y"] }}] }}"#);
-        assert!(SkillWheel::parse(&bad_requires).is_err());
+    fn test_old_saves_lose_unknown_skills_and_get_their_points_back() {
+        let catalog = catalog();
+        let mut hero = CharacterStats::new(PlayerClass::Soldier);
+        hero.skills.insert("frappeLourde".into(), 2);
+        hero.skills.insert("heavyStrike".into(), 1);
+        assert_eq!(catalog.forget_unknown(&mut hero), vec!["frappeLourde".to_string()]);
+        assert_eq!(hero.skill_points, 2);
+        assert_eq!(hero.skills.len(), 1);
+    }
+
+    #[test]
+    fn test_cast_rules() {
+        let catalog = catalog();
+        let mut hero = CharacterStats::new(PlayerClass::WarPriest);
+        assert_eq!(catalog.cast_check(&hero, "judgment", 0.0), Some(CastError::NotLearned));
+        hero.skills.insert("judgment".into(), 1);
+        assert_eq!(catalog.cast_check(&hero, "judgment", 0.0), None);
+        assert_eq!(catalog.cast_check(&hero, "judgment", 1.0), Some(CastError::Cooldown));
+        hero.mana = 0.0;
+        assert_eq!(catalog.cast_check(&hero, "judgment", 0.0), Some(CastError::NoMana));
+        let cast = catalog.get("judgment").unwrap().cast.as_ref().unwrap();
+        // Le maillet frappe le sol à 35 % d'un geste de 0,9 s
+        assert!((catalog.impact_delay(cast) - 0.315).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_ranked_values() {
+        assert_eq!(Ranked::One(2.0).at(3), 2.0);
+        let r = Ranked::PerRank(vec![3.0, 3.5, 4.0]);
+        assert_eq!((r.at(0), r.at(1), r.at(2), r.at(3), r.at(5)), (3.0, 3.0, 3.5, 4.0, 4.0));
+    }
+
+    #[test]
+    fn test_areas() {
+        let block = 1.0;
+        let feet = Vec3::new(0.0, 100.0, 0.0);
+        let aim = Vec3::new(0.0, -0.3, -1.0);
+        let arc = Area::Arc { range: Ranked::One(3.0), angle: Ranked::One(90.0) }.place(1, feet, aim, None, block);
+        assert!(arc.contains(feet + Vec3::new(0.0, 0.0, -2.0), block), "devant");
+        assert!(!arc.contains(feet + Vec3::new(0.0, 0.0, 2.0), block), "derrière");
+        assert!(!arc.contains(feet + Vec3::new(0.0, 0.0, -4.0), block), "trop loin");
+        assert!(!arc.contains(feet + Vec3::new(0.0, 5.0, -1.0), block), "trop haut");
+
+        let line = Area::Line { length: Ranked::One(6.0), width: Ranked::One(2.0) }.place(1, feet, aim, None, block);
+        assert!(line.contains(feet + Vec3::new(0.5, 0.0, -5.0), block));
+        assert!(!line.contains(feet + Vec3::new(2.0, 0.0, -5.0), block));
+
+        let circle = Area::Circle { radius: Ranked::PerRank(vec![3.0, 4.0]), center: Center::Caster, distance: Ranked::One(0.0) };
+        assert!(!circle.place(1, feet, aim, None, block).contains(feet + Vec3::new(3.5, 0.0, 0.0), block));
+        assert!(circle.place(2, feet, aim, None, block).contains(feet + Vec3::new(3.5, 0.0, 0.0), block));
+
+        // Un point visé trop loin est ramené à la portée
+        let aimed = Area::Circle { radius: Ranked::One(2.0), center: Center::Aimed, distance: Ranked::One(5.0) }.place(1, feet, aim, Some(feet + Vec3::new(0.0, 0.0, -20.0)), block);
+        assert!(matches!(aimed, PlacedArea::Circle { center, .. } if (center - (feet + Vec3::new(0.0, 0.0, -5.0))).length() < 1e-3));
     }
 }

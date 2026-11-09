@@ -1,0 +1,14 @@
+{
+  "name": "Typhon Bouillant",
+  "description": "Feu / Eau : Orbe Igné + Fouet Écumeux.\n\nTu fouettes ton orbe de feu pour déclencher une énorme vague de vapeur à très haute pression qui ébouillante la zone.",
+  "wheel": {
+    "tier": 3,
+    "ring": 2.5,
+    "slot": 0.125,
+    "requires": [
+      "fusion"
+    ],
+    "max_rank": 3,
+    "planner": 186
+  }
+}

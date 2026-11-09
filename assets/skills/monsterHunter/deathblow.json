@@ -1,0 +1,15 @@
+{
+  "name": "Mise à mort",
+  "description": "Tir d'entrave + Broche-monstre. Un tir précis dans les articulations pour faire chuter la cible, suivi d'un empalement ascendant dévastateur.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "piercingVolley",
+      "monsterSkewer"
+    ],
+    "max_rank": 3,
+    "planner": 327
+  }
+}

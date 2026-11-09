@@ -1,0 +1,12 @@
+{
+  "name": "Onde Sismique",
+  "description": "Zone. Un coup violent frappé directement le sol, soulevant une ligne de débris vers l'avant pour toucher à distance.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 349
+  }
+}

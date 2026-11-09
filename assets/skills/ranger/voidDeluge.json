@@ -1,0 +1,16 @@
+{
+  "name": "Déluge du Néant",
+  "description": "Compétence ultime. Tu surcharges tes arbalètes avec la Pierre du néant. Tu lévites brièvement et libères instantanément une onde sphérique composée de centaines de balles d'Étherium. Ces projectiles sont à tête chercheuse, traversent absolument tous les murs et boucliers, et perforent l'armure de tous les ennemis dans un très large rayon.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "detonatingMark",
+      "magneticStorm",
+      "bulletDance"
+    ],
+    "max_rank": 3,
+    "planner": 284
+  }
+}

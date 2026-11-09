@@ -1,0 +1,14 @@
+{
+  "name": "Cri de ralliement",
+  "description": "Provocation. Force tous les ennemis dans un large rayon à te cibler exclusivement.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "taunt"
+    ],
+    "max_rank": 3,
+    "planner": 368
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Tempête de Shrapnels",
+  "description": "Terre / Air : Éclat Sismique + Lames de Vent.\n\nLes rafales de vent pulvérisent ton rocher en vol, le changeant en une pluie de projectiles perforants.",
+  "wheel": {
+    "tier": 3,
+    "ring": 2.5,
+    "slot": 0.375,
+    "requires": [
+      "fusion"
+    ],
+    "max_rank": 3,
+    "planner": 187
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Phalange",
+  "description": "Ancrage. Tu t'ancres au sol en utilisant le poids de ton armure lourde, devenant impossible à renverser ou à repousser.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "shieldBash"
+    ],
+    "max_rank": 3,
+    "planner": 366
+  }
+}

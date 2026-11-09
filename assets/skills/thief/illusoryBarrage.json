@@ -1,0 +1,15 @@
+{
+  "name": "Déluge Illusoire",
+  "description": "Tir à Éclats + Leurre. Ton leurre se met à tirer simultanément une volée de carreaux d'ombre explosifs avant de se dissiper.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "shardShot",
+      "smokeScreen"
+    ],
+    "max_rank": 3,
+    "planner": 268
+  }
+}

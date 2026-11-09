@@ -1,0 +1,14 @@
+{
+  "name": "Arme de l'Aube",
+  "description": "Arme. Ton arme s'embrase de lumière, infligeant des dégâts supplémentaires majeurs, surtout aux créatures de l'ombre.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "radiantStrike"
+    ],
+    "max_rank": 3,
+    "planner": 397
+  }
+}

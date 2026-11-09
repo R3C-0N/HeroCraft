@@ -28,6 +28,7 @@ mod creatures;
 mod dropped_items;
 mod gpu_timer;
 mod hero_creator;
+mod gestures;
 mod hero_model;
 mod villagers;
 mod input;
@@ -48,6 +49,7 @@ mod skills_screen;
 mod skinned_model;
 #[cfg(test)]
 mod skill_models;
+mod skill_play;
 mod terrain_cull;
 mod ui;
 mod ui_skin;
@@ -197,6 +199,8 @@ fn main() {
     let mut villager_animator = villagers::VillagerAnimator::default();
     let mut hero_gait = hero_model::HeroGait::default();
     let mut hero_figure = hero_model::FigureCache::default();
+    // Compétences : lancements, recharges, gestes du héros et frappes à montrer
+    let mut skill_play = skill_play::SkillPlay::default();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
     // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
     // prochain coup qu'on peut leur porter
@@ -766,6 +770,15 @@ fn main() {
                                         state.simulated_time = time as f32;
                                         client_weather.model.forced = forced;
                                     }
+                                    NetEvent::SkillCast { player_id, skill, rank, aim, aimed } => skill_play.on_cast(player_id, client.player_id(), &skill, rank, aim, aimed),
+                                    NetEvent::SkillRefused { skill, reason } => {
+                                        ui_state.chat.error(format!("{} : {reason}", skill_name(&skill)));
+                                        skill_play.on_refused(&skill, &reason);
+                                    }
+                                    NetEvent::SkillHit { player_id, skill, rank, center, creatures, players } => {
+                                        let caster = (player_id != client.player_id()).then_some(player_id);
+                                        skill_play.on_hit(skill_play::Shown { caster, skill, rank, at: Instant::now(), center, creatures, players });
+                                    }
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
                                 }
                             }
@@ -810,7 +823,7 @@ fn main() {
                                         // Banc d'essai : les bêtes ne blessent pas le joueur
                                         for hit in hits.into_iter().filter(|_| bench.is_none()) {
                                             let cause = creature_registry.get(hit.species).map_or("Une créature", |s| s.name.as_str());
-                                            let hurt = ui_state.player.bitten(hit.damage, cause);
+                                            let hurt = ui_state.player.bitten(hit.damage * skill_play.solo_damage_factor(), cause);
                                             show_wound(hurt, cause, &mut camera, &mut ui_state, &mut audio);
                                         }
                                         // Œufs pondus par les bêtes apprivoisées, laissés à leurs pieds
@@ -856,12 +869,25 @@ fn main() {
                                     }
                                 }
                             }
-                            // Le héros, vu de dehors à la troisième personne
+                            // Compétences : en solo les règles tournent ici, sur nos créatures
+                            let solo_skills = (net.is_none() && !ui_state.is_settings_open).then_some((&mut solo_creatures, camera.player_pos, &mut ui_state.player.stats));
+                            let _cues = skill_play.tick(anim_dt, solo_skills);
+                            if net.is_none() {
+                                let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
+                                for murder in solo_creatures.take_murders() {
+                                    ui_state.chat.server(&murder.announce(&name));
+                                }
+                                for assault in solo_creatures.take_assaults() {
+                                    ui_state.chat.server(&assault.warning());
+                                }
+                            }
+                            // Le héros, vu de dehors à la troisième personne, avec le geste de sa compétence
                             hero_gait.update(camera.player_pos, anim_dt, block);
                             if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson) {
                                 state.set_hero_sheet(&legend.appearance);
                                 let figure = hero_figure.get(&legend.appearance);
-                                hero_model::push_hero(&mut frame, &legend.appearance, figure, camera.player_pos, camera.player_yaw, hero_gait.swing(), block);
+                                let pose = skill_play.hero_pose(hero_gait.swing(), figure.units_per_block(&legend.appearance));
+                                hero_model::push_hero_posed(&mut frame, &legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, block);
                             }
                             state.set_creature_frame(&frame);
                             creature_vertices = frame.vertices.len();
@@ -1058,6 +1084,20 @@ fn main() {
                         }
                         if net.is_none() {
                             ui_state.chat.players.clear();
+                        }
+
+                        // Compétences lancées (touches de la barre, /cast) : visée du regard, et du
+                        // bloc visé s'il y en a un
+                        for skill in std::mem::take(&mut ui_state.skill_casts) {
+                            let (_, _, _, aim) = camera.look_vectors();
+                            let aimed = block_interaction.target().map(|hit| camera.eye_position() + aim * hit.distance as f32);
+                            let result = match net.as_mut() {
+                                Some(client) => skill_play.request(&skill, &mut ui_state.player.stats, aim, aimed, Some(&mut |s: &str, aim, aimed| client.send_cast_skill(s, aim, aimed))),
+                                None => skill_play.request(&skill, &mut ui_state.player.stats, aim, aimed, None),
+                            };
+                            if let Err(reason) = result {
+                                ui_state.chat.error(format!("{} : {reason}", skill_name(&skill)));
+                            }
                         }
 
                         // 2. Traitement des actions déclenchées par les boutons egui et le clavier
@@ -1823,6 +1863,11 @@ fn write_profile_report() {
     }
 }
 
+/// Nom affiché d'une compétence (son identifiant si elle est inconnue)
+fn skill_name(id: &str) -> String {
+    herocraft_common::skills().get(id).map_or_else(|| id.to_string(), |s| s.name.clone())
+}
+
 /// Identifiants des blocs et objets que `/give` peut donner (ceux du catalogue de l'inventaire)
 fn commands_items() -> Vec<String> {
     let blocks = herocraft_common::blocks().iter().filter(|s| inventory::can_hold(herocraft_common::BlockId(s.numeric_id).into())).map(|s| s.id.clone());
@@ -1999,6 +2044,13 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
                 }
             }
         }
+        Command::Cast(skill) => match herocraft_common::skills().get(&skill) {
+            None => Err(format!("Unknown skill: {skill}")),
+            Some(_) => {
+                game.ui.skill_casts.push(skill);
+                Ok(Vec::new())
+            }
+        },
         Command::Heal => match game.net.as_deref_mut() {
             Some(client) => {
                 client.send_heal();

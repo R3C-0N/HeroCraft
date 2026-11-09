@@ -1,0 +1,14 @@
+{
+  "name": "Golem de Chair",
+  "description": "Défense. Amalgame de cadavres très lent, incapable d'esquiver, mais encaissant des dégâts colossaux à ta place.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "boneWall"
+    ],
+    "max_rank": 3,
+    "planner": 218
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Béhémoth d'Os",
+  "description": "Golem + Mur. Une monstruosité géante faite d'os et de chair putréfiée qui charge en ligne droite, écrasant et renversant tout sur son passage.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "fleshGolem"
+    ],
+    "max_rank": 3,
+    "planner": 222
+  }
+}

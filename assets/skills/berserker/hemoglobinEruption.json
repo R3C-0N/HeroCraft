@@ -1,0 +1,15 @@
+{
+  "name": "Éruption d'Hémoglobine",
+  "description": "Entaille Sanglante + Frappe Sauvage. Le sang magique sur ton arme explose violemment à l'impact, brûlant tous les ennemis dans la zone.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "dyingFrenzy",
+      "frenziedMutilation"
+    ],
+    "max_rank": 3,
+    "planner": 386
+  }
+}

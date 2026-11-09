@@ -37,6 +37,8 @@ pub enum Command {
     Summon { species: String, count: u32 },
     /// Jauges pleines
     Heal,
+    /// Lance une compétence apprise (identifiant de son fichier)
+    Cast(String),
     /// Points d'expérience gagnés
     Experience(u64),
     /// Joueurs en ligne
@@ -73,6 +75,7 @@ pub const COMMANDS: &[CommandHelp] = &[
     CommandHelp { name: "speed", usage: "/speed <factor>", description: "Movement speed multiplier (1 = normal, up to 20)" },
     CommandHelp { name: "summon", usage: "/summon <creature> [count]", description: "Spawn creatures in front of you" },
     CommandHelp { name: "heal", usage: "/heal", description: "Restore health, mana and stamina" },
+    CommandHelp { name: "cast", usage: "/cast <skill>", description: "Cast a learned skill (Tab completes the name)" },
     CommandHelp { name: "xp", usage: "/xp <amount>", description: "Gain experience points" },
     CommandHelp { name: "list", usage: "/list", description: "List the players online" },
     CommandHelp { name: "clear", usage: "/clear", description: "Clear the chat" },
@@ -136,6 +139,7 @@ pub fn parse(line: &str) -> Result<Command, String> {
             Command::Summon { species: species.to_string(), count }
         }
         ("heal", []) => Command::Heal,
+        ("cast", [skill]) => Command::Cast(skill.to_string()),
         ("xp" | "experience", [amount]) => {
             Command::Experience(amount.parse().ok().filter(|n| (1..=MAX_XP).contains(n)).ok_or_else(|| wrong(&format!("Invalid amount \"{amount}\" (1 to {MAX_XP})")))?)
         }
@@ -209,6 +213,7 @@ pub fn complete(line: &str, sources: &CompletionSources) -> Vec<String> {
         [command] => match command.to_lowercase().as_str() {
             "give" => sources.items.to_vec(),
             "summon" => sources.creatures.to_vec(),
+            "cast" => herocraft_common::skills().iter().filter(|s| s.is_castable()).map(|s| s.id.clone()).collect(),
             "tp" | "teleport" => sources.players.to_vec(),
             "help" | "?" => COMMANDS.iter().map(|c| c.name.to_string()).collect(),
             "time" => vec!["set".into(), "speed".into()],

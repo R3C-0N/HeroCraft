@@ -1,0 +1,16 @@
+{
+  "name": "Avatar du Néant",
+  "description": "Chimère ultime. Au lieu d'utiliser ta magie de la nature, tu plantes violemment ton Totem au sol et tu le surcharges avec l'énergie de la Pierre du néant. Tu fusionnes avec lui pour devenir une entité cosmique colossale qui combine la force de l'ours, la vitesse du loup, les ailes du rapace et la magie du cerf grâce aux cristaux d'Étherium purs.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "owlbear",
+      "wendigo",
+      "sylvanGriffin"
+    ],
+    "max_rank": 3,
+    "planner": 209
+  }
+}

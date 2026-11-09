@@ -1,0 +1,12 @@
+{
+  "name": "Garde de fer",
+  "description": "Parade. Posture levant le bouclier pour bloquer totalement les attaques physiques frontales.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 364
+  }
+}

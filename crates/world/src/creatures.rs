@@ -277,6 +277,11 @@ pub struct Creature {
     chase_from: Option<Vec3>,
     /// Temps restant avant qu'une bête revenue de sa poursuite ne cherche de nouveau querelle
     calm: f32,
+    /// Ralentie par une compétence : vitesse retirée (0 à 1) et temps restant, en secondes
+    slow: f32,
+    slow_time: f32,
+    /// Étourdie par une compétence : temps restant sans bouger ni frapper, en secondes
+    stun: f32,
 }
 
 /// Un joueur a tué un habitant ou un voyageur : de quoi l'annoncer
@@ -689,6 +694,11 @@ impl CreatureWorld {
     }
 
     /// Les bêtes éveillées (celles des zones proches d'un joueur)
+    /// Taille d'un bloc, en unités du monde
+    pub fn block_size(&self) -> f32 {
+        self.geometry.block_height as f32
+    }
+
     pub fn creatures(&self) -> &[Creature] {
         &self.creatures
     }
@@ -792,6 +802,9 @@ impl CreatureWorld {
             quarry: None,
             chase_from: None,
             calm: 0.0,
+            slow: 0.0,
+            slow_time: 0.0,
+            stun: 0.0,
         });
     }
 
@@ -939,9 +952,15 @@ impl CreatureWorld {
     /// habitant, les gardes de sa ville s'en prennent à lui un moment ; s'il le tue, ceux des
     /// environs le recherchent longtemps
     pub fn hit_by(&mut self, id: u64, from: Vec3, player: u64) -> bool {
+        self.wound(id, from, player, PLAYER_HIT_DAMAGE).is_some()
+    }
+
+    /// Comme `hit_by`, avec `damage` points de dégâts (une compétence) : `Some(vrai)` si le coup
+    /// l'a tuée, `None` si elle n'existe pas ou est déjà morte
+    pub fn wound(&mut self, id: u64, from: Vec3, player: u64, damage: f32) -> Option<bool> {
         let victim = self.creatures.iter().find(|c| c.id == id && c.is_alive()).map(|c| (c.herd, c.position, c.managed && self.registry.get(c.species).is_some_and(|s| s.humanoid)));
         let who = self.villages.card(id).map(|card| (card.name.clone(), card.profession.clone(), self.villages.town_of(id).map(str::to_string)));
-        let Some(killed) = self.strike(id, from, PLAYER_HIT_DAMAGE, true) else { return false };
+        let killed = self.strike(id, from, damage, true)?;
         if let Some((herd, position, true)) = victim {
             // Le premier coup (pas ceux qui suivent tant que les gardes lui en veulent) est signalé
             // à son auteur : il sait pourquoi on l'attaque
@@ -970,7 +989,33 @@ impl CreatureWorld {
                 }
             }
         }
-        true
+        Some(killed)
+    }
+
+    /// Ralentit la créature `id` de `strength` (0 à 1) pendant `duration` secondes ; un ralenti plus
+    /// fort ou plus long que celui qu'elle subit le remplace
+    pub fn slow(&mut self, id: u64, strength: f32, duration: f32) {
+        if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
+            c.slow = c.slow.max(strength.clamp(0.0, 1.0));
+            c.slow_time = c.slow_time.max(duration);
+        }
+    }
+
+    /// Étourdit la créature `id` pendant `duration` secondes : elle ne bouge ni ne frappe
+    pub fn stun(&mut self, id: u64, duration: f32) {
+        if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
+            c.stun = c.stun.max(duration);
+        }
+    }
+
+    /// Repousse la créature `id` loin de `from` à `speed` blocs par seconde (négative : l'attire)
+    pub fn shove(&mut self, id: u64, from: Vec3, speed: f32) {
+        let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) else { return };
+        let up = c.position.normalize_or_zero();
+        let away = c.position - from;
+        let away = (away - up * away.dot(up)).normalize_or_zero();
+        c.push = away * speed;
+        c.vertical_speed = c.vertical_speed.max(KNOCKBACK_HOP * speed.abs().min(KNOCKBACK_SPEED) / KNOCKBACK_SPEED);
     }
 
     /// Les meurtres d'habitants depuis le dernier appel, à annoncer dans le chat
@@ -1100,7 +1145,13 @@ impl CreatureWorld {
         let mut bites = Vec::new();
         let Self { creatures, registry, prey_table, rng, wanted, .. } = self;
         for (index, c) in creatures.iter_mut().enumerate() {
-            c.attack_cooldown = (c.attack_cooldown - dt).max(0.0);
+            c.stun = (c.stun - dt).max(0.0);
+            c.slow_time = (c.slow_time - dt).max(0.0);
+            if c.slow_time <= 0.0 {
+                c.slow = 0.0;
+            }
+            // Étourdie, elle ne frappe pas
+            c.attack_cooldown = (c.attack_cooldown - dt).max(c.stun);
             c.striking = (c.striking - dt).max(0.0);
             c.anger = (c.anger - dt).max(0.0);
             c.sated = (c.sated - dt).max(0.0);
@@ -2016,7 +2067,8 @@ impl Walker<'_, '_> {
         }
         let mut velocity = c.push;
         let pace = if c.panic > 0.0 { c.panic_speed } else { c.pace } * if c.swimming { SWIM_SPEED } else { 1.0 };
-        let speed = species.walk_speed * pace * turn.cos().max(0.0);
+        let status = if c.stun > 0.0 { 0.0 } else { 1.0 - c.slow };
+        let speed = species.walk_speed * pace * status * turn.cos().max(0.0);
         if c.walking && c.dead_for.is_none() && speed > 0.0 {
             // Elle regarde quelques pas devant elle : le sol juste devant le museau décide si elle
             // avance, la suite si elle doit déjà obliquer pour contourner un mur, une falaise ou l'eau

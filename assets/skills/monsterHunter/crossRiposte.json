@@ -1,0 +1,14 @@
+{
+  "name": "Riposte croisée",
+  "description": "Réflexe. Pare une attaque physique avec ta lame et enchaîne automatiquement avec un tir à bout portant.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "tacticalDodge"
+    ],
+    "max_rank": 3,
+    "planner": 324
+  }
+}

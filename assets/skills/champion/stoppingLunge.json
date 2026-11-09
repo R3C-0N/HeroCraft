@@ -1,0 +1,12 @@
+{
+  "name": "Fente d'arrêt",
+  "description": "Épée. Coup d'épée rapide ciblant les jambes pour ralentir l'ennemi.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 362
+  }
+}

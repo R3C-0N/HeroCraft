@@ -1,0 +1,16 @@
+{
+  "name": "Terre",
+  "description": "Une compétence, deux sorts.\n\n- Offensif : Éclat Sismique, projette un rocher lourd et perforant.\n- Défensif : Rempart Tellurique, fait surgir un large mur de pierre qui avance pour repousser violemment les ennemis au loin.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 177,
+    "grants": [
+      "seismicShard",
+      "telluricRampart"
+    ]
+  }
+}

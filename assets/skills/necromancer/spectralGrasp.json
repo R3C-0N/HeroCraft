@@ -1,0 +1,14 @@
+{
+  "name": "Emprise Spectrale",
+  "description": "Spectre. Des mains fantomatiques jaillissent du sol pour paralyser totalement un groupe d'ennemis.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "poltergeist"
+    ],
+    "max_rank": 3,
+    "planner": 219
+  }
+}

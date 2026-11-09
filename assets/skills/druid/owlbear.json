@@ -1,0 +1,15 @@
+{
+  "name": "Ours-Hibou",
+  "description": "Ours + Faucon. Une créature massive capable de faire de très hauts bonds pour s'écraser au sol et créer une violente onde de choc de zone.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "runicBear",
+      "peregrineFalcon"
+    ],
+    "max_rank": 3,
+    "planner": 206
+  }
+}
