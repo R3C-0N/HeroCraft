@@ -897,6 +897,19 @@ fn main() {
                                 hero_model::push_hero_posed(&mut frame, &legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, block);
                                 hero_anchors = hero_model::HeroAnchors::posed(&legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, block);
                             }
+                            // À la première personne, le temps d'un geste : les bras et l'arme devant l'œil
+                            if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::FirstPerson && skill_play.local_play().is_some()) {
+                                state.set_hero_sheet(&legend.appearance);
+                                let figure = hero_figure.get(&legend.appearance);
+                                let pose = skill_play.hero_pose(0.0, figure.units_per_block(&legend.appearance));
+                                let held = ui_state.inventory.slot(ui_state.inventory.selected()).map(|s| s.item);
+                                // Un objet tenu (pas un bloc) fait l'arme ; sa couleur d'acier en attendant les vraies armes
+                                let weapon = held.filter(|item| item.block().is_none()).map(|_| [0.72, 0.74, 0.78, 1.0]);
+                                let (_, _, _, look) = camera.look_vectors();
+                                let (right, left) = hero_model::push_first_person_arms(&mut frame, &legend.appearance, figure, camera.eye_position(), look, &pose, weapon, block);
+                                hero_anchors.right_hand = right;
+                                hero_anchors.left_hand = left;
+                            }
                             // Les effets des compétences, accrochés au héros, aux joueurs et aux créatures
                             effect_quads.clear();
                             if !skill_effects.is_empty() {

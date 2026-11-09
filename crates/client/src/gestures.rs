@@ -131,7 +131,7 @@ impl GestureLibrary {
         library
     }
 
-    fn load_dir(dir: &Path) -> (Self, Vec<String>) {
+    pub(crate) fn load_dir(dir: &Path) -> (Self, Vec<String>) {
         let mut gestures = HashMap::new();
         let mut errors = Vec::new();
         for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
