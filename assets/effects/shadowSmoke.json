@@ -1,0 +1,36 @@
+{
+  "description": "Fumée d'ombre : disparition, frappe sournoise, malédiction.",
+  "layers": [
+    {
+      "particles": {
+        "count": 30,
+        "origin": "cylinder",
+        "origin_radius": 0.4,
+        "origin_height": 1.6,
+        "direction": "outward",
+        "speed": [0.4, 1.2],
+        "drag": 1.5,
+        "gravity": -0.4,
+        "life": [0.7, 1.3],
+        "size": [0.5, 1.2],
+        "color": ["#1A1428C0", "#1A142800"],
+        "texture": "smoke.png"
+      }
+    },
+    {
+      "particles": {
+        "count": 12,
+        "origin": "cylinder",
+        "origin_radius": 0.4,
+        "origin_height": 1.6,
+        "direction": "random",
+        "speed": [0.3, 0.8],
+        "life": [0.4, 0.8],
+        "size": [0.06, 0.0],
+        "color": ["#B080FF", "#B080FF00"],
+        "glow": 2.5,
+        "texture": "spark.png"
+      }
+    }
+  ]
+}

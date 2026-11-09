@@ -1,0 +1,46 @@
+{
+  "description": "Explosion de feu, souffle et fumée.",
+  "unit": "area",
+  "layers": [
+    {
+      "shape": "sprite",
+      "duration": 0.2,
+      "size": [0.4, 1.6],
+      "color": ["#FFF0C0", "#FF802000"],
+      "glow": 5,
+      "texture": "soft.png"
+    },
+    {
+      "particles": {
+        "count": 50,
+        "origin": "sphere",
+        "origin_radius": 0.2,
+        "direction": "random",
+        "speed": [3, 7],
+        "drag": 3,
+        "gravity": -1,
+        "life": [0.3, 0.6],
+        "size": [0.4, 0.1],
+        "color": ["#FFD070", "#FF301000"],
+        "glow": 3.5,
+        "texture": "flame.png"
+      }
+    },
+    {
+      "delay": 0.1,
+      "particles": {
+        "count": 16,
+        "origin": "sphere",
+        "origin_radius": 0.6,
+        "direction": "outward",
+        "speed": [0.5, 1.2],
+        "gravity": -0.8,
+        "drag": 1,
+        "life": [1.0, 1.8],
+        "size": [0.6, 1.4],
+        "color": ["#40382F90", "#40382F00"],
+        "texture": "smoke.png"
+      }
+    }
+  ]
+}

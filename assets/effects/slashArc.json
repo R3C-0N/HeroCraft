@@ -1,0 +1,15 @@
+{
+  "description": "Traînée lumineuse d'un coup de taille.",
+  "layers": [
+    {
+      "shape": "arc",
+      "duration": 0.25,
+      "radius": 1.6,
+      "angle": 120,
+      "thickness": [0.5, 0.1],
+      "sweep": true,
+      "color": ["#FFFFFFE0", "#C8DCFF00"],
+      "glow": 2
+    }
+  ]
+}

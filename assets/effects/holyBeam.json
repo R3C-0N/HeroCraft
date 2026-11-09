@@ -1,0 +1,22 @@
+{
+  "description": "Colonne de lumière qui tombe du ciel.",
+  "layers": [
+    {
+      "shape": "column",
+      "duration": 0.6,
+      "radius": [0.8, 0.2],
+      "height": 12,
+      "color": ["#FFF8E0E0", "#FFE9A800"],
+      "glow": 4
+    },
+    {
+      "shape": "ring",
+      "on_ground": true,
+      "duration": 0.4,
+      "radius": [0.4, 1.6],
+      "thickness": 0.2,
+      "color": ["#FFF8E0", "#FFE9A800"],
+      "glow": 3
+    }
+  ]
+}

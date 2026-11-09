@@ -1,0 +1,38 @@
+{
+  "description": "Balayage horizontal, de la droite vers la gauche.",
+  "duration": 0.6,
+  "legs": "free",
+  "impact": 0.5,
+  "keys": [
+    {"t": 0.0},
+    {
+      "t": 0.3,
+      "ease": "out",
+      "bones": {
+        "rightArm": {"rotation": [90, 0, 60]},
+        "rightForearm": {"rotation": [20, 0, 0]},
+        "leftArm": {"rotation": [40, 0, -10]},
+        "torso": {"rotation": [0, -50, 0]}
+      }
+    },
+    {
+      "t": 0.5,
+      "ease": "in",
+      "bones": {
+        "rightArm": {"rotation": [90, 0, -20]},
+        "rightForearm": {"rotation": [5, 0, 0]},
+        "rightHand": {"rotation": [0, 20, 0]},
+        "torso": {"rotation": [0, 30, 0]}
+      }
+    },
+    {
+      "t": 0.75,
+      "bones": {
+        "rightArm": {"rotation": [80, 0, -40]},
+        "rightForearm": {"rotation": [15, 0, 0]},
+        "torso": {"rotation": [0, 45, 0]}
+      }
+    },
+    {"t": 1.0}
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "description": "Arbalète épaulée à deux mains, visée puis recul du tir.",
+  "duration": 0.8,
+  "legs": "free",
+  "impact": 0.5,
+  "keys": [
+    {"t": 0.0},
+    {
+      "t": 0.3,
+      "ease": "out",
+      "bones": {
+        "rightArm": {"rotation": [85, 0, -5]},
+        "leftArm": {"rotation": [85, 0, -10]},
+        "rightForearm": {"rotation": [30, 0, 0]},
+        "leftForearm": {"rotation": [15, 0, 0]},
+        "head": {"rotation": [10, 0, 0]}
+      }
+    },
+    {
+      "t": 0.5,
+      "bones": {
+        "rightArm": {"rotation": [85, 0, -5]},
+        "leftArm": {"rotation": [85, 0, -10]},
+        "rightForearm": {"rotation": [30, 0, 0]},
+        "leftForearm": {"rotation": [15, 0, 0]},
+        "head": {"rotation": [10, 0, 0]}
+      }
+    },
+    {
+      "t": 0.58,
+      "ease": "out",
+      "bones": {
+        "rightArm": {"rotation": [95, 0, -5]},
+        "leftArm": {"rotation": [95, 0, -10]},
+        "rightForearm": {"rotation": [35, 0, 0]},
+        "leftForearm": {"rotation": [20, 0, 0]},
+        "torso": {"rotation": [-6, 0, 0]},
+        "head": {"rotation": [5, 0, 0]}
+      }
+    },
+    {
+      "t": 0.8,
+      "bones": {
+        "rightArm": {"rotation": [85, 0, -5]},
+        "leftArm": {"rotation": [85, 0, -10]},
+        "rightForearm": {"rotation": [30, 0, 0]},
+        "leftForearm": {"rotation": [15, 0, 0]},
+        "head": {"rotation": [10, 0, 0]}
+      }
+    },
+    {"t": 1.0}
+  ]
+}

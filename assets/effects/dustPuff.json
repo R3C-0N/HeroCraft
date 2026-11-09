@@ -1,0 +1,22 @@
+{
+  "description": "Bouffée de poussière aux pieds : départ de ruée, réception.",
+  "layers": [
+    {
+      "particles": {
+        "count": 14,
+        "origin": "ring",
+        "origin_radius": 0.4,
+        "direction": "outward",
+        "spread": 20,
+        "speed": [0.8, 1.6],
+        "gravity": -0.2,
+        "drag": 2,
+        "life": [0.5, 0.9],
+        "size": [0.35, 0.9],
+        "color": ["#B8A68A99", "#B8A68A00"],
+        "texture": "smoke.png",
+        "block_color": true
+      }
+    }
+  ]
+}
