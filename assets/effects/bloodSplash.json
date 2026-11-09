@@ -1,0 +1,47 @@
+{
+  "description": "Gerbe de sang qui gicle et retombe en gouttes.",
+  "layers": [
+    {
+      "particles": {
+        "count": 36,
+        "origin": "sphere",
+        "origin_radius": 0.15,
+        "direction": "up",
+        "spread": 70,
+        "speed": [
+          2,
+          5
+        ],
+        "gravity": 9,
+        "drag": 0.5,
+        "life": [
+          0.4,
+          0.8
+        ],
+        "size": [
+          0.12,
+          0.05
+        ],
+        "color": [
+          "#B01020",
+          "#5A060C00"
+        ],
+        "texture": "soft.png"
+      }
+    },
+    {
+      "shape": "disc",
+      "on_ground": true,
+      "duration": 1.2,
+      "radius": [
+        0.2,
+        0.9
+      ],
+      "color": [
+        "#7A0A14C0",
+        "#5A060C00"
+      ],
+      "texture": "soft.png"
+    }
+  ]
+}

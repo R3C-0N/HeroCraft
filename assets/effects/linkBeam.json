@@ -1,0 +1,53 @@
+{
+  "description": "Lien lumineux et ténu tendu vers l'allié ou la cible liée.",
+  "layers": [
+    {
+      "loop": true,
+      "fade_in": 0.2,
+      "fade_out": 0.3,
+      "shape": "streak",
+      "offset": [
+        0,
+        1.2,
+        0
+      ],
+      "length": 5,
+      "width": 0.08,
+      "color": ["#C0E8FFB0", "#C0E8FFB0"],
+      "glow": 3,
+      "pulse": 2
+    },
+    {
+      "loop": true,
+      "particles": {
+        "rate": 15,
+        "origin": "line",
+        "origin_length": 5,
+        "offset": [
+          0,
+          1.2,
+          2.5
+        ],
+        "direction": "random",
+        "speed": [
+          0.1,
+          0.3
+        ],
+        "life": [
+          0.5,
+          0.9
+        ],
+        "size": [
+          0.06,
+          0.0
+        ],
+        "color": [
+          "#E0F4FF",
+          "#80C0FF00"
+        ],
+        "glow": 3,
+        "texture": "spark.png"
+      }
+    }
+  ]
+}

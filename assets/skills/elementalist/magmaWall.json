@@ -10,5 +10,57 @@
     ],
     "max_rank": 3,
     "planner": 189
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 40
+    },
+    "cooldown": 22,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": 2.5,
+        "center": "aimed",
+        "distance": 6
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "over_time": {
+          "damage": [
+            3,
+            4,
+            5
+          ],
+          "duration": 6
+        }
+      },
+      {
+        "summon": {
+          "species": "stoneWall",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            8,
+            10,
+            12
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "stoneWall",
+      "anchor": "aimed",
+      "from": "impact"
+    },
+    {
+      "effect": "lavaPool",
+      "anchor": "aimed",
+      "from": "impact",
+      "to": "effectEnd"
+    }
+  ]
 }

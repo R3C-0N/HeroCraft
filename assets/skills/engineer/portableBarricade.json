@@ -10,5 +10,41 @@
     ],
     "max_rank": 3,
     "planner": 308
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 25
+    },
+    "cooldown": 20,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": 1.5,
+        "center": "aimed",
+        "distance": 4
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "summon": {
+          "species": "portableBarricade",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            10,
+            12,
+            15
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
 }

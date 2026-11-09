@@ -1,0 +1,37 @@
+{
+  "name": "Tourelle Balistique",
+  "description": "Tourelle de l'Ingénieur, posée sur trois pieds, qui tire des carreaux sur les ennemis proches.",
+  "body": {
+    "half_width": 0.59,
+    "half_length": 0.61,
+    "height": 1.06
+  },
+  "walk_speed": 0,
+  "health": 60,
+  "activity": "always",
+  "model": {
+    "mesh": "../skills/models/ballisticTurret.gltf",
+    "texture": "../skills/models/ballisticTurret.png",
+    "animations": {
+      "attaque": {
+        "clip": "fire",
+        "cycle": 0.5
+      },
+      "coup": {
+        "os": {
+          "root": {
+            "rotation": [
+              0,
+              0,
+              3
+            ],
+            "frequence": 2
+          }
+        }
+      },
+      "repos": {
+        "cycle": 2
+      }
+    }
+  }
+}

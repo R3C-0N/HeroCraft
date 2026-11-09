@@ -11,5 +11,47 @@
     ],
     "max_rank": 3,
     "planner": 221
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 60
+    },
+    "cooldown": 60,
+    "animation": "summon",
+    "area": {
+      "circle": {
+        "radius": 2,
+        "center": "aimed",
+        "distance": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "summon": {
+          "species": "lichLord",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            30,
+            40,
+            50
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "summonPortal",
+      "anchor": "aimed",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "shadowSmoke",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
 }

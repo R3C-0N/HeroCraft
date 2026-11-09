@@ -128,3 +128,27 @@ Une valeur seule est constante. Une couleur s'écrit `#RRGGBB` ou `#RRGGBBAA` (l
 | `summonPortal` | portail d'invocation |
 | `stunStars` | étoiles d'étourdissement |
 | `arrowTrail` | traînée de flèche |
+| `bloodSplash` | gerbe de sang |
+| `etheriumAura` | halo d'Étherium des ultimes |
+| `shapeshiftBurst` | éclatement d'une métamorphose |
+| `voidRift` | déchirure du Néant au sol |
+| `targetMark` | viseur sur une cible marquée |
+| `tornado` | tornade |
+| `roarWave` | onde d'un cri |
+| `windSwirl` | tourbillon de vent autour du corps |
+| `featherGust` | bourrasque de plumes |
+| `cableLine` | câble lancé |
+| `lightWall` | mur de lumière |
+| `lightningArc` | arc électrique |
+| `drainStream` | âme aspirée de la cible |
+| `flameCone` | cône de flammes continu |
+| `waterWhip` | fouet d'eau |
+| `linkBeam` | lien lumineux |
+| `spiritSkull` | crâne spectral en vol |
+| `ghostHands` | mains spectrales sortant du sol |
+| `steamBurst` | jet de vapeur |
+| `lavaPool` | flaque de lave |
+| `mistCloud` | brume au sol |
+| `iceShards` | éclats de glace |
+| `stoneWall` | roche et poussière d'un mur qui surgit |
+| `boneWall` | os et terre d'un mur d'os qui surgit |

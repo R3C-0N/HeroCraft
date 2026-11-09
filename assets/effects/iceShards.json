@@ -1,0 +1,76 @@
+{
+  "description": "Éclats de glace qui jaillissent et volent en morceaux.",
+  "layers": [
+    {
+      "particles": {
+        "count": 24,
+        "origin": "sphere",
+        "origin_radius": 0.3,
+        "direction": "outward",
+        "speed": [
+          3,
+          6
+        ],
+        "drag": 1.5,
+        "gravity": 6,
+        "life": [
+          0.4,
+          0.8
+        ],
+        "size": [
+          0.25,
+          0.1
+        ],
+        "color": [
+          "#E0F8FF",
+          "#A0D8FF00"
+        ],
+        "glow": 1.8,
+        "texture": "shard.png",
+        "spin": [
+          -360,
+          360
+        ]
+      }
+    },
+    {
+      "shape": "sprite",
+      "duration": 0.2,
+      "size": [
+        0.3,
+        1.2
+      ],
+      "color": [
+        "#F0FCFF",
+        "#A0E0FF00"
+      ],
+      "glow": 3,
+      "texture": "soft.png"
+    },
+    {
+      "particles": {
+        "count": 12,
+        "origin": "disc",
+        "origin_radius": 0.6,
+        "direction": "up",
+        "speed": [
+          0.2,
+          0.5
+        ],
+        "life": [
+          0.8,
+          1.4
+        ],
+        "size": [
+          0.5,
+          1.0
+        ],
+        "color": [
+          "#E0F0FF50",
+          "#E0F0FF00"
+        ],
+        "texture": "smoke.png"
+      }
+    }
+  ]
+}

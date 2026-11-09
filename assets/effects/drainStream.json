@@ -1,0 +1,53 @@
+{
+  "description": "Filet d'âme rouge et violet aspiré de la cible vers le lanceur.",
+  "layers": [
+    {
+      "loop": true,
+      "particles": {
+        "rate": 40,
+        "origin": "sphere",
+        "origin_radius": 0.4,
+        "offset": [
+          0,
+          1.1,
+          0
+        ],
+        "direction": "inward",
+        "speed": [
+          1,
+          2
+        ],
+        "life": [
+          0.4,
+          0.7
+        ],
+        "size": [
+          0.15,
+          0.03
+        ],
+        "color": [
+          "#E03050",
+          "#7020A000"
+        ],
+        "glow": 2.5,
+        "texture": "soft.png"
+      }
+    },
+    {
+      "loop": true,
+      "fade_in": 0.2,
+      "fade_out": 0.2,
+      "shape": "sprite",
+      "offset": [
+        0,
+        1.1,
+        0
+      ],
+      "size": 0.6,
+      "texture": "soft.png",
+      "color": ["#A0206080", "#A0206080"],
+      "glow": 2,
+      "pulse": 3
+    }
+  ]
+}

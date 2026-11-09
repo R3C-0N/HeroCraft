@@ -8,5 +8,41 @@
     "requires": [],
     "max_rank": 3,
     "planner": 303
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 15
+    },
+    "cooldown": 8,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": 1,
+        "center": "aimed",
+        "distance": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "summon": {
+          "species": "shrapnelMine",
+          "at": "aimed",
+          "limit": [
+            3,
+            4,
+            5
+          ],
+          "duration": 60
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
 }

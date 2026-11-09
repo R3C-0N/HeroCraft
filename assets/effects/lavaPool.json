@@ -1,0 +1,74 @@
+{
+  "description": "Flaque de lave bouillonnante qui rougeoie au sol.",
+  "unit": "area",
+  "layers": [
+    {
+      "loop": true,
+      "fade_in": 0.4,
+      "fade_out": 0.8,
+      "shape": "disc",
+      "on_ground": true,
+      "radius": 1.0,
+      "spin": 6,
+      "texture": "soft.png",
+      "color": ["#FF5010E0", "#FF5010E0"],
+      "glow": 3,
+      "pulse": 0.6
+    },
+    {
+      "loop": true,
+      "particles": {
+        "rate": 20,
+        "origin": "disc",
+        "origin_radius": 0.9,
+        "direction": "up",
+        "speed": [
+          1,
+          2.5
+        ],
+        "gravity": 5,
+        "life": [
+          0.4,
+          0.8
+        ],
+        "size": [
+          0.12,
+          0.04
+        ],
+        "color": [
+          "#FFD060",
+          "#FF301000"
+        ],
+        "glow": 4,
+        "texture": "soft.png"
+      }
+    },
+    {
+      "loop": true,
+      "particles": {
+        "rate": 6,
+        "origin": "disc",
+        "origin_radius": 0.9,
+        "direction": "up",
+        "speed": [
+          0.3,
+          0.7
+        ],
+        "gravity": -0.5,
+        "life": [
+          1.5,
+          2.5
+        ],
+        "size": [
+          0.5,
+          1.2
+        ],
+        "color": [
+          "#40302880",
+          "#40302800"
+        ],
+        "texture": "smoke.png"
+      }
+    }
+  ]
+}

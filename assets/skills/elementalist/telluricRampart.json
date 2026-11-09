@@ -1,4 +1,49 @@
 {
   "name": "Rempart Tellurique",
-  "description": "Fait surgir un large mur de pierre qui avance pour repousser violemment les ennemis au loin."
+  "description": "Fait surgir un large mur de pierre qui avance pour repousser violemment les ennemis au loin.",
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 16,
+    "animation": "groundSlam",
+    "area": {
+      "line": {
+        "length": 6,
+        "width": 3
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "knockback": {
+          "strength": [
+            8,
+            10,
+            12
+          ]
+        }
+      },
+      {
+        "summon": {
+          "species": "stoneWall",
+          "at": "aimed",
+          "limit": 1,
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "stoneWall",
+      "anchor": "aimed",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "area",
+      "from": "impact"
+    }
+  ]
 }

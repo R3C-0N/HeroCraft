@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use glam::Vec3;
-use herocraft_common::skills::{BuffStat, CastError, Effect, EffectEntry, PlacedArea, SkillCatalog, Targets, SKILL_BASE_DAMAGE};
+use herocraft_common::skills::{BuffStat, CastError, Center, Effect, EffectEntry, PlacedArea, SkillCatalog, Targets, SKILL_BASE_DAMAGE};
 use herocraft_common::CharacterStats;
 
 use crate::CreatureWorld;
@@ -64,6 +64,8 @@ pub struct SkillImpact {
     pub center: Vec3,
     pub creatures: Vec<u64>,
     pub players: Vec<u64>,
+    /// Entités que la frappe a fait apparaître (`summon`)
+    pub summoned: Vec<u64>,
 }
 
 /// Ce que `tick` renvoie : les frappes du moment et les joueurs dont les jauges ont changé
@@ -103,12 +105,27 @@ struct Buff {
     left: f32,
 }
 
+/// Une entité invoquée, suivie jusqu'à sa disparition
+#[derive(Debug, Clone)]
+struct Summoned {
+    caster: u64,
+    species: String,
+    id: u64,
+    /// Secondes avant qu'elle disparaisse (`None` : jusqu'à sa destruction)
+    left: Option<f32>,
+}
+
+/// Écart entre deux entités invoquées ensemble, en blocs
+const SUMMON_SPACING: f32 = 1.5;
+
 /// Lancements en attente d'impact, recharges et effets qui durent
 #[derive(Debug, Default)]
 pub struct SkillRunner {
     pending: Vec<Pending>,
     over_time: Vec<OverTime>,
     buffs: Vec<Buff>,
+    /// Entités invoquées, de la plus ancienne à la plus récente
+    summoned: Vec<Summoned>,
     /// Recharge restante de chaque compétence de chaque joueur, en secondes
     cooldowns: HashMap<(u64, String), f32>,
 }
@@ -153,8 +170,22 @@ impl SkillRunner {
         (1.0 - self.buff(player, BuffStat::Defense)).clamp(0.1, 1.0)
     }
 
+    /// Entités invoquées par le joueur `player` encore présentes
+    pub fn summoned_by(&self, player: u64) -> impl Iterator<Item = u64> + '_ {
+        self.summoned.iter().filter(move |s| s.caster == player).map(|s| s.id)
+    }
+
+    /// Oublie le joueur `player` (il quitte la partie) ; ses invocations disparaissent avec lui
+    pub fn forget_with(&mut self, player: u64, creatures: &mut CreatureWorld) {
+        for s in self.summoned.iter().filter(|s| s.caster == player) {
+            creatures.dismiss(s.id);
+        }
+        self.forget(player);
+    }
+
     /// Oublie le joueur `player` (il quitte la partie)
     pub fn forget(&mut self, player: u64) {
+        self.summoned.retain(|s| s.caster != player);
         self.pending.retain(|p| p.caster != player);
         self.over_time.retain(|o| o.caster != player && o.target != SkillTarget::Player(player));
         self.buffs.retain(|b| b.player != player);
@@ -172,6 +203,22 @@ impl SkillRunner {
             buff.left -= dt;
         }
         self.buffs.retain(|b| b.left > 0.0);
+        // Les invocations détruites sont oubliées ; celles dont la durée est passée disparaissent
+        let alive: std::collections::HashSet<u64> = creatures.creatures().iter().filter(|c| c.is_alive()).map(|c| c.id).collect();
+        self.summoned.retain_mut(|s| {
+            if !alive.contains(&s.id) {
+                creatures.dismiss(s.id);
+                return false;
+            }
+            if let Some(left) = &mut s.left {
+                *left -= dt;
+                if *left <= 0.0 {
+                    creatures.dismiss(s.id);
+                    return false;
+                }
+            }
+            true
+        });
 
         for p in &mut self.pending {
             p.left -= dt;
@@ -272,11 +319,51 @@ impl SkillRunner {
             self.apply_to_player(entry, p, p.caster, players);
             changed.push(p.caster);
         }
+        let summoned = self.summon(def.summons(), p, feet, center, creatures);
         touched_creatures.sort_unstable();
         touched_creatures.dedup();
         touched_players.sort_unstable();
         touched_players.dedup();
-        Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched_creatures, players: touched_players })
+        Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched_creatures, players: touched_players, summoned })
+    }
+
+    /// Les apparitions d'une frappe, une fois par lancement : en cercle autour de leur point,
+    /// les plus anciennes du lanceur disparaissant au-delà de la limite
+    fn summon<'a>(&mut self, summons: impl Iterator<Item = &'a Effect>, p: &Pending, feet: Vec3, center: Vec3, creatures: &mut CreatureWorld) -> Vec<u64> {
+        let mut out = Vec::new();
+        let block = creatures.block_size();
+        for effect in summons {
+            let Effect::Summon { species, count, at, duration, limit } = effect else { continue };
+            let Some(index) = creatures.registry().find(species) else { continue };
+            let origin = match at {
+                Center::Caster => feet,
+                Center::Aimed => center,
+            };
+            // Le plan du sol au point d'apparition, orienté vers la visée
+            let up = origin.normalize_or(Vec3::Y);
+            let forward = (p.aim - up * p.aim.dot(up)).normalize_or(up.any_orthonormal_vector());
+            let right = forward.cross(up);
+            let n = count.at(p.rank).round().max(1.0) as usize;
+            let radius = if n > 1 { SUMMON_SPACING * block * n as f32 / std::f32::consts::TAU } else { 0.0 };
+            for i in 0..n {
+                let angle = std::f32::consts::TAU * i as f32 / n as f32;
+                let spot = origin + (forward * angle.cos() + right * angle.sin()) * radius;
+                let id = creatures.summon(index, spot, 0.0, p.caster);
+                self.summoned.push(Summoned { caster: p.caster, species: species.clone(), id, left: duration.as_ref().map(|d| d.at(p.rank)) });
+                out.push(id);
+            }
+            if let Some(limit) = limit {
+                let limit = limit.at(p.rank).round().max(1.0) as usize;
+                let mine: Vec<u64> = self.summoned.iter().filter(|s| s.caster == p.caster && s.species == *species).map(|s| s.id).collect();
+                for &old in mine.iter().take(mine.len().saturating_sub(limit)) {
+                    creatures.dismiss(old);
+                    out.retain(|&id| id != old);
+                }
+                let gone = &mine[..mine.len().saturating_sub(limit)];
+                self.summoned.retain(|s| !gone.contains(&s.id));
+            }
+        }
+        out
     }
 
     fn apply_to_creature(&mut self, entry: &EffectEntry, p: &Pending, id: u64, feet: Vec3, damage_factor: f32, creatures: &mut CreatureWorld) {
@@ -393,5 +480,50 @@ mod tests {
         let hp = stats.hp;
         stats.take_damage(10.0);
         assert_eq!((stats.hp, stats.shield), (hp, 20.0), "le bouclier encaisse");
+    }
+
+    #[test]
+    fn test_summons_appear_at_the_aimed_point_and_leave_over_the_limit() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut stats = CharacterStats::new(PlayerClass::Engineer);
+        stats.skills.insert("shrapnelMine".into(), 1);
+        stats.stamina = 1000.0;
+        let mut runner = SkillRunner::new();
+        let mut mines = Vec::new();
+        for _ in 0..4 {
+            runner.cast(&catalog, 3, &mut stats, "shrapnelMine", Vec3::NEG_Z, None).unwrap();
+            let mut player = SoloPlayer { id: 3, feet, stats: &mut stats };
+            let mut summoned = Vec::new();
+            for _ in 0..20 {
+                summoned.extend(runner.tick(0.5, &catalog, &mut creatures, &mut player).impacts.into_iter().flat_map(|i| i.summoned));
+            }
+            assert_eq!(summoned.len(), 1, "une mine par lancement");
+            mines.extend(summoned);
+        }
+        // Trois mines au plus au rang 1 : la plus ancienne a disparu
+        let present: Vec<u64> = runner.summoned_by(3).collect();
+        assert_eq!(present, mines[1..].to_vec());
+        assert!(creatures.creatures().iter().all(|c| c.id != mines[0]));
+        let mine = creatures.creatures().iter().find(|c| c.id == mines[3]).unwrap();
+        assert!(mine.tamed && mine.summoner == Some(3), "alliée du lanceur");
+        assert!(mine.position.distance(feet) > creatures.block_size(), "posée devant, au point visé");
+
+        // En quittant la partie, l'ingénieur emporte ses mines
+        runner.forget_with(3, &mut creatures);
+        assert!(creatures.creatures().iter().all(|c| c.summoner.is_none()));
+    }
+
+    #[test]
+    fn test_humanoid_summons_are_described_but_not_yet_playable() {
+        let catalog = SkillCatalog::load_default();
+        for id in ["deathKnight", "lichLord"] {
+            let def = catalog.get(id).unwrap();
+            assert_eq!(def.summons().count(), 1, "{id}");
+            assert!(!def.is_castable(), "{id}");
+        }
+        for id in ["skeletonServant", "boneWall", "ballisticTurret", "etheriumBastion", "magmaWall"] {
+            assert!(catalog.get(id).unwrap().is_castable(), "{id}");
+        }
     }
 }

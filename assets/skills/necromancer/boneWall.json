@@ -8,5 +8,41 @@
     "requires": [],
     "max_rank": 3,
     "planner": 213
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 25
+    },
+    "cooldown": 18,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": 2.5,
+        "center": "aimed",
+        "distance": 5
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "summon": {
+          "species": "boneWall",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            8,
+            10,
+            12
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "boneWall",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
 }

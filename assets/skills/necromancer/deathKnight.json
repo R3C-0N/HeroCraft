@@ -10,5 +10,47 @@
     ],
     "max_rank": 3,
     "planner": 216
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 35
+    },
+    "cooldown": 30,
+    "animation": "summon",
+    "area": {
+      "circle": {
+        "radius": 1.5,
+        "center": "aimed",
+        "distance": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "summon": {
+          "species": "deathKnight",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            40,
+            50,
+            60
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "summonPortal",
+      "anchor": "aimed",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "shadowSmoke",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
 }

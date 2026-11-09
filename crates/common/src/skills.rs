@@ -211,11 +211,23 @@ pub enum Effect {
         heal: Option<Ranked>,
         duration: Ranked,
     },
-    /// Fait apparaître des créatures (espèce de `assets/creatures/`)
+    /// Fait apparaître des entités alliées : créatures, tourelles, pièges, murs (une espèce de
+    /// `assets/creatures/`), ou invocations humanoïdes (`assets/skills/models/humanoids.json`,
+    /// pas encore dessinées : la compétence reste « pas encore jouable »)
     Summon {
         species: String,
+        /// Combien à chaque lancement
         #[serde(default = "one")]
         count: Ranked,
+        /// Où elles apparaissent : aux pieds du lanceur (`self`) ou au point visé (`aimed`)
+        #[serde(default)]
+        at: Center,
+        /// Secondes avant qu'elles disparaissent (sans : jusqu'à leur destruction)
+        #[serde(default)]
+        duration: Option<Ranked>,
+        /// Nombre au plus en même temps pour ce lanceur : les plus anciennes disparaissent
+        #[serde(default)]
+        limit: Option<Ranked>,
     },
     /// La créature s'en prend au lanceur pendant `duration` secondes
     Taunt { duration: Ranked },
@@ -357,12 +369,19 @@ pub struct SkillDef {
     pub sounds: BTreeMap<String, String>,
     /// Mécanique écrite en Rust, appelée par son nom (ultimes et cas uniques)
     pub special: Option<String>,
+    /// Elle a des règles, et tout ce qu'elle fait apparaître existe en jeu
+    playable: bool,
 }
 
 impl SkillDef {
-    /// Se lance : elle a des règles
+    /// Se lance : elle a des règles, et ce qu'elle invoque existe en jeu
     pub fn is_castable(&self) -> bool {
-        self.cast.is_some()
+        self.playable
+    }
+
+    /// Les apparitions de la compétence (`summon`), dans l'ordre du fichier
+    pub fn summons(&self) -> impl Iterator<Item = &Effect> {
+        self.cast.iter().flat_map(|c| c.effects.iter().chain(&c.self_effects)).map(|e| &e.effect).filter(|e| matches!(e, Effect::Summon { .. }))
     }
 }
 
@@ -501,11 +520,25 @@ impl SkillCatalog {
                             visuals: file.visuals,
                             sounds: file.sounds,
                             special: file.special,
+                            playable: false,
                         });
                     }
                     Err(e) => errors.push(format!("{}/{id}.json : {e}", class.id)),
                 }
             }
+        }
+
+        // Ce qu'une compétence peut faire apparaître : les espèces de `assets/creatures/` (à côté
+        // de `assets/skills/`) et les invocations humanoïdes, qui ne sont pas encore des espèces
+        let creatures: HashSet<String> = dir.parent().map(|d| json_files(&d.join("creatures")).iter().map(|p| stem(p)).collect()).unwrap_or_default();
+        let humanoids: HashSet<String> = std::fs::read_to_string(dir.join("models/humanoids.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|v| v.get("humanoids").and_then(|h| h.as_object()).map(|h| h.keys().cloned().collect()))
+            .unwrap_or_default();
+        for s in &mut skills {
+            s.playable = s.cast.is_some()
+                && s.summons().all(|e| matches!(e, Effect::Summon { species, .. } if creatures.contains(species)));
         }
 
         let mut catalog = Self { classes, skills: Vec::new(), index: HashMap::new(), granted_by: HashMap::new(), gestures: timing, fingerprint: 0 };
@@ -519,7 +552,8 @@ impl SkillCatalog {
             fresh
         });
         let ids: HashSet<String> = skills.iter().map(|s| s.id.clone()).collect();
-        skills.retain(|s| match catalog.check(s, &ids) {
+        let entities: HashSet<String> = creatures.union(&humanoids).cloned().collect();
+        skills.retain(|s| match catalog.check(s, &ids, &entities) {
             Ok(()) => true,
             Err(e) => {
                 errors.push(format!("{}/{} : {e}", s.class, s.id));
@@ -544,7 +578,7 @@ impl SkillCatalog {
     }
 
     /// Ce qui cloche dans `skill` : nombres, références aux autres compétences et aux gestes
-    fn check(&self, skill: &SkillDef, ids: &HashSet<String>) -> Result<(), String> {
+    fn check(&self, skill: &SkillDef, ids: &HashSet<String>, entities: &HashSet<String>) -> Result<(), String> {
         if let Some(w) = &skill.wheel {
             if !(1..=4).contains(&w.tier) || w.max_rank == 0 || w.ring.unwrap_or(w.tier as f32) < 1.0 {
                 return Err("palier de 1 à 4, anneau et rang maximal à partir de 1".into());
@@ -568,6 +602,16 @@ impl SkillCatalog {
             };
             if !numbers.iter().chain([&&cast.cooldown, &&cast.cost.mana, &&cast.cost.stamina]).all(|r| r.is_finite()) {
                 return Err("nombre invalide dans cast".into());
+            }
+            for summon in skill.summons() {
+                if let Effect::Summon { species, count, duration, limit, .. } = summon {
+                    if !entities.contains(species) {
+                        return Err(format!("invocation inconnue {species} (ni dans assets/creatures/, ni dans models/humanoids.json)"));
+                    }
+                    if !(count.is_finite() && count.at(1) >= 1.0) || duration.as_ref().is_some_and(|d| !d.is_finite()) || limit.as_ref().is_some_and(|l| !l.is_finite()) {
+                        return Err(format!("invocation {species} : count à partir de 1, duration et limit en nombres"));
+                    }
+                }
             }
         }
         Ok(())
@@ -653,7 +697,7 @@ impl SkillCatalog {
     /// Pourquoi ce personnage ne peut pas lancer `id` maintenant (`None` : il peut)
     pub fn cast_check(&self, stats: &CharacterStats, id: &str, cooldown_left: f32) -> Option<CastError> {
         let Some(skill) = self.get(id) else { return Some(CastError::Unknown) };
-        let Some(cast) = &skill.cast else { return Some(CastError::NotPlayable) };
+        let Some(cast) = skill.cast.as_ref().filter(|_| skill.playable) else { return Some(CastError::NotPlayable) };
         let rank = self.rank(stats, id);
         if rank == 0 {
             return Some(CastError::NotLearned);

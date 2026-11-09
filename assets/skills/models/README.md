@@ -10,6 +10,22 @@ python3 tools/modeles_competences/construire.py
 
 Les formes du Druide et les créatures invoquées par le Nécromancien sont des espèces comme les autres (fiche, glTF, texture, animations par os : voir `assets/creatures/README.md`). Elles n'ont pas de champ `spawn` : elles n'apparaissent jamais seules, seule une compétence les fait venir.
 
+Une compétence les fait apparaître par l'effet `summon` de son bloc `cast` :
+
+```json
+{"summon": {"species": "skeletonServant", "count": [1, 2, 3], "at": "aimed", "duration": 45, "limit": [1, 2, 3]}}
+```
+
+| Champ | Rôle |
+|---|---|
+| `species` | L'espèce (`assets/creatures/<id>.json`) ou un humanoïde de `humanoids.json`. |
+| `count` | Combien à chaque lancement (1 par défaut), posées en cercle. |
+| `at` | `self` : aux pieds du lanceur ; `aimed` : au centre de la zone (le point visé). |
+| `duration` | Secondes avant qu'elles disparaissent ; sans : jusqu'à leur destruction. |
+| `limit` | Nombre au plus en même temps pour un lanceur : les plus anciennes disparaissent. |
+
+Les entités invoquées sont des alliées du lanceur ; elles disparaissent quand il quitte la partie et ne sont jamais sauvegardées. Une compétence qui invoque un humanoïde (`deathKnight`, `lichLord`) est décrite mais reste « pas encore jouable » tant que ces humanoïdes ne sont pas dessinés. Le comportement propre des entités (la tourelle qui tire, le piège qui claque, le mur qui bloque) n'est pas encore écrit : elles apparaissent, encaissent les coups et disparaissent.
+
 | Identifiant | Compétence | Os |
 |---|---|---|
 | `forestWolf` | Loup des Bois | `root`, `head`, `tail`, `legFR`, `legFL`, `legBR`, `legBL` |
@@ -25,6 +41,8 @@ Les formes du Druide et les créatures invoquées par le Nécromancien sont des 
 | `boneBehemoth` | Béhémoth d'Os | comme le loup |
 
 ## Objets posés (`*.gltf` de ce dossier)
+
+Tourelles, pièges, mines et murs sont eux aussi des entités : chacun a sa fiche d'espèce dans `assets/creatures/<identifiant>.json` (immobile, `walk_speed` 0, toujours éveillé), qui pointe vers le glTF de ce dossier (`../skills/models/<identifiant>.gltf`). Le repos est la pose finie du modèle (mur dressé, barricade dépliée).
 
 Même format que les créatures (glTF à squelette, données en base64, en blocs, y vers le haut, l'avant vers +z, posés sur le sol), avec leurs animations dans le glTF :
 

@@ -1,0 +1,50 @@
+{
+  "description": "Mur de lumière vertical et translucide qui bat doucement.",
+  "unit": "area",
+  "layers": [
+    {
+      "loop": true,
+      "fade_in": 0.3,
+      "fade_out": 0.4,
+      "shape": "disc",
+      "upright": true,
+      "offset": [
+        0,
+        1.0,
+        0
+      ],
+      "radius": 1.0,
+      "texture": "soft.png",
+      "color": ["#FFE9A870", "#FFE9A870"],
+      "glow": 2.5,
+      "pulse": 0.8
+    },
+    {
+      "loop": true,
+      "particles": {
+        "rate": 25,
+        "origin": "line",
+        "origin_length": 2,
+        "direction": "up",
+        "speed": [
+          0.5,
+          1.2
+        ],
+        "life": [
+          0.8,
+          1.4
+        ],
+        "size": [
+          0.08,
+          0.0
+        ],
+        "color": [
+          "#FFF8D0",
+          "#FFE9A800"
+        ],
+        "glow": 3,
+        "texture": "spark.png"
+      }
+    }
+  ]
+}

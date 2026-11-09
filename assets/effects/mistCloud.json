@@ -1,0 +1,39 @@
+{
+  "description": "Brume épaisse et pâle qui roule au sol.",
+  "unit": "area",
+  "layers": [
+    {
+      "loop": true,
+      "fade_in": 0.5,
+      "fade_out": 0.8,
+      "particles": {
+        "rate": 25,
+        "origin": "disc",
+        "origin_radius": 1.0,
+        "direction": "outward",
+        "speed": [
+          0.1,
+          0.4
+        ],
+        "drag": 0.3,
+        "life": [
+          2.5,
+          4.0
+        ],
+        "size": [
+          1.0,
+          2.0
+        ],
+        "color": [
+          "#D8E4EC70",
+          "#D8E4EC00"
+        ],
+        "texture": "smoke.png",
+        "spin": [
+          -15,
+          15
+        ]
+      }
+    }
+  ]
+}

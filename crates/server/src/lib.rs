@@ -882,7 +882,7 @@ impl Server {
 
     fn leave(&mut self, id: u64, reason: &str) {
         let Some(player) = self.players.remove(&id) else { return };
-        self.skill_runner.forget(id);
+        self.skill_runner.forget_with(id, &mut self.creatures);
         info!("{} a quitté la partie ({reason}).", player.name);
         if let Some(position) = player.position {
             self.last_positions.insert(player.name.clone(), position);

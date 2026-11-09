@@ -1,0 +1,65 @@
+{
+  "description": "Le sol éclate quand le mur de pierre surgit : éclats de roche et nuage de poussière.",
+  "layers": [
+    {
+      "particles": {
+        "count": 40,
+        "origin": "line",
+        "origin_length": 5,
+        "direction": "up",
+        "spread": 40,
+        "speed": [
+          3,
+          6
+        ],
+        "gravity": 9,
+        "life": [
+          0.5,
+          1.0
+        ],
+        "size": [
+          0.3,
+          0.15
+        ],
+        "color": [
+          "#8A8070",
+          "#5A504000"
+        ],
+        "texture": "shard.png",
+        "spin": [
+          -300,
+          300
+        ],
+        "block_color": true
+      }
+    },
+    {
+      "particles": {
+        "count": 24,
+        "origin": "line",
+        "origin_length": 5.5,
+        "direction": "outward",
+        "speed": [
+          1,
+          2.5
+        ],
+        "drag": 1.5,
+        "gravity": -0.3,
+        "life": [
+          1.0,
+          1.8
+        ],
+        "size": [
+          0.8,
+          1.8
+        ],
+        "color": [
+          "#A0907880",
+          "#A0907800"
+        ],
+        "texture": "smoke.png",
+        "block_color": true
+      }
+    }
+  ]
+}

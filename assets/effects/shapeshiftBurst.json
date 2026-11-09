@@ -1,0 +1,65 @@
+{
+  "description": "Éclatement de feuilles et de lumière verte quand le Druide change de forme.",
+  "layers": [
+    {
+      "shape": "sprite",
+      "duration": 0.25,
+      "size": [
+        0.6,
+        2.4
+      ],
+      "color": [
+        "#E8FFD0",
+        "#80FF6000"
+      ],
+      "glow": 3,
+      "texture": "soft.png"
+    },
+    {
+      "particles": {
+        "count": 40,
+        "origin": "sphere",
+        "origin_radius": 0.5,
+        "direction": "outward",
+        "speed": [
+          2,
+          4
+        ],
+        "drag": 2,
+        "gravity": 1,
+        "life": [
+          0.6,
+          1.1
+        ],
+        "size": [
+          0.18,
+          0.08
+        ],
+        "color": [
+          "#70C040",
+          "#3A702000"
+        ],
+        "texture": "shard.png",
+        "spin": [
+          -180,
+          180
+        ]
+      }
+    },
+    {
+      "shape": "ring",
+      "on_ground": true,
+      "duration": 0.5,
+      "radius": [
+        0.3,
+        2.0
+      ],
+      "thickness": 0.2,
+      "color": [
+        "#B0FF80",
+        "#60C04000"
+      ],
+      "glow": 2
+    }
+  ]
+}

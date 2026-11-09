@@ -1,0 +1,75 @@
+{
+  "description": "Halo d'Étherium noir et violet, piqué d'éclats cyan, qui tourne autour du corps.",
+  "layers": [
+    {
+      "loop": true,
+      "fade_in": 0.3,
+      "fade_out": 0.4,
+      "shape": "ring",
+      "on_ground": true,
+      "radius": 1.1,
+      "thickness": 0.25,
+      "color": ["#8A40FFB0", "#8A40FFB0"],
+      "glow": 2.5,
+      "pulse": 1.5
+    },
+    {
+      "loop": true,
+      "fade_in": 0.3,
+      "fade_out": 0.4,
+      "particles": {
+        "rate": 30,
+        "origin": "cylinder",
+        "origin_radius": 0.7,
+        "origin_height": 2,
+        "direction": "up",
+        "speed": [
+          0.3,
+          0.8
+        ],
+        "life": [
+          0.8,
+          1.4
+        ],
+        "size": [
+          0.35,
+          0.1
+        ],
+        "color": [
+          "#2A1840A0",
+          "#7030C000"
+        ],
+        "texture": "smoke.png",
+        "spin": [
+          -40,
+          40
+        ]
+      }
+    },
+    {
+      "loop": true,
+      "particles": {
+        "rate": 14,
+        "origin": "cylinder",
+        "origin_radius": 0.8,
+        "origin_height": 2.2,
+        "direction": "none",
+        "orbit": 90,
+        "life": [
+          0.6,
+          1.2
+        ],
+        "size": [
+          0.1,
+          0.0
+        ],
+        "color": [
+          "#60FFFF",
+          "#60FFFF00"
+        ],
+        "glow": 4,
+        "texture": "spark.png"
+      }
+    }
+  ]
+}

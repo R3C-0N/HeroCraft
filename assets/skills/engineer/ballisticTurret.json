@@ -8,5 +8,45 @@
     "requires": [],
     "max_rank": 3,
     "planner": 301
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 14,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": 1.5,
+        "center": "aimed",
+        "distance": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "summon": {
+          "species": "ballisticTurret",
+          "at": "aimed",
+          "limit": [
+            1,
+            1,
+            2
+          ],
+          "duration": [
+            20,
+            25,
+            30
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
 }

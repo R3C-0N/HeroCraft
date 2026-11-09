@@ -1,0 +1,37 @@
+{
+  "name": "Bastion d'Étherium",
+  "description": "Forteresse mécanique assemblée autour de l'Ingénieur, coiffée d'une tourelle de siège.",
+  "body": {
+    "half_width": 3.75,
+    "half_length": 3.75,
+    "height": 3.5
+  },
+  "walk_speed": 0,
+  "health": 600,
+  "activity": "always",
+  "model": {
+    "mesh": "../skills/models/etheriumBastion.gltf",
+    "texture": "../skills/models/etheriumBastion.png",
+    "animations": {
+      "attaque": {
+        "clip": "fire",
+        "cycle": 0.4
+      },
+      "coup": {
+        "os": {
+          "root": {
+            "rotation": [
+              0,
+              0,
+              3
+            ],
+            "frequence": 2
+          }
+        }
+      },
+      "repos": {
+        "cycle": 2
+      }
+    }
+  }
+}

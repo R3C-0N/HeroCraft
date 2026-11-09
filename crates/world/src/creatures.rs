@@ -282,6 +282,8 @@ pub struct Creature {
     slow_time: f32,
     /// Étourdie par une compétence : temps restant sans bouger ni frapper, en secondes
     stun: f32,
+    /// Invoquée par ce joueur (compétence) : alliée, jamais gardée endormie avec sa zone
+    pub summoner: Option<u64>,
 }
 
 /// Un joueur a tué un habitant ou un voyageur : de quoi l'annoncer
@@ -805,6 +807,7 @@ impl CreatureWorld {
             slow: 0.0,
             slow_time: 0.0,
             stun: 0.0,
+            summoner: None,
         });
     }
 
@@ -1449,6 +1452,9 @@ impl CreatureWorld {
 
     /// La bête telle qu'elle sera gardée endormie
     fn sleeping_creature(&self, c: &Creature) -> Option<SleepingCreature> {
+        if c.summoner.is_some() {
+            return None;
+        }
         let species = self.registry.get(c.species)?.id.clone();
         Some(SleepingCreature { id: c.id, species, herd: Some(c.herd), position: c.position, yaw: c.yaw, health: c.health, tamed: c.tamed, age: c.age })
     }
@@ -1531,6 +1537,25 @@ impl CreatureWorld {
             c.timer = 0.0;
         }
         id
+    }
+
+    /// Fait apparaître une entité invoquée par le joueur `summoner` (compétence) : apprivoisée,
+    /// donc alliée, et oubliée plutôt qu'endormie quand plus personne n'est près
+    pub fn summon(&mut self, species: usize, feet: Vec3, yaw: f32, summoner: u64) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        let health = self.registry.get(species).map_or(1.0, |s| s.health);
+        let herd = id;
+        self.wake_creature(id, species, herd, feet, yaw, health, true, None);
+        if let Some(c) = self.creatures.last_mut() {
+            c.summoner = Some(summoner);
+        }
+        id
+    }
+
+    /// Fait disparaître une entité invoquée (fin de sa durée, ou remplacée par une plus récente)
+    pub fn dismiss(&mut self, id: u64) {
+        self.creatures.retain(|c| !(c.id == id && c.summoner.is_some()));
     }
 
     /// Retire une créature (elle rentre chez elle pour de bon, ou s'éloigne de tous les joueurs)

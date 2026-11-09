@@ -1,0 +1,33 @@
+{
+  "name": "Mur de Pierre",
+  "description": "Mur de roche que le Sorcier élémentaire fait surgir du sol.",
+  "body": {
+    "half_width": 2.62,
+    "half_length": 0.62,
+    "height": 3.16
+  },
+  "walk_speed": 0,
+  "health": 200,
+  "activity": "always",
+  "model": {
+    "mesh": "../skills/models/stoneWall.gltf",
+    "texture": "../skills/models/stoneWall.png",
+    "animations": {
+      "coup": {
+        "os": {
+          "root": {
+            "rotation": [
+              0,
+              0,
+              3
+            ],
+            "frequence": 2
+          }
+        }
+      },
+      "repos": {
+        "cycle": 2
+      }
+    }
+  }
+}

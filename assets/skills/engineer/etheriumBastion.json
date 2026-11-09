@@ -12,5 +12,65 @@
     ],
     "max_rank": 3,
     "planner": 314
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 60,
+      "mana": 40
+    },
+    "cooldown": 120,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": 4
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2,
+            2.5,
+            3
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 8
+        }
+      },
+      {
+        "summon": {
+          "species": "etheriumBastion",
+          "at": "self",
+          "limit": 1,
+          "duration": [
+            15,
+            18,
+            20
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "voidRift",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "flameCone",
+      "anchor": "feet",
+      "from": "impact",
+      "to": "end"
+    }
+  ]
 }

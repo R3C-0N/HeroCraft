@@ -1,0 +1,91 @@
+{
+  "description": "Os qui jaillissent du sol dans une gerbe de terre et de poussière pâle.",
+  "layers": [
+    {
+      "particles": {
+        "count": 30,
+        "origin": "line",
+        "origin_length": 5,
+        "direction": "up",
+        "spread": 35,
+        "speed": [
+          3,
+          6
+        ],
+        "gravity": 9,
+        "life": [
+          0.5,
+          1.0
+        ],
+        "size": [
+          0.25,
+          0.12
+        ],
+        "color": [
+          "#E8E0C8",
+          "#B0A88800"
+        ],
+        "texture": "shard.png",
+        "spin": [
+          -360,
+          360
+        ]
+      }
+    },
+    {
+      "particles": {
+        "count": 20,
+        "origin": "line",
+        "origin_length": 5,
+        "direction": "up",
+        "spread": 50,
+        "speed": [
+          2,
+          4
+        ],
+        "gravity": 9,
+        "life": [
+          0.5,
+          0.9
+        ],
+        "size": [
+          0.2,
+          0.1
+        ],
+        "color": [
+          "#6A5A40",
+          "#4A3A2800"
+        ],
+        "texture": "shard.png",
+        "block_color": true
+      }
+    },
+    {
+      "particles": {
+        "count": 20,
+        "origin": "line",
+        "origin_length": 5.5,
+        "direction": "outward",
+        "speed": [
+          1,
+          2
+        ],
+        "drag": 1.5,
+        "gravity": -0.3,
+        "life": [
+          1.0,
+          1.6
+        ],
+        "size": [
+          0.7,
+          1.6
+        ],
+        "color": [
+          "#C8C0A870",
+          "#C8C0A800"
+        ],
+        "texture": "smoke.png"
+      }
+    }
+  ]
+}

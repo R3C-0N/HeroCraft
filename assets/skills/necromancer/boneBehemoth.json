@@ -10,5 +10,47 @@
     ],
     "max_rank": 3,
     "planner": 222
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 70
+    },
+    "cooldown": 75,
+    "animation": "summon",
+    "area": {
+      "circle": {
+        "radius": 2.5,
+        "center": "aimed",
+        "distance": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "summon": {
+          "species": "boneBehemoth",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            25,
+            30,
+            35
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "summonPortal",
+      "anchor": "aimed",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "boneWall",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
 }

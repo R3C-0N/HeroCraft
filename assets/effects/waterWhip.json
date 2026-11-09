@@ -1,0 +1,53 @@
+{
+  "description": "Fouet d'eau qui claque en arc et éclabousse.",
+  "layers": [
+    {
+      "shape": "arc",
+      "sweep": true,
+      "duration": 0.3,
+      "radius": 2.2,
+      "angle": 140,
+      "thickness": [
+        0.4,
+        0.15
+      ],
+      "color": [
+        "#A0E0FFE0",
+        "#4090FF00"
+      ],
+      "glow": 1.5
+    },
+    {
+      "delay": 0.2,
+      "particles": {
+        "count": 30,
+        "origin": "sphere",
+        "origin_radius": 0.3,
+        "offset": [
+          0,
+          1,
+          2
+        ],
+        "direction": "random",
+        "speed": [
+          2,
+          4
+        ],
+        "gravity": 8,
+        "life": [
+          0.4,
+          0.7
+        ],
+        "size": [
+          0.1,
+          0.05
+        ],
+        "color": [
+          "#C0F0FF",
+          "#60B0FF00"
+        ],
+        "texture": "soft.png"
+      }
+    }
+  ]
+}
