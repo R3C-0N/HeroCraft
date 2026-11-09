@@ -27,7 +27,7 @@ class Toile:
         self.c = np.zeros((N, N, 3))
         ys, xs = np.mgrid[0:N, 0:N]
         self.x, self.y = xs + 0.5, ys + 0.5
-        self.trame = np.tile(BAYER4, (N // 4, N // 4))
+        self.trame = np.tile(BAYER4, (N // 4, N // 4)) * 0.0   # pas de trame : des aplats francs
 
     # --- Dégradés et lumière -------------------------------------------------------------
 
@@ -75,18 +75,19 @@ class Toile:
         """Masque booléen dessiné sans lissage : dessin(ImageDraw)"""
         m = Image.new("1", (N, N), 0)
         dessin(ImageDraw.Draw(m))
-        return np.array(m, dtype=bool)
+        m = np.array(m, dtype=bool)
+        return m | np.roll(m, 1, 0) | np.roll(m, 1, 1) | np.roll(np.roll(m, 1, 0), 1, 1)   # traits d'au moins 2 px
 
     def peindre(self, masque, couleur):
         self.c = np.where(masque[..., None], rgb(couleur), self.c)
 
-    def contour(self, masque, couleur, epais=1):
+    def contour(self, masque, couleur, epais=2):
         bord = dilater(masque, epais) & ~masque
         self.peindre(bord, couleur)
 
     def liseré(self, masque, couleur, dx, dy):
         """Pixels du masque éclairés par une lumière venant de (dx, dy)"""
-        voisin = np.roll(np.roll(masque, dy, axis=0), dx, axis=1)
+        voisin = np.roll(np.roll(masque, 2 * dy, axis=0), 2 * dx, axis=1)
         self.peindre(masque & ~voisin, couleur)
 
     def objet(self, masque, couleur, clair, sombre, contour=(12, 8, 16), lumiere=(-1, -1)):
@@ -97,14 +98,15 @@ class Toile:
         self.contour(masque, contour)
 
     def point(self, x, y, couleur):
+        x, y = int(x) // 2 * 2, int(y) // 2 * 2       # aligné sur la grille des gros pixels
         if 0 <= x < N and 0 <= y < N:
-            self.c[int(y), int(x)] = rgb(couleur)
+            self.c[y:y + 2, x:x + 2] = rgb(couleur)
 
     def etincelle(self, x, y, couleur, grande=False, coeur=(255, 255, 255)):
-        for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+        for dx, dy in ((0, 0), (2, 0), (-2, 0), (0, 2), (0, -2)):
             self.point(x + dx, y + dy, couleur)
         if grande:
-            for dx, dy in ((2, 0), (-2, 0), (0, 2), (0, -2)):
+            for dx, dy in ((4, 0), (-4, 0), (0, 4), (0, -4)):
                 self.point(x + dx, y + dy, couleur)
         self.point(x, y, coeur)
 
@@ -116,26 +118,31 @@ class Toile:
 
     # --- Fin -----------------------------------------------------------------------------
 
-    def cadre(self, ultime=False):
-        noir = rgb((8, 6, 12))
-        self.c[0, :] = self.c[-1, :] = self.c[:, 0] = self.c[:, -1] = noir
-        if ultime:
-            violet, cyan = rgb((140, 60, 220)), rgb((110, 245, 255))
-            self.c[1, 1:-1] = self.c[-2, 1:-1] = violet
-            self.c[1:-1, 1] = self.c[1:-1, -2] = violet
-            for x, y in ((2, 2), (N - 3, 2), (2, N - 3), (N - 3, N - 3)):
-                for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
-                    self.c[y + dy, x + dx] = cyan
-        else:
-            self.c[1, 1:-1] = np.clip(self.c[1, 1:-1] * 1.5 + 0.08, 0, 1)
-            self.c[1:-1, 1] = np.clip(self.c[1:-1, 1] * 1.5 + 0.08, 0, 1)
-            self.c[-2, 1:-1] *= 0.45
-            self.c[1:-1, -2] *= 0.45
-
-    def image(self, couleurs=40):
-        img = Image.fromarray((np.clip(self.c, 0, 1) * 255).round().astype(np.uint8), "RGB")
+    def image(self, ultime=False, gros=2, couleurs=20):
+        """Image finale : la scène est réduite en pixels de `gros`×`gros` (des traits francs qui
+        restent lisibles en petit), encadrée, ramenée à une petite palette, puis agrandie à 48"""
+        n = N // gros
+        c = self.c.reshape(n, gros, n, gros, 3).mean(axis=(1, 3))
+        cadre(c, ultime)
+        img = Image.fromarray((np.clip(c, 0, 1) * 255).round().astype(np.uint8), "RGB")
         img = img.quantize(couleurs, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).convert("RGBA")
-        return img
+        return img.resize((N, N), Image.NEAREST)
+
+
+def cadre(c, ultime=False):
+    n = c.shape[0]
+    c[0, :] = c[-1, :] = c[:, 0] = c[:, -1] = rgb((8, 6, 12))
+    if ultime:
+        violet, cyan = rgb((140, 60, 220)), rgb((110, 245, 255))
+        c[1, 1:-1] = c[-2, 1:-1] = violet
+        c[1:-1, 1] = c[1:-1, -2] = violet
+        for x, y in ((1, 1), (n - 2, 1), (1, n - 2), (n - 2, n - 2)):
+            c[y, x] = cyan
+    else:
+        c[1, 1:-1] = np.clip(c[1, 1:-1] * 1.4 + 0.08, 0, 1)
+        c[1:-1, 1] = np.clip(c[1:-1, 1] * 1.4 + 0.08, 0, 1)
+        c[-2, 1:-1] *= 0.5
+        c[1:-1, -2] *= 0.5
 
 
 def dilater(m, n=1):

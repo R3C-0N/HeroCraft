@@ -868,8 +868,7 @@ def scene(competence):
     if fonction is None:
         return None
     toile = fonction()
-    toile.cadre(competence.get("ultimate", False))
-    return toile.image()
+    return toile.image(competence.get("ultimate", False))
 
 
 def icone(competence):

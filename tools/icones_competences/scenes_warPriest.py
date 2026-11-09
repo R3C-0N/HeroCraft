@@ -100,11 +100,11 @@ def hallowedHammer():
     """Lumière sacrée blanche et or : le maillet consacré, auréolé, rayonne"""
     t = Toile()
     t.fond_radial(24, 18, 40, [(255, 255, 235), (255, 230, 140), (240, 160, 50), (170, 80, 30), (70, 24, 20)])
-    t.rayons(24, 16, 8, 30, 16, (255, 250, 210), decalage=11)
+    t.rayons(24, 16, 10, 30, 8, (255, 250, 210), decalage=22)
     aureole = t.masque(lambda d: d.ellipse([15, 3, 33, 9], outline=1, width=2))
     t.objet(aureole, (255, 220, 90), BLANC, (200, 130, 40), contour=(120, 60, 20))
     dessiner_maillet(t, 24, 44, 24, 16, tete=(16, 9), metal=(240, 236, 220), lumiere=(-1, 0))
-    for x, y in ((10, 22), (38, 26), (14, 34), (35, 37), (9, 12), (40, 13)):
+    for x, y in ((10, 30), (38, 32)):
         t.etincelle(x, y, (255, 255, 200), coeur=(255, 255, 255))
     t.vignette(0.35)
     return t
@@ -116,14 +116,10 @@ def devotionAura():
     t.fond_radial(24, 38, 44, [(170, 90, 200), (100, 40, 150), (50, 16, 90), (20, 6, 40)])
     colonne = t.masque(lambda d: d.rectangle([9, 0, 39, 40], fill=1))
     t.lueur(24, 40, 18, (255, 190, 90), 0.7, sy=2.2)
-    for x, h in ((12, 14), (17, 20), (31, 18), (36, 12), (24, 24)):
-        for i in range(0, h, 3):
-            t.point(x, 38 - i, (255, 230, 150) if i < h / 2 else (220, 150, 220))
+    for x, y in ((10, 24), (38, 20)):
+        t.etincelle(x, y, (255, 230, 150))
     anneau = t.masque(lambda d: d.ellipse([5, 34, 43, 45], outline=1, width=2))
     t.objet(anneau, OR, OR_PALE, (190, 110, 30), contour=(60, 20, 50))
-    for a in range(0, 360, 45):
-        x, y = 24 + 19 * math.cos(math.radians(a)), 39.5 + 5.5 * math.sin(math.radians(a))
-        t.point(x, y, BLANC)
     corps = t.masque(lambda d: silhouette(d, {
         "tete": (24, 12), "cou": (24, 17), "hanche": (24, 28),
         "coudeG": (18, 21), "mainG": (14, 25), "coudeD": (30, 21), "mainD": (34, 25),
@@ -139,7 +135,7 @@ def penitentCharge():
     """Rouge sang, lignes de vitesse : le prêtre fonce, maillet en avant, la cible voit des étoiles"""
     t = Toile()
     t.fond_radial(38, 22, 46, [(255, 170, 110), (220, 50, 40), (130, 16, 30), (50, 6, 16)])
-    for y, x0, x1 in ((8, 2, 22), (14, 0, 14), (30, 4, 18), (38, 0, 12), (20, 0, 8)):
+    for y, x0, x1 in ((8, 2, 18), (30, 0, 10)):
         t.peindre(t.masque(lambda d, y=y, x0=x0, x1=x1: d.line([(x0, y), (x1, y)], fill=1)), (255, 140, 110))
     poussiere = t.masque(lambda d: [d.ellipse(b, fill=1) for b in ([2, 36, 12, 45], [8, 38, 18, 46], [0, 40, 8, 47])])
     t.objet(poussiere, (190, 120, 90), (240, 180, 140), (110, 60, 50), contour=(70, 20, 25))
@@ -169,7 +165,7 @@ def sanctuary():
     etoile = t.masque(lambda d: d.polygon([(24 + 17 * math.cos(math.radians(a)), 37 + 5.6 * math.sin(math.radians(a)))
                                            for a in (270, 54, 198, 342, 126)], outline=1))
     t.peindre(etoile, (255, 230, 140))
-    for x, y in ((14, 24), (20, 14), (30, 19), (35, 27), (25, 6), (11, 33), (38, 34)):
+    for x, y in ((14, 22), (32, 14), (24, 6)):
         t.etincelle(x, y, (255, 240, 170))
     t.vignette(0.5)
     return t
@@ -229,7 +225,7 @@ def condemnation():
     t.peindre(crane, (60, 20, 30))
     t.point(22, 36, (255, 80, 60)); t.point(25, 36, (255, 80, 60))
     t.lueur(24, 40, 12, (255, 240, 220), 0.7, sy=0.4)
-    for x, y in ((10, 30), (38, 28), (6, 40), (42, 42), (14, 20), (36, 16)):
+    for x, y in ((10, 30), (38, 26)):
         t.point(x, y, (255, 120, 60))
     t.vignette(0.5)
     return t
@@ -240,7 +236,7 @@ def avatarOfJustice():
     t = Toile()
     t.fond_radial(24, 22, 40, [(110, 50, 170), (60, 20, 110), (24, 8, 50), (6, 2, 14)])
     t.lueur(24, 22, 22, (255, 200, 110), 0.7)
-    t.rayons(24, 20, 14, 30, 12, (170, 110, 230), decalage=15)
+    t.rayons(24, 20, 16, 30, 6, (170, 110, 230), decalage=30)
     corps = t.masque(lambda d: silhouette(d, {
         "tete": (24, 9), "cou": (24, 14), "hanche": (24, 28),
         "coudeG": (16, 12), "mainG": (10, 5), "coudeD": (32, 12), "mainD": (38, 5),
@@ -251,7 +247,7 @@ def avatarOfJustice():
     t.liseré(corps, BLANC, 0, -1)
     t.liseré(corps, (230, 150, 60), 0, 1)
     t.contour(corps, (90, 30, 120))
-    for x, y in ((8, 26), (40, 28), (12, 40), (37, 41), (6, 14), (42, 15)):
+    for x, y in ((7, 28), (41, 28), (8, 42), (40, 42)):
         t.etincelle(x, y, (110, 245, 255))
     t.vignette(0.3)
     return t
