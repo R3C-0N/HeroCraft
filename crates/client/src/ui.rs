@@ -608,6 +608,13 @@ pub struct UiState {
     pub skill_screen: SkillScreen,
     /// Compétences que le joueur vient de lancer (touches de la barre, `/cast`), que le jeu lance
     pub skill_casts: Vec<String>,
+    /// Barre de compétences (touches A, E, R, T) et leurs icônes
+    pub skill_bar: crate::skill_bar::SkillBar,
+    pub skill_icons: crate::skill_bar::SkillIcons,
+    /// Recharge restante et totale de chaque case, mise à jour par le jeu à chaque image
+    pub skill_cooldowns: [(f32, f32); crate::skill_bar::SKILL_SLOTS],
+    /// Dernier refus d'une compétence (pas assez de mana, pas rechargée…), montré au-dessus de la barre
+    pub skill_notice: Option<(String, std::time::Instant)>,
     /// Demandes faites sur l'écran des compétences depuis la dernière image, que le jeu applique
     pub skill_requests: SkillScreenRequests,
     /// Écran de carte ouvert (touche M)
@@ -672,6 +679,10 @@ impl UiState {
             skills_open: false,
             skill_wheel: SkillWheel::standard(),
             skill_casts: Vec::new(),
+            skill_bar: crate::skill_bar::SkillBar::default(),
+            skill_icons: crate::skill_bar::SkillIcons::default(),
+            skill_cooldowns: [(0.0, 0.0); crate::skill_bar::SKILL_SLOTS],
+            skill_notice: None,
             skill_screen: SkillScreen::default(),
             skill_requests: SkillScreenRequests::default(),
             map_open: false,
@@ -1136,9 +1147,14 @@ impl UiState {
                 } else if self.skills_open {
                     let close_hint = self.controls.action_key_label(Action::OpenSkills);
                     let solo = self.multiplayer.status == NetStatus::Solo;
-                    let requests = self.skill_screen.draw(ctx, &self.skill_wheel, &self.player.stats, &close_hint, solo);
+                    let keys = [Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4].map(|a| self.controls.action_key_label(a));
+                    let bar = crate::skills_screen::BarView { bar: &self.skill_bar, icons: &self.skill_icons, keys };
+                    let requests = self.skill_screen.draw(ctx, &self.skill_wheel, &self.player.stats, &close_hint, solo, &bar);
                     if requests.learn.is_some() {
                         self.skill_requests.learn = requests.learn;
+                    }
+                    if let Some((slot, id)) = requests.place {
+                        self.skill_bar.place(slot, &id);
                     }
                     self.skill_requests.experience += requests.experience;
                 } else if self.map_open {
@@ -1146,6 +1162,7 @@ impl UiState {
                     self.world_map.draw_screen(ctx, &close_hint);
                 } else {
                     self.draw_hotbar(ctx);
+                    self.draw_skill_bar(ctx);
                     self.world_map.draw_compass(ctx, SCREEN_MARGIN);
                 }
             }
@@ -1203,6 +1220,67 @@ impl UiState {
                                     (i + 1).to_string(),
                                     egui::FontId::proportional(9.5_f32),
                                     TEXT_DIM,
+                                );
+                            }
+                        });
+                    });
+                });
+            });
+    }
+
+    /// Barre de compétences, à droite de la barre d'objets : l'icône de chaque case, sa touche,
+    /// sa recharge qui se vide, grisée si elle ne peut pas partir ; au-dessus, le dernier refus
+    fn draw_skill_bar(&self, ctx: &egui::Context) {
+        use crate::skill_bar::SKILL_SLOTS;
+        const SLOT_ACTIONS: [Action; SKILL_SLOTS] = [Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4];
+        let screen = ctx.screen_rect();
+        let bottom = screen.bottom() - SCREEN_MARGIN;
+        // Le bord droit de la barre d'objets, à l'image d'avant (une estimation à la première)
+        let hotbar_right = ctx
+            .memory(|m| m.area_rect(egui::Id::new("hotbar")))
+            .map_or(screen.center().x + (HOTBAR_SLOTS as f32 * (HOTBAR_SLOT_SIZE + 3.0_f32) + 12.0_f32) / 2.0_f32, |r| r.right());
+        let catalog = herocraft_common::skills();
+        egui::Area::new(egui::Id::new("skill_bar"))
+            .order(egui::Order::Background)
+            .pivot(egui::Align2::LEFT_BOTTOM)
+            .fixed_pos(egui::pos2(hotbar_right + 12.0_f32, bottom))
+            .interactable(false)
+            .show(ctx, |ui| {
+                ui.vertical(|ui| {
+                    let notice = self.skill_notice.as_ref().filter(|(_, at)| at.elapsed().as_secs_f32() < 2.5_f32);
+                    let text = notice.map_or(String::new(), |(text, _)| text.clone());
+                    let galley = ui.painter().layout_no_wrap(text, egui::FontId::proportional(12.0_f32), egui::Color32::from_rgb(255, 170, 150));
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(galley.size().x + 16.0_f32, galley.size().y + 4.0_f32), egui::Sense::hover());
+                    if notice.is_some() {
+                        ui.painter().rect_filled(rect, 4.0_f32, egui::Color32::from_black_alpha(150));
+                        ui.painter().galley(rect.min + egui::vec2(8.0_f32, 2.0_f32), galley, TEXT_SOFT);
+                    }
+                    hud_frame(egui::Margin::same(6.0_f32)).show(ui, |ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(3.0_f32, 0.0_f32);
+                        ui.horizontal(|ui| {
+                            for (slot, action) in SLOT_ACTIONS.into_iter().enumerate() {
+                                let (rect, _) = ui.allocate_exact_size(egui::vec2(HOTBAR_SLOT_SIZE, HOTBAR_SLOT_SIZE), egui::Sense::hover());
+                                paint_slot(ui.painter(), &self.icons, rect, None, false, false);
+                                if let Some(id) = self.skill_bar.get(slot) {
+                                    let (left, total) = self.skill_cooldowns[slot];
+                                    let blocked = catalog.cast_check(&self.player.stats, id, 0.0).is_some();
+                                    let icon = rect.shrink(4.0_f32);
+                                    self.skill_icons.paint(ui.painter(), icon, id, blocked);
+                                    if left > 0.0 && total > 0.0 {
+                                        // Le voile descend à mesure que la recharge passe
+                                        let part = (left / total).clamp(0.0, 1.0);
+                                        let veil = egui::Rect::from_min_max(egui::pos2(icon.left(), icon.bottom() - icon.height() * part), icon.max);
+                                        ui.painter().rect_filled(veil, 0.0_f32, egui::Color32::from_black_alpha(160));
+                                        let seconds = if left >= 1.0 { format!("{}", left.ceil() as u32) } else { format!("{left:.1}") };
+                                        ui.painter().text(icon.center(), egui::Align2::CENTER_CENTER, seconds, egui::FontId::proportional(14.0_f32), egui::Color32::WHITE);
+                                    }
+                                }
+                                ui.painter().text(
+                                    rect.left_top() + egui::vec2(4.0_f32, 2.0_f32),
+                                    egui::Align2::LEFT_TOP,
+                                    self.controls.action_key_label(action),
+                                    egui::FontId::proportional(9.5_f32),
+                                    GOLD_BRIGHT,
                                 );
                             }
                         });
@@ -3568,6 +3646,35 @@ mod tests {
                 if let Some(bread) = items().find("pain") {
                     ui.inventory.add_many(bread, 5);
                 }
+            },
+            true,
+            None,
+        ));
+
+        // Barre de compétences : une compétence prête, une en recharge, un refus affiché
+        all.push((
+            "hud_competences",
+            |ui| {
+                ui.player.stats.skills.insert("judgment".into(), 1);
+                ui.player.stats.skills.insert("bastionOfLight".into(), 1);
+                ui.skill_bar.slots = [Some("judgment".into()), Some("bastionOfLight".into()), None, Some("igneousOrb".into())];
+                ui.skill_cooldowns[1] = (3.4, 8.0);
+                ui.skill_notice = Some(("Jugement : pas assez de mana".into(), std::time::Instant::now()));
+            },
+            true,
+            None,
+        ));
+        // Fiche d'une compétence apprise, avec les boutons qui la posent sur la barre
+        all.push((
+            "roue_fiche",
+            |ui| {
+                ui.player.stats.skills.insert("judgment".into(), 1);
+                ui.skill_bar.slots[0] = Some("judgment".into());
+                ui.skill_screen.selected = Some("judgment".into());
+                let focus = ui.skill_wheel.branches.iter().position(|b| b.id == "warPriest").unwrap_or(0);
+                let count = ui.skill_wheel.branches.len();
+                ui.skill_screen.focus_on(focus, count);
+                ui.set_skills_open(true);
             },
             true,
             None,

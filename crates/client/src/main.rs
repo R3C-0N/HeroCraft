@@ -50,6 +50,7 @@ mod skills_screen;
 mod skinned_model;
 #[cfg(test)]
 mod skill_models;
+mod skill_bar;
 mod skill_play;
 mod terrain_cull;
 mod ui;
@@ -88,14 +89,15 @@ fn main() {
     info!("Contrôles (modifiables dans Échap > Commandes) :");
     info!(" • Souris                             : Regarder autour (curseur capturé en jeu)");
     info!(" • Clic gauche / Clic droit           : Casser le bloc visé (il tombe, à ramasser) / Poser le bloc choisi");
-    info!(" • [1-9] / Molette / [E]              : Choisir la case de la barre d'objets / Inventaire");
+    info!(" • [1-9] / Molette / [F]              : Choisir la case de la barre d'objets / Inventaire");
+    info!(" • [A,E,R,T] (AZERTY) / [Q,E,R,T]     : Compétences de la barre (posées depuis la roue)");
     info!(" • [Z,Q,S,D] (AZERTY) / [W,A,S,D]     : Se déplacer");
     info!(" • [ESPACE] / double [ESPACE]         : Sauter / S'envoler (monter en vol)");
     info!(" • [MAJ] / [CTRL]                     : S'accroupir (descendre en vol) / Sprinter");
     info!(" • [ALT] + Molette                    : Zoom FPS (0m) -> TPS (1-25m) -> Satellite");
-    info!(" • [F] / [R]                          : Vue sol <-> satellite / Réinitialiser la vue");
+    info!(" • [V] / [B]                          : Vue sol <-> satellite / Réinitialiser la vue");
     info!(" • [C]                                : Roue des compétences");
-    info!(" • [G] / [T] / [Y]                    : Nouvelle planète / Filtres tectonique, courants");
+    info!(" • [G] / [U] / [Y]                    : Nouvelle planète / Filtres tectonique, courants");
     info!(" • [ENTRÉE]                           : Chat (messages, commandes /help)");
     info!(" • [ÉCHAP]                            : Menu de pause (libère la souris)");
     info!("==========================================================");
@@ -157,6 +159,7 @@ fn main() {
     ui_state.set_scale_factor(window.scale_factor() as f32);
     ui_state.set_screen_size(size.width as f32, size.height as f32);
     ui_state.controls = input::Controls::load_or_default(input::CONTROLS_FILE);
+    ui_state.skill_bar = skill_bar::SkillBar::load_or_default(skill_bar::SKILL_BAR_FILE);
     ui_state.inventory = inventory::Inventory::load_or_default(inventory_file(current_seed, false));
     ui_state.player = player_stats::PlayerStats::load_or_default(Some(progress_file(current_seed)));
     ui_state.set_legend(load_legend(&legend_file(current_seed, false)));
@@ -775,7 +778,7 @@ fn main() {
                                     }
                                     NetEvent::SkillCast { player_id, skill, rank, aim, aimed } => skill_play.on_cast(player_id, client.player_id(), &skill, rank, aim, aimed),
                                     NetEvent::SkillRefused { skill, reason } => {
-                                        ui_state.chat.error(format!("{} : {reason}", skill_name(&skill)));
+                                        ui_state.skill_notice = Some((format!("{} : {reason}", skill_name(&skill)), Instant::now()));
                                         skill_play.on_refused(&skill, &reason);
                                     }
                                     NetEvent::SkillHit { player_id, skill, rank, center, creatures, players } => {
@@ -1042,6 +1045,10 @@ fn main() {
                         });
                         let map_ctx = ui_state.ctx.clone();
                         ui_state.world_map.pump(&map_ctx, &generator, ui_state.map_open);
+                        let cooldown_now = Instant::now();
+                        for slot in 0..skill_bar::SKILL_SLOTS {
+                            ui_state.skill_cooldowns[slot] = ui_state.skill_bar.get(slot).map_or((0.0, 0.0), |id| skill_play.cooldown(id, cooldown_now));
+                        }
                         let (full_output, maybe_action) = ui_state.update_ui(is_ground);
 
                         // Roue des compétences : point investi et expérience d'essai. En ligne, le
@@ -1059,7 +1066,11 @@ fn main() {
                         if let Some(id) = skill_requests.learn {
                             let wheel = &ui_state.skill_wheel;
                             match wheel.learn(&mut ui_state.player.stats, &id) {
-                                Ok(rank) => info!("Compétence {id} au rang {rank}."),
+                                Ok(rank) => {
+                                    info!("Compétence {id} au rang {rank}.");
+                                    let stats = ui_state.player.stats.clone();
+                                    ui_state.skill_bar.fill_learned(&stats);
+                                }
                                 Err(e) => warn!("Compétence {id} : {}.", e.message()),
                             }
                             match net.as_mut() {
@@ -1114,7 +1125,7 @@ fn main() {
                                 None => skill_play.request(&skill, &mut ui_state.player.stats, aim, aimed, None),
                             };
                             if let Err(reason) = result {
-                                ui_state.chat.error(format!("{} : {reason}", skill_name(&skill)));
+                                ui_state.skill_notice = Some((format!("{} : {reason}", skill_name(&skill)), Instant::now()));
                             }
                         }
 
@@ -1670,6 +1681,17 @@ fn game_key(
                 ui_state.show_tectonics = false;
             }
             pending_actions.push(UiAction::ToggleOceanCurrents);
+        }
+        Action::Skill1 | Action::Skill2 | Action::Skill3 | Action::Skill4 if first_press && is_ground_view => {
+            let slot = [Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4].iter().position(|&a| a == action).unwrap_or(0);
+            match ui_state.skill_bar.get(slot) {
+                Some(skill) => ui_state.skill_casts.push(skill.to_string()),
+                None => {
+                    let key = ui_state.controls.action_key_label(action);
+                    let wheel = ui_state.controls.action_key_label(Action::OpenSkills);
+                    ui_state.skill_notice = Some((format!("Rien sur [{key}] : posez une compétence depuis la roue [{wheel}]"), Instant::now()));
+                }
+            }
         }
         _ => {}
     }
