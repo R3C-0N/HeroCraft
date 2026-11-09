@@ -4,7 +4,7 @@ Chaque fichier `*.json` de ce dossier décrit un geste du héros joué par une c
 
 Un geste est une courte suite de **poses clés** : à chaque clé, quelques os du héros tournent (et le corps entier peut se déplacer) ; entre deux clés, la pose est interpolée. Un os qu'une clé ne cite pas revient à sa pose de repos, si bien qu'une clé sans `bones` est la pose de repos tout entière.
 
-Le client seul lit ces fichiers. Le lecteur de gestes n'est pas encore écrit (il attend les articulations du héros) ; `tools/verifier_effets_gestes.py` vérifie déjà les fichiers.
+Le client seul lit ces fichiers. Les os et leurs sens de rotation sont ceux de `Bone` dans `crates/client/src/hero_model.rs` (`Bone::rotation_from_degrees`) ; le lecteur de gestes n'est pas encore écrit, mais un test de `hero_model.rs` pose déjà chaque clé avec ce code, et `tools/verifier_effets_gestes.py` relit le format.
 
 ## Exemple
 
@@ -57,21 +57,21 @@ Chaque clé :
 | `rightLeg`, `leftLeg` | la hanche | la jambe entière |
 | `rightShin`, `leftShin` | le genou | le bas de la jambe |
 
-Les avant-bras, les mains et les tibias arrivent avec les articulations du héros ; avant elles, ces os ne bougeront rien.
+Chaque bras ou jambe reste un seul pavé qui se courbe au coude ou au genou.
 
 ## Sens des rotations
 
-`rotation` vaut `[x, y, z]` en degrés, autour du pivot de l'os :
+`rotation` vaut `[x, y, z]` en degrés, autour du pivot de l'os, appliqués dans l'ordre z, puis x, puis y (le cap en dernier) :
 
 | Axe | Valeur positive |
 |---|---|
-| `x` | bras ou jambe levé vers l'avant ; torse ou tête penchés en avant ; avant-bras plié vers le haut ; genou plié ; poignet qui incline l'arme pointe en avant |
+| `x` | bras ou jambe levé vers l'avant ; torse ou tête penchés en avant ; avant-bras plié vers le haut ; main fléchie vers l'avant, comme un bras qu'on lève (une arme tenue pointe en avant relève alors sa pointe ; en négatif elle l'abaisse) ; genou plié |
 | `y` | tourne vers la gauche du héros |
 | `z` | bras ou jambe écarté vers l'extérieur (même sens à gauche et à droite) ; torse ou tête penchés vers la gauche |
 
 Repères : un bras tendu à l'horizontale devant soi vaut `[90, 0, 0]`, levé au-dessus de la tête `[170, 0, 0]`, ouvert sur le côté `[0, 0, 90]`. Un accroupi plie les hanches (`rightLeg` à 30) et les genoux (`rightShin` à 60) et baisse le corps (`body` en `translation` `[0, -0.25, 0]`).
 
-`translation` (sur `body` seulement) vaut `[gauche, haut, avant]` en blocs. Elle ne déplace que l'image : un vrai déplacement (ruée, bond) vient de la compétence.
+`translation` (sur `body` seulement) vaut `[gauche, haut, avant]` en blocs ; le code la convertit en unités du patron (`Figure::units_per_block`). Elle ne déplace que l'image : un vrai déplacement (ruée, bond) vient de la compétence.
 
 ## Liste des gestes
 
