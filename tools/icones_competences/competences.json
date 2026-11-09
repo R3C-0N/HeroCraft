@@ -550,7 +550,8 @@
     "fireOrb",
     "fireExplosion"
    ],
-   "ultimate": false
+   "ultimate": false,
+   "element": "feu"
   },
   {
    "class": "elementalist",
@@ -562,7 +563,8 @@
     "fireExplosion",
     "holyBeam"
    ],
-   "ultimate": false
+   "ultimate": false,
+   "element": "feu"
   },
   {
    "class": "elementalist",
@@ -573,7 +575,8 @@
     "waterWhip",
     "slowFrost"
    ],
-   "ultimate": false
+   "ultimate": false,
+   "element": "eau"
   },
   {
    "class": "elementalist",
@@ -584,7 +587,8 @@
     "shieldDome",
     "healSparkles"
    ],
-   "ultimate": false
+   "ultimate": false,
+   "element": "eau"
   },
   {
    "class": "elementalist",
@@ -595,7 +599,8 @@
     "rockShard",
     "groundBurst"
    ],
-   "ultimate": false
+   "ultimate": false,
+   "element": "terre"
   },
   {
    "class": "elementalist",
@@ -606,7 +611,8 @@
     "stoneWall",
     "groundBurst"
    ],
-   "ultimate": false
+   "ultimate": false,
+   "element": "terre"
   },
   {
    "class": "elementalist",
@@ -616,7 +622,8 @@
    "effects": [
     "windBlades"
    ],
-   "ultimate": false
+   "ultimate": false,
+   "element": "air"
   },
   {
    "class": "elementalist",
@@ -627,7 +634,8 @@
     "dustPuff",
     "windBlades"
    ],
-   "ultimate": false
+   "ultimate": false,
+   "element": "air"
   },
   {
    "class": "elementalist",

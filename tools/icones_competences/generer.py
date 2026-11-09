@@ -448,7 +448,8 @@ def importer(md):
             continue          # second sort d'un élément (« Feu · Rune Volcanique ») : même icône
         nom, ident = m.group(1).strip(), m.group(2)
         if classe == "elementalist":
-            element = elements.get(nom.split(" ")[0], "neant" if "Néant" in nom else None)
+            noeud = re.search(r"\(nœud (\w+)\)", cols[0])
+            element = elements.get(noeud.group(1)) if noeud else ("neant" if "Néant" in nom else None)
         geste = re.match(r"`(\w+)`", cols[1])
         competences.append({
             "class": classe, "id": ident, "name": nom,
