@@ -351,12 +351,19 @@ def mur(t, x0, y0, x1, y1, pierre=(130, 120, 110), joint=None, rougeoie=None):
         t.lueur((x0 + x1) / 2, y1, (x1 - x0) * 0.7, rougeoie, 0.6, sy=0.6)
 
 
-def plume(t, x, y, angle, couleur=BLANC, long=7):
+def plume(t, x, y, angle, couleur=BLANC, long=8):
+    """Plume : un tuyau et deux barbes en amande, (x, y) à la base du tuyau"""
     a = math.radians(angle)
     ux, uy, nx, ny = math.cos(a), math.sin(a), -math.sin(a), math.cos(a)
-    m = t.masque(lambda d: d.polygon([(x, y), (x + ux * long / 2 + nx * 2, y + uy * long / 2 + ny * 2), (x + ux * long, y + uy * long),
-                                      (x + ux * long / 2 - nx * 2, y + uy * long / 2 - ny * 2)], fill=1))
-    t.objet(m, couleur, BLANC, melange(couleur, (0, 0, 0), 0.35), contour=melange(couleur, (0, 0, 0), 0.7))
+    L = long
+    def dessin(d):
+        d.polygon([(x + ux * L * 0.25, y + uy * L * 0.25),
+                   (x + ux * L * 0.5 + nx * L * 0.22, y + uy * L * 0.5 + ny * L * 0.22),
+                   (x + ux * L, y + uy * L),
+                   (x + ux * L * 0.55 - nx * L * 0.2, y + uy * L * 0.55 - ny * L * 0.2)], fill=1)
+    m = t.masque(dessin)
+    t.objet(m, couleur, BLANC, melange(couleur, (0, 0, 0), 0.3), contour=melange(couleur, (0, 0, 0), 0.65))
+    t.peindre(t.masque(lambda d: d.line([(x, y), (x + ux * L * 0.95, y + uy * L * 0.95)], fill=1)), melange(couleur, (0, 0, 0), 0.45))
 
 
 def oeil(t, cx, cy, r, iris=(255, 60, 40), blanc=(250, 240, 220)):
@@ -400,24 +407,24 @@ def bete(t, espece, x, y, s=1.0, couleur=OMBRE, liseres=((OR_PALE, 0, -1),), ret
 
     def dessin(d):
         if espece == "loup":
-            ell(d, -10, -4, 8, 4)
-            poly(d, [(4, -3), (8, -10), (12, -9), (9, 1)])
-            ell(d, 7, -13, 14, -7)
-            poly(d, [(12, -12), (19, -9), (12, -7)])
-            poly(d, [(8, -11), (9, -16), (11, -12)])
-            poly(d, [(-9, -2), (-16, -9), (-18, -6), (-10, 1)])
-            for a, b in (((-8, 2), (-9, 11)), ((-5, 2), (-4, 11)), ((4, 2), (3, 11)), ((7, 2), (8, 11))):
-                ligne(d, [a, b], 2)
+            ell(d, -10, -5, 8, 3)
+            poly(d, [(3, -4), (7, -11), (12, -10), (10, 0)])
+            ell(d, 7, -14, 14, -7)
+            poly(d, [(12, -13), (19, -10), (18, -8), (12, -7)])
+            poly(d, [(8, -12), (9, -17), (11, -13)])
+            poly(d, [(-9, -3), (-15, -8), (-18, -7), (-11, 0)])
+            ligne(d, [(-8, 0), (-11, 5), (-9, 11)], 3)
+            ligne(d, [(-5, 1), (-6, 6), (-4, 11)], 3)
+            ligne(d, [(4, 1), (4, 11)], 3)
+            ligne(d, [(7, 0), (8, 11)], 3)
         elif espece in ("ours", "hibours"):
-            ell(d, -12, -7, 10, 6)
-            ell(d, 7, -7, 16, 2)
-            ell(d, 13, -4, 19, 1)
-            ell(d, 8, -9, 12, -5)
-            for a, b in (((-9, 3), (-9, 11)), ((-4, 3), (-4, 11)), ((3, 3), (3, 11)), ((7, 2), (8, 11))):
-                ligne(d, [a, b], 3)
-            if espece == "hibours":
-                poly(d, [(9, -7), (9, -13), (12, -7)])
-                poly(d, [(17, -3), (21, -1), (17, 0)])
+            ell(d, -13, -8, 10, 6)
+            ell(d, -6, -11, 6, -2)
+            ell(d, 6, -9, 16, 1)
+            ell(d, 13, -6, 19, 0)
+            ell(d, 7, -11, 11, -7)
+            for a, b in (((-10, 2), (-10, 11)), ((-5, 3), (-5, 11)), ((3, 3), (3, 11)), ((7, 2), (8, 11))):
+                ligne(d, [a, b], 4)
         elif espece == "cerf":
             ell(d, -10, -4, 8, 3)
             poly(d, [(4, -2), (8, -12), (11, -11), (9, 1)])
@@ -429,17 +436,23 @@ def bete(t, espece, x, y, s=1.0, couleur=OMBRE, liseres=((OR_PALE, 0, -1),), ret
                 ligne(d, [(6 + b, -22), (1 + b, -24)], 1)
             for a, b in (((-8, 1), (-9, 12)), ((-5, 1), (-4, 12)), ((4, 1), (3, 12)), ((7, 1), (8, 12))):
                 ligne(d, [a, b], 1.5)
-        elif espece in ("oiseau", "griffon"):
-            g = 1.3 if espece == "griffon" else 1
-            ell(d, -2.5 * g, -6, 2.5 * g, 6 * g)
-            ell(d, -2, -10, 2, -5)
-            poly(d, [(1, -9), (4, -7), (1, -6)])
+        elif espece == "oiseau":
+            ell(d, -2.5, -6, 2.5, 6)
+            ell(d, -2.5, -11, 2.5, -5)
+            poly(d, [(1.5, -9.5), (5, -8), (2, -6)])
             for c in (-1, 1):
                 poly(d, [(c * 1, -3), (c * 16, -12), (c * 15, -7), (c * 11, -5), (c * 12, -1), (c * 7, 0), (c * 1, 3)])
-            poly(d, [(-2, 5 * g), (-4, 11 * g), (4, 11 * g), (2, 5 * g)])
-            if espece == "griffon":
-                ligne(d, [(-2, 6), (-4, 12)], 2)
-                ligne(d, [(2, 6), (4, 12)], 2)
+            poly(d, [(-2, 5), (-4, 11), (4, 11), (2, 5)])
+        elif espece == "griffon":
+            ell(d, -10, -4, 6, 4)
+            for a, b in (((-8, 2), (-9, 11)), ((-5, 2), (-4, 11)), ((2, 2), (2, 11)), ((5, 1), (6, 11))):
+                ligne(d, [a, b], 2.5)
+            ligne(d, [(-10, -1), (-16, 2), (-18, 7)], 1.5)
+            ell(d, -20, 6, -16, 10)
+            poly(d, [(3, -3), (7, -12), (11, -11), (8, 1)])
+            ell(d, 6, -16, 13, -9)
+            poly(d, [(12, -14), (17, -12), (15, -9), (12, -10)])
+            poly(d, [(-2, -3), (-6, -14), (-12, -22), (-6, -20), (-1, -16), (4, -18), (2, -10), (3, -3)])
         elif espece == "squelette":
             silhouette(d, {n: P(px, py) for n, (px, py) in POSES["brasOuverts"].items()}, s)
         elif espece == "golem":
