@@ -7,7 +7,7 @@
 //! cours. Rien n'est définitif avant le baptême, qui vérifie chaque choix contre l'atlas
 //! ([`Legend::verify`]) et scelle le héros pour de bon.
 
-use crate::hero_model::{Figure, FigureCache};
+use crate::hero_model::{Figure, FigureCache, FigurePose};
 use herocraft_common::hero::{self, atlas, Appearance, ClassSheet, Dice, Family, Legend, CLASSES, NAME_MAX, SHEET_SIZE};
 use herocraft_common::PlayerClass;
 
@@ -589,6 +589,12 @@ impl Preview {
 /// espèce contre un cadre de deux mètres (agrandi si cornes ou bois dépassent), pieds sur la même
 /// ligne, élargie par sa carrure
 fn draw_figure(painter: &egui::Painter, frame: egui::Rect, texture: &egui::TextureHandle, cfg: &Appearance, figure: &Figure, angle: f32, tilt: f32) {
+    draw_posed_figure(painter, frame, texture, cfg, figure, &FigurePose::default(), angle, tilt);
+}
+
+/// Comme `draw_figure`, la figure dans la pose `pose`
+#[allow(clippy::too_many_arguments)]
+fn draw_posed_figure(painter: &egui::Painter, frame: egui::Rect, texture: &egui::TextureHandle, cfg: &Appearance, figure: &Figure, pose: &FigurePose, angle: f32, tilt: f32) {
     let rotation = glam::Quat::from_rotation_x(-tilt) * glam::Quat::from_rotation_y(-angle);
     let width = cfg.width_scale();
     // Mètres par unité du patron : la taille va des pieds au sommet du crâne
@@ -610,7 +616,7 @@ fn draw_figure(painter: &egui::Painter, frame: egui::Rect, texture: &egui::Textu
     // passerait devant les mèches en relief posées sur elle. Elle est donc découpée en texels,
     // à la taille des pavés.
     let mut quads: Vec<(f32, [glam::Vec3; 4], [f32; 4], f32)> = Vec::new();
-    for q in figure.posed(0.0_f32, width) {
+    for q in figure.posed_with(pose, width) {
         let c = q.corners.map(|p| rotation * p);
         let normal = (c[1] - c[0]).cross(c[3] - c[0]).normalize_or_zero();
         if normal.z <= 1e-4 {
@@ -619,12 +625,16 @@ fn draw_figure(painter: &egui::Painter, frame: egui::Rect, texture: &egui::Textu
         let shade = 0.5_f32 + 0.5_f32 * normal.dot(light).max(0.0_f32);
         let [u, v, w, h] = q.uv;
         let (cols, rows) = (w.round().max(1.0_f32) as usize, h.round().max(1.0_f32) as usize);
-        let (du, dv) = ((c[1] - c[0]) / cols as f32, (c[3] - c[0]) / rows as f32);
+        // Un membre plié au coude ou au genou donne des faces en éventail : chaque texel suit les
+        // quatre coins de la face, pas seulement deux de ses côtés
+        let at = |i: usize, j: usize| {
+            let (a, b) = (i as f32 / cols as f32, j as f32 / rows as f32);
+            c[0].lerp(c[1], a).lerp(c[3].lerp(c[2], a), b)
+        };
         for j in 0..rows {
             for i in 0..cols {
                 // Rang j compté depuis le bas de la face, le haut de la planche en v
-                let o = c[0] + du * i as f32 + dv * j as f32;
-                let cell = [o, o + du, o + du + dv, o + dv];
+                let cell = [at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)];
                 let uv = [u + i as f32 * w / cols as f32, v + (rows - 1 - j) as f32 * h / rows as f32, w / cols as f32, h / rows as f32];
                 let depth = (cell[0] + cell[1] + cell[2] + cell[3]).z * 0.25_f32;
                 quads.push((depth, cell, uv, shade));
@@ -957,6 +967,71 @@ mod tests {
                         let texture = preview.texture(ui.ctx(), cfg);
                         let figure = preview.figure.get(cfg);
                         draw_figure(ui.painter(), rect, &texture, cfg, figure, angle.to_radians(), (-4.0_f32).to_radians());
+                    }
+                });
+            });
+            snapshot.apply_textures(&output.textures_delta);
+            let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);
+            snapshot.paint(&primitives, output.pixels_per_point);
+            snapshot.save(&dir.join(format!("{name}.png")));
+        }
+    }
+
+    /// Planche des articulations : quelques héros dans des poses qui plient coudes, poignets et
+    /// genoux, de profil puis de trois quarts.
+    /// `HEROCRAFT_CAPTURES=dossier cargo test -p herocraft_client snapshot_joints -- --ignored`
+    #[test]
+    #[ignore]
+    fn snapshot_joints() {
+        use crate::hero_model::Bone;
+        let Ok(dir) = std::env::var("HEROCRAFT_CAPTURES") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        let a = hero::atlas();
+        let heroes: Vec<Appearance> = [("humain", 1), ("nain", 2), ("hommeBete", 2)]
+            .iter()
+            .map(|(id, v)| {
+                let mut cfg = a.defaut(id);
+                cfg.variante = *v;
+                cfg.retouch(true);
+                cfg
+            })
+            .collect();
+        let pose = |bones: &[(Bone, [f32; 3])], down: f32| {
+            let mut pose = FigurePose::default();
+            for (bone, r) in bones {
+                pose.bone_mut(*bone).rotation = bone.rotation_from_degrees(*r);
+            }
+            pose.bone_mut(Bone::Body).translation = glam::vec3(0.0, -down, 0.0);
+            pose
+        };
+        let poses = [
+            ("repos", pose(&[], 0.0)),
+            ("estoc", pose(&[(Bone::RightArm, [40.0, 0.0, 0.0]), (Bone::RightForearm, [70.0, 0.0, 0.0]), (Bone::LeftArm, [20.0, 0.0, 10.0]), (Bone::LeftForearm, [100.0, 0.0, 0.0])], 0.0)),
+            ("accroupi", pose(&[(Bone::RightLeg, [70.0, 0.0, 0.0]), (Bone::LeftLeg, [70.0, 0.0, 0.0]), (Bone::RightShin, [110.0, 0.0, 0.0]), (Bone::LeftShin, [110.0, 0.0, 0.0]), (Bone::Torso, [25.0, 0.0, 0.0]), (Bone::RightArm, [50.0, 0.0, 0.0]), (Bone::LeftArm, [50.0, 0.0, 0.0]), (Bone::RightForearm, [40.0, 0.0, 0.0]), (Bone::LeftForearm, [40.0, 0.0, 0.0])], 6.0)),
+            ("frappe", pose(&[(Bone::RightArm, [160.0, 0.0, 10.0]), (Bone::RightForearm, [60.0, 0.0, 0.0]), (Bone::RightHand, [40.0, 0.0, 0.0]), (Bone::Torso, [-10.0, 25.0, 0.0]), (Bone::Head, [0.0, -20.0, 0.0]), (Bone::LeftLeg, [35.0, 0.0, 0.0]), (Bone::LeftShin, [45.0, 0.0, 0.0])], 0.0)),
+            ("incantation", pose(&[(Bone::RightArm, [60.0, 0.0, 15.0]), (Bone::LeftArm, [60.0, 0.0, 15.0]), (Bone::RightForearm, [80.0, 30.0, 0.0]), (Bone::LeftForearm, [80.0, -30.0, 0.0]), (Bone::Head, [15.0, 0.0, 0.0])], 0.0)),
+        ];
+        let cell = egui::vec2(260.0, 400.0);
+        for (name, angle) in [("articulations-profil", 90.0_f32), ("articulations-trois-quarts", 40.0)] {
+            let cols = poses.len();
+            let (width, height) = ((cols as f32 * cell.x) as usize, (heroes.len() as f32 * cell.y) as usize);
+            let ctx = egui::Context::default();
+            let mut snapshot = crate::ui_snapshot::Snapshot::new(width, height);
+            snapshot.set_background(None);
+            let mut previews: Vec<Preview> = heroes.iter().map(|_| Preview::default()).collect();
+            let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))), ..Default::default() };
+            let output = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                    for (row, (cfg, preview)) in heroes.iter().zip(previews.iter_mut()).enumerate() {
+                        let texture = preview.texture(ui.ctx(), cfg);
+                        let figure = preview.figure.get(cfg).clone();
+                        for (col, (label, pose)) in poses.iter().enumerate() {
+                            let min = egui::pos2(col as f32 * cell.x, row as f32 * cell.y);
+                            let rect = egui::Rect::from_min_size(min, cell).shrink(4.0);
+                            ui.painter().rect_filled(rect, 0.0, egui::Color32::from_rgb(58, 46, 36));
+                            draw_posed_figure(ui.painter(), rect, &texture, cfg, &figure, pose, angle.to_radians(), (-4.0_f32).to_radians());
+                            ui.painter().text(rect.left_top() + egui::vec2(8.0, 6.0), egui::Align2::LEFT_TOP, *label, egui::FontId::proportional(18.0), egui::Color32::from_rgb(235, 220, 190));
+                        }
                     }
                 });
             });
