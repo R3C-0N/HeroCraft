@@ -29,13 +29,14 @@ def stoppingArrow():
 
 
 def tacticalRetreat():
-    """Vert de lisière : l'archer bondit en arrière en tirant"""
+    """Vert de lisière : l'archer bondit en arrière en tirant d'instinct"""
     t = Toile()
     t.fond_radial(28, 24, 44, [(220, 240, 190), (130, 180, 110), (50, 100, 60), (14, 40, 24)])
-    heros(t, "saut", 18, 22, s=0.85, liseres=((BLANC, 1, 0),))
-    arc_tir(t, 27, 16, 16)
-    fleche(t, 30, 16, 44, 18)
-    t.peindre(t.masque(lambda d: d.arc([2, 20, 30, 50], 190, 280, fill=1, width=1)), BLANC)
+    t.peindre(t.masque(lambda d: d.arc([14, 20, 44, 52], 200, 300, fill=1, width=1)), BLANC)
+    corps, q = heros(t, "tir", 16, 24, s=0.9, liseres=((BLANC, 1, 0),))
+    mx, my = q["mainG"]
+    arc_tir(t, mx + 1, my, 16)
+    fleche(t, mx - 3, my, 44, my + 2)
     t.vignette(0.4)
     return t
 
@@ -69,8 +70,8 @@ def piercingArrow():
     """Blanc et ardoise : un trait blanc traverse toute la ligne"""
     t = Toile()
     t.fond_radial(24, 24, 44, [(230, 235, 245), (140, 150, 170), (60, 66, 86), (18, 20, 30)])
-    for x in (20, 30, 40):
-        heros(t, "debout", x, 28, s=0.55, couleur=(26, 26, 36), liseres=((BLANC, 0, -1),), retourne=True)
+    for x in (18, 29, 40):
+        heros(t, "debout", x, 30, s=0.7, couleur=(26, 26, 36), liseres=((BLANC, 0, -1),), retourne=True)
     t.peindre(t.masque(lambda d: d.line([(0, 22), (48, 22)], fill=1, width=3)), (230, 240, 255))
     t.peindre(t.masque(lambda d: d.line([(0, 22), (48, 22)], fill=1)), BLANC)
     t.vignette(0.4)
@@ -78,13 +79,15 @@ def piercingArrow():
 
 
 def hawkEye():
-    """Or de crépuscule : un œil lumineux au-dessus de l'archer concentré"""
+    """Or de crépuscule : l'archer se concentre, un œil lumineux veille au-dessus de lui"""
     t = Toile()
-    t.fond_radial(24, 14, 44, [(255, 240, 180), (230, 170, 80), (150, 80, 40), (60, 26, 16), (20, 8, 6)])
-    t.lueur(24, 12, 10, (255, 250, 210), 0.7)
-    oeil(t, 24, 12, 8, iris=(240, 170, 40))
-    heros(t, "debout", 24, 33, s=0.75, liseres=((OR_PALE, 0, -1),))
-    anneau(t, 24, 42, 12, 3, (255, 240, 180), 1)
+    t.fond_radial(24, 10, 44, [(255, 240, 180), (230, 170, 80), (150, 80, 40), (60, 26, 16), (20, 8, 6)])
+    t.lueur(24, 8, 8, (255, 250, 210), 0.7)
+    oeil(t, 24, 8, 6, iris=(240, 170, 40))
+    corps, q = heros(t, "tir", 22, 33, s=0.9, liseres=((OR_PALE, 0, -1),))
+    mx, my = q["mainG"]
+    arc_tir(t, mx + 1, my, 14)
+    anneau(t, 23, 43, 14, 3, (255, 240, 180), 1)
     t.vignette(0.4)
     return t
 
@@ -105,11 +108,12 @@ def ballistaShot():
     """Brun de siège : l'arc tendu à l'extrême, la flèche siffle et projette l'ennemi"""
     t = Toile()
     t.fond_radial(30, 22, 44, [(250, 220, 170), (200, 140, 80), (120, 70, 40), (40, 20, 10)])
-    arc_tir(t, 8, 26, 36)
-    fleche(t, 2, 26, 30, 26, epais=2)
-    heros(t, "tombe", 38, 24, s=0.7, couleur=(30, 16, 10), liseres=((OR_PALE, 0, -1),))
-    for y in (18, 34):
-        t.peindre(t.masque(lambda d, y=y: d.line([(14, y), (26, y)], fill=1)), (255, 240, 200))
+    arc_tir(t, 8, 24, 24)
+    fleche(t, 4, 24, 26, 24, epais=2)
+    for y in (18, 30):
+        t.peindre(t.masque(lambda d, y=y: d.line([(14, y), (24, y)], fill=1)), (255, 240, 200))
+    heros(t, "tombe", 36, 22, s=0.95, couleur=(30, 16, 10), liseres=((OR_PALE, 0, -1),))
+    explosion(t, 29, 24, 4, couleurs=(BLANC, (255, 230, 170), (220, 160, 80)), branches=6)
     t.vignette(0.4)
     return t
 
@@ -120,21 +124,19 @@ def steelDeluge():
     t.fond_vertical([(40, 50, 70), (100, 110, 130), (150, 150, 160)], 0, 40)
     sol = t.masque(lambda d: d.rectangle([0, 40, 48, 48], fill=1))
     t.peindre(sol, (40, 40, 44))
-    for i in range(14):
-        x, y = 4 + (i * 13) % 42, 8 + (i * 7) % 30
-        fleche(t, x + 2, y - 6, x, y, couleur=(220, 225, 235), fut=(160, 160, 170))
+    for x, y in ((6, 14), (16, 8), (26, 16), (36, 10), (44, 18), (10, 28), (22, 32), (32, 26), (40, 34), (16, 40), (30, 40)):
+        fleche(t, x + 4, y - 11, x, y, couleur=(230, 235, 245), fut=(170, 140, 110), plumes=(220, 60, 50))
     t.vignette(0.4)
     return t
 
 
 def deadlyHunt():
-    """Nuit de traque : un point rouge sur le point faible, du sang à chaque pas"""
+    """Clairière au crépuscule : un point rouge vise le point faible, du sang à chaque pas"""
     t = Toile()
-    t.fond_radial(24, 24, 42, [(90, 110, 90), (40, 56, 44), (16, 24, 18), (4, 8, 6)])
-    bete(t, "loup", 22, 26, s=1.05, couleur=(20, 24, 20), liseres=(((200, 220, 180), 0, -1),))
-    mire(t, 26, 22, 5, couleur=(255, 50, 40))
-    t.point(26, 22, (255, 60, 50))
-    sang(t, ((10, 40, 1.5), (18, 42, 1.5), (30, 41, 1.5)))
+    t.fond_radial(24, 22, 42, [(200, 220, 170), (110, 140, 90), (44, 64, 40), (12, 20, 12)])
+    bete(t, "cerf", 22, 28, s=1.0, couleur=(50, 34, 24), liseres=(((240, 220, 180), 0, -1),))
+    mire(t, 24, 25, 5, couleur=(255, 50, 40))
+    sang(t, ((10, 42, 1.5), (18, 43, 1.5), (30, 42, 1.5)))
     t.vignette(0.45)
     return t
 

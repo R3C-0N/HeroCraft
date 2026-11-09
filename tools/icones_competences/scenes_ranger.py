@@ -7,34 +7,41 @@ from scenes import Toile, dilater
 ELEC = (110, 240, 255)
 
 
-def balle(t, x, y, couleur=ELEC, trainee=10):
-    t.peindre(t.masque(lambda d: d.line([(x - trainee, y), (x, y)], fill=1, width=2)), melange(couleur, (0, 0, 0), 0.3))
-    orbe(t, x, y, 2, couleur)
+def balle(t, x, y, couleur=ELEC, trainee=10, angle=0):
+    """Trait électrique : un carreau court, pointe lumineuse et traînée"""
+    a = math.radians(angle)
+    ux, uy = math.cos(a), math.sin(a)
+    if trainee:
+        t.peindre(t.masque(lambda d: d.line([(x - ux * trainee, y - uy * trainee), (x, y)], fill=1, width=2)),
+                  melange(couleur, (0, 0, 0), 0.35))
+    t.lueur(x, y, 5, couleur, 0.6)
+    t.peindre(t.masque(lambda d: d.line([(x - ux * 4, y - uy * 4), (x + ux * 2, y + uy * 2)], fill=1, width=2)), couleur)
+    t.point(x + ux * 2, y + uy * 2, BLANC)
 
 
 def twinShot():
-    """Nuit sarcelle : deux balles cyan partent en même temps, une de chaque main"""
+    """Nuit sarcelle : deux traits cyan partent en même temps, un de chaque arbalète"""
     t = Toile()
     t.fond_radial(30, 24, 44, [(120, 220, 230), (30, 120, 140), (10, 50, 70), (2, 18, 26)])
-    arbalete(t, 4, 18, couleur=(60, 60, 70))
-    arbalete(t, 4, 32, couleur=(60, 60, 70))
-    balle(t, 36, 16, trainee=14)
-    balle(t, 40, 30, trainee=14)
+    arbalete(t, 2, 16, couleur=(60, 60, 70), long=14, carreau=False)
+    arbalete(t, 2, 34, couleur=(60, 60, 70), long=14, carreau=False)
+    balle(t, 38, 14, trainee=16)
+    balle(t, 42, 32, trainee=18)
     t.vignette(0.4)
     return t
 
 
 def evasiveRoll():
-    """Ocre poussiéreux : une roulade dans la poussière"""
+    """Ocre poussiéreux : le rôdeur roule au sol pour esquiver, dans la poussière"""
     t = Toile()
-    t.fond_vertical([(150, 180, 190), (210, 190, 140), (190, 150, 90)], 0, 36)
-    sol = t.masque(lambda d: d.rectangle([0, 38, 48, 48], fill=1))
-    t.zone_verticale(sol, [(140, 100, 60), (70, 46, 26)], 38, 48)
-    boule = t.masque(lambda d: d.ellipse([18, 22, 34, 38], fill=1))
-    t.peindre(boule, (30, 30, 40))
-    t.liseré(boule, ELEC, 0, -1)
-    t.peindre(t.masque(lambda d: d.arc([14, 18, 38, 42], 160, 300, fill=1, width=2)), BLANC)
-    nuage(t, 10, 38, 18, 8, (220, 200, 160), graine=4)
+    t.fond_vertical([(150, 180, 190), (210, 190, 140), (190, 150, 90)], 0, 38)
+    sol = t.masque(lambda d: d.rectangle([0, 40, 48, 48], fill=1))
+    t.zone_verticale(sol, [(140, 100, 60), (70, 46, 26)], 40, 48)
+    pose = {"tete": (5, -5), "cou": (3, -3), "hanche": (-3, 2), "coudeG": (1, 2), "mainG": (5, 3),
+            "coudeD": (6, 0), "mainD": (6, 4), "genouG": (3, 6), "piedG": (-3, 7), "genouD": (2, 3), "piedD": (-4, 4)}
+    heros(t, pose, 26, 32, s=1.3, liseres=((ELEC, 0, -1),))
+    t.peindre(t.masque(lambda d: d.arc([12, 16, 40, 44], 150, 300, fill=1, width=2)), BLANC)
+    nuage(t, 8, 40, 16, 7, (220, 200, 160), graine=4)
     t.vignette(0.4)
     return t
 
@@ -64,15 +71,13 @@ def recoilShot():
 
 
 def fragRounds():
-    """Cyan électrique : les arbalètes luisent, chaque tir éclate en bulle"""
+    """Cyan électrique : les arbalètes luisent, chaque tir éclate en gerbe"""
     t = Toile()
     t.fond_radial(24, 24, 42, [(180, 255, 255), (60, 190, 210), (20, 90, 120), (6, 30, 44)])
-    t.lueur(16, 30, 10, ELEC, 0.7)
-    arbalete(t, 4, 30, couleur=(60, 60, 70))
-    for x, y, r in ((30, 14, 6), (40, 28, 4), (28, 36, 3)):
-        bulle = t.masque(lambda d, x=x, y=y, r=r: d.ellipse([x - r, y - r, x + r, y + r], fill=1))
-        t.voile(bulle, ELEC, 0.45)
-        anneau(t, x, y, r, r, BLANC, 1)
+    t.lueur(12, 30, 10, ELEC, 0.7)
+    arbalete(t, 2, 30, couleur=(60, 60, 70), long=14, carreau=False)
+    for x, y, r in ((32, 14, 6), (40, 30, 5), (28, 38, 4)):
+        explosion(t, x, y, r, couleurs=(BLANC, ELEC, (30, 140, 200)), branches=7)
     t.vignette(0.4)
     return t
 
@@ -85,7 +90,7 @@ def shockVolley():
     for (x0, y0), (x1, y1) in zip(cibles, cibles[1:]):
         eclair(t, zigzag(x0, y0, x1, y1, n=4, amp=3, graine=x0), couleur=ELEC)
     for x, y in cibles:
-        heros(t, "debout", x, y + 4, s=0.45, couleur=(20, 20, 40), liseres=((ELEC, 0, -1),))
+        heros(t, "debout", x, y + 6, s=0.6, couleur=(20, 20, 40), liseres=((ELEC, 0, -1),))
     t.vignette(0.4)
     return t
 
@@ -110,9 +115,9 @@ def deadlyFlip():
     t.fond_vertical([(30, 40, 90), (100, 110, 180), (230, 170, 140)], 0, 40)
     sol = t.masque(lambda d: d.rectangle([0, 40, 48, 48], fill=1))
     t.peindre(sol, (40, 30, 40))
-    heros(t, "saut", 24, 14, s=0.8, liseres=((ELEC, 0, -1),), retourne=True)
+    heros(t, "saut", 24, 20, s=0.8, liseres=((ELEC, 0, -1),), retourne=True)
     for x in (12, 20, 28, 36):
-        t.peindre(t.masque(lambda d, x=x: d.line([(x + 2, 24), (x - 2, 38)], fill=1)), ELEC)
+        t.peindre(t.masque(lambda d, x=x: d.line([(x + 2, 30), (x - 2, 38)], fill=1)), ELEC)
         t.etincelle(x - 2, 40, ELEC)
     t.vignette(0.4)
     return t
@@ -147,11 +152,12 @@ def bulletDance():
     """Turquoise : le rôdeur tournoie et arrose tout autour de lui"""
     t = Toile()
     t.fond_radial(24, 24, 40, [(170, 255, 230), (50, 180, 170), (14, 80, 90), (4, 26, 34)])
-    anneau(t, 24, 26, 13, 13, BLANC, 1)
-    heros(t, "brasOuverts", 24, 28, s=0.8, liseres=((ELEC, 0, -1),))
+    anneau(t, 24, 26, 16, 16, BLANC, 1)
+    heros(t, "brasOuverts", 24, 28, s=1.05, liseres=((ELEC, 0, -1),))
     for i in range(8):
-        a = math.radians(i * 45)
-        balle(t, 24 + 19 * math.cos(a), 26 + 19 * math.sin(a), trainee=0)
+        a = i * 45 + 22
+        r = math.radians(a)
+        balle(t, 24 + 20 * math.cos(r), 26 + 20 * math.sin(r), trainee=5, angle=a)
     t.vignette(0.4)
     return t
 
