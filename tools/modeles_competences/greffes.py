@@ -43,18 +43,23 @@ def graft(ident, bones):
 
 
 def wolf_paw():
-    """Griffes de la Meute : l'avant-bras gauche se couvre de fourrure, la main devient une patte
-    griffue. (Pour le bras droit, prendre x → −x et `right…`.)"""
-    m = graft("wolfPaw", ["leftArm", "leftForearm", "leftHand"])
+    """Griffes de la Meute : les deux avant-bras se couvrent de fourrure, les mains deviennent des
+    pattes griffues."""
+    m = graft("wolfPaw", ["leftHand", "rightHand"])
     fur, dark, pad, claw = "#6e6457", "#4a433b", "#2a2420", "#e6dfcf"
-    m.box("leftArm", (3.6, 19, -2.4), (8.4, 21.5, 2.4), fur, "fur", {"sides": [("cut", [(x, -1) for x in range(0, 6, 2)])]})
-    m.box("leftForearm", (3.4, 15, -2.6), (8.6, 19.5, 2.6), fur, "fur", {"front": [("px", 2, 1, "#4f8a2e"), ("px", 3, 3, "#4f8a2e")]})
-    m.box("leftHand", (3.0, 10.5, -3.0), (9.0, 15.2, 3.4), fur, "fur", {
-        "bottom": [("rect", 0, 0, 99, 99, pad), ("rect", 2, 2, 2, 2, "#3d332c")], "front": [("row", -1, dark)]})
-    for k in range(4):
-        x = 3.8 + k * 1.45
-        m.beam("leftHand", (x, 11, 2.6), (x, 8.6, 4.2), 0.7, color=claw, pattern="bone")
-    m.beam("leftHand", (3.2, 12, 1.5), (2.2, 10.5, 2.6), 0.7, color=claw, pattern="bone")
+    for side, s in (("left", 1), ("right", -1)):
+        # Bornes en x du côté gauche, retournées pour le droit
+        span = lambda a, b: (s * a, s * b)  # noqa: E731
+        (a0, a1), (f0, f1), (h0, h1) = span(3.6, 8.4), span(3.4, 8.6), span(3.0, 9.0)
+        m.box(side + "Arm", (a0, 19, -2.4), (a1, 21.5, 2.4), fur, "fur", {"sides": [("cut", [(x, -1) for x in range(0, 6, 2)])]})
+        m.box(side + "Forearm", (f0, 15, -2.6), (f1, 19.5, 2.6), fur, "fur", {"front": [("px", 2, 1, "#4f8a2e"), ("px", 3, 3, "#4f8a2e")]})
+        m.box(side + "Hand", (h0, 10.5, -3.0), (h1, 15.2, 3.4), fur, "fur", {
+            "bottom": [("rect", 0, 0, 99, 99, pad), ("rect", 2, 2, 2, 2, "#3d332c")], "front": [("row", -1, dark)]})
+        for k in range(4):
+            x = s * (3.8 + k * 1.45)
+            m.beam(side + "Hand", (x, 11, 2.6), (x, 8.6, 4.2), 0.7, color=claw, pattern="bone")
+        # Ergot du côté du pouce
+        m.beam(side + "Hand", (s * 3.2, 12, 1.5), (s * 2.2, 10.5, 2.6), 0.7, color=claw, pattern="bone")
     return m
 
 

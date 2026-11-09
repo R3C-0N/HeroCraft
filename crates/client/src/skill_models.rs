@@ -178,6 +178,7 @@ fn apercu_competences_heros() {
     flap.bone_mut(Bone::LeftArm).rotation = Bone::LeftArm.rotation_from_degrees([0.0, 0.0, 80.0]);
     let mut claw = FigurePose::default();
     claw.raise_left_arm(1.2);
+    claw.raise_right_arm(0.6);
     let mut stride = FigurePose::default();
     stride.bone_mut(Bone::RightLeg).rotation = Bone::RightLeg.rotation_from_degrees([25.0, 0.0, 0.0]);
     stride.bone_mut(Bone::LeftLeg).rotation = Bone::LeftLeg.rotation_from_degrees([-20.0, 0.0, 0.0]);

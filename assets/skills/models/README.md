@@ -47,7 +47,7 @@ Les transformations partielles du Druide et les armes des invocations humanoïde
 
 | Identifiant | Compétence | Os |
 |---|---|---|
-| `wolfPaw` | Griffes de la Meute (bras gauche ; x → −x pour le droit) | `leftArm`, `leftForearm`, `leftHand` |
+| `wolfPaw` | Griffes de la Meute (les deux bras) | bras, avant-bras et mains |
 | `bearHide` | Échine du Plantigrade | `torso`, `rightArm`, `leftArm` |
 | `elkLegs` | Jambes de l'Élan | `rightLeg`, `leftLeg`, `rightShin`, `leftShin` |
 | `galeFeathers` | Plumes de Bourrasque | bras, avant-bras et mains |
