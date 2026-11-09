@@ -1,0 +1,2077 @@
+{
+ "_source": "Effets visuels des 180 compétences ; regénérer avec generer.py --importer",
+ "retouchees": [],
+ "skills": [
+  {
+   "class": "warPriest",
+   "id": "righteousStrike",
+   "name": "Frappe du Juste",
+   "gesture": "overheadStrike",
+   "effects": [
+    "weaponGlow",
+    "impactSpark",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "warPriest",
+   "id": "healingBolt",
+   "name": "Éclair de Guérison",
+   "gesture": "bless",
+   "effects": [
+    "handFlame",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "warPriest",
+   "id": "judgment",
+   "name": "Jugement",
+   "gesture": "groundSlam",
+   "effects": [
+    "shockRing",
+    "groundBurst",
+    "slowFrost"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "warPriest",
+   "id": "faithArmor",
+   "name": "Armure de Foi",
+   "gesture": "guard",
+   "effects": [
+    "shieldDome"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "warPriest",
+   "id": "hallowedHammer",
+   "name": "Marteau Consacré",
+   "gesture": "bless",
+   "effects": [
+    "weaponGlow",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "warPriest",
+   "id": "devotionAura",
+   "name": "Aura de Dévotion",
+   "gesture": "bless",
+   "effects": [
+    "auraRing"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "warPriest",
+   "id": "penitentCharge",
+   "name": "Charge Pénitente",
+   "gesture": "charge",
+   "effects": [
+    "dustPuff",
+    "impactSpark",
+    "stunStars"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "warPriest",
+   "id": "sanctuary",
+   "name": "Sanctuaire",
+   "gesture": "groundSlam",
+   "effects": [
+    "runeCircle",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "warPriest",
+   "id": "purifyingWave",
+   "name": "Onde Purificatrice",
+   "gesture": "sweep",
+   "effects": [
+    "impactSpark",
+    "shockRing",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "warPriest",
+   "id": "bastionOfLight",
+   "name": "Bastion de Lumière",
+   "gesture": "groundSlam",
+   "effects": [
+    "shockRing",
+    "shieldDome"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "warPriest",
+   "id": "condemnation",
+   "name": "Condamnation",
+   "gesture": "charge",
+   "effects": [
+    "dustPuff",
+    "weaponGlow",
+    "impactSpark",
+    "holyBeam",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "warPriest",
+   "id": "avatarOfJustice",
+   "name": "Avatar de la Justice",
+   "gesture": "summon",
+   "effects": [
+    "holyBeam",
+    "etheriumAura",
+    "shockRing",
+    "groundBurst"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "chaplain",
+   "id": "soothingLight",
+   "name": "Lumière Apaisante",
+   "gesture": "bless",
+   "effects": [
+    "handFlame",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "chaplain",
+   "id": "protectionAura",
+   "name": "Aura de Protection",
+   "gesture": "bless",
+   "effects": [
+    "shieldDome"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "chaplain",
+   "id": "celestialSmite",
+   "name": "Châtiment Céleste",
+   "gesture": "bless",
+   "effects": [
+    "holyBeam",
+    "slowFrost"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "chaplain",
+   "id": "blessingOfSpeed",
+   "name": "Bénédiction de Vitesse",
+   "gesture": "bless",
+   "effects": [
+    "windSwirl"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "chaplain",
+   "id": "areaHeal",
+   "name": "Soins de Zone",
+   "gesture": "channel",
+   "effects": [
+    "shockRing",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "chaplain",
+   "id": "sacredRampart",
+   "name": "Rempart Sacré",
+   "gesture": "summon",
+   "effects": [
+    "lightWall"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "chaplain",
+   "id": "purification",
+   "name": "Purification",
+   "gesture": "bless",
+   "effects": [
+    "healSparkles",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "chaplain",
+   "id": "martyrsMark",
+   "name": "Marque du Martyr",
+   "gesture": "bless",
+   "effects": [
+    "linkBeam",
+    "auraRing"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "chaplain",
+   "id": "sanctifiedNova",
+   "name": "Nova Sanctifiée",
+   "gesture": "channel",
+   "effects": [
+    "weaponGlow",
+    "fireExplosion",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "chaplain",
+   "id": "divineAegis",
+   "name": "Égide Divine",
+   "gesture": "guard",
+   "effects": [
+    "shieldDome",
+    "shockRing"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "chaplain",
+   "id": "redemption",
+   "name": "Rédemption",
+   "gesture": "bless",
+   "effects": [
+    "holyBeam",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "chaplain",
+   "id": "supremeIntervention",
+   "name": "Intervention Suprême",
+   "gesture": "summon",
+   "effects": [
+    "holyBeam",
+    "holyBeam",
+    "shieldDome",
+    "etheriumAura"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "necromancer",
+   "id": "skeletonServant",
+   "name": "Serviteur Squelette",
+   "gesture": "summon",
+   "effects": [
+    "summonPortal",
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "necromancer",
+   "id": "soulSiphon",
+   "name": "Siphon d'Âme",
+   "gesture": "channel",
+   "effects": [
+    "drainStream",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "necromancer",
+   "id": "boneWall",
+   "name": "Mur d'Ossements",
+   "gesture": "groundSlam",
+   "effects": [
+    "boneWall",
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "necromancer",
+   "id": "poltergeist",
+   "name": "Esprit Frappeur",
+   "gesture": "throw",
+   "effects": [
+    "spiritSkull",
+    "fireExplosion"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "necromancer",
+   "id": "deathKnight",
+   "name": "Chevalier de la Mort",
+   "gesture": "summon",
+   "effects": [
+    "summonPortal",
+    "shadowSmoke"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "necromancer",
+   "id": "miasmaCloud",
+   "name": "Nuage Miasmatique",
+   "gesture": "channel",
+   "effects": [
+    "poisonCloud"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "necromancer",
+   "id": "fleshGolem",
+   "name": "Golem de Chair",
+   "gesture": "summon",
+   "effects": [
+    "summonPortal",
+    "bloodSplash"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "necromancer",
+   "id": "spectralGrasp",
+   "name": "Emprise Spectrale",
+   "gesture": "groundSlam",
+   "effects": [
+    "ghostHands",
+    "runeCircle"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "necromancer",
+   "id": "lichLord",
+   "name": "Seigneur Liche",
+   "gesture": "summon",
+   "effects": [
+    "summonPortal",
+    "shadowSmoke"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "necromancer",
+   "id": "boneBehemoth",
+   "name": "Béhémoth d'Os",
+   "gesture": "summon",
+   "effects": [
+    "summonPortal",
+    "boneWall"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "necromancer",
+   "id": "soulStorm",
+   "name": "Tempête des Âmes",
+   "gesture": "channel",
+   "effects": [
+    "tornado",
+    "drainStream"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "necromancer",
+   "id": "voidLegion",
+   "name": "Légion du Néant",
+   "gesture": "groundSlam",
+   "effects": [
+    "voidRift",
+    "shadowSmoke",
+    "fireExplosion",
+    "shieldDome"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "druid",
+   "id": "packClaws",
+   "name": "Griffes de la Meute",
+   "gesture": "bless",
+   "effects": [
+    "shapeshiftBurst",
+    "slashArc"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "druid",
+   "id": "bearHide",
+   "name": "Échine du Plantigrade",
+   "gesture": "shout",
+   "effects": [
+    "shapeshiftBurst",
+    "shieldDome"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "druid",
+   "id": "elkLegs",
+   "name": "Jambes de l'Élan",
+   "gesture": "leap",
+   "effects": [
+    "shapeshiftBurst",
+    "dustPuff"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "druid",
+   "id": "galeFeathers",
+   "name": "Plumes de Bourrasque",
+   "gesture": "shout",
+   "effects": [
+    "featherGust",
+    "windBlades"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "druid",
+   "id": "forestWolf",
+   "name": "Loup des Bois",
+   "gesture": "shout",
+   "effects": [
+    "shapeshiftBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "druid",
+   "id": "runicBear",
+   "name": "Ours Runique",
+   "gesture": "shout",
+   "effects": [
+    "shapeshiftBurst",
+    "runeCircle"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "druid",
+   "id": "ancientStag",
+   "name": "Grand Cerf Ancien",
+   "gesture": "shout",
+   "effects": [
+    "shapeshiftBurst",
+    "auraRing"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "druid",
+   "id": "peregrineFalcon",
+   "name": "Faucon Pèlerin",
+   "gesture": "leap",
+   "effects": [
+    "shapeshiftBurst",
+    "featherGust"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "druid",
+   "id": "owlbear",
+   "name": "Ours-Hibou",
+   "gesture": "shout",
+   "effects": [
+    "shapeshiftBurst",
+    "shockRing",
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "druid",
+   "id": "wendigo",
+   "name": "Wendigo",
+   "gesture": "shout",
+   "effects": [
+    "shapeshiftBurst",
+    "shadowSmoke",
+    "bloodSplash"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "druid",
+   "id": "sylvanGriffin",
+   "name": "Griffon Sylvestre",
+   "gesture": "shout",
+   "effects": [
+    "shapeshiftBurst",
+    "featherGust"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "druid",
+   "id": "voidAvatar",
+   "name": "Avatar du Néant",
+   "gesture": "groundSlam",
+   "effects": [
+    "voidRift",
+    "column",
+    "etheriumAura"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "elementalist",
+   "id": "igneousOrb",
+   "name": "Orbe Igné",
+   "gesture": "throw",
+   "effects": [
+    "handFlame",
+    "fireOrb",
+    "fireExplosion"
+   ],
+   "ultimate": false,
+   "element": "feu"
+  },
+  {
+   "class": "elementalist",
+   "id": "volcanicRune",
+   "name": "Rune Volcanique",
+   "gesture": "groundSlam",
+   "effects": [
+    "runeCircle",
+    "fireExplosion",
+    "holyBeam"
+   ],
+   "ultimate": false,
+   "element": "feu"
+  },
+  {
+   "class": "elementalist",
+   "id": "foamingWhip",
+   "name": "Fouet Écumeux",
+   "gesture": "sweep",
+   "effects": [
+    "waterWhip",
+    "slowFrost"
+   ],
+   "ultimate": false,
+   "element": "eau"
+  },
+  {
+   "class": "elementalist",
+   "id": "waterVeil",
+   "name": "Voile Aquatique",
+   "gesture": "guard",
+   "effects": [
+    "shieldDome",
+    "healSparkles"
+   ],
+   "ultimate": false,
+   "element": "eau"
+  },
+  {
+   "class": "elementalist",
+   "id": "seismicShard",
+   "name": "Éclat Sismique",
+   "gesture": "throw",
+   "effects": [
+    "rockShard",
+    "groundBurst"
+   ],
+   "ultimate": false,
+   "element": "terre"
+  },
+  {
+   "class": "elementalist",
+   "id": "telluricRampart",
+   "name": "Rempart Tellurique",
+   "gesture": "groundSlam",
+   "effects": [
+    "stoneWall",
+    "groundBurst"
+   ],
+   "ultimate": false,
+   "element": "terre"
+  },
+  {
+   "class": "elementalist",
+   "id": "galeBlades",
+   "name": "Lames de Vent",
+   "gesture": "sweep",
+   "effects": [
+    "windBlades"
+   ],
+   "ultimate": false,
+   "element": "air"
+  },
+  {
+   "class": "elementalist",
+   "id": "updraft",
+   "name": "Courant Ascendant",
+   "gesture": "leap",
+   "effects": [
+    "dustPuff",
+    "windBlades"
+   ],
+   "ultimate": false,
+   "element": "air"
+  },
+  {
+   "class": "elementalist",
+   "id": "fusion",
+   "name": "Fusion",
+   "gesture": "aucun",
+   "effects": [],
+   "ultimate": false
+  },
+  {
+   "class": "elementalist",
+   "id": "scaldingTyphoon",
+   "name": "Typhon Bouillant",
+   "gesture": "sweep",
+   "effects": [
+    "fireOrb",
+    "steamBurst",
+    "waterWhip"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "elementalist",
+   "id": "shrapnelStorm",
+   "name": "Tempête de Shrapnels",
+   "gesture": "throw",
+   "effects": [
+    "rockShard",
+    "windBlades",
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "elementalist",
+   "id": "magmaWall",
+   "name": "Mur de Magma",
+   "gesture": "groundSlam",
+   "effects": [
+    "stoneWall",
+    "lavaPool"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "elementalist",
+   "id": "soothingMist",
+   "name": "Brume Apaisante",
+   "gesture": "channel",
+   "effects": [
+    "mistCloud",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "elementalist",
+   "id": "explosiveRetreat",
+   "name": "Retraite Explosive",
+   "gesture": "leap",
+   "effects": [
+    "dustPuff",
+    "fireOrb",
+    "fireExplosion"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "elementalist",
+   "id": "crystallization",
+   "name": "Cristallisation",
+   "gesture": "throw",
+   "effects": [
+    "rockShard",
+    "iceShards"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "elementalist",
+   "id": "voidSingularity",
+   "name": "Singularité du Néant",
+   "gesture": "channel",
+   "effects": [
+    "voidRift",
+    "fireExplosion",
+    "shockRing"
+   ],
+   "ultimate": true,
+   "element": "neant"
+  },
+  {
+   "class": "thief",
+   "id": "quickShot",
+   "name": "Tir Vif",
+   "gesture": "crossbowShot",
+   "effects": [
+    "arrowTrail",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "thief",
+   "id": "poisonBolt",
+   "name": "Carreau Empoisonné",
+   "gesture": "crossbowShot",
+   "effects": [
+    "arrowTrail",
+    "poisonCloud"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "thief",
+   "id": "shadowVeil",
+   "name": "Voile Ténébreux",
+   "gesture": "bless",
+   "effects": [
+    "shadowSmoke"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "thief",
+   "id": "shadowDecoy",
+   "name": "Leurre Obscur",
+   "gesture": "summon",
+   "effects": [
+    "shadowSmoke"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "thief",
+   "id": "shardShot",
+   "name": "Tir à Éclats",
+   "gesture": "crossbowShot",
+   "effects": [
+    "arrowTrail",
+    "impactSpark",
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "thief",
+   "id": "grappleBolt",
+   "name": "Carreau-Grappin",
+   "gesture": "crossbowShot",
+   "effects": [
+    "cableLine",
+    "dustPuff"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "thief",
+   "id": "ambush",
+   "name": "Embuscade",
+   "gesture": "aucun",
+   "effects": [
+    "shadowSmoke",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "thief",
+   "id": "smokeScreen",
+   "name": "Écran de Fumée",
+   "gesture": "throw",
+   "effects": [
+    "shadowSmoke"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "thief",
+   "id": "phantomShot",
+   "name": "Tir Fantôme",
+   "gesture": "crossbowShot",
+   "effects": [
+    "arrowTrail",
+    "shadowSmoke",
+    "shadowSmoke"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "thief",
+   "id": "toxicCloud",
+   "name": "Nuage Toxique",
+   "gesture": "crossbowShot",
+   "effects": [
+    "arrowTrail",
+    "poisonCloud"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "thief",
+   "id": "illusoryBarrage",
+   "name": "Déluge Illusoire",
+   "gesture": "summon",
+   "effects": [
+    "arrowTrail",
+    "impactSpark",
+    "shadowSmoke"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "thief",
+   "id": "voidEclipse",
+   "name": "Éclipse du Néant",
+   "gesture": "crossbowShot",
+   "effects": [
+    "voidRift",
+    "shadowSmoke",
+    "arrowTrail"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "ranger",
+   "id": "twinShot",
+   "name": "Tir Jumelé",
+   "gesture": "crossbowShot",
+   "effects": [
+    "arrowTrail",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "ranger",
+   "id": "evasiveRoll",
+   "name": "Roulade Évasive",
+   "gesture": "leap",
+   "effects": [
+    "dustPuff"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "ranger",
+   "id": "tracerRound",
+   "name": "Balle Traçante",
+   "gesture": "crossbowShot",
+   "effects": [
+    "arrowTrail",
+    "targetMark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "ranger",
+   "id": "recoilShot",
+   "name": "Tir de Recul",
+   "gesture": "crossbowShot",
+   "effects": [
+    "weaponGlow",
+    "arrowTrail",
+    "shockRing"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "ranger",
+   "id": "fragRounds",
+   "name": "Balles à Fragmentation",
+   "gesture": "bless",
+   "effects": [
+    "weaponGlow",
+    "fireExplosion"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "ranger",
+   "id": "shockVolley",
+   "name": "Salve Électrifiée",
+   "gesture": "crossbowShot",
+   "effects": [
+    "arrowTrail",
+    "lightningArc"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "ranger",
+   "id": "coveringFire",
+   "name": "Tir de Couverture",
+   "gesture": "crossbowShot",
+   "effects": [
+    "arrowTrail",
+    "slowFrost"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "ranger",
+   "id": "deadlyFlip",
+   "name": "Acrobatie Meurtrière",
+   "gesture": "leap",
+   "effects": [
+    "arrowTrail",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "ranger",
+   "id": "detonatingMark",
+   "name": "Marque Détonante",
+   "gesture": "bless",
+   "effects": [
+    "targetMark",
+    "fireExplosion"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "ranger",
+   "id": "magneticStorm",
+   "name": "Tempête Magnétique",
+   "gesture": "crossbowShot",
+   "effects": [
+    "lightningArc",
+    "stunStars"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "ranger",
+   "id": "bulletDance",
+   "name": "Danse des Balles",
+   "gesture": "spin",
+   "effects": [
+    "arrowTrail",
+    "dustPuff"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "ranger",
+   "id": "voidDeluge",
+   "name": "Déluge du Néant",
+   "gesture": "summon",
+   "effects": [
+    "etheriumAura",
+    "shockRing",
+    "arrowTrail"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "archer",
+   "id": "chargedShot",
+   "name": "Tir Chargé",
+   "gesture": "bowShot",
+   "effects": [
+    "weaponGlow",
+    "arrowTrail",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "archer",
+   "id": "stoppingArrow",
+   "name": "Flèche d'Arrêt",
+   "gesture": "bowShot",
+   "effects": [
+    "arrowTrail",
+    "slowFrost"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "archer",
+   "id": "tacticalRetreat",
+   "name": "Repli Tactique",
+   "gesture": "leap",
+   "effects": [
+    "dustPuff",
+    "arrowTrail"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "archer",
+   "id": "multiShot",
+   "name": "Tir Multiple",
+   "gesture": "bowShot",
+   "effects": [
+    "arrowTrail"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "archer",
+   "id": "arrowRain",
+   "name": "Pluie de Flèches",
+   "gesture": "bowShot",
+   "effects": [
+    "arrowTrail",
+    "runeCircle",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "archer",
+   "id": "piercingArrow",
+   "name": "Flèche Perforante",
+   "gesture": "bowShot",
+   "effects": [
+    "weaponGlow",
+    "thrustStreak",
+    "arrowTrail"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "archer",
+   "id": "hawkEye",
+   "name": "Œil de Faucon",
+   "gesture": "channel",
+   "effects": [
+    "auraRing",
+    "targetMark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "archer",
+   "id": "barbedArrow",
+   "name": "Flèche Barbelée",
+   "gesture": "bowShot",
+   "effects": [
+    "arrowTrail",
+    "bloodSplash"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "archer",
+   "id": "ballistaShot",
+   "name": "Tir de Baliste",
+   "gesture": "bowShot",
+   "effects": [
+    "weaponGlow",
+    "thrustStreak",
+    "shockRing"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "archer",
+   "id": "steelDeluge",
+   "name": "Déluge d'Acier",
+   "gesture": "bowShot",
+   "effects": [
+    "arrowTrail",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "archer",
+   "id": "deadlyHunt",
+   "name": "Traque Mortelle",
+   "gesture": "bowShot",
+   "effects": [
+    "targetMark",
+    "arrowTrail",
+    "bloodSplash"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "archer",
+   "id": "etheriumStrike",
+   "name": "Frappe d'Étherium",
+   "gesture": "bowShot",
+   "effects": [
+    "etheriumAura",
+    "thrustStreak",
+    "arrowTrail"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "engineer",
+   "id": "ballisticTurret",
+   "name": "Tourelle Balistique",
+   "gesture": "throw",
+   "effects": [
+    "dustPuff",
+    "arrowTrail"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "engineer",
+   "id": "jawTrap",
+   "name": "Piège à Mâchoire",
+   "gesture": "groundSlam",
+   "effects": [
+    "dustPuff",
+    "bloodSplash"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "engineer",
+   "id": "shrapnelMine",
+   "name": "Mine à Éclats",
+   "gesture": "throw",
+   "effects": [
+    "fireExplosion",
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "engineer",
+   "id": "rescueGrapple",
+   "name": "Grappin de Secours",
+   "gesture": "throw",
+   "effects": [
+    "cableLine",
+    "dustPuff"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "engineer",
+   "id": "flameTurret",
+   "name": "Tourelle Incendiaire",
+   "gesture": "throw",
+   "effects": [
+    "flameCone"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "engineer",
+   "id": "magneticTrap",
+   "name": "Piège Magnétique",
+   "gesture": "groundSlam",
+   "effects": [
+    "runeCircle",
+    "shockRing",
+    "inward"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "engineer",
+   "id": "portableBarricade",
+   "name": "Barricade Portative",
+   "gesture": "throw",
+   "effects": [
+    "dustPuff"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "engineer",
+   "id": "mechanicalOverload",
+   "name": "Surcharge Mécanique",
+   "gesture": "bless",
+   "effects": [
+    "lightningArc",
+    "weaponGlow"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "engineer",
+   "id": "executionZone",
+   "name": "Zone d'Exécution",
+   "gesture": "aucun",
+   "effects": [
+    "arrowTrail",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "engineer",
+   "id": "furnaceWall",
+   "name": "Mur Fournaise",
+   "gesture": "aucun",
+   "effects": [
+    "handFlame",
+    "fireExplosion"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "engineer",
+   "id": "targetedEradication",
+   "name": "Éradication Ciblée",
+   "gesture": "aucun",
+   "effects": [
+    "fireExplosion"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "engineer",
+   "id": "etheriumBastion",
+   "name": "Bastion d'Étherium",
+   "gesture": "groundSlam",
+   "effects": [
+    "voidRift",
+    "groundBurst",
+    "flameCone",
+    "fireExplosion"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "monsterHunter",
+   "id": "quickSlash",
+   "name": "Entaille vive",
+   "gesture": "sweep",
+   "effects": [
+    "slashArc",
+    "bloodSplash"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "monsterHunter",
+   "id": "hinderingShot",
+   "name": "Tir d'entrave",
+   "gesture": "crossbowShot",
+   "effects": [
+    "arrowTrail",
+    "slowFrost"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "monsterHunter",
+   "id": "tacticalDodge",
+   "name": "Esquive tactique",
+   "gesture": "leap",
+   "effects": [
+    "dustPuff"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "monsterHunter",
+   "id": "pommelStrike",
+   "name": "Coup de pommeau",
+   "gesture": "thrust",
+   "effects": [
+    "impactSpark",
+    "stunStars"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "monsterHunter",
+   "id": "piercingVolley",
+   "name": "Salve perforante",
+   "gesture": "crossbowShot",
+   "effects": [
+    "arrowTrail"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "monsterHunter",
+   "id": "monsterSkewer",
+   "name": "Broche-monstre",
+   "gesture": "thrust",
+   "effects": [
+    "thrustStreak",
+    "bloodSplash"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "monsterHunter",
+   "id": "harpoonBolt",
+   "name": "Carreau-harpon",
+   "gesture": "crossbowShot",
+   "effects": [
+    "cableLine"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "monsterHunter",
+   "id": "crossRiposte",
+   "name": "Riposte croisée",
+   "gesture": "guard",
+   "effects": [
+    "impactSpark",
+    "arrowTrail"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "monsterHunter",
+   "id": "deadlyDance",
+   "name": "Danse mortelle",
+   "gesture": "sweep",
+   "effects": [
+    "slashArc",
+    "arrowTrail"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "monsterHunter",
+   "id": "deathblow",
+   "name": "Mise à mort",
+   "gesture": "crossbowShot",
+   "effects": [
+    "arrowTrail",
+    "thrustStreak",
+    "bloodSplash"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "monsterHunter",
+   "id": "lightningAssault",
+   "name": "Assaut fulgurant",
+   "gesture": "leap",
+   "effects": [
+    "dustPuff",
+    "cableLine",
+    "slashArc",
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "monsterHunter",
+   "id": "etheriumFury",
+   "name": "Fureur d'Étherium",
+   "gesture": "bless",
+   "effects": [
+    "etheriumAura",
+    "slashArc",
+    "shockRing",
+    "thrustStreak"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "windBlade",
+   "id": "shearingStrike",
+   "name": "Frappe Cisaillante",
+   "gesture": "sweep",
+   "effects": [
+    "slashArc",
+    "windBlades"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "windBlade",
+   "id": "airBlade",
+   "name": "Lame d'Air",
+   "gesture": "sweep",
+   "effects": [
+    "slashArc"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "windBlade",
+   "id": "breezeStep",
+   "name": "Pas de Brise",
+   "gesture": "charge",
+   "effects": [
+    "windSwirl",
+    "dustPuff"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "windBlade",
+   "id": "minorTornado",
+   "name": "Tornade Mineure",
+   "gesture": "spin",
+   "effects": [
+    "slashArc",
+    "tornado"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "windBlade",
+   "id": "piercingGust",
+   "name": "Bourrasque Perçante",
+   "gesture": "thrust",
+   "effects": [
+    "thrustStreak",
+    "windBlades"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "windBlade",
+   "id": "windCrescent",
+   "name": "Croissant de Vent",
+   "gesture": "overheadStrike",
+   "effects": [
+    "slashArc"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "windBlade",
+   "id": "zephyrMantle",
+   "name": "Manteau de Zéphyr",
+   "gesture": "bless",
+   "effects": [
+    "windSwirl"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "windBlade",
+   "id": "risingStrike",
+   "name": "Frappe Ascendante",
+   "gesture": "sweep",
+   "effects": [
+    "slashArc",
+    "windBlades"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "windBlade",
+   "id": "hurricaneDance",
+   "name": "Danse de l'Ouragan",
+   "gesture": "sweep",
+   "effects": [
+    "slashArc",
+    "windBlades"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "windBlade",
+   "id": "cuttingTempest",
+   "name": "Tempête Tranchante",
+   "gesture": "spin",
+   "effects": [
+    "tornado",
+    "slashArc"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "windBlade",
+   "id": "celestialExecution",
+   "name": "Exécution Céleste",
+   "gesture": "sweep",
+   "effects": [
+    "slashArc",
+    "windSwirl",
+    "slashArc",
+    "shockRing",
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "windBlade",
+   "id": "voidTyphoon",
+   "name": "Typhon du Néant",
+   "gesture": "overheadStrike",
+   "effects": [
+    "voidRift",
+    "tornado",
+    "slashArc",
+    "fireExplosion"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "soldier",
+   "id": "heavyStrike",
+   "name": "Frappe Lourde",
+   "gesture": "sweep",
+   "effects": [
+    "slashArc",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "soldier",
+   "id": "guardBreaker",
+   "name": "Brise-Garde",
+   "gesture": "sweep",
+   "effects": [
+    "slashArc",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "soldier",
+   "id": "frontalRush",
+   "name": "Ruée Frontale",
+   "gesture": "charge",
+   "effects": [
+    "dustPuff",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "soldier",
+   "id": "seismicWave",
+   "name": "Onde Sismique",
+   "gesture": "groundSlam",
+   "effects": [
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "soldier",
+   "id": "circularSweep",
+   "name": "Balayage Circulaire",
+   "gesture": "spin",
+   "effects": [
+    "slashArc",
+    "dustPuff"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "soldier",
+   "id": "rallyingCry",
+   "name": "Cri de Ralliement",
+   "gesture": "shout",
+   "effects": [
+    "roarWave",
+    "slowFrost",
+    "shieldDome"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "soldier",
+   "id": "divingStrike",
+   "name": "Frappe Plongeante",
+   "gesture": "leap",
+   "effects": [
+    "dustPuff",
+    "shockRing",
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "soldier",
+   "id": "absoluteParry",
+   "name": "Parade Absolue",
+   "gesture": "guard",
+   "effects": [
+    "impactSpark",
+    "slashArc"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "soldier",
+   "id": "seismicBreach",
+   "name": "Percée Sismique",
+   "gesture": "charge",
+   "effects": [
+    "dustPuff",
+    "groundBurst",
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "soldier",
+   "id": "crushingTornado",
+   "name": "Tornade Écrasante",
+   "gesture": "leap",
+   "effects": [
+    "slashArc",
+    "shockRing",
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "soldier",
+   "id": "relentlessExecution",
+   "name": "Exécution Implacable",
+   "gesture": "sweep",
+   "effects": [
+    "impactSpark",
+    "shockRing"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "soldier",
+   "id": "voidWarmaster",
+   "name": "Maître de guerre du Néant",
+   "gesture": "shout",
+   "effects": [
+    "etheriumAura",
+    "weaponGlow",
+    "shockRing"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "champion",
+   "id": "shieldBash",
+   "name": "Coup de bouclier",
+   "gesture": "charge",
+   "effects": [
+    "impactSpark",
+    "stunStars"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "champion",
+   "id": "stoppingLunge",
+   "name": "Fente d'arrêt",
+   "gesture": "thrust",
+   "effects": [
+    "thrustStreak",
+    "slowFrost"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "champion",
+   "id": "taunt",
+   "name": "Provocation",
+   "gesture": "shout",
+   "effects": [
+    "roarWave",
+    "targetMark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "champion",
+   "id": "ironGuard",
+   "name": "Garde de fer",
+   "gesture": "guard",
+   "effects": [
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "champion",
+   "id": "phalanx",
+   "name": "Phalange",
+   "gesture": "guard",
+   "effects": [
+    "auraRing",
+    "dustPuff"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "champion",
+   "id": "armorBreaker",
+   "name": "Brise-armure",
+   "gesture": "overheadStrike",
+   "effects": [
+    "slashArc",
+    "impactSpark",
+    "rockShard"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "champion",
+   "id": "rallyingCry",
+   "name": "Cri de ralliement",
+   "gesture": "shout",
+   "effects": [
+    "roarWave",
+    "targetMark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "champion",
+   "id": "perfectRiposte",
+   "name": "Riposte parfaite",
+   "gesture": "guard",
+   "effects": [
+    "impactSpark",
+    "slashArc"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "champion",
+   "id": "armoredBreach",
+   "name": "Percée cuirassée",
+   "gesture": "charge",
+   "effects": [
+    "dustPuff",
+    "impactSpark",
+    "thrustStreak"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "champion",
+   "id": "livingWall",
+   "name": "Mur vivant",
+   "gesture": "guard",
+   "effects": [
+    "lightWall",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "champion",
+   "id": "devastatingCounter",
+   "name": "Contre dévastateur",
+   "gesture": "guard",
+   "effects": [
+    "impactSpark",
+    "slashArc"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "champion",
+   "id": "voidMonolith",
+   "name": "Monolithe du Néant",
+   "gesture": "groundSlam",
+   "effects": [
+    "voidRift",
+    "shockRing",
+    "groundBurst",
+    "etheriumAura"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "berserker",
+   "id": "savageStrike",
+   "name": "Frappe Sauvage",
+   "gesture": "overheadStrike",
+   "effects": [
+    "slashArc",
+    "bloodSplash"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "berserker",
+   "id": "bloodyCut",
+   "name": "Entaille Sanglante",
+   "gesture": "bless",
+   "effects": [
+    "bloodSplash",
+    "weaponGlow"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "berserker",
+   "id": "visceralHowl",
+   "name": "Hurlement Viscéral",
+   "gesture": "shout",
+   "effects": [
+    "roarWave",
+    "stunStars"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "berserker",
+   "id": "blindCharge",
+   "name": "Charge Aveugle",
+   "gesture": "charge",
+   "effects": [
+    "dustPuff",
+    "impactSpark",
+    "groundBurst"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "berserker",
+   "id": "frenziedMutilation",
+   "name": "Mutilation Frénétique",
+   "gesture": "sweep",
+   "effects": [
+    "slashArc",
+    "bloodSplash"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "berserker",
+   "id": "gapingWound",
+   "name": "Plaie Béante",
+   "gesture": "groundSlam",
+   "effects": [
+    "bloodSplash",
+    "shockRing"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "berserker",
+   "id": "dyingFrenzy",
+   "name": "Frénésie Moribonde",
+   "gesture": "aucun",
+   "effects": [
+    "auraRing"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "berserker",
+   "id": "crushingGrip",
+   "name": "Prise Écrasante",
+   "gesture": "thrust",
+   "effects": [
+    "impactSpark",
+    "bloodSplash"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "berserker",
+   "id": "hemoglobinEruption",
+   "name": "Éruption d'Hémoglobine",
+   "gesture": "overheadStrike",
+   "effects": [
+    "weaponGlow",
+    "fireExplosion"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "berserker",
+   "id": "agonyWhirl",
+   "name": "Trombe d'Agonie",
+   "gesture": "spin",
+   "effects": [
+    "tornado",
+    "slashArc",
+    "bloodSplash"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "berserker",
+   "id": "carnalShockwave",
+   "name": "Onde de Choc Charnelle",
+   "gesture": "shout",
+   "effects": [
+    "impactSpark",
+    "roarWave",
+    "shockRing",
+    "stunStars"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "berserker",
+   "id": "etheriumAbomination",
+   "name": "Abomination de l'Étherium",
+   "gesture": "shout",
+   "effects": [
+    "bloodSplash",
+    "etheriumAura",
+    "shockRing",
+    "groundBurst",
+    "fireExplosion"
+   ],
+   "ultimate": true
+  },
+  {
+   "class": "paladin",
+   "id": "radiantStrike",
+   "name": "Frappe Rayonnante",
+   "gesture": "overheadStrike",
+   "effects": [
+    "weaponGlow",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "paladin",
+   "id": "shieldFlash",
+   "name": "Éclat de Bouclier",
+   "gesture": "guard",
+   "effects": [
+    "impactSpark",
+    "shockRing"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "paladin",
+   "id": "sealOfBravery",
+   "name": "Sceau de Bravoure",
+   "gesture": "bless",
+   "effects": [
+    "runeCircle",
+    "weaponGlow"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "paladin",
+   "id": "wingedAssault",
+   "name": "Assaut Ailé",
+   "gesture": "charge",
+   "effects": [
+    "dustPuff",
+    "featherGust",
+    "impactSpark"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "paladin",
+   "id": "glimmeringGuard",
+   "name": "Garde Scintillante",
+   "gesture": "guard",
+   "effects": [
+    "shieldDome",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "paladin",
+   "id": "dawnWeapon",
+   "name": "Arme de l'Aube",
+   "gesture": "bless",
+   "effects": [
+    "weaponGlow"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "paladin",
+   "id": "vigorAura",
+   "name": "Aura de Vigueur",
+   "gesture": "bless",
+   "effects": [
+    "auraRing"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "paladin",
+   "id": "virtuousIntervention",
+   "name": "Intervention Vertueuse",
+   "gesture": "leap",
+   "effects": [
+    "holyBeam",
+    "shieldDome"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "paladin",
+   "id": "solarWave",
+   "name": "Onde Solaire",
+   "gesture": "sweep",
+   "effects": [
+    "impactSpark",
+    "shockRing",
+    "stunStars"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "paladin",
+   "id": "celestialPhalanx",
+   "name": "Phalange Céleste",
+   "gesture": "charge",
+   "effects": [
+    "lightWall",
+    "dustPuff"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "paladin",
+   "id": "wrathOfTheJust",
+   "name": "Courroux du Juste",
+   "gesture": "overheadStrike",
+   "effects": [
+    "weaponGlow",
+    "impactSpark",
+    "healSparkles"
+   ],
+   "ultimate": false
+  },
+  {
+   "class": "paladin",
+   "id": "voidFortress",
+   "name": "Forteresse du Néant",
+   "gesture": "guard",
+   "effects": [
+    "shieldDome",
+    "etheriumAura",
+    "thrustStreak"
+   ],
+   "ultimate": true
+  }
+ ]
+}
