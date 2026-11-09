@@ -14,7 +14,7 @@ def Rz(a): a=math.radians(a); c,s=math.cos(a),math.sin(a); return np.array([[c,-
 # sens « naturel » de chaque os : signe appliqué à x et z
 SIGN = {"body":(1,1),"torso":(1,-1),"head":(1,-1),
         "rightArm":(-1,-1),"leftArm":(-1,1),"rightForearm":(-1,-1),"leftForearm":(-1,1),
-        "rightHand":(1,-1),"leftHand":(1,1),"rightLeg":(-1,-1),"leftLeg":(-1,1),"rightShin":(1,-1),"leftShin":(1,1)}
+        "rightHand":(-1,-1),"leftHand":(-1,1),"rightLeg":(-1,-1),"leftLeg":(-1,1),"rightShin":(1,-1),"leftShin":(1,1)}
 def rot(bone, r):
     sx, sz = SIGN[bone]
     return Ry(r[1]) @ Rx(sx*r[0]) @ Rz(sz*r[2])

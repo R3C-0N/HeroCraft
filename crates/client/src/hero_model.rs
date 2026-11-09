@@ -995,4 +995,45 @@ mod tests {
         let run = cadence(5.0);
         assert!(run > walk && run < 2.2, "{run} cycles par seconde");
     }
+
+    /// Les gestes des compétences (`assets/hero/animations/`) ne citent que des os de la figure,
+    /// et la frappe au sol, posée par ce code, abat bien la main droite devant le héros
+    #[test]
+    fn skill_gestures_name_real_bones_and_strike_forward() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/hero/animations");
+        let (cfg, f) = hero("humain", 0);
+        let mut count = 0;
+        for entry in std::fs::read_dir(&dir).expect("dossier des gestes") {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|e| e != "json") {
+                continue;
+            }
+            count += 1;
+            let geste: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            for key in geste["keys"].as_array().unwrap() {
+                let mut pose = FigurePose::default();
+                for (name, bone_pose) in key["bones"].as_object().into_iter().flatten() {
+                    let bone = Bone::from_name(name).unwrap_or_else(|| panic!("{}: os inconnu {name}", path.display()));
+                    let v = |field: &str| bone_pose.get(field).map(|a| {
+                        let a = a.as_array().unwrap();
+                        [0, 1, 2].map(|i| a[i].as_f64().unwrap() as f32)
+                    });
+                    if let Some(r) = v("rotation") {
+                        pose.bone_mut(bone).rotation = bone.rotation_from_degrees(r);
+                    }
+                    if let Some(t) = v("translation") {
+                        pose.bone_mut(bone).translation = Vec3::from(t) * f.units_per_block(&cfg);
+                    }
+                }
+                let frames = f.bone_frames(&pose);
+                assert!(frames.iter().all(|b| b.rotation.is_finite() && b.translation.is_finite()), "{}", path.display());
+                if path.ends_with("groundSlam.json") && key["t"].as_f64() == Some(0.35) {
+                    let hand = frames[Bone::RightHand.index()].apply(f.pivot(Bone::RightHand));
+                    let shoulder = f.pivot(Bone::RightArm);
+                    assert!(hand.z > 3.0 && hand.y < shoulder.y, "poignet en {hand}");
+                }
+            }
+        }
+        assert!(count >= 15, "{count} gestes");
+    }
 }

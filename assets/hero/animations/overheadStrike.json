@@ -11,7 +11,7 @@
       "bones": {
         "rightArm": {"rotation": [170, 0, 10]},
         "rightForearm": {"rotation": [40, 0, 0]},
-        "rightHand": {"rotation": [-30, 0, 0]},
+        "rightHand": {"rotation": [30, 0, 0]},
         "torso": {"rotation": [-10, 0, 0]},
         "leftArm": {"rotation": [30, 0, 0]}
       }
@@ -22,7 +22,7 @@
       "bones": {
         "rightArm": {"rotation": [60, 0, 5]},
         "rightForearm": {"rotation": [10, 0, 0]},
-        "rightHand": {"rotation": [30, 0, 0]},
+        "rightHand": {"rotation": [-30, 0, 0]},
         "torso": {"rotation": [20, 0, 0]},
         "leftArm": {"rotation": [-10, 0, 0]}
       }
@@ -32,7 +32,7 @@
       "bones": {
         "rightArm": {"rotation": [55, 0, 5]},
         "rightForearm": {"rotation": [15, 0, 0]},
-        "rightHand": {"rotation": [20, 0, 0]},
+        "rightHand": {"rotation": [-20, 0, 0]},
         "torso": {"rotation": [12, 0, 0]}
       }
     },
