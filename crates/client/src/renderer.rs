@@ -166,6 +166,8 @@ pub struct State {
     cloud_weather: crate::weather::CloudWeather,
     /// Pluie et neige autour du joueur
     precipitation: crate::precipitation::Precipitation,
+    /// Effets des compétences
+    effects: crate::effects::EffectRenderer,
 
     // Pipeline Planète & Voxels 3D
     pub render_pipeline: wgpu::RenderPipeline,
@@ -645,6 +647,7 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
         let precipitation = crate::precipitation::Precipitation::new(&device, &atmosphere.scene_layout, scene_target, integrated_gpu);
+        let effects = crate::effects::EffectRenderer::new(&device, &queue, &atmosphere.scene_layout, scene_target);
 
         // -------------------------------------------------------------
         // Rendu Interface Utilisateur egui
@@ -678,6 +681,7 @@ impl State {
             cloud_weather_buffer,
             cloud_weather,
             precipitation,
+            effects,
             render_pipeline: scene_pipelines.terrain,
             render_pipeline_layout,
             terrain_pipeline_layout,
@@ -791,6 +795,7 @@ impl State {
         self.player_outlines.set_target(device, &self.render_pipeline_layout, target);
         self.block_cracks.set_target(device, &self.render_pipeline_layout, target);
         self.precipitation.set_target(device, target);
+        self.effects.set_target(device, target);
         log::info!("Anti-Aliasing MSAA : sample_count = {}, cible HDR : {}", sample_count, target.describe());
         herocraft_common::profiler::set_meta("msaa_sample_count", sample_count.to_string());
         crate::benchmark::set_meta("Cible HDR", target.describe());
@@ -1105,6 +1110,11 @@ impl State {
         self.precipitation.update(&self.queue, frame);
     }
 
+    /// Les quadrilatères des effets de compétences de cette image
+    pub fn update_effects(&mut self, quads: &[crate::effects::EffectQuad]) {
+        self.effects.update(&self.queue, quads);
+    }
+
     pub fn render(
         &mut self,
         paint_jobs: &[egui::ClippedPrimitive],
@@ -1269,6 +1279,9 @@ impl State {
 
             // 1.d. Pluie et neige, transparentes, devant le relief et les nuages
             self.precipitation.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
+
+            // 1.d bis. Effets des compétences, lueurs ajoutées avant le bloom
+            self.effects.draw(&mut render_pass, &self.atmosphere.scene_bind_group);
         }
 
         // 1.e. Rayons crépusculaires : l'air à l'ombre du relief et des nuages ne diffuse pas le soleil
@@ -1499,6 +1512,7 @@ mod tests {
         let block_cracks = include_str!("block_cracks.wgsl");
         let creature = include_str!("creature.wgsl");
         let precipitation = include_str!("precipitation.wgsl");
+        let effects = include_str!("effects.wgsl");
 
         for (name, source) in [
             ("sky_shader.wgsl", sky_shader),
@@ -1513,6 +1527,7 @@ mod tests {
             ("block_cracks.wgsl", block_cracks),
             ("creature.wgsl", creature),
             ("precipitation.wgsl", precipitation),
+            ("effects.wgsl", effects),
         ] {
             // Assemblage naga_oil (imports de common.wgsl) puis validation complète
             let module = if matches!(name, "ui_shader.wgsl" | "post_shader.wgsl" | "shadow_caster.wgsl") {

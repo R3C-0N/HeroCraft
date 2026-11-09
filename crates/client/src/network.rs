@@ -595,6 +595,11 @@ impl NetClient {
     }
 
     /// Boîtes (8 coins, dans l'ordre de `BlockGeometry::block_corners`) des autres joueurs visibles
+    /// Pieds affichés d'un autre joueur
+    pub fn remote_player_feet(&self, id: u64) -> Option<Vec3> {
+        self.players.get(&id).and_then(|p| p.position)
+    }
+
     pub fn remote_player_boxes(&self, base_radius: f32) -> Vec<[Vec3; 8]> {
         let block = BlockGeometry::new(base_radius as f64).block_height as f32;
         self.players

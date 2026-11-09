@@ -677,6 +677,41 @@ pub fn push_hero_posed(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Fig
     push_figure(frame, cfg, figure, feet, yaw, pose, HERO_TEXTURE, block);
 }
 
+/// Points du héros posé où se jouent les effets des compétences, dans le monde
+#[derive(Debug, Clone, Copy)]
+pub struct HeroAnchors {
+    pub feet: Vec3,
+    pub body: Vec3,
+    pub head: Vec3,
+    pub right_hand: Vec3,
+    pub left_hand: Vec3,
+}
+
+impl HeroAnchors {
+    /// Points approchés d'un héros qu'on ne dessine pas (vue à la première personne, autre joueur)
+    pub fn standing(feet: Vec3, yaw: f32, block: f32) -> Self {
+        let up = feet.normalize_or_zero();
+        let (east, north) = tangent_frame(up);
+        let forward = north * yaw.cos() + east * yaw.sin();
+        let left = up.cross(forward);
+        let body = feet + up * 1.0 * block;
+        Self { feet, body, head: feet + up * 1.6 * block, right_hand: body - left * 0.35 * block + forward * 0.35 * block, left_hand: body + left * 0.35 * block + forward * 0.35 * block }
+    }
+
+    /// Points du héros `figure` posé en `pose`, debout sur `feet` et tourné vers `yaw`
+    pub fn posed(cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, block: f32) -> Self {
+        let up = feet.normalize_or_zero();
+        let (east, north) = tangent_frame(up);
+        let forward = north * yaw.cos() + east * yaw.sin();
+        let left = up.cross(forward);
+        let unit = cfg.taille as f32 / figure.body_height * block;
+        let to_world = |p: Vec3| feet + (left * p.x + up * p.y + forward * p.z) * unit;
+        let frames = figure.bone_frames(pose);
+        let at = |bone: Bone| to_world(frames[bone.index()].apply(figure.pivot(bone)));
+        Self { feet, body: at(Bone::Torso), head: at(Bone::Head), right_hand: at(Bone::RightHand), left_hand: at(Bone::LeftHand) }
+    }
+}
+
 /// Posture d'une figure : balancement de la marche, pose de chaque os, couchée, teinte
 #[derive(Debug, Clone, Copy)]
 pub struct FigurePose {

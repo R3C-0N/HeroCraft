@@ -200,7 +200,7 @@ mod tests {
         player.stats.add_experience(350);
         player.stats.satiety = 42.0;
         let wheel = herocraft_common::SkillWheel::standard();
-        let id = wheel.nodes[0].id.clone();
+        let id = wheel.nodes.iter().find(|n| n.requires.is_empty() && n.tier == 1).unwrap().id.clone();
         wheel.learn(&mut player.stats, &id).unwrap();
         player.save();
 

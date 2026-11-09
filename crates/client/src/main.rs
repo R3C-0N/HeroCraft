@@ -26,6 +26,7 @@ mod commands;
 mod creature_render;
 mod creatures;
 mod dropped_items;
+mod effects;
 mod gpu_timer;
 mod hero_creator;
 mod gestures;
@@ -201,6 +202,8 @@ fn main() {
     let mut hero_figure = hero_model::FigureCache::default();
     // Compétences : lancements, recharges, gestes du héros et frappes à montrer
     let mut skill_play = skill_play::SkillPlay::default();
+    let mut skill_effects = effects::Effects::default();
+    let mut effect_quads: Vec<effects::EffectQuad> = Vec::new();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
     // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
     // prochain coup qu'on peut leur porter
@@ -871,7 +874,7 @@ fn main() {
                             }
                             // Compétences : en solo les règles tournent ici, sur nos créatures
                             let solo_skills = (net.is_none() && !ui_state.is_settings_open).then_some((&mut solo_creatures, camera.player_pos, &mut ui_state.player.stats));
-                            let _cues = skill_play.tick(anim_dt, solo_skills);
+                            skill_effects.start(skill_play.tick(anim_dt, solo_skills));
                             if net.is_none() {
                                 let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
                                 for murder in solo_creatures.take_murders() {
@@ -883,12 +886,27 @@ fn main() {
                             }
                             // Le héros, vu de dehors à la troisième personne, avec le geste de sa compétence
                             hero_gait.update(camera.player_pos, anim_dt, block);
+                            let mut hero_anchors = hero_model::HeroAnchors::standing(camera.player_pos, camera.player_yaw, block);
                             if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson) {
                                 state.set_hero_sheet(&legend.appearance);
                                 let figure = hero_figure.get(&legend.appearance);
                                 let pose = skill_play.hero_pose(hero_gait.swing(), figure.units_per_block(&legend.appearance));
                                 hero_model::push_hero_posed(&mut frame, &legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, block);
+                                hero_anchors = hero_model::HeroAnchors::posed(&legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, block);
                             }
+                            // Les effets des compétences, accrochés au héros, aux joueurs et aux créatures
+                            effect_quads.clear();
+                            if !skill_effects.is_empty() {
+                                let up = camera.player_pos.normalize_or_zero();
+                                let (east, north) = herocraft_common::tangent_frame(up);
+                                let hero_forward = north * camera.player_yaw.cos() + east * camera.player_yaw.sin();
+                                let players = |id: u64| net.as_ref().and_then(|c| c.remote_player_feet(id)).map(|f| (f, 0.0));
+                                let views = &creature_views;
+                                let creature_feet = |id: u64| views.iter().find(|v| v.id == id).map(|v| v.feet);
+                                let world = effects::AnchorWorld { hero: hero_anchors, hero_forward, players: &players, creatures: &creature_feet, eye: camera.eye_position(), block };
+                                skill_effects.update(anim_dt, &world, &mut effect_quads);
+                            }
+                            state.update_effects(&effect_quads);
                             state.set_creature_frame(&frame);
                             creature_vertices = frame.vertices.len();
                             probe.section("créatures : animation et maillage", section);
