@@ -86,11 +86,11 @@ impl VillagerAnimator {
             _ => None,
         };
         match (view.action, pause) {
-            (CreatureAction::Attaque, _) => pose.right_arm = 1.2 + 0.9 * (t * TAU * 2.5).sin().max(0.0),
-            (_, Some("travaille")) => pose.right_arm = 1.0 + 0.6 * (t * TAU / 0.8).sin(),
+            (CreatureAction::Attaque, _) => pose.raise_right_arm(1.2 + 0.9 * (t * TAU * 2.5).sin().max(0.0)),
+            (_, Some("travaille")) => pose.raise_right_arm(1.0 + 0.6 * (t * TAU / 0.8).sin()),
             (_, Some("discute")) => {
-                pose.right_arm = 0.35 + 0.3 * (t * TAU / 1.6).sin().max(0.0);
-                pose.left_arm = 0.15 + 0.15 * (t * TAU / 2.1 + 1.0).sin().max(0.0);
+                pose.raise_right_arm(0.35 + 0.3 * (t * TAU / 1.6).sin().max(0.0));
+                pose.raise_left_arm(0.15 + 0.15 * (t * TAU / 2.1 + 1.0).sin().max(0.0));
             }
             (_, Some("sommeil")) => pose.lying = 1.0,
             _ => {}
@@ -161,6 +161,7 @@ pub fn feet_of(views: &[CreatureView], id: u64) -> Option<Vec3> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hero_model::Bone;
 
     #[test]
     fn work_raises_the_arm_and_sleep_lays_down() {
@@ -172,8 +173,8 @@ mod tests {
         let mut animator = VillagerAnimator::default();
         assert!(is_humanoid(&view(CreatureAction::Repos), &registry));
         let still = animator.pose(&view(CreatureAction::Repos), &registry);
-        assert_eq!((still.right_arm, still.lying), (0.0, 0.0));
-        assert!(animator.pose(&view(pause("travaille")), &registry).right_arm > 0.3);
+        assert_eq!((still.arm_raise(Bone::RightArm), still.lying), (0.0, 0.0));
+        assert!(animator.pose(&view(pause("travaille")), &registry).arm_raise(Bone::RightArm) > 0.3);
         assert_eq!(animator.pose(&view(pause("sommeil")), &registry).lying, 1.0);
         let mut frame = CreatureFrame::default();
         push_villagers(&mut frame, &[view(CreatureAction::Marche)], &registry, |_| None, &mut animator, |_| 7, 1.0);

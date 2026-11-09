@@ -12,6 +12,12 @@
 //! - les proportions de l'espèce et de sa variante (`mods`) : tête, torse, bras, jambes, dos voûté
 //!   et lévitation du sylphe.
 //!
+//! **Articulé.** La figure porte 13 os (`Bone`) : corps, torse, tête, bras, avant-bras, mains,
+//! jambes et tibias. Un bras ou une jambe reste un seul pavé de la planche, mais il se tord en
+//! courbe au coude, au poignet et au genou : chaque coin suit l'os du haut, puis une part
+//! croissante de l'os du bas à travers le pli. `FigurePose` donne la rotation et le déplacement de
+//! chaque os ; `Bone::rotation_from_degrees` lit les angles des fichiers de gestes.
+//!
 //! Une pièce dont la case est vide (pas de barbe, pas de queue…) ne donne aucun pavé : la figure
 //! se lit sur la planche peinte, et rien d'autre ne décide de ce qui se voit.
 
@@ -46,31 +52,207 @@ impl Quad {
     }
 }
 
-/// Un membre qui se balance en marchant : hauteur de son pivot et sens du balancement
-#[derive(Clone, Copy, Debug)]
-pub struct Swing {
-    pub pivot: f32,
-    pub sign: f32,
+/// Les os du héros. Chaque pièce de la figure en suit un ; un os tourne autour de son pivot et
+/// emporte ses enfants (l'avant-bras suit le bras, la main suit l'avant-bras…).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Bone {
+    /// Tout le héros, pivot aux pieds
+    Body,
+    /// Buste, tête et bras, pivot aux hanches (celui du dos voûté)
+    Torso,
+    /// Pivot au cou
+    Head,
+    /// Pivot à l'épaule
+    RightArm,
+    LeftArm,
+    /// Pivot au coude
+    RightForearm,
+    LeftForearm,
+    /// Pivot au poignet ; la main porte l'arme
+    RightHand,
+    LeftHand,
+    /// Pivot à la hanche
+    RightLeg,
+    LeftLeg,
+    /// Pivot au genou
+    RightShin,
+    LeftShin,
 }
 
-/// Une pièce de la figure : ses faces, son balancement s'il s'agit d'un membre, et si elle suit le
-/// haut du corps quand le dos se voûte
+impl Bone {
+    pub const COUNT: usize = 13;
+    /// Tous les os, chaque parent avant ses enfants
+    pub const ALL: [Bone; Bone::COUNT] = [
+        Bone::Body,
+        Bone::Torso,
+        Bone::Head,
+        Bone::RightArm,
+        Bone::LeftArm,
+        Bone::RightForearm,
+        Bone::LeftForearm,
+        Bone::RightHand,
+        Bone::LeftHand,
+        Bone::RightLeg,
+        Bone::LeftLeg,
+        Bone::RightShin,
+        Bone::LeftShin,
+    ];
+
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Nom de l'os dans les fichiers de gestes
+    #[allow(dead_code)] // lu par les gestes des compétences
+    pub fn name(self) -> &'static str {
+        match self {
+            Bone::Body => "body",
+            Bone::Torso => "torso",
+            Bone::Head => "head",
+            Bone::RightArm => "rightArm",
+            Bone::LeftArm => "leftArm",
+            Bone::RightForearm => "rightForearm",
+            Bone::LeftForearm => "leftForearm",
+            Bone::RightHand => "rightHand",
+            Bone::LeftHand => "leftHand",
+            Bone::RightLeg => "rightLeg",
+            Bone::LeftLeg => "leftLeg",
+            Bone::RightShin => "rightShin",
+            Bone::LeftShin => "leftShin",
+        }
+    }
+
+    #[allow(dead_code)] // lu par les gestes des compétences
+    pub fn from_name(name: &str) -> Option<Bone> {
+        Bone::ALL.into_iter().find(|b| b.name() == name)
+    }
+
+    /// L'os qui porte celui-ci (aucun pour `Body`)
+    pub fn parent(self) -> Option<Bone> {
+        Some(match self {
+            Bone::Body => return None,
+            Bone::Torso | Bone::RightLeg | Bone::LeftLeg => Bone::Body,
+            Bone::Head | Bone::RightArm | Bone::LeftArm => Bone::Torso,
+            Bone::RightForearm => Bone::RightArm,
+            Bone::LeftForearm => Bone::LeftArm,
+            Bone::RightHand => Bone::RightForearm,
+            Bone::LeftHand => Bone::LeftForearm,
+            Bone::RightShin => Bone::RightLeg,
+            Bone::LeftShin => Bone::LeftLeg,
+        })
+    }
+
+    /// Côté du héros : 1 pour la gauche (+x), −1 pour la droite, 0 au milieu
+    fn side(self) -> f32 {
+        match self {
+            Bone::RightArm | Bone::RightForearm | Bone::RightHand | Bone::RightLeg | Bone::RightShin => -1.0,
+            Bone::LeftArm | Bone::LeftForearm | Bone::LeftHand | Bone::LeftLeg | Bone::LeftShin => 1.0,
+            _ => 0.0,
+        }
+    }
+
+    /// Rotation d'un fichier de gestes, `[x, y, z]` en degrés, dans le repère de la figure.
+    ///
+    /// - x positif : bras, avant-bras, main et jambe partent vers l'avant (bras levé, coude plié
+    ///   vers le haut, pointe de l'arme inclinée vers l'avant) ; torse et tête se penchent en
+    ///   avant ; le tibia se plie vers l'arrière (genou fléchi) ;
+    /// - y positif : l'os tourne vers la gauche du héros ;
+    /// - z positif : un membre s'écarte vers l'extérieur (en miroir à gauche et à droite) ; torse et
+    ///   tête penchent vers la gauche.
+    ///
+    /// Ordre : z, puis x, puis y (le cap en dernier).
+    #[allow(dead_code)] // lu par les gestes des compétences
+    pub fn rotation_from_degrees(self, [x, y, z]: [f32; 3]) -> Quat {
+        let (x, y, z) = (x.to_radians(), y.to_radians(), z.to_radians());
+        // Un membre pend vers −y : l'envoyer vers +z demande une rotation x négative
+        let forward = match self {
+            Bone::Body | Bone::Torso | Bone::Head | Bone::RightShin | Bone::LeftShin => 1.0,
+            _ => -1.0,
+        };
+        // Écarter vers l'extérieur : −x à droite, +x à gauche ; pencher à gauche : haut vers +x
+        let outward = match self.side() {
+            0.0 => -1.0,
+            side => side,
+        };
+        Quat::from_rotation_y(y) * Quat::from_rotation_x(forward * x) * Quat::from_rotation_z(outward * z)
+    }
+}
+
+/// La pose d'un os, par rapport à son parent : une rotation autour de son pivot puis un
+/// déplacement, en unités du patron (`Figure::units_per_block` pour passer des blocs)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BonePose {
+    pub rotation: Quat,
+    pub translation: Vec3,
+}
+
+impl Default for BonePose {
+    fn default() -> Self {
+        Self { rotation: Quat::IDENTITY, translation: Vec3::ZERO }
+    }
+}
+
+/// Où se trouve un os posé : `p ↦ rotation · p + translation`, des unités du patron au repos vers
+/// la figure posée
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BoneFrame {
+    pub rotation: Quat,
+    pub translation: Vec3,
+}
+
+impl BoneFrame {
+    const IDENTITY: BoneFrame = BoneFrame { rotation: Quat::IDENTITY, translation: Vec3::ZERO };
+
+    pub fn apply(&self, p: Vec3) -> Vec3 {
+        self.rotation * p + self.translation
+    }
+
+    fn then(&self, local: &BoneFrame) -> BoneFrame {
+        BoneFrame { rotation: self.rotation * local.rotation, translation: self.rotation * local.translation + self.translation }
+    }
+}
+
+/// Une articulation le long d'un membre : l'os qui part de là, la hauteur de son pivot au repos,
+/// et la demi-longueur de la courbe du pli
+#[derive(Clone, Copy, Debug)]
+pub struct Joint {
+    pub bone: Bone,
+    pub height: f32,
+    pub bend: f32,
+}
+
+impl Joint {
+    /// Part de la rotation de l'os que suit un point à la hauteur `y` : rien au-dessus du pli, tout
+    /// en dessous, et la courbe entre les deux
+    fn weight(&self, y: f32) -> f32 {
+        // Une part qui croît au même pas sur tout le pli : la courbe est un arc régulier et le
+        // dessus du coude s'étire partout pareil, sans qu'un rang de texels s'allonge seul
+        ((self.height + self.bend - y) / (2.0 * self.bend)).clamp(0.0, 1.0)
+    }
+}
+
+/// Une pièce de la figure : ses faces, l'os qui la porte et, pour un bras ou une jambe, les
+/// articulations où le pavé se plie (de haut en bas). Le membre reste un seul pavé, tordu en
+/// courbe au pli : la planche ne se découpe pas et aucun creux ne s'ouvre.
 #[derive(Clone, Debug)]
 pub struct Piece {
     pub quads: Vec<Quad>,
-    pub swing: Option<Swing>,
-    pub upper: bool,
+    pub bone: Bone,
+    pub joints: Vec<Joint>,
 }
 
 /// Le héros en unités du patron, pieds à zéro, face vers +z, sa gauche vers +x
 #[derive(Clone, Debug)]
 pub struct Figure {
     pub pieces: Vec<Piece>,
+    /// Pivot de chaque os au repos, dans l'ordre de `Bone::ALL`
+    pivots: [Vec3; Bone::COUNT],
     /// Hauteur du corps, des pieds au sommet du crâne (sans couche 2 ni appendice)
     pub body_height: f32,
     /// Plus haut point de la figure, appendices compris
     pub top: f32,
     /// Hauteur des hanches, pivot du dos voûté
+    #[allow(dead_code)]
     hips: f32,
     /// Inclinaison du haut du corps vers l'avant, en radians
     stoop: f32,
@@ -81,39 +263,82 @@ pub struct Figure {
 impl Figure {
     /// Les faces dans leur pose : membres balancés de `swing` radians, dos voûté, élargies de
     /// `width` en travers et en profondeur
+    #[cfg(test)]
     pub fn posed(&self, swing: f32, width: f32) -> impl Iterator<Item = Quad> + '_ {
         self.posed_with(&FigurePose { swing, ..FigurePose::default() }, width)
     }
 
-    /// Les faces dans une pose complète : comme `posed`, bras droit et gauche levés en plus
-    pub fn posed_with(&self, pose: &FigurePose, width: f32) -> impl Iterator<Item = Quad> + '_ {
-        let (swing, right_arm, left_arm) = (pose.swing, pose.right_arm, pose.left_arm);
-        let scale = vec3(width, 1.0, width);
-        let hips = vec3(0.0, self.hips, 0.0);
-        let stoop = Quat::from_rotation_x(self.stoop);
-        let lift = vec3(0.0, self.hover, 0.0);
-        self.pieces.iter().flat_map(move |piece| {
-            let (pivot, turn) = match piece.swing {
-                Some(s) => {
-                    // Les bras pivotent aux épaules, au-dessus des hanches ; leur gauche est vers +x
-                    let raise = if s.pivot > self.hips + 1.0 {
-                        let x = piece.quads.first().map_or(0.0, |q| q.centre().x);
-                        if x < 0.0 { right_arm } else { left_arm }
-                    } else {
-                        0.0
-                    };
-                    (vec3(0.0, s.pivot, 0.0), Quat::from_rotation_x(s.sign * swing - raise))
-                }
-                None => (Vec3::ZERO, Quat::IDENTITY),
+    /// Pivot de l'os au repos
+    pub fn pivot(&self, bone: Bone) -> Vec3 {
+        self.pivots[bone.index()]
+    }
+
+    /// Unités du patron par bloc pour une apparence (pour les déplacements des gestes, en blocs)
+    #[allow(dead_code)] // lu par les gestes des compétences
+    pub fn units_per_block(&self, cfg: &Appearance) -> f32 {
+        self.body_height / cfg.taille as f32
+    }
+
+    /// Où est chaque os dans la pose `pose` (avant élargissement et lévitation)
+    #[allow(dead_code)] // lu par les gestes des compétences
+    pub fn bone_frames(&self, pose: &FigurePose) -> [BoneFrame; Bone::COUNT] {
+        self.bone_frames_and_locals(pose).0
+    }
+
+    /// Les os posés, et la rotation et le déplacement de chacun par rapport à son parent
+    fn bone_frames_and_locals(&self, pose: &FigurePose) -> ([BoneFrame; Bone::COUNT], [(Quat, Vec3); Bone::COUNT]) {
+        let mut frames = [BoneFrame::IDENTITY; Bone::COUNT];
+        let mut locals = [(Quat::IDENTITY, Vec3::ZERO); Bone::COUNT];
+        for bone in Bone::ALL {
+            let mut rotation = pose.bones[bone.index()].rotation;
+            // La marche balance bras et jambes, en sens contraires ; le dos voûté penche le torse
+            let swing = match bone {
+                Bone::RightArm | Bone::LeftLeg => 1.0,
+                Bone::LeftArm | Bone::RightLeg => -1.0,
+                _ => 0.0,
             };
-            let upper = piece.upper;
+            if swing != 0.0 {
+                rotation *= Quat::from_rotation_x(swing * pose.swing);
+            }
+            if bone == Bone::Torso {
+                rotation *= Quat::from_rotation_x(self.stoop);
+            }
+            let pivot = self.pivot(bone);
+            let translation = pose.bones[bone.index()].translation;
+            locals[bone.index()] = (rotation, translation);
+            let local = BoneFrame { rotation, translation: pivot + translation - rotation * pivot };
+            frames[bone.index()] = match bone.parent() {
+                Some(parent) => frames[parent.index()].then(&local),
+                None => local,
+            };
+        }
+        (frames, locals)
+    }
+
+    /// Les faces dans une pose complète : comme `posed`, chaque os tourné et déplacé en plus
+    pub fn posed_with(&self, pose: &FigurePose, width: f32) -> impl Iterator<Item = Quad> + '_ {
+        let scale = vec3(width, 1.0, width);
+        let lift = vec3(0.0, self.hover, 0.0);
+        let (frames, locals) = self.bone_frames_and_locals(pose);
+        self.pieces.iter().flat_map(move |piece| {
+            let frame = frames[piece.bone.index()];
             piece.quads.iter().map(move |q| {
                 let corners = q.corners.map(|p| {
-                    let mut p = pivot + turn * (p - pivot);
-                    if upper {
-                        p = hips + stoop * (p - hips);
+                    // Chaque coin suit l'os du membre, puis une part de chaque articulation selon
+                    // sa hauteur au repos : le pavé se courbe au pli
+                    let mut f = frame;
+                    for joint in &piece.joints {
+                        let w = joint.weight(p.y);
+                        if w <= 0.0 {
+                            break;
+                        }
+                        let local = locals[joint.bone.index()];
+                        let pivot = self.pivot(joint.bone);
+                        let rotation = Quat::IDENTITY.slerp(local.0, w);
+                        let partial = BoneFrame { rotation, translation: pivot + local.1 * w - rotation * pivot };
+                        f = f.then(&partial);
                     }
-                    p * scale + lift
+                    f.apply(p) * scale + lift
                 });
                 Quad { corners, uv: q.uv }
             })
@@ -145,6 +370,26 @@ fn boite(cx: f32, bottom: f32, size: Vec3, pat: [f32; 3], u: f32, v: f32, g: f32
         Quad { corners: [vec3(x0, y1, z1), vec3(x1, y1, z1), vec3(x1, y1, z0), vec3(x0, y1, z0)], uv: [u + d, v, w, d] },
         Quad { corners: [vec3(x0, y0, z0), vec3(x1, y0, z0), vec3(x1, y0, z1), vec3(x0, y0, z1)], uv: [u + d + w, v, w, d] },
     ]
+}
+
+/// Les faces d'une boîte, les quatre côtés découpés en rangs d'un texel : un membre peut ainsi se
+/// courber à ses articulations au lieu de rester rigide
+fn en_rangs(out: &mut Vec<Quad>, faces: [Quad; 6]) {
+    for (index, face) in faces.into_iter().enumerate() {
+        let [u, v, w, h] = face.uv;
+        let rows = h.round() as usize;
+        if index >= 4 || rows <= 1 {
+            out.push(face);
+            continue;
+        }
+        let [c0, c1, c2, c3] = face.corners;
+        for j in 0..rows {
+            // Rang j compté du haut de la face, sur la planche comme sur la boîte
+            let (top, bottom) = (1.0 - j as f32 / rows as f32, 1.0 - (j + 1) as f32 / rows as f32);
+            let corners = [c0.lerp(c3, bottom), c1.lerp(c2, bottom), c1.lerp(c2, top), c0.lerp(c3, top)];
+            out.push(Quad { corners, uv: [u, v + j as f32, w, 1.0] });
+        }
+    }
 }
 
 /// Un pavé de coin `o` et d'arêtes `a`, `b`, `c`, chaque face tournée vers le dehors et montrant
@@ -262,29 +507,39 @@ pub fn figure(cfg: &Appearance, sheet: &Sheet) -> Figure {
     let crown = shoulders + 8.0 * k;
     let arm_x = 4.0 * sx + 2.0 * ab;
 
-    let arm = |sign| Some(Swing { pivot: legs + 10.0, sign });
-    let leg = |sign| Some(Swing { pivot: legs, sign });
     let mut pieces = Vec::new();
-    let mut piece = |swing: Option<Swing>, upper: bool, build: &dyn Fn(&mut Vec<Quad>)| {
+    let mut piece = |bone: Bone, joints: Vec<Joint>, build: &dyn Fn(&mut Vec<Quad>)| {
         let mut quads = Vec::new();
         build(&mut quads);
-        pieces.push(Piece { quads, swing, upper });
+        pieces.push(Piece { quads, bone, joints });
     };
 
-    // Chaque membre : sa boîte de couche 1, puis sa couche 2 en relief.
-    // (centre x, bas, taille, dépliage, coin couche 1, coin couche 2, relief, balancement, haut du corps)
+    // Les plis : coude et poignet à 5 et 9 texels du haut du bras, genou à mi-jambe
+    let (elbow, wrist, knee) = (legs + 7.0, legs + 3.0, legs / 2.0);
+    let arm = |forearm, hand| vec![Joint { bone: forearm, height: elbow, bend: 2.0 * ab }, Joint { bone: hand, height: wrist, bend: 1.0 }];
+    let leg = |shin| vec![Joint { bone: shin, height: knee, bend: 2.0 * lj }];
+
+    // Chaque membre : sa boîte de couche 1, puis sa couche 2 en relief. Un bras ou une jambe reste
+    // un seul pavé, découpé en rangs de texels pour pouvoir se courber à ses articulations.
+    // (os, articulations, centre x, bas, taille, dépliage, coin couche 1, coin couche 2, relief)
     #[allow(clippy::type_complexity)]
-    let membres: [(f32, f32, Vec3, [f32; 3], (f32, f32), (f32, f32), f32, Option<Swing>, bool); 6] = [
-        (0.0, shoulders, Vec3::splat(8.0 * k), [8.0, 8.0, 8.0], (0.0, 0.0), (32.0, 0.0), RELIEF_TETE, None, true),
-        (0.0, legs, vec3(8.0 * sx, 12.0, 4.0 * sx), [8.0, 12.0, 4.0], (16.0, 16.0), (16.0, 32.0), RELIEF_CORPS, None, true),
-        (-arm_x, legs, vec3(4.0 * ab, 12.0, 4.0 * ab), [4.0, 12.0, 4.0], (40.0, 16.0), (40.0, 32.0), RELIEF_CORPS, arm(1.0), true),
-        (arm_x, legs, vec3(4.0 * ab, 12.0, 4.0 * ab), [4.0, 12.0, 4.0], (32.0, 48.0), (48.0, 48.0), RELIEF_CORPS, arm(-1.0), true),
-        (-2.0, 0.0, vec3(4.0, legs, 4.0), [4.0, 12.0, 4.0], (0.0, 16.0), (0.0, 32.0), RELIEF_CORPS, leg(-1.0), false),
-        (2.0, 0.0, vec3(4.0, legs, 4.0), [4.0, 12.0, 4.0], (16.0, 48.0), (0.0, 48.0), RELIEF_CORPS, leg(1.0), false),
+    let membres: [(Bone, Vec<Joint>, f32, f32, Vec3, [f32; 3], (f32, f32), (f32, f32), f32); 6] = [
+        (Bone::Head, vec![], 0.0, shoulders, Vec3::splat(8.0 * k), [8.0, 8.0, 8.0], (0.0, 0.0), (32.0, 0.0), RELIEF_TETE),
+        (Bone::Torso, vec![], 0.0, legs, vec3(8.0 * sx, 12.0, 4.0 * sx), [8.0, 12.0, 4.0], (16.0, 16.0), (16.0, 32.0), RELIEF_CORPS),
+        (Bone::RightArm, arm(Bone::RightForearm, Bone::RightHand), -arm_x, legs, vec3(4.0 * ab, 12.0, 4.0 * ab), [4.0, 12.0, 4.0], (40.0, 16.0), (40.0, 32.0), RELIEF_CORPS),
+        (Bone::LeftArm, arm(Bone::LeftForearm, Bone::LeftHand), arm_x, legs, vec3(4.0 * ab, 12.0, 4.0 * ab), [4.0, 12.0, 4.0], (32.0, 48.0), (48.0, 48.0), RELIEF_CORPS),
+        (Bone::RightLeg, leg(Bone::RightShin), -2.0, 0.0, vec3(4.0, legs, 4.0), [4.0, 12.0, 4.0], (0.0, 16.0), (0.0, 32.0), RELIEF_CORPS),
+        (Bone::LeftLeg, leg(Bone::LeftShin), 2.0, 0.0, vec3(4.0, legs, 4.0), [4.0, 12.0, 4.0], (16.0, 48.0), (0.0, 48.0), RELIEF_CORPS),
     ];
-    for (cx, bottom, size, pat, (u1, v1), (u2, v2), t, swing, upper) in membres {
-        piece(swing, upper, &|q| {
-            q.extend(boite(cx, bottom, size, pat, u1, v1, 0.0));
+    for (bone, joints, cx, bottom, size, pat, (u1, v1), (u2, v2), t) in membres {
+        let bends = !joints.is_empty();
+        piece(bone, joints, &|q| {
+            let faces = boite(cx, bottom, size, pat, u1, v1, 0.0);
+            if bends {
+                en_rangs(q, faces);
+            } else {
+                q.extend(faces);
+            }
             relief(q, sheet, cx, bottom, size, pat, u2, v2, t, t == RELIEF_TETE);
         });
     }
@@ -292,7 +547,7 @@ pub fn figure(cfg: &Appearance, sheet: &Sheet) -> Figure {
     let mouth = shoulders + 4.0 * k;
     let front = 4.0 * k + 0.05;
     let back = 4.0 * sx;
-    piece(None, true, &|q| {
+    piece(Bone::Head, vec![], &|q| {
         // Barbe : couvre le bas du visage et tombe sous le menton
         extrude(q, sheet, (0, 0, 8, 8), vec3(-4.0 * k, mouth, front + 0.5), Vec3::X * k, Vec3::NEG_Y * k, Vec3::Z, false);
         // Cheveux tombants : derrière la tête, vus de dos
@@ -302,6 +557,8 @@ pub fn figure(cfg: &Appearance, sheet: &Sheet) -> Figure {
         let empty = (0..8).rev().take_while(|&j| (0..8).all(|i| !peint(sheet, 32 + i, j))).count();
         let base = crown + 0.25 - empty as f32 * k;
         extrude(q, sheet, (32, 0, 8, 8), vec3(-4.0 * k, base + 8.0 * k, 0.0), Vec3::X * k, Vec3::NEG_Y * k, Vec3::Z * k, false);
+    });
+    piece(Bone::Torso, vec![], &|q| {
         // Ailes : racine contre le dos, déployées vers l'arrière et les côtés
         let span = 1.3_f32;
         let sweep = 30.0_f32.to_radians();
@@ -319,8 +576,22 @@ pub fn figure(cfg: &Appearance, sheet: &Sheet) -> Figure {
     });
 
     let top = pieces.iter().flat_map(|p| p.quads.iter()).flat_map(|q| q.corners).fold(crown, |t, c| t.max(c.y));
+    let pivots = Bone::ALL.map(|bone| {
+        let x = bone.side() * arm_x;
+        match bone {
+            Bone::Body => Vec3::ZERO,
+            Bone::Torso => vec3(0.0, legs, 0.0),
+            Bone::Head => vec3(0.0, shoulders, 0.0),
+            Bone::RightArm | Bone::LeftArm => vec3(x, legs + 10.0, 0.0),
+            Bone::RightForearm | Bone::LeftForearm => vec3(x, elbow, 0.0),
+            Bone::RightHand | Bone::LeftHand => vec3(x, wrist, 0.0),
+            Bone::RightLeg | Bone::LeftLeg => vec3(bone.side() * 2.0, legs, 0.0),
+            Bone::RightShin | Bone::LeftShin => vec3(bone.side() * 2.0, knee, 0.0),
+        }
+    });
     Figure {
         pieces,
+        pivots,
         body_height: crown,
         top,
         hips: legs,
@@ -401,14 +672,14 @@ pub fn push_hero(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, f
     push_figure(frame, cfg, figure, feet, yaw, &FigurePose { swing, ..FigurePose::default() }, HERO_TEXTURE, block);
 }
 
-/// Posture d'une figure : balancement de la marche, bras levés, couchée, teinte
+/// Posture d'une figure : balancement de la marche, pose de chaque os, couchée, teinte
 #[derive(Debug, Clone, Copy)]
 pub struct FigurePose {
     /// Balancement des bras et des jambes
     pub swing: f32,
-    /// Bras droit et bras gauche levés vers l'avant, en radians, par-dessus le balancement
-    pub right_arm: f32,
-    pub left_arm: f32,
+    /// Rotation et déplacement de chaque os par rapport à son parent, dans l'ordre de `Bone::ALL`,
+    /// par-dessus le balancement. Un os laissé au repos reste dans le prolongement de son parent.
+    pub bones: [BonePose; Bone::COUNT],
     /// De 0 (debout) à 1 (couchée sur le dos)
     pub lying: f32,
     /// Couleur multipliée à la planche (rouge d'un coup reçu)
@@ -417,7 +688,35 @@ pub struct FigurePose {
 
 impl Default for FigurePose {
     fn default() -> Self {
-        Self { swing: 0.0, right_arm: 0.0, left_arm: 0.0, lying: 0.0, tint: [1.0; 3] }
+        Self { swing: 0.0, bones: [BonePose::default(); Bone::COUNT], lying: 0.0, tint: [1.0; 3] }
+    }
+}
+
+impl FigurePose {
+    #[allow(dead_code)] // lu par les gestes des compétences
+    pub fn bone(&self, bone: Bone) -> &BonePose {
+        &self.bones[bone.index()]
+    }
+
+    pub fn bone_mut(&mut self, bone: Bone) -> &mut BonePose {
+        &mut self.bones[bone.index()]
+    }
+
+    /// Raccourci des habitants : lève le bras droit vers l'avant de `angle` radians
+    pub fn raise_right_arm(&mut self, angle: f32) {
+        self.bone_mut(Bone::RightArm).rotation = Quat::from_rotation_x(-angle);
+    }
+
+    /// Raccourci des habitants : lève le bras gauche vers l'avant de `angle` radians
+    pub fn raise_left_arm(&mut self, angle: f32) {
+        self.bone_mut(Bone::LeftArm).rotation = Quat::from_rotation_x(-angle);
+    }
+
+    /// De combien le bras `bone` est levé vers l'avant, en radians
+    #[allow(dead_code)] // lu par les gestes des compétences
+    pub fn arm_raise(&self, bone: Bone) -> f32 {
+        let down = self.bone(bone).rotation * Vec3::NEG_Y;
+        down.z.atan2(-down.y)
     }
 }
 
@@ -471,6 +770,106 @@ mod tests {
 
     fn points(f: &Figure) -> Vec<Vec3> {
         f.posed(0.0, 1.0).flat_map(|q| q.corners).collect()
+    }
+
+    /// Les coins posés de l'os `bone` le long d'un bras ou d'une jambe : ceux de sa pièce
+    fn limb(f: &Figure, pose: &FigurePose, bone: Bone) -> Vec<Vec3> {
+        let start: usize = f.pieces.iter().take_while(|p| p.bone != bone).map(|p| p.quads.len()).sum();
+        let count = f.pieces.iter().find(|p| p.bone == bone).unwrap().quads.len();
+        f.posed_with(pose, 1.0).skip(start).take(count).flat_map(|q| q.corners).collect()
+    }
+
+    #[test]
+    fn bones_have_english_names_and_parents_come_first() {
+        for (i, bone) in Bone::ALL.into_iter().enumerate() {
+            assert_eq!(bone.index(), i);
+            assert_eq!(Bone::from_name(bone.name()), Some(bone));
+            if let Some(parent) = bone.parent() {
+                assert!(parent.index() < i, "{} avant {}", parent.name(), bone.name());
+            }
+        }
+        assert_eq!(Bone::from_name("rightForearm"), Some(Bone::RightForearm));
+        assert_eq!(Bone::from_name("avantBras"), None);
+    }
+
+    #[test]
+    fn gesture_angles_follow_the_files_conventions() {
+        let dir = |bone: Bone, r: [f32; 3]| bone.rotation_from_degrees(r) * Vec3::NEG_Y;
+        // Bras tendu devant soi, ouvert sur le côté, en miroir
+        assert!(dir(Bone::RightArm, [90.0, 0.0, 0.0]).abs_diff_eq(Vec3::Z, 1e-5));
+        assert!(dir(Bone::RightArm, [0.0, 0.0, 90.0]).abs_diff_eq(Vec3::NEG_X, 1e-5));
+        assert!(dir(Bone::LeftArm, [0.0, 0.0, 90.0]).abs_diff_eq(Vec3::X, 1e-5));
+        // Avant-bras plié vers le haut, genou plié vers l'arrière
+        assert!(dir(Bone::LeftForearm, [90.0, 0.0, 0.0]).abs_diff_eq(Vec3::Z, 1e-5));
+        assert!(dir(Bone::RightShin, [90.0, 0.0, 0.0]).abs_diff_eq(Vec3::NEG_Z, 1e-5));
+        // Torse penché en avant, puis vers la gauche ; tourner vers la gauche
+        let up = |r: [f32; 3]| Bone::Torso.rotation_from_degrees(r) * Vec3::Y;
+        assert!(up([30.0, 0.0, 0.0]).z > 0.4);
+        assert!(up([0.0, 0.0, 30.0]).x > 0.4);
+        assert!((Bone::Torso.rotation_from_degrees([0.0, 90.0, 0.0]) * Vec3::Z).abs_diff_eq(Vec3::X, 1e-5));
+    }
+
+    #[test]
+    fn the_rest_pose_keeps_the_limbs_straight() {
+        let (_, f) = hero("humain", 0);
+        // Rien ne bouge au repos : chaque coin reste où le patron le pose
+        let rest: Vec<Vec3> = f.pieces.iter().flat_map(|p| p.quads.iter()).flat_map(|q| q.corners).collect();
+        assert!(points(&f).iter().zip(&rest).all(|(a, b)| a.abs_diff_eq(*b, 1e-4)));
+        // Bras droit entier à gauche de l'axe, sous l'épaule
+        let shoulder = f.pivot(Bone::RightArm);
+        assert!(limb(&f, &FigurePose::default(), Bone::RightArm).iter().all(|p| p.x < 0.0 && p.y < shoulder.y + 2.5));
+    }
+
+    #[test]
+    fn a_bent_elbow_curves_the_arm_without_tearing_it() {
+        let (_, f) = hero("humain", 0);
+        let mut pose = FigurePose::default();
+        pose.bone_mut(Bone::RightForearm).rotation = Bone::RightForearm.rotation_from_degrees([90.0, 0.0, 0.0]);
+        let bent = limb(&f, &pose, Bone::RightArm);
+        let elbow = f.pivot(Bone::RightForearm);
+        // L'avant-bras part vers l'avant à hauteur du coude ; le haut du bras n'a pas bougé
+        let reach = bent.iter().fold(f32::MIN, |m, p| m.max(p.z));
+        assert!(reach > elbow.y - f.hips - 1.0, "main à {reach} devant");
+        let still = limb(&f, &FigurePose::default(), Bone::RightArm);
+        assert!(bent.iter().zip(&still).filter(|(_, s)| s.y > elbow.y + 2.1).all(|(b, s)| b.abs_diff_eq(*s, 1e-4)));
+        // Pas de déchirure : deux coins confondus au repos le restent une fois pliés, et le dessus
+        // du coude s'étire en arc sans qu'une arête ne s'emballe
+        let quads: Vec<Quad> = f.posed_with(&pose, 1.0).collect();
+        let rest: Vec<Quad> = f.posed(0.0, 1.0).collect();
+        let pairs: Vec<(Vec3, Vec3)> = rest.iter().zip(&quads).flat_map(|(r, q)| r.corners.into_iter().zip(q.corners)).collect();
+        for (i, (r, q)) in pairs.iter().enumerate().step_by(7) {
+            for (r2, q2) in &pairs[i + 1..] {
+                if r.abs_diff_eq(*r2, 1e-5) {
+                    assert!(q.abs_diff_eq(*q2, 1e-4), "coin {r} déchiré : {q} / {q2}");
+                }
+            }
+        }
+        for (q, r) in quads.iter().zip(&rest) {
+            for i in 0..4 {
+                let (a, b) = ((q.corners[i] - q.corners[(i + 1) % 4]).length(), (r.corners[i] - r.corners[(i + 1) % 4]).length());
+                assert!(a < b * 2.2 + 0.05, "arête de {b} étirée à {a}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_bent_knee_and_a_twisted_wrist_follow_their_parents() {
+        let (_, f) = hero("nain", 0);
+        let mut pose = FigurePose::default();
+        pose.bone_mut(Bone::LeftShin).rotation = Bone::LeftShin.rotation_from_degrees([90.0, 0.0, 0.0]);
+        let shin = limb(&f, &pose, Bone::LeftLeg);
+        let knee = f.pivot(Bone::LeftShin);
+        // Le pied part en arrière à hauteur du genou
+        assert!(shin.iter().fold(f32::MAX, |m, p| m.min(p.z)) < -knee.y + 1.0);
+        assert!(shin.iter().all(|p| p.y > knee.y - 3.0));
+        // La main suit le bras levé : son repère est celui de l'avant-bras puis du poignet
+        let mut raise = FigurePose::default();
+        raise.raise_right_arm(std::f32::consts::FRAC_PI_2);
+        let frames = f.bone_frames(&raise);
+        let hand = frames[Bone::RightHand.index()].apply(f.pivot(Bone::RightHand));
+        let shoulder = f.pivot(Bone::RightArm);
+        assert!((hand.y - shoulder.y).abs() < 0.01 && hand.z > 5.0, "poignet en {hand}");
+        assert!((raise.arm_raise(Bone::RightArm) - std::f32::consts::FRAC_PI_2).abs() < 1e-4);
     }
 
     #[test]
