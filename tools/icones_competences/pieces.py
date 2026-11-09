@@ -25,14 +25,14 @@ POSES = {
                     "coudeD": (6, -8), "mainD": (11, -10), "genouG": (-3, 6), "piedG": (-5, 11), "genouD": (3, 6), "piedD": (5, 11)},
     "brasTendu": {"tete": (0, -15), "cou": (0, -10), "hanche": (0, 0), "coudeG": (-4, -5), "mainG": (-3, 0),
                   "coudeD": (6, -10), "mainD": (12, -11), "genouG": (-3, 6), "piedG": (-5, 11), "genouD": (3, 6), "piedD": (5, 11)},
-    "course": {"tete": (4, -15), "cou": (2, -10), "hanche": (-2, 0), "coudeG": (-4, -6), "mainG": (-1, -3),
-               "coudeD": (6, -7), "mainD": (10, -9), "genouG": (4, 4), "piedG": (2, 11), "genouD": (-7, 5), "piedD": (-11, 9)},
+    "course": {"tete": (4, -15), "cou": (2, -10), "hanche": (-1, 0), "coudeG": (-4, -5), "mainG": (-7, -2),
+               "coudeD": (6, -7), "mainD": (10, -10), "genouG": (5, 4), "piedG": (4, 11), "genouD": (-4, 6), "piedD": (-10, 9)},
     "saut": {"tete": (1, -15), "cou": (0, -10), "hanche": (-1, 0), "coudeG": (-6, -12), "mainG": (-8, -17),
              "coudeD": (6, -9), "mainD": (10, -13), "genouG": (-6, 2), "piedG": (-4, 8), "genouD": (4, 3), "piedD": (1, 9)},
     "accroupi": {"tete": (2, -10), "cou": (1, -6), "hanche": (-1, 2), "coudeG": (-4, -2), "mainG": (-1, 3),
                  "coudeD": (6, -3), "mainD": (10, -4), "genouG": (5, 3), "piedG": (4, 9), "genouD": (-5, 6), "piedD": (-8, 9)},
-    "agenouille": {"tete": (0, -10), "cou": (0, -6), "hanche": (0, 2), "coudeG": (-4, -1), "mainG": (-1, -4),
-                   "coudeD": (4, -1), "mainD": (1, -4), "genouG": (-5, 4), "piedG": (-8, 7), "genouD": (4, 7), "piedD": (2, 7)},
+    "agenouille": {"tete": (1, -12), "cou": (0, -7), "hanche": (-1, 2), "coudeG": (3, -3), "mainG": (5, -7),
+                   "coudeD": (4, -2), "mainD": (6, -6), "genouG": (5, 3), "piedG": (5, 10), "genouD": (-1, 10), "piedD": (-8, 10)},
     "garde": {"tete": (0, -15), "cou": (0, -10), "hanche": (0, 0), "coudeG": (4, -6), "mainG": (8, -7),
               "coudeD": (5, -4), "mainD": (8, -2), "genouG": (-4, 6), "piedG": (-6, 11), "genouD": (4, 6), "piedD": (6, 11)},
     "frappeHaute": {"tete": (1, -15), "cou": (0, -10), "hanche": (0, 0), "coudeG": (-2, -15), "mainG": (2, -19),
@@ -52,7 +52,7 @@ def heros(t, pose, x, y, s=1.0, couleur=OMBRE, liseres=((OR_PALE, 0, -1),), reto
     if cape:
         cx, cy = q["cou"]
         q["cape"] = [(cx + k * 3 * s - k * 5 * s, y + 9 * s), (cx - k * 9 * s, y + 7 * s)]
-    m = t.masque(lambda d: silhouette(d, q))
+    m = t.masque(lambda d: silhouette(d, q, s))
     if s > 1.25 or epais:
         m = dilater(m, epais or 1)
     t.peindre(m, couleur)
@@ -78,6 +78,18 @@ def lame(t, x0, y0, x1, y1, metal=ACIER, garde=True, largeur=2, poignee=BOIS, lu
         nx, ny = -uy, ux
         m_g = t.masque(lambda d: d.line([(gx + nx * 3, gy + ny * 3), (gx - nx * 3, gy - ny * 3)], fill=1, width=2))
         t.objet(m_g, OR, OR_PALE, (150, 90, 30))
+
+
+def sceptre(t, x0, y0, x1, y1, or_=OR, gemme=(255, 250, 220)):
+    """Sceptre doré : hampe de (x0, y0) à la tête ouvragée en (x1, y1)"""
+    m = t.masque(lambda d: d.line([(x0, y0), (x1, y1)], fill=1, width=2))
+    t.objet(m, or_, OR_PALE, (160, 100, 30))
+    a = math.atan2(y1 - y0, x1 - x0)
+    ux, uy, nx, ny = math.cos(a), math.sin(a), -math.sin(a), math.cos(a)
+    couronne = t.masque(lambda d: [d.line([(x1, y1), (x1 + ux * 4 + nx * c * 3, y1 + uy * 4 + ny * c * 3)], fill=1, width=1)
+                                   for c in (-1, 0, 1)])
+    t.objet(couronne, or_, OR_PALE, (160, 100, 30))
+    orbe(t, x1 + ux * 3, y1 + uy * 3, 2, gemme)
 
 
 def hache(t, x0, y0, x1, y1, metal=ACIER, double=False):
@@ -381,7 +393,7 @@ def bete(t, espece, x, y, s=1.0, couleur=OMBRE, liseres=((OR_PALE, 0, -1),), ret
                 ligne(d, [(-2, 6), (-4, 12)], 2)
                 ligne(d, [(2, 6), (4, 12)], 2)
         elif espece == "squelette":
-            silhouette(d, {n: P(px, py) for n, (px, py) in POSES["brasOuverts"].items()})
+            silhouette(d, {n: P(px, py) for n, (px, py) in POSES["brasOuverts"].items()}, s)
         elif espece == "golem":
             ell(d, -9, -12, 9, 6)
             ell(d, -3, -17, 3, -11)

@@ -147,24 +147,27 @@ def dilater(m, n=1):
 
 # --- Pièces réutilisables ----------------------------------------------------------------
 
-def silhouette(d, pose):
-    """Une silhouette de héros à partir de ses articulations (dict de points)"""
+def silhouette(d, pose, s=1.0):
+    """Une silhouette de héros à partir de ses articulations (dict de points) ; `s` règle
+    l'épaisseur des membres pour que bras et jambes restent séparés même en petit"""
     p = pose
     tx, ty = p["cou"]
     hx, hy = p["hanche"]
+    bras, jambe = max(2, round(2.2 * s)), max(2, round(2.6 * s))
     # buste
-    d.polygon([(tx - 4, ty), (tx + 4, ty), (hx + 3, hy), (hx - 3, hy)], fill=1)
+    d.polygon([(tx - 3.2 * s, ty), (tx + 3.2 * s, ty), (hx + 2.2 * s, hy), (hx - 2.2 * s, hy)], fill=1)
     # tête
     cx, cy = p["tete"]
-    d.ellipse([cx - 2.5, cy - 3, cx + 2.5, cy + 2.5], fill=1)
-    d.line([(cx, cy), (tx, ty)], fill=1, width=2)
+    r = max(2.2, 2.7 * s)
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=1)
+    d.line([(cx, cy), (tx, ty)], fill=1, width=max(2, round(2 * s)))
     # bras et jambes
-    for epaule, coude, main in (((tx - 3, ty + 1), p["coudeG"], p["mainG"]), ((tx + 3, ty + 1), p["coudeD"], p["mainD"])):
-        d.line([epaule, coude, main], fill=1, width=3, joint="curve")
+    for epaule, coude, main in (((tx - 2.6 * s, ty + 1), p["coudeG"], p["mainG"]), ((tx + 2.6 * s, ty + 1), p["coudeD"], p["mainD"])):
+        d.line([epaule, coude, main], fill=1, width=bras, joint="curve")
     for genou, pied, cote in ((p["genouG"], p["piedG"], -1), (p["genouD"], p["piedD"], 1)):
-        d.line([(hx + cote * 2, hy), genou, pied], fill=1, width=3, joint="curve")
+        d.line([(hx + cote * 1.4 * s, hy), genou, pied], fill=1, width=jambe, joint="curve")
     if p.get("cape"):
-        d.polygon([(tx - 4, ty), (tx + 4, ty)] + p["cape"], fill=1)
+        d.polygon([(tx - 3 * s, ty), (tx + 3 * s, ty)] + p["cape"], fill=1)
 
 
 def maillet(d, x0, y0, x1, y1, tete=(9, 6), manche=2):
@@ -188,4 +191,14 @@ def dessiner_maillet(t, x0, y0, x1, y1, tete=(10, 6), bois=(150, 92, 44), metal=
     m_tete = t.masque(lambda d: d.polygon(tete_p, fill=1))
     t.objet(m_manche & ~m_tete, bois, melange(bois, (255, 230, 180), 0.4), melange(bois, (0, 0, 0), 0.5), lumiere=lumiere)
     t.objet(m_tete, metal, (255, 255, 255), melange(metal, (40, 40, 80), 0.55), lumiere=lumiere)
+    # frettes dorées aux deux bouts de la tête et au cœur : un maillet, pas un panneau
+    a = math.atan2(y1 - y0, x1 - x0)
+    ux, uy, nx, ny = math.cos(a), math.sin(a), -math.sin(a), math.cos(a)
+    w, h = tete
+    for k in (-0.32, 0.32):
+        cx, cy = x1 + nx * w * k, y1 + ny * w * k
+        bande = t.masque(lambda d, cx=cx, cy=cy: d.line([(cx - ux * h * 0.45, cy - uy * h * 0.45), (cx + ux * h * 0.45, cy + uy * h * 0.45)],
+                                                         fill=1, width=1))
+        t.peindre(bande & m_tete, (230, 170, 60))
+    t.peindre(t.masque(lambda d: d.ellipse([x1 - 1, y1 - 1, x1 + 1, y1 + 1], fill=1)) & m_tete, melange(metal, (40, 40, 80), 0.6))
     return m_manche | m_tete

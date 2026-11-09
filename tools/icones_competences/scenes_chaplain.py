@@ -6,14 +6,13 @@ from scenes import Toile, dilater
 
 
 def soothingLight():
-    """Aube rose : une paume ouverte porte une petite lumière, des paillettes retombent"""
+    """Aube rose : le chapelain lève les mains, une petite lumière y naît, des paillettes retombent"""
     t = Toile()
-    t.fond_radial(24, 20, 44, [(255, 230, 220), (250, 160, 170), (190, 80, 120), (90, 30, 70), (30, 10, 30)])
-    orbe(t, 24, 22, 5, (255, 240, 180))
-    main = t.masque(lambda d: (d.ellipse([12, 30, 36, 40], fill=1), d.polygon([(10, 33), (6, 28), (9, 26), (14, 31)], fill=1),
-                               d.polygon([(38, 33), (42, 28), (39, 26), (34, 31)], fill=1), d.rectangle([18, 38, 30, 47], fill=1)))
-    t.objet(main, (236, 186, 150), (255, 225, 195), (170, 110, 90), lumiere=(0, -1))
-    for x, y in ((12, 12), (36, 10), (16, 4), (31, 18), (40, 22)):
+    t.fond_radial(24, 14, 44, [(255, 230, 220), (250, 160, 170), (190, 80, 120), (90, 30, 70), (30, 10, 30)])
+    heros(t, "brasLeves", 24, 30, s=1.0, liseres=((OR_PALE, 0, -1),))
+    orbe(t, 24, 9, 4, (255, 240, 180))
+    sceptre(t, 36, 42, 38, 30)
+    for x, y in ((10, 12), (38, 8), (14, 24), (36, 22)):
         t.etincelle(x, y, OR_PALE)
     t.vignette(0.4)
     return t
@@ -38,12 +37,11 @@ def celestialSmite():
     t.fond_vertical([(20, 24, 50), (50, 60, 100), (90, 100, 140)], 0, 36)
     sol = t.masque(lambda d: d.rectangle([0, 38, 48, 48], fill=1))
     t.zone_verticale(sol, [(50, 46, 60), (20, 18, 26)], 38, 48)
-    nuage(t, 24, 4, 44, 10, (70, 76, 110), graine=4)
     t.lueur(26, 30, 14, OR_PALE, 0.5, sy=2.5)
-    t.peindre(t.masque(lambda d: d.polygon([(24, 6), (28, 6), (29, 38), (23, 38)], fill=1)), (255, 245, 200))
-    t.peindre(t.masque(lambda d: d.line([(26, 6), (26, 38)], fill=1)), BLANC)
-    heros(t, "accroupi", 26, 29, liseres=((OR_PALE, 0, -1),))
-    anneau(t, 26, 39, 10, 2, OR, 1)
+    t.peindre(t.masque(lambda d: d.polygon([(24, 0), (28, 0), (29, 38), (23, 38)], fill=1)), (255, 245, 200))
+    t.peindre(t.masque(lambda d: d.line([(26, 0), (26, 38)], fill=1)), BLANC)
+    heros(t, "brasOuverts", 26, 27, s=0.95, couleur=(30, 20, 40), liseres=((OR_PALE, 0, -1),))
+    anneau(t, 26, 39, 10, 2, OR, 2)
     t.vignette(0.45)
     return t
 
@@ -52,12 +50,12 @@ def blessingOfSpeed():
     """Vert tendre : un allié qui court, des traits dorés tournent autour de ses jambes"""
     t = Toile()
     t.fond_radial(28, 24, 44, [(230, 255, 190), (150, 220, 90), (60, 150, 60), (20, 70, 40), (8, 30, 20)])
-    for y, x0 in ((10, 2), (18, 0), (34, 4)):
-        t.peindre(t.masque(lambda d, y=y, x0=x0: d.line([(x0, y), (x0 + 12, y)], fill=1)), (230, 255, 200))
-    heros(t, "course", 26, 24, liseres=((BLANC, 1, 0),))
-    for r, a0 in ((9, 20), (12, 200)):
-        t.peindre(t.masque(lambda d, r=r, a0=a0: d.arc([24 - r, 31 - r * 0.35, 24 + r, 31 + r * 0.35], a0, a0 + 140, fill=1, width=2)), OR)
-    for x, y in ((12, 28), (38, 30)):
+    for y, x0 in ((10, 2), (20, 0), (30, 2)):
+        t.peindre(t.masque(lambda d, y=y, x0=x0: d.line([(x0, y), (x0 + 10, y)], fill=1)), (230, 255, 200))
+    t.peindre(t.masque(lambda d: d.arc([12, 30, 36, 40], 180, 360, fill=1, width=2)), OR)
+    heros(t, "course", 25, 24, s=1.05, liseres=((BLANC, 1, 0),))
+    t.peindre(t.masque(lambda d: d.arc([12, 30, 36, 40], 20, 160, fill=1, width=2)), OR)
+    for x, y in ((8, 36), (40, 34)):
         t.etincelle(x, y, OR_PALE)
     t.vignette(0.4)
     return t
@@ -83,17 +81,15 @@ def sacredRampart():
     """Indigo : un mur de lumière dressé, les flèches ennemies s'y brisent"""
     t = Toile()
     t.fond_radial(20, 24, 42, [(120, 120, 230), (60, 56, 170), (28, 24, 90), (10, 8, 36)])
-    mur_m = t.masque(lambda d: d.rectangle([18, 4, 28, 44], fill=1))
-    t.lueur(23, 24, 16, (255, 220, 140), 0.55, sy=2)
-    t.voile(mur_m, (255, 230, 150), 0.5)
-    for x in (18, 28):
-        t.peindre(t.masque(lambda d, x=x: d.line([(x, 4), (x, 44)], fill=1)), OR)
-    for y in (10, 20, 30, 40):
-        t.peindre(t.masque(lambda d, y=y: d.line([(19, y), (27, y)], fill=1)), OR_PALE)
-    for y, l in ((12, 0), (24, 4), (35, 1)):
-        fleche(t, 44 - l, y, 31, y, couleur=(180, 180, 200), fut=(120, 90, 70))
-        t.etincelle(30, y, OR_PALE)
-    heros(t, "brasTendu", 10, 30, s=0.8, liseres=((OR_PALE, 1, 0),))
+    t.lueur(25, 24, 16, (255, 220, 140), 0.55, sy=2)
+    mur_m = t.masque(lambda d: d.polygon([(22, 2), (30, 4), (30, 44), (22, 42)], fill=1))
+    t.voile(mur_m, (255, 235, 170), 0.6)
+    t.peindre(t.masque(lambda d: d.line([(26, 6), (26, 40)], fill=1)), BLANC)
+    t.peindre(t.masque(lambda d: d.line([(30, 4), (30, 44)], fill=1, width=2)), OR)
+    for y in (12, 24, 35):
+        fleche(t, 46, y, 34, y, couleur=(180, 180, 200), fut=(120, 90, 70))
+        t.etincelle(32, y, OR_PALE)
+    heros(t, "brasTendu", 10, 30, s=0.95, liseres=((OR_PALE, 1, 0),))
     t.vignette(0.45)
     return t
 
@@ -139,20 +135,17 @@ def sanctifiedNova():
 
 
 def divineAegis():
-    """Bleu acier : un dôme massif se referme, une onde repousse les ennemis"""
+    """Bleu acier : un dôme massif se referme sur le chapelain, une onde repousse les ennemis"""
     t = Toile()
     t.fond_radial(24, 30, 42, [(170, 200, 230), (90, 120, 170), (40, 56, 100), (14, 20, 40)])
-    sol = t.masque(lambda d: d.rectangle([0, 38, 48, 48], fill=1))
-    t.zone_verticale(sol, [(60, 70, 90), (20, 24, 34)], 38, 48)
-    dome = t.masque(lambda d: d.pieslice([8, 12, 40, 64], 180, 360, fill=1))
+    sol = t.masque(lambda d: d.rectangle([0, 40, 48, 48], fill=1))
+    t.zone_verticale(sol, [(60, 70, 90), (20, 24, 34)], 40, 48)
+    dome = t.masque(lambda d: d.pieslice([9, 12, 39, 68], 180, 360, fill=1))
     t.voile(dome, (255, 220, 120), 0.4)
-    t.peindre(t.masque(lambda d: d.arc([8, 12, 40, 64], 180, 360, fill=1, width=3)), OR)
-    t.peindre(t.masque(lambda d: d.arc([11, 15, 37, 61], 195, 250, fill=1, width=1)), BLANC)
-    heros(t, "garde", 24, 27, s=0.8, liseres=((OR_PALE, 0, -1),))
-    ondes(t, 24, 30, (230, 240, 255), rayons=(19, 22), debut=-30, fin=10)
-    ondes(t, 24, 30, (230, 240, 255), rayons=(19, 22), debut=170, fin=210)
-    heros(t, "tombe", 5, 38, s=0.6, couleur=(30, 20, 30), liseres=())
-    heros(t, "tombe", 43, 38, s=0.6, retourne=True, couleur=(30, 20, 30), liseres=())
+    t.peindre(t.masque(lambda d: d.arc([9, 12, 39, 68], 180, 360, fill=1, width=3)), OR)
+    heros(t, "brasLeves", 24, 29, s=0.8, liseres=((OR_PALE, 0, -1),))
+    for c in (-1, 1):
+        heros(t, "tombe", 24 + c * 19, 36, s=0.55, couleur=(30, 20, 40), liseres=((BLANC, -c, 0),), retourne=c > 0)
     t.vignette(0.4)
     return t
 
@@ -161,12 +154,12 @@ def redemption():
     """Magenta et noir : une large colonne de lumière s'abat, les ennemis pris dans un flash"""
     t = Toile()
     t.fond_radial(24, 30, 40, [(200, 60, 140), (120, 20, 90), (50, 8, 40), (14, 2, 14)])
-    col = t.masque(lambda d: d.polygon([(14, 0), (34, 0), (38, 40), (10, 40)], fill=1))
-    t.voile(col, (255, 230, 250), 0.6)
-    t.peindre(t.masque(lambda d: d.rectangle([20, 0, 28, 40], fill=1)), BLANC)
-    t.lueur(24, 40, 18, (255, 220, 240), 0.9, sy=0.4)
+    col = t.masque(lambda d: d.polygon([(12, 0), (36, 0), (40, 44), (8, 44)], fill=1))
+    t.voile(col, (255, 230, 250), 0.45)
+    t.peindre(t.masque(lambda d: d.rectangle([21, 0, 27, 44], fill=1)), BLANC)
+    t.lueur(24, 42, 18, (255, 220, 240), 0.8, sy=0.4)
     for x in (14, 34):
-        heros(t, "tombe", x, 38, s=0.6, couleur=(70, 20, 60), liseres=((BLANC, 0, -1),), retourne=x > 24)
+        heros(t, "brasOuverts", x, 30, s=0.75, couleur=(90, 20, 70), liseres=((BLANC, 0, -1), (BLANC, -1 if x > 24 else 1, 0)))
     t.vignette(0.45)
     return t
 
@@ -175,14 +168,13 @@ def supremeIntervention():
     """Ultime : nuit d'Étherium, des colonnes tombent sur les alliés et les relèvent"""
     t = Toile()
     t.fond_radial(24, 26, 42, [(90, 40, 150), (50, 16, 100), (20, 6, 44), (6, 2, 14)])
-    for x, w in ((10, 3), (38, 3), (24, 5)):
-        c = t.masque(lambda d, x=x, w=w: d.rectangle([x - w, 0, x + w, 40], fill=1))
-        t.voile(c, (200, 150, 255), 0.45)
-        t.peindre(t.masque(lambda d, x=x: d.line([(x, 0), (x, 40)], fill=1)), CYAN)
-    heros(t, "brasLeves", 24, 28, s=0.85, couleur=(255, 236, 170), liseres=((BLANC, 0, -1), ((230, 160, 60), 0, 1)))
-    heros(t, "agenouille", 10, 36, s=0.7, liseres=((CYAN, 0, -1),))
-    heros(t, "agenouille", 38, 36, s=0.7, retourne=True, liseres=((CYAN, 0, -1),))
-    for x, y in ((6, 10), (42, 12), (16, 20), (32, 18)):
-        t.etincelle(x, y, CYAN)
+    for x, w in ((9, 4), (39, 4), (24, 5)):
+        c = t.masque(lambda d, x=x, w=w: d.rectangle([x - w, 0, x + w, 44], fill=1))
+        t.voile(c, (200, 150, 255), 0.4)
+        t.peindre(t.masque(lambda d, x=x: d.line([(x, 0), (x, 44)], fill=1)), CYAN)
+    heros(t, "brasLeves", 24, 28, s=0.9, couleur=(255, 236, 170), liseres=((BLANC, 0, -1), ((230, 160, 60), 0, 1)))
+    for x in (9, 39):
+        heros(t, "brasOuverts", x, 32, s=0.65, liseres=((CYAN, 0, -1),))
     t.vignette(0.35)
     return t
+
