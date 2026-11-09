@@ -48,7 +48,6 @@ mod shaders;
 mod shadow;
 mod skills_screen;
 mod skinned_model;
-#[cfg(test)]
 mod skill_models;
 mod skill_bar;
 mod skill_play;

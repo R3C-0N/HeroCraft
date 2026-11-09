@@ -1,0 +1,34 @@
+{
+  "name": "Seigneur Liche",
+  "description": "Entité supérieure invoquée par le Nécromancien, le bâton de liche à la main. Il frappe en mêlée les monstres qui approchent.",
+  "body": {
+    "half_width": 0.3,
+    "half_length": 0.3,
+    "height": 1.9
+  },
+  "walk_speed": 1.4,
+  "health": 60,
+  "activity": "always",
+  "humanoid": true,
+  "attack": {
+    "mode": "solo",
+    "damage": 7,
+    "cooldown": 1.2,
+    "sight": 12,
+    "engage": 10,
+    "leash": 16,
+    "reach": 1.4,
+    "chase_speed": 1.6,
+    "hunts_players": false,
+    "prey": [
+      "loup",
+      "ours",
+      "sanglier",
+      "brute",
+      "champion",
+      "gorgone",
+      "millepattes",
+      "rampant"
+    ]
+  }
+}

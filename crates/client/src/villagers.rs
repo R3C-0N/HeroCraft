@@ -14,6 +14,7 @@ use herocraft_common::hero::{atlas, Appearance};
 use herocraft_common::{CreatureAction, CreatureRegistry, VillagerCard};
 
 use crate::camera::{CameraViewMode, OrbitCamera};
+use crate::creature_render::SheetSource;
 use crate::creatures::{CreatureFrame, CreatureView};
 use crate::hero_model::{figure, push_figure, Figure, FigurePose, HeroGait};
 
@@ -102,21 +103,37 @@ impl VillagerAnimator {
 }
 
 /// Ajoute les humanoïdes au maillage des créatures ; `texture` donne l'indice de la planche d'une
-/// apparence
+/// apparence ou d'une image fixe. Une invocation humanoïde (Chevalier de la Mort, Seigneur Liche)
+/// porte sa propre planche et son arme dans la main droite.
 pub fn push_villagers(
     frame: &mut CreatureFrame,
     views: &[CreatureView],
     registry: &CreatureRegistry,
     card: impl Fn(u64) -> Option<Arc<VillagerCard>>,
     animator: &mut VillagerAnimator,
-    mut texture: impl FnMut(&Appearance) -> usize,
+    mut texture: impl FnMut(SheetSource) -> usize,
     block: f32,
 ) {
     for view in views.iter().filter(|v| is_humanoid(v, registry)) {
+        let look = view.species.and_then(|s| registry.get(s)).and_then(|s| crate::skill_models::summon_look(&s.id));
+        if let Some(look) = look {
+            let mut pose = animator.pose(view, registry);
+            // L'arme tenue devant soi, sauf quand le bras frappe déjà
+            if pose.bone_mut(crate::hero_model::Bone::RightArm).rotation == glam::Quat::IDENTITY {
+                pose.raise_right_arm(0.35);
+            }
+            let slot = texture(SheetSource::Fixed(&look.id, &look.sheet));
+            push_figure(frame, &look.appearance, &look.figure, view.feet, view.yaw, &pose, slot, block);
+            if let Some(weapon) = &look.weapon {
+                let slot = texture(SheetSource::Fixed(&weapon.id, &weapon.texture));
+                crate::skill_models::push_graft(frame, &weapon.model, &look.appearance, &look.figure, view.feet, view.yaw, &pose, slot, block);
+            }
+            continue;
+        }
         let card = card(view.id);
         let appearance = card.as_ref().map_or(stranger(), |c| &c.appearance);
         let pose = animator.pose(view, registry);
-        let slot = texture(appearance);
+        let slot = texture(SheetSource::Painted(appearance));
         push_figure(frame, appearance, animator.figure(appearance), view.feet, view.yaw, &pose, slot, block);
     }
 }
@@ -162,6 +179,28 @@ pub fn feet_of(views: &[CreatureView], id: u64) -> Option<Vec3> {
 mod tests {
     use super::*;
     use crate::hero_model::Bone;
+
+    #[test]
+    fn humanoid_summons_wear_their_own_sheet_and_hold_their_weapon() {
+        let registry = CreatureRegistry::load_default();
+        let mut animator = VillagerAnimator::default();
+        for (k, id) in ["deathKnight", "lichLord"].into_iter().enumerate() {
+            let species = registry.find(id).unwrap_or_else(|| panic!("{id}"));
+            let view = CreatureView { id: k as u64, species: Some(species), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
+            let mut frame = CreatureFrame::default();
+            let mut asked = Vec::new();
+            push_villagers(&mut frame, &[view], &registry, |_| None, &mut animator, |source| {
+                asked.push(match source {
+                    SheetSource::Painted(_) => "peinte".to_string(),
+                    SheetSource::Fixed(key, _) => key.to_string(),
+                });
+                asked.len() - 1
+            }, 1.0);
+            let look = crate::skill_models::summon_look(id).unwrap();
+            assert_eq!(asked, vec![id.to_string(), look.weapon.as_ref().unwrap().id.clone()], "sa planche puis son arme");
+            assert_eq!(frame.draws.len(), 2);
+        }
+    }
 
     #[test]
     fn work_raises_the_arm_and_sleep_lays_down() {

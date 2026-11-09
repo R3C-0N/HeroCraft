@@ -1045,8 +1045,8 @@ impl State {
     }
 
     /// Indice de texture de la planche d'un habitant
-    pub fn villager_texture(&mut self, appearance: &herocraft_common::hero::Appearance) -> usize {
-        self.creatures.villager_texture(&self.device, &self.queue, appearance)
+    pub fn villager_texture(&mut self, source: crate::creature_render::SheetSource) -> usize {
+        self.creatures.villager_texture(&self.device, &self.queue, source)
     }
 
     /// Maillage des créatures de l'image (`creatures::build_frame`)

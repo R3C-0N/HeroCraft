@@ -515,15 +515,12 @@ mod tests {
     }
 
     #[test]
-    fn test_humanoid_summons_are_described_but_not_yet_playable() {
+    fn test_every_summon_skill_is_playable() {
         let catalog = SkillCatalog::load_default();
-        for id in ["deathKnight", "lichLord"] {
+        for id in ["skeletonServant", "deathKnight", "fleshGolem", "lichLord", "boneBehemoth", "boneWall", "ballisticTurret", "etheriumBastion", "magmaWall"] {
             let def = catalog.get(id).unwrap();
             assert_eq!(def.summons().count(), 1, "{id}");
-            assert!(!def.is_castable(), "{id}");
-        }
-        for id in ["skeletonServant", "boneWall", "ballisticTurret", "etheriumBastion", "magmaWall"] {
-            assert!(catalog.get(id).unwrap().is_castable(), "{id}");
+            assert!(def.is_castable(), "{id}");
         }
     }
 }

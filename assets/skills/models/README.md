@@ -18,13 +18,13 @@ Une compétence les fait apparaître par l'effet `summon` de son bloc `cast` :
 
 | Champ | Rôle |
 |---|---|
-| `species` | L'espèce (`assets/creatures/<id>.json`) ou un humanoïde de `humanoids.json`. |
+| `species` | L'espèce (`assets/creatures/<id>.json`). |
 | `count` | Combien à chaque lancement (1 par défaut), posées en cercle. |
 | `at` | `self` : aux pieds du lanceur ; `aimed` : au centre de la zone (le point visé). |
 | `duration` | Secondes avant qu'elles disparaissent ; sans : jusqu'à leur destruction. |
 | `limit` | Nombre au plus en même temps pour un lanceur : les plus anciennes disparaissent. |
 
-Les entités invoquées sont des alliées du lanceur ; elles disparaissent quand il quitte la partie et ne sont jamais sauvegardées. Une compétence qui invoque un humanoïde (`deathKnight`, `lichLord`) est décrite mais reste « pas encore jouable » tant que ces humanoïdes ne sont pas dessinés. Le comportement propre des entités (la tourelle qui tire, le piège qui claque, le mur qui bloque) n'est pas encore écrit : elles apparaissent, encaissent les coups et disparaissent.
+Les entités invoquées sont des alliées du lanceur ; elles disparaissent quand il quitte la partie et ne sont jamais sauvegardées. Le Chevalier de la Mort et le Seigneur Liche sont des créatures humanoïdes (`humanoid: true`) du même identifiant que leur entrée de `humanoids.json` : le client les dessine avec le corps du héros, leur planche et leur arme greffée dans la main droite, et ils frappent les monstres qui approchent. Le comportement propre des autres entités (la tourelle qui tire, le piège qui claque, le mur qui bloque) n'est pas encore écrit : elles apparaissent, encaissent les coups et disparaissent.
 
 | Identifiant | Compétence | Os |
 |---|---|---|
