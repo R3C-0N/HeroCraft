@@ -10,25 +10,37 @@ PIERRE = (140, 120, 100)
 VAPEUR = (240, 245, 250)
 
 
-def gantelet(t, cx, cy, couleur=(120, 110, 130), lueur=None):
-    """Poing ganté levé"""
+def gantelet(t, cx, cy, couleur=(150, 140, 170), lueur=None, rune=None):
+    """Gantelet runique, poing fermé dressé : quatre jointures, pouce replié, manchette dorée
+    marquée d'une rune ; (cx, cy) au centre du poing"""
     if lueur:
-        t.lueur(cx, cy - 4, 9, lueur, 0.7)
-    m = t.masque(lambda d: (d.rounded_rectangle([cx - 5, cy - 5, cx + 5, cy + 4], 2, fill=1),
-                            d.rectangle([cx - 4, cy + 4, cx + 4, cy + 12], fill=1)))
-    t.objet(m, couleur, melange(couleur, BLANC, 0.4), melange(couleur, (0, 0, 0), 0.5))
-    for i in range(3):
-        t.peindre(t.masque(lambda d, i=i: d.line([(cx - 3 + i * 3, cy - 5), (cx - 3 + i * 3, cy - 2)], fill=1)),
-                  melange(couleur, (0, 0, 0), 0.5))
-
+        t.lueur(cx, cy - 3, 11, lueur, 0.7)
+    clair, sombre = melange(couleur, BLANC, 0.5), melange(couleur, (0, 0, 0), 0.5)
+    manchette = t.masque(lambda d: d.polygon([(cx - 5, cy + 5), (cx + 5, cy + 5), (cx + 7, cy + 15), (cx - 7, cy + 15)], fill=1))
+    t.objet(manchette, sombre, couleur, melange(sombre, (0, 0, 0), 0.5))
+    t.peindre(t.masque(lambda d: d.line([(cx - 6, cy + 7), (cx + 6, cy + 7)], fill=1)), OR)
+    paume = t.masque(lambda d: (d.rounded_rectangle([cx - 6, cy - 3, cx + 6, cy + 6], 2, fill=1),
+                                [d.ellipse([cx - 6 + i * 3, cy - 6, cx - 3 + i * 3, cy - 1], fill=1) for i in range(4)]))
+    t.objet(paume, couleur, clair, sombre)
+    for i in range(1, 4):
+        t.peindre(t.masque(lambda d, i=i: d.line([(cx - 6 + i * 3, cy - 4), (cx - 6 + i * 3, cy)], fill=1)), sombre)
+    pouce = t.masque(lambda d: d.line([(cx - 6, cy + 3), (cx - 1, cy + 1), (cx + 2, cy + 1)], fill=1, width=2))
+    t.objet(pouce, clair, BLANC, sombre)
+    t.etincelle(cx, cy + 11, rune or lueur or CYAN)
 
 def rocher(t, cx, cy, r, couleur=PIERRE, givre=None):
-    pts = [(cx + r * math.cos(math.radians(a)) * (0.8 + 0.2 * (i % 2)), cy + r * math.sin(math.radians(a)) * (0.8 + 0.2 * ((i + 1) % 2)))
-           for i, a in enumerate(range(0, 360, 45))]
+    """Rocher anguleux, facettes éclairées en haut à gauche"""
+    formes = (1.0, 0.75, 0.95, 0.7, 1.05, 0.8, 0.9, 0.72, 1.0)
+    pts = [(cx + r * formes[i] * math.cos(math.radians(a)), cy + r * formes[i] * math.sin(math.radians(a)))
+           for i, a in enumerate(range(0, 360, 40))]
     m = t.masque(lambda d: d.polygon(pts, fill=1))
     t.objet(m, couleur, melange(couleur, BLANC, 0.4), melange(couleur, (0, 0, 0), 0.5))
+    if r >= 4:
+        t.peindre(t.masque(lambda d: d.line([(cx - r * 0.5, cy - r * 0.1), (cx + r * 0.1, cy + r * 0.3), (cx + r * 0.6, cy - r * 0.2)],
+                                            fill=1)) & m, melange(couleur, (0, 0, 0), 0.35))
     if givre:
         t.liseré(m, givre, -1, -1)
+        t.liseré(m, givre, 0, -1)
     return m
 
 
@@ -58,14 +70,17 @@ def volcanicRune():
 
 
 def foamingWhip():
-    """Eau : un fouet d'eau claque en arc, des gouttes bleues restent sur la cible"""
+    """Eau : un fouet d'eau ondule et claque en arc, des gouttes bleues restent sur la cible"""
     t = Toile()
-    t.fond_radial(24, 24, 42, [(200, 240, 255), (70, 160, 230), (20, 80, 160), (8, 30, 70)])
-    t.peindre(t.masque(lambda d: d.arc([6, 6, 44, 40], 160, 350, fill=1, width=4)), EAU)
-    t.peindre(t.masque(lambda d: d.arc([6, 6, 44, 40], 200, 340, fill=1, width=1)), BLANC)
-    for x, y in ((40, 26), (43, 32), (38, 34), (44, 20)):
+    t.fond_radial(30, 20, 44, [(170, 220, 250), (70, 150, 220), (20, 70, 150), (8, 26, 60)])
+    pts = [(12, 34), (14, 24), (20, 16), (28, 14), (34, 18), (38, 14), (42, 8)]
+    t.peindre(t.masque(lambda d: d.line(pts, fill=1, width=4, joint="curve")), EAU)
+    t.peindre(t.masque(lambda d: d.line(pts[1:], fill=1, width=1, joint="curve")), BLANC)
+    for x, y in ((44, 6), (40, 4), (45, 12), (36, 8)):
+        t.point(x, y, EAU_C)
+    for x, y in ((40, 26), (43, 32), (36, 30)):
         orbe(t, x, y, 1.5, EAU_C, halo=False)
-    gantelet(t, 10, 34, lueur=EAU)
+    gantelet(t, 10, 36, lueur=EAU)
     t.vignette(0.4)
     return t
 
@@ -150,12 +165,14 @@ def fusion():
 
 
 def scaldingTyphoon():
-    """Feu et eau : le fouet frappe l'orbe en vol, une énorme vague de vapeur éclate"""
+    """Feu et eau : le fouet frappe l'orbe en vol, qui éclate en volutes de vapeur"""
     t = Toile()
-    t.fond_radial(28, 20, 44, [(250, 250, 250), (200, 210, 220), (130, 120, 140), (70, 50, 60), (24, 16, 20)])
-    nuage(t, 28, 18, 34, 22, VAPEUR, sombre=(180, 190, 200), graine=6, n=8)
-    boule_de_feu(t, 28, 20, 4)
-    t.peindre(t.masque(lambda d: d.arc([2, 14, 34, 50], 200, 330, fill=1, width=3)), EAU)
+    t.fond_radial(28, 20, 44, [(240, 220, 210), (200, 130, 110), (130, 60, 70), (60, 24, 40), (20, 8, 14)])
+    for x, y, r in ((22, 14, 7), (32, 10, 6), (36, 20, 7), (26, 24, 6), (14, 22, 5)):
+        bouffee = t.masque(lambda d, x=x, y=y, r=r: d.ellipse([x - r, y - r, x + r, y + r], fill=1))
+        t.voile(bouffee, VAPEUR, 0.55)
+    boule_de_feu(t, 28, 18, 4)
+    t.peindre(t.masque(lambda d: d.line([(6, 42), (12, 32), (20, 26), (26, 22)], fill=1, width=3, joint="curve")), EAU)
     t.vignette(0.4)
     return t
 
@@ -173,13 +190,17 @@ def shrapnelStorm():
 
 
 def magmaWall():
-    """Feu et terre : un mur de pierre incandescent laisse une flaque de lave"""
+    """Feu et terre : un rempart de roche volcanique fendu de lave surgit et laisse une flaque bouillante"""
     t = Toile()
     t.fond_vertical([(30, 10, 10), (90, 24, 16), (160, 50, 20)], 0, 36)
-    lave = t.masque(lambda d: d.ellipse([2, 36, 46, 46], fill=1))
+    lave = t.masque(lambda d: d.ellipse([0, 36, 48, 47], fill=1))
     t.objet(lave, (255, 120, 30), (255, 220, 100), (200, 50, 20), contour=(60, 10, 6))
-    mur(t, 12, 10, 36, 38, pierre=(70, 40, 34), joint=(255, 120, 40), rougeoie=(255, 100, 30))
-    for x, y in ((10, 41), (30, 43), (38, 40)):
+    roche = t.masque(lambda d: d.polygon([(8, 40), (10, 20), (14, 12), (19, 16), (24, 6), (29, 14), (34, 10), (38, 22), (40, 40)], fill=1))
+    t.objet(roche, (60, 40, 40), (110, 80, 70), (30, 18, 18), contour=(14, 6, 6))
+    for pts in (((14, 38), (16, 28), (13, 22)), ((24, 38), (25, 26), (23, 14)), ((33, 38), (32, 26), (35, 20))):
+        t.peindre(t.masque(lambda d, pts=pts: d.line(pts, fill=1, width=1)), (255, 170, 40))
+    t.lueur(24, 34, 16, (255, 100, 30), 0.5, sy=0.6)
+    for x, y in ((6, 42), (30, 44), (42, 41)):
         anneau(t, x, y, 1.5, 1, (255, 240, 150), 1)
     t.vignette(0.4)
     return t
@@ -203,20 +224,22 @@ def explosiveRetreat():
     t = Toile()
     t.fond_radial(32, 32, 44, [(255, 230, 150), (240, 120, 40), (150, 40, 30), (60, 14, 16), (20, 4, 6)])
     explosion(t, 32, 34, 12)
-    heros(t, "saut", 12, 18, s=0.8, liseres=(((255, 220, 150), 1, 0),), retourne=True)
+    heros(t, "saut", 13, 24, s=0.8, liseres=(((255, 220, 150), 1, 0),), retourne=True)
     t.peindre(t.masque(lambda d: d.arc([10, 14, 40, 50], 200, 300, fill=1, width=1)), (255, 240, 200))
     t.vignette(0.4)
     return t
 
 
 def crystallization():
-    """Eau et terre : le rocher se couvre de givre et éclate en éclats glacés"""
+    """Eau et terre : le rocher traverse un voile d'eau, se couvre de givre et éclate en éclats glacés"""
     t = Toile()
     t.fond_radial(28, 24, 42, [(240, 250, 255), (160, 220, 250), (70, 130, 200), (20, 50, 100), (6, 16, 40)])
-    rocher(t, 18, 22, 8, couleur=(150, 180, 210), givre=BLANC)
-    cristaux(t, ((32, 20, 8), (38, 30, 7), (30, 34, 6), (40, 14, 5)), couleur=(200, 240, 255), sombre=(80, 140, 220))
-    for x, y in ((8, 10), (44, 40), (24, 40)):
-        t.etincelle(x, y, (220, 245, 255))
+    voile = t.masque(lambda d: d.rectangle([20, 4, 24, 44], fill=1))
+    t.voile(voile, EAU, 0.45)
+    for y in (16, 24, 32):
+        t.peindre(t.masque(lambda d, y=y: d.line([(2, y), (8, y)], fill=1)), BLANC)
+    rocher(t, 14, 24, 6, couleur=(150, 180, 210), givre=BLANC)
+    cristaux(t, ((32, 18, 8), (38, 28, 7), (30, 32, 6), (42, 14, 5)), couleur=(200, 240, 255), sombre=(80, 140, 220))
     t.vignette(0.4)
     return t
 
