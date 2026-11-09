@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 """Reprend la roue des compétences du carnet Planner (fiche « Classes », #138) dans
-`assets/competences/roue.json`.
+`assets/skills/` : `classes.json` (les quinze classes) et un fichier par compétence,
+`assets/skills/<classe>/<id>.json`.
 
     PLANNER_TOKEN=... python3 tools/importer_roue_competences.py
+
+Le carnet fait foi pour le nom, la description et la place sur la roue (palier, anneau, part,
+prérequis). Tout ce qui s'écrit à la main reste : identifiant anglais, règles (`cast`), visuels,
+sons, mécanique `special`, compétences accordées (`wheel.grants`) et icône. Une compétence déjà
+présente est retrouvée par son numéro de fiche (`wheel.planner`) ; une nouvelle reçoit un
+identifiant tiré de son nom, à traduire en anglais à la main.
 
 Le carnet range les classes par famille (magie, distance, corps à corps) ; chaque classe a ses
 niveaux (« Niveau 1 », « Niveau 2 », « Niveau 3 » : les fusions) et son ultime. Les prérequis
@@ -22,7 +29,7 @@ import unicodedata
 import urllib.request
 
 RACINE = pathlib.Path(__file__).resolve().parents[1]
-SORTIE = RACINE / "assets/competences/roue.json"
+SORTIE = RACINE / "assets/skills"
 API = os.environ.get("PLANNER_API", "https://planner.mathis-medard.fr/api/v1/")
 FICHE_CLASSES = 138
 
@@ -157,6 +164,11 @@ def ranger(noeuds):
 
 def main():
     branches, noeuds = [], []
+    # Identifiants anglais des classes déjà là, par nom
+    fichier_classes = SORTIE / "classes.json"
+    id_par_nom = {}
+    if fichier_classes.exists():
+        id_par_nom = {c["name"]: c["id"] for c in json.loads(fichier_classes.read_text(encoding="utf-8"))["classes"]}
     for famille in fiche(FICHE_CLASSES)["children"]:
         f = fiche(famille["id"])
         if f["title"] not in FAMILLES:
@@ -165,7 +177,7 @@ def main():
         classes = f["children"]
         for i, c in enumerate(classes):
             classe = fiche(c["id"])
-            id_classe = identifiant(classe["title"])
+            id_classe = id_par_nom.get(classe["title"]) or identifiant(classe["title"])
             mix = repartition(classe["body"]) or {id_famille: 100}
             branches.append({
                 "id": id_classe,
@@ -179,40 +191,53 @@ def main():
             noeuds += de_la_classe
             print(f"{classe['title']} : {len(de_la_classe)} compétences", file=sys.stderr)
 
-    # Identifiants lisibles, uniques sur toute la roue (la classe départage les homonymes)
-    noms = {}
+    # Fichiers déjà là, par numéro de fiche : leur identifiant et leurs parties écrites à la main
+    existants = {}
+    for chemin in SORTIE.glob("*/*.json"):
+        donnees = json.loads(chemin.read_text(encoding="utf-8"))
+        numero = (donnees.get("wheel") or {}).get("planner")
+        if numero is not None:
+            existants[numero] = (chemin, donnees)
+    # Les nouvelles : un identifiant tiré du nom, unique sur toute la roue (la classe départage)
+    pris = {chemin.stem for chemin, _ in existants.values()}
     for n in noeuds:
-        noms.setdefault(identifiant(n["name"]), []).append(n)
-    for base, memes in noms.items():
-        for n in memes:
-            n["id"] = base if len(memes) == 1 else base + n["branch"][:1].upper() + n["branch"][1:]
+        if n["planner"] in existants:
+            n["id"] = existants[n["planner"]][0].stem
+            continue
+        base = identifiant(n["name"])
+        n["id"] = base if base not in pris else base + n["branch"][:1].upper() + n["branch"][1:]
+        pris.add(n["id"])
+        print(f"Nouvelle compétence {n['branch']}/{n['id']} : identifiant à traduire en anglais", file=sys.stderr)
     par_numero = {n["planner"]: n["id"] for n in noeuds}
-    sortie = []
     for n in noeuds:
         manquants = [p for p in n["requires"] if p not in par_numero]
         if manquants:
             sys.exit(f"{n['name']} : prérequis hors de la roue {manquants}")
-        sortie.append({
-            "id": n["id"],
-            "name": n["name"],
-            "description": n["description"],
-            "branch": n["branch"],
+        chemin, donnees = existants.get(n["planner"], (SORTIE / n["branch"] / f"{n['id']}.json", {}))
+        roue = dict(donnees.get("wheel") or {})
+        roue.update({
             "tier": n["tier"],
             "ring": n["ring"],
             "slot": n["slot"],
             "requires": [par_numero[p] for p in n["requires"]],
-            "max_rank": RANG_MAX,
+            "max_rank": roue.get("max_rank", RANG_MAX),
             "planner": n["planner"],
         })
+        sortie = {"name": n["name"], "description": n["description"], "wheel": roue}
+        # Le reste (règles, visuels, sons, icône…) est gardé tel quel, dans son ordre
+        sortie.update({k: v for k, v in donnees.items() if k not in sortie})
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        chemin.write_text(json.dumps(sortie, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    perdus = [str(c.relative_to(RACINE)) for numero, (c, _) in existants.items() if numero not in par_numero]
+    if perdus:
+        print(f"Plus dans le carnet (laissées en place, à retirer à la main) : {perdus}", file=sys.stderr)
 
-    roue = {
+    classes = {
         "_source": f"Carnet Planner, fiche #{FICHE_CLASSES} « Classes » ; regénérer avec tools/importer_roue_competences.py",
-        "branches": branches,
-        "nodes": sortie,
+        "classes": branches,
     }
-    SORTIE.parent.mkdir(parents=True, exist_ok=True)
-    SORTIE.write_text(json.dumps(roue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"{len(branches)} classes, {len(sortie)} compétences -> {SORTIE.relative_to(RACINE)}", file=sys.stderr)
+    (SORTIE / "classes.json").write_text(json.dumps(classes, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"{len(branches)} classes, {len(noeuds)} compétences -> {SORTIE.relative_to(RACINE)}", file=sys.stderr)
 
 
 if __name__ == "__main__":
