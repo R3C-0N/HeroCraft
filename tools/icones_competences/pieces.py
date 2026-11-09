@@ -92,6 +92,54 @@ def sceptre(t, x0, y0, x1, y1, or_=OR, gemme=(255, 250, 220)):
     orbe(t, x1 + ux * 3, y1 + uy * 3, 2, gemme)
 
 
+def lanterne(t, cx, cy, lumiere=(150, 255, 150), metal=(90, 80, 70)):
+    """Lanterne : anneau, chapeau, verre lumineux, socle ; (cx, cy) au centre du verre"""
+    t.lueur(cx, cy, 9, lumiere, 0.7)
+    anse = t.masque(lambda d: d.arc([cx - 2, cy - 9, cx + 2, cy - 5], 180, 360, fill=1, width=1))
+    t.peindre(anse, metal)
+    chapeau = t.masque(lambda d: d.polygon([(cx - 4, cy - 4), (cx + 4, cy - 4), (cx + 2, cy - 6), (cx - 2, cy - 6)], fill=1))
+    t.objet(chapeau, metal, melange(metal, BLANC, 0.4), melange(metal, (0, 0, 0), 0.5))
+    verre = t.masque(lambda d: d.rectangle([cx - 3, cy - 3, cx + 3, cy + 3], fill=1))
+    t.objet(verre, lumiere, BLANC, melange(lumiere, (0, 0, 0), 0.3), contour=melange(metal, (0, 0, 0), 0.4))
+    for x in (cx - 3, cx + 3):
+        t.peindre(t.masque(lambda d, x=x: d.line([(x, cy - 3), (x, cy + 3)], fill=1)), metal)
+    socle = t.masque(lambda d: d.rectangle([cx - 4, cy + 4, cx + 4, cy + 5], fill=1))
+    t.objet(socle, metal, melange(metal, BLANC, 0.4), melange(metal, (0, 0, 0), 0.5))
+
+
+def main_ouverte(t, cx, cy, s=1.0, couleur=(200, 255, 210), alpha=None, angle=0):
+    """Main ouverte doigts écartés, paume en (cx, cy), doigts vers le haut (angle en degrés)"""
+    a0 = math.radians(angle - 90)
+    def dessin(d):
+        d.ellipse([cx - 3.5 * s, cy - 3 * s, cx + 3.5 * s, cy + 4 * s], fill=1)
+        for i, (da, l) in enumerate(((-35, 6), (-14, 8), (2, 8.5), (18, 7.5), (60, 5.5))):
+            a = a0 + math.radians(da)
+            bx, by = cx + 2.5 * s * math.cos(a), cy + 2.5 * s * math.sin(a)
+            d.line([(bx, by), (bx + l * s * math.cos(a), by + l * s * math.sin(a))], fill=1, width=max(1, round(1.6 * s)))
+        d.rectangle([cx - 2.5 * s, cy + 2 * s, cx + 2.5 * s, cy + 9 * s], fill=1)
+    m = t.masque(dessin)
+    if alpha:
+        t.voile(m, couleur, alpha)
+        t.liseré(m, BLANC, -1, -1)
+    else:
+        t.objet(m, couleur, melange(couleur, BLANC, 0.4), melange(couleur, (0, 0, 0), 0.4))
+    return m
+
+
+def os_(t, x0, y0, x1, y1, couleur=(235, 230, 205)):
+    """Un os : tige et deux nœuds à chaque bout"""
+    a = math.atan2(y1 - y0, x1 - x0)
+    nx, ny = -math.sin(a), math.cos(a)
+    def dessin(d):
+        d.line([(x0, y0), (x1, y1)], fill=1, width=2)
+        for x, y in ((x0, y0), (x1, y1)):
+            for c in (-1, 1):
+                d.ellipse([x + nx * c * 1.5 - 1.6, y + ny * c * 1.5 - 1.6, x + nx * c * 1.5 + 1.6, y + ny * c * 1.5 + 1.6], fill=1)
+    m = t.masque(dessin)
+    t.objet(m, couleur, BLANC, melange(couleur, (0, 0, 0), 0.4), contour=(30, 20, 30))
+    return m
+
+
 def hache(t, x0, y0, x1, y1, metal=ACIER, double=False):
     a = math.atan2(y1 - y0, x1 - x0)
     ux, uy, nx, ny = math.cos(a), math.sin(a), -math.sin(a), math.cos(a)
