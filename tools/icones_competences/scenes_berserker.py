@@ -19,15 +19,18 @@ def savageStrike():
 
 
 def bloodyCut():
-    """Bordeaux : la main entaillée, l'arme rougeoie de sang bouillant"""
+    """Bordeaux : le berserker s'entaille le bras, sa hache rougeoie de sang bouillant"""
     t = Toile()
     t.fond_radial(24, 20, 42, [(240, 120, 110), (150, 30, 40), (70, 6, 16), (20, 0, 4)])
-    t.lueur(28, 16, 14, RAGE, 0.6)
-    hache(t, 14, 44, 32, 12, metal=(255, 120, 90))
-    main = t.masque(lambda d: (d.ellipse([4, 28, 16, 38], fill=1), d.rectangle([4, 34, 12, 46], fill=1)))
-    t.objet(main, (220, 160, 130), (250, 200, 170), (140, 90, 70))
-    t.peindre(t.masque(lambda d: d.line([(6, 32), (14, 30)], fill=1)), SANG)
-    sang(t, ((10, 40, 1.5), (14, 44, 1)))
+    sol = t.masque(lambda d: d.rectangle([0, 42, 48, 48], fill=1))
+    t.peindre(sol, (40, 4, 10))
+    t.lueur(32, 14, 12, RAGE, 0.7)
+    corps, q = heros(t, "brasLeves", 22, 30, s=0.95, liseres=((RAGE, 0, -1),))
+    mx, my = q["mainD"]
+    hache(t, mx - 3, my + 4, mx + 3, my - 8, metal=(255, 120, 90))
+    gx, gy = q["mainG"]
+    t.peindre(t.masque(lambda d: d.line([(gx + 1, gy + 3), (gx + 4, gy + 6)], fill=1, width=2)), (255, 40, 40))
+    sang(t, ((gx + 3, gy + 10, 1.5), (gx + 4, gy + 16, 1.5), (gx + 2, 40, 2)))
     t.vignette(0.4)
     return t
 
@@ -56,29 +59,32 @@ def blindCharge():
 
 
 def frenziedMutilation():
-    """Cramoisi : une rafale de coups chaotiques, le sang gicle partout"""
+    """Cramoisi : le berserker taille dans tous les sens, le sang gicle partout"""
     t = Toile()
     t.fond_radial(24, 24, 40, [(255, 160, 140), (210, 40, 50), (110, 6, 20), (36, 0, 6)])
     for a, b in ((200, 300), (20, 120), (250, 350), (100, 190)):
-        croissant(t, 24, 24, 15 + (a % 3) * 2, a, b, (255, 220, 210), epais=2)
-    sang(t, ((10, 12, 2), (38, 10, 2.5), (8, 34, 1.5), (40, 36, 2), (24, 6, 1.5), (24, 42, 2)))
+        croissant(t, 24, 24, 17 + (a % 3) * 2, a, b, (255, 220, 210), epais=2)
+    corps, q = heros(t, "frappeHaute", 22, 30, s=0.9, liseres=((RAGE, 0, -1),))
+    mx, my = q["mainD"]
+    hache(t, mx - 2, my + 4, mx + 6, my - 6)
+    sang(t, ((8, 12, 2), (40, 12, 2.5), (8, 34, 1.5), (40, 34, 2), (34, 6, 1.5)))
     t.vignette(0.4)
     return t
 
 
 def gapingWound():
-    """Rouge-brun : le poing frappe le sol en sang, une onde rouge repousse tout"""
+    """Rouge-brun : la hache s'abat dans le sol ensanglanté, une onde rouge repousse tout"""
     t = Toile()
     t.fond_vertical([(60, 10, 10), (150, 40, 30), (200, 90, 60)], 0, 36)
     sol_m = t.masque(lambda d: d.rectangle([0, 36, 48, 48], fill=1))
     t.zone_verticale(sol_m, [(90, 30, 20), (30, 8, 4)], 36, 48)
-    for r in (10, 17, 23):
-        anneau(t, 24, 39, r, r * 0.3, RAGE if r < 20 else (200, 40, 30), 1)
-    poing = t.masque(lambda d: (d.rounded_rectangle([14, 24, 34, 37], 4, fill=1), d.polygon([(17, 4), (31, 4), (30, 26), (18, 26)], fill=1)))
-    t.objet(poing, (210, 150, 120), (250, 200, 170), (130, 80, 60))
-    for x in (19, 24, 29):
-        t.peindre(t.masque(lambda d, x=x: d.line([(x, 28), (x, 36)], fill=1)), (130, 80, 60))
-    sang(t, ((14, 34, 2), (34, 33, 2), (24, 40, 2.5)))
+    for r in (12, 18, 23):
+        anneau(t, 24, 40, r, r * 0.3, RAGE if r < 20 else (200, 40, 30), 1)
+    corps, q = heros(t, "agenouille", 20, 30, s=1.0, liseres=((RAGE, 0, -1),))
+    mx, my = q["mainD"]
+    hache(t, mx - 2, my, mx + 6, 40)
+    explosion(t, mx + 6, 40, 4, couleurs=(BLANC, (255, 160, 140), RAGE), branches=6)
+    sang(t, ((10, 34, 1.5), (38, 33, 2), (34, 26, 1.5)))
     t.vignette(0.4)
     return t
 
@@ -96,13 +102,20 @@ def dyingFrenzy():
 
 
 def crushingGrip():
-    """Brun sombre : la main agrippe la gorge, puis l'arme achève"""
+    """Brun sombre : une main soulève l'ennemi par la gorge, l'autre lève la hache"""
     t = Toile()
     t.fond_radial(28, 22, 42, [(230, 170, 130), (160, 80, 50), (80, 30, 20), (24, 8, 4)])
-    heros(t, "tombe", 34, 26, s=0.8, couleur=(40, 16, 10), liseres=((OR_PALE, 0, -1),), retourne=True)
-    main = t.masque(lambda d: (d.line([(4, 30), (24, 22)], fill=1, width=4), d.ellipse([22, 18, 30, 26], fill=1)))
-    t.objet(main, (200, 140, 110), (240, 190, 160), (120, 70, 50))
-    hache(t, 10, 12, 26, 4)
+    sol = t.masque(lambda d: d.rectangle([0, 42, 48, 48], fill=1))
+    t.peindre(sol, (40, 16, 8))
+    pendu = dict(POSES["debout"])
+    pendu.update({"piedG": (-2, 12), "piedD": (2, 12), "genouG": (-2, 6), "genouD": (2, 6),
+                  "mainG": (-3, 1), "mainD": (3, 1), "coudeG": (-4, -5), "coudeD": (4, -5)})
+    heros(t, pendu, 33, 30, s=0.85, couleur=(60, 30, 20), liseres=((OR_PALE, 0, -1),), retourne=True)
+    q = dict(POSES["brasTendu"])
+    q.update({"mainD": (12, -14), "coudeD": (6, -11), "coudeG": (-5, -12), "mainG": (-3, -18)})
+    corps, q = heros(t, q, 20, 31, s=0.9, liseres=((RAGE, 1, 0),))
+    gx, gy = q["mainG"]
+    hache(t, gx, gy + 3, gx - 2, gy - 10)
     t.vignette(0.4)
     return t
 
@@ -121,12 +134,18 @@ def hemoglobinEruption():
 
 
 def agonyWhirl():
-    """Rouge tourbillon : une tornade rouge avance en taillant et saigne elle-même"""
+    """Rouge tourbillon : le berserker tournoie hache tendue au cœur d'une tornade de sang"""
     t = Toile()
     t.fond_radial(24, 26, 40, [(250, 170, 150), (200, 60, 50), (110, 16, 20), (36, 4, 6)])
-    tornade(t, 24, 42, 6, 16, (200, 20, 30), clair=(255, 180, 160), n=8)
-    hache(t, 30, 30, 42, 18, double=True)
-    sang(t, ((8, 20, 1.5), (40, 40, 2), (10, 38, 1.5)))
+    sol = t.masque(lambda d: d.rectangle([0, 42, 48, 48], fill=1))
+    t.peindre(sol, (50, 8, 10))
+    for i, (y, r) in enumerate(((14, 14), (24, 19), (34, 16))):
+        t.peindre(t.masque(lambda d, y=y, r=r, i=i: d.arc([24 - r, y - 4, 24 + r, y + 4], i * 90 + 160, i * 90 + 400, fill=1, width=2)),
+                  (255, 120, 110))
+    corps, q = heros(t, "brasOuverts", 24, 30, s=0.95, liseres=((RAGE, 0, -1),))
+    mx, my = q["mainD"]
+    hache(t, mx - 2, my + 1, mx + 9, my - 2)
+    sang(t, ((6, 20, 1.5), (42, 38, 2), (8, 38, 1.5)))
     t.vignette(0.4)
     return t
 
@@ -135,10 +154,19 @@ def carnalShockwave():
     """Pourpre : il se frappe le torse, le choc et le cri paralysent la zone"""
     t = Toile()
     t.fond_radial(24, 24, 40, [(240, 150, 190), (170, 40, 90), (90, 10, 40), (30, 2, 12)])
-    for r in (14, 19, 23):
+    sol = t.masque(lambda d: d.rectangle([0, 42, 48, 48], fill=1))
+    t.peindre(sol, (40, 6, 20))
+    for r in (13, 18, 22):
         anneau(t, 24, 22, r, r, (255, 200, 220), 1)
-    heros(t, "garde", 24, 26, s=1.0, liseres=((RAGE, 0, -1),))
-    explosion(t, 26, 18, 3, couleurs=(BLANC, (255, 200, 200), RAGE), branches=6)
+    q = dict(POSES["debout"])
+    q.update({"coudeD": (6, -5), "mainD": (1, -8), "coudeG": (-6, -12), "mainG": (-10, -18)})
+    corps, q = heros(t, q, 24, 30, s=1.0, liseres=((RAGE, 0, -1),))
+    gx, gy = q["mainG"]
+    hache(t, gx + 2, gy + 3, gx - 1, gy - 9)
+    for a in (-30, 0, 30):
+        r = math.radians(a)
+        t.peindre(t.masque(lambda d, r=r: d.line([(31 + 2 * math.cos(r), 22 + 2 * math.sin(r)), (31 + 6 * math.cos(r), 22 + 6 * math.sin(r))],
+                                                  fill=1)), (255, 220, 230))
     t.vignette(0.4)
     return t
 
