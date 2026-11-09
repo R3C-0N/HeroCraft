@@ -1,0 +1,47 @@
+{
+  "name": "Grand Cerf Ancien",
+  "description": "Forme de cerf du Druide, aux bois immenses où pousse la mousse.",
+  "body": {"half_width": 0.35, "half_length": 0.9, "height": 2.4},
+  "walk_speed": 2.0,
+  "health": 40,
+  "model": {
+    "mesh": "modeles/ancientStag.gltf",
+    "texture": "modeles/ancientStag.png",
+    "animations": {
+      "repos": {"cycle": 3.5, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "head": {"rotation": [2, 0, 0]},
+        "root": {"translation": [0, 0.006, 0], "frequence": 2},
+        "tail": {"rotation": [0, 8, 0], "frequence": 2}
+      }},
+      "marche": {"foulee": 0.8, "os": {
+        "legFR": {"rotation": [22, 0, 0], "phase": 0},
+        "legFL": {"rotation": [22, 0, 0], "phase": 0.5},
+        "legBR": {"rotation": [22, 0, 0], "phase": 0.5},
+        "legBL": {"rotation": [22, 0, 0], "phase": 0},
+        "root": {"translation": [0, 0.015, 0], "phase": 0.25, "frequence": 2},
+        "head": {"rotation": [3, 0, 0], "phase": 0.1, "frequence": 2},
+        "tail": {"rotation": [0, 10, 0]}
+      }},
+      "course": {"foulee": 1.7919999999999998, "os": {
+        "legFR": {"rotation": [33.0, 0, 0], "phase": 0},
+        "legFL": {"rotation": [33.0, 0, 0], "phase": 0.1},
+        "legBR": {"rotation": [33.0, 0, 0], "phase": 0.5},
+        "legBL": {"rotation": [33.0, 0, 0], "phase": 0.6},
+        "root": {"rotation": [5, 0, 0], "translation": [0, 0.04, 0], "phase": 0.3},
+        "head": {"rotation": [6, 0, 0], "rotation_fixe": [8, 0, 0], "phase": 0.55},
+        "tail": {"rotation": [8, 0, 0], "rotation_fixe": [20, 0, 0], "phase": 0.3}
+      }},
+      "attaque": {"cycle": 0.8, "os": {
+        "root": {"rotation": [-7, 0, 0], "translation": [0, 0.03, 0.1], "phase": 0.75},
+        "head": {"rotation": [14, 0, 0], "rotation_fixe": [-8, 0, 0], "phase": 0.1, "frequence": 2},
+        "legFR": {"rotation": [-25, 0, 0], "phase": 0.75},
+        "legFL": {"rotation": [-25, 0, 0], "phase": 0.8}
+      }},
+      "coup": {"os": {
+        "root": {"rotation": [-9, 0, 0], "frequence": 0.5},
+        "head": {"rotation": [-14, 0, 0], "frequence": 0.5},
+        "tail": {"rotation": [25, 0, 0], "frequence": 0.5}
+      }}
+    }
+  }
+}

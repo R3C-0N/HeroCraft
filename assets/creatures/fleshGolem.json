@@ -1,0 +1,43 @@
+{
+  "name": "Golem de Chair",
+  "description": "Une masse de chairs recousues qui avance en écrasant tout.",
+  "body": {"half_width": 0.75, "half_length": 0.5, "height": 2.7},
+  "walk_speed": 1.2,
+  "health": 80,
+  "model": {
+    "mesh": "modeles/fleshGolem.gltf",
+    "texture": "modeles/fleshGolem.png",
+    "animations": {
+      "repos": {"cycle": 4, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "head": {"rotation": [0, 12, 0], "frequence": 0.5},
+        "armR": {"rotation": [4, 0, 2]},
+        "armL": {"rotation": [4, 0, -2], "phase": 0.5},
+        "torso": {"rotation": [3, 0, 0]}
+      }},
+      "marche": {"foulee": 0.8, "os": {
+        "legR": {"rotation": [18, 0, 0]},
+        "legL": {"rotation": [18, 0, 0], "phase": 0.5},
+        "armR": {"rotation": [14.4, 0, 0], "phase": 0.5},
+        "armL": {"rotation": [14.4, 0, 0]},
+        "root": {"translation": [0, 0.02, 0], "phase": 0.25, "frequence": 2}
+      }},
+      "course": {"foulee": 1.4400000000000002, "os": {
+        "legR": {"rotation": [27.0, 0, 0]},
+        "legL": {"rotation": [27.0, 0, 0], "phase": 0.5},
+        "armR": {"rotation": [21.599999999999998, 0, 0], "phase": 0.5},
+        "armL": {"rotation": [21.599999999999998, 0, 0]},
+        "root": {"translation": [0, 0.05, 0], "phase": 0.25, "frequence": 2},
+        "torso": {"rotation_fixe": [10, 0, 0]}
+      }},
+      "attaque": {"cycle": 1.2, "os": {
+        "armR": {"rotation": [-60, 0, 0], "rotation_fixe": [-60, 0, 0]},
+        "torso": {"rotation": [10, 0, 0]},
+        "armL": {"rotation": [20, 0, 0], "phase": 0.5}
+      }},
+      "coup": {"os": {
+        "head": {"rotation": [-15, 0, 0], "frequence": 0.5},
+        "torso": {"rotation": [-12, 0, 0], "frequence": 0.5}
+      }}
+    }
+  }
+}

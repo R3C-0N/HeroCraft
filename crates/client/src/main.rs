@@ -46,6 +46,8 @@ mod shaders;
 mod shadow;
 mod skills_screen;
 mod skinned_model;
+#[cfg(test)]
+mod skill_models;
 mod terrain_cull;
 mod ui;
 mod ui_skin;

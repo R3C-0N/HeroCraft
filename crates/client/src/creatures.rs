@@ -705,20 +705,21 @@ mod tests {
 }
 
 #[cfg(test)]
-mod apercu {
+pub(crate) mod apercu {
     use super::*;
     use crate::skinned_model::Texture;
 
     /// Dessine `frame` (une bête aux pieds `feet`) dans la case de coin (`ox`, `oy`) et de côté
     /// `cell` d'une image `w` de large : vue de trois quarts, z-buffer, texels au plus proche
     #[allow(clippy::too_many_arguments)]
-    fn rasterize(img: &mut [[u8; 3]], depth: &mut [f32], w: usize, frame: &CreatureFrame, tex: &Texture, feet: Vec3, (ox, oy, cell): (usize, usize, usize), scale: f32) {
+    pub(crate) fn rasterize(img: &mut [[u8; 3]], depth: &mut [f32], w: usize, frame: &CreatureFrame, tex: &Texture, feet: Vec3, (ox, oy, cell): (usize, usize, usize), scale: f32) {
         // x = est, y = haut (z monde), profondeur = nord, inclinée
         let (ca, sa) = (0.5f32.cos(), 0.5f32.sin());
         let project = |p: Vec3| {
             let q = p - feet;
             let (x, up, n) = (q.x, q.z, q.y);
-            let (y, d) = (up * ca - n * sa, up * sa + n * ca);
+            // Caméra au sud, au-dessus : le nord s'éloigne et monte à l'écran
+            let (y, d) = (up * ca + n * sa, n * ca - up * sa);
             (ox as f32 + cell as f32 * 0.5 + x * scale, oy as f32 + cell as f32 * 0.85 - y * scale, d)
         };
         let light = Vec3::new(0.4, 0.5, 0.75).normalize();
@@ -761,13 +762,13 @@ mod apercu {
                         continue;
                     }
                     depth[y * w + x] = d;
-                    img[y * w + x] = [0, 1, 2].map(|c| (tex.rgba[o + c] as f32 * shade).min(255.0) as u8);
+                    img[y * w + x] = [0, 1, 2].map(|c| (tex.rgba[o + c] as f32 * shade * color[c]).min(255.0) as u8);
                 }
             }
         }
     }
 
-    fn save(img: &[[u8; 3]], w: usize, h: usize) {
+    pub(crate) fn save(img: &[[u8; 3]], w: usize, h: usize) {
         let out = std::env::var("APERCU").unwrap_or("apercu.png".into());
         let file = std::fs::File::create(out).unwrap();
         let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w as u32, h as u32);

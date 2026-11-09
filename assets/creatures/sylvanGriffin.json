@@ -1,0 +1,55 @@
+{
+  "name": "Griffon Sylvestre",
+  "description": "Forme hybride du Druide : avant d'aigle, arrière de fauve, ailes feuillues.",
+  "body": {"half_width": 0.45, "half_length": 1.0, "height": 2.0},
+  "walk_speed": 2.4,
+  "health": 45,
+  "model": {
+    "mesh": "modeles/sylvanGriffin.gltf",
+    "texture": "modeles/sylvanGriffin.png",
+    "animations": {
+      "repos": {"cycle": 3.5, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "head": {"rotation": [2, 0, 0]},
+        "root": {"translation": [0, 0.006, 0], "frequence": 2},
+        "tail": {"rotation": [0, 8, 0], "frequence": 2},
+        "wingR": {"rotation": [0, 0, -4], "frequence": 0.5},
+        "wingL": {"rotation": [0, 0, 4], "frequence": 0.5}
+      }},
+      "marche": {"foulee": 0.7, "os": {
+        "legFR": {"rotation": [26, 0, 0], "phase": 0},
+        "legFL": {"rotation": [26, 0, 0], "phase": 0.5},
+        "legBR": {"rotation": [26, 0, 0], "phase": 0.5},
+        "legBL": {"rotation": [26, 0, 0], "phase": 0},
+        "root": {"translation": [0, 0.015, 0], "phase": 0.25, "frequence": 2},
+        "head": {"rotation": [3, 0, 0], "phase": 0.1, "frequence": 2},
+        "tail": {"rotation": [0, 10, 0]},
+        "wingR": {"rotation": [0, 0, -4], "frequence": 0.5},
+        "wingL": {"rotation": [0, 0, 4], "frequence": 0.5}
+      }},
+      "course": {"foulee": 1.5679999999999998, "os": {
+        "legFR": {"rotation": [39.0, 0, 0], "phase": 0},
+        "legFL": {"rotation": [39.0, 0, 0], "phase": 0.1},
+        "legBR": {"rotation": [39.0, 0, 0], "phase": 0.5},
+        "legBL": {"rotation": [39.0, 0, 0], "phase": 0.6},
+        "root": {"rotation": [5, 0, 0], "translation": [0, 0.04, 0], "phase": 0.3},
+        "head": {"rotation": [6, 0, 0], "rotation_fixe": [8, 0, 0], "phase": 0.55},
+        "tail": {"rotation": [8, 0, 0], "rotation_fixe": [20, 0, 0], "phase": 0.3},
+        "wingR": {"rotation": [0, 0, -40], "frequence": 2},
+        "wingL": {"rotation": [0, 0, 40], "frequence": 2}
+      }},
+      "attaque": {"cycle": 0.8, "os": {
+        "root": {"rotation": [-7, 0, 0], "translation": [0, 0.03, 0.1], "phase": 0.75},
+        "head": {"rotation": [14, 0, 0], "rotation_fixe": [-8, 0, 0], "phase": 0.1, "frequence": 2},
+        "legFR": {"rotation": [-25, 0, 0], "phase": 0.75},
+        "legFL": {"rotation": [-25, 0, 0], "phase": 0.8},
+        "wingR": {"rotation": [0, 0, -45], "frequence": 2},
+        "wingL": {"rotation": [0, 0, 45], "frequence": 2}
+      }},
+      "coup": {"os": {
+        "root": {"rotation": [-9, 0, 0], "frequence": 0.5},
+        "head": {"rotation": [-14, 0, 0], "frequence": 0.5},
+        "tail": {"rotation": [25, 0, 0], "frequence": 0.5}
+      }}
+    }
+  }
+}

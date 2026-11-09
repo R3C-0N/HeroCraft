@@ -1,0 +1,46 @@
+{
+  "name": "Faucon Pèlerin",
+  "description": "Forme de faucon du Druide, taillée pour le vol.",
+  "body": {"half_width": 0.3, "half_length": 0.45, "height": 0.9},
+  "walk_speed": 3.0,
+  "health": 15,
+  "model": {
+    "mesh": "modeles/peregrineFalcon.gltf",
+    "texture": "modeles/peregrineFalcon.png",
+    "animations": {
+      "repos": {"cycle": 3, "pause": {"poids": 2, "duree": [2, 5]}, "os": {
+        "wingR": {"rotation_fixe": [0, -80, 0]},
+        "wingL": {"rotation_fixe": [0, 80, 0]},
+        "head": {"rotation": [0, 25, 0], "frequence": 0.5},
+        "tail": {"rotation": [6, 0, 0], "frequence": 2}
+      }},
+      "marche": {"cycle": 0.6, "os": {
+        "wingR": {"rotation": [0, 0, -30], "frequence": 1},
+        "wingL": {"rotation": [0, 0, 30], "frequence": 1},
+        "root": {"translation": [0, 0.02, 0], "phase": 0.5},
+        "tail": {"rotation": [5, 0, 0]},
+        "legR": {"rotation_fixe": [-60, 0, 0]},
+        "legL": {"rotation_fixe": [-60, 0, 0]}
+      }},
+      "course": {"cycle": 0.4, "os": {
+        "wingR": {"rotation": [0, 0, -42], "frequence": 1},
+        "wingL": {"rotation": [0, 0, 42], "frequence": 1},
+        "root": {"rotation_fixe": [10, 0, 0], "translation": [0, 0.03, 0], "phase": 0.5},
+        "legR": {"rotation_fixe": [-70, 0, 0]},
+        "legL": {"rotation_fixe": [-70, 0, 0]}
+      }},
+      "attaque": {"cycle": 0.6, "os": {
+        "wingR": {"rotation": [0, 0, -50], "frequence": 1},
+        "wingL": {"rotation": [0, 0, 50], "frequence": 1},
+        "legR": {"rotation": [-40, 0, 0], "rotation_fixe": [-30, 0, 0]},
+        "legL": {"rotation": [-40, 0, 0], "rotation_fixe": [-30, 0, 0]},
+        "head": {"rotation": [20, 0, 0], "frequence": 2}
+      }},
+      "coup": {"os": {
+        "root": {"rotation": [-15, 0, 0], "frequence": 0.5},
+        "wingR": {"rotation": [0, 0, -30], "frequence": 0.5},
+        "wingL": {"rotation": [0, 0, 30], "frequence": 0.5}
+      }}
+    }
+  }
+}
