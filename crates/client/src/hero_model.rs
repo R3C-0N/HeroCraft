@@ -671,13 +671,8 @@ impl HeroGait {
     }
 }
 
-/// Ajoute le héros au maillage des créatures, debout sur `feet` et tourné vers `yaw` (0 = nord) ;
-/// `block` : taille d'un bloc, `swing` : balancement des membres
-pub fn push_hero(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, swing: f32, block: f32) {
-    push_figure(frame, cfg, figure, feet, yaw, &FigurePose { swing, ..FigurePose::default() }, HERO_TEXTURE, block);
-}
-
-/// Comme `push_hero`, dans la pose `pose` (le geste d'une compétence)
+/// Ajoute le héros au maillage des créatures, debout sur `feet` et tourné vers `yaw` (0 = nord),
+/// dans la pose `pose` (balancement de la marche, geste d'une compétence) ; `block` : taille d'un bloc
 pub fn push_hero_posed(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, block: f32) {
     push_figure(frame, cfg, figure, feet, yaw, pose, HERO_TEXTURE, block);
 }
@@ -1096,7 +1091,7 @@ mod tests {
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let (_, north) = tangent_frame(feet.normalize());
         let mut frame = CreatureFrame::default();
-        push_hero(&mut frame, &cfg, &f, feet, 0.0, 0.0, 1.0);
+        push_hero_posed(&mut frame, &cfg, &f, feet, 0.0, &FigurePose::default(), 1.0);
         assert_eq!(frame.draws.len(), 1);
         assert_eq!(frame.draws[0].0, Some(HERO_TEXTURE));
         assert_eq!(frame.uvs.len(), frame.vertices.len());

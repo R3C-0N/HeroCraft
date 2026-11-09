@@ -614,7 +614,7 @@ fn spawn(p: &ParticleLayer, seed: u32, origin: Vec3, up: Vec3, forward: Vec3, ri
         Direction::Random | Direction::None => {
             let z = r(4) * 2.0 - 1.0;
             let s = (1.0 - z * z).max(0.0).sqrt();
-            right * (s * (r(5) * 6.283).cos()) + forward * (s * (r(5) * 6.283).sin()) + up * z
+            right * (s * (r(5) * std::f32::consts::TAU).cos()) + forward * (s * (r(5) * std::f32::consts::TAU).sin()) + up * z
         }
     };
     // Ouverture du cône autour de la direction
@@ -624,7 +624,7 @@ fn spawn(p: &ParticleLayer, seed: u32, origin: Vec3, up: Vec3, forward: Vec3, ri
     let dir = if p.direction == Direction::Random { base } else { (base * spread.cos() + side * spread.sin()).normalize_or(base) };
     let speed = if p.direction == Direction::None { 0.0 } else { p.speed.pick(r(8)) * block };
     let orbit = (p.orbit != 0.0).then(|| (theta, (start - origin).dot(pa).hypot((start - origin).dot(pb)).max(0.3 * block)));
-    Particle { pos: start, vel: dir * speed, age: 0.0, life: p.life.pick(r(9)).max(0.05), spin: p.spin.pick(r(10)), angle: r(11) * 6.283, orbit }
+    Particle { pos: start, vel: dir * speed, age: 0.0, life: p.life.pick(r(9)).max(0.05), spin: p.spin.pick(r(10)), angle: r(11) * std::f32::consts::TAU, orbit }
 }
 
 /// Demi-axes d'un carré face à l'œil

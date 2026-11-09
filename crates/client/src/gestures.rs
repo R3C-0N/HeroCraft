@@ -158,6 +158,7 @@ impl GestureLibrary {
         self.gestures.get(name)
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.gestures.len()
     }

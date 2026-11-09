@@ -18,8 +18,10 @@ use crate::hero_model::FigurePose;
 /// Identifiant du joueur en solo
 const SOLO_PLAYER: u64 = 0;
 
-/// Une compétence qu'un joueur est en train de lancer (le geste et ses visuels)
+/// Une compétence qu'un joueur est en train de lancer (le geste et ses visuels). Rang et visée
+/// serviront aux gestes des autres joueurs, quand ils seront dessinés en entier.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Play {
     /// `None` : le joueur local
     pub player: Option<u64>,
@@ -45,7 +47,6 @@ pub struct Shown {
     pub caster: Option<u64>,
     pub skill: String,
     pub rank: u8,
-    pub at: Instant,
     pub center: Vec3,
     pub creatures: Vec<u64>,
     pub players: Vec<u64>,
@@ -229,7 +230,7 @@ impl SkillPlay {
             let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
             let tick = self.runner.tick(dt, skills(), creatures, &mut player);
             for SkillImpact { skill, rank, center, creatures, players, .. } in tick.impacts {
-                self.on_hit(Shown { caster: None, skill, rank, at: now, center, creatures, players });
+                self.on_hit(Shown { caster: None, skill, rank, center, creatures, players });
             }
         }
         self.plays.retain(|p| now.duration_since(p.started).as_secs_f32() < p.duration);

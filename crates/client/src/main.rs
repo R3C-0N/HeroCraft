@@ -783,7 +783,7 @@ fn main() {
                                     }
                                     NetEvent::SkillHit { player_id, skill, rank, center, creatures, players } => {
                                         let caster = (player_id != client.player_id()).then_some(player_id);
-                                        skill_play.on_hit(skill_play::Shown { caster, skill, rank, at: Instant::now(), center, creatures, players });
+                                        skill_play.on_hit(skill_play::Shown { caster, skill, rank, center, creatures, players });
                                     }
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
                                 }

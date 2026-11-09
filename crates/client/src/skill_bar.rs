@@ -76,14 +76,6 @@ impl SkillBar {
         self.save();
     }
 
-    /// Vide la case `slot`
-    pub fn clear(&mut self, slot: usize) {
-        if let Some(s) = self.slots.get_mut(slot) {
-            *s = None;
-            self.save();
-        }
-    }
-
     /// Les compétences lançables apprises qui ne sont pas encore sur la barre prennent les cases
     /// libres (après qu'un point a été investi)
     pub fn fill_learned(&mut self, stats: &CharacterStats) {
