@@ -47,11 +47,16 @@ def breezeStep():
 
 
 def minorTornado():
-    """Turquoise : un coup circulaire et un petit tourbillon"""
+    """Turquoise : un coup circulaire du sabre fait naître un petit tourbillon"""
     t = Toile()
-    t.fond_radial(24, 26, 40, [(200, 255, 245), (80, 190, 190), (20, 90, 100), (6, 30, 36)])
-    tornade(t, 24, 42, 6, 16, VENT_S, clair=VENT, n=8)
-    sabre(t, 30, 34, 42, 20)
+    t.fond_radial(28, 26, 40, [(200, 255, 245), (80, 190, 190), (20, 90, 100), (6, 30, 36)])
+    sol = t.masque(lambda d: d.rectangle([0, 42, 48, 48], fill=1))
+    t.peindre(sol, (10, 40, 44))
+    tornade(t, 35, 42, 14, 10, VENT_S, clair=VENT, n=8)
+    corps, q = heros(t, "brasTendu", 11, 31, s=0.85, liseres=((VENT, 1, 0),))
+    mx, my = q["mainD"]
+    sabre(t, mx - 1, my + 1, mx + 9, my - 5)
+    croissant(t, mx + 2, my + 4, 9, 250, 340, BLANC, epais=1)
     t.vignette(0.4)
     return t
 
@@ -71,11 +76,13 @@ def windCrescent():
     """Vert sombre : une haute lame d'air verticale traverse plusieurs ennemis"""
     t = Toile()
     t.fond_radial(24, 24, 42, [(180, 240, 220), (60, 150, 130), (20, 70, 60), (6, 24, 20)])
-    for x in (12, 36):
-        heros(t, "debout", x, 30, s=0.6, couleur=(14, 30, 26), liseres=((VENT, 0, -1),))
+    sol = t.masque(lambda d: d.rectangle([0, 40, 48, 48], fill=1))
+    t.peindre(sol, (8, 30, 26))
+    for x in (10, 38):
+        heros(t, "debout", x, 29, s=0.8, couleur=(14, 36, 30), liseres=((VENT, 0, -1),))
     t.peindre(t.masque(lambda d: d.chord([16, 2, 32, 46], 270, 90, fill=1)), VENT_S)
     t.peindre(t.masque(lambda d: d.chord([20, 2, 30, 46], 270, 90, fill=1)), VENT)
-    t.vignette(0.4)
+    t.vignette(0.3)
     return t
 
 
@@ -94,11 +101,17 @@ def risingStrike():
     """Bleu de ciel montant : un coup qui part du sol soulève la cible dans une colonne d'air"""
     t = Toile()
     t.fond_vertical([(240, 250, 255), (140, 200, 230), (50, 110, 160)], 0, 48)
-    col = t.masque(lambda d: d.rectangle([22, 0, 38, 44], fill=1))
-    t.voile(col, VENT, 0.4)
-    heros(t, "tombe", 30, 12, s=0.6, couleur=(20, 30, 50), liseres=((BLANC, 0, -1),))
-    croissant(t, 18, 34, 14, 270, 360, BLANC, epais=3)
-    sabre(t, 8, 44, 18, 22)
+    sol = t.masque(lambda d: d.rectangle([0, 42, 48, 48], fill=1))
+    t.peindre(sol, (30, 60, 90))
+    col = t.masque(lambda d: d.rectangle([24, 0, 42, 42], fill=1))
+    t.voile(col, VENT, 0.45)
+    for x in (27, 39):
+        t.peindre(t.masque(lambda d, x=x: d.line([(x, 38), (x, 26)], fill=1)), BLANC)
+    heros(t, "tombe", 33, 12, s=0.75, couleur=(30, 40, 70), liseres=((BLANC, 0, -1),))
+    corps, q = heros(t, "frappeHaute", 12, 31, s=0.85, liseres=((VENT, 1, 0),))
+    mx, my = q["mainD"]
+    sabre(t, mx, my + 2, mx + 8, my - 9)
+    croissant(t, 16, 26, 12, 280, 350, BLANC, epais=2)
     t.vignette(0.4)
     return t
 
@@ -126,14 +139,18 @@ def cuttingTempest():
 
 
 def celestialExecution():
-    """Ciel d'altitude : la cible projetée en l'air, la lame du vent la rabat au sol"""
+    """Ciel d'altitude : la lame du vent s'abat d'en haut et rabat la cible au sol"""
     t = Toile()
     t.fond_vertical([(30, 60, 120), (100, 160, 220), (220, 240, 255)], 0, 48)
-    heros(t, "frappeHaute", 24, 12, s=0.7, liseres=((BLANC, 0, -1),))
-    sabre(t, 26, 0, 30, 20)
-    heros(t, "tombe", 24, 30, s=0.6, couleur=(20, 30, 60), liseres=((BLANC, 0, -1),))
-    t.peindre(t.masque(lambda d: d.line([(24, 34), (24, 46)], fill=1, width=2)), BLANC)
-    nuage(t, 24, 44, 30, 6, BLANC, graine=4)
+    sol = t.masque(lambda d: d.rectangle([0, 42, 48, 48], fill=1))
+    t.peindre(sol, (60, 80, 110))
+    corps, q = heros(t, "frappeHaute", 15, 20, s=0.7, liseres=((BLANC, 0, -1),))
+    mx, my = q["mainD"]
+    sabre(t, mx, my + 2, mx + 12, my + 6)
+    croissant(t, 22, 22, 12, 300, 420, BLANC, epais=2)
+    heros(t, "tombe", 32, 38, s=0.7, couleur=(20, 30, 60), liseres=((BLANC, 0, -1),))
+    for x in (22, 42):
+        t.peindre(t.masque(lambda d, x=x: d.line([(x, 41), (x + (3 if x > 30 else -3), 36)], fill=1)), BLANC)
     t.vignette(0.35)
     return t
 

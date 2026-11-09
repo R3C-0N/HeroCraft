@@ -41,26 +41,33 @@ def hinderingShot():
 
 
 def tacticalDodge():
-    """Brun poussiéreux : une roulade de côté"""
+    """Brun poussiéreux : une roulade de côté, la poussière vole derrière"""
     t = Toile()
     t.fond_vertical([(170, 160, 140), (200, 170, 120), (160, 120, 80)], 0, 38)
     sol = t.masque(lambda d: d.rectangle([0, 40, 48, 48], fill=1))
     t.zone_verticale(sol, [(120, 90, 60), (50, 36, 24)], 40, 48)
-    heros(t, "accroupi", 30, 30, liseres=((SANG_C, 0, -1),))
-    t.peindre(t.masque(lambda d: d.arc([4, 18, 34, 48], 180, 300, fill=1, width=2)), BLANC)
-    nuage(t, 10, 40, 16, 6, (210, 190, 150), graine=4)
+    pose = {"tete": (5, -5), "cou": (3, -3), "hanche": (-3, 2), "coudeG": (1, 2), "mainG": (5, 3),
+            "coudeD": (6, 0), "mainD": (6, 4), "genouG": (3, 6), "piedG": (-3, 7), "genouD": (2, 3), "piedD": (-4, 4)}
+    heros(t, pose, 30, 32, s=1.3, liseres=((SANG_C, 0, -1),))
+    for y, l in ((24, 10), (30, 14), (36, 9)):
+        t.peindre(t.masque(lambda d, y=y, l=l: d.line([(18 - l, y), (18, y)], fill=1)), BLANC)
+    nuage(t, 8, 41, 14, 5, (210, 190, 150), graine=4, alpha=0.7)
     t.vignette(0.4)
     return t
 
 
 def pommelStrike():
-    """Or terne : un coup sec du pommeau, des étoiles tournent sur la cible"""
+    """Or terne : le chasseur frappe la tempe de la bête du pommeau, des étoiles tournent"""
     t = Toile()
     t.fond_radial(28, 20, 42, [(250, 230, 170), (200, 150, 80), (110, 70, 30), (40, 20, 8)])
-    monstre(t, 30, 30, s=0.9, liseres=((OR_PALE, 0, -1),), retourne=True)
-    lame(t, 4, 30, 18, 22, garde=True)
-    explosion(t, 20, 20, 4, couleurs=(BLANC, (255, 240, 180), (240, 200, 100)), branches=6)
-    for x, y in ((24, 10), (32, 6), (40, 10)):
+    sol = t.masque(lambda d: d.rectangle([0, 42, 48, 48], fill=1))
+    t.peindre(sol, (50, 30, 14))
+    monstre(t, 34, 34, s=0.85, liseres=((OR_PALE, 0, -1),), retourne=True)
+    corps, q = heros(t, "brasTendu", 10, 31, s=0.85, liseres=((OR_PALE, 1, 0),))
+    mx, my = q["mainD"]
+    lame(t, mx + 3, my, mx - 10, my + 8, garde=True)
+    explosion(t, mx + 5, my, 3, couleurs=(BLANC, (255, 240, 180), (240, 200, 100)), branches=6)
+    for x, y in ((26, 12), (33, 9), (40, 13)):
         t.etincelle(x, y, (255, 240, 80), grande=True)
     t.vignette(0.4)
     return t
@@ -105,26 +112,32 @@ def harpoonBolt():
 
 
 def crossRiposte():
-    """Acier et étincelles : la lame pare, puis un tir à bout portant"""
+    """Acier et étincelles : la lame pare la griffe, l'arbalète de poing tire à bout portant"""
     t = Toile()
     t.fond_radial(24, 22, 42, [(250, 230, 200), (180, 140, 100), (90, 60, 40), (30, 18, 10)])
-    lame(t, 8, 40, 34, 10)
-    lame(t, 40, 40, 14, 12, metal=(170, 170, 180))
-    explosion(t, 24, 22, 5, couleurs=(BLANC, (255, 230, 150), (255, 170, 60)), branches=8)
-    for x, y in ((16, 16), (32, 14), (30, 28)):
-        t.etincelle(x, y, (255, 220, 120))
+    for i in range(3):
+        g = t.masque(lambda d, i=i: d.line([(46, 6 + i * 4), (34, 14 + i * 3), (30, 20 + i * 2)], fill=1, width=2))
+        t.objet(g, (230, 220, 200), BLANC, (120, 100, 80))
+    lame(t, 12, 30, 34, 8)
+    explosion(t, 30, 13, 4, couleurs=(BLANC, (255, 230, 150), (255, 170, 60)), branches=8)
+    xa = arbalete(t, 4, 40, couleur=(80, 50, 40), long=12)
+    fleche(t, xa + 2, 38, 44, 34, couleur=(230, 230, 240), trainee=(255, 220, 160), epais=1)
+    t.etincelle(xa + 1, 38, (255, 220, 120))
     t.vignette(0.4)
     return t
 
 
 def deadlyDance():
-    """Rouge et cuivre : le chasseur avance en taillant, ses carreaux partent sur les côtés"""
+    """Rouge et cuivre : lame dans une main, arbalète dans l'autre, le chasseur tournoie"""
     t = Toile()
     t.fond_radial(24, 24, 40, [(255, 200, 160), (210, 90, 60), (120, 30, 30), (40, 8, 8)])
-    croissant(t, 24, 26, 16, 160, 380, (255, 230, 210), epais=2)
-    heros(t, "brasOuverts", 24, 28, s=0.8, liseres=((OR_PALE, 0, -1),))
-    for c in (-1, 1):
-        fleche(t, 24 + c * 8, 16, 24 + c * 22, 10, couleur=(220, 220, 230))
+    croissant(t, 24, 26, 18, 160, 380, (255, 230, 210), epais=2)
+    corps, q = heros(t, "brasOuverts", 24, 30, s=0.95, liseres=((OR_PALE, 0, -1),))
+    mx, my = q["mainD"]
+    lame(t, mx - 1, my + 1, mx + 6, my - 9, largeur=2)
+    gx, gy = q["mainG"]
+    xa = arbalete(t, gx + 2, gy, couleur=(80, 50, 40), vers=-1, long=9, carreau=False)
+    fleche(t, xa - 1, gy - 1, 2, gy - 4, couleur=(220, 220, 230))
     t.vignette(0.4)
     return t
 
@@ -141,13 +154,15 @@ def deathblow():
 
 
 def lightningAssault():
-    """Orage jaune : le chasseur se projette sur la bête pour une frappe plongeante"""
+    """Orage jaune : le chasseur bondit sur la bête, lame levée pour une frappe plongeante"""
     t = Toile()
     t.fond_radial(28, 30, 44, [(255, 250, 200), (230, 200, 80), (130, 100, 40), (40, 30, 10)])
-    monstre(t, 32, 34, s=0.8, liseres=((BLANC, 0, -1),), retourne=True)
-    heros(t, "frappeHaute", 18, 16, s=0.75, liseres=((BLANC, 1, 0),))
-    lame(t, 20, 4, 30, 22, largeur=2)
-    t.peindre(t.masque(lambda d: d.line([(4, 4), (16, 14)], fill=1, width=1)), BLANC)
+    monstre(t, 32, 38, s=0.8, liseres=((BLANC, 0, -1),), retourne=True)
+    corps, q = heros(t, "frappeHaute", 16, 25, s=0.75, liseres=((BLANC, 1, 0),))
+    mx, my = q["mainD"]
+    lame(t, mx, my + 2, mx + 12, my - 4, largeur=2)
+    for i in range(3):
+        t.peindre(t.masque(lambda d, i=i: d.line([(2, 10 + i * 5), (8, 14 + i * 5)], fill=1)), BLANC)
     t.vignette(0.4)
     return t
 
