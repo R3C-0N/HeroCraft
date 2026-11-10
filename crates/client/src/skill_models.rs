@@ -16,7 +16,8 @@ use herocraft_common::hero::{atlas, Appearance, Sheet, SHEET_SIZE};
 use herocraft_common::tangent_frame;
 use serde::Deserialize;
 
-use crate::creatures::CreatureFrame;
+use crate::creatures::{CreatureFrame, CreatureView};
+use herocraft_common::{CreatureRegistry, COPY_SUMMONER};
 use crate::hero_model::{figure, Bone, Figure, FigurePose};
 use crate::planet_mesh::PlanetVertex;
 use crate::skinned_model::{SkinnedModel, Texture};
@@ -32,7 +33,6 @@ struct Humanoid {
 }
 
 #[derive(Deserialize)]
-#[cfg_attr(not(test), allow(dead_code))]
 struct Tinted {
     tint: [f32; 3],
 }
@@ -40,7 +40,6 @@ struct Tinted {
 #[derive(Deserialize)]
 struct Catalogue {
     humanoids: std::collections::BTreeMap<String, Humanoid>,
-    #[cfg_attr(not(test), allow(dead_code))]
     tinted: std::collections::BTreeMap<String, Tinted>,
 }
 
@@ -133,6 +132,35 @@ fn summon_looks() -> &'static HashMap<String, SummonLook> {
 /// L'allure de l'invocation humanoïde `species` (identifiant de sa créature), s'il y en a une
 pub fn summon_look(species: &str) -> Option<&'static SummonLook> {
     summon_looks().get(species)
+}
+
+/// La pièce greffée `id` (`assets/skills/models/<id>.gltf`), lue la première fois qu'on la demande
+pub fn graft(id: &str) -> Option<&'static Graft> {
+    static GRAFTS: std::sync::Mutex<Option<HashMap<String, Option<&'static Graft>>>> = std::sync::Mutex::new(None);
+    let mut grafts = GRAFTS.lock().unwrap_or_else(|e| e.into_inner());
+    *grafts.get_or_insert_with(HashMap::new).entry(id.to_string()).or_insert_with(|| match Graft::load(id) {
+        Ok(g) => Some(Box::leak(Box::new(g))),
+        Err(e) => {
+            log::warn!("Pièce greffée illisible : {e}");
+            None
+        }
+    })
+}
+
+/// Teinte des copies (leurres, ombres d'Étherium), par identifiant de leur créature
+fn copy_tints() -> &'static HashMap<String, [f32; 3]> {
+    static TINTS: OnceLock<HashMap<String, [f32; 3]>> = OnceLock::new();
+    TINTS.get_or_init(|| read_catalogue().map(|c| c.tinted.into_iter().map(|(id, t)| (id, t.tint)).collect()).unwrap_or_default())
+}
+
+/// La créature telle qu'elle se dessine : une copie (`CreatureState::copy`) prend l'espèce
+/// qu'elle imite et la teinte de son espèce à elle ; une copie de son invocateur reste humanoïde
+pub fn drawn_as(view: &CreatureView, registry: &CreatureRegistry) -> CreatureView {
+    let Some(copy) = view.copy else { return *view };
+    let own = view.species.and_then(|s| registry.get(s));
+    let tint = own.and_then(|s| copy_tints().get(&s.id).copied());
+    let species = if copy == COPY_SUMMONER { view.species } else { registry.get(copy as usize).map(|_| copy as usize).or(view.species) };
+    CreatureView { species, tint, ..*view }
 }
 
 /// Ajoute une pièce greffée, posée comme la figure (`push_figure`) : chaque sommet suit l'os du
@@ -313,6 +341,17 @@ fn every_humanoid_summon_has_its_look_and_weapon() {
         // L'arme est à hauteur de main, près du corps
         let near = frame.vertices.iter().all(|v| (Vec3::from(v.position) - feet).length() < 3.0);
         assert!(near, "{id} : arme loin du corps");
+    }
+}
+
+#[test]
+fn druid_partial_forms_graft_their_piece_while_they_last() {
+    let catalog = herocraft_common::skills::SkillCatalog::load_default();
+    for (skill, piece) in [("packClaws", "wolfPaw"), ("bearHide", "bearHide"), ("elkLegs", "elkLegs"), ("galeFeathers", "galeFeathers")] {
+        let def = catalog.get(skill).unwrap_or_else(|| panic!("{skill}"));
+        assert!(def.is_castable(), "{skill}");
+        assert_eq!(def.graft.as_deref(), Some(piece), "{skill}");
+        assert!(graft(piece).is_some(), "{piece}");
     }
 }
 }

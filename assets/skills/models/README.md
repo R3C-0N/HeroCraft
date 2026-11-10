@@ -24,7 +24,9 @@ Une compétence les fait apparaître par l'effet `summon` de son bloc `cast` :
 | `duration` | Secondes avant qu'elles disparaissent ; sans : jusqu'à leur destruction. |
 | `limit` | Nombre au plus en même temps pour un lanceur : les plus anciennes disparaissent. |
 
-Les entités invoquées sont des alliées du lanceur ; elles disparaissent quand il quitte la partie et ne sont jamais sauvegardées. Le Chevalier de la Mort et le Seigneur Liche sont des créatures humanoïdes (`humanoid: true`) du même identifiant que leur entrée de `humanoids.json` : le client les dessine avec le corps du héros, leur planche et leur arme greffée dans la main droite, et ils frappent les monstres qui approchent. Le comportement propre des autres entités (la tourelle qui tire, le piège qui claque, le mur qui bloque) n'est pas encore écrit : elles apparaissent, encaissent les coups et disparaissent.
+Les entités invoquées sont des alliées du lanceur ; elles disparaissent quand il quitte la partie et ne sont jamais sauvegardées. Le Chevalier de la Mort et le Seigneur Liche sont des créatures humanoïdes (`humanoid: true`) du même identifiant que leur entrée de `humanoids.json` : le client les dessine avec le corps du héros, leur planche et leur arme greffée dans la main droite, et ils frappent les monstres qui approchent. Les invocations jouent leur animation `apparition` (le mur qui surgit, la tourelle qui tombe) avant d'agir ; une attaque avec un champ `shot` (portée, vitesse, rayon d'explosion, effets `muzzle`, `projectile`, `impact`) tire à distance au lieu de frapper au contact : tourelles, bastion, orbes du Seigneur Liche. Une espèce avec `taunt` (rayon en blocs) attire sur elle les monstres proches : Chevalier de la Mort, leurres. Le piège qui claque et le mur qui bloque ne sont pas encore écrits.
+
+Le champ `copies` de `summon` fait des copies : `caster` reprend la figure du lanceur (leurres du Voleur), `corpse` relève à leur place les cadavres de la zone (Légion du Néant).
 
 | Identifiant | Compétence | Os |
 |---|---|---|
@@ -71,6 +73,8 @@ Les transformations partielles du Druide et les armes des invocations humanoïde
 | `elkLegs` | Jambes de l'Élan | `rightLeg`, `leftLeg`, `rightShin`, `leftShin` |
 | `galeFeathers` | Plumes de Bourrasque | bras, avant-bras et mains |
 | `runeblade`, `lichStaff` | armes des invocations humanoïdes | `rightHand` |
+
+Une compétence porte sa pièce par le champ `graft` de sa fiche (`"graft": "wolfPaw"`) : le héros la porte le temps du geste et de ses effets.
 
 ## Invocations humanoïdes (`humanoids.json`)
 

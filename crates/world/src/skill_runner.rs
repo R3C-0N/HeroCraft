@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use glam::Vec3;
-use herocraft_common::skills::{BuffStat, CastError, Center, Effect, EffectEntry, PlacedArea, SkillCatalog, Targets, SKILL_BASE_DAMAGE};
+use herocraft_common::skills::{BuffStat, CastError, Center, Copies, Effect, EffectEntry, PlacedArea, SkillCatalog, Targets, SKILL_BASE_DAMAGE};
 use herocraft_common::CharacterStats;
 
 use crate::CreatureWorld;
@@ -319,7 +319,7 @@ impl SkillRunner {
             self.apply_to_player(entry, p, p.caster, players);
             changed.push(p.caster);
         }
-        let summoned = self.summon(def.summons(), p, feet, center, creatures);
+        let summoned = self.summon(def.summons(), p, feet, center, &area, creatures);
         touched_creatures.sort_unstable();
         touched_creatures.dedup();
         touched_players.sort_unstable();
@@ -329,12 +329,26 @@ impl SkillRunner {
 
     /// Les apparitions d'une frappe, une fois par lancement : en cercle autour de leur point,
     /// les plus anciennes du lanceur disparaissant au-delà de la limite
-    fn summon<'a>(&mut self, summons: impl Iterator<Item = &'a Effect>, p: &Pending, feet: Vec3, center: Vec3, creatures: &mut CreatureWorld) -> Vec<u64> {
+    fn summon<'a>(&mut self, summons: impl Iterator<Item = &'a Effect>, p: &Pending, feet: Vec3, center: Vec3, area: &PlacedArea, creatures: &mut CreatureWorld) -> Vec<u64> {
         let mut out = Vec::new();
         let block = creatures.block_size();
         for effect in summons {
-            let Effect::Summon { species, count, at, duration, limit } = effect else { continue };
+            let Effect::Summon { species, count, at, duration, limit, copies } = effect else { continue };
             let Some(index) = creatures.registry().find(species) else { continue };
+            let left = duration.as_ref().map(|d| d.at(p.rank));
+            // Une par cadavre de la zone, à sa place et à son allure ; le cadavre disparaît
+            if *copies == Some(Copies::Corpse) {
+                let corpses: Vec<(u64, usize, Vec3, f32)> =
+                    creatures.creatures().iter().filter(|c| !c.is_alive() && c.summoner.is_none() && area.contains(c.position, block)).map(|c| (c.id, c.species, c.position, c.yaw)).collect();
+                for (corpse, kind, position, yaw) in corpses {
+                    creatures.remove(corpse);
+                    let id = creatures.summon(index, position, yaw, p.caster);
+                    creatures.set_copy(id, kind as u32);
+                    self.summoned.push(Summoned { caster: p.caster, species: species.clone(), id, left });
+                    out.push(id);
+                }
+                continue;
+            }
             let origin = match at {
                 Center::Caster => feet,
                 Center::Aimed => center,
@@ -349,7 +363,10 @@ impl SkillRunner {
                 let angle = std::f32::consts::TAU * i as f32 / n as f32;
                 let spot = origin + (forward * angle.cos() + right * angle.sin()) * radius;
                 let id = creatures.summon(index, spot, 0.0, p.caster);
-                self.summoned.push(Summoned { caster: p.caster, species: species.clone(), id, left: duration.as_ref().map(|d| d.at(p.rank)) });
+                if *copies == Some(Copies::Caster) {
+                    creatures.set_copy(id, herocraft_common::COPY_SUMMONER);
+                }
+                self.summoned.push(Summoned { caster: p.caster, species: species.clone(), id, left });
                 out.push(id);
             }
             if let Some(limit) = limit {
@@ -522,5 +539,34 @@ mod tests {
             assert_eq!(def.summons().count(), 1, "{id}");
             assert!(def.is_castable(), "{id}");
         }
+    }
+
+    #[test]
+    fn test_void_legion_turns_corpses_into_shades_and_the_decoy_copies_its_thief() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let near = creatures.creatures()[0].id;
+        let cow = creatures.creatures()[0].species;
+        creatures.wound(near, feet, 5, 10_000.0);
+        let mut stats = CharacterStats::new(PlayerClass::Necromancer);
+        stats.skills.insert("voidLegion".into(), 1);
+        stats.skills.insert("shadowDecoy".into(), 1);
+        stats.mana = 1000.0;
+        stats.stamina = 1000.0;
+        let mut runner = SkillRunner::new();
+        runner.cast(&catalog, 5, &mut stats, "voidLegion", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: 5, feet, stats: &mut stats };
+        let summoned: Vec<u64> = (0..10).flat_map(|_| runner.tick(0.2, &catalog, &mut creatures, &mut player).impacts).flat_map(|i| i.summoned).collect();
+        assert_eq!(summoned.len(), 1, "une ombre par cadavre");
+        assert!(creatures.creatures().iter().all(|c| c.id != near), "le cadavre est devenu l'ombre");
+        let shade = creatures.creatures().iter().find(|c| c.id == summoned[0]).unwrap();
+        assert_eq!(shade.copy, Some(cow as u32));
+        assert!(stats.shield > 0.0, "le nécromancien reçoit son bouclier");
+
+        runner.cast(&catalog, 5, &mut stats, "shadowDecoy", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: 5, feet, stats: &mut stats };
+        let decoy: Vec<u64> = (0..10).flat_map(|_| runner.tick(0.2, &catalog, &mut creatures, &mut player).impacts).flat_map(|i| i.summoned).collect();
+        let decoy = creatures.creatures().iter().find(|c| c.id == decoy[0]).unwrap();
+        assert_eq!((decoy.copy, decoy.summoner), (Some(herocraft_common::COPY_SUMMONER), Some(5)));
     }
 }

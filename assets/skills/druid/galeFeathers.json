@@ -8,5 +8,56 @@
     "requires": [],
     "max_rank": 3,
     "planner": 199
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 18
+    },
+    "cooldown": 14,
+    "animation": "shout",
+    "area": {
+      "arc": {
+        "range": [
+          4,
+          4.5,
+          5
+        ],
+        "angle": 100
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "knockback": {
+          "strength": [
+            10,
+            12,
+            14
+          ]
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "speed",
+          "value": 0.15,
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "featherGust",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "windBlades",
+      "anchor": "body",
+      "from": "impact"
+    }
+  ],
+  "graft": "galeFeathers"
 }

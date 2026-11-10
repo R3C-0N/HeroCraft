@@ -110,6 +110,7 @@ pub fn push_villagers(
     views: &[CreatureView],
     registry: &CreatureRegistry,
     card: impl Fn(u64) -> Option<Arc<VillagerCard>>,
+    hero_of: &dyn Fn(u64) -> Option<Appearance>,
     animator: &mut VillagerAnimator,
     mut texture: impl FnMut(SheetSource) -> usize,
     block: f32,
@@ -131,8 +132,13 @@ pub fn push_villagers(
             continue;
         }
         let card = card(view.id);
-        let appearance = card.as_ref().map_or(stranger(), |c| &c.appearance);
-        let pose = animator.pose(view, registry);
+        // Un leurre copie son invocateur
+        let copied = view.copy.filter(|&c| c == herocraft_common::COPY_SUMMONER).and(view.summoner).and_then(hero_of);
+        let appearance = copied.as_ref().or(card.as_ref().map(|c| &c.appearance)).unwrap_or(stranger());
+        let mut pose = animator.pose(view, registry);
+        if let Some(tint) = view.tint {
+            pose.tint = [0, 1, 2].map(|i| pose.tint[i] * tint[i]);
+        }
         let slot = texture(SheetSource::Painted(appearance));
         push_figure(frame, appearance, animator.figure(appearance), view.feet, view.yaw, &pose, slot, block);
     }
@@ -186,10 +192,10 @@ mod tests {
         let mut animator = VillagerAnimator::default();
         for (k, id) in ["deathKnight", "lichLord"].into_iter().enumerate() {
             let species = registry.find(id).unwrap_or_else(|| panic!("{id}"));
-            let view = CreatureView { id: k as u64, species: Some(species), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None };
+            let view = CreatureView { id: k as u64, species: Some(species), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
             let mut frame = CreatureFrame::default();
             let mut asked = Vec::new();
-            push_villagers(&mut frame, &[view], &registry, |_| None, &mut animator, |source| {
+            push_villagers(&mut frame, &[view], &registry, |_| None, &|_| None, &mut animator, |source| {
                 asked.push(match source {
                     SheetSource::Painted(_) => "peinte".to_string(),
                     SheetSource::Fixed(key, _) => key.to_string(),
@@ -208,7 +214,7 @@ mod tests {
         let species = registry.find("villageois").unwrap();
         let s = registry.get(species).unwrap();
         let pause = |name: &str| CreatureAction::Pause(s.pauses().position(|(n, _)| n == name).unwrap() as u8);
-        let view = |action| CreatureView { id: 1, species: Some(species), feet: Vec3::new(0.0, 0.0, 1000.0), yaw: 0.0, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None };
+        let view = |action| CreatureView { id: 1, species: Some(species), feet: Vec3::new(0.0, 0.0, 1000.0), yaw: 0.0, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
         let mut animator = VillagerAnimator::default();
         assert!(is_humanoid(&view(CreatureAction::Repos), &registry));
         let still = animator.pose(&view(CreatureAction::Repos), &registry);
@@ -216,7 +222,7 @@ mod tests {
         assert!(animator.pose(&view(pause("travaille")), &registry).arm_raise(Bone::RightArm) > 0.3);
         assert_eq!(animator.pose(&view(pause("sommeil")), &registry).lying, 1.0);
         let mut frame = CreatureFrame::default();
-        push_villagers(&mut frame, &[view(CreatureAction::Marche)], &registry, |_| None, &mut animator, |_| 7, 1.0);
+        push_villagers(&mut frame, &[view(CreatureAction::Marche)], &registry, |_| None, &|_| None, &mut animator, |_| 7, 1.0);
         assert_eq!(frame.draws.len(), 1);
         assert_eq!(frame.draws[0].0, Some(7));
     }

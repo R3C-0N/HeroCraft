@@ -152,3 +152,7 @@ Une valeur seule est constante. Une couleur s'écrit `#RRGGBB` ou `#RRGGBBAA` (l
 | `iceShards` | éclats de glace |
 | `stoneWall` | roche et poussière d'un mur qui surgit |
 | `boneWall` | os et terre d'un mur d'os qui surgit |
+| `turretBolt` | carreau d'une tourelle en vol |
+| `soulOrb` | orbe d'âme du Seigneur Liche en vol |
+| `soulBlast` | explosion d'un orbe d'âme |
+| `shadowBolt` | trait d'ombre du Barrage Illusoire |

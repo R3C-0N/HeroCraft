@@ -857,6 +857,10 @@ fn main() {
                                     }
                                 }
                             };
+                            // Les copies (leurres, ombres d'Étherium) se dessinent à l'allure qu'elles imitent
+                            for view in creature_views.iter_mut().filter(|v| v.copy.is_some()) {
+                                *view = skill_models::drawn_as(view, &creature_registry);
+                            }
                             probe.section("créatures : simulation", section);
                             let section = Instant::now();
                             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
@@ -872,7 +876,11 @@ fn main() {
                                     Some(client) => client.villager_card(id).cloned(),
                                     None => solo_creatures.villager_card(id).cloned(),
                                 };
-                                villagers::push_villagers(&mut frame, &creature_views, &creature_registry, card_of, &mut villager_animator, |a| state.villager_texture(a), block);
+                                // Le leurre du joueur local copie son héros ; celui d'un autre, un inconnu
+                                let me = net.as_ref().map_or(skill_play::SOLO_PLAYER, |c| c.player_id());
+                                let my_look = ui_state.legend.as_ref().map(|l| l.appearance.clone());
+                                let hero_of = |id: u64| (id == me).then(|| my_look.clone()).flatten();
+                                villagers::push_villagers(&mut frame, &creature_views, &creature_registry, card_of, &hero_of, &mut villager_animator, |a| state.villager_texture(a), block);
                                 let mut tags = net.as_ref().map(|c| c.name_tags(&camera, state.size.width as f32, state.size.height as f32)).unwrap_or_default();
                                 tags.extend(villagers::name_tags(&creature_views, card_of, looked_at, &camera, state.size.width as f32, state.size.height as f32));
                                 ui_state.name_tags = tags;
@@ -904,6 +912,11 @@ fn main() {
                                 let figure = hero_figure.get(&legend.appearance);
                                 let pose = skill_play.hero_pose(hero_gait.swing(), figure.units_per_block(&legend.appearance));
                                 hero_model::push_hero_posed(&mut frame, &legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, block);
+                                // Transformations partielles du Druide : patte, fourrure, pattes de cerf, plumes
+                                for graft in skill_play.hero_grafts().iter().filter_map(|g| skill_models::graft(g)) {
+                                    let slot = state.villager_texture(creature_render::SheetSource::Fixed(&graft.id, &graft.texture));
+                                    skill_models::push_graft(&mut frame, &graft.model, &legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, slot, block);
+                                }
                                 hero_anchors = hero_model::HeroAnchors::posed(&legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, block);
                             }
                             // À la première personne, le temps d'un geste : les bras et l'arme devant l'œil

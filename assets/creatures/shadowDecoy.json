@@ -1,0 +1,14 @@
+{
+  "name": "Leurre Obscur",
+  "description": "Double d'ombre du Voleur, immobile, qui attire à lui les bêtes agressives proches.",
+  "body": {
+    "half_width": 0.3,
+    "half_length": 0.3,
+    "height": 1.8
+  },
+  "walk_speed": 0,
+  "health": 25,
+  "activity": "always",
+  "humanoid": true,
+  "taunt": 6
+}

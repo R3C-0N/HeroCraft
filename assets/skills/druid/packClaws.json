@@ -8,5 +8,39 @@
     "requires": [],
     "max_rank": 3,
     "planner": 196
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 15
+    },
+    "cooldown": 18,
+    "animation": "bless",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": [
+            0.25,
+            0.3,
+            0.4
+          ],
+          "duration": [
+            10,
+            12,
+            15
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "leftHand",
+      "from": "start"
+    }
+  ],
+  "graft": "wolfPaw"
 }

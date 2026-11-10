@@ -31,6 +31,15 @@
         0.62,
         1.25
       ]
+    },
+    "illusoryDecoy": {
+      "name": "Leurre du Déluge",
+      "copies": "caster",
+      "tint": [
+        0.16,
+        0.13,
+        0.22
+      ]
     }
   }
 }

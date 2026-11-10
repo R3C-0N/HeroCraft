@@ -16,7 +16,7 @@ use crate::gestures::GestureLibrary;
 use crate::hero_model::FigurePose;
 
 /// Identifiant du joueur en solo
-const SOLO_PLAYER: u64 = 0;
+pub const SOLO_PLAYER: u64 = 0;
 
 /// Une compétence qu'un joueur est en train de lancer (le geste et ses visuels). Rang et visée
 /// serviront aux gestes des autres joueurs, quand ils seront dessinés en entier.
@@ -85,6 +85,8 @@ pub struct SkillPlay {
     cooldown_of: HashMap<String, f32>,
     plays: Vec<Play>,
     cues: Vec<VisualCue>,
+    /// Pièces greffées sur le héros local (`SkillDef::graft`), et jusqu'à quand
+    grafts: Vec<(String, Instant)>,
     /// Dernier refus, à montrer au joueur
     pub last_refusal: Option<(String, Instant)>,
 }
@@ -98,6 +100,7 @@ impl Default for SkillPlay {
             cooldown_of: HashMap::new(),
             plays: Vec::new(),
             cues: Vec::new(),
+            grafts: Vec::new(),
             last_refusal: None,
         }
     }
@@ -148,6 +151,12 @@ impl SkillPlay {
         self.plays.retain(|p| p.player != player);
         self.plays.push(Play { player, skill: skill.to_string(), rank, started: now, aim, aimed, duration });
         let impact = catalog.impact_delay(cast);
+        // Transformation partielle du Druide : la pièce reste tant que durent ses effets
+        if let Some(graft) = def.graft.as_ref().filter(|_| player.is_none()) {
+            let seconds = impact + effect_seconds(&cast.self_effects, rank).max(effect_seconds(&cast.effects, rank)).max(duration);
+            self.grafts.retain(|(g, _)| g != graft);
+            self.grafts.push((graft.clone(), now + std::time::Duration::from_secs_f32(seconds)));
+        }
         for visual in def.visuals.iter().filter(|v| v.from == Moment::Start) {
             let hold = match visual.to {
                 Some(Moment::Impact) => Some(impact),
@@ -281,6 +290,13 @@ impl SkillPlay {
     }
 
     /// La pose du héros local : son geste en cours par-dessus la marche
+    /// Pièces greffées sur le héros local en ce moment
+    pub fn hero_grafts(&mut self) -> Vec<String> {
+        let now = Instant::now();
+        self.grafts.retain(|(_, until)| *until > now);
+        self.grafts.iter().map(|(g, _)| g.clone()).collect()
+    }
+
     pub fn hero_pose(&self, swing: f32, units_per_block: f32) -> FigurePose {
         let now = Instant::now();
         let mut pose = FigurePose { swing, ..FigurePose::default() };

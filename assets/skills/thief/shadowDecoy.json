@@ -8,5 +8,42 @@
     "requires": [],
     "max_rank": 3,
     "planner": 259
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 14,
+    "animation": "summon",
+    "area": {
+      "circle": {
+        "radius": 1.5,
+        "center": "aimed",
+        "distance": 5
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "summon": {
+          "species": "shadowDecoy",
+          "at": "aimed",
+          "duration": [
+            6,
+            8,
+            10
+          ],
+          "limit": 1,
+          "copies": "caster"
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shadowSmoke",
+      "anchor": "aimed",
+      "from": "start"
+    }
+  ]
 }

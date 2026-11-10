@@ -627,7 +627,7 @@ impl NetClient {
             .iter()
             .filter_map(|(&id, c)| {
                 let (feet, yaw) = c.position?;
-                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw, hurt: c.hurt, death: c.death, action: c.action, scale: c.scale, mood: c.mood, summoner: c.summoner, copy: c.copy })
+                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw, hurt: c.hurt, death: c.death, action: c.action, scale: c.scale, mood: c.mood, summoner: c.summoner, copy: c.copy, tint: None })
             })
             .collect()
     }

@@ -227,9 +227,21 @@ pub enum Effect {
         /// Nombre au plus en même temps pour ce lanceur : les plus anciennes disparaissent
         #[serde(default)]
         limit: Option<Ranked>,
+        /// Elles prennent une autre allure : celle du lanceur (`caster`, un leurre), ou celle d'un
+        /// cadavre de la zone (`corpse` : une par cadavre, à sa place, qui le remplace)
+        #[serde(default)]
+        copies: Option<Copies>,
     },
     /// La créature s'en prend au lanceur pendant `duration` secondes
     Taunt { duration: Ranked },
+}
+
+/// L'allure que prend une invocation (`Effect::Summon::copies`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Copies {
+    Caster,
+    Corpse,
 }
 
 /// Statistique qu'un `buff` augmente
@@ -350,6 +362,8 @@ struct SkillFile {
     sounds: BTreeMap<String, String>,
     #[serde(default)]
     special: Option<String>,
+    #[serde(default)]
+    graft: Option<String>,
 }
 
 /// Une compétence lue dans son fichier
@@ -368,6 +382,9 @@ pub struct SkillDef {
     pub sounds: BTreeMap<String, String>,
     /// Mécanique écrite en Rust, appelée par son nom (ultimes et cas uniques)
     pub special: Option<String>,
+    /// Pièce greffée sur le lanceur tant que durent ses effets (`assets/skills/models/<id>.gltf` :
+    /// patte de loup, fourrure d'ours… du Druide)
+    pub graft: Option<String>,
 }
 
 impl SkillDef {
@@ -517,6 +534,7 @@ impl SkillCatalog {
                             visuals: file.visuals,
                             sounds: file.sounds,
                             special: file.special,
+                            graft: file.graft,
                         });
                     }
                     Err(e) => errors.push(format!("{}/{id}.json : {e}", class.id)),
@@ -539,6 +557,16 @@ impl SkillCatalog {
             fresh
         });
         let ids: HashSet<String> = skills.iter().map(|s| s.id.clone()).collect();
+        // Une pièce greffée sans modèle n'est pas dessinée
+        for s in &mut skills {
+            if let Some(graft) = s.graft.take() {
+                if dir.join("models").join(format!("{graft}.gltf")).is_file() {
+                    s.graft = Some(graft);
+                } else {
+                    errors.push(format!("{}/{} : pièce greffée inconnue {graft}", s.class, s.id));
+                }
+            }
+        }
         skills.retain(|s| match catalog.check(s, &ids, &creatures) {
             Ok(()) => true,
             Err(e) => {

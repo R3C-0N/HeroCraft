@@ -11,5 +11,42 @@
     ],
     "max_rank": 3,
     "planner": 268
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 35
+    },
+    "cooldown": 22,
+    "animation": "summon",
+    "area": {
+      "circle": {
+        "radius": 1.5,
+        "center": "aimed",
+        "distance": 5
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "summon": {
+          "species": "illusoryDecoy",
+          "at": "aimed",
+          "duration": [
+            4,
+            5,
+            6
+          ],
+          "limit": 1,
+          "copies": "caster"
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shadowSmoke",
+      "anchor": "aimed",
+      "from": "start"
+    }
+  ]
 }

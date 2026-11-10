@@ -891,7 +891,7 @@ mod tests {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/effects");
         let (library, errors) = EffectLibrary::load_dir(&dir);
         assert!(errors.is_empty(), "{errors:?}");
-        assert_eq!(library.effects.len(), 50);
+        assert_eq!(library.effects.len(), 51);
         let ring = &library.effects["shockRing"];
         assert!(ring.area_unit);
         assert!((ring.natural_seconds() - 1.1).abs() < 1e-4, "{}", ring.natural_seconds());
