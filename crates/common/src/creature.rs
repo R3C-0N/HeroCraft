@@ -83,6 +83,120 @@ pub struct CreatureSpecies {
     /// avant tout autre (Chevalier de la Mort)
     #[serde(default)]
     pub taunt: Option<f32>,
+    /// Corps solide : forme, taille et résistance (sans : un cercle de la demi-largeur du corps, de
+    /// résistance 0,5)
+    #[serde(default)]
+    pub collision: Option<CreatureCollision>,
+}
+
+/// Forme du corps solide d'une espèce, vue de dessus
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CollisionShape {
+    /// Un disque (bête, humanoïde, tourelle)
+    #[default]
+    Circle,
+    /// Un rectangle tourné avec la bête (mur, barricade)
+    Box,
+}
+
+/// Corps solide d'une espèce, tel qu'écrit dans sa fiche
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureCollision {
+    #[serde(default)]
+    pub shape: CollisionShape,
+    /// Demi-largeur et demi-longueur, en blocs (un cercle a pour rayon la première) ; sans : celles
+    /// du corps (`body`)
+    #[serde(default)]
+    pub size: Option<[f32; 2]>,
+    /// Hauteur, en blocs (sans : celle du corps)
+    #[serde(default)]
+    pub height: Option<f32>,
+    /// De 0 à 1 : la part de l'enfoncement d'un autre corps qu'elle repousse à chaque instant. 0 :
+    /// on la traverse (piège) ; 1 : rien ne la traverse (mur)
+    #[serde(default = "half_f32")]
+    pub resistance: f32,
+}
+
+fn half_f32() -> f32 {
+    0.5
+}
+
+/// Corps solide d'une entité, en blocs
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Collider {
+    pub shape: CollisionShape,
+    pub half_width: f32,
+    pub half_length: f32,
+    pub height: f32,
+    pub resistance: f32,
+}
+
+/// Le corps d'un joueur, pour les collisions avec les entités
+pub const PLAYER_COLLIDER: Collider = Collider { shape: CollisionShape::Circle, half_width: 0.3, half_length: 0.3, height: 1.8, resistance: 0.5 };
+
+impl CreatureSpecies {
+    /// Son corps solide, à l'échelle 1
+    pub fn collider(&self) -> Collider {
+        let c = self.collision.unwrap_or(CreatureCollision { shape: CollisionShape::Circle, size: None, height: None, resistance: 0.5 });
+        let [half_width, half_length] = c.size.unwrap_or([self.body.half_width, self.body.half_length]);
+        Collider { shape: c.shape, half_width, half_length, height: c.height.unwrap_or(self.body.height), resistance: c.resistance.clamp(0.0, 1.0) }
+    }
+}
+
+impl Collider {
+    /// Rayon du disque qui le remplace quand il bouge contre un autre
+    pub fn radius(&self) -> f32 {
+        match self.shape {
+            CollisionShape::Circle => self.half_width,
+            CollisionShape::Box => self.half_width.min(self.half_length),
+        }
+    }
+
+    /// Ce corps, posé les pieds en `feet` et tourné du cap `yaw`, est enfoncé par un disque de rayon
+    /// `radius` (en blocs) aux pieds en `other` : le déplacement, dans le plan du sol, qui sort le
+    /// disque de lui (`block` : taille d'un bloc). Aucun s'ils ne se touchent pas, ou si l'un passe
+    /// au-dessus de l'autre (`other_height` : hauteur du disque).
+    pub fn separation(&self, feet: Vec3, yaw: f32, block: f32, other: Vec3, radius: f32, other_height: f32) -> Option<Vec3> {
+        let up = feet.normalize_or_zero();
+        let rise = (other.length() - feet.length()) / block;
+        if rise >= self.height || rise + other_height <= 0.0 {
+            return None;
+        }
+        let (east, north) = crate::math::tangent_frame(up);
+        let ahead = north * yaw.cos() + east * yaw.sin();
+        let side = east * yaw.cos() - north * yaw.sin();
+        let d = (other - feet) / block;
+        let (f, s) = (d.dot(ahead), d.dot(side));
+        let (along, across, depth) = match self.shape {
+            CollisionShape::Circle => {
+                let distance = (f * f + s * s).sqrt();
+                let depth = self.half_width + radius - distance;
+                if depth <= 0.0 {
+                    return None;
+                }
+                if distance < 1e-4 { (1.0, 0.0, depth) } else { (f / distance, s / distance, depth) }
+            }
+            CollisionShape::Box => {
+                let (cf, cs) = (f.clamp(-self.half_length, self.half_length), s.clamp(-self.half_width, self.half_width));
+                let (df, ds) = (f - cf, s - cs);
+                let outside = (df * df + ds * ds).sqrt();
+                if outside > 1e-4 {
+                    let depth = radius - outside;
+                    if depth <= 0.0 {
+                        return None;
+                    }
+                    (df / outside, ds / outside, depth)
+                } else {
+                    // Le centre est dedans : il sort par le côté le plus proche
+                    let (pf, ps) = (self.half_length - f.abs() + radius, self.half_width - s.abs() + radius);
+                    if pf < ps { (if f < 0.0 { -1.0 } else { 1.0 }, 0.0, pf) } else { (0.0, if s < 0.0 { -1.0 } else { 1.0 }, ps) }
+                }
+            }
+        };
+        Some((ahead * along + side * across) * depth * block)
+    }
 }
 
 /// Élevage d'une espèce : nourrie de ce qu'elle aime, une bête sauvage finit par s'apprivoiser ;
@@ -180,6 +294,24 @@ pub struct CreatureAttack {
     /// frappe au contact seulement si sa cible est à portée de `reach`
     #[serde(default)]
     pub shot: Option<CreatureShot>,
+    /// Piège : la première cible à portée de `reach` le déclenche ; il explose sur tout ennemi
+    /// proche, puis disparaît
+    #[serde(default)]
+    pub burst: Option<CreatureBurst>,
+}
+
+/// L'explosion d'un piège
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureBurst {
+    /// Rayon, en blocs : chaque ennemi dans ce rayon autour du piège prend les dégâts de l'attaque
+    pub radius: f32,
+    /// Secondes pendant lesquelles les ennemis touchés restent immobilisés
+    #[serde(default)]
+    pub stun: f32,
+    /// Effet visuel de l'explosion (`assets/effects/`)
+    #[serde(default)]
+    pub effect: Option<String>,
 }
 
 /// Un tir à distance : un projectile part de la bête vers sa cible, et touche à son arrivée
@@ -662,6 +794,23 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_disc_is_pushed_out_of_a_wall_across_its_nearest_side() {
+        let feet = Vec3::new(0.0, 0.0, 100.0);
+        let (east, north) = crate::math::tangent_frame(feet.normalize());
+        let wall = Collider { shape: CollisionShape::Box, half_width: 2.0, half_length: 0.5, height: 3.0, resistance: 1.0 };
+        // Cap nord : le mur est large d'est en ouest, mince du nord au sud
+        let out = wall.separation(feet, 0.0, 1.0, feet + north * 0.6 + east * 1.5, 0.3, 1.8).expect("il touche le mur");
+        assert!((out.dot(north) - 0.2).abs() < 1e-3 && out.dot(east).abs() < 1e-3, "{out}");
+        assert!(wall.separation(feet, 0.0, 1.0, feet + north * 0.9, 0.3, 1.8).is_none(), "trop loin");
+        assert!(wall.separation(feet, 0.0, 1.0, feet + feet.normalize() * 3.5 + north * 0.6, 0.3, 1.8).is_none(), "au-dessus");
+        // Tourné d'un quart de tour, c'est l'inverse
+        assert!(wall.separation(feet, std::f32::consts::FRAC_PI_2, 1.0, feet + north * 1.5, 0.3, 1.8).is_some());
+        let disc = Collider { shape: CollisionShape::Circle, half_width: 0.5, half_length: 0.5, height: 1.0, resistance: 0.5 };
+        let out = disc.separation(feet, 0.0, 1.0, feet + east * 0.6, 0.3, 1.8).unwrap();
+        assert!((out.dot(east) - 0.2).abs() < 1e-3);
+    }
 
     #[test]
     fn test_bundled_species_load() {

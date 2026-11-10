@@ -68,5 +68,8 @@
       "projectile": "turretBolt",
       "impact": "impactSpark"
     }
+  },
+  "collision": {
+    "resistance": 1
   }
 }

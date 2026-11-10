@@ -85,6 +85,8 @@ pub struct ConnectedPlayer {
     pub crouching: bool,
     /// Ce qu'il tient en main : sa nourriture attire les bêtes
     pub holding: Option<ItemId>,
+    /// Allure de son héros, une fois sa légende reçue
+    pub appearance: Option<Box<herocraft_common::hero::Appearance>>,
     /// Créatures que son client affiche (celles qui lui ont été annoncées)
     known_creatures: HashSet<u64>,
     connection: ClientConnection,
@@ -515,6 +517,9 @@ impl Server {
         }
         for other in self.players.values() {
             connection.send(&ServerPacket::PlayerJoined { player_id: other.id, name: other.name.clone() });
+            if let Some(appearance) = &other.appearance {
+                connection.send(&ServerPacket::PlayerAppearance { player_id: other.id, appearance: appearance.clone() });
+            }
         }
         connection.send(&self.clock_packet());
 
@@ -537,6 +542,7 @@ impl Server {
                 sprinting: false,
                 crouching: false,
                 holding: None,
+                appearance: None,
                 known_creatures: HashSet::new(),
                 connection,
             },
@@ -634,6 +640,9 @@ impl Server {
         info!("{} est {} ({}, {}).", player.name, legend.appearance.nom, legend.appearance.species().nom, legend.class.label());
         player.stats.class = legend.class;
         player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+        let appearance = Box::new(legend.appearance);
+        player.appearance = Some(appearance.clone());
+        self.broadcast(&ServerPacket::PlayerAppearance { player_id: id, appearance });
     }
 
     /// `/xp` : le joueur gagne `amount` points d'expérience, ses nouvelles jauges lui sont envoyées

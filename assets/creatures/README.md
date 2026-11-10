@@ -54,6 +54,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 | `activity` | Le rythme de vie de l'espèce (voir ci-dessous, `diurnal` par défaut). |
 | `loot` | Ce que donne la bête dépecée, au format du champ `loot` des blocs (`assets/blocks/README.md`) : `[{"item": "viandeVache", "count": [1, 3]}, {"item": "bone", "chance": 0.5}]`. Une bête tuée reste couchée à terre 10 minutes ; un clic droit sur elle, couteau ou dague en main, la dépèce : elle disparaît et son butin tombe à côté. En ligne, le serveur tire le butin et l'envoie à celui qui l'a dépecée. |
 | `model` | Le modèle 3D (voir ci-dessous). |
+| `collision` | Corps solide (voir plus bas). Sans ce champ : un disque de la demi-largeur du corps, de résistance 0,5. |
 
 Chaque entrée de `spawn` a trois champs :
 - `biome` : l'un de `Plains`, `Forest`, `Desert`, `Mountains`, `SnowPeaks`, `Tundra`, `Taiga`, `Savanna`, `Jungle`, `Beach`, `Sea`, `Ocean` ou `DeepOcean` ;
@@ -96,7 +97,25 @@ Une bête dont la fiche a un champ `attack` chasse les joueurs et ses proies qu'
 | `prey` | Espèces qu'elle chasse (identifiants de fichiers). Après avoir tué une proie, elle les laisse tranquilles une minute. |
 | `pack_size` | En meute, nombre de bêtes qu'il lui faut, elle comprise (3 par défaut). |
 
+| `shot` | Tir à distance : `range` (portée), `damage`, `speed` (blocs par seconde, 0 : tout de suite), `radius` (explosion), `height` (d'où part le tir) et les effets `muzzle`, `projectile`, `impact`. Trop loin pour frapper, la bête s'arrête et tire. |
+| `burst` | Piège : la première cible à portée de `reach` le déclenche ; il retire `damage` à chaque ennemi dans `radius` blocs, l'immobilise `stun` secondes et joue l'effet `effect`, puis disparaît. |
+
 Le bestiaire ne décrit pas d'attaque : `tools/importer_bestiaire.py` garde celle de la fiche existante.
+
+## Collisions
+
+Les entités ne se traversent pas : chacune sort de ce qu'elle enfonce (une autre bête, un mur, un joueur), et le joueur sort des entités qu'il enfonce.
+
+```json
+"collision": {"shape": "box", "size": [2.62, 0.62], "height": 3.16, "resistance": 1}
+```
+
+| Champ | Rôle |
+|---|---|
+| `shape` | `circle` (disque, par défaut) ou `box` (rectangle tourné avec la bête). |
+| `size` | Demi-largeur et demi-longueur, en blocs (le disque a pour rayon la première). Sans : celles de `body`. |
+| `height` | Hauteur, en blocs (sans : celle de `body`). Ce qui passe au-dessus ne la touche pas. |
+| `resistance` | De 0 à 1 : la part de l'enfoncement qu'elle repousse à chaque instant, entière si elle ne bouge pas (`walk_speed` 0), moitié sinon. 0 : on la traverse (pièges) ; 1 : infranchissable (murs). Un joueur a 0,5. |
 
 ## Modèle
 

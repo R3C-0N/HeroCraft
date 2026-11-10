@@ -188,7 +188,9 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
         _ => None,
     });
     assert_eq!(species, "vache");
-    assert!(state.position.distance(feet) < 1e-3);
+    // À ses pieds, ou poussée d'un pas par le corps d'Alice
+    let block = BlockGeometry::new(herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 4242, ..Default::default() }).base_radius()).block_height as f32;
+    assert!(state.position.distance(feet) < block);
     pump(&mut server, &alice, |p| match p {
         ServerPacket::CreatureStates(states) => states.into_iter().find(|s| s.creature_id == sheep),
         _ => None,
@@ -361,6 +363,7 @@ fn la_legende_donne_sa_voie_et_une_legende_truquee_est_refusee() {
     });
 
     let (client, _, _) = connect(&addr, "Bran");
+    let (ami, _, _) = connect(&addr, "Ami");
     let mut appearance = atlas().defaut("gnome");
     appearance.nom = "Brandin".into();
     // Un gnome de deux mètres n'existe pas : le serveur ne change rien
@@ -374,6 +377,14 @@ fn la_legende_donne_sa_voie_et_une_legende_truquee_est_refusee() {
         _ => None,
     });
     assert_eq!(class, PlayerClass::Druid);
+    // Les autres joueurs reçoivent son allure pour dessiner son héros, ceux qui arrivent après aussi
+    let seen = |c: &Client| wait_for(c, |p| match p {
+        ServerPacket::PlayerAppearance { appearance, .. } => Some(appearance.nom),
+        _ => None,
+    });
+    assert_eq!(seen(&ami), "Brandin");
+    let (tard, _, _) = connect(&addr, "Tard");
+    assert_eq!(seen(&tard), "Brandin");
 
     running.store(false, Ordering::SeqCst);
     server_thread.join().unwrap();

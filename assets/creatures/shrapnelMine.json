@@ -49,5 +49,20 @@
         "cycle": 1.0
       }
     }
+  },
+  "collision": {
+    "resistance": 0
+  },
+  "attack": {
+    "mode": "solo",
+    "damage": 25,
+    "cooldown": 1.0,
+    "sight": 1.5,
+    "reach": 0.0,
+    "hunts_players": false,
+    "burst": {
+      "radius": 3.0,
+      "effect": "fireExplosion"
+    }
   }
 }

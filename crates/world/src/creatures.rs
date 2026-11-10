@@ -37,7 +37,7 @@ use std::sync::Arc;
 use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
-use herocraft_common::{blocks, items, tangent_frame, AttackMode, BlockId, ItemId, MOOD_HEARTS, MOOD_SATED, MOOD_TAMED, CreatureAction, CreatureShotEvent, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CORPSE_TIME, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
+use herocraft_common::{blocks, items, tangent_frame, AttackMode, BlockId, ItemId, MOOD_HEARTS, MOOD_SATED, MOOD_TAMED, CreatureAction, CreatureShotEvent, Collider, PLAYER_COLLIDER, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CORPSE_TIME, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -288,6 +288,8 @@ pub struct Creature {
     /// bouge ni ne frappe avant d'être en place
     appearing: f32,
     appear_total: f32,
+    /// Piège déclenché : secondes avant qu'il disparaisse
+    vanish: Option<f32>,
     /// Allure copiée (`CreatureState::copy`)
     pub copy: Option<u32>,
 }
@@ -842,6 +844,7 @@ impl CreatureWorld {
             summoner: None,
             appearing: 0.0,
             appear_total: 0.0,
+            vanish: None,
             copy: None,
         });
     }
@@ -1225,6 +1228,8 @@ impl CreatureWorld {
         }
         // Coups portés aux proies : proie, d'où, dégâts, rang du prédateur
         let mut bites = Vec::new();
+        // Ennemis immobilisés par un piège, et pour combien de temps
+        let mut stuns = Vec::new();
         let Self { creatures, registry, prey_table, rng, wanted, shots, flying, .. } = self;
         for (index, c) in creatures.iter_mut().enumerate() {
             c.stun = (c.stun - dt).max(0.0);
@@ -1237,6 +1242,12 @@ impl CreatureWorld {
             c.striking = (c.striking - dt).max(0.0);
             c.anger = (c.anger - dt).max(0.0);
             c.sated = (c.sated - dt).max(0.0);
+            // Un piège déclenché ne fait plus rien
+            if let Some(t) = c.vanish.as_mut() {
+                *t -= dt;
+                c.hunting = false;
+                continue;
+            }
             // Une entité invoquée ne fait rien avant d'être en place
             if c.appearing > 0.0 {
                 c.appearing = (c.appearing - dt).max(0.0);
@@ -1402,6 +1413,11 @@ impl CreatureWorld {
                         c.walking = false;
                     }
                 }
+                // Un piège se déclenche dès qu'on marche dessus, de quelque côté que ce soit
+                AttackMode::Solo | AttackMode::Pack if attack.burst.is_some() => {
+                    c.walking = false;
+                    strikes = in_reach;
+                }
                 AttackMode::Solo | AttackMode::Pack => {
                     if in_reach || shot.is_some() {
                         c.walking = false;
@@ -1425,6 +1441,29 @@ impl CreatureWorld {
                 c.attack_cooldown = attack.cooldown;
                 // Le temps d'un cycle de son animation d'attaque
                 c.striking = species.model.animations.get("attaque").map_or(STRIKE_ANIMATION, |a| a.cycle);
+                if let Some(burst) = &attack.burst {
+                    // Il explose sur tout ennemi proche, puis disparaît le temps de son animation
+                    let reach = burst.radius * block;
+                    for &(id, _, position, alive, _, tamed, ally) in &snapshot {
+                        let foe = if summoned { !tamed } else { ally };
+                        if alive && foe && id != c.id && position.distance(c.position) <= reach {
+                            blasts.push((id, c.position, attack.damage));
+                            if burst.stun > 0.0 {
+                                stuns.push((id, burst.stun));
+                            }
+                        }
+                    }
+                    if !summoned {
+                        for (player, feet) in players.iter().enumerate() {
+                            if feet.distance(c.position) <= reach {
+                                player_hits.push(PlayerHit { player, creature_id: c.id, species: c.species, damage: attack.damage });
+                            }
+                        }
+                    }
+                    shots.push(CreatureShotEvent { creature_id: c.id, species: c.species as u32, from: c.position, to: c.position });
+                    c.vanish = Some(c.striking.max(0.1));
+                    continue;
+                }
                 if let Some(shot) = shot {
                     let from = c.position + up * shot.height * block;
                     let aim = goal + up * TARGET_RADIUS * block;
@@ -1456,6 +1495,9 @@ impl CreatureWorld {
         }
         for (id, from, damage) in blasts {
             self.strike(id, from, damage, false);
+        }
+        for (id, duration) in stuns {
+            self.stun(id, duration);
         }
         for (prey, from, damage, hunter) in bites {
             // Un garde reste sur le qui-vive ; une bête repue laisse les proies un moment
@@ -1490,7 +1532,8 @@ impl CreatureWorld {
         // Une image très longue (fenêtre en arrière-plan) ne fait pas traverser les murs
         let dt = dt.min(MAX_STEP);
         // Une bête morte reste à terre le temps qu'on la dépèce
-        self.creatures.retain(|c| c.dead_for.is_none_or(|t| t < CORPSE_TIME));
+        // Un piège déclenché disparaît une fois son animation jouée
+        self.creatures.retain(|c| c.dead_for.is_none_or(|t| t < CORPSE_TIME) && c.vanish.is_none_or(|t| t > 0.0));
 
         let columns = std::mem::take(&mut self.columns);
         let mut query = TerrainQuery::with_columns(generator, edits, columns);
@@ -1511,6 +1554,7 @@ impl CreatureWorld {
                 walker.step(creature, species, food, nearest, herd, &mut self.rng, dt);
             }
         }
+        walker.collide(&mut self.creatures, &self.registry, players);
 
         let mut columns = query.into_columns();
         if columns.len() > MAX_CACHED_COLUMNS {
@@ -1895,6 +1939,67 @@ impl Walker<'_, '_> {
     }
 
     /// Rien de solide dans la colonne `column` entre les altitudes `altitude` et `altitude + height`
+    /// Les corps solides se repoussent : chaque bête qui bouge sort de ce qu'elle enfonce (une autre
+    /// bête, un mur, un joueur), de la part que lui donne la résistance de l'obstacle (entière contre
+    /// un obstacle fixe, moitié contre un autre qui bouge)
+    fn collide(&mut self, creatures: &mut [Creature], registry: &CreatureRegistry, players: &[Vec3]) {
+        let block = self.block();
+        // Pieds, cap, corps à l'échelle, fixe
+        let bodies: Vec<Option<(Vec3, f32, Collider, bool)>> = creatures
+            .iter()
+            .map(|c| {
+                let species = registry.get(c.species)?;
+                if !c.is_alive() || c.hidden || c.vanish.is_some() {
+                    return None;
+                }
+                let mut body = species.collider();
+                let scale = c.scale();
+                body.half_width *= scale;
+                body.half_length *= scale;
+                body.height *= scale;
+                (body.resistance > 0.0).then_some((c.position, c.yaw, body, species.walk_speed <= 0.0))
+            })
+            .collect();
+        for (i, c) in creatures.iter_mut().enumerate() {
+            let Some((feet, _, me, fixed)) = bodies[i] else { continue };
+            let Some(species) = registry.get(c.species) else { continue };
+            if fixed {
+                continue;
+            }
+            let mut shift = Vec3::ZERO;
+            for (j, other) in bodies.iter().enumerate() {
+                let Some((at, yaw, body, anchored)) = *other else { continue };
+                if j == i || at.distance(feet) > (body.half_width + body.half_length + me.radius()) * block {
+                    continue;
+                }
+                if let Some(out) = body.separation(at, yaw, block, feet, me.radius(), me.height) {
+                    shift += out * body.resistance * if anchored { 1.0 } else { 0.5 };
+                }
+            }
+            for &player in players {
+                if let Some(out) = PLAYER_COLLIDER.separation(player, 0.0, block, feet, me.radius(), me.height) {
+                    shift += out * PLAYER_COLLIDER.resistance * 0.5;
+                }
+            }
+            if shift != Vec3::ZERO {
+                self.nudge(c, species, shift);
+            }
+        }
+    }
+
+    /// Déplace la bête de `offset` dans le plan du sol, si son corps y passe
+    fn nudge(&mut self, c: &mut Creature, species: &CreatureSpecies, offset: Vec3) {
+        let altitude = self.altitude(c.position);
+        let target = (c.position + offset).normalize_or_zero() * c.position.length();
+        let free = match self.ground(target, altitude) {
+            Some((column, ground)) => ground <= altitude + 1e-3 && self.fits(column, altitude, species.body.height),
+            None => false,
+        };
+        if free {
+            c.position = target;
+        }
+    }
+
     fn fits(&mut self, column: BlockPos, altitude: f32, height: f32) -> bool {
         let (bottom, top) = ((altitude + 1e-3).floor() as i32, (altitude + height - 1e-3).floor() as i32);
         (bottom..=top).all(|y| {
@@ -3155,6 +3260,68 @@ mod tests {
         assert!(shots.iter().any(|s| s.creature_id == turret), "la tourelle n'a pas tiré");
         let hurt = world.creatures().iter().find(|c| c.id == monster).is_none_or(|c| c.health < health);
         assert!(hurt, "le monstre n'a pas été touché");
+    }
+
+    #[test]
+    fn a_jaw_trap_snaps_on_the_monster_that_steps_on_it_then_vanishes() {
+        let (generator, edits, mut world, feet, _) = beasts_and_player("rampant", 1, 0.0, 33);
+        let block = world.block_size();
+        let (east, _) = tangent_frame(feet.normalize());
+        let player = feet - east * 40.0 * block;
+        let monster = world.creatures()[0].id;
+        // Assez solide pour survivre aux mâchoires
+        world.creature_mut(monster).unwrap().health = 100.0;
+        let health = 100.0;
+        let trap = world.summon(world.registry().find("jawTrap").unwrap(), feet, 0.0, 9);
+        let mut shots = Vec::new();
+        let mut stunned = false;
+        for _ in 0..30 {
+            world.tick(0.05, &generator, &edits, &[player]);
+            shots.extend(world.take_shots());
+            stunned |= world.creatures().iter().any(|c| c.id == monster && c.stun > 0.0);
+        }
+        assert!(shots.iter().any(|s| s.creature_id == trap), "le piège ne s'est pas déclenché");
+        assert!(world.creatures().iter().all(|c| c.id != trap), "le piège déclenché est resté");
+        assert!(world.creatures().iter().find(|c| c.id == monster).is_none_or(|c| c.health < health), "le monstre n'a rien pris");
+        assert!(stunned, "le monstre n'a pas été immobilisé");
+    }
+
+    #[test]
+    fn a_stone_wall_stops_the_monster_but_creatures_walk_over_a_trap() {
+        // Le joueur à sept blocs à l'est, un mur de pierre en travers à mi-chemin
+        let (generator, edits, mut world, feet, player) = beasts_and_player("rampant", 1, 7.0, 34);
+        let block = world.block_size();
+        let (east, north) = tangent_frame(feet.normalize());
+        let monster = world.creatures()[0].id;
+        world.summon(world.registry().find("stoneWall").unwrap(), feet + east * 3.5 * block, std::f32::consts::FRAC_PI_2, 9);
+        let mut closest = f32::MIN;
+        for _ in 0..80 {
+            world.tick(0.05, &generator, &edits, &[player]);
+            let Some(c) = world.creatures().iter().find(|c| c.id == monster) else { break };
+            let d = (c.position - feet) / block;
+            if d.dot(north).abs() < 2.4 {
+                closest = closest.max(d.dot(east));
+            }
+        }
+        assert!(closest > 1.5, "le monstre ne s'est pas approché du mur ({closest})");
+        assert!(closest < 3.5 - 0.62 - 0.4, "le monstre a traversé le mur ({closest})");
+
+        // Un piège (résistance 0) ne gêne personne
+        let trap = world.registry().get(world.registry().find("jawTrap").unwrap()).unwrap().collider();
+        assert_eq!(trap.resistance, 0.0);
+    }
+
+    #[test]
+    fn two_beasts_on_the_same_spot_are_pushed_apart() {
+        let (generator, edits, mut world, feet, _) = beasts_and_player("vache", 2, 0.0, 35);
+        let block = world.block_size();
+        let (east, _) = tangent_frame(feet.normalize());
+        let player = feet - east * 60.0 * block;
+        for _ in 0..40 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        let [a, b] = [0, 1].map(|i| world.creatures()[i].position);
+        assert!(a.distance(b) / block > 0.5, "les deux vaches restent l'une dans l'autre ({})", a.distance(b) / block);
     }
 
     #[test]

@@ -201,6 +201,8 @@ fn main() {
     let mut creature_animator = creatures::CreatureAnimator::default();
     let mut villager_animator = villagers::VillagerAnimator::default();
     let mut hero_gait = hero_model::HeroGait::default();
+    // Démarche des héros des autres joueurs
+    let mut remote_gaits: std::collections::HashMap<u64, hero_model::HeroGait> = std::collections::HashMap::new();
     let mut hero_figure = hero_model::FigureCache::default();
     // Compétences : lancements, recharges, gestes du héros et frappes à montrer
     let mut skill_play = skill_play::SkillPlay::default();
@@ -617,6 +619,7 @@ fn main() {
                         let section = Instant::now();
                         if !ui_state.is_settings_open {
                             herocraft_common::prof_scope!("frame::camera_update");
+                            camera.obstacles = creatures::obstacles(&creature_views, &creature_registry);
                             camera.update(dt, &generator);
                             // Jauges du joueur, chute terminée : dommages (signalés au serveur en
                             // ligne), vue secouée et, si elle tue, écran de mort
@@ -876,10 +879,10 @@ fn main() {
                                     Some(client) => client.villager_card(id).cloned(),
                                     None => solo_creatures.villager_card(id).cloned(),
                                 };
-                                // Le leurre du joueur local copie son héros ; celui d'un autre, un inconnu
+                                // Un leurre copie le héros de son lanceur, le nôtre ou celui d'un autre joueur
                                 let me = net.as_ref().map_or(skill_play::SOLO_PLAYER, |c| c.player_id());
                                 let my_look = ui_state.legend.as_ref().map(|l| l.appearance.clone());
-                                let hero_of = |id: u64| (id == me).then(|| my_look.clone()).flatten();
+                                let hero_of = |id: u64| if id == me { my_look.clone() } else { net.as_ref().and_then(|c| c.remote_appearance(id)).cloned() };
                                 villagers::push_villagers(&mut frame, &creature_views, &creature_registry, card_of, &hero_of, &mut villager_animator, |a| state.villager_texture(a), block);
                                 let mut tags = net.as_ref().map(|c| c.name_tags(&camera, state.size.width as f32, state.size.height as f32)).unwrap_or_default();
                                 tags.extend(villagers::name_tags(&creature_views, card_of, looked_at, &camera, state.size.width as f32, state.size.height as f32));
@@ -918,6 +921,23 @@ fn main() {
                                     skill_models::push_graft(&mut frame, &graft.model, &legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, slot, block);
                                 }
                                 hero_anchors = hero_model::HeroAnchors::posed(&legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, block);
+                            }
+                            // Les héros des autres joueurs, avec le geste de leur compétence et leurs greffes
+                            if let Some(client) = net.as_ref() {
+                                let heroes = client.remote_heroes();
+                                remote_gaits.retain(|id, _| heroes.iter().any(|h| h.0 == *id));
+                                for (id, feet, yaw, appearance) in heroes {
+                                    let gait = remote_gaits.entry(id).or_default();
+                                    gait.update(feet, anim_dt, block);
+                                    let figure = villager_animator.hero_figure(appearance);
+                                    let pose = skill_play.pose_of(Some(id), gait.swing(), figure.units_per_block(appearance));
+                                    let slot = state.villager_texture(creature_render::SheetSource::Painted(appearance));
+                                    hero_model::push_figure(&mut frame, appearance, figure, feet, yaw, &pose, slot, block);
+                                    for graft in skill_play.grafts_of(Some(id)).iter().filter_map(|g| skill_models::graft(g)) {
+                                        let slot = state.villager_texture(creature_render::SheetSource::Fixed(&graft.id, &graft.texture));
+                                        skill_models::push_graft(&mut frame, &graft.model, appearance, figure, feet, yaw, &pose, slot, block);
+                                    }
+                                }
                             }
                             // À la première personne, le temps d'un geste : les bras et l'arme devant l'œil
                             if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::FirstPerson && skill_play.local_play().is_some()) {

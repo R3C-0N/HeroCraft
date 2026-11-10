@@ -54,5 +54,9 @@
       "projectile": "fireOrb",
       "impact": "fireExplosion"
     }
+  },
+  "collision": {
+    "shape": "box",
+    "resistance": 1
   }
 }

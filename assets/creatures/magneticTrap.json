@@ -49,5 +49,8 @@
         "cycle": 1.2
       }
     }
+  },
+  "collision": {
+    "resistance": 0
   }
 }

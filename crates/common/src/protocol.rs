@@ -160,6 +160,12 @@ pub enum ServerPacket {
         player_id: u64,
         name: String,
     },
+    /// Allure d'un joueur (sa légende vérifiée), pour dessiner son héros : à chaque baptême, et à
+    /// la connexion pour les joueurs déjà présents
+    PlayerAppearance {
+        player_id: u64,
+        appearance: Box<crate::hero::Appearance>,
+    },
     /// Un joueur a quitté la partie
     PlayerLeft {
         player_id: u64,

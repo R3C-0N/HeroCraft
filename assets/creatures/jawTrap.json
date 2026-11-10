@@ -52,5 +52,21 @@
         "cycle": 2
       }
     }
+  },
+  "collision": {
+    "resistance": 0
+  },
+  "attack": {
+    "mode": "solo",
+    "damage": 30,
+    "cooldown": 1.0,
+    "sight": 1.5,
+    "reach": 0.0,
+    "hunts_players": false,
+    "burst": {
+      "radius": 1.0,
+      "stun": 3,
+      "effect": "bloodSplash"
+    }
   }
 }

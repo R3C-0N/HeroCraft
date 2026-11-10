@@ -46,6 +46,11 @@ pub struct VillagerAnimator {
 }
 
 impl VillagerAnimator {
+    /// Le corps taillé pour l'allure d'un héros (celui d'un autre joueur), gardé tant qu'il sert
+    pub fn hero_figure(&mut self, appearance: &Appearance) -> &Figure {
+        self.figure(appearance)
+    }
+
     pub fn update(&mut self, views: &[CreatureView], registry: &CreatureRegistry, dt: f32, block: f32) {
         self.time = (self.time + dt) % 3600.0;
         let mut seen = Vec::new();

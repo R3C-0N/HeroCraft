@@ -25,6 +25,25 @@ use log::warn;
 use crate::planet_mesh::PlanetVertex;
 use crate::skinned_model::{skin_normal, skin_point, Animation, SkinnedModel, Texture};
 
+/// Corps solide d'une entité, qui repousse le joueur : pieds, cap, forme à l'échelle, fixe
+pub type Obstacle = (Vec3, f32, herocraft_common::Collider, bool);
+
+/// Les corps solides des entités vivantes (un piège, de résistance 0, n'en a pas)
+pub fn obstacles(views: &[CreatureView], registry: &CreatureRegistry) -> Vec<Obstacle> {
+    views
+        .iter()
+        .filter(|v| v.death <= 0.0)
+        .filter_map(|v| {
+            let species = registry.get(v.species?)?;
+            let mut body = species.collider();
+            body.half_width *= v.scale;
+            body.half_length *= v.scale;
+            body.height *= v.scale;
+            (body.resistance > 0.0).then_some((v.feet, v.yaw, body, species.walk_speed <= 0.0))
+        })
+        .collect()
+}
+
 /// Une créature à dessiner
 #[derive(Debug, Clone, Copy)]
 pub struct CreatureView {

@@ -33,5 +33,9 @@
         "cycle": 2
       }
     }
+  },
+  "collision": {
+    "shape": "box",
+    "resistance": 1
   }
 }

@@ -271,12 +271,16 @@ pub struct RemotePlayer {
     pub name: String,
     /// Pieds affichés, recalculés à chaque frame par `poll`
     pub position: Option<Vec3>,
+    /// Cap affiché, avec la position
+    pub yaw: f32,
+    /// Allure de son héros, une fois sa légende reçue par le serveur
+    pub appearance: Option<herocraft_common::hero::Appearance>,
     track: Track,
 }
 
 impl RemotePlayer {
     fn new(name: String) -> Self {
-        Self { name, position: None, track: Track::default() }
+        Self { name, position: None, yaw: 0.0, appearance: None, track: Track::default() }
     }
 }
 
@@ -494,7 +498,9 @@ impl NetClient {
         }
         let now = Instant::now();
         for player in self.players.values_mut() {
-            player.position = player.track.sample(now, INTERPOLATION_DELAY).map(|(p, _)| p);
+            if let Some((position, yaw)) = player.track.sample(now, INTERPOLATION_DELAY) {
+                (player.position, player.yaw) = (Some(position), yaw);
+            }
         }
         for creature in self.creatures.values_mut() {
             creature.position = creature.track.sample(now, CREATURE_INTERPOLATION_DELAY);
@@ -508,6 +514,11 @@ impl NetClient {
             ServerPacket::VoxelUpdate { block, block_id } => return Some(NetEvent::BlockChanged(block.into(), BlockId(block_id))),
             ServerPacket::PlayerJoined { player_id, name } if player_id != self.player_id => {
                 self.players.insert(player_id, RemotePlayer::new(name));
+            }
+            ServerPacket::PlayerAppearance { player_id, appearance } => {
+                if let Some(player) = self.players.get_mut(&player_id) {
+                    player.appearance = Some(*appearance);
+                }
             }
             ServerPacket::PlayerLeft { player_id } => {
                 self.players.remove(&player_id);
@@ -608,11 +619,27 @@ impl NetClient {
 
     pub fn remote_player_boxes(&self, base_radius: f32) -> Vec<[Vec3; 8]> {
         let block = BlockGeometry::new(base_radius as f64).block_height as f32;
+        // Un joueur dont on connaît l'allure est dessiné en héros, sans boîte
         self.players
             .values()
+            .filter(|p| p.appearance.is_none())
             .filter_map(|p| p.position)
             .take(MAX_REMOTE_PLAYERS)
             .map(|feet| player_box(feet, block))
+            .collect()
+    }
+
+    /// Allure du héros d'un autre joueur, si le serveur l'a envoyée
+    pub fn remote_appearance(&self, id: u64) -> Option<&herocraft_common::hero::Appearance> {
+        self.players.get(&id).and_then(|p| p.appearance.as_ref())
+    }
+
+    /// Héros des autres joueurs à dessiner : identifiant, pieds, cap, allure
+    pub fn remote_heroes(&self) -> Vec<(u64, Vec3, f32, &herocraft_common::hero::Appearance)> {
+        self.players
+            .iter()
+            .filter_map(|(&id, p)| Some((id, p.position?, p.yaw, p.appearance.as_ref()?)))
+            .take(MAX_REMOTE_PLAYERS)
             .collect()
     }
 

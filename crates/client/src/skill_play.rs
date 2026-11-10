@@ -86,7 +86,8 @@ pub struct SkillPlay {
     plays: Vec<Play>,
     cues: Vec<VisualCue>,
     /// Pièces greffées sur le héros local (`SkillDef::graft`), et jusqu'à quand
-    grafts: Vec<(String, Instant)>,
+    /// Pièces greffées : sur qui (`None` : le joueur local), laquelle, jusqu'à quand
+    grafts: Vec<(Option<u64>, String, Instant)>,
     /// Dernier refus, à montrer au joueur
     pub last_refusal: Option<(String, Instant)>,
 }
@@ -152,10 +153,10 @@ impl SkillPlay {
         self.plays.push(Play { player, skill: skill.to_string(), rank, started: now, aim, aimed, duration });
         let impact = catalog.impact_delay(cast);
         // Transformation partielle du Druide : la pièce reste tant que durent ses effets
-        if let Some(graft) = def.graft.as_ref().filter(|_| player.is_none()) {
+        if let Some(graft) = def.graft.as_ref() {
             let seconds = impact + effect_seconds(&cast.self_effects, rank).max(effect_seconds(&cast.effects, rank)).max(duration);
-            self.grafts.retain(|(g, _)| g != graft);
-            self.grafts.push((graft.clone(), now + std::time::Duration::from_secs_f32(seconds)));
+            self.grafts.retain(|(who, g, _)| !(*who == player && g == graft));
+            self.grafts.push((player, graft.clone(), now + std::time::Duration::from_secs_f32(seconds)));
         }
         for visual in def.visuals.iter().filter(|v| v.from == Moment::Start) {
             let hold = match visual.to {
@@ -200,7 +201,26 @@ impl SkillPlay {
     /// Des créatures tirent : la bouche du tir, le projectile qui file, l'explosion à l'arrivée
     pub fn on_shots(&mut self, shots: &[herocraft_common::CreatureShotEvent], registry: &herocraft_common::CreatureRegistry, block: f32) {
         for event in shots {
-            let Some(shot) = registry.get(event.species as usize).and_then(|s| s.attack.as_ref()).and_then(|a| a.shot.as_ref()) else { continue };
+            let attack = registry.get(event.species as usize).and_then(|s| s.attack.as_ref());
+            // Un piège qui explose
+            if let Some(burst) = attack.and_then(|a| a.burst.as_ref()) {
+                if let Some(effect) = &burst.effect {
+                    self.cues.push(VisualCue {
+                        effect: effect.clone(),
+                        anchor: Anchor::Area,
+                        caster: None,
+                        point: event.to,
+                        creature: None,
+                        aim: Vec3::ZERO,
+                        hold: None,
+                        area_blocks: burst.radius.max(1.0),
+                        travel: None,
+                        delay: 0.0,
+                    });
+                }
+                continue;
+            }
+            let Some(shot) = attack.and_then(|a| a.shot.as_ref()) else { continue };
             let flight = shot.flight_seconds(event.from, event.to, block);
             let base = VisualCue {
                 effect: String::new(),
@@ -292,15 +312,25 @@ impl SkillPlay {
     /// La pose du héros local : son geste en cours par-dessus la marche
     /// Pièces greffées sur le héros local en ce moment
     pub fn hero_grafts(&mut self) -> Vec<String> {
+        self.grafts_of(None)
+    }
+
+    /// Pièces greffées sur le héros du joueur `player` (`None` : le joueur local) en ce moment
+    pub fn grafts_of(&mut self, player: Option<u64>) -> Vec<String> {
         let now = Instant::now();
-        self.grafts.retain(|(_, until)| *until > now);
-        self.grafts.iter().map(|(g, _)| g.clone()).collect()
+        self.grafts.retain(|(_, _, until)| *until > now);
+        self.grafts.iter().filter(|(who, _, _)| *who == player).map(|(_, g, _)| g.clone()).collect()
     }
 
     pub fn hero_pose(&self, swing: f32, units_per_block: f32) -> FigurePose {
+        self.pose_of(None, swing, units_per_block)
+    }
+
+    /// La pose du héros du joueur `player` (`None` : le joueur local) : son geste en cours par-dessus la marche
+    pub fn pose_of(&self, player: Option<u64>, swing: f32, units_per_block: f32) -> FigurePose {
         let now = Instant::now();
         let mut pose = FigurePose { swing, ..FigurePose::default() };
-        let Some(play) = self.plays.iter().find(|p| p.player.is_none()) else { return pose };
+        let Some(play) = self.plays.iter().find(|p| p.player == player) else { return pose };
         let Some(gesture) = skills().get(&play.skill).and_then(|s| s.cast.as_ref()).and_then(|c| self.gestures.get(&c.animation)) else { return pose };
         if gesture.legs_locked {
             pose.swing = 0.0;

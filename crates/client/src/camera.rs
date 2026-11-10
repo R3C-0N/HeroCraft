@@ -57,6 +57,8 @@ pub struct OrbitCamera {
     pub player_pos: Vec3,
     /// Taille du héros, en mètres (en blocs) : ses yeux et le haut de sa tête en dépendent
     pub hero_height: f32,
+    /// Corps solides des entités proches, qui repoussent le joueur (mis à jour à chaque image)
+    pub obstacles: Vec<crate::creatures::Obstacle>,
     /// Azimut horizontal du regard (en radians sur le plan tangentiel local)
     pub player_yaw: f32,
     /// Inclinaison verticale du regard (tangage en radians, -85° à +85°)
@@ -162,6 +164,7 @@ impl Default for OrbitCamera {
             descend_held: false,
             crouch_blend: 0.0,
             hero_height: PLAYER_HEIGHT,
+            obstacles: Vec::new(),
 
             distance: 330.0,
             target_distance: 330.0,
@@ -773,6 +776,32 @@ impl OrbitCamera {
             }
         }
 
+        // 1 bis. Les entités solides repoussent le joueur, de la part de leur résistance (un mur, de
+        // résistance 1, ne se traverse pas)
+        if !self.is_dead {
+            let block = self.block_height();
+            let me = herocraft_common::PLAYER_COLLIDER;
+            let mut shift = Vec3::ZERO;
+            for &(at, yaw, body, fixed) in &self.obstacles {
+                if at.distance(self.player_pos) > (body.half_width + body.half_length + me.radius()) * block {
+                    continue;
+                }
+                if let Some(out) = body.separation(at, yaw, block, self.player_pos, me.radius(), self.hero_height) {
+                    shift += out * body.resistance * if fixed { 1.0 } else { 0.5 };
+                }
+            }
+            if shift != Vec3::ZERO {
+                let candidate = (self.player_pos + shift).normalize() * self.player_pos.length();
+                let free = match &self.collider {
+                    Some(collider) => !body_blocked(collider, generator, candidate, GROUND_TOLERANCE),
+                    None => true,
+                };
+                if free {
+                    self.player_pos = candidate;
+                }
+            }
+        }
+
         // 2. Gravité sphérique et hauteur du relief sous les pieds
         let new_up = self.player_pos.normalize();
         let ground_radius = match &self.collider {
@@ -1353,6 +1382,26 @@ mod tests {
         for _ in 0..60 {
             cam.update(0.016, gen);
         }
+    }
+
+    #[test]
+    fn a_summoned_wall_cannot_be_walked_through() {
+        let (mut cam, gen, _, _) = voxel_test_camera();
+        let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
+        let (_, forward, _, _) = cam.look_vectors();
+        let start = cam.player_pos;
+        let (east, north) = tangent_frame(start.normalize());
+        // Un mur de pierre à deux blocs devant, en travers du chemin
+        let wall = herocraft_common::Collider { shape: herocraft_common::CollisionShape::Box, half_width: 2.6, half_length: 0.6, height: 3.0, resistance: 1.0 };
+        let yaw = forward.dot(east).atan2(forward.dot(north));
+        cam.obstacles = vec![(start + forward * 2.0 * h, yaw, wall, true)];
+        walk(&mut cam, &gen, 1.5);
+        let ahead = (cam.player_pos - start).dot(forward) / h;
+        assert!(ahead > 0.8 && ahead < 2.0 - 0.6 - 0.3 + 0.05, "le joueur est passé à {ahead} blocs");
+        // Sans le mur, il passe
+        cam.obstacles.clear();
+        walk(&mut cam, &gen, 0.5);
+        assert!((cam.player_pos - start).dot(forward) / h > 2.0);
     }
 
     #[test]
