@@ -87,6 +87,9 @@ pub struct CreatureSpecies {
     /// résistance 0,5)
     #[serde(default)]
     pub collision: Option<CreatureCollision>,
+    /// Elle attire les ennemis proches (Piège Magnétique)
+    #[serde(default)]
+    pub magnet: Option<CreatureMagnet>,
 }
 
 /// Forme du corps solide d'une espèce, vue de dessus
@@ -312,6 +315,21 @@ pub struct CreatureBurst {
     /// Effet visuel de l'explosion (`assets/effects/`)
     #[serde(default)]
     pub effect: Option<String>,
+    /// Saignement des ennemis touchés : points de vie perdus chaque seconde, pendant
+    /// `bleed_seconds` secondes
+    #[serde(default)]
+    pub bleed: f32,
+    #[serde(default)]
+    pub bleed_seconds: f32,
+}
+
+/// Aimant (Piège Magnétique) : les ennemis à moins de `radius` blocs sont tirés vers lui
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureMagnet {
+    pub radius: f32,
+    /// Vitesse à laquelle il les tire, en blocs par seconde, au bord de son rayon (moins près de lui)
+    pub speed: f32,
 }
 
 /// Un tir à distance : un projectile part de la bête vers sa cible, et touche à son arrivée

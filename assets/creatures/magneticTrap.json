@@ -52,5 +52,9 @@
   },
   "collision": {
     "resistance": 0
+  },
+  "magnet": {
+    "radius": 4,
+    "speed": 6
   }
 }

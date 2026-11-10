@@ -54,6 +54,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 | `activity` | Le rythme de vie de l'espèce (voir ci-dessous, `diurnal` par défaut). |
 | `loot` | Ce que donne la bête dépecée, au format du champ `loot` des blocs (`assets/blocks/README.md`) : `[{"item": "viandeVache", "count": [1, 3]}, {"item": "bone", "chance": 0.5}]`. Une bête tuée reste couchée à terre 10 minutes ; un clic droit sur elle, couteau ou dague en main, la dépèce : elle disparaît et son butin tombe à côté. En ligne, le serveur tire le butin et l'envoie à celui qui l'a dépecée. |
 | `model` | Le modèle 3D (voir ci-dessous). |
+| `magnet` | Aimant (Piège Magnétique) : `radius` (blocs) et `speed` (blocs par seconde au bord du rayon) ; les ennemis à portée sont tirés vers lui. |
 | `collision` | Corps solide (voir plus bas). Sans ce champ : un disque de la demi-largeur du corps, de résistance 0,5. |
 
 Chaque entrée de `spawn` a trois champs :
@@ -98,7 +99,7 @@ Une bête dont la fiche a un champ `attack` chasse les joueurs et ses proies qu'
 | `pack_size` | En meute, nombre de bêtes qu'il lui faut, elle comprise (3 par défaut). |
 
 | `shot` | Tir à distance : `range` (portée), `damage`, `speed` (blocs par seconde, 0 : tout de suite), `radius` (explosion), `height` (d'où part le tir) et les effets `muzzle`, `projectile`, `impact`. Trop loin pour frapper, la bête s'arrête et tire. |
-| `burst` | Piège : la première cible à portée de `reach` le déclenche ; il retire `damage` à chaque ennemi dans `radius` blocs, l'immobilise `stun` secondes et joue l'effet `effect`, puis disparaît. |
+| `burst` | Piège : la première cible à portée de `reach` le déclenche ; il retire `damage` à chaque ennemi dans `radius` blocs, l'immobilise `stun` secondes, le fait saigner (`bleed` points par seconde pendant `bleed_seconds` secondes, sans recul) et joue l'effet `effect`, puis disparaît. |
 
 Le bestiaire ne décrit pas d'attaque : `tools/importer_bestiaire.py` garde celle de la fiche existante.
 

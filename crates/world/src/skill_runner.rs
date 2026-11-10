@@ -113,6 +113,9 @@ struct Summoned {
     id: u64,
     /// Secondes avant qu'elle disparaisse (`None` : jusqu'à sa destruction)
     left: Option<f32>,
+    /// Effets sur le lanceur à la fin de sa durée, et le rang de la compétence
+    on_end: Vec<EffectEntry>,
+    rank: u8,
 }
 
 /// Écart entre deux entités invoquées ensemble, en blocs
@@ -205,6 +208,7 @@ impl SkillRunner {
         self.buffs.retain(|b| b.left > 0.0);
         // Les invocations détruites sont oubliées ; celles dont la durée est passée disparaissent
         let alive: std::collections::HashSet<u64> = creatures.creatures().iter().filter(|c| c.is_alive()).map(|c| c.id).collect();
+        let mut ended = Vec::new();
         self.summoned.retain_mut(|s| {
             if !alive.contains(&s.id) {
                 creatures.dismiss(s.id);
@@ -214,11 +218,20 @@ impl SkillRunner {
                 *left -= dt;
                 if *left <= 0.0 {
                     creatures.dismiss(s.id);
+                    ended.push((s.caster, s.rank, std::mem::take(&mut s.on_end)));
                     return false;
                 }
             }
             true
         });
+        for (caster, rank, effects) in ended {
+            for entry in &effects {
+                self.apply_to_player(entry, caster, rank, caster, players);
+            }
+            if !effects.is_empty() {
+                out.changed.push(caster);
+            }
+        }
 
         for p in &mut self.pending {
             p.left -= dt;
@@ -308,7 +321,7 @@ impl SkillRunner {
                         Targets::Enemies => false,
                     };
                     if applies {
-                        self.apply_to_player(entry, p, id, players);
+                        self.apply_to_player(entry, p.caster, p.rank, id, players);
                         touched_players.push(id);
                         changed.push(id);
                     }
@@ -316,7 +329,7 @@ impl SkillRunner {
             }
         }
         for entry in &cast.self_effects {
-            self.apply_to_player(entry, p, p.caster, players);
+            self.apply_to_player(entry, p.caster, p.rank, p.caster, players);
             changed.push(p.caster);
         }
         let summoned = self.summon(def.summons(), p, feet, center, &area, creatures);
@@ -333,7 +346,7 @@ impl SkillRunner {
         let mut out = Vec::new();
         let block = creatures.block_size();
         for effect in summons {
-            let Effect::Summon { species, count, at, duration, limit, copies } = effect else { continue };
+            let Effect::Summon { species, count, at, duration, limit, copies, on_end } = effect else { continue };
             let Some(index) = creatures.registry().find(species) else { continue };
             let left = duration.as_ref().map(|d| d.at(p.rank));
             // Une par cadavre de la zone, à sa place et à son allure ; le cadavre disparaît
@@ -344,7 +357,7 @@ impl SkillRunner {
                     creatures.remove(corpse);
                     let id = creatures.summon(index, position, yaw, p.caster);
                     creatures.set_copy(id, kind as u32);
-                    self.summoned.push(Summoned { caster: p.caster, species: species.clone(), id, left });
+                    self.summoned.push(Summoned { caster: p.caster, species: species.clone(), id, left, on_end: on_end.clone(), rank: p.rank });
                     out.push(id);
                 }
                 continue;
@@ -366,7 +379,7 @@ impl SkillRunner {
                 if *copies == Some(Copies::Caster) {
                     creatures.set_copy(id, herocraft_common::COPY_SUMMONER);
                 }
-                self.summoned.push(Summoned { caster: p.caster, species: species.clone(), id, left });
+                self.summoned.push(Summoned { caster: p.caster, species: species.clone(), id, left, on_end: on_end.clone(), rank: p.rank });
                 out.push(id);
             }
             if let Some(limit) = limit {
@@ -403,8 +416,7 @@ impl SkillRunner {
         }
     }
 
-    fn apply_to_player(&mut self, entry: &EffectEntry, p: &Pending, id: u64, players: &mut dyn SkillPlayers) {
-        let rank = p.rank;
+    fn apply_to_player(&mut self, entry: &EffectEntry, caster: u64, rank: u8, id: u64, players: &mut dyn SkillPlayers) {
         match &entry.effect {
             Effect::Heal { amount } => {
                 if let Some(stats) = players.stats_mut(id) {
@@ -424,7 +436,7 @@ impl SkillRunner {
             Effect::OverTime { heal, damage, duration } => {
                 let per_second = heal.as_ref().map_or(0.0, |h| h.at(rank)) - damage.as_ref().map_or(0.0, |d| d.at(rank));
                 if per_second != 0.0 {
-                    self.over_time.push(OverTime { caster: p.caster, target: SkillTarget::Player(id), per_second, left: duration.at(rank), next: OVER_TIME_STEP });
+                    self.over_time.push(OverTime { caster, target: SkillTarget::Player(id), per_second, left: duration.at(rank), next: OVER_TIME_STEP });
                 }
             }
             // Pas de dégâts entre joueurs ; ralentir ou repousser un joueur demanderait son client
@@ -561,7 +573,14 @@ mod tests {
         assert!(creatures.creatures().iter().all(|c| c.id != near), "le cadavre est devenu l'ombre");
         let shade = creatures.creatures().iter().find(|c| c.id == summoned[0]).unwrap();
         assert_eq!(shade.copy, Some(cow as u32));
-        assert!(stats.shield > 0.0, "le nécromancien reçoit son bouclier");
+        assert_eq!(stats.shield, 0.0, "pas de bouclier avant l'implosion");
+        // Au bout de leur durée (8 s au rang 1), les ombres implosent en bouclier
+        let mut player = SoloPlayer { id: 5, feet, stats: &mut stats };
+        for _ in 0..40 {
+            runner.tick(0.2, &catalog, &mut creatures, &mut player);
+        }
+        assert!(creatures.creatures().iter().all(|c| c.id != summoned[0]), "l'ombre a implosé");
+        assert!(stats.shield > 0.0, "le nécromancien reçoit son bouclier à l'implosion");
 
         runner.cast(&catalog, 5, &mut stats, "shadowDecoy", Vec3::NEG_Z, None).unwrap();
         let mut player = SoloPlayer { id: 5, feet, stats: &mut stats };

@@ -290,6 +290,10 @@ pub struct Creature {
     appear_total: f32,
     /// Piège déclenché : secondes avant qu'il disparaisse
     vanish: Option<f32>,
+    /// Saignement : points de vie perdus par seconde, secondes restantes, temps avant la prochaine perte
+    bleed: f32,
+    bleed_left: f32,
+    bleed_next: f32,
     /// Allure copiée (`CreatureState::copy`)
     pub copy: Option<u32>,
 }
@@ -845,6 +849,9 @@ impl CreatureWorld {
             appearing: 0.0,
             appear_total: 0.0,
             vanish: None,
+            bleed: 0.0,
+            bleed_left: 0.0,
+            bleed_next: 0.0,
             copy: None,
         });
     }
@@ -1049,6 +1056,18 @@ impl CreatureWorld {
         }
     }
 
+    /// La créature `id` perd `damage` points de vie par saignement, sans reculer ni fuir
+    fn bleed_out(&mut self, id: u64, damage: f32) {
+        let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) else { return };
+        c.hurt = CREATURE_HURT_TIME;
+        c.health -= damage;
+        if c.health <= 0.0 {
+            c.dead_for = Some(0.0);
+            c.walking = false;
+            c.hunting = false;
+        }
+    }
+
     /// Repousse la créature `id` loin de `from` à `speed` blocs par seconde (négative : l'attire)
     pub fn shove(&mut self, id: u64, from: Vec3, speed: f32) {
         let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) else { return };
@@ -1226,12 +1245,43 @@ impl CreatureWorld {
                 }
             }
         }
+        // Les aimants (Piège Magnétique) tirent à eux les ennemis proches
+        let magnets: Vec<(u64, Vec3, f32, f32, bool)> = self
+            .creatures
+            .iter()
+            .filter(|c| c.is_alive() && c.appearing <= 0.0)
+            .filter_map(|c| self.registry.get(c.species)?.magnet.map(|m| (c.id, c.position, m.radius * block, m.speed, c.summoner.is_some())))
+            .collect();
+        for &(magnet, at, radius, speed, allied) in &magnets {
+            for c in self.creatures.iter_mut().filter(|c| c.is_alive() && c.id != magnet) {
+                let foe = if allied { !c.tamed } else { c.summoner.is_some() };
+                let to = at - c.position;
+                let up = c.position.normalize_or_zero();
+                let flat = to - up * to.dot(up);
+                let distance = flat.length();
+                if foe && distance <= radius && distance > 0.3 * block {
+                    c.push = flat / distance * speed * (distance / radius).clamp(0.3, 1.0);
+                }
+            }
+        }
         // Coups portés aux proies : proie, d'où, dégâts, rang du prédateur
         let mut bites = Vec::new();
+        // Pertes de sang de l'instant : qui, combien
+        let mut bleeding = Vec::new();
+        // Ennemis qu'un piège fait saigner : qui, par seconde, combien de temps
+        let mut cuts = Vec::new();
         // Ennemis immobilisés par un piège, et pour combien de temps
         let mut stuns = Vec::new();
         let Self { creatures, registry, prey_table, rng, wanted, shots, flying, .. } = self;
         for (index, c) in creatures.iter_mut().enumerate() {
+            if c.bleed_left > 0.0 && c.is_alive() {
+                c.bleed_left -= dt;
+                c.bleed_next -= dt;
+                if c.bleed_next <= 0.0 {
+                    c.bleed_next += 1.0;
+                    bleeding.push((c.id, c.bleed));
+                }
+            }
             c.stun = (c.stun - dt).max(0.0);
             c.slow_time = (c.slow_time - dt).max(0.0);
             if c.slow_time <= 0.0 {
@@ -1451,6 +1501,9 @@ impl CreatureWorld {
                             if burst.stun > 0.0 {
                                 stuns.push((id, burst.stun));
                             }
+                            if burst.bleed > 0.0 && burst.bleed_seconds > 0.0 {
+                                cuts.push((id, burst.bleed, burst.bleed_seconds));
+                            }
                         }
                     }
                     if !summoned {
@@ -1498,6 +1551,14 @@ impl CreatureWorld {
         }
         for (id, duration) in stuns {
             self.stun(id, duration);
+        }
+        for (id, per_second, seconds) in cuts {
+            if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
+                (c.bleed, c.bleed_left, c.bleed_next) = (per_second, seconds, 1.0);
+            }
+        }
+        for (id, damage) in bleeding {
+            self.bleed_out(id, damage);
         }
         for (prey, from, damage, hunter) in bites {
             // Un garde reste sur le qui-vive ; une bête repue laisse les proies un moment
@@ -1554,7 +1615,9 @@ impl CreatureWorld {
                 walker.step(creature, species, food, nearest, herd, &mut self.rng, dt);
             }
         }
-        walker.collide(&mut self.creatures, &self.registry, players);
+        if dt > 0.0 {
+            walker.collide(&mut self.creatures, &self.registry, players);
+        }
 
         let mut columns = query.into_columns();
         if columns.len() > MAX_CACHED_COLUMNS {
@@ -1957,13 +2020,14 @@ impl Walker<'_, '_> {
                 body.half_width *= scale;
                 body.half_length *= scale;
                 body.height *= scale;
-                (body.resistance > 0.0).then_some((c.position, c.yaw, body, species.walk_speed <= 0.0))
+                (body.resistance > 0.0).then_some((c.position, c.yaw, body, species.walk_speed <= 0.0 || c.sleeping))
             })
             .collect();
         for (i, c) in creatures.iter_mut().enumerate() {
             let Some((feet, _, me, fixed)) = bodies[i] else { continue };
             let Some(species) = registry.get(c.species) else { continue };
-            if fixed {
+            // Une bête endormie ne se laisse pas bousculer : on la contourne
+            if fixed || c.sleeping {
                 continue;
             }
             let mut shift = Vec3::ZERO;
@@ -2535,6 +2599,8 @@ mod tests {
         let generator = generator();
         let edits = TerrainEdits::new(None);
         let (_, feet) = grass_column(&generator, &edits);
+        // Le joueur assez loin pour qu'elles ne le remarquent pas, et ne le bousculent pas
+        let far = feet + tangent_frame(feet.normalize()).0 * 20.0 * BlockGeometry::new(generator.base_radius()).block_height as f32;
         let mut world = CreatureWorld::new(generator.base_radius(), 5, registry());
         world.populate = false;
         let cow = world.registry().find("vache").unwrap();
@@ -2544,7 +2610,7 @@ mod tests {
 
         let mut yaws = vec![0.2];
         for _ in 0..30 {
-            world.tick(0.05, &generator, &edits, &[feet]);
+            world.tick(0.05, &generator, &edits, &[far]);
             yaws.push(world.creatures()[0].yaw);
         }
         for pair in yaws.windows(2) {
@@ -2830,6 +2896,8 @@ mod tests {
         let generator = generator();
         let edits = TerrainEdits::new(None);
         let (_, feet) = grass_column(&generator, &edits);
+        // Le joueur assez loin pour qu'elles ne le remarquent pas, et ne le bousculent pas
+        let far = feet + tangent_frame(feet.normalize()).0 * 20.0 * BlockGeometry::new(generator.base_radius()).block_height as f32;
         let up = feet.normalize();
         let mut world = CreatureWorld::new(generator.base_radius(), 3, registry());
         let cow = world.registry().find("vache").unwrap();
@@ -2841,13 +2909,13 @@ mod tests {
         // Minuit : le soleil sous les pieds. La vache s'endort et ne bouge plus, le loup veille.
         world.set_sun_dir(-up);
         for _ in 0..400 {
-            world.tick(0.05, &generator, &edits, &[feet]);
+            world.tick(0.05, &generator, &edits, &[far]);
         }
         let (cow_sleeping, at) = get(&world, cow_id);
         assert!(cow_sleeping, "la vache ne dort pas la nuit");
         assert!(!get(&world, wolf_id).0, "le loup dort la nuit");
         for _ in 0..400 {
-            world.tick(0.05, &generator, &edits, &[feet]);
+            world.tick(0.05, &generator, &edits, &[far]);
         }
         assert!(get(&world, cow_id).1.distance(at) < 1e-3, "la vache bouge en dormant");
 
@@ -2858,7 +2926,7 @@ mod tests {
         // Midi : la vache est réveillée, le loup dort
         world.set_sun_dir(up);
         for _ in 0..600 {
-            world.tick(0.05, &generator, &edits, &[feet]);
+            world.tick(0.05, &generator, &edits, &[far]);
         }
         assert!(!get(&world, cow_id).0, "la vache dort en plein jour");
         assert!(get(&world, wolf_id).0, "le loup ne dort pas en plein jour");
@@ -2870,6 +2938,8 @@ mod tests {
         let generator = generator();
         let edits = TerrainEdits::new(None);
         let (_, feet) = grass_column(&generator, &edits);
+        // Le joueur assez loin pour qu'elles ne le remarquent pas, et ne le bousculent pas
+        let far = feet + tangent_frame(feet.normalize()).0 * 20.0 * BlockGeometry::new(generator.base_radius()).block_height as f32;
         let up = feet.normalize();
         let mut world = CreatureWorld::new(generator.base_radius(), 3, registry());
         let cow = world.spawn(world.registry().find("vache").unwrap(), feet);
@@ -2877,7 +2947,7 @@ mod tests {
         let sleeping = |world: &CreatureWorld, id| world.creatures().iter().find(|c| c.id == id).unwrap().is_sleeping();
         let run = |world: &mut CreatureWorld| {
             for _ in 0..600 {
-                world.tick(0.05, &generator, &edits, &[feet]);
+                world.tick(0.05, &generator, &edits, &[far]);
             }
         };
         // Midi, en plein orage : la vache se couche
@@ -3284,6 +3354,30 @@ mod tests {
         assert!(world.creatures().iter().all(|c| c.id != trap), "le piège déclenché est resté");
         assert!(world.creatures().iter().find(|c| c.id == monster).is_none_or(|c| c.health < health), "le monstre n'a rien pris");
         assert!(stunned, "le monstre n'a pas été immobilisé");
+        // Puis il saigne, sans reculer
+        let after = world.creatures().iter().find(|c| c.id == monster).unwrap().health;
+        for _ in 0..60 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        let bled = world.creatures().iter().find(|c| c.id == monster).unwrap().health;
+        assert!(bled <= after - 10.0, "le monstre n'a pas saigné ({after} -> {bled})");
+    }
+
+    #[test]
+    fn the_magnetic_trap_drags_beasts_to_its_center() {
+        // Une vache, qui ne s'approcherait pas d'elle-même (un monstre, lui, irait mordre le piège)
+        let (generator, edits, mut world, feet, _) = beasts_and_player("vache", 1, 0.0, 36);
+        let block = world.block_size();
+        let (east, _) = tangent_frame(feet.normalize());
+        let player = feet - east * 40.0 * block;
+        let monster = world.creatures()[0].id;
+        let trap_feet = feet + east * 3.0 * block;
+        world.summon(world.registry().find("magneticTrap").unwrap(), trap_feet, 0.0, 9);
+        for _ in 0..40 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        let distance = world.creatures().iter().find(|c| c.id == monster).unwrap().position.distance(trap_feet) / block;
+        assert!(distance < 1.5, "la vache est restée à {distance} blocs du piège");
     }
 
     #[test]

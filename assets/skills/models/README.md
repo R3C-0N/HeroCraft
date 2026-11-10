@@ -23,6 +23,8 @@ Une compétence les fait apparaître par l'effet `summon` de son bloc `cast` :
 | `at` | `self` : aux pieds du lanceur ; `aimed` : au centre de la zone (le point visé). |
 | `duration` | Secondes avant qu'elles disparaissent ; sans : jusqu'à leur destruction. |
 | `limit` | Nombre au plus en même temps pour un lanceur : les plus anciennes disparaissent. |
+| `copies` | `caster` : elles prennent l'allure du lanceur ; `corpse` : une par cadavre de la zone, à sa place. |
+| `on_end` | Effets sur le lanceur quand chacune disparaît au bout de sa durée : les ombres de la Légion du Néant implosent en bouclier. |
 
 Les entités invoquées sont des alliées du lanceur ; elles disparaissent quand il quitte la partie et ne sont jamais sauvegardées. Le Chevalier de la Mort et le Seigneur Liche sont des créatures humanoïdes (`humanoid: true`) du même identifiant que leur entrée de `humanoids.json` : le client les dessine avec le corps du héros, leur planche et leur arme greffée dans la main droite, et ils frappent les monstres qui approchent. Les invocations jouent leur animation `apparition` (le mur qui surgit, la tourelle qui tombe) avant d'agir ; une attaque avec un champ `shot` (portée, vitesse, rayon d'explosion, effets `muzzle`, `projectile`, `impact`) tire à distance au lieu de frapper au contact : tourelles, bastion, orbes du Seigneur Liche. Une espèce avec `taunt` (rayon en blocs) attire sur elle les monstres proches : Chevalier de la Mort, leurres. Les pièges (`burst`) explosent sur le premier ennemi qui marche dessus, puis disparaissent ; les murs, de résistance 1 (`collision`), ne se traversent pas. Les autres joueurs voient les héros, leurs gestes et leurs greffes.
 

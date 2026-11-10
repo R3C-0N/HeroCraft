@@ -58,7 +58,7 @@
   },
   "attack": {
     "mode": "solo",
-    "damage": 30,
+    "damage": 15,
     "cooldown": 1.0,
     "sight": 1.5,
     "reach": 0.0,
@@ -66,7 +66,9 @@
     "burst": {
       "radius": 1.0,
       "stun": 3,
-      "effect": "bloodSplash"
+      "effect": "bloodSplash",
+      "bleed": 5,
+      "bleed_seconds": 6
     }
   }
 }

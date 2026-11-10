@@ -231,6 +231,10 @@ pub enum Effect {
         /// cadavre de la zone (`corpse` : une par cadavre, à sa place, qui le remplace)
         #[serde(default)]
         copies: Option<Copies>,
+        /// Effets sur le lanceur quand chacune disparaît au bout de sa durée (les ombres de la
+        /// Légion du Néant implosent en bouclier)
+        #[serde(default)]
+        on_end: Vec<EffectEntry>,
     },
     /// La créature s'en prend au lanceur pendant `duration` secondes
     Taunt { duration: Ranked },
