@@ -344,7 +344,7 @@ impl SkillPlay {
         let on_me = shown.players.contains(&self.me);
         let now = Instant::now();
         for (entry, applies) in cast.self_effects.iter().map(|e| (e, mine)).chain(cast.effects.iter().map(|e| (e, on_me && e.to.unwrap_or(cast.targets) != herocraft_common::skills::Targets::Enemies))) {
-            if let (true, Effect::Buff { stat: herocraft_common::skills::BuffStat::Speed, value, duration }) = (applies, &entry.effect) {
+            if let (true, Effect::Buff { stat: herocraft_common::skills::BuffStat::Speed, value, duration, .. }) = (applies, &entry.effect) {
                 self.speed_buffs.push((value.at(shown.rank), now + std::time::Duration::from_secs_f32(duration.at(shown.rank).max(0.0))));
             }
         }
@@ -397,6 +397,11 @@ impl SkillPlay {
         self.plays.retain(|p| now.duration_since(p.started).as_secs_f32() < p.duration);
         self.ready_at.retain(|_, t| *t > now);
         std::mem::take(&mut self.cues)
+    }
+
+    /// Facteur des dégâts d'un coup d'arme du joueur solo sur la créature `id` (renforcements de dégâts)
+    pub fn solo_hit_factor(&self, id: u64, creatures: &herocraft_world::CreatureWorld) -> f32 {
+        self.runner.hit_factor(SOLO_PLAYER, id, creatures)
     }
 
     /// Facteur des dégâts qu'encaisse le joueur solo (renforcement de défense)
@@ -499,7 +504,8 @@ fn effect_seconds(effects: &[herocraft_common::skills::EffectEntry], rank: u8) -
             | Effect::Taunt { duration }
             | Effect::Invisible { duration }
             | Effect::Blind { duration }
-            | Effect::Mark { duration, .. } => duration.at(rank),
+            | Effect::Mark { duration, .. }
+            | Effect::Link { duration, .. } => duration.at(rank),
             _ => 0.0,
         })
         .fold(0.0, f32::max)

@@ -742,7 +742,8 @@ fn main() {
                             let striking = aimed.filter(|_| block_interaction.is_breaking_held()).filter(|&id| strike_lock == Some(id) || !humanoid(id));
                             if let Some(id) = striking {
                                 block_interaction.pause_mining();
-                                hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut ui_state.player.stats, &mut audio, &ui_state.audio_settings);
+                                let boost = skill_play.solo_hit_factor(id, &solo_creatures);
+                                hit_creature(id, boost, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut ui_state.player.stats, &mut audio, &ui_state.audio_settings);
                                 // Un habitant tué en solo : le chat l'annonce (en ligne, c'est le serveur)
                                 let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
                                 for murder in solo_creatures.take_murders() {
@@ -1919,9 +1920,10 @@ fn show_wound(hurt: f32, what: &str, camera: &mut OrbitCamera, ui_state: &mut Ui
 }
 
 /// Frappe la créature `id` (la simulation solo, ou le serveur en ligne, en tire dégâts, recul et
-/// fuite), sauf si le coup précédent est trop récent
+/// fuite), sauf si le coup précédent est trop récent. `boost` : facteur de ses renforcements de dégâts.
 fn hit_creature(
     id: u64,
+    boost: f32,
     cooldown: &mut f32,
     camera: &OrbitCamera,
     net: Option<&mut NetClient>,
@@ -1942,7 +1944,7 @@ fn hit_creature(
         Some(client) => client.send_hit_creature(id),
         None => {
             let factor = if critical { herocraft_world::CRITICAL_FACTOR } else { 1.0 };
-            solo.wound(id, camera.player_pos, 0, herocraft_common::PLAYER_HIT_DAMAGE * factor);
+            solo.wound(id, camera.player_pos, 0, herocraft_common::PLAYER_HIT_DAMAGE * factor * boost);
         }
     }
     // Coup sourd

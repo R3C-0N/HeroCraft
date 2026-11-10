@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 15;
+pub const PROTOCOL_VERSION: u32 = 16;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 

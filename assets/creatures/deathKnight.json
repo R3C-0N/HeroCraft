@@ -1,6 +1,7 @@
 {
   "name": "Chevalier de la Mort",
   "description": "Mort-vivant en armure lourde invoqué par le Nécromancien, la lame runique à la main. Il s'interpose et frappe les monstres qui approchent.",
+  "tags": ["shadow"],
   "body": {
     "half_width": 0.3,
     "half_length": 0.3,

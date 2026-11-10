@@ -1,6 +1,7 @@
 {
   "name": "Rampant aveugle",
   "description": "N’a pas d’yeux : il chasse au bruit et s’immobilise quand le silence revient.",
+  "tags": ["shadow"],
   "body": {"half_width": 0.458, "half_length": 0.733, "height": 1.0099},
   "walk_speed": 0.9,
   "min_group": 1,

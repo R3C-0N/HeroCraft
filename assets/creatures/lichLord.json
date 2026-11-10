@@ -1,6 +1,7 @@
 {
   "name": "Seigneur Liche",
   "description": "Entité supérieure invoquée par le Nécromancien, le bâton de liche à la main. Il frappe en mêlée les monstres qui approchent.",
+  "tags": ["shadow"],
   "body": {
     "half_width": 0.3,
     "half_length": 0.3,

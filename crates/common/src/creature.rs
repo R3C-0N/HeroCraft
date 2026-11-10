@@ -35,6 +35,9 @@ pub struct CreatureSpecies {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    /// Familles de l'espèce, que certaines compétences visent (`shadow` : créature de l'ombre)
+    #[serde(default)]
+    pub tags: Vec<String>,
     /// Volume du corps pour les déplacements
     pub body: CreatureBody,
     /// Vitesse de marche, en blocs par seconde

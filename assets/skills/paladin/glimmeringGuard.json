@@ -27,14 +27,10 @@
             45,
             55
           ],
-          "duration": 6
-        }
-      },
-      {
-        "buff": {
-          "stat": "regeneration",
-          "value": 0.3,
-          "duration": 6
+          "duration": 6,
+          "absorb_to": {
+            "mana": 0.5
+          }
         }
       }
     ]

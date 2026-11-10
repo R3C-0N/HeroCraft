@@ -34,11 +34,7 @@
         }
       },
       {
-        "buff": {
-          "stat": "regeneration",
-          "value": 0.3,
-          "duration": 5
-        }
+        "cleanse": {}
       }
     ]
   },

@@ -28,7 +28,15 @@
             0.5,
             0.6
           ],
-          "duration": 12
+          "duration": 12,
+          "against": {
+            "tag": "shadow",
+            "value": [
+              0.4,
+              0.5,
+              0.6
+            ]
+          }
         }
       }
     ]

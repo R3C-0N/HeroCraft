@@ -120,6 +120,19 @@ struct Buff {
     stat: BuffStat,
     value: f32,
     left: f32,
+    /// Dégâts en plus contre les créatures qui portent cette étiquette
+    against: Option<(String, f32)>,
+}
+
+/// Un allié lié à un lanceur, qui encaisse une part de ses dégâts
+#[derive(Debug, Clone)]
+struct Link {
+    caster: u64,
+    ally: u64,
+    share: f32,
+    left: f32,
+    /// Coups que le lien encaisse encore avant de se défaire (`None` : jusqu'à sa durée)
+    hits: Option<u32>,
 }
 
 /// Une entité invoquée, suivie jusqu'à sa disparition
@@ -137,6 +150,10 @@ struct Summoned {
 
 /// Points de vie rendus chaque seconde par un renforcement de régénération de 1 (100 %)
 const REGENERATION_HP: f32 = 5.0;
+/// Points de mana et d'endurance rendus chaque seconde par un renforcement de récupération de 1
+/// (100 % de la récupération au repos)
+const REGENERATION_MANA: f32 = 2.0;
+const REGENERATION_STAMINA: f32 = 10.0;
 
 /// Écart entre deux entités invoquées ensemble, en blocs
 const SUMMON_SPACING: f32 = 1.5;
@@ -159,8 +176,8 @@ pub struct SkillRunner {
     luck: u64,
     /// Les deux derniers sorts élémentaires de chaque joueur, que la Fusion mêle
     recent: HashMap<u64, Vec<String>>,
-    /// Alliés liés à un lanceur (Marque du Martyr) : lanceur, allié, part des dégâts, secondes restantes
-    links: Vec<(u64, u64, f32, f32)>,
+    /// Alliés liés à un lanceur (Marque du Martyr, Intervention Vertueuse)
+    links: Vec<Link>,
 }
 
 /// Facteur des dégâts d'un coup critique
@@ -284,12 +301,32 @@ impl SkillRunner {
     }
 
     /// Le joueur `player` subit `damage` points : la part qu'il garde, et celle qu'encaisse le
-    /// lanceur qui l'a lié (Marque du Martyr), s'il en est un
-    pub fn share_damage(&self, player: u64, damage: f32) -> (f32, Option<(u64, f32)>) {
-        match self.links.iter().find(|l| l.1 == player) {
-            Some(&(caster, _, share, _)) => (damage * (1.0 - share), Some((caster, damage * share))),
-            None => (damage, None),
+    /// lanceur qui l'a lié (Marque du Martyr), s'il en est un. Un lien compté en coups (Intervention
+    /// Vertueuse) s'use, et se défait à son dernier.
+    pub fn share_damage(&mut self, player: u64, damage: f32) -> (f32, Option<(u64, f32)>) {
+        let Some(i) = self.links.iter().position(|l| l.ally == player) else { return (damage, None) };
+        let link = &mut self.links[i];
+        let (caster, share) = (link.caster, link.share);
+        if let Some(hits) = &mut link.hits {
+            *hits = hits.saturating_sub(1);
+            if *hits == 0 {
+                self.links.remove(i);
+            }
         }
+        (damage * (1.0 - share), Some((caster, damage * share)))
+    }
+
+    /// Dégâts en plus du joueur `player` contre la créature `id`, selon la famille de son espèce
+    /// (Arme de l'Aube contre les créatures de l'ombre)
+    fn against(&self, player: u64, id: u64, creatures: &CreatureWorld) -> f32 {
+        let Some(species) = creatures.creatures().iter().find(|c| c.id == id).and_then(|c| creatures.registry().get(c.species)) else { return 0.0 };
+        self.buffs.iter().filter(|b| b.player == player && b.stat == BuffStat::Damage).filter_map(|b| b.against.as_ref()).filter(|(tag, _)| species.tags.contains(tag)).map(|(_, value)| value).sum()
+    }
+
+    /// Facteur des dégâts d'un coup d'arme du joueur `player` sur la créature `id` : ses renforcements
+    /// de dégâts, famille de la créature comprise
+    pub fn hit_factor(&self, player: u64, id: u64, creatures: &CreatureWorld) -> f32 {
+        1.0 + self.buff(player, BuffStat::Damage) + self.against(player, id, creatures)
     }
 
     /// La forme (compétence du Druide) que le joueur `player` a prise en ce moment
@@ -329,7 +366,7 @@ impl SkillRunner {
         self.forms.retain(|f| f.0 != player);
         self.marks.retain(|m| m.0 != player);
         self.recent.remove(&player);
-        self.links.retain(|l| l.0 != player && l.1 != player);
+        self.links.retain(|l| l.caster != player && l.ally != player);
         self.cooldowns.retain(|(p, _), _| *p != player);
     }
 
@@ -349,15 +386,20 @@ impl SkillRunner {
         }
         self.marks.retain(|m| m.3 > 0.0);
         for link in &mut self.links {
-            link.3 -= dt;
+            link.left -= dt;
         }
-        self.links.retain(|l| l.3 > 0.0);
+        self.links.retain(|l| l.left > 0.0);
         for buff in &mut self.buffs {
             buff.left -= dt;
             // Régénération : des points de vie rendus chaque instant
-            if buff.stat == BuffStat::Regeneration && buff.value > 0.0 {
+            let regenerates = matches!(buff.stat, BuffStat::Regeneration | BuffStat::ManaRegen | BuffStat::StaminaRegen);
+            if regenerates && buff.value > 0.0 {
                 if let Some(stats) = players.stats_mut(buff.player) {
-                    stats.hp = (stats.hp + buff.value * REGENERATION_HP * dt).min(stats.max_hp);
+                    match buff.stat {
+                        BuffStat::Regeneration => stats.hp = (stats.hp + buff.value * REGENERATION_HP * dt).min(stats.max_hp),
+                        BuffStat::ManaRegen => stats.mana = (stats.mana + buff.value * REGENERATION_MANA * dt).min(stats.max_mana),
+                        _ => stats.stamina = (stats.stamina + buff.value * REGENERATION_STAMINA * dt).min(stats.max_stamina),
+                    }
                     out.changed.push(buff.player);
                 }
             }
@@ -593,6 +635,7 @@ impl SkillRunner {
 
     fn apply_to_creature(&mut self, entry: &EffectEntry, p: &Pending, id: u64, feet: Vec3, damage_factor: f32, creatures: &mut CreatureWorld) {
         let rank = p.rank;
+        let damage_factor = damage_factor + self.against(p.caster, id, creatures) * p.power;
         match &entry.effect {
             Effect::Damage { power } => {
                 let chance = if p.crit { 1.0 } else { self.critical_chance(p.caster, id) };
@@ -624,7 +667,7 @@ impl SkillRunner {
                 }
             }
             // Sans effet sur une bête : soins, boucliers, renforcements, invisibilité, résurrection, lien
-            Effect::Heal { .. } | Effect::Shield { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } => {}
+            Effect::Heal { .. } | Effect::Shield { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } => {}
         }
     }
 
@@ -636,22 +679,37 @@ impl SkillRunner {
                     stats.hp = (stats.hp + amount.at(rank) * power).min(stats.max_hp);
                 }
             }
-            Effect::Link { share, duration } => {
+            Effect::Link { share, duration, hits } => {
                 // On ne se lie pas à soi-même
                 if id != caster {
-                    self.links.retain(|l| l.1 != id);
-                    self.links.push((caster, id, share.at(rank).clamp(0.0, 1.0), duration.at(rank)));
+                    self.links.retain(|l| l.ally != id);
+                    let hits = hits.as_ref().map(|h| h.at(rank).round().max(1.0) as u32);
+                    self.links.push(Link { caster, ally: id, share: share.at(rank).clamp(0.0, 1.0), left: duration.at(rank), hits });
                 }
             }
-            Effect::Shield { amount, duration } => {
+            Effect::Shield { amount, duration, absorb_to } => {
                 if let Some(stats) = players.stats_mut(id) {
                     stats.shield = stats.shield.max(amount.at(rank) * power);
                     stats.shield_time = stats.shield_time.max(duration.at(rank));
+                    stats.shield_mana = absorb_to.as_ref().map_or(0.0, |a| a.mana.at(rank).max(0.0));
                 }
             }
-            Effect::Buff { stat, value, duration } => {
+            Effect::Buff { stat, value, duration, against } => {
                 self.buffs.retain(|b| !(b.player == id && b.stat == *stat));
-                self.buffs.push(Buff { player: id, stat: *stat, value: value.at(rank), left: duration.at(rank) });
+                let against = against.as_ref().map(|a| (a.tag.clone(), a.value.at(rank)));
+                self.buffs.push(Buff { player: id, stat: *stat, value: value.at(rank), left: duration.at(rank), against });
+            }
+            Effect::Cleanse {} => {
+                if let Some(stats) = players.stats_mut(id) {
+                    stats.cleanse();
+                }
+                self.over_time.retain(|o| !(o.target == SkillTarget::Player(id) && o.per_second < 0.0));
+            }
+            Effect::Restore { mana, stamina } => {
+                if let Some(stats) = players.stats_mut(id) {
+                    stats.mana = (stats.mana + mana.at(rank) * power).min(stats.max_mana);
+                    stats.stamina = (stats.stamina + stamina.at(rank) * power).min(stats.max_stamina);
+                }
             }
             Effect::OverTime { heal, damage, duration, .. } => {
                 let per_second = heal.as_ref().map_or(0.0, |h| h.at(rank) * power) - damage.as_ref().map_or(0.0, |d| d.at(rank));
@@ -888,6 +946,82 @@ mod tests {
 
     fn health(w: &CreatureWorld, id: u64) -> f32 {
         w.creatures().iter().find(|c| c.id == id).map(|c| c.health).unwrap()
+    }
+
+    #[test]
+    fn purification_heals_and_removes_slow_stun_and_damage_over_time() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        stats.skills.insert("purification".into(), 1);
+        stats.hp = 50.0;
+        let mut runner = SkillRunner::new();
+        runner.cast(&catalog, 1, &mut stats, "purification", Vec3::NEG_Z, None).unwrap();
+        // Ralenti, étourdi et empoisonné après le lancement, avant la frappe
+        stats.apply_slow(0.5, 20.0);
+        stats.apply_stun(20.0);
+        runner.over_time.push(OverTime { caster: 9, target: SkillTarget::Player(1), per_second: -4.0, left: 20.0, next: OVER_TIME_STEP, moving: 1.0, last: None });
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        until_impact(&mut runner, &catalog, &mut creatures, &mut player);
+        assert!(stats.hp > 50.0, "la Purification soigne");
+        assert!(!stats.is_stunned() && stats.status_speed() == 1.0, "ralenti et étourdissement retirés");
+        assert!(runner.over_time.is_empty(), "le poison est retiré");
+    }
+
+    #[test]
+    fn virtuous_intervention_takes_the_next_hit_whole_then_unlinks() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut paladin = CharacterStats::new(PlayerClass::WarPriest);
+        paladin.skills.insert("virtuousIntervention".into(), 1);
+        paladin.stamina = 100.0;
+        let mut ally = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        runner.cast(&catalog, 1, &mut paladin, "virtuousIntervention", Vec3::NEG_Z, None).unwrap();
+        let mut pair = Pair { feet, a: (1, &mut paladin), b: (2, &mut ally) };
+        until_impact(&mut runner, &catalog, &mut creatures, &mut pair);
+        assert_eq!(runner.share_damage(2, 20.0), (0.0, Some((1, 20.0))), "le paladin encaisse le coup en entier");
+        assert_eq!(runner.share_damage(2, 20.0), (20.0, None), "le lien se défait après un coup");
+    }
+
+    #[test]
+    fn glimmering_guard_turns_absorbed_damage_into_mana() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        stats.skills.insert("glimmeringGuard".into(), 1);
+        stats.stamina = 100.0;
+        let mut runner = SkillRunner::new();
+        runner.cast(&catalog, 1, &mut stats, "glimmeringGuard", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        until_impact(&mut runner, &catalog, &mut creatures, &mut player);
+        stats.mana = 10.0;
+        let hp = stats.hp;
+        stats.take_damage(20.0);
+        assert_eq!((stats.hp, stats.mana), (hp, 20.0), "la moitié des dégâts absorbés revient en mana");
+        // Le bouclier fini, plus de mana rendu
+        stats.regenerate(10.0, false);
+        assert_eq!(stats.shield_mana, 0.0);
+    }
+
+    #[test]
+    fn dawn_weapon_hits_shadow_creatures_harder() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let cow = creatures.creatures()[0].id;
+        let rampant = creatures.registry().find("rampant").unwrap();
+        let block = creatures.block_size();
+        creatures.spawn(rampant, feet + Vec3::new(2.0 * block, 0.0, 0.0));
+        let shadow = creatures.creatures().iter().find(|c| c.species == rampant).unwrap().id;
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        stats.skills.insert("dawnWeapon".into(), 1);
+        let mut runner = SkillRunner::new();
+        assert_eq!(runner.hit_factor(1, shadow, &creatures), 1.0);
+        runner.cast(&catalog, 1, &mut stats, "dawnWeapon", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        until_impact(&mut runner, &catalog, &mut creatures, &mut player);
+        assert!((runner.hit_factor(1, cow, &creatures) - 1.4).abs() < 1e-5, "bonus de dégâts ordinaire");
+        assert!((runner.hit_factor(1, shadow, &creatures) - 1.8).abs() < 1e-5, "doublé contre une créature de l'ombre");
     }
 
     #[test]

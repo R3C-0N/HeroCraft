@@ -726,7 +726,7 @@ impl Server {
                     m.stats.revive();
                     m.stats.fallen = true;
                 }
-                m.connection.send(&ServerPacket::PlayerHurt { damage: part, cause: "Marque du Martyr".to_string() });
+                m.connection.send(&ServerPacket::PlayerHurt { damage: part, cause: "Un coup encaissé pour un allié".to_string() });
                 m.connection.send(&ServerPacket::StatsUpdate(m.stats.clone()));
             }
         }
@@ -796,6 +796,7 @@ impl Server {
                 player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
                 damage *= herocraft_world::CRITICAL_FACTOR;
             }
+            damage *= self.skill_runner.hit_factor(id, creature_id, &self.creatures);
             self.creatures.wound(creature_id, feet, id, damage);
             let name = self.players.get(&id).map(|p| p.name.clone()).unwrap_or_default();
             for murder in self.creatures.take_murders() {

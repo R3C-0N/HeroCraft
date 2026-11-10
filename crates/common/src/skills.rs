@@ -200,9 +200,23 @@ pub enum Effect {
     /// Attirée vers le lanceur
     Pull { strength: Ranked },
     /// Points de dégâts absorbés pendant `duration` secondes
-    Shield { amount: Ranked, duration: Ranked },
+    Shield {
+        amount: Ranked,
+        duration: Ranked,
+        /// Ce que le bouclier rend à son porteur à mesure qu'il encaisse (`{ "mana": 0.5 }` : la
+        /// moitié des dégâts absorbés, en mana)
+        #[serde(default)]
+        absorb_to: Option<Absorb>,
+    },
     /// Statistique augmentée de `value` (0,3 : +30 %) pendant `duration` secondes
-    Buff { stat: BuffStat, value: Ranked, duration: Ranked },
+    Buff {
+        stat: BuffStat,
+        value: Ranked,
+        duration: Ranked,
+        /// Dégâts en plus contre une famille de créatures (`tags` de l'espèce)
+        #[serde(default)]
+        against: Option<Against>,
+    },
     /// Dégâts (`damage`) ou soins (`heal`) par seconde pendant `duration` secondes
     OverTime {
         #[serde(default)]
@@ -250,10 +264,39 @@ pub enum Effect {
     /// toujours) pendant `duration` secondes
     Mark { chance: Ranked, duration: Ranked },
     /// Lie l'allié au lanceur pendant `duration` secondes : `share` des dégâts qu'il subit (0,4 : 40 %)
-    /// sont encaissés par le lanceur à sa place
-    Link { share: Ranked, duration: Ranked },
+    /// sont encaissés par le lanceur à sa place. Avec `hits`, le lien se défait après tant de coups.
+    Link {
+        share: Ranked,
+        duration: Ranked,
+        #[serde(default)]
+        hits: Option<Ranked>,
+    },
+    /// Retire au joueur son ralenti, son étourdissement et ses dégâts sur la durée
+    Cleanse {},
+    /// Points de mana et d'endurance rendus
+    Restore {
+        #[serde(default)]
+        mana: Ranked,
+        #[serde(default)]
+        stamina: Ranked,
+    },
     /// Les alliés tombés dans la zone se relèvent sur place avec `health` de leur vie (0,5 : la moitié)
     Revive { health: Ranked },
+}
+
+/// Part des dégâts absorbés par un bouclier qu'il rend en mana (`Effect::Shield::absorb_to`)
+#[derive(Debug, Clone, Deserialize)]
+pub struct Absorb {
+    pub mana: Ranked,
+}
+
+/// Bonus de dégâts contre les créatures d'une famille (`Effect::Buff::against`)
+#[derive(Debug, Clone, Deserialize)]
+pub struct Against {
+    /// Étiquette de l'espèce (`tags` dans sa fiche) : `shadow` pour les créatures de l'ombre
+    pub tag: String,
+    /// Dégâts en plus contre elles (0,5 : +50 %), ajoutés à `value`
+    pub value: Ranked,
 }
 
 /// L'allure que prend une invocation (`Effect::Summon::copies`)
@@ -280,6 +323,10 @@ pub enum BuffStat {
     Critical,
     /// Portée des compétences : distance de visée, longueur des lignes et des secteurs (0,3 : +30 %)
     Range,
+    /// Récupération du mana (0,3 : +30 % de la récupération au repos)
+    ManaRegen,
+    /// Récupération de l'endurance
+    StaminaRegen,
 }
 
 /// Un effet, et à qui il s'applique s'il ne vise pas les cibles de la compétence (`to`)

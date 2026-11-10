@@ -28,13 +28,10 @@
     "targets": "allies",
     "effects": [
       {
-        "shield": {
-          "amount": [
-            30,
-            40,
-            50
-          ],
-          "duration": 4
+        "link": {
+          "share": 1,
+          "duration": 4,
+          "hits": 1
         }
       }
     ],

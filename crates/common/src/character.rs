@@ -136,6 +136,9 @@ pub struct CharacterStats {
     pub shield: f32,
     #[serde(default)]
     pub shield_time: f32,
+    /// Part des dégâts absorbés par le bouclier qu'il rend en mana (0 : rien)
+    #[serde(default)]
+    pub shield_mana: f32,
     /// Ralenti : part de la vitesse perdue (0 à 1), et pour combien de secondes encore
     #[serde(default)]
     pub slow: f32,
@@ -174,6 +177,7 @@ impl CharacterStats {
             skills: std::collections::BTreeMap::new(),
             shield: 0.0,
             shield_time: 0.0,
+            shield_mana: 0.0,
             slow: 0.0,
             slow_time: 0.0,
             stun_time: 0.0,
@@ -255,6 +259,7 @@ impl CharacterStats {
         // Le bouclier d'une compétence encaisse d'abord
         let absorbed = amount.min(self.shield).max(0.0);
         self.shield -= absorbed;
+        self.mana = (self.mana + absorbed * self.shield_mana).min(self.max_mana);
         let amount = amount - absorbed;
         self.hp = (self.hp - amount).max(0.0);
         self.hp == 0.0 // True si mort
@@ -267,6 +272,7 @@ impl CharacterStats {
         self.shield_time = (self.shield_time - dt).max(0.0);
         if self.shield_time <= 0.0 {
             self.shield = 0.0;
+            self.shield_mana = 0.0;
         }
         self.tick_status(dt);
         let drain = SATIETY_DRAIN + if sprinting { SPRINT_SATIETY_COST } else { 0.0 };
@@ -308,6 +314,13 @@ impl CharacterStats {
     pub fn apply_slow(&mut self, strength: f32, seconds: f32) {
         self.slow = self.slow.max(strength.clamp(0.0, 1.0));
         self.slow_time = self.slow_time.max(seconds);
+    }
+
+    /// Retire le ralenti et l'étourdissement (Purification)
+    pub fn cleanse(&mut self) {
+        self.slow = 0.0;
+        self.slow_time = 0.0;
+        self.stun_time = 0.0;
     }
 
     pub fn apply_stun(&mut self, seconds: f32) {
