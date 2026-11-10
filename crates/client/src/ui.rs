@@ -616,6 +616,8 @@ pub struct UiState {
     pub skill_icons: crate::skill_bar::SkillIcons,
     /// Recharge restante et totale de chaque case, mise à jour par le jeu à chaque image
     pub skill_cooldowns: [(f32, f32); crate::skill_bar::SKILL_SLOTS],
+    /// Ce que montre la case de la Fusion : l'icône du mélange qu'elle lancerait, et si elle est verrouillée
+    pub fusion_face: Option<(String, bool)>,
     /// Dernier refus d'une compétence (pas assez de mana, pas rechargée…), montré au-dessus de la barre
     pub skill_notice: Option<(String, std::time::Instant)>,
     /// Demandes faites sur l'écran des compétences depuis la dernière image, que le jeu applique
@@ -686,6 +688,7 @@ impl UiState {
             skill_bar: crate::skill_bar::SkillBar::default(),
             skill_icons: crate::skill_bar::SkillIcons::default(),
             skill_cooldowns: [(0.0, 0.0); crate::skill_bar::SKILL_SLOTS],
+            fusion_face: None,
             skill_notice: None,
             skill_screen: SkillScreen::default(),
             skill_requests: SkillScreenRequests::default(),
@@ -1269,9 +1272,15 @@ impl UiState {
                                 paint_slot(ui.painter(), &self.icons, rect, None, false, false);
                                 if let Some(id) = self.skill_bar.get(slot) {
                                     let (left, total) = self.skill_cooldowns[slot];
-                                    let blocked = catalog.cast_check(&self.player.stats, id, 0.0).is_some();
+                                    let mut blocked = catalog.cast_check(&self.player.stats, id, 0.0).is_some();
+                                    // La Fusion montre le mélange qu'elle lancerait, grisé s'il n'est pas appris
+                                    let mut face = id;
+                                    if let Some((shown, locked)) = self.fusion_face.as_ref().filter(|_| catalog.get(id).is_some_and(|d| d.fusion.is_some())) {
+                                        face = shown.as_str();
+                                        blocked = *locked;
+                                    }
                                     let icon = rect.shrink(4.0_f32);
-                                    self.skill_icons.paint(ui.painter(), icon, id, blocked);
+                                    self.skill_icons.paint(ui.painter(), icon, face, blocked);
                                     if left > 0.0 && total > 0.0 {
                                         // Le voile descend à mesure que la recharge passe
                                         let part = (left / total).clamp(0.0, 1.0);

@@ -804,7 +804,7 @@ fn main() {
                                         state.simulated_time = time as f32;
                                         client_weather.model.forced = forced;
                                     }
-                                    NetEvent::SkillCast { player_id, skill, rank, aim, aimed } => skill_play.on_cast(player_id, client.player_id(), &skill, rank, aim, aimed),
+                                    NetEvent::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified } => skill_play.on_cast(player_id, client.player_id(), &skill, rank, aim, aimed, fused, amplified),
                                     NetEvent::SkillRefused { skill, reason } => {
                                         ui_state.skill_notice = Some((format!("{} : {reason}", skill_name(&skill)), Instant::now()));
                                         skill_play.on_refused(&skill, &reason);
@@ -1170,6 +1170,7 @@ fn main() {
                         ui_state.world_map.pump(&map_ctx, &generator, ui_state.map_open);
                         let cooldown_now = Instant::now();
                         for slot in 0..skill_bar::SKILL_SLOTS {
+                            ui_state.fusion_face = skill_play.fusion_face(&ui_state.player.stats);
                             ui_state.skill_cooldowns[slot] = ui_state.skill_bar.get(slot).map_or((0.0, 0.0), |id| skill_play.cooldown(id, cooldown_now));
                         }
                         let (full_output, maybe_action) = ui_state.update_ui(is_ground);

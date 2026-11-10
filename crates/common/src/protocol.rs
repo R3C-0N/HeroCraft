@@ -233,10 +233,14 @@ pub enum ServerPacket {
     /// le geste et ne le rejoue pas)
     SkillCast {
         player_id: u64,
+        /// La compétence vraiment lancée : le mélange, pour la Fusion
         skill: String,
         rank: u8,
         aim: Vec3,
         aimed: Option<Vec3>,
+        /// Lancée par la Fusion (sa recharge est celle de la Fusion), et amplifiée
+        fused: bool,
+        amplified: bool,
     },
     /// Le lancement de `skill` est refusé (`reason` : pourquoi, en clair) ; le client arrête le geste
     SkillRefused {

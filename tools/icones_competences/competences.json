@@ -2072,6 +2072,78 @@
     "thrustStreak"
    ],
    "ultimate": true
+  },
+  {
+   "class": "elementalist",
+   "id": "fire",
+   "name": "Feu",
+   "gesture": "aucun",
+   "effects": [],
+   "ultimate": false,
+   "element": "feu"
+  },
+  {
+   "class": "elementalist",
+   "id": "water",
+   "name": "Eau",
+   "gesture": "aucun",
+   "effects": [],
+   "ultimate": false,
+   "element": "eau"
+  },
+  {
+   "class": "elementalist",
+   "id": "earth",
+   "name": "Terre",
+   "gesture": "aucun",
+   "effects": [],
+   "ultimate": false,
+   "element": "terre"
+  },
+  {
+   "class": "elementalist",
+   "id": "air",
+   "name": "Air",
+   "gesture": "aucun",
+   "effects": [],
+   "ultimate": false,
+   "element": "air"
+  },
+  {
+   "class": "elementalist",
+   "id": "amplifiedFire",
+   "name": "Feu amplifié",
+   "gesture": "aucun",
+   "effects": [],
+   "ultimate": false,
+   "element": "feu"
+  },
+  {
+   "class": "elementalist",
+   "id": "amplifiedWater",
+   "name": "Eau amplifiée",
+   "gesture": "aucun",
+   "effects": [],
+   "ultimate": false,
+   "element": "eau"
+  },
+  {
+   "class": "elementalist",
+   "id": "amplifiedEarth",
+   "name": "Terre amplifiée",
+   "gesture": "aucun",
+   "effects": [],
+   "ultimate": false,
+   "element": "terre"
+  },
+  {
+   "class": "elementalist",
+   "id": "amplifiedAir",
+   "name": "Air amplifié",
+   "gesture": "aucun",
+   "effects": [],
+   "ultimate": false,
+   "element": "air"
   }
  ]
 }

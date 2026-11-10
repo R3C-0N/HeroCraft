@@ -351,7 +351,7 @@ pub enum NetEvent {
     /// Horloge du ciel du serveur et temps imposé, qui font foi
     Clock { time: f64, forced: Option<herocraft_common::WeatherKind> },
     /// Un joueur (peut-être nous) lance une compétence
-    SkillCast { player_id: u64, skill: String, rank: u8, aim: Vec3, aimed: Option<Vec3> },
+    SkillCast { player_id: u64, skill: String, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool },
     /// Le serveur refuse notre lancement de `skill`
     SkillRefused { skill: String, reason: String },
     /// Une compétence frappe : centre de sa zone et cibles touchées
@@ -577,7 +577,7 @@ impl NetClient {
                 let items = items.into_iter().map(|(item, count)| (ItemId(item), count)).filter(|(item, _)| item.is_known()).collect();
                 return Some(NetEvent::Loot { position, items });
             }
-            ServerPacket::SkillCast { player_id, skill, rank, aim, aimed } => return Some(NetEvent::SkillCast { player_id, skill, rank, aim, aimed }),
+            ServerPacket::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified } => return Some(NetEvent::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified }),
             ServerPacket::SkillRefused { skill, reason } => return Some(NetEvent::SkillRefused { skill, reason }),
             ServerPacket::SkillHit { player_id, skill, rank, center, creatures, players } => return Some(NetEvent::SkillHit { player_id, skill, rank, center, creatures, players }),
             ServerPacket::ConnectAck { .. } | ServerPacket::PlayerJoined { .. } => {}

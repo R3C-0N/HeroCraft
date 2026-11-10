@@ -1,6 +1,6 @@
 {
   "name": "Fusion",
-  "description": "Se débloque après les sorts de base. Combine deux sorts déjà connus en un seul. Cette compétence donne d'un coup les quatre fusions d'amplification (même élément × 2) ; chaque autre fusion est ensuite une compétence à part.",
+  "description": "Se débloque après les sorts de base. Mêle les deux derniers sorts élémentaires que tu as lancés. Deux éléments différents donnent leur fusion, si tu l'as apprise ; deux sorts du même élément relancent le dernier amplifié : plus grand, plus fort, plus éclatant.",
   "wheel": {
     "tier": 2,
     "ring": 2.0,
@@ -13,5 +13,80 @@
     ],
     "max_rank": 3,
     "planner": 179
+  },
+  "fusion": {
+    "mixes": [
+      {
+        "elements": [
+          "fire",
+          "water"
+        ],
+        "skill": "scaldingTyphoon"
+      },
+      {
+        "elements": [
+          "fire",
+          "earth"
+        ],
+        "skill": "magmaWall"
+      },
+      {
+        "elements": [
+          "earth",
+          "air"
+        ],
+        "skill": "shrapnelStorm"
+      },
+      {
+        "elements": [
+          "water",
+          "air"
+        ],
+        "skill": "soothingMist"
+      },
+      {
+        "elements": [
+          "water",
+          "earth"
+        ],
+        "skill": "crystallization"
+      },
+      {
+        "elements": [
+          "fire",
+          "air"
+        ],
+        "skill": "explosiveRetreat"
+      }
+    ],
+    "amplify": {
+      "power": 1.75,
+      "area": 1.3,
+      "cost": 1.5,
+      "visuals": [
+        {
+          "effect": "auraRing",
+          "anchor": "body",
+          "from": "start",
+          "to": "impact"
+        },
+        {
+          "effect": "shockRing",
+          "anchor": "area",
+          "from": "impact"
+        },
+        {
+          "effect": "etheriumAura",
+          "anchor": "body",
+          "from": "impact"
+        }
+      ],
+      "icons": {
+        "fire": "amplifiedFire.png",
+        "water": "amplifiedWater.png",
+        "earth": "amplifiedEarth.png",
+        "air": "amplifiedAir.png"
+      }
+    }
   }
 }

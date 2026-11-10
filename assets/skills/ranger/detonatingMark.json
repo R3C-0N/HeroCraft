@@ -39,7 +39,8 @@
           ]
         }
       }
-    ]
+    ],
+    "homing": true
   },
   "visuals": [
     {

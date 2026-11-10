@@ -82,7 +82,8 @@ impl SkillBar {
         let mut changed = false;
         for def in skills().castable(stats) {
             // Les attaques d'une forme du Druide se lancent aux clics, pas depuis la barre
-            if self.slot_of(&def.id).is_some() || skills().form_of_attack(&def.id).is_some() {
+            // Les mélanges se lancent par la case de la Fusion
+            if self.slot_of(&def.id).is_some() || skills().form_of_attack(&def.id).is_some() || skills().fusion_of_mix(&def.id).is_some() {
                 continue;
             }
             let Some(free) = self.slots.iter().position(Option::is_none) else { break };
@@ -105,7 +106,11 @@ impl SkillIcons {
     fn texture(&self, ctx: &egui::Context, id: &str) -> Option<egui::TextureId> {
         let mut cache = self.cache.borrow_mut();
         let handle = cache.entry(id.to_string()).or_insert_with(|| {
-            let path = skills().get(id)?.icon.clone()?;
+            // L'amplification d'un élément (case de la Fusion) : `amplify:<élément>`
+            let path = match id.strip_prefix("amplify:") {
+                Some(element) => skills().amplify_icon(element)?.to_path_buf(),
+                None => skills().get(id)?.icon.clone()?,
+            };
             match Texture::load(&path) {
                 Ok(image) => {
                     let pixels = egui::ColorImage::from_rgba_unmultiplied([image.width as usize, image.height as usize], &image.rgba);

@@ -89,6 +89,8 @@ pub struct SkillPlay {
     grafts: Vec<(Option<u64>, String, Instant)>,
     /// Formes complètes (`SkillDef::form`) : sur qui, par quelle compétence, jusqu'à quand
     forms: Vec<(Option<u64>, String, Instant)>,
+    /// Lancements amplifiés par la Fusion, en attente de leur frappe : qui, quoi, jusqu'à quand
+    amplified: Vec<(Option<u64>, String, Instant)>,
     /// Renforcements de vitesse du joueur local : de combien, jusqu'à quand
     speed_buffs: Vec<(f32, Instant)>,
     /// Élan de la compétence locale qui commence : ruée, bond, en combien de secondes
@@ -110,6 +112,7 @@ impl Default for SkillPlay {
             cues: Vec::new(),
             grafts: Vec::new(),
             forms: Vec::new(),
+            amplified: Vec::new(),
             speed_buffs: Vec::new(),
             motion: None,
             me: SOLO_PLAYER,
@@ -130,7 +133,17 @@ impl SkillPlay {
     pub fn request(&mut self, skill: &str, stats: &mut CharacterStats, aim: Vec3, aimed: Option<Vec3>, online: Option<&mut dyn FnMut(&str, Vec3, Option<Vec3>)>) -> Result<(), String> {
         let catalog = skills();
         let now = Instant::now();
-        let (left, _) = self.cooldown(skill, now);
+        let requested = skill;
+        // La Fusion lance le mélange des deux derniers sorts élémentaires (ou le dernier amplifié)
+        let fused = match catalog.get(requested).and_then(|d| d.fusion.as_ref()) {
+            Some(_) if catalog.rank(stats, requested) == 0 => return Err(herocraft_common::CastError::NotLearned.message().to_string()),
+            Some(_) => Some(self.runner.fusion_preview(catalog, SOLO_PLAYER, stats).map_err(|e| e.message().to_string())?),
+            None if catalog.fusion_of_mix(requested).is_some() => return Err(herocraft_common::CastError::FusionOnly.message().to_string()),
+            None => None,
+        };
+        let skill = fused.as_ref().map_or(requested, |f| f.skill());
+        let amplified = matches!(fused, Some(herocraft_common::skills::Fused::Amplified { .. }));
+        let (left, _) = self.cooldown(requested, now);
         if let Some(error) = catalog.cast_check(stats, skill, left) {
             return Err(error.message().to_string());
         }
@@ -147,29 +160,59 @@ impl SkillPlay {
         }
         let rank = match online {
             Some(send) => {
-                send(skill, aim, aimed);
+                send(requested, aim, aimed);
+                // Le serveur tient le compte des sorts à mêler ; on le tient aussi pour prévoir
+                self.runner.remember(catalog, SOLO_PLAYER, requested);
                 catalog.rank(stats, skill)
             }
-            None => self.runner.cast(catalog, SOLO_PLAYER, stats, skill, aim, aimed).map_err(|e| e.message().to_string())?,
+            None => self.runner.cast_as(catalog, SOLO_PLAYER, stats, requested, aim, aimed).map_err(|e| e.message().to_string())?.rank,
         };
-        self.arm_cooldown(catalog, skill, rank, now);
-        self.start(None, skill, rank, aim, aimed, now);
+        self.arm_cooldown(catalog, requested, skill, rank, now);
+        self.start(None, skill, rank, aim, aimed, now, amplified);
         Ok(())
     }
 
-    fn arm_cooldown(&mut self, catalog: &SkillCatalog, skill: &str, rank: u8, now: Instant) {
+    /// La recharge de la case `key` (la Fusion, ou la compétence elle-même), celle de `skill`
+    fn arm_cooldown(&mut self, catalog: &SkillCatalog, key: &str, skill: &str, rank: u8, now: Instant) {
         if let Some(cast) = catalog.get(skill).and_then(|s| s.cast.as_ref()) {
             let seconds = cast.cooldown.at(rank);
-            self.cooldown_of.insert(skill.to_string(), seconds);
-            self.ready_at.insert(skill.to_string(), now + std::time::Duration::from_secs_f32(seconds.max(0.0)));
+            self.cooldown_of.insert(key.to_string(), seconds);
+            self.ready_at.insert(key.to_string(), now + std::time::Duration::from_secs_f32(seconds.max(0.0)));
         }
     }
 
-    /// Le geste commence, et les visuels `start` avec lui
-    fn start(&mut self, player: Option<u64>, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, now: Instant) {
+    /// Ce que montre la case de la Fusion : l'icône du mélange qu'elle lancerait (`amplify:<élément>`
+    /// pour une amplification), ou la sienne ; grisée sans mélange appris ou de quoi le payer
+    pub fn fusion_face(&self, stats: &CharacterStats) -> Option<(String, bool)> {
+        let catalog = skills();
+        let fusion = catalog.fusion()?;
+        let face = match self.runner.recent_spells(SOLO_PLAYER) {
+            [first, last] => catalog.fuse(first, last),
+            _ => None,
+        };
+        let unlearned = catalog.rank(stats, &fusion.id) == 0;
+        Some(match face {
+            Some(herocraft_common::skills::Fused::Amplified { element, spell }) => (format!("amplify:{element}"), unlearned || catalog.cast_check(stats, &spell, 0.0).is_some()),
+            Some(herocraft_common::skills::Fused::Mix(mix)) => {
+                let blocked = unlearned || catalog.cast_check(stats, &mix, 0.0).is_some();
+                (mix, blocked)
+            }
+            None => (fusion.id.clone(), true),
+        })
+    }
+
+    /// Le geste commence, et les visuels `start` avec lui (et ceux de l'amplification, `amplified`)
+    #[allow(clippy::too_many_arguments)]
+    fn start(&mut self, player: Option<u64>, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, now: Instant, amplified: bool) {
         let catalog = skills();
         let Some(def) = catalog.get(skill) else { return };
         let Some(cast) = &def.cast else { return };
+        let amplify = catalog.fusion().and_then(|f| f.fusion.as_ref()).map(|f| f.amplify.clone()).filter(|_| amplified);
+        let size = amplify.as_ref().map_or(1.0, |a| a.area);
+        if amplified {
+            self.amplified.retain(|(who, _, _)| *who != player);
+            self.amplified.push((player, skill.to_string(), now + std::time::Duration::from_secs_f32(5.0)));
+        }
         let duration = self.gestures.get(&cast.animation).map_or(0.6, |g| g.duration) / cast.speed;
         self.plays.retain(|p| p.player != player);
         self.plays.push(Play { player, skill: skill.to_string(), rank, started: now, aim, aimed, duration });
@@ -192,7 +235,7 @@ impl SkillPlay {
             let (dash, leap) = (movement.dash.as_ref().map_or(0.0, |d| d.at(rank)), movement.leap.as_ref().map_or(0.0, |l| l.at(rank)));
             self.motion = Some((dash, leap, seconds));
         }
-        for visual in def.visuals.iter().filter(|v| v.from == Moment::Start) {
+        for visual in def.visuals.iter().chain(amplify.iter().flat_map(|a| &a.visuals)).filter(|v| v.from == Moment::Start) {
             let hold = match visual.to {
                 Some(Moment::Impact) => Some(impact),
                 Some(Moment::End) => Some(duration),
@@ -207,7 +250,7 @@ impl SkillPlay {
                 creature: None,
                 aim,
                 hold,
-                area_blocks: cast.area.size_blocks(rank),
+                area_blocks: cast.area.size_blocks(rank) * size,
                 travel: None,
                 delay: 0.0,
             });
@@ -215,13 +258,16 @@ impl SkillPlay {
     }
 
     /// Un joueur (peut-être nous) lance une compétence, d'après le serveur
-    pub fn on_cast(&mut self, player: u64, me: u64, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>) {
+    #[allow(clippy::too_many_arguments)]
+    pub fn on_cast(&mut self, player: u64, me: u64, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool) {
         if player == me {
-            // Notre geste a déjà commencé ; la recharge du serveur fait foi
-            self.arm_cooldown(skills(), skill, rank, Instant::now());
+            // Notre geste a déjà commencé ; la recharge du serveur fait foi (celle de la Fusion pour un mélange)
+            let catalog = skills();
+            let key = if fused { catalog.fusion().map_or(skill, |f| f.id.as_str()) } else { skill };
+            self.arm_cooldown(catalog, key, skill, rank, Instant::now());
             return;
         }
-        self.start(Some(player), skill, rank, aim, aimed, Instant::now());
+        self.start(Some(player), skill, rank, aim, aimed, Instant::now(), amplified);
     }
 
     /// Le serveur refuse notre lancement : le geste s'arrête, la recharge aussi
@@ -285,6 +331,12 @@ impl SkillPlay {
         let catalog = skills();
         let Some(def) = catalog.get(&shown.skill) else { return };
         let Some(cast) = &def.cast else { return };
+        let now = Instant::now();
+        self.amplified.retain(|(_, _, until)| *until > now);
+        let who = shown.caster.filter(|&c| c != self.me);
+        let amplified = self.amplified.iter().position(|(p, s, _)| *p == who && *s == shown.skill).map(|i| self.amplified.remove(i)).is_some();
+        let amplify = catalog.fusion().and_then(|f| f.fusion.as_ref()).map(|f| f.amplify.clone()).filter(|_| amplified);
+        let size = amplify.as_ref().map_or(1.0, |a| a.area);
         let effect_end = effect_seconds(&cast.effects, shown.rank);
         let self_end = effect_seconds(&cast.self_effects, shown.rank);
         // Renforcements de vitesse qui nous touchent : les nôtres, et ceux d'un allié sur nous
@@ -296,7 +348,7 @@ impl SkillPlay {
                 self.speed_buffs.push((value.at(shown.rank), now + std::time::Duration::from_secs_f32(duration.at(shown.rank).max(0.0))));
             }
         }
-        for visual in &def.visuals {
+        for visual in def.visuals.iter().chain(amplify.iter().flat_map(|a| &a.visuals)) {
             let hold = match visual.to {
                 Some(Moment::EffectEnd) => Some(if visual.anchor == Anchor::Target { effect_end } else { self_end.max(effect_end) }),
                 _ => None,
@@ -309,7 +361,7 @@ impl SkillPlay {
                 creature: None,
                 aim: Vec3::ZERO,
                 hold,
-                area_blocks: cast.area.size_blocks(shown.rank),
+                area_blocks: cast.area.size_blocks(shown.rank) * size,
                 travel: None,
                 delay: 0.0,
             };

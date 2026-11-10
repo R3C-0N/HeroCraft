@@ -718,6 +718,18 @@ impl Server {
     fn creature_attack(&mut self, id: u64, species: usize, damage: f32) {
         let cause = self.creatures.registry().get(species).map_or_else(|| "Une créature".to_string(), |s| s.name.clone());
         let damage = damage * self.skill_runner.damage_taken_factor(id);
+        // Lié par une Marque du Martyr : le chapelain encaisse sa part des dégâts
+        let (damage, shared) = self.skill_runner.share_damage(id, damage);
+        if let Some((martyr, part)) = shared.filter(|s| s.0 != id) {
+            if let Some(m) = self.players.get_mut(&martyr).filter(|m| !m.stats.fallen) {
+                if m.stats.take_damage(part) {
+                    m.stats.revive();
+                    m.stats.fallen = true;
+                }
+                m.connection.send(&ServerPacket::PlayerHurt { damage: part, cause: "Marque du Martyr".to_string() });
+                m.connection.send(&ServerPacket::StatsUpdate(m.stats.clone()));
+            }
+        }
         let Some(player) = self.players.get_mut(&id) else { return };
         let died = player.stats.take_damage(damage);
         if died {
@@ -864,10 +876,11 @@ impl Server {
     /// à l'impact de son geste (`tick_skills`)
     fn cast_skill(&mut self, id: u64, skill: String, aim: Vec3, aimed: Option<Vec3>) {
         let Some(player) = self.players.get_mut(&id) else { return };
-        match self.skill_runner.cast(herocraft_common::skills(), id, &mut player.stats, &skill, aim, aimed) {
-            Ok(rank) => {
+        match self.skill_runner.cast_as(herocraft_common::skills(), id, &mut player.stats, &skill, aim, aimed) {
+            Ok(casting) => {
                 player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
-                self.broadcast(&ServerPacket::SkillCast { player_id: id, skill, rank, aim, aimed });
+                let fused = casting.skill != skill;
+                self.broadcast(&ServerPacket::SkillCast { player_id: id, skill: casting.skill, rank: casting.rank, aim, aimed, fused, amplified: casting.amplified });
             }
             Err(error) => {
                 player.connection.send(&ServerPacket::SkillRefused { skill, reason: error.message().to_string() });

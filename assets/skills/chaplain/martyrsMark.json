@@ -25,6 +25,12 @@
     "targets": "allies",
     "effects": [
       {
+        "link": {
+          "share": 0.4,
+          "duration": 10
+        }
+      },
+      {
         "over_time": {
           "heal": [
             3,
@@ -38,14 +44,6 @@
         "buff": {
           "stat": "defense",
           "value": 0.3,
-          "duration": 10
-        }
-      }
-    ],
-    "self_effects": [
-      {
-        "over_time": {
-          "damage": 1,
           "duration": 10
         }
       }

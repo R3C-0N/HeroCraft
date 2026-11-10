@@ -26,7 +26,7 @@ pub use generator::*;
 pub use ocean_currents::*;
 pub use quadtree::*;
 pub use roads::{Road, RoadMap};
-pub use skill_runner::{SkillImpact, SkillPlayers, SkillRunner, SkillTick, SoloPlayer, CRITICAL_FACTOR};
+pub use skill_runner::{Casting, SkillImpact, SkillPlayers, SkillRunner, SkillTick, SoloPlayer, CRITICAL_FACTOR};
 pub use culture::Culture;
 pub use structures::{Settlement, SettlementKind, StructureMap};
 pub use tectonics::*;

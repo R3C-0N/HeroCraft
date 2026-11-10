@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use glam::Vec3;
-use herocraft_common::skills::{BuffStat, CastError, Center, Copies, Effect, EffectEntry, PlacedArea, SkillCatalog, Targets, SKILL_BASE_DAMAGE};
+use herocraft_common::skills::{BuffStat, CastError, Center, Copies, Effect, EffectEntry, Fused, PlacedArea, SkillCatalog, Targets, SKILL_BASE_DAMAGE};
 use herocraft_common::CharacterStats;
 
 use crate::CreatureWorld;
@@ -86,6 +86,18 @@ struct Pending {
     left: f32,
     /// Lancée depuis l'invisibilité : ses dégâts sont tous critiques
     crit: bool,
+    /// Amplifiée par la Fusion : facteur de ses dégâts, soins, boucliers et reculs, et de sa zone
+    power: f32,
+    size: f32,
+}
+
+/// Un lancement accepté : la compétence vraiment lancée (le mélange, pour la Fusion), son rang, et
+/// si elle est amplifiée
+#[derive(Debug, Clone, PartialEq)]
+pub struct Casting {
+    pub skill: String,
+    pub rank: u8,
+    pub amplified: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +109,9 @@ struct OverTime {
     left: f32,
     /// Temps avant le prochain coup
     next: f32,
+    /// Facteur des dégâts tant que la bête bouge, et où elle était au coup précédent
+    moving: f32,
+    last: Option<Vec3>,
 }
 
 #[derive(Debug, Clone)]
@@ -142,6 +157,10 @@ pub struct SkillRunner {
     marks: Vec<(u64, u64, f32, f32)>,
     /// État du tirage des coups critiques
     luck: u64,
+    /// Les deux derniers sorts élémentaires de chaque joueur, que la Fusion mêle
+    recent: HashMap<u64, Vec<String>>,
+    /// Alliés liés à un lanceur (Marque du Martyr) : lanceur, allié, part des dégâts, secondes restantes
+    links: Vec<(u64, u64, f32, f32)>,
 }
 
 /// Facteur des dégâts d'un coup critique
@@ -161,10 +180,30 @@ impl SkillRunner {
     /// rechargée ou s'il n'a pas de quoi la payer ; sinon le coût est payé, la recharge armée, et
     /// la frappe attend l'impact du geste. Renvoie le rang de la compétence.
     pub fn cast(&mut self, catalog: &SkillCatalog, caster: u64, stats: &mut CharacterStats, skill: &str, aim: Vec3, aimed: Option<Vec3>) -> Result<u8, CastError> {
+        self.cast_as(catalog, caster, stats, skill, aim, aimed).map(|c| c.rank)
+    }
+
+    /// Comme `cast`, et dit ce qui est vraiment lancé : la Fusion lance le mélange des deux derniers
+    /// sorts élémentaires du joueur, ou le dernier amplifié s'ils sont du même élément
+    pub fn cast_as(&mut self, catalog: &SkillCatalog, caster: u64, stats: &mut CharacterStats, requested: &str, aim: Vec3, aimed: Option<Vec3>) -> Result<Casting, CastError> {
         if !aim.is_finite() || aimed.is_some_and(|p| !p.is_finite()) {
             return Err(CastError::Unknown);
         }
-        if let Some(error) = catalog.cast_check(stats, skill, self.cooldown(caster, skill)) {
+        let asked = catalog.get(requested).ok_or(CastError::Unknown)?;
+        let fused = match asked.fusion {
+            Some(_) => {
+                if catalog.rank(stats, requested) == 0 {
+                    return Err(CastError::NotLearned);
+                }
+                Some(self.fusion_preview(catalog, caster, stats)?)
+            }
+            None if catalog.fusion_of_mix(requested).is_some() => return Err(CastError::FusionOnly),
+            None => None,
+        };
+        let skill = fused.as_ref().map_or(requested, |f| f.skill());
+        let amplified = matches!(fused, Some(Fused::Amplified { .. }));
+        // La recharge est celle de la compétence demandée : la Fusion a la sienne
+        if let Some(error) = catalog.cast_check(stats, skill, self.cooldown(caster, requested)) {
             return Err(error);
         }
         if stats.is_stunned() {
@@ -181,6 +220,15 @@ impl SkillRunner {
             (None, None) => {}
         }
         let rank = catalog.rank(stats, skill);
+        let amplify = catalog.fusion().and_then(|f| f.fusion.as_ref()).map(|f| f.amplify.clone()).unwrap_or_default();
+        let (cost, power, size) = if amplified { (amplify.cost, amplify.power, amplify.area) } else { (1.0, 1.0, 1.0) };
+        let (mana, stamina) = (cast.cost.mana.at(rank) * cost, cast.cost.stamina.at(rank) * cost);
+        if stats.mana < mana {
+            return Err(CastError::NoMana);
+        }
+        if stats.stamina < stamina {
+            return Err(CastError::NoStamina);
+        }
         if def.form.is_some() {
             let lasting = cast.self_effects.iter().chain(&cast.effects).filter_map(|e| match &e.effect {
                 Effect::Buff { duration, .. } | Effect::Shield { duration, .. } | Effect::OverTime { duration, .. } => Some(duration.at(rank)),
@@ -190,17 +238,58 @@ impl SkillRunner {
             self.forms.retain(|f| f.0 != caster);
             self.forms.push((caster, skill.to_string(), seconds));
         }
-        stats.mana -= cast.cost.mana.at(rank);
-        stats.stamina -= cast.cost.stamina.at(rank);
-        self.cooldowns.insert((caster, skill.to_string()), cast.cooldown.at(rank));
+        stats.mana -= mana;
+        stats.stamina -= stamina;
+        self.cooldowns.insert((caster, requested.to_string()), cast.cooldown.at(rank));
         // Une attaque lancée invisible le dévoile, et frappe en critique
         let attacks = cast.effects.iter().any(|e| matches!(e.effect, Effect::Damage { .. } | Effect::OverTime { damage: Some(_), .. }));
         let crit = attacks && stats.is_invisible();
         if attacks {
             stats.invisible_time = 0.0;
         }
-        self.pending.push(Pending { caster, skill: skill.to_string(), rank, aim: aim.normalize_or_zero(), aimed, left: catalog.impact_delay(cast), crit });
-        Ok(rank)
+        self.remember(catalog, caster, requested);
+        self.pending.push(Pending { caster, skill: skill.to_string(), rank, aim: aim.normalize_or_zero(), aimed, left: catalog.impact_delay(cast), crit, power, size });
+        Ok(Casting { skill: skill.to_string(), rank, amplified })
+    }
+
+    /// Ce que la Fusion du joueur `caster` lancerait maintenant : refusée sans deux sorts
+    /// élémentaires, ou si leur mélange n'est pas appris
+    pub fn fusion_preview(&self, catalog: &SkillCatalog, caster: u64, stats: &CharacterStats) -> Result<Fused, CastError> {
+        let recent = self.recent.get(&caster).map(Vec::as_slice).unwrap_or_default();
+        let [first, last] = recent else { return Err(CastError::FusionEmpty) };
+        let fused = catalog.fuse(first, last).ok_or(CastError::FusionEmpty)?;
+        if catalog.rank(stats, fused.skill()) == 0 {
+            return Err(CastError::FusionLocked);
+        }
+        Ok(fused)
+    }
+
+    /// Le joueur `caster` a lancé `skill` : un sort élémentaire entre dans ce que la Fusion mêlera,
+    /// la Fusion consomme les deux. Appelé par `cast_as` ; le client en ligne l'appelle pour prévoir.
+    pub fn remember(&mut self, catalog: &SkillCatalog, caster: u64, skill: &str) {
+        if catalog.get(skill).is_some_and(|d| d.fusion.is_some()) {
+            self.recent.remove(&caster);
+        } else if catalog.element_of(skill).is_some() {
+            let recent = self.recent.entry(caster).or_default();
+            recent.push(skill.to_string());
+            if recent.len() > 2 {
+                recent.remove(0);
+            }
+        }
+    }
+
+    /// Les sorts élémentaires que la Fusion du joueur `caster` mêlera (deux au plus, le dernier en fin)
+    pub fn recent_spells(&self, caster: u64) -> &[String] {
+        self.recent.get(&caster).map(Vec::as_slice).unwrap_or_default()
+    }
+
+    /// Le joueur `player` subit `damage` points : la part qu'il garde, et celle qu'encaisse le
+    /// lanceur qui l'a lié (Marque du Martyr), s'il en est un
+    pub fn share_damage(&self, player: u64, damage: f32) -> (f32, Option<(u64, f32)>) {
+        match self.links.iter().find(|l| l.1 == player) {
+            Some(&(caster, _, share, _)) => (damage * (1.0 - share), Some((caster, damage * share))),
+            None => (damage, None),
+        }
     }
 
     /// La forme (compétence du Druide) que le joueur `player` a prise en ce moment
@@ -239,6 +328,8 @@ impl SkillRunner {
         self.buffs.retain(|b| b.player != player);
         self.forms.retain(|f| f.0 != player);
         self.marks.retain(|m| m.0 != player);
+        self.recent.remove(&player);
+        self.links.retain(|l| l.0 != player && l.1 != player);
         self.cooldowns.retain(|(p, _), _| *p != player);
     }
 
@@ -257,6 +348,10 @@ impl SkillRunner {
             mark.3 -= dt;
         }
         self.marks.retain(|m| m.3 > 0.0);
+        for link in &mut self.links {
+            link.3 -= dt;
+        }
+        self.links.retain(|l| l.3 > 0.0);
         for buff in &mut self.buffs {
             buff.left -= dt;
             // Régénération : des points de vie rendus chaque instant
@@ -288,7 +383,7 @@ impl SkillRunner {
         });
         for (caster, rank, effects) in ended {
             for entry in &effects {
-                self.apply_to_player(entry, caster, rank, caster, players);
+                self.apply_to_player(entry, caster, rank, 1.0, caster, players);
             }
             if !effects.is_empty() {
                 out.changed.push(caster);
@@ -316,6 +411,11 @@ impl SkillRunner {
                 let amount = o.per_second * OVER_TIME_STEP;
                 match o.target {
                     SkillTarget::Creature(id) if amount < 0.0 => {
+                        // Un saignement s'aggrave quand la bête bouge
+                        let now = creatures.creatures().iter().find(|c| c.id == id).map(|c| c.position);
+                        let moved = matches!((o.last, now), (Some(a), Some(b)) if a.distance(b) > 0.3 * block);
+                        o.last = now;
+                        let amount = if moved { amount * o.moving } else { amount };
                         let from = players.feet(o.caster).unwrap_or_else(|| creatures.creatures().iter().find(|c| c.id == id).map_or(Vec3::ZERO, |c| c.position + Vec3::ONE * block));
                         creatures.wound(id, from, o.caster, -amount);
                     }
@@ -350,9 +450,27 @@ impl SkillRunner {
         let cast = def.cast.as_ref()?;
         let feet = players.feet(p.caster)?;
         let block = creatures.block_size();
-        let area = cast.area.place(p.rank, feet, p.aim, p.aimed, block);
+        let reach = 1.0 + self.buff(p.caster, BuffStat::Range);
+        // Un tir à tête chercheuse se pose sur la bête marquée la plus proche du point visé
+        let mut aimed = p.aimed;
+        if cast.homing {
+            let target = aimed.unwrap_or(feet + p.aim * 12.0 * block);
+            let range = match &cast.area {
+                herocraft_common::skills::Area::Circle { distance, .. } => distance.at(p.rank) * reach * block,
+                _ => f32::MAX,
+            };
+            let marked: Vec<u64> = self.marks.iter().filter(|m| m.0 == p.caster).map(|m| m.1).collect();
+            aimed = creatures
+                .creatures()
+                .iter()
+                .filter(|c| c.is_alive() && marked.contains(&c.id) && c.position.distance(feet) <= range)
+                .min_by(|a, b| a.position.distance(target).total_cmp(&b.position.distance(target)))
+                .map(|c| c.position)
+                .or(aimed);
+        }
+        let area = cast.area.place_scaled(p.rank, feet, p.aim, aimed, block, p.size, reach);
         let center = area.center(feet);
-        let damage_factor = 1.0 + self.buff(p.caster, BuffStat::Damage);
+        let damage_factor = (1.0 + self.buff(p.caster, BuffStat::Damage)) * p.power;
 
         // Les cibles de la zone : créatures vivantes (les bêtes apprivoisées sont des alliées) et joueurs
         let in_area = |point: Vec3| area.contains(point, block);
@@ -383,7 +501,7 @@ impl SkillRunner {
                         Targets::Enemies => false,
                     };
                     if applies {
-                        self.apply_to_player(entry, p.caster, p.rank, id, players);
+                        self.apply_to_player(entry, p.caster, p.rank, p.power, id, players);
                         touched_players.push(id);
                         changed.push(id);
                     }
@@ -391,7 +509,7 @@ impl SkillRunner {
             }
         }
         for entry in &cast.self_effects {
-            self.apply_to_player(entry, p.caster, p.rank, p.caster, players);
+            self.apply_to_player(entry, p.caster, p.rank, p.power, p.caster, players);
             changed.push(p.caster);
         }
         let summoned = self.summon(def.summons(), p, feet, center, &area, creatures);
@@ -490,28 +608,44 @@ impl SkillRunner {
             }
             Effect::Slow { strength, duration } => creatures.slow(id, strength.at(rank), duration.at(rank)),
             Effect::Stun { duration } => creatures.stun(id, duration.at(rank)),
-            Effect::Knockback { strength } => creatures.shove(id, feet, strength.at(rank)),
-            Effect::Pull { strength } => creatures.shove(id, feet, -strength.at(rank)),
-            Effect::OverTime { damage, duration, .. } => {
+            Effect::Knockback { strength } => creatures.shove(id, feet, strength.at(rank) * p.power),
+            Effect::Pull { strength } => creatures.shove(id, feet, -strength.at(rank) * p.power),
+            Effect::OverTime { damage, duration, moving, .. } => {
                 if let Some(damage) = damage {
-                    self.over_time.push(OverTime { caster: p.caster, target: SkillTarget::Creature(id), per_second: -damage.at(rank) * damage_factor, left: duration.at(rank), next: OVER_TIME_STEP });
+                    self.over_time.push(OverTime {
+                        caster: p.caster,
+                        target: SkillTarget::Creature(id),
+                        per_second: -damage.at(rank) * damage_factor,
+                        left: duration.at(rank),
+                        next: OVER_TIME_STEP,
+                        moving: moving.as_ref().map_or(1.0, |m| m.at(rank)),
+                        last: Some(feet).and_then(|_| creatures.creatures().iter().find(|c| c.id == id).map(|c| c.position)),
+                    });
                 }
             }
-            // Sans effet sur une bête : soins, boucliers, renforcements, invisibilité, résurrection
-            Effect::Heal { .. } | Effect::Shield { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } => {}
+            // Sans effet sur une bête : soins, boucliers, renforcements, invisibilité, résurrection, lien
+            Effect::Heal { .. } | Effect::Shield { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } => {}
         }
     }
 
-    fn apply_to_player(&mut self, entry: &EffectEntry, caster: u64, rank: u8, id: u64, players: &mut dyn SkillPlayers) {
+    /// Effet `entry` du lanceur `caster` sur le joueur `id`, ses soins et boucliers multipliés par `power`
+    fn apply_to_player(&mut self, entry: &EffectEntry, caster: u64, rank: u8, power: f32, id: u64, players: &mut dyn SkillPlayers) {
         match &entry.effect {
             Effect::Heal { amount } => {
                 if let Some(stats) = players.stats_mut(id) {
-                    stats.hp = (stats.hp + amount.at(rank)).min(stats.max_hp);
+                    stats.hp = (stats.hp + amount.at(rank) * power).min(stats.max_hp);
+                }
+            }
+            Effect::Link { share, duration } => {
+                // On ne se lie pas à soi-même
+                if id != caster {
+                    self.links.retain(|l| l.1 != id);
+                    self.links.push((caster, id, share.at(rank).clamp(0.0, 1.0), duration.at(rank)));
                 }
             }
             Effect::Shield { amount, duration } => {
                 if let Some(stats) = players.stats_mut(id) {
-                    stats.shield = stats.shield.max(amount.at(rank));
+                    stats.shield = stats.shield.max(amount.at(rank) * power);
                     stats.shield_time = stats.shield_time.max(duration.at(rank));
                 }
             }
@@ -519,10 +653,10 @@ impl SkillRunner {
                 self.buffs.retain(|b| !(b.player == id && b.stat == *stat));
                 self.buffs.push(Buff { player: id, stat: *stat, value: value.at(rank), left: duration.at(rank) });
             }
-            Effect::OverTime { heal, damage, duration } => {
-                let per_second = heal.as_ref().map_or(0.0, |h| h.at(rank)) - damage.as_ref().map_or(0.0, |d| d.at(rank));
+            Effect::OverTime { heal, damage, duration, .. } => {
+                let per_second = heal.as_ref().map_or(0.0, |h| h.at(rank) * power) - damage.as_ref().map_or(0.0, |d| d.at(rank));
                 if per_second != 0.0 {
-                    self.over_time.push(OverTime { caster, target: SkillTarget::Player(id), per_second, left: duration.at(rank), next: OVER_TIME_STEP });
+                    self.over_time.push(OverTime { caster, target: SkillTarget::Player(id), per_second, left: duration.at(rank), next: OVER_TIME_STEP, moving: 1.0, last: None });
                 }
             }
             Effect::Invisible { duration } => {
@@ -852,5 +986,120 @@ mod tests {
         assert_eq!(runner.cast(&catalog, 7, &mut stats, "judgment", Vec3::NEG_Z, None), Err(CastError::Stunned));
         stats.tick_status(1.5);
         assert_eq!(runner.cast(&catalog, 7, &mut stats, "judgment", Vec3::NEG_Z, None), Ok(1));
+    }
+    #[test]
+    fn fusion_mixes_the_last_two_spells_or_amplifies_the_same_element() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let cow = creatures.creatures()[0].id;
+        let at = creatures.creatures()[0].position;
+        creatures.creature_mut(cow).unwrap().health = 1000.0;
+        let mut stats = CharacterStats::new(PlayerClass::Sorcerer);
+        for skill in ["fire", "water", "fusion"] {
+            stats.skills.insert(skill.into(), 1);
+        }
+        stats.mana = 10_000.0;
+        let mut runner = SkillRunner::new();
+        let run = |runner: &mut SkillRunner, stats: &mut CharacterStats, creatures: &mut CreatureWorld| {
+            until_impact(runner, &catalog, creatures, &mut SoloPlayer { id: 6, feet, stats });
+            runner.tick(6.0, &catalog, creatures, &mut SoloPlayer { id: 6, feet, stats });
+        };
+        assert_eq!(runner.cast(&catalog, 6, &mut stats, "fusion", Vec3::NEG_Z, Some(at)), Err(CastError::FusionEmpty));
+        assert_eq!(runner.cast(&catalog, 6, &mut stats, "scaldingTyphoon", Vec3::NEG_Z, Some(at)), Err(CastError::FusionOnly));
+
+        // Feu puis eau : le Typhon Bouillant, s'il est appris
+        runner.cast(&catalog, 6, &mut stats, "igneousOrb", Vec3::NEG_Z, Some(at)).unwrap();
+        run(&mut runner, &mut stats, &mut creatures);
+        runner.cast(&catalog, 6, &mut stats, "foamingWhip", Vec3::NEG_Z, None).unwrap();
+        run(&mut runner, &mut stats, &mut creatures);
+        assert_eq!(runner.cast(&catalog, 6, &mut stats, "fusion", Vec3::NEG_Z, Some(at)), Err(CastError::FusionLocked));
+        stats.skills.insert("scaldingTyphoon".into(), 1);
+        let casting = runner.cast_as(&catalog, 6, &mut stats, "fusion", Vec3::NEG_Z, Some(at)).unwrap();
+        assert_eq!((casting.skill.as_str(), casting.amplified), ("scaldingTyphoon", false));
+        run(&mut runner, &mut stats, &mut creatures);
+        assert!(runner.recent_spells(6).is_empty(), "la Fusion consomme ses deux sorts");
+
+        // Deux orbes : la seconde relancée amplifiée
+        runner.cast(&catalog, 6, &mut stats, "igneousOrb", Vec3::NEG_Z, Some(at)).unwrap();
+        run(&mut runner, &mut stats, &mut creatures);
+        runner.cast(&catalog, 6, &mut stats, "igneousOrb", Vec3::NEG_Z, Some(at)).unwrap();
+        run(&mut runner, &mut stats, &mut creatures);
+        let before = health(&creatures, cow);
+        let mana = stats.mana;
+        let casting = runner.cast_as(&catalog, 6, &mut stats, "fusion", Vec3::NEG_Z, Some(at)).unwrap();
+        assert_eq!((casting.skill.as_str(), casting.amplified), ("igneousOrb", true));
+        assert!((mana - stats.mana - 12.0 * 1.5).abs() < 0.01, "coût amplifié : {}", mana - stats.mana);
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 6, feet, stats: &mut stats });
+        let expected = 1.3 * SKILL_BASE_DAMAGE * 1.75;
+        assert!((before - health(&creatures, cow) - expected).abs() < 0.01, "dégâts amplifiés : {}", before - health(&creatures, cow));
+        assert_eq!(runner.cooldown(6, "fusion") > 0.0, true, "la Fusion a sa propre recharge");
+    }
+
+    #[test]
+    fn martyrs_mark_shares_the_allys_damage_with_the_chaplain() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut chaplain = CharacterStats::new(PlayerClass::Chaplain);
+        chaplain.skills.insert("martyrsMark".into(), 1);
+        let mut ally = CharacterStats::new(PlayerClass::Soldier);
+        let mut runner = SkillRunner::new();
+        runner.cast(&catalog, 1, &mut chaplain, "martyrsMark", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut Pair { feet, a: (1, &mut chaplain), b: (2, &mut ally) });
+        let (kept, shared) = runner.share_damage(2, 10.0);
+        assert!((kept - 6.0).abs() < 1e-4 && shared == Some((1, 4.0)), "{kept} {shared:?}");
+        assert_eq!(runner.share_damage(1, 10.0), (10.0, None), "le chapelain ne se lie pas à lui-même");
+    }
+
+    #[test]
+    fn a_detonating_mark_seeks_the_marked_beast_and_hawk_eye_reaches_further() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let cow = creatures.creatures()[0].id;
+        creatures.creature_mut(cow).unwrap().health = 1000.0;
+        let block = creatures.block_size();
+        let mut stats = CharacterStats::new(PlayerClass::Ranger);
+        stats.skills.insert("tracerRound".into(), 1);
+        stats.skills.insert("detonatingMark".into(), 1);
+        stats.mana = 1000.0;
+        let mut runner = SkillRunner::new();
+        runner.cast(&catalog, 3, &mut stats, "tracerRound", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 3, feet, stats: &mut stats });
+        let before = health(&creatures, cow);
+        // Visé loin de la vache, à dix blocs sur le côté : le tir la retrouve
+        runner.cast(&catalog, 3, &mut stats, "detonatingMark", Vec3::X, Some(feet + Vec3::X * 10.0 * block)).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 3, feet, stats: &mut stats });
+        assert!(health(&creatures, cow) < before, "le tir n'a pas cherché la bête marquée");
+
+        let mut archer = CharacterStats::new(PlayerClass::Archer);
+        archer.skills.insert("hawkEye".into(), 1);
+        runner.cast(&catalog, 4, &mut archer, "hawkEye", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 4, feet, stats: &mut archer });
+        assert!((runner.buff(4, BuffStat::Range) - 0.3).abs() < 1e-6, "l'œil de faucon n'allonge pas la portée");
+    }
+
+    #[test]
+    fn deadly_hunt_bleeds_harder_while_the_beast_moves() {
+        let catalog = SkillCatalog::load_default();
+        let bled = |moves: bool| {
+            let (mut creatures, feet) = world();
+            let cow = creatures.creatures()[0].id;
+            creatures.creature_mut(cow).unwrap().health = 1000.0;
+            let block = creatures.block_size();
+            let mut stats = CharacterStats::new(PlayerClass::Archer);
+            stats.skills.insert("deadlyHunt".into(), 1);
+            let mut runner = SkillRunner::new();
+            runner.cast(&catalog, 2, &mut stats, "deadlyHunt", Vec3::NEG_Z, None).unwrap();
+            until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 2, feet, stats: &mut stats });
+            let after_hit = health(&creatures, cow);
+            for _ in 0..20 {
+                if moves {
+                    creatures.creature_mut(cow).unwrap().position += Vec3::X * 0.5 * block;
+                }
+                runner.tick(0.25, &catalog, &mut creatures, &mut SoloPlayer { id: 2, feet, stats: &mut stats });
+            }
+            after_hit - health(&creatures, cow)
+        };
+        let (still, moving) = (bled(false), bled(true));
+        assert!(still > 0.0 && moving > 2.0 * still, "immobile {still}, en mouvement {moving}");
     }
 }

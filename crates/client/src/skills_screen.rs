@@ -462,6 +462,12 @@ fn draw_placement(ui: &mut egui::Ui, stats: &CharacterStats, node: &SkillNode, b
                     .on_hover_text("Ses règles ne sont pas encore écrites : elle s'apprend, mais ne se lance pas encore.");
                 return;
             }
+            // Un mélange ne se pose pas : il se lance par la case de la Fusion
+            if catalog.fusion_of_mix(id).is_some() {
+                ui.label(egui::RichText::new("Se lance par la Fusion").italics().size(11.0_f32).color(TEXT_DIM))
+                    .on_hover_text("Lance ses deux sorts élémentaires, puis la Fusion.");
+                return;
+            }
             if !learned {
                 return;
             }

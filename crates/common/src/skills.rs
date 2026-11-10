@@ -210,6 +210,9 @@ pub enum Effect {
         #[serde(default)]
         heal: Option<Ranked>,
         duration: Ranked,
+        /// Facteur des dégâts tant que la bête bouge (saignement qui s'aggrave : 3, trois fois plus)
+        #[serde(default)]
+        moving: Option<Ranked>,
     },
     /// Fait apparaître des entités alliées : créatures, tourelles, pièges, murs, invocations
     /// humanoïdes (une espèce de `assets/creatures/`)
@@ -246,6 +249,9 @@ pub enum Effect {
     /// La bête marquée encaisse plus souvent les coups critiques du lanceur : `chance` en plus (1 :
     /// toujours) pendant `duration` secondes
     Mark { chance: Ranked, duration: Ranked },
+    /// Lie l'allié au lanceur pendant `duration` secondes : `share` des dégâts qu'il subit (0,4 : 40 %)
+    /// sont encaissés par le lanceur à sa place
+    Link { share: Ranked, duration: Ranked },
     /// Les alliés tombés dans la zone se relèvent sur place avec `health` de leur vie (0,5 : la moitié)
     Revive { health: Ranked },
 }
@@ -272,6 +278,8 @@ pub enum BuffStat {
     Regeneration,
     /// Chance de coup critique (0,3 : 30 % ; un critique double les dégâts)
     Critical,
+    /// Portée des compétences : distance de visée, longueur des lignes et des secteurs (0,3 : +30 %)
+    Range,
 }
 
 /// Un effet, et à qui il s'applique s'il ne vise pas les cibles de la compétence (`to`)
@@ -313,6 +321,80 @@ pub struct Cast {
     /// Effets sur le lanceur, quelle que soit la zone
     #[serde(default)]
     pub self_effects: Vec<EffectEntry>,
+    /// Le cercle visé se pose sur la bête marquée (`mark`) par le lanceur la plus proche du point visé,
+    /// à portée
+    #[serde(default)]
+    pub homing: bool,
+}
+
+/// Les règles de la Fusion : elle mêle les deux derniers sorts élémentaires lancés
+#[derive(Debug, Clone, Deserialize)]
+pub struct FusionRules {
+    /// Deux éléments différents (nœuds de la roue qui donnent les sorts) et la compétence qu'ils font
+    pub mixes: Vec<FusionMix>,
+    #[serde(default)]
+    pub amplify: Amplify,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FusionMix {
+    pub elements: [String; 2],
+    pub skill: String,
+}
+
+/// Deux sorts du même élément : le dernier est relancé amplifié
+#[derive(Debug, Clone, Deserialize)]
+pub struct Amplify {
+    /// Facteur des dégâts, soins, boucliers et reculs
+    #[serde(default = "amplify_power")]
+    pub power: f32,
+    /// Facteur de la taille de la zone
+    #[serde(default = "amplify_area")]
+    pub area: f32,
+    /// Facteur du coût
+    #[serde(default = "amplify_cost")]
+    pub cost: f32,
+    /// Visuels joués en plus de ceux du sort
+    #[serde(default)]
+    pub visuals: Vec<Visual>,
+    /// Icône de l'amplification de chaque élément (fichier à côté de celui de la Fusion)
+    #[serde(default)]
+    pub icons: BTreeMap<String, String>,
+}
+
+impl Default for Amplify {
+    fn default() -> Self {
+        Self { power: amplify_power(), area: amplify_area(), cost: amplify_cost(), visuals: Vec::new(), icons: BTreeMap::new() }
+    }
+}
+
+fn amplify_power() -> f32 {
+    1.75
+}
+
+fn amplify_area() -> f32 {
+    1.3
+}
+
+fn amplify_cost() -> f32 {
+    1.5
+}
+
+/// Ce que la Fusion lance : un mélange de deux éléments, ou le dernier sort amplifié
+#[derive(Debug, Clone, PartialEq)]
+pub enum Fused {
+    Mix(String),
+    Amplified { spell: String, element: String },
+}
+
+impl Fused {
+    /// La compétence lancée
+    pub fn skill(&self) -> &str {
+        match self {
+            Fused::Mix(s) => s,
+            Fused::Amplified { spell, .. } => spell,
+        }
+    }
 }
 
 /// Moment d'un visuel
@@ -384,6 +466,8 @@ struct SkillFile {
     form: Option<String>,
     #[serde(default)]
     form_attacks: Vec<String>,
+    #[serde(default)]
+    fusion: Option<FusionRules>,
 }
 
 /// Une compétence lue dans son fichier
@@ -411,12 +495,14 @@ pub struct SkillDef {
     /// Les deux attaques de la forme, au clic gauche puis au clic droit : des compétences sans
     /// place sur la roue, apprises avec la forme et jouables seulement sous elle
     pub form_attacks: Vec<String>,
+    /// La Fusion : elle lance le mélange des deux derniers sorts élémentaires
+    pub fusion: Option<FusionRules>,
 }
 
 impl SkillDef {
-    /// Se lance : elle a des règles (ce qu'elle invoque est vérifié au chargement)
+    /// Se lance : elle a des règles (ce qu'elle invoque est vérifié au chargement), ou c'est la Fusion
     pub fn is_castable(&self) -> bool {
-        self.cast.is_some()
+        self.cast.is_some() || self.fusion.is_some()
     }
 
     /// Les apparitions de la compétence (`summon`), dans l'ordre du fichier
@@ -466,6 +552,10 @@ pub struct SkillCatalog {
     granted_by: HashMap<String, String>,
     /// Attaque de forme -> la forme (compétence) qui la donne
     form_attack_of: HashMap<String, String>,
+    /// Mélange -> la Fusion qui le lance
+    mix_of: HashMap<String, String>,
+    /// Icônes des amplifications, par élément
+    amplify_icons: HashMap<String, PathBuf>,
     gestures: HashMap<String, GestureTiming>,
     fingerprint: u64,
 }
@@ -565,6 +655,7 @@ impl SkillCatalog {
                             graft: file.graft,
                             form: file.form,
                             form_attacks: file.form_attacks,
+                            fusion: file.fusion,
                         });
                     }
                     Err(e) => errors.push(format!("{}/{id}.json : {e}", class.id)),
@@ -576,7 +667,7 @@ impl SkillCatalog {
         // de `assets/skills/`)
         let creatures: HashSet<String> = dir.parent().map(|d| json_files(&d.join("creatures")).iter().map(|p| stem(p)).collect()).unwrap_or_default();
 
-        let mut catalog = Self { classes, skills: Vec::new(), index: HashMap::new(), granted_by: HashMap::new(), form_attack_of: HashMap::new(), gestures: timing, fingerprint: 0 };
+        let mut catalog = Self { classes, skills: Vec::new(), index: HashMap::new(), granted_by: HashMap::new(), form_attack_of: HashMap::new(), mix_of: HashMap::new(), amplify_icons: HashMap::new(), gestures: timing, fingerprint: 0 };
         // Les fichiers en double ou mal formés sont écartés, puis les références vérifiées
         let mut seen = HashSet::new();
         skills.retain(|s| {
@@ -613,6 +704,19 @@ impl SkillCatalog {
                 catalog.granted_by.insert(a.clone(), s.id.clone());
                 catalog.form_attack_of.insert(a.clone(), s.id.clone());
             }
+            if let Some(fusion) = &s.fusion {
+                for m in &fusion.mixes {
+                    catalog.mix_of.insert(m.skill.clone(), s.id.clone());
+                }
+                for (element, icon) in &fusion.amplify.icons {
+                    let path = dir.join(&s.class).join(icon);
+                    if path.is_file() {
+                        catalog.amplify_icons.insert(element.clone(), path);
+                    } else {
+                        errors.push(format!("{}/{} : icône d'amplification absente {icon}", s.class, s.id));
+                    }
+                }
+            }
         }
         // Une compétence ni sur la roue ni accordée par un nœud ne s'apprendrait jamais
         for s in &skills {
@@ -634,6 +738,18 @@ impl SkillCatalog {
             }
             if let Some(missing) = w.requires.iter().chain(&w.grants).find(|r| !ids.contains(*r)) {
                 return Err(format!("compétence inconnue {missing}"));
+            }
+        }
+        if let Some(fusion) = &skill.fusion {
+            if let Some(missing) = fusion.mixes.iter().flat_map(|m| m.elements.iter().chain([&m.skill])).find(|r| !ids.contains(*r)) {
+                return Err(format!("fusion : compétence inconnue {missing}"));
+            }
+            if fusion.mixes.iter().any(|m| m.elements[0] == m.elements[1]) {
+                return Err("fusion : deux éléments différents par mélange (un même élément deux fois s'amplifie)".into());
+            }
+            let a = &fusion.amplify;
+            if ![a.power, a.area, a.cost].iter().all(|v| v.is_finite() && *v > 0.0) {
+                return Err("fusion : facteurs d'amplification positifs".into());
             }
         }
         if let Some(cast) = &skill.cast {
@@ -719,6 +835,39 @@ impl SkillCatalog {
     /// La forme (compétence du Druide) dont `id` est l'une des deux attaques
     pub fn form_of_attack(&self, id: &str) -> Option<&SkillDef> {
         self.form_attack_of.get(id).and_then(|f| self.get(f))
+    }
+
+    /// La Fusion (compétence du Sorcier élémentaire qui mêle les sorts), s'il en est une
+    pub fn fusion(&self) -> Option<&SkillDef> {
+        self.skills.iter().find(|s| s.fusion.is_some())
+    }
+
+    /// La Fusion qui lance le mélange `id` (un mélange ne se lance pas directement)
+    pub fn fusion_of_mix(&self, id: &str) -> Option<&SkillDef> {
+        self.mix_of.get(id).and_then(|f| self.get(f))
+    }
+
+    /// L'élément (nœud de la roue) du sort `id`, s'il entre dans la Fusion
+    pub fn element_of(&self, id: &str) -> Option<&str> {
+        let node = self.granted_by(id)?;
+        let rules = self.fusion()?.fusion.as_ref()?;
+        rules.mixes.iter().any(|m| m.elements.iter().any(|e| e == node)).then_some(node)
+    }
+
+    /// Ce que la Fusion fait des sorts `first` puis `last` : leur mélange, ou `last` amplifié s'ils
+    /// sont du même élément
+    pub fn fuse(&self, first: &str, last: &str) -> Option<Fused> {
+        let (a, b) = (self.element_of(first)?, self.element_of(last)?);
+        if a == b {
+            return Some(Fused::Amplified { spell: last.to_string(), element: a.to_string() });
+        }
+        let rules = self.fusion()?.fusion.as_ref()?;
+        rules.mixes.iter().find(|m| (m.elements[0] == a && m.elements[1] == b) || (m.elements[0] == b && m.elements[1] == a)).map(|m| Fused::Mix(m.skill.clone()))
+    }
+
+    /// Icône de l'amplification de l'élément `element`
+    pub fn amplify_icon(&self, element: &str) -> Option<&Path> {
+        self.amplify_icons.get(element).map(PathBuf::as_path)
     }
 
     /// Durée et impact du geste `name`
@@ -809,6 +958,12 @@ pub enum CastError {
     /// Une attaque de forme, hors de sa forme
     NotInForm,
     Stunned,
+    /// Un mélange ne se lance que par la Fusion
+    FusionOnly,
+    /// La Fusion attend deux sorts élémentaires
+    FusionEmpty,
+    /// Ce mélange n'est pas encore appris
+    FusionLocked,
 }
 
 impl CastError {
@@ -824,6 +979,9 @@ impl CastError {
             CastError::InForm => "impossible sous cette forme",
             CastError::NotInForm => "seulement sous sa forme",
             CastError::Stunned => "étourdi",
+            CastError::FusionOnly => "se lance par la Fusion",
+            CastError::FusionEmpty => "lance d'abord deux sorts élémentaires",
+            CastError::FusionLocked => "mélange pas encore appris",
         }
     }
 }
@@ -891,6 +1049,13 @@ impl Area {
     /// La zone posée aux pieds `feet` du lanceur, qui vise `aim` (direction quelconque) et
     /// `aimed` (point au sol, s'il en vise un). `block` : taille d'un bloc en unités du monde.
     pub fn place(&self, rank: u8, feet: Vec3, aim: Vec3, aimed: Option<Vec3>, block: f32) -> PlacedArea {
+        self.place_scaled(rank, feet, aim, aimed, block, 1.0, 1.0)
+    }
+
+    /// Comme `place`, la zone agrandie de `size` (amplification) et sa portée allongée de `reach`
+    /// (renforcement de portée)
+    #[allow(clippy::too_many_arguments)]
+    pub fn place_scaled(&self, rank: u8, feet: Vec3, aim: Vec3, aimed: Option<Vec3>, block: f32, size: f32, reach: f32) -> PlacedArea {
         let up = feet.normalize_or_zero();
         let flat = aim - up * aim.dot(up);
         let forward = if flat.length_squared() > 1e-8 { flat.normalize() } else { crate::tangent_frame(up).1 };
@@ -898,21 +1063,23 @@ impl Area {
             Area::Circle { radius, center, distance } => {
                 let center = match (center, aimed) {
                     (Center::Aimed, Some(point)) => {
-                        let reach = distance.at(rank) * block;
+                        let range = distance.at(rank) * reach * block;
                         let offset = point - feet;
-                        if offset.length() > reach {
-                            feet + offset.normalize() * reach
+                        if offset.length() > range {
+                            feet + offset.normalize() * range
                         } else {
                             point
                         }
                     }
-                    (Center::Aimed, None) => feet + forward * distance.at(rank) * block,
+                    (Center::Aimed, None) => feet + forward * distance.at(rank) * reach * block,
                     (Center::Caster, _) => feet,
                 };
-                PlacedArea::Circle { center, radius: radius.at(rank) * block }
+                PlacedArea::Circle { center, radius: radius.at(rank) * size * block }
             }
-            Area::Arc { range, angle } => PlacedArea::Arc { apex: feet, forward, range: range.at(rank) * block, half_angle: (angle.at(rank) * 0.5).to_radians() },
-            Area::Line { length, width } => PlacedArea::Line { start: feet, forward, length: length.at(rank) * block, half_width: width.at(rank) * 0.5 * block },
+            Area::Arc { range, angle } => PlacedArea::Arc { apex: feet, forward, range: range.at(rank) * size * reach * block, half_angle: (angle.at(rank) * 0.5).to_radians() },
+            Area::Line { length, width } => {
+                PlacedArea::Line { start: feet, forward, length: length.at(rank) * size * reach * block, half_width: width.at(rank) * 0.5 * size * block }
+            }
             Area::Caster => PlacedArea::Caster,
         }
     }
@@ -1138,17 +1305,42 @@ mod tests {
             assert!(skill.id.chars().all(|c| c.is_ascii_alphanumeric()) && skill.id.chars().next().unwrap().is_ascii_lowercase(), "{}", skill.id);
         }
         assert_ne!(catalog.fingerprint(), 0);
-        // Toutes se jouent, sauf les nœuds qui donnent d'autres sorts (éléments, Fusion)
+        // Toutes se jouent, sauf les nœuds qui donnent d'autres sorts (éléments)
         for skill in catalog.iter() {
-            let container = skill.wheel.as_ref().is_some_and(|w| !w.grants.is_empty()) || skill.id == "fusion";
+            let container = skill.wheel.as_ref().is_some_and(|w| !w.grants.is_empty());
             assert!(container || skill.is_castable(), "{}/{} n'a pas de règles", skill.class, skill.id);
         }
+    }
+
+    #[test]
+    fn test_fusion_mixes_two_elements_and_amplifies_one() {
+        let catalog = catalog();
+        assert_eq!(catalog.element_of("igneousOrb"), Some("fire"));
+        assert_eq!(catalog.element_of("judgment"), None);
+        assert_eq!(catalog.fuse("foamingWhip", "igneousOrb"), Some(Fused::Mix("scaldingTyphoon".into())));
+        assert_eq!(catalog.fuse("seismicShard", "galeBlades"), Some(Fused::Mix("shrapnelStorm".into())));
+        assert_eq!(catalog.fuse("igneousOrb", "volcanicRune"), Some(Fused::Amplified { spell: "volcanicRune".into(), element: "fire".into() }));
+        // Les six paires d'éléments ont leur mélange, chaque élément son icône d'amplification
+        let elements = ["fire", "water", "earth", "air"];
+        let spell = |e: &str| catalog.iter().find(|s| catalog.granted_by(&s.id) == Some(e)).unwrap().id.clone();
+        for a in elements {
+            assert!(catalog.amplify_icon(a).is_some(), "{a}");
+            for b in elements.iter().filter(|b| **b != a) {
+                assert!(matches!(catalog.fuse(&spell(a), &spell(b)), Some(Fused::Mix(_))), "{a} + {b}");
+            }
+        }
+        assert!(catalog.fusion_of_mix("magmaWall").is_some());
+        assert!(catalog.fusion().unwrap().is_castable());
     }
 
     #[test]
     fn test_visuals_and_gestures_exist() {
         let catalog = catalog();
         let effects = asset_dir("assets/effects").unwrap();
+        let amplify = catalog.fusion().and_then(|f| f.fusion.as_ref()).map(|f| f.amplify.visuals.clone()).unwrap_or_default();
+        for visual in &amplify {
+            assert!(effects.join(format!("{}.json", visual.effect)).is_file(), "amplification : effet inconnu {}", visual.effect);
+        }
         for skill in catalog.iter() {
             for visual in &skill.visuals {
                 assert!(effects.join(format!("{}.json", visual.effect)).is_file(), "{} : effet inconnu {}", skill.id, visual.effect);
