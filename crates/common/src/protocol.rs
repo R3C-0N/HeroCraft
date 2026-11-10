@@ -182,6 +182,8 @@ pub enum ServerPacket {
     CreaturesDespawned(Vec<u64>),
     /// Positions des créatures du voisinage, envoyées à intervalle régulier
     CreatureStates(Vec<CreatureState>),
+    /// Tirs de créatures (tourelles, bastion, liche) partis à l'instant, pour les montrer
+    CreatureShots(Vec<crate::creature::CreatureShotEvent>),
     /// Mise à jour des statistiques RPG du joueur (chaque seconde, et aussitôt après une chute)
     StatsUpdate(CharacterStats),
     /// Le joueur vient d'être mordu ou chargé par une créature (suivi de ses nouvelles jauges)

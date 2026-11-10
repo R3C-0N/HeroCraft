@@ -436,7 +436,8 @@ impl Effects {
             let seconds = cue.hold.map_or_else(|| def.natural_seconds(), |h| h.max(0.05));
             let n = def.layers.len();
             self.next_seed = self.next_seed.wrapping_add(7919);
-            self.running.push(Running { def: def.clone(), cue, started: Instant::now(), seconds, particles: vec![Vec::new(); n], emitted: vec![false; n], carry: vec![0.0; n], last_anchor: None, seed: self.next_seed });
+            let started = Instant::now() + std::time::Duration::from_secs_f32(cue.delay.clamp(0.0, 30.0));
+            self.running.push(Running { def: def.clone(), cue, started, seconds, particles: vec![Vec::new(); n], emitted: vec![false; n], carry: vec![0.0; n], last_anchor: None, seed: self.next_seed });
         }
     }
 
@@ -450,7 +451,12 @@ impl Effects {
         let now = Instant::now();
         self.running.retain(|r| now.duration_since(r.started).as_secs_f32() < r.seconds + 2.0);
         for run in &mut self.running {
-            let Some((anchor, forward)) = anchor_of(&run.cue, world) else { continue };
+            // Pas encore commencé (`VisualCue::delay`)
+            if now < run.started {
+                continue;
+            }
+            let t = now.duration_since(run.started).as_secs_f32();
+            let Some((anchor, forward)) = anchor_of(&run.cue, world, t) else { continue };
             let anchor = match anchor {
                 Some(p) => {
                     run.last_anchor = Some(p);
@@ -461,7 +467,6 @@ impl Effects {
                     None => continue,
                 },
             };
-            let t = now.duration_since(run.started).as_secs_f32();
             let scale = world.block * if run.def.area_unit { run.cue.area_blocks.max(0.1) } else { 1.0 };
             simulate(run, t, dt, anchor, forward, scale, world, out);
             if out.len() >= MAX_QUADS {
@@ -474,7 +479,7 @@ impl Effects {
 
 /// L'ancre d'un visuel à cette image et la direction de la visée. `Some(None)` : l'ancre a
 /// disparu (cible morte), l'effet reste où il était.
-fn anchor_of(cue: &VisualCue, world: &AnchorWorld) -> Option<(Option<Vec3>, Vec3)> {
+fn anchor_of(cue: &VisualCue, world: &AnchorWorld, t: f32) -> Option<(Option<Vec3>, Vec3)> {
     let (hero, forward) = match cue.caster {
         None => (world.hero, world.hero_forward),
         Some(id) => {
@@ -493,7 +498,11 @@ fn anchor_of(cue: &VisualCue, world: &AnchorWorld) -> Option<(Option<Vec3>, Vec3
         Anchor::Head => Some(hero.head),
         Anchor::Body => Some(hero.body),
         Anchor::Feet => Some(hero.feet),
-        Anchor::Aimed | Anchor::Area => Some(cue.point),
+        Anchor::Aimed | Anchor::Area => Some(match cue.travel {
+            // Un projectile file vers son but
+            Some((to, seconds)) => cue.point.lerp(to, (t / seconds.max(1e-3)).clamp(0.0, 1.0)),
+            None => cue.point,
+        }),
         Anchor::Target => cue.creature.and_then(|id| (world.creatures)(id)),
     };
     Some((point, forward))
@@ -882,7 +891,7 @@ mod tests {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/effects");
         let (library, errors) = EffectLibrary::load_dir(&dir);
         assert!(errors.is_empty(), "{errors:?}");
-        assert_eq!(library.effects.len(), 47);
+        assert_eq!(library.effects.len(), 50);
         let ring = &library.effects["shockRing"];
         assert!(ring.area_unit);
         assert!((ring.natural_seconds() - 1.1).abs() < 1e-4, "{}", ring.natural_seconds());
@@ -894,7 +903,7 @@ mod tests {
         let (library, _) = EffectLibrary::load_dir(&dir);
         let mut effects = Effects { library, running: Vec::new(), next_seed: 1 };
         let feet = Vec3::new(0.0, 1000.0, 0.0);
-        let cue = VisualCue { effect: "shockRing".into(), anchor: Anchor::Feet, caster: None, point: feet, creature: None, aim: Vec3::NEG_Z, hold: None, area_blocks: 3.0 };
+        let cue = VisualCue { effect: "shockRing".into(), anchor: Anchor::Feet, caster: None, point: feet, creature: None, aim: Vec3::NEG_Z, hold: None, area_blocks: 3.0, travel: None, delay: 0.0 };
         effects.start(vec![cue]);
         let no_player = |_: u64| None; let no_creature = |_: u64| None;
         let world = AnchorWorld { hero: HeroAnchors::standing(feet, 0.0, 1.0), hero_forward: Vec3::NEG_Z, players: &no_player, creatures: &no_creature, eye: feet + Vec3::new(0.0, 3.0, 6.0), block: 1.0 };

@@ -79,6 +79,10 @@ pub struct CreatureSpecies {
     /// Modèle 3D (absent pour un humanoïde)
     #[serde(default)]
     pub model: CreatureModel,
+    /// Provocation, en blocs : les bêtes agressives à cette distance d'elle s'en prennent à elle
+    /// avant tout autre (Chevalier de la Mort)
+    #[serde(default)]
+    pub taunt: Option<f32>,
 }
 
 /// Élevage d'une espèce : nourrie de ce qu'elle aime, une bête sauvage finit par s'apprivoiser ;
@@ -172,6 +176,57 @@ pub struct CreatureAttack {
     /// Elle lâche sa cible à tant de blocs de là où la poursuite a commencé, et y revient
     #[serde(default)]
     pub leash: Option<f32>,
+    /// Tir à distance (tourelle, bastion, liche) : la bête vise de loin au lieu de s'approcher, et
+    /// frappe au contact seulement si sa cible est à portée de `reach`
+    #[serde(default)]
+    pub shot: Option<CreatureShot>,
+}
+
+/// Un tir à distance : un projectile part de la bête vers sa cible, et touche à son arrivée
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureShot {
+    /// Portée, en blocs
+    pub range: f32,
+    /// Points de vie retirés à chaque cible touchée (sinon ceux de l'attaque)
+    #[serde(default)]
+    pub damage: Option<f32>,
+    /// Vitesse du projectile, en blocs par seconde (0 : tout de suite, comme un jet de flammes)
+    #[serde(default)]
+    pub speed: f32,
+    /// Rayon de l'explosion, en blocs : chaque ennemi dans ce rayon autour de la cible est touché
+    /// (0 : la cible seule)
+    #[serde(default)]
+    pub radius: f32,
+    /// Hauteur d'où part le tir, en blocs au-dessus des pieds
+    #[serde(default = "one_f32")]
+    pub height: f32,
+    /// Effets visuels (`assets/effects/`) : à la bouche du tir, tourné vers la cible ; le long du
+    /// trajet ; à l'arrivée
+    #[serde(default)]
+    pub muzzle: Option<String>,
+    #[serde(default)]
+    pub projectile: Option<String>,
+    #[serde(default)]
+    pub impact: Option<String>,
+}
+
+impl CreatureShot {
+    /// Durée du trajet d'un tir de `from` à `to`, en secondes (`block` : taille d'un bloc)
+    pub fn flight_seconds(&self, from: Vec3, to: Vec3, block: f32) -> f32 {
+        if self.speed > 0.0 { from.distance(to) / (self.speed * block) } else { 0.0 }
+    }
+}
+
+/// Un tir de créature, pour le montrer aux joueurs
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CreatureShotEvent {
+    pub creature_id: u64,
+    /// Rang de l'espèce du tireur dans le registre
+    pub species: u32,
+    /// Bouche du tir et point d'arrivée
+    pub from: Vec3,
+    pub to: Vec3,
 }
 
 /// Volume du corps, en blocs
@@ -345,6 +400,9 @@ pub enum CreatureAction {
     Attaque,
     /// Inactivité : rang dans `CreatureSpecies::pauses`
     Pause(u8),
+    /// Elle apparaît (entité invoquée qui se déplie ou surgit du sol) : avancée de 0 à 255 de son
+    /// animation `apparition`, jouée une seule fois
+    Apparition(u8),
 }
 
 impl CreatureAction {
@@ -356,6 +414,7 @@ impl CreatureAction {
             Self::Course => "course",
             Self::Attaque => "attaque",
             Self::Pause(i) => species.pauses().nth(i as usize).map_or("repos", |(name, _)| name),
+            Self::Apparition(_) => "apparition",
         }
     }
 }
@@ -572,7 +631,15 @@ pub struct CreatureState {
     pub scale: f32,
     /// Humeur d'élevage, en bits `MOOD_*`
     pub mood: u8,
+    /// Joueur qui l'a invoquée (compétence)
+    pub summoner: Option<u64>,
+    /// Copie d'une autre allure : celle de son invocateur (`COPY_SUMMONER`) ou celle d'une espèce
+    /// (son rang dans le registre), teinte comprise
+    pub copy: Option<u32>,
 }
+
+/// `CreatureState::copy` : elle a l'allure de son invocateur
+pub const COPY_SUMMONER: u32 = u32::MAX;
 
 /// Des cœurs flottent au-dessus d'elle (amoureuse, ou tout juste apprivoisée)
 pub const MOOD_HEARTS: u8 = 1;

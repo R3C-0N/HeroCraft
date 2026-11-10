@@ -19,16 +19,7 @@
     "leash": 16,
     "reach": 1.2,
     "chase_speed": 1.6,
-    "hunts_players": false,
-    "prey": [
-      "loup",
-      "ours",
-      "sanglier",
-      "brute",
-      "champion",
-      "gorgone",
-      "millepattes",
-      "rampant"
-    ]
-  }
+    "hunts_players": false
+  },
+  "taunt": 6
 }

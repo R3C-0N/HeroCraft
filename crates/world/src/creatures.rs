@@ -37,7 +37,7 @@ use std::sync::Arc;
 use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
-use herocraft_common::{blocks, items, tangent_frame, AttackMode, BlockId, ItemId, MOOD_HEARTS, MOOD_SATED, MOOD_TAMED, CreatureAction, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CORPSE_TIME, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
+use herocraft_common::{blocks, items, tangent_frame, AttackMode, BlockId, ItemId, MOOD_HEARTS, MOOD_SATED, MOOD_TAMED, CreatureAction, CreatureShotEvent, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CORPSE_TIME, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -284,6 +284,12 @@ pub struct Creature {
     stun: f32,
     /// Invoquée par ce joueur (compétence) : alliée, jamais gardée endormie avec sa zone
     pub summoner: Option<u64>,
+    /// Apparition d'une entité invoquée : temps restant et durée totale, en secondes ; elle ne
+    /// bouge ni ne frappe avant d'être en place
+    appearing: f32,
+    appear_total: f32,
+    /// Allure copiée (`CreatureState::copy`)
+    pub copy: Option<u32>,
 }
 
 /// Un joueur a tué un habitant ou un voyageur : de quoi l'annoncer
@@ -378,6 +384,21 @@ pub struct PlayerHit {
     pub damage: f32,
 }
 
+/// Un projectile en vol
+#[derive(Debug, Clone)]
+struct Flying {
+    shooter: u64,
+    /// Le tireur est une entité invoquée : il ne touche que les bêtes hostiles
+    allied: bool,
+    species: usize,
+    target: Target,
+    to: Vec3,
+    damage: f32,
+    /// Rayon de l'explosion, en unités du monde
+    radius: f32,
+    left: f32,
+}
+
 /// Ce qu'une bête chasse
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Target {
@@ -399,6 +420,8 @@ impl Creature {
             action: self.action(),
             scale: self.scale(),
             mood: self.mood(),
+            summoner: self.summoner,
+            copy: self.copy,
         }
     }
 
@@ -431,6 +454,9 @@ impl Creature {
     pub fn action(&self) -> CreatureAction {
         if self.dead_for.is_some() {
             CreatureAction::Repos
+        } else if self.appearing > 0.0 {
+            let done = 1.0 - self.appearing / self.appear_total.max(1e-3);
+            CreatureAction::Apparition((done.clamp(0.0, 1.0) * 255.0) as u8)
         } else if self.striking > 0.0 {
             CreatureAction::Attaque
         } else if self.panic > 0.0 || (self.hunting && self.walking && self.pace > 1.0) {
@@ -540,6 +566,10 @@ pub struct CreatureWorld {
     wanted: Vec<(u64, u64, f32)>,
     /// Meurtres pas encore annoncés (voir `take_murders`)
     murders: Vec<Murder>,
+    /// Tirs partis, pas encore montrés (voir `take_shots`)
+    shots: Vec<CreatureShotEvent>,
+    /// Projectiles en vol : ils touchent à leur arrivée
+    flying: Vec<Flying>,
     /// Coups portés aux habitants, pas encore signalés à leur auteur (voir `take_assaults`)
     assaults: Vec<Assault>,
     geometry: BlockGeometry,
@@ -654,6 +684,8 @@ impl CreatureWorld {
             food_table,
             lay_table,
             laid: Vec::new(),
+            shots: Vec::new(),
+            flying: Vec::new(),
             wanted: Vec::new(),
             murders: Vec::new(),
             assaults: Vec::new(),
@@ -808,6 +840,9 @@ impl CreatureWorld {
             slow_time: 0.0,
             stun: 0.0,
             summoner: None,
+            appearing: 0.0,
+            appear_total: 0.0,
+            copy: None,
         });
     }
 
@@ -1068,6 +1103,18 @@ impl CreatureWorld {
         }
 
         let c = &mut self.creatures[index];
+        // Une entité invoquée encaisse sans reculer ni fuir
+        if c.summoner.is_some() {
+            c.hurt = CREATURE_HURT_TIME;
+            c.health -= damage;
+            if c.health <= 0.0 {
+                c.dead_for = Some(0.0);
+                c.walking = false;
+                c.hunting = false;
+                return Some(true);
+            }
+            return Some(false);
+        }
         let up = c.position.normalize_or_zero();
         let (east, north) = tangent_frame(up);
         let away = c.position - from;
@@ -1142,11 +1189,43 @@ impl CreatureWorld {
             w.2 -= dt;
         }
         self.wanted.retain(|w| w.2 > 0.0);
-        let snapshot: Vec<(u64, usize, Vec3, bool, bool)> = self.creatures.iter().map(|c| (c.id, c.species, c.position, c.is_alive() && !c.hidden, c.hunting)).collect();
+        // Identifiant, espèce, pieds, vivante et visible, en chasse, apprivoisée, invoquée
+        let snapshot: Vec<(u64, usize, Vec3, bool, bool, bool, bool)> =
+            self.creatures.iter().map(|c| (c.id, c.species, c.position, c.is_alive() && !c.hidden, c.hunting, c.tamed, c.summoner.is_some())).collect();
         let mut player_hits = Vec::new();
+        // Les projectiles arrivés touchent leur cible, ou tout ce qui est hostile au tireur dans le
+        // rayon de leur explosion
+        let mut blasts = Vec::new();
+        for f in &mut self.flying {
+            f.left -= dt;
+        }
+        let (arrived, flying): (Vec<Flying>, Vec<Flying>) = std::mem::take(&mut self.flying).into_iter().partition(|f| f.left <= 0.0);
+        self.flying = flying;
+        for f in arrived {
+            if f.radius > 0.0 {
+                for &(id, _, position, alive, _, tamed, summoned) in &snapshot {
+                    let foe = if f.allied { !tamed } else { summoned };
+                    if alive && foe && id != f.shooter && position.distance(f.to) <= f.radius {
+                        blasts.push((id, f.to, f.damage));
+                    }
+                }
+                if !f.allied {
+                    for (player, feet) in players.iter().enumerate() {
+                        if feet.distance(f.to) <= f.radius {
+                            player_hits.push(PlayerHit { player, creature_id: f.shooter, species: f.species, damage: f.damage });
+                        }
+                    }
+                }
+            } else {
+                match f.target {
+                    Target::Creature(id) => blasts.push((id, f.to, f.damage)),
+                    Target::Player(player) => player_hits.push(PlayerHit { player, creature_id: f.shooter, species: f.species, damage: f.damage }),
+                }
+            }
+        }
         // Coups portés aux proies : proie, d'où, dégâts, rang du prédateur
         let mut bites = Vec::new();
-        let Self { creatures, registry, prey_table, rng, wanted, .. } = self;
+        let Self { creatures, registry, prey_table, rng, wanted, shots, flying, .. } = self;
         for (index, c) in creatures.iter_mut().enumerate() {
             c.stun = (c.stun - dt).max(0.0);
             c.slow_time = (c.slow_time - dt).max(0.0);
@@ -1158,6 +1237,13 @@ impl CreatureWorld {
             c.striking = (c.striking - dt).max(0.0);
             c.anger = (c.anger - dt).max(0.0);
             c.sated = (c.sated - dt).max(0.0);
+            // Une entité invoquée ne fait rien avant d'être en place
+            if c.appearing > 0.0 {
+                c.appearing = (c.appearing - dt).max(0.0);
+                c.hunting = false;
+                c.walking = false;
+                continue;
+            }
             let Some(species) = registry.get(c.species) else { continue };
             let Some(attack) = &species.attack else { continue };
             // Endormie, elle ne chasse pas, sauf si un coup l'a réveillée en colère
@@ -1174,7 +1260,7 @@ impl CreatureWorld {
             }
             c.sleeping = false;
             let (mut kin, mut alerted) = (0, false);
-            for &(id, kind, position, alive, hunting) in &snapshot {
+            for &(id, kind, position, alive, hunting, _, _) in &snapshot {
                 if alive && kind == c.species && position.distance(c.position) <= PACK_RADIUS * block {
                     kin += 1;
                     alerted |= hunting && id != c.id;
@@ -1203,7 +1289,12 @@ impl CreatureWorld {
                     target = Some((candidate, position, distance));
                 }
             };
+            let summoned = c.summoner.is_some();
             for (k, &player) in players.iter().enumerate() {
+                // Une invocation ne s'en prend jamais aux joueurs
+                if summoned {
+                    break;
+                }
                 let key = keys.get(k).copied().unwrap_or(0);
                 // Un humanoïde (garde, voyageur armé) ne s'en prend qu'au joueur qui a frappé l'un des
                 // siens (`wanted`), jamais à son voisin ; une bête en colère, à tous
@@ -1212,13 +1303,35 @@ impl CreatureWorld {
                 }
             }
             if c.sated <= 0.0 && !angry {
-                for &(id, kind, position, alive, _) in &snapshot {
-                    if alive && prey_table[c.species].contains(&kind) {
+                for &(id, kind, position, alive, _, tamed, _) in &snapshot {
+                    if alive && prey_table[c.species].contains(&kind) && !(summoned && tamed) {
                         consider(Target::Creature(id), position);
                     }
                 }
             }
-            let Some((target, goal, _)) = kept.or(target) else {
+            // Une invocation s'en prend aux bêtes agressives ; une bête agressive, aux invocations
+            let hostile = |kind: usize| registry.get(kind).and_then(|s| s.attack.as_ref()).is_some_and(|a| a.hunts_players);
+            for &(id, kind, position, alive, _, tamed, ally) in &snapshot {
+                let foe = if summoned { !tamed && hostile(kind) } else { attack.hunts_players && ally };
+                if alive && foe && id != c.id {
+                    consider(Target::Creature(id), position);
+                }
+            }
+            // Une invocation qui provoque (`taunt`) attire à elle les bêtes agressives proches
+            let taunter = (attack.hunts_players && !summoned)
+                .then(|| {
+                    snapshot
+                        .iter()
+                        .filter(|e| e.3 && e.6)
+                        .filter_map(|e| {
+                            let reach = registry.get(e.1)?.taunt? * block;
+                            let distance = e.2.distance(c.position);
+                            (distance <= reach).then_some((Target::Creature(e.0), e.2, distance))
+                        })
+                        .min_by(|a, b| a.2.total_cmp(&b.2))
+                })
+                .flatten();
+            let Some((target, goal, _)) = taunter.or(kept).or(target) else {
                 c.stop_hunting(rng);
                 c.quarry = None;
                 c.chase_from = None;
@@ -1246,6 +1359,8 @@ impl CreatureWorld {
             let flat_distance = flat.length() / block;
             let toward = yaw_to(flat);
             let in_reach = flat_distance <= species.body.half_length + attack.reach + TARGET_RADIUS && (to.dot(up) / block).abs() <= MAX_STRIKE_HEIGHT;
+            // Trop loin pour frapper, assez près pour tirer
+            let shot = attack.shot.as_ref().filter(|s| !in_reach && flat_distance <= s.range);
             let mut strikes = false;
             match attack.mode {
                 AttackMode::Charge => {
@@ -1288,7 +1403,7 @@ impl CreatureWorld {
                     }
                 }
                 AttackMode::Solo | AttackMode::Pack => {
-                    if in_reach {
+                    if in_reach || shot.is_some() {
                         c.walking = false;
                         c.target_yaw = toward;
                         strikes = angle_between(c.yaw, toward).abs() < STRIKE_ANGLE;
@@ -1310,16 +1425,37 @@ impl CreatureWorld {
                 c.attack_cooldown = attack.cooldown;
                 // Le temps d'un cycle de son animation d'attaque
                 c.striking = species.model.animations.get("attaque").map_or(STRIKE_ANIMATION, |a| a.cycle);
+                if let Some(shot) = shot {
+                    let from = c.position + up * shot.height * block;
+                    let aim = goal + up * TARGET_RADIUS * block;
+                    shots.push(CreatureShotEvent { creature_id: c.id, species: c.species as u32, from, to: aim });
+                    flying.push(Flying {
+                        shooter: c.id,
+                        allied: summoned,
+                        species: c.species,
+                        target,
+                        to: goal,
+                        damage: shot.damage.unwrap_or(attack.damage),
+                        radius: shot.radius * block,
+                        left: shot.flight_seconds(from, aim, block),
+                    });
+                    continue;
+                }
                 // Un petit bond vers la cible
-                c.push += flat.normalize_or_zero() * LUNGE_SPEED;
-                if c.vertical_speed == 0.0 {
-                    c.vertical_speed = LUNGE_HOP;
+                if species.walk_speed > 0.0 {
+                    c.push += flat.normalize_or_zero() * LUNGE_SPEED;
+                    if c.vertical_speed == 0.0 {
+                        c.vertical_speed = LUNGE_HOP;
+                    }
                 }
                 match target {
                     Target::Player(player) => player_hits.push(PlayerHit { player, creature_id: c.id, species: c.species, damage: attack.damage }),
                     Target::Creature(prey) => bites.push((prey, c.position, attack.damage, index)),
                 }
             }
+        }
+        for (id, from, damage) in blasts {
+            self.strike(id, from, damage, false);
         }
         for (prey, from, damage, hunter) in bites {
             // Un garde reste sur le qui-vive ; une bête repue laisse les proies un moment
@@ -1547,10 +1683,25 @@ impl CreatureWorld {
         let health = self.registry.get(species).map_or(1.0, |s| s.health);
         let herd = id;
         self.wake_creature(id, species, herd, feet, yaw, health, true, None);
+        let appear = self.registry.get(species).and_then(|s| s.model.animations.get("apparition")).map_or(0.0, |a| a.cycle);
         if let Some(c) = self.creatures.last_mut() {
             c.summoner = Some(summoner);
+            c.appearing = appear;
+            c.appear_total = appear;
         }
         id
+    }
+
+    /// Donne à la créature invoquée `id` l'allure d'une autre (`CreatureState::copy`)
+    pub fn set_copy(&mut self, id: u64, copy: u32) {
+        if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id) {
+            c.copy = Some(copy);
+        }
+    }
+
+    /// Tirs de créatures partis depuis le dernier appel, pour les montrer aux joueurs
+    pub fn take_shots(&mut self) -> Vec<CreatureShotEvent> {
+        std::mem::take(&mut self.shots)
     }
 
     /// Fait disparaître une entité invoquée (fin de sa durée, ou remplacée par une plus récente)
@@ -2980,6 +3131,42 @@ mod tests {
     /// Coups portés au joueur en `seconds` secondes de jeu
     fn hits_over(world: &mut CreatureWorld, generator: &PlanetWorldGenerator, edits: &TerrainEdits, player: Vec3, seconds: f32) -> Vec<PlayerHit> {
         (0..(seconds / 0.05) as usize).flat_map(|_| world.tick(0.05, generator, edits, &[player])).collect()
+    }
+
+    #[test]
+    fn a_summoned_turret_appears_then_shoots_the_monster_in_range() {
+        let (generator, edits, mut world, feet, _) = beasts_and_player("rampant", 1, 0.0, 31);
+        let block = world.block_size();
+        let (east, north) = tangent_frame(feet.normalize());
+        // Le monstre est à huit blocs de la tourelle, le joueur loin des deux
+        let turret_feet = feet + north * 8.0 * block;
+        let player = feet - east * 40.0 * block;
+        let monster = world.creatures()[0].id;
+        let turret = world.summon(world.registry().find("ballisticTurret").unwrap(), turret_feet, 0.0, 9);
+        let action = |w: &CreatureWorld, id| w.creatures().iter().find(|c| c.id == id).map(|c| c.action());
+        assert!(matches!(action(&world, turret), Some(CreatureAction::Apparition(0))), "elle apparaît d'abord");
+        let health = world.creatures().iter().find(|c| c.id == monster).unwrap().health;
+        let mut shots = Vec::new();
+        for _ in 0..80 {
+            world.tick(0.05, &generator, &edits, &[player]);
+            shots.extend(world.take_shots());
+        }
+        assert!(!matches!(action(&world, turret), Some(CreatureAction::Apparition(_))), "en place");
+        assert!(shots.iter().any(|s| s.creature_id == turret), "la tourelle n'a pas tiré");
+        let hurt = world.creatures().iter().find(|c| c.id == monster).is_none_or(|c| c.health < health);
+        assert!(hurt, "le monstre n'a pas été touché");
+    }
+
+    #[test]
+    fn the_death_knight_draws_the_monster_away_from_the_player() {
+        let (generator, edits, mut world, feet, player) = beasts_and_player("rampant", 1, 2.0, 32);
+        let block = world.block_size();
+        let (_, north) = tangent_frame(feet.normalize());
+        let knight = world.summon(world.registry().find("deathKnight").unwrap(), feet + north * 4.5 * block, 0.0, 9);
+        let health = world.creatures().iter().find(|c| c.id == knight).unwrap().health;
+        let hits = hits_over(&mut world, &generator, &edits, player, 4.0);
+        assert!(hits.is_empty(), "le monstre s'en est pris au joueur malgré la provocation");
+        assert!(world.creatures().iter().find(|c| c.id == knight).is_none_or(|c| c.health < health), "le chevalier n'a pas été attaqué");
     }
 
     #[test]

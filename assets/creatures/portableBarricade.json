@@ -13,6 +13,10 @@
     "mesh": "../skills/models/portableBarricade.gltf",
     "texture": "../skills/models/portableBarricade.png",
     "animations": {
+      "apparition": {
+        "clip": "unfold",
+        "cycle": 0.7
+      },
       "coup": {
         "os": {
           "root": {

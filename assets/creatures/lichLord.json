@@ -20,15 +20,14 @@
     "reach": 1.4,
     "chase_speed": 1.6,
     "hunts_players": false,
-    "prey": [
-      "loup",
-      "ours",
-      "sanglier",
-      "brute",
-      "champion",
-      "gorgone",
-      "millepattes",
-      "rampant"
-    ]
+    "shot": {
+      "range": 10,
+      "damage": 6,
+      "speed": 10,
+      "radius": 2,
+      "height": 1.6,
+      "projectile": "soulOrb",
+      "impact": "soulBlast"
+    }
   }
 }

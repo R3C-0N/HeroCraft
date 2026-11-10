@@ -294,6 +294,9 @@ pub struct RemoteCreature {
     /// Taille et humeur d'élevage (`CreatureState::scale`, `mood`), les dernières reçues
     pub scale: f32,
     pub mood: u8,
+    /// Invocateur et allure copiée (`CreatureState::summoner`, `copy`)
+    pub summoner: Option<u64>,
+    pub copy: Option<u32>,
     track: Track,
     /// Derniers coups, morts et actions reçus, avec leur instant, pour les montrer au rythme des
     /// positions
@@ -302,12 +305,12 @@ pub struct RemoteCreature {
 
 impl RemoteCreature {
     fn new(species: String) -> Self {
-        Self { species, position: None, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, track: Track::default(), effects: VecDeque::new() }
+        Self { species, position: None, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, track: Track::default(), effects: VecDeque::new() }
     }
 
     fn push(&mut self, at: Instant, state: &CreatureState) {
         self.track.push(at, state.position, state.yaw);
-        (self.scale, self.mood) = (state.scale, state.mood);
+        (self.scale, self.mood, self.summoner, self.copy) = (state.scale, state.mood, state.summoner, state.copy);
         self.effects.push_back((at, state.hurt, state.death, state.action));
         while self.effects.len() > MAX_SNAPSHOTS {
             self.effects.pop_front();
@@ -349,6 +352,8 @@ pub enum NetEvent {
     SkillRefused { skill: String, reason: String },
     /// Une compétence frappe : centre de sa zone et cibles touchées
     SkillHit { player_id: u64, skill: String, rank: u8, center: Vec3, creatures: Vec<u64>, players: Vec<u64> },
+    /// Des créatures tirent (tourelles, bastion, liche)
+    CreatureShots(Vec<herocraft_common::CreatureShotEvent>),
     /// Connexion perdue ou fermée par le serveur
     Disconnected(String),
 }
@@ -535,6 +540,7 @@ impl NetClient {
                     }
                 }
             }
+            ServerPacket::CreatureShots(shots) => return Some(NetEvent::CreatureShots(shots)),
             ServerPacket::ChatMessage { sender, message } => {
                 if sender.is_empty() {
                     info!("[Serveur] {message}");
@@ -621,7 +627,7 @@ impl NetClient {
             .iter()
             .filter_map(|(&id, c)| {
                 let (feet, yaw) = c.position?;
-                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw, hurt: c.hurt, death: c.death, action: c.action, scale: c.scale, mood: c.mood })
+                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw, hurt: c.hurt, death: c.death, action: c.action, scale: c.scale, mood: c.mood, summoner: c.summoner, copy: c.copy })
             })
             .collect()
     }

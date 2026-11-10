@@ -13,6 +13,10 @@
     "mesh": "../skills/models/etheriumBastion.gltf",
     "texture": "../skills/models/etheriumBastion.png",
     "animations": {
+      "apparition": {
+        "clip": "rise",
+        "cycle": 1.0
+      },
       "attaque": {
         "clip": "fire",
         "cycle": 0.4
@@ -32,6 +36,23 @@
       "repos": {
         "cycle": 2
       }
+    }
+  },
+  "attack": {
+    "mode": "solo",
+    "damage": 10,
+    "cooldown": 2.0,
+    "sight": 16,
+    "reach": 0.0,
+    "chase_speed": 1.0,
+    "hunts_players": false,
+    "shot": {
+      "range": 16,
+      "speed": 18,
+      "radius": 2.5,
+      "height": 3.2,
+      "projectile": "fireOrb",
+      "impact": "fireExplosion"
     }
   }
 }

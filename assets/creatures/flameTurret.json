@@ -13,6 +13,25 @@
     "mesh": "../skills/models/flameTurret.gltf",
     "texture": "../skills/models/flameTurret.png",
     "animations": {
+      "apparition": {
+        "cycle": 0.45,
+        "os": {
+          "root": {
+            "translation_fixe": [
+              0,
+              1.0,
+              0
+            ],
+            "translation": [
+              0,
+              1.0,
+              0
+            ],
+            "frequence": 0.5,
+            "phase": 0.25
+          }
+        }
+      },
       "attaque": {
         "clip": "fire",
         "cycle": 0.3
@@ -32,6 +51,22 @@
       "repos": {
         "cycle": 2
       }
+    }
+  },
+  "attack": {
+    "mode": "solo",
+    "damage": 3,
+    "cooldown": 0.5,
+    "sight": 6,
+    "reach": 0.0,
+    "chase_speed": 1.0,
+    "hunts_players": false,
+    "shot": {
+      "range": 5,
+      "speed": 0,
+      "radius": 1.5,
+      "height": 0.6,
+      "muzzle": "flameCone"
     }
   }
 }

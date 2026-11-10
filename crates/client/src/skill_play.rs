@@ -69,6 +69,10 @@ pub struct VisualCue {
     pub hold: Option<f32>,
     /// Taille de la zone de la compétence en blocs, pour les effets en `unit: area`
     pub area_blocks: f32,
+    /// Projectile : l'ancre file de `point` à ce point en tant de secondes
+    pub travel: Option<(Vec3, f32)>,
+    /// Secondes avant que l'effet commence
+    pub delay: f32,
 }
 
 /// L'état des compétences du joueur et de ce qui se joue autour de lui
@@ -160,6 +164,8 @@ impl SkillPlay {
                 aim,
                 hold,
                 area_blocks: cast.area.size_blocks(rank),
+                travel: None,
+                delay: 0.0,
             });
         }
     }
@@ -180,6 +186,35 @@ impl SkillPlay {
         self.ready_at.remove(skill);
         self.cues.retain(|c| c.caster.is_some());
         self.last_refusal = Some((reason.to_string(), Instant::now()));
+    }
+
+    /// Des créatures tirent : la bouche du tir, le projectile qui file, l'explosion à l'arrivée
+    pub fn on_shots(&mut self, shots: &[herocraft_common::CreatureShotEvent], registry: &herocraft_common::CreatureRegistry, block: f32) {
+        for event in shots {
+            let Some(shot) = registry.get(event.species as usize).and_then(|s| s.attack.as_ref()).and_then(|a| a.shot.as_ref()) else { continue };
+            let flight = shot.flight_seconds(event.from, event.to, block);
+            let base = VisualCue {
+                effect: String::new(),
+                anchor: Anchor::Aimed,
+                caster: None,
+                point: event.from,
+                creature: None,
+                aim: event.to - event.from,
+                hold: None,
+                area_blocks: shot.radius.max(1.0),
+                travel: None,
+                delay: 0.0,
+            };
+            if let Some(effect) = &shot.muzzle {
+                self.cues.push(VisualCue { effect: effect.clone(), hold: Some(0.5), ..base.clone() });
+            }
+            if let Some(effect) = shot.projectile.as_ref().filter(|_| flight > 0.0) {
+                self.cues.push(VisualCue { effect: effect.clone(), hold: Some(flight), travel: Some((event.to, flight)), ..base.clone() });
+            }
+            if let Some(effect) = &shot.impact {
+                self.cues.push(VisualCue { effect: effect.clone(), point: event.to, delay: flight, ..base.clone() });
+            }
+        }
     }
 
     /// Une compétence frappe (d'après le serveur, ou en solo d'après nos propres règles)
@@ -203,6 +238,8 @@ impl SkillPlay {
                 aim: Vec3::ZERO,
                 hold,
                 area_blocks: cast.area.size_blocks(shown.rank),
+                travel: None,
+                delay: 0.0,
             };
             match visual.from {
                 Moment::Impact => self.cues.push(base),

@@ -784,6 +784,10 @@ fn main() {
                                         let caster = (player_id != client.player_id()).then_some(player_id);
                                         skill_play.on_hit(skill_play::Shown { caster, skill, rank, center, creatures, players });
                                     }
+                                    NetEvent::CreatureShots(shots) => {
+                                        let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+                                        skill_play.on_shots(&shots, &creature_registry, block);
+                                    }
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
                                 }
                             }
@@ -830,6 +834,12 @@ fn main() {
                                             let cause = creature_registry.get(hit.species).map_or("Une créature", |s| s.name.as_str());
                                             let hurt = ui_state.player.bitten(hit.damage * skill_play.solo_damage_factor(), cause);
                                             show_wound(hurt, cause, &mut camera, &mut ui_state, &mut audio);
+                                        }
+                                        // Tirs des tourelles, du bastion et de la liche
+                                        let shots = solo_creatures.take_shots();
+                                        if !shots.is_empty() {
+                                            let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+                                            skill_play.on_shots(&shots, &creature_registry, block);
                                         }
                                         // Œufs pondus par les bêtes apprivoisées, laissés à leurs pieds
                                         for (feet, item) in solo_creatures.take_laid() {

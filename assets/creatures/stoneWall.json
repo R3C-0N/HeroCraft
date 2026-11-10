@@ -13,6 +13,10 @@
     "mesh": "../skills/models/stoneWall.gltf",
     "texture": "../skills/models/stoneWall.png",
     "animations": {
+      "apparition": {
+        "clip": "rise",
+        "cycle": 0.6
+      },
       "coup": {
         "os": {
           "root": {

@@ -186,7 +186,7 @@ mod tests {
         let mut animator = VillagerAnimator::default();
         for (k, id) in ["deathKnight", "lichLord"].into_iter().enumerate() {
             let species = registry.find(id).unwrap_or_else(|| panic!("{id}"));
-            let view = CreatureView { id: k as u64, species: Some(species), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
+            let view = CreatureView { id: k as u64, species: Some(species), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None };
             let mut frame = CreatureFrame::default();
             let mut asked = Vec::new();
             push_villagers(&mut frame, &[view], &registry, |_| None, &mut animator, |source| {
@@ -208,7 +208,7 @@ mod tests {
         let species = registry.find("villageois").unwrap();
         let s = registry.get(species).unwrap();
         let pause = |name: &str| CreatureAction::Pause(s.pauses().position(|(n, _)| n == name).unwrap() as u8);
-        let view = |action| CreatureView { id: 1, species: Some(species), feet: Vec3::new(0.0, 0.0, 1000.0), yaw: 0.0, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0 };
+        let view = |action| CreatureView { id: 1, species: Some(species), feet: Vec3::new(0.0, 0.0, 1000.0), yaw: 0.0, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None };
         let mut animator = VillagerAnimator::default();
         assert!(is_humanoid(&view(CreatureAction::Repos), &registry));
         let still = animator.pose(&view(CreatureAction::Repos), &registry);

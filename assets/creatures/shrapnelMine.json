@@ -13,6 +13,25 @@
     "mesh": "../skills/models/shrapnelMine.gltf",
     "texture": "../skills/models/shrapnelMine.png",
     "animations": {
+      "apparition": {
+        "cycle": 0.35,
+        "os": {
+          "root": {
+            "translation_fixe": [
+              0,
+              0.6,
+              0
+            ],
+            "translation": [
+              0,
+              0.6,
+              0
+            ],
+            "frequence": 0.5,
+            "phase": 0.25
+          }
+        }
+      },
       "coup": {
         "os": {
           "root": {

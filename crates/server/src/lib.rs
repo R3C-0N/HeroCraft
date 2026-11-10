@@ -330,6 +330,10 @@ impl Server {
         for hit in self.creatures.tick_players(dt, &self.generator, &self.edits, &presences, &ids) {
             self.creature_attack(ids[hit.player], hit.species, hit.damage);
         }
+        let shots = self.creatures.take_shots();
+        if !shots.is_empty() {
+            self.broadcast(&ServerPacket::CreatureShots(shots));
+        }
         // Œufs pondus, à la place de la bête : montrés au joueur le plus proche (les objets au sol
         // sont propres à chaque client, un seul peut le ramasser)
         for (feet, item) in self.creatures.take_laid() {
