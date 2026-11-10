@@ -11,5 +11,50 @@
     ],
     "max_rank": 3,
     "planner": 266
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 28
+    },
+    "cooldown": 14,
+    "animation": "crossbowShot",
+    "area": {
+      "line": {
+        "length": 14,
+        "width": 1
+      }
+    },
+    "movement": {
+      "dash": 10
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.0,
+            2.4,
+            2.8
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shadowBolt",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "shadowSmoke",
+      "anchor": "body",
+      "from": "end"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

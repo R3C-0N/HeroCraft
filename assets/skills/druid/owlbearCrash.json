@@ -1,0 +1,53 @@
+{
+  "name": "Écrasement Aérien",
+  "description": "Clic droit de l'Ours-Hibou : un très haut bond qui s'écrase en onde de choc.",
+  "cast": {
+    "cost": {
+      "stamina": 14
+    },
+    "cooldown": 7,
+    "animation": "leap",
+    "area": {
+      "circle": {
+        "radius": 4
+      }
+    },
+    "movement": {
+      "leap": 7
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.2,
+            2.6,
+            3.0
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 7
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

@@ -8,5 +8,44 @@
     "requires": [],
     "max_rank": 3,
     "planner": 318
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 8,
+    "animation": "leap",
+    "area": "self",
+    "movement": {
+      "leap": [
+        -4,
+        -4.5,
+        -5
+      ]
+    },
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.5,
+          "duration": 1
+        }
+      },
+      {
+        "buff": {
+          "stat": "damage",
+          "value": 0.2,
+          "duration": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    }
+  ]
 }

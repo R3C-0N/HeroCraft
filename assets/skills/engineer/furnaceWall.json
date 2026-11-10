@@ -11,5 +11,53 @@
     ],
     "max_rank": 3,
     "planner": 312
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 35
+    },
+    "cooldown": 22,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": 1.5,
+        "center": "aimed",
+        "distance": 4
+      }
+    },
+    "targets": "all",
+    "effects": [
+      {
+        "summon": {
+          "species": "portableBarricade",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            15,
+            18,
+            22
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "damage": 5,
+          "duration": 4
+        },
+        "to": "enemies"
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "flameCone",
+      "anchor": "aimed",
+      "from": "impact"
+    },
+    {
+      "effect": "fireExplosion",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
 }

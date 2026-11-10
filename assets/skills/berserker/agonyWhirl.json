@@ -11,5 +11,64 @@
     ],
     "max_rank": 3,
     "planner": 387
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 16,
+    "animation": "spin",
+    "area": {
+      "circle": {
+        "radius": 3.5
+      }
+    },
+    "movement": {
+      "dash": 4
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.4,
+            2.8,
+            3.2
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "damage": 3,
+          "duration": 4
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "over_time": {
+          "damage": 3,
+          "duration": 5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "windSwirl",
+      "anchor": "body",
+      "from": "start",
+      "to": "end"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

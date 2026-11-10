@@ -10,5 +10,48 @@
     ],
     "max_rank": 3,
     "planner": 233
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 15
+    },
+    "cooldown": 10,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "heal": {
+          "amount": [
+            10,
+            14,
+            18
+          ]
+        }
+      },
+      {
+        "buff": {
+          "stat": "regeneration",
+          "value": 0.3,
+          "duration": 5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "auraRing",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

@@ -59,6 +59,11 @@ pub struct OrbitCamera {
     pub hero_height: f32,
     /// Corps solides des entités proches, qui repoussent le joueur (mis à jour à chaque image)
     pub obstacles: Vec<crate::creatures::Obstacle>,
+    /// Élan d'une compétence (ruée, bond) : direction dans le plan du sol, vitesse en blocs par
+    /// seconde, secondes restantes
+    impulse: Option<(Vec3, f32, f32)>,
+    /// Allure donnée par les renforcements de vitesse (1 : aucun)
+    pub buff_speed: f32,
     /// Azimut horizontal du regard (en radians sur le plan tangentiel local)
     pub player_yaw: f32,
     /// Inclinaison verticale du regard (tangage en radians, -85° à +85°)
@@ -165,6 +170,8 @@ impl Default for OrbitCamera {
             crouch_blend: 0.0,
             hero_height: PLAYER_HEIGHT,
             obstacles: Vec::new(),
+            impulse: None,
+            buff_speed: 1.0,
 
             distance: 330.0,
             target_distance: 330.0,
@@ -746,7 +753,7 @@ impl OrbitCamera {
                 (false, true) => 0.45,
                 (true, false) => 0.50,
                 (true, true) => 1.10,
-            } * scale * self.speed_multiplier;
+            } * scale * self.speed_multiplier * self.buff_speed.max(0.0);
             let delta = move_dir * speed * dt;
             match &self.collider {
                 // Les murs arrêtent le joueur, qui glisse le long d'eux (axe est puis axe nord)
@@ -773,6 +780,26 @@ impl OrbitCamera {
                     }
                 }
                 None => self.player_pos += delta,
+            }
+        }
+
+        // 1 ter. Élan d'une compétence : le joueur file dans sa direction, arrêté par les murs
+        if let Some((direction, speed, left)) = self.impulse.as_mut() {
+            let step = dt.min(*left);
+            *left -= dt;
+            let delta = *direction * *speed * step * self.block_height();
+            let candidate = (self.player_pos + delta).normalize() * self.player_pos.length();
+            let blocked = match &self.collider {
+                Some(collider) => body_blocked(collider, generator, candidate, STEP_UP),
+                None => false,
+            };
+            if blocked || self.is_dead {
+                self.impulse = None;
+            } else {
+                self.player_pos = candidate;
+            }
+            if self.impulse.is_some_and(|(_, _, left)| left <= 0.0) {
+                self.impulse = None;
             }
         }
 
@@ -923,6 +950,22 @@ impl OrbitCamera {
 
         // Calcul anti-collision garanti au-dessus du relief
         self.update_camera_bounds(generator);
+    }
+
+    /// Une compétence lance le joueur : `dash` blocs droit devant (négatif : en arrière) au ras du
+    /// sol, ou `leap` blocs en bondissant, le tout en `seconds` secondes
+    pub fn launch(&mut self, dash: f32, leap: f32, seconds: f32) {
+        let (_, forward, _, _) = self.look_vectors();
+        let seconds = seconds.max(0.1);
+        let distance = if leap != 0.0 { leap } else { dash };
+        if distance != 0.0 {
+            self.impulse = Some((forward * distance.signum(), distance.abs() / seconds, seconds));
+        }
+        if leap != 0.0 && !self.is_flying {
+            // Assez d'élan vertical pour rester en l'air le temps du bond
+            self.vertical_velocity = (GRAVITY * seconds * 0.5).max((2.0 * GRAVITY * 0.6).sqrt()) * self.block_height();
+            self.is_grounded = false;
+        }
     }
 
     /// Bloc qui porte le joueur (sa matière donne le son des pas), ou l'eau quand il y a les pieds
@@ -1382,6 +1425,20 @@ mod tests {
         for _ in 0..60 {
             cam.update(0.016, gen);
         }
+    }
+
+    #[test]
+    fn a_skill_dash_carries_the_player_forward() {
+        let (mut cam, gen, _, _) = voxel_test_camera();
+        let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
+        let (_, forward, _, _) = cam.look_vectors();
+        let start = cam.player_pos;
+        cam.launch(3.0, 0.0, 0.3);
+        for _ in 0..40 {
+            cam.update(0.016, &gen);
+        }
+        let ahead = (cam.player_pos - start).dot(forward) / h;
+        assert!((ahead - 3.0).abs() < 0.3, "ruée de {ahead} blocs");
     }
 
     #[test]

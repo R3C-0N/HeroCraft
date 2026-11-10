@@ -10,5 +10,73 @@
     ],
     "max_rank": 3,
     "planner": 297
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 32
+    },
+    "cooldown": 18,
+    "animation": "bowShot",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ],
+        "center": "aimed",
+        "distance": 16
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.8,
+            1.0,
+            1.2
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "damage": [
+            5,
+            6,
+            7
+          ],
+          "duration": 5
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.3,
+          "duration": 5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

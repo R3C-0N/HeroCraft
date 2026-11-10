@@ -12,5 +12,60 @@
     ],
     "max_rank": 3,
     "planner": 284
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 60
+    },
+    "cooldown": 120,
+    "animation": "leap",
+    "area": {
+      "circle": {
+        "radius": 12
+      }
+    },
+    "movement": {
+      "leap": 0.1
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            4,
+            5,
+            6
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "voidRift",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

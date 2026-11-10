@@ -8,5 +8,55 @@
     "requires": [],
     "max_rank": 3,
     "planner": 288
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 8,
+    "animation": "bowShot",
+    "speed": 1.5,
+    "area": {
+      "line": {
+        "length": 12,
+        "width": 1
+      }
+    },
+    "movement": {
+      "leap": [
+        -4,
+        -5,
+        -6
+      ]
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.6,
+            0.8,
+            1.0
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

@@ -8,5 +8,48 @@
     "requires": [],
     "max_rank": 3,
     "planner": 319
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 8,
+    "animation": "thrust",
+    "area": {
+      "arc": {
+        "range": 2.5,
+        "angle": 60
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": 0.6
+        }
+      },
+      {
+        "stun": {
+          "duration": [
+            1,
+            1.25,
+            1.5
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

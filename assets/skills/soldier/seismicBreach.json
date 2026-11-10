@@ -11,5 +11,60 @@
     ],
     "max_rank": 3,
     "planner": 356
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 32
+    },
+    "cooldown": 16,
+    "animation": "charge",
+    "area": {
+      "arc": {
+        "range": 8,
+        "angle": 70
+      }
+    },
+    "movement": {
+      "dash": 5
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.4,
+            2.8,
+            3.2
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "rockShard",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

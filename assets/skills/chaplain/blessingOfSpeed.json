@@ -8,5 +8,43 @@
     "requires": [],
     "max_rank": 3,
     "planner": 229
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 12
+    },
+    "cooldown": 15,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "buff": {
+          "stat": "speed",
+          "value": [
+            0.25,
+            0.35,
+            0.45
+          ],
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "featherGust",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "windSwirl",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

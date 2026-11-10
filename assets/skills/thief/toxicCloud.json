@@ -11,5 +11,60 @@
     ],
     "max_rank": 3,
     "planner": 267
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 18,
+    "animation": "crossbowShot",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ],
+        "center": "aimed",
+        "distance": 12
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "over_time": {
+          "damage": [
+            6,
+            7,
+            8
+          ],
+          "duration": 8
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.4,
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "poisonCloud",
+      "anchor": "area",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "shadowSmoke",
+      "anchor": "area",
+      "from": "impact"
+    }
+  ]
 }

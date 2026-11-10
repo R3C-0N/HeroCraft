@@ -10,5 +10,47 @@
     ],
     "max_rank": 3,
     "planner": 323
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 10,
+    "animation": "crossbowShot",
+    "area": {
+      "line": {
+        "length": 16,
+        "width": 1
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": 0.8
+        }
+      },
+      {
+        "pull": {
+          "strength": [
+            10,
+            12,
+            14
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "cableLine",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

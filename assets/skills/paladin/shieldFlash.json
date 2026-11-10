@@ -8,5 +8,61 @@
     "requires": [],
     "max_rank": 3,
     "planner": 392
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 9,
+    "animation": "guard",
+    "area": {
+      "circle": {
+        "radius": 3
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "knockback": {
+          "strength": [
+            6,
+            7,
+            8
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": 0.5
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.4,
+          "duration": 1.5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "holyBeam",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
 }

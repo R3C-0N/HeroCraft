@@ -8,5 +8,51 @@
     "requires": [],
     "max_rank": 3,
     "planner": 378
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 12,
+    "animation": "shout",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "slow": {
+          "strength": 0.5,
+          "duration": [
+            2,
+            2.5,
+            3
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "roarWave",
+      "anchor": "head",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
 }

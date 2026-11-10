@@ -1,0 +1,46 @@
+{
+  "name": "Souffle Astral",
+  "description": "Clic droit de l'Avatar du Néant : un souffle d'énergie astrale en ligne droite.",
+  "cast": {
+    "cost": {
+      "stamina": 15
+    },
+    "cooldown": 5,
+    "animation": "shout",
+    "area": {
+      "line": {
+        "length": 12,
+        "width": 3
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            3,
+            3.5,
+            4
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "soulBlast",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "etheriumAura",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
+}

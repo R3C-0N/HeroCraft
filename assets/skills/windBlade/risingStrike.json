@@ -10,5 +10,57 @@
     ],
     "max_rank": 3,
     "planner": 339
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 9,
+    "animation": "overheadStrike",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 70
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.4,
+            1.6,
+            1.8
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": [
+            1,
+            1.25,
+            1.5
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "windSwirl",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

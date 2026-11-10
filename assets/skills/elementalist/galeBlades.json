@@ -1,4 +1,42 @@
 {
   "name": "Lames de Vent",
-  "description": "Envoie des rafales très rapides et tranchantes."
+  "description": "Envoie des rafales très rapides et tranchantes.",
+  "cast": {
+    "cost": {
+      "mana": 8
+    },
+    "cooldown": 3,
+    "animation": "throw",
+    "speed": 1.5,
+    "area": {
+      "line": {
+        "length": 12,
+        "width": 1.5
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.9,
+            1.1,
+            1.3
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "windBlades",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

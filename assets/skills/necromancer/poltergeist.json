@@ -8,5 +8,43 @@
     "requires": [],
     "max_rank": 3,
     "planner": 214
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 10
+    },
+    "cooldown": 5,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": 2,
+        "center": "aimed",
+        "distance": 14
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.2,
+            1.4,
+            1.6
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "spiritSkull",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "soulBlast",
+      "anchor": "area",
+      "from": "impact"
+    }
+  ]
 }

@@ -12,5 +12,64 @@
     ],
     "max_rank": 3,
     "planner": 329
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 60
+    },
+    "cooldown": 120,
+    "animation": "spin",
+    "area": {
+      "circle": {
+        "radius": 6
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": 3
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": 1.0,
+          "duration": 15
+        }
+      },
+      {
+        "buff": {
+          "stat": "speed",
+          "value": 0.4,
+          "duration": 15
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

@@ -10,5 +10,52 @@
     ],
     "max_rank": 3,
     "planner": 281
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 14,
+    "animation": "crossbowShot",
+    "area": {
+      "circle": {
+        "radius": [
+          3.5,
+          4,
+          4.5
+        ],
+        "center": "aimed",
+        "distance": 16
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.4,
+            2.8,
+            3.2
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "targetMark",
+      "anchor": "area",
+      "from": "start"
+    },
+    {
+      "effect": "fireExplosion",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

@@ -8,5 +8,51 @@
     "requires": [],
     "max_rank": 3,
     "planner": 349
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 14
+    },
+    "cooldown": 8,
+    "animation": "groundSlam",
+    "area": {
+      "line": {
+        "length": [
+          8,
+          9,
+          10
+        ],
+        "width": 2
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.2,
+            1.4,
+            1.6
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "groundBurst",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "rockShard",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
 }

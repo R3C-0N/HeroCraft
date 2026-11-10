@@ -10,5 +10,40 @@
     ],
     "max_rank": 3,
     "planner": 397
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 18
+    },
+    "cooldown": 20,
+    "animation": "bless",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": [
+            0.4,
+            0.5,
+            0.6
+          ],
+          "duration": 12
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "holyBeam",
+      "anchor": "body",
+      "from": "impact"
+    }
+  ]
 }

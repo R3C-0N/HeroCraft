@@ -1,0 +1,37 @@
+{
+  "name": "Serres Sylvestres",
+  "description": "Clic gauche du Griffon Sylvestre : des serres rapides.",
+  "cast": {
+    "cost": {
+      "stamina": 4
+    },
+    "cooldown": 0.6,
+    "animation": "sweep",
+    "speed": 1.5,
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 90
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.2,
+            1.4,
+            1.6
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

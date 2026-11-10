@@ -1,0 +1,49 @@
+{
+  "name": "Charge Perçante",
+  "description": "Clic droit du Grand Cerf Ancien : une charge droit devant, bois baissés.",
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 6,
+    "animation": "charge",
+    "area": {
+      "line": {
+        "length": 7,
+        "width": 2
+      }
+    },
+    "movement": {
+      "dash": 7
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.6,
+            1.9,
+            2.2
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

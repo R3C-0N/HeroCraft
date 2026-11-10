@@ -10,5 +10,57 @@
     ],
     "max_rank": 3,
     "planner": 381
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 9,
+    "animation": "spin",
+    "area": {
+      "circle": {
+        "radius": 2.5
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.8,
+            2.1,
+            2.4
+          ]
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "heal": {
+          "amount": [
+            5,
+            7,
+            9
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "body",
+      "from": "impact"
+    }
+  ]
 }

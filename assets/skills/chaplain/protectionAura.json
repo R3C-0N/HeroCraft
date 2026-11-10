@@ -8,5 +8,38 @@
     "requires": [],
     "max_rank": 3,
     "planner": 227
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 12
+    },
+    "cooldown": 12,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "shield": {
+          "amount": [
+            15,
+            20,
+            25
+          ],
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

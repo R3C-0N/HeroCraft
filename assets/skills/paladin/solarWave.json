@@ -11,5 +11,60 @@
     ],
     "max_rank": 3,
     "planner": 401
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 16,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": [
+          5,
+          5.5,
+          6
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.6,
+            1.9,
+            2.2
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": [
+            1.5,
+            1.75,
+            2
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "holyBeam",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

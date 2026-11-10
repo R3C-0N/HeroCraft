@@ -12,5 +12,73 @@
     ],
     "max_rank": 3,
     "planner": 269
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 60
+    },
+    "cooldown": 120,
+    "animation": "spin",
+    "area": {
+      "circle": {
+        "radius": 10
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            4,
+            5,
+            6
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": 1.5
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.7,
+          "duration": 6
+        }
+      },
+      {
+        "buff": {
+          "stat": "speed",
+          "value": 0.6,
+          "duration": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "shadowSmoke",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "shadowBolt",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

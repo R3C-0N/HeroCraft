@@ -368,6 +368,10 @@ struct SkillFile {
     special: Option<String>,
     #[serde(default)]
     graft: Option<String>,
+    #[serde(default)]
+    form: Option<String>,
+    #[serde(default)]
+    form_attacks: Vec<String>,
 }
 
 /// Une compétence lue dans son fichier
@@ -389,6 +393,12 @@ pub struct SkillDef {
     /// Pièce greffée sur le lanceur tant que durent ses effets (`assets/skills/models/<id>.gltf` :
     /// patte de loup, fourrure d'ours… du Druide)
     pub graft: Option<String>,
+    /// Forme complète prise par le lanceur tant que durent ses effets : une espèce de
+    /// `assets/creatures/` dessinée à la place du héros (formes du Druide)
+    pub form: Option<String>,
+    /// Les deux attaques de la forme, au clic gauche puis au clic droit : des compétences sans
+    /// place sur la roue, apprises avec la forme et jouables seulement sous elle
+    pub form_attacks: Vec<String>,
 }
 
 impl SkillDef {
@@ -442,6 +452,8 @@ pub struct SkillCatalog {
     index: HashMap<String, usize>,
     /// Nœud de la roue qui donne chaque compétence accordée (`grants`)
     granted_by: HashMap<String, String>,
+    /// Attaque de forme -> la forme (compétence) qui la donne
+    form_attack_of: HashMap<String, String>,
     gestures: HashMap<String, GestureTiming>,
     fingerprint: u64,
 }
@@ -539,6 +551,8 @@ impl SkillCatalog {
                             sounds: file.sounds,
                             special: file.special,
                             graft: file.graft,
+                            form: file.form,
+                            form_attacks: file.form_attacks,
                         });
                     }
                     Err(e) => errors.push(format!("{}/{id}.json : {e}", class.id)),
@@ -550,7 +564,7 @@ impl SkillCatalog {
         // de `assets/skills/`)
         let creatures: HashSet<String> = dir.parent().map(|d| json_files(&d.join("creatures")).iter().map(|p| stem(p)).collect()).unwrap_or_default();
 
-        let mut catalog = Self { classes, skills: Vec::new(), index: HashMap::new(), granted_by: HashMap::new(), gestures: timing, fingerprint: 0 };
+        let mut catalog = Self { classes, skills: Vec::new(), index: HashMap::new(), granted_by: HashMap::new(), form_attack_of: HashMap::new(), gestures: timing, fingerprint: 0 };
         // Les fichiers en double ou mal formés sont écartés, puis les références vérifiées
         let mut seen = HashSet::new();
         skills.retain(|s| {
@@ -581,6 +595,11 @@ impl SkillCatalog {
         for s in &skills {
             for g in s.wheel.iter().flat_map(|w| &w.grants) {
                 catalog.granted_by.insert(g.clone(), s.id.clone());
+            }
+            // Les attaques d'une forme s'apprennent avec elle
+            for a in &s.form_attacks {
+                catalog.granted_by.insert(a.clone(), s.id.clone());
+                catalog.form_attack_of.insert(a.clone(), s.id.clone());
             }
         }
         // Une compétence ni sur la roue ni accordée par un nœud ne s'apprendrait jamais
@@ -620,6 +639,15 @@ impl SkillCatalog {
             };
             if !numbers.iter().chain([&&cast.cooldown, &&cast.cost.mana, &&cast.cost.stamina]).all(|r| r.is_finite()) {
                 return Err("nombre invalide dans cast".into());
+            }
+            if let Some(form) = skill.form.as_ref().filter(|f| !entities.contains(*f)) {
+                return Err(format!("forme inconnue {form} (absente de assets/creatures/)"));
+            }
+            if !skill.form_attacks.is_empty() && (skill.form.is_none() || skill.form_attacks.len() != 2) {
+                return Err("form_attacks : deux attaques (clic gauche, clic droit), avec une forme".into());
+            }
+            if let Some(missing) = skill.form_attacks.iter().find(|a| !ids.contains(*a)) {
+                return Err(format!("attaque de forme inconnue {missing}"));
             }
             for summon in skill.summons() {
                 if let Effect::Summon { species, count, duration, limit, .. } = summon {
@@ -674,6 +702,11 @@ impl SkillCatalog {
     /// Les compétences que ce personnage peut lancer, dans l'ordre du catalogue
     pub fn castable<'a>(&'a self, stats: &'a CharacterStats) -> impl Iterator<Item = &'a SkillDef> + 'a {
         self.skills.iter().filter(move |s| s.is_castable() && self.rank(stats, &s.id) > 0)
+    }
+
+    /// La forme (compétence du Druide) dont `id` est l'une des deux attaques
+    pub fn form_of_attack(&self, id: &str) -> Option<&SkillDef> {
+        self.form_attack_of.get(id).and_then(|f| self.get(f))
     }
 
     /// Durée et impact du geste `name`
@@ -759,6 +792,10 @@ pub enum CastError {
     NoMana,
     NoStamina,
     Dead,
+    /// Changé en bête : seules les attaques de la forme se lancent
+    InForm,
+    /// Une attaque de forme, hors de sa forme
+    NotInForm,
 }
 
 impl CastError {
@@ -771,6 +808,8 @@ impl CastError {
             CastError::NoMana => "pas assez de mana",
             CastError::NoStamina => "pas assez d'endurance",
             CastError::Dead => "mort",
+            CastError::InForm => "impossible sous cette forme",
+            CastError::NotInForm => "seulement sous sa forme",
         }
     }
 }
@@ -1077,12 +1116,19 @@ mod tests {
         assert_eq!(colors.len(), wheel.branches.len());
         // Les quatre éléments du Sorcier donnent chacun deux compétences
         assert_eq!(catalog.granted_by("igneousOrb"), Some("fire"));
-        assert_eq!(catalog.granted_by.len(), 8);
+        // ... et chacune des huit formes du Druide ses deux attaques
+        assert_eq!(catalog.granted_by.len(), 8 + 16);
+        assert_eq!(catalog.form_of_attack("wolfBite").map(|f| f.id.as_str()), Some("forestWolf"));
         // Identifiants en anglais : ni accent, ni nom de fichier hors de la convention
         for skill in catalog.iter() {
             assert!(skill.id.chars().all(|c| c.is_ascii_alphanumeric()) && skill.id.chars().next().unwrap().is_ascii_lowercase(), "{}", skill.id);
         }
         assert_ne!(catalog.fingerprint(), 0);
+        // Toutes se jouent, sauf les nœuds qui donnent d'autres sorts (éléments, Fusion)
+        for skill in catalog.iter() {
+            let container = skill.wheel.as_ref().is_some_and(|w| !w.grants.is_empty()) || skill.id == "fusion";
+            assert!(container || skill.is_castable(), "{}/{} n'a pas de règles", skill.class, skill.id);
+        }
     }
 
     #[test]

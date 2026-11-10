@@ -8,5 +8,52 @@
     "requires": [],
     "max_rank": 3,
     "planner": 273
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 8,
+    "animation": "crossbowShot",
+    "area": {
+      "line": {
+        "length": 16,
+        "width": 1
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": 0.6
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": [
+            0.2,
+            0.3,
+            0.4
+          ],
+          "duration": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "targetMark",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

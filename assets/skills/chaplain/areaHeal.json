@@ -10,5 +10,50 @@
     ],
     "max_rank": 3,
     "planner": 231
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 20
+    },
+    "cooldown": 12,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": [
+          6,
+          7,
+          8
+        ]
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "heal": {
+          "amount": [
+            18,
+            22,
+            26
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "holyBeam",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

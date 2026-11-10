@@ -1,4 +1,52 @@
 {
   "name": "Fouet Écumeux",
-  "description": "Frappe à moyenne portée et ralentit la cible."
+  "description": "Frappe à moyenne portée et ralentit la cible.",
+  "cast": {
+    "cost": {
+      "mana": 10
+    },
+    "cooldown": 4,
+    "animation": "sweep",
+    "area": {
+      "arc": {
+        "range": 6,
+        "angle": 40
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.0,
+            1.2,
+            1.4
+          ]
+        }
+      },
+      {
+        "slow": {
+          "strength": [
+            0.4,
+            0.5,
+            0.6
+          ],
+          "duration": 2.5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "waterWhip",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "slowFrost",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

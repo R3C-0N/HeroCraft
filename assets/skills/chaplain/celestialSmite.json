@@ -8,5 +8,59 @@
     "requires": [],
     "max_rank": 3,
     "planner": 228
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 10
+    },
+    "cooldown": 5,
+    "animation": "bless",
+    "area": {
+      "line": {
+        "length": 14,
+        "width": 1
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.8,
+            1.0,
+            1.2
+          ]
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.3,
+          "duration": [
+            1.5,
+            2,
+            2.5
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "handFlame",
+      "anchor": "rightHand",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "holyBeam",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "slowFrost",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

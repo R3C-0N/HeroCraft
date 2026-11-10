@@ -10,5 +10,55 @@
     ],
     "max_rank": 3,
     "planner": 217
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 20
+    },
+    "cooldown": 14,
+    "animation": "summon",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ],
+        "center": "aimed",
+        "distance": 12
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "over_time": {
+          "damage": [
+            4,
+            5,
+            6
+          ],
+          "duration": 8
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.25,
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "poisonCloud",
+      "anchor": "area",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "mistCloud",
+      "anchor": "area",
+      "from": "impact"
+    }
+  ]
 }

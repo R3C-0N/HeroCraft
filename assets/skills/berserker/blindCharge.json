@@ -8,5 +8,65 @@
     "requires": [],
     "max_rank": 3,
     "planner": 379
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 15
+    },
+    "cooldown": 8,
+    "animation": "charge",
+    "area": {
+      "line": {
+        "length": 6,
+        "width": 2
+      }
+    },
+    "movement": {
+      "dash": 6
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.0,
+            1.2,
+            1.4
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": [
+            6,
+            7,
+            8
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": 0.8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

@@ -85,9 +85,16 @@ pub struct SkillPlay {
     cooldown_of: HashMap<String, f32>,
     plays: Vec<Play>,
     cues: Vec<VisualCue>,
-    /// Pièces greffées sur le héros local (`SkillDef::graft`), et jusqu'à quand
     /// Pièces greffées : sur qui (`None` : le joueur local), laquelle, jusqu'à quand
     grafts: Vec<(Option<u64>, String, Instant)>,
+    /// Formes complètes (`SkillDef::form`) : sur qui, par quelle compétence, jusqu'à quand
+    forms: Vec<(Option<u64>, String, Instant)>,
+    /// Renforcements de vitesse du joueur local : de combien, jusqu'à quand
+    speed_buffs: Vec<(f32, Instant)>,
+    /// Élan de la compétence locale qui commence : ruée, bond, en combien de secondes
+    motion: Option<(f32, f32, f32)>,
+    /// Identifiant du joueur local (en ligne, celui du serveur)
+    pub me: u64,
     /// Dernier refus, à montrer au joueur
     pub last_refusal: Option<(String, Instant)>,
 }
@@ -102,6 +109,10 @@ impl Default for SkillPlay {
             plays: Vec::new(),
             cues: Vec::new(),
             grafts: Vec::new(),
+            forms: Vec::new(),
+            speed_buffs: Vec::new(),
+            motion: None,
+            me: SOLO_PLAYER,
             last_refusal: None,
         }
     }
@@ -122,6 +133,14 @@ impl SkillPlay {
         let (left, _) = self.cooldown(skill, now);
         if let Some(error) = catalog.cast_check(stats, skill, left) {
             return Err(error.message().to_string());
+        }
+        // Changé en bête, seules ses deux attaques ; et elles seulement sous elle
+        let form = self.form_skill(None);
+        match (catalog.form_of_attack(skill), form) {
+            (Some(of), Some(current)) if of.id == current => {}
+            (Some(_), _) => return Err(herocraft_common::CastError::NotInForm.message().to_string()),
+            (None, Some(_)) => return Err(herocraft_common::CastError::InForm.message().to_string()),
+            (None, None) => {}
         }
         let rank = match online {
             Some(send) => {
@@ -157,6 +176,18 @@ impl SkillPlay {
             let seconds = impact + effect_seconds(&cast.self_effects, rank).max(effect_seconds(&cast.effects, rank)).max(duration);
             self.grafts.retain(|(who, g, _)| !(*who == player && g == graft));
             self.grafts.push((player, graft.clone(), now + std::time::Duration::from_secs_f32(seconds)));
+        }
+        // Forme complète du Druide : la bête remplace le héros tant que durent ses effets
+        if def.form.is_some() {
+            let seconds = impact + lasting_seconds(cast, rank);
+            self.forms.retain(|(who, _, _)| *who != player);
+            self.forms.push((player, skill.to_string(), now + std::time::Duration::from_secs_f32(seconds)));
+        }
+        // Ruée ou bond du joueur local, jusqu'à l'impact
+        if let Some(movement) = cast.movement.as_ref().filter(|_| player.is_none()) {
+            let seconds = if impact >= 0.3 * duration { impact } else { 0.6 * duration };
+            let (dash, leap) = (movement.dash.as_ref().map_or(0.0, |d| d.at(rank)), movement.leap.as_ref().map_or(0.0, |l| l.at(rank)));
+            self.motion = Some((dash, leap, seconds));
         }
         for visual in def.visuals.iter().filter(|v| v.from == Moment::Start) {
             let hold = match visual.to {
@@ -253,6 +284,15 @@ impl SkillPlay {
         let Some(cast) = &def.cast else { return };
         let effect_end = effect_seconds(&cast.effects, shown.rank);
         let self_end = effect_seconds(&cast.self_effects, shown.rank);
+        // Renforcements de vitesse qui nous touchent : les nôtres, et ceux d'un allié sur nous
+        let mine = shown.caster.is_none_or(|c| c == self.me);
+        let on_me = shown.players.contains(&self.me);
+        let now = Instant::now();
+        for (entry, applies) in cast.self_effects.iter().map(|e| (e, mine)).chain(cast.effects.iter().map(|e| (e, on_me && e.to.unwrap_or(cast.targets) != herocraft_common::skills::Targets::Enemies))) {
+            if let (true, Effect::Buff { stat: herocraft_common::skills::BuffStat::Speed, value, duration }) = (applies, &entry.effect) {
+                self.speed_buffs.push((value.at(shown.rank), now + std::time::Duration::from_secs_f32(duration.at(shown.rank).max(0.0))));
+            }
+        }
         for visual in &def.visuals {
             let hold = match visual.to {
                 Some(Moment::EffectEnd) => Some(if visual.anchor == Anchor::Target { effect_end } else { self_end.max(effect_end) }),
@@ -311,6 +351,36 @@ impl SkillPlay {
 
     /// La pose du héros local : son geste en cours par-dessus la marche
     /// Pièces greffées sur le héros local en ce moment
+    /// Allure du joueur local donnée par ses renforcements de vitesse (1 : aucun, 0 : immobile)
+    pub fn speed_factor(&mut self) -> f32 {
+        let now = Instant::now();
+        self.speed_buffs.retain(|(_, until)| *until > now);
+        (1.0 + self.speed_buffs.iter().map(|(v, _)| v).sum::<f32>()).max(0.0)
+    }
+
+    /// Élan à donner au joueur local (ruée, bond : blocs, blocs, secondes), une seule fois
+    pub fn take_motion(&mut self) -> Option<(f32, f32, f32)> {
+        self.motion.take()
+    }
+
+    /// Espèce dont le héros du joueur `player` (`None` : le joueur local) a pris la forme
+    pub fn form_of(&mut self, player: Option<u64>) -> Option<String> {
+        self.form_skill(player).and_then(|s| skills().get(&s)).and_then(|d| d.form.clone())
+    }
+
+    /// Le joueur `player` (`None` : le joueur local) joue l'une des attaques de sa forme
+    pub fn form_attacking(&self, player: Option<u64>) -> bool {
+        let now = Instant::now();
+        self.plays.iter().any(|p| p.player == player && skills().form_of_attack(&p.skill).is_some() && now.duration_since(p.started).as_secs_f32() < p.duration)
+    }
+
+    /// La compétence de forme que le joueur `player` (`None` : le joueur local) a lancée, tant qu'elle dure
+    pub fn form_skill(&mut self, player: Option<u64>) -> Option<String> {
+        let now = Instant::now();
+        self.forms.retain(|(_, _, until)| *until > now);
+        self.forms.iter().find(|(who, _, _)| *who == player).map(|(_, f, _)| f.clone())
+    }
+
     pub fn hero_grafts(&mut self) -> Vec<String> {
         self.grafts_of(None)
     }
@@ -348,6 +418,19 @@ impl SkillPlay {
     }
 }
 
+/// Durée d'une forme : celle de ses renforcements, boucliers et effets sur la durée (comme les
+/// règles, `SkillRunner::cast`)
+fn lasting_seconds(cast: &herocraft_common::skills::Cast, rank: u8) -> f32 {
+    cast.self_effects
+        .iter()
+        .chain(&cast.effects)
+        .filter_map(|e| match &e.effect {
+            Effect::Buff { duration, .. } | Effect::Shield { duration, .. } | Effect::OverTime { duration, .. } => Some(duration.at(rank)),
+            _ => None,
+        })
+        .fold(0.0, f32::max)
+}
+
 /// Durée la plus longue des effets qui durent (ralenti, étourdi, bouclier, renforcement…)
 fn effect_seconds(effects: &[herocraft_common::skills::EffectEntry], rank: u8) -> f32 {
     effects
@@ -357,4 +440,50 @@ fn effect_seconds(effects: &[herocraft_common::skills::EffectEntry], rank: u8) -
             _ => 0.0,
         })
         .fold(0.0, f32::max)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use herocraft_common::{CreatureRegistry, PlayerClass};
+    use std::sync::Arc;
+
+    #[test]
+    fn a_local_cast_gives_its_dash_its_speed_and_its_form() {
+        let mut play = SkillPlay::default();
+        let mut stats = CharacterStats::new(PlayerClass::Druid);
+        for skill in ["breezeStep", "zephyrMantle", "forestWolf"] {
+            stats.skills.insert(skill.into(), 1);
+        }
+        stats.mana = 1000.0;
+        stats.stamina = 1000.0;
+        let mut creatures = CreatureWorld::new(1000.0, 1, Arc::new(CreatureRegistry::load_default()));
+        let feet = Vec3::Z * 1000.0;
+
+        // Pas de Brise : une ruée vers l'avant
+        play.request("breezeStep", &mut stats, Vec3::NEG_Y, None, None).unwrap();
+        let (dash, leap, seconds) = play.take_motion().expect("une ruée");
+        assert!(dash > 0.0 && leap == 0.0 && seconds > 0.0);
+        assert!(play.take_motion().is_none(), "une seule fois");
+
+        // Manteau de Zéphyr : plus vite, une fois l'impact passé
+        play.request("zephyrMantle", &mut stats, Vec3::NEG_Y, None, None).unwrap();
+        assert_eq!(play.speed_factor(), 1.0);
+        for _ in 0..40 {
+            play.tick(0.05, Some((&mut creatures, feet, &mut stats)));
+        }
+        assert!(play.speed_factor() > 1.3, "{}", play.speed_factor());
+
+        // Loup des Bois : le héros devient le loup, et n'a plus que ses deux attaques
+        assert_eq!(play.request("wolfBite", &mut stats, Vec3::NEG_Y, None, None), Err(herocraft_common::CastError::NotInForm.message().to_string()));
+        play.request("forestWolf", &mut stats, Vec3::NEG_Y, None, None).unwrap();
+        assert_eq!(play.form_of(None).as_deref(), Some("forestWolf"));
+        assert_eq!(play.form_of(Some(7)), None);
+        play.request("wolfBite", &mut stats, Vec3::NEG_Y, None, None).unwrap();
+        assert!(play.form_attacking(None));
+        play.request("wolfPounce", &mut stats, Vec3::NEG_Y, None, None).unwrap();
+        stats.skills.insert("packClaws".into(), 1);
+        let refused = play.request("packClaws", &mut stats, Vec3::NEG_Y, None, None);
+        assert_eq!(refused, Err(herocraft_common::CastError::InForm.message().to_string()), "une autre compétence sous la forme");
+    }
 }

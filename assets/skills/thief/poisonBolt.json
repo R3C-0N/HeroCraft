@@ -8,5 +8,48 @@
     "requires": [],
     "max_rank": 3,
     "planner": 257
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 6,
+    "animation": "crossbowShot",
+    "area": {
+      "line": {
+        "length": 14,
+        "width": 1
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": 0.5
+        }
+      },
+      {
+        "over_time": {
+          "damage": [
+            3,
+            4,
+            5
+          ],
+          "duration": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "poisonCloud",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

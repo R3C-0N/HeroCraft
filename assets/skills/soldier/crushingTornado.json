@@ -11,5 +11,64 @@
     ],
     "max_rank": 3,
     "planner": 357
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 15,
+    "animation": "leap",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ]
+      }
+    },
+    "movement": {
+      "leap": 6
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.4,
+            2.8,
+            3.2
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 7
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "windSwirl",
+      "anchor": "body",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

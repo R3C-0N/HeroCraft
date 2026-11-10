@@ -81,7 +81,8 @@ impl SkillBar {
     pub fn fill_learned(&mut self, stats: &CharacterStats) {
         let mut changed = false;
         for def in skills().castable(stats) {
-            if self.slot_of(&def.id).is_some() {
+            // Les attaques d'une forme du Druide se lancent aux clics, pas depuis la barre
+            if self.slot_of(&def.id).is_some() || skills().form_of_attack(&def.id).is_some() {
                 continue;
             }
             let Some(free) = self.slots.iter().position(Option::is_none) else { break };

@@ -10,5 +10,61 @@
     ],
     "max_rank": 3,
     "planner": 352
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 20,
+    "animation": "shout",
+    "area": {
+      "circle": {
+        "radius": [
+          5,
+          6,
+          7
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "slow": {
+          "strength": 0.4,
+          "duration": 4
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": [
+            0.25,
+            0.3,
+            0.35
+          ],
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "roarWave",
+      "anchor": "head",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "slowFrost",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

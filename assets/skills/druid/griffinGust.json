@@ -1,0 +1,45 @@
+{
+  "name": "Rafale d'Ailes",
+  "description": "Clic droit du Griffon Sylvestre : un battement d'ailes qui repousse tout autour.",
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 5,
+    "animation": "spin",
+    "area": {
+      "circle": {
+        "radius": 3.5
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.0,
+            1.2,
+            1.4
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 7
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "featherGust",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "windSwirl",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
+}

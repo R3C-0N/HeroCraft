@@ -1,4 +1,56 @@
 {
   "name": "Rune Volcanique",
-  "description": "Place une marque au sol qui explose en un pilier de feu au passage d'un ennemi."
+  "description": "Place une marque au sol qui explose en un pilier de feu au passage d'un ennemi.",
+  "cast": {
+    "cost": {
+      "mana": 15
+    },
+    "cooldown": 10,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": [
+          2.5,
+          3,
+          3.5
+        ],
+        "center": "aimed",
+        "distance": 8
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.8,
+            2.1,
+            2.4
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "runeCircle",
+      "anchor": "area",
+      "from": "start"
+    },
+    {
+      "effect": "fireExplosion",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "lavaPool",
+      "anchor": "area",
+      "from": "impact"
+    }
+  ]
 }

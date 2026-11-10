@@ -10,5 +10,62 @@
     ],
     "max_rank": 3,
     "planner": 324
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 10,
+    "animation": "crossbowShot",
+    "area": {
+      "arc": {
+        "range": 4,
+        "angle": 60
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.6,
+            1.9,
+            2.2
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 5
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.6,
+          "duration": 1.5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

@@ -10,5 +10,58 @@
     ],
     "max_rank": 3,
     "planner": 190
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 20,
+    "animation": "channel",
+    "area": {
+      "circle": {
+        "radius": [
+          5,
+          5.5,
+          6
+        ]
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "over_time": {
+          "heal": [
+            4,
+            5,
+            6
+          ],
+          "duration": 8
+        }
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.25,
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "mistCloud",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "windSwirl",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

@@ -10,5 +10,57 @@
     ],
     "max_rank": 3,
     "planner": 264
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 20
+    },
+    "cooldown": 18,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "slow": {
+          "strength": 0.5,
+          "duration": 5
+        }
+      },
+      {
+        "stun": {
+          "duration": 1
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.5,
+          "duration": 5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shadowSmoke",
+      "anchor": "feet",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "mistCloud",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
 }

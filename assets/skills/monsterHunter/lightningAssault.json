@@ -11,5 +11,61 @@
     ],
     "max_rank": 3,
     "planner": 328
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 15,
+    "animation": "charge",
+    "area": {
+      "line": {
+        "length": 8,
+        "width": 2
+      }
+    },
+    "movement": {
+      "dash": 8
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.4,
+            2.8,
+            3.2
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": 1
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "cableLine",
+      "anchor": "rightHand",
+      "from": "start"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

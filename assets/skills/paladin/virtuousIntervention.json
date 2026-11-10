@@ -10,5 +10,55 @@
     ],
     "max_rank": 3,
     "planner": 399
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 14,
+    "animation": "charge",
+    "area": {
+      "circle": {
+        "radius": 4
+      }
+    },
+    "movement": {
+      "dash": 6
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "shield": {
+          "amount": [
+            30,
+            40,
+            50
+          ],
+          "duration": 4
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.4,
+          "duration": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "shieldDome",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

@@ -1,0 +1,41 @@
+{
+  "name": "Taillade",
+  "description": "Clic gauche de l'Ours-Hibou : de lourdes griffes.",
+  "cast": {
+    "cost": {
+      "stamina": 4
+    },
+    "cooldown": 1.0,
+    "animation": "sweep",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 110
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.6,
+            1.8,
+            2.0
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "slashArc",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

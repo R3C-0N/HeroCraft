@@ -11,5 +11,59 @@
     ],
     "max_rank": 3,
     "planner": 192
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 14,
+    "animation": "leap",
+    "impact": 0.1,
+    "area": {
+      "circle": {
+        "radius": 3.5
+      }
+    },
+    "movement": {
+      "leap": [
+        -6,
+        -7,
+        -8
+      ]
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.2,
+            2.6,
+            3.0
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "fireOrb",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "fireExplosion",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    }
+  ]
 }

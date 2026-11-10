@@ -10,5 +10,50 @@
     ],
     "max_rank": 3,
     "planner": 366
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 20,
+    "animation": "guard",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": [
+            0.3,
+            0.35,
+            0.4
+          ],
+          "duration": 8
+        }
+      },
+      {
+        "shield": {
+          "amount": [
+            20,
+            30,
+            40
+          ],
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
 }

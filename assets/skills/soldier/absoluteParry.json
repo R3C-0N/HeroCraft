@@ -10,5 +10,61 @@
     ],
     "max_rank": 3,
     "planner": 354
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 12,
+    "animation": "guard",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 120
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.0,
+            2.4,
+            2.8
+          ]
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": [
+            0.7,
+            0.8,
+            0.9
+          ],
+          "duration": 1.5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

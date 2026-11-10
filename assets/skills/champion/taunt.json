@@ -8,5 +8,46 @@
     "requires": [],
     "max_rank": 3,
     "planner": 363
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 10,
+    "animation": "shout",
+    "area": {
+      "circle": {
+        "radius": [
+          5,
+          6,
+          7
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "taunt": {
+          "duration": [
+            4,
+            5,
+            6
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "roarWave",
+      "anchor": "head",
+      "from": "impact"
+    },
+    {
+      "effect": "targetMark",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

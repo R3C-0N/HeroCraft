@@ -8,5 +8,54 @@
     "requires": [],
     "max_rank": 3,
     "planner": 391
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 5,
+    "animation": "overheadStrike",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 90
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.2,
+            1.4,
+            1.6
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": 0.6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "holyBeam",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

@@ -10,5 +10,41 @@
     ],
     "max_rank": 3,
     "planner": 293
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 20,
+    "animation": "guard",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": [
+            0.25,
+            0.35,
+            0.45
+          ],
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "targetMark",
+      "anchor": "head",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "impact",
+      "to": "effectEnd"
+    }
+  ]
 }

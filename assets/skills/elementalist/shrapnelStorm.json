@@ -10,5 +10,47 @@
     ],
     "max_rank": 3,
     "planner": 187
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 14,
+    "animation": "throw",
+    "area": {
+      "arc": {
+        "range": 10,
+        "angle": 50
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.0,
+            2.4,
+            2.8
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "rockShard",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "windBlades",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

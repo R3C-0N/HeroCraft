@@ -10,5 +10,41 @@
     ],
     "max_rank": 3,
     "planner": 396
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 16,
+    "animation": "guard",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "shield": {
+          "amount": [
+            35,
+            45,
+            55
+          ],
+          "duration": 6
+        }
+      },
+      {
+        "buff": {
+          "stat": "regeneration",
+          "value": 0.3,
+          "duration": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    }
+  ]
 }

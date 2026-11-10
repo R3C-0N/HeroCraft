@@ -118,6 +118,9 @@ struct Summoned {
     rank: u8,
 }
 
+/// Points de vie rendus chaque seconde par un renforcement de régénération de 1 (100 %)
+const REGENERATION_HP: f32 = 5.0;
+
 /// Écart entre deux entités invoquées ensemble, en blocs
 const SUMMON_SPACING: f32 = 1.5;
 
@@ -129,6 +132,8 @@ pub struct SkillRunner {
     buffs: Vec<Buff>,
     /// Entités invoquées, de la plus ancienne à la plus récente
     summoned: Vec<Summoned>,
+    /// Joueurs changés en bête (formes du Druide) : qui, par quelle compétence, secondes restantes
+    forms: Vec<(u64, String, f32)>,
     /// Recharge restante de chaque compétence de chaque joueur, en secondes
     cooldowns: HashMap<(u64, String), f32>,
 }
@@ -155,12 +160,34 @@ impl SkillRunner {
         }
         let def = catalog.get(skill).ok_or(CastError::Unknown)?;
         let cast = def.cast.as_ref().ok_or(CastError::NotPlayable)?;
+        // Changé en bête, on n'a que les deux attaques de la forme ; et elles seulement sous elle
+        let form = self.form(caster);
+        match (catalog.form_of_attack(skill), form) {
+            (Some(of), Some(current)) if of.id == current => {}
+            (Some(_), _) => return Err(CastError::NotInForm),
+            (None, Some(_)) => return Err(CastError::InForm),
+            (None, None) => {}
+        }
         let rank = catalog.rank(stats, skill);
+        if def.form.is_some() {
+            let lasting = cast.self_effects.iter().chain(&cast.effects).filter_map(|e| match &e.effect {
+                Effect::Buff { duration, .. } | Effect::Shield { duration, .. } | Effect::OverTime { duration, .. } => Some(duration.at(rank)),
+                _ => None,
+            });
+            let seconds = catalog.impact_delay(cast) + lasting.fold(0.0, f32::max);
+            self.forms.retain(|f| f.0 != caster);
+            self.forms.push((caster, skill.to_string(), seconds));
+        }
         stats.mana -= cast.cost.mana.at(rank);
         stats.stamina -= cast.cost.stamina.at(rank);
         self.cooldowns.insert((caster, skill.to_string()), cast.cooldown.at(rank));
         self.pending.push(Pending { caster, skill: skill.to_string(), rank, aim: aim.normalize_or_zero(), aimed, left: catalog.impact_delay(cast) });
         Ok(rank)
+    }
+
+    /// La forme (compétence du Druide) que le joueur `player` a prise en ce moment
+    pub fn form(&self, player: u64) -> Option<&str> {
+        self.forms.iter().find(|f| f.0 == player).map(|f| f.1.as_str())
     }
 
     /// Renforcement de `stat` du joueur `player` (0 : aucun ; 0,3 : +30 %)
@@ -192,6 +219,7 @@ impl SkillRunner {
         self.pending.retain(|p| p.caster != player);
         self.over_time.retain(|o| o.caster != player && o.target != SkillTarget::Player(player));
         self.buffs.retain(|b| b.player != player);
+        self.forms.retain(|f| f.0 != player);
         self.cooldowns.retain(|(p, _), _| *p != player);
     }
 
@@ -202,8 +230,19 @@ impl SkillRunner {
             *left -= dt;
         }
         self.cooldowns.retain(|_, left| *left > 0.0);
+        for form in &mut self.forms {
+            form.2 -= dt;
+        }
+        self.forms.retain(|f| f.2 > 0.0);
         for buff in &mut self.buffs {
             buff.left -= dt;
+            // Régénération : des points de vie rendus chaque instant
+            if buff.stat == BuffStat::Regeneration && buff.value > 0.0 {
+                if let Some(stats) = players.stats_mut(buff.player) {
+                    stats.hp = (stats.hp + buff.value * REGENERATION_HP * dt).min(stats.max_hp);
+                    out.changed.push(buff.player);
+                }
+            }
         }
         self.buffs.retain(|b| b.left > 0.0);
         // Les invocations détruites sont oubliées ; celles dont la durée est passée disparaissent
@@ -588,4 +627,36 @@ mod tests {
         let decoy = creatures.creatures().iter().find(|c| c.id == decoy[0]).unwrap();
         assert_eq!((decoy.copy, decoy.summoner), (Some(herocraft_common::COPY_SUMMONER), Some(5)));
     }
+
+    #[test]
+    fn a_druid_form_allows_only_its_two_attacks_and_regeneration_heals() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut stats = CharacterStats::new(PlayerClass::Druid);
+        for skill in ["ancientStag", "packClaws"] {
+            stats.skills.insert(skill.into(), 1);
+        }
+        stats.mana = 1000.0;
+        stats.stamina = 1000.0;
+        let mut runner = SkillRunner::new();
+        assert_eq!(runner.cast(&catalog, 5, &mut stats, "stagAntlers", Vec3::NEG_Z, None), Err(CastError::NotInForm));
+        runner.cast(&catalog, 5, &mut stats, "ancientStag", Vec3::NEG_Z, None).unwrap();
+        assert_eq!(runner.form(5), Some("ancientStag"));
+        assert_eq!(runner.cast(&catalog, 5, &mut stats, "packClaws", Vec3::NEG_Z, None), Err(CastError::InForm));
+        runner.cast(&catalog, 5, &mut stats, "stagAntlers", Vec3::NEG_Z, None).unwrap();
+        // Le cerf régénère : la vie remonte
+        stats.hp = 10.0;
+        let mut player = SoloPlayer { id: 5, feet, stats: &mut stats };
+        for _ in 0..20 {
+            runner.tick(0.25, &catalog, &mut creatures, &mut player);
+        }
+        assert!(stats.hp > 12.0, "{}", stats.hp);
+        // La forme passée, plus d'attaques de cerf
+        let mut player = SoloPlayer { id: 5, feet, stats: &mut stats };
+        for _ in 0..100 {
+            runner.tick(0.25, &catalog, &mut creatures, &mut player);
+        }
+        assert_eq!(runner.form(5), None);
+    }
+
 }

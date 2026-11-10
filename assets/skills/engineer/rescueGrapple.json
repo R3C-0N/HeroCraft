@@ -8,5 +8,42 @@
     "requires": [],
     "max_rank": 3,
     "planner": 304
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 15
+    },
+    "cooldown": 12,
+    "animation": "throw",
+    "area": "self",
+    "movement": {
+      "leap": [
+        -7,
+        -8,
+        -9
+      ]
+    },
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "speed",
+          "value": 0.3,
+          "duration": 2
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "cableLine",
+      "anchor": "leftHand",
+      "from": "impact"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    }
+  ]
 }

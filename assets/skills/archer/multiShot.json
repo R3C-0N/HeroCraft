@@ -8,5 +8,56 @@
     "requires": [],
     "max_rank": 3,
     "planner": 289
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 6,
+    "animation": "bowShot",
+    "area": {
+      "arc": {
+        "range": 8,
+        "angle": 35
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.8,
+            0.9,
+            1.0
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": [
+            4,
+            5,
+            6
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

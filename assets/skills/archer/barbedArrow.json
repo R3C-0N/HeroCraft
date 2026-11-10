@@ -10,5 +10,52 @@
     ],
     "max_rank": 3,
     "planner": 294
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 9,
+    "animation": "bowShot",
+    "area": {
+      "line": {
+        "length": 14,
+        "width": 1
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.6,
+            0.7,
+            0.8
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "damage": [
+            3,
+            4,
+            5
+          ],
+          "duration": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

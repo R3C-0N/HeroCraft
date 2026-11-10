@@ -13,5 +13,67 @@
     ],
     "max_rank": 3,
     "planner": 239
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 90
+    },
+    "cooldown": 150,
+    "animation": "channel",
+    "area": {
+      "circle": {
+        "radius": 14
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "heal": {
+          "amount": 1000
+        }
+      },
+      {
+        "shield": {
+          "amount": 200,
+          "duration": 6
+        }
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.9,
+          "duration": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "holyBeam",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "shieldDome",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

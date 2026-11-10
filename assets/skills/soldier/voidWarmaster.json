@@ -12,5 +12,74 @@
     ],
     "max_rank": 3,
     "planner": 359
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 60
+    },
+    "cooldown": 120,
+    "animation": "groundSlam",
+    "area": {
+      "line": {
+        "length": 30,
+        "width": 4
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            4,
+            5,
+            6
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 10
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": 0.8,
+          "duration": 15
+        }
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.5,
+          "duration": 15
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "voidRift",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

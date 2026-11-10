@@ -10,5 +10,60 @@
     ],
     "max_rank": 3,
     "planner": 368
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 18,
+    "animation": "shout",
+    "area": {
+      "circle": {
+        "radius": [
+          9,
+          10,
+          11
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "taunt": {
+          "duration": [
+            5,
+            6,
+            7
+          ]
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.25,
+          "duration": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "roarWave",
+      "anchor": "head",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "targetMark",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

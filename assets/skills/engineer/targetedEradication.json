@@ -11,5 +11,64 @@
     ],
     "max_rank": 3,
     "planner": 313
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 35
+    },
+    "cooldown": 20,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": [
+          3,
+          3.5,
+          4
+        ],
+        "center": "aimed",
+        "distance": 8
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "stun": {
+          "duration": 2
+        }
+      },
+      {
+        "damage": {
+          "power": [
+            2.4,
+            2.8,
+            3.2
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "damage": 4,
+          "duration": 5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "fireExplosion",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

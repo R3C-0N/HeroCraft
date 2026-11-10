@@ -608,6 +608,9 @@ pub struct UiState {
     pub skill_screen: SkillScreen,
     /// Compétences que le joueur vient de lancer (touches de la barre, `/cast`), que le jeu lance
     pub skill_casts: Vec<String>,
+    /// Changé en bête (forme du Druide) : ses deux attaques, au clic gauche et au clic droit. Plus
+    /// de barre d'objets, d'inventaire ni de barre de compétences le temps de la forme.
+    pub beast_attacks: Option<[String; 2]>,
     /// Barre de compétences (touches A, E, R, T) et leurs icônes
     pub skill_bar: crate::skill_bar::SkillBar,
     pub skill_icons: crate::skill_bar::SkillIcons,
@@ -679,6 +682,7 @@ impl UiState {
             skills_open: false,
             skill_wheel: SkillWheel::standard(),
             skill_casts: Vec::new(),
+            beast_attacks: None,
             skill_bar: crate::skill_bar::SkillBar::default(),
             skill_icons: crate::skill_bar::SkillIcons::default(),
             skill_cooldowns: [(0.0, 0.0); crate::skill_bar::SKILL_SLOTS],
@@ -1161,8 +1165,10 @@ impl UiState {
                     let close_hint = self.controls.action_key_label(Action::OpenMap);
                     self.world_map.draw_screen(ctx, &close_hint);
                 } else {
-                    self.draw_hotbar(ctx);
-                    self.draw_skill_bar(ctx);
+                    if self.beast_attacks.is_none() {
+                        self.draw_hotbar(ctx);
+                        self.draw_skill_bar(ctx);
+                    }
                     self.world_map.draw_compass(ctx, SCREEN_MARGIN);
                 }
             }

@@ -11,5 +11,63 @@
     ],
     "max_rank": 3,
     "planner": 282
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 32
+    },
+    "cooldown": 16,
+    "animation": "crossbowShot",
+    "area": {
+      "arc": {
+        "range": 12,
+        "angle": 70
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.4,
+            1.7,
+            2.0
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": [
+            1,
+            1.25,
+            1.5
+          ]
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.4,
+          "duration": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "lightningArc",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "lightningArc",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
 }

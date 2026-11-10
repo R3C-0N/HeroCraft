@@ -1,0 +1,41 @@
+{
+  "name": "Coup de Bois",
+  "description": "Clic gauche du Grand Cerf Ancien : un coup de bois qui repousse.",
+  "cast": {
+    "cost": {
+      "stamina": 4
+    },
+    "cooldown": 1.0,
+    "animation": "thrust",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 60
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.2,
+            1.4,
+            1.6
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

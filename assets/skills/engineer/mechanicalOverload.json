@@ -10,5 +10,51 @@
     ],
     "max_rank": 3,
     "planner": 309
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 20,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": 12
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "heal": {
+          "amount": [
+            30,
+            40,
+            50
+          ]
+        }
+      },
+      {
+        "shield": {
+          "amount": [
+            20,
+            30,
+            40
+          ],
+          "duration": 10
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "lightningArc",
+      "anchor": "leftHand",
+      "from": "impact"
+    },
+    {
+      "effect": "lightningArc",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

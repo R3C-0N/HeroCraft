@@ -1,0 +1,51 @@
+{
+  "name": "Écrasement",
+  "description": "Clic droit de l'Ours Runique : il se dresse et retombe de tout son poids, étourdissant ce qui l'entoure.",
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 6,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": 3
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.2,
+            1.4,
+            1.6
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": 1
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

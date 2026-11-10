@@ -10,5 +10,67 @@
     ],
     "max_rank": 3,
     "planner": 382
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 12,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": [
+          3.5,
+          4,
+          4.5
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.8,
+            1.0,
+            1.2
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": [
+            7,
+            8,
+            9
+          ]
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "over_time": {
+          "damage": 1,
+          "duration": 3
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "bloodSplash",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
 }

@@ -12,5 +12,88 @@
     ],
     "max_rank": 3,
     "planner": 209
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 90
+    },
+    "cooldown": 150,
+    "animation": "summon",
+    "area": {
+      "circle": {
+        "radius": 6
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": 3
+        }
+      },
+      {
+        "knockback": {
+          "strength": 8
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": 1.0,
+          "duration": 25
+        }
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.6,
+          "duration": 25
+        }
+      },
+      {
+        "buff": {
+          "stat": "speed",
+          "value": 0.5,
+          "duration": 25
+        }
+      },
+      {
+        "buff": {
+          "stat": "regeneration",
+          "value": 0.6,
+          "duration": 25
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "voidRift",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ],
+  "form": "voidChimera",
+  "form_attacks": [
+    "voidClaw",
+    "voidBreath"
+  ]
 }

@@ -10,5 +10,51 @@
     ],
     "max_rank": 3,
     "planner": 337
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 9,
+    "animation": "overheadStrike",
+    "area": {
+      "line": {
+        "length": [
+          12,
+          14,
+          16
+        ],
+        "width": 2
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.6,
+            1.9,
+            2.2
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "windBlades",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

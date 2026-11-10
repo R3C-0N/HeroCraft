@@ -11,5 +11,74 @@
     ],
     "max_rank": 3,
     "planner": 208
-  }
+  },
+  "cast": {
+    "cost": {
+      "mana": 35
+    },
+    "cooldown": 45,
+    "animation": "leap",
+    "area": {
+      "circle": {
+        "radius": 3
+      }
+    },
+    "movement": {
+      "leap": 6
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.8,
+            2.1,
+            2.4
+          ]
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "speed",
+          "value": [
+            0.6,
+            0.7,
+            0.8
+          ],
+          "duration": 20
+        }
+      },
+      {
+        "buff": {
+          "stat": "damage",
+          "value": 0.35,
+          "duration": 20
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "featherGust",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ],
+  "form": "sylvanGriffin",
+  "form_attacks": [
+    "griffinTalons",
+    "griffinGust"
+  ]
 }

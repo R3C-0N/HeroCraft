@@ -1,0 +1,46 @@
+{
+  "name": "Coup de Patte",
+  "description": "Clic gauche de l'Ours Runique : un coup de patte lourd qui repousse.",
+  "cast": {
+    "cost": {
+      "stamina": 4
+    },
+    "cooldown": 1.0,
+    "animation": "sweep",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 110
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.4,
+            1.6,
+            1.8
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "slashArc",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

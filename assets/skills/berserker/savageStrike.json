@@ -8,5 +8,57 @@
     "requires": [],
     "max_rank": 3,
     "planner": 376
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 4,
+    "animation": "overheadStrike",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 90
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.3,
+            1.5,
+            1.7
+          ]
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": 0.1,
+          "duration": 5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

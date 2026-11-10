@@ -11,5 +11,63 @@
     ],
     "max_rank": 3,
     "planner": 311
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 35
+    },
+    "cooldown": 22,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ],
+        "center": "aimed",
+        "distance": 10
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "pull": {
+          "strength": 8
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.6,
+          "duration": 6
+        }
+      },
+      {
+        "damage": {
+          "power": [
+            1.6,
+            2.0,
+            2.4
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "lightningArc",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "turretBolt",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }

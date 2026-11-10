@@ -203,6 +203,8 @@ fn main() {
     let mut hero_gait = hero_model::HeroGait::default();
     // Démarche des héros des autres joueurs
     let mut remote_gaits: std::collections::HashMap<u64, hero_model::HeroGait> = std::collections::HashMap::new();
+    // Pieds des héros changés en bête (formes du Druide) à l'image d'avant, pour leur allure
+    let mut form_feet: std::collections::HashMap<u64, glam::Vec3> = std::collections::HashMap::new();
     let mut hero_figure = hero_model::FigureCache::default();
     // Compétences : lancements, recharges, gestes du héros et frappes à montrer
     let mut skill_play = skill_play::SkillPlay::default();
@@ -334,7 +336,16 @@ fn main() {
                     // Clic souris : glisser pour tourner la planète en vue satellite (curseur visible).
                     // Souris capturée, les clics restent libres pour l'interaction avec les blocs.
                     WindowEvent::MouseInput { state: btn_state, button, .. } => {
-                        if cursor_captured {
+                        // Changé en bête : le clic gauche et le clic droit lancent ses deux attaques
+                        if let Some(attacks) = ui_state.beast_attacks.as_ref().filter(|_| cursor_captured) {
+                            if *btn_state == ElementState::Pressed {
+                                match button {
+                                    MouseButton::Left => ui_state.skill_casts.push(attacks[0].clone()),
+                                    MouseButton::Right => ui_state.skill_casts.push(attacks[1].clone()),
+                                    _ => {}
+                                }
+                            }
+                        } else if cursor_captured {
                             // Pose appliquée et remaillée sur-le-champ : le bloc change dans la frame qui
                             // suit le clic. Le clic gauche (casse, coup à une bête) avance à chaque frame.
                             let pressed = *btn_state == ElementState::Pressed;
@@ -438,7 +449,7 @@ fn main() {
                                 || ui_state.ctx.wants_pointer_input())
                         };
 
-                        if cursor_captured && !zoom_modifier_held {
+                        if cursor_captured && !zoom_modifier_held && ui_state.beast_attacks.is_none() {
                             // Molette vers le haut : case précédente (vers la gauche)
                             hotbar_scroll -= match delta {
                                 MouseScrollDelta::LineDelta(_x, y) => *y,
@@ -527,7 +538,7 @@ fn main() {
                             // En jeu normal (menu fermé) : barre d'objets (1 à 9), déplacements et
                             // raccourcis selon les touches attribuées
                             if let Some(slot) = input::hotbar_slot_for(key_code) {
-                                if is_pressed {
+                                if is_pressed && ui_state.beast_attacks.is_none() {
                                     ui_state.inventory.select(slot);
                                 }
                                 return;
@@ -620,6 +631,11 @@ fn main() {
                         if !ui_state.is_settings_open {
                             herocraft_common::prof_scope!("frame::camera_update");
                             camera.obstacles = creatures::obstacles(&creature_views, &creature_registry);
+                            // Compétences : allure renforcée, ruée ou bond qui commence
+                            camera.buff_speed = skill_play.speed_factor();
+                            if let Some((dash, leap, seconds)) = skill_play.take_motion() {
+                                camera.launch(dash, leap, seconds);
+                            }
                             camera.update(dt, &generator);
                             // Jauges du joueur, chute terminée : dommages (signalés au serveur en
                             // ligne), vue secouée et, si elle tue, écran de mort
@@ -869,7 +885,37 @@ fn main() {
                             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
                             let anim_dt = if ui_state.is_settings_open { 0.0 } else { dt };
                             // Les bêtes d'après leur modèle, les habitants et les voyageurs avec le corps des héros
-                            let beasts: Vec<creatures::CreatureView> = creature_views.iter().filter(|v| !villagers::is_humanoid(v, &creature_registry)).copied().collect();
+                            let mut beasts: Vec<creatures::CreatureView> = creature_views.iter().filter(|v| !villagers::is_humanoid(v, &creature_registry)).copied().collect();
+                            // Héros changés en bête (formes du Druide) : la bête à leur place
+                            skill_play.me = net.as_ref().map_or(skill_play::SOLO_PLAYER, |c| c.player_id());
+                            let third_person = camera.view_mode() == camera::CameraViewMode::ThirdPerson;
+                            let local_form = skill_play.form_of(None).filter(|_| ui_state.legend.is_some());
+                            // Changé en bête : les clics lancent ses attaques, l'inventaire se ferme
+                            let attacks = skill_play.form_skill(None).and_then(|s| herocraft_common::skills().get(&s)).and_then(|d| <[String; 2]>::try_from(d.form_attacks.clone()).ok());
+                            if attacks.is_some() && ui_state.beast_attacks.is_none() {
+                                ui_state.set_inventory_open(false);
+                                block_interaction.reset();
+                            }
+                            ui_state.beast_attacks = attacks;
+                            let mut shapes: Vec<(u64, String, glam::Vec3, f32, bool)> = Vec::new();
+                            if let Some(form) = local_form.clone().filter(|_| third_person) {
+                                shapes.push((u64::MAX, form, camera.player_pos, camera.player_yaw, skill_play.form_attacking(None)));
+                            }
+                            if let Some(client) = net.as_ref() {
+                                for (id, feet, yaw, _) in client.remote_heroes() {
+                                    if let Some(form) = skill_play.form_of(Some(id)) {
+                                        shapes.push((u64::MAX - 1 - id, form, feet, yaw, skill_play.form_attacking(Some(id))));
+                                    }
+                                }
+                            }
+                            form_feet.retain(|id, _| shapes.iter().any(|s| s.0 == *id));
+                            for (id, form, feet, yaw, attacking) in &shapes {
+                                let speed = form_feet.insert(*id, *feet).map_or(0.0, |last| last.distance(*feet) / block / dt.max(1e-3));
+                                let action = if *attacking {
+                                    herocraft_common::CreatureAction::Attaque
+                                } else if speed > 4.0 { herocraft_common::CreatureAction::Course } else if speed > 0.3 { herocraft_common::CreatureAction::Marche } else { herocraft_common::CreatureAction::Repos };
+                                beasts.push(creatures::CreatureView { id: *id, species: creature_registry.find(form), feet: *feet, yaw: *yaw, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None });
+                            }
                             creature_animator.update(&beasts, &creature_registry, &creature_models, anim_dt, block);
                             let mut frame = creatures::build_frame(&beasts, &creature_registry, &creature_models, &creature_animator, block);
                             villager_animator.update(&creature_views, &creature_registry, anim_dt, block);
@@ -910,7 +956,7 @@ fn main() {
                             // Le héros, vu de dehors à la troisième personne, avec le geste de sa compétence
                             hero_gait.update(camera.player_pos, anim_dt, block);
                             let mut hero_anchors = hero_model::HeroAnchors::standing(camera.player_pos, camera.player_yaw, block);
-                            if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson) {
+                            if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson && local_form.is_none()) {
                                 state.set_hero_sheet(&legend.appearance);
                                 let figure = hero_figure.get(&legend.appearance);
                                 let pose = skill_play.hero_pose(hero_gait.swing(), figure.units_per_block(&legend.appearance));
@@ -927,6 +973,9 @@ fn main() {
                                 let heroes = client.remote_heroes();
                                 remote_gaits.retain(|id, _| heroes.iter().any(|h| h.0 == *id));
                                 for (id, feet, yaw, appearance) in heroes {
+                                    if skill_play.form_of(Some(id)).is_some() {
+                                        continue;
+                                    }
                                     let gait = remote_gaits.entry(id).or_default();
                                     gait.update(feet, anim_dt, block);
                                     let figure = villager_animator.hero_figure(appearance);
@@ -1708,7 +1757,7 @@ fn game_key(
             *zoom_modifier_held = false;
             ui_state.chat.open();
         }
-        Action::OpenInventory if first_press && is_ground_view => {
+        Action::OpenInventory if first_press && is_ground_view && ui_state.beast_attacks.is_none() => {
             camera.release_inputs();
             ui_state.set_inventory_open(true);
         }
@@ -1737,7 +1786,7 @@ fn game_key(
             }
             pending_actions.push(UiAction::ToggleOceanCurrents);
         }
-        Action::Skill1 | Action::Skill2 | Action::Skill3 | Action::Skill4 if first_press && is_ground_view => {
+        Action::Skill1 | Action::Skill2 | Action::Skill3 | Action::Skill4 if first_press && is_ground_view && ui_state.beast_attacks.is_none() => {
             let slot = [Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4].iter().position(|&a| a == action).unwrap_or(0);
             match ui_state.skill_bar.get(slot) {
                 Some(skill) => ui_state.skill_casts.push(skill.to_string()),

@@ -8,5 +8,49 @@
     "requires": [],
     "max_rank": 3,
     "planner": 286
-  }
+  },
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 7,
+    "animation": "bowShot",
+    "speed": 0.6,
+    "area": {
+      "line": {
+        "length": 16,
+        "width": 1
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.6,
+            1.9,
+            2.2
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
 }
