@@ -114,6 +114,8 @@ pub enum ClientPacket {
     },
     /// Le joueur quitte la partie
     Disconnect,
+    /// Le joueur tombé réapparaît (écran de mort quitté) : une résurrection ne peut plus le relever
+    Respawn,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

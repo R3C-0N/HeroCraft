@@ -18,7 +18,7 @@ pub mod villagers;
 pub mod weather;
 
 pub use caves::{carvable_range, CaveField, CAVE_DEPTH};
-pub use creatures::{Assault, Creature, CreatureWorld, Murder, Feeding, PlayerHit, PlayerPresence, CREATURE_RANGE_BLOCKS};
+pub use creatures::{Assault, Creature, CreatureWorld, Murder, Feeding, PlayerHit, PlayerPresence, BLIND_SIGHT, CREATURE_RANGE_BLOCKS};
 pub use cubed_sphere::*;
 pub use edits::*;
 pub use farming::{crop_weather_factor, tilled_block, Fields, FIELDS_FILE};
@@ -26,7 +26,7 @@ pub use generator::*;
 pub use ocean_currents::*;
 pub use quadtree::*;
 pub use roads::{Road, RoadMap};
-pub use skill_runner::{SkillImpact, SkillPlayers, SkillRunner, SkillTick, SoloPlayer};
+pub use skill_runner::{SkillImpact, SkillPlayers, SkillRunner, SkillTick, SoloPlayer, CRITICAL_FACTOR};
 pub use culture::Culture;
 pub use structures::{Settlement, SettlementKind, StructureMap};
 pub use tectonics::*;

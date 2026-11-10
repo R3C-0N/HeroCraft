@@ -301,6 +301,12 @@ pub struct CreatureAttack {
     /// proche, puis disparaît
     #[serde(default)]
     pub burst: Option<CreatureBurst>,
+    /// Son coup ralentit le joueur touché : `[part de la vitesse perdue, secondes]`
+    #[serde(default)]
+    pub slow: Option<[f32; 2]>,
+    /// Son coup étourdit le joueur touché tant de secondes
+    #[serde(default)]
+    pub stun: Option<f32>,
 }
 
 /// L'explosion d'un piège

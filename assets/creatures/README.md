@@ -99,6 +99,8 @@ Une bête dont la fiche a un champ `attack` chasse les joueurs et ses proies qu'
 | `pack_size` | En meute, nombre de bêtes qu'il lui faut, elle comprise (3 par défaut). |
 
 | `shot` | Tir à distance : `range` (portée), `damage`, `speed` (blocs par seconde, 0 : tout de suite), `radius` (explosion), `height` (d'où part le tir) et les effets `muzzle`, `projectile`, `impact`. Trop loin pour frapper, la bête s'arrête et tire. |
+| `slow` | Son coup ralentit le joueur touché : `[part de la vitesse perdue, secondes]` (Gorgone florale, Mille-pattes géant). |
+| `stun` | Son coup étourdit le joueur touché tant de secondes (Brute cornue, Sanglier). |
 | `burst` | Piège : la première cible à portée de `reach` le déclenche ; il retire `damage` à chaque ennemi dans `radius` blocs, l'immobilise `stun` secondes, le fait saigner (`bleed` points par seconde pendant `bleed_seconds` secondes, sans recul) et joue l'effet `effect`, puis disparaît. |
 
 Le bestiaire ne décrit pas d'attaque : `tools/importer_bestiaire.py` garde celle de la fiche existante.

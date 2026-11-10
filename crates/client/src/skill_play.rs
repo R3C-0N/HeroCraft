@@ -134,6 +134,9 @@ impl SkillPlay {
         if let Some(error) = catalog.cast_check(stats, skill, left) {
             return Err(error.message().to_string());
         }
+        if stats.is_stunned() {
+            return Err(herocraft_common::CastError::Stunned.message().to_string());
+        }
         // Changé en bête, seules ses deux attaques ; et elles seulement sous elle
         let form = self.form_skill(None);
         match (catalog.form_of_attack(skill), form) {
@@ -436,7 +439,15 @@ fn effect_seconds(effects: &[herocraft_common::skills::EffectEntry], rank: u8) -
     effects
         .iter()
         .map(|e| match &e.effect {
-            Effect::Slow { duration, .. } | Effect::Stun { duration } | Effect::Shield { duration, .. } | Effect::Buff { duration, .. } | Effect::OverTime { duration, .. } | Effect::Taunt { duration } => duration.at(rank),
+            Effect::Slow { duration, .. }
+            | Effect::Stun { duration }
+            | Effect::Shield { duration, .. }
+            | Effect::Buff { duration, .. }
+            | Effect::OverTime { duration, .. }
+            | Effect::Taunt { duration }
+            | Effect::Invisible { duration }
+            | Effect::Blind { duration }
+            | Effect::Mark { duration, .. } => duration.at(rank),
             _ => 0.0,
         })
         .fold(0.0, f32::max)

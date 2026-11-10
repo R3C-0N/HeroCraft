@@ -7,7 +7,7 @@
   "max_group": 2,
   "spawn": [],
   "activity": "nocturnal",
-  "attack": {"mode": "solo", "damage": 5, "cooldown": 1.2, "sight": 4, "reach": 1.0, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
+  "attack": {"mode": "solo", "damage": 5, "slow": [0.3, 2.5], "cooldown": 1.2, "sight": 4, "reach": 1.0, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
   "loot": [
     {"item": "pocheVenin", "chance": 0.6},
     {"item": "glandeAcide", "chance": 0.6}

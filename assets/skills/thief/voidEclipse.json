@@ -36,12 +36,17 @@
         }
       },
       {
-        "stun": {
-          "duration": 1.5
+        "blind": {
+          "duration": 6
         }
       }
     ],
     "self_effects": [
+      {
+        "invisible": {
+          "duration": 6
+        }
+      },
       {
         "buff": {
           "stat": "defense",

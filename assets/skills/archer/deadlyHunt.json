@@ -27,6 +27,12 @@
     "targets": "enemies",
     "effects": [
       {
+        "mark": {
+          "chance": 1,
+          "duration": 0.5
+        }
+      },
+      {
         "damage": {
           "power": [
             1.8,

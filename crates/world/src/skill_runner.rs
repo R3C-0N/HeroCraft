@@ -84,6 +84,8 @@ struct Pending {
     aim: Vec3,
     aimed: Option<Vec3>,
     left: f32,
+    /// Lancée depuis l'invisibilité : ses dégâts sont tous critiques
+    crit: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -136,7 +138,14 @@ pub struct SkillRunner {
     forms: Vec<(u64, String, f32)>,
     /// Recharge restante de chaque compétence de chaque joueur, en secondes
     cooldowns: HashMap<(u64, String), f32>,
+    /// Bêtes marquées : par qui, laquelle, chance de critique en plus, secondes restantes
+    marks: Vec<(u64, u64, f32, f32)>,
+    /// État du tirage des coups critiques
+    luck: u64,
 }
+
+/// Facteur des dégâts d'un coup critique
+pub const CRITICAL_FACTOR: f32 = 2.0;
 
 impl SkillRunner {
     pub fn new() -> Self {
@@ -157,6 +166,9 @@ impl SkillRunner {
         }
         if let Some(error) = catalog.cast_check(stats, skill, self.cooldown(caster, skill)) {
             return Err(error);
+        }
+        if stats.is_stunned() {
+            return Err(CastError::Stunned);
         }
         let def = catalog.get(skill).ok_or(CastError::Unknown)?;
         let cast = def.cast.as_ref().ok_or(CastError::NotPlayable)?;
@@ -181,7 +193,13 @@ impl SkillRunner {
         stats.mana -= cast.cost.mana.at(rank);
         stats.stamina -= cast.cost.stamina.at(rank);
         self.cooldowns.insert((caster, skill.to_string()), cast.cooldown.at(rank));
-        self.pending.push(Pending { caster, skill: skill.to_string(), rank, aim: aim.normalize_or_zero(), aimed, left: catalog.impact_delay(cast) });
+        // Une attaque lancée invisible le dévoile, et frappe en critique
+        let attacks = cast.effects.iter().any(|e| matches!(e.effect, Effect::Damage { .. } | Effect::OverTime { damage: Some(_), .. }));
+        let crit = attacks && stats.is_invisible();
+        if attacks {
+            stats.invisible_time = 0.0;
+        }
+        self.pending.push(Pending { caster, skill: skill.to_string(), rank, aim: aim.normalize_or_zero(), aimed, left: catalog.impact_delay(cast), crit });
         Ok(rank)
     }
 
@@ -220,6 +238,7 @@ impl SkillRunner {
         self.over_time.retain(|o| o.caster != player && o.target != SkillTarget::Player(player));
         self.buffs.retain(|b| b.player != player);
         self.forms.retain(|f| f.0 != player);
+        self.marks.retain(|m| m.0 != player);
         self.cooldowns.retain(|(p, _), _| *p != player);
     }
 
@@ -234,6 +253,10 @@ impl SkillRunner {
             form.2 -= dt;
         }
         self.forms.retain(|f| f.2 > 0.0);
+        for mark in &mut self.marks {
+            mark.3 -= dt;
+        }
+        self.marks.retain(|m| m.3 > 0.0);
         for buff in &mut self.buffs {
             buff.left -= dt;
             // Régénération : des points de vie rendus chaque instant
@@ -435,11 +458,35 @@ impl SkillRunner {
         out
     }
 
+    /// Chance de coup critique du joueur `caster` sur la créature `id` : son renforcement, plus ses marques
+    pub fn critical_chance(&self, caster: u64, id: u64) -> f32 {
+        self.buff(caster, BuffStat::Critical) + self.marks.iter().filter(|m| m.0 == caster && m.1 == id).map(|m| m.2).sum::<f32>()
+    }
+
+    /// Un tirage entre 0 et 1 (splitmix64)
+    fn roll(&mut self) -> f32 {
+        self.luck = self.luck.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.luck;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        (z >> 40) as f32 / (1u64 << 24) as f32
+    }
+
     fn apply_to_creature(&mut self, entry: &EffectEntry, p: &Pending, id: u64, feet: Vec3, damage_factor: f32, creatures: &mut CreatureWorld) {
         let rank = p.rank;
         match &entry.effect {
             Effect::Damage { power } => {
-                creatures.wound(id, feet, p.caster, power.at(rank) * SKILL_BASE_DAMAGE * damage_factor);
+                let chance = if p.crit { 1.0 } else { self.critical_chance(p.caster, id) };
+                let critical = chance > 0.0 && self.roll() < chance;
+                let factor = if critical { CRITICAL_FACTOR } else { 1.0 };
+                creatures.wound(id, feet, p.caster, power.at(rank) * SKILL_BASE_DAMAGE * damage_factor * factor);
+            }
+            Effect::Blind { duration } => creatures.blind(id, duration.at(rank)),
+            Effect::Taunt { duration } => creatures.taunt(id, p.caster, duration.at(rank)),
+            Effect::Mark { chance, duration } => {
+                self.marks.retain(|m| !(m.0 == p.caster && m.1 == id));
+                self.marks.push((p.caster, id, chance.at(rank), duration.at(rank)));
             }
             Effect::Slow { strength, duration } => creatures.slow(id, strength.at(rank), duration.at(rank)),
             Effect::Stun { duration } => creatures.stun(id, duration.at(rank)),
@@ -450,8 +497,8 @@ impl SkillRunner {
                     self.over_time.push(OverTime { caster: p.caster, target: SkillTarget::Creature(id), per_second: -damage.at(rank) * damage_factor, left: duration.at(rank), next: OVER_TIME_STEP });
                 }
             }
-            // Pas encore pour les créatures : soins, boucliers, renforcements, provocation
-            Effect::Heal { .. } | Effect::Shield { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Taunt { .. } => {}
+            // Sans effet sur une bête : soins, boucliers, renforcements, invisibilité, résurrection
+            Effect::Heal { .. } | Effect::Shield { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } => {}
         }
     }
 
@@ -478,8 +525,19 @@ impl SkillRunner {
                     self.over_time.push(OverTime { caster, target: SkillTarget::Player(id), per_second, left: duration.at(rank), next: OVER_TIME_STEP });
                 }
             }
-            // Pas de dégâts entre joueurs ; ralentir ou repousser un joueur demanderait son client
-            Effect::Damage { .. } | Effect::Slow { .. } | Effect::Stun { .. } | Effect::Knockback { .. } | Effect::Pull { .. } | Effect::Summon { .. } | Effect::Taunt { .. } => {}
+            Effect::Invisible { duration } => {
+                if let Some(stats) = players.stats_mut(id) {
+                    stats.invisible_time = stats.invisible_time.max(duration.at(rank));
+                }
+            }
+            Effect::Revive { health } => {
+                if let Some(stats) = players.stats_mut(id) {
+                    stats.resurrect(health.at(rank));
+                }
+            }
+            // Pas de combat entre joueurs : ni dégâts, ni ralenti, ni étourdissement d'un allié (ce
+            // sont les bêtes qui ralentissent et étourdissent les joueurs, `CreatureWorld::afflict`)
+            Effect::Damage { .. } | Effect::Slow { .. } | Effect::Stun { .. } | Effect::Knockback { .. } | Effect::Pull { .. } | Effect::Summon { .. } | Effect::Taunt { .. } | Effect::Blind { .. } | Effect::Mark { .. } => {}
         }
     }
 }
@@ -659,4 +717,140 @@ mod tests {
         assert_eq!(runner.form(5), None);
     }
 
+    /// Deux joueurs côte à côte
+    struct Pair<'a> {
+        feet: Vec3,
+        a: (u64, &'a mut CharacterStats),
+        b: (u64, &'a mut CharacterStats),
+    }
+
+    impl SkillPlayers for Pair<'_> {
+        fn ids(&self) -> Vec<u64> {
+            vec![self.a.0, self.b.0]
+        }
+        fn feet(&self, id: u64) -> Option<Vec3> {
+            (id == self.a.0 || id == self.b.0).then_some(self.feet)
+        }
+        fn stats_mut(&mut self, id: u64) -> Option<&mut CharacterStats> {
+            if id == self.a.0 {
+                Some(&mut *self.a.1)
+            } else if id == self.b.0 {
+                Some(&mut *self.b.1)
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Avance jusqu'à la frappe du lancement en attente
+    fn until_impact(runner: &mut SkillRunner, catalog: &SkillCatalog, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) {
+        for _ in 0..100 {
+            if !runner.tick(0.02, catalog, creatures, players).impacts.is_empty() {
+                return;
+            }
+        }
+        panic!("pas de frappe");
+    }
+
+    fn health(w: &CreatureWorld, id: u64) -> f32 {
+        w.creatures().iter().find(|c| c.id == id).map(|c| c.health).unwrap()
+    }
+
+    #[test]
+    fn the_first_attack_out_of_invisibility_is_critical_and_reveals() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let cow = creatures.creatures()[0].id;
+        creatures.creature_mut(cow).unwrap().health = 1000.0;
+        let mut stats = CharacterStats::new(PlayerClass::Rogue);
+        stats.skills.insert("shadowVeil".into(), 1);
+        stats.skills.insert("ambush".into(), 1);
+        let mut runner = SkillRunner::new();
+        runner.cast(&catalog, 4, &mut stats, "shadowVeil", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 4, feet, stats: &mut stats });
+        assert!(stats.is_invisible(), "le voile ne rend pas invisible");
+
+        runner.cast(&catalog, 4, &mut stats, "ambush", Vec3::NEG_Z, None).unwrap();
+        assert!(!stats.is_invisible(), "l'attaque ne dévoile pas");
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 4, feet, stats: &mut stats });
+        let expected = 2.4 * SKILL_BASE_DAMAGE * CRITICAL_FACTOR;
+        assert!((1000.0 - health(&creatures, cow) - expected).abs() < 0.01, "pas de critique : {} dégâts", 1000.0 - health(&creatures, cow));
+    }
+
+    #[test]
+    fn marks_and_critical_buffs_raise_the_critical_chance() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let cow = creatures.creatures()[0].id;
+        creatures.creature_mut(cow).unwrap().health = 1000.0;
+        let mut stats = CharacterStats::new(PlayerClass::Archer);
+        stats.skills.insert("deadlyHunt".into(), 1);
+        stats.skills.insert("hawkEye".into(), 1);
+        let mut runner = SkillRunner::new();
+        // Chasse mortelle : le point faible est toujours trouvé
+        runner.cast(&catalog, 2, &mut stats, "deadlyHunt", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 2, feet, stats: &mut stats });
+        let expected = 1.8 * SKILL_BASE_DAMAGE * CRITICAL_FACTOR;
+        assert!((1000.0 - health(&creatures, cow) - expected).abs() < 0.01, "pas de critique : {} dégâts", 1000.0 - health(&creatures, cow));
+
+        runner.tick(1.0, &catalog, &mut creatures, &mut SoloPlayer { id: 2, feet, stats: &mut stats });
+        assert_eq!(runner.critical_chance(2, cow), 0.0, "la marque de la chasse ne dure pas");
+        runner.cast(&catalog, 2, &mut stats, "hawkEye", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 2, feet, stats: &mut stats });
+        assert!((runner.critical_chance(2, cow) - 0.3).abs() < 1e-6, "l'œil de faucon : {}", runner.critical_chance(2, cow));
+
+        // Sur mille tirages à 30 %, à peu près trois cents critiques
+        let crits = (0..1000).filter(|_| runner.roll() < 0.3).count();
+        assert!((240..360).contains(&crits), "{crits} critiques");
+    }
+
+    #[test]
+    fn a_tracer_round_marks_and_a_radiant_strike_blinds() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let cow = creatures.creatures()[0].id;
+        creatures.creature_mut(cow).unwrap().health = 1000.0;
+        let mut stats = CharacterStats::new(PlayerClass::Ranger);
+        stats.skills.insert("tracerRound".into(), 1);
+        stats.skills.insert("radiantStrike".into(), 1);
+        let mut runner = SkillRunner::new();
+        runner.cast(&catalog, 3, &mut stats, "tracerRound", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 3, feet, stats: &mut stats });
+        assert!(runner.critical_chance(3, cow) > 0.0, "la balle traçante ne marque pas");
+        assert_eq!(runner.critical_chance(4, cow), 0.0, "la marque ne sert que son tireur");
+
+        runner.cast(&catalog, 3, &mut stats, "radiantStrike", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 3, feet, stats: &mut stats });
+        assert!(creatures.is_blind(cow), "la frappe radieuse n'aveugle pas");
+    }
+
+    #[test]
+    fn supreme_intervention_raises_the_fallen_ally_with_half_his_life() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut chaplain = CharacterStats::new(PlayerClass::Chaplain);
+        chaplain.skills.insert("supremeIntervention".into(), 1);
+        chaplain.mana = 1000.0;
+        let mut ally = CharacterStats::new(PlayerClass::Soldier);
+        // Tombé : le serveur l'a déjà ranimé, il attend sur son écran de mort
+        ally.fallen = true;
+        let mut runner = SkillRunner::new();
+        runner.cast(&catalog, 1, &mut chaplain, "supremeIntervention", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut Pair { feet, a: (1, &mut chaplain), b: (2, &mut ally) });
+        assert!(!ally.fallen && ally.revived == 1, "l'allié n'est pas relevé");
+        assert!((ally.hp - 0.5 * ally.max_hp).abs() < 0.01, "relevé avec {} / {}", ally.hp, ally.max_hp);
+        assert_eq!(chaplain.revived, 0, "le chapelain debout n'est pas « relevé »");
+    }
+
+    #[test]
+    fn a_stunned_player_cannot_cast() {
+        let catalog = SkillCatalog::load_default();
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        stats.skills.insert("judgment".into(), 1);
+        stats.apply_stun(1.0);
+        let mut runner = SkillRunner::new();
+        assert_eq!(runner.cast(&catalog, 7, &mut stats, "judgment", Vec3::NEG_Z, None), Err(CastError::Stunned));
+        stats.tick_status(1.5);
+        assert_eq!(runner.cast(&catalog, 7, &mut stats, "judgment", Vec3::NEG_Z, None), Ok(1));
+    }
 }

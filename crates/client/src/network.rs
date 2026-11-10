@@ -453,6 +453,11 @@ impl NetClient {
         self.connection.send(&ClientPacket::Eat { item: item.0 });
     }
 
+    /// Le joueur tombé réapparaît : une résurrection ne peut plus le relever
+    pub fn send_respawn(&mut self) {
+        self.connection.send(&ClientPacket::Respawn);
+    }
+
     pub fn send_heal(&mut self) {
         self.connection.send(&ClientPacket::Heal);
     }

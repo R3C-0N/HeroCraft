@@ -44,6 +44,11 @@
           "value": 0.9,
           "duration": 6
         }
+      },
+      {
+        "revive": {
+          "health": 0.5
+        }
       }
     ]
   },

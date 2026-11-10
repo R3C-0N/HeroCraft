@@ -282,6 +282,10 @@ pub struct Creature {
     slow_time: f32,
     /// Étourdie par une compétence : temps restant sans bouger ni frapper, en secondes
     stun: f32,
+    /// Aveuglée : temps restant à ne voir qu'à `BLIND_SIGHT` blocs, en secondes
+    blind: f32,
+    /// Provoquée : clé du joueur qu'elle poursuit, et temps restant, en secondes
+    taunted: Option<(u64, f32)>,
     /// Invoquée par ce joueur (compétence) : alliée, jamais gardée endormie avec sa zone
     pub summoner: Option<u64>,
     /// Apparition d'une entité invoquée : temps restant et durée totale, en secondes ; elle ne
@@ -530,6 +534,9 @@ impl Creature {
     }
 }
 
+/// Ce que voit encore une bête aveuglée, en blocs
+pub const BLIND_SIGHT: f32 = 1.5;
+
 /// Un joueur tel que les créatures le perçoivent
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlayerPresence {
@@ -539,11 +546,13 @@ pub struct PlayerPresence {
     pub crouching: bool,
     /// Ce qu'il tient en main : sa nourriture attire une bête qui s'élève
     pub holding: Option<ItemId>,
+    /// Invisible (compétence) : les bêtes ne le voient ni ne le sentent
+    pub hidden: bool,
 }
 
 impl PlayerPresence {
     pub fn standing(feet: Vec3) -> Self {
-        Self { feet, crouching: false, holding: None }
+        Self { feet, crouching: false, holding: None, hidden: false }
     }
 }
 
@@ -845,6 +854,8 @@ impl CreatureWorld {
             slow: 0.0,
             slow_time: 0.0,
             stun: 0.0,
+            blind: 0.0,
+            taunted: None,
             summoner: None,
             appearing: 0.0,
             appear_total: 0.0,
@@ -1056,6 +1067,37 @@ impl CreatureWorld {
         }
     }
 
+    /// Aveugle la créature `id` pendant `duration` secondes : elle ne voit plus qu'à `BLIND_SIGHT` blocs
+    pub fn blind(&mut self, id: u64, duration: f32) {
+        if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
+            c.blind = c.blind.max(duration);
+        }
+    }
+
+    /// La créature `id` ne poursuit plus que le joueur de clé `key` pendant `duration` secondes
+    pub fn taunt(&mut self, id: u64, key: u64, duration: f32) {
+        if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
+            c.taunted = Some((key, duration));
+            c.sleeping = false;
+        }
+    }
+
+    /// Ralenti et étourdissement que le coup `hit` laisse au joueur touché (`attack.slow`, `attack.stun`)
+    pub fn afflict(&self, hit: &PlayerHit, stats: &mut herocraft_common::CharacterStats) {
+        let Some(attack) = self.registry.get(hit.species).and_then(|s| s.attack.as_ref()) else { return };
+        if let Some([strength, seconds]) = attack.slow {
+            stats.apply_slow(strength, seconds);
+        }
+        if let Some(seconds) = attack.stun {
+            stats.apply_stun(seconds);
+        }
+    }
+
+    /// Aveuglée en ce moment
+    pub fn is_blind(&self, id: u64) -> bool {
+        self.creatures.iter().any(|c| c.id == id && c.blind > 0.0)
+    }
+
     /// La créature `id` perd `damage` points de vie par saignement, sans reculer ni fuir
     fn bleed_out(&mut self, id: u64, damage: f32) {
         let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) else { return };
@@ -1205,7 +1247,7 @@ impl CreatureWorld {
 
     /// Les bêtes agressives choisissent leur cible, s'en approchent et frappent celles à portée.
     /// Renvoie les coups portés aux joueurs ; ceux portés aux proies sont appliqués ici.
-    fn hunt(&mut self, dt: f32, players: &[Vec3], keys: &[u64]) -> Vec<PlayerHit> {
+    fn hunt(&mut self, dt: f32, players: &[Vec3], keys: &[u64], hidden: &[bool]) -> Vec<PlayerHit> {
         let block = self.geometry.block_height as f32;
         for w in &mut self.wanted {
             w.2 -= dt;
@@ -1283,6 +1325,11 @@ impl CreatureWorld {
                 }
             }
             c.stun = (c.stun - dt).max(0.0);
+            c.blind = (c.blind - dt).max(0.0);
+            if let Some(t) = c.taunted.as_mut() {
+                t.1 -= dt;
+            }
+            c.taunted = c.taunted.filter(|t| t.1 > 0.0);
             c.slow_time = (c.slow_time - dt).max(0.0);
             if c.slow_time <= 0.0 {
                 c.slow = 0.0;
@@ -1327,7 +1374,8 @@ impl CreatureWorld {
                     alerted |= hunting && id != c.id;
                 }
             }
-            let angry = c.anger > 0.0;
+            // Provoquée, elle est aussi en colère
+            let angry = c.anger > 0.0 || c.taunted.is_some();
             let pack_mode = attack.mode == AttackMode::Pack;
             if (pack_mode && kin < attack.pack_size as usize) || (attack.provoked_only && !angry) {
                 c.stop_hunting(rng);
@@ -1336,6 +1384,8 @@ impl CreatureWorld {
 
             // La cible la plus proche à portée de vue : un joueur, ou une proie s'il a faim
             let range = attack.sight * block * if c.hunting || angry || (pack_mode && alerted) { PURSUIT_FACTOR } else { 1.0 };
+            // Aveuglée, elle ne voit plus qu'à quelques pas
+            let range = if c.blind > 0.0 { range.min(BLIND_SIGHT * block) } else { range };
             // Une bête tenue en laisse ne prend pour cible que ce qui l'approche (`engage`), mais
             // ne lâche pas celle qu'elle poursuit déjà
             let engage = attack.engage.map_or(range, |e| e * block);
@@ -1357,6 +1407,10 @@ impl CreatureWorld {
                     break;
                 }
                 let key = keys.get(k).copied().unwrap_or(0);
+                // Invisible, il passe sous son nez
+                if hidden.get(k).copied().unwrap_or(false) {
+                    continue;
+                }
                 // Un humanoïde (garde, voyageur armé) ne s'en prend qu'au joueur qui a frappé l'un des
                 // siens (`wanted`), jamais à son voisin ; une bête en colère, à tous
                 if attack.hunts_players || (angry && !species.humanoid) || wanted.iter().any(|w| w.0 == key && w.1 == c.herd) {
@@ -1392,7 +1446,12 @@ impl CreatureWorld {
                         .min_by(|a, b| a.2.total_cmp(&b.2))
                 })
                 .flatten();
-            let Some((target, goal, _)) = taunter.or(kept).or(target) else {
+            // Provoquée par un joueur (compétence) : c'est lui qu'elle poursuit, où qu'il soit
+            let provoker = c.taunted.filter(|_| !summoned).and_then(|(key, _)| {
+                let k = (0..players.len()).find(|&k| keys.get(k).copied().unwrap_or(0) == key)?;
+                (!hidden.get(k).copied().unwrap_or(false)).then(|| (Target::Player(k), players[k], players[k].distance(c.position)))
+            });
+            let Some((target, goal, _)) = provoker.or(taunter).or(kept).or(target) else {
                 c.stop_hunting(rng);
                 c.quarry = None;
                 c.chase_from = None;
@@ -1602,7 +1661,8 @@ impl CreatureWorld {
         let mut villages = std::mem::take(&mut self.villages);
         villages.tick(self, &mut query, generator, players, dt);
         self.villages = villages;
-        let hits = self.hunt(dt, players, keys);
+        let hidden: Vec<bool> = presences.iter().map(|p| p.hidden).collect();
+        let hits = self.hunt(dt, players, keys, &hidden);
         self.scare();
         self.rear(dt);
 
@@ -1610,7 +1670,13 @@ impl CreatureWorld {
         let mut walker = Walker { geometry: self.geometry, query: &mut query, sun_dir: self.sun_dir, climate: self.climate.as_ref() };
         for (creature, herd) in self.creatures.iter_mut().zip(herds) {
             if let Some(species) = self.registry.get(creature.species) {
-                let nearest = presences.iter().copied().min_by(|a, b| a.feet.distance_squared(creature.position).total_cmp(&b.feet.distance_squared(creature.position)));
+                // Les joueurs invisibles passent inaperçus ; aveuglée, elle ne remarque que le plus proche
+                let nearest = presences
+                    .iter()
+                    .copied()
+                    .filter(|p| !p.hidden)
+                    .filter(|p| creature.blind <= 0.0 || p.feet.distance(creature.position) <= BLIND_SIGHT * self.geometry.block_height as f32)
+                    .min_by(|a, b| a.feet.distance_squared(creature.position).total_cmp(&b.feet.distance_squared(creature.position)));
                 let food = self.food_table.get(creature.species).map_or(&[][..], |f| &f[..]);
                 walker.step(creature, species, food, nearest, herd, &mut self.rng, dt);
             }
@@ -2817,7 +2883,7 @@ mod tests {
         let c = &mut world.creatures[0];
         (c.walking, c.timer) = (false, 100.0);
         let start = world.creatures()[0].position;
-        let crouching = PlayerPresence { feet: player, crouching: true, holding: None };
+        let crouching = PlayerPresence { feet: player, crouching: true, holding: None, hidden: false };
         for _ in 0..40 {
             world.tick_with_presences(0.05, &generator, &edits, &[crouching]);
         }
@@ -2827,7 +2893,7 @@ mod tests {
 
         // Accroupi tout près, il finit par le remarquer
         let (east, _) = tangent_frame(c.position.normalize());
-        let close = PlayerPresence { feet: c.position + east * 2.0 * geometry.block_height as f32, crouching: true, holding: None };
+        let close = PlayerPresence { feet: c.position + east * 2.0 * geometry.block_height as f32, crouching: true, holding: None, hidden: false };
         world.tick_with_presences(0.05, &generator, &edits, &[close]);
         assert!(world.creatures()[0].panic > 0.0, "le lapin ne fuit pas un joueur accroupi à 2 blocs");
     }
@@ -3802,5 +3868,49 @@ mod tests {
         // Elle repond plus tard, entre 5 et 10 minutes après
         let next = world.creatures().iter().find(|c| c.id == tame).unwrap().lay_in;
         assert!((300.0..=600.0).contains(&next), "{next}");
+    }
+    #[test]
+    fn an_invisible_player_is_ignored_and_a_blind_monster_loses_him() {
+        let (generator, edits, mut world, _, player) = beasts_and_player("rampant", 1, 3.0, 41);
+        let hidden = PlayerPresence { hidden: true, ..PlayerPresence::standing(player) };
+        let hits: Vec<PlayerHit> = (0..80).flat_map(|_| world.tick_with_presences(0.05, &generator, &edits, &[hidden])).collect();
+        assert!(hits.is_empty(), "le monstre a frappé un joueur invisible");
+        assert!(!world.creatures()[0].is_hunting(), "le monstre poursuit un joueur invisible");
+
+        // Aveuglé, il ne voit pas le joueur à trois blocs
+        let (generator, edits, mut world, _, player) = beasts_and_player("rampant", 1, 3.0, 42);
+        let monster = world.creatures()[0].id;
+        world.blind(monster, 10.0);
+        assert!(world.is_blind(monster));
+        world.tick(0.05, &generator, &edits, &[player]);
+        assert!(!world.creatures()[0].is_hunting(), "le monstre aveuglé a vu le joueur");
+    }
+
+    #[test]
+    fn a_taunted_monster_chases_its_provoker() {
+        // Un ours ne s'en prend à personne sans raison ; provoqué par le joueur 7, il le poursuit
+        let (generator, edits, mut world, _, player) = beasts_and_player("ours", 1, 2.0, 43);
+        let bear = world.creatures()[0].id;
+        world.taunt(bear, 7, 5.0);
+        let presences = [PlayerPresence::standing(player)];
+        let hits: Vec<PlayerHit> = (0..80).flat_map(|_| world.tick_players(0.05, &generator, &edits, &presences, &[7])).collect();
+        assert!(!hits.is_empty(), "l'ours provoqué n'a pas attaqué");
+    }
+
+    #[test]
+    fn some_beasts_slow_or_stun_the_player_they_hit() {
+        let (generator, edits, mut world, _, player) = beasts_and_player("gorgone", 1, 1.0, 44);
+        let hits = hits_over(&mut world, &generator, &edits, player, 5.0);
+        let mut stats = herocraft_common::CharacterStats::new(herocraft_common::PlayerClass::Adventurer);
+        world.afflict(hits.first().expect("la gorgone n'a pas frappé"), &mut stats);
+        assert!(stats.slow > 0.0 && stats.slow_time > 0.0, "la gorgone ne ralentit pas");
+        assert!(stats.status_speed() < 1.0);
+
+        let brute = world.registry().find("brute").unwrap();
+        let hit = PlayerHit { player: 0, creature_id: 0, species: brute, damage: 1.0 };
+        world.afflict(&hit, &mut stats);
+        assert!(stats.is_stunned() && stats.status_speed() == 0.0, "la brute n'étourdit pas");
+        stats.tick_status(1.0);
+        assert!(!stats.is_stunned(), "l'étourdissement ne passe pas");
     }
 }

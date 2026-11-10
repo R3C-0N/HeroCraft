@@ -328,8 +328,11 @@ impl Server {
         self.creatures.set_climate(&self.weather, self.clock.time);
 
         let (ids, presences): (Vec<u64>, Vec<herocraft_world::PlayerPresence>) =
-            self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching, holding: p.holding }))).unzip();
+            self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching, holding: p.holding, hidden: p.stats.is_invisible() || p.stats.fallen }))).unzip();
         for hit in self.creatures.tick_players(dt, &self.generator, &self.edits, &presences, &ids) {
+            if let Some(player) = self.players.get_mut(&ids[hit.player]) {
+                self.creatures.afflict(&hit, &mut player.stats);
+            }
             self.creature_attack(ids[hit.player], hit.species, hit.damage);
         }
         let shots = self.creatures.take_shots();
@@ -603,6 +606,14 @@ impl Server {
                 self.broadcast(&ServerPacket::ChatMessage { sender, message: text });
             }
             ClientPacket::Summon { species, count, feet } => self.summon(id, &species, count, feet),
+            ClientPacket::Respawn => {
+                if let Some(player) = self.players.get_mut(&id) {
+                    player.stats.fallen = false;
+                    player.stats.slow_time = 0.0;
+                    player.stats.stun_time = 0.0;
+                    player.stats.tick_status(0.0);
+                }
+            }
             ClientPacket::Heal => {
                 let Some(player) = self.players.get_mut(&id) else { return };
                 player.stats.revive();
@@ -692,6 +703,7 @@ impl Server {
         let died = player.stats.take_damage(damage);
         if died {
             player.stats.revive();
+            player.stats.fallen = true;
         }
         player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
         if died {
@@ -710,6 +722,7 @@ impl Server {
         let died = player.stats.take_damage(damage);
         if died {
             player.stats.revive();
+            player.stats.fallen = true;
         }
         player.connection.send(&ServerPacket::PlayerHurt { damage, cause: cause.clone() });
         player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
@@ -764,7 +777,14 @@ impl Server {
         let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
         let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
         if self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
-            self.creatures.hit_by(creature_id, feet, id);
+            // Frappé par un joueur invisible : il se dévoile, et le coup est critique
+            let mut damage = herocraft_common::PLAYER_HIT_DAMAGE;
+            if let Some(player) = self.players.get_mut(&id).filter(|p| p.stats.is_invisible()) {
+                player.stats.invisible_time = 0.0;
+                player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+                damage *= herocraft_world::CRITICAL_FACTOR;
+            }
+            self.creatures.wound(creature_id, feet, id, damage);
             let name = self.players.get(&id).map(|p| p.name.clone()).unwrap_or_default();
             for murder in self.creatures.take_murders() {
                 self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });

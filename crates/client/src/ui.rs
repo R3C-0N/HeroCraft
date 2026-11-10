@@ -1682,6 +1682,19 @@ impl UiState {
                     let warning = if hunger == Hunger::Starving { "Vous mourez de faim" } else { "Vous avez faim" };
                     ui.label(egui::RichText::new(warning).size(12.0_f32).color(egui::Color32::from_rgb(240, 150, 110)));
                 }
+                // États du moment : étourdi, ralenti, invisible, avec le temps qui reste
+                if !self.player.is_dead() {
+                    let states = [
+                        (stats.is_stunned(), format!("Étourdi  {:.0} s", stats.stun_time.ceil()), egui::Color32::from_rgb(240, 200, 80)),
+                        (stats.slow > 0.0_f32 && stats.slow_time > 0.0_f32, format!("Ralenti {:.0} %  {:.0} s", stats.slow * 100.0_f32, stats.slow_time.ceil()), egui::Color32::from_rgb(130, 180, 240)),
+                        (stats.is_invisible(), format!("Invisible  {:.0} s", stats.invisible_time.ceil()), egui::Color32::from_rgb(190, 160, 240)),
+                    ];
+                    for (active, text, color) in states {
+                        if active {
+                            ui.label(egui::RichText::new(text).size(12.0_f32).strong().color(color));
+                        }
+                    }
+                }
             });
     }
 

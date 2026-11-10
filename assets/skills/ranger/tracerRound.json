@@ -27,18 +27,15 @@
         "damage": {
           "power": 0.6
         }
-      }
-    ],
-    "self_effects": [
+      },
       {
-        "buff": {
-          "stat": "damage",
-          "value": [
-            0.2,
+        "mark": {
+          "chance": [
             0.3,
-            0.4
+            0.4,
+            0.5
           ],
-          "duration": 6
+          "duration": 8
         }
       }
     ]

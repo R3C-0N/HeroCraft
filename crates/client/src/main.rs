@@ -632,9 +632,19 @@ fn main() {
                             herocraft_common::prof_scope!("frame::camera_update");
                             camera.obstacles = creatures::obstacles(&creature_views, &creature_registry);
                             // Compétences : allure renforcée, ruée ou bond qui commence
-                            camera.buff_speed = skill_play.speed_factor();
+                            // Ralenti ou étourdi par une bête : moins vite, ou plus du tout, et sans sauter
+                            camera.buff_speed = skill_play.speed_factor() * ui_state.player.stats.status_speed();
+                            if ui_state.player.stats.is_stunned() {
+                                camera.jump_requested = false;
+                            }
                             if let Some((dash, leap, seconds)) = skill_play.take_motion() {
                                 camera.launch(dash, leap, seconds);
+                            }
+                            // Relevé sur place par une compétence (Intervention Suprême) : l'écran de mort se ferme
+                            if camera.is_dead && !ui_state.player.is_dead() {
+                                camera.is_dead = false;
+                                audio.reset_player();
+                                info!("Relevé sur place.");
                             }
                             camera.update(dt, &generator);
                             // Jauges du joueur, chute terminée : dommages (signalés au serveur en
@@ -732,7 +742,7 @@ fn main() {
                             let striking = aimed.filter(|_| block_interaction.is_breaking_held()).filter(|&id| strike_lock == Some(id) || !humanoid(id));
                             if let Some(id) = striking {
                                 block_interaction.pause_mining();
-                                hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut audio, &ui_state.audio_settings);
+                                hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut ui_state.player.stats, &mut audio, &ui_state.audio_settings);
                                 // Un habitant tué en solo : le chat l'annonce (en ligne, c'est le serveur)
                                 let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
                                 for murder in solo_creatures.take_murders() {
@@ -840,7 +850,12 @@ fn main() {
                                         solo_creatures.set_sun_dir(state.sun_dir());
                                         // Sous l'orage les bêtes s'abritent, l'hiver les ours hibernent
                                         solo_creatures.set_climate(&client_weather.model, state.simulated_time as f64);
-                                        let player = herocraft_world::PlayerPresence { feet: camera.player_pos, crouching: camera.is_crouching(), holding: ui_state.inventory.selected_item() };
+                                        let player = herocraft_world::PlayerPresence {
+                                            feet: camera.player_pos,
+                                            crouching: camera.is_crouching(),
+                                            holding: ui_state.inventory.selected_item(),
+                                            hidden: ui_state.player.stats.is_invisible() || ui_state.player.is_dead(),
+                                        };
                                         // Les plantes semées poussent (le serveur s'en charge en ligne)
                                         for (pos, block) in solo_fields.tick_in_weather(dt, &generator, lod_manager.terrain_edits(), &client_weather.model, state.simulated_time as f64) {
                                             terrain_edited |= lod_manager.set_block(&generator, pos, block);
@@ -850,6 +865,10 @@ fn main() {
                                         let hits = solo_creatures.tick_with_presences(dt, &generator, lod_manager.terrain_edits(), &[player]);
                                         // Banc d'essai : les bêtes ne blessent pas le joueur
                                         for hit in hits.into_iter().filter(|_| bench.is_none()) {
+                                            // Ralenti, étourdi : le coup de certaines bêtes le laisse sonné
+                                            if !ui_state.player.is_dead() {
+                                                solo_creatures.afflict(&hit, &mut ui_state.player.stats);
+                                            }
                                             let cause = creature_registry.get(hit.species).map_or("Une créature", |s| s.name.as_str());
                                             let hurt = ui_state.player.bitten(hit.damage * skill_play.solo_damage_factor(), cause);
                                             show_wound(hurt, cause, &mut camera, &mut ui_state, &mut audio);
@@ -1264,6 +1283,9 @@ fn main() {
                                 }
                                 UiAction::Respawn => {
                                     ui_state.player.respawn();
+                                    if let Some(client) = net.as_mut() {
+                                        client.send_respawn();
+                                    }
                                     camera.spawn_on_ground(&generator);
                                     audio.reset_player();
                                     info!("Réapparition au point d'apparition.");
@@ -1903,17 +1925,23 @@ fn hit_creature(
     camera: &OrbitCamera,
     net: Option<&mut NetClient>,
     solo: &mut herocraft_world::CreatureWorld,
+    stats: &mut herocraft_common::CharacterStats,
     audio: &mut audio::Audio,
     settings: &audio::AudioSettings,
 ) {
-    if *cooldown > 0.0 {
+    // Étourdi, il ne frappe pas
+    if *cooldown > 0.0 || stats.is_stunned() {
         return;
     }
     *cooldown = ATTACK_COOLDOWN;
+    // Invisible, son coup le dévoile et porte en critique (le serveur en juge en ligne)
+    let critical = stats.is_invisible();
+    stats.invisible_time = 0.0;
     match net {
         Some(client) => client.send_hit_creature(id),
         None => {
-            solo.hit(id, camera.player_pos);
+            let factor = if critical { herocraft_world::CRITICAL_FACTOR } else { 1.0 };
+            solo.wound(id, camera.player_pos, 0, herocraft_common::PLAYER_HIT_DAMAGE * factor);
         }
     }
     // Coup sourd

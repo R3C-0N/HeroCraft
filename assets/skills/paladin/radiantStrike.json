@@ -33,8 +33,12 @@
         }
       },
       {
-        "stun": {
-          "duration": 0.6
+        "blind": {
+          "duration": [
+            2,
+            2.5,
+            3
+          ]
         }
       }
     ]

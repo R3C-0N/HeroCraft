@@ -30,6 +30,17 @@
           ],
           "duration": 8
         }
+      },
+      {
+        "buff": {
+          "stat": "critical",
+          "value": [
+            0.3,
+            0.4,
+            0.5
+          ],
+          "duration": 8
+        }
       }
     ]
   },

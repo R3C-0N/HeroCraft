@@ -41,8 +41,8 @@
         "to": "enemies"
       },
       {
-        "stun": {
-          "duration": 1
+        "blind": {
+          "duration": 3
         },
         "to": "enemies"
       },

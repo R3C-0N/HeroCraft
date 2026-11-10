@@ -238,6 +238,16 @@ pub enum Effect {
     },
     /// La créature s'en prend au lanceur pendant `duration` secondes
     Taunt { duration: Ranked },
+    /// Le joueur disparaît aux yeux des bêtes pendant `duration` secondes ; sa première attaque le
+    /// dévoile, et porte un coup critique
+    Invisible { duration: Ranked },
+    /// La bête aveuglée ne voit plus qu'à un bloc et demi pendant `duration` secondes
+    Blind { duration: Ranked },
+    /// La bête marquée encaisse plus souvent les coups critiques du lanceur : `chance` en plus (1 :
+    /// toujours) pendant `duration` secondes
+    Mark { chance: Ranked, duration: Ranked },
+    /// Les alliés tombés dans la zone se relèvent sur place avec `health` de leur vie (0,5 : la moitié)
+    Revive { health: Ranked },
 }
 
 /// L'allure que prend une invocation (`Effect::Summon::copies`)
@@ -260,6 +270,8 @@ pub enum BuffStat {
     Speed,
     /// Régénération de la vie
     Regeneration,
+    /// Chance de coup critique (0,3 : 30 % ; un critique double les dégâts)
+    Critical,
 }
 
 /// Un effet, et à qui il s'applique s'il ne vise pas les cibles de la compétence (`to`)
@@ -796,6 +808,7 @@ pub enum CastError {
     InForm,
     /// Une attaque de forme, hors de sa forme
     NotInForm,
+    Stunned,
 }
 
 impl CastError {
@@ -810,6 +823,7 @@ impl CastError {
             CastError::Dead => "mort",
             CastError::InForm => "impossible sous cette forme",
             CastError::NotInForm => "seulement sous sa forme",
+            CastError::Stunned => "étourdi",
         }
     }
 }
