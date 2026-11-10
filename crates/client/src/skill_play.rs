@@ -78,6 +78,8 @@ pub struct VisualCue {
 /// L'état des compétences du joueur et de ce qui se joue autour de lui
 pub struct SkillPlay {
     runner: SkillRunner,
+    /// Un saignement vient de tuer le joueur solo (`take_solo_death`)
+    solo_died: bool,
     gestures: GestureLibrary,
     /// Fin de recharge de chaque compétence du joueur local
     ready_at: HashMap<String, Instant>,
@@ -92,7 +94,7 @@ pub struct SkillPlay {
     /// Lancements amplifiés par la Fusion, en attente de leur frappe : qui, quoi, jusqu'à quand
     amplified: Vec<(Option<u64>, String, Instant)>,
     /// Renforcements de vitesse du joueur local : de combien, jusqu'à quand
-    speed_buffs: Vec<(f32, Instant)>,
+    speed_buffs: Vec<(f32, Instant, bool)>,
     /// Élan de la compétence locale qui commence : ruée, bond, en combien de secondes
     motion: Option<(f32, f32, f32)>,
     /// Identifiant du joueur local (en ligne, celui du serveur)
@@ -114,6 +116,7 @@ impl Default for SkillPlay {
             forms: Vec::new(),
             amplified: Vec::new(),
             speed_buffs: Vec::new(),
+            solo_died: false,
             motion: None,
             me: SOLO_PLAYER,
             last_refusal: None,
@@ -344,8 +347,8 @@ impl SkillPlay {
         let on_me = shown.players.contains(&self.me);
         let now = Instant::now();
         for (entry, applies) in cast.self_effects.iter().map(|e| (e, mine)).chain(cast.effects.iter().map(|e| (e, on_me && e.to.unwrap_or(cast.targets) != herocraft_common::skills::Targets::Enemies))) {
-            if let (true, Effect::Buff { stat: herocraft_common::skills::BuffStat::Speed, value, duration, .. }) = (applies, &entry.effect) {
-                self.speed_buffs.push((value.at(shown.rank), now + std::time::Duration::from_secs_f32(duration.at(shown.rank).max(0.0))));
+            if let (true, Effect::Buff { stat: herocraft_common::skills::BuffStat::Speed, value, duration, per_missing_health, .. }) = (applies, &entry.effect) {
+                self.speed_buffs.push((value.at(shown.rank), now + std::time::Duration::from_secs_f32(duration.at(shown.rank).max(0.0)), *per_missing_health));
             }
         }
         for visual in def.visuals.iter().chain(amplify.iter().flat_map(|a| &a.visuals)) {
@@ -390,6 +393,7 @@ impl SkillPlay {
         if let Some((creatures, feet, stats)) = solo {
             let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
             let tick = self.runner.tick(dt, skills(), creatures, &mut player);
+            self.solo_died |= !tick.died.is_empty();
             for SkillImpact { skill, rank, center, creatures, players, .. } in tick.impacts {
                 self.on_hit(Shown { caster: None, skill, rank, center, creatures, players });
             }
@@ -397,6 +401,28 @@ impl SkillPlay {
         self.plays.retain(|p| now.duration_since(p.started).as_secs_f32() < p.duration);
         self.ready_at.retain(|_, t| *t > now);
         std::mem::take(&mut self.cues)
+    }
+
+    /// Vrai une fois si un saignement vient de tuer le joueur solo
+    pub fn take_solo_death(&mut self) -> bool {
+        std::mem::take(&mut self.solo_died)
+    }
+
+    /// Le joueur solo vient de tomber : un effet à la mort (Abomination de l'Étherium) le relève
+    /// sur place dans une nova
+    pub fn solo_last_stand(&mut self, creatures: &mut CreatureWorld, feet: Vec3, stats: &mut CharacterStats) {
+        let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
+        if let Some(SkillImpact { skill, rank, center, creatures, players, .. }) = self.runner.last_stand(SOLO_PLAYER, creatures, &mut player) {
+            self.on_hit(Shown { caster: None, skill, rank, center, creatures, players });
+        }
+    }
+
+    /// Le joueur solo a frappé la créature `id` de son arme : ses renforcements qui portent des
+    /// effets (Marteau Consacré) les jouent autour d'elle
+    pub fn solo_weapon_hit(&mut self, id: u64, creatures: &mut CreatureWorld, feet: Vec3, stats: &mut CharacterStats) {
+        let Some(at) = creatures.creatures().iter().find(|c| c.id == id).map(|c| c.position) else { return };
+        let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
+        self.runner.ride(SOLO_PLAYER, &[at], creatures, &mut player);
     }
 
     /// Facteur des dégâts d'un coup d'arme du joueur solo sur la créature `id` (renforcements de dégâts)
@@ -412,10 +438,11 @@ impl SkillPlay {
     /// La pose du héros local : son geste en cours par-dessus la marche
     /// Pièces greffées sur le héros local en ce moment
     /// Allure du joueur local donnée par ses renforcements de vitesse (1 : aucun, 0 : immobile)
-    pub fn speed_factor(&mut self) -> f32 {
+    /// `missing` : la part de vie qui lui manque, que suivent certains renforcements (Frénésie Moribonde)
+    pub fn speed_factor(&mut self, missing: f32) -> f32 {
         let now = Instant::now();
-        self.speed_buffs.retain(|(_, until)| *until > now);
-        (1.0 + self.speed_buffs.iter().map(|(v, _)| v).sum::<f32>()).max(0.0)
+        self.speed_buffs.retain(|(_, until, _)| *until > now);
+        (1.0 + self.speed_buffs.iter().map(|(v, _, scaled)| if *scaled { v * missing.clamp(0.0, 1.0) } else { *v }).sum::<f32>()).max(0.0)
     }
 
     /// Élan à donner au joueur local (ruée, bond : blocs, blocs, secondes), une seule fois
@@ -537,11 +564,11 @@ mod tests {
 
         // Manteau de Zéphyr : plus vite, une fois l'impact passé
         play.request("zephyrMantle", &mut stats, Vec3::NEG_Y, None, None).unwrap();
-        assert_eq!(play.speed_factor(), 1.0);
+        assert_eq!(play.speed_factor(0.0), 1.0);
         for _ in 0..40 {
             play.tick(0.05, Some((&mut creatures, feet, &mut stats)));
         }
-        assert!(play.speed_factor() > 1.3, "{}", play.speed_factor());
+        assert!(play.speed_factor(0.0) > 1.3, "{}", play.speed_factor(0.0));
 
         // Loup des Bois : le héros devient le loup, et n'a plus que ses deux attaques
         assert_eq!(play.request("wolfBite", &mut stats, Vec3::NEG_Y, None, None), Err(herocraft_common::CastError::NotInForm.message().to_string()));

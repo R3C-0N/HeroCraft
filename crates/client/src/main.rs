@@ -633,7 +633,8 @@ fn main() {
                             camera.obstacles = creatures::obstacles(&creature_views, &creature_registry);
                             // Compétences : allure renforcée, ruée ou bond qui commence
                             // Ralenti ou étourdi par une bête : moins vite, ou plus du tout, et sans sauter
-                            camera.buff_speed = skill_play.speed_factor() * ui_state.player.stats.status_speed();
+                            let missing = 1.0 - ui_state.player.stats.hp / ui_state.player.stats.max_hp.max(1.0);
+                            camera.buff_speed = skill_play.speed_factor(missing) * ui_state.player.stats.status_speed();
                             if ui_state.player.stats.is_stunned() {
                                 camera.jump_requested = false;
                             }
@@ -743,7 +744,9 @@ fn main() {
                             if let Some(id) = striking {
                                 block_interaction.pause_mining();
                                 let boost = skill_play.solo_hit_factor(id, &solo_creatures);
-                                hit_creature(id, boost, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut ui_state.player.stats, &mut audio, &ui_state.audio_settings);
+                                if hit_creature(id, boost, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut ui_state.player.stats, &mut audio, &ui_state.audio_settings) {
+                                    skill_play.solo_weapon_hit(id, &mut solo_creatures, camera.player_pos, &mut ui_state.player.stats);
+                                }
                                 // Un habitant tué en solo : le chat l'annonce (en ligne, c'est le serveur)
                                 let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
                                 for murder in solo_creatures.take_murders() {
@@ -872,6 +875,10 @@ fn main() {
                                             }
                                             let cause = creature_registry.get(hit.species).map_or("Une créature", |s| s.name.as_str());
                                             let hurt = ui_state.player.bitten(hit.damage * skill_play.solo_damage_factor(), cause);
+                                            // Tombé sous un effet à la mort : la nova part, il se relève
+                                            if ui_state.player.is_dead() {
+                                                skill_play.solo_last_stand(&mut solo_creatures, camera.player_pos, &mut ui_state.player.stats);
+                                            }
                                             show_wound(hurt, cause, &mut camera, &mut ui_state, &mut audio);
                                         }
                                         // Tirs des tourelles, du bastion et de la liche
@@ -964,6 +971,9 @@ fn main() {
                             // Compétences : en solo les règles tournent ici, sur nos créatures
                             let solo_skills = (net.is_none() && !ui_state.is_settings_open).then_some((&mut solo_creatures, camera.player_pos, &mut ui_state.player.stats));
                             skill_effects.start(skill_play.tick(anim_dt, solo_skills));
+                            if skill_play.take_solo_death() {
+                                ui_state.player.bled_out();
+                            }
                             if net.is_none() {
                                 let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
                                 for murder in solo_creatures.take_murders() {
@@ -1921,6 +1931,7 @@ fn show_wound(hurt: f32, what: &str, camera: &mut OrbitCamera, ui_state: &mut Ui
 
 /// Frappe la créature `id` (la simulation solo, ou le serveur en ligne, en tire dégâts, recul et
 /// fuite), sauf si le coup précédent est trop récent. `boost` : facteur de ses renforcements de dégâts.
+/// Renvoie vrai si le coup a porté ici, en solo.
 fn hit_creature(
     id: u64,
     boost: f32,
@@ -1931,15 +1942,16 @@ fn hit_creature(
     stats: &mut herocraft_common::CharacterStats,
     audio: &mut audio::Audio,
     settings: &audio::AudioSettings,
-) {
+) -> bool {
     // Étourdi, il ne frappe pas
     if *cooldown > 0.0 || stats.is_stunned() {
-        return;
+        return false;
     }
     *cooldown = ATTACK_COOLDOWN;
     // Invisible, son coup le dévoile et porte en critique (le serveur en juge en ligne)
     let critical = stats.is_invisible();
     stats.invisible_time = 0.0;
+    let alone = net.is_none();
     match net {
         Some(client) => client.send_hit_creature(id),
         None => {
@@ -1949,6 +1961,7 @@ fn hit_creature(
     }
     // Coup sourd
     audio.block_placed(audio::synth::Material::Dirt, 0.0, settings);
+    alone
 }
 
 /// Le bloc cassé tombe au sol (s'il se ramasse : ni eau, ni lave), avec le butin de sa fiche

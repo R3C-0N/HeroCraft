@@ -216,6 +216,17 @@ pub enum Effect {
         /// Dégâts en plus contre une famille de créatures (`tags` de l'espèce)
         #[serde(default)]
         against: Option<Against>,
+        /// La valeur suit la vie qui manque au joueur : nulle à pleine vie, entière au bord de la mort
+        #[serde(default)]
+        per_missing_health: bool,
+        /// Si le joueur tombe à zéro point de vie tant que le renforcement dure, ces effets partent
+        /// autour de lui et il survit, le renforcement consumé
+        #[serde(default)]
+        on_death: Option<Around>,
+        /// Tant que le renforcement dure, chaque attaque du joueur qui touche joue ces effets autour
+        /// de ses cibles
+        #[serde(default)]
+        rider: Option<Around>,
     },
     /// Dégâts (`damage`) ou soins (`heal`) par seconde pendant `duration` secondes
     OverTime {
@@ -271,6 +282,8 @@ pub enum Effect {
         #[serde(default)]
         hits: Option<Ranked>,
     },
+    /// Points de vie que perd le joueur (une frappe qui blesse son lanceur)
+    Sacrifice { health: Ranked },
     /// Retire au joueur son ralenti, son étourdissement et ses dégâts sur la durée
     Cleanse {},
     /// Points de mana et d'endurance rendus
@@ -282,6 +295,16 @@ pub enum Effect {
     },
     /// Les alliés tombés dans la zone se relèvent sur place avec `health` de leur vie (0,5 : la moitié)
     Revive { health: Ranked },
+}
+
+/// Des effets joués dans un rayon autour d'un point : un cadavre (`Cast::on_kill`), les cibles d'une
+/// attaque (`rider`), le joueur qui tombe (`on_death`). Chaque effet dit à qui il va (`to`) : les
+/// ennemis par défaut.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Around {
+    /// Rayon, en blocs
+    pub radius: Ranked,
+    pub effects: Vec<EffectEntry>,
 }
 
 /// Part des dégâts absorbés par un bouclier qu'il rend en mana (`Effect::Shield::absorb_to`)
@@ -372,6 +395,15 @@ pub struct Cast {
     /// à portée
     #[serde(default)]
     pub homing: bool,
+    /// Effets sur le lanceur pour chaque ennemi que la frappe touche
+    #[serde(default)]
+    pub on_hit: Vec<EffectEntry>,
+    /// Effets sur le lanceur si la frappe ne touche aucun ennemi
+    #[serde(default)]
+    pub on_miss: Vec<EffectEntry>,
+    /// Effets autour de chaque ennemi que la frappe tue
+    #[serde(default)]
+    pub on_kill: Option<Around>,
 }
 
 /// Les règles de la Fusion : elle mêle les deux derniers sorts élémentaires lancés

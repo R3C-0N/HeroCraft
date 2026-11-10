@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use glam::Vec3;
-use herocraft_common::skills::{BuffStat, CastError, Center, Copies, Effect, EffectEntry, Fused, PlacedArea, SkillCatalog, Targets, SKILL_BASE_DAMAGE};
+use herocraft_common::skills::{Around, BuffStat, CastError, Center, Copies, Effect, EffectEntry, Fused, PlacedArea, SkillCatalog, Targets, SKILL_BASE_DAMAGE};
 use herocraft_common::CharacterStats;
 
 use crate::CreatureWorld;
@@ -74,6 +74,8 @@ pub struct SkillTick {
     pub impacts: Vec<SkillImpact>,
     /// Joueurs à qui renvoyer leurs statistiques
     pub changed: Vec<u64>,
+    /// Joueurs qu'un effet sur la durée vient de tuer
+    pub died: Vec<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,7 +124,18 @@ struct Buff {
     left: f32,
     /// Dégâts en plus contre les créatures qui portent cette étiquette
     against: Option<(String, f32)>,
+    /// La valeur suit la vie qui manque au joueur, et la part qui manque en ce moment (1 sinon)
+    scaled: bool,
+    scale: f32,
+    /// Effets à la mort du joueur et à chacune de ses attaques, la compétence et son rang
+    on_death: Option<Around>,
+    rider: Option<Around>,
+    skill: String,
+    rank: u8,
 }
+
+/// Part de sa vie que garde un joueur sauvé par un effet à la mort (Abomination de l'Étherium)
+const LAST_STAND_HEALTH: f32 = 0.1;
 
 /// Un allié lié à un lanceur, qui encaisse une part de ses dégâts
 #[derive(Debug, Clone)]
@@ -316,6 +329,72 @@ impl SkillRunner {
         (damage * (1.0 - share), Some((caster, damage * share)))
     }
 
+    /// Le joueur `player` vient de tomber à zéro point de vie. S'il porte un renforcement à effet
+    /// de mort (Abomination de l'Étherium), ses effets partent autour de lui, le renforcement et
+    /// les saignements de sa compétence s'arrêtent, et il survit avec un peu de vie : renvoie alors
+    /// la frappe à annoncer. `None` : il meurt.
+    pub fn last_stand(&mut self, player: u64, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> Option<SkillImpact> {
+        let buff = self.buffs.iter().find(|b| b.player == player && b.on_death.is_some())?.clone();
+        let around = buff.on_death.as_ref()?;
+        let feet = players.feet(player)?;
+        self.buffs.retain(|b| !(b.player == player && b.skill == buff.skill));
+        self.over_time.retain(|o| !(o.caster == player && o.target == SkillTarget::Player(player) && o.per_second < 0.0));
+        // Relevé sur place : le client qui l'a vu tomber le remet debout
+        let stats = players.stats_mut(player)?;
+        stats.fallen = true;
+        stats.resurrect(LAST_STAND_HEALTH);
+        let (touched, _) = self.burst(around, player, buff.rank, &buff.skill, &[feet], creatures, players);
+        Some(SkillImpact { caster: player, skill: buff.skill, rank: buff.rank, center: feet, creatures: touched, players: Vec::new(), summoned: Vec::new() })
+    }
+
+    /// Joue les effets de `around` dans son rayon autour de chacun des `points`, une fois par cible :
+    /// renvoie les créatures et les joueurs touchés
+    #[allow(clippy::too_many_arguments)]
+    fn burst(&mut self, around: &Around, caster: u64, rank: u8, skill: &str, points: &[Vec3], creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> (Vec<u64>, Vec<u64>) {
+        let radius = around.radius.at(rank) * creatures.block_size();
+        let near = |at: Vec3| points.iter().any(|p| p.distance(at) <= radius);
+        let beasts: Vec<(u64, bool)> = creatures.creatures().iter().filter(|c| c.is_alive() && near(c.position)).map(|c| (c.id, c.tamed)).collect();
+        let people: Vec<u64> = players.ids().into_iter().filter(|&id| players.feet(id).is_some_and(near)).collect();
+        let feet = players.feet(caster).or(points.first().copied()).unwrap_or(Vec3::ZERO);
+        let p = Pending { caster, skill: skill.to_string(), rank, aim: Vec3::ZERO, aimed: None, left: 0.0, crit: false, power: 1.0, size: 1.0 };
+        let damage_factor = 1.0 + self.buff(caster, BuffStat::Damage);
+        let (mut touched, mut helped) = (Vec::new(), Vec::new());
+        for entry in &around.effects {
+            let to = entry.to.unwrap_or_default();
+            for &(id, tamed) in &beasts {
+                if matches!(to, Targets::All) || (to == Targets::Enemies && !tamed) || (to == Targets::Allies && tamed) {
+                    self.apply_to_creature(entry, &p, id, feet, damage_factor, creatures);
+                    touched.push(id);
+                }
+            }
+            for &id in &people {
+                if matches!(to, Targets::Allies | Targets::All) || (to == Targets::Caster && id == caster) {
+                    self.apply_to_player(entry, caster, rank, 1.0, skill, id, players);
+                    helped.push(id);
+                }
+            }
+        }
+        touched.sort_unstable();
+        touched.dedup();
+        helped.sort_unstable();
+        helped.dedup();
+        (touched, helped)
+    }
+
+    /// Une attaque du joueur `caster` a touché aux points `points` : ses renforcements qui portent
+    /// des effets (Marteau Consacré) les jouent autour. Renvoie les joueurs dont les jauges changent.
+    pub fn ride(&mut self, caster: u64, points: &[Vec3], creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> Vec<u64> {
+        let riders: Vec<(Around, u8, String)> = self.buffs.iter().filter(|b| b.player == caster).filter_map(|b| b.rider.clone().map(|r| (r, b.rank, b.skill.clone()))).collect();
+        let mut changed = Vec::new();
+        if points.is_empty() {
+            return changed;
+        }
+        for (around, rank, skill) in riders {
+            changed.extend(self.burst(&around, caster, rank, &skill, points, creatures, players).1);
+        }
+        changed
+    }
+
     /// Dégâts en plus du joueur `player` contre la créature `id`, selon la famille de son espèce
     /// (Arme de l'Aube contre les créatures de l'ombre)
     fn against(&self, player: u64, id: u64, creatures: &CreatureWorld) -> f32 {
@@ -336,7 +415,7 @@ impl SkillRunner {
 
     /// Renforcement de `stat` du joueur `player` (0 : aucun ; 0,3 : +30 %)
     pub fn buff(&self, player: u64, stat: BuffStat) -> f32 {
-        self.buffs.iter().filter(|b| b.player == player && b.stat == stat).map(|b| b.value).sum()
+        self.buffs.iter().filter(|b| b.player == player && b.stat == stat).map(|b| b.value * b.scale).sum()
     }
 
     /// Facteur des dégâts que subit le joueur `player` (renforcement de défense compris)
@@ -391,6 +470,11 @@ impl SkillRunner {
         self.links.retain(|l| l.left > 0.0);
         for buff in &mut self.buffs {
             buff.left -= dt;
+            if buff.scaled {
+                if let Some(stats) = players.stats_mut(buff.player) {
+                    buff.scale = missing_health(stats);
+                }
+            }
             // Régénération : des points de vie rendus chaque instant
             let regenerates = matches!(buff.stat, BuffStat::Regeneration | BuffStat::ManaRegen | BuffStat::StaminaRegen);
             if regenerates && buff.value > 0.0 {
@@ -425,7 +509,7 @@ impl SkillRunner {
         });
         for (caster, rank, effects) in ended {
             for entry in &effects {
-                self.apply_to_player(entry, caster, rank, 1.0, caster, players);
+                self.apply_to_player(entry, caster, rank, 1.0, "", caster, players);
             }
             if !effects.is_empty() {
                 out.changed.push(caster);
@@ -445,6 +529,7 @@ impl SkillRunner {
 
         let block = creatures.block_size();
         let mut finished = Vec::new();
+        let mut fell = Vec::new();
         for (i, o) in self.over_time.iter_mut().enumerate() {
             o.left -= dt;
             o.next -= dt;
@@ -466,8 +551,8 @@ impl SkillRunner {
                         if let Some(stats) = players.stats_mut(id) {
                             if amount > 0.0 {
                                 stats.hp = (stats.hp + amount).min(stats.max_hp);
-                            } else {
-                                stats.take_damage(-amount);
+                            } else if stats.hp > 0.0 && stats.take_damage(-amount) {
+                                fell.push(id);
                             }
                             out.changed.push(id);
                         }
@@ -480,6 +565,14 @@ impl SkillRunner {
         }
         for i in finished.into_iter().rev() {
             self.over_time.swap_remove(i);
+        }
+        // Tombé d'un saignement : un effet à la mort le sauve, sinon il meurt
+        fell.dedup();
+        for id in fell {
+            match self.last_stand(id, creatures, players) {
+                Some(impact) => out.impacts.push(impact),
+                None => out.died.push(id),
+            }
         }
         out.changed.sort_unstable();
         out.changed.dedup();
@@ -543,7 +636,7 @@ impl SkillRunner {
                         Targets::Enemies => false,
                     };
                     if applies {
-                        self.apply_to_player(entry, p.caster, p.rank, p.power, id, players);
+                        self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, id, players);
                         touched_players.push(id);
                         changed.push(id);
                     }
@@ -551,12 +644,36 @@ impl SkillRunner {
             }
         }
         for entry in &cast.self_effects {
-            self.apply_to_player(entry, p.caster, p.rank, p.power, p.caster, players);
+            self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, p.caster, players);
             changed.push(p.caster);
         }
         let summoned = self.summon(def.summons(), p, feet, center, &area, creatures);
         touched_creatures.sort_unstable();
         touched_creatures.dedup();
+        // Ce que la frappe déclenche : par ennemi touché, si elle manque, autour de ceux qu'elle tue
+        let enemies: Vec<u64> = touched_creatures.iter().copied().filter(|id| creature_hits.contains(&(*id, false))).collect();
+        let triggered = if enemies.is_empty() { &cast.on_miss } else { &cast.on_hit };
+        for _ in 0..enemies.len().max(1) {
+            for entry in triggered {
+                self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, p.caster, players);
+                changed.push(p.caster);
+            }
+        }
+        let place = |creatures: &CreatureWorld, id: u64| creatures.creatures().iter().find(|c| c.id == id).map(|c| (c.position, c.is_alive()));
+        let spots: Vec<(Vec3, bool)> = enemies.iter().filter_map(|&id| place(creatures, id)).collect();
+        if let Some(around) = &cast.on_kill {
+            let corpses: Vec<Vec3> = spots.iter().filter(|s| !s.1).map(|s| s.0).collect();
+            if !corpses.is_empty() {
+                let (_, helped) = self.burst(around, p.caster, p.rank, &p.skill, &corpses, creatures, players);
+                touched_players.extend(&helped);
+                changed.extend(helped);
+            }
+        }
+        let attacks = cast.effects.iter().any(|e| matches!(e.effect, Effect::Damage { .. }));
+        if attacks {
+            let points: Vec<Vec3> = spots.iter().map(|s| s.0).collect();
+            changed.extend(self.ride(p.caster, &points, creatures, players));
+        }
         touched_players.sort_unstable();
         touched_players.dedup();
         Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched_creatures, players: touched_players, summoned })
@@ -667,12 +784,14 @@ impl SkillRunner {
                 }
             }
             // Sans effet sur une bête : soins, boucliers, renforcements, invisibilité, résurrection, lien
-            Effect::Heal { .. } | Effect::Shield { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } => {}
+            Effect::Heal { .. } | Effect::Shield { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } | Effect::Sacrifice { .. } => {}
         }
     }
 
-    /// Effet `entry` du lanceur `caster` sur le joueur `id`, ses soins et boucliers multipliés par `power`
-    fn apply_to_player(&mut self, entry: &EffectEntry, caster: u64, rank: u8, power: f32, id: u64, players: &mut dyn SkillPlayers) {
+    /// Effet `entry` de la compétence `skill` du lanceur `caster` sur le joueur `id`, ses soins et
+    /// boucliers multipliés par `power`
+    #[allow(clippy::too_many_arguments)]
+    fn apply_to_player(&mut self, entry: &EffectEntry, caster: u64, rank: u8, power: f32, skill: &str, id: u64, players: &mut dyn SkillPlayers) {
         match &entry.effect {
             Effect::Heal { amount } => {
                 if let Some(stats) = players.stats_mut(id) {
@@ -694,10 +813,32 @@ impl SkillRunner {
                     stats.shield_mana = absorb_to.as_ref().map_or(0.0, |a| a.mana.at(rank).max(0.0));
                 }
             }
-            Effect::Buff { stat, value, duration, against } => {
+            Effect::Buff { stat, value, duration, against, per_missing_health, on_death, rider } => {
                 self.buffs.retain(|b| !(b.player == id && b.stat == *stat));
                 let against = against.as_ref().map(|a| (a.tag.clone(), a.value.at(rank)));
-                self.buffs.push(Buff { player: id, stat: *stat, value: value.at(rank), left: duration.at(rank), against });
+                let scale = match players.stats_mut(id) {
+                    Some(stats) if *per_missing_health => missing_health(stats),
+                    _ => 1.0,
+                };
+                self.buffs.push(Buff {
+                    player: id,
+                    stat: *stat,
+                    value: value.at(rank),
+                    left: duration.at(rank),
+                    against,
+                    scaled: *per_missing_health,
+                    scale,
+                    on_death: on_death.clone(),
+                    rider: rider.clone(),
+                    skill: skill.to_string(),
+                    rank,
+                });
+            }
+            Effect::Sacrifice { health } => {
+                // Jamais mortel : la frappe blesse, elle ne tue pas son lanceur
+                if let Some(stats) = players.stats_mut(id) {
+                    stats.hp = (stats.hp - health.at(rank)).max(1.0f32.min(stats.hp));
+                }
             }
             Effect::Cleanse {} => {
                 if let Some(stats) = players.stats_mut(id) {
@@ -732,6 +873,11 @@ impl SkillRunner {
             Effect::Damage { .. } | Effect::Slow { .. } | Effect::Stun { .. } | Effect::Knockback { .. } | Effect::Pull { .. } | Effect::Summon { .. } | Effect::Taunt { .. } | Effect::Blind { .. } | Effect::Mark { .. } => {}
         }
     }
+}
+
+/// Part de sa vie qui manque au joueur (0 : pleine vie, 1 : au bord de la mort)
+fn missing_health(stats: &CharacterStats) -> f32 {
+    (1.0 - stats.hp / stats.max_hp.max(1.0)).clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
@@ -1022,6 +1168,122 @@ mod tests {
         until_impact(&mut runner, &catalog, &mut creatures, &mut player);
         assert!((runner.hit_factor(1, cow, &creatures) - 1.4).abs() < 1e-5, "bonus de dégâts ordinaire");
         assert!((runner.hit_factor(1, shadow, &creatures) - 1.8).abs() < 1e-5, "doublé contre une créature de l'ombre");
+    }
+
+    #[test]
+    fn frenzied_mutilation_heals_per_enemy_hit_and_wounds_on_a_miss() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let cow = creatures.creatures()[0].id;
+        creatures.creature_mut(cow).unwrap().health = 1000.0;
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        stats.skills.insert("frenziedMutilation".into(), 1);
+        stats.stamina = 100.0;
+        stats.hp = 50.0;
+        let mut runner = SkillRunner::new();
+        runner.cast(&catalog, 1, &mut stats, "frenziedMutilation", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        until_impact(&mut runner, &catalog, &mut creatures, &mut player);
+        assert_eq!(stats.hp, 55.0, "un ennemi touché : un soin");
+        // Loin de tout, la rafale manque et blesse
+        let far = feet + Vec3::new(0.0, 0.0, 8.0 * creatures.block_size());
+        runner.cooldowns.clear();
+        runner.cast(&catalog, 1, &mut stats, "frenziedMutilation", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: 1, feet: far, stats: &mut stats };
+        until_impact(&mut runner, &catalog, &mut creatures, &mut player);
+        assert_eq!(stats.hp, 47.0, "aucun ennemi touché : 8 points perdus");
+    }
+
+    #[test]
+    fn dying_frenzy_grows_with_the_missing_health() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        stats.skills.insert("dyingFrenzy".into(), 1);
+        stats.stamina = 100.0;
+        let mut runner = SkillRunner::new();
+        runner.cast(&catalog, 1, &mut stats, "dyingFrenzy", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        until_impact(&mut runner, &catalog, &mut creatures, &mut player);
+        assert!(runner.buff(1, BuffStat::Damage) < 0.05, "presque rien à pleine vie");
+        stats.hp = stats.max_hp * 0.25;
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.tick(0.01, &catalog, &mut creatures, &mut player);
+        assert!((runner.buff(1, BuffStat::Damage) - 0.6).abs() < 0.01, "les trois quarts du bonus aux trois quarts de vie perdus");
+        assert!((runner.buff(1, BuffStat::Speed) - 0.3).abs() < 0.01);
+    }
+
+    #[test]
+    fn etherium_abomination_explodes_instead_of_dying() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let cow = creatures.creatures()[0].id;
+        creatures.creature_mut(cow).unwrap().health = 1000.0;
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        stats.skills.insert("etheriumAbomination".into(), 1);
+        stats.stamina = 100.0;
+        let mut runner = SkillRunner::new();
+        runner.cast(&catalog, 1, &mut stats, "etheriumAbomination", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        until_impact(&mut runner, &catalog, &mut creatures, &mut player);
+        let before = health(&creatures, cow);
+        // Il se vide de son sang jusqu'à zéro : la nova part, il survit
+        stats.hp = 1.0;
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        let mut novas = 0;
+        let mut died = false;
+        for _ in 0..40 {
+            let tick = runner.tick(0.1, &catalog, &mut creatures, &mut player);
+            novas += tick.impacts.len();
+            died |= !tick.died.is_empty();
+        }
+        assert_eq!((novas, died), (1, false), "une nova, et pas de mort");
+        assert!(health(&creatures, cow) <= before - 6.0 * SKILL_BASE_DAMAGE, "la nova frappe autour");
+        assert!(stats.hp > 0.0 && runner.buff(1, BuffStat::Damage) == 0.0, "il survit, l'Abomination consumée");
+        // Sans elle, le même saignement tue
+        let mut plain = CharacterStats::new(PlayerClass::WarPriest);
+        plain.hp = 1.0;
+        runner.over_time.push(OverTime { caster: 2, target: SkillTarget::Player(2), per_second: -4.0, left: 5.0, next: OVER_TIME_STEP, moving: 1.0, last: None });
+        let mut player = SoloPlayer { id: 2, feet, stats: &mut plain };
+        let died: Vec<u64> = (0..10).flat_map(|_| runner.tick(0.1, &catalog, &mut creatures, &mut player).died).collect();
+        assert_eq!(died, vec![2]);
+    }
+
+    #[test]
+    fn condemnation_turns_a_kill_into_a_heal_and_hallowed_hammer_heals_on_each_attack() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let cow = creatures.creatures()[0].id;
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        stats.skills.insert("condemnation".into(), 1);
+        stats.skills.insert("hallowedHammer".into(), 1);
+        stats.stamina = 100.0;
+        let mut runner = SkillRunner::new();
+        // Le coup ne tue pas : pas de soin
+        creatures.creature_mut(cow).unwrap().health = 1000.0;
+        stats.hp = 20.0;
+        runner.cast(&catalog, 1, &mut stats, "condemnation", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        until_impact(&mut runner, &catalog, &mut creatures, &mut player);
+        assert!(stats.hp < 25.0, "la cible survit : pas d'explosion de soin");
+        // Marteau Consacré : chaque attaque soigne autour de la cible
+        runner.cast(&catalog, 1, &mut stats, "hallowedHammer", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        until_impact(&mut runner, &catalog, &mut creatures, &mut player);
+        stats.hp = 20.0;
+        let at = creatures.creatures()[0].position;
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        assert_eq!(runner.ride(1, &[at], &mut creatures, &mut player), vec![1]);
+        assert_eq!(stats.hp, 26.0, "un coup d'arme soigne les alliés proches de la cible");
+        // Le coup tue : le cadavre éclate en soin
+        creatures.creature_mut(cow).unwrap().health = 1.0;
+        runner.cooldowns.clear();
+        runner.buffs.clear();
+        stats.hp = 20.0;
+        runner.cast(&catalog, 1, &mut stats, "condemnation", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        until_impact(&mut runner, &catalog, &mut creatures, &mut player);
+        assert!(stats.hp >= 50.0, "30 points rendus autour du cadavre");
     }
 
     #[test]

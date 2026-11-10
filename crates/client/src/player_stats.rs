@@ -35,6 +35,8 @@ pub struct PlayerStats {
     progress_path: Option<PathBuf>,
     /// Résurrections comptées au moment de sa mort : une de plus le relève sur place
     revived_seen: u32,
+    /// Instant de la dernière réapparition : les jauges d'avant, encore en route, ne le retuent pas
+    respawned_at: Option<Instant>,
 }
 
 /// Ce qui se garde d'une partie solo à l'autre
@@ -54,7 +56,7 @@ struct SavedProgress {
 impl Default for PlayerStats {
     /// Même personnage que celui que le serveur donne à chaque nouveau joueur
     fn default() -> Self {
-        Self { stats: CharacterStats::new(PlayerClass::Adventurer), hurt_at: None, hurt_strength: 0.0, death: None, progress_path: None, revived_seen: 0 }
+        Self { stats: CharacterStats::new(PlayerClass::Adventurer), hurt_at: None, hurt_strength: 0.0, death: None, progress_path: None, revived_seen: 0, respawned_at: None }
     }
 }
 
@@ -157,6 +159,19 @@ impl PlayerStats {
         self.hurt_strength
     }
 
+    /// Tombé à zéro point de vie hors d'un coup (un saignement) : il reste mort jusqu'à `respawn`
+    pub fn bled_out(&mut self) {
+        if self.is_dead() {
+            return;
+        }
+        self.stats.hp = 0.0;
+        self.hurt_at = Some(Instant::now());
+        self.hurt_strength = 1.0;
+        self.death = Some(Death { at: Instant::now(), cause: "A succombé à ses blessures".to_string() });
+        self.stats.fallen = true;
+        self.revived_seen = self.stats.revived;
+    }
+
     pub fn is_dead(&self) -> bool {
         self.death.is_some()
     }
@@ -168,6 +183,7 @@ impl PlayerStats {
 
     /// Retour à la vie, jauges pleines (le joueur reste à replacer au point d'apparition)
     pub fn respawn(&mut self) {
+        self.respawned_at = Some(Instant::now());
         self.death = None;
         self.hurt_at = None;
         self.stats.revive();
@@ -192,6 +208,11 @@ impl PlayerStats {
     /// si le serveur l'a déjà ranimé)
     pub fn sync(&mut self, stats: CharacterStats, camera: &mut OrbitCamera) {
         self.stats = stats;
+        // Le serveur le dit tombé sans qu'un coup l'ait annoncé : un saignement l'a vidé
+        let fresh = self.respawned_at.is_some_and(|at| at.elapsed().as_secs_f32() < 2.0);
+        if !self.is_dead() && self.stats.fallen && !fresh {
+            self.bled_out();
+        }
         if self.is_dead() && !self.check_revived() {
             self.stats.hp = 0.0;
         }

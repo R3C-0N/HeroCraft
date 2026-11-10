@@ -700,16 +700,47 @@ impl Server {
         if damage <= 0.0 {
             return;
         }
-        let died = player.stats.take_damage(damage);
-        if died {
-            player.stats.revive();
-            player.stats.fallen = true;
-        }
+        let died = player.stats.take_damage(damage) && self.falls(id);
+        let Some(player) = self.players.get(&id) else { return };
         player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
         if died {
             let name = player.name.clone();
             info!("{name} est mort d'une chute de {blocks:.0} blocs.");
             self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{name} s'est écrasé au sol") });
+        }
+    }
+
+    /// Le joueur `id` vient de tomber à zéro point de vie. Un effet à la mort (Abomination de
+    /// l'Étherium) le sauve : sa nova est annoncée, et il reste debout (faux). Sinon il tombe (vrai) :
+    /// ranimé pour la suite, il attend de réapparaître.
+    fn falls(&mut self, id: u64) -> bool {
+        let stand = self.skill_runner.last_stand(id, &mut self.creatures, &mut PlayersView(&mut self.players));
+        match stand {
+            Some(impact) => {
+                self.announce_impact(impact);
+                false
+            }
+            None => {
+                if let Some(player) = self.players.get_mut(&id) {
+                    player.stats.revive();
+                    player.stats.fallen = true;
+                }
+                true
+            }
+        }
+    }
+
+    /// Annonce une frappe à tous, et les meurtres et agressions d'habitants qu'elle a faits
+    fn announce_impact(&mut self, impact: herocraft_world::SkillImpact) {
+        let name = self.players.get(&impact.caster).map(|p| p.name.clone()).unwrap_or_default();
+        self.broadcast(&ServerPacket::SkillHit { player_id: impact.caster, skill: impact.skill, rank: impact.rank, center: impact.center, creatures: impact.creatures, players: impact.players });
+        for murder in self.creatures.take_murders() {
+            self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
+        }
+        for assault in self.creatures.take_assaults() {
+            if let Some(player) = self.players.get(&assault.player) {
+                tell(player, &assault.warning());
+            }
         }
     }
 
@@ -721,21 +752,18 @@ impl Server {
         // Lié par une Marque du Martyr : le chapelain encaisse sa part des dégâts
         let (damage, shared) = self.skill_runner.share_damage(id, damage);
         if let Some((martyr, part)) = shared.filter(|s| s.0 != id) {
-            if let Some(m) = self.players.get_mut(&martyr).filter(|m| !m.stats.fallen) {
-                if m.stats.take_damage(part) {
-                    m.stats.revive();
-                    m.stats.fallen = true;
-                }
+            let hurt = self.players.get_mut(&martyr).filter(|m| !m.stats.fallen).map(|m| m.stats.take_damage(part));
+            if hurt == Some(true) {
+                self.falls(martyr);
+            }
+            if let Some(m) = self.players.get(&martyr).filter(|_| hurt.is_some()) {
                 m.connection.send(&ServerPacket::PlayerHurt { damage: part, cause: "Un coup encaissé pour un allié".to_string() });
                 m.connection.send(&ServerPacket::StatsUpdate(m.stats.clone()));
             }
         }
         let Some(player) = self.players.get_mut(&id) else { return };
-        let died = player.stats.take_damage(damage);
-        if died {
-            player.stats.revive();
-            player.stats.fallen = true;
-        }
+        let died = player.stats.take_damage(damage) && self.falls(id);
+        let Some(player) = self.players.get(&id) else { return };
         player.connection.send(&ServerPacket::PlayerHurt { damage, cause: cause.clone() });
         player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
         if died {
@@ -798,6 +826,14 @@ impl Server {
             }
             damage *= self.skill_runner.hit_factor(id, creature_id, &self.creatures);
             self.creatures.wound(creature_id, feet, id, damage);
+            // Un renforcement qui porte des effets (Marteau Consacré) les joue autour de la bête frappée
+            if let Some(at) = self.creatures.creatures().iter().find(|c| c.id == creature_id).map(|c| c.position) {
+                for changed in self.skill_runner.ride(id, &[at], &mut self.creatures, &mut PlayersView(&mut self.players)) {
+                    if let Some(player) = self.players.get(&changed) {
+                        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+                    }
+                }
+            }
             let name = self.players.get(&id).map(|p| p.name.clone()).unwrap_or_default();
             for murder in self.creatures.take_murders() {
                 self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
@@ -894,22 +930,16 @@ impl Server {
         let mut view = PlayersView(&mut self.players);
         let tick = self.skill_runner.tick(dt, herocraft_common::skills(), &mut self.creatures, &mut view);
         for impact in tick.impacts {
-            let name = self.players.get(&impact.caster).map(|p| p.name.clone()).unwrap_or_default();
-            self.broadcast(&ServerPacket::SkillHit {
-                player_id: impact.caster,
-                skill: impact.skill,
-                rank: impact.rank,
-                center: impact.center,
-                creatures: impact.creatures,
-                players: impact.players,
-            });
-            for murder in self.creatures.take_murders() {
-                self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
-            }
-            for assault in self.creatures.take_assaults() {
-                if let Some(player) = self.players.get(&assault.player) {
-                    tell(player, &assault.warning());
-                }
+            self.announce_impact(impact);
+        }
+        // Vidés de leur sang par un effet sur la durée
+        for id in tick.died {
+            if let Some(player) = self.players.get_mut(&id) {
+                player.stats.revive();
+                player.stats.fallen = true;
+                let name = player.name.clone();
+                info!("{name} a succombé à ses blessures.");
+                self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{name} a succombé à ses blessures") });
             }
         }
         for id in tick.changed {

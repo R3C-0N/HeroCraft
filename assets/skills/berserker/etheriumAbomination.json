@@ -55,7 +55,22 @@
         "buff": {
           "stat": "defense",
           "value": 0.6,
-          "duration": 15
+          "duration": 15,
+          "on_death": {
+            "radius": 8,
+            "effects": [
+              {
+                "damage": {
+                  "power": 6
+                }
+              },
+              {
+                "knockback": {
+                  "strength": 12
+                }
+              }
+            ]
+          }
         }
       }
     ]

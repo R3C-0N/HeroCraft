@@ -39,7 +39,22 @@
           ]
         }
       }
-    ]
+    ],
+    "on_kill": {
+      "radius": 6,
+      "effects": [
+        {
+          "heal": {
+            "amount": [
+              30,
+              40,
+              50
+            ]
+          },
+          "to": "allies"
+        }
+      ]
+    }
   },
   "visuals": [
     {

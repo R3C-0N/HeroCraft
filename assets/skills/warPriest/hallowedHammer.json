@@ -28,7 +28,22 @@
             0.35,
             0.45
           ],
-          "duration": 10
+          "duration": 10,
+          "rider": {
+            "radius": 3,
+            "effects": [
+              {
+                "heal": {
+                  "amount": [
+                    6,
+                    8,
+                    10
+                  ]
+                },
+                "to": "allies"
+              }
+            ]
+          }
         }
       }
     ]
