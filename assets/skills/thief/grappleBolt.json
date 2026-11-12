@@ -19,11 +19,16 @@
     "animation": "crossbowShot",
     "area": "self",
     "movement": {
-      "leap": [
-        7,
-        8,
-        9
-      ]
+      "grapple": {
+        "to": "block",
+        "range": [
+          16,
+          18,
+          20
+        ],
+        "speed": 25,
+        "stop": 0.5
+      }
     },
     "targets": "self"
   },

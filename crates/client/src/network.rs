@@ -354,6 +354,8 @@ pub enum NetEvent {
     SkillCast { player_id: u64, skill: String, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool },
     /// Le serveur refuse notre lancement de `skill`
     SkillRefused { skill: String, reason: String },
+    /// Une compétence nous déplace (téléportation, traction vers sa cible)
+    SkillMove(herocraft_common::skills::SkillMove),
     /// Une compétence frappe : centre de sa zone et cibles touchées
     SkillHit { player_id: u64, skill: String, rank: u8, center: Vec3, creatures: Vec<u64>, players: Vec<u64> },
     /// Des créatures tirent (tourelles, bastion, liche)
@@ -579,6 +581,7 @@ impl NetClient {
             }
             ServerPacket::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified } => return Some(NetEvent::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified }),
             ServerPacket::SkillRefused { skill, reason } => return Some(NetEvent::SkillRefused { skill, reason }),
+            ServerPacket::SkillMove(m) => return Some(NetEvent::SkillMove(m)),
             ServerPacket::SkillHit { player_id, skill, rank, center, creatures, players } => return Some(NetEvent::SkillHit { player_id, skill, rank, center, creatures, players }),
             ServerPacket::ConnectAck { .. } | ServerPacket::PlayerJoined { .. } => {}
         }

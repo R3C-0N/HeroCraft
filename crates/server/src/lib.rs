@@ -932,6 +932,11 @@ impl Server {
         for impact in tick.impacts {
             self.announce_impact(impact);
         }
+        for (id, motion) in tick.moves {
+            if let Some(player) = self.players.get(&id) {
+                player.connection.send(&ServerPacket::SkillMove(motion));
+            }
+        }
         // Vidés de leur sang par un effet sur la durée
         for id in tick.died {
             if let Some(player) = self.players.get_mut(&id) {

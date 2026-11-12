@@ -20,30 +20,39 @@
     "animation": "charge",
     "area": {
       "line": {
-        "length": 8,
+        "length": 10,
         "width": 2
       }
     },
     "movement": {
-      "dash": 8
+      "leap": -2,
+      "grapple": {
+        "to": "target",
+        "range": 10,
+        "speed": 30,
+        "stop": 1.2
+      }
     },
     "targets": "enemies",
-    "effects": [
-      {
-        "damage": {
-          "power": [
-            2.4,
-            2.8,
-            3.2
-          ]
+    "follow_up": {
+      "delay": 0.35,
+      "effects": [
+        {
+          "damage": {
+            "power": [
+              2.4,
+              2.8,
+              3.2
+            ]
+          }
+        },
+        {
+          "stun": {
+            "duration": 1
+          }
         }
-      },
-      {
-        "stun": {
-          "duration": 1
-        }
-      }
-    ]
+      ]
+    }
   },
   "visuals": [
     {
