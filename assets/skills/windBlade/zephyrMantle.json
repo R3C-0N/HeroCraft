@@ -37,6 +37,12 @@
           "value": 0.2,
           "duration": 8
         }
+      },
+      {
+        "deflect": {
+          "size": "small",
+          "duration": 8
+        }
       }
     ]
   },

@@ -19,7 +19,9 @@
     "animation": "guard",
     "area": {
       "circle": {
-        "radius": 6
+        "radius": 6,
+        "center": "aimed",
+        "distance": 3
       }
     },
     "targets": "allies",
@@ -31,6 +33,18 @@
             32,
             40
           ],
+          "duration": [
+            4,
+            5,
+            6
+          ]
+        }
+      },
+      {
+        "summon": {
+          "species": "sacredRampart",
+          "at": "aimed",
+          "limit": 1,
           "duration": [
             4,
             5,

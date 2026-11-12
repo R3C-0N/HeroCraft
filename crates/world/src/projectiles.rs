@@ -199,6 +199,11 @@ impl CreatureWorld {
         self.guards = guards;
     }
 
+    /// Les défenses des joueurs en ce moment
+    pub fn guards(&self) -> &[PlayerGuard] {
+        &self.guards
+    }
+
     /// Touches et fins des tirs de compétence depuis le dernier appel
     pub fn take_contacts(&mut self) -> Vec<SkillContact> {
         std::mem::take(&mut self.contacts)

@@ -10,8 +10,8 @@
   "health": 150,
   "activity": "always",
   "model": {
-    "mesh": "../skills/models/portableBarricade.gltf",
-    "texture": "../skills/models/portableBarricade.png",
+    "mesh": "../skills/models/furnaceBarricade.gltf",
+    "texture": "../skills/models/furnaceBarricade.png",
     "animations": {
       "apparition": {
         "clip": "unfold",

@@ -1495,6 +1495,34 @@ mod tests {
     }
 
     #[test]
+    fn walls_and_wards_against_shots() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet, _) = cows_in_line(&[]);
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        // Mur vivant : une garde de face, dans la direction visée
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "livingWall", None);
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 0.2);
+        let guard = creatures.guards().iter().find(|g| g.key == 1).copied().expect("une garde");
+        let (facing, cos) = guard.front.expect("de face");
+        assert!(facing.dot(Vec3::NEG_Z) > 0.99 && (cos - 0.5).abs() < 1e-3, "{facing} {cos}");
+        // Manteau de Zéphyr : les petits projectiles sont déviés
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "zephyrMantle", None);
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 0.2);
+        let guard = creatures.guards().iter().find(|g| g.key == 1).copied().unwrap();
+        assert_eq!(guard.deflect, Some(herocraft_common::ProjectileSize::Small));
+        // Les deux cessent avec leur durée
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 9.0);
+        assert!(creatures.guards().is_empty());
+        // Rempart Sacré : un mur de lumière qui arrête les tirs, devant le Chapelain
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "sacredRampart", None);
+        let rampart = creatures.registry().find("sacredRampart").unwrap();
+        let wall = creatures.creatures().iter().find(|c| c.species == rampart).expect("le mur est là");
+        let ahead = (wall.position - feet).dot(Vec3::NEG_Z) / creatures.block_size();
+        assert!((ahead - 3.0).abs() < 0.2, "à trois blocs devant : {ahead}");
+    }
+
+    #[test]
     fn purification_heals_and_removes_slow_stun_and_damage_over_time() {
         let catalog = SkillCatalog::load_default();
         let (mut creatures, feet) = world();
