@@ -401,6 +401,91 @@ pub enum Effect {
     },
     /// Les alliés tombés dans la zone se relèvent sur place avec `health` de leur vie (0,5 : la moitié)
     Revive { health: Ranked },
+    /// Posture de garde du joueur pendant `duration` secondes : les coups des bêtes qui arrivent
+    /// de face sont bloqués, et chaque coup paré peut déclencher une riposte
+    Guard(Guard),
+    /// Le joueur ignore ces états pendant `duration` secondes ; ceux qu'il subit déjà tombent
+    Immune { from: Vec<Status>, duration: Ranked },
+    /// La garde de la bête (`guard` de son espèce) tombe pendant `duration` secondes
+    BreakGuard { duration: Ranked },
+}
+
+/// Une garde (`Effect::Guard`)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Guard {
+    /// Secondes que dure la fenêtre
+    pub duration: Ranked,
+    /// Part des dégâts bloqués (1 : tout)
+    #[serde(default = "one")]
+    pub block: Ranked,
+    /// Angle couvert devant le joueur, en degrés (360 ou rien : de tous les côtés)
+    #[serde(default)]
+    pub arc: Option<f32>,
+    /// Coups parés avant que la garde tombe (rien : jusqu'à la fin de la fenêtre)
+    #[serde(default)]
+    pub hits: Option<Ranked>,
+    /// Types de dégâts bloqués (`physical`, `magical`) ; vide : tous. Les coups des bêtes sont
+    /// physiques tant qu'elles n'ont pas de type de dégâts.
+    #[serde(default)]
+    pub kinds: Vec<String>,
+    /// Riposte : des effets joués à chaque coup paré, autour de l'attaquant ou du joueur
+    #[serde(default)]
+    pub counter: Option<Counter>,
+    /// Renvoie à l'attaquant tant de fois les dégâts bloqués (2 : le double)
+    #[serde(default)]
+    pub reflect: Option<Ranked>,
+    /// Facteur de la recharge quand la fenêtre se ferme sans avoir rien paré (2 : deux fois plus
+    /// longue). Par défaut 2 pour une garde qui riposte, 1 sinon.
+    #[serde(default)]
+    pub miss_cooldown: Option<f32>,
+}
+
+impl Guard {
+    /// Elle riposte (`counter` ou `reflect`)
+    pub fn ripostes(&self) -> bool {
+        self.counter.is_some() || self.reflect.is_some()
+    }
+
+    /// Facteur de la recharge après une garde qui n'a rien paré
+    pub fn miss_factor(&self) -> f32 {
+        self.miss_cooldown.unwrap_or(if self.ripostes() { 2.0 } else { 1.0 })
+    }
+
+    /// Elle bloque les dégâts de type `kind` (`physical`, `magical`)
+    pub fn blocks(&self, kind: &str) -> bool {
+        self.kinds.is_empty() || self.kinds.iter().any(|k| k == kind)
+    }
+}
+
+/// La riposte d'une garde (`Guard::counter`)
+#[derive(Debug, Clone, Deserialize)]
+pub struct Counter {
+    /// Autour de qui elle part : l'attaquant (par défaut) ou le joueur
+    #[serde(default)]
+    pub at: CounterAt,
+    #[serde(flatten)]
+    pub around: Around,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CounterAt {
+    #[default]
+    Attacker,
+    #[serde(rename = "self")]
+    Caster,
+}
+
+/// Ce qu'une immunité fait ignorer (`Effect::Immune`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+    Stun,
+    Slow,
+    Knockback,
+    Pull,
+    Damage,
 }
 
 /// Une zone qui reste posée après la frappe (`Cast::zone`). Deux fois par seconde, elle rejoue les
@@ -628,6 +713,8 @@ pub enum Moment {
     End,
     /// Fin de l'effet sur la cible (ralenti, étourdi, bouclier…)
     EffectEnd,
+    /// Une garde pare un coup : la riposte part
+    Parry,
 }
 
 /// Où un visuel se joue
@@ -1019,6 +1106,23 @@ impl SkillCatalog {
                     if !(count.is_finite() && count.at(1) >= 1.0) || duration.as_ref().is_some_and(|d| !d.is_finite()) || limit.as_ref().is_some_and(|l| !l.is_finite()) {
                         return Err(format!("invocation {species} : count à partir de 1, duration et limit en nombres"));
                     }
+                }
+            }
+            for entry in cast.effects.iter().chain(&cast.self_effects) {
+                match &entry.effect {
+                    Effect::Guard(guard) => {
+                        let numbers = [Some(&guard.duration), Some(&guard.block), guard.hits.as_ref(), guard.reflect.as_ref(), guard.counter.as_ref().map(|c| &c.around.radius)];
+                        if !numbers.iter().flatten().all(|r| r.is_finite()) || guard.arc.is_some_and(|a| !(a > 0.0 && a <= 360.0)) || guard.miss_cooldown.is_some_and(|m| !(m.is_finite() && m > 0.0)) {
+                            return Err("guard : nombres finis, arc de 0 à 360 degrés, miss_cooldown positif".into());
+                        }
+                        if let Some(kind) = guard.kinds.iter().find(|k| !matches!(k.as_str(), "physical" | "magical")) {
+                            return Err(format!("guard : type de dégâts inconnu {kind} (physical, magical)"));
+                        }
+                    }
+                    Effect::Immune { from, duration } if from.is_empty() || !duration.is_finite() => {
+                        return Err("immune : au moins un état dans from, et une durée".into());
+                    }
+                    _ => {}
                 }
             }
         }

@@ -823,10 +823,12 @@ fn main() {
                                         skill_play.on_refused(&skill, &reason);
                                     }
                                     NetEvent::SkillMove(m) => skill_play.on_move(m),
-                                    NetEvent::SkillHit { player_id, skill, rank, center, creatures, players } => {
+                                    NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, parried } => {
                                         let caster = (player_id != client.player_id()).then_some(player_id);
-                                        skill_play.on_hit(skill_play::Shown { caster, skill, rank, center, creatures, players });
+                                        skill_play.on_hit(skill_play::Shown { caster, skill, rank, center, creatures, players, parried });
                                     }
+                                    NetEvent::SkillCooldown { skill, seconds } => skill_play.extend_cooldown(&skill, seconds),
+                                    NetEvent::Pushed { direction, speed } => camera.push(direction, speed),
                                     NetEvent::CreatureShots(shots) => {
                                         let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
                                         skill_play.on_shots(&shots, &creature_registry, block);
@@ -879,12 +881,19 @@ fn main() {
                                         let hits = solo_creatures.tick_with_presences(dt, &generator, lod_manager.terrain_edits(), &[player]);
                                         // Banc d'essai : les bêtes ne blessent pas le joueur
                                         for hit in hits.into_iter().filter(|_| bench.is_none()) {
-                                            // Ralenti, étourdi : le coup de certaines bêtes le laisse sonné
-                                            if !ui_state.player.is_dead() {
-                                                solo_creatures.afflict(&hit, &mut ui_state.player.stats);
+                                            // Une garde levée pare le coup qui arrive de face, et riposte
+                                            let (_, facing, _, _) = camera.look_vectors();
+                                            let (damage, parried) = skill_play.solo_parry(&mut solo_creatures, camera.player_pos, facing, &mut ui_state.player.stats, hit.creature_id, hit.damage);
+                                            // Ralenti, étourdi, repoussé : le coup de certaines bêtes le laisse sonné
+                                            if !ui_state.player.is_dead() && !parried {
+                                                let ignores = skill_play.solo_immunities();
+                                                solo_creatures.afflict(&hit, &mut ui_state.player.stats, &ignores);
+                                                if let Some((direction, speed)) = solo_creatures.knockback(&hit, camera.player_pos).filter(|_| !ignores.contains(&herocraft_common::skills::Status::Knockback)) {
+                                                    camera.push(direction, speed);
+                                                }
                                             }
                                             let cause = creature_registry.get(hit.species).map_or("Une créature", |s| s.name.as_str());
-                                            let hurt = ui_state.player.bitten(hit.damage * skill_play.solo_damage_factor(), cause);
+                                            let hurt = ui_state.player.bitten(damage * skill_play.solo_damage_factor(), cause);
                                             // Tombé sous un effet à la mort : la nova part, il se relève
                                             if ui_state.player.is_dead() {
                                                 skill_play.solo_last_stand(&mut solo_creatures, camera.player_pos, &mut ui_state.player.stats);

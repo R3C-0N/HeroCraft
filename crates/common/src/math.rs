@@ -13,6 +13,27 @@ pub fn tangent_frame(up: Vec3) -> (Vec3, Vec3) {
     }
 }
 
+/// Direction du cap `yaw` au point `at` de la sphère, le long du sol
+pub fn yaw_direction(at: Vec3, yaw: f32) -> Vec3 {
+    let (east, north) = tangent_frame(at.normalize_or(Vec3::Y));
+    north * yaw.cos() + east * yaw.sin()
+}
+
+/// Ce qui est en `from` se trouve devant celui qui est en `at` et regarde vers `facing`, dans un
+/// angle de `arc` degrés (360 : de tous les côtés). Seul compte l'écart le long du sol.
+pub fn in_front(facing: Vec3, at: Vec3, from: Vec3, arc: f32) -> bool {
+    if arc >= 360.0 {
+        return true;
+    }
+    let up = at.normalize_or(Vec3::Y);
+    let flat = |v: Vec3| (v - up * v.dot(up)).normalize_or_zero();
+    let (toward, facing) = (flat(from - at), flat(facing));
+    if toward == Vec3::ZERO || facing == Vec3::ZERO {
+        return true;
+    }
+    toward.dot(facing) >= (arc.to_radians() * 0.5).cos() - 1e-4
+}
+
 /// Les 6 faces du cube projeté sur la sphère planétaire
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PlanetFace {

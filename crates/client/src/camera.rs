@@ -24,6 +24,10 @@ const JUMP_HEIGHT: f32 = 1.3;
 const CLIMB_SPEED: f32 = 3.0;
 /// Gravité, en blocs par seconde au carré : un saut reste en l'air ~0,65 s
 const GRAVITY: f32 = 25.0;
+/// Durée d'un recul donné par le coup d'une bête, en secondes
+const PUSH_SECONDS: f32 = 0.25;
+/// Hauteur du petit saut d'un recul, en blocs
+const PUSH_HOP: f32 = 0.3;
 /// Vitesse de chute maximale, en blocs par seconde (atteinte après ~30 blocs de chute)
 const TERMINAL_FALL_SPEED: f32 = 40.0;
 /// Coup reçu : la vue penche de côté puis se redresse, en tant de secondes
@@ -1149,6 +1153,21 @@ impl OrbitCamera {
             self.player_yaw = flat.dot(east).atan2(flat.dot(north));
         }
         self.player_pitch = look.dot(up).clamp(-1.0, 1.0).asin().clamp(-85f32.to_radians(), 85f32.to_radians());
+    }
+
+    /// Le coup d'une bête repousse le joueur le long du sol dans `direction`, à `speed` blocs par
+    /// seconde, avec un petit saut
+    pub fn push(&mut self, direction: Vec3, speed: f32) {
+        let up = self.player_pos.normalize_or_zero();
+        let direction = (direction - up * direction.dot(up)).normalize_or_zero();
+        if direction == Vec3::ZERO || speed <= 0.0 || self.is_dead {
+            return;
+        }
+        self.impulse = Some((direction, speed, PUSH_SECONDS));
+        if !self.is_flying && self.is_grounded {
+            self.vertical_velocity = (2.0 * GRAVITY * PUSH_HOP).sqrt() * self.block_height();
+            self.is_grounded = false;
+        }
     }
 
     /// Bloc qui porte le joueur (sa matière donne le son des pas), ou l'eau quand il y a les pieds

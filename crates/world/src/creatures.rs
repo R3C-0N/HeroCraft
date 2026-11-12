@@ -37,6 +37,7 @@ use std::sync::Arc;
 use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
+use herocraft_common::skills::Status;
 use herocraft_common::{blocks, items, tangent_frame, AttackMode, BlockId, ItemId, MOOD_HEARTS, MOOD_SATED, MOOD_TAMED, CreatureAction, CreatureShotEvent, Collider, PLAYER_COLLIDER, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CORPSE_TIME, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -302,6 +303,8 @@ pub struct Creature {
     flight: Option<Flight>,
     /// Elle vient de retomber d'un vol : hauteur de la chute en blocs, et le coup qui l'a rabattue
     landed: Option<(f32, Option<(u64, f32)>)>,
+    /// Garde brisée (Brise-Garde) : temps restant sans se garder, en secondes
+    guard_broken: f32,
     /// Pressée par une compétence (Surcharge Mécanique) : cadence en plus (0,5 : +50 %) et temps restant
     haste: f32,
     haste_time: f32,
@@ -902,6 +905,7 @@ impl CreatureWorld {
             stun: 0.0,
             flight: None,
             landed: None,
+            guard_broken: 0.0,
             blind: 0.0,
             taunted: None,
             summoner: None,
@@ -1065,6 +1069,7 @@ impl CreatureWorld {
     /// Comme `hit_by`, avec `damage` points de dégâts (une compétence) : `Some(vrai)` si le coup
     /// l'a tuée, `None` si elle n'existe pas ou est déjà morte
     pub fn wound(&mut self, id: u64, from: Vec3, player: u64, damage: f32) -> Option<bool> {
+        let damage = damage * (1.0 - self.guard_against(id, from));
         let victim = self.creatures.iter().find(|c| c.id == id && c.is_alive()).map(|c| (c.herd, c.position, c.managed && self.registry.get(c.species).is_some_and(|s| s.humanoid)));
         let who = self.villages.card(id).map(|card| (card.name.clone(), card.profession.clone(), self.villages.town_of(id).map(str::to_string)));
         let killed = self.strike(id, from, damage, true)?;
@@ -1171,15 +1176,59 @@ impl CreatureWorld {
         }
     }
 
-    /// Ralenti et étourdissement que le coup `hit` laisse au joueur touché (`attack.slow`, `attack.stun`)
-    pub fn afflict(&self, hit: &PlayerHit, stats: &mut herocraft_common::CharacterStats) {
+    /// Ralenti et étourdissement que le coup `hit` laisse au joueur touché (`attack.slow`,
+    /// `attack.stun`), sauf ceux dont il est immunisé (`ignores`)
+    pub fn afflict(&self, hit: &PlayerHit, stats: &mut herocraft_common::CharacterStats, ignores: &[Status]) {
         let Some(attack) = self.registry.get(hit.species).and_then(|s| s.attack.as_ref()) else { return };
-        if let Some([strength, seconds]) = attack.slow {
+        if let Some([strength, seconds]) = attack.slow.filter(|_| !ignores.contains(&Status::Slow)) {
             stats.apply_slow(strength, seconds);
         }
-        if let Some(seconds) = attack.stun {
+        if let Some(seconds) = attack.stun.filter(|_| !ignores.contains(&Status::Stun)) {
             stats.apply_stun(seconds);
         }
+    }
+
+    /// Recul que le coup `hit` donne au joueur aux pieds `feet` : direction (le long du sol, à
+    /// l'opposé de la bête) et vitesse en blocs par seconde (`attack.knockback`)
+    pub fn knockback(&self, hit: &PlayerHit, feet: Vec3) -> Option<(Vec3, f32)> {
+        let strength = self.registry.get(hit.species).and_then(|s| s.attack.as_ref()).and_then(|a| a.knockback).filter(|k| *k > 0.0)?;
+        let from = self.position(hit.creature_id)?;
+        let up = feet.normalize_or_zero();
+        let away = feet - from;
+        let away = (away - up * away.dot(up)).normalize_or_zero();
+        (away != Vec3::ZERO).then_some((away, strength))
+    }
+
+    /// Position de la créature `id`, vivante ou non
+    pub fn position(&self, id: u64) -> Option<Vec3> {
+        self.creatures.iter().find(|c| c.id == id).map(|c| c.position)
+    }
+
+    /// La garde de la créature `id` tombe pendant `duration` secondes (Brise-Garde)
+    pub fn break_guard(&mut self, id: u64, duration: f32) {
+        if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
+            c.guard_broken = c.guard_broken.max(duration);
+        }
+    }
+
+    /// Part des dégâts d'un coup venu de `from` que la garde de la créature `id` retire : celle de
+    /// son espèce si le coup arrive de face, et qu'elle n'est ni étourdie ni brisée
+    pub fn guard_against(&self, id: u64, from: Vec3) -> f32 {
+        let Some(c) = self.creatures.iter().find(|c| c.id == id && c.is_alive()) else { return 0.0 };
+        let Some(guard) = self.registry.get(c.species).and_then(|s| s.guard) else { return 0.0 };
+        if c.stun > 0.0 || c.guard_broken > 0.0 {
+            return 0.0;
+        }
+        if herocraft_common::in_front(herocraft_common::yaw_direction(c.position, c.yaw), c.position, from, guard.arc) {
+            guard.block.clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// La garde de la créature `id` tient en ce moment (elle n'est ni étourdie ni brisée)
+    pub fn guarding(&self, id: u64) -> bool {
+        self.creatures.iter().any(|c| c.id == id && c.is_alive() && c.stun <= 0.0 && c.guard_broken <= 0.0 && self.registry.get(c.species).is_some_and(|s| s.guard.is_some()))
     }
 
     /// Aveuglée en ce moment
@@ -1475,6 +1524,7 @@ impl CreatureWorld {
                 }
             }
             c.stun = (c.stun - dt).max(0.0);
+            c.guard_broken = (c.guard_broken - dt).max(0.0);
             c.blind = (c.blind - dt).max(0.0);
             if let Some(t) = c.taunted.as_mut() {
                 t.1 -= dt;
@@ -4231,15 +4281,29 @@ mod tests {
         let (generator, edits, mut world, _, player) = beasts_and_player("gorgone", 1, 1.0, 44);
         let hits = hits_over(&mut world, &generator, &edits, player, 5.0);
         let mut stats = herocraft_common::CharacterStats::new(herocraft_common::PlayerClass::Adventurer);
-        world.afflict(hits.first().expect("la gorgone n'a pas frappé"), &mut stats);
+        world.afflict(hits.first().expect("la gorgone n'a pas frappé"), &mut stats, &[]);
         assert!(stats.slow > 0.0 && stats.slow_time > 0.0, "la gorgone ne ralentit pas");
         assert!(stats.status_speed() < 1.0);
 
         let brute = world.registry().find("brute").unwrap();
         let hit = PlayerHit { player: 0, creature_id: 0, species: brute, damage: 1.0 };
-        world.afflict(&hit, &mut stats);
+        world.afflict(&hit, &mut stats, &[]);
         assert!(stats.is_stunned() && stats.status_speed() == 0.0, "la brute n'étourdit pas");
         stats.tick_status(1.0);
         assert!(!stats.is_stunned(), "l'étourdissement ne passe pas");
     }
+
+    #[test]
+    fn a_charging_brute_knocks_the_player_back_unless_immune() {
+        let (generator, edits, mut world, _, player) = beasts_and_player("brute", 1, 1.0, 44);
+        let hits = hits_over(&mut world, &generator, &edits, player, 8.0);
+        let hit = hits.first().expect("la brute n'a pas frappé");
+        let (direction, speed) = world.knockback(hit, player).expect("la brute repousse");
+        let from = world.position(hit.creature_id).unwrap();
+        assert!(direction.dot(player - from) > 0.0 && speed > 0.0, "le recul éloigne de la bête");
+        let mut stats = herocraft_common::CharacterStats::new(herocraft_common::PlayerClass::Adventurer);
+        world.afflict(hit, &mut stats, &[Status::Stun]);
+        assert!(!stats.is_stunned(), "immunisé, il n'est pas étourdi");
+    }
 }
+

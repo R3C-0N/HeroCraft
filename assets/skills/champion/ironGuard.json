@@ -19,13 +19,23 @@
     "targets": "self",
     "self_effects": [
       {
-        "buff": {
-          "stat": "defense",
-          "value": [
-            0.5,
-            0.6,
-            0.7
+        "guard": {
+          "duration": [
+            3,
+            3.5,
+            4
           ],
+          "block": 1,
+          "arc": 120,
+          "kinds": [
+            "physical"
+          ]
+        }
+      },
+      {
+        "buff": {
+          "stat": "speed",
+          "value": -0.5,
           "duration": [
             3,
             3.5,
@@ -41,6 +51,11 @@
       "anchor": "body",
       "from": "impact",
       "to": "effectEnd"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "body",
+      "from": "parry"
     }
   ]
 }

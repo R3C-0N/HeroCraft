@@ -17,34 +17,29 @@
     },
     "cooldown": 10,
     "animation": "sweep",
-    "area": {
-      "arc": {
-        "range": 3,
-        "angle": 120
-      }
-    },
-    "targets": "enemies",
-    "effects": [
-      {
-        "damage": {
-          "power": [
-            1.6,
-            1.9,
-            2.2
-          ]
-        }
-      }
-    ],
+    "area": "self",
+    "targets": "self",
     "self_effects": [
       {
-        "buff": {
-          "stat": "defense",
-          "value": [
-            0.6,
-            0.7,
-            0.8
-          ],
-          "duration": 1.5
+        "guard": {
+          "duration": 1.5,
+          "block": 1,
+          "arc": 120,
+          "hits": 1,
+          "counter": {
+            "radius": 1.5,
+            "effects": [
+              {
+                "damage": {
+                  "power": [
+                    1.6,
+                    1.9,
+                    2.2
+                  ]
+                }
+              }
+            ]
+          }
         }
       }
     ]
@@ -59,12 +54,12 @@
     {
       "effect": "slashArc",
       "anchor": "weapon",
-      "from": "impact"
+      "from": "parry"
     },
     {
       "effect": "impactSpark",
       "anchor": "target",
-      "from": "hit"
+      "from": "parry"
     }
   ]
 }

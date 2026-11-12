@@ -55,6 +55,8 @@ pub struct Shown {
     pub center: Vec3,
     pub creatures: Vec<u64>,
     pub players: Vec<u64>,
+    /// La riposte d'une garde : seuls les visuels de parade se jouent
+    pub parried: bool,
 }
 
 /// Événement visuel d'une compétence, que le moteur d'effets joue
@@ -158,6 +160,16 @@ impl SkillPlay {
     pub fn cooldown(&self, skill: &str, now: Instant) -> (f32, f32) {
         let left = self.ready_at.get(skill).map_or(0.0, |t| t.saturating_duration_since(now).as_secs_f32());
         (left, self.cooldown_of.get(skill).copied().unwrap_or(0.0))
+    }
+
+    /// La recharge de `skill` dure `seconds` de plus (une parade ratée)
+    pub fn extend_cooldown(&mut self, skill: &str, seconds: f32) {
+        let now = Instant::now();
+        let ready = self.ready_at.get(skill).copied().filter(|t| *t > now).unwrap_or(now);
+        let left = ready.saturating_duration_since(now).as_secs_f32() + seconds.max(0.0);
+        self.ready_at.insert(skill.to_string(), now + std::time::Duration::from_secs_f32(left));
+        let total = self.cooldown_of.get(skill).copied().unwrap_or(0.0) + seconds.max(0.0);
+        self.cooldown_of.insert(skill.to_string(), total.max(left));
     }
 
     /// Le joueur local lance `skill`. En ligne (`online`), la demande part au serveur par
@@ -388,12 +400,16 @@ impl SkillPlay {
         let mine = shown.caster.is_none_or(|c| c == self.me);
         let on_me = shown.players.contains(&self.me);
         let now = Instant::now();
-        for (entry, applies) in cast.self_effects.iter().map(|e| (e, mine)).chain(cast.effects.iter().map(|e| (e, on_me && e.to.unwrap_or(cast.targets) != herocraft_common::skills::Targets::Enemies))) {
+        for (entry, applies) in cast.self_effects.iter().map(|e| (e, mine && !shown.parried)).chain(cast.effects.iter().map(|e| (e, on_me && e.to.unwrap_or(cast.targets) != herocraft_common::skills::Targets::Enemies))) {
             if let (true, Effect::Buff { stat: herocraft_common::skills::BuffStat::Speed, value, duration, per_missing_health, .. }) = (applies, &entry.effect) {
                 self.speed_buffs.push((value.at(shown.rank), now + std::time::Duration::from_secs_f32(duration.at(shown.rank).max(0.0)), *per_missing_health));
             }
         }
         for visual in def.visuals.iter().chain(amplify.iter().flat_map(|a| &a.visuals)) {
+            // Une riposte ne joue que les visuels de parade, une frappe tous les autres
+            if shown.parried != (visual.from == Moment::Parry) {
+                continue;
+            }
             let hold = match visual.to {
                 Some(Moment::EffectEnd) => Some(if visual.anchor == Anchor::Target { effect_end } else { self_end.max(effect_end) }),
                 _ => None,
@@ -412,7 +428,7 @@ impl SkillPlay {
             };
             match visual.from {
                 Moment::Impact => self.cues.push(base),
-                Moment::Hit if visual.anchor == Anchor::Target => {
+                Moment::Hit | Moment::Parry if visual.anchor == Anchor::Target => {
                     for &id in &shown.creatures {
                         self.cues.push(VisualCue { creature: Some(id), ..base.clone() });
                     }
@@ -424,6 +440,7 @@ impl SkillPlay {
                         self.cues.push(base);
                     }
                 }
+                Moment::Parry => self.cues.push(base),
                 _ => {}
             }
         }
@@ -439,8 +456,11 @@ impl SkillPlay {
             for (_, m) in tick.moves.into_iter().filter(|m| m.0 == SOLO_PLAYER) {
                 self.on_move(m);
             }
-            for SkillImpact { skill, rank, center, creatures, players, .. } in tick.impacts {
-                self.on_hit(Shown { caster: None, skill, rank, center, creatures, players });
+            for (_, skill, seconds) in tick.missed.iter().filter(|m| m.0 == SOLO_PLAYER) {
+                self.extend_cooldown(skill, *seconds);
+            }
+            for SkillImpact { skill, rank, center, creatures, players, parried, .. } in tick.impacts {
+                self.on_hit(Shown { caster: None, skill, rank, center, creatures, players, parried });
             }
         }
         self.plays.retain(|p| now.duration_since(p.started).as_secs_f32() < p.duration);
@@ -457,8 +477,8 @@ impl SkillPlay {
     /// sur place dans une nova
     pub fn solo_last_stand(&mut self, creatures: &mut CreatureWorld, feet: Vec3, stats: &mut CharacterStats) {
         let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
-        if let Some(SkillImpact { skill, rank, center, creatures, players, .. }) = self.runner.last_stand(SOLO_PLAYER, creatures, &mut player) {
-            self.on_hit(Shown { caster: None, skill, rank, center, creatures, players });
+        if let Some(SkillImpact { skill, rank, center, creatures, players, parried, .. }) = self.runner.last_stand(SOLO_PLAYER, creatures, &mut player) {
+            self.on_hit(Shown { caster: None, skill, rank, center, creatures, players, parried });
         }
     }
 
@@ -473,6 +493,23 @@ impl SkillPlay {
     /// Facteur des dégâts d'un coup d'arme du joueur solo sur la créature `id` (renforcements de dégâts)
     pub fn solo_hit_factor(&self, id: u64, creatures: &herocraft_world::CreatureWorld) -> f32 {
         self.runner.hit_factor(SOLO_PLAYER, id, creatures)
+    }
+
+    /// Le coup `damage` de la créature `attacker` arrive sur le joueur solo, qui regarde vers
+    /// `facing` : sa garde le pare peut-être, et sa riposte se montre. Renvoie les dégâts qui
+    /// passent, et si le coup a été paré.
+    pub fn solo_parry(&mut self, creatures: &mut CreatureWorld, feet: Vec3, facing: Vec3, stats: &mut CharacterStats, attacker: u64, damage: f32) -> (f32, bool) {
+        let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
+        let parry = self.runner.parry(SOLO_PLAYER, Some(facing), attacker, damage, "physical", creatures, &mut player);
+        if let Some(SkillImpact { skill, rank, center, creatures, players, parried, .. }) = parry.impact {
+            self.on_hit(Shown { caster: None, skill, rank, center, creatures, players, parried });
+        }
+        (parry.damage, parry.parried)
+    }
+
+    /// Ce que le joueur solo ignore en ce moment (immunités)
+    pub fn solo_immunities(&self) -> Vec<herocraft_common::skills::Status> {
+        self.runner.immunities(SOLO_PLAYER)
     }
 
     /// Facteur des dégâts qu'encaisse le joueur solo (renforcement de défense)
@@ -589,7 +626,10 @@ fn effect_seconds(effects: &[herocraft_common::skills::EffectEntry], rank: u8) -
             | Effect::Invisible { duration }
             | Effect::Blind { duration }
             | Effect::Mark { duration, .. }
-            | Effect::Link { duration, .. } => duration.at(rank),
+            | Effect::Link { duration, .. }
+            | Effect::Immune { duration, .. }
+            | Effect::BreakGuard { duration } => duration.at(rank),
+            Effect::Guard(guard) => guard.duration.at(rank),
             _ => 0.0,
         })
         .fold(0.0, f32::max)
