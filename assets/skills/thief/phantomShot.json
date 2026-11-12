@@ -28,7 +28,10 @@
       "speed": 50
     },
     "movement": {
-      "dash": 10
+      "teleport": {
+        "behind": 1.5,
+        "face": "target"
+      }
     },
     "targets": "enemies",
     "effects": [

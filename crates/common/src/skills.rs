@@ -160,14 +160,110 @@ pub enum Area {
     Caster,
 }
 
-/// Déplacement du lanceur au lancement, en blocs : `dash` vers l'avant, `leap` (négatif : en
-/// arrière) en bondissant
+/// Déplacement du lanceur, en blocs : `dash` vers l'avant, `leap` (négatif : en arrière) en
+/// bondissant, du lancement à l'impact ; `hover` dès le lancement ; `grapple` à l'impact ;
+/// `teleport` quand la frappe touche
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Movement {
     #[serde(default)]
     pub dash: Option<Ranked>,
     #[serde(default)]
     pub leap: Option<Ranked>,
+    #[serde(default)]
+    pub teleport: Option<Teleport>,
+    #[serde(default)]
+    pub grapple: Option<Grapple>,
+    #[serde(default)]
+    pub hover: Option<Hover>,
+}
+
+/// Téléportation près de l'ennemi touché le plus proche du lanceur. La place se compte dans le
+/// repère de la cible vue du lanceur : `behind` blocs au-delà d'elle (négatif : entre elle et le
+/// lanceur), `above` au-dessus, `side` sur sa droite. Le serveur la calcule et l'envoie au lanceur.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Teleport {
+    #[serde(default)]
+    pub behind: Ranked,
+    #[serde(default)]
+    pub above: Ranked,
+    #[serde(default)]
+    pub side: Ranked,
+    /// Où le lanceur regarde en arrivant
+    #[serde(default)]
+    pub face: Facing,
+    /// Secondes entre la frappe et la téléportation
+    #[serde(default)]
+    pub delay: Ranked,
+}
+
+/// Regard du lanceur à l'arrivée d'une téléportation
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Facing {
+    /// Vers la cible
+    #[default]
+    Target,
+    /// Dans la direction qu'il visait au lancement
+    Aim,
+    /// À l'opposé de la cible
+    Away,
+}
+
+/// Le lanceur est tiré en ligne droite à l'impact : vers le bloc visé (`block`, il s'y hisse s'il
+/// en atteint le rebord) ou vers l'ennemi touché le plus proche (`target`)
+#[derive(Debug, Clone, Deserialize)]
+pub struct Grapple {
+    #[serde(default)]
+    pub to: GrappleTo,
+    /// Portée, en blocs : un bloc plus loin n'est pas agrippé
+    pub range: Ranked,
+    /// Vitesse de la traction, en blocs par seconde
+    #[serde(default = "grapple_speed")]
+    pub speed: Ranked,
+    /// Distance où la traction s'arrête avant le point d'accroche, en blocs
+    #[serde(default = "grapple_stop")]
+    pub stop: Ranked,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GrappleTo {
+    #[default]
+    Block,
+    Target,
+}
+
+fn grapple_speed() -> Ranked {
+    Ranked::One(25.0)
+}
+
+fn grapple_stop() -> Ranked {
+    Ranked::One(0.0)
+}
+
+/// Lévitation : le lanceur monte de `height` blocs et flotte `duration` secondes, puis redescend
+/// sans se blesser
+#[derive(Debug, Clone, Deserialize)]
+pub struct Hover {
+    pub height: Ranked,
+    pub duration: Ranked,
+}
+
+/// Un déplacement que le serveur impose au lanceur (`SkillTick::moves`)
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum SkillMove {
+    /// Il apparaît aux pieds `feet`, le regard dans la direction `look`
+    Teleport { feet: Vec3, look: Vec3 },
+    /// Il est tiré vers `to` à `speed` blocs par seconde, jusqu'à `stop` blocs de lui
+    Pull { to: Vec3, speed: f32, stop: f32 },
+}
+
+/// Une seconde frappe, `delay` secondes après la première, sur les ennemis qu'elle a trouvés dans
+/// sa zone
+#[derive(Debug, Clone, Deserialize)]
+pub struct FollowUp {
+    pub delay: Ranked,
+    pub effects: Vec<EffectEntry>,
 }
 
 /// Qui subit les effets
@@ -201,6 +297,10 @@ pub enum Effect {
     Knockback { strength: Ranked },
     /// Attirée vers le lanceur
     Pull { strength: Ranked },
+    /// Projetée à `height` blocs en l'air : étourdie tant qu'elle vole, elle se blesse en retombant
+    Launch { height: Ranked },
+    /// Rabattue au sol : à l'atterrissage, `power` × `SKILL_BASE_DAMAGE` points de vie retirés
+    Slam { power: Ranked },
     /// Points de dégâts absorbés pendant `duration` secondes
     Shield {
         amount: Ranked,
@@ -301,6 +401,13 @@ pub enum Effect {
     },
     /// Les alliés tombés dans la zone se relèvent sur place avec `health` de leur vie (0,5 : la moitié)
     Revive { health: Ranked },
+    /// Posture de garde du joueur pendant `duration` secondes : les coups des bêtes qui arrivent
+    /// de face sont bloqués, et chaque coup paré peut déclencher une riposte
+    Guard(Guard),
+    /// Le joueur ignore ces états pendant `duration` secondes ; ceux qu'il subit déjà tombent
+    Immune { from: Vec<Status>, duration: Ranked },
+    /// La garde de la bête (`guard` de son espèce) tombe pendant `duration` secondes
+    BreakGuard { duration: Ranked },
     /// Pendant `duration` secondes, les tirs ennemis qui arrivent sur le joueur de face, dans un
     /// arc de `arc` degrés autour de la direction visée au lancement, s'arrêtent sur lui (Mur vivant)
     ShotGuard { arc: Ranked, duration: Ranked },
@@ -311,6 +418,84 @@ pub enum Effect {
         size: crate::creature::ProjectileSize,
         duration: Ranked,
     },
+}
+
+/// Une garde (`Effect::Guard`)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Guard {
+    /// Secondes que dure la fenêtre
+    pub duration: Ranked,
+    /// Part des dégâts bloqués (1 : tout)
+    #[serde(default = "one")]
+    pub block: Ranked,
+    /// Angle couvert devant le joueur, en degrés (360 ou rien : de tous les côtés)
+    #[serde(default)]
+    pub arc: Option<f32>,
+    /// Coups parés avant que la garde tombe (rien : jusqu'à la fin de la fenêtre)
+    #[serde(default)]
+    pub hits: Option<Ranked>,
+    /// Types de dégâts bloqués (`physical`, `magical`) ; vide : tous. Les coups des bêtes sont
+    /// physiques tant qu'elles n'ont pas de type de dégâts.
+    #[serde(default)]
+    pub kinds: Vec<String>,
+    /// Riposte : des effets joués à chaque coup paré, autour de l'attaquant ou du joueur
+    #[serde(default)]
+    pub counter: Option<Counter>,
+    /// Renvoie à l'attaquant tant de fois les dégâts bloqués (2 : le double)
+    #[serde(default)]
+    pub reflect: Option<Ranked>,
+    /// Facteur de la recharge quand la fenêtre se ferme sans avoir rien paré (2 : deux fois plus
+    /// longue). Par défaut 2 pour une garde qui riposte, 1 sinon.
+    #[serde(default)]
+    pub miss_cooldown: Option<f32>,
+}
+
+impl Guard {
+    /// Elle riposte (`counter` ou `reflect`)
+    pub fn ripostes(&self) -> bool {
+        self.counter.is_some() || self.reflect.is_some()
+    }
+
+    /// Facteur de la recharge après une garde qui n'a rien paré
+    pub fn miss_factor(&self) -> f32 {
+        self.miss_cooldown.unwrap_or(if self.ripostes() { 2.0 } else { 1.0 })
+    }
+
+    /// Elle bloque les dégâts de type `kind` (`physical`, `magical`)
+    pub fn blocks(&self, kind: &str) -> bool {
+        self.kinds.is_empty() || self.kinds.iter().any(|k| k == kind)
+    }
+}
+
+/// La riposte d'une garde (`Guard::counter`)
+#[derive(Debug, Clone, Deserialize)]
+pub struct Counter {
+    /// Autour de qui elle part : l'attaquant (par défaut) ou le joueur
+    #[serde(default)]
+    pub at: CounterAt,
+    #[serde(flatten)]
+    pub around: Around,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CounterAt {
+    #[default]
+    Attacker,
+    #[serde(rename = "self")]
+    Caster,
+}
+
+/// Ce qu'une immunité fait ignorer (`Effect::Immune`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+    Stun,
+    Slow,
+    Knockback,
+    Pull,
+    Damage,
 }
 
 /// Un vrai projectile (`Cast::projectile`) : le tir part de la main du lanceur dans la direction
@@ -527,6 +712,9 @@ pub struct Cast {
     /// ce qu'il rencontre
     #[serde(default)]
     pub projectile: Option<Projectile>,
+    /// Seconde frappe sur les ennemis trouvés par la première
+    #[serde(default)]
+    pub follow_up: Option<FollowUp>,
 }
 
 /// Les règles de la Fusion : elle mêle les deux derniers sorts élémentaires lancés
@@ -615,6 +803,8 @@ pub enum Moment {
     EffectEnd,
     /// Le projectile s'arrête sur un mur, une garde ou le relief
     Blocked,
+    /// Une garde pare un coup : la riposte part
+    Parry,
 }
 
 /// Où un visuel se joue
@@ -989,6 +1179,23 @@ impl SkillCatalog {
                     return Err("projectile : zone line ou circle (portée et point visé)".into());
                 }
             }
+            if let Some(m) = &cast.movement {
+                if m.grapple.as_ref().is_some_and(|g| !(g.range.is_finite() && g.range.at(1) > 0.0 && g.speed.is_finite() && g.speed.at(1) > 0.0 && g.stop.is_finite())) {
+                    return Err("grapple : range et speed positives".into());
+                }
+                if m.hover.as_ref().is_some_and(|h| !(h.height.is_finite() && h.duration.is_finite() && h.duration.at(1) > 0.0)) {
+                    return Err("hover : height en nombre, duration positive".into());
+                }
+                if m.teleport.as_ref().is_some_and(|t| ![&t.behind, &t.above, &t.side, &t.delay].iter().all(|r| r.is_finite()) || t.delay.at(1) < 0.0) {
+                    return Err("teleport : nombres, delay positif ou nul".into());
+                }
+                if (m.teleport.is_some() || m.grapple.as_ref().is_some_and(|g| g.to == GrappleTo::Target)) && matches!(cast.area, Area::Caster) {
+                    return Err("teleport et grapple vers la cible : une zone qui touche des ennemis".into());
+                }
+            }
+            if cast.follow_up.as_ref().is_some_and(|f| !f.delay.is_finite() || f.delay.at(1) < 0.0) {
+                return Err("follow_up : delay positif ou nul".into());
+            }
             if let Some(form) = skill.form.as_ref().filter(|f| !entities.contains(*f)) {
                 return Err(format!("forme inconnue {form} (absente de assets/creatures/)"));
             }
@@ -1006,6 +1213,23 @@ impl SkillCatalog {
                     if !(count.is_finite() && count.at(1) >= 1.0) || duration.as_ref().is_some_and(|d| !d.is_finite()) || limit.as_ref().is_some_and(|l| !l.is_finite()) {
                         return Err(format!("invocation {species} : count à partir de 1, duration et limit en nombres"));
                     }
+                }
+            }
+            for entry in cast.effects.iter().chain(&cast.self_effects) {
+                match &entry.effect {
+                    Effect::Guard(guard) => {
+                        let numbers = [Some(&guard.duration), Some(&guard.block), guard.hits.as_ref(), guard.reflect.as_ref(), guard.counter.as_ref().map(|c| &c.around.radius)];
+                        if !numbers.iter().flatten().all(|r| r.is_finite()) || guard.arc.is_some_and(|a| !(a > 0.0 && a <= 360.0)) || guard.miss_cooldown.is_some_and(|m| !(m.is_finite() && m > 0.0)) {
+                            return Err("guard : nombres finis, arc de 0 à 360 degrés, miss_cooldown positif".into());
+                        }
+                        if let Some(kind) = guard.kinds.iter().find(|k| !matches!(k.as_str(), "physical" | "magical")) {
+                            return Err(format!("guard : type de dégâts inconnu {kind} (physical, magical)"));
+                        }
+                    }
+                    Effect::Immune { from, duration } if from.is_empty() || !duration.is_finite() => {
+                        return Err("immune : au moins un état dans from, et une durée".into());
+                    }
+                    _ => {}
                 }
             }
         }
@@ -1185,6 +1409,8 @@ pub enum CastError {
     FusionEmpty,
     /// Ce mélange n'est pas encore appris
     FusionLocked,
+    /// Un grappin sans bloc visé à portée
+    NothingToGrab,
 }
 
 impl CastError {
@@ -1203,6 +1429,7 @@ impl CastError {
             CastError::FusionOnly => "se lance par la Fusion",
             CastError::FusionEmpty => "lance d'abord deux sorts élémentaires",
             CastError::FusionLocked => "mélange pas encore appris",
+            CastError::NothingToGrab => "rien à agripper",
         }
     }
 }

@@ -354,8 +354,14 @@ pub enum NetEvent {
     SkillCast { player_id: u64, skill: String, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool },
     /// Le serveur refuse notre lancement de `skill`
     SkillRefused { skill: String, reason: String },
+    /// Une compétence nous déplace (téléportation, traction vers sa cible)
+    SkillMove(herocraft_common::skills::SkillMove),
     /// Une compétence frappe : centre de sa zone et cibles touchées
-    SkillHit { player_id: u64, skill: String, rank: u8, center: Vec3, creatures: Vec<u64>, players: Vec<u64>, contact: bool },
+    SkillHit { player_id: u64, skill: String, rank: u8, center: Vec3, creatures: Vec<u64>, players: Vec<u64>, parried: bool, contact: bool },
+    /// Notre parade ratée : la recharge de `skill` dure `seconds` de plus
+    SkillCooldown { skill: String, seconds: f32 },
+    /// Le coup d'une bête nous repousse
+    Pushed { direction: Vec3, speed: f32 },
     /// Des créatures tirent (tourelles, bastion, liche)
     CreatureShots(Vec<herocraft_common::CreatureShotEvent>),
     Projectiles(Vec<herocraft_common::ProjectileEvent>),
@@ -581,7 +587,10 @@ impl NetClient {
             }
             ServerPacket::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified } => return Some(NetEvent::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified }),
             ServerPacket::SkillRefused { skill, reason } => return Some(NetEvent::SkillRefused { skill, reason }),
-            ServerPacket::SkillHit { player_id, skill, rank, center, creatures, players, contact } => return Some(NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, contact }),
+            ServerPacket::SkillMove(m) => return Some(NetEvent::SkillMove(m)),
+            ServerPacket::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact } => return Some(NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact }),
+            ServerPacket::SkillCooldown { skill, seconds } => return Some(NetEvent::SkillCooldown { skill, seconds }),
+            ServerPacket::PlayerPushed { direction, speed } => return Some(NetEvent::Pushed { direction, speed }),
             ServerPacket::ConnectAck { .. } | ServerPacket::PlayerJoined { .. } => {}
         }
         None

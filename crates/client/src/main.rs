@@ -641,6 +641,15 @@ fn main() {
                             if let Some((dash, leap, seconds)) = skill_play.take_motion() {
                                 camera.launch(dash, leap, seconds);
                             }
+                            for motion in skill_play.take_moves(Instant::now()) {
+                                match motion {
+                                    skill_play::Motion::Hover { height, duration } => camera.hover(height, duration),
+                                    skill_play::Motion::Pull { to, speed, stop, hoist } => camera.pull(to, speed, stop, hoist),
+                                    skill_play::Motion::Teleport { feet, look } => {
+                                        camera.skill_teleport(feet, look, &generator);
+                                    }
+                                }
+                            }
                             // Relevé sur place par une compétence (Intervention Suprême) : l'écran de mort se ferme
                             if camera.is_dead && !ui_state.player.is_dead() {
                                 camera.is_dead = false;
@@ -813,12 +822,15 @@ fn main() {
                                         ui_state.skill_notice = Some((format!("{} : {reason}", skill_name(&skill)), Instant::now()));
                                         skill_play.on_refused(&skill, &reason);
                                     }
-                                    NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, contact } => {
+                                    NetEvent::SkillMove(m) => skill_play.on_move(m),
+                                    NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact } => {
                                         let caster = (player_id != client.player_id()).then_some(player_id);
-                                        skill_play.on_hit(skill_play::Shown { caster, skill, rank, center, creatures, players, contact });
+                                        skill_play.on_hit(skill_play::Shown { caster, skill, rank, center, creatures, players, parried, contact });
                                     }
-                                    NetEvent::Projectiles(events) => skill_play.on_projectiles(&events, &creature_registry),
+                                    NetEvent::SkillCooldown { skill, seconds } => skill_play.extend_cooldown(&skill, seconds),
+                                    NetEvent::Pushed { direction, speed } => camera.push(direction, speed),
                                     NetEvent::CreatureShots(shots) => skill_play.on_shots(&shots, &creature_registry),
+                                    NetEvent::Projectiles(events) => skill_play.on_projectiles(&events, &creature_registry),
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
                                 }
                             }
@@ -867,12 +879,19 @@ fn main() {
                                         let hits = solo_creatures.tick_with_presences(dt, &generator, lod_manager.terrain_edits(), &[player]);
                                         // Banc d'essai : les bêtes ne blessent pas le joueur
                                         for hit in hits.into_iter().filter(|_| bench.is_none()) {
-                                            // Ralenti, étourdi : le coup de certaines bêtes le laisse sonné
-                                            if !ui_state.player.is_dead() {
-                                                solo_creatures.afflict(&hit, &mut ui_state.player.stats);
+                                            // Une garde levée pare le coup qui arrive de face, et riposte
+                                            let (_, facing, _, _) = camera.look_vectors();
+                                            let (damage, parried) = skill_play.solo_parry(&mut solo_creatures, camera.player_pos, facing, &mut ui_state.player.stats, hit.creature_id, hit.damage);
+                                            // Ralenti, étourdi, repoussé : le coup de certaines bêtes le laisse sonné
+                                            if !ui_state.player.is_dead() && !parried {
+                                                let ignores = skill_play.solo_immunities();
+                                                solo_creatures.afflict(&hit, &mut ui_state.player.stats, &ignores);
+                                                if let Some((direction, speed)) = solo_creatures.knockback(&hit, camera.player_pos).filter(|_| !ignores.contains(&herocraft_common::skills::Status::Knockback)) {
+                                                    camera.push(direction, speed);
+                                                }
                                             }
                                             let cause = creature_registry.get(hit.species).map_or("Une créature", |s| s.name.as_str());
-                                            let hurt = ui_state.player.bitten(hit.damage * skill_play.solo_damage_factor(), cause);
+                                            let hurt = ui_state.player.bitten(damage * skill_play.solo_damage_factor(), cause);
                                             // Tombé sous un effet à la mort : la nova part, il se relève
                                             if ui_state.player.is_dead() {
                                                 skill_play.solo_last_stand(&mut solo_creatures, camera.player_pos, &mut ui_state.player.stats);
@@ -1260,7 +1279,14 @@ fn main() {
                         // bloc visé s'il y en a un
                         for skill in std::mem::take(&mut ui_state.skill_casts) {
                             let (_, _, _, aim) = camera.look_vectors();
-                            let aimed = block_interaction.target().map(|hit| camera.eye_position() + aim * hit.distance as f32);
+                            // Un grappin vise plus loin que la main : jusqu'à sa portée
+                            let aimed = match skill_play::grapple_of(herocraft_common::skills::skills(), &skill).filter(|g| g.to == herocraft_common::skills::GrappleTo::Block) {
+                                Some(grapple) => {
+                                    let rank = herocraft_common::skills::skills().rank(&ui_state.player.stats, &skill);
+                                    block_interaction.hit_within(&camera, &generator, &lod_manager.terrain_edits().clone(), grapple.range.at(rank) as f64).map(|d| camera.eye_position() + aim * d)
+                                }
+                                None => block_interaction.target().map(|hit| camera.eye_position() + aim * hit.distance as f32),
+                            };
                             let result = match net.as_mut() {
                                 Some(client) => skill_play.request(&skill, &mut ui_state.player.stats, aim, aimed, Some(&mut |s: &str, aim, aimed| client.send_cast_skill(s, aim, aimed))),
                                 None => skill_play.request(&skill, &mut ui_state.player.stats, aim, aimed, None),

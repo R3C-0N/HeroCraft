@@ -24,6 +24,10 @@ const JUMP_HEIGHT: f32 = 1.3;
 const CLIMB_SPEED: f32 = 3.0;
 /// Gravité, en blocs par seconde au carré : un saut reste en l'air ~0,65 s
 const GRAVITY: f32 = 25.0;
+/// Durée d'un recul donné par le coup d'une bête, en secondes
+const PUSH_SECONDS: f32 = 0.25;
+/// Hauteur du petit saut d'un recul, en blocs
+const PUSH_HOP: f32 = 0.3;
 /// Vitesse de chute maximale, en blocs par seconde (atteinte après ~30 blocs de chute)
 const TERMINAL_FALL_SPEED: f32 = 40.0;
 /// Coup reçu : la vue penche de côté puis se redresse, en tant de secondes
@@ -36,6 +40,24 @@ const DEATH_ROLL: f32 = 1.25;
 /// Accroupi : les yeux descendent de cette fraction de leur hauteur, en tant de secondes
 const CROUCH_EYE_DROP: f32 = 0.2;
 const CROUCH_SECS: f32 = 0.12;
+/// Durée de la montée d'une lévitation, en secondes
+const HOVER_RISE_SECS: f32 = 0.35;
+/// Temps maximal d'une traction de compétence, en secondes (une traction qui piétine s'arrête)
+const PULL_MAX_SECS: f32 = 2.0;
+/// Distance au point d'accroche en deçà de laquelle un grappin arrêté hisse sur le rebord, en blocs
+const HOIST_REACH: f32 = 2.5;
+/// Écart le plus grand entre une téléportation et la case libre où elle se pose, en blocs
+const TELEPORT_SLACK: f32 = 2.0;
+
+/// Le joueur porté par une compétence, sans gravité
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Carried {
+    /// Tiré vers `to` à `speed` (unités du monde par seconde) jusqu'à `stop`, et hissé sur le rebord
+    /// qui l'arrête avec `hoist`
+    Pull { to: Vec3, speed: f32, stop: f32, hoist: bool, left: f32 },
+    /// Monté jusqu'au rayon `top`, il flotte encore `left` secondes
+    Hover { top: f32, rise: f32, left: f32 },
+}
 
 /// Mode de vue actif selon le continuum de distance de zoom
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +84,10 @@ pub struct OrbitCamera {
     /// Élan d'une compétence (ruée, bond) : direction dans le plan du sol, vitesse en blocs par
     /// seconde, secondes restantes
     impulse: Option<(Vec3, f32, f32)>,
+    /// Porté par une compétence (grappin, lévitation) : ni gravité ni chute
+    carried: Option<Carried>,
+    /// La prochaine arrivée au sol ne compte pas comme une chute (fin d'une lévitation)
+    soft_landing: bool,
     /// Allure donnée par les renforcements de vitesse (1 : aucun)
     pub buff_speed: f32,
     /// Azimut horizontal du regard (en radians sur le plan tangentiel local)
@@ -171,6 +197,8 @@ impl Default for OrbitCamera {
             hero_height: PLAYER_HEIGHT,
             obstacles: Vec::new(),
             impulse: None,
+            carried: None,
+            soft_landing: false,
             buff_speed: 1.0,
 
             distance: 330.0,
@@ -803,6 +831,14 @@ impl OrbitCamera {
             }
         }
 
+        // 1 quater. Porté par une compétence : tiré vers son point d'accroche, ou soulevé
+        if self.is_dead {
+            self.carried = None;
+        }
+        if let Some(carried) = self.carried {
+            self.carry(carried, dt, generator);
+        }
+
         // 1 bis. Les entités solides repoussent le joueur, de la part de leur résistance (un mur, de
         // résistance 1, ne se traverse pas)
         if !self.is_dead {
@@ -844,7 +880,13 @@ impl OrbitCamera {
         let previous_radius = self.player_pos.length();
         let mut current_radius = previous_radius;
 
-        if self.is_flying {
+        if self.carried.is_some() {
+            // Porté : ni gravité ni saut, jamais sous le sol
+            self.vertical_velocity = 0.0;
+            self.jump_requested = false;
+            current_radius = current_radius.max(ground_radius);
+            self.is_grounded = current_radius <= ground_radius;
+        } else if self.is_flying {
             // Vol : vitesse verticale pilotée directement (~10 blocs/s), sans gravité
             let mut climb = 0.0;
             if self.ascend_held { climb += 0.40 * scale; }
@@ -929,15 +971,16 @@ impl OrbitCamera {
         self.player_pos = new_up * current_radius;
 
         // Chute : du point le plus haut atteint en l'air jusqu'au contact du sol (l'échelle la remet à zéro)
-        if self.is_flying || climbing {
+        if self.is_flying || climbing || self.carried.is_some() {
             self.fall_peak = None;
         } else if self.is_grounded {
             if let Some(peak) = self.fall_peak.take() {
                 let blocks = (peak - current_radius) / self.block_height();
-                if blocks > 0.0 {
+                if blocks > 0.0 && !self.soft_landing {
                     self.landed_fall = Some(blocks);
                 }
             }
+            self.soft_landing = false;
         } else {
             let peak = self.fall_peak.unwrap_or(previous_radius);
             self.fall_peak = Some(peak.max(current_radius));
@@ -964,6 +1007,165 @@ impl OrbitCamera {
         if leap != 0.0 && !self.is_flying {
             // Assez d'élan vertical pour rester en l'air le temps du bond
             self.vertical_velocity = (GRAVITY * seconds * 0.5).max((2.0 * GRAVITY * 0.6).sqrt()) * self.block_height();
+            self.is_grounded = false;
+        }
+    }
+
+    /// Une compétence fait léviter le joueur : il monte de `height` blocs et flotte `duration`
+    /// secondes, puis redescend sans se blesser
+    pub fn hover(&mut self, height: f32, duration: f32) {
+        if self.is_flying || self.is_dead {
+            return;
+        }
+        let top = self.player_pos.length() + height.max(0.0) * self.block_height();
+        let rise = height.max(0.0) * self.block_height() / HOVER_RISE_SECS;
+        self.impulse = None;
+        self.carried = Some(Carried::Hover { top, rise, left: duration.max(0.0) });
+        self.is_grounded = false;
+    }
+
+    /// Une compétence tire le joueur vers `to` à `speed` blocs par seconde, jusqu'à `stop` blocs de
+    /// lui ; avec `hoist`, il se hisse sur le rebord qui l'arrête (grappin)
+    pub fn pull(&mut self, to: Vec3, speed: f32, stop: f32, hoist: bool) {
+        if self.is_flying || self.is_dead || !to.is_finite() {
+            return;
+        }
+        let h = self.block_height();
+        self.impulse = None;
+        self.carried = Some(Carried::Pull { to, speed: speed.max(0.1) * h, stop: stop.max(0.0) * h, hoist, left: PULL_MAX_SECS });
+        self.is_grounded = false;
+    }
+
+    /// Le joueur porté avance d'une image ; la traction finie, il reprend pied (et se hisse sur un
+    /// rebord), la lévitation finie, il redescend en douceur
+    fn carry(&mut self, carried: Carried, dt: f32, generator: &PlanetWorldGenerator) {
+        let h = self.block_height();
+        match carried {
+            Carried::Pull { to, speed, stop, hoist, left } => {
+                let toward = to - self.player_pos;
+                let distance = toward.length();
+                let step = (speed * dt).min(distance - stop);
+                let candidate = self.player_pos + toward / distance.max(1e-6) * step.max(0.0);
+                let blocked = match &self.collider {
+                    Some(collider) => body_blocked(collider, generator, candidate, GROUND_TOLERANCE),
+                    None => false,
+                };
+                if !blocked {
+                    self.player_pos = candidate;
+                }
+                let left = left - dt;
+                if blocked || step <= 1e-4 || distance - step <= stop + 1e-3 || left <= 0.0 {
+                    self.carried = None;
+                    if hoist && self.player_pos.distance(to) <= HOIST_REACH * h {
+                        self.hoist(to, generator);
+                    }
+                } else {
+                    self.carried = Some(Carried::Pull { to, speed, stop, hoist, left });
+                }
+            }
+            Carried::Hover { top, rise, left } => {
+                let up = self.player_pos.normalize();
+                let radius = self.player_pos.length();
+                let next = (radius + rise * dt).min(top);
+                let head_free = match &self.collider {
+                    Some(collider) => !collider.any_solid(generator, &footprint(up * (next + self.hero_height * h), h)),
+                    None => true,
+                };
+                if head_free {
+                    self.player_pos = up * next;
+                }
+                let left = if next >= top || !head_free { left - dt } else { left };
+                if left <= 0.0 {
+                    self.carried = None;
+                    self.soft_landing = true;
+                } else {
+                    self.carried = Some(Carried::Hover { top, rise, left });
+                }
+            }
+        }
+    }
+
+    /// Au bout d'un grappin, arrêté contre un mur près de son point d'accroche `to` : le joueur se
+    /// hisse sur le rebord s'il y trouve sa place, un peu plus haut et vers le mur
+    fn hoist(&mut self, to: Vec3, generator: &PlanetWorldGenerator) {
+        let Some(collider) = &self.collider else { return };
+        let h = collider.block_height();
+        let up = self.player_pos.normalize();
+        let toward = to - self.player_pos;
+        let flat = (toward - up * toward.dot(up)).normalize_or_zero();
+        for lift in [0.6, 1.1, 1.6, 2.1] {
+            for reach in [0.7, 1.0] {
+                let candidate = self.player_pos + up * lift * h + flat * reach * h;
+                let below = candidate - up * 0.3 * h;
+                if !body_blocked(collider, generator, candidate, GROUND_TOLERANCE) && collider.any_solid(generator, &[below]) {
+                    self.player_pos = candidate;
+                    self.vertical_velocity = 0.0;
+                    self.fall_peak = None;
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Une compétence téléporte le joueur aux pieds `feet`, le regard vers `look`. Si la place est
+    /// prise, il se pose sur la case libre la plus proche, à `TELEPORT_SLACK` blocs au plus ; sinon
+    /// il reste où il est. Renvoie vrai s'il a bougé.
+    pub fn skill_teleport(&mut self, feet: Vec3, look: Vec3, generator: &PlanetWorldGenerator) -> bool {
+        if self.is_dead || !feet.is_finite() || feet.length() < 1.0 {
+            return false;
+        }
+        let h = self.block_height();
+        let spot = match &self.collider {
+            Some(collider) => {
+                let up = feet.normalize();
+                let (east, north) = tangent_frame(up);
+                let mut candidates = vec![feet];
+                for ring in [0.5_f32, 1.0, 1.5, TELEPORT_SLACK] {
+                    for k in 0..8 {
+                        let angle = std::f32::consts::TAU * k as f32 / 8.0;
+                        let side = (north * angle.cos() + east * angle.sin()) * ring * h;
+                        candidates.push(feet + side);
+                        candidates.push(feet + side + up * ring.min(1.0) * h);
+                    }
+                }
+                candidates.into_iter().find(|&c| !body_blocked(collider, generator, c, GROUND_TOLERANCE))
+            }
+            None => Some(feet),
+        };
+        let Some(spot) = spot else { return false };
+        self.player_pos = spot;
+        self.impulse = None;
+        self.carried = None;
+        self.vertical_velocity = 0.0;
+        self.is_grounded = false;
+        self.fall_peak = None;
+        self.soft_landing = true;
+        self.look_toward(look);
+        true
+    }
+
+    /// Tourne le regard vers la direction `look` (repère du monde)
+    pub fn look_toward(&mut self, look: Vec3) {
+        let (up, east, north) = self.local_frame();
+        let Some(look) = look.try_normalize() else { return };
+        let flat = look - up * look.dot(up);
+        if flat.length_squared() > 1e-6 {
+            self.player_yaw = flat.dot(east).atan2(flat.dot(north));
+        }
+        self.player_pitch = look.dot(up).clamp(-1.0, 1.0).asin().clamp(-85f32.to_radians(), 85f32.to_radians());
+    }
+
+    /// Le coup d'une bête repousse le joueur le long du sol dans `direction`, à `speed` blocs par
+    /// seconde, avec un petit saut
+    pub fn push(&mut self, direction: Vec3, speed: f32) {
+        let up = self.player_pos.normalize_or_zero();
+        let direction = (direction - up * direction.dot(up)).normalize_or_zero();
+        if direction == Vec3::ZERO || speed <= 0.0 || self.is_dead {
+            return;
+        }
+        self.impulse = Some((direction, speed, PUSH_SECONDS));
+        if !self.is_flying && self.is_grounded {
+            self.vertical_velocity = (2.0 * GRAVITY * PUSH_HOP).sqrt() * self.block_height();
             self.is_grounded = false;
         }
     }
@@ -1439,6 +1641,72 @@ mod tests {
         }
         let ahead = (cam.player_pos - start).dot(forward) / h;
         assert!((ahead - 3.0).abs() < 0.3, "ruée de {ahead} blocs");
+    }
+
+    #[test]
+    fn a_skill_teleport_lands_on_the_nearest_free_spot_and_turns_the_view() {
+        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        let geometry = herocraft_world::BlockGeometry::new(cam.base_radius as f64);
+        let h = geometry.block_height as f32;
+        let (_, forward, _, _) = cam.look_vectors();
+        let centre = |p: herocraft_world::BlockPos| geometry.corner(p.face, p.x as f64 + 0.5, p.y as f64, p.z as f64 + 0.5).as_vec3();
+        // Une place libre, trois blocs devant : il y est, le regard tourné vers l'arrière
+        let free = centre(cell_at(&cam, 3.0, 0.0, floor));
+        assert!(cam.skill_teleport(free, -forward, &gen));
+        assert!(cam.player_pos.distance(free) < 1e-3);
+        let (_, now_forward, _, _) = cam.look_vectors();
+        assert!(now_forward.dot(-forward) > 0.99, "regard vers l'arrière");
+        for _ in 0..60 {
+            cam.update(0.016, &gen);
+        }
+        assert_eq!(cam.take_landing(), None, "une téléportation n'est pas une chute");
+
+        // Dans un pilier de pierre : à côté, à deux blocs au plus
+        let pillar = cell_at(&cam, 2.0, 0.0, floor);
+        for y in floor..floor + 3 {
+            edits.set_block(&gen, herocraft_world::BlockPos { y, ..pillar }, herocraft_common::BlockId::STONE);
+        }
+        let inside = centre(pillar);
+        assert!(cam.skill_teleport(inside, forward, &gen));
+        let landed = geometry.block_at_point(cam.player_pos.as_dvec3()).unwrap();
+        assert!((landed.x, landed.z) != (pillar.x, pillar.z), "pas dans le pilier");
+        assert!(cam.player_pos.distance(inside) <= (TELEPORT_SLACK + 1.1) * h);
+    }
+
+    #[test]
+    fn a_grapple_pulls_the_player_up_onto_a_ledge() {
+        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        let geometry = herocraft_world::BlockGeometry::new(cam.base_radius as f64);
+        // Un mur de trois blocs de haut, trois blocs devant
+        fill(&cam, &gen, &edits, &[3.0], &[floor, floor + 1, floor + 2], herocraft_common::BlockId::STONE);
+        let wall = cell_at(&cam, 3.0, 0.0, floor + 2);
+        // Accroché au haut de sa face, côté joueur
+        let anchor = geometry.corner(wall.face, wall.x as f64 + 0.5, wall.y as f64 + 0.9, wall.z as f64 + 0.5).as_vec3();
+        let (_, forward, _, _) = cam.look_vectors();
+        let anchor = anchor - forward * 0.45 * geometry.block_height as f32;
+        cam.pull(anchor, 25.0, 0.0, true);
+        for _ in 0..120 {
+            cam.update(0.016, &gen);
+        }
+        let on = geometry.block_at_point(cam.player_pos.as_dvec3()).unwrap();
+        assert_eq!((on.x, on.z), (wall.x, wall.z), "hissé sur le mur");
+        assert!((altitude_blocks(&cam) - (floor + 3) as f32).abs() < 0.1, "debout dessus : {}", altitude_blocks(&cam));
+        assert!(cam.take_landing().unwrap_or(0.0) < 1.0);
+    }
+
+    #[test]
+    fn a_hover_lifts_the_player_and_lets_him_down_unhurt() {
+        let (mut cam, gen, _, floor) = voxel_test_camera();
+        cam.hover(2.0, 0.5);
+        for _ in 0..40 {
+            cam.update(0.016, &gen);
+        }
+        assert!((altitude_blocks(&cam) - (floor + 2) as f32).abs() < 0.1, "en l'air : {}", altitude_blocks(&cam));
+        for _ in 0..120 {
+            cam.update(0.016, &gen);
+        }
+        assert!((altitude_blocks(&cam) - floor as f32).abs() < 0.1, "redescendu");
+        assert_eq!(cam.take_landing(), None, "sans chute");
     }
 
     #[test]

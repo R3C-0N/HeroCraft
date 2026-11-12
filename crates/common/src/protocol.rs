@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 16;
+pub const PROTOCOL_VERSION: u32 = 18;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -249,6 +249,9 @@ pub enum ServerPacket {
         skill: String,
         reason: String,
     },
+    /// Une compétence déplace son lanceur (téléportation près de sa cible, traction vers elle) :
+    /// envoyé à lui seul, qui décide de sa position
+    SkillMove(crate::skills::SkillMove),
     /// La compétence frappe : centre de sa zone et cibles touchées, pour leurs effets visuels
     SkillHit {
         player_id: u64,
@@ -259,6 +262,19 @@ pub enum ServerPacket {
         players: Vec<u64>,
         /// La touche d'un projectile en vol : seuls les visuels « hit » jouent
         contact: bool,
+        /// La riposte d'une garde qui vient de parer un coup
+        parried: bool,
+    },
+    /// La garde de `skill` s'est fermée sans rien parer : sa recharge dure `seconds` de plus
+    SkillCooldown {
+        skill: String,
+        seconds: f32,
+    },
+    /// Le coup d'une bête repousse le joueur : direction le long du sol et vitesse, en blocs par
+    /// seconde
+    PlayerPushed {
+        direction: Vec3,
+        speed: f32,
     },
     /// Erreur ou déconnexion
     Disconnect(String),

@@ -17,35 +17,37 @@
     },
     "cooldown": 10,
     "animation": "crossbowShot",
-    "area": {
-      "arc": {
-        "range": 4,
-        "angle": 60
-      }
-    },
-    "targets": "enemies",
-    "effects": [
-      {
-        "damage": {
-          "power": [
-            1.6,
-            1.9,
-            2.2
-          ]
-        }
-      },
-      {
-        "knockback": {
-          "strength": 5
-        }
-      }
-    ],
+    "area": "self",
+    "targets": "self",
     "self_effects": [
       {
-        "buff": {
-          "stat": "defense",
-          "value": 0.6,
-          "duration": 1.5
+        "guard": {
+          "duration": 1.2,
+          "block": 1,
+          "arc": 120,
+          "hits": 1,
+          "kinds": [
+            "physical"
+          ],
+          "counter": {
+            "radius": 1.5,
+            "effects": [
+              {
+                "damage": {
+                  "power": [
+                    1.6,
+                    1.9,
+                    2.2
+                  ]
+                }
+              },
+              {
+                "knockback": {
+                  "strength": 5
+                }
+              }
+            ]
+          }
         }
       }
     ]
@@ -60,12 +62,12 @@
     {
       "effect": "arrowTrail",
       "anchor": "rightHand",
-      "from": "impact"
+      "from": "parry"
     },
     {
       "effect": "impactSpark",
       "anchor": "target",
-      "from": "hit"
+      "from": "parry"
     }
   ]
 }

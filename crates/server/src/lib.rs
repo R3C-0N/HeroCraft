@@ -330,10 +330,28 @@ impl Server {
         let (ids, presences): (Vec<u64>, Vec<herocraft_world::PlayerPresence>) =
             self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching, holding: p.holding, hidden: p.stats.is_invisible() || p.stats.fallen }))).unzip();
         for hit in self.creatures.tick_players(dt, &self.generator, &self.edits, &presences, &ids) {
-            if let Some(player) = self.players.get_mut(&ids[hit.player]) {
-                self.creatures.afflict(&hit, &mut player.stats);
+            let id = ids[hit.player];
+            // Une garde levée pare le coup qui arrive de face, et riposte
+            let facing = self.players.get(&id).and_then(|p| p.position.map(|feet| herocraft_common::yaw_direction(feet, p.yaw)));
+            let parry = self.skill_runner.parry(id, facing, hit.creature_id, hit.damage, "physical", &mut self.creatures, &mut PlayersView(&mut self.players));
+            if let Some(impact) = parry.impact {
+                self.announce_impact(impact);
             }
-            self.creature_attack(ids[hit.player], hit.species, hit.damage);
+            if !parry.parried {
+                let ignores = self.skill_runner.immunities(id);
+                if let Some(player) = self.players.get_mut(&id) {
+                    self.creatures.afflict(&hit, &mut player.stats, &ignores);
+                    let push = player.position.and_then(|feet| self.creatures.knockback(&hit, feet)).filter(|_| !ignores.contains(&herocraft_common::skills::Status::Knockback));
+                    if let Some((direction, speed)) = push {
+                        player.connection.send(&ServerPacket::PlayerPushed { direction, speed });
+                    }
+                }
+            }
+            if parry.damage > 0.0 {
+                self.creature_attack(id, hit.species, parry.damage);
+            } else if let Some(player) = self.players.get(&id) {
+                player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+            }
         }
         let shots = self.creatures.take_shots();
         if !shots.is_empty() {
@@ -737,7 +755,7 @@ impl Server {
     /// Annonce une frappe à tous, et les meurtres et agressions d'habitants qu'elle a faits
     fn announce_impact(&mut self, impact: herocraft_world::SkillImpact) {
         let name = self.players.get(&impact.caster).map(|p| p.name.clone()).unwrap_or_default();
-        self.broadcast(&ServerPacket::SkillHit { player_id: impact.caster, skill: impact.skill, rank: impact.rank, center: impact.center, creatures: impact.creatures, players: impact.players, contact: impact.contact });
+        self.broadcast(&ServerPacket::SkillHit { player_id: impact.caster, skill: impact.skill, rank: impact.rank, center: impact.center, creatures: impact.creatures, players: impact.players, parried: impact.parried, contact: impact.contact });
         for murder in self.creatures.take_murders() {
             self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
         }
@@ -935,6 +953,17 @@ impl Server {
         let tick = self.skill_runner.tick(dt, herocraft_common::skills(), &mut self.creatures, &mut view);
         for impact in tick.impacts {
             self.announce_impact(impact);
+        }
+        for (id, motion) in tick.moves {
+            if let Some(player) = self.players.get(&id) {
+                player.connection.send(&ServerPacket::SkillMove(motion));
+            }
+        }
+        // Une parade ratée : sa recharge s'allonge, le client l'affiche
+        for (id, skill, seconds) in tick.missed {
+            if let Some(player) = self.players.get(&id) {
+                player.connection.send(&ServerPacket::SkillCooldown { skill, seconds });
+            }
         }
         // Vidés de leur sang par un effet sur la durée
         for id in tick.died {

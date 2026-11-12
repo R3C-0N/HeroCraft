@@ -491,3 +491,82 @@ fn le_serveur_accepte_le_labour_et_le_semis() {
     running.store(false, Ordering::Relaxed);
     server_thread.join().unwrap();
 }
+
+#[test]
+fn un_tir_fantome_teleporte_son_lanceur_dans_le_dos_de_la_cible() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let (_, feet) = land(&server);
+    let client = Client::connect(&addr, WAIT).unwrap();
+    client.send(&ClientPacket::Connect { player_name: "Ombre".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
+    client.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
+    client.send(&ClientPacket::GainExperience(100_000));
+    for skill in ["quickShot", "shardShot", "shadowVeil", "ambush", "phantomShot"] {
+        client.send(&ClientPacket::LearnSkill { id: skill.into() });
+    }
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.skills.contains_key("phantomShot")).then_some(()));
+    // Une vache trois blocs devant, sur le même sol
+    let block = server.creatures().block_size();
+    let up = feet.normalize();
+    let ahead = Vec3::X - up * Vec3::X.dot(up);
+    let ahead = ahead.normalize();
+    let cow = server.spawn_creature("vache", (feet + ahead * 3.0 * block).normalize() * feet.length()).expect("une vache");
+    server.tick(1.0 / 60.0);
+
+    client.send(&ClientPacket::CastSkill { skill: "phantomShot".into(), aim: ahead, aimed: None });
+    let (arrival, look) = pump(&mut server, &client, |p| match p {
+        ServerPacket::SkillMove(herocraft_common::skills::SkillMove::Teleport { feet, look }) => Some((feet, look)),
+        ServerPacket::SkillRefused { reason, .. } => panic!("refusé : {reason}"),
+        _ => None,
+    });
+    let at = server.creatures().creatures().iter().find(|c| c.id == cow).unwrap().position;
+    // Dans son dos, vu du lanceur : plus loin que la vache, à un bloc et demi d'elle
+    assert!(arrival.distance(feet) > at.distance(feet), "arrivée {arrival}, vache {at}");
+    assert!((arrival.distance(at) / block - 1.5).abs() < 0.3, "à {} blocs de la vache", arrival.distance(at) / block);
+    assert!(look.dot(at - arrival) > 0.0, "tourné vers elle");
+}
+
+#[test]
+fn une_parade_bloque_le_coup_d_une_bete_et_riposte() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let (_, feet) = land(&server);
+    let client = Client::connect(&addr, WAIT).unwrap();
+    client.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
+    let me = pump(&mut server, &client, |p| match p {
+        ServerPacket::ConnectAck { player_id, .. } => Some(player_id),
+        _ => None,
+    });
+    client.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
+    // Deux points : Brise-Garde, que la Parade Absolue demande, puis elle
+    client.send(&ClientPacket::GainExperience(300));
+    client.send(&ClientPacket::LearnSkill { id: "guardBreaker".into() });
+    client.send(&ClientPacket::LearnSkill { id: "absoluteParry".into() });
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.skills.contains_key("absoluteParry")).then_some(()));
+
+    // Un rampant contre elle : son premier coup porte
+    let block = BlockGeometry::new(herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 4242, ..Default::default() }).base_radius()).block_height as f32;
+    let up = feet.normalize();
+    let side = up.any_orthonormal_vector();
+    let brute = server.spawn_creature("rampant", feet + side * 2.0 * block).expect("espèce rampant");
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::PlayerHurt { .. }).then_some(()));
+
+    // Alice lève sa garde avant le coup suivant (le rampant frappe toutes les 1,4 s)
+    while client.try_recv().expect("connexion fermée").is_some() {}
+    client.send(&ClientPacket::CastSkill { skill: "absoluteParry".into(), aim: side, aimed: None });
+    let (creatures, hurt) = {
+        let mut hurt = false;
+        let found = pump(&mut server, &client, |p| match p {
+            ServerPacket::PlayerHurt { .. } => {
+                hurt = true;
+                None
+            }
+            ServerPacket::SkillHit { player_id, skill, creatures, parried: true, .. } if player_id == me && skill == "absoluteParry" => Some(creatures),
+            _ => None,
+        });
+        (found, hurt)
+    };
+    assert!(!hurt, "le coup paré ne blesse pas");
+    assert!(creatures.contains(&brute), "la riposte renvoie le coup au rampant");
+}

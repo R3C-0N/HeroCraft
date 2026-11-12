@@ -37,6 +37,7 @@ use std::sync::Arc;
 use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
+use herocraft_common::skills::Status;
 use herocraft_common::{blocks, items, tangent_frame, AttackMode, BlockId, ItemId, MOOD_HEARTS, MOOD_SATED, MOOD_TAMED, CreatureAction, CreatureShotEvent, Collider, PLAYER_COLLIDER, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CORPSE_TIME, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -88,6 +89,11 @@ const KNOCKBACK_SPEED: f32 = 6.0;
 const KNOCKBACK_HOP: f32 = 4.5;
 /// Freinage du recul, par seconde
 const KNOCKBACK_DAMPING: f32 = 5.0;
+/// Vitesse d'une bête rabattue au sol par une compétence (`slam`), en blocs par seconde
+const SLAM_SPEED: f32 = 40.0;
+/// Chute sans dommage d'une bête projetée en l'air (`launch`), en blocs, et dégâts par bloc au-delà
+const LAUNCH_SAFE_FALL: f32 = 3.0;
+const LAUNCH_FALL_DAMAGE: f32 = 3.0;
 /// Fuite après un coup : durée, en secondes, et allure par rapport à la marche
 const PANIC_TIME: f32 = 4.0;
 const PANIC_SPEED: f32 = 1.8;
@@ -203,6 +209,15 @@ const NEWBORN_SCALE: f32 = 0.5;
 /// Au-delà, le cache de colonnes est vidé
 const MAX_CACHED_COLUMNS: usize = 4096;
 
+/// Le vol d'une bête projetée par une compétence
+#[derive(Debug, Clone, Copy)]
+struct Flight {
+    /// Altitude la plus haute atteinte, en blocs
+    peak: f32,
+    /// Rabattue : par qui, et combien de dégâts à l'atterrissage
+    slam: Option<(u64, f32)>,
+}
+
 pub struct Creature {
     pub id: u64,
     /// Rang de son espèce dans le registre
@@ -292,6 +307,12 @@ pub struct Creature {
     slow_time: f32,
     /// Étourdie par une compétence : temps restant sans bouger ni frapper, en secondes
     stun: f32,
+    /// Projetée en l'air ou rabattue par une compétence : son vol, jusqu'à ce qu'elle retombe
+    flight: Option<Flight>,
+    /// Elle vient de retomber d'un vol : hauteur de la chute en blocs, et le coup qui l'a rabattue
+    landed: Option<(f32, Option<(u64, f32)>)>,
+    /// Garde brisée (Brise-Garde) : temps restant sans se garder, en secondes
+    guard_broken: f32,
     /// Pressée par une compétence (Surcharge Mécanique) : cadence en plus (0,5 : +50 %) et temps restant
     haste: f32,
     haste_time: f32,
@@ -884,6 +905,9 @@ impl CreatureWorld {
             shield: 0.0,
             shield_time: 0.0,
             stun: 0.0,
+            flight: None,
+            landed: None,
+            guard_broken: 0.0,
             blind: 0.0,
             taunted: None,
             summoner: None,
@@ -1047,6 +1071,7 @@ impl CreatureWorld {
     /// Comme `hit_by`, avec `damage` points de dégâts (une compétence) : `Some(vrai)` si le coup
     /// l'a tuée, `None` si elle n'existe pas ou est déjà morte
     pub fn wound(&mut self, id: u64, from: Vec3, player: u64, damage: f32) -> Option<bool> {
+        let damage = damage * (1.0 - self.guard_against(id, from));
         let victim = self.creatures.iter().find(|c| c.id == id && c.is_alive()).map(|c| (c.herd, c.position, c.managed && self.registry.get(c.species).is_some_and(|s| s.humanoid)));
         let who = self.villages.card(id).map(|card| (card.name.clone(), card.profession.clone(), self.villages.town_of(id).map(str::to_string)));
         let killed = self.strike(id, from, damage, true)?;
@@ -1153,15 +1178,59 @@ impl CreatureWorld {
         }
     }
 
-    /// Ralenti et étourdissement que le coup `hit` laisse au joueur touché (`attack.slow`, `attack.stun`)
-    pub fn afflict(&self, hit: &PlayerHit, stats: &mut herocraft_common::CharacterStats) {
+    /// Ralenti et étourdissement que le coup `hit` laisse au joueur touché (`attack.slow`,
+    /// `attack.stun`), sauf ceux dont il est immunisé (`ignores`)
+    pub fn afflict(&self, hit: &PlayerHit, stats: &mut herocraft_common::CharacterStats, ignores: &[Status]) {
         let Some(attack) = self.registry.get(hit.species).and_then(|s| s.attack.as_ref()) else { return };
-        if let Some([strength, seconds]) = attack.slow {
+        if let Some([strength, seconds]) = attack.slow.filter(|_| !ignores.contains(&Status::Slow)) {
             stats.apply_slow(strength, seconds);
         }
-        if let Some(seconds) = attack.stun {
+        if let Some(seconds) = attack.stun.filter(|_| !ignores.contains(&Status::Stun)) {
             stats.apply_stun(seconds);
         }
+    }
+
+    /// Recul que le coup `hit` donne au joueur aux pieds `feet` : direction (le long du sol, à
+    /// l'opposé de la bête) et vitesse en blocs par seconde (`attack.knockback`)
+    pub fn knockback(&self, hit: &PlayerHit, feet: Vec3) -> Option<(Vec3, f32)> {
+        let strength = self.registry.get(hit.species).and_then(|s| s.attack.as_ref()).and_then(|a| a.knockback).filter(|k| *k > 0.0)?;
+        let from = self.position(hit.creature_id)?;
+        let up = feet.normalize_or_zero();
+        let away = feet - from;
+        let away = (away - up * away.dot(up)).normalize_or_zero();
+        (away != Vec3::ZERO).then_some((away, strength))
+    }
+
+    /// Position de la créature `id`, vivante ou non
+    pub fn position(&self, id: u64) -> Option<Vec3> {
+        self.creatures.iter().find(|c| c.id == id).map(|c| c.position)
+    }
+
+    /// La garde de la créature `id` tombe pendant `duration` secondes (Brise-Garde)
+    pub fn break_guard(&mut self, id: u64, duration: f32) {
+        if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
+            c.guard_broken = c.guard_broken.max(duration);
+        }
+    }
+
+    /// Part des dégâts d'un coup venu de `from` que la garde de la créature `id` retire : celle de
+    /// son espèce si le coup arrive de face, et qu'elle n'est ni étourdie ni brisée
+    pub fn guard_against(&self, id: u64, from: Vec3) -> f32 {
+        let Some(c) = self.creatures.iter().find(|c| c.id == id && c.is_alive()) else { return 0.0 };
+        let Some(guard) = self.registry.get(c.species).and_then(|s| s.guard) else { return 0.0 };
+        if c.stun > 0.0 || c.guard_broken > 0.0 {
+            return 0.0;
+        }
+        if herocraft_common::in_front(herocraft_common::yaw_direction(c.position, c.yaw), c.position, from, guard.arc) {
+            guard.block.clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// La garde de la créature `id` tient en ce moment (elle n'est ni étourdie ni brisée)
+    pub fn guarding(&self, id: u64) -> bool {
+        self.creatures.iter().any(|c| c.id == id && c.is_alive() && c.stun <= 0.0 && c.guard_broken <= 0.0 && self.registry.get(c.species).is_some_and(|s| s.guard.is_some()))
     }
 
     /// Aveuglée en ce moment
@@ -1189,6 +1258,48 @@ impl CreatureWorld {
         let away = (away - up * away.dot(up)).normalize_or_zero();
         c.push = away * speed;
         c.vertical_speed = c.vertical_speed.max(KNOCKBACK_HOP * speed.abs().min(KNOCKBACK_SPEED) / KNOCKBACK_SPEED);
+    }
+
+    /// Projette la créature `id` à `height` blocs en l'air : elle reste étourdie tant qu'elle vole,
+    /// et se blesse en retombant de haut
+    pub fn launch(&mut self, id: u64, height: f32) {
+        let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive() && c.summoner.is_none()) else { return };
+        c.vertical_speed = (2.0 * GRAVITY * height.max(0.0)).sqrt();
+        c.push = Vec3::ZERO;
+        let flight = c.flight.get_or_insert(Flight { peak: f32::MIN, slam: None });
+        flight.slam = None;
+    }
+
+    /// Rabat la créature `id` au sol : à l'atterrissage, elle perd `damage` points de vie, portés par
+    /// le joueur `player`
+    pub fn slam(&mut self, id: u64, player: u64, damage: f32) {
+        let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive() && c.summoner.is_none()) else { return };
+        c.vertical_speed = -SLAM_SPEED;
+        c.push = Vec3::ZERO;
+        c.flight.get_or_insert(Flight { peak: f32::MIN, slam: None }).slam = Some((player, damage));
+    }
+
+    /// La créature `id` vole, projetée par une compétence
+    pub fn is_airborne(&self, id: u64) -> bool {
+        self.creatures.iter().any(|c| c.id == id && c.flight.is_some())
+    }
+
+    /// Les bêtes retombées d'un vol se blessent : la chute au-delà de `LAUNCH_SAFE_FALL` blocs, et le
+    /// coup qui les a rabattues
+    fn land(&mut self) {
+        let block = self.geometry.block_height as f32;
+        let landed: Vec<(u64, Vec3, f32, Option<(u64, f32)>)> = self.creatures.iter_mut().filter_map(|c| c.landed.take().map(|(fall, slam)| (c.id, c.position, fall, slam))).collect();
+        for (id, at, fall, slam) in landed {
+            let (player, hit) = slam.unwrap_or((0, 0.0));
+            let damage = hit + (fall - LAUNCH_SAFE_FALL).max(0.0) * LAUNCH_FALL_DAMAGE;
+            if damage > 0.0 {
+                // Frappée d'en haut : elle ne recule pas
+                self.wound(id, at + at.normalize_or_zero() * block, player, damage);
+                if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id) {
+                    c.push = Vec3::ZERO;
+                }
+            }
+        }
     }
 
     /// Les meurtres d'habitants depuis le dernier appel, à annoncer dans le chat
@@ -1377,6 +1488,7 @@ impl CreatureWorld {
                 }
             }
             c.stun = (c.stun - dt).max(0.0);
+            c.guard_broken = (c.guard_broken - dt).max(0.0);
             c.blind = (c.blind - dt).max(0.0);
             if let Some(t) = c.taunted.as_mut() {
                 t.1 -= dt;
@@ -1772,6 +1884,7 @@ impl CreatureWorld {
         if dt > 0.0 {
             walker.collide(&mut self.creatures, &self.registry, players);
         }
+        self.land();
 
         let mut columns = query.into_columns();
         if columns.len() > MAX_CACHED_COLUMNS {
@@ -2535,6 +2648,9 @@ impl Walker<'_, '_> {
         if altitude <= ground + 1e-4 && c.vertical_speed <= 0.0 {
             altitude = ground;
             c.vertical_speed = 0.0;
+            if let Some(flight) = c.flight.take() {
+                c.landed = Some(((flight.peak - ground).max(0.0), flight.slam));
+            }
         } else {
             c.vertical_speed -= GRAVITY * dt;
             let next = altitude + c.vertical_speed * dt;
@@ -2549,6 +2665,15 @@ impl Walker<'_, '_> {
             }
         }
         c.position = up * radius_of(altitude);
+        if let Some(flight) = c.flight.as_mut() {
+            // En vol, elle ne marche ni ne frappe
+            flight.peak = flight.peak.max(altitude);
+            c.stun = c.stun.max(0.1);
+            if c.vertical_speed == 0.0 && altitude <= ground + 1e-4 {
+                let flight = c.flight.take().unwrap();
+                c.landed = Some(((flight.peak - ground).max(0.0), flight.slam));
+            }
+        }
         let on_ground = altitude <= ground + 1e-4 && c.vertical_speed <= 0.0;
         let swimming = on_ground && self.query.block(BlockPos { y: column.y - 1, ..column }).is_liquid();
         if swimming && !c.swimming {
@@ -2737,6 +2862,45 @@ mod tests {
         }
         let alt = altitude(&geometry, world.creatures()[0].position);
         assert!((alt - (ground.y - 1) as f32).abs() < 1e-2, "altitude {alt} au lieu de {}", ground.y - 1);
+    }
+
+    #[test]
+    fn a_launched_beast_flies_stunned_then_a_slam_hurts_it_on_landing() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let (ground, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 3, registry());
+        world.populate = false;
+        let cow = world.registry().find("cow").or_else(|| world.registry().find("vache")).unwrap();
+        world.spawn(cow, feet);
+        let id = world.creatures()[0].id;
+        let (east, _) = tangent_frame(feet.normalize());
+        let player = feet - east * 30.0 * geometry.block_height as f32;
+        let health = |w: &CreatureWorld| w.creatures()[0].health;
+        let full = health(&world);
+
+        // Projetée à 4 blocs : elle monte, étourdie tant qu'elle vole
+        world.launch(id, 4.0);
+        let mut peak = 0.0f32;
+        for _ in 0..12 {
+            world.tick(0.05, &generator, &edits, &[player]);
+            peak = peak.max(altitude(&geometry, world.creatures()[0].position) - ground.y as f32);
+            assert!(world.creatures()[0].stun > 0.0, "étourdie en vol");
+        }
+        assert!((3.5..4.5).contains(&peak), "montée à {peak} blocs");
+        assert!(world.is_airborne(id));
+
+        // Rabattue : elle tombe aussitôt et prend le coup à l'atterrissage
+        world.slam(id, 9, 20.0);
+        for _ in 0..10 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        assert!(!world.is_airborne(id), "posée au sol");
+        let alt = altitude(&geometry, world.creatures()[0].position);
+        assert!((alt - ground.y as f32).abs() < 0.05, "altitude {alt}");
+        let lost = full - health(&world);
+        assert!(lost >= 20.0, "le coup rabattu blesse : {lost} points");
     }
 
     /// Cap qui mène du centre de la colonne `from` vers celui de `to`
@@ -4240,15 +4404,29 @@ mod tests {
         let (generator, edits, mut world, _, player) = beasts_and_player("gorgone", 1, 1.0, 44);
         let hits = hits_over(&mut world, &generator, &edits, player, 5.0);
         let mut stats = herocraft_common::CharacterStats::new(herocraft_common::PlayerClass::Adventurer);
-        world.afflict(hits.first().expect("la gorgone n'a pas frappé"), &mut stats);
+        world.afflict(hits.first().expect("la gorgone n'a pas frappé"), &mut stats, &[]);
         assert!(stats.slow > 0.0 && stats.slow_time > 0.0, "la gorgone ne ralentit pas");
         assert!(stats.status_speed() < 1.0);
 
         let brute = world.registry().find("brute").unwrap();
         let hit = PlayerHit { player: 0, creature_id: 0, species: brute, damage: 1.0 };
-        world.afflict(&hit, &mut stats);
+        world.afflict(&hit, &mut stats, &[]);
         assert!(stats.is_stunned() && stats.status_speed() == 0.0, "la brute n'étourdit pas");
         stats.tick_status(1.0);
         assert!(!stats.is_stunned(), "l'étourdissement ne passe pas");
     }
+
+    #[test]
+    fn a_charging_brute_knocks_the_player_back_unless_immune() {
+        let (generator, edits, mut world, _, player) = beasts_and_player("brute", 1, 1.0, 44);
+        let hits = hits_over(&mut world, &generator, &edits, player, 8.0);
+        let hit = hits.first().expect("la brute n'a pas frappé");
+        let (direction, speed) = world.knockback(hit, player).expect("la brute repousse");
+        let from = world.position(hit.creature_id).unwrap();
+        assert!(direction.dot(player - from) > 0.0 && speed > 0.0, "le recul éloigne de la bête");
+        let mut stats = herocraft_common::CharacterStats::new(herocraft_common::PlayerClass::Adventurer);
+        world.afflict(hit, &mut stats, &[Status::Stun]);
+        assert!(!stats.is_stunned(), "immunisé, il n'est pas étourdi");
+    }
 }
+
