@@ -26,6 +26,10 @@
         ]
       }
     },
+    "zone": {
+      "duration": 6,
+      "follow": true
+    },
     "targets": "enemies",
     "effects": [
       {
@@ -42,6 +46,17 @@
         "pull": {
           "strength": 4
         }
+      },
+      {
+        "over_time": {
+          "heal": [
+            5,
+            6,
+            7
+          ],
+          "duration": 6
+        },
+        "to": "summons"
       }
     ],
     "self_effects": [

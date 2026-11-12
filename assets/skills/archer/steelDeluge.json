@@ -28,6 +28,9 @@
         "distance": 16
       }
     },
+    "zone": {
+      "duration": 5
+    },
     "targets": "enemies",
     "effects": [
       {
@@ -66,7 +69,8 @@
     {
       "effect": "arrowTrail",
       "anchor": "area",
-      "from": "impact"
+      "from": "impact",
+      "to": "effectEnd"
     },
     {
       "effect": "dustPuff",

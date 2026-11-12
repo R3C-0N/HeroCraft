@@ -26,6 +26,9 @@
         ]
       }
     },
+    "zone": {
+      "duration": 8
+    },
     "targets": "allies",
     "effects": [
       {
@@ -44,14 +47,21 @@
           "value": 0.25,
           "duration": 8
         }
+      },
+      {
+        "invisible": {
+          "duration": 8
+        },
+        "to": "self"
       }
     ]
   },
   "visuals": [
     {
       "effect": "mistCloud",
-      "anchor": "feet",
-      "from": "impact"
+      "anchor": "area",
+      "from": "impact",
+      "to": "effectEnd"
     },
     {
       "effect": "windSwirl",

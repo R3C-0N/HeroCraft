@@ -24,6 +24,9 @@
         "distance": 6
       }
     },
+    "zone": {
+      "duration": 6
+    },
     "targets": "enemies",
     "effects": [
       {

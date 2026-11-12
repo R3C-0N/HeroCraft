@@ -24,6 +24,9 @@
         "distance": 10
       }
     },
+    "zone": {
+      "duration": 6
+    },
     "targets": "all",
     "effects": [
       {
@@ -54,7 +57,8 @@
     {
       "effect": "runeCircle",
       "anchor": "area",
-      "from": "impact"
+      "from": "impact",
+      "to": "effectEnd"
     },
     {
       "effect": "healSparkles",

@@ -1053,6 +1053,14 @@ impl CreatureWorld {
 
     /// Ralentit la créature `id` de `strength` (0 à 1) pendant `duration` secondes ; un ralenti plus
     /// fort ou plus long que celui qu'elle subit le remplace
+    /// Rend `amount` points de vie à la créature `id`, sans dépasser ceux de son espèce
+    pub fn heal(&mut self, id: u64, amount: f32) {
+        if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
+            let full = self.registry.get(c.species).map_or(c.health, |s| s.health);
+            c.health = (c.health + amount.max(0.0)).min(full.max(c.health));
+        }
+    }
+
     pub fn slow(&mut self, id: u64, strength: f32, duration: f32) {
         if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
             c.slow = c.slow.max(strength.clamp(0.0, 1.0));

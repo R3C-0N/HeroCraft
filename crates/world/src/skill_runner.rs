@@ -148,6 +148,44 @@ struct Link {
     hits: Option<u32>,
 }
 
+/// Une zone qui reste posée (`Cast::zone`) : son lancement, où était le lanceur, si elle le suit,
+/// secondes restantes et temps avant de rejouer ses effets
+#[derive(Debug, Clone)]
+struct Zone {
+    pending: Pending,
+    feet: Vec3,
+    follow: bool,
+    left: f32,
+    next: f32,
+}
+
+/// Intervalle entre deux passages d'une zone sur ceux qui s'y trouvent, en secondes
+const ZONE_STEP: f32 = 0.5;
+/// Durée des états qu'une zone donne (ralenti, invisibilité, renforcement…) : ils cessent dès qu'on
+/// en sort, la zone les redonne à chaque passage
+const ZONE_HOLD: f32 = 2.0 * ZONE_STEP;
+
+/// L'effet `entry` tel qu'une zone qui reste le joue : à sa frappe (`first`) ou à un passage. Les
+/// effets d'un coup ne jouent qu'à la frappe ; ceux qui durent sont raccourcis au passage suivant.
+fn zone_entry(entry: &EffectEntry, first: bool) -> Option<EffectEntry> {
+    use herocraft_common::skills::Ranked;
+    let hold = Ranked::One(ZONE_HOLD);
+    let effect = match &entry.effect {
+        Effect::OverTime { damage, heal, moving, .. } => Effect::OverTime { damage: damage.clone(), heal: heal.clone(), duration: Ranked::One(ZONE_STEP), moving: moving.clone() },
+        Effect::Slow { strength, .. } => Effect::Slow { strength: strength.clone(), duration: hold },
+        Effect::Blind { .. } => Effect::Blind { duration: hold },
+        Effect::Invisible { .. } => Effect::Invisible { duration: hold },
+        Effect::Taunt { .. } => Effect::Taunt { duration: hold },
+        Effect::Mark { chance, .. } => Effect::Mark { chance: chance.clone(), duration: hold },
+        Effect::Buff { stat, value, against, per_missing_health, on_death, rider, .. } => {
+            Effect::Buff { stat: *stat, value: value.clone(), duration: hold, against: against.clone(), per_missing_health: *per_missing_health, on_death: on_death.clone(), rider: rider.clone() }
+        }
+        other if first => other.clone(),
+        _ => return None,
+    };
+    Some(EffectEntry { effect, to: entry.to })
+}
+
 /// Une entité invoquée, suivie jusqu'à sa disparition
 #[derive(Debug, Clone)]
 struct Summoned {
@@ -191,6 +229,8 @@ pub struct SkillRunner {
     recent: HashMap<u64, Vec<String>>,
     /// Alliés liés à un lanceur (Marque du Martyr, Intervention Vertueuse)
     links: Vec<Link>,
+    /// Zones qui restent posées après leur frappe
+    zones: Vec<Zone>,
 }
 
 /// Facteur des dégâts d'un coup critique
@@ -446,6 +486,7 @@ impl SkillRunner {
         self.marks.retain(|m| m.0 != player);
         self.recent.remove(&player);
         self.links.retain(|l| l.caster != player && l.ally != player);
+        self.zones.retain(|z| z.pending.caster != player);
         self.cooldowns.retain(|(p, _), _| *p != player);
     }
 
@@ -527,6 +568,8 @@ impl SkillRunner {
             }
         }
 
+        self.pulse_zones(dt, catalog, creatures, players, &mut out.changed);
+
         let block = creatures.block_size();
         let mut finished = Vec::new();
         let mut fell = Vec::new();
@@ -607,42 +650,18 @@ impl SkillRunner {
         let center = area.center(feet);
         let damage_factor = (1.0 + self.buff(p.caster, BuffStat::Damage)) * p.power;
 
-        // Les cibles de la zone : créatures vivantes (les bêtes apprivoisées sont des alliées) et joueurs
-        let in_area = |point: Vec3| area.contains(point, block);
-        let creature_hits: Vec<(u64, bool)> = creatures.creatures().iter().filter(|c| c.is_alive() && in_area(c.position)).map(|c| (c.id, c.tamed)).collect();
-        let player_hits: Vec<u64> = players
-            .ids()
-            .into_iter()
-            .filter(|&id| id == p.caster && matches!(area, PlacedArea::Caster) || players.feet(id).is_some_and(in_area))
-            .collect();
-
-        let mut touched_creatures = Vec::new();
-        let mut touched_players = Vec::new();
-        let groups = [(cast.targets, &cast.effects)];
-        for (targets, effects) in groups {
-            for entry in effects.iter() {
-                let to = entry.to.unwrap_or(targets);
-                for &(id, tamed) in &creature_hits {
-                    let hostile = !tamed;
-                    if matches!(to, Targets::All) || (to == Targets::Enemies && hostile) || (to == Targets::Allies && !hostile) {
-                        self.apply_to_creature(entry, p, id, feet, damage_factor, creatures);
-                        touched_creatures.push(id);
-                    }
-                }
-                for &id in &player_hits {
-                    let applies = match to {
-                        Targets::Allies | Targets::All => true,
-                        Targets::Caster => id == p.caster,
-                        Targets::Enemies => false,
-                    };
-                    if applies {
-                        self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, id, players);
-                        touched_players.push(id);
-                        changed.push(id);
-                    }
-                }
+        // Dans une zone qui reste, les effets qui durent valent tant qu'on s'y trouve
+        let staying: Vec<EffectEntry>;
+        let effects = match &cast.zone {
+            Some(zone) => {
+                staying = cast.effects.iter().filter_map(|e| zone_entry(e, true)).collect();
+                self.zones.push(Zone { pending: Pending { aimed, crit: false, ..p.clone() }, feet, follow: zone.follow, left: zone.duration.at(p.rank), next: ZONE_STEP });
+                &staying
             }
-        }
+            None => &cast.effects,
+        };
+        let (mut touched_creatures, mut touched_players, creature_hits) = self.sweep(cast.targets, effects, p, feet, &area, damage_factor, creatures, players);
+        changed.extend(&touched_players);
         for entry in &cast.self_effects {
             self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, p.caster, players);
             changed.push(p.caster);
@@ -677,6 +696,82 @@ impl SkillRunner {
         touched_players.sort_unstable();
         touched_players.dedup();
         Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched_creatures, players: touched_players, summoned })
+    }
+
+    /// Applique les effets `effects` à ceux qui se trouvent dans la zone `area` : les créatures et
+    /// les joueurs touchés, et les créatures vivantes de la zone (identifiant, alliée ou non)
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn sweep(&mut self, targets: Targets, effects: &[EffectEntry], p: &Pending, feet: Vec3, area: &PlacedArea, damage_factor: f32, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> (Vec<u64>, Vec<u64>, Vec<(u64, bool)>) {
+        let block = creatures.block_size();
+        // Les cibles de la zone : créatures vivantes (les bêtes apprivoisées sont des alliées) et joueurs
+        let in_area = |point: Vec3| area.contains(point, block);
+        let found: Vec<(u64, bool, bool)> = creatures.creatures().iter().filter(|c| c.is_alive() && in_area(c.position)).map(|c| (c.id, c.tamed, c.summoner == Some(p.caster))).collect();
+        let player_hits: Vec<u64> = players
+            .ids()
+            .into_iter()
+            .filter(|&id| id == p.caster && matches!(area, PlacedArea::Caster) || players.feet(id).is_some_and(in_area))
+            .collect();
+        let mut touched_creatures = Vec::new();
+        let mut touched_players = Vec::new();
+        for entry in effects {
+            let to = entry.to.unwrap_or(targets);
+            for &(id, tamed, mine) in &found {
+                let applies = match to {
+                    Targets::All => true,
+                    Targets::Enemies => !tamed,
+                    Targets::Allies => tamed,
+                    Targets::Summons => mine,
+                    Targets::Caster => false,
+                };
+                if applies {
+                    self.apply_to_creature(entry, p, id, feet, damage_factor, creatures);
+                    touched_creatures.push(id);
+                }
+            }
+            for &id in &player_hits {
+                let applies = match to {
+                    Targets::Allies | Targets::All => true,
+                    Targets::Caster => id == p.caster,
+                    Targets::Enemies | Targets::Summons => false,
+                };
+                if applies {
+                    self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, id, players);
+                    touched_players.push(id);
+                }
+            }
+        }
+        (touched_creatures, touched_players, found.into_iter().map(|(id, tamed, _)| (id, tamed)).collect())
+    }
+
+    /// Les zones qui restent posées rejouent leurs effets sur ceux qui s'y trouvent
+    fn pulse_zones(&mut self, dt: f32, catalog: &SkillCatalog, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, changed: &mut Vec<u64>) {
+        let block = creatures.block_size();
+        let mut zones = std::mem::take(&mut self.zones);
+        for zone in &mut zones {
+            zone.left -= dt;
+            zone.next -= dt;
+            if zone.next > 0.0 || zone.left <= 0.0 {
+                continue;
+            }
+            zone.next += ZONE_STEP;
+            let p = &zone.pending;
+            let Some(cast) = catalog.get(&p.skill).and_then(|d| d.cast.as_ref()) else { continue };
+            // Une aura suit son lanceur ; sinon la zone reste où elle a été posée
+            let feet = if zone.follow { players.feet(p.caster).unwrap_or(zone.feet) } else { zone.feet };
+            let area = cast.area.place_scaled(p.rank, feet, p.aim, p.aimed, block, p.size, 1.0);
+            let effects: Vec<EffectEntry> = cast.effects.iter().filter_map(|e| zone_entry(e, false)).collect();
+            let damage_factor = (1.0 + self.buff(p.caster, BuffStat::Damage)) * p.power;
+            let (_, touched, _) = self.sweep(cast.targets, &effects, p, feet, &area, damage_factor, creatures, players);
+            changed.extend(touched);
+        }
+        zones.retain(|z| z.left > 0.0);
+        zones.append(&mut self.zones);
+        self.zones = zones;
+    }
+
+    /// Zones encore posées : compétence, lanceur et secondes restantes
+    pub fn zones(&self) -> impl Iterator<Item = (&str, u64, f32)> + '_ {
+        self.zones.iter().map(|z| (z.pending.skill.as_str(), z.pending.caster, z.left))
     }
 
     /// Les apparitions d'une frappe, une fois par lancement : en cercle autour de leur point,
@@ -766,11 +861,17 @@ impl SkillRunner {
                 self.marks.retain(|m| !(m.0 == p.caster && m.1 == id));
                 self.marks.push((p.caster, id, chance.at(rank), duration.at(rank)));
             }
+            Effect::Heal { amount } => creatures.heal(id, amount.at(rank) * p.power),
             Effect::Slow { strength, duration } => creatures.slow(id, strength.at(rank), duration.at(rank)),
             Effect::Stun { duration } => creatures.stun(id, duration.at(rank)),
             Effect::Knockback { strength } => creatures.shove(id, feet, strength.at(rank) * p.power),
             Effect::Pull { strength } => creatures.shove(id, feet, -strength.at(rank) * p.power),
-            Effect::OverTime { damage, duration, moving, .. } => {
+            Effect::OverTime { damage, heal, duration, moving } => {
+                // Un soin sur la durée d'une bête alliée : rendu d'un coup, par passage d'une zone ou
+                // pour toute sa durée
+                if let Some(heal) = heal {
+                    creatures.heal(id, heal.at(rank) * duration.at(rank) * p.power);
+                }
                 if let Some(damage) = damage {
                     self.over_time.push(OverTime {
                         caster: p.caster,
@@ -783,8 +884,8 @@ impl SkillRunner {
                     });
                 }
             }
-            // Sans effet sur une bête : soins, boucliers, renforcements, invisibilité, résurrection, lien
-            Effect::Heal { .. } | Effect::Shield { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } | Effect::Sacrifice { .. } => {}
+            // Sans effet sur une bête : boucliers, renforcements, invisibilité, résurrection, lien
+            Effect::Shield { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } | Effect::Sacrifice { .. } => {}
         }
     }
 
@@ -1284,6 +1385,158 @@ mod tests {
         let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
         until_impact(&mut runner, &catalog, &mut creatures, &mut player);
         assert!(stats.hp >= 50.0, "30 points rendus autour du cadavre");
+    }
+
+    /// Lance `skill` (rang 1) au point `aimed` et avance jusqu'à sa frappe
+    fn cast_at(runner: &mut SkillRunner, catalog: &SkillCatalog, creatures: &mut CreatureWorld, stats: &mut CharacterStats, feet: Vec3, skill: &str, aimed: Option<Vec3>) {
+        stats.skills.insert(skill.into(), 1);
+        stats.mana = 100.0;
+        stats.stamina = 100.0;
+        runner.cast(catalog, 1, stats, skill, Vec3::NEG_Z, aimed).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats };
+        until_impact(runner, catalog, creatures, &mut player);
+    }
+
+    /// Avance de `seconds`, le joueur 1 aux pieds `feet`
+    fn pass(runner: &mut SkillRunner, catalog: &SkillCatalog, creatures: &mut CreatureWorld, stats: &mut CharacterStats, feet: Vec3, seconds: f32) {
+        let mut player = SoloPlayer { id: 1, feet, stats };
+        for _ in 0..(seconds / 0.1).round() as usize {
+            runner.tick(0.1, catalog, creatures, &mut player);
+        }
+    }
+
+    #[test]
+    fn a_miasma_cloud_stays_and_catches_those_who_enter_later() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let block = creatures.block_size();
+        let cow = creatures.creatures()[0].id;
+        creatures.creature_mut(cow).unwrap().health = 1000.0;
+        let spot = feet + Vec3::new(8.0 * block, 0.0, 0.0);
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        // Le nuage est posé loin de la bête : elle n'a rien
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "miasmaCloud", Some(spot));
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
+        assert_eq!(health(&creatures, cow), 1000.0);
+        // Elle y entre : le nuage la ronge
+        creatures.creature_mut(cow).unwrap().position = spot;
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
+        let inside = health(&creatures, cow);
+        assert!(inside < 1000.0, "entrée après la frappe, elle est touchée");
+        // Elle en sort : plus rien, alors que le nuage dure encore
+        creatures.creature_mut(cow).unwrap().position = feet + Vec3::new(0.0, 0.0, -30.0 * block);
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
+        let left = health(&creatures, cow);
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 2.0);
+        assert_eq!(health(&creatures, cow), left, "sortie du nuage, elle ne souffre plus");
+        assert_eq!(runner.zones().count(), 1);
+        // Le nuage se dissipe au bout de ses 8 secondes
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 4.0);
+        assert_eq!(runner.zones().count(), 0);
+    }
+
+    #[test]
+    fn a_sanctuary_burns_enemies_and_heals_allies_inside() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let cow = creatures.creatures()[0].id;
+        creatures.creature_mut(cow).unwrap().health = 1000.0;
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "sanctuary", Some(feet));
+        stats.hp = 10.0;
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 2.0);
+        assert!(stats.hp >= 13.0, "soigné dans le sanctuaire : {}", stats.hp);
+        assert!(health(&creatures, cow) < 1000.0);
+        // Sorti du sanctuaire, le soin cesse
+        let away = feet + Vec3::new(30.0 * creatures.block_size(), 0.0, 0.0);
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, away, 1.0);
+        let hp = stats.hp;
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, away, 2.0);
+        assert_eq!(stats.hp, hp);
+    }
+
+    #[test]
+    fn a_soothing_mist_hides_its_caster_only_while_inside() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        // Le mélange se lance par la Fusion : ici la frappe est posée telle quelle
+        runner.pending.push(Pending { caster: 1, skill: "soothingMist".into(), rank: 1, aim: Vec3::NEG_Z, aimed: None, left: 0.0, crit: false, power: 1.0, size: 1.0 });
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 0.1);
+        assert!(stats.is_invisible());
+        // Le brouillard le recache tant qu'il y reste
+        for _ in 0..30 {
+            stats.tick_status(0.1);
+            pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 0.1);
+        }
+        assert!(stats.is_invisible(), "caché tant qu'il est dans le brouillard");
+        // Il en sort : le brouillard reste où il a été posé
+        let away = feet + Vec3::new(30.0 * creatures.block_size(), 0.0, 0.0);
+        for _ in 0..15 {
+            stats.tick_status(0.1);
+            pass(&mut runner, &catalog, &mut creatures, &mut stats, away, 0.1);
+        }
+        assert!(!stats.is_invisible(), "dévoilé hors du brouillard");
+    }
+
+    #[test]
+    fn a_vigor_aura_follows_its_caster_and_speeds_stamina_recovery() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "vigorAura", None);
+        // L'aura suit le paladin, même loin d'où il l'a lancée
+        let away = feet + Vec3::new(30.0 * creatures.block_size(), 0.0, 0.0);
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, away, 3.0);
+        stats.stamina = 0.0;
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, away, 2.0);
+        assert!((stats.stamina - 6.0).abs() < 0.5, "+30 % de la récupération au repos : {}", stats.stamina);
+        // L'aura finie, plus rien
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, away, 12.0);
+        stats.stamina = 0.0;
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, away, 1.0);
+        assert_eq!(stats.stamina, 0.0);
+    }
+
+    #[test]
+    fn a_soul_storm_heals_the_casters_summons_inside() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let block = creatures.block_size();
+        let skeleton = creatures.registry().find("skeletonServant").unwrap();
+        let mine = creatures.summon(skeleton, feet + Vec3::new(block, 0.0, 0.0), 0.0, 1);
+        let theirs = creatures.summon(skeleton, feet + Vec3::new(-block, 0.0, 0.0), 0.0, 2);
+        creatures.creature_mut(mine).unwrap().health = 5.0;
+        creatures.creature_mut(theirs).unwrap().health = 5.0;
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "soulStorm", None);
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
+        assert!(health(&creatures, mine) > 5.0, "l'invocation du lanceur est soignée");
+        assert_eq!(health(&creatures, theirs), 5.0, "pas celle d'un autre");
+    }
+
+    #[test]
+    fn a_magma_wall_leaves_a_lava_pool_that_burns_who_crosses_it() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let block = creatures.block_size();
+        let cow = creatures.creatures()[0].id;
+        creatures.creature_mut(cow).unwrap().health = 1000.0;
+        let spot = feet + Vec3::new(5.0 * block, 0.0, 0.0);
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        // Le mélange se lance par la Fusion : ici la frappe est posée telle quelle
+        runner.pending.push(Pending { caster: 1, skill: "magmaWall".into(), rank: 1, aim: Vec3::NEG_Z, aimed: Some(spot), left: 0.0, crit: false, power: 1.0, size: 1.0 });
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 0.5);
+        assert_eq!(runner.summoned_by(1).count(), 1, "le mur est là");
+        creatures.creature_mut(cow).unwrap().position = spot + Vec3::new(block, 0.0, 0.0);
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
+        assert!(health(&creatures, cow) < 1000.0, "la lave brûle qui la traverse");
     }
 
     #[test]

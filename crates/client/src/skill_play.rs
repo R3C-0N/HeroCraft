@@ -340,7 +340,8 @@ impl SkillPlay {
         let amplified = self.amplified.iter().position(|(p, s, _)| *p == who && *s == shown.skill).map(|i| self.amplified.remove(i)).is_some();
         let amplify = catalog.fusion().and_then(|f| f.fusion.as_ref()).map(|f| f.amplify.clone()).filter(|_| amplified);
         let size = amplify.as_ref().map_or(1.0, |a| a.area);
-        let effect_end = effect_seconds(&cast.effects, shown.rank);
+        // Une zone qui reste se montre tant qu'elle dure
+        let effect_end = effect_seconds(&cast.effects, shown.rank).max(cast.zone.as_ref().map_or(0.0, |z| z.duration.at(shown.rank)));
         let self_end = effect_seconds(&cast.self_effects, shown.rank);
         // Renforcements de vitesse qui nous touchent : les nôtres, et ceux d'un allié sur nous
         let mine = shown.caster.is_none_or(|c| c == self.me);

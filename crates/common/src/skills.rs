@@ -181,6 +181,8 @@ pub enum Targets {
     #[serde(rename = "self")]
     Caster,
     All,
+    /// Les entités invoquées par le lanceur
+    Summons,
 }
 
 /// Ce que subit une cible
@@ -297,6 +299,20 @@ pub enum Effect {
     Revive { health: Ranked },
 }
 
+/// Une zone qui reste posée après la frappe (`Cast::zone`). Deux fois par seconde, elle rejoue les
+/// effets qui durent sur ceux qui s'y trouvent : les dégâts et soins par seconde comptent tant
+/// qu'on y est, ralenti, aveuglement, invisibilité et renforcements cessent quand on en sort. La
+/// durée de ces effets est celle de la zone. Les effets d'un coup (dégâts, soin, recul,
+/// étourdissement, invocation) ne jouent qu'à la frappe.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Zone {
+    /// Secondes que dure la zone
+    pub duration: Ranked,
+    /// Elle suit le lanceur (une aura) au lieu de rester où elle a été posée
+    #[serde(default)]
+    pub follow: bool,
+}
+
 /// Des effets joués dans un rayon autour d'un point : un cadavre (`Cast::on_kill`), les cibles d'une
 /// attaque (`rider`), le joueur qui tombe (`on_death`). Chaque effet dit à qui il va (`to`) : les
 /// ennemis par défaut.
@@ -395,6 +411,10 @@ pub struct Cast {
     /// à portée
     #[serde(default)]
     pub homing: bool,
+    /// La zone reste posée : ses effets valent tant qu'on s'y trouve, pour qui y entre après la
+    /// frappe aussi
+    #[serde(default)]
+    pub zone: Option<Zone>,
     /// Effets sur le lanceur pour chaque ennemi que la frappe touche
     #[serde(default)]
     pub on_hit: Vec<EffectEntry>,

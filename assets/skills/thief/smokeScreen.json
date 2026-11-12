@@ -26,6 +26,9 @@
         ]
       }
     },
+    "zone": {
+      "duration": 5
+    },
     "targets": "enemies",
     "effects": [
       {
@@ -38,33 +41,33 @@
         "blind": {
           "duration": 5
         }
-      }
-    ],
-    "self_effects": [
+      },
       {
         "invisible": {
           "duration": 5
-        }
+        },
+        "to": "self"
       },
       {
         "buff": {
           "stat": "defense",
           "value": 0.5,
           "duration": 5
-        }
+        },
+        "to": "self"
       }
     ]
   },
   "visuals": [
     {
       "effect": "shadowSmoke",
-      "anchor": "feet",
+      "anchor": "area",
       "from": "impact",
       "to": "effectEnd"
     },
     {
       "effect": "mistCloud",
-      "anchor": "feet",
+      "anchor": "area",
       "from": "impact"
     }
   ]
