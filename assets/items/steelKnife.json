@@ -2,6 +2,7 @@
   "numeric_id": 16838,
   "name": "Couteau en acier",
   "category": "Outils",
+  "weapon": {"kind": "dagger", "interval": 0.25},
   "max_stack": 1,
   "icon": "icones/steelKnife.png",
   "stats": {"Dégâts": 6, "Durabilité": 2000},

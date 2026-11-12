@@ -2,6 +2,7 @@
   "numeric_id": 16544,
   "name": "Sabre d'acier",
   "category": "Armes",
+  "weapon": {"kind": "sword", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/steelSabre.png",
   "stats": {"Dégâts": 13, "Durabilité": 2000},

@@ -2,6 +2,7 @@
   "numeric_id": 16825,
   "name": "Pioche en mithril",
   "category": "Outils",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/mithrilPickaxe.png",
   "stats": {"Dégâts": 8, "Durabilité": 3000},

@@ -2,6 +2,7 @@
   "numeric_id": 16409,
   "name": "Bâton d'âmes de bronze",
   "category": "Armes",
+  "weapon": {"kind": "staff", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/bronzeSoulStaff.png",
   "stats": {"Dégâts": 7, "Durabilité": 500},

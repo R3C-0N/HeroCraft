@@ -2,6 +2,7 @@
   "numeric_id": 16514,
   "name": "Bouclier de mithril",
   "category": "Armes",
+  "weapon": {"kind": "shield", "interval": 0.6},
   "max_stack": 1,
   "icon": "icones/mithrilShield.png",
   "stats": {"Dégâts": 6, "Durabilité": 3000},

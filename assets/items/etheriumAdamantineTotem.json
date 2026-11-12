@@ -2,6 +2,7 @@
   "numeric_id": 16444,
   "name": "Totem d'étherium (adamantine)",
   "category": "Armes",
+  "weapon": {"kind": "staff", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/etheriumAdamantineTotem.png",
   "stats": {"Dégâts": 21, "Durabilité": 5000},

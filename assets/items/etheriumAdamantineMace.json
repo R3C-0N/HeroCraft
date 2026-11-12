@@ -2,6 +2,7 @@
   "numeric_id": 16435,
   "name": "Masse d'étherium (adamantine)",
   "category": "Armes",
+  "weapon": {"kind": "mace", "interval": 0.55},
   "max_stack": 1,
   "icon": "icones/etheriumAdamantineMace.png",
   "stats": {"Dégâts": 28, "Durabilité": 5000},

@@ -2,6 +2,7 @@
   "numeric_id": 16402,
   "name": "Dague de bronze",
   "category": "Armes",
+  "weapon": {"kind": "dagger", "interval": 0.25},
   "max_stack": 1,
   "icon": "icones/bronzeDagger.png",
   "stats": {"Dégâts": 8, "Durabilité": 500},

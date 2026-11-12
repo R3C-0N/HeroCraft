@@ -2,6 +2,7 @@
   "numeric_id": 16479,
   "name": "Gantelet runique en silex",
   "category": "Armes",
+  "weapon": {"kind": "gauntlet", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/flintGauntlet.png",
   "stats": {"Dégâts": 4, "Durabilité": 150},

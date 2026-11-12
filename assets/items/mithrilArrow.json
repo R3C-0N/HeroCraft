@@ -2,6 +2,7 @@
   "numeric_id": 16505,
   "name": "Flèche de mithril",
   "category": "Armes",
+  "ammo": "arrow",
   "max_stack": 99,
   "icon": "icones/mithrilArrow.png",
   "stats": {"Dégâts": 11},

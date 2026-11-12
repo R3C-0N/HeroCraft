@@ -2,6 +2,7 @@
   "numeric_id": 16410,
   "name": "Lance de bronze",
   "category": "Armes",
+  "weapon": {"kind": "spear", "interval": 0.5, "reach": 1},
   "max_stack": 1,
   "icon": "icones/bronzeSpear.png",
   "stats": {"Dégâts": 12, "Durabilité": 500},

@@ -2,6 +2,7 @@
   "numeric_id": 16828,
   "name": "Houe en orichalque",
   "category": "Outils",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/orichalcumHoe.png",
   "stats": {"Dégâts": 4, "Durabilité": 3000},

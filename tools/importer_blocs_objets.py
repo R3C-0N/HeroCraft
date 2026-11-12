@@ -158,6 +158,16 @@ def ecrire(chemin, fiche):
         for champ in ("drop", "loot", "recipes"):
             if champ not in fiche and champ in ancienne and (ancienne[champ] or champ == "drop"):
                 fiche = {**fiche, champ: ancienne[champ]}
+        # L'arme et la munition (voir `assets/items/README.md`), juste après la rubrique ; une arme
+        # ne s'empile pas
+        gardes = {champ: ancienne[champ] for champ in ("weapon", "ammo") if champ in ancienne and champ not in fiche}
+        if gardes:
+            rangee = {}
+            for k, x in fiche.items():
+                rangee[k] = 1 if k == "max_stack" and "weapon" in gardes else x
+                if k == "category":
+                    rangee.update(gardes)
+            fiche = rangee
     c = lambda v: json.dumps(v, ensure_ascii=False, separators=(", ", ": "))
     # Les recettes et le butin, une ligne par entrée
     v = lambda k, v: "[\n" + ",\n".join(f"    {c(r)}" for r in v) + "\n  ]" if k in ("recipes", "loot") and v else c(v)

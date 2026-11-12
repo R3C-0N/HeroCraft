@@ -2,6 +2,7 @@
   "numeric_id": 16399,
   "name": "Flèche de bronze",
   "category": "Armes",
+  "ammo": "arrow",
   "max_stack": 99,
   "icon": "icones/bronzeArrow.png",
   "stats": {"Dégâts": 6},

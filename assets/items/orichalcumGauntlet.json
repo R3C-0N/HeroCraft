@@ -2,6 +2,7 @@
   "numeric_id": 16524,
   "name": "Gantelet runique d'orichalque",
   "category": "Armes",
+  "weapon": {"kind": "gauntlet", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/orichalcumGauntlet.png",
   "stats": {"Dégâts": 20, "Durabilité": 3000},

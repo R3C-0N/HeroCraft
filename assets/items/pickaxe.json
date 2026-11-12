@@ -2,6 +2,7 @@
   "numeric_id": 16832,
   "name": "Stone Pickaxe",
   "category": "Outils",
-  "max_stack": 64,
+  "weapon": {"kind": "tool", "interval": 0.5},
+  "max_stack": 1,
   "icon": "icones/pickaxe.png"
 }

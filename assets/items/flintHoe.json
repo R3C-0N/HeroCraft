@@ -2,6 +2,7 @@
   "numeric_id": 16813,
   "name": "Houe en silex",
   "category": "Outils",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/flintHoe.png",
   "stats": {"Dégâts": 1, "Durabilité": 150},

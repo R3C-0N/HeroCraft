@@ -134,6 +134,12 @@ pub struct ItemSheet {
     /// ou `ring`), pour une armure ou un bijou
     #[serde(default)]
     pub slot: Option<EquipSlot>,
+    /// Arme : famille, intervalle entre deux coups, munition et chargeur (voir `weapons`)
+    #[serde(default)]
+    pub weapon: Option<crate::weapons::WeaponSheet>,
+    /// Munition : tirée par un arc (`arrow`) ou une arbalète (`bolt`)
+    #[serde(default)]
+    pub ammo: Option<crate::weapons::AmmoKind>,
     /// Caractéristiques affichées (dégâts, durabilité, protection, satiété…)
     #[serde(default)]
     pub stats: BTreeMap<String, f32>,
@@ -159,6 +165,12 @@ impl ItemSheet {
         }
         if sheet.slot.is_some() && sheet.max_stack != 1 {
             return Err("un objet qui se porte (`slot`) ne s'empile pas : `max_stack` doit valoir 1".into());
+        }
+        if let Some(weapon) = &sheet.weapon {
+            weapon.check()?;
+            if sheet.max_stack != 1 || sheet.ammo.is_some() {
+                return Err("une arme (`weapon`) ne s'empile pas et n'est pas une munition".into());
+            }
         }
         Ok(sheet)
     }

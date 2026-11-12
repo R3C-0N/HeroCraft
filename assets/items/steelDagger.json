@@ -2,6 +2,7 @@
   "numeric_id": 16540,
   "name": "Dague d'acier",
   "category": "Armes",
+  "weapon": {"kind": "dagger", "interval": 0.25},
   "max_stack": 1,
   "icon": "icones/steelDagger.png",
   "stats": {"Dégâts": 13, "Durabilité": 2000},

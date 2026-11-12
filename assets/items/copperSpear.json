@@ -2,6 +2,7 @@
   "numeric_id": 16426,
   "name": "Lance de cuivre",
   "category": "Armes",
+  "weapon": {"kind": "spear", "interval": 0.5, "reach": 1},
   "max_stack": 1,
   "icon": "icones/copperSpear.png",
   "stats": {"Dégâts": 10, "Durabilité": 300},

@@ -2,6 +2,7 @@
   "numeric_id": 16446,
   "name": "Hache de guerre en étherium (mithril)",
   "category": "Armes",
+  "weapon": {"kind": "axe", "interval": 0.8},
   "max_stack": 1,
   "icon": "icones/etheriumMithrilBattleAxe.png",
   "stats": {"Dégâts": 27, "Durabilité": 5000},

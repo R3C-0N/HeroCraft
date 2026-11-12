@@ -2,6 +2,7 @@
   "numeric_id": 16815,
   "name": "Pioche en silex",
   "category": "Outils",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/flintPickaxe.png",
   "stats": {"Dégâts": 2, "Durabilité": 150},

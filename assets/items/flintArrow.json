@@ -2,6 +2,7 @@
   "numeric_id": 16475,
   "name": "Flèche en silex",
   "category": "Armes",
+  "ammo": "arrow",
   "max_stack": 99,
   "icon": "icones/flintArrow.png",
   "stats": {"Dégâts": 3},

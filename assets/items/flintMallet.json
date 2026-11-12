@@ -2,6 +2,7 @@
   "numeric_id": 16480,
   "name": "Maillet à tête de silex",
   "category": "Armes",
+  "weapon": {"kind": "mace", "interval": 0.55},
   "max_stack": 1,
   "icon": "icones/flintMallet.png",
   "stats": {"Dégâts": 5, "Durabilité": 150},

@@ -2,6 +2,7 @@
   "numeric_id": 16793,
   "name": "Houe en cuivre",
   "category": "Outils",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/copperHoe.png",
   "stats": {"Dégâts": 2, "Durabilité": 300},
