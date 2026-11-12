@@ -1,0 +1,71 @@
+{
+  "name": "Rempart Sacré",
+  "description": "Protection. Invoque un mur de lumière immobile bloquant les projectiles ennemis pendant quelques secondes.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "protectionAura"
+    ],
+    "max_rank": 3,
+    "planner": 232
+  },
+  "cast": {
+    "cost": {
+      "mana": 20
+    },
+    "cooldown": 18,
+    "animation": "guard",
+    "area": {
+      "circle": {
+        "radius": 6,
+        "center": "aimed",
+        "distance": 3
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "shield": {
+          "amount": [
+            25,
+            32,
+            40
+          ],
+          "duration": [
+            4,
+            5,
+            6
+          ]
+        }
+      },
+      {
+        "summon": {
+          "species": "sacredRampart",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            4,
+            5,
+            6
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "lightWall",
+      "anchor": "aimed",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "shieldDome",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "name": "Riposte croisée",
+  "description": "Réflexe. Pare une attaque physique avec ta lame et enchaîne automatiquement avec un tir à bout portant.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "tacticalDodge"
+    ],
+    "max_rank": 3,
+    "planner": 324
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 10,
+    "animation": "crossbowShot",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "guard": {
+          "duration": 1.2,
+          "block": 1,
+          "arc": 120,
+          "hits": 1,
+          "kinds": [
+            "physical"
+          ],
+          "counter": {
+            "radius": 1.5,
+            "effects": [
+              {
+                "damage": {
+                  "power": [
+                    1.6,
+                    1.9,
+                    2.2
+                  ]
+                }
+              },
+              {
+                "knockback": {
+                  "strength": 5
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "parry"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "parry"
+    }
+  ]
+}

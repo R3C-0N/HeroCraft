@@ -1,0 +1,13 @@
+{
+  "description": "Fine traînée derrière une flèche ou un carreau.",
+  "layers": [
+    {
+      "shape": "trail",
+      "loop": true,
+      "width": [0.06, 0.0],
+      "life": 0.2,
+      "color": ["#FFFFFF90", "#FFFFFF00"],
+      "glow": 1.2
+    }
+  ]
+}

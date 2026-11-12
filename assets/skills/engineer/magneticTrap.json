@@ -1,0 +1,80 @@
+{
+  "name": "Piège Magnétique",
+  "description": "Piège. Attire violemment les ennemis au centre d'une zone piégée et ralentit fortement leur vitesse de déplacement.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "jawTrap"
+    ],
+    "max_rank": 3,
+    "planner": 307
+  },
+  "cast": {
+    "cost": {
+      "stamina": 25
+    },
+    "cooldown": 16,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": [
+          3,
+          3.5,
+          4
+        ],
+        "center": "aimed",
+        "distance": 5
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "slow": {
+          "strength": [
+            0.5,
+            0.6,
+            0.7
+          ],
+          "duration": [
+            6,
+            7,
+            8
+          ]
+        }
+      },
+      {
+        "summon": {
+          "species": "magneticTrap",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            6,
+            7,
+            8
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "runeCircle",
+      "anchor": "aimed",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "slowFrost",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

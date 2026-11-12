@@ -1,0 +1,67 @@
+{
+  "name": "Tir de Couverture",
+  "description": "Contrôle. Déluge continu dans un large cône frontal qui ralentit considérablement l'avancée ennemie.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "recoilShot"
+    ],
+    "max_rank": 3,
+    "planner": 278
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 12,
+    "animation": "crossbowShot",
+    "area": {
+      "arc": {
+        "range": 12,
+        "angle": 60
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.8,
+            1.0,
+            1.2
+          ]
+        }
+      },
+      {
+        "slow": {
+          "strength": [
+            0.5,
+            0.6,
+            0.7
+          ],
+          "duration": 3
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "leftHand",
+      "from": "impact"
+    },
+    {
+      "effect": "slowFrost",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

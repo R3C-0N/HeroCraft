@@ -606,6 +606,27 @@ pub struct UiState {
     /// Roue des compétences, la même que celle du serveur
     pub skill_wheel: SkillWheel,
     pub skill_screen: SkillScreen,
+    /// Compétences que le joueur vient de lancer (touches de la barre, `/cast`), que le jeu lance
+    pub skill_casts: Vec<String>,
+    /// Compétences qui se chargent dont la touche vient d'être enfoncée (elles partent au relâchement)
+    pub skill_charges: Vec<String>,
+    /// La compétence dont la touche est tenue enfoncée, qui se charge
+    pub skill_charging: Option<String>,
+    /// L'arme en main : chargeur, arc bandé, compétence chargée, munition spéciale (mis à jour à
+    /// chaque image)
+    pub weapon_hud: WeaponHud,
+    /// Changé en bête (forme du Druide) : ses deux attaques, au clic gauche et au clic droit. Plus
+    /// de barre d'objets, d'inventaire ni de barre de compétences le temps de la forme.
+    pub beast_attacks: Option<[String; 2]>,
+    /// Barre de compétences (touches A, E, R, T) et leurs icônes
+    pub skill_bar: crate::skill_bar::SkillBar,
+    pub skill_icons: crate::skill_bar::SkillIcons,
+    /// Recharge restante et totale de chaque case, mise à jour par le jeu à chaque image
+    pub skill_cooldowns: [(f32, f32); crate::skill_bar::SKILL_SLOTS],
+    /// Ce que montre la case de la Fusion : l'icône du mélange qu'elle lancerait, et si elle est verrouillée
+    pub fusion_face: Option<(String, bool)>,
+    /// Dernier refus d'une compétence (pas assez de mana, pas rechargée…), montré au-dessus de la barre
+    pub skill_notice: Option<(String, std::time::Instant)>,
     /// Demandes faites sur l'écran des compétences depuis la dernière image, que le jeu applique
     pub skill_requests: SkillScreenRequests,
     /// Écran de carte ouvert (touche M)
@@ -669,6 +690,16 @@ impl UiState {
             player: PlayerStats::default(),
             skills_open: false,
             skill_wheel: SkillWheel::standard(),
+            skill_casts: Vec::new(),
+            skill_charges: Vec::new(),
+            skill_charging: None,
+            weapon_hud: WeaponHud::default(),
+            beast_attacks: None,
+            skill_bar: crate::skill_bar::SkillBar::default(),
+            skill_icons: crate::skill_bar::SkillIcons::default(),
+            skill_cooldowns: [(0.0, 0.0); crate::skill_bar::SKILL_SLOTS],
+            fusion_face: None,
+            skill_notice: None,
             skill_screen: SkillScreen::default(),
             skill_requests: SkillScreenRequests::default(),
             map_open: false,
@@ -1133,16 +1164,25 @@ impl UiState {
                 } else if self.skills_open {
                     let close_hint = self.controls.action_key_label(Action::OpenSkills);
                     let solo = self.multiplayer.status == NetStatus::Solo;
-                    let requests = self.skill_screen.draw(ctx, &self.skill_wheel, &self.player.stats, &close_hint, solo);
+                    let keys = [Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4].map(|a| self.controls.action_key_label(a));
+                    let bar = crate::skills_screen::BarView { bar: &self.skill_bar, icons: &self.skill_icons, keys };
+                    let requests = self.skill_screen.draw(ctx, &self.skill_wheel, &self.player.stats, &close_hint, solo, &bar);
                     if requests.learn.is_some() {
                         self.skill_requests.learn = requests.learn;
+                    }
+                    if let Some((slot, id)) = requests.place {
+                        self.skill_bar.place(slot, &id);
                     }
                     self.skill_requests.experience += requests.experience;
                 } else if self.map_open {
                     let close_hint = self.controls.action_key_label(Action::OpenMap);
                     self.world_map.draw_screen(ctx, &close_hint);
                 } else {
-                    self.draw_hotbar(ctx);
+                    if self.beast_attacks.is_none() {
+                        self.draw_hotbar(ctx);
+                        self.draw_skill_bar(ctx);
+                        self.draw_weapon_hud(ctx);
+                    }
                     self.world_map.draw_compass(ctx, SCREEN_MARGIN);
                 }
             }
@@ -1200,6 +1240,114 @@ impl UiState {
                                     (i + 1).to_string(),
                                     egui::FontId::proportional(9.5_f32),
                                     TEXT_DIM,
+                                );
+                            }
+                        });
+                    });
+                });
+            });
+    }
+
+    /// Barre de compétences, à droite de la barre d'objets : l'icône de chaque case, sa touche,
+    /// sa recharge qui se vide, grisée si elle ne peut pas partir ; au-dessus, le dernier refus
+    /// Au-dessus de la barre d'objets : le chargeur de l'arbalète et son rechargement, la munition
+    /// spéciale chargée ; sous le réticule, la jauge de l'arc bandé ou de la compétence chargée
+    fn draw_weapon_hud(&self, ctx: &egui::Context) {
+        let hud = &self.weapon_hud;
+        let screen = ctx.screen_rect();
+        let mut parts: Vec<String> = Vec::new();
+        if let Some((loaded, size, left, _)) = hud.magazine {
+            let mut text = format!("Carreaux {loaded}/{size}");
+            if left > 0.0 {
+                text += &format!(" · recharge {left:.1} s");
+            }
+            parts.push(text);
+        }
+        if let Some((name, shots)) = &hud.special {
+            parts.push(format!("{name} ×{shots}"));
+        }
+        if !parts.is_empty() {
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("weapon_hud")));
+            let bottom = screen.bottom() - SCREEN_MARGIN - HOTBAR_SLOT_SIZE - 52.0_f32;
+            let galley = painter.layout_no_wrap(parts.join("   "), egui::FontId::proportional(12.0_f32), TEXT_SOFT);
+            let rect = egui::Rect::from_center_size(egui::pos2(screen.center().x, bottom - galley.size().y / 2.0_f32), galley.size() + egui::vec2(16.0_f32, 6.0_f32));
+            painter.rect_filled(rect, 4.0_f32, egui::Color32::from_black_alpha(150));
+            painter.galley(rect.min + egui::vec2(8.0_f32, 3.0_f32), galley, TEXT_SOFT);
+            // Le rechargement : une fine jauge sous le texte
+            if let Some((_, _, left, total)) = hud.magazine.filter(|m| m.2 > 0.0 && m.3 > 0.0) {
+                let done = (1.0 - left / total).clamp(0.0, 1.0);
+                let bar = egui::Rect::from_min_size(egui::pos2(rect.left(), rect.bottom() + 2.0_f32), egui::vec2(rect.width() * done, 3.0_f32));
+                painter.rect_filled(bar, 1.0_f32, GOLD_BRIGHT);
+            }
+        }
+        if let Some((label, progress, ready)) = &hud.charge {
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("charge_gauge")));
+            let center = screen.center() + egui::vec2(0.0_f32, 28.0_f32);
+            let back = egui::Rect::from_center_size(center, egui::vec2(90.0_f32, 6.0_f32));
+            painter.rect_filled(back, 2.0_f32, egui::Color32::from_black_alpha(160));
+            let fill = egui::Rect::from_min_size(back.min, egui::vec2(back.width() * progress.clamp(0.0, 1.0), back.height()));
+            painter.rect_filled(fill, 2.0_f32, if *ready { GOLD_BRIGHT } else { egui::Color32::from_gray(150) });
+            painter.text(back.center_bottom() + egui::vec2(0.0_f32, 3.0_f32), egui::Align2::CENTER_TOP, label, egui::FontId::proportional(11.0_f32), TEXT_SOFT);
+        }
+    }
+
+    fn draw_skill_bar(&self, ctx: &egui::Context) {
+        use crate::skill_bar::SKILL_SLOTS;
+        const SLOT_ACTIONS: [Action; SKILL_SLOTS] = [Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4];
+        let screen = ctx.screen_rect();
+        let bottom = screen.bottom() - SCREEN_MARGIN;
+        // Le bord droit de la barre d'objets, à l'image d'avant (une estimation à la première)
+        let hotbar_right = ctx
+            .memory(|m| m.area_rect(egui::Id::new("hotbar")))
+            .map_or(screen.center().x + (HOTBAR_SLOTS as f32 * (HOTBAR_SLOT_SIZE + 3.0_f32) + 12.0_f32) / 2.0_f32, |r| r.right());
+        let catalog = herocraft_common::skills();
+        egui::Area::new(egui::Id::new("skill_bar"))
+            .order(egui::Order::Background)
+            .pivot(egui::Align2::LEFT_BOTTOM)
+            .fixed_pos(egui::pos2(hotbar_right + 12.0_f32, bottom))
+            .interactable(false)
+            .show(ctx, |ui| {
+                ui.vertical(|ui| {
+                    let notice = self.skill_notice.as_ref().filter(|(_, at)| at.elapsed().as_secs_f32() < 2.5_f32);
+                    let text = notice.map_or(String::new(), |(text, _)| text.clone());
+                    let galley = ui.painter().layout_no_wrap(text, egui::FontId::proportional(12.0_f32), egui::Color32::from_rgb(255, 170, 150));
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(galley.size().x + 16.0_f32, galley.size().y + 4.0_f32), egui::Sense::hover());
+                    if notice.is_some() {
+                        ui.painter().rect_filled(rect, 4.0_f32, egui::Color32::from_black_alpha(150));
+                        ui.painter().galley(rect.min + egui::vec2(8.0_f32, 2.0_f32), galley, TEXT_SOFT);
+                    }
+                    hud_frame(egui::Margin::same(6.0_f32)).show(ui, |ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(3.0_f32, 0.0_f32);
+                        ui.horizontal(|ui| {
+                            for (slot, action) in SLOT_ACTIONS.into_iter().enumerate() {
+                                let (rect, _) = ui.allocate_exact_size(egui::vec2(HOTBAR_SLOT_SIZE, HOTBAR_SLOT_SIZE), egui::Sense::hover());
+                                paint_slot(ui.painter(), &self.icons, rect, None, false, false);
+                                if let Some(id) = self.skill_bar.get(slot) {
+                                    let (left, total) = self.skill_cooldowns[slot];
+                                    let mut blocked = catalog.cast_check(&self.player.stats, id, 0.0).is_some();
+                                    // La Fusion montre le mélange qu'elle lancerait, grisé s'il n'est pas appris
+                                    let mut face = id;
+                                    if let Some((shown, locked)) = self.fusion_face.as_ref().filter(|_| catalog.get(id).is_some_and(|d| d.fusion.is_some())) {
+                                        face = shown.as_str();
+                                        blocked = *locked;
+                                    }
+                                    let icon = rect.shrink(4.0_f32);
+                                    self.skill_icons.paint(ui.painter(), icon, face, blocked);
+                                    if left > 0.0 && total > 0.0 {
+                                        // Le voile descend à mesure que la recharge passe
+                                        let part = (left / total).clamp(0.0, 1.0);
+                                        let veil = egui::Rect::from_min_max(egui::pos2(icon.left(), icon.bottom() - icon.height() * part), icon.max);
+                                        ui.painter().rect_filled(veil, 0.0_f32, egui::Color32::from_black_alpha(160));
+                                        let seconds = if left >= 1.0 { format!("{}", left.ceil() as u32) } else { format!("{left:.1}") };
+                                        ui.painter().text(icon.center(), egui::Align2::CENTER_CENTER, seconds, egui::FontId::proportional(14.0_f32), egui::Color32::WHITE);
+                                    }
+                                }
+                                ui.painter().text(
+                                    rect.left_top() + egui::vec2(4.0_f32, 2.0_f32),
+                                    egui::Align2::LEFT_TOP,
+                                    self.controls.action_key_label(action),
+                                    egui::FontId::proportional(9.5_f32),
+                                    GOLD_BRIGHT,
                                 );
                             }
                         });
@@ -1398,6 +1546,9 @@ impl UiState {
                                 ui.horizontal(|ui| {
                                     ui.label(egui::RichText::new("Protection").size(12.5_f32).color(TEXT_SOFT));
                                     ui.label(egui::RichText::new(inventory.protection().to_string()).size(12.5_f32).strong().color(GOLD_BRIGHT));
+                                    // La part des coups physiques que l'armure retire
+                                    let kept = herocraft_common::armor_factor(inventory.protection() as f32);
+                                    ui.label(egui::RichText::new(format!("−{:.0} % physique", (1.0 - kept) * 100.0)).size(11.0_f32).color(TEXT_DIM));
                                 });
                                 ui.label(egui::RichText::new("Maj + clic : porter / ôter").size(11.0_f32).color(TEXT_DIM));
                             });
@@ -1594,6 +1745,19 @@ impl UiState {
                 if hunger != Hunger::Fed && !self.player.is_dead() {
                     let warning = if hunger == Hunger::Starving { "Vous mourez de faim" } else { "Vous avez faim" };
                     ui.label(egui::RichText::new(warning).size(12.0_f32).color(egui::Color32::from_rgb(240, 150, 110)));
+                }
+                // États du moment : étourdi, ralenti, invisible, avec le temps qui reste
+                if !self.player.is_dead() {
+                    let states = [
+                        (stats.is_stunned(), format!("Étourdi  {:.0} s", stats.stun_time.ceil()), egui::Color32::from_rgb(240, 200, 80)),
+                        (stats.slow > 0.0_f32 && stats.slow_time > 0.0_f32, format!("Ralenti {:.0} %  {:.0} s", stats.slow * 100.0_f32, stats.slow_time.ceil()), egui::Color32::from_rgb(130, 180, 240)),
+                        (stats.is_invisible(), format!("Invisible  {:.0} s", stats.invisible_time.ceil()), egui::Color32::from_rgb(190, 160, 240)),
+                    ];
+                    for (active, text, color) in states {
+                        if active {
+                            ui.label(egui::RichText::new(text).size(12.0_f32).strong().color(color));
+                        }
+                    }
                 }
             });
     }
@@ -2753,6 +2917,17 @@ fn red_vignette(screen: egui::Rect, alpha: u8) -> egui::Shape {
 }
 
 /// Cadre commun des panneaux du HUD : bois sombre à liseré, comme les bulles de l'ancien jeu
+/// Ce que l'affichage montre de l'arme en main
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WeaponHud {
+    /// Arbalète : carreaux prêts, contenance, rechargement restant et total (secondes)
+    pub magazine: Option<(u8, u8, f32, f32)>,
+    /// Munition spéciale chargée : nom de la compétence, tirs restants
+    pub special: Option<(String, u32)>,
+    /// Arc bandé ou compétence chargée : ce qu'on charge, avancement (0 à 1), assez pour partir
+    pub charge: Option<(String, f32, bool)>,
+}
+
 fn hud_frame(margin: egui::Margin) -> crate::ui_skin::SkinFrame {
     crate::ui_skin::SkinFrame::area(margin)
 }
@@ -3565,6 +3740,37 @@ mod tests {
                 if let Some(bread) = items().find("pain") {
                     ui.inventory.add_many(bread, 5);
                 }
+            },
+            true,
+            None,
+        ));
+
+        // Barre de compétences : une compétence prête, une en recharge, un refus affiché
+        all.push((
+            "hud_competences",
+            |ui| {
+                ui.player.stats.skills.insert("judgment".into(), 1);
+                ui.player.stats.skills.insert("bastionOfLight".into(), 1);
+                ui.skill_bar.slots = [Some("judgment".into()), Some("bastionOfLight".into()), None, Some("igneousOrb".into())];
+                ui.skill_cooldowns[1] = (3.4, 8.0);
+                ui.skill_notice = Some(("Jugement : pas assez de mana".into(), std::time::Instant::now()));
+                // Une arbalète de Rôdeur qui recharge, des balles à fragmentation et un tir chargé
+                ui.weapon_hud = WeaponHud { magazine: Some((0, 2, 0.5, 0.8)), special: Some(("Balles à Fragmentation".into(), 2)), charge: Some(("Tir de Baliste".into(), 0.7, true)) };
+            },
+            true,
+            None,
+        ));
+        // Fiche d'une compétence apprise, avec les boutons qui la posent sur la barre
+        all.push((
+            "roue_fiche",
+            |ui| {
+                ui.player.stats.skills.insert("judgment".into(), 1);
+                ui.skill_bar.slots[0] = Some("judgment".into());
+                ui.skill_screen.selected = Some("judgment".into());
+                let focus = ui.skill_wheel.branches.iter().position(|b| b.id == "warPriest").unwrap_or(0);
+                let count = ui.skill_wheel.branches.len();
+                ui.skill_screen.focus_on(focus, count);
+                ui.set_skills_open(true);
             },
             true,
             None,

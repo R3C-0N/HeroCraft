@@ -1,0 +1,42 @@
+{
+  "description": "Estoc droit devant, l'arme pointée vers la cible.",
+  "duration": 0.5,
+  "legs": "free",
+  "impact": 0.45,
+  "keys": [
+    {"t": 0.0},
+    {
+      "t": 0.3,
+      "ease": "out",
+      "bones": {
+        "rightArm": {"rotation": [70, 0, 5]},
+        "rightForearm": {"rotation": [100, 0, 0]},
+        "rightHand": {"rotation": [60, 0, 0]},
+        "body": {"translation": [0, 0, -0.05]},
+        "torso": {"rotation": [0, -20, 0]}
+      }
+    },
+    {
+      "t": 0.45,
+      "ease": "in",
+      "bones": {
+        "rightArm": {"rotation": [90, 0, 0]},
+        "rightForearm": {"rotation": [0, 0, 0]},
+        "rightHand": {"rotation": [90, 0, 0]},
+        "torso": {"rotation": [10, 15, 0]},
+        "body": {"translation": [0, 0, 0.15]}
+      }
+    },
+    {
+      "t": 0.7,
+      "bones": {
+        "rightArm": {"rotation": [85, 0, 0]},
+        "rightForearm": {"rotation": [10, 0, 0]},
+        "rightHand": {"rotation": [80, 0, 0]},
+        "torso": {"rotation": [8, 0, 0]},
+        "body": {"translation": [0, 0, 0.1]}
+      }
+    },
+    {"t": 1.0}
+  ]
+}

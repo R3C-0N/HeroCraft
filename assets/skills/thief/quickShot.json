@@ -1,0 +1,58 @@
+{
+  "name": "Tir Vif",
+  "description": "Arbalète. Un carreau ultra-rapide tiré depuis ton arbalète de poing.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 256
+  },
+  "cast": {
+    "cost": {
+      "stamina": 8
+    },
+    "cooldown": 3,
+    "animation": "crossbowShot",
+    "speed": 1.5,
+    "area": {
+      "line": {
+        "length": 14,
+        "width": 1
+      }
+    },
+    "projectile": {
+      "speed": 60
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.0,
+            1.15,
+            1.3
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "projectile",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
+    }
+  ]
+}

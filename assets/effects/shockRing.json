@@ -1,0 +1,31 @@
+{
+  "description": "Onde lumineuse qui court au sol jusqu'au bord de la zone.",
+  "unit": "area",
+  "layers": [
+    {
+      "shape": "ring",
+      "on_ground": true,
+      "duration": 0.45,
+      "radius": [0.2, 1.0],
+      "thickness": 0.3,
+      "color": ["#FFE9A8", "#FFB54700"],
+      "glow": 3
+    },
+    {
+      "delay": 0.3,
+      "particles": {
+        "count": 40,
+        "origin": "ring",
+        "origin_radius": 1.0,
+        "direction": "outward",
+        "speed": [1, 2.5],
+        "gravity": -2,
+        "life": [0.4, 0.8],
+        "size": [0.08, 0.02],
+        "color": ["#FFF2C0", "#FFB54700"],
+        "glow": 2,
+        "texture": "spark.png"
+      }
+    }
+  ]
+}

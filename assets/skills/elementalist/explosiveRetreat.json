@@ -1,0 +1,69 @@
+{
+  "name": "Retraite Explosive",
+  "description": "Feu / Air : Orbe Igné + Courant Ascendant.\n\nTon bond vers l'arrière attire l'orbe exactement là où tu te trouvais, déclenchant une violente explosion pour punir ceux qui te foncent dessus.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.25,
+    "requires": [
+      "scaldingTyphoon",
+      "magmaWall"
+    ],
+    "max_rank": 3,
+    "planner": 192
+  },
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 14,
+    "animation": "leap",
+    "impact": 0.1,
+    "area": {
+      "circle": {
+        "radius": 3.5
+      }
+    },
+    "movement": {
+      "leap": [
+        -6,
+        -7,
+        -8
+      ]
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.2,
+            2.6,
+            3.0
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "fireOrb",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "fireExplosion",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    }
+  ]
+}

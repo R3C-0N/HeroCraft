@@ -1,0 +1,49 @@
+{
+  "name": "Lumière Apaisante",
+  "description": "Soin. Un soin rapide et direct sur une cible unique (allié ou soi-même).",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 226
+  },
+  "cast": {
+    "cost": {
+      "mana": 10
+    },
+    "cooldown": 4,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "heal": {
+          "amount": [
+            14,
+            18,
+            22
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "handFlame",
+      "anchor": "rightHand",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

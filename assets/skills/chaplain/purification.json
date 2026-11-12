@@ -1,0 +1,53 @@
+{
+  "name": "Purification",
+  "description": "Lumière offensive. Retire un effet négatif (poison, ralentissement) sur un allié et lui rend une petite portion de santé.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "celestialSmite"
+    ],
+    "max_rank": 3,
+    "planner": 233
+  },
+  "cast": {
+    "cost": {
+      "mana": 15
+    },
+    "cooldown": 10,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "heal": {
+          "amount": [
+            10,
+            14,
+            18
+          ]
+        }
+      },
+      {
+        "cleanse": {}
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "auraRing",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

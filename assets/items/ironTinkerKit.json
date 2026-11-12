@@ -2,6 +2,7 @@
   "numeric_id": 16503,
   "name": "Trousse de fer",
   "category": "Armes",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/ironTinkerKit.png",
   "stats": {"Dégâts": 5, "Durabilité": 900},

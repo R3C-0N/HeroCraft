@@ -1,0 +1,82 @@
+{
+  "name": "Zone d'Exécution",
+  "description": "Tourelle Balistique + Piège Magnétique. Les tirs de la tourelle sont magnétisés, ciblant automatiquement et transperçant la grappe d'ennemis regroupés par le piège.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "mechanicalOverload",
+      "magneticTrap"
+    ],
+    "max_rank": 3,
+    "planner": 311
+  },
+  "cast": {
+    "cost": {
+      "stamina": 35
+    },
+    "cooldown": 22,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ],
+        "center": "aimed",
+        "distance": 10
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "pull": {
+          "strength": 8
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.6,
+          "duration": 6
+        }
+      },
+      {
+        "summon": {
+          "species": "magneticTrap",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            8,
+            9,
+            10
+          ]
+        }
+      },
+      {
+        "summon": {
+          "species": "executionTurret",
+          "limit": 1,
+          "duration": [
+            8,
+            9,
+            10
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "lightningArc",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

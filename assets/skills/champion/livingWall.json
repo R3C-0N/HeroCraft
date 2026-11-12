@@ -1,0 +1,93 @@
+{
+  "name": "Mur vivant",
+  "description": "Garde de fer + Phalange. Crée une véritable ligne de front impénétrable. Tu avances lentement tout en bloquant les projectiles et en écrasant les ennemis sous ton avancée.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "perfectRiposte",
+      "phalanx"
+    ],
+    "max_rank": 3,
+    "planner": 372
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 20,
+    "animation": "guard",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 120
+      }
+    },
+    "movement": {
+      "dash": 3
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.2,
+            1.4,
+            1.6
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 5
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": [
+            0.5,
+            0.6,
+            0.7
+          ],
+          "duration": 6
+        }
+      },
+      {
+        "buff": {
+          "stat": "speed",
+          "value": -0.3,
+          "duration": 6
+        }
+      },
+      {
+        "shot_guard": {
+          "arc": 120,
+          "duration": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "lightWall",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

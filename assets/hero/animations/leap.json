@@ -1,0 +1,51 @@
+{
+  "description": "Accroupi, détente, puis réception genoux fléchis (le bond lui-même vient de la compétence).",
+  "duration": 0.7,
+  "legs": "locked",
+  "impact": 0.2,
+  "keys": [
+    {"t": 0.0},
+    {
+      "t": 0.15,
+      "ease": "out",
+      "bones": {
+        "rightLeg": {"rotation": [35, 0, 0]},
+        "leftLeg": {"rotation": [35, 0, 0]},
+        "rightShin": {"rotation": [70, 0, 0]},
+        "leftShin": {"rotation": [70, 0, 0]},
+        "torso": {"rotation": [20, 0, 0]},
+        "rightArm": {"rotation": [-30, 0, 0]},
+        "leftArm": {"rotation": [-30, 0, 0]},
+        "body": {"translation": [0, -0.16, 0]}
+      }
+    },
+    {
+      "t": 0.3,
+      "ease": "out",
+      "bones": {
+        "rightLeg": {"rotation": [-10, 0, 0]},
+        "leftLeg": {"rotation": [5, 0, 0]},
+        "rightShin": {"rotation": [30, 0, 0]},
+        "leftShin": {"rotation": [20, 0, 0]},
+        "torso": {"rotation": [-10, 0, 0]},
+        "rightArm": {"rotation": [60, 0, 30]},
+        "leftArm": {"rotation": [60, 0, 30]}
+      }
+    },
+    {
+      "t": 0.75,
+      "ease": "in",
+      "bones": {
+        "rightLeg": {"rotation": [30, 0, 0]},
+        "leftLeg": {"rotation": [30, 0, 0]},
+        "rightShin": {"rotation": [60, 0, 0]},
+        "leftShin": {"rotation": [60, 0, 0]},
+        "torso": {"rotation": [15, 0, 0]},
+        "rightArm": {"rotation": [40, 0, 20]},
+        "leftArm": {"rotation": [40, 0, 20]},
+        "body": {"translation": [0, -0.12, 0]}
+      }
+    },
+    {"t": 1.0}
+  ]
+}

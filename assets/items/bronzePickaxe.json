@@ -2,6 +2,7 @@
   "numeric_id": 16790,
   "name": "Pioche en bronze",
   "category": "Outils",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/bronzePickaxe.png",
   "stats": {"Dégâts": 4, "Durabilité": 500},

@@ -1,0 +1,64 @@
+{
+  "name": "Balles à Fragmentation",
+  "description": "Munition. Tes tirs explosent à l'impact, infligeant des dégâts magiques de zone.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "tracerRound"
+    ],
+    "max_rank": 3,
+    "planner": 276
+  },
+  "cast": {
+    "weapons": [
+      "crossbow"
+    ],
+    "cost": {
+      "mana": 18
+    },
+    "cooldown": 9,
+    "animation": "crossbowShot",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "load_ammo": {
+          "shots": 3,
+          "duration": 15,
+          "radius": [
+            2.5,
+            3,
+            3.5
+          ],
+          "effects": [
+            {
+              "damage": {
+                "power": [
+                  1.4,
+                  1.7,
+                  2.0
+                ],
+                "kind": "magical"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "end"
+    },
+    {
+      "effect": "fireExplosion",
+      "anchor": "area",
+      "from": "hit"
+    }
+  ]
+}

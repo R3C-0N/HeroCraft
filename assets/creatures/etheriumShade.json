@@ -1,0 +1,23 @@
+{
+  "name": "Ombre d'Étherium",
+  "description": "Cadavre changé en ombre par la Légion du Néant : invulnérable, il déchiquette les ennemis puis implose.",
+  "tags": ["shadow"],
+  "body": {
+    "half_width": 0.35,
+    "half_length": 0.5,
+    "height": 1.6
+  },
+  "walk_speed": 2.2,
+  "health": 100000,
+  "activity": "always",
+  "humanoid": true,
+  "attack": {
+    "mode": "solo",
+    "damage": 12,
+    "cooldown": 0.5,
+    "sight": 14,
+    "reach": 1.2,
+    "chase_speed": 1.6,
+    "hunts_players": false
+  }
+}

@@ -1,13 +1,15 @@
 {
   "name": "Brute cornue",
   "description": "Charge cornes en avant et renverse les boucliers levés.",
+  "armor": 60,
+  "resist": 10,
   "body": {"half_width": 1.0778, "half_length": 0.7541, "height": 2.8224},
   "walk_speed": 1.1,
   "min_group": 1,
   "max_group": 1,
   "spawn": [],
   "activity": "nocturnal",
-  "attack": {"mode": "charge", "damage": 10, "cooldown": 2.5, "sight": 12, "chase_speed": 2.8, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
+  "attack": {"mode": "charge", "damage": 10, "stun": 0.8, "knockback": 8, "cooldown": 2.5, "sight": 12, "chase_speed": 2.8, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
   "loot": [
     {"item": "cornesMassives"},
     {"item": "cuirEpais", "count": [1, 2]},

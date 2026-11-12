@@ -1,0 +1,101 @@
+{
+  "name": "Wendigo",
+  "description": "Cerf + Loup. Un prédateur bipède terrifiant aux bois acérés, spécialisé dans la furtivité et les attaques magiques provoquant de lourds saignements.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "ancientStag",
+      "forestWolf"
+    ],
+    "max_rank": 3,
+    "planner": 207
+  },
+  "cast": {
+    "cost": {
+      "mana": 35
+    },
+    "cooldown": 45,
+    "animation": "shout",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "over_time": {
+          "damage": [
+            5,
+            6,
+            7
+          ],
+          "duration": 6
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.4,
+          "duration": 4
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": [
+            0.4,
+            0.5,
+            0.6
+          ],
+          "duration": 20
+        }
+      },
+      {
+        "buff": {
+          "stat": "speed",
+          "value": 0.3,
+          "duration": 20
+        }
+      },
+      {
+        "invisible": {
+          "duration": [
+            3,
+            4,
+            5
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "roarWave",
+      "anchor": "head",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ],
+  "form": "wendigo",
+  "form_attacks": [
+    "wendigoRend",
+    "wendigoHowl"
+  ]
+}

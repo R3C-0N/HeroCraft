@@ -1,0 +1,61 @@
+{
+  "name": "Griffes de la Meute",
+  "description": "Loup. Ton bras libre se transforme en patte de loup pour des attaques de mêlée très rapides.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 196
+  },
+  "cast": {
+    "cost": {
+      "mana": 15
+    },
+    "cooldown": 18,
+    "animation": "bless",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "attack_speed",
+          "value": [
+            0.4,
+            0.5,
+            0.6
+          ],
+          "duration": [
+            10,
+            12,
+            15
+          ]
+        }
+      },
+      {
+        "buff": {
+          "stat": "damage",
+          "value": [
+            0.1,
+            0.15,
+            0.2
+          ],
+          "duration": [
+            10,
+            12,
+            15
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "leftHand",
+      "from": "start"
+    }
+  ],
+  "graft": "wolfPaw"
+}

@@ -1,0 +1,41 @@
+{
+  "description": "Coup de haut en bas, arme levée au-dessus de la tête.",
+  "duration": 0.7,
+  "legs": "free",
+  "impact": 0.45,
+  "keys": [
+    {"t": 0.0},
+    {
+      "t": 0.3,
+      "ease": "out",
+      "bones": {
+        "rightArm": {"rotation": [170, 0, 10]},
+        "rightForearm": {"rotation": [40, 0, 0]},
+        "rightHand": {"rotation": [30, 0, 0]},
+        "torso": {"rotation": [-10, 0, 0]},
+        "leftArm": {"rotation": [30, 0, 0]}
+      }
+    },
+    {
+      "t": 0.45,
+      "ease": "in",
+      "bones": {
+        "rightArm": {"rotation": [60, 0, 5]},
+        "rightForearm": {"rotation": [10, 0, 0]},
+        "rightHand": {"rotation": [-30, 0, 0]},
+        "torso": {"rotation": [20, 0, 0]},
+        "leftArm": {"rotation": [-10, 0, 0]}
+      }
+    },
+    {
+      "t": 0.7,
+      "bones": {
+        "rightArm": {"rotation": [55, 0, 5]},
+        "rightForearm": {"rotation": [15, 0, 0]},
+        "rightHand": {"rotation": [-20, 0, 0]},
+        "torso": {"rotation": [12, 0, 0]}
+      }
+    },
+    {"t": 1.0}
+  ]
+}

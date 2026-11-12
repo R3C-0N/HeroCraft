@@ -18,11 +18,12 @@ use glam::Vec3;
 use herocraft_common::lan::{LanAnnounce, LanAnnouncer};
 use herocraft_common::net::{encode_frame, Connection};
 use herocraft_common::{
+    DamageKind,
     fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, ItemId, PlayerClass, PlayerState,
     ServerPacket, SkillWheel, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
-use herocraft_world::{BlockGeometry, BlockPos, CreatureWorld, Fields, PlanetDescriptor, PlanetWorldGenerator, TerrainEdits, CREATURE_RANGE_BLOCKS};
+use herocraft_world::{BlockGeometry, BlockPos, CreatureWorld, Fields, PlanetDescriptor, PlanetWorldGenerator, SkillPlayers, SkillRunner, TerrainEdits, CREATURE_RANGE_BLOCKS};
 use log::{info, warn};
 
 /// Ticks de simulation par seconde
@@ -49,6 +50,8 @@ const MAX_REACH_BLOCKS: f64 = 12.0;
 /// Longueur maximale d'un nom de joueur et d'un message de chat, en caractères
 const MAX_NAME_CHARS: usize = 24;
 const MAX_CHAT_CHARS: usize = 256;
+/// Pièces portées au plus : les huit cases d'équipement
+const MAX_WORN: usize = 8;
 /// `/summon` : créatures au plus par commande, et distance maximale au joueur, en blocs
 const MAX_SUMMON: u32 = 20;
 const MAX_SUMMON_BLOCKS: f64 = 32.0;
@@ -85,6 +88,10 @@ pub struct ConnectedPlayer {
     pub crouching: bool,
     /// Ce qu'il tient en main : sa nourriture attire les bêtes
     pub holding: Option<ItemId>,
+    /// Protection des pièces d'armure qu'il porte (`ClientPacket::Equipment`)
+    pub protection: f32,
+    /// Allure de son héros, une fois sa légende reçue
+    pub appearance: Option<Box<herocraft_common::hero::Appearance>>,
     /// Créatures que son client affiche (celles qui lui ont été annoncées)
     known_creatures: HashSet<u64>,
     connection: ClientConnection,
@@ -118,6 +125,8 @@ pub struct Server {
     last_stats: HashMap<String, CharacterStats>,
     /// Roue des compétences, juge des points que les joueurs investissent
     skill_wheel: SkillWheel,
+    /// Compétences lancées : recharges, frappes en attente, effets qui durent
+    skill_runner: SkillRunner,
     /// Tirage du butin des bêtes tuées
     loot_rng: herocraft_common::LootRng,
     /// Combien de fois on a parlé à chaque habitant (il enchaîne ses répliques)
@@ -177,6 +186,7 @@ impl Server {
             last_positions: HashMap::new(),
             last_stats: HashMap::new(),
             skill_wheel: SkillWheel::standard(),
+            skill_runner: SkillRunner::new(),
             loot_rng: herocraft_common::LootRng::from_clock(),
             talks: HashMap::new(),
             next_player_id: 1,
@@ -315,6 +325,7 @@ impl Server {
         for player in self.players.values_mut() {
             player.stats.regenerate(dt, player.sprinting);
         }
+        self.tick_skills(dt);
 
         // Le ciel avance pour tous : sommeil des bêtes, saisons et météo
         self.clock.time += dt as f64;
@@ -322,9 +333,38 @@ impl Server {
         self.creatures.set_climate(&self.weather, self.clock.time);
 
         let (ids, presences): (Vec<u64>, Vec<herocraft_world::PlayerPresence>) =
-            self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching, holding: p.holding }))).unzip();
+            self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching, holding: p.holding, hidden: p.stats.is_invisible() || p.stats.fallen }))).unzip();
         for hit in self.creatures.tick_players(dt, &self.generator, &self.edits, &presences, &ids) {
-            self.creature_attack(ids[hit.player], hit.species, hit.damage);
+            let id = ids[hit.player];
+            // Une garde levée pare le coup qui arrive de face, et riposte
+            let facing = self.players.get(&id).and_then(|p| p.position.map(|feet| herocraft_common::yaw_direction(feet, p.yaw)));
+            let parry = self.skill_runner.parry(id, facing, hit.creature_id, hit.damage, hit.kind.name(), &mut self.creatures, &mut PlayersView(&mut self.players));
+            if let Some(impact) = parry.impact {
+                self.announce_impact(impact);
+            }
+            if !parry.parried {
+                let ignores = self.skill_runner.immunities(id);
+                if let Some(player) = self.players.get_mut(&id) {
+                    self.creatures.afflict(&hit, &mut player.stats, &ignores);
+                    let push = player.position.and_then(|feet| self.creatures.knockback(&hit, feet)).filter(|_| !ignores.contains(&herocraft_common::skills::Status::Knockback));
+                    if let Some((direction, speed)) = push {
+                        player.connection.send(&ServerPacket::PlayerPushed { direction, speed });
+                    }
+                }
+            }
+            if parry.damage > 0.0 {
+                self.creature_attack(id, hit.species, parry.damage, hit.kind);
+            } else if let Some(player) = self.players.get(&id) {
+                player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+            }
+        }
+        let shots = self.creatures.take_shots();
+        if !shots.is_empty() {
+            self.broadcast(&ServerPacket::CreatureShots(shots));
+        }
+        let projectiles = self.creatures.take_projectile_events();
+        if !projectiles.is_empty() {
+            self.broadcast(&ServerPacket::Projectiles(projectiles));
         }
         // Œufs pondus, à la place de la bête : montrés au joueur le plus proche (les objets au sol
         // sont propres à chaque client, un seul peut le ramasser)
@@ -459,7 +499,7 @@ impl Server {
                 }
                 Err(_) => continue,
             };
-            let ClientPacket::Connect { player_name, protocol_version } = packet else {
+            let ClientPacket::Connect { player_name, protocol_version, skills } = packet else {
                 reject(&pending.connection, "Le premier paquet doit être Connect");
                 continue;
             };
@@ -468,6 +508,10 @@ impl Server {
                     &pending.connection,
                     &format!("Version du protocole incompatible (client {protocol_version}, serveur {PROTOCOL_VERSION})"),
                 );
+                continue;
+            }
+            if skills != herocraft_common::skills().fingerprint() {
+                reject(&pending.connection, "Fichiers de compétences différents de ceux du serveur (assets/skills/)");
                 continue;
             }
             let name: String = player_name.trim().chars().filter(|c| !c.is_control()).take(MAX_NAME_CHARS).collect();
@@ -503,13 +547,18 @@ impl Server {
         }
         for other in self.players.values() {
             connection.send(&ServerPacket::PlayerJoined { player_id: other.id, name: other.name.clone() });
+            if let Some(appearance) = &other.appearance {
+                connection.send(&ServerPacket::PlayerAppearance { player_id: other.id, appearance: appearance.clone() });
+            }
         }
         connection.send(&self.clock_packet());
 
         info!("{name} a rejoint la partie (joueur #{id}, {}).", connection.peer_addr());
         self.broadcast(&ServerPacket::PlayerJoined { player_id: id, name: name.clone() });
         self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{name} a rejoint la partie") });
-        let stats = self.last_stats.remove(&name).unwrap_or_else(|| CharacterStats::new(PlayerClass::Adventurer));
+        let mut stats = self.last_stats.remove(&name).unwrap_or_else(|| CharacterStats::new(PlayerClass::Adventurer));
+        // Compétences d'avant le passage aux identifiants anglais : oubliées, points rendus
+        herocraft_common::skills().forget_unknown(&mut stats);
         connection.send(&ServerPacket::StatsUpdate(stats.clone()));
         self.players.insert(
             id,
@@ -523,6 +572,8 @@ impl Server {
                 sprinting: false,
                 crouching: false,
                 holding: None,
+                protection: 0.0,
+                appearance: None,
                 known_creatures: HashSet::new(),
                 connection,
             },
@@ -560,6 +611,7 @@ impl Server {
                     player.sprinting = sprinting;
                     player.crouching = crouching;
                     player.holding = holding.map(ItemId);
+                    self.skill_runner.hold(id, player.holding, player.stats.class);
                 }
             }
             ClientPacket::Fall { blocks } => self.fall(id, blocks),
@@ -569,8 +621,16 @@ impl Server {
             ClientPacket::FeedCreature { creature_id, item } => self.feed_creature(id, creature_id, ItemId(item)),
             ClientPacket::SkinCreature { creature_id } => self.skin_creature(id, creature_id),
             ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
+            ClientPacket::CastSkill { skill, aim, aimed } => self.cast_skill(id, skill, aim, aimed),
+            ClientPacket::BeginCharge { skill } => self.skill_runner.arsenal_mut().begin_charge(id, skill.as_deref()),
+            ClientPacket::Shoot { aim, ammo } => self.shoot(id, aim, ItemId(ammo)),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
             ClientPacket::Eat { item } => self.eat(id, ItemId(item)),
+            ClientPacket::Equipment(worn) => {
+                if let Some(player) = self.players.get_mut(&id) {
+                    player.protection = herocraft_common::items().protection(worn.into_iter().take(MAX_WORN).map(ItemId));
+                }
+            }
             ClientPacket::ChatMessage(text) => {
                 let text: String = text.trim().chars().filter(|c| !c.is_control()).take(MAX_CHAT_CHARS).collect();
                 if text.is_empty() {
@@ -582,6 +642,14 @@ impl Server {
                 self.broadcast(&ServerPacket::ChatMessage { sender, message: text });
             }
             ClientPacket::Summon { species, count, feet } => self.summon(id, &species, count, feet),
+            ClientPacket::Respawn => {
+                if let Some(player) = self.players.get_mut(&id) {
+                    player.stats.fallen = false;
+                    player.stats.slow_time = 0.0;
+                    player.stats.stun_time = 0.0;
+                    player.stats.tick_status(0.0);
+                }
+            }
             ClientPacket::Heal => {
                 let Some(player) = self.players.get_mut(&id) else { return };
                 player.stats.revive();
@@ -619,6 +687,9 @@ impl Server {
         info!("{} est {} ({}, {}).", player.name, legend.appearance.nom, legend.appearance.species().nom, legend.class.label());
         player.stats.class = legend.class;
         player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+        let appearance = Box::new(legend.appearance);
+        player.appearance = Some(appearance.clone());
+        self.broadcast(&ServerPacket::PlayerAppearance { player_id: id, appearance });
     }
 
     /// `/xp` : le joueur gagne `amount` points d'expérience, ses nouvelles jauges lui sont envoyées
@@ -665,10 +736,8 @@ impl Server {
         if damage <= 0.0 {
             return;
         }
-        let died = player.stats.take_damage(damage);
-        if died {
-            player.stats.revive();
-        }
+        let died = player.stats.take_damage(damage) && self.falls(id);
+        let Some(player) = self.players.get(&id) else { return };
         player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
         if died {
             let name = player.name.clone();
@@ -677,15 +746,62 @@ impl Server {
         }
     }
 
+    /// Le joueur `id` vient de tomber à zéro point de vie. Un effet à la mort (Abomination de
+    /// l'Étherium) le sauve : sa nova est annoncée, et il reste debout (faux). Sinon il tombe (vrai) :
+    /// ranimé pour la suite, il attend de réapparaître.
+    fn falls(&mut self, id: u64) -> bool {
+        let stand = self.skill_runner.last_stand(id, &mut self.creatures, &mut PlayersView(&mut self.players));
+        match stand {
+            Some(impact) => {
+                self.announce_impact(impact);
+                false
+            }
+            None => {
+                if let Some(player) = self.players.get_mut(&id) {
+                    player.stats.revive();
+                    player.stats.fallen = true;
+                }
+                true
+            }
+        }
+    }
+
+    /// Annonce une frappe à tous, et les meurtres et agressions d'habitants qu'elle a faits
+    fn announce_impact(&mut self, impact: herocraft_world::SkillImpact) {
+        let name = self.players.get(&impact.caster).map(|p| p.name.clone()).unwrap_or_default();
+        self.broadcast(&ServerPacket::SkillHit { player_id: impact.caster, skill: impact.skill, rank: impact.rank, center: impact.center, creatures: impact.creatures, players: impact.players, parried: impact.parried, contact: impact.contact });
+        for murder in self.creatures.take_murders() {
+            self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
+        }
+        for assault in self.creatures.take_assaults() {
+            if let Some(player) = self.players.get(&assault.player) {
+                tell(player, &assault.warning());
+            }
+        }
+    }
+
     /// Coup d'une créature de l'espèce de rang `species` sur un joueur ; comme une chute, celui qu'il
     /// tue revient à la vie et ses nouvelles jauges lui sont envoyées aussitôt
-    fn creature_attack(&mut self, id: u64, species: usize, damage: f32) {
+    fn creature_attack(&mut self, id: u64, species: usize, damage: f32, kind: DamageKind) {
         let cause = self.creatures.registry().get(species).map_or_else(|| "Une créature".to_string(), |s| s.name.clone());
-        let Some(player) = self.players.get_mut(&id) else { return };
-        let died = player.stats.take_damage(damage);
-        if died {
-            player.stats.revive();
+        // L'armure portée, puis les renforcements de défense
+        let protection = self.players.get(&id).map_or(0.0, |p| p.protection);
+        let damage = herocraft_common::through_armor(damage, kind, protection) * self.skill_runner.damage_taken_factor(id, kind);
+        // Lié par une Marque du Martyr : le chapelain encaisse sa part des dégâts
+        let (damage, shared) = self.skill_runner.share_damage(id, damage);
+        if let Some((martyr, part)) = shared.filter(|s| s.0 != id) {
+            let hurt = self.players.get_mut(&martyr).filter(|m| !m.stats.fallen).map(|m| m.stats.take_hit(part, Some(kind)));
+            if hurt == Some(true) {
+                self.falls(martyr);
+            }
+            if let Some(m) = self.players.get(&martyr).filter(|_| hurt.is_some()) {
+                m.connection.send(&ServerPacket::PlayerHurt { damage: part, cause: "Un coup encaissé pour un allié".to_string() });
+                m.connection.send(&ServerPacket::StatsUpdate(m.stats.clone()));
+            }
         }
+        let Some(player) = self.players.get_mut(&id) else { return };
+        let died = player.stats.take_hit(damage, Some(kind)) && self.falls(id);
+        let Some(player) = self.players.get(&id) else { return };
         player.connection.send(&ServerPacket::PlayerHurt { damage, cause: cause.clone() });
         player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
         if died {
@@ -737,9 +853,27 @@ impl Server {
     /// que les joueurs voient avec les prochaines positions
     fn hit_creature(&mut self, id: u64, creature_id: u64) {
         let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
-        let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
+        let held = self.skill_runner.arsenal().held(id);
+        let reach = (MAX_REACH_BLOCKS as f32 + held.reach) * self.geometry.block_height as f32;
         if self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
-            self.creatures.hit_by(creature_id, feet, id);
+            // Les dégâts de l'arme, à son rythme : un coup trop rapproché est ignoré
+            let Ok(mut damage) = self.skill_runner.arsenal_mut().strike(id) else { return };
+            // Frappé par un joueur invisible : il se dévoile, et le coup est critique
+            if let Some(player) = self.players.get_mut(&id).filter(|p| p.stats.is_invisible()) {
+                player.stats.invisible_time = 0.0;
+                player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+                damage *= herocraft_world::CRITICAL_FACTOR;
+            }
+            damage *= self.skill_runner.hit_factor(id, creature_id, &self.creatures);
+            self.creatures.wound(creature_id, feet, id, damage);
+            // Un renforcement qui porte des effets (Marteau Consacré) les joue autour de la bête frappée
+            if let Some(at) = self.creatures.creatures().iter().find(|c| c.id == creature_id).map(|c| c.position) {
+                for changed in self.skill_runner.ride(id, &[at], &mut self.creatures, &mut PlayersView(&mut self.players)) {
+                    if let Some(player) = self.players.get(&changed) {
+                        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+                    }
+                }
+            }
             let name = self.players.get(&id).map(|p| p.name.clone()).unwrap_or_default();
             for murder in self.creatures.take_murders() {
                 self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
@@ -749,6 +883,37 @@ impl Server {
                 if let Some(player) = self.players.get(&assault.player) {
                     tell(player, &assault.warning());
                 }
+            }
+        }
+    }
+
+    /// Un tir d'arc ou d'arbalète du joueur `id` : la munition doit aller avec l'arme tenue, la
+    /// cadence, le chargeur et l'arc bandé sont jugés ici. Annoncé à tous (`PlayerShot`).
+    fn shoot(&mut self, id: u64, aim: Vec3, ammo: ItemId) {
+        let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
+        if !aim.is_finite() || aim.length_squared() < 1e-6 {
+            return;
+        }
+        let held = self.skill_runner.arsenal().held(id);
+        let fits = ammo.block().is_none() && held.ammo.is_some() && herocraft_common::items().get(ammo).is_some_and(|s| s.ammo == held.ammo);
+        if !fits || self.players.get(&id).is_some_and(|p| p.stats.is_stunned() || p.stats.fallen) {
+            return;
+        }
+        let Ok(fired) = self.skill_runner.arsenal_mut().fire(id) else { return };
+        if let Some(player) = self.players.get_mut(&id).filter(|p| p.stats.is_invisible()) {
+            player.stats.invisible_time = 0.0;
+            player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+        }
+        let damage = held.damage + herocraft_common::weapons::ammo_damage(ammo);
+        let hit = self.skill_runner.shoot(id, feet, aim.normalize(), damage, fired, &mut self.creatures, &mut PlayersView(&mut self.players));
+        self.broadcast(&ServerPacket::PlayerShot { player_id: id, from: feet, to: hit.to, target: hit.target, special: hit.special });
+        let name = self.players.get(&id).map(|p| p.name.clone()).unwrap_or_default();
+        for murder in self.creatures.take_murders() {
+            self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
+        }
+        for assault in self.creatures.take_assaults() {
+            if let Some(player) = self.players.get(&assault.player) {
+                tell(player, &assault.warning());
             }
         }
     }
@@ -815,6 +980,57 @@ impl Server {
 
     /// Investit un point du joueur dans une compétence, si la roue l'accepte, puis lui renvoie
     /// ses statistiques (inchangées en cas de refus, ce qui défait ce que son client a affiché)
+    /// Le joueur lance une compétence : refusée (et il le sait), ou annoncée à tous ; elle frappera
+    /// à l'impact de son geste (`tick_skills`)
+    fn cast_skill(&mut self, id: u64, skill: String, aim: Vec3, aimed: Option<Vec3>) {
+        let Some(player) = self.players.get_mut(&id) else { return };
+        match self.skill_runner.cast_as(herocraft_common::skills(), id, &mut player.stats, &skill, aim, aimed) {
+            Ok(casting) => {
+                player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+                let fused = casting.skill != skill;
+                self.broadcast(&ServerPacket::SkillCast { player_id: id, skill: casting.skill, rank: casting.rank, aim, aimed, fused, amplified: casting.amplified });
+            }
+            Err(error) => {
+                player.connection.send(&ServerPacket::SkillRefused { skill, reason: error.message().to_string() });
+            }
+        }
+    }
+
+    /// Les compétences avancent : frappes annoncées à tous, jauges changées renvoyées à leurs joueurs
+    fn tick_skills(&mut self, dt: f32) {
+        let mut view = PlayersView(&mut self.players);
+        let tick = self.skill_runner.tick(dt, herocraft_common::skills(), &mut self.creatures, &mut view);
+        for impact in tick.impacts {
+            self.announce_impact(impact);
+        }
+        for (id, motion) in tick.moves {
+            if let Some(player) = self.players.get(&id) {
+                player.connection.send(&ServerPacket::SkillMove(motion));
+            }
+        }
+        // Une parade ratée : sa recharge s'allonge, le client l'affiche
+        for (id, skill, seconds) in tick.missed {
+            if let Some(player) = self.players.get(&id) {
+                player.connection.send(&ServerPacket::SkillCooldown { skill, seconds });
+            }
+        }
+        // Vidés de leur sang par un effet sur la durée
+        for id in tick.died {
+            if let Some(player) = self.players.get_mut(&id) {
+                player.stats.revive();
+                player.stats.fallen = true;
+                let name = player.name.clone();
+                info!("{name} a succombé à ses blessures.");
+                self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{name} a succombé à ses blessures") });
+            }
+        }
+        for id in tick.changed {
+            if let Some(player) = self.players.get(&id) {
+                player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+            }
+        }
+    }
+
     fn learn_skill(&mut self, id: u64, skill: &str) {
         let Some(player) = self.players.get_mut(&id) else { return };
         if let Err(error) = self.skill_wheel.learn(&mut player.stats, skill) {
@@ -825,6 +1041,7 @@ impl Server {
 
     fn leave(&mut self, id: u64, reason: &str) {
         let Some(player) = self.players.remove(&id) else { return };
+        self.skill_runner.forget_with(id, &mut self.creatures);
         info!("{} a quitté la partie ({reason}).", player.name);
         if let Some(position) = player.position {
             self.last_positions.insert(player.name.clone(), position);
@@ -895,6 +1112,23 @@ impl Server {
 }
 
 /// Réponse d'une commande, au seul joueur qui l'a tapée
+/// Les joueurs connectés, tels que les compétences les voient
+struct PlayersView<'a>(&'a mut HashMap<u64, ConnectedPlayer>);
+
+impl SkillPlayers for PlayersView<'_> {
+    fn ids(&self) -> Vec<u64> {
+        self.0.keys().copied().collect()
+    }
+
+    fn feet(&self, id: u64) -> Option<Vec3> {
+        self.0.get(&id).and_then(|p| p.position)
+    }
+
+    fn stats_mut(&mut self, id: u64) -> Option<&mut CharacterStats> {
+        self.0.get_mut(&id).map(|p| &mut p.stats)
+    }
+}
+
 fn tell(player: &ConnectedPlayer, message: &str) {
     player.connection.send(&ServerPacket::ChatMessage { sender: String::new(), message: message.to_string() });
 }

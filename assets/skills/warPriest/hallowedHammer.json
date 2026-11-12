@@ -1,0 +1,59 @@
+{
+  "name": "Marteau Consacré",
+  "description": "Maillet. Le maillet s'illumine. Les prochaines attaques infligent des dégâts de lumière supplémentaires et soignent les alliés dans un petit rayon autour de la cible.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "righteousStrike"
+    ],
+    "max_rank": 3,
+    "planner": 246
+  },
+  "cast": {
+    "cost": {
+      "mana": 15
+    },
+    "cooldown": 20,
+    "animation": "bless",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": [
+            0.25,
+            0.35,
+            0.45
+          ],
+          "duration": 10,
+          "rider": {
+            "radius": 3,
+            "effects": [
+              {
+                "heal": {
+                  "amount": [
+                    6,
+                    8,
+                    10
+                  ]
+                },
+                "to": "allies"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "effectEnd"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "description": "Ruée tête baissée, épaule et bouclier en avant.",
+  "duration": 0.6,
+  "legs": "free",
+  "impact": 0.5,
+  "keys": [
+    {"t": 0.0},
+    {
+      "t": 0.15,
+      "ease": "out",
+      "bones": {
+        "torso": {"rotation": [25, -30, 0]},
+        "leftArm": {"rotation": [40, 0, -20]},
+        "leftForearm": {"rotation": [70, 0, 0]},
+        "rightArm": {"rotation": [-20, 0, 10]},
+        "head": {"rotation": [-15, 0, 0]}
+      }
+    },
+    {
+      "t": 0.85,
+      "bones": {
+        "torso": {"rotation": [25, -30, 0]},
+        "leftArm": {"rotation": [40, 0, -20]},
+        "leftForearm": {"rotation": [70, 0, 0]},
+        "rightArm": {"rotation": [-20, 0, 10]},
+        "head": {"rotation": [-15, 0, 0]}
+      }
+    },
+    {"t": 1.0}
+  ]
+}

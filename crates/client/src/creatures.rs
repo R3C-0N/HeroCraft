@@ -25,6 +25,25 @@ use log::warn;
 use crate::planet_mesh::PlanetVertex;
 use crate::skinned_model::{skin_normal, skin_point, Animation, SkinnedModel, Texture};
 
+/// Corps solide d'une entité, qui repousse le joueur : pieds, cap, forme à l'échelle, fixe
+pub type Obstacle = (Vec3, f32, herocraft_common::Collider, bool);
+
+/// Les corps solides des entités vivantes (un piège, de résistance 0, n'en a pas)
+pub fn obstacles(views: &[CreatureView], registry: &CreatureRegistry) -> Vec<Obstacle> {
+    views
+        .iter()
+        .filter(|v| v.death <= 0.0)
+        .filter_map(|v| {
+            let species = registry.get(v.species?)?;
+            let mut body = species.collider();
+            body.half_width *= v.scale;
+            body.half_length *= v.scale;
+            body.height *= v.scale;
+            (body.resistance > 0.0).then_some((v.feet, v.yaw, body, species.walk_speed <= 0.0))
+        })
+        .collect()
+}
+
 /// Une créature à dessiner
 #[derive(Debug, Clone, Copy)]
 pub struct CreatureView {
@@ -45,6 +64,11 @@ pub struct CreatureView {
     pub scale: f32,
     /// Humeur d'élevage (bits `MOOD_*` : cœurs, apprivoisée, rassasiée)
     pub mood: u8,
+    /// Joueur qui l'a invoquée, et allure copiée (`CreatureState::copy`)
+    pub summoner: Option<u64>,
+    pub copy: Option<u32>,
+    /// Teinte multipliée à sa couleur (leurre d'ombre, ombre d'Étherium)
+    pub tint: Option<[f32; 3]>,
 }
 
 impl CreatureView {
@@ -59,6 +83,9 @@ impl CreatureView {
             action: state.action,
             scale: state.scale,
             mood: state.mood,
+            summoner: state.summoner,
+            copy: state.copy,
+            tint: None,
         }
     }
 }
@@ -256,6 +283,16 @@ impl CreatureAnimator {
             }
             gait.speed += (moved / dt - gait.speed) * (SPEED_SMOOTHING * dt).min(1.0);
             let (Some(species), Some(rig)) = (view.species.and_then(|s| registry.get(s)), models.get(view.species)) else { continue };
+            // Une entité invoquée qui apparaît joue son apparition une seule fois, au rythme du serveur
+            if let CreatureAction::Apparition(done) = view.action {
+                if rig.animations.contains_key("apparition") {
+                    gait.current = "apparition".into();
+                    gait.phase = (done as f32 / 255.0).min(0.999);
+                    gait.previous = None;
+                    gait.blend = 1.0;
+                    continue;
+                }
+            }
 
             let wanted = wanted_animation(view, species, rig, gait.speed);
             if wanted != gait.current {
@@ -352,7 +389,8 @@ pub fn build_frame(views: &[CreatureView], registry: &CreatureRegistry, models: 
         let roll = view.death.clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2;
         let (left, up) = (left * roll.cos() - up * roll.sin(), up * roll.cos() + left * roll.sin());
         let hurt = view.hurt.clamp(0.0, 1.0);
-        let tint = [0, 1, 2].map(|i| 1.0 + (HURT_TINT[i] - 1.0) * hurt);
+        let base = view.tint.unwrap_or([1.0; 3]);
+        let tint = [0, 1, 2].map(|i| base[i] * (1.0 + (HURT_TINT[i] - 1.0) * hurt));
         // Un petit est dessiné plus petit
         let size = block * view.scale.clamp(0.1, 1.0);
         let to_world = |p: Vec3| view.feet + (left * p.x + up * p.y + forward * p.z) * size;
@@ -530,7 +568,7 @@ mod tests {
         let (east, north) = tangent_frame(feet.normalize());
         let animator = CreatureAnimator::default();
         for (yaw, heading) in [(0.0, north), (std::f32::consts::FRAC_PI_2, east)] {
-            let view = CreatureView { id: 1, species: Some(boar), feet, yaw, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
+            let view = CreatureView { id: 1, species: Some(boar), feet, yaw, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
             let frame = build_frame(&[view], &registry, &models, &animator, 1.0);
             assert_eq!(frame.draws, vec![(Some(boar), 0..frame.indices.len() as u32)]);
             assert_eq!(frame.vertices.len(), frame.uvs.len());
@@ -557,7 +595,7 @@ mod tests {
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let (_, north) = tangent_frame(feet.normalize());
         let mut animator = CreatureAnimator::default();
-        let mut view = CreatureView { id: 7, species: Some(boar), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
+        let mut view = CreatureView { id: 7, species: Some(boar), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
         let mesh = |animator: &CreatureAnimator, view: CreatureView| build_frame(&[view], &registry, &models, animator, 1.0).vertices;
         let still = mesh(&animator, view);
 
@@ -595,7 +633,7 @@ mod tests {
         let play = |id: &str, action: CreatureAction, speed: f32| {
             let species = registry.find(id).unwrap();
             let mut animator = CreatureAnimator::default();
-            let mut view = CreatureView { id: 1, species: Some(species), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0 };
+            let mut view = CreatureView { id: 1, species: Some(species), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
             for _ in 0..10 {
                 view.feet += north * speed * 0.05;
                 animator.update(&[view], &registry, &models, 0.05, 1.0);
@@ -620,7 +658,7 @@ mod tests {
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let height = |vertices: &[PlanetVertex]| vertices.iter().map(|v| Vec3::from(v.position).z - feet.z).fold(0.0, f32::max);
         let mut animator = CreatureAnimator::default();
-        let mut view = CreatureView { id: 2, species: Some(cow), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
+        let mut view = CreatureView { id: 2, species: Some(cow), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
         animator.update(&[view], &registry, &models, 0.05, 1.0);
         let standing = height(&build_frame(&[view], &registry, &models, &animator, 1.0).vertices);
         view.action = CreatureAction::Pause(sleep);
@@ -657,8 +695,8 @@ mod tests {
     fn test_unknown_species_gets_a_placeholder() {
         let (registry, models) = setup();
         let views = [
-            CreatureView { id: 3, species: None, feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 },
-            CreatureView { id: 4, species: registry.find("lapin"), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 },
+            CreatureView { id: 3, species: None, feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None },
+            CreatureView { id: 4, species: registry.find("lapin"), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None },
         ];
         let frame = build_frame(&views, &registry, &models, &CreatureAnimator::default(), 1.0);
         assert_eq!(frame.draws.len(), 2);
@@ -672,7 +710,7 @@ mod tests {
         let cow = registry.find("vache").unwrap();
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let animator = CreatureAnimator::default();
-        let view = CreatureView { id: 1, species: Some(cow), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
+        let view = CreatureView { id: 1, species: Some(cow), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
         let frame = |view: CreatureView| build_frame(&[view], &registry, &models, &animator, 1.0).vertices;
         assert!(frame(view).iter().all(|v| v.color == [1.0; 4]));
         assert!(frame(CreatureView { hurt: 1.0, ..view }).iter().all(|v| v.color[0] == 1.0 && v.color[1] < 0.5));
@@ -690,7 +728,7 @@ mod tests {
         let boar = registry.find("sanglier").unwrap();
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let (_, north) = tangent_frame(feet.normalize());
-        let near = CreatureView { id: 1, species: Some(boar), feet: feet + north * 3.0, yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
+        let near = CreatureView { id: 1, species: Some(boar), feet: feet + north * 3.0, yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
         let far = CreatureView { id: 2, feet: feet + north * 5.0, ..near };
         let eye = feet + Vec3::Z * 0.4;
         assert_eq!(aimed_creature(&[far, near], &registry, eye, north, 6.0, 1.0).map(|(id, _)| id), Some(1));
@@ -795,7 +833,7 @@ pub(crate) mod apercu {
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let mut animator = CreatureAnimator::default();
         for (i, species) in registry.iter().enumerate() {
-            let mut v = CreatureView { id: i as u64, species: Some(i), feet, yaw: 0.6, hurt: 0.0, death: 0.0, action: CreatureAction::Marche, scale: 1.0, mood: 0 };
+            let mut v = CreatureView { id: i as u64, species: Some(i), feet, yaw: 0.6, hurt: 0.0, death: 0.0, action: CreatureAction::Marche, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
             // Un peu de marche pour une pose animée
             let (_, north) = tangent_frame(feet.normalize());
             for _ in 0..7 {
@@ -825,7 +863,7 @@ pub(crate) mod apercu {
         for (row, &i) in bred.iter().enumerate() {
             let species = registry.get(i).unwrap();
             for (col, (scale, mood)) in [(1.0, MOOD_HEARTS), (0.5, 0), (0.75, MOOD_HEARTS)].into_iter().enumerate() {
-                let view = CreatureView { id: i as u64, species: Some(i), feet, yaw: 0.6, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale, mood };
+                let view = CreatureView { id: i as u64, species: Some(i), feet, yaw: 0.6, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale, mood, summoner: None, copy: None, tint: None };
                 let frame = build_frame(&[view], &registry, &models, &animator, 1.0);
                 // Même échelle pour l'adulte et ses petits, cœurs compris
                 rasterize(&mut img, &mut depth, w, &frame, textures[i].as_ref().unwrap(), feet, (col * cell, row * cell, cell), scale_for(species, cell) * 0.8);
@@ -857,7 +895,7 @@ pub(crate) mod apercu {
                 let mut animator = CreatureAnimator::default();
                 let coup = name == "coup";
                 animator.gaits.insert(1, Gait { last_feet: feet, speed: 0.0, current: if coup { "repos".into() } else { name.clone() }, phase, previous: None, blend: 1.0 });
-                let view = CreatureView { id: 1, species: Some(i), feet, yaw: 1.2, hurt: if coup { 1.0 - phase } else { 0.0 }, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0 };
+                let view = CreatureView { id: 1, species: Some(i), feet, yaw: 1.2, hurt: if coup { 1.0 - phase } else { 0.0 }, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
                 let frame = build_frame(&[view], &registry, &models, &animator, 1.0);
                 rasterize(&mut img, &mut depth, w, &frame, textures[i].as_ref().unwrap(), feet, (col * cell, row * cell, cell), scale_for(s, cell));
             }

@@ -2,6 +2,7 @@
   "numeric_id": 16830,
   "name": "Pioche en orichalque",
   "category": "Outils",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/orichalcumPickaxe.png",
   "stats": {"Dégâts": 7, "Durabilité": 3000},

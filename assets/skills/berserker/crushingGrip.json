@@ -1,0 +1,66 @@
+{
+  "name": "Prise Écrasante",
+  "description": "Assaut. Ta main libre agrippe la gorge de l'ennemi par réflexe de survie, broyant ses os pendant que tu l'achèves avec ton arme.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "blindCharge"
+    ],
+    "max_rank": 3,
+    "planner": 384
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 9,
+    "animation": "thrust",
+    "area": {
+      "arc": {
+        "range": 2.5,
+        "angle": 50
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.6,
+            1.9,
+            2.2
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": [
+            1,
+            1.25,
+            1.5
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "thrustStreak",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

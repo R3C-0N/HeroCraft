@@ -1,0 +1,57 @@
+{
+  "name": "Arme de l'Aube",
+  "description": "Arme. Ton arme s'embrase de lumière, infligeant des dégâts supplémentaires majeurs, surtout aux créatures de l'ombre.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "radiantStrike"
+    ],
+    "max_rank": 3,
+    "planner": 397
+  },
+  "cast": {
+    "cost": {
+      "mana": 18
+    },
+    "cooldown": 20,
+    "animation": "bless",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": [
+            0.4,
+            0.5,
+            0.6
+          ],
+          "duration": 12,
+          "against": {
+            "tag": "shadow",
+            "value": [
+              0.4,
+              0.5,
+              0.6
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "holyBeam",
+      "anchor": "body",
+      "from": "impact"
+    }
+  ]
+}

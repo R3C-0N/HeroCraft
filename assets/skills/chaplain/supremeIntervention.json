@@ -1,0 +1,85 @@
+{
+  "name": "Intervention Suprême",
+  "description": "Compétence ultime, aussi appelée Lueur de l'Étherium. Le Chapelain lève son Sceptre et canalise la pure énergie de l'Étherium. Tous les alliés morts dans une très large zone sont instantanément ressuscités avec la moitié de leur santé. Les alliés en vie sont soignés au maximum et bénéficient d'une aura d'invincibilité pendant une courte durée.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "sanctifiedNova",
+      "divineAegis",
+      "redemption",
+      "martyrsMark"
+    ],
+    "max_rank": 3,
+    "planner": 239
+  },
+  "cast": {
+    "cost": {
+      "mana": 90
+    },
+    "cooldown": 150,
+    "animation": "channel",
+    "area": {
+      "circle": {
+        "radius": 14
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "heal": {
+          "amount": 1000
+        }
+      },
+      {
+        "shield": {
+          "amount": 200,
+          "duration": 6
+        }
+      },
+      {
+        "immune": {
+          "from": [
+            "damage"
+          ],
+          "duration": 6
+        }
+      },
+      {
+        "revive": {
+          "health": 0.5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "holyBeam",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "shieldDome",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

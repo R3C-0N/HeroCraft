@@ -2,6 +2,7 @@
   "numeric_id": 16396,
   "name": "Épée d'adamantine",
   "category": "Armes",
+  "weapon": {"kind": "sword", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/adamantineSword.png",
   "stats": {"Dégâts": 18, "Durabilité": 3000},

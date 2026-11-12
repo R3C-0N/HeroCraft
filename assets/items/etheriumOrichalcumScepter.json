@@ -2,6 +2,7 @@
   "numeric_id": 16468,
   "name": "Sceptre d'étherium (orichalque)",
   "category": "Armes",
+  "weapon": {"kind": "staff", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/etheriumOrichalcumScepter.png",
   "stats": {"Dégâts": 15, "Durabilité": 5000},

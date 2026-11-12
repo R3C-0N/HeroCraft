@@ -1,0 +1,65 @@
+{
+  "name": "Nova Sanctifiée",
+  "description": "Lumière Apaisante + Soins de Zone. Le Sceptre accumule l'énergie lumineuse et la libère en une explosion de soins massifs sur une large zone.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "areaHeal"
+    ],
+    "max_rank": 3,
+    "planner": 236
+  },
+  "cast": {
+    "cost": {
+      "mana": 35
+    },
+    "cooldown": 20,
+    "animation": "channel",
+    "area": {
+      "circle": {
+        "radius": [
+          8,
+          9,
+          10
+        ]
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "heal": {
+          "amount": [
+            35,
+            45,
+            55
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "heal": 3,
+          "duration": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "holyBeam",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

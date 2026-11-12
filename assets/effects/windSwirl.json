@@ -1,0 +1,32 @@
+{
+  "description": "Tourbillon de vent clair autour du corps.",
+  "layers": [
+    {
+      "loop": true,
+      "fade_in": 0.2,
+      "fade_out": 0.3,
+      "particles": {
+        "rate": 40,
+        "origin": "cylinder",
+        "origin_radius": 0.9,
+        "origin_height": 1.8,
+        "direction": "none",
+        "orbit": 420,
+        "life": [
+          0.4,
+          0.7
+        ],
+        "size": [
+          0.25,
+          0.05
+        ],
+        "color": [
+          "#E0FFF8A0",
+          "#A0F0E000"
+        ],
+        "glow": 1.5,
+        "texture": "soft.png"
+      }
+    }
+  ]
+}

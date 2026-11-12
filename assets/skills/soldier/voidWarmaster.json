@@ -1,0 +1,96 @@
+{
+  "name": "Maître de guerre du Néant",
+  "description": "Compétence ultime. Tu imprègnes ton arme d'Étherium pur. Tu deviens totalement inarrêtable et tes attaques génèrent des ondes de choc gigantesques qui traversent toute la carte. La force libérée pulvérise tout sur son passage, quelle que soit la forme de l'arme que tu tiens entre tes mains.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "relentlessExecution",
+      "crushingTornado",
+      "seismicBreach"
+    ],
+    "max_rank": 3,
+    "planner": 359
+  },
+  "cast": {
+    "cost": {
+      "stamina": 60
+    },
+    "cooldown": 120,
+    "animation": "groundSlam",
+    "area": {
+      "line": {
+        "length": 30,
+        "width": 4
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            4,
+            5,
+            6
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 10
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": 0.8,
+          "duration": 15
+        }
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.5,
+          "duration": 15
+        }
+      },
+      {
+        "immune": {
+          "from": [
+            "stun",
+            "slow",
+            "knockback",
+            "pull"
+          ],
+          "duration": 15
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "voidRift",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

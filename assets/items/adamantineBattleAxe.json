@@ -2,6 +2,7 @@
   "numeric_id": 16385,
   "name": "Hache de guerre en adamantine",
   "category": "Armes",
+  "weapon": {"kind": "axe", "interval": 0.8},
   "max_stack": 1,
   "icon": "icones/adamantineBattleAxe.png",
   "stats": {"Dégâts": 24, "Durabilité": 3000},

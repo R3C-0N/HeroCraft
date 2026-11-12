@@ -1,0 +1,66 @@
+{
+  "name": "Pluie de Flèches",
+  "description": "Volée. Tire une volée en cloche qui s'abat sur une large zone ciblée.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "multiShot"
+    ],
+    "max_rank": 3,
+    "planner": 291
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 10,
+    "animation": "bowShot",
+    "area": {
+      "circle": {
+        "radius": [
+          3,
+          3.5,
+          4
+        ],
+        "center": "aimed",
+        "distance": 16
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.0,
+            1.2,
+            1.4
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

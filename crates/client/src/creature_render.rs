@@ -17,6 +17,14 @@ use crate::skinned_model::Texture;
 /// Planches d'habitants gardées au plus avant d'oublier les plus anciennes
 const MAX_VILLAGER_SHEETS: usize = 96;
 
+/// D'où vient la texture d'un humanoïde : une apparence à peindre, ou une image toute faite
+#[derive(Clone, Copy)]
+pub enum SheetSource<'a> {
+    Painted(&'a herocraft_common::hero::Appearance),
+    /// Clé unique et image
+    Fixed(&'a str, &'a Texture),
+}
+
 pub struct CreatureRenderer {
     pipeline: wgpu::RenderPipeline,
     /// Gardé pour recréer le pipeline quand la cible de la passe 3D change
@@ -173,15 +181,26 @@ impl CreatureRenderer {
         }
     }
 
-    /// Indice de texture de la planche d'un habitant (peinte la première fois qu'on la demande)
-    pub fn villager_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, appearance: &herocraft_common::hero::Appearance) -> usize {
-        let key = appearance.sheet_key();
+    /// Indice de texture de la planche d'un habitant (peinte la première fois qu'on la demande), ou
+    /// d'une image fixe (planche d'une invocation, arme greffée)
+    pub fn villager_texture(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, source: SheetSource) -> usize {
+        let key = match source {
+            SheetSource::Painted(appearance) => appearance.sheet_key(),
+            SheetSource::Fixed(key, _) => format!("fixe:{key}"),
+        };
         let slot = match self.villagers.iter().position(|(k, _, _)| *k == key) {
             Some(slot) => slot,
             None => {
-                let size = herocraft_common::hero::SHEET_SIZE as u32;
-                let sheet = Texture { width: size, height: size, rgba: herocraft_common::hero::paint(appearance).rgba };
-                let bind_group = texture_bind_group(device, queue, &self.texture_layout, &self.sampler, &sheet, "Villager Sheet");
+                let painted;
+                let texture = match source {
+                    SheetSource::Painted(appearance) => {
+                        let size = herocraft_common::hero::SHEET_SIZE as u32;
+                        painted = Texture { width: size, height: size, rgba: herocraft_common::hero::paint(appearance).rgba };
+                        &painted
+                    }
+                    SheetSource::Fixed(_, texture) => texture,
+                };
+                let bind_group = texture_bind_group(device, queue, &self.texture_layout, &self.sampler, texture, "Villager Sheet");
                 self.villagers.push((key, bind_group, 0));
                 self.villagers.len() - 1
             }

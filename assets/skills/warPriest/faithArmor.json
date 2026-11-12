@@ -1,0 +1,42 @@
+{
+  "name": "Armure de Foi",
+  "description": "Protection. S'entoure d'un bouclier lumineux temporaire qui réduit les dégâts physiques subis.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 244
+  },
+  "cast": {
+    "cost": {
+      "mana": 15
+    },
+    "cooldown": 18,
+    "animation": "guard",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "shield": {
+          "amount": [
+            20,
+            30,
+            40
+          ],
+          "duration": 8,
+          "absorbs": "physical"
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    }
+  ]
+}

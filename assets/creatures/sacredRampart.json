@@ -1,0 +1,45 @@
+{
+  "name": "Rempart Sacré",
+  "description": "Mur de lumière du Chapelain : il arrête les tirs ennemis et laisse passer tout le monde.",
+  "body": {
+    "half_width": 2.0,
+    "half_length": 0.2,
+    "height": 2.6
+  },
+  "walk_speed": 0,
+  "health": 1000,
+  "activity": "always",
+  "model": {
+    "mesh": "../skills/models/sacredRampart.gltf",
+    "texture": "../skills/models/sacredRampart.png",
+    "animations": {
+      "apparition": {
+        "clip": "rise",
+        "cycle": 0.5
+      },
+      "coup": {
+        "os": {
+          "root": {
+            "rotation": [
+              0,
+              0,
+              3
+            ],
+            "frequence": 2
+          }
+        }
+      },
+      "repos": {
+        "cycle": 2
+      }
+    }
+  },
+  "collision": {
+    "shape": "box",
+    "resistance": 0
+  },
+  "obstacle": {
+    "shots": true,
+    "invulnerable": true
+  }
+}

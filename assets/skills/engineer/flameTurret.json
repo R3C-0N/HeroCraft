@@ -1,0 +1,50 @@
+{
+  "name": "Tourelle Incendiaire",
+  "description": "Explosif. Déploie un canon à courte portée qui crache un cône de flammes continu, idéal pour verrouiller un couloir.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "shrapnelMine"
+    ],
+    "max_rank": 3,
+    "planner": 306
+  },
+  "cast": {
+    "cost": {
+      "stamina": 25
+    },
+    "cooldown": 18,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": 1.5,
+        "center": "aimed",
+        "distance": 5
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "summon": {
+          "species": "flameTurret",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            15,
+            18,
+            22
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Éclats de métal gris qui sautent de la cible quand son armure cède.",
+  "layers": [
+    {
+      "shape": "sprite",
+      "duration": 0.15,
+      "size": [0.5, 1.1],
+      "color": ["#E8EEF4FF", "#9FB0C000"],
+      "glow": 2,
+      "texture": "soft.png"
+    },
+    {
+      "particles": {
+        "count": 14,
+        "origin": "point",
+        "direction": "random",
+        "speed": [2.5, 5],
+        "gravity": 12,
+        "drag": 1.5,
+        "life": [0.35, 0.7],
+        "size": [0.12, 0.06],
+        "color": ["#D8E0E8", "#6E7C8A00"],
+        "glow": 1,
+        "texture": "shard.png"
+      }
+    }
+  ]
+}

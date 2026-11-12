@@ -2,6 +2,7 @@
   "numeric_id": 16389,
   "name": "Masse d'adamantine",
   "category": "Armes",
+  "weapon": {"kind": "mace", "interval": 0.55},
   "max_stack": 1,
   "icon": "icones/adamantineMace.png",
   "stats": {"Dégâts": 25, "Durabilité": 3000},

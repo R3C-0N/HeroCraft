@@ -2,6 +2,7 @@
   "numeric_id": 16513,
   "name": "Sceptre de mithril",
   "category": "Armes",
+  "weapon": {"kind": "staff", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/mithrilScepter.png",
   "stats": {"Dégâts": 11, "Durabilité": 3000},

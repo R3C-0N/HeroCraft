@@ -258,3 +258,128 @@ def voidSingularity():
     gantelet(t, 40, 38, couleur=(90, 80, 110), lueur=VIOLET)
     t.vignette(0.3)
     return t
+
+
+# --- Les quatre éléments (nœuds de la roue) et leurs amplifications (Fusion, même élément × 2) ---
+
+FEU = ((255, 250, 200), (255, 190, 40), (240, 80, 20), (150, 30, 14))
+AIR = (220, 245, 255)
+FONDS = {
+    "feu": [(255, 220, 140), (240, 110, 40), (150, 36, 18), (60, 12, 8), (20, 4, 4)],
+    "eau": [(190, 235, 255), (80, 160, 230), (24, 80, 160), (8, 30, 70), (4, 10, 28)],
+    "terre": [(235, 205, 150), (170, 120, 70), (100, 64, 34), (46, 26, 14), (16, 8, 4)],
+    "air": [(170, 215, 235), (90, 145, 190), (44, 86, 136), (20, 40, 72), (8, 16, 30)],
+}
+
+
+def flamme(t, cx, cy, s=1.0):
+    """Flamme dressée en trois langues, cœur pâle"""
+    for k, c in ((1.0, FEU[2]), (0.72, FEU[1]), (0.42, FEU[0])):
+        pts = [(cx - 9 * s * k, cy + 8 * s * k), (cx - 8 * s * k, cy - 1 * s * k), (cx - 4 * s * k, cy - 7 * s * k),
+               (cx - 3 * s * k, cy - 1 * s * k), (cx, cy - 15 * s * k), (cx + 3 * s * k, cy - 3 * s * k),
+               (cx + 6 * s * k, cy - 9 * s * k), (cx + 9 * s * k, cy), (cx + 8 * s * k, cy + 8 * s * k)]
+        m = t.masque(lambda d, pts=pts: d.polygon(pts, fill=1))
+        t.peindre(m, c)
+        if k == 1.0:
+            t.contour(m, FEU[3])
+    t.lueur(cx, cy, 16 * s, FEU[1], 0.6)
+
+
+def goutte(t, cx, cy, s=1.0):
+    """Goutte d'eau, reflet en haut à gauche"""
+    m = t.masque(lambda d: (d.ellipse([cx - 8 * s, cy - 4 * s, cx + 8 * s, cy + 12 * s], fill=1),
+                            d.polygon([(cx - 7 * s, cy + 1 * s), (cx, cy - 14 * s), (cx + 7 * s, cy + 1 * s)], fill=1)))
+    t.objet(m, EAU, EAU_C, (30, 90, 180), contour=(10, 40, 90))
+    t.peindre(t.masque(lambda d: d.arc([cx - 5 * s, cy - 1 * s, cx + 3 * s, cy + 9 * s], 150, 240, fill=1, width=max(1, round(s)))), BLANC)
+    t.lueur(cx, cy + 2 * s, 14 * s, EAU, 0.5)
+
+
+def montagne(t, cx, cy, s=1.0):
+    """Bloc de roche taillé en pic, veine dorée"""
+    m = t.masque(lambda d: d.polygon([(cx - 12 * s, cy + 10 * s), (cx - 7 * s, cy - 2 * s), (cx - 2 * s, cy - 13 * s),
+                                      (cx + 4 * s, cy - 6 * s), (cx + 8 * s, cy - 9 * s), (cx + 12 * s, cy + 10 * s)], fill=1))
+    t.objet(m, PIERRE, melange(PIERRE, BLANC, 0.45), melange(PIERRE, (0, 0, 0), 0.5))
+    t.peindre(t.masque(lambda d: d.line([(cx - 2 * s, cy - 13 * s), (cx - 1 * s, cy - 2 * s), (cx + 4 * s, cy + 4 * s),
+                                         (cx + 2 * s, cy + 10 * s)], fill=1)) & m, OR)
+    rocher(t, cx - 13 * s, cy + 9 * s, 2.5 * s)
+    rocher(t, cx + 13 * s, cy + 8 * s, 2 * s)
+
+
+def tourbillon(t, cx, cy, s=1.0):
+    """Spirale de vent, trois volutes qui s'enroulent vers le centre"""
+    t.lueur(cx, cy, 12 * s, AIR, 0.25)
+    for i, r in enumerate((13, 9, 5)):
+        r = r * s
+        debut = i * 110
+        epais = max(2, round(2 * s))
+        t.peindre(t.masque(lambda d, r=r, debut=debut: d.arc([cx - r + 1, cy - r + 1, cx + r + 1, cy + r + 1], debut, debut + 260, fill=1,
+                                                              width=epais)), (30, 60, 100))
+        t.peindre(t.masque(lambda d, r=r, debut=debut: d.arc([cx - r, cy - r, cx + r, cy + r], debut, debut + 260, fill=1,
+                                                              width=epais)), AIR if i % 2 == 0 else BLANC)
+    for x, y in ((cx - 15 * s, cy - 6 * s), (cx + 14 * s, cy + 8 * s), (cx + 6 * s, cy - 15 * s)):
+        t.point(x, y, BLANC)
+
+
+EMBLEMES = {"feu": flamme, "eau": goutte, "terre": montagne, "air": tourbillon}
+
+
+def element(nom):
+    """Nœud d'un élément : son emblème dans un cercle de runes"""
+    t = Toile()
+    t.fond_radial(24, 24, 40, FONDS[nom])
+    anneau(t, 24, 24, 19, 19, melange(FONDS[nom][1], BLANC, 0.5), 1)
+    for i in range(8):
+        a = math.radians(i * 45 + 22.5)
+        t.point(24 + 19 * math.cos(a), 24 + 19 * math.sin(a), BLANC)
+    EMBLEMES[nom](t, 24, 26, 1.0)
+    t.vignette(0.4)
+    return t
+
+
+def amplifie(nom):
+    """Amplification : l'emblème doublé, plus grand, rayonnant, cerclé d'Étherium"""
+    t = Toile()
+    fond = FONDS[nom]
+    t.fond_radial(24, 24, 44, [melange(fond[0], BLANC, 0.4)] + fond[:-1])
+    t.rayons(24, 25, 8, 23, 12, melange(fond[0], BLANC, 0.5))
+    t.lueur(24, 25, 22, fond[1], 0.5 if nom == "air" else 0.9)
+    # L'écho du premier sort, puis le second par-dessus, plus grand
+    EMBLEMES[nom](t, 15, 30, 0.6)
+    EMBLEMES[nom](t, 27, 25, 1.25)
+    anneau(t, 24, 25, 21, 21, CYAN, 1, clair=BLANC)
+    for x, y in ((8, 8), (40, 10), (42, 40)):
+        t.etincelle(x, y, CYAN)
+    t.vignette(0.3)
+    return t
+
+
+def fire():
+    return element("feu")
+
+
+def water():
+    return element("eau")
+
+
+def earth():
+    return element("terre")
+
+
+def air():
+    return element("air")
+
+
+def amplifiedFire():
+    return amplifie("feu")
+
+
+def amplifiedWater():
+    return amplifie("eau")
+
+
+def amplifiedEarth():
+    return amplifie("terre")
+
+
+def amplifiedAir():
+    return amplifie("air")

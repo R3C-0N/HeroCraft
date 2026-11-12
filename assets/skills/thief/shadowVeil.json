@@ -1,0 +1,62 @@
+{
+  "name": "Voile Ténébreux",
+  "description": "Ombre. Tu utilises ta main libre pour canaliser la magie de l'ombre et disparaître totalement pendant quelques secondes.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 258
+  },
+  "cast": {
+    "cost": {
+      "mana": 15
+    },
+    "cooldown": 18,
+    "animation": "guard",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "invisible": {
+          "duration": [
+            4,
+            5,
+            6
+          ]
+        }
+      },
+      {
+        "buff": {
+          "stat": "speed",
+          "value": [
+            0.3,
+            0.4,
+            0.5
+          ],
+          "duration": 4
+        }
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": [
+            0.5,
+            0.6,
+            0.7
+          ],
+          "duration": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shadowSmoke",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    }
+  ]
+}

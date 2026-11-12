@@ -1,0 +1,45 @@
+{
+  "description": "Câble d'acier tendu, lancé droit devant.",
+  "layers": [
+    {
+      "shape": "streak",
+      "duration": 0.5,
+      "length": [
+        0.5,
+        8
+      ],
+      "width": 0.05,
+      "color": [
+        "#B8C0C8",
+        "#8890A000"
+      ]
+    },
+    {
+      "particles": {
+        "count": 8,
+        "origin": "point",
+        "direction": "forward",
+        "spread": 8,
+        "speed": [
+          10,
+          14
+        ],
+        "drag": 1,
+        "life": [
+          0.3,
+          0.5
+        ],
+        "size": [
+          0.06,
+          0.02
+        ],
+        "color": [
+          "#FFE0A0",
+          "#FF902000"
+        ],
+        "glow": 2,
+        "texture": "spark.png"
+      }
+    }
+  ]
+}

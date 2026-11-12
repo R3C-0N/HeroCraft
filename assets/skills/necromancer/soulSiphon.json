@@ -1,0 +1,63 @@
+{
+  "name": "Siphon d'Âme",
+  "description": "Drain. Utilise ta main libre pour arracher la force vitale d'une cible et te soigner lentement.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 212
+  },
+  "cast": {
+    "cost": {
+      "mana": 12
+    },
+    "cooldown": 8,
+    "animation": "channel",
+    "area": {
+      "line": {
+        "length": 10,
+        "width": 1.5
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "over_time": {
+          "damage": [
+            3,
+            4,
+            5
+          ],
+          "duration": 4
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "over_time": {
+          "heal": [
+            3,
+            4,
+            5
+          ],
+          "duration": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "drainStream",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "body",
+      "from": "impact"
+    }
+  ]
+}

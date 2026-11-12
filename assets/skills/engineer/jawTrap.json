@@ -1,0 +1,48 @@
+{
+  "name": "Piège à Mâchoire",
+  "description": "Piège. Pose un piège dissimulé au sol qui immobilise le premier ennemi marchant dessus et lui inflige un lourd saignement.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 302
+  },
+  "cast": {
+    "cost": {
+      "stamina": 15
+    },
+    "cooldown": 10,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": 1,
+        "center": "aimed",
+        "distance": 3
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "summon": {
+          "species": "jawTrap",
+          "at": "aimed",
+          "limit": [
+            2,
+            3,
+            4
+          ],
+          "duration": 60
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
+}

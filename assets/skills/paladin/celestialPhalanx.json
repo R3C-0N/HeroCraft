@@ -1,0 +1,73 @@
+{
+  "name": "Phalange Céleste",
+  "description": "Assaut Ailé + Garde Scintillante. Tu charges en générant un large mur de lumière frontal, bousculant les ennemis tout en abritant totalement les alliés dans ton sillage.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "glimmeringGuard",
+      "virtuousIntervention"
+    ],
+    "max_rank": 3,
+    "planner": 402
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 18,
+    "animation": "charge",
+    "area": {
+      "line": {
+        "length": 7,
+        "width": 3
+      }
+    },
+    "movement": {
+      "dash": 6
+    },
+    "targets": "all",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.8,
+            2.1,
+            2.4
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 7
+        }
+      },
+      {
+        "shield": {
+          "amount": 30,
+          "duration": 5
+        },
+        "to": "allies"
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "lightWall",
+      "anchor": "body",
+      "from": "start",
+      "to": "end"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

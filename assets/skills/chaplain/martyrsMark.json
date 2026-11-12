@@ -1,0 +1,65 @@
+{
+  "name": "Marque du Martyr",
+  "description": "Bénédiction. Le Chapelain lie sa vitalité à un allié. Une partie des dégâts subis par l'allié est redirigée vers le Chapelain, mais l'allié bénéficie d'une forte régénération.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "blessingOfSpeed"
+    ],
+    "max_rank": 3,
+    "planner": 234
+  },
+  "cast": {
+    "cost": {
+      "mana": 20
+    },
+    "cooldown": 20,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": 8
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "link": {
+          "share": 0.4,
+          "duration": 10
+        }
+      },
+      {
+        "over_time": {
+          "heal": [
+            3,
+            4,
+            5
+          ],
+          "duration": 10
+        }
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.3,
+          "duration": 10
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "linkBeam",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

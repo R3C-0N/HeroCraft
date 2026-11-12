@@ -1,0 +1,58 @@
+{
+  "name": "Carreau Empoisonné",
+  "description": "Munition. Une munition enduite de toxines pour des dégâts sur la durée.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 257
+  },
+  "cast": {
+    "weapons": [
+      "bow",
+      "crossbow"
+    ],
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 6,
+    "animation": "crossbowShot",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "load_ammo": {
+          "shots": 3,
+          "duration": 15,
+          "effects": [
+            {
+              "over_time": {
+                "damage": [
+                  3,
+                  4,
+                  5
+                ],
+                "duration": 6
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "end"
+    },
+    {
+      "effect": "poisonCloud",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

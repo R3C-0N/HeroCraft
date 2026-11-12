@@ -2,6 +2,7 @@
   "numeric_id": 16489,
   "name": "Arbalète de poing",
   "category": "Armes",
+  "weapon": {"kind": "crossbow", "interval": 0.8, "ammo": "bolt"},
   "max_stack": 1,
   "icon": "icones/handCrossbow.png",
   "stats": {"Dégâts": 2, "Durabilité": 80},

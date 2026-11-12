@@ -1,0 +1,90 @@
+{
+  "name": "Frappe d'Étherium",
+  "description": "Compétence ultime. Sans utiliser de magie propre, tu coches une unique flèche taillée dans de l'Étherium pur. En relâchant la corde, le projectile déchire l'air dans un silence total, transperçant absolument tous les obstacles, murs, boucliers et ennemis sur toute la longueur de la zone, infligeant des dégâts physiques cataclysmiques.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "ballistaShot",
+      "steelDeluge",
+      "deadlyHunt"
+    ],
+    "max_rank": 3,
+    "planner": 299
+  },
+  "cast": {
+    "cost": {
+      "stamina": 60
+    },
+    "cooldown": 90,
+    "animation": "bowShot",
+    "speed": 0.5,
+    "area": {
+      "line": {
+        "length": 40,
+        "width": 2
+      }
+    },
+    "projectile": {
+      "speed": 80,
+      "size": "large",
+      "pierce": "all",
+      "through": [
+        "terrain",
+        "obstacles"
+      ]
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            5,
+            6,
+            7
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 10
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "projectile",
+      "from": "impact"
+    },
+    {
+      "effect": "voidRift",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
+    }
+  ]
+}

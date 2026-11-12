@@ -1,0 +1,83 @@
+{
+  "name": "Exécution Implacable",
+  "description": "Brise-Garde + Frappe Lourde. Un combo en deux temps inarrêtable : le premier coup pulvérise l'armure, le second expédie la cible à l'autre bout de la pièce.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "absoluteParry",
+      "circularSweep"
+    ],
+    "max_rank": 3,
+    "planner": 358
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 14,
+    "animation": "overheadStrike",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 70
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "shred": {
+          "amount": 1,
+          "duration": 4
+        }
+      },
+      {
+        "damage": {
+          "power": [
+            3.0,
+            3.4,
+            3.8
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": [
+            12,
+            13,
+            14
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "armorShatter",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

@@ -2,6 +2,7 @@
   "numeric_id": 16526,
   "name": "Marteau d'orichalque",
   "category": "Armes",
+  "weapon": {"kind": "mace", "interval": 0.55},
   "max_stack": 1,
   "icon": "icones/orichalcumMallet.png",
   "stats": {"Dégâts": 20, "Durabilité": 3000},

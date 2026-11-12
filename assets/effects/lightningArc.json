@@ -1,0 +1,61 @@
+{
+  "description": "Arc électrique qui crépite vers l'avant.",
+  "layers": [
+    {
+      "shape": "streak",
+      "duration": 0.18,
+      "length": 6,
+      "width": [
+        0.15,
+        0.03
+      ],
+      "color": [
+        "#E0F8FF",
+        "#60C0FF00"
+      ],
+      "glow": 5
+    },
+    {
+      "delay": 0.08,
+      "shape": "streak",
+      "duration": 0.14,
+      "length": 5,
+      "width": [
+        0.1,
+        0.02
+      ],
+      "color": [
+        "#FFFFFF",
+        "#80D0FF00"
+      ],
+      "glow": 5
+    },
+    {
+      "particles": {
+        "count": 20,
+        "origin": "point",
+        "direction": "forward",
+        "spread": 25,
+        "speed": [
+          6,
+          12
+        ],
+        "drag": 4,
+        "life": [
+          0.15,
+          0.35
+        ],
+        "size": [
+          0.08,
+          0.0
+        ],
+        "color": [
+          "#E0F8FF",
+          "#60C0FF00"
+        ],
+        "glow": 4,
+        "texture": "spark.png"
+      }
+    }
+  ]
+}

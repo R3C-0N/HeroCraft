@@ -1,0 +1,64 @@
+{
+  "description": "Jet de vapeur blanche brûlante qui fuse et s'étale.",
+  "layers": [
+    {
+      "particles": {
+        "count": 40,
+        "origin": "sphere",
+        "origin_radius": 0.3,
+        "direction": "up",
+        "spread": 50,
+        "speed": [
+          2,
+          5
+        ],
+        "drag": 2,
+        "gravity": -1,
+        "life": [
+          0.8,
+          1.6
+        ],
+        "size": [
+          0.4,
+          1.4
+        ],
+        "color": [
+          "#F0F4F8B0",
+          "#E0E8F000"
+        ],
+        "texture": "smoke.png",
+        "spin": [
+          -40,
+          40
+        ]
+      }
+    },
+    {
+      "particles": {
+        "count": 20,
+        "origin": "sphere",
+        "origin_radius": 0.2,
+        "direction": "random",
+        "speed": [
+          3,
+          6
+        ],
+        "drag": 3,
+        "life": [
+          0.2,
+          0.4
+        ],
+        "size": [
+          0.1,
+          0.02
+        ],
+        "color": [
+          "#FFFFFF",
+          "#C0E0FF00"
+        ],
+        "glow": 2,
+        "texture": "soft.png"
+      }
+    }
+  ]
+}

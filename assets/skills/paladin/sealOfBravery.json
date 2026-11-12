@@ -1,0 +1,50 @@
+{
+  "name": "Sceau de Bravoure",
+  "description": "Soutien. Un enchantement rapide augmentant tes dégâts de mêlée et ceux des alliés proches.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 393
+  },
+  "cast": {
+    "cost": {
+      "mana": 15
+    },
+    "cooldown": 20,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": 8
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": [
+            0.2,
+            0.25,
+            0.3
+          ],
+          "duration": 12
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "runeCircle",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "weaponGlow",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

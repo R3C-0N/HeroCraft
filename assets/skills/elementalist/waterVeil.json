@@ -1,0 +1,44 @@
+{
+  "name": "Voile Aquatique",
+  "description": "Un bouclier fluide qui absorbe les dégâts et te soigne légèrement.",
+  "cast": {
+    "cost": {
+      "mana": 15
+    },
+    "cooldown": 14,
+    "animation": "guard",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "shield": {
+          "amount": [
+            25,
+            32,
+            40
+          ],
+          "duration": 8
+        }
+      },
+      {
+        "over_time": {
+          "heal": 2,
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "mistCloud",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
+}

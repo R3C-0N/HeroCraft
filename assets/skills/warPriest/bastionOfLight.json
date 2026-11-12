@@ -1,0 +1,78 @@
+{
+  "name": "Bastion de Lumière",
+  "description": "Jugement + Armure de Foi. Frappe violemment le sol, créant un large dôme protecteur. Les alliés à l'intérieur bénéficient d'une réduction massive des dégâts, et les ennemis qui tentent d'y entrer sont repoussés.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "sanctuary",
+      "penitentCharge"
+    ],
+    "max_rank": 3,
+    "planner": 252
+  },
+  "cast": {
+    "cost": {
+      "mana": 35
+    },
+    "cooldown": 30,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": 5
+      }
+    },
+    "targets": "all",
+    "effects": [
+      {
+        "shield": {
+          "amount": [
+            30,
+            40,
+            50
+          ],
+          "duration": 8
+        },
+        "to": "allies"
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": [
+            0.4,
+            0.5,
+            0.6
+          ],
+          "duration": 8
+        },
+        "to": "allies"
+      },
+      {
+        "knockback": {
+          "strength": 8
+        },
+        "to": "enemies"
+      }
+    ],
+    "zone": {
+      "duration": [
+        6,
+        7,
+        8
+      ]
+    }
+  },
+  "visuals": [
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shieldDome",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
+}

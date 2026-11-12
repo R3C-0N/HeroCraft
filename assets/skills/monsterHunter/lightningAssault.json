@@ -1,0 +1,80 @@
+{
+  "name": "Assaut fulgurant",
+  "description": "Esquive tactique + Carreau-harpon. Roulade arrière pour éviter un coup, harponnage immédiat, puis propulsion vers l'ennemi pour une frappe plongeante.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "crossRiposte",
+      "harpoonBolt"
+    ],
+    "max_rank": 3,
+    "planner": 328
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 15,
+    "animation": "charge",
+    "area": {
+      "line": {
+        "length": 10,
+        "width": 2
+      }
+    },
+    "movement": {
+      "leap": -2,
+      "grapple": {
+        "to": "target",
+        "range": 10,
+        "speed": 30,
+        "stop": 1.2
+      }
+    },
+    "targets": "enemies",
+    "follow_up": {
+      "delay": 0.35,
+      "effects": [
+        {
+          "damage": {
+            "power": [
+              2.4,
+              2.8,
+              3.2
+            ]
+          }
+        },
+        {
+          "stun": {
+            "duration": 1
+          }
+        }
+      ]
+    }
+  },
+  "visuals": [
+    {
+      "effect": "cableLine",
+      "anchor": "rightHand",
+      "from": "start"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

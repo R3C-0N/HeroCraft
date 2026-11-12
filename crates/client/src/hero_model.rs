@@ -317,6 +317,11 @@ impl Figure {
 
     /// Les faces dans une pose complète : comme `posed`, chaque os tourné et déplacé en plus
     pub fn posed_with(&self, pose: &FigurePose, width: f32) -> impl Iterator<Item = Quad> + '_ {
+        self.posed_bones(pose, width).map(|(_, quad)| quad)
+    }
+
+    /// Comme `posed_with`, avec l'os de la pièce qui porte chaque quadrilatère
+    pub fn posed_bones(&self, pose: &FigurePose, width: f32) -> impl Iterator<Item = (Bone, Quad)> + '_ {
         let scale = vec3(width, 1.0, width);
         let lift = vec3(0.0, self.hover, 0.0);
         let (frames, locals) = self.bone_frames_and_locals(pose);
@@ -340,7 +345,7 @@ impl Figure {
                     }
                     f.apply(p) * scale + lift
                 });
-                Quad { corners, uv: q.uv }
+                (piece.bone, Quad { corners, uv: q.uv })
             })
         })
     }
@@ -666,10 +671,127 @@ impl HeroGait {
     }
 }
 
-/// Ajoute le héros au maillage des créatures, debout sur `feet` et tourné vers `yaw` (0 = nord) ;
-/// `block` : taille d'un bloc, `swing` : balancement des membres
-pub fn push_hero(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, swing: f32, block: f32) {
-    push_figure(frame, cfg, figure, feet, yaw, &FigurePose { swing, ..FigurePose::default() }, HERO_TEXTURE, block);
+/// Ajoute le héros au maillage des créatures, debout sur `feet` et tourné vers `yaw` (0 = nord),
+/// dans la pose `pose` (balancement de la marche, geste d'une compétence) ; `block` : taille d'un bloc
+pub fn push_hero_posed(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, block: f32) {
+    push_figure(frame, cfg, figure, feet, yaw, pose, HERO_TEXTURE, block);
+}
+
+/// Os des bras, seuls dessinés à la première personne
+const ARM_BONES: [Bone; 6] = [Bone::RightArm, Bone::LeftArm, Bone::RightForearm, Bone::LeftForearm, Bone::RightHand, Bone::LeftHand];
+
+/// Vue à la première personne, pendant le geste d'une compétence : les bras du héros posé (et
+/// l'arme de sa main droite, s'il en tient une), accrochés à l'œil `eye` qui regarde vers `look`.
+/// Renvoie les points des mains, où se jouent les effets.
+#[allow(clippy::too_many_arguments)]
+pub fn push_first_person_arms(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, eye: Vec3, look: Vec3, pose: &FigurePose, weapon: Option<[f32; 4]>, block: f32) -> (Vec3, Vec3) {
+    let up_hint = eye.normalize_or_zero();
+    let forward = look.normalize_or(up_hint.any_orthonormal_vector());
+    let left = up_hint.cross(forward).normalize_or(forward.any_orthonormal_vector());
+    let up = forward.cross(left);
+    let unit = cfg.taille as f32 / figure.body_height * block;
+    // Le cou du héros juste sous l'œil, le corps un peu en retrait : les épaules sortent du champ
+    // au repos, les bras y entrent quand le geste les lève devant soi
+    let neck = figure.pivot(Bone::Head) * vec3(cfg.width_scale(), 1.0, cfg.width_scale());
+    let origin = eye - (left * neck.x + up * neck.y + forward * neck.z) * unit - up * 0.12 * block + forward * 0.1 * block;
+    let to_world = |p: Vec3| origin + (left * p.x + up * p.y + forward * p.z) * unit;
+    let rotate = |n: Vec3| left * n.x + up * n.y + forward * n.z;
+    let sheet = SHEET_SIZE as f32;
+    let margin = 0.01_f32;
+    let color = [pose.tint[0], pose.tint[1], pose.tint[2], 1.0];
+    let start = frame.indices.len() as u32;
+    for (bone, quad) in figure.posed_bones(pose, cfg.width_scale()) {
+        if !ARM_BONES.contains(&bone) {
+            continue;
+        }
+        let c = quad.corners;
+        let normal = rotate((c[1] - c[0]).cross(c[3] - c[0]).normalize_or_zero());
+        let [u, v, w, h] = quad.uv;
+        let (u0, v0, u1, v1) = ((u + margin) / sheet, (v + margin) / sheet, (u + w - margin) / sheet, (v + h - margin) / sheet);
+        let uvs = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
+        let base = frame.vertices.len() as u32;
+        for (p, uv) in c.iter().zip(uvs) {
+            frame.vertices.push(PlanetVertex { position: to_world(*p).to_array(), normal: normal.to_array(), color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
+            frame.uvs.push(uv);
+        }
+        frame.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+    frame.draws.push((Some(HERO_TEXTURE), start..frame.indices.len() as u32));
+
+    let frames = figure.bone_frames(pose);
+    let at = |bone: Bone| to_world(frames[bone.index()].apply(figure.pivot(bone)));
+    let (right_hand, left_hand) = (at(Bone::RightHand), at(Bone::LeftHand));
+    if let Some(color) = weapon {
+        // Une arme simple dans le poing : manche de bois, puis la lame ou la tête aux couleurs de
+        // l'objet, dans l'axe du poing (devant soi quand le bras pend)
+        let grip = right_hand + rotate(frames[Bone::RightHand.index()].rotation * Vec3::NEG_Y) * 1.5 * unit;
+        let along = rotate(frames[Bone::RightHand.index()].rotation * Vec3::Z).normalize_or(forward);
+        let side = rotate(frames[Bone::RightHand.index()].rotation * Vec3::X).normalize_or(left);
+        let start = frame.indices.len() as u32;
+        push_box(frame, grip - along * 0.08 * block, along, side, 0.3 * block, 0.05 * block, [0.36, 0.24, 0.14, 1.0]);
+        push_box(frame, grip + along * 0.22 * block, along, side, 0.55 * block, 0.07 * block, color);
+        frame.draws.push((None, start..frame.indices.len() as u32));
+    }
+    (right_hand, left_hand)
+}
+
+/// Pavé de couleur unie : de `base` sur `length` le long de `along`, de côté `width`
+fn push_box(frame: &mut CreatureFrame, base: Vec3, along: Vec3, side: Vec3, length: f32, width: f32, color: [f32; 4]) {
+    let third = along.cross(side).normalize_or_zero();
+    let h = width * 0.5;
+    let corner = |a: f32, s: f32, t: f32| base + along * a + side * s + third * t;
+    let faces: [([f32; 3], [[f32; 3]; 4]); 6] = [
+        ([0.0, 0.0, 1.0], [[0.0, -1.0, 1.0], [0.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, -1.0, 1.0]]),
+        ([0.0, 0.0, -1.0], [[0.0, 1.0, -1.0], [0.0, -1.0, -1.0], [1.0, -1.0, -1.0], [1.0, 1.0, -1.0]]),
+        ([0.0, 1.0, 0.0], [[0.0, 1.0, 1.0], [0.0, 1.0, -1.0], [1.0, 1.0, -1.0], [1.0, 1.0, 1.0]]),
+        ([0.0, -1.0, 0.0], [[0.0, -1.0, -1.0], [0.0, -1.0, 1.0], [1.0, -1.0, 1.0], [1.0, -1.0, -1.0]]),
+        ([1.0, 0.0, 0.0], [[1.0, -1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, -1.0], [1.0, -1.0, -1.0]]),
+        ([-1.0, 0.0, 0.0], [[0.0, -1.0, -1.0], [0.0, 1.0, -1.0], [0.0, 1.0, 1.0], [0.0, -1.0, 1.0]]),
+    ];
+    for (n, corners) in faces {
+        let normal = side * n[1] + third * n[2] + along * n[0];
+        let base_index = frame.vertices.len() as u32;
+        for [a, s, t] in corners {
+            frame.vertices.push(PlanetVertex { position: corner(a * length, s * h, t * h).to_array(), normal: normal.to_array(), color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
+            frame.uvs.push([0.5, 0.5]);
+        }
+        frame.indices.extend_from_slice(&[base_index, base_index + 1, base_index + 2, base_index, base_index + 2, base_index + 3]);
+    }
+}
+
+/// Points du héros posé où se jouent les effets des compétences, dans le monde
+#[derive(Debug, Clone, Copy)]
+pub struct HeroAnchors {
+    pub feet: Vec3,
+    pub body: Vec3,
+    pub head: Vec3,
+    pub right_hand: Vec3,
+    pub left_hand: Vec3,
+}
+
+impl HeroAnchors {
+    /// Points approchés d'un héros qu'on ne dessine pas (vue à la première personne, autre joueur)
+    pub fn standing(feet: Vec3, yaw: f32, block: f32) -> Self {
+        let up = feet.normalize_or_zero();
+        let (east, north) = tangent_frame(up);
+        let forward = north * yaw.cos() + east * yaw.sin();
+        let left = up.cross(forward);
+        let body = feet + up * 1.0 * block;
+        Self { feet, body, head: feet + up * 1.6 * block, right_hand: body - left * 0.35 * block + forward * 0.35 * block, left_hand: body + left * 0.35 * block + forward * 0.35 * block }
+    }
+
+    /// Points du héros `figure` posé en `pose`, debout sur `feet` et tourné vers `yaw`
+    pub fn posed(cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, block: f32) -> Self {
+        let up = feet.normalize_or_zero();
+        let (east, north) = tangent_frame(up);
+        let forward = north * yaw.cos() + east * yaw.sin();
+        let left = up.cross(forward);
+        let unit = cfg.taille as f32 / figure.body_height * block;
+        let to_world = |p: Vec3| feet + (left * p.x + up * p.y + forward * p.z) * unit;
+        let frames = figure.bone_frames(pose);
+        let at = |bone: Bone| to_world(frames[bone.index()].apply(figure.pivot(bone)));
+        Self { feet, body: at(Bone::Torso), head: at(Bone::Head), right_hand: at(Bone::RightHand), left_hand: at(Bone::LeftHand) }
+    }
 }
 
 /// Posture d'une figure : balancement de la marche, pose de chaque os, couchée, teinte
@@ -766,6 +888,31 @@ mod tests {
         cfg.retouch(true);
         let f = figure(&cfg, &paint(&cfg));
         (cfg, f)
+    }
+
+    #[test]
+    fn first_person_arms_come_into_view_during_a_slam() {
+        let (cfg, f) = hero("humain", 0);
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/hero/animations");
+        let (gestures, _) = crate::gestures::GestureLibrary::load_dir(&dir);
+        let slam = gestures.get("groundSlam").unwrap();
+        let eye = Vec3::new(0.0, 1000.0, 0.0);
+        let look = Vec3::new(0.0, -0.2, -1.0).normalize();
+        let in_view = |p: Vec3| (p - eye).normalize().dot(look) > 0.6;
+        let mut frame = CreatureFrame::default();
+        let mut pose = FigurePose::default();
+        slam.pose(0.0, f.units_per_block(&cfg), &mut pose);
+        let (rest, _) = push_first_person_arms(&mut frame, &cfg, &f, eye, look, &pose, Some([0.7; 4]), 1.0);
+        assert!(!in_view(rest), "au repos, la main pend hors du champ");
+        assert!(!frame.indices.is_empty() && frame.draws.len() == 2, "bras et arme");
+        let mut seen = false;
+        for i in 0..=20 {
+            slam.pose(i as f32 / 20.0, f.units_per_block(&cfg), &mut pose);
+            let (hand, _) = push_first_person_arms(&mut CreatureFrame::default(), &cfg, &f, eye, look, &pose, None, 1.0);
+            seen |= in_view(hand);
+            assert!(hand.distance(eye) < 1.5, "la main reste près de l'œil : {}", hand.distance(eye));
+        }
+        assert!(seen, "pendant le geste, la main passe devant l'œil");
     }
 
     fn points(f: &Figure) -> Vec<Vec3> {
@@ -944,7 +1091,7 @@ mod tests {
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let (_, north) = tangent_frame(feet.normalize());
         let mut frame = CreatureFrame::default();
-        push_hero(&mut frame, &cfg, &f, feet, 0.0, 0.0, 1.0);
+        push_hero_posed(&mut frame, &cfg, &f, feet, 0.0, &FigurePose::default(), 1.0);
         assert_eq!(frame.draws.len(), 1);
         assert_eq!(frame.draws[0].0, Some(HERO_TEXTURE));
         assert_eq!(frame.uvs.len(), frame.vertices.len());
@@ -994,5 +1141,46 @@ mod tests {
         // Plus vite, le pas s'allonge et la cadence monte sans s'emballer
         let run = cadence(5.0);
         assert!(run > walk && run < 2.2, "{run} cycles par seconde");
+    }
+
+    /// Les gestes des compétences (`assets/hero/animations/`) ne citent que des os de la figure,
+    /// et la frappe au sol, posée par ce code, abat bien la main droite devant le héros
+    #[test]
+    fn skill_gestures_name_real_bones_and_strike_forward() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/hero/animations");
+        let (cfg, f) = hero("humain", 0);
+        let mut count = 0;
+        for entry in std::fs::read_dir(&dir).expect("dossier des gestes") {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|e| e != "json") {
+                continue;
+            }
+            count += 1;
+            let geste: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            for key in geste["keys"].as_array().unwrap() {
+                let mut pose = FigurePose::default();
+                for (name, bone_pose) in key["bones"].as_object().into_iter().flatten() {
+                    let bone = Bone::from_name(name).unwrap_or_else(|| panic!("{}: os inconnu {name}", path.display()));
+                    let v = |field: &str| bone_pose.get(field).map(|a| {
+                        let a = a.as_array().unwrap();
+                        [0, 1, 2].map(|i| a[i].as_f64().unwrap() as f32)
+                    });
+                    if let Some(r) = v("rotation") {
+                        pose.bone_mut(bone).rotation = bone.rotation_from_degrees(r);
+                    }
+                    if let Some(t) = v("translation") {
+                        pose.bone_mut(bone).translation = Vec3::from(t) * f.units_per_block(&cfg);
+                    }
+                }
+                let frames = f.bone_frames(&pose);
+                assert!(frames.iter().all(|b| b.rotation.is_finite() && b.translation.is_finite()), "{}", path.display());
+                if path.ends_with("groundSlam.json") && key["t"].as_f64() == Some(0.35) {
+                    let hand = frames[Bone::RightHand.index()].apply(f.pivot(Bone::RightHand));
+                    let shoulder = f.pivot(Bone::RightArm);
+                    assert!(hand.z > 3.0 && hand.y < shoulder.y, "poignet en {hand}");
+                }
+            }
+        }
+        assert!(count >= 15, "{count} gestes");
     }
 }

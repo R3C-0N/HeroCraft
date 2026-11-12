@@ -1,0 +1,63 @@
+{
+  "description": "Déchirure du Néant au sol : un gouffre noir cerclé de violet d'où montent des éclats cyan.",
+  "unit": "area",
+  "layers": [
+    {
+      "shape": "disc",
+      "on_ground": true,
+      "duration": 1.6,
+      "radius": [
+        0.1,
+        0.8
+      ],
+      "spin": 40,
+      "texture": "rune.png",
+      "color": [
+        "#7030E0",
+        "#30108000"
+      ],
+      "glow": 2.5
+    },
+    {
+      "shape": "disc",
+      "on_ground": true,
+      "duration": 1.6,
+      "radius": [
+        0.05,
+        0.55
+      ],
+      "color": [
+        "#0A0412F0",
+        "#0A041200"
+      ],
+      "texture": "soft.png"
+    },
+    {
+      "particles": {
+        "count": 50,
+        "origin": "disc",
+        "origin_radius": 0.6,
+        "direction": "up",
+        "speed": [
+          2,
+          5
+        ],
+        "drag": 1,
+        "life": [
+          0.5,
+          1.2
+        ],
+        "size": [
+          0.12,
+          0.02
+        ],
+        "color": [
+          "#70FFFF",
+          "#7030E000"
+        ],
+        "glow": 4,
+        "texture": "spark.png"
+      }
+    }
+  ]
+}

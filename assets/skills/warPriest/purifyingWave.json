@@ -1,0 +1,71 @@
+{
+  "name": "Onde Purificatrice",
+  "description": "Frappe du Juste + Éclair de Guérison. Frappe le maillet contre le sceptre. Libère une onde radiale qui inflige de lourds dégâts de lumière aux ennemis et soigne fortement les alliés traversés.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "hallowedHammer",
+      "devotionAura"
+    ],
+    "max_rank": 3,
+    "planner": 251
+  },
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 16,
+    "animation": "sweep",
+    "area": {
+      "circle": {
+        "radius": [
+          5,
+          5.5,
+          6
+        ]
+      }
+    },
+    "targets": "all",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.5,
+            1.8,
+            2.1
+          ]
+        },
+        "to": "enemies"
+      },
+      {
+        "heal": {
+          "amount": [
+            20,
+            26,
+            32
+          ]
+        },
+        "to": "allies"
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "impactSpark",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

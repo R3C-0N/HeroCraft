@@ -1,0 +1,95 @@
+{
+  "name": "Avatar de la Justice",
+  "description": "Compétence ultime, aussi appelée Courroux de l'Étherium. Le Prêtre-guerrier canalise la Pierre du néant à travers ses deux armes. Il devient une immense figure de lumière astrale. Ses attaques au maillet provoquent des tremblements de terre ravageurs, et chaque coup porté déclenche automatiquement des soins de zone équivalents aux dégâts infligés pour toute l'équipe. L'effet dure 15 secondes.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "purifyingWave",
+      "bastionOfLight",
+      "condemnation"
+    ],
+    "max_rank": 3,
+    "planner": 254
+  },
+  "cast": {
+    "cost": {
+      "mana": 50
+    },
+    "cooldown": 120,
+    "animation": "summon",
+    "area": {
+      "circle": {
+        "radius": 8
+      }
+    },
+    "targets": "all",
+    "effects": [
+      {
+        "damage": {
+          "power": 2
+        },
+        "to": "enemies"
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": 1.0,
+          "duration": 15,
+          "rider": {
+            "radius": 4,
+            "effects": [
+              {
+                "damage": {
+                  "power": [
+                    0.8,
+                    1.0,
+                    1.2
+                  ]
+                }
+              },
+              {
+                "heal": {
+                  "amount": [
+                    8,
+                    10,
+                    12
+                  ]
+                },
+                "to": "allies"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.5,
+          "duration": 15
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "holyBeam",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ],
+  "special": "avatarOfJustice"
+}

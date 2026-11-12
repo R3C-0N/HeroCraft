@@ -1,6 +1,8 @@
 {
   "name": "Serviteur Squelette",
   "description": "Des os rassemblés par la nécromancie, une épée rouillée à la main.",
+  "armor": 30,
+  "tags": ["shadow"],
   "body": {"half_width": 0.3, "half_length": 0.3, "height": 1.95},
   "walk_speed": 1.8,
   "health": 20,

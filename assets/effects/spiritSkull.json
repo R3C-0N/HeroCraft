@@ -1,0 +1,54 @@
+{
+  "description": "Crâne spectral vert qui file en hurlant, une traînée de brume derrière lui.",
+  "layers": [
+    {
+      "loop": true,
+      "shape": "sprite",
+      "size": 0.7,
+      "texture": "soft.png",
+      "color": ["#90FFB0C0", "#90FFB0C0"],
+      "glow": 3,
+      "pulse": 4
+    },
+    {
+      "loop": true,
+      "shape": "trail",
+      "width": [
+        0.4,
+        0.0
+      ],
+      "life": 0.35,
+      "color": [
+        "#60E080A0",
+        "#20804000"
+      ],
+      "glow": 2
+    },
+    {
+      "loop": true,
+      "particles": {
+        "rate": 30,
+        "origin": "sphere",
+        "origin_radius": 0.2,
+        "direction": "random",
+        "speed": [
+          0.2,
+          0.6
+        ],
+        "life": [
+          0.4,
+          0.8
+        ],
+        "size": [
+          0.3,
+          0.6
+        ],
+        "color": [
+          "#60C08060",
+          "#20603000"
+        ],
+        "texture": "smoke.png"
+      }
+    }
+  ]
+}

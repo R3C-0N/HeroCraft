@@ -1,0 +1,78 @@
+{
+  "name": "Condamnation",
+  "description": "Marteau Consacré + Charge Pénitente. Effectue une charge fulgurante terminée par un coup de maillet surpuissant. Si la cible est tuée, elle explose en un soin de zone massif pour le groupe.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "hallowedHammer",
+      "penitentCharge"
+    ],
+    "max_rank": 3,
+    "planner": 253
+  },
+  "cast": {
+    "cost": {
+      "stamina": 25,
+      "mana": 15
+    },
+    "cooldown": 14,
+    "animation": "overheadStrike",
+    "area": {
+      "arc": {
+        "range": 4,
+        "angle": 90
+      }
+    },
+    "movement": {
+      "dash": 7
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.5,
+            3,
+            3.5
+          ]
+        }
+      }
+    ],
+    "on_kill": {
+      "radius": 6,
+      "effects": [
+        {
+          "heal": {
+            "amount": [
+              30,
+              40,
+              50
+            ]
+          },
+          "to": "allies"
+        }
+      ]
+    }
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ],
+  "special": "condemnation"
+}

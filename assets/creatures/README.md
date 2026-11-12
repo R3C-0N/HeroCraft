@@ -43,17 +43,24 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 | Champ | Rôle |
 |---|---|
 | `name`, `description` | Nom affiché et description. |
+| `tags` | Familles de l'espèce, que certaines compétences visent : `shadow` pour les créatures de l'ombre (l'Arme de l'Aube les frappe plus fort). |
+| `armor` | Armure (0 par défaut) : réduit les coups physiques, dégâts × 100 / (100 + armure). À 50, un tiers de moins ; à 100, la moitié. Certaines compétences la percent ou la brisent. |
+| `resist` | Résistance (0 par défaut) : réduit de la même façon les coups magiques. |
 | `body` | Volume utilisé pour les déplacements, en blocs : `half_width` (demi-largeur), `half_length` (demi-longueur, de la tête à la queue) et `height`. La créature ne passe que là où ce corps tient. |
 | `walk_speed` | Vitesse de promenade, en blocs par seconde. À 0, la créature ne bouge pas. |
 | `health` | Points de vie (10 par défaut). Un coup de joueur en retire 2,5 : la bête rougit, recule, puis s'enfuit ; à 0 elle bascule sur le flanc et reste à terre 10 minutes, le temps qu'on la dépèce. |
 | `min_group`, `max_group` | Taille d'un groupe posé ensemble dans une zone (1 par défaut). |
 | `temperament` | Réaction au joueur le plus proche, tant qu'il ne l'a pas frappée : `craintif` (fuit quand il approche à moins de 8 blocs, ou de 3 blocs s'il est accroupi avec Maj), `placide` (s'arrête et le regarde à moins de 6 blocs), `curieux` (le suit à moins de 16 blocs et s'arrête à 3 blocs de lui) ou `indifferent` (l'ignore, par défaut). |
 | `attack` | Comportement agressif (voir plus bas). Sans ce champ, la bête est paisible : frappée, elle s'enfuit. |
+| `guard` | Elle se garde : les coups qui lui arrivent de face, dans `arc` degrés (120 par défaut), perdent la part `block` de leurs dégâts (0,6 : 60 %), sauf quand elle est étourdie ou que Brise-Garde a brisé sa garde (garde, voyageur armé, chevalier de la mort). |
 | `breeding` | Élevage : `food` (ce qu'elle mange, identifiants d'objets ou de blocs : tenu en main, il l'attire), `taming_chance` (chance qu'un repas l'apprivoise, 1/3 par défaut), `lays` (ponte d'une bête apprivoisée et adulte : `item`, l'objet pondu, et `minutes`, le temps entre deux pontes au moins et au plus) et `growth_minutes` (temps qu'il faut à un petit pour devenir adulte, 10 par défaut). Sans ce champ, elle ne s'élève pas. Exemple : `"breeding": {"food": ["grainesBle"], "growth_minutes": 6, "lays": {"item": "oeufFaisan", "minutes": [5, 10]}}`. |
 | `spawn` | Les biomes où l'espèce apparaît d'elle-même (voir ci-dessous). Sans ce champ, elle n'apparaît jamais seule : c'est le cas des créatures des profondeurs, des mondes démoniaques et des bois féeriques, qui attendent leur monde. |
 | `activity` | Le rythme de vie de l'espèce (voir ci-dessous, `diurnal` par défaut). |
 | `loot` | Ce que donne la bête dépecée, au format du champ `loot` des blocs (`assets/blocks/README.md`) : `[{"item": "viandeVache", "count": [1, 3]}, {"item": "bone", "chance": 0.5}]`. Une bête tuée reste couchée à terre 10 minutes ; un clic droit sur elle, couteau ou dague en main, la dépèce : elle disparaît et son butin tombe à côté. En ligne, le serveur tire le butin et l'envoie à celui qui l'a dépecée. |
 | `model` | Le modèle 3D (voir ci-dessous). |
+| `magnet` | Aimant (Piège Magnétique) : `radius` (blocs) et `speed` (blocs par seconde au bord du rayon) ; les ennemis à portée sont tirés vers lui. |
+| `collision` | Corps solide (voir plus bas). Sans ce champ : un disque de la demi-largeur du corps, de résistance 0,5. |
+| `obstacle` | Un mur invoqué contre les tirs : `shots` (il arrête les projectiles du camp d'en face, ceux de son camp passent), `invulnerable` (rien ne l'abîme : le mur de lumière du Rempart Sacré), `thorns` (qui le frappe au corps à corps prend `damage` dégâts puis brûle de `burn` points par seconde pendant `seconds` secondes : Mur Fournaise, Bastion d'Étherium). |
 
 Chaque entrée de `spawn` a trois champs :
 - `biome` : l'un de `Plains`, `Forest`, `Desert`, `Mountains`, `SnowPeaks`, `Tundra`, `Taiga`, `Savanna`, `Jungle`, `Beach`, `Sea`, `Ocean` ou `DeepOcean` ;
@@ -96,7 +103,29 @@ Une bête dont la fiche a un champ `attack` chasse les joueurs et ses proies qu'
 | `prey` | Espèces qu'elle chasse (identifiants de fichiers). Après avoir tué une proie, elle les laisse tranquilles une minute. |
 | `pack_size` | En meute, nombre de bêtes qu'il lui faut, elle comprise (3 par défaut). |
 
+| `shot` | Tir à distance : `range` (portée), `damage`, `speed` (blocs par seconde, 0 : tout de suite), `radius` (explosion), `height` (d'où part le tir) et les effets `muzzle`, `projectile`, `impact`. `pierce` (blocs) : le tir traverse et touche chaque ennemi près de sa trajectoire (Tourelle d'Exécution). Trop loin pour frapper, la bête s'arrête et tire. |
+| `slow` | Son coup ralentit le joueur touché : `[part de la vitesse perdue, secondes]` (Gorgone florale, Mille-pattes géant). |
+| `stun` | Son coup étourdit le joueur touché tant de secondes (Brute cornue, Sanglier). |
+| `knockback` | Son coup repousse le joueur touché, à tant de blocs par seconde (Brute cornue, Sanglier, Ours). Une garde qui pare le coup, ou une immunité au recul, l'en protège. |
+| `kind` | Type de ses coups : `physical` (par défaut) ou `magical` (souffle du chien de l'enfer, regard de la gorgone). L'armure portée par le joueur ne réduit que les coups physiques. |
+| `burst` | Piège : la première cible à portée de `reach` le déclenche ; il retire `damage` à chaque ennemi dans `radius` blocs, l'immobilise `stun` secondes, le fait saigner (`bleed` points par seconde pendant `bleed_seconds` secondes, sans recul) et joue l'effet `effect`, puis disparaît. `spawn` (`species`, `count`, `seconds`) : ce qu'il fait apparaître autour de lui en se déclenchant, pour le même invocateur (les trois mines du Piège d'Éradication), qui disparaît au bout de `seconds` secondes si rien ne le déclenche. |
+
 Le bestiaire ne décrit pas d'attaque : `tools/importer_bestiaire.py` garde celle de la fiche existante.
+
+## Collisions
+
+Les entités ne se traversent pas : chacune sort de ce qu'elle enfonce (une autre bête, un mur, un joueur), et le joueur sort des entités qu'il enfonce.
+
+```json
+"collision": {"shape": "box", "size": [2.62, 0.62], "height": 3.16, "resistance": 1}
+```
+
+| Champ | Rôle |
+|---|---|
+| `shape` | `circle` (disque, par défaut) ou `box` (rectangle tourné avec la bête). |
+| `size` | Demi-largeur et demi-longueur, en blocs (le disque a pour rayon la première). Sans : celles de `body`. |
+| `height` | Hauteur, en blocs (sans : celle de `body`). Ce qui passe au-dessus ne la touche pas. |
+| `resistance` | De 0 à 1 : la part de l'enfoncement qu'elle repousse à chaque instant, entière si elle ne bouge pas (`walk_speed` 0), moitié sinon. 0 : on la traverse (pièges) ; 1 : infranchissable (murs). Un joueur a 0,5. |
 
 ## Modèle
 

@@ -1,0 +1,61 @@
+{
+  "name": "Tir à Éclats",
+  "description": "Arbalète. Le carreau explose à l'impact, projetant des fragments sur les cibles proches.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "quickShot"
+    ],
+    "max_rank": 3,
+    "planner": 261
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 8,
+    "animation": "crossbowShot",
+    "area": {
+      "circle": {
+        "radius": [
+          2,
+          2.5,
+          3
+        ],
+        "center": "aimed",
+        "distance": 14
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.3,
+            1.5,
+            1.7
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "rockShard",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

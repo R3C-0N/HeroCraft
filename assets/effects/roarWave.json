@@ -1,0 +1,86 @@
+{
+  "description": "Onde d'un cri : anneaux qui partent du corps à hauteur de tête.",
+  "unit": "area",
+  "layers": [
+    {
+      "shape": "ring",
+      "upright": true,
+      "offset": [
+        0,
+        1.6,
+        0.4
+      ],
+      "duration": 0.45,
+      "radius": [
+        0.1,
+        0.6
+      ],
+      "thickness": 0.12,
+      "color": [
+        "#FFFFFFA0",
+        "#FFFFFF00"
+      ]
+    },
+    {
+      "delay": 0.12,
+      "shape": "ring",
+      "upright": true,
+      "offset": [
+        0,
+        1.6,
+        0.6
+      ],
+      "duration": 0.45,
+      "radius": [
+        0.1,
+        0.8
+      ],
+      "thickness": 0.12,
+      "color": [
+        "#FFFFFF80",
+        "#FFFFFF00"
+      ]
+    },
+    {
+      "shape": "ring",
+      "on_ground": true,
+      "duration": 0.6,
+      "radius": [
+        0.1,
+        1.0
+      ],
+      "thickness": 0.15,
+      "color": [
+        "#F0E0C0A0",
+        "#F0E0C000"
+      ]
+    },
+    {
+      "particles": {
+        "count": 24,
+        "origin": "ring",
+        "origin_radius": 0.4,
+        "direction": "outward",
+        "speed": [
+          4,
+          7
+        ],
+        "drag": 3,
+        "life": [
+          0.4,
+          0.7
+        ],
+        "size": [
+          0.3,
+          0.7
+        ],
+        "color": [
+          "#C0B09070",
+          "#C0B09000"
+        ],
+        "texture": "smoke.png",
+        "block_color": true
+      }
+    }
+  ]
+}

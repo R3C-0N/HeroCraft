@@ -1,0 +1,85 @@
+{
+  "name": "Exécution Céleste",
+  "description": "Frappe Ascendante + Pas de Brise. Tu propulses l'ennemi en l'air avec ton sabre, le vent te téléporte instantanément au-dessus de lui, et tu le rabats violemment au sol d'un coup fracassant.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "risingStrike",
+      "zephyrMantle"
+    ],
+    "max_rank": 3,
+    "planner": 343
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 15,
+    "animation": "leap",
+    "area": {
+      "arc": {
+        "range": 3.5,
+        "angle": 70
+      }
+    },
+    "movement": {
+      "teleport": {
+        "above": 1.0,
+        "face": "target",
+        "delay": 0.5
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "launch": {
+          "height": 4
+        }
+      }
+    ],
+    "follow_up": {
+      "delay": 0.6,
+      "effects": [
+        {
+          "slam": {
+            "power": [
+              3.0,
+              3.4,
+              3.8
+            ]
+          }
+        },
+        {
+          "stun": {
+            "duration": 1
+          }
+        }
+      ]
+    }
+  },
+  "visuals": [
+    {
+      "effect": "windSwirl",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

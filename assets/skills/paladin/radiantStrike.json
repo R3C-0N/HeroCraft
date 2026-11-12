@@ -1,0 +1,65 @@
+{
+  "name": "Frappe Rayonnante",
+  "description": "Arme. Un coup d'arme infusé de lumière qui aveugle brièvement la cible.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 391
+  },
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 5,
+    "animation": "overheadStrike",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 90
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.2,
+            1.4,
+            1.6
+          ]
+        }
+      },
+      {
+        "blind": {
+          "duration": [
+            2,
+            2.5,
+            3
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "holyBeam",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

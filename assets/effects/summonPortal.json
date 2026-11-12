@@ -1,0 +1,40 @@
+{
+  "description": "Portail vertical d'où sort une créature invoquée.",
+  "layers": [
+    {
+      "shape": "disc",
+      "upright": true,
+      "duration": 1.2,
+      "radius": [0.0, 1.1],
+      "spin": -90,
+      "color": ["#7040C0E0", "#7040C000"],
+      "glow": 2.5,
+      "texture": "rune.png"
+    },
+    {
+      "shape": "ring",
+      "upright": true,
+      "duration": 1.2,
+      "radius": 1.1,
+      "thickness": 0.1,
+      "color": ["#C8A0FF", "#C8A0FF00"],
+      "glow": 3
+    },
+    {
+      "duration": 1.0,
+      "particles": {
+        "rate": 50,
+        "origin": "ring",
+        "origin_radius": 1.1,
+        "upright": true,
+        "direction": "inward",
+        "speed": [0.8, 1.6],
+        "life": [0.4, 0.7],
+        "size": [0.07, 0.0],
+        "color": ["#E0C8FF", "#7040C000"],
+        "glow": 3,
+        "texture": "spark.png"
+      }
+    }
+  ]
+}

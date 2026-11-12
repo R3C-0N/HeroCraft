@@ -1,0 +1,64 @@
+{
+  "name": "Balle Traçante",
+  "description": "Munition. Munition lumineuse qui marque la cible, augmentant fortement tes chances de coup critique sur celle-ci.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 273
+  },
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 8,
+    "animation": "crossbowShot",
+    "area": {
+      "line": {
+        "length": 16,
+        "width": 1
+      }
+    },
+    "projectile": {
+      "speed": 60
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": 0.6
+        }
+      },
+      {
+        "mark": {
+          "chance": [
+            0.3,
+            0.4,
+            0.5
+          ],
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "projectile",
+      "from": "impact"
+    },
+    {
+      "effect": "targetMark",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
+    }
+  ]
+}

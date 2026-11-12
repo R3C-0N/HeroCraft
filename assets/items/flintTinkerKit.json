@@ -2,6 +2,7 @@
   "numeric_id": 16487,
   "name": "Trousse de tailleur de pierre",
   "category": "Armes",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/flintTinkerKit.png",
   "stats": {"Dégâts": 2, "Durabilité": 150},

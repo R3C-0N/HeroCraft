@@ -1,0 +1,51 @@
+{
+  "name": "Parade Absolue",
+  "description": "Garde. Une posture défensive utilisant le manche de l'arme pour encaisser n'importe quel coup et riposter immédiatement avec une force doublée.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "guardBreaker"
+    ],
+    "max_rank": 3,
+    "planner": 354
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 12,
+    "animation": "guard",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "guard": {
+          "duration": 1.5,
+          "block": 1,
+          "hits": 1,
+          "reflect": 2
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "parry"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "parry"
+    }
+  ]
+}

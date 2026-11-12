@@ -1,0 +1,48 @@
+{
+  "name": "Échine du Plantigrade",
+  "description": "Ours. Ton dos se couvre d'une épaisse fourrure protectrice pour absorber les dégâts lourds.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 197
+  },
+  "cast": {
+    "cost": {
+      "mana": 15
+    },
+    "cooldown": 20,
+    "animation": "shout",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": [
+            0.25,
+            0.3,
+            0.35
+          ],
+          "duration": 15
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "body",
+      "from": "start"
+    },
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    }
+  ],
+  "graft": "bearHide"
+}

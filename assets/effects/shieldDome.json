@@ -1,0 +1,31 @@
+{
+  "description": "Dôme protecteur translucide autour du héros ou de la zone.",
+  "unit": "area",
+  "layers": [
+    {
+      "shape": "dome",
+      "duration": 0.25,
+      "radius": [0.2, 1.0],
+      "color": ["#BFE3FF00", "#BFE3FF55"],
+      "glow": 1.5
+    },
+    {
+      "shape": "dome",
+      "delay": 0.25,
+      "loop": true,
+      "radius": 1.0,
+      "color": ["#BFE3FF40", "#BFE3FF40"],
+      "glow": 1.5,
+      "pulse": 0.5
+    },
+    {
+      "shape": "ring",
+      "on_ground": true,
+      "loop": true,
+      "radius": 1.0,
+      "thickness": 0.08,
+      "color": ["#E6F4FFC0", "#E6F4FFC0"],
+      "glow": 2.5
+    }
+  ]
+}

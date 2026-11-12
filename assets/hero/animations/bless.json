@@ -1,0 +1,31 @@
+{
+  "description": "Main tendue paume ouverte, vers un allié ou vers soi.",
+  "duration": 0.7,
+  "legs": "free",
+  "impact": 0.5,
+  "keys": [
+    {"t": 0.0},
+    {
+      "t": 0.4,
+      "ease": "out",
+      "bones": {
+        "rightArm": {"rotation": [95, 0, 10]},
+        "rightForearm": {"rotation": [0, 0, 0]},
+        "rightHand": {"rotation": [40, 0, 0]},
+        "head": {"rotation": [-10, 0, 0]},
+        "torso": {"rotation": [-5, 0, 0]}
+      }
+    },
+    {
+      "t": 0.75,
+      "bones": {
+        "rightArm": {"rotation": [95, 0, 10]},
+        "rightForearm": {"rotation": [5, 0, 0]},
+        "rightHand": {"rotation": [40, 0, 0]},
+        "head": {"rotation": [-10, 0, 0]},
+        "torso": {"rotation": [-5, 0, 0]}
+      }
+    },
+    {"t": 1.0}
+  ]
+}

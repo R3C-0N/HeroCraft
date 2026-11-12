@@ -1,0 +1,60 @@
+{
+  "name": "Faucon Pèlerin",
+  "description": "Faucon. Forme de vol courte durée pour t'échapper, ignorer le terrain ou fondre sur une cible en piqué.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "galeFeathers"
+    ],
+    "max_rank": 3,
+    "planner": 204
+  },
+  "cast": {
+    "cost": {
+      "mana": 25
+    },
+    "cooldown": 40,
+    "animation": "leap",
+    "area": "self",
+    "movement": {
+      "leap": [
+        6,
+        7,
+        8
+      ]
+    },
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "speed",
+          "value": [
+            0.7,
+            0.85,
+            1.0
+          ],
+          "duration": 10
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "featherGust",
+      "anchor": "body",
+      "from": "impact"
+    }
+  ],
+  "form": "peregrineFalcon",
+  "form_attacks": [
+    "falconTalons",
+    "falconDive"
+  ]
+}

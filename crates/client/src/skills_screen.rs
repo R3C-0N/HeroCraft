@@ -43,6 +43,15 @@ pub struct SkillScreenRequests {
     pub learn: Option<String>,
     /// Se donner de l'expérience (bouton d'essai du solo)
     pub experience: u64,
+    /// Poser cette compétence dans cette case de la barre
+    pub place: Option<(usize, String)>,
+}
+
+/// La barre de compétences, telle que la fiche la montre : ce qui est posé, et les touches
+pub struct BarView<'a> {
+    pub bar: &'a crate::skill_bar::SkillBar,
+    pub icons: &'a crate::skill_bar::SkillIcons,
+    pub keys: [String; crate::skill_bar::SKILL_SLOTS],
 }
 
 /// État propre à l'écran : la classe sous la loupe et la compétence dont la fiche est ouverte
@@ -90,6 +99,7 @@ impl SkillScreen {
         stats: &CharacterStats,
         close_hint: &str,
         allow_test_experience: bool,
+        bar: &BarView,
     ) -> SkillScreenRequests {
         let mut requests = SkillScreenRequests::default();
         if self.selected.as_deref().is_some_and(|id| wheel.node(id).is_none()) {
@@ -146,9 +156,9 @@ impl SkillScreen {
                                 ui.add_space(6.0_f32);
                                 match self.selected.as_deref().and_then(|id| wheel.node(id)) {
                                     Some(node) => {
-                                        if let Some(id) = draw_sheet(ui, wheel, stats, node) {
-                                            requests.learn = Some(id);
-                                        }
+                                        let (learn, place) = draw_sheet(ui, wheel, stats, node, bar);
+                                        requests.learn = learn;
+                                        requests.place = place;
                                     }
                                     None => {
                                         ui.label(egui::RichText::new("Choisissez une compétence sur la roue pour voir sa fiche.").color(TEXT_DIM));
@@ -392,9 +402,13 @@ fn draw_progress(ui: &mut egui::Ui, stats: &CharacterStats) {
 }
 
 /// Fiche d'une compétence ; renvoie son identifiant si le joueur y investit un point
-fn draw_sheet(ui: &mut egui::Ui, wheel: &SkillWheel, stats: &CharacterStats, node: &SkillNode) -> Option<String> {
+fn draw_sheet(ui: &mut egui::Ui, wheel: &SkillWheel, stats: &CharacterStats, node: &SkillNode, bar: &BarView) -> (Option<String>, Option<(usize, String)>) {
     let current = rank(stats, &node.id);
-    ui.label(egui::RichText::new(&node.name).strong().size(15.0_f32).color(GOLD_BRIGHT));
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(36.0_f32, 36.0_f32), egui::Sense::hover());
+        bar.icons.paint(ui.painter(), rect, &node.id, current == 0);
+        ui.label(egui::RichText::new(&node.name).strong().size(15.0_f32).color(GOLD_BRIGHT));
+    });
     let branch = wheel.branch(&node.branch).map_or("", |b| b.name.as_str());
     ui.label(egui::RichText::new(format!("{branch} · {} · rang {current}/{}", node.tier_label(), node.max_rank)).size(11.0_f32).color(TEXT_DIM));
     ui.add_space(4.0_f32);
@@ -423,7 +437,52 @@ fn draw_sheet(ui: &mut egui::Ui, wheel: &SkillWheel, stats: &CharacterStats, nod
         let text = chars.next().map(|c| c.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default();
         ui.label(egui::RichText::new(text).size(11.0_f32).color(TEXT_DIM));
     }
-    clicked.then(|| node.id.clone())
+    let place = draw_placement(ui, stats, node, bar);
+    (clicked.then(|| node.id.clone()), place)
+}
+
+/// Ce que le nœud fait lancer (lui-même, ou les compétences qu'il donne) et les boutons qui les
+/// posent sur la barre ; une compétence sans règles est marquée « pas encore jouable »
+fn draw_placement(ui: &mut egui::Ui, stats: &CharacterStats, node: &SkillNode, bar: &BarView) -> Option<(usize, String)> {
+    let catalog = herocraft_common::skills();
+    let ids: Vec<&str> = if node.grants.is_empty() { vec![node.id.as_str()] } else { node.grants.iter().map(String::as_str).collect() };
+    let learned = rank(stats, &node.id) > 0;
+    let mut place = None;
+    ui.add_space(8.0_f32);
+    for id in ids {
+        let Some(def) = catalog.get(id) else { continue };
+        ui.horizontal(|ui| {
+            if !node.grants.is_empty() {
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(24.0_f32, 24.0_f32), egui::Sense::hover());
+                bar.icons.paint(ui.painter(), rect, id, !learned);
+                ui.label(egui::RichText::new(&def.name).size(12.0_f32).color(TEXT_SOFT)).on_hover_text(&def.description);
+            }
+            if !def.is_castable() {
+                ui.label(egui::RichText::new("Pas encore jouable").italics().size(11.0_f32).color(TEXT_DIM))
+                    .on_hover_text("Ses règles ne sont pas encore écrites : elle s'apprend, mais ne se lance pas encore.");
+                return;
+            }
+            // Un mélange ne se pose pas : il se lance par la case de la Fusion
+            if catalog.fusion_of_mix(id).is_some() {
+                ui.label(egui::RichText::new("Se lance par la Fusion").italics().size(11.0_f32).color(TEXT_DIM))
+                    .on_hover_text("Lance ses deux sorts élémentaires, puis la Fusion.");
+                return;
+            }
+            if !learned {
+                return;
+            }
+            ui.label(egui::RichText::new("Barre :").size(11.0_f32).color(TEXT_DIM));
+            for (slot, key) in bar.keys.iter().enumerate() {
+                let here = bar.bar.get(slot) == Some(id);
+                let text = egui::RichText::new(key).size(11.0_f32).color(if here { GOLD_BRIGHT } else { TEXT_SOFT });
+                let occupant = bar.bar.get(slot).and_then(|o| catalog.get(o)).map_or("vide".to_string(), |o| o.name.clone());
+                if ui.add(egui::Button::new(text).selected(here).small()).on_hover_text(format!("Poser sur [{key}] (aujourd'hui : {occupant})")).clicked() {
+                    place = Some((slot, id.to_string()));
+                }
+            }
+        });
+    }
+    place
 }
 
 /// Coupe `text` en lignes de mots qui tiennent dans `room` (mesurées par `width`) ; un mot trop

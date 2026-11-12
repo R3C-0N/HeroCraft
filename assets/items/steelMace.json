@@ -2,6 +2,7 @@
   "numeric_id": 16542,
   "name": "Masse d'acier",
   "category": "Armes",
+  "weapon": {"kind": "mace", "interval": 0.55},
   "max_stack": 1,
   "icon": "icones/steelMace.png",
   "stats": {"Dégâts": 15, "Durabilité": 2000},

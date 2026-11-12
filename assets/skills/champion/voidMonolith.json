@@ -1,0 +1,100 @@
+{
+  "name": "Monolithe du Néant",
+  "description": "Compétence ultime. Tu incrustes de l'Étherium pur dans ton épée et ton bouclier. Tu frappes violemment le sol, créant une onde de choc qui enferme les ennemis proches dans un cratère. À l'intérieur, tu deviens totalement invulnérable et chacune de tes frappes à l'épée désintègre l'armure adverse.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "armoredBreach",
+      "livingWall",
+      "devastatingCounter"
+    ],
+    "max_rank": 3,
+    "planner": 374
+  },
+  "cast": {
+    "cost": {
+      "stamina": 60
+    },
+    "cooldown": 120,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": 6
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": 3
+        }
+      },
+      {
+        "pull": {
+          "strength": 8
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.6,
+          "duration": 8
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "immune": {
+          "from": [
+            "damage",
+            "stun",
+            "knockback"
+          ],
+          "duration": 8
+        }
+      },
+      {
+        "buff": {
+          "stat": "damage",
+          "value": 0.6,
+          "duration": 8,
+          "rider": {
+            "radius": 0.5,
+            "effects": [
+              {
+                "shred": {
+                  "amount": 1,
+                  "duration": 3
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "voidRift",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
+}

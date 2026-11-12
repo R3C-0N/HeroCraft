@@ -1,0 +1,49 @@
+{
+  "name": "Éclair de Guérison",
+  "description": "Soin. Le sceptre libère un soin rapide sur un allié proche ou sur lui-même.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 242
+  },
+  "cast": {
+    "cost": {
+      "mana": 10
+    },
+    "cooldown": 5,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "heal": {
+          "amount": [
+            15,
+            20,
+            25
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "handFlame",
+      "anchor": "rightHand",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

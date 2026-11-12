@@ -1,6 +1,7 @@
 {
   "name": "Chimère du Néant",
   "description": "Forme colossale de l'Avatar du Néant, constellée de cristaux d'Étherium.",
+  "tags": ["shadow"],
   "body": {"half_width": 0.9, "half_length": 2.0, "height": 3.4},
   "walk_speed": 1.8,
   "health": 150,

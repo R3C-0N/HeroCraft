@@ -1,0 +1,72 @@
+{
+  "name": "Œil de Faucon",
+  "description": "Précision. Posture de concentration augmentant drastiquement la portée, la vitesse de visée et les chances de coup critique pendant quelques secondes.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "tacticalRetreat"
+    ],
+    "max_rank": 3,
+    "planner": 293
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 20,
+    "animation": "guard",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": [
+            0.25,
+            0.35,
+            0.45
+          ],
+          "duration": 8
+        }
+      },
+      {
+        "buff": {
+          "stat": "critical",
+          "value": [
+            0.3,
+            0.4,
+            0.5
+          ],
+          "duration": 8
+        }
+      },
+      {
+        "buff": {
+          "stat": "range",
+          "value": [
+            0.3,
+            0.4,
+            0.5
+          ],
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "targetMark",
+      "anchor": "head",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "impact",
+      "to": "effectEnd"
+    }
+  ]
+}

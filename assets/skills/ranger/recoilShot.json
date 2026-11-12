@@ -1,0 +1,78 @@
+{
+  "name": "Tir de Recul",
+  "description": "Contrôle. Tir lourd chargé d'énergie cinétique qui repousse violemment l'ennemi pour le maintenir à distance.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 274
+  },
+  "cast": {
+    "weapons": [
+      "crossbow"
+    ],
+    "uses_round": true,
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 8,
+    "animation": "crossbowShot",
+    "area": {
+      "line": {
+        "length": 10,
+        "width": 1.5
+      }
+    },
+    "projectile": {
+      "speed": 40
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.0,
+            1.2,
+            1.4
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": [
+            8,
+            9,
+            10
+          ]
+        }
+      }
+    ],
+    "movement": {
+      "leap": -2
+    }
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "projectile",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
+    }
+  ]
+}

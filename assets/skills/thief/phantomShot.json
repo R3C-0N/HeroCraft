@@ -1,0 +1,72 @@
+{
+  "name": "Tir Fantôme",
+  "description": "Tir Vif + Voile Ténébreux. Tu décoches un carreau imprégné de magie. À l'impact, tu te téléportes instantanément dans le dos de la cible touchée.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "shardShot",
+      "ambush"
+    ],
+    "max_rank": 3,
+    "planner": 266
+  },
+  "cast": {
+    "cost": {
+      "stamina": 28
+    },
+    "cooldown": 14,
+    "animation": "crossbowShot",
+    "area": {
+      "line": {
+        "length": 14,
+        "width": 1
+      }
+    },
+    "projectile": {
+      "speed": 50
+    },
+    "movement": {
+      "teleport": {
+        "behind": 1.5,
+        "face": "target"
+      }
+    },
+    "targets": "enemies",
+    "kind": "magical",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.0,
+            2.4,
+            2.8
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shadowBolt",
+      "anchor": "projectile",
+      "from": "impact"
+    },
+    {
+      "effect": "shadowSmoke",
+      "anchor": "body",
+      "from": "end"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
+    }
+  ]
+}

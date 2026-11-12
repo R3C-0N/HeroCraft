@@ -2,6 +2,7 @@
   "numeric_id": 16500,
   "name": "Bâton d'âmes de fer",
   "category": "Armes",
+  "weapon": {"kind": "staff", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/ironSoulStaff.png",
   "stats": {"Dégâts": 9, "Durabilité": 900},

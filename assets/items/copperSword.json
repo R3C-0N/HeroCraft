@@ -2,6 +2,7 @@
   "numeric_id": 16427,
   "name": "Épée de cuivre",
   "category": "Armes",
+  "weapon": {"kind": "sword", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/copperSword.png",
   "stats": {"Dégâts": 6, "Durabilité": 300},

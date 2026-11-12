@@ -1,0 +1,64 @@
+{
+  "name": "Tir Jumelé",
+  "description": "Rafale. Tire simultanément une balle magique de chaque arbalète pour des dégâts rapides.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 271
+  },
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 3,
+    "animation": "crossbowShot",
+    "speed": 1.3,
+    "area": {
+      "line": {
+        "length": 14,
+        "width": 1.5
+      }
+    },
+    "projectile": {
+      "speed": 50
+    },
+    "targets": "enemies",
+    "kind": "magical",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.0,
+            1.1,
+            1.2
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "projectile",
+      "from": "impact"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "projectile",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
+    }
+  ]
+}

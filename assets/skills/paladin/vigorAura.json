@@ -1,0 +1,57 @@
+{
+  "name": "Aura de Vigueur",
+  "description": "Soutien. Une zone lumineuse persistante autour de toi qui accélère la récupération d'endurance de tout le groupe.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "sealOfBravery"
+    ],
+    "max_rank": 3,
+    "planner": 398
+  },
+  "cast": {
+    "cost": {
+      "mana": 20
+    },
+    "cooldown": 30,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": 8
+      }
+    },
+    "zone": {
+      "duration": 15,
+      "follow": true
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "buff": {
+          "stat": "stamina_regen",
+          "value": [
+            0.3,
+            0.4,
+            0.5
+          ],
+          "duration": 15
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "auraRing",
+      "anchor": "feet",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

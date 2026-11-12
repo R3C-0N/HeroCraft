@@ -1,0 +1,74 @@
+{
+  "name": "Écran de Fumée",
+  "description": "Illusion. Déploie une large zone d'ombre qui aveugle les ennemis et te rend indétectable à l'intérieur.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "shadowDecoy"
+    ],
+    "max_rank": 3,
+    "planner": 264
+  },
+  "cast": {
+    "cost": {
+      "mana": 20
+    },
+    "cooldown": 18,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ]
+      }
+    },
+    "zone": {
+      "duration": 5
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "slow": {
+          "strength": 0.5,
+          "duration": 5
+        }
+      },
+      {
+        "blind": {
+          "duration": 5
+        }
+      },
+      {
+        "invisible": {
+          "duration": 5
+        },
+        "to": "self"
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.5,
+          "duration": 5
+        },
+        "to": "self"
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shadowSmoke",
+      "anchor": "area",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "mistCloud",
+      "anchor": "area",
+      "from": "impact"
+    }
+  ]
+}

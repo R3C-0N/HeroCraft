@@ -1,0 +1,12 @@
+{
+  "numeric_id": 16918,
+  "name": "Arc renforcé d'orichalque",
+  "category": "Armes",
+  "weapon": {"kind": "bow", "interval": 0.3, "ammo": "arrow"},
+  "max_stack": 1,
+  "icon": "icones/orichalcumBow.png",
+  "stats": {"Dégâts": 9, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"orichalcumIngot": 2, "stick": 3, "rope": 2}, "repair": {"orichalcumIngot": 1}}
+  ]
+}

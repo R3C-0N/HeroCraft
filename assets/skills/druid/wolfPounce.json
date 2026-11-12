@@ -1,0 +1,48 @@
+{
+  "name": "Bond du Loup",
+  "description": "Clic droit du Loup des Bois : il bondit sur sa proie et la renverse.",
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 4,
+    "animation": "leap",
+    "area": {
+      "circle": {
+        "radius": 2
+      }
+    },
+    "movement": {
+      "leap": 5
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.4,
+            1.7,
+            2.0
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

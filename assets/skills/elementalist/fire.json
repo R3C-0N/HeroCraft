@@ -1,0 +1,16 @@
+{
+  "name": "Feu",
+  "description": "Une compétence, deux sorts.\n\n- Offensif : Orbe Igné, lance une boule de feu explosive.\n- Défensif (piège) : Rune Volcanique, place une marque au sol qui explose en un pilier de feu au passage d'un ennemi.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 175,
+    "grants": [
+      "igneousOrb",
+      "volcanicRune"
+    ]
+  }
+}

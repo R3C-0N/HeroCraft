@@ -1,0 +1,22 @@
+{
+  "description": "Lames de vent pâles et rapides.",
+  "layers": [
+    {
+      "shape": "arc",
+      "loop": true,
+      "radius": 0.6,
+      "angle": 140,
+      "thickness": 0.12,
+      "color": ["#E8FFF8B0", "#E8FFF8B0"],
+      "glow": 1.5
+    },
+    {
+      "shape": "trail",
+      "loop": true,
+      "width": [0.25, 0.0],
+      "life": 0.18,
+      "color": ["#E8FFF890", "#E8FFF800"],
+      "glow": 1.2
+    }
+  ]
+}

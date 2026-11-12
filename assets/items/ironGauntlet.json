@@ -2,6 +2,7 @@
   "numeric_id": 16494,
   "name": "Gantelet runique de fer",
   "category": "Armes",
+  "weapon": {"kind": "gauntlet", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/ironGauntlet.png",
   "stats": {"Dégâts": 10, "Durabilité": 900},

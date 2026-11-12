@@ -1,0 +1,30 @@
+{
+  "description": "Carreau de tourelle en vol : une pointe claire et sa traînée.",
+  "layers": [
+    {
+      "shape": "sprite",
+      "loop": true,
+      "size": 0.18,
+      "color": [
+        "#FFF4D8",
+        "#FFF4D8"
+      ],
+      "glow": 2,
+      "texture": "soft.png"
+    },
+    {
+      "shape": "trail",
+      "loop": true,
+      "width": [
+        0.08,
+        0.0
+      ],
+      "life": 0.15,
+      "color": [
+        "#FFE8B0C0",
+        "#FFE8B000"
+      ],
+      "glow": 1.5
+    }
+  ]
+}

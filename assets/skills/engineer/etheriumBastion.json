@@ -1,0 +1,76 @@
+{
+  "name": "Bastion d'Étherium",
+  "description": "Compétence ultime. Tu enfonces ta trousse du bricoleur gorgée d'Étherium directement sous tes pieds. Le sol s'ouvre et une forteresse mécanique imprenable s'assemble instantanément autour de toi, te surélevant aux commandes d'une tourelle de siège colossale.\n\n- Mur Fournaise intégré : la base du bastion est encerclée par un mur d'acier incandescent qui repousse et calcine instantanément toute cible tentant le corps à corps.\n- Zone d'Exécution amplifiée : tu pilotes manuellement la tourelle qui tire des obus magnétiques perforants. Chaque tir attire et écrase les ennemis au centre de l'impact avant de tout vaporiser.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "executionZone",
+      "targetedEradication",
+      "furnaceWall"
+    ],
+    "max_rank": 3,
+    "planner": 314
+  },
+  "cast": {
+    "cost": {
+      "stamina": 60,
+      "mana": 40
+    },
+    "cooldown": 120,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": 4
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2,
+            2.5,
+            3
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 8
+        }
+      },
+      {
+        "summon": {
+          "species": "etheriumBastion",
+          "at": "self",
+          "limit": 1,
+          "duration": [
+            15,
+            18,
+            20
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "voidRift",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "flameCone",
+      "anchor": "feet",
+      "from": "impact",
+      "to": "end"
+    }
+  ]
+}

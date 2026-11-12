@@ -26,8 +26,10 @@ mod commands;
 mod creature_render;
 mod creatures;
 mod dropped_items;
+mod effects;
 mod gpu_timer;
 mod hero_creator;
+mod gestures;
 mod hero_model;
 mod villagers;
 mod input;
@@ -46,8 +48,9 @@ mod shaders;
 mod shadow;
 mod skills_screen;
 mod skinned_model;
-#[cfg(test)]
 mod skill_models;
+mod skill_bar;
+mod skill_play;
 mod terrain_cull;
 mod ui;
 mod ui_skin;
@@ -85,14 +88,15 @@ fn main() {
     info!("Contrôles (modifiables dans Échap > Commandes) :");
     info!(" • Souris                             : Regarder autour (curseur capturé en jeu)");
     info!(" • Clic gauche / Clic droit           : Casser le bloc visé (il tombe, à ramasser) / Poser le bloc choisi");
-    info!(" • [1-9] / Molette / [E]              : Choisir la case de la barre d'objets / Inventaire");
+    info!(" • [1-9] / Molette / [F]              : Choisir la case de la barre d'objets / Inventaire");
+    info!(" • [A,E,R,T] (AZERTY) / [Q,E,R,T]     : Compétences de la barre (posées depuis la roue)");
     info!(" • [Z,Q,S,D] (AZERTY) / [W,A,S,D]     : Se déplacer");
     info!(" • [ESPACE] / double [ESPACE]         : Sauter / S'envoler (monter en vol)");
     info!(" • [MAJ] / [CTRL]                     : S'accroupir (descendre en vol) / Sprinter");
     info!(" • [ALT] + Molette                    : Zoom FPS (0m) -> TPS (1-25m) -> Satellite");
-    info!(" • [F] / [R]                          : Vue sol <-> satellite / Réinitialiser la vue");
+    info!(" • [V] / [B]                          : Vue sol <-> satellite / Réinitialiser la vue");
     info!(" • [C]                                : Roue des compétences");
-    info!(" • [G] / [T] / [Y]                    : Nouvelle planète / Filtres tectonique, courants");
+    info!(" • [G] / [U] / [Y]                    : Nouvelle planète / Filtres tectonique, courants");
     info!(" • [ENTRÉE]                           : Chat (messages, commandes /help)");
     info!(" • [ÉCHAP]                            : Menu de pause (libère la souris)");
     info!("==========================================================");
@@ -154,6 +158,7 @@ fn main() {
     ui_state.set_scale_factor(window.scale_factor() as f32);
     ui_state.set_screen_size(size.width as f32, size.height as f32);
     ui_state.controls = input::Controls::load_or_default(input::CONTROLS_FILE);
+    ui_state.skill_bar = skill_bar::SkillBar::load_or_default(skill_bar::SKILL_BAR_FILE);
     ui_state.inventory = inventory::Inventory::load_or_default(inventory_file(current_seed, false));
     ui_state.player = player_stats::PlayerStats::load_or_default(Some(progress_file(current_seed)));
     ui_state.set_legend(load_legend(&legend_file(current_seed, false)));
@@ -196,12 +201,19 @@ fn main() {
     let mut creature_animator = creatures::CreatureAnimator::default();
     let mut villager_animator = villagers::VillagerAnimator::default();
     let mut hero_gait = hero_model::HeroGait::default();
+    // Démarche des héros des autres joueurs
+    let mut remote_gaits: std::collections::HashMap<u64, hero_model::HeroGait> = std::collections::HashMap::new();
+    // Pieds des héros changés en bête (formes du Druide) à l'image d'avant, pour leur allure
+    let mut form_feet: std::collections::HashMap<u64, glam::Vec3> = std::collections::HashMap::new();
     let mut hero_figure = hero_model::FigureCache::default();
+    // Compétences : lancements, recharges, gestes du héros et frappes à montrer
+    let mut skill_play = skill_play::SkillPlay::default();
+    let mut skill_effects = effects::Effects::default();
+    let mut effect_quads: Vec<effects::EffectQuad> = Vec::new();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
     // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
     // prochain coup qu'on peut leur porter
     let mut creature_views: Vec<creatures::CreatureView> = Vec::new();
-    let mut attack_cooldown = 0.0_f32;
     // Humanoïde visé quand le clic gauche a été enfoncé : seul lui se frappe tant que le clic est tenu
     let mut strike_lock: Option<u64> = None;
     // En solo, combien de fois on a parlé à chaque habitant (il enchaîne ses répliques)
@@ -323,7 +335,16 @@ fn main() {
                     // Clic souris : glisser pour tourner la planète en vue satellite (curseur visible).
                     // Souris capturée, les clics restent libres pour l'interaction avec les blocs.
                     WindowEvent::MouseInput { state: btn_state, button, .. } => {
-                        if cursor_captured {
+                        // Changé en bête : le clic gauche et le clic droit lancent ses deux attaques
+                        if let Some(attacks) = ui_state.beast_attacks.as_ref().filter(|_| cursor_captured) {
+                            if *btn_state == ElementState::Pressed {
+                                match button {
+                                    MouseButton::Left => ui_state.skill_casts.push(attacks[0].clone()),
+                                    MouseButton::Right => ui_state.skill_casts.push(attacks[1].clone()),
+                                    _ => {}
+                                }
+                            }
+                        } else if cursor_captured {
                             // Pose appliquée et remaillée sur-le-champ : le bloc change dans la frame qui
                             // suit le clic. Le clic gauche (casse, coup à une bête) avance à chaque frame.
                             let pressed = *btn_state == ElementState::Pressed;
@@ -427,7 +448,7 @@ fn main() {
                                 || ui_state.ctx.wants_pointer_input())
                         };
 
-                        if cursor_captured && !zoom_modifier_held {
+                        if cursor_captured && !zoom_modifier_held && ui_state.beast_attacks.is_none() {
                             // Molette vers le haut : case précédente (vers la gauche)
                             hotbar_scroll -= match delta {
                                 MouseScrollDelta::LineDelta(_x, y) => *y,
@@ -516,7 +537,7 @@ fn main() {
                             // En jeu normal (menu fermé) : barre d'objets (1 à 9), déplacements et
                             // raccourcis selon les touches attribuées
                             if let Some(slot) = input::hotbar_slot_for(key_code) {
-                                if is_pressed {
+                                if is_pressed && ui_state.beast_attacks.is_none() {
                                     ui_state.inventory.select(slot);
                                 }
                                 return;
@@ -608,6 +629,32 @@ fn main() {
                         let section = Instant::now();
                         if !ui_state.is_settings_open {
                             herocraft_common::prof_scope!("frame::camera_update");
+                            camera.obstacles = creatures::obstacles(&creature_views, &creature_registry);
+                            // Compétences : allure renforcée, ruée ou bond qui commence
+                            // Ralenti ou étourdi par une bête : moins vite, ou plus du tout, et sans sauter
+                            let missing = 1.0 - ui_state.player.stats.hp / ui_state.player.stats.max_hp.max(1.0);
+                            camera.buff_speed = skill_play.speed_factor(missing) * ui_state.player.stats.status_speed();
+                            if ui_state.player.stats.is_stunned() {
+                                camera.jump_requested = false;
+                            }
+                            if let Some((dash, leap, side, seconds)) = skill_play.take_motion() {
+                                camera.launch(dash, leap, side, seconds);
+                            }
+                            for motion in skill_play.take_moves(Instant::now()) {
+                                match motion {
+                                    skill_play::Motion::Hover { height, duration } => camera.hover(height, duration),
+                                    skill_play::Motion::Pull { to, speed, stop, hoist } => camera.pull(to, speed, stop, hoist),
+                                    skill_play::Motion::Teleport { feet, look } => {
+                                        camera.skill_teleport(feet, look, &generator);
+                                    }
+                                }
+                            }
+                            // Relevé sur place par une compétence (Intervention Suprême) : l'écran de mort se ferme
+                            if camera.is_dead && !ui_state.player.is_dead() {
+                                camera.is_dead = false;
+                                audio.reset_player();
+                                info!("Relevé sur place.");
+                            }
                             camera.update(dt, &generator);
                             // Jauges du joueur, chute terminée : dommages (signalés au serveur en
                             // ligne), vue secouée et, si elle tue, écran de mort
@@ -676,7 +723,9 @@ fn main() {
 
                         // Bloc visé par le réticule (souris capturée seulement) et bouton tenu enfoncé
                         let mut terrain_edited = false;
-                        attack_cooldown = (attack_cooldown - dt).max(0.0);
+                        // L'arme en main : sa cadence, son chargeur, ce qu'elle tire
+                        skill_play.hold(ui_state.inventory.selected_item(), ui_state.player.stats.class);
+                        ui_state.weapon_hud = skill_play.weapon_hud(ui_state.skill_charging.as_deref());
                         let mut aimed = None;
                         let mut looked_at = None;
                         if cursor_captured {
@@ -694,17 +743,66 @@ fn main() {
                             // Un habitant, un garde ou un voyageur ne se frappe que si le clic a commencé
                             // sur lui : celui qui passe devant un bloc en train de casser n'est pas
                             // frappé par mégarde (les gardes s'en prendraient au joueur)
-                            if block_interaction.take_fresh_press() {
+                            let fresh = block_interaction.take_fresh_press();
+                            if fresh {
                                 strike_lock = aimed;
+                            }
+                            // Un arc ou une arbalète, et de quoi le charger : le clic gauche tire (l'arc
+                            // se bande tant qu'on tient le bouton et part au relâchement). Sans munition,
+                            // il frappe au corps à corps, d'un coup de crosse.
+                            let held = skill_play.held();
+                            let ammo = held.ammo.and_then(|kind| ui_state.inventory.find_ammo(kind));
+                            let shooting = held.is_ranged() && ammo.is_some();
+                            if let Some(ammo) = ammo.filter(|_| shooting) {
+                                block_interaction.pause_mining();
+                                let bow = held.kind == Some(herocraft_common::WeaponKind::Bow);
+                                if bow && fresh {
+                                    skill_play.begin_charge(None);
+                                    if let Some(client) = net.as_mut() {
+                                        client.send_begin_charge(None);
+                                    }
+                                }
+                                let release = if bow { skill_play.is_charging(None) && !block_interaction.is_breaking_held() } else { fresh };
+                                if release {
+                                    match skill_play.fire() {
+                                        Ok(fired) => {
+                                            ui_state.inventory.take_one(ammo);
+                                            let (up, _, _, aim) = camera.look_vectors();
+                                            let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+                                            audio.block_hit(audio::synth::Material::Wood, &ui_state.audio_settings);
+                                            match net.as_mut() {
+                                                Some(client) => client.send_shoot(aim, ammo),
+                                                None => {
+                                                    let damage = held.damage + herocraft_common::weapons::ammo_damage(ammo);
+                                                    let hit = skill_play.solo_shoot(camera.player_pos, aim, damage, fired, &mut solo_creatures, &mut ui_state.player.stats);
+                                                    skill_play.show_shot(None, camera.eye_position(), hit.to + up * 0.8 * block, hit.target, hit.special.as_deref(), block);
+                                                    let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
+                                                    for murder in solo_creatures.take_murders() {
+                                                        ui_state.chat.server(&murder.announce(&name));
+                                                    }
+                                                    for assault in solo_creatures.take_assaults() {
+                                                        ui_state.chat.server(&assault.warning());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(error) => {
+                                            let weapon = held.item.map_or("Arme", |i| i.name());
+                                            ui_state.skill_notice = Some((format!("{weapon} : {}", error.message()), Instant::now()));
+                                        }
+                                    }
+                                }
                             }
                             if !block_interaction.is_breaking_held() {
                                 strike_lock = None;
                             }
                             let humanoid = |id: u64| creature_views.iter().find(|v| v.id == id).is_some_and(|v| villagers::is_humanoid(v, &creature_registry));
-                            let striking = aimed.filter(|_| block_interaction.is_breaking_held()).filter(|&id| strike_lock == Some(id) || !humanoid(id));
+                            let striking = aimed.filter(|_| !shooting && block_interaction.is_breaking_held()).filter(|&id| strike_lock == Some(id) || !humanoid(id));
                             if let Some(id) = striking {
                                 block_interaction.pause_mining();
-                                hit_creature(id, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut audio, &ui_state.audio_settings);
+                                if hit_creature(id, &mut skill_play, &camera, net.as_mut(), &mut solo_creatures, &mut ui_state.player.stats, &mut audio, &ui_state.audio_settings) {
+                                    skill_play.solo_weapon_hit(id, &mut solo_creatures, camera.player_pos, &mut ui_state.player.stats);
+                                }
                                 // Un habitant tué en solo : le chat l'annonce (en ligne, c'est le serveur)
                                 let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
                                 for murder in solo_creatures.take_murders() {
@@ -714,7 +812,7 @@ fn main() {
                                     ui_state.chat.server(&assault.warning());
                                 }
                             }
-                            let action = if striking.is_some() { None } else { block_interaction.tick(dt) };
+                            let action = if striking.is_some() || shooting { None } else { block_interaction.tick(dt) };
                             if let Some(block) = block_interaction.take_hit() {
                                 audio.block_hit(audio::synth::Material::of(block), &ui_state.audio_settings);
                             }
@@ -737,6 +835,7 @@ fn main() {
                         if let Some(client) = net.as_mut() {
                             herocraft_common::prof_scope!("reseau");
                             client.send_move(&camera, ui_state.inventory.selected_item());
+                            client.send_equipment(ui_state.inventory.worn().into_iter().map(|i| i.0).collect());
                             let mut lost = None;
                             for event in client.poll() {
                                 match event {
@@ -754,7 +853,7 @@ fn main() {
                                     }
                                     NetEvent::Stats(stats) => ui_state.player.sync(stats, &mut camera),
                                     NetEvent::Hurt { damage, cause } => {
-                                        let hurt = ui_state.player.bitten(damage, &cause);
+                                        let hurt = ui_state.player.bitten(damage, None, &cause);
                                         show_wound(hurt, &cause, &mut camera, &mut ui_state, &mut audio);
                                     }
                                     NetEvent::Loot { position, items } => drop_loot(&mut dropped_items, &camera, position, &items),
@@ -766,6 +865,27 @@ fn main() {
                                         state.simulated_time = time as f32;
                                         client_weather.model.forced = forced;
                                     }
+                                    NetEvent::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified } => skill_play.on_cast(player_id, client.player_id(), &skill, rank, aim, aimed, fused, amplified),
+                                    NetEvent::SkillRefused { skill, reason } => {
+                                        ui_state.skill_notice = Some((format!("{} : {reason}", skill_name(&skill)), Instant::now()));
+                                        skill_play.on_refused(&skill, &reason);
+                                    }
+                                    NetEvent::SkillMove(m) => skill_play.on_move(m),
+                                    NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact } => {
+                                        let caster = (player_id != client.player_id()).then_some(player_id);
+                                        skill_play.on_hit(skill_play::Shown { caster, skill, rank, center, creatures, players, parried, contact });
+                                    }
+                                    NetEvent::SkillCooldown { skill, seconds } => skill_play.extend_cooldown(&skill, seconds),
+                                    NetEvent::Pushed { direction, speed } => camera.push(direction, speed),
+                                    NetEvent::PlayerShot { player_id, from, to, target, special } => {
+                                        let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+                                        let up = from.normalize_or_zero();
+                                        let mine = player_id == client.player_id();
+                                        let start = if mine { camera.eye_position() } else { from + up * 1.5 * block };
+                                        skill_play.show_shot((!mine).then_some(player_id), start, to + up * 0.8 * block, target, special.as_deref(), block);
+                                    }
+                                    NetEvent::CreatureShots(shots) => skill_play.on_shots(&shots, &creature_registry),
+                                    NetEvent::Projectiles(events) => skill_play.on_projectiles(&events, &creature_registry),
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
                                 }
                             }
@@ -799,7 +919,12 @@ fn main() {
                                         solo_creatures.set_sun_dir(state.sun_dir());
                                         // Sous l'orage les bêtes s'abritent, l'hiver les ours hibernent
                                         solo_creatures.set_climate(&client_weather.model, state.simulated_time as f64);
-                                        let player = herocraft_world::PlayerPresence { feet: camera.player_pos, crouching: camera.is_crouching(), holding: ui_state.inventory.selected_item() };
+                                        let player = herocraft_world::PlayerPresence {
+                                            feet: camera.player_pos,
+                                            crouching: camera.is_crouching(),
+                                            holding: ui_state.inventory.selected_item(),
+                                            hidden: ui_state.player.stats.is_invisible() || ui_state.player.is_dead(),
+                                        };
                                         // Les plantes semées poussent (le serveur s'en charge en ligne)
                                         for (pos, block) in solo_fields.tick_in_weather(dt, &generator, lod_manager.terrain_edits(), &client_weather.model, state.simulated_time as f64) {
                                             terrain_edited |= lod_manager.set_block(&generator, pos, block);
@@ -809,9 +934,35 @@ fn main() {
                                         let hits = solo_creatures.tick_with_presences(dt, &generator, lod_manager.terrain_edits(), &[player]);
                                         // Banc d'essai : les bêtes ne blessent pas le joueur
                                         for hit in hits.into_iter().filter(|_| bench.is_none()) {
+                                            // Une garde levée pare le coup qui arrive de face, et riposte
+                                            let (_, facing, _, _) = camera.look_vectors();
+                                            let (damage, parried) = skill_play.solo_parry(&mut solo_creatures, camera.player_pos, facing, &mut ui_state.player.stats, hit.creature_id, hit.damage, hit.kind);
+                                            // Ralenti, étourdi, repoussé : le coup de certaines bêtes le laisse sonné
+                                            if !ui_state.player.is_dead() && !parried {
+                                                let ignores = skill_play.solo_immunities();
+                                                solo_creatures.afflict(&hit, &mut ui_state.player.stats, &ignores);
+                                                if let Some((direction, speed)) = solo_creatures.knockback(&hit, camera.player_pos).filter(|_| !ignores.contains(&herocraft_common::skills::Status::Knockback)) {
+                                                    camera.push(direction, speed);
+                                                }
+                                            }
                                             let cause = creature_registry.get(hit.species).map_or("Une créature", |s| s.name.as_str());
-                                            let hurt = ui_state.player.bitten(hit.damage, cause);
+                                            // L'armure portée, puis les renforcements de défense
+                                            let damage = herocraft_common::through_armor(damage, hit.kind, ui_state.inventory.protection() as f32) * skill_play.solo_damage_factor(hit.kind);
+                                            let hurt = ui_state.player.bitten(damage, Some(hit.kind), cause);
+                                            // Tombé sous un effet à la mort : la nova part, il se relève
+                                            if ui_state.player.is_dead() {
+                                                skill_play.solo_last_stand(&mut solo_creatures, camera.player_pos, &mut ui_state.player.stats);
+                                            }
                                             show_wound(hurt, cause, &mut camera, &mut ui_state, &mut audio);
+                                        }
+                                        // Tirs des tourelles, du bastion et de la liche
+                                        let shots = solo_creatures.take_shots();
+                                        if !shots.is_empty() {
+                                            skill_play.on_shots(&shots, &creature_registry);
+                                        }
+                                        let projectiles = solo_creatures.take_projectile_events();
+                                        if !projectiles.is_empty() {
+                                            skill_play.on_projectiles(&projectiles, &creature_registry);
                                         }
                                         // Œufs pondus par les bêtes apprivoisées, laissés à leurs pieds
                                         for (feet, item) in solo_creatures.take_laid() {
@@ -829,12 +980,46 @@ fn main() {
                                     }
                                 }
                             };
+                            // Les copies (leurres, ombres d'Étherium) se dessinent à l'allure qu'elles imitent
+                            for view in creature_views.iter_mut().filter(|v| v.copy.is_some()) {
+                                *view = skill_models::drawn_as(view, &creature_registry);
+                            }
                             probe.section("créatures : simulation", section);
                             let section = Instant::now();
                             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
                             let anim_dt = if ui_state.is_settings_open { 0.0 } else { dt };
                             // Les bêtes d'après leur modèle, les habitants et les voyageurs avec le corps des héros
-                            let beasts: Vec<creatures::CreatureView> = creature_views.iter().filter(|v| !villagers::is_humanoid(v, &creature_registry)).copied().collect();
+                            let mut beasts: Vec<creatures::CreatureView> = creature_views.iter().filter(|v| !villagers::is_humanoid(v, &creature_registry)).copied().collect();
+                            // Héros changés en bête (formes du Druide) : la bête à leur place
+                            skill_play.me = net.as_ref().map_or(skill_play::SOLO_PLAYER, |c| c.player_id());
+                            let third_person = camera.view_mode() == camera::CameraViewMode::ThirdPerson;
+                            let local_form = skill_play.form_of(None).filter(|_| ui_state.legend.is_some());
+                            // Changé en bête : les clics lancent ses attaques, l'inventaire se ferme
+                            let attacks = skill_play.form_skill(None).and_then(|s| herocraft_common::skills().get(&s)).and_then(|d| <[String; 2]>::try_from(d.form_attacks.clone()).ok());
+                            if attacks.is_some() && ui_state.beast_attacks.is_none() {
+                                ui_state.set_inventory_open(false);
+                                block_interaction.reset();
+                            }
+                            ui_state.beast_attacks = attacks;
+                            let mut shapes: Vec<(u64, String, glam::Vec3, f32, bool)> = Vec::new();
+                            if let Some(form) = local_form.clone().filter(|_| third_person) {
+                                shapes.push((u64::MAX, form, camera.player_pos, camera.player_yaw, skill_play.form_attacking(None)));
+                            }
+                            if let Some(client) = net.as_ref() {
+                                for (id, feet, yaw, _) in client.remote_heroes() {
+                                    if let Some(form) = skill_play.form_of(Some(id)) {
+                                        shapes.push((u64::MAX - 1 - id, form, feet, yaw, skill_play.form_attacking(Some(id))));
+                                    }
+                                }
+                            }
+                            form_feet.retain(|id, _| shapes.iter().any(|s| s.0 == *id));
+                            for (id, form, feet, yaw, attacking) in &shapes {
+                                let speed = form_feet.insert(*id, *feet).map_or(0.0, |last| last.distance(*feet) / block / dt.max(1e-3));
+                                let action = if *attacking {
+                                    herocraft_common::CreatureAction::Attaque
+                                } else if speed > 4.0 { herocraft_common::CreatureAction::Course } else if speed > 0.3 { herocraft_common::CreatureAction::Marche } else { herocraft_common::CreatureAction::Repos };
+                                beasts.push(creatures::CreatureView { id: *id, species: creature_registry.find(form), feet: *feet, yaw: *yaw, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None });
+                            }
                             creature_animator.update(&beasts, &creature_registry, &creature_models, anim_dt, block);
                             let mut frame = creatures::build_frame(&beasts, &creature_registry, &creature_models, &creature_animator, block);
                             villager_animator.update(&creature_views, &creature_registry, anim_dt, block);
@@ -844,7 +1029,11 @@ fn main() {
                                     Some(client) => client.villager_card(id).cloned(),
                                     None => solo_creatures.villager_card(id).cloned(),
                                 };
-                                villagers::push_villagers(&mut frame, &creature_views, &creature_registry, card_of, &mut villager_animator, |a| state.villager_texture(a), block);
+                                // Un leurre copie le héros de son lanceur, le nôtre ou celui d'un autre joueur
+                                let me = net.as_ref().map_or(skill_play::SOLO_PLAYER, |c| c.player_id());
+                                let my_look = ui_state.legend.as_ref().map(|l| l.appearance.clone());
+                                let hero_of = |id: u64| if id == me { my_look.clone() } else { net.as_ref().and_then(|c| c.remote_appearance(id)).cloned() };
+                                villagers::push_villagers(&mut frame, &creature_views, &creature_registry, card_of, &hero_of, &mut villager_animator, |a| state.villager_texture(a), block);
                                 let mut tags = net.as_ref().map(|c| c.name_tags(&camera, state.size.width as f32, state.size.height as f32)).unwrap_or_default();
                                 tags.extend(villagers::name_tags(&creature_views, card_of, looked_at, &camera, state.size.width as f32, state.size.height as f32));
                                 ui_state.name_tags = tags;
@@ -856,13 +1045,87 @@ fn main() {
                                     }
                                 }
                             }
-                            // Le héros, vu de dehors à la troisième personne
+                            // Compétences : en solo les règles tournent ici, sur nos créatures
+                            let solo_skills = (net.is_none() && !ui_state.is_settings_open).then_some((&mut solo_creatures, camera.player_pos, &mut ui_state.player.stats));
+                            skill_effects.start(skill_play.tick(anim_dt, solo_skills));
+                            for id in skill_play.take_ended_projectiles() {
+                                skill_effects.end_projectile(id);
+                            }
+                            if skill_play.take_solo_death() {
+                                ui_state.player.bled_out();
+                            }
+                            if net.is_none() {
+                                let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
+                                for murder in solo_creatures.take_murders() {
+                                    ui_state.chat.server(&murder.announce(&name));
+                                }
+                                for assault in solo_creatures.take_assaults() {
+                                    ui_state.chat.server(&assault.warning());
+                                }
+                            }
+                            // Le héros, vu de dehors à la troisième personne, avec le geste de sa compétence
                             hero_gait.update(camera.player_pos, anim_dt, block);
-                            if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson) {
+                            let mut hero_anchors = hero_model::HeroAnchors::standing(camera.player_pos, camera.player_yaw, block);
+                            if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson && local_form.is_none()) {
                                 state.set_hero_sheet(&legend.appearance);
                                 let figure = hero_figure.get(&legend.appearance);
-                                hero_model::push_hero(&mut frame, &legend.appearance, figure, camera.player_pos, camera.player_yaw, hero_gait.swing(), block);
+                                let pose = skill_play.hero_pose(hero_gait.swing(), figure.units_per_block(&legend.appearance));
+                                hero_model::push_hero_posed(&mut frame, &legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, block);
+                                // Transformations partielles du Druide : patte, fourrure, pattes de cerf, plumes
+                                for graft in skill_play.hero_grafts().iter().filter_map(|g| skill_models::graft(g)) {
+                                    let slot = state.villager_texture(creature_render::SheetSource::Fixed(&graft.id, &graft.texture));
+                                    skill_models::push_graft(&mut frame, &graft.model, &legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, slot, block);
+                                }
+                                hero_anchors = hero_model::HeroAnchors::posed(&legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, block);
                             }
+                            // Les héros des autres joueurs, avec le geste de leur compétence et leurs greffes
+                            if let Some(client) = net.as_ref() {
+                                let heroes = client.remote_heroes();
+                                remote_gaits.retain(|id, _| heroes.iter().any(|h| h.0 == *id));
+                                for (id, feet, yaw, appearance) in heroes {
+                                    if skill_play.form_of(Some(id)).is_some() {
+                                        continue;
+                                    }
+                                    let gait = remote_gaits.entry(id).or_default();
+                                    gait.update(feet, anim_dt, block);
+                                    let figure = villager_animator.hero_figure(appearance);
+                                    let pose = skill_play.pose_of(Some(id), gait.swing(), figure.units_per_block(appearance));
+                                    let slot = state.villager_texture(creature_render::SheetSource::Painted(appearance));
+                                    hero_model::push_figure(&mut frame, appearance, figure, feet, yaw, &pose, slot, block);
+                                    for graft in skill_play.grafts_of(Some(id)).iter().filter_map(|g| skill_models::graft(g)) {
+                                        let slot = state.villager_texture(creature_render::SheetSource::Fixed(&graft.id, &graft.texture));
+                                        skill_models::push_graft(&mut frame, &graft.model, appearance, figure, feet, yaw, &pose, slot, block);
+                                    }
+                                }
+                            }
+                            // À la première personne, le temps d'un geste : les bras et l'arme devant l'œil
+                            if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::FirstPerson && skill_play.local_play().is_some()) {
+                                state.set_hero_sheet(&legend.appearance);
+                                let figure = hero_figure.get(&legend.appearance);
+                                let pose = skill_play.hero_pose(0.0, figure.units_per_block(&legend.appearance));
+                                let held = ui_state.inventory.slot(ui_state.inventory.selected()).map(|s| s.item);
+                                // Un objet tenu (pas un bloc) fait l'arme ; sa couleur d'acier en attendant les vraies armes
+                                let weapon = held.filter(|item| item.block().is_none()).map(|_| [0.72, 0.74, 0.78, 1.0]);
+                                let (_, _, _, look) = camera.look_vectors();
+                                let (right, left) = hero_model::push_first_person_arms(&mut frame, &legend.appearance, figure, camera.eye_position(), look, &pose, weapon, block);
+                                hero_anchors.right_hand = right;
+                                hero_anchors.left_hand = left;
+                            }
+                            // Les effets des compétences, accrochés au héros, aux joueurs et aux créatures
+                            effect_quads.clear();
+                            if !skill_effects.is_empty() {
+                                let up = camera.player_pos.normalize_or_zero();
+                                let (east, north) = herocraft_common::tangent_frame(up);
+                                let hero_forward = north * camera.player_yaw.cos() + east * camera.player_yaw.sin();
+                                let players = |id: u64| net.as_ref().and_then(|c| c.remote_player_feet(id)).map(|f| (f, 0.0));
+                                let views = &creature_views;
+                                let creature_feet = |id: u64| views.iter().find(|v| v.id == id).map(|v| v.feet);
+                                let shots = &skill_play;
+                                let projectile_at = |id: u64| shots.projectile_at(id);
+                                let world = effects::AnchorWorld { hero: hero_anchors, hero_forward, players: &players, creatures: &creature_feet, projectiles: &projectile_at, eye: camera.eye_position(), block };
+                                skill_effects.update(anim_dt, &world, &mut effect_quads);
+                            }
+                            state.update_effects(&effect_quads);
                             state.set_creature_frame(&frame);
                             creature_vertices = frame.vertices.len();
                             probe.section("créatures : animation et maillage", section);
@@ -998,6 +1261,11 @@ fn main() {
                         });
                         let map_ctx = ui_state.ctx.clone();
                         ui_state.world_map.pump(&map_ctx, &generator, ui_state.map_open);
+                        let cooldown_now = Instant::now();
+                        for slot in 0..skill_bar::SKILL_SLOTS {
+                            ui_state.fusion_face = skill_play.fusion_face(&ui_state.player.stats);
+                            ui_state.skill_cooldowns[slot] = ui_state.skill_bar.get(slot).map_or((0.0, 0.0), |id| skill_play.cooldown(id, cooldown_now));
+                        }
                         let (full_output, maybe_action) = ui_state.update_ui(is_ground);
 
                         // Roue des compétences : point investi et expérience d'essai. En ligne, le
@@ -1015,7 +1283,11 @@ fn main() {
                         if let Some(id) = skill_requests.learn {
                             let wheel = &ui_state.skill_wheel;
                             match wheel.learn(&mut ui_state.player.stats, &id) {
-                                Ok(rank) => info!("Compétence {id} au rang {rank}."),
+                                Ok(rank) => {
+                                    info!("Compétence {id} au rang {rank}.");
+                                    let stats = ui_state.player.stats.clone();
+                                    ui_state.skill_bar.fill_learned(&stats);
+                                }
                                 Err(e) => warn!("Compétence {id} : {}.", e.message()),
                             }
                             match net.as_mut() {
@@ -1060,6 +1332,34 @@ fn main() {
                             ui_state.chat.players.clear();
                         }
 
+                        // Compétences qui se chargent : le serveur compte le temps tenu jusqu'au relâchement
+                        for skill in std::mem::take(&mut ui_state.skill_charges) {
+                            skill_play.begin_charge(Some(&skill));
+                            if let Some(client) = net.as_mut() {
+                                client.send_begin_charge(Some(&skill));
+                            }
+                        }
+                        // Compétences lancées (touches de la barre, /cast) : visée du regard, et du
+                        // bloc visé s'il y en a un
+                        for skill in std::mem::take(&mut ui_state.skill_casts) {
+                            let (_, _, _, aim) = camera.look_vectors();
+                            // Un grappin vise plus loin que la main : jusqu'à sa portée
+                            let aimed = match skill_play::grapple_of(herocraft_common::skills::skills(), &skill).filter(|g| g.to == herocraft_common::skills::GrappleTo::Block) {
+                                Some(grapple) => {
+                                    let rank = herocraft_common::skills::skills().rank(&ui_state.player.stats, &skill);
+                                    block_interaction.hit_within(&camera, &generator, &lod_manager.terrain_edits().clone(), grapple.range.at(rank) as f64).map(|d| camera.eye_position() + aim * d)
+                                }
+                                None => block_interaction.target().map(|hit| camera.eye_position() + aim * hit.distance as f32),
+                            };
+                            let result = match net.as_mut() {
+                                Some(client) => skill_play.request(&skill, &mut ui_state.player.stats, aim, aimed, Some(&mut |s: &str, aim, aimed| client.send_cast_skill(s, aim, aimed))),
+                                None => skill_play.request(&skill, &mut ui_state.player.stats, aim, aimed, None),
+                            };
+                            if let Err(reason) = result {
+                                ui_state.skill_notice = Some((format!("{} : {reason}", skill_name(&skill)), Instant::now()));
+                            }
+                        }
+
                         // 2. Traitement des actions déclenchées par les boutons egui et le clavier
                         pending_actions.extend(maybe_action);
                         for action in pending_actions.drain(..) {
@@ -1091,6 +1391,9 @@ fn main() {
                                 }
                                 UiAction::Respawn => {
                                     ui_state.player.respawn();
+                                    if let Some(client) = net.as_mut() {
+                                        client.send_respawn();
+                                    }
                                     camera.spawn_on_ground(&generator);
                                     audio.reset_player();
                                     info!("Réapparition au point d'apparition.");
@@ -1584,7 +1887,7 @@ fn game_key(
             *zoom_modifier_held = false;
             ui_state.chat.open();
         }
-        Action::OpenInventory if first_press && is_ground_view => {
+        Action::OpenInventory if first_press && is_ground_view && ui_state.beast_attacks.is_none() => {
             camera.release_inputs();
             ui_state.set_inventory_open(true);
         }
@@ -1613,6 +1916,29 @@ fn game_key(
             }
             pending_actions.push(UiAction::ToggleOceanCurrents);
         }
+        Action::Skill1 | Action::Skill2 | Action::Skill3 | Action::Skill4 if is_ground_view && ui_state.beast_attacks.is_none() => {
+            let slot = [Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4].iter().position(|&a| a == action).unwrap_or(0);
+            match ui_state.skill_bar.get(slot).map(str::to_string) {
+                // Une compétence qui se charge (Tir de Baliste) part au relâchement de sa touche
+                Some(skill) if herocraft_common::skills().get(&skill).and_then(|d| d.cast.as_ref()).is_some_and(|c| c.charge.is_some()) => {
+                    if first_press {
+                        ui_state.skill_charges.push(skill.clone());
+                        ui_state.skill_charging = Some(skill);
+                    } else if !is_pressed && ui_state.skill_charging.as_deref() == Some(skill.as_str()) {
+                        ui_state.skill_charging = None;
+                        ui_state.skill_casts.push(skill);
+                    }
+                }
+                Some(skill) if first_press => ui_state.skill_casts.push(skill),
+                Some(_) => {}
+                None if !first_press => {}
+                None => {
+                    let key = ui_state.controls.action_key_label(action);
+                    let wheel = ui_state.controls.action_key_label(Action::OpenSkills);
+                    ui_state.skill_notice = Some((format!("Rien sur [{key}] : posez une compétence depuis la roue [{wheel}]"), Instant::now()));
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -1636,9 +1962,6 @@ fn set_cursor_captured(window: &Window, captured: bool) {
         window.set_cursor_visible(true);
     }
 }
-
-/// Délai entre deux coups portés à une créature, en secondes
-const ATTACK_COOLDOWN: f32 = 0.4;
 
 /// Bête morte sous le réticule, à portée et devant le bloc visé : à dépecer
 fn aimed_corpse(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<u64> {
@@ -1712,28 +2035,39 @@ fn show_wound(hurt: f32, what: &str, camera: &mut OrbitCamera, ui_state: &mut Ui
 }
 
 /// Frappe la créature `id` (la simulation solo, ou le serveur en ligne, en tire dégâts, recul et
-/// fuite), sauf si le coup précédent est trop récent
+/// fuite), sauf si le coup précédent est trop récent pour l'arme tenue.
+/// Renvoie vrai si le coup a porté ici, en solo.
 fn hit_creature(
     id: u64,
-    cooldown: &mut f32,
+    skill_play: &mut skill_play::SkillPlay,
     camera: &OrbitCamera,
     net: Option<&mut NetClient>,
     solo: &mut herocraft_world::CreatureWorld,
+    stats: &mut herocraft_common::CharacterStats,
     audio: &mut audio::Audio,
     settings: &audio::AudioSettings,
-) {
-    if *cooldown > 0.0 {
-        return;
+) -> bool {
+    // Étourdi, il ne frappe pas
+    if stats.is_stunned() {
+        return false;
     }
-    *cooldown = ATTACK_COOLDOWN;
+    // Au rythme de l'arme tenue, de ses dégâts (le serveur en juge en ligne)
+    let Ok(damage) = skill_play.strike() else { return false };
+    // Invisible, son coup le dévoile et porte en critique
+    let critical = stats.is_invisible();
+    stats.invisible_time = 0.0;
+    let alone = net.is_none();
     match net {
         Some(client) => client.send_hit_creature(id),
         None => {
-            solo.hit(id, camera.player_pos);
+            let factor = if critical { herocraft_world::CRITICAL_FACTOR } else { 1.0 };
+            let boost = skill_play.solo_hit_factor(id, solo);
+            solo.wound(id, camera.player_pos, 0, damage * factor * boost);
         }
     }
     // Coup sourd
     audio.block_placed(audio::synth::Material::Dirt, 0.0, settings);
+    alone
 }
 
 /// Le bloc cassé tombe au sol (s'il se ramasse : ni eau, ni lave), avec le butin de sa fiche
@@ -1821,6 +2155,11 @@ fn write_profile_report() {
     if let Some(path) = herocraft_common::profiler::write_report() {
         info!("Rapport de profilage écrit : {}", path.display());
     }
+}
+
+/// Nom affiché d'une compétence (son identifiant si elle est inconnue)
+fn skill_name(id: &str) -> String {
+    herocraft_common::skills().get(id).map_or_else(|| id.to_string(), |s| s.name.clone())
 }
 
 /// Identifiants des blocs et objets que `/give` peut donner (ceux du catalogue de l'inventaire)
@@ -1999,6 +2338,13 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
                 }
             }
         }
+        Command::Cast(skill) => match herocraft_common::skills().get(&skill) {
+            None => Err(format!("Unknown skill: {skill}")),
+            Some(_) => {
+                game.ui.skill_casts.push(skill);
+                Ok(Vec::new())
+            }
+        },
         Command::Heal => match game.net.as_deref_mut() {
             Some(client) => {
                 client.send_heal();

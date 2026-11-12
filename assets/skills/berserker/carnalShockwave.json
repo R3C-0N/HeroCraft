@@ -1,0 +1,83 @@
+{
+  "name": "Onde de Choc Charnelle",
+  "description": "Hurlement Viscéral + Plaie Béante. Tu frappes ton propre torse de ta main libre. Le choc magique résonne avec ton hurlement et paralyse totalement la zone.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "gapingWound"
+    ],
+    "max_rank": 3,
+    "planner": 388
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 18,
+    "animation": "shout",
+    "area": {
+      "circle": {
+        "radius": [
+          5,
+          5.5,
+          6
+        ]
+      }
+    },
+    "targets": "enemies",
+    "kind": "magical",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.2,
+            1.4,
+            1.6
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": [
+            1.5,
+            1.75,
+            2
+          ]
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "over_time": {
+          "damage": 2,
+          "duration": 3
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "roarWave",
+      "anchor": "head",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

@@ -1,19 +1,24 @@
-//! Vérifie les modèles 3D des compétences (`assets/skills/models`, construits par
-//! `tools/modeles_competences/construire.py`) et en tire des aperçus hors jeu :
-//! - objets posés (tourelles, pièges, murs…) : un glTF et ses animations (`fire`, `snap`, `rise`…) ;
+//! Modèles 3D des compétences (`assets/skills/models`, construits par
+//! `tools/modeles_competences/construire.py`) :
+//! - objets posés (tourelles, pièges, murs…) : un glTF et ses animations (`fire`, `snap`, `rise`…),
+//!   dessinés comme les créatures (leur fiche est dans `assets/creatures/`) ;
 //! - pièces greffées sur le héros (transformations partielles du Druide, armes des invocations) :
 //!   un glTF dont les os portent les noms des os du héros, en texels du patron × 0,05625 bloc ;
-//! - invocations humanoïdes : une planche 64 × 64 au patron du héros (`humanoids.json`).
+//! - invocations humanoïdes : une planche 64 × 64 au patron du héros (`humanoids.json`), portée
+//!   par une créature humanoïde du même identifiant, l'arme greffée dans la main droite.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-use glam::Vec3;
+use glam::{vec3, Quat, Vec3};
 use herocraft_common::hero::{atlas, Appearance, Sheet, SHEET_SIZE};
 use herocraft_common::tangent_frame;
 use serde::Deserialize;
 
-use crate::creatures::CreatureFrame;
-use crate::hero_model::{figure, push_figure, Bone, Figure, FigurePose};
+use crate::creatures::{CreatureFrame, CreatureView};
+use herocraft_common::{CreatureRegistry, COPY_SUMMONER};
+use crate::hero_model::{figure, Bone, Figure, FigurePose};
 use crate::planet_mesh::PlanetVertex;
 use crate::skinned_model::{SkinnedModel, Texture};
 
@@ -39,17 +44,21 @@ struct Catalogue {
 }
 
 fn dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/skills/models")
+    herocraft_common::skills::asset_dir("assets/skills/models").unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/skills/models"))
 }
 
-fn catalogue() -> Catalogue {
-    serde_json::from_str(&std::fs::read_to_string(dir().join("humanoids.json")).unwrap()).unwrap()
+fn read_catalogue() -> Result<Catalogue, String> {
+    let path = dir().join("humanoids.json");
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{} : {e}", path.display()))?;
+    serde_json::from_str(&text).map_err(|e| format!("{} : {e}", path.display()))
 }
 
-fn sheet(file: &str) -> Sheet {
-    let texture = Texture::load(&dir().join(file)).unwrap();
-    assert_eq!((texture.width, texture.height), (SHEET_SIZE as u32, SHEET_SIZE as u32), "{file}");
-    Sheet { rgba: texture.rgba }
+fn load_sheet(file: &str) -> Result<Sheet, String> {
+    let texture = Texture::load(&dir().join(file)).map_err(|e| format!("{file} : {e}"))?;
+    if (texture.width, texture.height) != (SHEET_SIZE as u32, SHEET_SIZE as u32) {
+        return Err(format!("{file} : la planche doit faire {SHEET_SIZE} × {SHEET_SIZE}"));
+    }
+    Ok(Sheet { rgba: texture.rgba })
 }
 
 fn appearance(species: &str) -> Appearance {
@@ -58,26 +67,124 @@ fn appearance(species: &str) -> Appearance {
     cfg
 }
 
-/// Ajoute une pièce greffée, posée comme la figure : chaque sommet suit l'os du héros dont il porte
-/// le nom
+/// Une pièce greffée sur le héros : son maillage et sa texture
+pub struct Graft {
+    pub id: String,
+    pub model: SkinnedModel,
+    pub texture: Texture,
+}
+
+impl Graft {
+    fn load(id: &str) -> Result<Self, String> {
+        let model = SkinnedModel::load(&dir().join(format!("{id}.gltf"))).map_err(|e| format!("{id} : {e}"))?;
+        let texture = Texture::load(&dir().join(format!("{id}.png"))).map_err(|e| format!("{id} : {e}"))?;
+        if let Some(name) = model.vertices.iter().filter_map(|v| model.joint_name(v.joints[0])).find(|n| Bone::from_name(n).is_none()) {
+            return Err(format!("{id} : {name} n'est pas un os du héros"));
+        }
+        Ok(Self { id: id.to_string(), model, texture })
+    }
+}
+
+/// L'allure d'une invocation humanoïde : un corps de héros à sa planche, et son arme
+pub struct SummonLook {
+    pub id: String,
+    pub appearance: Appearance,
+    pub sheet: Texture,
+    pub figure: Figure,
+    pub weapon: Option<Graft>,
+}
+
+/// Les invocations humanoïdes de `humanoids.json`, par identifiant (celui de leur créature),
+/// chargées une fois
+fn summon_looks() -> &'static HashMap<String, SummonLook> {
+    static LOOKS: OnceLock<HashMap<String, SummonLook>> = OnceLock::new();
+    LOOKS.get_or_init(|| {
+        let catalogue = match read_catalogue() {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("Invocations humanoïdes illisibles : {e}");
+                return HashMap::new();
+            }
+        };
+        let mut looks = HashMap::new();
+        for (id, h) in catalogue.humanoids {
+            if !atlas().especes().any(|e| e.id == h.species) {
+                log::warn!("Invocation {id} : espèce {} inconnue", h.species);
+                continue;
+            }
+            let sheet = match load_sheet(&h.sheet) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!("Invocation {id} : {e}");
+                    continue;
+                }
+            };
+            let cfg = appearance(&h.species);
+            let figure = figure(&cfg, &sheet);
+            let weapon = Graft::load(&h.weapon).map_err(|e| log::warn!("Invocation {id} : {e}")).ok();
+            let size = SHEET_SIZE as u32;
+            looks.insert(id.clone(), SummonLook { id, appearance: cfg, sheet: Texture { width: size, height: size, rgba: sheet.rgba }, figure, weapon });
+        }
+        looks
+    })
+}
+
+/// L'allure de l'invocation humanoïde `species` (identifiant de sa créature), s'il y en a une
+pub fn summon_look(species: &str) -> Option<&'static SummonLook> {
+    summon_looks().get(species)
+}
+
+/// La pièce greffée `id` (`assets/skills/models/<id>.gltf`), lue la première fois qu'on la demande
+pub fn graft(id: &str) -> Option<&'static Graft> {
+    static GRAFTS: std::sync::Mutex<Option<HashMap<String, Option<&'static Graft>>>> = std::sync::Mutex::new(None);
+    let mut grafts = GRAFTS.lock().unwrap_or_else(|e| e.into_inner());
+    *grafts.get_or_insert_with(HashMap::new).entry(id.to_string()).or_insert_with(|| match Graft::load(id) {
+        Ok(g) => Some(Box::leak(Box::new(g))),
+        Err(e) => {
+            log::warn!("Pièce greffée illisible : {e}");
+            None
+        }
+    })
+}
+
+/// Teinte des copies (leurres, ombres d'Étherium), par identifiant de leur créature
+fn copy_tints() -> &'static HashMap<String, [f32; 3]> {
+    static TINTS: OnceLock<HashMap<String, [f32; 3]>> = OnceLock::new();
+    TINTS.get_or_init(|| read_catalogue().map(|c| c.tinted.into_iter().map(|(id, t)| (id, t.tint)).collect()).unwrap_or_default())
+}
+
+/// La créature telle qu'elle se dessine : une copie (`CreatureState::copy`) prend l'espèce
+/// qu'elle imite et la teinte de son espèce à elle ; une copie de son invocateur reste humanoïde
+pub fn drawn_as(view: &CreatureView, registry: &CreatureRegistry) -> CreatureView {
+    let Some(copy) = view.copy else { return *view };
+    let own = view.species.and_then(|s| registry.get(s));
+    let tint = own.and_then(|s| copy_tints().get(&s.id).copied());
+    let species = if copy == COPY_SUMMONER { view.species } else { registry.get(copy as usize).map(|_| copy as usize).or(view.species) };
+    CreatureView { species, tint, ..*view }
+}
+
+/// Ajoute une pièce greffée, posée comme la figure (`push_figure`) : chaque sommet suit l'os du
+/// héros dont il porte le nom
 #[allow(clippy::too_many_arguments)]
-fn push_graft(frame: &mut CreatureFrame, model: &SkinnedModel, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, texture: usize) {
+pub fn push_graft(frame: &mut CreatureFrame, model: &SkinnedModel, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, texture: usize, block: f32) {
     // Le même repère que `push_figure`
     let up = feet.normalize_or_zero();
     let (east, north) = tangent_frame(up);
     let forward = north * yaw.cos() + east * yaw.sin();
     let left = up.cross(forward);
-    let unit = cfg.taille as f32 / figure.body_height;
+    let unit = cfg.taille as f32 / figure.body_height * block;
+    let lying = pose.lying.clamp(0.0, 1.0);
+    let lie = Quat::from_rotation_x(-lying * std::f32::consts::FRAC_PI_2);
+    let lift = vec3(0.0, 2.0 * lying, 0.0);
     let frames = figure.bone_frames(pose);
     let to_world = |p: Vec3| feet + (left * p.x + up * p.y + forward * p.z) * unit;
     let start = frame.indices.len() as u32;
     let base = frame.vertices.len() as u32;
     for v in &model.vertices {
-        let name = model.joint_name(v.joints[0]).unwrap();
-        let bone = Bone::from_name(name).unwrap_or_else(|| panic!("os inconnu du héros : {name}"));
+        let bone = model.joint_name(v.joints[0]).and_then(Bone::from_name).unwrap_or(Bone::Body);
         let f = frames[bone.index()];
-        let p = f.apply(v.position / HERO_TEXEL);
-        let n = f.rotation * v.normal;
+        let p = lie * f.apply(v.position / HERO_TEXEL) + lift;
+        let n = lie * (f.rotation * v.normal);
         frame.vertices.push(PlanetVertex {
             position: to_world(p).to_array(),
             normal: (left * n.x + up * n.y + forward * n.z).to_array(),
@@ -91,6 +198,19 @@ fn push_graft(frame: &mut CreatureFrame, model: &SkinnedModel, cfg: &Appearance,
     frame.draws.push((Some(texture), start..frame.indices.len() as u32));
 }
 
+#[cfg(test)]
+mod tests {
+use super::*;
+use crate::hero_model::push_figure;
+
+fn catalogue() -> Catalogue {
+    read_catalogue().unwrap()
+}
+
+fn sheet(file: &str) -> Sheet {
+    load_sheet(file).unwrap()
+}
+
 #[test]
 fn every_skill_model_loads_with_its_texture_and_clips() {
     let expected = [
@@ -100,6 +220,8 @@ fn every_skill_model_loads_with_its_texture_and_clips() {
         ("magneticTrap", vec!["spin"]),
         ("shrapnelMine", vec!["blink"]),
         ("portableBarricade", vec!["unfold"]),
+        ("furnaceBarricade", vec!["unfold"]),
+        ("sacredRampart", vec!["rise"]),
         ("etheriumBastion", vec!["rise", "fire"]),
         ("stoneWall", vec!["rise"]),
         ("boneWall", vec!["rise"]),
@@ -202,9 +324,36 @@ fn apercu_competences_heros() {
             let model = SkinnedModel::load(&dir().join(format!("{graft}.gltf"))).unwrap();
             let gtex = Texture::load(&dir().join(format!("{graft}.png"))).unwrap();
             let mut frame = CreatureFrame::default();
-            push_graft(&mut frame, &model, &cfg, &f, feet, yaw, &pose, 0);
+            push_graft(&mut frame, &model, &cfg, &f, feet, yaw, &pose, 0, 1.0);
             rasterize(&mut img, &mut depth, w, &frame, &gtex, feet, (k * cell, 0, cell), scale);
         }
     }
     save(&img, w, h);
+}
+
+#[test]
+fn every_humanoid_summon_has_its_look_and_weapon() {
+    for id in ["deathKnight", "lichLord"] {
+        let look = summon_look(id).unwrap_or_else(|| panic!("{id}"));
+        assert!(look.weapon.is_some(), "{id} sans arme");
+        let mut frame = CreatureFrame::default();
+        let feet = Vec3::new(0.0, 1000.0, 0.0);
+        let weapon = look.weapon.as_ref().unwrap();
+        push_graft(&mut frame, &weapon.model, &look.appearance, &look.figure, feet, 0.0, &FigurePose::default(), 0, 1.0);
+        // L'arme est à hauteur de main, près du corps
+        let near = frame.vertices.iter().all(|v| (Vec3::from(v.position) - feet).length() < 3.0);
+        assert!(near, "{id} : arme loin du corps");
+    }
+}
+
+#[test]
+fn druid_partial_forms_graft_their_piece_while_they_last() {
+    let catalog = herocraft_common::skills::SkillCatalog::load_default();
+    for (skill, piece) in [("packClaws", "wolfPaw"), ("bearHide", "bearHide"), ("elkLegs", "elkLegs"), ("galeFeathers", "galeFeathers")] {
+        let def = catalog.get(skill).unwrap_or_else(|| panic!("{skill}"));
+        assert!(def.is_castable(), "{skill}");
+        assert_eq!(def.graft.as_deref(), Some(piece), "{skill}");
+        assert!(graft(piece).is_some(), "{piece}");
+    }
+}
 }

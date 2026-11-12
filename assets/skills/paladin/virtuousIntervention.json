@@ -1,0 +1,61 @@
+{
+  "name": "Intervention Vertueuse",
+  "description": "Charge. Un bond instantané devant un allié ciblé pour encaisser la prochaine attaque lourde à sa place.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "wingedAssault"
+    ],
+    "max_rank": 3,
+    "planner": 399
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 14,
+    "animation": "charge",
+    "area": {
+      "circle": {
+        "radius": 4
+      }
+    },
+    "movement": {
+      "dash": 6
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "link": {
+          "share": 1,
+          "duration": 4,
+          "hits": 1
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.4,
+          "duration": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "shieldDome",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "Chevalier de la Mort",
+  "description": "Mort-vivant en armure lourde invoqué par le Nécromancien, la lame runique à la main. Il s'interpose et frappe les monstres qui approchent.",
+  "armor": 80,
+  "resist": 20,
+  "tags": ["shadow"],
+  "body": {
+    "half_width": 0.3,
+    "half_length": 0.3,
+    "height": 1.9
+  },
+  "walk_speed": 1.6,
+  "health": 80,
+  "activity": "always",
+  "humanoid": true,
+  "guard": {"block": 0.6, "arc": 120},
+  "attack": {
+    "mode": "solo",
+    "damage": 6,
+    "cooldown": 1.2,
+    "sight": 12,
+    "engage": 10,
+    "leash": 16,
+    "reach": 1.2,
+    "chase_speed": 1.6,
+    "hunts_players": false
+  },
+  "taunt": 6
+}

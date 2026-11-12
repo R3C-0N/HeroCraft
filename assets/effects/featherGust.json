@@ -1,0 +1,51 @@
+{
+  "description": "Bourrasque de plumes lâchée vers l'avant.",
+  "layers": [
+    {
+      "particles": {
+        "count": 30,
+        "origin": "sphere",
+        "origin_radius": 0.3,
+        "direction": "forward",
+        "spread": 35,
+        "speed": [
+          5,
+          9
+        ],
+        "drag": 2.5,
+        "gravity": 0.6,
+        "life": [
+          0.6,
+          1.2
+        ],
+        "size": [
+          0.18,
+          0.12
+        ],
+        "color": [
+          "#F8F4EC",
+          "#E0D8C800"
+        ],
+        "texture": "shard.png",
+        "spin": [
+          -300,
+          300
+        ]
+      }
+    },
+    {
+      "shape": "arc",
+      "duration": 0.3,
+      "radius": [
+        0.6,
+        1.8
+      ],
+      "angle": 90,
+      "thickness": 0.3,
+      "color": [
+        "#FFFFFFA0",
+        "#E0FFF800"
+      ]
+    }
+  ]
+}

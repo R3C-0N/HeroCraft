@@ -1,0 +1,70 @@
+{
+  "name": "Singularité du Néant",
+  "description": "Compétence ultime. Tu surcharges tes deux gantelets runiques pour contourner les éléments classiques et déchirer la réalité, libérant une explosion d'énergie astrale pure.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "explosiveRetreat",
+      "crystallization"
+    ],
+    "max_rank": 3,
+    "planner": 194
+  },
+  "cast": {
+    "cost": {
+      "mana": 90
+    },
+    "cooldown": 120,
+    "animation": "channel",
+    "impact": 0.8,
+    "area": {
+      "circle": {
+        "radius": 7,
+        "center": "aimed",
+        "distance": 14
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "pull": {
+          "strength": 10
+        }
+      },
+      {
+        "damage": {
+          "power": [
+            5,
+            6,
+            7
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "voidRift",
+      "anchor": "area",
+      "from": "start"
+    },
+    {
+      "effect": "soulBlast",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
+}

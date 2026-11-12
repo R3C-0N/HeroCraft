@@ -1,0 +1,64 @@
+{
+  "name": "Carreau-harpon",
+  "description": "Contrôle. Projette un carreau câblé pour tracter un petit ennemi vers toi, ou te hisser rapidement vers une créature géante.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "pommelStrike"
+    ],
+    "max_rank": 3,
+    "planner": 323
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 10,
+    "animation": "crossbowShot",
+    "area": {
+      "line": {
+        "length": 16,
+        "width": 1
+      }
+    },
+    "projectile": {
+      "speed": 40
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": 0.8
+        }
+      },
+      {
+        "pull": {
+          "strength": [
+            10,
+            12,
+            14
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "cableLine",
+      "anchor": "projectile",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
+    }
+  ]
+}

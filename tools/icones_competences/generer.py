@@ -948,8 +948,8 @@ def badge_effet(competence):
 
 def importer(md):
     """Tire du document des effets la classe, l'identifiant, le geste et les effets"""
-    roue = json.loads((RACINE / "assets/competences/roue.json").read_text())
-    rang = {n["name"]: n["tier"] for n in roue["nodes"]}
+    fichiers = [json.loads(c.read_text()) for c in (RACINE / "assets/skills").glob("*/*.json")]
+    rang = {f["name"]: f["wheel"]["tier"] for f in fichiers if f.get("wheel")}
     ultime_max = max(rang.values())
     competences, classe, element = [], None, None
     elements = {"Feu": "feu", "Eau": "eau", "Terre": "terre", "Air": "air"}

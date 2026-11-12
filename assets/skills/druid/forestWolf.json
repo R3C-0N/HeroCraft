@@ -1,0 +1,75 @@
+{
+  "name": "Loup des Bois",
+  "description": "Loup. Transformation totale axée sur l'agilité, l'esquive et les enchaînements critiques.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "packClaws"
+    ],
+    "max_rank": 3,
+    "planner": 201
+  },
+  "cast": {
+    "cost": {
+      "mana": 25
+    },
+    "cooldown": 40,
+    "animation": "shout",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "speed",
+          "value": [
+            0.4,
+            0.5,
+            0.6
+          ],
+          "duration": 20
+        }
+      },
+      {
+        "buff": {
+          "stat": "damage",
+          "value": [
+            0.3,
+            0.4,
+            0.5
+          ],
+          "duration": 20
+        }
+      },
+      {
+        "buff": {
+          "stat": "critical",
+          "value": [
+            0.2,
+            0.25,
+            0.3
+          ],
+          "duration": 20
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ],
+  "form": "forestWolf",
+  "form_attacks": [
+    "wolfBite",
+    "wolfPounce"
+  ]
+}

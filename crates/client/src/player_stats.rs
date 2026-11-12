@@ -33,6 +33,10 @@ pub struct PlayerStats {
     /// Fichier où la progression (niveau, expérience, points, compétences) du monde solo est
     /// gardée ; `None` en ligne, où le serveur la tient
     progress_path: Option<PathBuf>,
+    /// Résurrections comptées au moment de sa mort : une de plus le relève sur place
+    revived_seen: u32,
+    /// Instant de la dernière réapparition : les jauges d'avant, encore en route, ne le retuent pas
+    respawned_at: Option<Instant>,
 }
 
 /// Ce qui se garde d'une partie solo à l'autre
@@ -52,7 +56,7 @@ struct SavedProgress {
 impl Default for PlayerStats {
     /// Même personnage que celui que le serveur donne à chaque nouveau joueur
     fn default() -> Self {
-        Self { stats: CharacterStats::new(PlayerClass::Adventurer), hurt_at: None, hurt_strength: 0.0, death: None, progress_path: None }
+        Self { stats: CharacterStats::new(PlayerClass::Adventurer), hurt_at: None, hurt_strength: 0.0, death: None, progress_path: None, revived_seen: 0, respawned_at: None }
     }
 }
 
@@ -70,6 +74,8 @@ impl PlayerStats {
             stats.experience = saved.experience;
             stats.skill_points = saved.skill_points;
             stats.skills = saved.skills;
+            // Compétences d'avant le passage aux identifiants anglais : oubliées, points rendus
+            herocraft_common::skills().forget_unknown(stats);
             stats.revive();
             if let Some(satiety) = saved.satiety.filter(|s| s.is_finite()) {
                 stats.satiety = satiety.clamp(0.0, stats.max_satiety);
@@ -104,6 +110,7 @@ impl PlayerStats {
     /// joueur épuisé jusqu'à ce qu'il ait repris son souffle
     pub fn tick(&mut self, dt: f32, camera: &mut OrbitCamera) {
         if self.is_dead() {
+            self.check_revived();
             return;
         }
         self.stats.regenerate(dt, camera.is_running());
@@ -127,27 +134,43 @@ impl PlayerStats {
     /// Dommages d'une chute de `blocks` blocs : renvoie la force de la blessure (0 si la chute
     /// est sans mal). S'il en meurt, le joueur reste mort jusqu'à `respawn`.
     pub fn fall(&mut self, blocks: f32) -> f32 {
-        self.hurt(fall_damage(blocks), || format!("Chute de {:.0} blocs", blocks))
+        self.hurt(fall_damage(blocks), None, || format!("Chute de {:.0} blocs", blocks))
     }
 
     /// Dommages d'une créature (`cause` : son nom) : renvoie la force de la blessure
-    pub fn bitten(&mut self, damage: f32, cause: &str) -> f32 {
-        self.hurt(damage, || format!("Tué par : {cause}"))
+    /// (`kind` : le type du coup, que les boucliers typés distinguent)
+    pub fn bitten(&mut self, damage: f32, kind: Option<herocraft_common::DamageKind>, cause: &str) -> f32 {
+        self.hurt(damage, kind, || format!("Tué par : {cause}"))
     }
 
     /// Retire `damage` points de vie et renvoie la force de la blessure (0 sans dommage). S'il en
     /// meurt, le joueur reste mort jusqu'à `respawn`, avec la cause que donne `cause`.
-    fn hurt(&mut self, damage: f32, cause: impl FnOnce() -> String) -> f32 {
+    fn hurt(&mut self, damage: f32, kind: Option<herocraft_common::DamageKind>, cause: impl FnOnce() -> String) -> f32 {
         if damage <= 0.0 || self.is_dead() {
             return 0.0;
         }
         self.hurt_at = Some(Instant::now());
         self.hurt_strength = (3.0 * damage / self.stats.max_hp.max(1.0)).clamp(0.3, 1.0);
-        if self.stats.take_damage(damage) {
+        if self.stats.take_hit(damage, kind) {
             self.hurt_strength = 1.0;
             self.death = Some(Death { at: Instant::now(), cause: cause() });
+            self.stats.fallen = true;
+            self.revived_seen = self.stats.revived;
         }
         self.hurt_strength
+    }
+
+    /// Tombé à zéro point de vie hors d'un coup (un saignement) : il reste mort jusqu'à `respawn`
+    pub fn bled_out(&mut self) {
+        if self.is_dead() {
+            return;
+        }
+        self.stats.hp = 0.0;
+        self.hurt_at = Some(Instant::now());
+        self.hurt_strength = 1.0;
+        self.death = Some(Death { at: Instant::now(), cause: "A succombé à ses blessures".to_string() });
+        self.stats.fallen = true;
+        self.revived_seen = self.stats.revived;
     }
 
     pub fn is_dead(&self) -> bool {
@@ -161,16 +184,37 @@ impl PlayerStats {
 
     /// Retour à la vie, jauges pleines (le joueur reste à replacer au point d'apparition)
     pub fn respawn(&mut self) {
+        self.respawned_at = Some(Instant::now());
         self.death = None;
         self.hurt_at = None;
         self.stats.revive();
+        self.stats.fallen = false;
+        self.stats.stun_time = 0.0;
+        self.stats.slow_time = 0.0;
+        self.stats.tick_status(0.0);
+    }
+
+    /// Mort, mais relevé par une compétence (Intervention Suprême) : il revient à la vie sur place
+    fn check_revived(&mut self) -> bool {
+        if self.is_dead() && self.stats.revived > self.revived_seen {
+            self.revived_seen = self.stats.revived;
+            self.death = None;
+            self.hurt_at = None;
+            return true;
+        }
+        false
     }
 
     /// Statistiques reçues du serveur (un joueur mort le reste ici jusqu'à sa réapparition, même
     /// si le serveur l'a déjà ranimé)
     pub fn sync(&mut self, stats: CharacterStats, camera: &mut OrbitCamera) {
         self.stats = stats;
-        if self.is_dead() {
+        // Le serveur le dit tombé sans qu'un coup l'ait annoncé : un saignement l'a vidé
+        let fresh = self.respawned_at.is_some_and(|at| at.elapsed().as_secs_f32() < 2.0);
+        if !self.is_dead() && self.stats.fallen && !fresh {
+            self.bled_out();
+        }
+        if self.is_dead() && !self.check_revived() {
             self.stats.hp = 0.0;
         }
         self.update_exhaustion(camera);
@@ -198,7 +242,7 @@ mod tests {
         player.stats.add_experience(350);
         player.stats.satiety = 42.0;
         let wheel = herocraft_common::SkillWheel::standard();
-        let id = wheel.nodes[0].id.clone();
+        let id = wheel.nodes.iter().find(|n| n.requires.is_empty() && n.tier == 1).unwrap().id.clone();
         wheel.learn(&mut player.stats, &id).unwrap();
         player.save();
 
@@ -248,6 +292,24 @@ mod tests {
         assert!(!player.is_dead());
         assert_eq!(player.respawn_in(), None);
         assert_eq!(player.stats.hp, player.stats.max_hp);
+    }
+
+    #[test]
+    fn test_a_fallen_player_is_raised_in_place_by_a_resurrection() {
+        let mut player = PlayerStats::default();
+        let mut camera = OrbitCamera::default();
+        player.fall(500.0);
+        assert!(player.is_dead() && player.stats.fallen);
+        // Le serveur l'a ranimé mais le garde tombé : il reste sur son écran de mort
+        let mut server = player.stats.clone();
+        server.revive();
+        player.sync(server.clone(), &mut camera);
+        assert!(player.is_dead());
+        // Puis un chapelain le relève
+        assert!(server.resurrect(0.5));
+        player.sync(server, &mut camera);
+        assert!(!player.is_dead(), "relevé, il reste mort");
+        assert_eq!(player.stats.hp, 0.5 * player.stats.max_hp);
     }
 
     #[test]

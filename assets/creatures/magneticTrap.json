@@ -1,0 +1,60 @@
+{
+  "name": "Piège Magnétique",
+  "description": "Disque cuivré dont l'aimant tourne en attirant les ennemis.",
+  "body": {
+    "half_width": 0.62,
+    "half_length": 0.62,
+    "height": 0.41
+  },
+  "walk_speed": 0,
+  "health": 20,
+  "activity": "always",
+  "model": {
+    "mesh": "../skills/models/magneticTrap.gltf",
+    "texture": "../skills/models/magneticTrap.png",
+    "animations": {
+      "apparition": {
+        "cycle": 0.35,
+        "os": {
+          "root": {
+            "translation_fixe": [
+              0,
+              0.6,
+              0
+            ],
+            "translation": [
+              0,
+              0.6,
+              0
+            ],
+            "frequence": 0.5,
+            "phase": 0.25
+          }
+        }
+      },
+      "coup": {
+        "os": {
+          "root": {
+            "rotation": [
+              0,
+              0,
+              3
+            ],
+            "frequence": 2
+          }
+        }
+      },
+      "repos": {
+        "clip": "spin",
+        "cycle": 1.2
+      }
+    }
+  },
+  "collision": {
+    "resistance": 0
+  },
+  "magnet": {
+    "radius": 4,
+    "speed": 6
+  }
+}

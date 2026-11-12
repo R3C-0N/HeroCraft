@@ -1,0 +1,69 @@
+{
+  "name": "Flèche Barbelée",
+  "description": "Entrave. Décoche une flèche à pointe large causant un lourd saignement continu sur la cible.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "stoppingArrow"
+    ],
+    "max_rank": 3,
+    "planner": 294
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 9,
+    "animation": "bowShot",
+    "area": {
+      "line": {
+        "length": 14,
+        "width": 1
+      }
+    },
+    "projectile": {
+      "speed": 45
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.6,
+            0.7,
+            0.8
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "damage": [
+            3,
+            4,
+            5
+          ],
+          "duration": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "projectile",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "name": "Jugement",
+  "description": "Sol. Frappe le sol avec le maillet, créant une petite onde de choc qui ralentit les ennemis.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 243
+  },
+  "cast": {
+    "cost": {
+      "mana": 12
+    },
+    "cooldown": 7,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": [
+          3,
+          3.5,
+          4
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.8,
+            1.0,
+            1.2
+          ]
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.4,
+          "duration": [
+            2,
+            2.5,
+            3
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "slowFrost",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ],
+  "sounds": {
+    "impact": "heavyGround"
+  }
+}

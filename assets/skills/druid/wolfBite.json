@@ -1,0 +1,37 @@
+{
+  "name": "Morsure",
+  "description": "Clic gauche du Loup des Bois : une morsure rapide.",
+  "cast": {
+    "cost": {
+      "stamina": 4
+    },
+    "cooldown": 0.6,
+    "animation": "thrust",
+    "speed": 1.6,
+    "area": {
+      "arc": {
+        "range": 2.5,
+        "angle": 70
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.0,
+            1.2,
+            1.4
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

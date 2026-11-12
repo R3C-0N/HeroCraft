@@ -1,0 +1,12 @@
+{
+  "numeric_id": 16908,
+  "name": "Arc renforcé de cuivre",
+  "category": "Armes",
+  "weapon": {"kind": "bow", "interval": 0.3, "ammo": "arrow"},
+  "max_stack": 1,
+  "icon": "icones/copperBow.png",
+  "stats": {"Dégâts": 3, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperIngot": 2, "stick": 3, "rope": 2}, "repair": {"copperIngot": 1}}
+  ]
+}

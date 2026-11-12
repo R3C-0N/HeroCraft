@@ -1,0 +1,57 @@
+{
+  "name": "Manteau de Zéphyr",
+  "description": "Mobilité. Le vent s'enroule autour de toi, augmentant drastiquement ta vitesse de déplacement et déviant les petits projectiles.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "breezeStep"
+    ],
+    "max_rank": 3,
+    "planner": 338
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 20,
+    "animation": "shout",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "speed",
+          "value": [
+            0.4,
+            0.5,
+            0.6
+          ],
+          "duration": 8
+        }
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.2,
+          "duration": 8
+        }
+      },
+      {
+        "deflect": {
+          "size": "small",
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "windSwirl",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    }
+  ]
+}

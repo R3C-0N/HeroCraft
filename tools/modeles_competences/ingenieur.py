@@ -133,19 +133,20 @@ def shrapnel_mine():
     return m
 
 
-def portable_barricade():
+def portable_barricade(ident="portableBarricade", wood=WOOD, iron=IRON, iron_dark=IRON_DARK, spikes="#c8ccd2"):
     """Barricade Portative dépliée : trois panneaux de planches cerclés de fer, pointes au sommet.
     3 blocs de large. `unfold` déplie les volets (`panelR`, `panelL`)."""
-    m = Model("portableBarricade")
+    m = Model(ident)
     m.bone("root", None, (0, 0, 0))
+    IRON, IRON_DARK = iron, iron_dark  # noqa: N806
 
     def panel(bone, x0, x1):
-        m.box(bone, (x0, 1, -1), (x1, 20, 1), WOOD, "planks", {"front": [("rows", [0, 6, 12], IRON_DARK)], "back": [("rows", [0, 6, 12], IRON_DARK)]})
+        m.box(bone, (x0, 1, -1), (x1, 20, 1), wood, "planks", {"front": [("rows", [0, 6, 12], IRON_DARK)], "back": [("rows", [0, 6, 12], IRON_DARK)]})
         for y in (3, 10, 17):
             m.box(bone, (x0, y, -1.3), (x1, y + 1.2, 1.3), IRON, "rivets")
         for k in range(int(abs(x1 - x0) // 4)):
             x = min(x0, x1) + 2 + k * 4
-            m.beam(bone, (x, 20, 0), (x, 24, 1), 1.0, color="#c8ccd2", pattern="metal")
+            m.beam(bone, (x, 20, 0), (x, 24, 1), 1.0, color=spikes, pattern="metal")
 
     panel("root", -8, 8)
     m.box("root", (-8, 0, -4), (8, 1, 4), IRON_DARK, "metal")
@@ -158,6 +159,29 @@ def portable_barricade():
         m.pop()
     m.clip("unfold", 0.7, [("panelR", "rotation", [(0, [0, -150, 0]), (0.5, [0, 8, 0]), (0.7, [0, 0, 0])]),
                            ("panelL", "rotation", [(0, [0, 150, 0]), (0.5, [0, -8, 0]), (0.7, [0, 0, 0])])])
+    return m
+
+
+def furnace_barricade():
+    """Barricade du Mur Fournaise : la Barricade Portative embrasée, planches charbonneuses et fer
+    rougi."""
+    return portable_barricade("furnaceBarricade", wood="#3a2418", iron="#d8512a", iron_dark="#8a2a14", spikes="#ffb35a")
+
+
+def sacred_rampart():
+    """Rempart Sacré du Chapelain : un mur de lumière, deux piliers dorés et un treillis de rayons
+    pâles, 4 blocs de large et 2,5 de haut. `rise` le fait monter du sol."""
+    m = Model("sacredRampart", seed=23)
+    m.bone("root", None, (0, 0, 0))
+    gold, pale, light = "#d9a83a", "#fff1b8", "#ffe27a"
+    for x in (-32, 30):
+        m.box("root", (x, 0, -2), (x + 2, 40, 2), gold, "metal")
+        m.box("root", (x - 1, 38, -2.5), (x + 3, 42, 2.5), light, "plain")
+    for x in range(-28, 30, 4):
+        m.box("root", (x, 2, -0.4), (x + 1, 38, 0.4), pale, "plain")
+    for y in (2, 14, 26, 38):
+        m.box("root", (-30, y, -0.5), (30, y + 1, 0.5), light, "plain")
+    m.clip("rise", 0.5, [("root", "translation", [(0, [0, -40, 0]), (0.4, [0, 2, 0]), (0.5, [0, 0, 0])])])
     return m
 
 
@@ -233,4 +257,27 @@ def stone_wall():
     return m
 
 
-ALL = [ballistic_turret, flame_turret, jaw_trap, magnetic_trap, shrapnel_mine, portable_barricade, etherium_bastion, stone_wall]
+def volcanic_rune():
+    """Rune Volcanique du Sorcier : une dalle de basalte ronde gravée d'une rune de braise (`glow`)
+    qui pulse en attendant qu'un ennemi passe."""
+    m = Model("volcanicRune", seed=5)
+    m.bone("root", None, (0, 0, 0))
+    for a in (0, 30, 60):
+        m.box("root", (-7, 0, -7), (7, 0.8, 7), "#2e2a28", "stone", euler=(0, a, 0))
+    m.bone("glow", "root", (0, 0.8, 0))
+    # Cercle de braise et trois branches de la rune
+    for k in range(12):
+        m.push((0, 0, 0), (0, k * 30, 0))
+        m.box("glow", (-1.1, 0.8, 5), (1.1, 1.2, 6), "#ff6a1a", "glow", {"top": [("px", 0, 0, "#ffd080")]})
+        m.pop()
+    for k in range(3):
+        m.push((0, 0, 0), (0, k * 120, 0))
+        m.box("glow", (-0.5, 0.8, 0), (0.5, 1.2, 4.5), "#ff8a2a", "glow", {"top": [("px", 0, 0, "#ffe0a0")]})
+        m.box("glow", (-1.8, 0.8, 3.2), (1.8, 1.2, 4), "#ff8a2a", "glow")
+        m.pop()
+    m.box("glow", (-1.2, 0.8, -1.2), (1.2, 1.4, 1.2), "#ffb040", "glow", {"top": [("px", 0, 0, "#fff0c0")]})
+    m.clip("pulse", 1.4, [("glow", "scale", [(0, [1, 1, 1]), (0.7, [1.08, 1.6, 1.08]), (1.4, [1, 1, 1])])])
+    return m
+
+
+ALL = [ballistic_turret, flame_turret, jaw_trap, magnetic_trap, shrapnel_mine, portable_barricade, furnace_barricade, sacred_rampart, etherium_bastion, stone_wall, volcanic_rune]

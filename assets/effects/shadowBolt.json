@@ -1,0 +1,30 @@
+{
+  "description": "Carreau d'ombre violet en vol, tiré par le leurre du Déluge Illusoire.",
+  "layers": [
+    {
+      "shape": "sprite",
+      "loop": true,
+      "size": 0.25,
+      "color": [
+        "#C080FF",
+        "#C080FF"
+      ],
+      "glow": 2.5,
+      "texture": "soft.png"
+    },
+    {
+      "shape": "trail",
+      "loop": true,
+      "width": [
+        0.1,
+        0.0
+      ],
+      "life": 0.2,
+      "color": [
+        "#9040E0C0",
+        "#40107000"
+      ],
+      "glow": 2
+    }
+  ]
+}

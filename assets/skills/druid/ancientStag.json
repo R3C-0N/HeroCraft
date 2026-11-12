@@ -1,0 +1,89 @@
+{
+  "name": "Grand Cerf Ancien",
+  "description": "Cerf. Forme rapide spécialisée dans la charge perçante et la diffusion d'une aura de régénération.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "elkLegs"
+    ],
+    "max_rank": 3,
+    "planner": 203
+  },
+  "cast": {
+    "cost": {
+      "mana": 25
+    },
+    "cooldown": 40,
+    "animation": "charge",
+    "area": {
+      "line": {
+        "length": 6,
+        "width": 2
+      }
+    },
+    "movement": {
+      "dash": 6
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.4,
+            1.7,
+            2.0
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 7
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "speed",
+          "value": 0.35,
+          "duration": 20
+        }
+      },
+      {
+        "buff": {
+          "stat": "regeneration",
+          "value": [
+            0.3,
+            0.4,
+            0.5
+          ],
+          "duration": 20
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ],
+  "form": "ancientStag",
+  "form_attacks": [
+    "stagAntlers",
+    "stagCharge"
+  ]
+}

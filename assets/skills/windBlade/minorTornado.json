@@ -1,0 +1,63 @@
+{
+  "name": "Tornade Mineure",
+  "description": "Tourbillon. Un coup circulaire rapide qui crée un petit tourbillon autour de toi, déséquilibrant les ennemis très proches.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 334
+  },
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 7,
+    "animation": "spin",
+    "area": {
+      "circle": {
+        "radius": [
+          2.5,
+          2.75,
+          3
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.9,
+            1.1,
+            1.3
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 4
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.3,
+          "duration": 2
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "tornado",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "windSwirl",
+      "anchor": "body",
+      "from": "impact"
+    }
+  ]
+}

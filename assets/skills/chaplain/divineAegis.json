@@ -1,0 +1,84 @@
+{
+  "name": "Égide Divine",
+  "description": "Aura de Protection + Rempart Sacré. La main libre canalise un bouclier colossal autour du Chapelain, le rendant insensible aux dégâts, tout en repoussant fortement les ennemis proches.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "sacredRampart"
+    ],
+    "max_rank": 3,
+    "planner": 237
+  },
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 24,
+    "animation": "guard",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "knockback": {
+          "strength": [
+            8,
+            9,
+            10
+          ]
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "immune": {
+          "from": [
+            "damage"
+          ],
+          "duration": [
+            2,
+            2.5,
+            3
+          ]
+        }
+      },
+      {
+        "shield": {
+          "amount": [
+            60,
+            80,
+            100
+          ],
+          "duration": 5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "holyBeam",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
+}

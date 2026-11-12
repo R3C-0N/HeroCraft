@@ -1,0 +1,46 @@
+{
+  "name": "Lacération",
+  "description": "Clic gauche du Wendigo : des griffes qui font saigner.",
+  "cast": {
+    "cost": {
+      "stamina": 4
+    },
+    "cooldown": 0.8,
+    "animation": "sweep",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 90
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.0,
+            1.2,
+            1.4
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "damage": [
+            3,
+            4,
+            5
+          ],
+          "duration": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

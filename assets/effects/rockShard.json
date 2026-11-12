@@ -1,0 +1,28 @@
+{
+  "description": "Rocher en vol, qui sème des gravillons.",
+  "layers": [
+    {
+      "shape": "sprite",
+      "loop": true,
+      "size": 0.6,
+      "color": ["#8A7A68", "#8A7A68"],
+      "texture": "shard.png",
+      "spin": [200, 200]
+    },
+    {
+      "loop": true,
+      "particles": {
+        "rate": 25,
+        "origin": "sphere",
+        "origin_radius": 0.2,
+        "direction": "random",
+        "speed": [0.2, 0.6],
+        "gravity": 12,
+        "life": [0.3, 0.6],
+        "size": [0.06, 0.04],
+        "color": ["#7A6A58", "#7A6A5800"],
+        "texture": "shard.png"
+      }
+    }
+  ]
+}

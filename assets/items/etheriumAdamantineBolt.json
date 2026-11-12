@@ -2,6 +2,7 @@
   "numeric_id": 16432,
   "name": "Carreau d'étherium (adamantine)",
   "category": "Armes",
+  "ammo": "bolt",
   "max_stack": 99,
   "icon": "icones/etheriumAdamantineBolt.png",
   "stats": {"Dégâts": 18},

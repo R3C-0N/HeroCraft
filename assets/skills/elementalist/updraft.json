@@ -1,0 +1,54 @@
+{
+  "name": "Courant Ascendant",
+  "description": "Te propulse rapidement en arrière pour fuir, tout en déséquilibrant les ennemis devant toi.",
+  "cast": {
+    "cost": {
+      "mana": 12
+    },
+    "cooldown": 8,
+    "animation": "leap",
+    "area": {
+      "arc": {
+        "range": 4,
+        "angle": 90
+      }
+    },
+    "movement": {
+      "leap": [
+        -5,
+        -6,
+        -7
+      ]
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "knockback": {
+          "strength": [
+            5,
+            6,
+            7
+          ]
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.3,
+          "duration": 2
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "windSwirl",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "featherGust",
+      "anchor": "body",
+      "from": "impact"
+    }
+  ]
+}

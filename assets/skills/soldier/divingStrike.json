@@ -1,0 +1,67 @@
+{
+  "name": "Frappe Plongeante",
+  "description": "Assaut. Un bond en avant suivi d'un écrasement brutal de l'arme au sol, créant un cratère d'impact.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "frontalRush"
+    ],
+    "max_rank": 3,
+    "planner": 353
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 10,
+    "animation": "leap",
+    "area": {
+      "circle": {
+        "radius": 3
+      }
+    },
+    "movement": {
+      "leap": [
+        5,
+        6,
+        7
+      ]
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.8,
+            2.1,
+            2.4
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

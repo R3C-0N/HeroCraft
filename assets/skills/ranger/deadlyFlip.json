@@ -1,0 +1,63 @@
+{
+  "name": "Acrobatie Meurtrière",
+  "description": "Mobilité. Saut périlleux arrière rapide tout en décochant une volée de tirs vers le sol.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "evasiveRoll"
+    ],
+    "max_rank": 3,
+    "planner": 279
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 10,
+    "animation": "leap",
+    "impact": 0.3,
+    "area": {
+      "circle": {
+        "radius": 3
+      }
+    },
+    "movement": {
+      "leap": [
+        -5,
+        -6,
+        -7
+      ]
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.2,
+            1.4,
+            1.6
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

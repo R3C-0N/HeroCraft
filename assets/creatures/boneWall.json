@@ -1,0 +1,46 @@
+{
+  "name": "Mur d'Os",
+  "description": "Barricade d'os que le Nécromancien fait jaillir du sol.",
+  "armor": 100,
+  "resist": 50,
+  "body": {
+    "half_width": 2.63,
+    "half_length": 0.44,
+    "height": 2.25
+  },
+  "walk_speed": 0,
+  "health": 150,
+  "activity": "always",
+  "model": {
+    "mesh": "../skills/models/boneWall.gltf",
+    "texture": "../skills/models/boneWall.png",
+    "animations": {
+      "apparition": {
+        "clip": "rise",
+        "cycle": 0.6
+      },
+      "coup": {
+        "os": {
+          "root": {
+            "rotation": [
+              0,
+              0,
+              3
+            ],
+            "frequence": 2
+          }
+        }
+      },
+      "repos": {
+        "cycle": 2
+      }
+    }
+  },
+  "collision": {
+    "shape": "box",
+    "resistance": 1
+  },
+  "obstacle": {
+    "shots": true
+  }
+}

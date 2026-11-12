@@ -175,7 +175,7 @@ pub struct JoinedWorld {
 /// Se connecte et attend l'accueil du serveur (bloquant)
 pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
     let connection = ServerConnection::connect(addr, CONNECT_TIMEOUT).map_err(|e| format!("connexion à {addr} impossible : {e}"))?;
-    connection.send(&ClientPacket::Connect { player_name: name.to_string(), protocol_version: PROTOCOL_VERSION });
+    connection.send(&ClientPacket::Connect { player_name: name.to_string(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
 
     let (player_id, seed, spawn_position, chunk_count) = match connection.recv_timeout(CONNECT_TIMEOUT)? {
         ServerPacket::ConnectAck { player_id, world_seed, spawn_position, edited_chunks, .. } => {
@@ -193,6 +193,7 @@ pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
         villager_cards: HashMap::new(),
         last_move_sent: None,
         last_move: None,
+        last_equipment: None,
     };
     let mut edited_chunks = Vec::with_capacity(chunk_count as usize);
     while edited_chunks.len() < chunk_count as usize {
@@ -271,12 +272,16 @@ pub struct RemotePlayer {
     pub name: String,
     /// Pieds affichés, recalculés à chaque frame par `poll`
     pub position: Option<Vec3>,
+    /// Cap affiché, avec la position
+    pub yaw: f32,
+    /// Allure de son héros, une fois sa légende reçue par le serveur
+    pub appearance: Option<herocraft_common::hero::Appearance>,
     track: Track,
 }
 
 impl RemotePlayer {
     fn new(name: String) -> Self {
-        Self { name, position: None, track: Track::default() }
+        Self { name, position: None, yaw: 0.0, appearance: None, track: Track::default() }
     }
 }
 
@@ -294,6 +299,9 @@ pub struct RemoteCreature {
     /// Taille et humeur d'élevage (`CreatureState::scale`, `mood`), les dernières reçues
     pub scale: f32,
     pub mood: u8,
+    /// Invocateur et allure copiée (`CreatureState::summoner`, `copy`)
+    pub summoner: Option<u64>,
+    pub copy: Option<u32>,
     track: Track,
     /// Derniers coups, morts et actions reçus, avec leur instant, pour les montrer au rythme des
     /// positions
@@ -302,12 +310,12 @@ pub struct RemoteCreature {
 
 impl RemoteCreature {
     fn new(species: String) -> Self {
-        Self { species, position: None, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, track: Track::default(), effects: VecDeque::new() }
+        Self { species, position: None, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, track: Track::default(), effects: VecDeque::new() }
     }
 
     fn push(&mut self, at: Instant, state: &CreatureState) {
         self.track.push(at, state.position, state.yaw);
-        (self.scale, self.mood) = (state.scale, state.mood);
+        (self.scale, self.mood, self.summoner, self.copy) = (state.scale, state.mood, state.summoner, state.copy);
         self.effects.push_back((at, state.hurt, state.death, state.action));
         while self.effects.len() > MAX_SNAPSHOTS {
             self.effects.pop_front();
@@ -343,6 +351,23 @@ pub enum NetEvent {
     Chat { sender: String, message: String },
     /// Horloge du ciel du serveur et temps imposé, qui font foi
     Clock { time: f64, forced: Option<herocraft_common::WeatherKind> },
+    /// Un joueur (peut-être nous) lance une compétence
+    SkillCast { player_id: u64, skill: String, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool },
+    /// Un joueur (peut-être nous) a tiré à l'arc ou à l'arbalète
+    PlayerShot { player_id: u64, from: Vec3, to: Vec3, target: Option<u64>, special: Option<String> },
+    /// Le serveur refuse notre lancement de `skill`
+    SkillRefused { skill: String, reason: String },
+    /// Une compétence nous déplace (téléportation, traction vers sa cible)
+    SkillMove(herocraft_common::skills::SkillMove),
+    /// Une compétence frappe : centre de sa zone et cibles touchées
+    SkillHit { player_id: u64, skill: String, rank: u8, center: Vec3, creatures: Vec<u64>, players: Vec<u64>, parried: bool, contact: bool },
+    /// Notre parade ratée : la recharge de `skill` dure `seconds` de plus
+    SkillCooldown { skill: String, seconds: f32 },
+    /// Le coup d'une bête nous repousse
+    Pushed { direction: Vec3, speed: f32 },
+    /// Des créatures tirent (tourelles, bastion, liche)
+    CreatureShots(Vec<herocraft_common::CreatureShotEvent>),
+    Projectiles(Vec<herocraft_common::ProjectileEvent>),
     /// Connexion perdue ou fermée par le serveur
     Disconnected(String),
 }
@@ -356,6 +381,8 @@ pub struct NetClient {
     villager_cards: HashMap<u64, std::sync::Arc<herocraft_common::VillagerCard>>,
     last_move_sent: Option<Instant>,
     last_move: Option<(Vec3, f32, f32, bool, bool, Option<u16>)>,
+    /// Dernières pièces portées envoyées au serveur
+    last_equipment: Option<Vec<u16>>,
 }
 
 impl NetClient {
@@ -369,6 +396,16 @@ impl NetClient {
         self.last_move = Some(state);
         self.last_move_sent = Some(Instant::now());
         self.connection.send(&ClientPacket::PlayerMove { position: state.0, yaw: state.1, pitch: state.2, sprinting: state.3, crouching: state.4, holding: state.5 });
+    }
+
+    /// Envoie les pièces portées (numéros d'objets) quand elles ont changé : leur Protection
+    /// réduit les coups physiques que le serveur inflige au joueur
+    pub fn send_equipment(&mut self, worn: Vec<u16>) {
+        if self.last_equipment.as_ref() == Some(&worn) {
+            return;
+        }
+        self.connection.send(&ClientPacket::Equipment(worn.clone()));
+        self.last_equipment = Some(worn);
     }
 
     /// Légende du héros : le serveur en vérifie chaque choix et en prend la voie
@@ -408,6 +445,26 @@ impl NetClient {
         self.connection.send(&ClientPacket::SkinCreature { creature_id });
     }
 
+    /// Notre identifiant de joueur sur le serveur
+    pub fn player_id(&self) -> u64 {
+        self.player_id
+    }
+
+    /// Demande au serveur de lancer une compétence
+    /// Commence à tenir chargé un tir d'arc (`None`) ou une compétence
+    pub fn send_begin_charge(&mut self, skill: Option<&str>) {
+        self.connection.send(&ClientPacket::BeginCharge { skill: skill.map(str::to_string) });
+    }
+
+    /// Tire à l'arc ou à l'arbalète la munition `ammo`, déjà retirée de l'inventaire
+    pub fn send_shoot(&mut self, aim: Vec3, ammo: herocraft_common::ItemId) {
+        self.connection.send(&ClientPacket::Shoot { aim, ammo: ammo.0 });
+    }
+
+    pub fn send_cast_skill(&mut self, skill: &str, aim: Vec3, aimed: Option<Vec3>) {
+        self.connection.send(&ClientPacket::CastSkill { skill: skill.to_string(), aim, aimed });
+    }
+
     /// Demande au serveur d'investir un point dans une compétence (il renvoie les statistiques)
     pub fn send_learn_skill(&mut self, id: String) {
         self.connection.send(&ClientPacket::LearnSkill { id });
@@ -426,6 +483,11 @@ impl NetClient {
     /// Le joueur mange l'aliment `item` (le serveur lui renvoie ses jauges)
     pub fn send_eat(&mut self, item: herocraft_common::ItemId) {
         self.connection.send(&ClientPacket::Eat { item: item.0 });
+    }
+
+    /// Le joueur tombé réapparaît : une résurrection ne peut plus le relever
+    pub fn send_respawn(&mut self) {
+        self.connection.send(&ClientPacket::Respawn);
     }
 
     pub fn send_heal(&mut self) {
@@ -473,7 +535,9 @@ impl NetClient {
         }
         let now = Instant::now();
         for player in self.players.values_mut() {
-            player.position = player.track.sample(now, INTERPOLATION_DELAY).map(|(p, _)| p);
+            if let Some((position, yaw)) = player.track.sample(now, INTERPOLATION_DELAY) {
+                (player.position, player.yaw) = (Some(position), yaw);
+            }
         }
         for creature in self.creatures.values_mut() {
             creature.position = creature.track.sample(now, CREATURE_INTERPOLATION_DELAY);
@@ -487,6 +551,11 @@ impl NetClient {
             ServerPacket::VoxelUpdate { block, block_id } => return Some(NetEvent::BlockChanged(block.into(), BlockId(block_id))),
             ServerPacket::PlayerJoined { player_id, name } if player_id != self.player_id => {
                 self.players.insert(player_id, RemotePlayer::new(name));
+            }
+            ServerPacket::PlayerAppearance { player_id, appearance } => {
+                if let Some(player) = self.players.get_mut(&player_id) {
+                    player.appearance = Some(*appearance);
+                }
             }
             ServerPacket::PlayerLeft { player_id } => {
                 self.players.remove(&player_id);
@@ -519,6 +588,8 @@ impl NetClient {
                     }
                 }
             }
+            ServerPacket::CreatureShots(shots) => return Some(NetEvent::CreatureShots(shots)),
+            ServerPacket::Projectiles(events) => return Some(NetEvent::Projectiles(events)),
             ServerPacket::ChatMessage { sender, message } => {
                 if sender.is_empty() {
                     info!("[Serveur] {message}");
@@ -539,6 +610,13 @@ impl NetClient {
                 let items = items.into_iter().map(|(item, count)| (ItemId(item), count)).filter(|(item, _)| item.is_known()).collect();
                 return Some(NetEvent::Loot { position, items });
             }
+            ServerPacket::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified } => return Some(NetEvent::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified }),
+            ServerPacket::PlayerShot { player_id, from, to, target, special } => return Some(NetEvent::PlayerShot { player_id, from, to, target, special }),
+            ServerPacket::SkillRefused { skill, reason } => return Some(NetEvent::SkillRefused { skill, reason }),
+            ServerPacket::SkillMove(m) => return Some(NetEvent::SkillMove(m)),
+            ServerPacket::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact } => return Some(NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact }),
+            ServerPacket::SkillCooldown { skill, seconds } => return Some(NetEvent::SkillCooldown { skill, seconds }),
+            ServerPacket::PlayerPushed { direction, speed } => return Some(NetEvent::Pushed { direction, speed }),
             ServerPacket::ConnectAck { .. } | ServerPacket::PlayerJoined { .. } => {}
         }
         None
@@ -576,13 +654,34 @@ impl NetClient {
     }
 
     /// Boîtes (8 coins, dans l'ordre de `BlockGeometry::block_corners`) des autres joueurs visibles
+    /// Pieds affichés d'un autre joueur
+    pub fn remote_player_feet(&self, id: u64) -> Option<Vec3> {
+        self.players.get(&id).and_then(|p| p.position)
+    }
+
     pub fn remote_player_boxes(&self, base_radius: f32) -> Vec<[Vec3; 8]> {
         let block = BlockGeometry::new(base_radius as f64).block_height as f32;
+        // Un joueur dont on connaît l'allure est dessiné en héros, sans boîte
         self.players
             .values()
+            .filter(|p| p.appearance.is_none())
             .filter_map(|p| p.position)
             .take(MAX_REMOTE_PLAYERS)
             .map(|feet| player_box(feet, block))
+            .collect()
+    }
+
+    /// Allure du héros d'un autre joueur, si le serveur l'a envoyée
+    pub fn remote_appearance(&self, id: u64) -> Option<&herocraft_common::hero::Appearance> {
+        self.players.get(&id).and_then(|p| p.appearance.as_ref())
+    }
+
+    /// Héros des autres joueurs à dessiner : identifiant, pieds, cap, allure
+    pub fn remote_heroes(&self) -> Vec<(u64, Vec3, f32, &herocraft_common::hero::Appearance)> {
+        self.players
+            .iter()
+            .filter_map(|(&id, p)| Some((id, p.position?, p.yaw, p.appearance.as_ref()?)))
+            .take(MAX_REMOTE_PLAYERS)
             .collect()
     }
 
@@ -597,7 +696,7 @@ impl NetClient {
             .iter()
             .filter_map(|(&id, c)| {
                 let (feet, yaw) = c.position?;
-                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw, hurt: c.hurt, death: c.death, action: c.action, scale: c.scale, mood: c.mood })
+                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw, hurt: c.hurt, death: c.death, action: c.action, scale: c.scale, mood: c.mood, summoner: c.summoner, copy: c.copy, tint: None })
             })
             .collect()
     }

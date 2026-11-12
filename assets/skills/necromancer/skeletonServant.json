@@ -1,0 +1,59 @@
+{
+  "name": "Serviteur Squelette",
+  "description": "Invocation. Invoque un squelette armé d'une épée courte pour harceler au corps à corps.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 211
+  },
+  "cast": {
+    "cost": {
+      "mana": 20
+    },
+    "cooldown": 12,
+    "animation": "summon",
+    "area": {
+      "circle": {
+        "radius": 1.5,
+        "center": "aimed",
+        "distance": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "summon": {
+          "species": "skeletonServant",
+          "at": "aimed",
+          "limit": [
+            1,
+            2,
+            3
+          ],
+          "count": [
+            1,
+            2,
+            3
+          ],
+          "duration": 45
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "summonPortal",
+      "anchor": "aimed",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
+}

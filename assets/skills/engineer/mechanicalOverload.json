@@ -1,0 +1,67 @@
+{
+  "name": "Surcharge Mécanique",
+  "description": "Tourelle. Ta main libre envoie un signal qui booste temporairement la cadence de tir et la résistance de toutes tes tourelles actives.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.125,
+    "requires": [
+      "ballisticTurret"
+    ],
+    "max_rank": 3,
+    "planner": 309
+  },
+  "cast": {
+    "cost": {
+      "stamina": 20
+    },
+    "cooldown": 20,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": 12
+      }
+    },
+    "targets": "summons",
+    "effects": [
+      {
+        "heal": {
+          "amount": [
+            30,
+            40,
+            50
+          ]
+        }
+      },
+      {
+        "shield": {
+          "amount": [
+            20,
+            30,
+            40
+          ],
+          "duration": 10
+        }
+      },
+      {
+        "buff": {
+          "stat": "attack_speed",
+          "value": 0.5,
+          "duration": 10
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "lightningArc",
+      "anchor": "leftHand",
+      "from": "impact"
+    },
+    {
+      "effect": "lightningArc",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

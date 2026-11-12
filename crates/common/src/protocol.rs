@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 14;
+pub const PROTOCOL_VERSION: u32 = 21;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -26,6 +26,9 @@ pub enum ClientPacket {
     Connect {
         player_name: String,
         protocol_version: u32,
+        /// Empreinte des fichiers de compétences du client (`SkillCatalog::fingerprint`) : le
+        /// serveur refuse un client qui ne juge pas les compétences comme lui
+        skills: u64,
     },
     /// Position des pieds du joueur (repère du centre de la planète), orientation du regard et
     /// sprint en cours (il consomme l'endurance), posture accroupie (les bêtes craintives le
@@ -52,6 +55,18 @@ pub enum ClientPacket {
     HitCreature {
         creature_id: u64,
     },
+    /// Le joueur commence à tenir chargé un tir d'arc (`skill` : `None`) ou une compétence qui se
+    /// charge (`Cast::charge`) : le serveur compte le temps jusqu'au tir ou au lancement
+    BeginCharge {
+        skill: Option<String>,
+    },
+    /// Le joueur tire à l'arc ou à l'arbalète dans la direction `aim`, la munition `ammo` (numéro
+    /// d'`ItemId`) déjà retirée de son inventaire. Le serveur juge l'arme, la cadence, le chargeur
+    /// et l'arc bandé, puis annonce le tir (`PlayerShot`) ; un tir refusé est ignoré.
+    Shoot {
+        aim: Vec3,
+        ammo: u16,
+    },
     /// Le joueur donne à manger à une créature l'objet `item` (numéro d'`ItemId`), déjà retiré de son
     /// inventaire : le serveur l'apprivoise, la rend amoureuse ou fait grandir le petit
     FeedCreature {
@@ -73,6 +88,14 @@ pub enum ClientPacket {
     LearnSkill {
         id: String,
     },
+    /// Le joueur lance la compétence `skill`, en regardant dans la direction `aim` (repère du
+    /// centre de la planète) et en visant le point `aimed` au sol, s'il en vise un. Le serveur
+    /// vérifie rang, coût et recharge, puis l'annonce (`SkillCast`) ou la refuse (`SkillRefused`).
+    CastSkill {
+        skill: String,
+        aim: Vec3,
+        aimed: Option<Vec3>,
+    },
     /// Légende du héros, envoyée à la connexion et au baptême : le serveur vérifie chaque choix
     /// contre l'atlas et en prend la voie (ses jauges et ses gains de niveau en dépendent)
     Legend(Box<crate::hero::Legend>),
@@ -81,6 +104,9 @@ pub enum ClientPacket {
     Eat {
         item: u16,
     },
+    /// Pièces que le joueur porte (numéros d'objets), envoyées à la connexion et à chaque
+    /// changement : leur Protection réduit les coups physiques qu'il reçoit
+    Equipment(Vec<u16>),
     /// Envoi d'un message dans le chat
     ChatMessage(String),
     /// Commande `/summon` : `count` créatures de l'espèce `species` (nom de son fichier) aux pieds
@@ -103,6 +129,8 @@ pub enum ClientPacket {
     },
     /// Le joueur quitte la partie
     Disconnect,
+    /// Le joueur tombé réapparaît (écran de mort quitté) : une résurrection ne peut plus le relever
+    Respawn,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -149,6 +177,12 @@ pub enum ServerPacket {
         player_id: u64,
         name: String,
     },
+    /// Allure d'un joueur (sa légende vérifiée), pour dessiner son héros : à chaque baptême, et à
+    /// la connexion pour les joueurs déjà présents
+    PlayerAppearance {
+        player_id: u64,
+        appearance: Box<crate::hero::Appearance>,
+    },
     /// Un joueur a quitté la partie
     PlayerLeft {
         player_id: u64,
@@ -171,6 +205,10 @@ pub enum ServerPacket {
     CreaturesDespawned(Vec<u64>),
     /// Positions des créatures du voisinage, envoyées à intervalle régulier
     CreatureStates(Vec<CreatureState>),
+    /// Tirs de créatures (tourelles, bastion, liche) partis à l'instant, pour les montrer
+    CreatureShots(Vec<crate::creature::CreatureShotEvent>),
+    /// Projectiles partis, déviés ou arrêtés depuis le dernier envoi (joueurs et créatures)
+    Projectiles(Vec<crate::creature::ProjectileEvent>),
     /// Mise à jour des statistiques RPG du joueur (chaque seconde, et aussitôt après une chute)
     StatsUpdate(CharacterStats),
     /// Le joueur vient d'être mordu ou chargé par une créature (suivi de ses nouvelles jauges)
@@ -207,6 +245,60 @@ pub enum ServerPacket {
         time: f64,
         /// Temps imposé par `/weather`, ou `None` pour le temps naturel
         forced: Option<crate::WeatherKind>,
+    },
+    /// Un joueur lance une compétence (envoyé à tous, lanceur compris : son client a déjà commencé
+    /// le geste et ne le rejoue pas)
+    SkillCast {
+        player_id: u64,
+        /// La compétence vraiment lancée : le mélange, pour la Fusion
+        skill: String,
+        rank: u8,
+        aim: Vec3,
+        aimed: Option<Vec3>,
+        /// Lancée par la Fusion (sa recharge est celle de la Fusion), et amplifiée
+        fused: bool,
+        amplified: bool,
+    },
+    /// Un joueur a tiré à l'arc ou à l'arbalète (envoyé à tous, tireur compris) : d'où, jusqu'où,
+    /// la bête touchée, la munition spéciale qu'il portait (compétence qui l'a chargée)
+    PlayerShot {
+        player_id: u64,
+        from: Vec3,
+        to: Vec3,
+        target: Option<u64>,
+        special: Option<String>,
+    },
+    /// Le lancement de `skill` est refusé (`reason` : pourquoi, en clair) ; le client arrête le geste
+    SkillRefused {
+        skill: String,
+        reason: String,
+    },
+    /// Une compétence déplace son lanceur (téléportation près de sa cible, traction vers elle) :
+    /// envoyé à lui seul, qui décide de sa position
+    SkillMove(crate::skills::SkillMove),
+    /// La compétence frappe : centre de sa zone et cibles touchées, pour leurs effets visuels
+    SkillHit {
+        player_id: u64,
+        skill: String,
+        rank: u8,
+        center: Vec3,
+        creatures: Vec<u64>,
+        players: Vec<u64>,
+        /// La touche d'un projectile en vol : seuls les visuels « hit » jouent
+        contact: bool,
+        /// La riposte d'une garde qui vient de parer un coup
+        parried: bool,
+    },
+    /// La garde de `skill` s'est fermée sans rien parer : sa recharge dure `seconds` de plus
+    SkillCooldown {
+        skill: String,
+        seconds: f32,
+    },
+    /// Le coup d'une bête repousse le joueur : direction le long du sol et vitesse, en blocs par
+    /// seconde
+    PlayerPushed {
+        direction: Vec3,
+        speed: f32,
     },
     /// Erreur ou déconnexion
     Disconnect(String),

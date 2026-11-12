@@ -1,0 +1,68 @@
+{
+  "name": "Mise à mort",
+  "description": "Tir d'entrave + Broche-monstre. Un tir précis dans les articulations pour faire chuter la cible, suivi d'un empalement ascendant dévastateur.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "piercingVolley",
+      "monsterSkewer"
+    ],
+    "max_rank": 3,
+    "planner": 327
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 16,
+    "animation": "thrust",
+    "area": {
+      "line": {
+        "length": 10,
+        "width": 1.5
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "stun": {
+          "duration": 1.5
+        }
+      },
+      {
+        "damage": {
+          "power": [
+            2.8,
+            3.2,
+            3.6
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "start"
+    },
+    {
+      "effect": "thrustStreak",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

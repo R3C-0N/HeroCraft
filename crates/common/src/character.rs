@@ -131,6 +131,34 @@ pub struct CharacterStats {
     /// Compétences apprises dans la roue, par identifiant, et leur rang (1 à `SkillNode::max_rank`)
     #[serde(default)]
     pub skills: std::collections::BTreeMap<String, u8>,
+    /// Bouclier d'une compétence : points de dégâts qu'il absorbe encore, et temps qu'il dure
+    #[serde(default)]
+    pub shield: f32,
+    #[serde(default)]
+    pub shield_time: f32,
+    /// Part des dégâts absorbés par le bouclier qu'il rend en mana (0 : rien)
+    #[serde(default)]
+    pub shield_mana: f32,
+    /// Type des coups que le bouclier absorbe (aucun : tous)
+    #[serde(default)]
+    pub shield_kind: Option<crate::DamageKind>,
+    /// Ralenti : part de la vitesse perdue (0 à 1), et pour combien de secondes encore
+    #[serde(default)]
+    pub slow: f32,
+    #[serde(default)]
+    pub slow_time: f32,
+    /// Étourdi : ni pas, ni saut, ni compétence, pour tant de secondes encore
+    #[serde(default)]
+    pub stun_time: f32,
+    /// Invisible aux yeux des bêtes pour tant de secondes encore (une attaque le dévoile)
+    #[serde(default)]
+    pub invisible_time: f32,
+    /// Tombé au combat et pas encore réapparu : une résurrection peut le relever sur place
+    #[serde(default)]
+    pub fallen: bool,
+    /// Nombre de fois qu'une compétence l'a relevé : son client voit ainsi qu'il revient à la vie
+    #[serde(default)]
+    pub revived: u32,
 }
 
 impl CharacterStats {
@@ -150,6 +178,16 @@ impl CharacterStats {
             max_satiety: MAX_SATIETY,
             skill_points: 0,
             skills: std::collections::BTreeMap::new(),
+            shield: 0.0,
+            shield_time: 0.0,
+            shield_mana: 0.0,
+            shield_kind: None,
+            slow: 0.0,
+            slow_time: 0.0,
+            stun_time: 0.0,
+            invisible_time: 0.0,
+            fallen: false,
+            revived: 0,
         };
         stats.recalculate();
         stats.hp = stats.max_hp;
@@ -222,6 +260,18 @@ impl CharacterStats {
     }
 
     pub fn take_damage(&mut self, amount: f32) -> bool {
+        self.take_hit(amount, None)
+    }
+
+    /// Comme `take_damage`, pour un coup de type `kind` : un bouclier qui ne vaut que contre un
+    /// type (`shield_kind`) laisse passer les autres, et ce qui n'a pas de type (une chute)
+    pub fn take_hit(&mut self, amount: f32, kind: Option<crate::DamageKind>) -> bool {
+        // Le bouclier d'une compétence encaisse d'abord, s'il vaut contre ce coup
+        let shielded = self.shield_kind.is_none() || self.shield_kind == kind;
+        let absorbed = if shielded { amount.min(self.shield).max(0.0) } else { 0.0 };
+        self.shield -= absorbed;
+        self.mana = (self.mana + absorbed * self.shield_mana).min(self.max_mana);
+        let amount = amount - absorbed;
         self.hp = (self.hp - amount).max(0.0);
         self.hp == 0.0 // True si mort
     }
@@ -230,6 +280,13 @@ impl CharacterStats {
     /// consomme l'endurance, qui se régénère (+10 par sec) sinon, le mana remonte (+2 par sec).
     /// La vie remonte (+1 par sec) tant que le joueur n'a pas faim ; affamé, il en perd.
     pub fn regenerate(&mut self, dt: f32, sprinting: bool) {
+        self.shield_time = (self.shield_time - dt).max(0.0);
+        if self.shield_time <= 0.0 {
+            self.shield = 0.0;
+            self.shield_mana = 0.0;
+            self.shield_kind = None;
+        }
+        self.tick_status(dt);
         let drain = SATIETY_DRAIN + if sprinting { SPRINT_SATIETY_COST } else { 0.0 };
         self.satiety = (self.satiety - drain * dt).clamp(0.0, self.max_satiety);
         let hunger = self.hunger();
@@ -253,6 +310,57 @@ impl CharacterStats {
                 }
             }
         }
+    }
+
+    /// Le temps passe sur le ralenti, l'étourdissement et l'invisibilité
+    pub fn tick_status(&mut self, dt: f32) {
+        self.slow_time = (self.slow_time - dt).max(0.0);
+        if self.slow_time <= 0.0 {
+            self.slow = 0.0;
+        }
+        self.stun_time = (self.stun_time - dt).max(0.0);
+        self.invisible_time = (self.invisible_time - dt).max(0.0);
+    }
+
+    /// Ralenti de `strength` (0 à 1) pendant `seconds` : le plus fort et le plus long l'emportent
+    pub fn apply_slow(&mut self, strength: f32, seconds: f32) {
+        self.slow = self.slow.max(strength.clamp(0.0, 1.0));
+        self.slow_time = self.slow_time.max(seconds);
+    }
+
+    /// Retire le ralenti et l'étourdissement (Purification)
+    pub fn cleanse(&mut self) {
+        self.slow = 0.0;
+        self.slow_time = 0.0;
+        self.stun_time = 0.0;
+    }
+
+    pub fn apply_stun(&mut self, seconds: f32) {
+        self.stun_time = self.stun_time.max(seconds);
+    }
+
+    pub fn is_stunned(&self) -> bool {
+        self.stun_time > 0.0
+    }
+
+    pub fn is_invisible(&self) -> bool {
+        self.invisible_time > 0.0
+    }
+
+    /// Allure que laissent le ralenti et l'étourdissement (1 : pleine, 0 : immobile)
+    pub fn status_speed(&self) -> f32 {
+        if self.is_stunned() { 0.0 } else { 1.0 - self.slow }
+    }
+
+    /// Relevé par une compétence avec `fraction` de sa vie, s'il est tombé
+    pub fn resurrect(&mut self, fraction: f32) -> bool {
+        if !self.fallen {
+            return false;
+        }
+        self.fallen = false;
+        self.hp = (self.max_hp * fraction.clamp(0.05, 1.0)).max(1.0);
+        self.revived += 1;
+        true
     }
 
     /// Ce que la faim fait au joueur en ce moment

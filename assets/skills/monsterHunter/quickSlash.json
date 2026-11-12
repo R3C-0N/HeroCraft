@@ -1,0 +1,59 @@
+{
+  "name": "Entaille vive",
+  "description": "Épée. Coup rapide avec ton épée à une main pour faire saigner la cible.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 316
+  },
+  "cast": {
+    "cost": {
+      "stamina": 8
+    },
+    "cooldown": 4,
+    "animation": "sweep",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 90
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.9,
+            1.0,
+            1.1
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "damage": [
+            2,
+            3,
+            4
+          ],
+          "duration": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "name": "Percée cuirassée",
+  "description": "Coup de bouclier + Fente d'arrêt. Charge frontale avec le bouclier en avant, suivie immédiatement d'un empalement profond à l'épée.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "phalanx",
+      "armorBreaker"
+    ],
+    "max_rank": 3,
+    "planner": 371
+  },
+  "cast": {
+    "cost": {
+      "stamina": 28
+    },
+    "cooldown": 14,
+    "animation": "charge",
+    "area": {
+      "line": {
+        "length": 6,
+        "width": 2
+      }
+    },
+    "movement": {
+      "dash": 5
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.2,
+            2.6,
+            3.0
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 6
+        }
+      },
+      {
+        "stun": {
+          "duration": 1
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "thrustStreak",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

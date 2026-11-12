@@ -1,0 +1,72 @@
+{
+  "name": "Brise-armure",
+  "description": "Épée. Frappe lourde à l'épée qui détériore la protection de la cible.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "stoppingLunge"
+    ],
+    "max_rank": 3,
+    "planner": 367
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 9,
+    "animation": "overheadStrike",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 70
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "shred": {
+          "amount": [
+            0.3,
+            0.4,
+            0.5
+          ],
+          "duration": 6
+        }
+      },
+      {
+        "damage": {
+          "power": [
+            2.0,
+            2.3,
+            2.6
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "armorShatter",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

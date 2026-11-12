@@ -1,0 +1,86 @@
+{
+  "name": "Déluge d'Acier",
+  "description": "Pluie de Flèches + Tir Multiple. Tu tires plusieurs poignées de flèches en l'air à une vitesse folle, créant une zone de mort où les projectiles pleuvent en continu pendant plusieurs secondes.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "arrowRain"
+    ],
+    "max_rank": 3,
+    "planner": 297
+  },
+  "cast": {
+    "cost": {
+      "stamina": 32
+    },
+    "cooldown": 18,
+    "animation": "bowShot",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ],
+        "center": "aimed",
+        "distance": 16
+      }
+    },
+    "zone": {
+      "duration": 5
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.8,
+            1.0,
+            1.2
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "damage": [
+            5,
+            6,
+            7
+          ],
+          "duration": 5
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.3,
+          "duration": 5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "area",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

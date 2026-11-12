@@ -1,0 +1,77 @@
+{
+  "name": "Cristallisation",
+  "description": "Eau / Terre : Éclat Sismique + Voile Aquatique.\n\nTon rocher traverse ton bouclier d'eau, gèle instantanément, et explose à l'impact en projetant des éclats de givre acérés sur les ennemis proches.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.75,
+    "requires": [
+      "shrapnelStorm",
+      "soothingMist"
+    ],
+    "max_rank": 3,
+    "planner": 193
+  },
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 14,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": [
+          3,
+          3.5,
+          4
+        ],
+        "center": "aimed",
+        "distance": 12
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.0,
+            2.4,
+            2.8
+          ]
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.6,
+          "duration": 3
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "shield": {
+          "amount": 20,
+          "duration": 5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "rockShard",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "iceShards",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "slowFrost",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

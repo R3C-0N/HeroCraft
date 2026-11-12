@@ -1,13 +1,14 @@
 {
   "name": "Mille-pattes géant",
   "description": "Court sur les parois des galeries et mord d’un venin qui paralyse.",
+  "armor": 40,
   "body": {"half_width": 0.5074, "half_length": 1.5049, "height": 0.7517},
   "walk_speed": 0,
   "min_group": 1,
   "max_group": 2,
   "spawn": [],
   "activity": "nocturnal",
-  "attack": {"mode": "solo", "damage": 5, "cooldown": 1.2, "sight": 4, "reach": 1.0, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
+  "attack": {"mode": "solo", "damage": 5, "slow": [0.3, 2.5], "cooldown": 1.2, "sight": 4, "reach": 1.0, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
   "loot": [
     {"item": "pocheVenin", "chance": 0.6},
     {"item": "glandeAcide", "chance": 0.6}

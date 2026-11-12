@@ -1,0 +1,100 @@
+{
+  "name": "Ours-Hibou",
+  "description": "Ours + Faucon. Une créature massive capable de faire de très hauts bonds pour s'écraser au sol et créer une violente onde de choc de zone.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "runicBear",
+      "peregrineFalcon"
+    ],
+    "max_rank": 3,
+    "planner": 206
+  },
+  "cast": {
+    "cost": {
+      "mana": 35
+    },
+    "cooldown": 45,
+    "animation": "leap",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ]
+      }
+    },
+    "movement": {
+      "leap": 6
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.2,
+            2.6,
+            3.0
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 8
+        }
+      },
+      {
+        "stun": {
+          "duration": 1
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.4,
+          "duration": 20
+        }
+      },
+      {
+        "buff": {
+          "stat": "damage",
+          "value": 0.3,
+          "duration": 20
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ],
+  "form": "owlbear",
+  "form_attacks": [
+    "owlbearMaul",
+    "owlbearCrash"
+  ]
+}

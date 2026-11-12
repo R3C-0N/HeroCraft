@@ -194,6 +194,23 @@ impl Inventory {
         Some(block)
     }
 
+    /// Une munition de ce type dans la barre ou le sac (la barre d'abord), sans la retirer
+    pub fn find_ammo(&self, kind: herocraft_common::AmmoKind) -> Option<ItemId> {
+        self.slots[..STORAGE_SLOTS].iter().flatten().find(|s| s.item.block().is_none() && items().get(s.item).is_some_and(|sheet| sheet.ammo == Some(kind))).map(|s| s.item)
+    }
+
+    /// Retire un exemplaire de `item` (la barre d'abord) ; faux s'il n'y en a pas
+    pub fn take_one(&mut self, item: ItemId) -> bool {
+        let Some(slot) = self.slots[..STORAGE_SLOTS].iter_mut().find(|s| s.is_some_and(|s| s.item == item)) else { return false };
+        if let Some(stack) = slot.as_mut() {
+            stack.count -= 1;
+            if stack.count == 0 {
+                *slot = None;
+            }
+        }
+        true
+    }
+
     /// Range un bloc ou un objet : d'abord sur une pile du même, sinon dans la première case vide
     /// (barre d'objets puis sac, jamais l'équipement). Renvoie faux si l'inventaire est plein.
     pub fn add(&mut self, item: impl Into<ItemId>) -> bool {
@@ -236,14 +253,15 @@ impl Inventory {
         self.slot(FIRST_EQUIPMENT + i)
     }
 
+    /// Pièces portées, dans l'ordre des cases d'équipement
+    pub fn worn(&self) -> Vec<ItemId> {
+        (0..EQUIPMENT.len()).filter_map(|i| self.equipped(i)).map(|stack| stack.item).collect()
+    }
+
     /// Protection totale de ce qui est porté : la somme de la caractéristique `Protection` des
     /// pièces
     pub fn protection(&self) -> u32 {
-        (0..EQUIPMENT.len())
-            .filter_map(|i| self.equipped(i))
-            .filter_map(|stack| items().get(stack.item).and_then(|sheet| sheet.stats.get("Protection")).copied())
-            .map(|p| p.max(0.0) as u32)
-            .sum()
+        items().protection(self.worn()) as u32
     }
 
     /// Exemplaires d'un ingrédient, toutes ses variantes comprises

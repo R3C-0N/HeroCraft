@@ -1,6 +1,7 @@
 {
   "name": "Tréant gardien",
   "description": "Reste immobile tant qu’on n’abat aucun arbre de son bosquet.",
+  "armor": 50,
   "body": {"half_width": 1.1379, "half_length": 0.3937, "height": 2.925},
   "walk_speed": 0.35,
   "min_group": 1,

@@ -1,0 +1,12 @@
+{
+  "numeric_id": 16915,
+  "name": "Arbalète d'acier",
+  "category": "Armes",
+  "weapon": {"kind": "crossbow", "interval": 1.2, "ammo": "bolt"},
+  "max_stack": 1,
+  "icon": "icones/steelCrossbow.png",
+  "stats": {"Dégâts": 8, "Durabilité": 2000},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"steelIngot": 3, "plank": 2, "rope": 2}, "repair": {"steelIngot": 1}}
+  ]
+}

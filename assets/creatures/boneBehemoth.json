@@ -1,6 +1,9 @@
 {
   "name": "Béhémoth d'Os",
   "description": "Un colosse d'os assemblés, une âme verte prise dans la cage.",
+  "armor": 60,
+  "resist": 10,
+  "tags": ["shadow"],
   "body": {"half_width": 0.8, "half_length": 2.3, "height": 3.3},
   "walk_speed": 1.4,
   "health": 140,

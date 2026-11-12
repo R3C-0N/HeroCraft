@@ -1,0 +1,70 @@
+{
+  "name": "Repli Tactique",
+  "description": "Précision. Un bond en arrière rapide pour maintenir la distance tout en décochant une flèche d'instinct.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 288
+  },
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 8,
+    "animation": "bowShot",
+    "speed": 1.5,
+    "area": {
+      "line": {
+        "length": 12,
+        "width": 1
+      }
+    },
+    "projectile": {
+      "speed": 45
+    },
+    "movement": {
+      "leap": [
+        -4,
+        -5,
+        -6
+      ]
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.6,
+            0.8,
+            1.0
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "projectile",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
+    }
+  ]
+}

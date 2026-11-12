@@ -2,6 +2,7 @@
   "numeric_id": 16456,
   "name": "Lance d'étherium (mithril)",
   "category": "Armes",
+  "weapon": {"kind": "spear", "interval": 0.5, "reach": 1},
   "max_stack": 1,
   "icon": "icones/etheriumMithrilSpear.png",
   "stats": {"Dégâts": 28, "Durabilité": 5000},

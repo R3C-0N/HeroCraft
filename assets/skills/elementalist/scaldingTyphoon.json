@@ -1,0 +1,73 @@
+{
+  "name": "Typhon Bouillant",
+  "description": "Feu / Eau : Orbe Igné + Fouet Écumeux.\n\nTu fouettes ton orbe de feu pour déclencher une énorme vague de vapeur à très haute pression qui ébouillante la zone.",
+  "wheel": {
+    "tier": 3,
+    "ring": 2.5,
+    "slot": 0.125,
+    "requires": [
+      "fusion"
+    ],
+    "max_rank": 3,
+    "planner": 186
+  },
+  "cast": {
+    "cost": {
+      "mana": 32
+    },
+    "cooldown": 16,
+    "animation": "sweep",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ],
+        "center": "aimed",
+        "distance": 10
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.6,
+            1.9,
+            2.2
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "damage": 4,
+          "duration": 4
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.3,
+          "duration": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "waterWhip",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "steamBurst",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "fireExplosion",
+      "anchor": "area",
+      "from": "impact"
+    }
+  ]
+}

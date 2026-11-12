@@ -1,0 +1,16 @@
+{
+  "name": "Eau",
+  "description": "Une compétence, deux sorts.\n\n- Offensif : Fouet Écumeux, frappe à moyenne portée et ralentit la cible.\n- Défensif : Voile Aquatique, un bouclier fluide qui absorbe les dégâts et te soigne légèrement.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 176,
+    "grants": [
+      "foamingWhip",
+      "waterVeil"
+    ]
+  }
+}

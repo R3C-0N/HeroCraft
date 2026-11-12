@@ -1,0 +1,94 @@
+{
+  "name": "Tempête des Âmes",
+  "description": "Siphon + Miasme. Un vaste tourbillon spectral qui aspire massivement la vie de tous les ennemis piégés à l'intérieur pour régénérer tes invocations et toi-même.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "miasmaCloud"
+    ],
+    "max_rank": 3,
+    "planner": 223
+  },
+  "cast": {
+    "cost": {
+      "mana": 35
+    },
+    "cooldown": 20,
+    "animation": "channel",
+    "area": {
+      "circle": {
+        "radius": [
+          5,
+          5.5,
+          6
+        ]
+      }
+    },
+    "zone": {
+      "duration": 6,
+      "follow": true
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "over_time": {
+          "damage": [
+            6,
+            7,
+            8
+          ],
+          "duration": 6
+        }
+      },
+      {
+        "pull": {
+          "strength": 4
+        }
+      },
+      {
+        "over_time": {
+          "heal": [
+            5,
+            6,
+            7
+          ],
+          "duration": 6
+        },
+        "to": "summons"
+      }
+    ],
+    "self_effects": [
+      {
+        "over_time": {
+          "heal": [
+            5,
+            6,
+            7
+          ],
+          "duration": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "tornado",
+      "anchor": "feet",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "drainStream",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "body",
+      "from": "impact"
+    }
+  ]
+}

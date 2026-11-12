@@ -1,0 +1,62 @@
+{
+  "name": "Ruée Frontale",
+  "description": "Assaut. Une charge à l'épaule très rapide pour réduire la distance et déséquilibrer l'adversaire.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 348
+  },
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 7,
+    "animation": "charge",
+    "area": {
+      "line": {
+        "length": 5,
+        "width": 2
+      }
+    },
+    "movement": {
+      "dash": 5
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            0.8,
+            1.0,
+            1.2
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 4
+        }
+      },
+      {
+        "stun": {
+          "duration": 0.5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

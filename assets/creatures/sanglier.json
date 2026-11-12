@@ -1,6 +1,7 @@
 {
   "name": "Sanglier",
   "description": "Charge en ligne droite, tête baissée, sur tout ce qui bouge près de sa bauge.",
+  "armor": 25,
   "body": {"half_width": 0.3094, "half_length": 0.7973, "height": 0.9381},
   "walk_speed": 1.2,
   "min_group": 1,
@@ -10,7 +11,7 @@
     {"biome": "Forest", "weight": 0.5}
   ],
   "activity": "nocturnal",
-  "attack": {"mode": "charge", "damage": 6, "cooldown": 2.0, "sight": 7, "chase_speed": 2.5},
+  "attack": {"mode": "charge", "damage": 6, "stun": 0.5, "knockback": 7, "cooldown": 2.0, "sight": 7, "chase_speed": 2.5},
   "loot": [
     {"item": "viandeSanglier", "count": [1, 2]},
     {"item": "hide", "count": [1, 2]},

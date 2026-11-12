@@ -1,0 +1,101 @@
+{
+  "name": "Abomination de l'Étherium",
+  "description": "Compétence ultime. Tu enfonces un éclat d'Étherium pur directement dans ta chair. Tu deviens un monstre colossal et insensible. Ta santé se vide rapidement, mais tes frappes provoquent des séismes. Si tu tombes à zéro point de vie sous cet effet, tu exploses dans une nova de néant destructrice au lieu de mourir.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "hemoglobinEruption",
+      "agonyWhirl",
+      "carnalShockwave"
+    ],
+    "max_rank": 3,
+    "planner": 389
+  },
+  "cast": {
+    "cost": {
+      "stamina": 60
+    },
+    "cooldown": 120,
+    "animation": "shout",
+    "area": {
+      "circle": {
+        "radius": 6
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": 3
+        }
+      },
+      {
+        "stun": {
+          "duration": 1.5
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "over_time": {
+          "damage": 4,
+          "duration": 15
+        }
+      },
+      {
+        "buff": {
+          "stat": "damage",
+          "value": 1.0,
+          "duration": 15
+        }
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.6,
+          "duration": 15,
+          "on_death": {
+            "radius": 8,
+            "effects": [
+              {
+                "damage": {
+                  "power": 6
+                }
+              },
+              {
+                "knockback": {
+                  "strength": 12
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
+}

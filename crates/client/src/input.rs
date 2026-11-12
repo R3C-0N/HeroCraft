@@ -34,10 +34,14 @@ pub enum Action {
     OpenSkills,
     OpenMap,
     OpenChat,
+    Skill1,
+    Skill2,
+    Skill3,
+    Skill4,
 }
 
 /// Groupes d'actions, dans l'ordre d'affichage de la page Commandes
-pub const ACTION_GROUPS: [(&str, &[Action]); 7] = [
+pub const ACTION_GROUPS: [(&str, &[Action]); 8] = [
     (
         "DÉPLACEMENT",
         &[
@@ -52,6 +56,7 @@ pub const ACTION_GROUPS: [(&str, &[Action]); 7] = [
     ),
     ("OBJETS", &[Action::OpenInventory]),
     ("HÉROS", &[Action::OpenSkills]),
+    ("COMPÉTENCES", &[Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4]),
     ("EXPLORATION", &[Action::OpenMap]),
     ("CAMÉRA", &[Action::ZoomModifier, Action::ToggleView, Action::ResetView]),
     ("MONDE", &[Action::NewPlanet, Action::ToggleTectonics, Action::ToggleOceanCurrents]),
@@ -59,7 +64,7 @@ pub const ACTION_GROUPS: [(&str, &[Action]); 7] = [
 ];
 
 impl Action {
-    pub const ALL: [Action; 17] = [
+    pub const ALL: [Action; 21] = [
         Action::MoveForward,
         Action::MoveBackward,
         Action::MoveLeft,
@@ -77,6 +82,10 @@ impl Action {
         Action::OpenSkills,
         Action::OpenMap,
         Action::OpenChat,
+        Action::Skill1,
+        Action::Skill2,
+        Action::Skill3,
+        Action::Skill4,
     ];
 
     pub fn label(self) -> &'static str {
@@ -98,6 +107,10 @@ impl Action {
             Action::OpenSkills => "Ouvrir la roue des compétences",
             Action::OpenMap => "Ouvrir la carte",
             Action::OpenChat => "Ouvrir le chat (messages et commandes /)",
+            Action::Skill1 => "Compétence de la case 1",
+            Action::Skill2 => "Compétence de la case 2",
+            Action::Skill3 => "Compétence de la case 3",
+            Action::Skill4 => "Compétence de la case 4",
         }
     }
 
@@ -112,16 +125,21 @@ impl Action {
             Action::Descend => KeyCode::ShiftLeft,
             Action::Sprint => KeyCode::ControlLeft,
             Action::ZoomModifier => KeyCode::AltLeft,
-            Action::ToggleView => KeyCode::KeyF,
-            Action::ResetView => KeyCode::KeyR,
+            Action::ToggleView => KeyCode::KeyV,
+            Action::ResetView => KeyCode::KeyB,
             Action::NewPlanet => KeyCode::KeyG,
-            Action::ToggleTectonics => KeyCode::KeyT,
+            Action::ToggleTectonics => KeyCode::KeyU,
             Action::ToggleOceanCurrents => KeyCode::KeyY,
-            Action::OpenInventory => KeyCode::KeyE,
+            Action::OpenInventory => KeyCode::KeyF,
             Action::OpenSkills => KeyCode::KeyC,
             // Touche M d'un clavier AZERTY (point-virgule en QWERTY)
             Action::OpenMap => KeyCode::Semicolon,
             Action::OpenChat => KeyCode::Enter,
+            // A, E, R, T d'un clavier AZERTY (Q, E, R, T en QWERTY)
+            Action::Skill1 => KeyCode::KeyQ,
+            Action::Skill2 => KeyCode::KeyE,
+            Action::Skill3 => KeyCode::KeyR,
+            Action::Skill4 => KeyCode::KeyT,
         }
     }
 }
@@ -205,6 +223,22 @@ impl Controls {
     /// Complète les actions manquantes et dédoublonne les touches d'un fichier ancien ou édité à la main
     fn repair(&mut self) {
         let defaults = Controls::default();
+        // Avant la barre de compétences, E ouvrait l'inventaire, F changeait de vue, R la
+        // remettait droite et T montrait les plaques : ces actions laissent la place aux
+        // compétences si elles étaient encore sur ces touches
+        if !self.bindings.contains_key(&Action::Skill1) {
+            let old = [
+                (Action::OpenInventory, KeyCode::KeyE),
+                (Action::ToggleView, KeyCode::KeyF),
+                (Action::ResetView, KeyCode::KeyR),
+                (Action::ToggleTectonics, KeyCode::KeyT),
+            ];
+            for (action, key) in old {
+                if self.bindings.get(&action) == Some(&key) {
+                    self.bindings.remove(&action);
+                }
+            }
+        }
         // Avant la roue des compétences, C servait aux courants marins : un fichier de cette
         // époque les envoie sur leur nouvelle touche plutôt que de tout remettre à zéro
         if !self.bindings.contains_key(&Action::OpenSkills)
@@ -437,6 +471,17 @@ mod tests {
         assert_eq!(controls.key(Action::OpenSkills), KeyCode::KeyC);
         assert_eq!(controls.key(Action::ToggleOceanCurrents), KeyCode::KeyY);
         // Les autres touches personnalisées sont gardées
+        assert_eq!(controls.key(Action::Jump), KeyCode::KeyJ);
+    }
+
+    #[test]
+    fn test_old_file_frees_the_skill_keys() {
+        let json = r#"{ "bindings": { "OpenInventory": "KeyE", "ToggleView": "KeyF", "ResetView": "KeyR", "ToggleTectonics": "KeyT", "Jump": "KeyJ" } }"#;
+        let mut controls: Controls = serde_json::from_str(json).unwrap();
+        controls.repair();
+        assert_eq!(controls.key(Action::OpenInventory), KeyCode::KeyF);
+        assert_eq!(controls.key(Action::ToggleView), KeyCode::KeyV);
+        assert_eq!([Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4].map(|a| controls.key(a)), [KeyCode::KeyQ, KeyCode::KeyE, KeyCode::KeyR, KeyCode::KeyT]);
         assert_eq!(controls.key(Action::Jump), KeyCode::KeyJ);
     }
 

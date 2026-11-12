@@ -2,6 +2,7 @@
   "numeric_id": 16537,
   "name": "Flèche d'acier",
   "category": "Armes",
+  "ammo": "arrow",
   "max_stack": 99,
   "icon": "icones/steelArrow.png",
   "stats": {"Dégâts": 9},

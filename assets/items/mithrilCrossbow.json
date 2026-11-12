@@ -1,0 +1,12 @@
+{
+  "numeric_id": 16917,
+  "name": "Arbalète de mithril",
+  "category": "Armes",
+  "weapon": {"kind": "crossbow", "interval": 1.2, "ammo": "bolt"},
+  "max_stack": 1,
+  "icon": "icones/mithrilCrossbow.png",
+  "stats": {"Dégâts": 10, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"mithrilIngot": 3, "plank": 2, "rope": 2}, "repair": {"mithrilIngot": 1}}
+  ]
+}

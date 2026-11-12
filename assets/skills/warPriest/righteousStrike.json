@@ -1,0 +1,66 @@
+{
+  "name": "Frappe du Juste",
+  "description": "Maillet. Un coup lourd avec le maillet qui inflige des dégâts physiques et soigne légèrement le Prêtre-guerrier.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 241
+  },
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 4,
+    "animation": "overheadStrike",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 100
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.2,
+            1.4,
+            1.6
+          ]
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "heal": {
+          "amount": [
+            4,
+            6,
+            8
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "body",
+      "from": "impact"
+    }
+  ]
+}

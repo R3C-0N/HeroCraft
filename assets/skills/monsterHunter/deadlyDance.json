@@ -1,0 +1,65 @@
+{
+  "name": "Danse mortelle",
+  "description": "Entaille vive + Salve perforante. Tu tailles dans le vif en avançant, tout en arrosant les flancs de tirs rapides d'arbalète.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.1667,
+    "requires": [
+      "monsterSkewer",
+      "piercingVolley"
+    ],
+    "max_rank": 3,
+    "planner": 326
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 15,
+    "animation": "spin",
+    "area": {
+      "circle": {
+        "radius": 4
+      }
+    },
+    "movement": {
+      "dash": 4
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.2,
+            2.6,
+            3.0
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "damage": 3,
+          "duration": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

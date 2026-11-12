@@ -2,6 +2,7 @@
   "numeric_id": 16814,
   "name": "Couteau en silex",
   "category": "Outils",
+  "weapon": {"kind": "dagger", "interval": 0.25},
   "max_stack": 1,
   "icon": "icones/flintKnife.png",
   "stats": {"Dégâts": 2, "Durabilité": 150},

@@ -1,0 +1,77 @@
+{
+  "name": "Brume Apaisante",
+  "description": "Eau / Air : Voile Aquatique + Courant Ascendant.\n\nLe vent disperse ton bouclier aquatique pour créer un épais brouillard de zone qui te cache et te soigne en continu.",
+  "wheel": {
+    "tier": 3,
+    "ring": 2.5,
+    "slot": 0.875,
+    "requires": [
+      "fusion"
+    ],
+    "max_rank": 3,
+    "planner": 190
+  },
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 20,
+    "animation": "channel",
+    "area": {
+      "circle": {
+        "radius": [
+          5,
+          5.5,
+          6
+        ]
+      }
+    },
+    "zone": {
+      "duration": 8
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "over_time": {
+          "heal": [
+            4,
+            5,
+            6
+          ],
+          "duration": 8
+        }
+      },
+      {
+        "buff": {
+          "stat": "defense",
+          "value": 0.25,
+          "duration": 8
+        }
+      },
+      {
+        "invisible": {
+          "duration": 8
+        },
+        "to": "self"
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "mistCloud",
+      "anchor": "area",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "windSwirl",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

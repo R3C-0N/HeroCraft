@@ -1,0 +1,59 @@
+{
+  "name": "Embuscade",
+  "description": "Ombre. Ta première attaque en sortant d'une disparition garantit des dégâts critiques massifs.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "shadowVeil"
+    ],
+    "max_rank": 3,
+    "planner": 263
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 14,
+    "animation": "thrust",
+    "area": {
+      "arc": {
+        "range": 2.5,
+        "angle": 60
+      }
+    },
+    "movement": {
+      "dash": 2
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.4,
+            2.8,
+            3.2
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shadowSmoke",
+      "anchor": "body",
+      "from": "start"
+    },
+    {
+      "effect": "thrustStreak",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

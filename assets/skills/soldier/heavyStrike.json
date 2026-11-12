@@ -1,0 +1,58 @@
+{
+  "name": "Frappe Lourde",
+  "description": "Puissance. Un grand mouvement ample qui repousse l'ennemi en arrière, parfait pour se créer de l'espace.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.125,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 346
+  },
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 6,
+    "animation": "sweep",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 120
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.3,
+            1.5,
+            1.7
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": [
+            6,
+            7,
+            8
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

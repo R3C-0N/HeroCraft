@@ -24,6 +24,40 @@ pub const CREATURE_DEATH_TIME: f32 = 0.8;
 /// Durée pendant laquelle une bête morte reste à terre, à dépecer, avant de disparaître, en secondes
 pub const CORPSE_TIME: f32 = 600.0;
 
+/// Type d'un coup : l'armure d'une cible réduit les coups physiques, sa résistance les coups magiques
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DamageKind {
+    #[default]
+    Physical,
+    Magical,
+}
+
+impl DamageKind {
+    /// Son nom dans les fichiers : `physical` ou `magical`
+    pub fn name(self) -> &'static str {
+        match self {
+            DamageKind::Physical => "physical",
+            DamageKind::Magical => "magical",
+        }
+    }
+}
+
+/// Facteur des dégâts qui passent une armure (ou une résistance) de `armor` : 100 / (100 + armor).
+/// À 50, un tiers de dégâts en moins ; à 100, la moitié ; jamais d'immunité.
+pub fn armor_factor(armor: f32) -> f32 {
+    100.0 / (100.0 + armor.max(0.0))
+}
+
+/// Ce qui reste d'un coup de `amount` points de type `kind` porté à un joueur dont l'armure a
+/// `protection` de Protection : elle ne réduit que les coups physiques
+pub fn through_armor(amount: f32, kind: DamageKind, protection: f32) -> f32 {
+    match kind {
+        DamageKind::Physical => amount * armor_factor(protection),
+        DamageKind::Magical => amount,
+    }
+}
+
 /// Une espèce de créature, telle que décrite par son fichier
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -35,6 +69,15 @@ pub struct CreatureSpecies {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    /// Familles de l'espèce, que certaines compétences visent (`shadow` : créature de l'ombre)
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Armure : réduit les coups physiques (voir `armor_factor`)
+    #[serde(default)]
+    pub armor: f32,
+    /// Résistance : réduit les coups magiques
+    #[serde(default)]
+    pub resist: f32,
     /// Volume du corps pour les déplacements
     pub body: CreatureBody,
     /// Vitesse de marche, en blocs par seconde
@@ -66,6 +109,10 @@ pub struct CreatureSpecies {
     /// la simulation des villages, sans modèle glTF
     #[serde(default)]
     pub humanoid: bool,
+    /// Elle se garde : les coups qui lui arrivent de face perdent une part de leurs dégâts, tant
+    /// qu'elle n'est ni étourdie ni brisée (`break_guard`)
+    #[serde(default)]
+    pub guard: Option<CreatureGuard>,
     /// Élevage : ce qu'elle mange, ce qu'il faut pour l'apprivoiser, le temps que met un petit à
     /// grandir (aucun : elle ne s'élève pas)
     #[serde(default)]
@@ -79,6 +126,167 @@ pub struct CreatureSpecies {
     /// Modèle 3D (absent pour un humanoïde)
     #[serde(default)]
     pub model: CreatureModel,
+    /// Provocation, en blocs : les bêtes agressives à cette distance d'elle s'en prennent à elle
+    /// avant tout autre (Chevalier de la Mort)
+    #[serde(default)]
+    pub taunt: Option<f32>,
+    /// Corps solide : forme, taille et résistance (sans : un cercle de la demi-largeur du corps, de
+    /// résistance 0,5)
+    #[serde(default)]
+    pub collision: Option<CreatureCollision>,
+    /// Elle attire les ennemis proches (Piège Magnétique)
+    #[serde(default)]
+    pub magnet: Option<CreatureMagnet>,
+    /// Un obstacle (mur invoqué) : il arrête les tirs ennemis, brûle qui le frappe
+    #[serde(default)]
+    pub obstacle: Option<CreatureObstacle>,
+}
+
+/// Ce que fait un obstacle (barricade, mur) en plus de bloquer le passage
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureObstacle {
+    /// Il arrête les tirs de ses ennemis (ceux de son camp passent)
+    #[serde(default)]
+    pub shots: bool,
+    /// Rien ne l'abîme (mur de lumière)
+    #[serde(default)]
+    pub invulnerable: bool,
+    /// Qui le frappe au corps à corps prend des dégâts et brûle (Mur Fournaise)
+    #[serde(default)]
+    pub thorns: Option<Thorns>,
+}
+
+/// Le retour de flamme d'un obstacle incandescent
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Thorns {
+    /// Dégâts à chaque coup reçu au corps à corps
+    pub damage: f32,
+    /// Brûlure ensuite : points par seconde, pendant `seconds` secondes
+    #[serde(default)]
+    pub burn: f32,
+    #[serde(default)]
+    pub seconds: f32,
+}
+
+/// Taille d'un projectile : le Manteau de Zéphyr dévie les petits
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectileSize {
+    #[default]
+    Small,
+    Large,
+}
+
+/// Forme du corps solide d'une espèce, vue de dessus
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CollisionShape {
+    /// Un disque (bête, humanoïde, tourelle)
+    #[default]
+    Circle,
+    /// Un rectangle tourné avec la bête (mur, barricade)
+    Box,
+}
+
+/// Corps solide d'une espèce, tel qu'écrit dans sa fiche
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureCollision {
+    #[serde(default)]
+    pub shape: CollisionShape,
+    /// Demi-largeur et demi-longueur, en blocs (un cercle a pour rayon la première) ; sans : celles
+    /// du corps (`body`)
+    #[serde(default)]
+    pub size: Option<[f32; 2]>,
+    /// Hauteur, en blocs (sans : celle du corps)
+    #[serde(default)]
+    pub height: Option<f32>,
+    /// De 0 à 1 : la part de l'enfoncement d'un autre corps qu'elle repousse à chaque instant. 0 :
+    /// on la traverse (piège) ; 1 : rien ne la traverse (mur)
+    #[serde(default = "half_f32")]
+    pub resistance: f32,
+}
+
+fn half_f32() -> f32 {
+    0.5
+}
+
+/// Corps solide d'une entité, en blocs
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Collider {
+    pub shape: CollisionShape,
+    pub half_width: f32,
+    pub half_length: f32,
+    pub height: f32,
+    pub resistance: f32,
+}
+
+/// Le corps d'un joueur, pour les collisions avec les entités
+pub const PLAYER_COLLIDER: Collider = Collider { shape: CollisionShape::Circle, half_width: 0.3, half_length: 0.3, height: 1.8, resistance: 0.5 };
+
+impl CreatureSpecies {
+    /// Son corps solide, à l'échelle 1
+    pub fn collider(&self) -> Collider {
+        let c = self.collision.unwrap_or(CreatureCollision { shape: CollisionShape::Circle, size: None, height: None, resistance: 0.5 });
+        let [half_width, half_length] = c.size.unwrap_or([self.body.half_width, self.body.half_length]);
+        Collider { shape: c.shape, half_width, half_length, height: c.height.unwrap_or(self.body.height), resistance: c.resistance.clamp(0.0, 1.0) }
+    }
+}
+
+impl Collider {
+    /// Rayon du disque qui le remplace quand il bouge contre un autre
+    pub fn radius(&self) -> f32 {
+        match self.shape {
+            CollisionShape::Circle => self.half_width,
+            CollisionShape::Box => self.half_width.min(self.half_length),
+        }
+    }
+
+    /// Ce corps, posé les pieds en `feet` et tourné du cap `yaw`, est enfoncé par un disque de rayon
+    /// `radius` (en blocs) aux pieds en `other` : le déplacement, dans le plan du sol, qui sort le
+    /// disque de lui (`block` : taille d'un bloc). Aucun s'ils ne se touchent pas, ou si l'un passe
+    /// au-dessus de l'autre (`other_height` : hauteur du disque).
+    pub fn separation(&self, feet: Vec3, yaw: f32, block: f32, other: Vec3, radius: f32, other_height: f32) -> Option<Vec3> {
+        let up = feet.normalize_or_zero();
+        let rise = (other.length() - feet.length()) / block;
+        if rise >= self.height || rise + other_height <= 0.0 {
+            return None;
+        }
+        let (east, north) = crate::math::tangent_frame(up);
+        let ahead = north * yaw.cos() + east * yaw.sin();
+        let side = east * yaw.cos() - north * yaw.sin();
+        let d = (other - feet) / block;
+        let (f, s) = (d.dot(ahead), d.dot(side));
+        let (along, across, depth) = match self.shape {
+            CollisionShape::Circle => {
+                let distance = (f * f + s * s).sqrt();
+                let depth = self.half_width + radius - distance;
+                if depth <= 0.0 {
+                    return None;
+                }
+                if distance < 1e-4 { (1.0, 0.0, depth) } else { (f / distance, s / distance, depth) }
+            }
+            CollisionShape::Box => {
+                let (cf, cs) = (f.clamp(-self.half_length, self.half_length), s.clamp(-self.half_width, self.half_width));
+                let (df, ds) = (f - cf, s - cs);
+                let outside = (df * df + ds * ds).sqrt();
+                if outside > 1e-4 {
+                    let depth = radius - outside;
+                    if depth <= 0.0 {
+                        return None;
+                    }
+                    (df / outside, ds / outside, depth)
+                } else {
+                    // Le centre est dedans : il sort par le côté le plus proche
+                    let (pf, ps) = (self.half_length - f.abs() + radius, self.half_width - s.abs() + radius);
+                    if pf < ps { (if f < 0.0 { -1.0 } else { 1.0 }, 0.0, pf) } else { (0.0, if s < 0.0 { -1.0 } else { 1.0 }, ps) }
+                }
+            }
+        };
+        Some((ahead * along + side * across) * depth * block)
+    }
 }
 
 /// Élevage d'une espèce : nourrie de ce qu'elle aime, une bête sauvage finit par s'apprivoiser ;
@@ -172,6 +380,151 @@ pub struct CreatureAttack {
     /// Elle lâche sa cible à tant de blocs de là où la poursuite a commencé, et y revient
     #[serde(default)]
     pub leash: Option<f32>,
+    /// Tir à distance (tourelle, bastion, liche) : la bête vise de loin au lieu de s'approcher, et
+    /// frappe au contact seulement si sa cible est à portée de `reach`
+    #[serde(default)]
+    pub shot: Option<CreatureShot>,
+    /// Piège : la première cible à portée de `reach` le déclenche ; il explose sur tout ennemi
+    /// proche, puis disparaît
+    #[serde(default)]
+    pub burst: Option<CreatureBurst>,
+    /// Son coup ralentit le joueur touché : `[part de la vitesse perdue, secondes]`
+    #[serde(default)]
+    pub slow: Option<[f32; 2]>,
+    /// Son coup étourdit le joueur touché tant de secondes
+    #[serde(default)]
+    pub stun: Option<f32>,
+    /// Son coup repousse le joueur touché : vitesse de départ, en blocs par seconde
+    #[serde(default)]
+    pub knockback: Option<f32>,
+    /// Type de ses coups (physiques par défaut)
+    #[serde(default)]
+    pub kind: DamageKind,
+}
+
+/// La garde d'une espèce (`CreatureSpecies::guard`)
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureGuard {
+    /// Part des dégâts retirée aux coups de face (0,6 : 60 %)
+    pub block: f32,
+    /// Angle couvert devant elle, en degrés
+    #[serde(default = "default_guard_arc")]
+    pub arc: f32,
+}
+
+fn default_guard_arc() -> f32 {
+    120.0
+}
+
+/// L'explosion d'un piège
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureBurst {
+    /// Rayon, en blocs : chaque ennemi dans ce rayon autour du piège prend les dégâts de l'attaque
+    pub radius: f32,
+    /// Secondes pendant lesquelles les ennemis touchés restent immobilisés
+    #[serde(default)]
+    pub stun: f32,
+    /// Effet visuel de l'explosion (`assets/effects/`)
+    #[serde(default)]
+    pub effect: Option<String>,
+    /// Saignement des ennemis touchés : points de vie perdus chaque seconde, pendant
+    /// `bleed_seconds` secondes
+    #[serde(default)]
+    pub bleed: f32,
+    #[serde(default)]
+    pub bleed_seconds: f32,
+    /// Ce que le piège fait apparaître en se déclenchant, autour de lui (les mines de
+    /// l'Éradication Ciblée)
+    #[serde(default)]
+    pub spawn: Option<BurstSpawn>,
+}
+
+/// Les entités qu'un piège fait apparaître en se déclenchant (`CreatureBurst::spawn`) : elles sont
+/// au même invocateur que lui
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BurstSpawn {
+    /// Espèce (identifiant de son fichier)
+    pub species: String,
+    #[serde(default = "one")]
+    pub count: u32,
+    /// Secondes avant qu'elles disparaissent si rien ne les déclenche
+    #[serde(default = "default_spawn_seconds")]
+    pub seconds: f32,
+}
+
+fn default_spawn_seconds() -> f32 {
+    10.0
+}
+
+/// Aimant (Piège Magnétique) : les ennemis à moins de `radius` blocs sont tirés vers lui
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureMagnet {
+    pub radius: f32,
+    /// Vitesse à laquelle il les tire, en blocs par seconde, au bord de son rayon (moins près de lui)
+    pub speed: f32,
+}
+
+/// Un tir à distance : un projectile part de la bête vers sa cible, et touche à son arrivée
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureShot {
+    /// Portée, en blocs
+    pub range: f32,
+    /// Points de vie retirés à chaque cible touchée (sinon ceux de l'attaque)
+    #[serde(default)]
+    pub damage: Option<f32>,
+    /// Vitesse du projectile, en blocs par seconde (0 : tout de suite, comme un jet de flammes)
+    #[serde(default)]
+    pub speed: f32,
+    /// Rayon de l'explosion, en blocs : chaque ennemi dans ce rayon autour de la cible est touché
+    /// (0 : la cible seule)
+    #[serde(default)]
+    pub radius: f32,
+    /// Hauteur d'où part le tir, en blocs au-dessus des pieds
+    #[serde(default = "one_f32")]
+    pub height: f32,
+    /// Effets visuels (`assets/effects/`) : à la bouche du tir, tourné vers la cible ; le long du
+    /// trajet ; à l'arrivée
+    #[serde(default)]
+    pub muzzle: Option<String>,
+    #[serde(default)]
+    pub projectile: Option<String>,
+    #[serde(default)]
+    pub impact: Option<String>,
+    /// Le tir traverse : chaque ennemi à moins de tant de blocs de sa trajectoire est touché
+    /// (0 : il s'arrête sur sa cible)
+    #[serde(default)]
+    pub pierce: f32,
+    /// Petit (déviable) ou gros ; par défaut petit, sauf s'il explose
+    #[serde(default)]
+    pub size: Option<ProjectileSize>,
+}
+
+impl CreatureShot {
+    /// Sa taille, telle qu'écrite ou devinée (un tir qui explose est gros)
+    pub fn size(&self) -> ProjectileSize {
+        self.size.unwrap_or(if self.radius > 0.0 { ProjectileSize::Large } else { ProjectileSize::Small })
+    }
+
+    /// Durée du trajet d'un tir de `from` à `to`, en secondes (`block` : taille d'un bloc)
+    pub fn flight_seconds(&self, from: Vec3, to: Vec3, block: f32) -> f32 {
+        if self.speed > 0.0 { from.distance(to) / (self.speed * block) } else { 0.0 }
+    }
+}
+
+/// Un tir de créature, pour le montrer aux joueurs
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CreatureShotEvent {
+    pub creature_id: u64,
+    /// Rang de l'espèce du tireur dans le registre
+    pub species: u32,
+    /// Bouche du tir et point d'arrivée
+    pub from: Vec3,
+    pub to: Vec3,
 }
 
 /// Volume du corps, en blocs
@@ -345,6 +698,9 @@ pub enum CreatureAction {
     Attaque,
     /// Inactivité : rang dans `CreatureSpecies::pauses`
     Pause(u8),
+    /// Elle apparaît (entité invoquée qui se déplie ou surgit du sol) : avancée de 0 à 255 de son
+    /// animation `apparition`, jouée une seule fois
+    Apparition(u8),
 }
 
 impl CreatureAction {
@@ -356,6 +712,7 @@ impl CreatureAction {
             Self::Course => "course",
             Self::Attaque => "attaque",
             Self::Pause(i) => species.pauses().nth(i as usize).map_or("repos", |(name, _)| name),
+            Self::Apparition(_) => "apparition",
         }
     }
 }
@@ -572,7 +929,15 @@ pub struct CreatureState {
     pub scale: f32,
     /// Humeur d'élevage, en bits `MOOD_*`
     pub mood: u8,
+    /// Joueur qui l'a invoquée (compétence)
+    pub summoner: Option<u64>,
+    /// Copie d'une autre allure : celle de son invocateur (`COPY_SUMMONER`) ou celle d'une espèce
+    /// (son rang dans le registre), teinte comprise
+    pub copy: Option<u32>,
 }
+
+/// `CreatureState::copy` : elle a l'allure de son invocateur
+pub const COPY_SUMMONER: u32 = u32::MAX;
 
 /// Des cœurs flottent au-dessus d'elle (amoureuse, ou tout juste apprivoisée)
 pub const MOOD_HEARTS: u8 = 1;
@@ -595,6 +960,23 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_disc_is_pushed_out_of_a_wall_across_its_nearest_side() {
+        let feet = Vec3::new(0.0, 0.0, 100.0);
+        let (east, north) = crate::math::tangent_frame(feet.normalize());
+        let wall = Collider { shape: CollisionShape::Box, half_width: 2.0, half_length: 0.5, height: 3.0, resistance: 1.0 };
+        // Cap nord : le mur est large d'est en ouest, mince du nord au sud
+        let out = wall.separation(feet, 0.0, 1.0, feet + north * 0.6 + east * 1.5, 0.3, 1.8).expect("il touche le mur");
+        assert!((out.dot(north) - 0.2).abs() < 1e-3 && out.dot(east).abs() < 1e-3, "{out}");
+        assert!(wall.separation(feet, 0.0, 1.0, feet + north * 0.9, 0.3, 1.8).is_none(), "trop loin");
+        assert!(wall.separation(feet, 0.0, 1.0, feet + feet.normalize() * 3.5 + north * 0.6, 0.3, 1.8).is_none(), "au-dessus");
+        // Tourné d'un quart de tour, c'est l'inverse
+        assert!(wall.separation(feet, std::f32::consts::FRAC_PI_2, 1.0, feet + north * 1.5, 0.3, 1.8).is_some());
+        let disc = Collider { shape: CollisionShape::Circle, half_width: 0.5, half_length: 0.5, height: 1.0, resistance: 0.5 };
+        let out = disc.separation(feet, 0.0, 1.0, feet + east * 0.6, 0.3, 1.8).unwrap();
+        assert!((out.dot(east) - 0.2).abs() < 1e-3);
+    }
 
     #[test]
     fn test_bundled_species_load() {
@@ -661,5 +1043,53 @@ mod tests {
         assert!(CreatureSpecies::parse("cube", &unknown).is_err());
         let harmless = wolf.replace(r#""damage": 4"#, r#""damage": 0"#);
         assert!(CreatureSpecies::parse("cube", &harmless).is_err());
+    }
+}
+
+/// Qui a tiré un projectile
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Shooter {
+    /// Une créature : identifiant, rang de son espèce dans le registre
+    Creature { id: u64, species: u32 },
+    /// Un joueur, par une compétence
+    Player(u64),
+}
+
+/// Pourquoi un projectile s'arrête
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProjectileEnd {
+    /// Sur une cible
+    Hit,
+    /// Sur un mur ou une garde
+    Blocked,
+    /// Sur le relief
+    Terrain,
+    /// Au bout de sa portée
+    Range,
+}
+
+/// La vie d'un projectile, pour la montrer aux joueurs : le client fait voler le tir en ligne droite
+/// entre deux événements
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ProjectileEvent {
+    Launch {
+        id: u64,
+        shooter: Shooter,
+        /// La compétence, pour un tir de joueur (vide sinon)
+        skill: String,
+        from: Vec3,
+        /// Vitesse, en unités du monde par seconde
+        velocity: Vec3,
+    },
+    /// Il rebondit, est dévié ou corrige sa course vers sa cible
+    Turn { id: u64, at: Vec3, velocity: Vec3 },
+    End { id: u64, at: Vec3, reason: ProjectileEnd },
+}
+
+impl ProjectileEvent {
+    pub fn id(&self) -> u64 {
+        match self {
+            Self::Launch { id, .. } | Self::Turn { id, .. } | Self::End { id, .. } => *id,
+        }
     }
 }

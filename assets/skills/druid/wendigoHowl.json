@@ -1,0 +1,48 @@
+{
+  "name": "Hurlement Glacial",
+  "description": "Clic droit du Wendigo : un cri qui glace et fait saigner les ennemis proches.",
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 7,
+    "animation": "shout",
+    "area": {
+      "circle": {
+        "radius": 5
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "slow": {
+          "strength": 0.5,
+          "duration": 3
+        }
+      },
+      {
+        "over_time": {
+          "damage": [
+            3,
+            4,
+            5
+          ],
+          "duration": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "roarWave",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "slowFrost",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

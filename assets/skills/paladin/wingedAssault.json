@@ -1,0 +1,62 @@
+{
+  "name": "Assaut Ailé",
+  "description": "Charge. Une charge fulgurante, bouclier en avant, pour percuter l'ennemi et réduire la distance.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 394
+  },
+  "cast": {
+    "cost": {
+      "stamina": 15
+    },
+    "cooldown": 8,
+    "animation": "charge",
+    "area": {
+      "line": {
+        "length": 6,
+        "width": 2
+      }
+    },
+    "movement": {
+      "dash": 6
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.0,
+            1.2,
+            1.4
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 5
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "featherGust",
+      "anchor": "body",
+      "from": "start"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

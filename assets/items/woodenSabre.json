@@ -2,6 +2,7 @@
   "numeric_id": 16555,
   "name": "Sabre en bois",
   "category": "Armes",
+  "weapon": {"kind": "sword", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/woodenSabre.png",
   "stats": {"Dégâts": 3, "Durabilité": 80},

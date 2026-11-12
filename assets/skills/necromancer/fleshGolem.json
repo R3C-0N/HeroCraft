@@ -1,0 +1,56 @@
+{
+  "name": "Golem de Chair",
+  "description": "Défense. Amalgame de cadavres très lent, incapable d'esquiver, mais encaissant des dégâts colossaux à ta place.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.625,
+    "requires": [
+      "boneWall"
+    ],
+    "max_rank": 3,
+    "planner": 218
+  },
+  "cast": {
+    "cost": {
+      "mana": 40
+    },
+    "cooldown": 40,
+    "animation": "summon",
+    "area": {
+      "circle": {
+        "radius": 2,
+        "center": "aimed",
+        "distance": 6
+      }
+    },
+    "targets": "allies",
+    "effects": [
+      {
+        "summon": {
+          "species": "fleshGolem",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            40,
+            50,
+            60
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "summonPortal",
+      "anchor": "aimed",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "bloodSplash",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
+}

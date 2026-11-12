@@ -17,7 +17,7 @@ const WAIT: Duration = Duration::from_secs(10);
 
 fn connect(addr: &str, name: &str) -> (Client, u64, u32) {
     let client = Client::connect(addr, WAIT).unwrap();
-    client.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION });
+    client.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
     match client.recv_timeout(WAIT).unwrap() {
         ServerPacket::ConnectAck { player_id, world_seed, edited_chunks, .. } => {
             assert_eq!(world_seed, 4242);
@@ -86,7 +86,7 @@ fn deux_joueurs_partagent_les_blocs_et_les_positions() {
 
     // Un deuxième « Alice » est refusé
     let dup = Client::connect(&addr, WAIT).unwrap();
-    dup.send(&ClientPacket::Connect { player_name: "alice".into(), protocol_version: PROTOCOL_VERSION });
+    dup.send(&ClientPacket::Connect { player_name: "alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
     assert!(matches!(dup.recv_timeout(WAIT).unwrap(), ServerPacket::Disconnect(_)));
 
     // Sans position connue, Alice ne peut rien casser : le serveur lui renvoie le vrai bloc
@@ -171,7 +171,7 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
     let (_, feet) = land(&server);
 
     let alice = Client::connect(&addr, WAIT).unwrap();
-    alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
+    alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
     pump(&mut server, &alice, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
     alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
     let deadline = Instant::now() + WAIT;
@@ -188,7 +188,9 @@ fn les_creatures_proches_sont_montrees_au_joueur() {
         _ => None,
     });
     assert_eq!(species, "vache");
-    assert!(state.position.distance(feet) < 1e-3);
+    // À ses pieds, ou poussée d'un pas par le corps d'Alice
+    let block = BlockGeometry::new(herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 4242, ..Default::default() }).base_radius()).block_height as f32;
+    assert!(state.position.distance(feet) < block);
     pump(&mut server, &alice, |p| match p {
         ServerPacket::CreatureStates(states) => states.into_iter().find(|s| s.creature_id == sheep),
         _ => None,
@@ -221,7 +223,7 @@ fn une_bete_morte_reste_a_terre_et_se_depece() {
     let addr = server.local_addr().unwrap().to_string();
     let (_, feet) = land(&server);
     let alice = Client::connect(&addr, WAIT).unwrap();
-    alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
+    alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
     pump(&mut server, &alice, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
     alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
     let deadline = Instant::now() + WAIT;
@@ -269,11 +271,11 @@ fn l_experience_donne_des_points_que_la_roue_juge() {
     let mut server = test_server();
     let addr = server.local_addr().unwrap().to_string();
     let client = Client::connect(&addr, WAIT).unwrap();
-    client.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION });
+    client.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
     pump(&mut server, &client, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
 
     // Sans point, la roue refuse : les statistiques reviennent inchangées
-    client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
+    client.send(&ClientPacket::LearnSkill { id: "heavyStrike".into() });
     let stats = pump(&mut server, &client, |p| match p {
         ServerPacket::StatsUpdate(stats) => Some(stats),
         _ => None,
@@ -284,21 +286,66 @@ fn l_experience_donne_des_points_que_la_roue_juge() {
     client.send(&ClientPacket::GainExperience(300));
     pump(&mut server, &client, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.skill_points == 2).then_some(()));
 
-    client.send(&ClientPacket::LearnSkill { id: "frappeLourde".into() });
+    client.send(&ClientPacket::LearnSkill { id: "heavyStrike".into() });
     let stats = pump(&mut server, &client, |p| match p {
         ServerPacket::StatsUpdate(stats) if stats.skill_points < 2 => Some(stats),
         _ => None,
     });
-    assert_eq!(stats.skills.get("frappeLourde"), Some(&1));
+    assert_eq!(stats.skills.get("heavyStrike"), Some(&1));
     // Tornade écrasante est une fusion du niveau 2 : refusée, le point reste
-    client.send(&ClientPacket::LearnSkill { id: "tornadeEcrasante".into() });
+    client.send(&ClientPacket::LearnSkill { id: "crushingTornado".into() });
     server.tick(1.0 / 60.0);
     let stats = pump(&mut server, &client, |p| match p {
         ServerPacket::StatsUpdate(stats) => Some(stats),
         _ => None,
     });
     assert_eq!(stats.skill_points, 1);
-    assert!(!stats.skills.contains_key("tornadeEcrasante"));
+    assert!(!stats.skills.contains_key("crushingTornado"));
+}
+
+#[test]
+fn une_competence_se_lance_frappe_et_se_recharge() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let client = Client::connect(&addr, WAIT).unwrap();
+    client.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
+    let me = pump(&mut server, &client, |p| match p {
+        ServerPacket::ConnectAck { player_id, .. } => Some(player_id),
+        _ => None,
+    });
+    let feet = Vec3::new(0.0, 1000.0, 0.0);
+    client.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
+
+    // Pas apprise : refusée
+    client.send(&ClientPacket::CastSkill { skill: "judgment".into(), aim: Vec3::NEG_Z, aimed: None });
+    let reason = pump(&mut server, &client, |p| match p {
+        ServerPacket::SkillRefused { reason, .. } => Some(reason),
+        _ => None,
+    });
+    assert!(reason.contains("pas apprise"), "{reason}");
+
+    client.send(&ClientPacket::GainExperience(100));
+    client.send(&ClientPacket::LearnSkill { id: "judgment".into() });
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.skills.contains_key("judgment")).then_some(()));
+    client.send(&ClientPacket::CastSkill { skill: "judgment".into(), aim: Vec3::NEG_Z, aimed: None });
+    let (caster, rank) = pump(&mut server, &client, |p| match p {
+        ServerPacket::SkillCast { player_id, rank, .. } => Some((player_id, rank)),
+        _ => None,
+    });
+    assert_eq!((caster, rank), (me, 1));
+    // La frappe arrive à l'impact du geste
+    let center = pump(&mut server, &client, |p| match p {
+        ServerPacket::SkillHit { center, .. } => Some(center),
+        _ => None,
+    });
+    assert!(center.distance(feet) < 1e-3, "Jugement frappe aux pieds du lanceur");
+    // Relancée aussitôt : pas encore rechargée
+    client.send(&ClientPacket::CastSkill { skill: "judgment".into(), aim: Vec3::NEG_Z, aimed: None });
+    let reason = pump(&mut server, &client, |p| match p {
+        ServerPacket::SkillRefused { reason, .. } => Some(reason),
+        _ => None,
+    });
+    assert!(reason.contains("rechargée"), "{reason}");
 }
 
 #[test]
@@ -316,6 +363,7 @@ fn la_legende_donne_sa_voie_et_une_legende_truquee_est_refusee() {
     });
 
     let (client, _, _) = connect(&addr, "Bran");
+    let (ami, _, _) = connect(&addr, "Ami");
     let mut appearance = atlas().defaut("gnome");
     appearance.nom = "Brandin".into();
     // Un gnome de deux mètres n'existe pas : le serveur ne change rien
@@ -329,6 +377,14 @@ fn la_legende_donne_sa_voie_et_une_legende_truquee_est_refusee() {
         _ => None,
     });
     assert_eq!(class, PlayerClass::Druid);
+    // Les autres joueurs reçoivent son allure pour dessiner son héros, ceux qui arrivent après aussi
+    let seen = |c: &Client| wait_for(c, |p| match p {
+        ServerPacket::PlayerAppearance { appearance, .. } => Some(appearance.nom),
+        _ => None,
+    });
+    assert_eq!(seen(&ami), "Brandin");
+    let (tard, _, _) = connect(&addr, "Tard");
+    assert_eq!(seen(&tard), "Brandin");
 
     running.store(false, Ordering::SeqCst);
     server_thread.join().unwrap();
@@ -342,7 +398,7 @@ fn le_chat_et_les_commandes_passent_par_le_serveur() {
 
     let join = |server: &mut Server, name: &str| {
         let client = Client::connect(&addr, WAIT).unwrap();
-        client.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION });
+        client.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
         pump(server, &client, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
         client
     };
@@ -434,4 +490,136 @@ fn le_serveur_accepte_le_labour_et_le_semis() {
 
     running.store(false, Ordering::Relaxed);
     server_thread.join().unwrap();
+}
+
+#[test]
+fn un_tir_fantome_teleporte_son_lanceur_dans_le_dos_de_la_cible() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let (_, feet) = land(&server);
+    let client = Client::connect(&addr, WAIT).unwrap();
+    client.send(&ClientPacket::Connect { player_name: "Ombre".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
+    client.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
+    client.send(&ClientPacket::GainExperience(100_000));
+    for skill in ["quickShot", "shardShot", "shadowVeil", "ambush", "phantomShot"] {
+        client.send(&ClientPacket::LearnSkill { id: skill.into() });
+    }
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.skills.contains_key("phantomShot")).then_some(()));
+    // Une vache trois blocs devant, sur le même sol
+    let block = server.creatures().block_size();
+    let up = feet.normalize();
+    let ahead = Vec3::X - up * Vec3::X.dot(up);
+    let ahead = ahead.normalize();
+    let cow = server.spawn_creature("vache", (feet + ahead * 3.0 * block).normalize() * feet.length()).expect("une vache");
+    server.tick(1.0 / 60.0);
+
+    client.send(&ClientPacket::CastSkill { skill: "phantomShot".into(), aim: ahead, aimed: None });
+    let (arrival, look) = pump(&mut server, &client, |p| match p {
+        ServerPacket::SkillMove(herocraft_common::skills::SkillMove::Teleport { feet, look }) => Some((feet, look)),
+        ServerPacket::SkillRefused { reason, .. } => panic!("refusé : {reason}"),
+        _ => None,
+    });
+    let at = server.creatures().creatures().iter().find(|c| c.id == cow).unwrap().position;
+    // Dans son dos, vu du lanceur : plus loin que la vache, à un bloc et demi d'elle
+    assert!(arrival.distance(feet) > at.distance(feet), "arrivée {arrival}, vache {at}");
+    assert!((arrival.distance(at) / block - 1.5).abs() < 0.3, "à {} blocs de la vache", arrival.distance(at) / block);
+    assert!(look.dot(at - arrival) > 0.0, "tourné vers elle");
+}
+
+#[test]
+fn une_parade_bloque_le_coup_d_une_bete_et_riposte() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let (_, feet) = land(&server);
+    let client = Client::connect(&addr, WAIT).unwrap();
+    client.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
+    let me = pump(&mut server, &client, |p| match p {
+        ServerPacket::ConnectAck { player_id, .. } => Some(player_id),
+        _ => None,
+    });
+    client.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
+    // Deux points : Brise-Garde, que la Parade Absolue demande, puis elle
+    client.send(&ClientPacket::GainExperience(300));
+    client.send(&ClientPacket::LearnSkill { id: "guardBreaker".into() });
+    client.send(&ClientPacket::LearnSkill { id: "absoluteParry".into() });
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.skills.contains_key("absoluteParry")).then_some(()));
+
+    // Un rampant contre elle : son premier coup porte
+    let block = BlockGeometry::new(herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 4242, ..Default::default() }).base_radius()).block_height as f32;
+    let up = feet.normalize();
+    let side = up.any_orthonormal_vector();
+    let brute = server.spawn_creature("rampant", feet + side * 2.0 * block).expect("espèce rampant");
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::PlayerHurt { .. }).then_some(()));
+
+    // Alice lève sa garde avant le coup suivant (le rampant frappe toutes les 1,4 s)
+    while client.try_recv().expect("connexion fermée").is_some() {}
+    client.send(&ClientPacket::CastSkill { skill: "absoluteParry".into(), aim: side, aimed: None });
+    let (creatures, hurt) = {
+        let mut hurt = false;
+        let found = pump(&mut server, &client, |p| match p {
+            ServerPacket::PlayerHurt { .. } => {
+                hurt = true;
+                None
+            }
+            ServerPacket::SkillHit { player_id, skill, creatures, parried: true, .. } if player_id == me && skill == "absoluteParry" => Some(creatures),
+            _ => None,
+        });
+        (found, hurt)
+    };
+    assert!(!hurt, "le coup paré ne blesse pas");
+    assert!(creatures.contains(&brute), "la riposte renvoie le coup au rampant");
+}
+
+#[test]
+fn l_arbalete_tire_un_carreau_puis_recharge() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let (_, feet) = land(&server);
+    let alice = Client::connect(&addr, WAIT).unwrap();
+    alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
+    let me = pump(&mut server, &alice, |p| match p {
+        ServerPacket::ConnectAck { player_id, .. } => Some(player_id),
+        _ => None,
+    });
+    let crossbow = herocraft_common::items().find("handCrossbow").unwrap();
+    let bolt = herocraft_common::items().find("ironBolt").unwrap();
+    let arrow = herocraft_common::items().find("ironArrow").unwrap();
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: Some(crossbow.0) });
+    let deadline = Instant::now() + WAIT;
+    while server.players().all(|p| p.position.is_none()) {
+        assert!(Instant::now() < deadline, "position d'Alice non reçue");
+        server.tick(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let block = BlockGeometry::new(herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 4242, ..Default::default() }).base_radius()).block_height as f32;
+    let north = herocraft_common::tangent_frame(feet.normalize()).1;
+    let shots = |server: &mut Server, alice: &Client, ticks: usize| {
+        let mut seen = Vec::new();
+        for _ in 0..ticks {
+            server.tick(1.0 / 60.0);
+            std::thread::sleep(Duration::from_millis(1));
+            while let Some(packet) = alice.try_recv().expect("connexion fermée") {
+                if let ServerPacket::PlayerShot { player_id, target, .. } = packet {
+                    seen.push((player_id, target));
+                }
+            }
+        }
+        seen
+    };
+
+    // Prise en main, elle se charge d'abord : le tir est ignoré
+    alice.send(&ClientPacket::Shoot { aim: north, ammo: bolt.0 });
+    assert!(shots(&mut server, &alice, 10).is_empty(), "l'arbalète n'est pas encore chargée");
+    shots(&mut server, &alice, 60);
+    // Une flèche ne va pas dans une arbalète
+    alice.send(&ClientPacket::Shoot { aim: north, ammo: arrow.0 });
+    assert!(shots(&mut server, &alice, 10).is_empty(), "une flèche dans une arbalète");
+    // Chargée : le carreau part et touche la vache
+    let cow = server.spawn_creature("vache", feet + north * 6.0 * block).expect("espèce vache");
+    alice.send(&ClientPacket::Shoot { aim: north, ammo: bolt.0 });
+    assert_eq!(shots(&mut server, &alice, 10), vec![(me, Some(cow))]);
+    // Aussitôt après : elle recharge, le tir est ignoré
+    alice.send(&ClientPacket::Shoot { aim: north, ammo: bolt.0 });
+    assert!(shots(&mut server, &alice, 10).is_empty(), "tir trop rapide accepté");
 }

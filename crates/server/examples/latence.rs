@@ -14,7 +14,7 @@ type Client = Connection<ClientPacket, ServerPacket>;
 
 fn connect(addr: &str, name: &str) -> Client {
     let c = Client::connect(addr, Duration::from_secs(5)).unwrap();
-    c.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION });
+    c.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
     c
 }
 

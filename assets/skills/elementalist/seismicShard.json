@@ -1,0 +1,56 @@
+{
+  "name": "Éclat Sismique",
+  "description": "Projette un rocher lourd et perforant.",
+  "cast": {
+    "cost": {
+      "mana": 12
+    },
+    "cooldown": 6,
+    "animation": "throw",
+    "area": {
+      "line": {
+        "length": 14,
+        "width": 1.5
+      }
+    },
+    "projectile": {
+      "speed": 25,
+      "size": "large",
+      "pierce": 2
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.4,
+            1.6,
+            1.8
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "rockShard",
+      "anchor": "projectile",
+      "from": "impact"
+    },
+    {
+      "effect": "groundBurst",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
+    }
+  ]
+}

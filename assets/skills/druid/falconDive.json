@@ -1,0 +1,43 @@
+{
+  "name": "Piqué",
+  "description": "Clic droit du Faucon Pèlerin : il fond sur sa cible en piqué.",
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 5,
+    "animation": "leap",
+    "area": {
+      "circle": {
+        "radius": 2.5
+      }
+    },
+    "movement": {
+      "leap": 6
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.8,
+            2.1,
+            2.4
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "featherGust",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

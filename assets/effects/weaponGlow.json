@@ -1,0 +1,29 @@
+{
+  "description": "L'arme tenue s'illumine.",
+  "layers": [
+    {
+      "shape": "sprite",
+      "loop": true,
+      "size": 0.9,
+      "color": ["#FFE9A8CC", "#FFE9A8CC"],
+      "glow": 2.5,
+      "texture": "soft.png"
+    },
+    {
+      "loop": true,
+      "particles": {
+        "rate": 30,
+        "origin": "line",
+        "origin_length": 0.9,
+        "direction": "random",
+        "speed": [0.1, 0.4],
+        "gravity": -0.5,
+        "life": [0.3, 0.6],
+        "size": [0.06, 0.0],
+        "color": ["#FFF6D0", "#FFC86000"],
+        "glow": 3,
+        "texture": "spark.png"
+      }
+    }
+  ]
+}

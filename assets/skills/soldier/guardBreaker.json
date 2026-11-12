@@ -1,0 +1,70 @@
+{
+  "name": "Brise-Garde",
+  "description": "Garde. Une frappe de bas en haut utilisant tout le poids du corps pour briser la posture et la parade de la cible.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 347
+  },
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 6,
+    "animation": "overheadStrike",
+    "area": {
+      "arc": {
+        "range": 3,
+        "angle": 70
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.2,
+            1.4,
+            1.6
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": [
+            0.8,
+            1,
+            1.2
+          ]
+        }
+      },
+      {
+        "break_guard": {
+          "duration": 4
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

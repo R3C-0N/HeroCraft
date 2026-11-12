@@ -1,0 +1,51 @@
+{
+  "name": "Éradication Ciblée",
+  "description": "Mine à Éclats + Piège à Mâchoire. Dès qu'un ennemi est immobilisé par le piège, cela déclenche le largage automatique de trois mines à éclats tout autour de lui pour une explosion mortelle.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "magneticTrap",
+      "flameTurret"
+    ],
+    "max_rank": 3,
+    "planner": 313
+  },
+  "cast": {
+    "cost": {
+      "stamina": 35
+    },
+    "cooldown": 20,
+    "animation": "throw",
+    "area": {
+      "circle": {
+        "radius": [
+          3,
+          3.5,
+          4
+        ],
+        "center": "aimed",
+        "distance": 8
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "summon": {
+          "species": "eradicationTrap",
+          "at": "aimed",
+          "limit": 1,
+          "duration": 30
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "dustPuff",
+      "anchor": "aimed",
+      "from": "impact"
+    }
+  ]
+}

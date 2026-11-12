@@ -1,0 +1,73 @@
+{
+  "name": "Nuage Toxique",
+  "description": "Carreau Empoisonné + Écran de Fumée. Le carreau libère un vaste brouillard empoisonné et opaque qui étouffe les ennemis pris dedans.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "grappleBolt",
+      "smokeScreen"
+    ],
+    "max_rank": 3,
+    "planner": 267
+  },
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 18,
+    "animation": "crossbowShot",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ],
+        "center": "aimed",
+        "distance": 12
+      }
+    },
+    "zone": {
+      "duration": 8
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "over_time": {
+          "damage": [
+            6,
+            7,
+            8
+          ],
+          "duration": 8
+        }
+      },
+      {
+        "slow": {
+          "strength": 0.4,
+          "duration": 8
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "arrowTrail",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "poisonCloud",
+      "anchor": "area",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "shadowSmoke",
+      "anchor": "area",
+      "from": "impact"
+    }
+  ]
+}

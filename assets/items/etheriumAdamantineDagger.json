@@ -2,6 +2,7 @@
   "numeric_id": 16433,
   "name": "Dague d'étherium (adamantine)",
   "category": "Armes",
+  "weapon": {"kind": "dagger", "interval": 0.25},
   "max_stack": 1,
   "icon": "icones/etheriumAdamantineDagger.png",
   "stats": {"Dégâts": 22, "Durabilité": 5000},

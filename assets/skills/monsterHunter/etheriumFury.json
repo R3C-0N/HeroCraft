@@ -1,0 +1,92 @@
+{
+  "name": "Fureur d'Étherium",
+  "description": "Compétence ultime. Tu enduis la lame de ton épée et les carreaux de ton arbalète d'Étherium pur. Le temps d'action est drastiquement réduit : tes coups d'épée libèrent des ondes d'énergie massives et chaque tir traverse tous les obstacles sur la carte, broyant n'importe quel monstre sur ton passage.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "deadlyDance",
+      "deathblow",
+      "lightningAssault"
+    ],
+    "max_rank": 3,
+    "planner": 329
+  },
+  "cast": {
+    "cost": {
+      "stamina": 60
+    },
+    "cooldown": 120,
+    "animation": "spin",
+    "area": {
+      "circle": {
+        "radius": 6
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": 3
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "damage",
+          "value": 1.0,
+          "duration": 15,
+          "rider": {
+            "radius": 3,
+            "effects": [
+              {
+                "damage": {
+                  "power": 1.2
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "buff": {
+          "stat": "attack_speed",
+          "value": 0.6,
+          "duration": 15
+        }
+      },
+      {
+        "buff": {
+          "stat": "speed",
+          "value": 0.4,
+          "duration": 15
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "name": "Barricade Portative",
+  "description": "Module de l'Ingénieur déplié en un large mur d'acier.",
+  "armor": 100,
+  "resist": 50,
+  "body": {
+    "half_width": 1.41,
+    "half_length": 0.52,
+    "height": 1.51
+  },
+  "walk_speed": 0,
+  "health": 150,
+  "activity": "always",
+  "model": {
+    "mesh": "../skills/models/portableBarricade.gltf",
+    "texture": "../skills/models/portableBarricade.png",
+    "animations": {
+      "apparition": {
+        "clip": "unfold",
+        "cycle": 0.7
+      },
+      "coup": {
+        "os": {
+          "root": {
+            "rotation": [
+              0,
+              0,
+              3
+            ],
+            "frequence": 2
+          }
+        }
+      },
+      "repos": {
+        "cycle": 2
+      }
+    }
+  },
+  "collision": {
+    "shape": "box",
+    "resistance": 1
+  },
+  "obstacle": {
+    "shots": true
+  }
+}

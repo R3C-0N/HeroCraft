@@ -1,0 +1,58 @@
+{
+  "name": "Lame d'Air",
+  "description": "Projectile. Tu fends l'air avec ton sabre pour envoyer un projectile tranchant magique à moyenne portée.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.375,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 332
+  },
+  "cast": {
+    "cost": {
+      "stamina": 10
+    },
+    "cooldown": 4,
+    "animation": "sweep",
+    "area": {
+      "line": {
+        "length": 10,
+        "width": 1.5
+      }
+    },
+    "projectile": {
+      "speed": 35
+    },
+    "targets": "enemies",
+    "kind": "magical",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.1,
+            1.3,
+            1.5
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "windBlades",
+      "anchor": "projectile",
+      "from": "impact"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
+    }
+  ]
+}

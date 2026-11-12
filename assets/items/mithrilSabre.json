@@ -2,6 +2,7 @@
   "numeric_id": 16512,
   "name": "Sabre de mithril",
   "category": "Armes",
+  "weapon": {"kind": "sword", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/mithrilSabre.png",
   "stats": {"Dégâts": 16, "Durabilité": 3000},

@@ -10,6 +10,26 @@ python3 tools/modeles_competences/construire.py
 
 Les formes du Druide et les créatures invoquées par le Nécromancien sont des espèces comme les autres (fiche, glTF, texture, animations par os : voir `assets/creatures/README.md`). Elles n'ont pas de champ `spawn` : elles n'apparaissent jamais seules, seule une compétence les fait venir.
 
+Une compétence les fait apparaître par l'effet `summon` de son bloc `cast` :
+
+```json
+{"summon": {"species": "skeletonServant", "count": [1, 2, 3], "at": "aimed", "duration": 45, "limit": [1, 2, 3]}}
+```
+
+| Champ | Rôle |
+|---|---|
+| `species` | L'espèce (`assets/creatures/<id>.json`). |
+| `count` | Combien à chaque lancement (1 par défaut), posées en cercle. |
+| `at` | `self` : aux pieds du lanceur ; `aimed` : au centre de la zone (le point visé). |
+| `duration` | Secondes avant qu'elles disparaissent ; sans : jusqu'à leur destruction. |
+| `limit` | Nombre au plus en même temps pour un lanceur : les plus anciennes disparaissent. |
+| `copies` | `caster` : elles prennent l'allure du lanceur ; `corpse` : une par cadavre de la zone, à sa place. |
+| `on_end` | Effets sur le lanceur quand chacune disparaît au bout de sa durée : les ombres de la Légion du Néant implosent en bouclier. |
+
+Les entités invoquées sont des alliées du lanceur ; elles disparaissent quand il quitte la partie et ne sont jamais sauvegardées. Le Chevalier de la Mort et le Seigneur Liche sont des créatures humanoïdes (`humanoid: true`) du même identifiant que leur entrée de `humanoids.json` : le client les dessine avec le corps du héros, leur planche et leur arme greffée dans la main droite, et ils frappent les monstres qui approchent. Les invocations jouent leur animation `apparition` (le mur qui surgit, la tourelle qui tombe) avant d'agir ; une attaque avec un champ `shot` (portée, vitesse, rayon d'explosion, effets `muzzle`, `projectile`, `impact`) tire à distance au lieu de frapper au contact : tourelles, bastion, orbes du Seigneur Liche. Une espèce avec `taunt` (rayon en blocs) attire sur elle les monstres proches : Chevalier de la Mort, leurres. Les pièges (`burst`) explosent sur le premier ennemi qui marche dessus, puis disparaissent ; les murs, de résistance 1 (`collision`), ne se traversent pas. Les autres joueurs voient les héros, leurs gestes et leurs greffes.
+
+Le champ `copies` de `summon` fait des copies : `caster` reprend la figure du lanceur (leurres du Voleur), `corpse` relève à leur place les cadavres de la zone (Légion du Néant).
+
 | Identifiant | Compétence | Os |
 |---|---|---|
 | `forestWolf` | Loup des Bois | `root`, `head`, `tail`, `legFR`, `legFL`, `legBR`, `legBL` |
@@ -25,6 +45,8 @@ Les formes du Druide et les créatures invoquées par le Nécromancien sont des 
 | `boneBehemoth` | Béhémoth d'Os | comme le loup |
 
 ## Objets posés (`*.gltf` de ce dossier)
+
+Tourelles, pièges, mines et murs sont eux aussi des entités : chacun a sa fiche d'espèce dans `assets/creatures/<identifiant>.json` (immobile, `walk_speed` 0, toujours éveillé), qui pointe vers le glTF de ce dossier (`../skills/models/<identifiant>.gltf`). Le repos est la pose finie du modèle (mur dressé, barricade dépliée).
 
 Même format que les créatures (glTF à squelette, données en base64, en blocs, y vers le haut, l'avant vers +z, posés sur le sol), avec leurs animations dans le glTF :
 
@@ -53,6 +75,8 @@ Les transformations partielles du Druide et les armes des invocations humanoïde
 | `elkLegs` | Jambes de l'Élan | `rightLeg`, `leftLeg`, `rightShin`, `leftShin` |
 | `galeFeathers` | Plumes de Bourrasque | bras, avant-bras et mains |
 | `runeblade`, `lichStaff` | armes des invocations humanoïdes | `rightHand` |
+
+Une compétence porte sa pièce par le champ `graft` de sa fiche (`"graft": "wolfPaw"`) : le héros la porte le temps du geste et de ses effets.
 
 ## Invocations humanoïdes (`humanoids.json`)
 

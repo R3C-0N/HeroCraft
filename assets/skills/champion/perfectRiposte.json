@@ -1,0 +1,65 @@
+{
+  "name": "Riposte parfaite",
+  "description": "Parade. Une parade au bouclier bien synchronisée déclenche un violent coup d'épée automatique.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.875,
+    "requires": [
+      "ironGuard"
+    ],
+    "max_rank": 3,
+    "planner": 369
+  },
+  "cast": {
+    "cost": {
+      "stamina": 18
+    },
+    "cooldown": 10,
+    "animation": "sweep",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "guard": {
+          "duration": 1.5,
+          "block": 1,
+          "arc": 120,
+          "hits": 1,
+          "counter": {
+            "radius": 1.5,
+            "effects": [
+              {
+                "damage": {
+                  "power": [
+                    1.6,
+                    1.9,
+                    2.2
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "parry"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "parry"
+    }
+  ]
+}

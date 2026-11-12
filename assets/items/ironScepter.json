@@ -2,6 +2,7 @@
   "numeric_id": 16498,
   "name": "Sceptre de fer",
   "category": "Armes",
+  "weapon": {"kind": "staff", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/ironScepter.png",
   "stats": {"Dégâts": 6, "Durabilité": 900},

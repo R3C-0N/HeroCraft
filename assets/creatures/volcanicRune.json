@@ -1,0 +1,70 @@
+{
+  "name": "Rune Volcanique",
+  "description": "Rune de braise gravée au sol par le Sorcier : elle éclate en pilier de feu au passage d'un ennemi.",
+  "body": {
+    "half_width": 0.9,
+    "half_length": 0.9,
+    "height": 0.15
+  },
+  "walk_speed": 0,
+  "health": 20,
+  "activity": "always",
+  "model": {
+    "mesh": "../skills/models/volcanicRune.gltf",
+    "texture": "../skills/models/volcanicRune.png",
+    "animations": {
+      "apparition": {
+        "cycle": 0.35,
+        "os": {
+          "root": {
+            "translation_fixe": [
+              0,
+              0.6,
+              0
+            ],
+            "translation": [
+              0,
+              0.6,
+              0
+            ],
+            "frequence": 0.5,
+            "phase": 0.25
+          }
+        }
+      },
+      "coup": {
+        "os": {
+          "root": {
+            "rotation": [
+              0,
+              0,
+              3
+            ],
+            "frequence": 2
+          }
+        }
+      },
+      "repos": {
+        "clip": "pulse",
+        "cycle": 1.4
+      }
+    }
+  },
+  "collision": {
+    "resistance": 0
+  },
+  "attack": {
+    "mode": "solo",
+    "damage": 12,
+    "cooldown": 1.0,
+    "sight": 2.5,
+    "reach": 0.5,
+    "hunts_players": false,
+    "burst": {
+      "radius": 3.0,
+      "effect": "fireExplosion",
+      "bleed": 3,
+      "bleed_seconds": 3
+    }
+  }
+}

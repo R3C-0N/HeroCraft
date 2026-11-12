@@ -1,0 +1,77 @@
+{
+  "name": "Contre dévastateur",
+  "description": "Brise-armure + Riposte parfaite. Tu encaisses volontairement une attaque lourde sur ton bouclier pour relâcher instantanément un coup d'épée circulaire massif qui fauche la zone.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "armorBreaker",
+      "perfectRiposte"
+    ],
+    "max_rank": 3,
+    "planner": 373
+  },
+  "cast": {
+    "cost": {
+      "stamina": 30
+    },
+    "cooldown": 16,
+    "animation": "spin",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "guard": {
+          "duration": 1.5,
+          "block": 1,
+          "arc": 120,
+          "hits": 1,
+          "reflect": 1,
+          "counter": {
+            "at": "self",
+            "radius": [
+              3.5,
+              4,
+              4.5
+            ],
+            "effects": [
+              {
+                "damage": {
+                  "power": [
+                    2.4,
+                    2.8,
+                    3.2
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "slashArc",
+      "anchor": "weapon",
+      "from": "parry"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "parry"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "parry"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "name": "Légion du Néant",
+  "description": "Compétence ultime. Tu plantes ton Bâton-lanterne d'âmes au sol et le surcharges avec l'énergie de la Pierre du néant. La réalité se déchire, transformant instantanément tous les cadavres de la zone (alliés comme ennemis) en ombres d'Étherium. Ces ombres sont totalement invulnérables, déchiquettent les ennemis survivants à une vitesse fulgurante, puis implosent en te conférant un bouclier de santé impénétrable.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "lichLord",
+      "boneBehemoth",
+      "soulStorm"
+    ],
+    "max_rank": 3,
+    "planner": 224
+  },
+  "cast": {
+    "cost": {
+      "mana": 90
+    },
+    "cooldown": 120,
+    "animation": "groundSlam",
+    "area": {
+      "circle": {
+        "radius": [
+          8,
+          9,
+          10
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "summon": {
+          "species": "etheriumShade",
+          "duration": [
+            8,
+            10,
+            12
+          ],
+          "copies": "corpse",
+          "on_end": [
+            {
+              "shield": {
+                "amount": [
+                  60,
+                  80,
+                  100
+                ],
+                "duration": 20
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "voidRift",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shadowSmoke",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    }
+  ]
+}

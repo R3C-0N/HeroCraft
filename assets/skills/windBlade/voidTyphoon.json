@@ -1,0 +1,83 @@
+{
+  "name": "Typhon du Néant",
+  "description": "Compétence ultime. Tu canalises la Pierre du néant directement dans la lame de ton sabre. Tu déclenches un coup d'une puissance colossale qui déchire l'espace lui-même. Une tornade géante d'Étherium noir avance sur le terrain, aspirant tous les ennemis sur son passage et les lacérant avec des milliers de coupures imblocables avant d'exploser.",
+  "wheel": {
+    "tier": 4,
+    "ring": 4.0,
+    "slot": 0.5,
+    "requires": [
+      "hurricaneDance",
+      "cuttingTempest",
+      "celestialExecution"
+    ],
+    "max_rank": 3,
+    "planner": 344
+  },
+  "cast": {
+    "cost": {
+      "stamina": 60
+    },
+    "cooldown": 120,
+    "animation": "overheadStrike",
+    "area": {
+      "line": {
+        "length": 20,
+        "width": 5
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "pull": {
+          "strength": 8
+        }
+      },
+      {
+        "damage": {
+          "power": [
+            4.5,
+            5.5,
+            6.5
+          ]
+        }
+      },
+      {
+        "over_time": {
+          "damage": 5,
+          "duration": 4
+        }
+      }
+    ],
+    "projectile": {
+      "speed": 10,
+      "size": "large",
+      "pierce": "all",
+      "through": [
+        "obstacles"
+      ]
+    }
+  },
+  "visuals": [
+    {
+      "effect": "etheriumAura",
+      "anchor": "body",
+      "from": "start",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "tornado",
+      "anchor": "aimed",
+      "from": "impact"
+    },
+    {
+      "effect": "voidRift",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    }
+  ]
+}

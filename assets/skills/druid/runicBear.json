@@ -1,0 +1,81 @@
+{
+  "name": "Ours Runique",
+  "description": "Ours. Transformation en tank massif qui encaisse les coups et renverse les ennemis avec son poids.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "bearHide"
+    ],
+    "max_rank": 3,
+    "planner": 202
+  },
+  "cast": {
+    "cost": {
+      "mana": 25
+    },
+    "cooldown": 40,
+    "animation": "shout",
+    "area": {
+      "circle": {
+        "radius": 3
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "knockback": {
+          "strength": 6
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "defense",
+          "value": [
+            0.4,
+            0.5,
+            0.6
+          ],
+          "duration": 20
+        }
+      },
+      {
+        "shield": {
+          "amount": [
+            40,
+            55,
+            70
+          ],
+          "duration": 20
+        }
+      },
+      {
+        "buff": {
+          "stat": "speed",
+          "value": -0.15,
+          "duration": 20
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "body",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ],
+  "form": "runicBear",
+  "form_attacks": [
+    "bearSwipe",
+    "bearSlam"
+  ]
+}

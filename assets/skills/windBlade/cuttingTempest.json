@@ -1,0 +1,67 @@
+{
+  "name": "Tempête Tranchante",
+  "description": "Tornade Mineure + Croissant de Vent. Tu tournoies sur toi-même tout en chargeant ton coup, libérant un gigantesque croissant de vent horizontal qui fauche tout sur un très large rayon autour de toi.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.5,
+    "requires": [
+      "windCrescent",
+      "risingStrike"
+    ],
+    "max_rank": 3,
+    "planner": 342
+  },
+  "cast": {
+    "cost": {
+      "stamina": 32
+    },
+    "cooldown": 16,
+    "animation": "spin",
+    "speed": 0.7,
+    "area": {
+      "circle": {
+        "radius": [
+          6,
+          6.5,
+          7
+        ]
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            2.2,
+            2.6,
+            3.0
+          ]
+        }
+      },
+      {
+        "knockback": {
+          "strength": 6
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "tornado",
+      "anchor": "feet",
+      "from": "start",
+      "to": "impact"
+    },
+    {
+      "effect": "windBlades",
+      "anchor": "feet",
+      "from": "impact"
+    },
+    {
+      "effect": "shockRing",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ]
+}

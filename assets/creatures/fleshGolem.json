@@ -1,8 +1,11 @@
 {
   "name": "Golem de Chair",
   "description": "Une masse de chairs recousues qui avance en écrasant tout.",
+  "armor": 40,
+  "tags": ["shadow"],
   "body": {"half_width": 0.75, "half_length": 0.5, "height": 2.7},
   "walk_speed": 1.2,
+  "taunt": 6,
   "health": 80,
   "model": {
     "mesh": "modeles/fleshGolem.gltf",

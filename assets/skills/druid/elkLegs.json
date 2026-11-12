@@ -1,0 +1,68 @@
+{
+  "name": "Jambes de l'Élan",
+  "description": "Cerf. Tes jambes mutent, t'offrant un grand bonus de vitesse et un violent coup de sabot pour déséquilibrer l'ennemi.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.625,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 198
+  },
+  "cast": {
+    "cost": {
+      "mana": 15
+    },
+    "cooldown": 16,
+    "animation": "leap",
+    "area": {
+      "arc": {
+        "range": 2.5,
+        "angle": 90
+      }
+    },
+    "targets": "enemies",
+    "effects": [
+      {
+        "knockback": {
+          "strength": [
+            8,
+            9,
+            10
+          ]
+        }
+      },
+      {
+        "stun": {
+          "duration": 0.5
+        }
+      }
+    ],
+    "self_effects": [
+      {
+        "buff": {
+          "stat": "speed",
+          "value": [
+            0.3,
+            0.4,
+            0.5
+          ],
+          "duration": 12
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shapeshiftBurst",
+      "anchor": "feet",
+      "from": "start"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "impact"
+    }
+  ],
+  "graft": "elkLegs"
+}

@@ -1,0 +1,47 @@
+{
+  "name": "Carreau-Grappin",
+  "description": "Munition. Permet de te hisser instantanément sur un point en hauteur ou d'échapper au corps à corps.",
+  "wheel": {
+    "tier": 2,
+    "ring": 2.0,
+    "slot": 0.375,
+    "requires": [
+      "poisonBolt"
+    ],
+    "max_rank": 3,
+    "planner": 262
+  },
+  "cast": {
+    "cost": {
+      "stamina": 15
+    },
+    "cooldown": 12,
+    "animation": "crossbowShot",
+    "area": "self",
+    "movement": {
+      "grapple": {
+        "to": "block",
+        "range": [
+          16,
+          18,
+          20
+        ],
+        "speed": 25,
+        "stop": 0.5
+      }
+    },
+    "targets": "self"
+  },
+  "visuals": [
+    {
+      "effect": "cableLine",
+      "anchor": "rightHand",
+      "from": "impact"
+    },
+    {
+      "effect": "dustPuff",
+      "anchor": "feet",
+      "from": "start"
+    }
+  ]
+}

@@ -2,6 +2,7 @@
   "numeric_id": 16516,
   "name": "Lance de mithril",
   "category": "Armes",
+  "weapon": {"kind": "spear", "interval": 0.5, "reach": 1},
   "max_stack": 1,
   "icon": "icones/mithrilSpear.png",
   "stats": {"Dégâts": 20, "Durabilité": 3000},

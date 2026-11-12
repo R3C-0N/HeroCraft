@@ -1,0 +1,79 @@
+{
+  "name": "Rédemption",
+  "description": "Châtiment Céleste + Purification. Un rayon intense frappe une zone, soignant les alliés tout en aveuglant et affaiblissant les ennemis touchés.",
+  "wheel": {
+    "tier": 3,
+    "ring": 3.0,
+    "slot": 0.8333,
+    "requires": [
+      "purification"
+    ],
+    "max_rank": 3,
+    "planner": 238
+  },
+  "cast": {
+    "cost": {
+      "mana": 30
+    },
+    "cooldown": 16,
+    "animation": "bless",
+    "area": {
+      "circle": {
+        "radius": [
+          4,
+          4.5,
+          5
+        ],
+        "center": "aimed",
+        "distance": 12
+      }
+    },
+    "targets": "all",
+    "effects": [
+      {
+        "damage": {
+          "power": [
+            1.4,
+            1.7,
+            2.0
+          ]
+        },
+        "to": "enemies"
+      },
+      {
+        "blind": {
+          "duration": 3
+        },
+        "to": "enemies"
+      },
+      {
+        "heal": {
+          "amount": [
+            20,
+            25,
+            30
+          ]
+        },
+        "to": "allies"
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "holyBeam",
+      "anchor": "area",
+      "from": "impact"
+    },
+    {
+      "effect": "healSparkles",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "stunStars",
+      "anchor": "target",
+      "from": "hit",
+      "to": "effectEnd"
+    }
+  ]
+}

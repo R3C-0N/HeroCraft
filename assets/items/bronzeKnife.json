@@ -2,6 +2,7 @@
   "numeric_id": 16789,
   "name": "Couteau en bronze",
   "category": "Outils",
+  "weapon": {"kind": "dagger", "interval": 0.25},
   "max_stack": 1,
   "icon": "icones/bronzeKnife.png",
   "stats": {"Dégâts": 4, "Durabilité": 500},

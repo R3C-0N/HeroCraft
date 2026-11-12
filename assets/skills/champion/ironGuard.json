@@ -1,0 +1,61 @@
+{
+  "name": "Garde de fer",
+  "description": "Parade. Posture levant le bouclier pour bloquer totalement les attaques physiques frontales.",
+  "wheel": {
+    "tier": 1,
+    "ring": 1.0,
+    "slot": 0.875,
+    "requires": [],
+    "max_rank": 3,
+    "planner": 364
+  },
+  "cast": {
+    "cost": {
+      "stamina": 12
+    },
+    "cooldown": 12,
+    "animation": "guard",
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
+      {
+        "guard": {
+          "duration": [
+            3,
+            3.5,
+            4
+          ],
+          "block": 1,
+          "arc": 120,
+          "kinds": [
+            "physical"
+          ]
+        }
+      },
+      {
+        "buff": {
+          "stat": "speed",
+          "value": -0.5,
+          "duration": [
+            3,
+            3.5,
+            4
+          ]
+        }
+      }
+    ]
+  },
+  "visuals": [
+    {
+      "effect": "shieldDome",
+      "anchor": "body",
+      "from": "impact",
+      "to": "effectEnd"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "body",
+      "from": "parry"
+    }
+  ]
+}
