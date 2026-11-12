@@ -1,6 +1,8 @@
 {
   "name": "Tourelle Incendiaire",
   "description": "Canon trapu de l'Ingénieur qui crache un cône de flammes.",
+  "armor": 60,
+  "resist": 20,
   "body": {
     "half_width": 0.44,
     "half_length": 0.72,

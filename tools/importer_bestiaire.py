@@ -114,6 +114,8 @@ def importer(module):
             **({"attack": a} if (a := ancien.get("attack")) else {}),
             # Le butin est écrit à la main dans les fiches : une réimportation le garde
             **({"loot": l} if (l := ancien.get("loot")) else {}),
+            # L'armure et la résistance sont écrites à la main : une réimportation les garde
+            **{champ: ancien[champ] for champ in ("armor", "resist") if champ in ancien},
             "model": {
                 "mesh": f"modeles/{ident}.gltf",
                 "texture": f"modeles/{ident}.png",

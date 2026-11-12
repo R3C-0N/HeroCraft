@@ -38,7 +38,7 @@ use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
 use herocraft_common::skills::Status;
-use herocraft_common::{blocks, items, tangent_frame, AttackMode, BlockId, ItemId, MOOD_HEARTS, MOOD_SATED, MOOD_TAMED, CreatureAction, CreatureShotEvent, Collider, PLAYER_COLLIDER, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CORPSE_TIME, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
+use herocraft_common::{armor_factor, blocks, items, tangent_frame, AttackMode, DamageKind, BlockId, ItemId, MOOD_HEARTS, MOOD_SATED, MOOD_TAMED, CreatureAction, CreatureShotEvent, Collider, PLAYER_COLLIDER, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CORPSE_TIME, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -313,6 +313,8 @@ pub struct Creature {
     shield_time: f32,
     /// Aveuglée : temps restant à ne voir qu'à `BLIND_SIGHT` blocs, en secondes
     blind: f32,
+    /// Armure brisée par des compétences : part retirée et temps restant, en secondes, par bris
+    shreds: Vec<(f32, f32)>,
     /// Provoquée : clé du joueur qu'elle poursuit, et temps restant, en secondes
     taunted: Option<(u64, f32)>,
     /// Invoquée par ce joueur (compétence) : alliée, jamais gardée endormie avec sa zone
@@ -421,6 +423,8 @@ pub struct PlayerHit {
     /// Rang de l'espèce de la créature dans le registre
     pub species: usize,
     pub damage: f32,
+    /// Type du coup (`CreatureAttack::kind`)
+    pub kind: DamageKind,
 }
 
 /// Un projectile en vol
@@ -436,6 +440,7 @@ struct Flying {
     target: Target,
     to: Vec3,
     damage: f32,
+    kind: DamageKind,
     /// Rayon de l'explosion, en unités du monde
     radius: f32,
     left: f32,
@@ -907,6 +912,7 @@ impl CreatureWorld {
             landed: None,
             guard_broken: 0.0,
             blind: 0.0,
+            shreds: Vec::new(),
             taunted: None,
             summoner: None,
             appearing: 0.0,
@@ -1069,10 +1075,15 @@ impl CreatureWorld {
     /// Comme `hit_by`, avec `damage` points de dégâts (une compétence) : `Some(vrai)` si le coup
     /// l'a tuée, `None` si elle n'existe pas ou est déjà morte
     pub fn wound(&mut self, id: u64, from: Vec3, player: u64, damage: f32) -> Option<bool> {
+        self.wound_with(id, from, player, damage, DamageKind::Physical, 0.0)
+    }
+
+    /// Comme `wound`, pour un coup de type `kind` qui ignore la part `pierce` de l'armure
+    pub fn wound_with(&mut self, id: u64, from: Vec3, player: u64, damage: f32, kind: DamageKind, pierce: f32) -> Option<bool> {
         let damage = damage * (1.0 - self.guard_against(id, from));
         let victim = self.creatures.iter().find(|c| c.id == id && c.is_alive()).map(|c| (c.herd, c.position, c.managed && self.registry.get(c.species).is_some_and(|s| s.humanoid)));
         let who = self.villages.card(id).map(|card| (card.name.clone(), card.profession.clone(), self.villages.town_of(id).map(str::to_string)));
-        let killed = self.strike(id, from, damage, true)?;
+        let killed = self.strike(id, from, damage, kind, pierce, true)?;
         if let Some((herd, position, true)) = victim {
             // Le premier coup (pas ceux qui suivent tant que les gardes lui en veulent) est signalé
             // à son auteur : il sait pourquoi on l'attaque
@@ -1174,6 +1185,47 @@ impl CreatureWorld {
             c.taunted = Some((key, duration));
             c.sleeping = false;
         }
+    }
+
+    /// Facteur des dégâts de type `kind` que laisse passer la créature de rang `index` : son armure
+    /// (moins ce qui en est brisé, et la part `pierce` que le coup ignore) contre les coups
+    /// physiques, sa résistance contre les coups magiques
+    fn mitigation(&self, index: usize, kind: DamageKind, pierce: f32) -> f32 {
+        let c = &self.creatures[index];
+        let Some(species) = self.registry.get(c.species) else { return 1.0 };
+        match kind {
+            DamageKind::Physical => {
+                let broken: f32 = c.shreds.iter().map(|s| s.0).sum();
+                armor_factor(species.armor * (1.0 - broken.clamp(0.0, 1.0)) * (1.0 - pierce.clamp(0.0, 1.0)))
+            }
+            DamageKind::Magical => armor_factor(species.resist),
+        }
+    }
+
+    /// Armure de la créature `id` en ce moment, bris déduits (0 si elle n'existe pas)
+    pub fn armor(&self, id: u64) -> f32 {
+        let Some(c) = self.creatures.iter().find(|c| c.id == id) else { return 0.0 };
+        let broken: f32 = c.shreds.iter().map(|s| s.0).sum();
+        self.registry.get(c.species).map_or(0.0, |s| s.armor * (1.0 - broken.clamp(0.0, 1.0)))
+    }
+
+    /// Brise l'armure de la créature `id` : `amount` en moins (1 : toute) pendant `seconds`
+    /// secondes, sans dépasser `max` brisé en tout. Renvoie vrai si de l'armure a cédé.
+    pub fn shred(&mut self, id: u64, amount: f32, seconds: f32, max: f32) -> bool {
+        let Some(index) = self.creatures.iter().position(|c| c.id == id && c.is_alive()) else { return false };
+        let armored = self.registry.get(self.creatures[index].species).is_some_and(|s| s.armor > 0.0);
+        let c = &mut self.creatures[index];
+        let broken: f32 = c.shreds.iter().map(|s| s.0).sum();
+        let amount = amount.min(max.min(1.0) - broken).max(0.0);
+        // Un nouveau bris prolonge ceux d'avant : l'armure rongée coup après coup reste rongée
+        for s in &mut c.shreds {
+            s.1 = s.1.max(seconds);
+        }
+        if amount <= 0.0 || seconds <= 0.0 {
+            return false;
+        }
+        c.shreds.push((amount, seconds));
+        armored
     }
 
     /// Ralenti et étourdissement que le coup `hit` laisse au joueur touché (`attack.slow`,
@@ -1332,8 +1384,9 @@ impl CreatureWorld {
 
     /// Coup de `damage` sur la créature `id`, porté depuis `from` (par un joueur ou par un
     /// prédateur). Renvoie `Some(vrai)` s'il l'a tuée, `None` si elle n'existe pas ou est déjà morte.
-    fn strike(&mut self, id: u64, from: Vec3, damage: f32, by_player: bool) -> Option<bool> {
+    fn strike(&mut self, id: u64, from: Vec3, damage: f32, kind: DamageKind, pierce: f32, by_player: bool) -> Option<bool> {
         let index = self.creatures.iter().position(|c| c.id == id && c.is_alive())?;
+        let damage = damage * self.mitigation(index, kind, pierce);
         let species = self.creatures[index].species;
         let attack = self.registry.get(species).and_then(|s| s.attack.as_ref());
         let fights_back = by_player
@@ -1462,27 +1515,27 @@ impl CreatureWorld {
                     let t = (position - f.from).dot(along);
                     let off = (position - f.from - along * t).length();
                     if alive && foe && id != f.shooter && t >= 0.0 && t <= end && off <= f.pierce + TARGET_RADIUS * block {
-                        blasts.push((id, f.from, f.damage));
+                        blasts.push((id, f.from, f.damage, f.kind));
                     }
                 }
             } else if f.radius > 0.0 {
                 for &(id, _, position, alive, _, tamed, summoned) in &snapshot {
                     let foe = if f.allied { !tamed } else { summoned };
                     if alive && foe && id != f.shooter && position.distance(f.to) <= f.radius {
-                        blasts.push((id, f.to, f.damage));
+                        blasts.push((id, f.to, f.damage, f.kind));
                     }
                 }
                 if !f.allied {
                     for (player, feet) in players.iter().enumerate() {
                         if feet.distance(f.to) <= f.radius {
-                            player_hits.push(PlayerHit { player, creature_id: f.shooter, species: f.species, damage: f.damage });
+                            player_hits.push(PlayerHit { player, creature_id: f.shooter, species: f.species, damage: f.damage, kind: f.kind });
                         }
                     }
                 }
             } else {
                 match f.target {
-                    Target::Creature(id) => blasts.push((id, f.to, f.damage)),
-                    Target::Player(player) => player_hits.push(PlayerHit { player, creature_id: f.shooter, species: f.species, damage: f.damage }),
+                    Target::Creature(id) => blasts.push((id, f.to, f.damage, f.kind)),
+                    Target::Player(player) => player_hits.push(PlayerHit { player, creature_id: f.shooter, species: f.species, damage: f.damage, kind: f.kind }),
                 }
             }
         }
@@ -1526,6 +1579,10 @@ impl CreatureWorld {
             c.stun = (c.stun - dt).max(0.0);
             c.guard_broken = (c.guard_broken - dt).max(0.0);
             c.blind = (c.blind - dt).max(0.0);
+            c.shreds.retain_mut(|s| {
+                s.1 -= dt;
+                s.1 > 0.0
+            });
             if let Some(t) = c.taunted.as_mut() {
                 t.1 -= dt;
             }
@@ -1764,7 +1821,7 @@ impl CreatureWorld {
                     for &(id, _, position, alive, _, tamed, ally) in &snapshot {
                         let foe = if summoned { !tamed } else { ally };
                         if alive && foe && id != c.id && position.distance(c.position) <= reach {
-                            blasts.push((id, c.position, attack.damage));
+                            blasts.push((id, c.position, attack.damage, attack.kind));
                             if burst.stun > 0.0 {
                                 stuns.push((id, burst.stun));
                             }
@@ -1776,7 +1833,7 @@ impl CreatureWorld {
                     if !summoned {
                         for (player, feet) in players.iter().enumerate() {
                             if feet.distance(c.position) <= reach {
-                                player_hits.push(PlayerHit { player, creature_id: c.id, species: c.species, damage: attack.damage });
+                                player_hits.push(PlayerHit { player, creature_id: c.id, species: c.species, damage: attack.damage, kind: attack.kind });
                             }
                         }
                     }
@@ -1800,6 +1857,7 @@ impl CreatureWorld {
                         pierce: shot.pierce * block,
                         to: goal,
                         damage: shot.damage.unwrap_or(attack.damage),
+                        kind: attack.kind,
                         radius: shot.radius * block,
                         left: shot.flight_seconds(from, aim, block),
                     });
@@ -1813,13 +1871,13 @@ impl CreatureWorld {
                     }
                 }
                 match target {
-                    Target::Player(player) => player_hits.push(PlayerHit { player, creature_id: c.id, species: c.species, damage: attack.damage }),
-                    Target::Creature(prey) => bites.push((prey, c.position, attack.damage, index)),
+                    Target::Player(player) => player_hits.push(PlayerHit { player, creature_id: c.id, species: c.species, damage: attack.damage, kind: attack.kind }),
+                    Target::Creature(prey) => bites.push((prey, c.position, attack.damage, attack.kind, index)),
                 }
             }
         }
-        for (id, from, damage) in blasts {
-            self.strike(id, from, damage, false);
+        for (id, from, damage, kind) in blasts {
+            self.strike(id, from, damage, kind, 0.0, false);
         }
         // Ce que les pièges déclenchés font apparaître, en cercle serré autour d'eux
         for (spawn, at, summoner) in spawns {
@@ -1843,10 +1901,10 @@ impl CreatureWorld {
         for (id, damage) in bleeding {
             self.bleed_out(id, damage);
         }
-        for (prey, from, damage, hunter) in bites {
+        for (prey, from, damage, kind, hunter) in bites {
             // Un garde reste sur le qui-vive ; une bête repue laisse les proies un moment
             let defends = self.registry.get(self.creatures[hunter].species).and_then(|s| s.attack.as_ref()).is_some_and(|a| a.defends_herd || !a.hunts_players);
-            if self.strike(prey, from, damage, false) == Some(true) && !defends {
+            if self.strike(prey, from, damage, kind, 0.0, false) == Some(true) && !defends {
                 self.creatures[hunter].sated = SATED_TIME;
             }
         }
@@ -3802,9 +3860,10 @@ mod tests {
         let turret = world.summon(world.registry().find("ballisticTurret").unwrap(), feet, 0.0, 9);
         world.shield(turret, 30.0, 10.0);
         let before = world.creatures().iter().find(|c| c.id == turret).unwrap().health;
-        world.wound(turret, feet, 1, 20.0);
+        // (des coups qui percent toute son armure, pour compter juste)
+        world.wound_with(turret, feet, 1, 20.0, DamageKind::Physical, 1.0);
         assert_eq!(world.creatures().iter().find(|c| c.id == turret).unwrap().health, before);
-        world.wound(turret, feet, 1, 20.0);
+        world.wound_with(turret, feet, 1, 20.0, DamageKind::Physical, 1.0);
         assert_eq!(world.creatures().iter().find(|c| c.id == turret).unwrap().health, before - 10.0);
     }
 
@@ -4286,7 +4345,7 @@ mod tests {
         assert!(stats.status_speed() < 1.0);
 
         let brute = world.registry().find("brute").unwrap();
-        let hit = PlayerHit { player: 0, creature_id: 0, species: brute, damage: 1.0 };
+        let hit = PlayerHit { player: 0, creature_id: 0, species: brute, damage: 1.0, kind: DamageKind::Physical };
         world.afflict(&hit, &mut stats, &[]);
         assert!(stats.is_stunned() && stats.status_speed() == 0.0, "la brute n'étourdit pas");
         stats.tick_status(1.0);

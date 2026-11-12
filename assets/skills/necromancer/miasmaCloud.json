@@ -48,6 +48,13 @@
           "strength": 0.25,
           "duration": 8
         }
+      },
+      {
+        "shred": {
+          "amount": 0.08,
+          "duration": 1,
+          "max": 0.6
+        }
       }
     ]
   },

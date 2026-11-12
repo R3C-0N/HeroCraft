@@ -193,6 +193,7 @@ pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
         villager_cards: HashMap::new(),
         last_move_sent: None,
         last_move: None,
+        last_equipment: None,
     };
     let mut edited_chunks = Vec::with_capacity(chunk_count as usize);
     while edited_chunks.len() < chunk_count as usize {
@@ -377,6 +378,8 @@ pub struct NetClient {
     villager_cards: HashMap<u64, std::sync::Arc<herocraft_common::VillagerCard>>,
     last_move_sent: Option<Instant>,
     last_move: Option<(Vec3, f32, f32, bool, bool, Option<u16>)>,
+    /// Dernières pièces portées envoyées au serveur
+    last_equipment: Option<Vec<u16>>,
 }
 
 impl NetClient {
@@ -390,6 +393,16 @@ impl NetClient {
         self.last_move = Some(state);
         self.last_move_sent = Some(Instant::now());
         self.connection.send(&ClientPacket::PlayerMove { position: state.0, yaw: state.1, pitch: state.2, sprinting: state.3, crouching: state.4, holding: state.5 });
+    }
+
+    /// Envoie les pièces portées (numéros d'objets) quand elles ont changé : leur Protection
+    /// réduit les coups physiques que le serveur inflige au joueur
+    pub fn send_equipment(&mut self, worn: Vec<u16>) {
+        if self.last_equipment.as_ref() == Some(&worn) {
+            return;
+        }
+        self.connection.send(&ClientPacket::Equipment(worn.clone()));
+        self.last_equipment = Some(worn);
     }
 
     /// Légende du héros : le serveur en vérifie chaque choix et en prend la voie

@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 18;
+pub const PROTOCOL_VERSION: u32 = 19;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -92,6 +92,9 @@ pub enum ClientPacket {
     Eat {
         item: u16,
     },
+    /// Pièces que le joueur porte (numéros d'objets), envoyées à la connexion et à chaque
+    /// changement : leur Protection réduit les coups physiques qu'il reçoit
+    Equipment(Vec<u16>),
     /// Envoi d'un message dans le chat
     ChatMessage(String),
     /// Commande `/summon` : `count` créatures de l'espèce `species` (nom de son fichier) aux pieds

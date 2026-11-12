@@ -1,13 +1,15 @@
 {
   "name": "Gorgone florale",
   "description": "Son regard change la chair en bois ; son pollen endort ceux qui approchent.",
+  "armor": 20,
+  "resist": 40,
   "body": {"half_width": 0.6956, "half_length": 0.5424, "height": 2.219},
   "walk_speed": 0.8,
   "min_group": 1,
   "max_group": 1,
   "spawn": [],
   "activity": "nocturnal",
-  "attack": {"mode": "solo", "damage": 6, "slow": [0.4, 3], "cooldown": 1.6, "sight": 8, "chase_speed": 1.2, "reach": 1.5, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
+  "attack": {"kind": "magical", "mode": "solo", "damage": 6, "slow": [0.4, 3], "cooldown": 1.6, "sight": 8, "chase_speed": 1.2, "reach": 1.5, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
   "loot": [
     {"item": "petalesMagiques", "count": [1, 3]},
     {"item": "lianesEpineuses", "count": [1, 2]}

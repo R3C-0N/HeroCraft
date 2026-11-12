@@ -285,8 +285,25 @@ pub enum Targets {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Effect {
-    /// `power` × `SKILL_BASE_DAMAGE` points de vie retirés
-    Damage { power: Ranked },
+    /// `power` × `SKILL_BASE_DAMAGE` points de vie retirés, de type `kind` (celui de la compétence,
+    /// `Cast::damage_kind`, par défaut). `pierce` : part de l'armure de la cible que ce coup ignore
+    /// (0,5 : la moitié ; 1 : toute)
+    Damage {
+        power: Ranked,
+        #[serde(default)]
+        kind: Option<crate::DamageKind>,
+        #[serde(default)]
+        pierce: Ranked,
+    },
+    /// Brise l'armure de la cible : `amount` de son armure en moins (1 : toute) pendant `duration`
+    /// secondes, pour tous les coups. Les bris s'additionnent jusqu'à `max` (1 par défaut). Placé
+    /// avant les dégâts, il compte dès le coup qui le porte.
+    Shred {
+        amount: Ranked,
+        duration: Ranked,
+        #[serde(default)]
+        max: Option<Ranked>,
+    },
     /// Points de vie rendus
     Heal { amount: Ranked },
     /// Vitesse réduite de `strength` (0 à 1) pendant `duration` secondes
@@ -309,12 +326,18 @@ pub enum Effect {
         /// moitié des dégâts absorbés, en mana)
         #[serde(default)]
         absorb_to: Option<Absorb>,
+        /// Il n'absorbe que les coups de ce type (aucun : tous)
+        #[serde(default)]
+        absorbs: Option<crate::DamageKind>,
     },
     /// Statistique augmentée de `value` (0,3 : +30 %) pendant `duration` secondes
     Buff {
         stat: BuffStat,
         value: Ranked,
         duration: Ranked,
+        /// Pour `defense` : ne réduit que les coups de ce type (aucun : tous)
+        #[serde(default)]
+        kind: Option<crate::DamageKind>,
         /// Dégâts en plus contre une famille de créatures (`tags` de l'espèce)
         #[serde(default)]
         against: Option<Against>,
@@ -627,6 +650,17 @@ pub struct Cast {
     /// Seconde frappe sur les ennemis trouvés par la première
     #[serde(default)]
     pub follow_up: Option<FollowUp>,
+    /// Type de ses dégâts (coups, dégâts sur la durée, zones). Sans : magique si elle coûte de la
+    /// mana, physique sinon (`damage_kind`)
+    #[serde(default)]
+    pub kind: Option<crate::DamageKind>,
+}
+
+impl Cast {
+    /// Type des dégâts de la compétence : `kind`, sinon celui de sa ressource
+    pub fn damage_kind(&self) -> crate::DamageKind {
+        self.kind.unwrap_or(if self.cost.mana.at(1) > 0.0 { crate::DamageKind::Magical } else { crate::DamageKind::Physical })
+    }
 }
 
 /// Les règles de la Fusion : elle mêle les deux derniers sorts élémentaires lancés
@@ -1108,7 +1142,17 @@ impl SkillCatalog {
                     }
                 }
             }
-            for entry in cast.effects.iter().chain(&cast.self_effects) {
+            // Percer et briser se comptent en parts de l'armure, de 0 à 1
+            let share = |r: &Ranked| r.is_finite() && (0..=3).all(|rank| (0.0..=1.0).contains(&r.at(rank)));
+            let mut entries: Vec<&EffectEntry> = cast.effects.iter().chain(&cast.self_effects).chain(&cast.on_hit).chain(&cast.on_miss).chain(cast.on_kill.iter().flat_map(|a| &a.effects)).collect();
+            let mut i = 0;
+            while i < entries.len() {
+                if let Effect::Buff { rider, on_death, .. } = &entries[i].effect {
+                    entries.extend(rider.iter().chain(on_death).flat_map(|a| &a.effects));
+                }
+                i += 1;
+            }
+            for entry in entries {
                 match &entry.effect {
                     Effect::Guard(guard) => {
                         let numbers = [Some(&guard.duration), Some(&guard.block), guard.hits.as_ref(), guard.reflect.as_ref(), guard.counter.as_ref().map(|c| &c.around.radius)];
@@ -1121,6 +1165,10 @@ impl SkillCatalog {
                     }
                     Effect::Immune { from, duration } if from.is_empty() || !duration.is_finite() => {
                         return Err("immune : au moins un état dans from, et une durée".into());
+                    }
+                    Effect::Damage { pierce, .. } if !share(pierce) => return Err("damage : pierce de 0 à 1".into()),
+                    Effect::Shred { amount, duration, max } if !share(amount) || !duration.is_finite() || max.as_ref().is_some_and(|m| !share(m)) => {
+                        return Err("shred : amount et max de 0 à 1, duration en secondes".into());
                     }
                     _ => {}
                 }

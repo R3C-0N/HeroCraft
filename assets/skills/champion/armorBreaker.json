@@ -26,18 +26,22 @@
     "targets": "enemies",
     "effects": [
       {
+        "shred": {
+          "amount": [
+            0.3,
+            0.4,
+            0.5
+          ],
+          "duration": 6
+        }
+      },
+      {
         "damage": {
           "power": [
             2.0,
             2.3,
             2.6
           ]
-        }
-      },
-      {
-        "slow": {
-          "strength": 0.2,
-          "duration": 4
         }
       }
     ]
@@ -56,6 +60,11 @@
     },
     {
       "effect": "impactSpark",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "armorShatter",
       "anchor": "target",
       "from": "hit"
     }

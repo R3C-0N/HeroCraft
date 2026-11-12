@@ -1,6 +1,8 @@
 {
   "name": "Champion démon",
   "description": "Garde les portes du monde démoniaque, armé d’une lame et d’un fouet de flammes.",
+  "armor": 70,
+  "resist": 40,
   "body": {"half_width": 2.1032, "half_length": 1.7934, "height": 4.2338},
   "walk_speed": 1.0,
   "min_group": 1,

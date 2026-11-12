@@ -1,6 +1,8 @@
 {
   "name": "Barricade Portative",
   "description": "Module de l'Ingénieur déplié en un large mur d'acier.",
+  "armor": 100,
+  "resist": 50,
   "body": {
     "half_width": 1.41,
     "half_length": 0.52,

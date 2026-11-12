@@ -28,6 +28,7 @@
       }
     },
     "targets": "enemies",
+    "kind": "magical",
     "effects": [
       {
         "damage": {
