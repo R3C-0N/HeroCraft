@@ -11,6 +11,7 @@
   "health": 80,
   "activity": "always",
   "humanoid": true,
+  "guard": {"block": 0.6, "arc": 120},
   "attack": {
     "mode": "solo",
     "damage": 6,

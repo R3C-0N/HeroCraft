@@ -69,6 +69,10 @@ pub struct CreatureSpecies {
     /// la simulation des villages, sans modèle glTF
     #[serde(default)]
     pub humanoid: bool,
+    /// Elle se garde : les coups qui lui arrivent de face perdent une part de leurs dégâts, tant
+    /// qu'elle n'est ni étourdie ni brisée (`break_guard`)
+    #[serde(default)]
+    pub guard: Option<CreatureGuard>,
     /// Élevage : ce qu'elle mange, ce qu'il faut pour l'apprivoiser, le temps que met un petit à
     /// grandir (aucun : elle ne s'élève pas)
     #[serde(default)]
@@ -310,6 +314,24 @@ pub struct CreatureAttack {
     /// Son coup étourdit le joueur touché tant de secondes
     #[serde(default)]
     pub stun: Option<f32>,
+    /// Son coup repousse le joueur touché : vitesse de départ, en blocs par seconde
+    #[serde(default)]
+    pub knockback: Option<f32>,
+}
+
+/// La garde d'une espèce (`CreatureSpecies::guard`)
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureGuard {
+    /// Part des dégâts retirée aux coups de face (0,6 : 60 %)
+    pub block: f32,
+    /// Angle couvert devant elle, en degrés
+    #[serde(default = "default_guard_arc")]
+    pub arc: f32,
+}
+
+fn default_guard_arc() -> f32 {
+    120.0
 }
 
 /// L'explosion d'un piège

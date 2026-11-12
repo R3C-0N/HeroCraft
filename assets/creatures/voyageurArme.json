@@ -7,6 +7,7 @@
   "temperament": "placide",
   "activity": "diurnal",
   "humanoid": true,
+  "guard": {"block": 0.5, "arc": 120},
   "attack": {
     "mode": "solo",
     "damage": 3.5,

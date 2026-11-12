@@ -10,7 +10,7 @@
     {"biome": "Forest", "weight": 0.5}
   ],
   "activity": "nocturnal",
-  "attack": {"mode": "charge", "damage": 6, "stun": 0.5, "cooldown": 2.0, "sight": 7, "chase_speed": 2.5},
+  "attack": {"mode": "charge", "damage": 6, "stun": 0.5, "knockback": 7, "cooldown": 2.0, "sight": 7, "chase_speed": 2.5},
   "loot": [
     {"item": "viandeSanglier", "count": [1, 2]},
     {"item": "hide", "count": [1, 2]},

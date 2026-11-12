@@ -18,33 +18,35 @@
     },
     "cooldown": 16,
     "animation": "spin",
-    "area": {
-      "circle": {
-        "radius": [
-          3.5,
-          4,
-          4.5
-        ]
-      }
-    },
-    "targets": "enemies",
-    "effects": [
-      {
-        "damage": {
-          "power": [
-            2.4,
-            2.8,
-            3.2
-          ]
-        }
-      }
-    ],
+    "area": "self",
+    "targets": "self",
     "self_effects": [
       {
-        "buff": {
-          "stat": "defense",
-          "value": 0.7,
-          "duration": 1.5
+        "guard": {
+          "duration": 1.5,
+          "block": 1,
+          "arc": 120,
+          "hits": 1,
+          "reflect": 1,
+          "counter": {
+            "at": "self",
+            "radius": [
+              3.5,
+              4,
+              4.5
+            ],
+            "effects": [
+              {
+                "damage": {
+                  "power": [
+                    2.4,
+                    2.8,
+                    3.2
+                  ]
+                }
+              }
+            ]
+          }
         }
       }
     ]
@@ -59,17 +61,17 @@
     {
       "effect": "slashArc",
       "anchor": "weapon",
-      "from": "impact"
+      "from": "parry"
     },
     {
       "effect": "shockRing",
       "anchor": "feet",
-      "from": "impact"
+      "from": "parry"
     },
     {
       "effect": "impactSpark",
       "anchor": "target",
-      "from": "hit"
+      "from": "parry"
     }
   ]
 }

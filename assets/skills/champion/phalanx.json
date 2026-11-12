@@ -40,6 +40,15 @@
           ],
           "duration": 8
         }
+      },
+      {
+        "immune": {
+          "from": [
+            "knockback",
+            "stun"
+          ],
+          "duration": 8
+        }
       }
     ]
   },

@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use glam::Vec3;
-use herocraft_common::skills::{Around, BuffStat, CastError, Center, Copies, Effect, EffectEntry, Facing, Fused, GrappleTo, PlacedArea, SkillCatalog, SkillMove, Targets, SKILL_BASE_DAMAGE};
+use herocraft_common::skills::{Around, BuffStat, CastError, Center, Copies, CounterAt, Effect, EffectEntry, Facing, Fused, GrappleTo, Guard, PlacedArea, SkillCatalog, SkillMove, Status, Targets, SKILL_BASE_DAMAGE};
 use herocraft_common::CharacterStats;
 
 use crate::CreatureWorld;
@@ -66,6 +66,20 @@ pub struct SkillImpact {
     pub players: Vec<u64>,
     /// Entités que la frappe a fait apparaître (`summon`)
     pub summoned: Vec<u64>,
+    /// La riposte d'une garde qui vient de parer un coup : le client n'en joue que les visuels
+    /// de parade (`Moment::Parry`)
+    pub parried: bool,
+}
+
+/// Ce qu'une garde fait d'un coup reçu (`SkillRunner::parry`)
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parry {
+    /// Dégâts qui passent encore
+    pub damage: f32,
+    /// Le coup a été paré : ni ralenti, ni étourdissement, ni recul
+    pub parried: bool,
+    /// La riposte, à annoncer
+    pub impact: Option<SkillImpact>,
 }
 
 /// Ce que `tick` renvoie : les frappes du moment et les joueurs dont les jauges ont changé
@@ -78,6 +92,8 @@ pub struct SkillTick {
     pub died: Vec<u64>,
     /// Déplacements imposés aux lanceurs (téléportation, traction vers une cible) : à qui, lequel
     pub moves: Vec<(u64, SkillMove)>,
+    /// Gardes fermées sans avoir rien paré : joueur, compétence, secondes de recharge en plus
+    pub missed: Vec<(u64, String, f32)>,
 }
 
 /// Ce qu'une frappe laisse pour plus tard, sur les ennemis qu'elle a trouvés
@@ -156,6 +172,30 @@ struct Buff {
     rider: Option<Around>,
     skill: String,
     rank: u8,
+}
+
+/// Une garde levée (`Effect::Guard`)
+#[derive(Debug, Clone)]
+struct Guarding {
+    player: u64,
+    skill: String,
+    rank: u8,
+    guard: Guard,
+    left: f32,
+    /// Coups qu'elle pare encore (`None` : jusqu'à la fin de la fenêtre)
+    hits: Option<u32>,
+    /// Coups déjà parés
+    parried: u32,
+    /// Direction visée au lancement : celle de la garde quand on ne sait pas où regarde le joueur
+    aim: Vec3,
+}
+
+/// Une immunité (`Effect::Immune`) : qui, à quoi, secondes restantes
+#[derive(Debug, Clone)]
+struct Immunity {
+    player: u64,
+    from: Vec<Status>,
+    left: f32,
 }
 
 /// Part de sa vie que garde un joueur sauvé par un effet à la mort (Abomination de l'Étherium)
@@ -265,6 +305,10 @@ pub struct SkillRunner {
     delayed: Vec<Delayed>,
     /// Déplacements des lanceurs décidés par les frappes, rendus par `tick`
     moves: Vec<(u64, SkillMove)>,
+    /// Gardes levées
+    guards: Vec<Guarding>,
+    /// Immunités en cours
+    immunities: Vec<Immunity>,
 }
 
 /// Facteur des dégâts d'un coup critique
@@ -422,7 +466,7 @@ impl SkillRunner {
         stats.fallen = true;
         stats.resurrect(LAST_STAND_HEALTH);
         let (touched, _) = self.burst(around, player, buff.rank, &buff.skill, &[feet], creatures, players);
-        Some(SkillImpact { caster: player, skill: buff.skill, rank: buff.rank, center: feet, creatures: touched, players: Vec::new(), summoned: Vec::new() })
+        Some(SkillImpact { caster: player, skill: buff.skill, rank: buff.rank, center: feet, creatures: touched, players: Vec::new(), summoned: Vec::new(), parried: false })
     }
 
     /// Joue les effets de `around` dans son rayon autour de chacun des `points`, une fois par cible :
@@ -498,7 +542,72 @@ impl SkillRunner {
 
     /// Facteur des dégâts que subit le joueur `player` (renforcement de défense compris)
     pub fn damage_taken_factor(&self, player: u64) -> f32 {
+        if self.immune(player, Status::Damage) {
+            return 0.0;
+        }
         (1.0 - self.buff(player, BuffStat::Defense)).clamp(0.1, 1.0)
+    }
+
+    /// Le joueur `player` est immunisé contre `status` en ce moment
+    pub fn immune(&self, player: u64, status: Status) -> bool {
+        self.immunities.iter().any(|i| i.player == player && i.from.contains(&status))
+    }
+
+    /// Tout ce que le joueur `player` ignore en ce moment
+    pub fn immunities(&self, player: u64) -> Vec<Status> {
+        let mut out: Vec<Status> = self.immunities.iter().filter(|i| i.player == player).flat_map(|i| i.from.iter().copied()).collect();
+        out.sort_unstable_by_key(|s| *s as u8);
+        out.dedup();
+        out
+    }
+
+    /// Le joueur `player` garde en ce moment : la compétence de sa garde
+    pub fn guarding(&self, player: u64) -> Option<&str> {
+        self.guards.iter().find(|g| g.player == player).map(|g| g.skill.as_str())
+    }
+
+    /// Le joueur `player`, qui regarde vers `facing` (s'il est connu), reçoit de la créature
+    /// `attacker` un coup de `damage` points, de type `kind` (`physical`, `magical`). Sa garde, s'il
+    /// en a levé une et que le coup arrive de face, en bloque sa part et lance sa riposte.
+    #[allow(clippy::too_many_arguments)]
+    pub fn parry(&mut self, player: u64, facing: Option<Vec3>, attacker: u64, damage: f32, kind: &str, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> Parry {
+        let untouched = Parry { damage, parried: false, impact: None };
+        let Some(i) = self.guards.iter().position(|g| g.player == player && g.guard.blocks(kind)) else { return untouched };
+        let Some(feet) = players.feet(player) else { return untouched };
+        let from = creatures.position(attacker);
+        let g = &self.guards[i];
+        let facing = facing.filter(|f| *f != Vec3::ZERO).unwrap_or(g.aim);
+        let arc = g.guard.arc.unwrap_or(360.0);
+        if from.is_some_and(|from| !herocraft_common::in_front(facing, feet, from, arc)) {
+            return untouched;
+        }
+        let g = &mut self.guards[i];
+        let blocked = damage * g.guard.block.at(g.rank).clamp(0.0, 1.0);
+        g.parried += 1;
+        if let Some(hits) = &mut g.hits {
+            *hits = hits.saturating_sub(1);
+        }
+        let g = g.clone();
+        if g.hits == Some(0) {
+            self.guards.remove(i);
+        }
+        // La riposte part autour de l'attaquant, ou du joueur (un coup circulaire, un éclat)
+        let point = match &g.guard.counter {
+            Some(c) if c.at == CounterAt::Caster => feet,
+            _ => from.unwrap_or(feet),
+        };
+        let (mut touched, mut helped) = (Vec::new(), Vec::new());
+        if let Some(counter) = &g.guard.counter {
+            (touched, helped) = self.burst(&counter.around, player, g.rank, &g.skill, &[point], creatures, players);
+        }
+        if let Some(reflect) = &g.guard.reflect {
+            let back = blocked * reflect.at(g.rank) * (1.0 + self.buff(player, BuffStat::Damage));
+            if back > 0.0 && creatures.wound(attacker, feet, player, back).is_some() && !touched.contains(&attacker) {
+                touched.push(attacker);
+            }
+        }
+        let impact = g.guard.ripostes().then(|| SkillImpact { caster: player, skill: g.skill.clone(), rank: g.rank, center: point, creatures: touched, players: helped, summoned: Vec::new(), parried: true });
+        Parry { damage: damage - blocked, parried: true, impact }
     }
 
     /// Entités invoquées par le joueur `player` encore présentes
@@ -527,6 +636,8 @@ impl SkillRunner {
         self.zones.retain(|z| z.pending.caster != player);
         self.delayed.retain(|d| d.pending.caster != player);
         self.moves.retain(|m| m.0 != player);
+        self.guards.retain(|g| g.player != player);
+        self.immunities.retain(|i| i.player != player);
         self.cooldowns.retain(|(p, _), _| *p != player);
     }
 
@@ -549,6 +660,24 @@ impl SkillRunner {
             link.left -= dt;
         }
         self.links.retain(|l| l.left > 0.0);
+        for immunity in &mut self.immunities {
+            immunity.left -= dt;
+        }
+        self.immunities.retain(|i| i.left > 0.0);
+        // Une garde qui se ferme sans avoir rien paré : la recharge de sa compétence s'allonge
+        for g in &mut self.guards {
+            g.left -= dt;
+        }
+        let (closed, open): (Vec<Guarding>, Vec<Guarding>) = std::mem::take(&mut self.guards).into_iter().partition(|g| g.left <= 0.0);
+        self.guards = open;
+        for g in closed.into_iter().filter(|g| g.parried == 0 && g.guard.miss_factor() > 1.0) {
+            let Some(cooldown) = catalog.get(&g.skill).and_then(|d| d.cast.as_ref()).map(|c| c.cooldown.at(g.rank)) else { continue };
+            let extra = cooldown * (g.guard.miss_factor() - 1.0);
+            if extra > 0.0 {
+                *self.cooldowns.entry((g.player, g.skill.clone())).or_insert(0.0) += extra;
+                out.missed.push((g.player, g.skill, extra));
+            }
+        }
         for buff in &mut self.buffs {
             buff.left -= dt;
             if buff.scaled {
@@ -756,6 +885,9 @@ impl SkillRunner {
             self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, p.caster, players);
             changed.push(p.caster);
         }
+        for g in self.guards.iter_mut().filter(|g| g.player == p.caster && g.skill == p.skill) {
+            g.aim = p.aim;
+        }
         let summoned = self.summon(def.summons(), p, feet, center, &area, creatures);
         touched_creatures.sort_unstable();
         touched_creatures.dedup();
@@ -806,7 +938,7 @@ impl SkillRunner {
         }
         touched_players.sort_unstable();
         touched_players.dedup();
-        Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched_creatures, players: touched_players, summoned })
+        Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched_creatures, players: touched_players, summoned, parried: false })
     }
 
     /// Téléporte le lanceur près de sa cible (`movement.teleport`), dans le repère de la cible vue
@@ -844,7 +976,7 @@ impl SkillRunner {
             }
         }
         let touched: Vec<u64> = alive.iter().map(|a| a.0).collect();
-        Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched, players: Vec::new(), summoned: Vec::new() })
+        Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched, players: Vec::new(), summoned: Vec::new(), parried: false })
     }
 
     /// Applique les effets `effects` à ceux qui se trouvent dans la zone `area` : les créatures et
@@ -1042,8 +1174,9 @@ impl SkillRunner {
                     });
                 }
             }
+            Effect::BreakGuard { duration } => creatures.break_guard(id, duration.at(rank)),
             // Sans effet sur une bête : les autres renforcements, invisibilité, résurrection, lien
-            Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } | Effect::Sacrifice { .. } => {}
+            Effect::Guard(_) | Effect::Immune { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } | Effect::Sacrifice { .. } => {}
         }
     }
 
@@ -1127,9 +1260,27 @@ impl SkillRunner {
                     stats.resurrect(health.at(rank));
                 }
             }
+            Effect::Guard(guard) => {
+                self.guards.retain(|g| g.player != id);
+                let hits = guard.hits.as_ref().map(|h| h.at(rank).round().max(1.0) as u32);
+                self.guards.push(Guarding { player: id, skill: skill.to_string(), rank, guard: guard.clone(), left: guard.duration.at(rank), hits, parried: 0, aim: Vec3::ZERO });
+            }
+            Effect::Immune { from, duration } => {
+                self.immunities.push(Immunity { player: id, from: from.clone(), left: duration.at(rank) });
+                // Ce qu'il ignore désormais tombe tout de suite
+                if let Some(stats) = players.stats_mut(id) {
+                    if from.contains(&Status::Stun) {
+                        stats.stun_time = 0.0;
+                    }
+                    if from.contains(&Status::Slow) {
+                        stats.slow = 0.0;
+                        stats.slow_time = 0.0;
+                    }
+                }
+            }
             // Pas de combat entre joueurs : ni dégâts, ni ralenti, ni étourdissement d'un allié (ce
             // sont les bêtes qui ralentissent et étourdissent les joueurs, `CreatureWorld::afflict`)
-            Effect::Damage { .. } | Effect::Slow { .. } | Effect::Stun { .. } | Effect::Knockback { .. } | Effect::Pull { .. } | Effect::Launch { .. } | Effect::Slam { .. } | Effect::Summon { .. } | Effect::Taunt { .. } | Effect::Blind { .. } | Effect::Mark { .. } => {}
+            Effect::BreakGuard { .. } | Effect::Damage { .. } | Effect::Slow { .. } | Effect::Stun { .. } | Effect::Knockback { .. } | Effect::Pull { .. } | Effect::Launch { .. } | Effect::Slam { .. } | Effect::Summon { .. } | Effect::Taunt { .. } | Effect::Blind { .. } | Effect::Mark { .. } => {}
         }
     }
 }
@@ -2095,4 +2246,138 @@ mod tests {
         assert!(arrival.distance(target + Vec3::X + right * 2.0) < 1e-4, "{arrival}");
         assert!(look.dot(arrival - target) > 0.0, "dos à la cible");
     }
+
+    /// Lance `skill` au rang 1, regard vers `aim`, et avance jusqu'à sa frappe
+    fn cast_and_strike(runner: &mut SkillRunner, catalog: &SkillCatalog, creatures: &mut CreatureWorld, feet: Vec3, stats: &mut CharacterStats, skill: &str, aim: Vec3) {
+        stats.skills.insert(skill.into(), 1);
+        stats.stamina = 1000.0;
+        stats.mana = 1000.0;
+        runner.cast(catalog, 1, stats, skill, aim, None).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats };
+        for _ in 0..40 {
+            if !runner.tick(0.05, catalog, creatures, &mut player).impacts.is_empty() {
+                return;
+            }
+        }
+        panic!("{skill} n'a pas frappé");
+    }
+
+    #[test]
+    fn a_riposte_parries_the_first_blow_from_the_front_and_strikes_back() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let near = creatures.creatures()[0].id;
+        let toward = (creatures.position(near).unwrap() - feet).normalize();
+        let mut stats = CharacterStats::new(PlayerClass::Champion);
+        let mut runner = SkillRunner::new();
+        cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "perfectRiposte", toward);
+        assert_eq!(runner.guarding(1), Some("perfectRiposte"));
+        let health = |w: &CreatureWorld| w.creatures().iter().find(|c| c.id == near).map(|c| c.health).unwrap();
+        let before = health(&creatures);
+
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        let parry = runner.parry(1, Some(toward), near, 10.0, "physical", &mut creatures, &mut player);
+        assert!(parry.parried && parry.damage == 0.0, "le coup de face est paré en entier");
+        let impact = parry.impact.expect("la riposte part");
+        assert!(impact.parried && impact.creatures.contains(&near), "la riposte touche l'attaquant");
+        assert!(health(&creatures) < before);
+        // Un seul coup paré : le suivant passe
+        let again = runner.parry(1, Some(toward), near, 10.0, "physical", &mut creatures, &mut player);
+        assert!(!again.parried && again.damage == 10.0);
+        assert_eq!(runner.guarding(1), None);
+    }
+
+    #[test]
+    fn a_frontal_guard_does_not_stop_a_blow_from_behind_nor_magic() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let near = creatures.creatures()[0].id;
+        let toward = (creatures.position(near).unwrap() - feet).normalize();
+        let mut stats = CharacterStats::new(PlayerClass::Champion);
+        let mut runner = SkillRunner::new();
+        cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "ironGuard", toward);
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        let back = runner.parry(1, Some(-toward), near, 10.0, "physical", &mut creatures, &mut player);
+        assert!(!back.parried && back.damage == 10.0, "le dos n'est pas gardé");
+        let magic = runner.parry(1, Some(toward), near, 10.0, "magical", &mut creatures, &mut player);
+        assert!(!magic.parried, "la Garde de fer ne bloque que le physique");
+        let front = runner.parry(1, Some(toward), near, 10.0, "physical", &mut creatures, &mut player);
+        assert!(front.parried && front.damage == 0.0 && front.impact.is_none(), "bloqué, sans riposte");
+        assert_eq!(runner.guarding(1), Some("ironGuard"), "elle pare jusqu'à la fin de sa fenêtre");
+    }
+
+    #[test]
+    fn a_parry_that_parries_nothing_doubles_its_cooldown() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut stats = CharacterStats::new(PlayerClass::Champion);
+        let mut runner = SkillRunner::new();
+        cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "perfectRiposte", Vec3::NEG_Z);
+        let left = runner.cooldown(1, "perfectRiposte");
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        let mut missed = Vec::new();
+        for _ in 0..20 {
+            missed.extend(runner.tick(0.1, &catalog, &mut creatures, &mut player).missed);
+        }
+        assert_eq!(missed, vec![(1, "perfectRiposte".to_string(), 10.0)]);
+        let now = runner.cooldown(1, "perfectRiposte");
+        assert!((now - (left - 2.0 + 10.0)).abs() < 0.01, "dix secondes de plus : {left} puis {now}");
+
+        // La Garde de fer, qui ne riposte pas, garde sa recharge
+        cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "ironGuard", Vec3::NEG_Z);
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        let missed: Vec<_> = (0..50).flat_map(|_| runner.tick(0.1, &catalog, &mut creatures, &mut player).missed).collect();
+        assert!(missed.is_empty());
+    }
+
+    #[test]
+    fn immunities_lift_and_ignore_stun_knockback_and_damage() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut stats = CharacterStats::new(PlayerClass::Champion);
+        let mut runner = SkillRunner::new();
+        cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "phalanx", Vec3::NEG_Z);
+        assert!(runner.immune(1, Status::Stun) && runner.immune(1, Status::Knockback));
+        assert!(!runner.immune(1, Status::Damage));
+
+        cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "divineAegis", Vec3::NEG_Z);
+        assert_eq!(runner.damage_taken_factor(1), 0.0, "l'Égide rend insensible aux dégâts");
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        for _ in 0..30 {
+            runner.tick(0.1, &catalog, &mut creatures, &mut player);
+        }
+        assert!(runner.damage_taken_factor(1) > 0.0, "puis l'immunité passe");
+
+        // Inarrêtable : l'étourdissement en cours tombe
+        stats.apply_stun(5.0);
+        stats.skills.insert("voidWarmaster".into(), 1);
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.apply_to_player(&EffectEntry { effect: Effect::Immune { from: vec![Status::Stun], duration: herocraft_common::skills::Ranked::One(3.0) }, to: None }, 1, 1, 1.0, "voidWarmaster", 1, &mut player);
+        assert!(!stats.is_stunned());
+        let immune = runner.immunities(1);
+        assert!(immune.contains(&Status::Stun) && immune.contains(&Status::Knockback));
+    }
+
+    #[test]
+    fn guard_breaker_breaks_the_guard_of_a_village_guard() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let block = creatures.block_size();
+        let species = creatures.registry().find("garde").expect("garde");
+        let at = feet + Vec3::new(2.0 * block, 0.0, 0.0);
+        creatures.spawn(species, at);
+        let guard = creatures.creatures().iter().find(|c| c.species == species).map(|c| c.id).unwrap();
+        assert!(creatures.guarding(guard));
+        // De face, la garde retire sa part ; de dos, rien
+        let facing = herocraft_common::yaw_direction(at, creatures.creatures().iter().find(|c| c.id == guard).unwrap().yaw);
+        assert!((creatures.guard_against(guard, at + facing * block) - 0.6).abs() < 1e-4);
+        assert_eq!(creatures.guard_against(guard, at - facing * block), 0.0);
+
+        let mut stats = CharacterStats::new(PlayerClass::Soldier);
+        let mut runner = SkillRunner::new();
+        cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "guardBreaker", Vec3::X);
+        assert!(!creatures.guarding(guard), "Brise-Garde la brise");
+        assert_eq!(creatures.guard_against(guard, at + facing * block), 0.0);
+    }
 }
+
