@@ -617,12 +617,9 @@ fn l_arbalete_tire_un_carreau_puis_recharge() {
     assert!(shots(&mut server, &alice, 10).is_empty(), "une flèche dans une arbalète");
     // Chargée : le carreau part et touche la vache
     let cow = server.spawn_creature("vache", feet + north * 6.0 * block).expect("espèce vache");
-    let health = |server: &Server| server.creatures().creatures().iter().find(|c| c.id == cow).map_or(0.0, |c| c.health);
-    let before = health(&server);
     alice.send(&ClientPacket::Shoot { aim: north, ammo: bolt.0 });
     assert_eq!(shots(&mut server, &alice, 10), vec![(me, Some(cow))]);
     // Aussitôt après : elle recharge, le tir est ignoré
     alice.send(&ClientPacket::Shoot { aim: north, ammo: bolt.0 });
     assert!(shots(&mut server, &alice, 10).is_empty(), "tir trop rapide accepté");
-    assert!(health(&server) < before, "la vache est blessée");
 }

@@ -1268,7 +1268,7 @@ impl UiState {
         }
         if !parts.is_empty() {
             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("weapon_hud")));
-            let bottom = screen.bottom() - SCREEN_MARGIN - HOTBAR_SLOT_SIZE - 26.0_f32;
+            let bottom = screen.bottom() - SCREEN_MARGIN - HOTBAR_SLOT_SIZE - 52.0_f32;
             let galley = painter.layout_no_wrap(parts.join("   "), egui::FontId::proportional(12.0_f32), TEXT_SOFT);
             let rect = egui::Rect::from_center_size(egui::pos2(screen.center().x, bottom - galley.size().y / 2.0_f32), galley.size() + egui::vec2(16.0_f32, 6.0_f32));
             painter.rect_filled(rect, 4.0_f32, egui::Color32::from_black_alpha(150));
