@@ -14,6 +14,9 @@
         "width": 1.5
       }
     },
+    "projectile": {
+      "speed": 45
+    },
     "targets": "enemies",
     "effects": [
       {
@@ -30,13 +33,18 @@
   "visuals": [
     {
       "effect": "windBlades",
-      "anchor": "rightHand",
+      "anchor": "projectile",
       "from": "impact"
     },
     {
       "effect": "impactSpark",
       "anchor": "target",
       "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
     }
   ]
 }

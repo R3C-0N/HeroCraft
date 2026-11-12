@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 20;
+pub const PROTOCOL_VERSION: u32 = 21;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -207,6 +207,8 @@ pub enum ServerPacket {
     CreatureStates(Vec<CreatureState>),
     /// Tirs de créatures (tourelles, bastion, liche) partis à l'instant, pour les montrer
     CreatureShots(Vec<crate::creature::CreatureShotEvent>),
+    /// Projectiles partis, déviés ou arrêtés depuis le dernier envoi (joueurs et créatures)
+    Projectiles(Vec<crate::creature::ProjectileEvent>),
     /// Mise à jour des statistiques RPG du joueur (chaque seconde, et aussitôt après une chute)
     StatsUpdate(CharacterStats),
     /// Le joueur vient d'être mordu ou chargé par une créature (suivi de ses nouvelles jauges)
@@ -282,6 +284,8 @@ pub enum ServerPacket {
         center: Vec3,
         creatures: Vec<u64>,
         players: Vec<u64>,
+        /// La touche d'un projectile en vol : seuls les visuels « hit » jouent
+        contact: bool,
         /// La riposte d'une garde qui vient de parer un coup
         parried: bool,
     },

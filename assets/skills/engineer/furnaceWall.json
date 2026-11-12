@@ -29,7 +29,7 @@
     "effects": [
       {
         "summon": {
-          "species": "portableBarricade",
+          "species": "furnaceBarricade",
           "at": "aimed",
           "limit": 1,
           "duration": [

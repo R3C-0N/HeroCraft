@@ -137,6 +137,46 @@ pub struct CreatureSpecies {
     /// Elle attire les ennemis proches (Piège Magnétique)
     #[serde(default)]
     pub magnet: Option<CreatureMagnet>,
+    /// Un obstacle (mur invoqué) : il arrête les tirs ennemis, brûle qui le frappe
+    #[serde(default)]
+    pub obstacle: Option<CreatureObstacle>,
+}
+
+/// Ce que fait un obstacle (barricade, mur) en plus de bloquer le passage
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CreatureObstacle {
+    /// Il arrête les tirs de ses ennemis (ceux de son camp passent)
+    #[serde(default)]
+    pub shots: bool,
+    /// Rien ne l'abîme (mur de lumière)
+    #[serde(default)]
+    pub invulnerable: bool,
+    /// Qui le frappe au corps à corps prend des dégâts et brûle (Mur Fournaise)
+    #[serde(default)]
+    pub thorns: Option<Thorns>,
+}
+
+/// Le retour de flamme d'un obstacle incandescent
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Thorns {
+    /// Dégâts à chaque coup reçu au corps à corps
+    pub damage: f32,
+    /// Brûlure ensuite : points par seconde, pendant `seconds` secondes
+    #[serde(default)]
+    pub burn: f32,
+    #[serde(default)]
+    pub seconds: f32,
+}
+
+/// Taille d'un projectile : le Manteau de Zéphyr dévie les petits
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectileSize {
+    #[default]
+    Small,
+    Large,
 }
 
 /// Forme du corps solide d'une espèce, vue de dessus
@@ -459,9 +499,17 @@ pub struct CreatureShot {
     /// (0 : il s'arrête sur sa cible)
     #[serde(default)]
     pub pierce: f32,
+    /// Petit (déviable) ou gros ; par défaut petit, sauf s'il explose
+    #[serde(default)]
+    pub size: Option<ProjectileSize>,
 }
 
 impl CreatureShot {
+    /// Sa taille, telle qu'écrite ou devinée (un tir qui explose est gros)
+    pub fn size(&self) -> ProjectileSize {
+        self.size.unwrap_or(if self.radius > 0.0 { ProjectileSize::Large } else { ProjectileSize::Small })
+    }
+
     /// Durée du trajet d'un tir de `from` à `to`, en secondes (`block` : taille d'un bloc)
     pub fn flight_seconds(&self, from: Vec3, to: Vec3, block: f32) -> f32 {
         if self.speed > 0.0 { from.distance(to) / (self.speed * block) } else { 0.0 }
@@ -995,5 +1043,53 @@ mod tests {
         assert!(CreatureSpecies::parse("cube", &unknown).is_err());
         let harmless = wolf.replace(r#""damage": 4"#, r#""damage": 0"#);
         assert!(CreatureSpecies::parse("cube", &harmless).is_err());
+    }
+}
+
+/// Qui a tiré un projectile
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Shooter {
+    /// Une créature : identifiant, rang de son espèce dans le registre
+    Creature { id: u64, species: u32 },
+    /// Un joueur, par une compétence
+    Player(u64),
+}
+
+/// Pourquoi un projectile s'arrête
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProjectileEnd {
+    /// Sur une cible
+    Hit,
+    /// Sur un mur ou une garde
+    Blocked,
+    /// Sur le relief
+    Terrain,
+    /// Au bout de sa portée
+    Range,
+}
+
+/// La vie d'un projectile, pour la montrer aux joueurs : le client fait voler le tir en ligne droite
+/// entre deux événements
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ProjectileEvent {
+    Launch {
+        id: u64,
+        shooter: Shooter,
+        /// La compétence, pour un tir de joueur (vide sinon)
+        skill: String,
+        from: Vec3,
+        /// Vitesse, en unités du monde par seconde
+        velocity: Vec3,
+    },
+    /// Il rebondit, est dévié ou corrige sa course vers sa cible
+    Turn { id: u64, at: Vec3, velocity: Vec3 },
+    End { id: u64, at: Vec3, reason: ProjectileEnd },
+}
+
+impl ProjectileEvent {
+    pub fn id(&self) -> u64 {
+        match self {
+            Self::Launch { id, .. } | Self::Turn { id, .. } | Self::End { id, .. } => *id,
+        }
     }
 }

@@ -35,6 +35,11 @@
         "width": 1.5
       }
     },
+    "projectile": {
+      "speed": 70,
+      "size": "large",
+      "pierce": "all"
+    },
     "targets": "enemies",
     "effects": [
       {
@@ -72,7 +77,7 @@
     },
     {
       "effect": "arrowTrail",
-      "anchor": "rightHand",
+      "anchor": "projectile",
       "from": "impact"
     },
     {
@@ -94,6 +99,11 @@
       "effect": "armorShatter",
       "anchor": "target",
       "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
     }
   ]
 }

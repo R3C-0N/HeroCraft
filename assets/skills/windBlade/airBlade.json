@@ -21,6 +21,9 @@
         "width": 1.5
       }
     },
+    "projectile": {
+      "speed": 35
+    },
     "targets": "enemies",
     "kind": "magical",
     "effects": [
@@ -38,13 +41,18 @@
   "visuals": [
     {
       "effect": "windBlades",
-      "anchor": "weapon",
+      "anchor": "projectile",
       "from": "impact"
     },
     {
       "effect": "impactSpark",
       "anchor": "target",
       "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
     }
   ]
 }

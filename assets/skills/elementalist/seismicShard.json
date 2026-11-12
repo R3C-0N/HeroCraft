@@ -13,6 +13,11 @@
         "width": 1.5
       }
     },
+    "projectile": {
+      "speed": 25,
+      "size": "large",
+      "pierce": 2
+    },
     "targets": "enemies",
     "effects": [
       {
@@ -34,13 +39,18 @@
   "visuals": [
     {
       "effect": "rockShard",
-      "anchor": "rightHand",
+      "anchor": "projectile",
       "from": "impact"
     },
     {
       "effect": "groundBurst",
       "anchor": "target",
       "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
     }
   ]
 }

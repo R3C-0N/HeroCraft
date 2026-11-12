@@ -871,9 +871,9 @@ fn main() {
                                         skill_play.on_refused(&skill, &reason);
                                     }
                                     NetEvent::SkillMove(m) => skill_play.on_move(m),
-                                    NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, parried } => {
+                                    NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact } => {
                                         let caster = (player_id != client.player_id()).then_some(player_id);
-                                        skill_play.on_hit(skill_play::Shown { caster, skill, rank, center, creatures, players, parried });
+                                        skill_play.on_hit(skill_play::Shown { caster, skill, rank, center, creatures, players, parried, contact });
                                     }
                                     NetEvent::SkillCooldown { skill, seconds } => skill_play.extend_cooldown(&skill, seconds),
                                     NetEvent::Pushed { direction, speed } => camera.push(direction, speed),
@@ -884,10 +884,8 @@ fn main() {
                                         let start = if mine { camera.eye_position() } else { from + up * 1.5 * block };
                                         skill_play.show_shot((!mine).then_some(player_id), start, to + up * 0.8 * block, target, special.as_deref(), block);
                                     }
-                                    NetEvent::CreatureShots(shots) => {
-                                        let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
-                                        skill_play.on_shots(&shots, &creature_registry, block);
-                                    }
+                                    NetEvent::CreatureShots(shots) => skill_play.on_shots(&shots, &creature_registry),
+                                    NetEvent::Projectiles(events) => skill_play.on_projectiles(&events, &creature_registry),
                                     NetEvent::Disconnected(reason) => lost = Some(reason),
                                 }
                             }
@@ -960,8 +958,11 @@ fn main() {
                                         // Tirs des tourelles, du bastion et de la liche
                                         let shots = solo_creatures.take_shots();
                                         if !shots.is_empty() {
-                                            let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
-                                            skill_play.on_shots(&shots, &creature_registry, block);
+                                            skill_play.on_shots(&shots, &creature_registry);
+                                        }
+                                        let projectiles = solo_creatures.take_projectile_events();
+                                        if !projectiles.is_empty() {
+                                            skill_play.on_projectiles(&projectiles, &creature_registry);
                                         }
                                         // Œufs pondus par les bêtes apprivoisées, laissés à leurs pieds
                                         for (feet, item) in solo_creatures.take_laid() {
@@ -1047,6 +1048,9 @@ fn main() {
                             // Compétences : en solo les règles tournent ici, sur nos créatures
                             let solo_skills = (net.is_none() && !ui_state.is_settings_open).then_some((&mut solo_creatures, camera.player_pos, &mut ui_state.player.stats));
                             skill_effects.start(skill_play.tick(anim_dt, solo_skills));
+                            for id in skill_play.take_ended_projectiles() {
+                                skill_effects.end_projectile(id);
+                            }
                             if skill_play.take_solo_death() {
                                 ui_state.player.bled_out();
                             }
@@ -1116,7 +1120,9 @@ fn main() {
                                 let players = |id: u64| net.as_ref().and_then(|c| c.remote_player_feet(id)).map(|f| (f, 0.0));
                                 let views = &creature_views;
                                 let creature_feet = |id: u64| views.iter().find(|v| v.id == id).map(|v| v.feet);
-                                let world = effects::AnchorWorld { hero: hero_anchors, hero_forward, players: &players, creatures: &creature_feet, eye: camera.eye_position(), block };
+                                let shots = &skill_play;
+                                let projectile_at = |id: u64| shots.projectile_at(id);
+                                let world = effects::AnchorWorld { hero: hero_anchors, hero_forward, players: &players, creatures: &creature_feet, projectiles: &projectile_at, eye: camera.eye_position(), block };
                                 skill_effects.update(anim_dt, &world, &mut effect_quads);
                             }
                             state.update_effects(&effect_quads);

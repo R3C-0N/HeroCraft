@@ -23,6 +23,9 @@
         "width": 1
       }
     },
+    "projectile": {
+      "speed": 40
+    },
     "targets": "enemies",
     "effects": [
       {
@@ -44,13 +47,18 @@
   "visuals": [
     {
       "effect": "cableLine",
-      "anchor": "rightHand",
+      "anchor": "projectile",
       "from": "impact"
     },
     {
       "effect": "impactSpark",
       "anchor": "target",
       "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
     }
   ]
 }

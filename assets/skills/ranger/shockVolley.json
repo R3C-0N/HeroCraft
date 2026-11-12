@@ -18,14 +18,24 @@
     "cooldown": 9,
     "animation": "crossbowShot",
     "area": {
-      "circle": {
-        "radius": [
+      "line": {
+        "length": 12,
+        "width": 1
+      }
+    },
+    "projectile": {
+      "speed": 45,
+      "bounce": {
+        "count": [
+          2,
+          3,
+          4
+        ],
+        "range": [
           3,
           3.5,
           4
-        ],
-        "center": "aimed",
-        "distance": 12
+        ]
       }
     },
     "targets": "enemies",
@@ -49,13 +59,18 @@
   "visuals": [
     {
       "effect": "lightningArc",
-      "anchor": "rightHand",
+      "anchor": "projectile",
       "from": "impact"
     },
     {
       "effect": "lightningArc",
       "anchor": "target",
       "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
     }
   ]
 }

@@ -435,6 +435,16 @@ pub enum Effect {
     Immune { from: Vec<Status>, duration: Ranked },
     /// La garde de la bête (`guard` de son espèce) tombe pendant `duration` secondes
     BreakGuard { duration: Ranked },
+    /// Pendant `duration` secondes, les tirs ennemis qui arrivent sur le joueur de face, dans un
+    /// arc de `arc` degrés autour de la direction visée au lancement, s'arrêtent sur lui (Mur vivant)
+    ShotGuard { arc: Ranked, duration: Ranked },
+    /// Pendant `duration` secondes, les projectiles de cette taille (`small` : les petits ; `large` :
+    /// tous) qui atteignent le joueur sont déviés (Manteau de Zéphyr)
+    Deflect {
+        #[serde(default)]
+        size: crate::creature::ProjectileSize,
+        duration: Ranked,
+    },
     /// Le chargeur de l'arbalète tenue se remplit d'un coup (Esquive tactique, Roulade Évasive)
     Reload {},
     /// Munition spéciale : les `shots` prochains tirs du joueur (tirs d'arc ou d'arbalète et
@@ -526,6 +536,80 @@ pub enum Status {
     Knockback,
     Pull,
     Damage,
+}
+
+/// Un vrai projectile (`Cast::projectile`) : le tir part de la main du lanceur dans la direction
+/// visée (vers le point visé pour une zone `circle` visée), vole et touche ce qu'il rencontre. La
+/// zone `line` donne sa portée (longueur) et son épaisseur (largeur).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Projectile {
+    /// Vitesse, en blocs par seconde
+    #[serde(default = "projectile_speed")]
+    pub speed: Ranked,
+    #[serde(default)]
+    pub size: crate::creature::ProjectileSize,
+    /// Ennemis traversés avant de s'arrêter
+    #[serde(default)]
+    pub pierce: Pierce,
+    /// Après chaque touche, il repart vers l'ennemi le plus proche pas encore touché
+    #[serde(default)]
+    pub bounce: Option<Bounce>,
+    /// Ce qu'il traverse sans s'arrêter
+    #[serde(default)]
+    pub through: Vec<Through>,
+}
+
+fn projectile_speed() -> Ranked {
+    Ranked::One(40.0)
+}
+
+/// Ennemis qu'un projectile traverse : un nombre, ou tous (`"all"`)
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum Pierce {
+    Count(Ranked),
+    All(PierceAll),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PierceAll {
+    All,
+}
+
+impl Default for Pierce {
+    fn default() -> Self {
+        Pierce::Count(Ranked::One(0.0))
+    }
+}
+
+impl Pierce {
+    /// Ennemis traversés au rang `rank` (`u32::MAX` : tous)
+    pub fn at(&self, rank: u8) -> u32 {
+        match self {
+            Pierce::Count(n) => n.at(rank).max(0.0).round() as u32,
+            Pierce::All(_) => u32::MAX,
+        }
+    }
+}
+
+/// Rebonds d'un projectile : combien, et jusqu'à quelle distance de la cible touchée, en blocs
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Bounce {
+    pub count: Ranked,
+    pub range: Ranked,
+}
+
+/// Ce qu'un projectile peut traverser
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Through {
+    /// Le relief
+    Terrain,
+    /// Les murs et les gardes
+    Obstacles,
 }
 
 /// Une zone qui reste posée après la frappe (`Cast::zone`). Deux fois par seconde, elle rejoue les
@@ -671,6 +755,10 @@ pub struct Cast {
     /// Effets autour de chaque ennemi que la frappe tue
     #[serde(default)]
     pub on_kill: Option<Around>,
+    /// Un vrai projectile : la compétence ne frappe pas sa zone d'un coup, son tir vole et touche
+    /// ce qu'il rencontre
+    #[serde(default)]
+    pub projectile: Option<Projectile>,
     /// Seconde frappe sur les ennemis trouvés par la première
     #[serde(default)]
     pub follow_up: Option<FollowUp>,
@@ -792,6 +880,8 @@ pub enum Moment {
     End,
     /// Fin de l'effet sur la cible (ralenti, étourdi, bouclier…)
     EffectEnd,
+    /// Le projectile s'arrête sur un mur, une garde ou le relief
+    Blocked,
     /// Une garde pare un coup : la riposte part
     Parry,
 }
@@ -812,6 +902,8 @@ pub enum Anchor {
     Target,
     /// Le centre de la zone de la compétence
     Area,
+    /// Le projectile de la compétence, de son départ à son arrêt (`Cast::projectile`)
+    Projectile,
 }
 
 /// Un effet visuel joué par la compétence
@@ -1150,6 +1242,21 @@ impl SkillCatalog {
             };
             if !numbers.iter().chain([&&cast.cooldown, &&cast.cost.mana, &&cast.cost.stamina]).all(|r| r.is_finite()) {
                 return Err("nombre invalide dans cast".into());
+            }
+            if let Some(p) = &cast.projectile {
+                let mut values = vec![&p.speed];
+                if let Pierce::Count(n) = &p.pierce {
+                    values.push(n);
+                }
+                if let Some(b) = &p.bounce {
+                    values.extend([&b.count, &b.range]);
+                }
+                if !values.iter().all(|r| r.is_finite()) || p.speed.at(1) <= 0.0 {
+                    return Err("projectile : vitesse positive, nombres valides".into());
+                }
+                if matches!(cast.area, Area::Arc { .. } | Area::Caster) {
+                    return Err("projectile : zone line ou circle (portée et point visé)".into());
+                }
             }
             if let Some(m) = &cast.movement {
                 if m.grapple.as_ref().is_some_and(|g| !(g.range.is_finite() && g.range.at(1) > 0.0 && g.speed.is_finite() && g.speed.at(1) > 0.0 && g.stop.is_finite())) {

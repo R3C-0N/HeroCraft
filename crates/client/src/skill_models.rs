@@ -220,6 +220,8 @@ fn every_skill_model_loads_with_its_texture_and_clips() {
         ("magneticTrap", vec!["spin"]),
         ("shrapnelMine", vec!["blink"]),
         ("portableBarricade", vec!["unfold"]),
+        ("furnaceBarricade", vec!["unfold"]),
+        ("sacredRampart", vec!["rise"]),
         ("etheriumBastion", vec!["rise", "fire"]),
         ("stoneWall", vec!["rise"]),
         ("boneWall", vec!["rise"]),

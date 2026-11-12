@@ -31,6 +31,8 @@ const NO_TEXTURE: u32 = 255;
 const DEFAULT_LAYER_SECONDS: f32 = 0.5;
 
 // Formes, telles que le shader les lit (`kind`)
+/// Secondes de trajet dont un sillage se souvient au plus
+const TRAIL_MEMORY: f32 = 0.6;
 const KIND_SPRITE: u32 = 0;
 const KIND_RING: u32 = 1;
 const KIND_ARC: u32 = 2;
@@ -140,6 +142,8 @@ struct ShapeLayer {
     on_ground: bool,
     upright: bool,
     texture: u32,
+    /// Sillage (`trail`) : secondes de trajet qu'il couvre derrière l'ancre
+    life: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -267,6 +271,7 @@ impl EffectDef {
                     on_ground: flag("on_ground"),
                     upright: flag("upright"),
                     texture: texture_layer(l.get("texture")),
+                    life: num("life", 0.2),
                 };
                 (LayerKind::Shape(layer), l.clone())
             };
@@ -355,6 +360,8 @@ pub struct AnchorWorld<'a> {
     pub players: &'a dyn Fn(u64) -> Option<(Vec3, f32)>,
     /// Pieds des créatures
     pub creatures: &'a dyn Fn(u64) -> Option<Vec3>,
+    /// Position des projectiles en vol
+    pub projectiles: &'a dyn Fn(u64) -> Option<Vec3>,
     pub eye: Vec3,
     pub block: f32,
 }
@@ -384,6 +391,8 @@ struct Running {
     carry: Vec<f32>,
     /// Dernière position de l'ancre
     last_anchor: Option<Vec3>,
+    /// Positions récentes de l'ancre (instant, position), pour les sillages
+    history: Vec<(f32, Vec3)>,
     seed: u32,
 }
 
@@ -437,12 +446,20 @@ impl Effects {
             let n = def.layers.len();
             self.next_seed = self.next_seed.wrapping_add(7919);
             let started = Instant::now() + std::time::Duration::from_secs_f32(cue.delay.clamp(0.0, 30.0));
-            self.running.push(Running { def: def.clone(), cue, started, seconds, particles: vec![Vec::new(); n], emitted: vec![false; n], carry: vec![0.0; n], last_anchor: None, seed: self.next_seed });
+            self.running.push(Running { def: def.clone(), cue, started, seconds, particles: vec![Vec::new(); n], emitted: vec![false; n], carry: vec![0.0; n], last_anchor: None, history: Vec::new(), seed: self.next_seed });
         }
     }
 
     pub fn is_empty(&self) -> bool {
         self.running.is_empty()
+    }
+
+    /// Le projectile `id` s'est arrêté : les visuels qui le suivaient s'achèvent
+    pub fn end_projectile(&mut self, id: u64) {
+        let now = Instant::now();
+        for run in self.running.iter_mut().filter(|r| r.cue.projectile == Some(id)) {
+            run.seconds = run.seconds.min(now.saturating_duration_since(run.started).as_secs_f32());
+        }
     }
 
     /// Avance de `dt` secondes et écrit les quadrilatères de l'image dans `out`
@@ -468,6 +485,8 @@ impl Effects {
                 },
             };
             let scale = world.block * if run.def.area_unit { run.cue.area_blocks.max(0.1) } else { 1.0 };
+            run.history.push((t, anchor));
+            run.history.retain(|h| h.0 >= t - TRAIL_MEMORY);
             simulate(run, t, dt, anchor, forward, scale, world, out);
             if out.len() >= MAX_QUADS {
                 out.truncate(MAX_QUADS);
@@ -504,6 +523,12 @@ fn anchor_of(cue: &VisualCue, world: &AnchorWorld, t: f32) -> Option<(Option<Vec
             None => cue.point,
         }),
         Anchor::Target => cue.creature.and_then(|id| (world.creatures)(id)),
+        // Le projectile en vol ; arrêté, l'effet reste où il était
+        Anchor::Projectile => cue.projectile.and_then(|id| (world.projectiles)(id)).or(match cue.travel {
+            Some((to, seconds)) if cue.projectile.is_none() => Some(cue.point.lerp(to, (t / seconds.max(1e-3)).clamp(0.0, 1.0))),
+            _ if cue.projectile.is_none() => Some(cue.point),
+            _ => None,
+        }),
     };
     Some((point, forward))
 }
@@ -541,7 +566,10 @@ fn simulate(run: &mut Running, t: f32, dt: f32, anchor: Vec3, forward: Vec3, sca
                 }
                 let pulse = if shape.pulse > 0.0 { 0.85 + 0.15 * (local * shape.pulse * std::f32::consts::TAU).sin() } else { 1.0 };
                 let rgb = [c[0] * layer.glow, c[1] * layer.glow, c[2] * layer.glow, c[3] * fade];
-                push_shape(shape, s, local, origin, up, forward, right, scale * pulse, block, world.eye, rgb, additive, out);
+                // Le bout d'un sillage : là où était l'ancre il y a `life` secondes
+                let offset = origin - anchor;
+                let tail = run.history.iter().find(|h| h.0 >= t - shape.life).map_or(origin, |h| h.1 + offset);
+                push_shape(shape, s, local, origin, tail, up, forward, right, scale * pulse, block, world.eye, rgb, additive, out);
             }
             LayerKind::Particles(p) => {
                 let parts = &mut run.particles[i];
@@ -645,7 +673,7 @@ fn billboard(center: Vec3, eye: Vec3, up: Vec3, half: f32) -> (Vec3, Vec3) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn push_shape(shape: &ShapeLayer, s: f32, local: f32, origin: Vec3, up: Vec3, forward: Vec3, right: Vec3, scale: f32, block: f32, eye: Vec3, rgb: [f32; 4], additive: f32, out: &mut Vec<EffectQuad>) {
+fn push_shape(shape: &ShapeLayer, s: f32, local: f32, origin: Vec3, tail: Vec3, up: Vec3, forward: Vec3, right: Vec3, scale: f32, block: f32, eye: Vec3, rgb: [f32; 4], additive: f32, out: &mut Vec<EffectQuad>) {
     let quad = |center: Vec3, u: Vec3, v: Vec3, kind: u32, p0: f32, p1: f32, texture: u32, rotation: f32| EffectQuad {
         center: [center.x, center.y, center.z, kind as f32],
         axis_u: [u.x, u.y, u.z, p0],
@@ -704,8 +732,18 @@ fn push_shape(shape: &ShapeLayer, s: f32, local: f32, origin: Vec3, up: Vec3, fo
             let (u, v) = billboard(origin, eye, up, half);
             out.push(quad(origin, u, v, KIND_SPRITE, 0.0, 0.0, shape.texture, shape.spin.to_radians() * local));
         }
-        // Le sillage d'un projectile : pas encore de projectiles
-        Shape::Trail => {}
+        // Le sillage d'un projectile : un ruban de l'ancre à là où elle était un instant plus tôt
+        Shape::Trail => {
+            let along = origin - tail;
+            let length = along.length();
+            if length > 1e-3 * block {
+                let width = shape.width.at(0.0) * scale;
+                let center = (origin + tail) * 0.5;
+                let dir = along / length;
+                let across = dir.cross((eye - center).normalize_or(up)).normalize_or(right);
+                out.push(quad(center, across * width * 0.5, dir * length * 0.5, KIND_BEAM, 0.0, 0.0, NO_TEXTURE, 0.0));
+            }
+        }
     }
 }
 
@@ -903,10 +941,10 @@ mod tests {
         let (library, _) = EffectLibrary::load_dir(&dir);
         let mut effects = Effects { library, running: Vec::new(), next_seed: 1 };
         let feet = Vec3::new(0.0, 1000.0, 0.0);
-        let cue = VisualCue { effect: "shockRing".into(), anchor: Anchor::Feet, caster: None, point: feet, creature: None, aim: Vec3::NEG_Z, hold: None, area_blocks: 3.0, travel: None, delay: 0.0 };
+        let cue = VisualCue { effect: "shockRing".into(), anchor: Anchor::Feet, caster: None, point: feet, creature: None, aim: Vec3::NEG_Z, hold: None, area_blocks: 3.0, travel: None, delay: 0.0, projectile: None };
         effects.start(vec![cue]);
         let no_player = |_: u64| None; let no_creature = |_: u64| None;
-        let world = AnchorWorld { hero: HeroAnchors::standing(feet, 0.0, 1.0), hero_forward: Vec3::NEG_Z, players: &no_player, creatures: &no_creature, eye: feet + Vec3::new(0.0, 3.0, 6.0), block: 1.0 };
+        let world = AnchorWorld { hero: HeroAnchors::standing(feet, 0.0, 1.0), hero_forward: Vec3::NEG_Z, players: &no_player, creatures: &no_creature, projectiles: &no_creature, eye: feet + Vec3::new(0.0, 3.0, 6.0), block: 1.0 };
         let mut out = Vec::new();
         effects.update(0.016, &world, &mut out);
         assert_eq!(out.len(), 1, "l'anneau seul avant les étincelles");
@@ -919,6 +957,37 @@ mod tests {
         assert!(out.len() > 30, "les étincelles partent : {}", out.len());
         effects.running[0].started -= std::time::Duration::from_secs(5);
         effects.update(0.016, &world, &mut out);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn a_trail_follows_its_projectile_and_ends_with_it() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/effects");
+        let (library, _) = EffectLibrary::load_dir(&dir);
+        let mut effects = Effects { library, running: Vec::new(), next_seed: 1 };
+        let feet = Vec3::new(0.0, 1000.0, 0.0);
+        let cue = VisualCue { effect: "arrowTrail".into(), anchor: Anchor::Projectile, caster: None, point: feet, creature: None, aim: Vec3::NEG_Z, hold: Some(8.0), area_blocks: 1.0, travel: None, delay: 0.0, projectile: Some(3) };
+        effects.start(vec![cue]);
+        let no_player = |_: u64| None;
+        let no_creature = |_: u64| None;
+        let mut out = Vec::new();
+        // La flèche avance de 2 blocs entre deux images : le ruban va de l'ancienne position à la nouvelle
+        for (k, z) in [0.0f32, -2.0].into_iter().enumerate() {
+            let at = move |id: u64| (id == 3).then_some(feet + Vec3::new(0.0, 1.4, z));
+            let world = AnchorWorld { hero: HeroAnchors::standing(feet, 0.0, 1.0), hero_forward: Vec3::NEG_Z, players: &no_player, creatures: &no_creature, projectiles: &at, eye: feet + Vec3::new(3.0, 3.0, 0.0), block: 1.0 };
+            effects.running[0].started -= std::time::Duration::from_millis(50 * k as u64);
+            effects.update(0.05, &world, &mut out);
+        }
+        assert_eq!(out.len(), 1, "un ruban");
+        assert_eq!(out[0].center[3] as u32, KIND_BEAM);
+        let half = Vec3::from_slice(&out[0].axis_v[..3]).length();
+        assert!((half - 1.0).abs() < 0.05, "le ruban couvre les 2 blocs parcourus : {half}");
+        // Le projectile s'arrête : le visuel s'achève
+        effects.end_projectile(3);
+        effects.running[0].started -= std::time::Duration::from_secs(3);
+        let gone = |_: u64| None;
+        let world = AnchorWorld { hero: HeroAnchors::standing(feet, 0.0, 1.0), hero_forward: Vec3::NEG_Z, players: &no_player, creatures: &no_creature, projectiles: &gone, eye: feet, block: 1.0 };
+        effects.update(0.05, &world, &mut out);
         assert!(effects.is_empty());
     }
 }
