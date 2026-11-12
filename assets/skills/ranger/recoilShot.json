@@ -10,6 +10,10 @@
     "planner": 274
   },
   "cast": {
+    "weapons": [
+      "crossbow"
+    ],
+    "uses_round": true,
     "cost": {
       "stamina": 12
     },
@@ -41,7 +45,10 @@
           ]
         }
       }
-    ]
+    ],
+    "movement": {
+      "leap": -2
+    }
   },
   "visuals": [
     {

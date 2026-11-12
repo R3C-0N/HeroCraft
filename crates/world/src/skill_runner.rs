@@ -12,6 +12,7 @@ use glam::Vec3;
 use herocraft_common::skills::{Around, BuffStat, CastError, Center, Copies, CounterAt, Effect, EffectEntry, Facing, Fused, GrappleTo, Guard, PlacedArea, SkillCatalog, SkillMove, Status, Targets, SKILL_BASE_DAMAGE};
 use herocraft_common::{CharacterStats, DamageKind};
 
+use crate::arsenal::{Arsenal, Fired, Special};
 use crate::CreatureWorld;
 
 /// Intervalle entre deux coups d'un effet par seconde, en secondes
@@ -317,6 +318,17 @@ pub struct SkillRunner {
     guards: Vec<Guarding>,
     /// Immunités en cours
     immunities: Vec<Immunity>,
+    /// L'arme de chaque joueur : cadence, chargeur, charge, munitions spéciales
+    arsenal: Arsenal,
+}
+
+/// Un tir d'arc ou d'arbalète arrivé : la bête touchée (la plus proche dans son couloir), où il
+/// s'arrête, et la munition spéciale qu'il portait
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShotHit {
+    pub target: Option<u64>,
+    pub to: Vec3,
+    pub special: Option<String>,
 }
 
 /// Facteur des dégâts d'un coup critique
@@ -325,6 +337,87 @@ pub const CRITICAL_FACTOR: f32 = 2.0;
 impl SkillRunner {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Les armes des joueurs
+    pub fn arsenal(&self) -> &Arsenal {
+        &self.arsenal
+    }
+
+    pub fn arsenal_mut(&mut self) -> &mut Arsenal {
+        &mut self.arsenal
+    }
+
+    /// Le joueur `player`, de voie `class`, tient `item` en main (`None` : mains nues)
+    pub fn hold(&mut self, player: u64, item: Option<herocraft_common::ItemId>, class: herocraft_common::PlayerClass) {
+        self.arsenal.hold(player, item, class);
+    }
+
+    /// Avance les armes de `dt` secondes, à la vitesse d'attaque de chacun (appelé par `tick` ; le
+    /// client en ligne l'appelle seul pour prévoir son chargeur)
+    pub fn tick_weapons(&mut self, dt: f32) {
+        let speeds: HashMap<u64, f32> = self.buffs.iter().filter(|b| b.stat == BuffStat::AttackSpeed).fold(HashMap::new(), |mut m, b| {
+            *m.entry(b.player).or_insert(1.0) += b.value * b.scale;
+            m
+        });
+        self.arsenal.tick(dt, |p| speeds.get(&p).copied().unwrap_or(1.0));
+    }
+
+    /// Le tir `fired` du joueur `caster` part de ses pieds `feet` dans la direction `aim`, avec
+    /// `damage` points (arme et munition, avant renforcements) : il frappe la première bête ennemie
+    /// de son couloir, et y porte sa munition spéciale
+    #[allow(clippy::too_many_arguments)]
+    pub fn shoot(&mut self, caster: u64, feet: Vec3, aim: Vec3, damage: f32, fired: Fired, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> ShotHit {
+        use herocraft_common::skills::{Area, Ranked};
+        use herocraft_common::weapons::{SHOT_RANGE_BLOCKS, SHOT_WIDTH_BLOCKS};
+        let block = creatures.block_size();
+        let reach = 1.0 + self.buff(caster, BuffStat::Range);
+        let line = Area::Line { length: Ranked::One(SHOT_RANGE_BLOCKS), width: Ranked::One(SHOT_WIDTH_BLOCKS) };
+        let area = line.place_scaled(1, feet, aim, None, block, 1.0, reach);
+        let target = creatures
+            .creatures()
+            .iter()
+            .filter(|c| c.is_alive() && !c.tamed && c.summoner.is_none() && area.contains(c.position, block))
+            .min_by(|a, b| a.position.distance(feet).total_cmp(&b.position.distance(feet)))
+            .map(|c| (c.id, c.position));
+        let up = feet.normalize_or_zero();
+        let flat = (aim - up * aim.dot(up)).normalize_or_zero();
+        let to = target.map_or(feet + flat * SHOT_RANGE_BLOCKS * reach * block, |t| t.1);
+        let special = fired.special.as_ref().map(|s| s.skill.clone());
+        if let Some((id, at)) = target {
+            let chance = self.critical_chance(caster, id);
+            let critical = chance > 0.0 && self.roll() < chance;
+            let factor = if critical { CRITICAL_FACTOR } else { 1.0 };
+            creatures.wound(id, feet, caster, damage * fired.power * self.hit_factor(caster, id, creatures) * factor);
+            if let Some(special) = &fired.special {
+                self.apply_special(special, caster, &[id], creatures, players);
+            }
+            self.ride(caster, &[at], creatures, players);
+        }
+        ShotHit { target: target.map(|t| t.0), to, special }
+    }
+
+    /// Les effets d'une munition spéciale sur les bêtes `targets` : sur elles seules, ou sur tous les
+    /// ennemis dans son rayon autour de chacune
+    fn apply_special(&mut self, special: &Special, caster: u64, targets: &[u64], creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) {
+        use herocraft_common::skills::Ranked;
+        let points: Vec<Vec3> = targets.iter().filter_map(|&id| creatures.creatures().iter().find(|c| c.id == id).map(|c| c.position)).collect();
+        match special.radius {
+            Some(radius) => {
+                let around = Around { radius: Ranked::One(radius), effects: special.effects.clone() };
+                self.burst(&around, caster, special.rank, &special.skill, &points, creatures, players);
+            }
+            None => {
+                let feet = players.feet(caster).unwrap_or(Vec3::ZERO);
+                let p = Pending { caster, skill: special.skill.clone(), rank: special.rank, aim: Vec3::ZERO, aimed: None, left: 0.0, crit: false, power: 1.0, size: 1.0, kind: DamageKind::Physical };
+                let damage_factor = 1.0 + self.buff(caster, BuffStat::Damage);
+                for entry in &special.effects {
+                    for &id in targets {
+                        self.apply_to_creature(entry, &p, id, feet, damage_factor, creatures);
+                    }
+                }
+            }
+        }
     }
 
     /// Recharge restante de `skill` pour le joueur `player`, en secondes
@@ -379,6 +472,18 @@ impl SkillRunner {
         if cast.movement.as_ref().and_then(|m| m.grapple.as_ref()).is_some_and(|g| g.to == GrappleTo::Block) && aimed.is_none() {
             return Err(CastError::NothingToGrab);
         }
+        // L'arme en main : la bonne famille, un carreau prêt, une charge assez longue
+        let held = self.arsenal.held(caster);
+        if !cast.weapons.is_empty() && !held.kind.is_some_and(|k| cast.weapons.contains(&k)) {
+            return Err(CastError::NoWeapon);
+        }
+        if cast.uses_round && self.arsenal.magazine(caster).is_none_or(|m| m.loaded == 0) {
+            return Err(CastError::Reloading);
+        }
+        let charged = match &cast.charge {
+            Some(charge) => charge.power_after(self.arsenal.charge_held(caster, Some(requested))).ok_or(CastError::NotCharged)?,
+            None => 1.0,
+        };
         let rank = catalog.rank(stats, skill);
         let amplify = catalog.fusion().and_then(|f| f.fusion.as_ref()).map(|f| f.amplify.clone()).unwrap_or_default();
         let (cost, power, size) = if amplified { (amplify.cost, amplify.power, amplify.area) } else { (1.0, 1.0, 1.0) };
@@ -400,6 +505,13 @@ impl SkillRunner {
         }
         stats.mana -= mana;
         stats.stamina -= stamina;
+        if cast.charge.is_some() {
+            self.arsenal.release_charge(caster, Some(requested));
+        }
+        if cast.uses_round {
+            let _ = self.arsenal.use_round(caster);
+        }
+        let power = power * charged;
         self.cooldowns.insert((caster, requested.to_string()), cast.cooldown.at(rank));
         // Une attaque lancée invisible le dévoile, et frappe en critique
         let attacks = cast.effects.iter().any(|e| matches!(e.effect, Effect::Damage { .. } | Effect::OverTime { damage: Some(_), .. }));
@@ -649,11 +761,13 @@ impl SkillRunner {
         self.guards.retain(|g| g.player != player);
         self.immunities.retain(|i| i.player != player);
         self.cooldowns.retain(|(p, _), _| *p != player);
+        self.arsenal.forget(player);
     }
 
     /// Avance de `dt` secondes : recharges, frappes arrivées à leur impact, effets qui durent
     pub fn tick(&mut self, dt: f32, catalog: &SkillCatalog, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> SkillTick {
         let mut out = SkillTick::default();
+        self.tick_weapons(dt);
         for left in self.cooldowns.values_mut() {
             *left -= dt;
         }
@@ -942,6 +1056,12 @@ impl SkillRunner {
             }
         }
         let attacks = cast.effects.iter().any(|e| matches!(e.effect, Effect::Damage { .. }));
+        // Une compétence de tir emporte la munition spéciale chargée
+        if attacks && !enemies.is_empty() && cast.weapons.iter().any(|w| w.is_ranged()) {
+            if let Some(special) = self.arsenal.take_special(p.caster) {
+                self.apply_special(&special, p.caster, &enemies, creatures, players);
+            }
+        }
         if attacks {
             let points: Vec<Vec3> = spots.iter().map(|s| s.0).collect();
             changed.extend(self.ride(p.caster, &points, creatures, players));
@@ -1162,7 +1282,7 @@ impl SkillRunner {
             Effect::Heal { amount } => creatures.heal(id, amount.at(rank) * p.power),
             // Une invocation alliée se protège et se presse (Surcharge Mécanique)
             Effect::Shield { amount, duration, .. } => creatures.shield(id, amount.at(rank) * p.power, duration.at(rank)),
-            Effect::Buff { stat: BuffStat::Haste, value, duration, .. } => creatures.haste(id, value.at(rank), duration.at(rank)),
+            Effect::Buff { stat: BuffStat::AttackSpeed, value, duration, .. } => creatures.haste(id, value.at(rank), duration.at(rank)),
             Effect::Slow { strength, duration } => creatures.slow(id, strength.at(rank), duration.at(rank)),
             Effect::Stun { duration } => creatures.stun(id, duration.at(rank)),
             Effect::Knockback { strength } => creatures.shove(id, feet, strength.at(rank) * p.power),
@@ -1190,7 +1310,7 @@ impl SkillRunner {
             }
             Effect::BreakGuard { duration } => creatures.break_guard(id, duration.at(rank)),
             // Sans effet sur une bête : les autres renforcements, invisibilité, résurrection, lien
-            Effect::Guard(_) | Effect::Immune { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } | Effect::Sacrifice { .. } => {}
+            Effect::Guard(_) | Effect::Immune { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } | Effect::Sacrifice { .. } | Effect::Reload {} | Effect::LoadAmmo { .. } => {}
         }
     }
 
@@ -1293,6 +1413,11 @@ impl SkillRunner {
                         stats.slow_time = 0.0;
                     }
                 }
+            }
+            Effect::Reload {} => self.arsenal.reload_now(id),
+            Effect::LoadAmmo { shots, duration, radius, effects } => {
+                let shots = shots.at(rank).round().max(1.0) as u32;
+                self.arsenal.load(id, Special { skill: skill.to_string(), rank, shots, left: duration.at(rank), radius: radius.as_ref().map(|r| r.at(rank)), effects: effects.clone() });
             }
             // Pas de combat entre joueurs : ni dégâts, ni ralenti, ni étourdissement d'un allié (ce
             // sont les bêtes qui ralentissent et étourdissent les joueurs, `CreatureWorld::afflict`)
@@ -1656,7 +1781,8 @@ mod tests {
         let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
         runner.tick(0.01, &catalog, &mut creatures, &mut player);
         assert!((runner.buff(1, BuffStat::Damage) - 0.6).abs() < 0.01, "les trois quarts du bonus aux trois quarts de vie perdus");
-        assert!((runner.buff(1, BuffStat::Speed) - 0.3).abs() < 0.01);
+        assert!((runner.buff(1, BuffStat::AttackSpeed) - 0.3).abs() < 0.01, "sa vitesse d'attaque suit aussi");
+        assert_eq!(runner.buff(1, BuffStat::Speed), 0.0, "plus de vitesse de déplacement");
     }
 
     #[test]
@@ -2466,6 +2592,10 @@ mod tests {
         creatures.creature_mut(cow).unwrap().health = 10_000.0;
         let mut stats = CharacterStats::new(PlayerClass::WarPriest);
         let mut runner = SkillRunner::new();
+        // Un arc bandé à fond
+        hold(&mut runner, "shortBow", PlayerClass::WarPriest);
+        runner.arsenal_mut().begin_charge(1, Some("ballistaShot"));
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 2.0);
         cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "ballistaShot", None);
         assert_eq!(creatures.armor(knight), 0.0, "toute l'armure brisée");
         let (on_knight, on_cow) = (10_000.0 - health(&creatures, knight), 10_000.0 - health(&creatures, cow));
@@ -2551,6 +2681,113 @@ mod tests {
         let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
         runner.ride(1, &[at], &mut creatures, &mut player);
         assert_eq!(creatures.armor(knight), 0.0, "un coup d'épée sous le Monolithe désintègre l'armure");
+    }
+
+    fn hold(runner: &mut SkillRunner, id: &str, class: PlayerClass) {
+        runner.hold(1, Some(herocraft_common::items().find(id).unwrap()), class);
+    }
+
+    #[test]
+    fn a_shooting_skill_needs_its_weapon_and_a_bolt() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut stats = CharacterStats::new(PlayerClass::Ranger);
+        stats.skills.insert("recoilShot".into(), 1);
+        stats.stamina = 100.0;
+        let mut runner = SkillRunner::new();
+        assert_eq!(runner.cast(&catalog, 1, &mut stats, "recoilShot", Vec3::NEG_Z, None), Err(CastError::NoWeapon), "mains nues");
+        hold(&mut runner, "shortBow", PlayerClass::Ranger);
+        assert_eq!(runner.cast(&catalog, 1, &mut stats, "recoilShot", Vec3::NEG_Z, None), Err(CastError::NoWeapon), "un arc n'est pas une arbalète");
+        hold(&mut runner, "handCrossbow", PlayerClass::Ranger);
+        let stamina = stats.stamina;
+        assert_eq!(runner.cast(&catalog, 1, &mut stats, "recoilShot", Vec3::NEG_Z, None), Err(CastError::Reloading), "elle se charge à la prise en main");
+        assert_eq!(stats.stamina, stamina, "un refus ne coûte rien");
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
+        assert_eq!(runner.cast(&catalog, 1, &mut stats, "recoilShot", Vec3::NEG_Z, None), Ok(1));
+        assert_eq!(runner.arsenal().magazine(1).unwrap().loaded, 1, "le Rôdeur garde son second carreau");
+    }
+
+    #[test]
+    fn evasive_moves_reload_the_crossbow() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut stats = CharacterStats::new(PlayerClass::MonsterHunter);
+        let mut runner = SkillRunner::new();
+        hold(&mut runner, "handCrossbow", PlayerClass::MonsterHunter);
+        assert_eq!(runner.arsenal().magazine(1).unwrap().loaded, 0);
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "tacticalDodge", None);
+        assert_eq!(runner.arsenal().magazine(1).unwrap().loaded, 1, "rechargée d'un coup");
+        assert!(catalog.get("tacticalDodge").unwrap().cast.as_ref().unwrap().movement.as_ref().unwrap().side.is_some(), "un bond de côté");
+    }
+
+    #[test]
+    fn a_ballista_shot_hits_harder_when_fully_drawn() {
+        let catalog = SkillCatalog::load_default();
+        let dealt = |held: f32| {
+            let (mut creatures, feet) = world();
+            let cow = creatures.creatures()[0].id;
+            creatures.creature_mut(cow).unwrap().health = 1000.0;
+            let mut stats = CharacterStats::new(PlayerClass::Archer);
+            stats.skills.insert("ballistaShot".into(), 1);
+            stats.stamina = 100.0;
+            let mut runner = SkillRunner::new();
+            hold(&mut runner, "shortBow", PlayerClass::Archer);
+            runner.arsenal_mut().begin_charge(1, Some("ballistaShot"));
+            pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, held);
+            runner.cast(&catalog, 1, &mut stats, "ballistaShot", Vec3::NEG_Z, None)?;
+            let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+            until_impact(&mut runner, &catalog, &mut creatures, &mut player);
+            Ok(1000.0 - health(&creatures, cow))
+        };
+        assert_eq!(dealt(0.2), Err(CastError::NotCharged), "relâchée trop tôt");
+        let (half, full) = (dealt(0.5).unwrap(), dealt(2.0).unwrap());
+        assert!(half > 0.0 && (full / half - 2.0).abs() < 0.05, "à moitié {half}, pleine {full}");
+    }
+
+    #[test]
+    fn poison_bolts_ride_the_next_three_shots() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let cow = creatures.creatures()[0].id;
+        creatures.creature_mut(cow).unwrap().health = 1000.0;
+        let mut stats = CharacterStats::new(PlayerClass::Rogue);
+        let mut runner = SkillRunner::new();
+        hold(&mut runner, "shortBow", PlayerClass::Rogue);
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "poisonBolt", None);
+        assert_eq!(runner.arsenal().special(1), Some(("poisonBolt", 3)));
+        runner.arsenal_mut().begin_charge(1, None);
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
+        let fired = runner.arsenal_mut().fire(1).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        let hit = runner.shoot(1, feet, Vec3::NEG_Z, 5.0, fired, &mut creatures, &mut player);
+        assert_eq!((hit.target, hit.special.as_deref()), (Some(cow), Some("poisonBolt")));
+        let after_shot = health(&creatures, cow);
+        assert_eq!(after_shot, 995.0, "le tir lui-même : arc et flèche");
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 3.0);
+        assert!(health(&creatures, cow) < after_shot, "le poison continue");
+        assert_eq!(runner.arsenal().special(1), Some(("poisonBolt", 2)));
+    }
+
+    #[test]
+    fn frag_rounds_explode_around_the_target() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let block = creatures.block_size();
+        let cow = creatures.creatures()[0].id;
+        let species = creatures.creatures()[0].species;
+        let beside = creatures.spawn(species, feet + Vec3::new(1.5 * block, 0.0, -2.0 * block));
+        for id in [cow, beside] {
+            creatures.creature_mut(id).unwrap().health = 1000.0;
+        }
+        let mut stats = CharacterStats::new(PlayerClass::Ranger);
+        let mut runner = SkillRunner::new();
+        hold(&mut runner, "handCrossbow", PlayerClass::Ranger);
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "fragRounds", None);
+        runner.arsenal_mut().reload_now(1);
+        let fired = runner.arsenal_mut().fire(1).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.shoot(1, feet, Vec3::NEG_Z, 5.0, fired, &mut creatures, &mut player);
+        assert!(health(&creatures, beside) < 1000.0, "l'explosion touche la voisine");
     }
 }
 

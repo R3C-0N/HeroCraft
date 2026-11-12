@@ -45,7 +45,7 @@
       },
       {
         "buff": {
-          "stat": "haste",
+          "stat": "attack_speed",
           "value": 0.5,
           "duration": 10
         }

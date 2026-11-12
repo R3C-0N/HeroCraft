@@ -40,7 +40,7 @@
       },
       {
         "buff": {
-          "stat": "speed",
+          "stat": "attack_speed",
           "value": 0.4,
           "duration": 10,
           "per_missing_health": true
