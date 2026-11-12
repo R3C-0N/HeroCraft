@@ -80,6 +80,11 @@ const KNOCKBACK_SPEED: f32 = 6.0;
 const KNOCKBACK_HOP: f32 = 4.5;
 /// Freinage du recul, par seconde
 const KNOCKBACK_DAMPING: f32 = 5.0;
+/// Vitesse d'une bête rabattue au sol par une compétence (`slam`), en blocs par seconde
+const SLAM_SPEED: f32 = 40.0;
+/// Chute sans dommage d'une bête projetée en l'air (`launch`), en blocs, et dégâts par bloc au-delà
+const LAUNCH_SAFE_FALL: f32 = 3.0;
+const LAUNCH_FALL_DAMAGE: f32 = 3.0;
 /// Fuite après un coup : durée, en secondes, et allure par rapport à la marche
 const PANIC_TIME: f32 = 4.0;
 const PANIC_SPEED: f32 = 1.8;
@@ -195,6 +200,15 @@ const NEWBORN_SCALE: f32 = 0.5;
 /// Au-delà, le cache de colonnes est vidé
 const MAX_CACHED_COLUMNS: usize = 4096;
 
+/// Le vol d'une bête projetée par une compétence
+#[derive(Debug, Clone, Copy)]
+struct Flight {
+    /// Altitude la plus haute atteinte, en blocs
+    peak: f32,
+    /// Rabattue : par qui, et combien de dégâts à l'atterrissage
+    slam: Option<(u64, f32)>,
+}
+
 pub struct Creature {
     pub id: u64,
     /// Rang de son espèce dans le registre
@@ -284,6 +298,10 @@ pub struct Creature {
     slow_time: f32,
     /// Étourdie par une compétence : temps restant sans bouger ni frapper, en secondes
     stun: f32,
+    /// Projetée en l'air ou rabattue par une compétence : son vol, jusqu'à ce qu'elle retombe
+    flight: Option<Flight>,
+    /// Elle vient de retomber d'un vol : hauteur de la chute en blocs, et le coup qui l'a rabattue
+    landed: Option<(f32, Option<(u64, f32)>)>,
     /// Pressée par une compétence (Surcharge Mécanique) : cadence en plus (0,5 : +50 %) et temps restant
     haste: f32,
     haste_time: f32,
@@ -882,6 +900,8 @@ impl CreatureWorld {
             shield: 0.0,
             shield_time: 0.0,
             stun: 0.0,
+            flight: None,
+            landed: None,
             blind: 0.0,
             taunted: None,
             summoner: None,
@@ -1187,6 +1207,48 @@ impl CreatureWorld {
         let away = (away - up * away.dot(up)).normalize_or_zero();
         c.push = away * speed;
         c.vertical_speed = c.vertical_speed.max(KNOCKBACK_HOP * speed.abs().min(KNOCKBACK_SPEED) / KNOCKBACK_SPEED);
+    }
+
+    /// Projette la créature `id` à `height` blocs en l'air : elle reste étourdie tant qu'elle vole,
+    /// et se blesse en retombant de haut
+    pub fn launch(&mut self, id: u64, height: f32) {
+        let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive() && c.summoner.is_none()) else { return };
+        c.vertical_speed = (2.0 * GRAVITY * height.max(0.0)).sqrt();
+        c.push = Vec3::ZERO;
+        let flight = c.flight.get_or_insert(Flight { peak: f32::MIN, slam: None });
+        flight.slam = None;
+    }
+
+    /// Rabat la créature `id` au sol : à l'atterrissage, elle perd `damage` points de vie, portés par
+    /// le joueur `player`
+    pub fn slam(&mut self, id: u64, player: u64, damage: f32) {
+        let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive() && c.summoner.is_none()) else { return };
+        c.vertical_speed = -SLAM_SPEED;
+        c.push = Vec3::ZERO;
+        c.flight.get_or_insert(Flight { peak: f32::MIN, slam: None }).slam = Some((player, damage));
+    }
+
+    /// La créature `id` vole, projetée par une compétence
+    pub fn is_airborne(&self, id: u64) -> bool {
+        self.creatures.iter().any(|c| c.id == id && c.flight.is_some())
+    }
+
+    /// Les bêtes retombées d'un vol se blessent : la chute au-delà de `LAUNCH_SAFE_FALL` blocs, et le
+    /// coup qui les a rabattues
+    fn land(&mut self) {
+        let block = self.geometry.block_height as f32;
+        let landed: Vec<(u64, Vec3, f32, Option<(u64, f32)>)> = self.creatures.iter_mut().filter_map(|c| c.landed.take().map(|(fall, slam)| (c.id, c.position, fall, slam))).collect();
+        for (id, at, fall, slam) in landed {
+            let (player, hit) = slam.unwrap_or((0, 0.0));
+            let damage = hit + (fall - LAUNCH_SAFE_FALL).max(0.0) * LAUNCH_FALL_DAMAGE;
+            if damage > 0.0 {
+                // Frappée d'en haut : elle ne recule pas
+                self.wound(id, at + at.normalize_or_zero() * block, player, damage);
+                if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id) {
+                    c.push = Vec3::ZERO;
+                }
+            }
+        }
     }
 
     /// Les meurtres d'habitants depuis le dernier appel, à annoncer dans le chat
@@ -1796,6 +1858,7 @@ impl CreatureWorld {
         if dt > 0.0 {
             walker.collide(&mut self.creatures, &self.registry, players);
         }
+        self.land();
 
         let mut columns = query.into_columns();
         if columns.len() > MAX_CACHED_COLUMNS {
@@ -2559,6 +2622,9 @@ impl Walker<'_, '_> {
         if altitude <= ground + 1e-4 && c.vertical_speed <= 0.0 {
             altitude = ground;
             c.vertical_speed = 0.0;
+            if let Some(flight) = c.flight.take() {
+                c.landed = Some(((flight.peak - ground).max(0.0), flight.slam));
+            }
         } else {
             c.vertical_speed -= GRAVITY * dt;
             let next = altitude + c.vertical_speed * dt;
@@ -2573,6 +2639,15 @@ impl Walker<'_, '_> {
             }
         }
         c.position = up * radius_of(altitude);
+        if let Some(flight) = c.flight.as_mut() {
+            // En vol, elle ne marche ni ne frappe
+            flight.peak = flight.peak.max(altitude);
+            c.stun = c.stun.max(0.1);
+            if c.vertical_speed == 0.0 && altitude <= ground + 1e-4 {
+                let flight = c.flight.take().unwrap();
+                c.landed = Some(((flight.peak - ground).max(0.0), flight.slam));
+            }
+        }
         let on_ground = altitude <= ground + 1e-4 && c.vertical_speed <= 0.0;
         let swimming = on_ground && self.query.block(BlockPos { y: column.y - 1, ..column }).is_liquid();
         if swimming && !c.swimming {

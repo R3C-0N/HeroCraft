@@ -160,14 +160,110 @@ pub enum Area {
     Caster,
 }
 
-/// Déplacement du lanceur au lancement, en blocs : `dash` vers l'avant, `leap` (négatif : en
-/// arrière) en bondissant
+/// Déplacement du lanceur, en blocs : `dash` vers l'avant, `leap` (négatif : en arrière) en
+/// bondissant, du lancement à l'impact ; `hover` dès le lancement ; `grapple` à l'impact ;
+/// `teleport` quand la frappe touche
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Movement {
     #[serde(default)]
     pub dash: Option<Ranked>,
     #[serde(default)]
     pub leap: Option<Ranked>,
+    #[serde(default)]
+    pub teleport: Option<Teleport>,
+    #[serde(default)]
+    pub grapple: Option<Grapple>,
+    #[serde(default)]
+    pub hover: Option<Hover>,
+}
+
+/// Téléportation près de l'ennemi touché le plus proche du lanceur. La place se compte dans le
+/// repère de la cible vue du lanceur : `behind` blocs au-delà d'elle (négatif : entre elle et le
+/// lanceur), `above` au-dessus, `side` sur sa droite. Le serveur la calcule et l'envoie au lanceur.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Teleport {
+    #[serde(default)]
+    pub behind: Ranked,
+    #[serde(default)]
+    pub above: Ranked,
+    #[serde(default)]
+    pub side: Ranked,
+    /// Où le lanceur regarde en arrivant
+    #[serde(default)]
+    pub face: Facing,
+    /// Secondes entre la frappe et la téléportation
+    #[serde(default)]
+    pub delay: Ranked,
+}
+
+/// Regard du lanceur à l'arrivée d'une téléportation
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Facing {
+    /// Vers la cible
+    #[default]
+    Target,
+    /// Dans la direction qu'il visait au lancement
+    Aim,
+    /// À l'opposé de la cible
+    Away,
+}
+
+/// Le lanceur est tiré en ligne droite à l'impact : vers le bloc visé (`block`, il s'y hisse s'il
+/// en atteint le rebord) ou vers l'ennemi touché le plus proche (`target`)
+#[derive(Debug, Clone, Deserialize)]
+pub struct Grapple {
+    #[serde(default)]
+    pub to: GrappleTo,
+    /// Portée, en blocs : un bloc plus loin n'est pas agrippé
+    pub range: Ranked,
+    /// Vitesse de la traction, en blocs par seconde
+    #[serde(default = "grapple_speed")]
+    pub speed: Ranked,
+    /// Distance où la traction s'arrête avant le point d'accroche, en blocs
+    #[serde(default = "grapple_stop")]
+    pub stop: Ranked,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GrappleTo {
+    #[default]
+    Block,
+    Target,
+}
+
+fn grapple_speed() -> Ranked {
+    Ranked::One(25.0)
+}
+
+fn grapple_stop() -> Ranked {
+    Ranked::One(0.0)
+}
+
+/// Lévitation : le lanceur monte de `height` blocs et flotte `duration` secondes, puis redescend
+/// sans se blesser
+#[derive(Debug, Clone, Deserialize)]
+pub struct Hover {
+    pub height: Ranked,
+    pub duration: Ranked,
+}
+
+/// Un déplacement que le serveur impose au lanceur (`SkillTick::moves`)
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum SkillMove {
+    /// Il apparaît aux pieds `feet`, le regard dans la direction `look`
+    Teleport { feet: Vec3, look: Vec3 },
+    /// Il est tiré vers `to` à `speed` blocs par seconde, jusqu'à `stop` blocs de lui
+    Pull { to: Vec3, speed: f32, stop: f32 },
+}
+
+/// Une seconde frappe, `delay` secondes après la première, sur les ennemis qu'elle a trouvés dans
+/// sa zone
+#[derive(Debug, Clone, Deserialize)]
+pub struct FollowUp {
+    pub delay: Ranked,
+    pub effects: Vec<EffectEntry>,
 }
 
 /// Qui subit les effets
@@ -201,6 +297,10 @@ pub enum Effect {
     Knockback { strength: Ranked },
     /// Attirée vers le lanceur
     Pull { strength: Ranked },
+    /// Projetée à `height` blocs en l'air : étourdie tant qu'elle vole, elle se blesse en retombant
+    Launch { height: Ranked },
+    /// Rabattue au sol : à l'atterrissage, `power` × `SKILL_BASE_DAMAGE` points de vie retirés
+    Slam { power: Ranked },
     /// Points de dégâts absorbés pendant `duration` secondes
     Shield {
         amount: Ranked,
@@ -439,6 +539,9 @@ pub struct Cast {
     /// Effets autour de chaque ennemi que la frappe tue
     #[serde(default)]
     pub on_kill: Option<Around>,
+    /// Seconde frappe sur les ennemis trouvés par la première
+    #[serde(default)]
+    pub follow_up: Option<FollowUp>,
 }
 
 /// Les règles de la Fusion : elle mêle les deux derniers sorts élémentaires lancés
@@ -882,6 +985,23 @@ impl SkillCatalog {
             if !numbers.iter().chain([&&cast.cooldown, &&cast.cost.mana, &&cast.cost.stamina]).all(|r| r.is_finite()) {
                 return Err("nombre invalide dans cast".into());
             }
+            if let Some(m) = &cast.movement {
+                if m.grapple.as_ref().is_some_and(|g| !(g.range.is_finite() && g.range.at(1) > 0.0 && g.speed.is_finite() && g.speed.at(1) > 0.0 && g.stop.is_finite())) {
+                    return Err("grapple : range et speed positives".into());
+                }
+                if m.hover.as_ref().is_some_and(|h| !(h.height.is_finite() && h.duration.is_finite() && h.duration.at(1) > 0.0)) {
+                    return Err("hover : height en nombre, duration positive".into());
+                }
+                if m.teleport.as_ref().is_some_and(|t| ![&t.behind, &t.above, &t.side, &t.delay].iter().all(|r| r.is_finite()) || t.delay.at(1) < 0.0) {
+                    return Err("teleport : nombres, delay positif ou nul".into());
+                }
+                if (m.teleport.is_some() || m.grapple.as_ref().is_some_and(|g| g.to == GrappleTo::Target)) && matches!(cast.area, Area::Caster) {
+                    return Err("teleport et grapple vers la cible : une zone qui touche des ennemis".into());
+                }
+            }
+            if cast.follow_up.as_ref().is_some_and(|f| !f.delay.is_finite() || f.delay.at(1) < 0.0) {
+                return Err("follow_up : delay positif ou nul".into());
+            }
             if let Some(form) = skill.form.as_ref().filter(|f| !entities.contains(*f)) {
                 return Err(format!("forme inconnue {form} (absente de assets/creatures/)"));
             }
@@ -1078,6 +1198,8 @@ pub enum CastError {
     FusionEmpty,
     /// Ce mélange n'est pas encore appris
     FusionLocked,
+    /// Un grappin sans bloc visé à portée
+    NothingToGrab,
 }
 
 impl CastError {
@@ -1096,6 +1218,7 @@ impl CastError {
             CastError::FusionOnly => "se lance par la Fusion",
             CastError::FusionEmpty => "lance d'abord deux sorts élémentaires",
             CastError::FusionLocked => "mélange pas encore appris",
+            CastError::NothingToGrab => "rien à agripper",
         }
     }
 }

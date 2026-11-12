@@ -8,12 +8,17 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use glam::Vec3;
-use herocraft_common::skills::{skills, Anchor, Effect, Moment, SkillCatalog};
+use herocraft_common::skills::{skills, Anchor, Effect, GrappleTo, Moment, SkillCatalog, SkillMove};
 use herocraft_common::CharacterStats;
 use herocraft_world::{CreatureWorld, SkillImpact, SkillRunner, SoloPlayer};
 
 use crate::gestures::GestureLibrary;
 use crate::hero_model::FigurePose;
+
+/// Le grappin de la compétence `skill`, s'il en est un
+pub fn grapple_of<'a>(catalog: &'a SkillCatalog, skill: &str) -> Option<&'a herocraft_common::skills::Grapple> {
+    catalog.get(skill)?.cast.as_ref()?.movement.as_ref()?.grapple.as_ref()
+}
 
 /// Identifiant du joueur en solo
 pub const SOLO_PLAYER: u64 = 0;
@@ -75,6 +80,27 @@ pub struct VisualCue {
     pub delay: f32,
 }
 
+/// Un déplacement de compétence que la caméra du joueur local joue
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Motion {
+    /// Lévitation : monter de `height` blocs et flotter `duration` secondes
+    Hover { height: f32, duration: f32 },
+    /// Traction en ligne droite vers `to`, à `speed` blocs par seconde, jusqu'à `stop` blocs ; avec
+    /// `hoist`, il se hisse sur le rebord qui l'arrête
+    Pull { to: Vec3, speed: f32, stop: f32, hoist: bool },
+    /// Téléportation : les pieds en `feet`, le regard vers `look`
+    Teleport { feet: Vec3, look: Vec3 },
+}
+
+impl From<SkillMove> for Motion {
+    fn from(m: SkillMove) -> Self {
+        match m {
+            SkillMove::Teleport { feet, look } => Motion::Teleport { feet, look },
+            SkillMove::Pull { to, speed, stop } => Motion::Pull { to, speed, stop, hoist: false },
+        }
+    }
+}
+
 /// L'état des compétences du joueur et de ce qui se joue autour de lui
 pub struct SkillPlay {
     runner: SkillRunner,
@@ -97,6 +123,8 @@ pub struct SkillPlay {
     speed_buffs: Vec<(f32, Instant, bool)>,
     /// Élan de la compétence locale qui commence : ruée, bond, en combien de secondes
     motion: Option<(f32, f32, f32)>,
+    /// Déplacements du joueur local à jouer, et à partir de quand : la compétence et son déplacement
+    moves: Vec<(Instant, String, Motion)>,
     /// Identifiant du joueur local (en ligne, celui du serveur)
     pub me: u64,
     /// Dernier refus, à montrer au joueur
@@ -118,6 +146,7 @@ impl Default for SkillPlay {
             speed_buffs: Vec::new(),
             solo_died: false,
             motion: None,
+            moves: Vec::new(),
             me: SOLO_PLAYER,
             last_refusal: None,
         }
@@ -152,6 +181,9 @@ impl SkillPlay {
         }
         if stats.is_stunned() {
             return Err(herocraft_common::CastError::Stunned.message().to_string());
+        }
+        if grapple_of(catalog, skill).is_some_and(|g| g.to == GrappleTo::Block) && aimed.is_none() {
+            return Err(herocraft_common::CastError::NothingToGrab.message().to_string());
         }
         // Changé en bête, seules ses deux attaques ; et elles seulement sous elle
         let form = self.form_skill(None);
@@ -237,6 +269,14 @@ impl SkillPlay {
             let seconds = if impact >= 0.3 * duration { impact } else { 0.6 * duration };
             let (dash, leap) = (movement.dash.as_ref().map_or(0.0, |d| d.at(rank)), movement.leap.as_ref().map_or(0.0, |l| l.at(rank)));
             self.motion = Some((dash, leap, seconds));
+            if let Some(hover) = &movement.hover {
+                self.moves.push((now, skill.to_string(), Motion::Hover { height: hover.height.at(rank), duration: hover.duration.at(rank) }));
+            }
+            // Le grappin part à l'impact du geste, vers le bloc visé
+            if let (Some(grapple), Some(to)) = (movement.grapple.as_ref().filter(|g| g.to == GrappleTo::Block), aimed) {
+                let at = now + std::time::Duration::from_secs_f32(impact.max(0.0));
+                self.moves.push((at, skill.to_string(), Motion::Pull { to, speed: grapple.speed.at(rank), stop: grapple.stop.at(rank), hoist: true }));
+            }
         }
         for visual in def.visuals.iter().chain(amplify.iter().flat_map(|a| &a.visuals)).filter(|v| v.from == Moment::Start) {
             let hold = match visual.to {
@@ -276,6 +316,7 @@ impl SkillPlay {
     /// Le serveur refuse notre lancement : le geste s'arrête, la recharge aussi
     pub fn on_refused(&mut self, skill: &str, reason: &str) {
         self.plays.retain(|p| !(p.player.is_none() && p.skill == skill));
+        self.moves.retain(|m| m.1 != skill);
         self.ready_at.remove(skill);
         self.cues.retain(|c| c.caster.is_some());
         self.last_refusal = Some((reason.to_string(), Instant::now()));
@@ -395,6 +436,9 @@ impl SkillPlay {
             let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
             let tick = self.runner.tick(dt, skills(), creatures, &mut player);
             self.solo_died |= !tick.died.is_empty();
+            for (_, m) in tick.moves.into_iter().filter(|m| m.0 == SOLO_PLAYER) {
+                self.on_move(m);
+            }
             for SkillImpact { skill, rank, center, creatures, players, .. } in tick.impacts {
                 self.on_hit(Shown { caster: None, skill, rank, center, creatures, players });
             }
@@ -449,6 +493,18 @@ impl SkillPlay {
     /// Élan à donner au joueur local (ruée, bond : blocs, blocs, secondes), une seule fois
     pub fn take_motion(&mut self) -> Option<(f32, f32, f32)> {
         self.motion.take()
+    }
+
+    /// Le serveur (ou les règles en solo) déplace le joueur local
+    pub fn on_move(&mut self, m: SkillMove) {
+        self.moves.push((Instant::now(), String::new(), m.into()));
+    }
+
+    /// Les déplacements du joueur local dont l'heure est venue
+    pub fn take_moves(&mut self, now: Instant) -> Vec<Motion> {
+        let (due, later): (Vec<_>, Vec<_>) = std::mem::take(&mut self.moves).into_iter().partition(|m| m.0 <= now);
+        self.moves = later;
+        due.into_iter().map(|m| m.2).collect()
     }
 
     /// Espèce dont le héros du joueur `player` (`None` : le joueur local) a pris la forme

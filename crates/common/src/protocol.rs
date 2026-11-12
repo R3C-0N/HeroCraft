@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 16;
+pub const PROTOCOL_VERSION: u32 = 17;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -247,6 +247,9 @@ pub enum ServerPacket {
         skill: String,
         reason: String,
     },
+    /// Une compétence déplace son lanceur (téléportation près de sa cible, traction vers elle) :
+    /// envoyé à lui seul, qui décide de sa position
+    SkillMove(crate::skills::SkillMove),
     /// La compétence frappe : centre de sa zone et cibles touchées, pour leurs effets visuels
     SkillHit {
         player_id: u64,

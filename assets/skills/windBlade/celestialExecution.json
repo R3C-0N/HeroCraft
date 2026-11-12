@@ -25,25 +25,39 @@
       }
     },
     "movement": {
-      "leap": 3
+      "teleport": {
+        "above": 1.0,
+        "face": "target",
+        "delay": 0.5
+      }
     },
     "targets": "enemies",
     "effects": [
       {
-        "damage": {
-          "power": [
-            3.0,
-            3.4,
-            3.8
-          ]
-        }
-      },
-      {
-        "stun": {
-          "duration": 1
+        "launch": {
+          "height": 4
         }
       }
-    ]
+    ],
+    "follow_up": {
+      "delay": 0.6,
+      "effects": [
+        {
+          "slam": {
+            "power": [
+              3.0,
+              3.4,
+              3.8
+            ]
+          }
+        },
+        {
+          "stun": {
+            "duration": 1
+          }
+        }
+      ]
+    }
   },
   "visuals": [
     {

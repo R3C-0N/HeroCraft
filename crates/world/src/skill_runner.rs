@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use glam::Vec3;
-use herocraft_common::skills::{Around, BuffStat, CastError, Center, Copies, Effect, EffectEntry, Fused, PlacedArea, SkillCatalog, Targets, SKILL_BASE_DAMAGE};
+use herocraft_common::skills::{Around, BuffStat, CastError, Center, Copies, Effect, EffectEntry, Facing, Fused, GrappleTo, PlacedArea, SkillCatalog, SkillMove, Targets, SKILL_BASE_DAMAGE};
 use herocraft_common::CharacterStats;
 
 use crate::CreatureWorld;
@@ -76,7 +76,31 @@ pub struct SkillTick {
     pub changed: Vec<u64>,
     /// Joueurs qu'un effet sur la durée vient de tuer
     pub died: Vec<u64>,
+    /// Déplacements imposés aux lanceurs (téléportation, traction vers une cible) : à qui, lequel
+    pub moves: Vec<(u64, SkillMove)>,
 }
+
+/// Ce qu'une frappe laisse pour plus tard, sur les ennemis qu'elle a trouvés
+#[derive(Debug, Clone)]
+enum Later {
+    /// La seconde frappe (`follow_up`)
+    FollowUp,
+    /// La téléportation du lanceur près de la première cible (`movement.teleport`)
+    Teleport,
+}
+
+#[derive(Debug, Clone)]
+struct Delayed {
+    pending: Pending,
+    targets: Vec<u64>,
+    left: f32,
+    what: Later,
+}
+
+/// Hauteur visée sur le corps d'une bête quand on se tourne vers elle, en blocs
+const LOOK_AT_HEIGHT: f32 = 0.6;
+/// Hauteur des yeux du héros au-dessus de ses pieds, en blocs
+const EYE_HEIGHT: f32 = 1.6;
 
 #[derive(Debug, Clone)]
 struct Pending {
@@ -237,6 +261,10 @@ pub struct SkillRunner {
     links: Vec<Link>,
     /// Zones qui restent posées après leur frappe
     zones: Vec<Zone>,
+    /// Secondes frappes et téléportations en attente
+    delayed: Vec<Delayed>,
+    /// Déplacements des lanceurs décidés par les frappes, rendus par `tick`
+    moves: Vec<(u64, SkillMove)>,
 }
 
 /// Facteur des dégâts d'un coup critique
@@ -294,6 +322,10 @@ impl SkillRunner {
             (Some(_), _) => return Err(CastError::NotInForm),
             (None, Some(_)) => return Err(CastError::InForm),
             (None, None) => {}
+        }
+        // Un grappin s'accroche au bloc visé : sans bloc, rien n'est payé
+        if cast.movement.as_ref().and_then(|m| m.grapple.as_ref()).is_some_and(|g| g.to == GrappleTo::Block) && aimed.is_none() {
+            return Err(CastError::NothingToGrab);
         }
         let rank = catalog.rank(stats, skill);
         let amplify = catalog.fusion().and_then(|f| f.fusion.as_ref()).map(|f| f.amplify.clone()).unwrap_or_default();
@@ -493,6 +525,8 @@ impl SkillRunner {
         self.recent.remove(&player);
         self.links.retain(|l| l.caster != player && l.ally != player);
         self.zones.retain(|z| z.pending.caster != player);
+        self.delayed.retain(|d| d.pending.caster != player);
+        self.moves.retain(|m| m.0 != player);
         self.cooldowns.retain(|(p, _), _| *p != player);
     }
 
@@ -607,6 +641,23 @@ impl SkillRunner {
             }
         }
 
+        for d in &mut self.delayed {
+            d.left -= dt;
+        }
+        let (ready, waiting): (Vec<Delayed>, Vec<Delayed>) = std::mem::take(&mut self.delayed).into_iter().partition(|d| d.left <= 0.0);
+        self.delayed = waiting;
+        for d in ready {
+            match d.what {
+                Later::Teleport => self.teleport(catalog, &d, creatures, players),
+                Later::FollowUp => {
+                    if let Some(impact) = self.follow_up(catalog, &d, creatures, players, &mut out.changed) {
+                        out.impacts.push(impact);
+                    }
+                }
+            }
+        }
+        out.moves = std::mem::take(&mut self.moves);
+
         self.pulse_zones(dt, catalog, creatures, players, &mut out.changed);
 
         let block = creatures.block_size();
@@ -710,6 +761,27 @@ impl SkillRunner {
         touched_creatures.dedup();
         // Ce que la frappe déclenche : par ennemi touché, si elle manque, autour de ceux qu'elle tue
         let enemies: Vec<u64> = touched_creatures.iter().copied().filter(|id| creature_hits.contains(&(*id, false))).collect();
+        // Déplacements et seconde frappe : vers les ennemis de la zone, le plus proche d'abord
+        let mut found: Vec<(u64, f32)> = creature_hits
+            .iter()
+            .filter(|(_, tamed)| !tamed)
+            .filter_map(|&(id, _)| creatures.creatures().iter().find(|c| c.id == id).map(|c| (id, c.position.distance(feet))))
+            .collect();
+        found.sort_by(|a, b| a.1.total_cmp(&b.1));
+        let found: Vec<u64> = found.into_iter().map(|f| f.0).collect();
+        if let (Some(&first), Some(movement)) = (found.first(), cast.movement.as_ref()) {
+            if let Some(teleport) = &movement.teleport {
+                self.delayed.push(Delayed { pending: p.clone(), targets: vec![first], left: teleport.delay.at(p.rank), what: Later::Teleport });
+            }
+            if let Some(grapple) = movement.grapple.as_ref().filter(|g| g.to == GrappleTo::Target) {
+                if let Some(to) = creatures.creatures().iter().find(|c| c.id == first).map(|c| c.position) {
+                    self.moves.push((p.caster, SkillMove::Pull { to, speed: grapple.speed.at(p.rank), stop: grapple.stop.at(p.rank) }));
+                }
+            }
+        }
+        if let Some(follow) = cast.follow_up.as_ref().filter(|_| !found.is_empty()) {
+            self.delayed.push(Delayed { pending: p.clone(), targets: found.clone(), left: follow.delay.at(p.rank), what: Later::FollowUp });
+        }
         let triggered = if enemies.is_empty() { &cast.on_miss } else { &cast.on_hit };
         for _ in 0..enemies.len().max(1) {
             for entry in triggered {
@@ -735,6 +807,44 @@ impl SkillRunner {
         touched_players.sort_unstable();
         touched_players.dedup();
         Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched_creatures, players: touched_players, summoned })
+    }
+
+    /// Téléporte le lanceur près de sa cible (`movement.teleport`), dans le repère de la cible vue
+    /// de lui
+    fn teleport(&mut self, catalog: &SkillCatalog, d: &Delayed, creatures: &CreatureWorld, players: &mut dyn SkillPlayers) {
+        let p = &d.pending;
+        let Some(teleport) = catalog.get(&p.skill).and_then(|s| s.cast.as_ref()).and_then(|c| c.movement.as_ref()).and_then(|m| m.teleport.as_ref()) else { return };
+        let (Some(feet), Some(&target)) = (players.feet(p.caster), d.targets.first()) else { return };
+        let Some(at) = creatures.creatures().iter().find(|c| c.id == target).map(|c| c.position) else { return };
+        let block = creatures.block_size();
+        let (feet, look) = teleport_spot(teleport, p.rank, feet, at, p.aim, block);
+        self.moves.push((p.caster, SkillMove::Teleport { feet, look }));
+    }
+
+    /// La seconde frappe (`follow_up`) sur les ennemis trouvés par la première, encore en vie
+    fn follow_up(&mut self, catalog: &SkillCatalog, d: &Delayed, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, changed: &mut Vec<u64>) -> Option<SkillImpact> {
+        let p = &d.pending;
+        let follow = catalog.get(&p.skill)?.cast.as_ref()?.follow_up.as_ref()?;
+        let feet = players.feet(p.caster)?;
+        let damage_factor = (1.0 + self.buff(p.caster, BuffStat::Damage)) * p.power;
+        let alive: Vec<(u64, Vec3)> = d.targets.iter().filter_map(|&id| creatures.creatures().iter().find(|c| c.id == id && c.is_alive()).map(|c| (id, c.position))).collect();
+        let center = alive.first()?.1;
+        for entry in &follow.effects {
+            match entry.to.unwrap_or(Targets::Enemies) {
+                Targets::Caster => {
+                    self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, p.caster, players);
+                    changed.push(p.caster);
+                }
+                Targets::Enemies | Targets::All => {
+                    for &(id, _) in &alive {
+                        self.apply_to_creature(entry, p, id, feet, damage_factor, creatures);
+                    }
+                }
+                Targets::Allies | Targets::Summons => {}
+            }
+        }
+        let touched: Vec<u64> = alive.iter().map(|a| a.0).collect();
+        Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched, players: Vec::new(), summoned: Vec::new() })
     }
 
     /// Applique les effets `effects` à ceux qui se trouvent dans la zone `area` : les créatures et
@@ -912,6 +1022,8 @@ impl SkillRunner {
             Effect::Stun { duration } => creatures.stun(id, duration.at(rank)),
             Effect::Knockback { strength } => creatures.shove(id, feet, strength.at(rank) * p.power),
             Effect::Pull { strength } => creatures.shove(id, feet, -strength.at(rank) * p.power),
+            Effect::Launch { height } => creatures.launch(id, height.at(rank)),
+            Effect::Slam { power } => creatures.slam(id, p.caster, power.at(rank) * SKILL_BASE_DAMAGE * damage_factor),
             Effect::OverTime { damage, heal, duration, moving } => {
                 // Un soin sur la durée d'une bête alliée : rendu d'un coup, par passage d'une zone ou
                 // pour toute sa durée
@@ -1017,9 +1129,26 @@ impl SkillRunner {
             }
             // Pas de combat entre joueurs : ni dégâts, ni ralenti, ni étourdissement d'un allié (ce
             // sont les bêtes qui ralentissent et étourdissent les joueurs, `CreatureWorld::afflict`)
-            Effect::Damage { .. } | Effect::Slow { .. } | Effect::Stun { .. } | Effect::Knockback { .. } | Effect::Pull { .. } | Effect::Summon { .. } | Effect::Taunt { .. } | Effect::Blind { .. } | Effect::Mark { .. } => {}
+            Effect::Damage { .. } | Effect::Slow { .. } | Effect::Stun { .. } | Effect::Knockback { .. } | Effect::Pull { .. } | Effect::Launch { .. } | Effect::Slam { .. } | Effect::Summon { .. } | Effect::Taunt { .. } | Effect::Blind { .. } | Effect::Mark { .. } => {}
         }
     }
+}
+
+/// Où arrive une téléportation près d'une cible aux pieds `target`, pour un lanceur aux pieds
+/// `feet` qui visait `aim` : les pieds d'arrivée et la direction du regard
+pub fn teleport_spot(teleport: &herocraft_common::skills::Teleport, rank: u8, feet: Vec3, target: Vec3, aim: Vec3, block: f32) -> (Vec3, Vec3) {
+    let up = target.normalize_or(Vec3::Y);
+    let flat = |v: Vec3| v - up * v.dot(up);
+    let forward = flat(target - feet).try_normalize().or_else(|| flat(aim).try_normalize()).unwrap_or_else(|| up.any_orthonormal_vector());
+    let right = forward.cross(up);
+    let offset = forward * teleport.behind.at(rank) + up * teleport.above.at(rank) + right * teleport.side.at(rank);
+    let arrival = target + offset * block;
+    let look = match teleport.face {
+        Facing::Target => (target + up * LOOK_AT_HEIGHT * block - (arrival + up * EYE_HEIGHT * block)).try_normalize().unwrap_or(forward),
+        Facing::Aim => aim.try_normalize().unwrap_or(forward),
+        Facing::Away => flat(arrival - target).try_normalize().unwrap_or(forward),
+    };
+    (arrival, look)
 }
 
 /// Part de sa vie qui manque au joueur (0 : pleine vie, 1 : au bord de la mort)
