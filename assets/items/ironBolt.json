@@ -2,6 +2,7 @@
   "numeric_id": 16492,
   "name": "Carreau de fer",
   "category": "Armes",
+  "ammo": "bolt",
   "max_stack": 99,
   "icon": "icones/ironBolt.png",
   "stats": {"Dégâts": 7},

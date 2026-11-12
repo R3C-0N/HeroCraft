@@ -2,6 +2,7 @@
   "numeric_id": 16534,
   "name": "Totem d'orichalque",
   "category": "Armes",
+  "weapon": {"kind": "staff", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/orichalcumTotem.png",
   "stats": {"Dégâts": 18, "Durabilité": 3000},

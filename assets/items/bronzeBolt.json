@@ -2,6 +2,7 @@
   "numeric_id": 16401,
   "name": "Carreau de bronze",
   "category": "Armes",
+  "ammo": "bolt",
   "max_stack": 99,
   "icon": "icones/bronzeBolt.png",
   "stats": {"Dégâts": 6},

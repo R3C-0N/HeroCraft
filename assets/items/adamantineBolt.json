@@ -2,6 +2,7 @@
   "numeric_id": 16386,
   "name": "Carreau d'adamantine",
   "category": "Armes",
+  "ammo": "bolt",
   "max_stack": 99,
   "icon": "icones/adamantineBolt.png",
   "stats": {"Dégâts": 12},

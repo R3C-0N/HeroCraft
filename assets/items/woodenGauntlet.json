@@ -2,6 +2,7 @@
   "numeric_id": 16554,
   "name": "Gantelet d'apprenti",
   "category": "Armes",
+  "weapon": {"kind": "gauntlet", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/woodenGauntlet.png",
   "stats": {"Dégâts": 2, "Durabilité": 80},

@@ -2,6 +2,7 @@
   "numeric_id": 16787,
   "name": "Hache en bronze",
   "category": "Outils",
+  "weapon": {"kind": "axe", "interval": 0.55},
   "max_stack": 1,
   "icon": "icones/bronzeAxe.png",
   "stats": {"Dégâts": 4, "Durabilité": 500},

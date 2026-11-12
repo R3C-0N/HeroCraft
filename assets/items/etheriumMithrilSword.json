@@ -2,6 +2,7 @@
   "numeric_id": 16457,
   "name": "Épée d'étherium (mithril)",
   "category": "Armes",
+  "weapon": {"kind": "sword", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/etheriumMithrilSword.png",
   "stats": {"Dégâts": 22, "Durabilité": 5000},

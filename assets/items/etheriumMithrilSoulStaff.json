@@ -2,6 +2,7 @@
   "numeric_id": 16455,
   "name": "Bâton d'âmes d'étherium (mithril)",
   "category": "Armes",
+  "weapon": {"kind": "staff", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/etheriumMithrilSoulStaff.png",
   "stats": {"Dégâts": 20, "Durabilité": 5000},

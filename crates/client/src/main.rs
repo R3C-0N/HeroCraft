@@ -214,7 +214,6 @@ fn main() {
     // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
     // prochain coup qu'on peut leur porter
     let mut creature_views: Vec<creatures::CreatureView> = Vec::new();
-    let mut attack_cooldown = 0.0_f32;
     // Humanoïde visé quand le clic gauche a été enfoncé : seul lui se frappe tant que le clic est tenu
     let mut strike_lock: Option<u64> = None;
     // En solo, combien de fois on a parlé à chaque habitant (il enchaîne ses répliques)
@@ -638,8 +637,8 @@ fn main() {
                             if ui_state.player.stats.is_stunned() {
                                 camera.jump_requested = false;
                             }
-                            if let Some((dash, leap, seconds)) = skill_play.take_motion() {
-                                camera.launch(dash, leap, seconds);
+                            if let Some((dash, leap, side, seconds)) = skill_play.take_motion() {
+                                camera.launch(dash, leap, side, seconds);
                             }
                             for motion in skill_play.take_moves(Instant::now()) {
                                 match motion {
@@ -724,7 +723,9 @@ fn main() {
 
                         // Bloc visé par le réticule (souris capturée seulement) et bouton tenu enfoncé
                         let mut terrain_edited = false;
-                        attack_cooldown = (attack_cooldown - dt).max(0.0);
+                        // L'arme en main : sa cadence, son chargeur, ce qu'elle tire
+                        skill_play.hold(ui_state.inventory.selected_item(), ui_state.player.stats.class);
+                        ui_state.weapon_hud = skill_play.weapon_hud(ui_state.skill_charging.as_deref());
                         let mut aimed = None;
                         let mut looked_at = None;
                         if cursor_captured {
@@ -742,18 +743,64 @@ fn main() {
                             // Un habitant, un garde ou un voyageur ne se frappe que si le clic a commencé
                             // sur lui : celui qui passe devant un bloc en train de casser n'est pas
                             // frappé par mégarde (les gardes s'en prendraient au joueur)
-                            if block_interaction.take_fresh_press() {
+                            let fresh = block_interaction.take_fresh_press();
+                            if fresh {
                                 strike_lock = aimed;
+                            }
+                            // Un arc ou une arbalète, et de quoi le charger : le clic gauche tire (l'arc
+                            // se bande tant qu'on tient le bouton et part au relâchement). Sans munition,
+                            // il frappe au corps à corps, d'un coup de crosse.
+                            let held = skill_play.held();
+                            let ammo = held.ammo.and_then(|kind| ui_state.inventory.find_ammo(kind));
+                            let shooting = held.is_ranged() && ammo.is_some();
+                            if let Some(ammo) = ammo.filter(|_| shooting) {
+                                block_interaction.pause_mining();
+                                let bow = held.kind == Some(herocraft_common::WeaponKind::Bow);
+                                if bow && fresh {
+                                    skill_play.begin_charge(None);
+                                    if let Some(client) = net.as_mut() {
+                                        client.send_begin_charge(None);
+                                    }
+                                }
+                                let release = if bow { skill_play.is_charging(None) && !block_interaction.is_breaking_held() } else { fresh };
+                                if release {
+                                    match skill_play.fire() {
+                                        Ok(fired) => {
+                                            ui_state.inventory.take_one(ammo);
+                                            let (up, _, _, aim) = camera.look_vectors();
+                                            let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+                                            audio.block_hit(audio::synth::Material::Wood, &ui_state.audio_settings);
+                                            match net.as_mut() {
+                                                Some(client) => client.send_shoot(aim, ammo),
+                                                None => {
+                                                    let damage = held.damage + herocraft_common::weapons::ammo_damage(ammo);
+                                                    let hit = skill_play.solo_shoot(camera.player_pos, aim, damage, fired, &mut solo_creatures, &mut ui_state.player.stats);
+                                                    skill_play.show_shot(None, camera.eye_position(), hit.to + up * 0.8 * block, hit.target, hit.special.as_deref(), block);
+                                                    let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
+                                                    for murder in solo_creatures.take_murders() {
+                                                        ui_state.chat.server(&murder.announce(&name));
+                                                    }
+                                                    for assault in solo_creatures.take_assaults() {
+                                                        ui_state.chat.server(&assault.warning());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(error) => {
+                                            let weapon = held.item.map_or("Arme", |i| i.name());
+                                            ui_state.skill_notice = Some((format!("{weapon} : {}", error.message()), Instant::now()));
+                                        }
+                                    }
+                                }
                             }
                             if !block_interaction.is_breaking_held() {
                                 strike_lock = None;
                             }
                             let humanoid = |id: u64| creature_views.iter().find(|v| v.id == id).is_some_and(|v| villagers::is_humanoid(v, &creature_registry));
-                            let striking = aimed.filter(|_| block_interaction.is_breaking_held()).filter(|&id| strike_lock == Some(id) || !humanoid(id));
+                            let striking = aimed.filter(|_| !shooting && block_interaction.is_breaking_held()).filter(|&id| strike_lock == Some(id) || !humanoid(id));
                             if let Some(id) = striking {
                                 block_interaction.pause_mining();
-                                let boost = skill_play.solo_hit_factor(id, &solo_creatures);
-                                if hit_creature(id, boost, &mut attack_cooldown, &camera, net.as_mut(), &mut solo_creatures, &mut ui_state.player.stats, &mut audio, &ui_state.audio_settings) {
+                                if hit_creature(id, &mut skill_play, &camera, net.as_mut(), &mut solo_creatures, &mut ui_state.player.stats, &mut audio, &ui_state.audio_settings) {
                                     skill_play.solo_weapon_hit(id, &mut solo_creatures, camera.player_pos, &mut ui_state.player.stats);
                                 }
                                 // Un habitant tué en solo : le chat l'annonce (en ligne, c'est le serveur)
@@ -765,7 +812,7 @@ fn main() {
                                     ui_state.chat.server(&assault.warning());
                                 }
                             }
-                            let action = if striking.is_some() { None } else { block_interaction.tick(dt) };
+                            let action = if striking.is_some() || shooting { None } else { block_interaction.tick(dt) };
                             if let Some(block) = block_interaction.take_hit() {
                                 audio.block_hit(audio::synth::Material::of(block), &ui_state.audio_settings);
                             }
@@ -830,6 +877,13 @@ fn main() {
                                     }
                                     NetEvent::SkillCooldown { skill, seconds } => skill_play.extend_cooldown(&skill, seconds),
                                     NetEvent::Pushed { direction, speed } => camera.push(direction, speed),
+                                    NetEvent::PlayerShot { player_id, from, to, target, special } => {
+                                        let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+                                        let up = from.normalize_or_zero();
+                                        let mine = player_id == client.player_id();
+                                        let start = if mine { camera.eye_position() } else { from + up * 1.5 * block };
+                                        skill_play.show_shot((!mine).then_some(player_id), start, to + up * 0.8 * block, target, special.as_deref(), block);
+                                    }
                                     NetEvent::CreatureShots(shots) => {
                                         let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
                                         skill_play.on_shots(&shots, &creature_registry, block);
@@ -1272,6 +1326,13 @@ fn main() {
                             ui_state.chat.players.clear();
                         }
 
+                        // Compétences qui se chargent : le serveur compte le temps tenu jusqu'au relâchement
+                        for skill in std::mem::take(&mut ui_state.skill_charges) {
+                            skill_play.begin_charge(Some(&skill));
+                            if let Some(client) = net.as_mut() {
+                                client.send_begin_charge(Some(&skill));
+                            }
+                        }
                         // Compétences lancées (touches de la barre, /cast) : visée du regard, et du
                         // bloc visé s'il y en a un
                         for skill in std::mem::take(&mut ui_state.skill_casts) {
@@ -1849,10 +1910,22 @@ fn game_key(
             }
             pending_actions.push(UiAction::ToggleOceanCurrents);
         }
-        Action::Skill1 | Action::Skill2 | Action::Skill3 | Action::Skill4 if first_press && is_ground_view && ui_state.beast_attacks.is_none() => {
+        Action::Skill1 | Action::Skill2 | Action::Skill3 | Action::Skill4 if is_ground_view && ui_state.beast_attacks.is_none() => {
             let slot = [Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4].iter().position(|&a| a == action).unwrap_or(0);
-            match ui_state.skill_bar.get(slot) {
-                Some(skill) => ui_state.skill_casts.push(skill.to_string()),
+            match ui_state.skill_bar.get(slot).map(str::to_string) {
+                // Une compétence qui se charge (Tir de Baliste) part au relâchement de sa touche
+                Some(skill) if herocraft_common::skills().get(&skill).and_then(|d| d.cast.as_ref()).is_some_and(|c| c.charge.is_some()) => {
+                    if first_press {
+                        ui_state.skill_charges.push(skill.clone());
+                        ui_state.skill_charging = Some(skill);
+                    } else if !is_pressed && ui_state.skill_charging.as_deref() == Some(skill.as_str()) {
+                        ui_state.skill_charging = None;
+                        ui_state.skill_casts.push(skill);
+                    }
+                }
+                Some(skill) if first_press => ui_state.skill_casts.push(skill),
+                Some(_) => {}
+                None if !first_press => {}
                 None => {
                     let key = ui_state.controls.action_key_label(action);
                     let wheel = ui_state.controls.action_key_label(Action::OpenSkills);
@@ -1883,9 +1956,6 @@ fn set_cursor_captured(window: &Window, captured: bool) {
         window.set_cursor_visible(true);
     }
 }
-
-/// Délai entre deux coups portés à une créature, en secondes
-const ATTACK_COOLDOWN: f32 = 0.4;
 
 /// Bête morte sous le réticule, à portée et devant le bloc visé : à dépecer
 fn aimed_corpse(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<u64> {
@@ -1959,12 +2029,11 @@ fn show_wound(hurt: f32, what: &str, camera: &mut OrbitCamera, ui_state: &mut Ui
 }
 
 /// Frappe la créature `id` (la simulation solo, ou le serveur en ligne, en tire dégâts, recul et
-/// fuite), sauf si le coup précédent est trop récent. `boost` : facteur de ses renforcements de dégâts.
+/// fuite), sauf si le coup précédent est trop récent pour l'arme tenue.
 /// Renvoie vrai si le coup a porté ici, en solo.
 fn hit_creature(
     id: u64,
-    boost: f32,
-    cooldown: &mut f32,
+    skill_play: &mut skill_play::SkillPlay,
     camera: &OrbitCamera,
     net: Option<&mut NetClient>,
     solo: &mut herocraft_world::CreatureWorld,
@@ -1973,11 +2042,12 @@ fn hit_creature(
     settings: &audio::AudioSettings,
 ) -> bool {
     // Étourdi, il ne frappe pas
-    if *cooldown > 0.0 || stats.is_stunned() {
+    if stats.is_stunned() {
         return false;
     }
-    *cooldown = ATTACK_COOLDOWN;
-    // Invisible, son coup le dévoile et porte en critique (le serveur en juge en ligne)
+    // Au rythme de l'arme tenue, de ses dégâts (le serveur en juge en ligne)
+    let Ok(damage) = skill_play.strike() else { return false };
+    // Invisible, son coup le dévoile et porte en critique
     let critical = stats.is_invisible();
     stats.invisible_time = 0.0;
     let alone = net.is_none();
@@ -1985,7 +2055,8 @@ fn hit_creature(
         Some(client) => client.send_hit_creature(id),
         None => {
             let factor = if critical { herocraft_world::CRITICAL_FACTOR } else { 1.0 };
-            solo.wound(id, camera.player_pos, 0, herocraft_common::PLAYER_HIT_DAMAGE * factor * boost);
+            let boost = skill_play.solo_hit_factor(id, solo);
+            solo.wound(id, camera.player_pos, 0, damage * factor * boost);
         }
     }
     // Coup sourd

@@ -2,6 +2,7 @@
   "numeric_id": 16403,
   "name": "Gantelet runique de bronze",
   "category": "Armes",
+  "weapon": {"kind": "gauntlet", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/bronzeGauntlet.png",
   "stats": {"Dégâts": 8, "Durabilité": 500},

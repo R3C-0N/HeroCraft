@@ -2,6 +2,7 @@
   "numeric_id": 16784,
   "name": "Pelle en adamantine",
   "category": "Outils",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/adamantineShovel.png",
   "stats": {"Dégâts": 9, "Durabilité": 3000},

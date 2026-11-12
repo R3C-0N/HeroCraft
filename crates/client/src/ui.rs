@@ -608,6 +608,13 @@ pub struct UiState {
     pub skill_screen: SkillScreen,
     /// Compétences que le joueur vient de lancer (touches de la barre, `/cast`), que le jeu lance
     pub skill_casts: Vec<String>,
+    /// Compétences qui se chargent dont la touche vient d'être enfoncée (elles partent au relâchement)
+    pub skill_charges: Vec<String>,
+    /// La compétence dont la touche est tenue enfoncée, qui se charge
+    pub skill_charging: Option<String>,
+    /// L'arme en main : chargeur, arc bandé, compétence chargée, munition spéciale (mis à jour à
+    /// chaque image)
+    pub weapon_hud: WeaponHud,
     /// Changé en bête (forme du Druide) : ses deux attaques, au clic gauche et au clic droit. Plus
     /// de barre d'objets, d'inventaire ni de barre de compétences le temps de la forme.
     pub beast_attacks: Option<[String; 2]>,
@@ -684,6 +691,9 @@ impl UiState {
             skills_open: false,
             skill_wheel: SkillWheel::standard(),
             skill_casts: Vec::new(),
+            skill_charges: Vec::new(),
+            skill_charging: None,
+            weapon_hud: WeaponHud::default(),
             beast_attacks: None,
             skill_bar: crate::skill_bar::SkillBar::default(),
             skill_icons: crate::skill_bar::SkillIcons::default(),
@@ -1171,6 +1181,7 @@ impl UiState {
                     if self.beast_attacks.is_none() {
                         self.draw_hotbar(ctx);
                         self.draw_skill_bar(ctx);
+                        self.draw_weapon_hud(ctx);
                     }
                     self.world_map.draw_compass(ctx, SCREEN_MARGIN);
                 }
@@ -1239,6 +1250,47 @@ impl UiState {
 
     /// Barre de compétences, à droite de la barre d'objets : l'icône de chaque case, sa touche,
     /// sa recharge qui se vide, grisée si elle ne peut pas partir ; au-dessus, le dernier refus
+    /// Au-dessus de la barre d'objets : le chargeur de l'arbalète et son rechargement, la munition
+    /// spéciale chargée ; sous le réticule, la jauge de l'arc bandé ou de la compétence chargée
+    fn draw_weapon_hud(&self, ctx: &egui::Context) {
+        let hud = &self.weapon_hud;
+        let screen = ctx.screen_rect();
+        let mut parts: Vec<String> = Vec::new();
+        if let Some((loaded, size, left, _)) = hud.magazine {
+            let mut text = format!("Carreaux {loaded}/{size}");
+            if left > 0.0 {
+                text += &format!(" · recharge {left:.1} s");
+            }
+            parts.push(text);
+        }
+        if let Some((name, shots)) = &hud.special {
+            parts.push(format!("{name} ×{shots}"));
+        }
+        if !parts.is_empty() {
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("weapon_hud")));
+            let bottom = screen.bottom() - SCREEN_MARGIN - HOTBAR_SLOT_SIZE - 52.0_f32;
+            let galley = painter.layout_no_wrap(parts.join("   "), egui::FontId::proportional(12.0_f32), TEXT_SOFT);
+            let rect = egui::Rect::from_center_size(egui::pos2(screen.center().x, bottom - galley.size().y / 2.0_f32), galley.size() + egui::vec2(16.0_f32, 6.0_f32));
+            painter.rect_filled(rect, 4.0_f32, egui::Color32::from_black_alpha(150));
+            painter.galley(rect.min + egui::vec2(8.0_f32, 3.0_f32), galley, TEXT_SOFT);
+            // Le rechargement : une fine jauge sous le texte
+            if let Some((_, _, left, total)) = hud.magazine.filter(|m| m.2 > 0.0 && m.3 > 0.0) {
+                let done = (1.0 - left / total).clamp(0.0, 1.0);
+                let bar = egui::Rect::from_min_size(egui::pos2(rect.left(), rect.bottom() + 2.0_f32), egui::vec2(rect.width() * done, 3.0_f32));
+                painter.rect_filled(bar, 1.0_f32, GOLD_BRIGHT);
+            }
+        }
+        if let Some((label, progress, ready)) = &hud.charge {
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("charge_gauge")));
+            let center = screen.center() + egui::vec2(0.0_f32, 28.0_f32);
+            let back = egui::Rect::from_center_size(center, egui::vec2(90.0_f32, 6.0_f32));
+            painter.rect_filled(back, 2.0_f32, egui::Color32::from_black_alpha(160));
+            let fill = egui::Rect::from_min_size(back.min, egui::vec2(back.width() * progress.clamp(0.0, 1.0), back.height()));
+            painter.rect_filled(fill, 2.0_f32, if *ready { GOLD_BRIGHT } else { egui::Color32::from_gray(150) });
+            painter.text(back.center_bottom() + egui::vec2(0.0_f32, 3.0_f32), egui::Align2::CENTER_TOP, label, egui::FontId::proportional(11.0_f32), TEXT_SOFT);
+        }
+    }
+
     fn draw_skill_bar(&self, ctx: &egui::Context) {
         use crate::skill_bar::SKILL_SLOTS;
         const SLOT_ACTIONS: [Action; SKILL_SLOTS] = [Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4];
@@ -2865,6 +2917,17 @@ fn red_vignette(screen: egui::Rect, alpha: u8) -> egui::Shape {
 }
 
 /// Cadre commun des panneaux du HUD : bois sombre à liseré, comme les bulles de l'ancien jeu
+/// Ce que l'affichage montre de l'arme en main
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WeaponHud {
+    /// Arbalète : carreaux prêts, contenance, rechargement restant et total (secondes)
+    pub magazine: Option<(u8, u8, f32, f32)>,
+    /// Munition spéciale chargée : nom de la compétence, tirs restants
+    pub special: Option<(String, u32)>,
+    /// Arc bandé ou compétence chargée : ce qu'on charge, avancement (0 à 1), assez pour partir
+    pub charge: Option<(String, f32, bool)>,
+}
+
 fn hud_frame(margin: egui::Margin) -> crate::ui_skin::SkinFrame {
     crate::ui_skin::SkinFrame::area(margin)
 }
@@ -3691,6 +3754,8 @@ mod tests {
                 ui.skill_bar.slots = [Some("judgment".into()), Some("bastionOfLight".into()), None, Some("igneousOrb".into())];
                 ui.skill_cooldowns[1] = (3.4, 8.0);
                 ui.skill_notice = Some(("Jugement : pas assez de mana".into(), std::time::Instant::now()));
+                // Une arbalète de Rôdeur qui recharge, des balles à fragmentation et un tir chargé
+                ui.weapon_hud = WeaponHud { magazine: Some((0, 2, 0.5, 0.8)), special: Some(("Balles à Fragmentation".into(), 2)), charge: Some(("Tir de Baliste".into(), 0.7, true)) };
             },
             true,
             None,

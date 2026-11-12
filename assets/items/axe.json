@@ -2,6 +2,7 @@
   "numeric_id": 16785,
   "name": "Axe",
   "category": "Outils",
-  "max_stack": 64,
+  "weapon": {"kind": "axe", "interval": 0.55},
+  "max_stack": 1,
   "icon": "icones/axe.png"
 }

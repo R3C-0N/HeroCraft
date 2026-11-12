@@ -2,6 +2,7 @@
   "numeric_id": 16840,
   "name": "Pelle en acier",
   "category": "Outils",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/steelShovel.png",
   "stats": {"Dégâts": 6, "Durabilité": 2000},

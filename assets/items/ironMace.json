@@ -2,6 +2,7 @@
   "numeric_id": 16495,
   "name": "Masse de fer",
   "category": "Armes",
+  "weapon": {"kind": "mace", "interval": 0.55},
   "max_stack": 1,
   "icon": "icones/ironMace.png",
   "stats": {"Dégâts": 12, "Durabilité": 900},

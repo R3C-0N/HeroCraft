@@ -2,6 +2,7 @@
   "numeric_id": 16782,
   "name": "Couteau en adamantine",
   "category": "Outils",
+  "weapon": {"kind": "dagger", "interval": 0.25},
   "max_stack": 1,
   "icon": "icones/adamantineKnife.png",
   "stats": {"Dégâts": 9, "Durabilité": 3000},

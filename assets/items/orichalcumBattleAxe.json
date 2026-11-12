@@ -2,6 +2,7 @@
   "numeric_id": 16521,
   "name": "Hache de guerre en orichalque",
   "category": "Armes",
+  "weapon": {"kind": "axe", "interval": 0.8},
   "max_stack": 1,
   "icon": "icones/orichalcumBattleAxe.png",
   "stats": {"Dégâts": 22, "Durabilité": 3000},

@@ -2,6 +2,7 @@
   "numeric_id": 16535,
   "name": "Bouclier en planches",
   "category": "Armes",
+  "weapon": {"kind": "shield", "interval": 0.6},
   "max_stack": 1,
   "icon": "icones/plankShield.png",
   "stats": {"Dégâts": 1, "Durabilité": 80},

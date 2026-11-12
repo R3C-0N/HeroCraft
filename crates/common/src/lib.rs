@@ -14,6 +14,7 @@ pub mod protocol;
 pub mod skills;
 pub mod villager;
 pub mod voxel;
+pub mod weapons;
 pub mod weather;
 
 pub use blocks::*;
@@ -28,4 +29,5 @@ pub use protocol::*;
 pub use skills::{skills, CastError, LearnError, SkillCatalog, SkillWheel};
 pub use villager::{professions, Profession, ProfessionRegistry, Trade, VillagerCard, Workplace, VILLAGER_HEARING_BLOCKS};
 pub use voxel::*;
+pub use weapons::{AmmoKind, Held, WeaponKind};
 pub use weather::WeatherKind;

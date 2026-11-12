@@ -1,0 +1,12 @@
+{
+  "numeric_id": 16911,
+  "name": "Arbalète de bronze",
+  "category": "Armes",
+  "weapon": {"kind": "crossbow", "interval": 1.2, "ammo": "bolt"},
+  "max_stack": 1,
+  "icon": "icones/bronzeCrossbow.png",
+  "stats": {"Dégâts": 6, "Durabilité": 500},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"bronzeIngot": 3, "plank": 2, "rope": 2}, "repair": {"bronzeIngot": 1}}
+  ]
+}

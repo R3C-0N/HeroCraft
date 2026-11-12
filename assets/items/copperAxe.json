@@ -2,6 +2,7 @@
   "numeric_id": 16792,
   "name": "Hache en cuivre",
   "category": "Outils",
+  "weapon": {"kind": "axe", "interval": 0.55},
   "max_stack": 1,
   "icon": "icones/copperAxe.png",
   "stats": {"Dégâts": 3, "Durabilité": 300},

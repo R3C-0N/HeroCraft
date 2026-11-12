@@ -2,6 +2,7 @@
   "numeric_id": 16817,
   "name": "Hache en fer",
   "category": "Outils",
+  "weapon": {"kind": "axe", "interval": 0.55},
   "max_stack": 1,
   "icon": "icones/ironAxe.png",
   "stats": {"Dégâts": 5, "Durabilité": 900},

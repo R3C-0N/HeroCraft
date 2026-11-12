@@ -2,6 +2,7 @@
   "numeric_id": 16820,
   "name": "Pioche en fer",
   "category": "Outils",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/ironPickaxe.png",
   "stats": {"Dégâts": 5, "Durabilité": 900},

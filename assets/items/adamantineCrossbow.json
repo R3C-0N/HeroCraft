@@ -1,0 +1,12 @@
+{
+  "numeric_id": 16921,
+  "name": "Arbalète d'adamantine",
+  "category": "Armes",
+  "weapon": {"kind": "crossbow", "interval": 1.2, "ammo": "bolt"},
+  "max_stack": 1,
+  "icon": "icones/adamantineCrossbow.png",
+  "stats": {"Dégâts": 12, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"adamantineIngot": 3, "plank": 2, "rope": 2}, "repair": {"adamantineIngot": 1}}
+  ]
+}

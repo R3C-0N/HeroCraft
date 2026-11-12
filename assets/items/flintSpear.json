@@ -2,6 +2,7 @@
   "numeric_id": 16485,
   "name": "Lance en silex",
   "category": "Armes",
+  "weapon": {"kind": "spear", "interval": 0.5, "reach": 1},
   "max_stack": 1,
   "icon": "icones/flintSpear.png",
   "stats": {"Dégâts": 7, "Durabilité": 150},

@@ -2,6 +2,7 @@
   "numeric_id": 16780,
   "name": "Hache en adamantine",
   "category": "Outils",
+  "weapon": {"kind": "axe", "interval": 0.55},
   "max_stack": 1,
   "icon": "icones/adamantineAxe.png",
   "stats": {"Dégâts": 9, "Durabilité": 3000},
