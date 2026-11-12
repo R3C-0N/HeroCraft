@@ -21,17 +21,11 @@
     "targets": "enemies",
     "effects": [
       {
-        "damage": {
-          "power": [
-            1.8,
-            2.1,
-            2.4
-          ]
-        }
-      },
-      {
-        "knockback": {
-          "strength": 4
+        "summon": {
+          "species": "volcanicRune",
+          "at": "aimed",
+          "limit": 2,
+          "duration": 30
         }
       }
     ]
@@ -39,17 +33,7 @@
   "visuals": [
     {
       "effect": "runeCircle",
-      "anchor": "area",
-      "from": "start"
-    },
-    {
-      "effect": "fireExplosion",
-      "anchor": "area",
-      "from": "impact"
-    },
-    {
-      "effect": "lavaPool",
-      "anchor": "area",
+      "anchor": "aimed",
       "from": "impact"
     }
   ]

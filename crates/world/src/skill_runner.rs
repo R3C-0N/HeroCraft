@@ -197,7 +197,13 @@ struct Summoned {
     /// Effets sur le lanceur à la fin de sa durée, et le rang de la compétence
     on_end: Vec<EffectEntry>,
     rank: u8,
+    /// Elle avance : direction (unitaire), blocs restants, vitesse en blocs par seconde
+    advance: Option<(Vec3, f32, f32)>,
 }
+
+/// Distance devant un mur qui avance où il pousse les ennemis, en blocs ; demi-longueur du mur
+const ADVANCE_REACH: f32 = 1.5;
+const ADVANCE_HALF_WIDTH: f32 = 3.0;
 
 /// Points de vie rendus chaque seconde par un renforcement de régénération de 1 (100 %)
 const REGENERATION_HP: f32 = 5.0;
@@ -530,6 +536,39 @@ impl SkillRunner {
             }
         }
         self.buffs.retain(|b| b.left > 0.0);
+        // Ce que les pièges ont fait apparaître (mines de l'Éradication Ciblée) disparaît à son heure
+        for (caster, id, seconds) in creatures.take_spawned() {
+            let species = creatures.creatures().iter().find(|c| c.id == id).and_then(|c| creatures.registry().get(c.species)).map(|s| s.id.clone()).unwrap_or_default();
+            self.summoned.push(Summoned { caster, species, id, left: Some(seconds), on_end: Vec::new(), rank: 1, advance: None });
+        }
+        // Les murs qui avancent glissent droit devant, en repoussant les ennemis
+        let block = creatures.block_size();
+        for s in &mut self.summoned {
+            let Some((dir, left, speed)) = &mut s.advance else { continue };
+            let step = (*speed * dt).min(*left);
+            *left -= step;
+            creatures.slide(s.id, *dir * step * block);
+            if let Some(at) = creatures.creatures().iter().find(|c| c.id == s.id).map(|c| c.position) {
+                let ahead: Vec<u64> = creatures
+                    .creatures()
+                    .iter()
+                    .filter(|c| c.is_alive() && !c.tamed && c.summoner.is_none())
+                    .filter(|c| {
+                        let off = c.position - at;
+                        let t = off.dot(*dir) / block;
+                        (-0.5..=ADVANCE_REACH).contains(&t) && (off - *dir * off.dot(*dir)).length() / block <= ADVANCE_HALF_WIDTH
+                    })
+                    .map(|c| c.id)
+                    .collect();
+                for id in ahead {
+                    let from = creatures.creatures().iter().find(|c| c.id == id).map_or(at, |c| c.position) - *dir * block;
+                    creatures.shove(id, from, (*speed * 1.5).max(4.0));
+                }
+            }
+            if *left <= 0.0 {
+                s.advance = None;
+            }
+        }
         // Les invocations détruites sont oubliées ; celles dont la durée est passée disparaissent
         let alive: std::collections::HashSet<u64> = creatures.creatures().iter().filter(|c| c.is_alive()).map(|c| c.id).collect();
         let mut ended = Vec::new();
@@ -780,7 +819,7 @@ impl SkillRunner {
         let mut out = Vec::new();
         let block = creatures.block_size();
         for effect in summons {
-            let Effect::Summon { species, count, at, duration, limit, copies, on_end } = effect else { continue };
+            let Effect::Summon { species, count, at, duration, limit, copies, on_end, advance } = effect else { continue };
             let Some(index) = creatures.registry().find(species) else { continue };
             let left = duration.as_ref().map(|d| d.at(p.rank));
             // Une par cadavre de la zone, à sa place et à son allure ; le cadavre disparaît
@@ -791,7 +830,7 @@ impl SkillRunner {
                     creatures.remove(corpse);
                     let id = creatures.summon(index, position, yaw, p.caster);
                     creatures.set_copy(id, kind as u32);
-                    self.summoned.push(Summoned { caster: p.caster, species: species.clone(), id, left, on_end: on_end.clone(), rank: p.rank });
+                    self.summoned.push(Summoned { caster: p.caster, species: species.clone(), id, left, on_end: on_end.clone(), rank: p.rank, advance: None });
                     out.push(id);
                 }
                 continue;
@@ -804,16 +843,20 @@ impl SkillRunner {
             let up = origin.normalize_or(Vec3::Y);
             let forward = (p.aim - up * p.aim.dot(up)).normalize_or(up.any_orthonormal_vector());
             let right = forward.cross(up);
+            // Tournée vers la visée : un mur se dresse en travers
+            let (east, north) = herocraft_common::tangent_frame(up);
+            let yaw = forward.dot(east).atan2(forward.dot(north));
+            let marching = advance.as_ref().map(|a| (forward, a.blocks.at(p.rank), a.speed.at(p.rank)));
             let n = count.at(p.rank).round().max(1.0) as usize;
             let radius = if n > 1 { SUMMON_SPACING * block * n as f32 / std::f32::consts::TAU } else { 0.0 };
             for i in 0..n {
                 let angle = std::f32::consts::TAU * i as f32 / n as f32;
                 let spot = origin + (forward * angle.cos() + right * angle.sin()) * radius;
-                let id = creatures.summon(index, spot, 0.0, p.caster);
+                let id = creatures.summon(index, spot, yaw, p.caster);
                 if *copies == Some(Copies::Caster) {
                     creatures.set_copy(id, herocraft_common::COPY_SUMMONER);
                 }
-                self.summoned.push(Summoned { caster: p.caster, species: species.clone(), id, left, on_end: on_end.clone(), rank: p.rank });
+                self.summoned.push(Summoned { caster: p.caster, species: species.clone(), id, left, on_end: on_end.clone(), rank: p.rank, advance: marching });
                 out.push(id);
             }
             if let Some(limit) = limit {
@@ -862,6 +905,9 @@ impl SkillRunner {
                 self.marks.push((p.caster, id, chance.at(rank), duration.at(rank)));
             }
             Effect::Heal { amount } => creatures.heal(id, amount.at(rank) * p.power),
+            // Une invocation alliée se protège et se presse (Surcharge Mécanique)
+            Effect::Shield { amount, duration, .. } => creatures.shield(id, amount.at(rank) * p.power, duration.at(rank)),
+            Effect::Buff { stat: BuffStat::Haste, value, duration, .. } => creatures.haste(id, value.at(rank), duration.at(rank)),
             Effect::Slow { strength, duration } => creatures.slow(id, strength.at(rank), duration.at(rank)),
             Effect::Stun { duration } => creatures.stun(id, duration.at(rank)),
             Effect::Knockback { strength } => creatures.shove(id, feet, strength.at(rank) * p.power),
@@ -884,8 +930,8 @@ impl SkillRunner {
                     });
                 }
             }
-            // Sans effet sur une bête : boucliers, renforcements, invisibilité, résurrection, lien
-            Effect::Shield { .. } | Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } | Effect::Sacrifice { .. } => {}
+            // Sans effet sur une bête : les autres renforcements, invisibilité, résurrection, lien
+            Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } | Effect::Sacrifice { .. } => {}
         }
     }
 
@@ -1537,6 +1583,62 @@ mod tests {
         creatures.creature_mut(cow).unwrap().position = spot + Vec3::new(block, 0.0, 0.0);
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
         assert!(health(&creatures, cow) < 1000.0, "la lave brûle qui la traverse");
+    }
+
+    #[test]
+    fn a_telluric_rampart_marches_forward_then_stops() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let block = creatures.block_size();
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        // Donné par le nœud de la Terre : ici la frappe est posée telle quelle
+        runner.pending.push(Pending { caster: 1, skill: "telluricRampart".into(), rank: 1, aim: Vec3::NEG_Z, aimed: None, left: 0.0, crit: false, power: 1.0, size: 1.0 });
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 0.1);
+        let wall = runner.summoned_by(1).next().expect("le mur");
+        let at = |c: &CreatureWorld| c.creatures().iter().find(|x| x.id == wall).unwrap().position;
+        let start = at(&creatures);
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 3.0);
+        let moved = (at(&creatures) - start).dot(Vec3::NEG_Z) / block;
+        assert!((moved - 6.0).abs() < 0.3, "le mur avance de six blocs vers la visée : {moved}");
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
+        assert!(((at(&creatures) - start).dot(Vec3::NEG_Z) / block - moved).abs() < 0.01, "puis il s'arrête");
+    }
+
+    #[test]
+    fn mechanical_overload_heals_shields_and_hastes_only_the_casters_turrets() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let block = creatures.block_size();
+        let turret = creatures.registry().find("ballisticTurret").unwrap();
+        let mine = creatures.summon(turret, feet + Vec3::new(3.0 * block, 0.0, 0.0), 0.0, 1);
+        let theirs = creatures.summon(turret, feet + Vec3::new(-3.0 * block, 0.0, 0.0), 0.0, 2);
+        creatures.creature_mut(mine).unwrap().health = 10.0;
+        creatures.creature_mut(theirs).unwrap().health = 10.0;
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        stats.hp = 50.0;
+        let mut runner = SkillRunner::new();
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "mechanicalOverload", None);
+        assert_eq!(health(&creatures, mine), 40.0, "la tourelle du lanceur est réparée");
+        assert_eq!(health(&creatures, theirs), 10.0, "pas celle d'un autre");
+        assert_eq!(stats.hp, 50.0, "plus de soin aux joueurs");
+        let c = creatures.creatures().iter().find(|c| c.id == mine).unwrap();
+        assert!(c.is_hasted() && c.has_shield(), "pressée et protégée");
+    }
+
+    #[test]
+    fn traps_dropped_by_an_eradication_trap_vanish_if_nothing_triggers_them() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        let mine = creatures.registry().find("shrapnelMine").unwrap();
+        let id = creatures.summon(mine, feet + Vec3::new(0.0, 0.0, 40.0 * creatures.block_size()), 0.0, 1);
+        creatures.spawned.push((1, id, 2.0));
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
+        assert_eq!(runner.summoned_by(1).collect::<Vec<_>>(), vec![id]);
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.5);
+        assert_eq!(runner.summoned_by(1).count(), 0);
     }
 
     #[test]

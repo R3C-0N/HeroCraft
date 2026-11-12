@@ -233,4 +233,27 @@ def stone_wall():
     return m
 
 
-ALL = [ballistic_turret, flame_turret, jaw_trap, magnetic_trap, shrapnel_mine, portable_barricade, etherium_bastion, stone_wall]
+def volcanic_rune():
+    """Rune Volcanique du Sorcier : une dalle de basalte ronde gravée d'une rune de braise (`glow`)
+    qui pulse en attendant qu'un ennemi passe."""
+    m = Model("volcanicRune", seed=5)
+    m.bone("root", None, (0, 0, 0))
+    for a in (0, 30, 60):
+        m.box("root", (-7, 0, -7), (7, 0.8, 7), "#2e2a28", "stone", euler=(0, a, 0))
+    m.bone("glow", "root", (0, 0.8, 0))
+    # Cercle de braise et trois branches de la rune
+    for k in range(12):
+        m.push((0, 0, 0), (0, k * 30, 0))
+        m.box("glow", (-1.1, 0.8, 5), (1.1, 1.2, 6), "#ff6a1a", "glow", {"top": [("px", 0, 0, "#ffd080")]})
+        m.pop()
+    for k in range(3):
+        m.push((0, 0, 0), (0, k * 120, 0))
+        m.box("glow", (-0.5, 0.8, 0), (0.5, 1.2, 4.5), "#ff8a2a", "glow", {"top": [("px", 0, 0, "#ffe0a0")]})
+        m.box("glow", (-1.8, 0.8, 3.2), (1.8, 1.2, 4), "#ff8a2a", "glow")
+        m.pop()
+    m.box("glow", (-1.2, 0.8, -1.2), (1.2, 1.4, 1.2), "#ffb040", "glow", {"top": [("px", 0, 0, "#fff0c0")]})
+    m.clip("pulse", 1.4, [("glow", "scale", [(0, [1, 1, 1]), (0.7, [1.08, 1.6, 1.08]), (1.4, [1, 1, 1])])])
+    return m
+
+
+ALL = [ballistic_turret, flame_turret, jaw_trap, magnetic_trap, shrapnel_mine, portable_barricade, etherium_bastion, stone_wall, volcanic_rune]

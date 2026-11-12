@@ -1,0 +1,79 @@
+{
+  "name": "Piège d'Éradication",
+  "description": "Mâchoire d'acier de l'Ingénieur : quand elle se referme, trois mines à éclats tombent autour de sa proie.",
+  "body": {
+    "half_width": 0.5,
+    "half_length": 0.5,
+    "height": 0.16
+  },
+  "walk_speed": 0,
+  "health": 15,
+  "activity": "always",
+  "model": {
+    "mesh": "../skills/models/jawTrap.gltf",
+    "texture": "../skills/models/jawTrap.png",
+    "animations": {
+      "apparition": {
+        "cycle": 0.35,
+        "os": {
+          "root": {
+            "translation_fixe": [
+              0,
+              0.6,
+              0
+            ],
+            "translation": [
+              0,
+              0.6,
+              0
+            ],
+            "frequence": 0.5,
+            "phase": 0.25
+          }
+        }
+      },
+      "attaque": {
+        "clip": "snap",
+        "cycle": 0.25
+      },
+      "coup": {
+        "os": {
+          "root": {
+            "rotation": [
+              0,
+              0,
+              3
+            ],
+            "frequence": 2
+          }
+        }
+      },
+      "repos": {
+        "cycle": 2
+      }
+    }
+  },
+  "collision": {
+    "resistance": 0
+  },
+  "attack": {
+    "mode": "solo",
+    "damage": 12,
+    "cooldown": 1.0,
+    "sight": 1.5,
+    "reach": 0.0,
+    "hunts_players": false,
+    "burst": {
+      "radius": 1.0,
+      "stun": 2.5,
+      "effect": "bloodSplash",
+      "bleed": 4,
+      "bleed_seconds": 5,
+      "spawn": {
+        "species": "shrapnelMine",
+        "count": 3,
+        "seconds": 8
+      }
+    }
+  }
+}

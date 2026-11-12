@@ -137,6 +137,8 @@ const FLANK_DISTANCE: f32 = 5.0;
 const FLANK_OFFSET: f32 = 2.5;
 /// Demi-largeur d'une cible, ajoutée à l'allonge, en blocs
 const TARGET_RADIUS: f32 = 0.3;
+/// Distance des entités qu'un piège fait apparaître autour de lui, en blocs
+const SPAWN_RING: f32 = 0.5;
 /// Écart de hauteur au-delà duquel un coup ne porte pas, en blocs
 const MAX_STRIKE_HEIGHT: f32 = 1.8;
 /// Écart au cap de la cible au-delà duquel elle se tourne avant de frapper, en radians
@@ -282,6 +284,12 @@ pub struct Creature {
     slow_time: f32,
     /// Étourdie par une compétence : temps restant sans bouger ni frapper, en secondes
     stun: f32,
+    /// Pressée par une compétence (Surcharge Mécanique) : cadence en plus (0,5 : +50 %) et temps restant
+    haste: f32,
+    haste_time: f32,
+    /// Bouclier d'une compétence : points de dégâts qu'il absorbe encore, et temps restant
+    shield: f32,
+    shield_time: f32,
     /// Aveuglée : temps restant à ne voir qu'à `BLIND_SIGHT` blocs, en secondes
     blind: f32,
     /// Provoquée : clé du joueur qu'elle poursuit, et temps restant, en secondes
@@ -398,6 +406,9 @@ pub struct PlayerHit {
 #[derive(Debug, Clone)]
 struct Flying {
     shooter: u64,
+    /// Bouche du tir, et demi-largeur de ce qu'il traverse (0 : il s'arrête sur sa cible)
+    from: Vec3,
+    pierce: f32,
     /// Le tireur est une entité invoquée : il ne touche que les bêtes hostiles
     allied: bool,
     species: usize,
@@ -419,6 +430,16 @@ enum Target {
 }
 
 impl Creature {
+    /// Pressée par une compétence en ce moment (Surcharge Mécanique)
+    pub fn is_hasted(&self) -> bool {
+        self.haste > 0.0
+    }
+
+    /// Protégée par le bouclier d'une compétence en ce moment
+    pub fn has_shield(&self) -> bool {
+        self.shield > 0.0
+    }
+
     pub fn state(&self) -> CreatureState {
         CreatureState {
             creature_id: self.id,
@@ -585,6 +606,8 @@ pub struct CreatureWorld {
     shots: Vec<CreatureShotEvent>,
     /// Projectiles en vol : ils touchent à leur arrivée
     flying: Vec<Flying>,
+    /// Entités qu'un piège a fait apparaître, pas encore remises aux compétences (`take_spawned`)
+    pub(crate) spawned: Vec<(u64, u64, f32)>,
     /// Coups portés aux habitants, pas encore signalés à leur auteur (voir `take_assaults`)
     assaults: Vec<Assault>,
     geometry: BlockGeometry,
@@ -701,6 +724,7 @@ impl CreatureWorld {
             laid: Vec::new(),
             shots: Vec::new(),
             flying: Vec::new(),
+            spawned: Vec::new(),
             wanted: Vec::new(),
             murders: Vec::new(),
             assaults: Vec::new(),
@@ -853,6 +877,10 @@ impl CreatureWorld {
             calm: 0.0,
             slow: 0.0,
             slow_time: 0.0,
+            haste: 0.0,
+            haste_time: 0.0,
+            shield: 0.0,
+            shield_time: 0.0,
             stun: 0.0,
             blind: 0.0,
             taunted: None,
@@ -1053,6 +1081,39 @@ impl CreatureWorld {
 
     /// Ralentit la créature `id` de `strength` (0 à 1) pendant `duration` secondes ; un ralenti plus
     /// fort ou plus long que celui qu'elle subit le remplace
+    /// La créature `id` frappe plus vite (`value` : 0,5 pour +50 %) pendant `duration` secondes
+    pub fn haste(&mut self, id: u64, value: f32, duration: f32) {
+        if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
+            c.haste = c.haste.max(value.max(0.0));
+            c.haste_time = c.haste_time.max(duration);
+        }
+    }
+
+    /// Un bouclier de `amount` points sur la créature `id` pendant `duration` secondes
+    pub fn shield(&mut self, id: u64, amount: f32, duration: f32) {
+        if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
+            c.shield = c.shield.max(amount.max(0.0));
+            c.shield_time = c.shield_time.max(duration);
+        }
+    }
+
+    /// Fait glisser la créature `id` de `delta` dans le plan du sol, à la même altitude (le mur
+    /// du Rempart Tellurique qui avance)
+    pub fn slide(&mut self, id: u64, delta: Vec3) {
+        if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
+            let radius = c.position.length();
+            let up = c.position.normalize_or_zero();
+            let flat = delta - up * delta.dot(up);
+            c.position = (c.position + flat).normalize_or_zero() * radius;
+        }
+    }
+
+    /// Entités qu'un piège a fait apparaître depuis le dernier appel : invocateur, identifiant et
+    /// secondes avant qu'elles disparaissent
+    pub fn take_spawned(&mut self) -> Vec<(u64, u64, f32)> {
+        std::mem::take(&mut self.spawned)
+    }
+
     /// Rend `amount` points de vie à la créature `id`, sans dépasser ceux de son espèce
     pub fn heal(&mut self, id: u64, amount: f32) {
         if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.is_alive()) {
@@ -1175,6 +1236,10 @@ impl CreatureWorld {
         }
 
         let c = &mut self.creatures[index];
+        // Le bouclier d'une compétence encaisse d'abord
+        let absorbed = damage.min(c.shield).max(0.0);
+        c.shield -= absorbed;
+        let damage = damage - absorbed;
         // Une entité invoquée encaisse sans reculer ni fuir
         if c.summoner.is_some() {
             c.hurt = CREATURE_HURT_TIME;
@@ -1268,13 +1333,28 @@ impl CreatureWorld {
         // Les projectiles arrivés touchent leur cible, ou tout ce qui est hostile au tireur dans le
         // rayon de leur explosion
         let mut blasts = Vec::new();
+        let mut spawns: Vec<(herocraft_common::BurstSpawn, Vec3, u64)> = Vec::new();
         for f in &mut self.flying {
             f.left -= dt;
         }
         let (arrived, flying): (Vec<Flying>, Vec<Flying>) = std::mem::take(&mut self.flying).into_iter().partition(|f| f.left <= 0.0);
         self.flying = flying;
         for f in arrived {
-            if f.radius > 0.0 {
+            if f.pierce > 0.0 {
+                // Il traverse : tout ennemi près de sa trajectoire, prolongée jusqu'au bout de la grappe
+                let line = f.to - f.from;
+                let length = line.length().max(1e-6);
+                let along = line / length;
+                let end = length + 4.0 * f.pierce;
+                for &(id, _, position, alive, _, tamed, summoned) in &snapshot {
+                    let foe = if f.allied { !tamed && !summoned } else { summoned };
+                    let t = (position - f.from).dot(along);
+                    let off = (position - f.from - along * t).length();
+                    if alive && foe && id != f.shooter && t >= 0.0 && t <= end && off <= f.pierce + TARGET_RADIUS * block {
+                        blasts.push((id, f.from, f.damage));
+                    }
+                }
+            } else if f.radius > 0.0 {
                 for &(id, _, position, alive, _, tamed, summoned) in &snapshot {
                     let foe = if f.allied { !tamed } else { summoned };
                     if alive && foe && id != f.shooter && position.distance(f.to) <= f.radius {
@@ -1342,8 +1422,16 @@ impl CreatureWorld {
             if c.slow_time <= 0.0 {
                 c.slow = 0.0;
             }
-            // Étourdie, elle ne frappe pas
-            c.attack_cooldown = (c.attack_cooldown - dt).max(c.stun);
+            c.haste_time = (c.haste_time - dt).max(0.0);
+            if c.haste_time <= 0.0 {
+                c.haste = 0.0;
+            }
+            c.shield_time = (c.shield_time - dt).max(0.0);
+            if c.shield_time <= 0.0 {
+                c.shield = 0.0;
+            }
+            // Étourdie, elle ne frappe pas ; pressée, elle recharge plus vite
+            c.attack_cooldown = (c.attack_cooldown - dt * (1.0 + c.haste)).max(c.stun);
             c.striking = (c.striking - dt).max(0.0);
             c.anger = (c.anger - dt).max(0.0);
             c.sated = (c.sated - dt).max(0.0);
@@ -1580,6 +1668,9 @@ impl CreatureWorld {
                             }
                         }
                     }
+                    if let (Some(spawn), Some(summoner)) = (&burst.spawn, c.summoner) {
+                        spawns.push((spawn.clone(), c.position, summoner));
+                    }
                     shots.push(CreatureShotEvent { creature_id: c.id, species: c.species as u32, from: c.position, to: c.position });
                     c.vanish = Some(c.striking.max(0.1));
                     continue;
@@ -1593,6 +1684,8 @@ impl CreatureWorld {
                         allied: summoned,
                         species: c.species,
                         target,
+                        from,
+                        pierce: shot.pierce * block,
                         to: goal,
                         damage: shot.damage.unwrap_or(attack.damage),
                         radius: shot.radius * block,
@@ -1615,6 +1708,17 @@ impl CreatureWorld {
         }
         for (id, from, damage) in blasts {
             self.strike(id, from, damage, false);
+        }
+        // Ce que les pièges déclenchés font apparaître, en cercle serré autour d'eux
+        for (spawn, at, summoner) in spawns {
+            let Some(kind) = self.registry.find(&spawn.species) else { continue };
+            let (east, north) = tangent_frame(at.normalize_or_zero());
+            for k in 0..spawn.count.max(1) {
+                let angle = TAU * k as f32 / spawn.count.max(1) as f32;
+                let spot = at + (north * angle.cos() + east * angle.sin()) * SPAWN_RING * block;
+                let id = self.summon(kind, spot, angle, summoner);
+                self.spawned.push((summoner, id, spawn.seconds));
+            }
         }
         for (id, duration) in stuns {
             self.stun(id, duration);
@@ -3435,6 +3539,109 @@ mod tests {
         }
         let bled = world.creatures().iter().find(|c| c.id == monster).unwrap().health;
         assert!(bled <= after - 10.0, "le monstre n'a pas saigné ({after} -> {bled})");
+    }
+
+    #[test]
+    fn a_volcanic_rune_bursts_into_fire_when_a_monster_walks_on_it() {
+        let (generator, edits, mut world, feet, _) = beasts_and_player("rampant", 1, 0.0, 41);
+        let block = world.block_size();
+        let (east, _) = tangent_frame(feet.normalize());
+        let player = feet - east * 40.0 * block;
+        let monster = world.creatures()[0].id;
+        world.creature_mut(monster).unwrap().health = 100.0;
+        let rune = world.summon(world.registry().find("volcanicRune").unwrap(), feet, 0.0, 9);
+        let mut shots = Vec::new();
+        for _ in 0..30 {
+            world.tick(0.05, &generator, &edits, &[player]);
+            shots.extend(world.take_shots());
+        }
+        assert!(shots.iter().any(|s| s.creature_id == rune), "la rune n'a pas éclaté");
+        assert!(world.creatures().iter().all(|c| c.id != rune), "la rune éclatée est restée");
+        assert!(world.creatures().iter().find(|c| c.id == monster).unwrap().health <= 100.0 - 12.0);
+    }
+
+    #[test]
+    fn an_eradication_trap_drops_three_mines_around_its_prey() {
+        let (generator, edits, mut world, feet, _) = beasts_and_player("rampant", 1, 0.0, 43);
+        let block = world.block_size();
+        let (east, _) = tangent_frame(feet.normalize());
+        let player = feet - east * 40.0 * block;
+        let monster = world.creatures()[0].id;
+        world.creature_mut(monster).unwrap().health = 500.0;
+        let trap = world.summon(world.registry().find("eradicationTrap").unwrap(), feet, 0.0, 9);
+        let mine = world.registry().find("shrapnelMine").unwrap();
+        let mut spawned = Vec::new();
+        let mut shots = Vec::new();
+        for _ in 0..30 {
+            world.tick(0.05, &generator, &edits, &[player]);
+            spawned.extend(world.take_spawned());
+            shots.extend(world.take_shots());
+        }
+        assert!(shots.iter().any(|s| s.creature_id == trap), "le piège ne s'est pas refermé");
+        assert_eq!(spawned.len(), 3, "trois mines larguées");
+        assert!(spawned.iter().all(|&(summoner, _, seconds)| summoner == 9 && seconds > 0.0));
+        let mines: Vec<u64> = spawned.iter().map(|s| s.1).collect();
+        assert!(mines.iter().all(|id| world.creatures().iter().find(|c| c.id == *id).is_none_or(|c| c.species == mine)));
+        // Le monstre immobilisé les déclenche
+        for _ in 0..40 {
+            world.tick(0.05, &generator, &edits, &[player]);
+            shots.extend(world.take_shots());
+        }
+        assert!(mines.iter().any(|id| shots.iter().any(|s| s.creature_id == *id)), "aucune mine n'a explosé");
+        assert!(world.creatures().iter().find(|c| c.id == monster).is_none_or(|c| c.health <= 500.0 - 12.0 - 25.0));
+    }
+
+    #[test]
+    fn a_piercing_shot_hits_every_monster_along_its_line() {
+        let (generator, edits, mut world, feet, _) = beasts_and_player("rampant", 0, 0.0, 47);
+        let block = world.block_size();
+        let (east, north) = tangent_frame(feet.normalize());
+        let player = feet - east * 40.0 * block;
+        let rampant = world.registry().find("rampant").unwrap();
+        let near = world.spawn(rampant, feet + north * 6.0 * block);
+        let far = world.spawn(rampant, feet + north * 8.0 * block);
+        for id in [near, far] {
+            let c = world.creature_mut(id).unwrap();
+            c.health = 1000.0;
+            c.stun = 100.0;
+        }
+        world.summon(world.registry().find("executionTurret").unwrap(), feet, 0.0, 9);
+        for _ in 0..60 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        let hp = |w: &CreatureWorld, id| w.creatures().iter().find(|c| c.id == id).unwrap().health;
+        assert!(hp(&world, near) < 1000.0 && hp(&world, far) < 1000.0, "les deux monstres alignés sont touchés");
+    }
+
+    #[test]
+    fn a_hasted_turret_shoots_faster_and_a_shield_absorbs_its_wounds() {
+        let (generator, edits, mut world, feet, _) = beasts_and_player("rampant", 0, 0.0, 53);
+        let block = world.block_size();
+        let (east, north) = tangent_frame(feet.normalize());
+        let player = feet - east * 40.0 * block;
+        // Pressée de 100 %, elle recharge deux fois plus vite
+        let hasted = world.summon(world.registry().find("ballisticTurret").unwrap(), player + north * 3.0 * block, 0.0, 9);
+        let plain = world.summon(world.registry().find("ballisticTurret").unwrap(), player - north * 3.0 * block, 0.0, 9);
+        world.haste(hasted, 1.0, 100.0);
+        for id in [hasted, plain] {
+            let c = world.creature_mut(id).unwrap();
+            c.appearing = 0.0;
+            c.attack_cooldown = 1.0;
+        }
+        for _ in 0..5 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        let cooldown = |w: &CreatureWorld, id| w.creatures().iter().find(|c| c.id == id).unwrap().attack_cooldown;
+        assert!((cooldown(&world, plain) - 0.75).abs() < 1e-4, "{}", cooldown(&world, plain));
+        assert!((cooldown(&world, hasted) - 0.5).abs() < 1e-4);
+        // Le bouclier encaisse d'abord
+        let turret = world.summon(world.registry().find("ballisticTurret").unwrap(), feet, 0.0, 9);
+        world.shield(turret, 30.0, 10.0);
+        let before = world.creatures().iter().find(|c| c.id == turret).unwrap().health;
+        world.wound(turret, feet, 1, 20.0);
+        assert_eq!(world.creatures().iter().find(|c| c.id == turret).unwrap().health, before);
+        world.wound(turret, feet, 1, 20.0);
+        assert_eq!(world.creatures().iter().find(|c| c.id == turret).unwrap().health, before - 10.0);
     }
 
     #[test]

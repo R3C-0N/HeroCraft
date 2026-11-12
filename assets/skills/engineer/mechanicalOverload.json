@@ -22,7 +22,7 @@
         "radius": 12
       }
     },
-    "targets": "allies",
+    "targets": "summons",
     "effects": [
       {
         "heal": {
@@ -40,6 +40,13 @@
             30,
             40
           ],
+          "duration": 10
+        }
+      },
+      {
+        "buff": {
+          "stat": "haste",
+          "value": 0.5,
           "duration": 10
         }
       }

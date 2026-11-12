@@ -330,6 +330,28 @@ pub struct CreatureBurst {
     pub bleed: f32,
     #[serde(default)]
     pub bleed_seconds: f32,
+    /// Ce que le piège fait apparaître en se déclenchant, autour de lui (les mines de
+    /// l'Éradication Ciblée)
+    #[serde(default)]
+    pub spawn: Option<BurstSpawn>,
+}
+
+/// Les entités qu'un piège fait apparaître en se déclenchant (`CreatureBurst::spawn`) : elles sont
+/// au même invocateur que lui
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BurstSpawn {
+    /// Espèce (identifiant de son fichier)
+    pub species: String,
+    #[serde(default = "one")]
+    pub count: u32,
+    /// Secondes avant qu'elles disparaissent si rien ne les déclenche
+    #[serde(default = "default_spawn_seconds")]
+    pub seconds: f32,
+}
+
+fn default_spawn_seconds() -> f32 {
+    10.0
 }
 
 /// Aimant (Piège Magnétique) : les ennemis à moins de `radius` blocs sont tirés vers lui
@@ -368,6 +390,10 @@ pub struct CreatureShot {
     pub projectile: Option<String>,
     #[serde(default)]
     pub impact: Option<String>,
+    /// Le tir traverse : chaque ennemi à moins de tant de blocs de sa trajectoire est touché
+    /// (0 : il s'arrête sur sa cible)
+    #[serde(default)]
+    pub pierce: f32,
 }
 
 impl CreatureShot {

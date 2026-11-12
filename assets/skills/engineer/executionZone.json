@@ -43,11 +43,25 @@
         }
       },
       {
-        "damage": {
-          "power": [
-            1.6,
-            2.0,
-            2.4
+        "summon": {
+          "species": "magneticTrap",
+          "at": "aimed",
+          "limit": 1,
+          "duration": [
+            8,
+            9,
+            10
+          ]
+        }
+      },
+      {
+        "summon": {
+          "species": "executionTurret",
+          "limit": 1,
+          "duration": [
+            8,
+            9,
+            10
           ]
         }
       }
@@ -58,11 +72,6 @@
       "effect": "lightningArc",
       "anchor": "area",
       "from": "impact"
-    },
-    {
-      "effect": "turretBolt",
-      "anchor": "target",
-      "from": "hit"
     },
     {
       "effect": "impactSpark",

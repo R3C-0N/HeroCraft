@@ -43,6 +43,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 | Champ | Rôle |
 |---|---|
 | `name`, `description` | Nom affiché et description. |
+| `tags` | Familles de l'espèce, que certaines compétences visent : `shadow` pour les créatures de l'ombre (l'Arme de l'Aube les frappe plus fort). |
 | `body` | Volume utilisé pour les déplacements, en blocs : `half_width` (demi-largeur), `half_length` (demi-longueur, de la tête à la queue) et `height`. La créature ne passe que là où ce corps tient. |
 | `walk_speed` | Vitesse de promenade, en blocs par seconde. À 0, la créature ne bouge pas. |
 | `health` | Points de vie (10 par défaut). Un coup de joueur en retire 2,5 : la bête rougit, recule, puis s'enfuit ; à 0 elle bascule sur le flanc et reste à terre 10 minutes, le temps qu'on la dépèce. |
@@ -98,10 +99,10 @@ Une bête dont la fiche a un champ `attack` chasse les joueurs et ses proies qu'
 | `prey` | Espèces qu'elle chasse (identifiants de fichiers). Après avoir tué une proie, elle les laisse tranquilles une minute. |
 | `pack_size` | En meute, nombre de bêtes qu'il lui faut, elle comprise (3 par défaut). |
 
-| `shot` | Tir à distance : `range` (portée), `damage`, `speed` (blocs par seconde, 0 : tout de suite), `radius` (explosion), `height` (d'où part le tir) et les effets `muzzle`, `projectile`, `impact`. Trop loin pour frapper, la bête s'arrête et tire. |
+| `shot` | Tir à distance : `range` (portée), `damage`, `speed` (blocs par seconde, 0 : tout de suite), `radius` (explosion), `height` (d'où part le tir) et les effets `muzzle`, `projectile`, `impact`. `pierce` (blocs) : le tir traverse et touche chaque ennemi près de sa trajectoire (Tourelle d'Exécution). Trop loin pour frapper, la bête s'arrête et tire. |
 | `slow` | Son coup ralentit le joueur touché : `[part de la vitesse perdue, secondes]` (Gorgone florale, Mille-pattes géant). |
 | `stun` | Son coup étourdit le joueur touché tant de secondes (Brute cornue, Sanglier). |
-| `burst` | Piège : la première cible à portée de `reach` le déclenche ; il retire `damage` à chaque ennemi dans `radius` blocs, l'immobilise `stun` secondes, le fait saigner (`bleed` points par seconde pendant `bleed_seconds` secondes, sans recul) et joue l'effet `effect`, puis disparaît. |
+| `burst` | Piège : la première cible à portée de `reach` le déclenche ; il retire `damage` à chaque ennemi dans `radius` blocs, l'immobilise `stun` secondes, le fait saigner (`bleed` points par seconde pendant `bleed_seconds` secondes, sans recul) et joue l'effet `effect`, puis disparaît. `spawn` (`species`, `count`, `seconds`) : ce qu'il fait apparaître autour de lui en se déclenchant, pour le même invocateur (les trois mines du Piège d'Éradication), qui disparaît au bout de `seconds` secondes si rien ne le déclenche. |
 
 Le bestiaire ne décrit pas d'attaque : `tools/importer_bestiaire.py` garde celle de la fiche existante.
 

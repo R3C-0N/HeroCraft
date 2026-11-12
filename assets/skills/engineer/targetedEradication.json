@@ -32,43 +32,20 @@
     "targets": "enemies",
     "effects": [
       {
-        "stun": {
-          "duration": 2
-        }
-      },
-      {
-        "damage": {
-          "power": [
-            2.4,
-            2.8,
-            3.2
-          ]
-        }
-      },
-      {
-        "over_time": {
-          "damage": 4,
-          "duration": 5
+        "summon": {
+          "species": "eradicationTrap",
+          "at": "aimed",
+          "limit": 1,
+          "duration": 30
         }
       }
     ]
   },
   "visuals": [
     {
-      "effect": "fireExplosion",
-      "anchor": "area",
+      "effect": "dustPuff",
+      "anchor": "aimed",
       "from": "impact"
-    },
-    {
-      "effect": "bloodSplash",
-      "anchor": "target",
-      "from": "hit"
-    },
-    {
-      "effect": "stunStars",
-      "anchor": "target",
-      "from": "hit",
-      "to": "effectEnd"
     }
   ]
 }

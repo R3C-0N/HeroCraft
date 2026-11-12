@@ -265,6 +265,10 @@ pub enum Effect {
         /// Légion du Néant implosent en bouclier)
         #[serde(default)]
         on_end: Vec<EffectEntry>,
+        /// Elles avancent droit devant, dans la direction visée, en repoussant les ennemis (le mur
+        /// du Rempart Tellurique)
+        #[serde(default)]
+        advance: Option<Advance>,
     },
     /// La créature s'en prend au lanceur pendant `duration` secondes
     Taunt { duration: Ranked },
@@ -338,6 +342,15 @@ pub struct Against {
     pub value: Ranked,
 }
 
+/// Une invocation qui avance (`Effect::Summon::advance`)
+#[derive(Debug, Clone, Deserialize)]
+pub struct Advance {
+    /// Distance parcourue, en blocs
+    pub blocks: Ranked,
+    /// Vitesse, en blocs par seconde
+    pub speed: Ranked,
+}
+
 /// L'allure que prend une invocation (`Effect::Summon::copies`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -362,6 +375,8 @@ pub enum BuffStat {
     Critical,
     /// Portée des compétences : distance de visée, longueur des lignes et des secteurs (0,3 : +30 %)
     Range,
+    /// Cadence de tir des invocations (0,5 : +50 %)
+    Haste,
     /// Récupération du mana (0,3 : +30 % de la récupération au repos)
     ManaRegen,
     /// Récupération de l'endurance

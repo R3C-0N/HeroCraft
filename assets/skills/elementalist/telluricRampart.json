@@ -29,7 +29,11 @@
           "species": "stoneWall",
           "at": "aimed",
           "limit": 1,
-          "duration": 8
+          "duration": 8,
+          "advance": {
+            "blocks": 6,
+            "speed": 4
+          }
         }
       }
     ]
