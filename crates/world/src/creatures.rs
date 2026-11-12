@@ -2838,6 +2838,45 @@ mod tests {
         assert!((alt - (ground.y - 1) as f32).abs() < 1e-2, "altitude {alt} au lieu de {}", ground.y - 1);
     }
 
+    #[test]
+    fn a_launched_beast_flies_stunned_then_a_slam_hurts_it_on_landing() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let (ground, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 3, registry());
+        world.populate = false;
+        let cow = world.registry().find("cow").or_else(|| world.registry().find("vache")).unwrap();
+        world.spawn(cow, feet);
+        let id = world.creatures()[0].id;
+        let (east, _) = tangent_frame(feet.normalize());
+        let player = feet - east * 30.0 * geometry.block_height as f32;
+        let health = |w: &CreatureWorld| w.creatures()[0].health;
+        let full = health(&world);
+
+        // Projetée à 4 blocs : elle monte, étourdie tant qu'elle vole
+        world.launch(id, 4.0);
+        let mut peak = 0.0f32;
+        for _ in 0..12 {
+            world.tick(0.05, &generator, &edits, &[player]);
+            peak = peak.max(altitude(&geometry, world.creatures()[0].position) - ground.y as f32);
+            assert!(world.creatures()[0].stun > 0.0, "étourdie en vol");
+        }
+        assert!((3.5..4.5).contains(&peak), "montée à {peak} blocs");
+        assert!(world.is_airborne(id));
+
+        // Rabattue : elle tombe aussitôt et prend le coup à l'atterrissage
+        world.slam(id, 9, 20.0);
+        for _ in 0..10 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        assert!(!world.is_airborne(id), "posée au sol");
+        let alt = altitude(&geometry, world.creatures()[0].position);
+        assert!((alt - ground.y as f32).abs() < 0.05, "altitude {alt}");
+        let lost = full - health(&world);
+        assert!(lost >= 20.0, "le coup rabattu blesse : {lost} points");
+    }
+
     /// Cap qui mène du centre de la colonne `from` vers celui de `to`
     fn yaw_towards(geometry: &BlockGeometry, from: Vec3, to: BlockPos) -> f32 {
         let target = geometry.corner(to.face, to.x as f64 + 0.5, to.y as f64, to.z as f64 + 0.5).as_vec3();

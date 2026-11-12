@@ -1982,4 +1982,117 @@ mod tests {
         let (still, moving) = (bled(false), bled(true));
         assert!(still > 0.0 && moving > 2.0 * still, "immobile {still}, en mouvement {moving}");
     }
+
+    /// Lance `skill` (rang 1) et avance de `seconds` par pas de 0,02 s : les frappes et les
+    /// déplacements rendus, avec l'instant où ils arrivent
+    fn run_moving(runner: &mut SkillRunner, catalog: &SkillCatalog, creatures: &mut CreatureWorld, stats: &mut CharacterStats, feet: Vec3, skill: &str, seconds: f32) -> (Vec<(f32, SkillImpact)>, Vec<(f32, SkillMove)>) {
+        stats.skills.insert(skill.into(), 1);
+        stats.mana = 100.0;
+        stats.stamina = 100.0;
+        runner.cast(catalog, 1, stats, skill, Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats };
+        let (mut impacts, mut moves) = (Vec::new(), Vec::new());
+        for i in 1..=(seconds / 0.02).round() as usize {
+            let tick = runner.tick(0.02, catalog, creatures, &mut player);
+            let t = i as f32 * 0.02;
+            impacts.extend(tick.impacts.into_iter().map(|x| (t, x)));
+            moves.extend(tick.moves.into_iter().map(|m| (t, m.1)));
+        }
+        (impacts, moves)
+    }
+
+    #[test]
+    fn phantom_shot_teleports_behind_the_target_and_faces_it() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let block = creatures.block_size();
+        let cow = creatures.creatures()[0].position;
+        let mut stats = CharacterStats::new(PlayerClass::Rogue);
+        let mut runner = SkillRunner::new();
+        let (impacts, moves) = run_moving(&mut runner, &catalog, &mut creatures, &mut stats, feet, "phantomShot", 1.0);
+        assert_eq!(impacts.len(), 1);
+        let [(t, SkillMove::Teleport { feet: arrival, look })] = moves.as_slice() else { panic!("une téléportation : {moves:?}") };
+        assert!((*t - impacts[0].0).abs() < 1e-3, "à l'impact");
+        // 1,5 bloc au-delà de la vache, vue depuis le lanceur (droit devant, vers -Z)
+        assert!(arrival.distance(cow + Vec3::NEG_Z * 1.5 * block) < 0.05 * block, "arrivée {arrival}, vache {cow}");
+        assert!(look.z > 0.8, "regard vers la vache : {look}");
+
+        // Rien de touché : pas de téléportation
+        let (mut creatures, feet) = world();
+        let mut runner = SkillRunner::new();
+        stats.skills.insert("phantomShot".into(), 1);
+        stats.stamina = 100.0;
+        runner.cast(&catalog, 1, &mut stats, "phantomShot", Vec3::X, None).unwrap();
+        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        let moved = (0..50).any(|_| !runner.tick(0.02, &catalog, &mut creatures, &mut player).moves.is_empty());
+        assert!(!moved);
+    }
+
+    #[test]
+    fn a_grapple_bolt_needs_an_aimed_block_and_costs_nothing_without_one() {
+        let catalog = SkillCatalog::load_default();
+        let mut stats = CharacterStats::new(PlayerClass::Rogue);
+        stats.skills.insert("grappleBolt".into(), 1);
+        let stamina = stats.stamina;
+        let mut runner = SkillRunner::new();
+        assert_eq!(runner.cast(&catalog, 1, &mut stats, "grappleBolt", Vec3::NEG_Z, None), Err(CastError::NothingToGrab));
+        assert_eq!(stats.stamina, stamina, "rien n'est payé");
+        assert_eq!(runner.cooldown(1, "grappleBolt"), 0.0);
+        assert!(runner.cast(&catalog, 1, &mut stats, "grappleBolt", Vec3::NEG_Z, Some(Vec3::new(0.0, 10_000.0, -50.0))).is_ok());
+    }
+
+    #[test]
+    fn celestial_execution_launches_teleports_above_then_slams() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let block = creatures.block_size();
+        let id = creatures.creatures()[0].id;
+        let cow = creatures.creatures()[0].position;
+        let mut stats = CharacterStats::new(PlayerClass::WindBlade);
+        let mut runner = SkillRunner::new();
+        let (impacts, moves) = run_moving(&mut runner, &catalog, &mut creatures, &mut stats, feet, "celestialExecution", 1.5);
+        assert!(creatures.is_airborne(id), "la vache est projetée");
+        // Deux frappes : la projection, puis la seconde, 0,6 s plus tard, sur la même vache
+        assert_eq!(impacts.len(), 2, "{impacts:?}");
+        assert!((impacts[1].0 - impacts[0].0 - 0.6).abs() < 0.03);
+        assert_eq!(impacts[1].1.creatures, vec![id]);
+        // Téléporté 0,5 s après la frappe, un bloc au-dessus d'elle, le regard vers le bas
+        let [(t, SkillMove::Teleport { feet: arrival, look })] = moves.as_slice() else { panic!("une téléportation : {moves:?}") };
+        assert!((*t - impacts[0].0 - 0.5).abs() < 0.03);
+        assert!(arrival.distance(cow + cow.normalize() * block) < 0.05 * block);
+        assert!(look.dot(cow.normalize()) < -0.5, "regard vers la vache, en dessous : {look}");
+    }
+
+    #[test]
+    fn lightning_assault_pulls_the_hunter_to_the_target_then_strikes() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet) = world();
+        let id = creatures.creatures()[0].id;
+        let cow = creatures.creatures()[0].position;
+        let before = health(&creatures, id);
+        let mut stats = CharacterStats::new(PlayerClass::MonsterHunter);
+        let mut runner = SkillRunner::new();
+        let (impacts, moves) = run_moving(&mut runner, &catalog, &mut creatures, &mut stats, feet, "lightningAssault", 1.5);
+        let [(_, SkillMove::Pull { to, speed, stop })] = moves.as_slice() else { panic!("une traction : {moves:?}") };
+        assert_eq!((*to, *speed, *stop), (cow, 30.0, 1.2));
+        // La frappe plongeante, 0,35 s après la traction : elle blesse et étourdit
+        assert_eq!(impacts.len(), 2, "{impacts:?}");
+        assert!((impacts[1].0 - impacts[0].0 - 0.35).abs() < 0.03);
+        assert_eq!(impacts[1].1.creatures, vec![id]);
+        assert!(health(&creatures, id) < before);
+    }
+
+    #[test]
+    fn a_teleport_spot_follows_the_line_from_caster_to_target() {
+        use herocraft_common::skills::{Ranked, Teleport};
+        let up = Vec3::Y;
+        let target = up * 100.0;
+        let feet = target + Vec3::X * 5.0;
+        let side = Teleport { behind: Ranked::One(-1.0), above: Ranked::One(0.0), side: Ranked::One(2.0), face: Facing::Away, delay: Ranked::One(0.0) };
+        let (arrival, look) = teleport_spot(&side, 1, feet, target, Vec3::NEG_X, 1.0);
+        // Entre la cible et le lanceur (un bloc vers lui), deux blocs sur la droite de la cible
+        let right = Vec3::NEG_X.cross(up);
+        assert!(arrival.distance(target + Vec3::X + right * 2.0) < 1e-4, "{arrival}");
+        assert!(look.dot(arrival - target) > 0.0, "dos à la cible");
+    }
 }

@@ -1625,6 +1625,72 @@ mod tests {
     }
 
     #[test]
+    fn a_skill_teleport_lands_on_the_nearest_free_spot_and_turns_the_view() {
+        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        let geometry = herocraft_world::BlockGeometry::new(cam.base_radius as f64);
+        let h = geometry.block_height as f32;
+        let (_, forward, _, _) = cam.look_vectors();
+        let centre = |p: herocraft_world::BlockPos| geometry.corner(p.face, p.x as f64 + 0.5, p.y as f64, p.z as f64 + 0.5).as_vec3();
+        // Une place libre, trois blocs devant : il y est, le regard tourné vers l'arrière
+        let free = centre(cell_at(&cam, 3.0, 0.0, floor));
+        assert!(cam.skill_teleport(free, -forward, &gen));
+        assert!(cam.player_pos.distance(free) < 1e-3);
+        let (_, now_forward, _, _) = cam.look_vectors();
+        assert!(now_forward.dot(-forward) > 0.99, "regard vers l'arrière");
+        for _ in 0..60 {
+            cam.update(0.016, &gen);
+        }
+        assert_eq!(cam.take_landing(), None, "une téléportation n'est pas une chute");
+
+        // Dans un pilier de pierre : à côté, à deux blocs au plus
+        let pillar = cell_at(&cam, 2.0, 0.0, floor);
+        for y in floor..floor + 3 {
+            edits.set_block(&gen, herocraft_world::BlockPos { y, ..pillar }, herocraft_common::BlockId::STONE);
+        }
+        let inside = centre(pillar);
+        assert!(cam.skill_teleport(inside, forward, &gen));
+        let landed = geometry.block_at_point(cam.player_pos.as_dvec3()).unwrap();
+        assert!((landed.x, landed.z) != (pillar.x, pillar.z), "pas dans le pilier");
+        assert!(cam.player_pos.distance(inside) <= (TELEPORT_SLACK + 1.1) * h);
+    }
+
+    #[test]
+    fn a_grapple_pulls_the_player_up_onto_a_ledge() {
+        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        let geometry = herocraft_world::BlockGeometry::new(cam.base_radius as f64);
+        // Un mur de trois blocs de haut, trois blocs devant
+        fill(&cam, &gen, &edits, &[3.0], &[floor, floor + 1, floor + 2], herocraft_common::BlockId::STONE);
+        let wall = cell_at(&cam, 3.0, 0.0, floor + 2);
+        // Accroché au haut de sa face, côté joueur
+        let anchor = geometry.corner(wall.face, wall.x as f64 + 0.5, wall.y as f64 + 0.9, wall.z as f64 + 0.5).as_vec3();
+        let (_, forward, _, _) = cam.look_vectors();
+        let anchor = anchor - forward * 0.45 * geometry.block_height as f32;
+        cam.pull(anchor, 25.0, 0.0, true);
+        for _ in 0..120 {
+            cam.update(0.016, &gen);
+        }
+        let on = geometry.block_at_point(cam.player_pos.as_dvec3()).unwrap();
+        assert_eq!((on.x, on.z), (wall.x, wall.z), "hissé sur le mur");
+        assert!((altitude_blocks(&cam) - (floor + 3) as f32).abs() < 0.1, "debout dessus : {}", altitude_blocks(&cam));
+        assert!(cam.take_landing().unwrap_or(0.0) < 1.0);
+    }
+
+    #[test]
+    fn a_hover_lifts_the_player_and_lets_him_down_unhurt() {
+        let (mut cam, gen, _, floor) = voxel_test_camera();
+        cam.hover(2.0, 0.5);
+        for _ in 0..40 {
+            cam.update(0.016, &gen);
+        }
+        assert!((altitude_blocks(&cam) - (floor + 2) as f32).abs() < 0.1, "en l'air : {}", altitude_blocks(&cam));
+        for _ in 0..120 {
+            cam.update(0.016, &gen);
+        }
+        assert!((altitude_blocks(&cam) - floor as f32).abs() < 0.1, "redescendu");
+        assert_eq!(cam.take_landing(), None, "sans chute");
+    }
+
+    #[test]
     fn a_summoned_wall_cannot_be_walked_through() {
         let (mut cam, gen, _, _) = voxel_test_camera();
         let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;

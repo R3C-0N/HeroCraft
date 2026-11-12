@@ -491,3 +491,38 @@ fn le_serveur_accepte_le_labour_et_le_semis() {
     running.store(false, Ordering::Relaxed);
     server_thread.join().unwrap();
 }
+
+#[test]
+fn un_tir_fantome_teleporte_son_lanceur_dans_le_dos_de_la_cible() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let (_, feet) = land(&server);
+    let client = Client::connect(&addr, WAIT).unwrap();
+    client.send(&ClientPacket::Connect { player_name: "Ombre".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::ConnectAck { .. }).then_some(()));
+    client.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
+    client.send(&ClientPacket::GainExperience(100_000));
+    for skill in ["quickShot", "shardShot", "shadowVeil", "ambush", "phantomShot"] {
+        client.send(&ClientPacket::LearnSkill { id: skill.into() });
+    }
+    pump(&mut server, &client, |p| matches!(p, ServerPacket::StatsUpdate(stats) if stats.skills.contains_key("phantomShot")).then_some(()));
+    // Une vache trois blocs devant, sur le même sol
+    let block = server.creatures().block_size();
+    let up = feet.normalize();
+    let ahead = Vec3::X - up * Vec3::X.dot(up);
+    let ahead = ahead.normalize();
+    let cow = server.spawn_creature("vache", (feet + ahead * 3.0 * block).normalize() * feet.length()).expect("une vache");
+    server.tick(1.0 / 60.0);
+
+    client.send(&ClientPacket::CastSkill { skill: "phantomShot".into(), aim: ahead, aimed: None });
+    let (arrival, look) = pump(&mut server, &client, |p| match p {
+        ServerPacket::SkillMove(herocraft_common::skills::SkillMove::Teleport { feet, look }) => Some((feet, look)),
+        ServerPacket::SkillRefused { reason, .. } => panic!("refusé : {reason}"),
+        _ => None,
+    });
+    let at = server.creatures().creatures().iter().find(|c| c.id == cow).unwrap().position;
+    // Dans son dos, vu du lanceur : plus loin que la vache, à un bloc et demi d'elle
+    assert!(arrival.distance(feet) > at.distance(feet), "arrivée {arrival}, vache {at}");
+    assert!((arrival.distance(at) / block - 1.5).abs() < 0.3, "à {} blocs de la vache", arrival.distance(at) / block);
+    assert!(look.dot(at - arrival) > 0.0, "tourné vers elle");
+}
