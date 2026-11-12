@@ -1,0 +1,12 @@
+{
+  "numeric_id": 16919,
+  "name": "Arbalète d'orichalque",
+  "category": "Armes",
+  "weapon": {"kind": "crossbow", "interval": 1.2, "ammo": "bolt"},
+  "max_stack": 1,
+  "icon": "icones/orichalcumCrossbow.png",
+  "stats": {"Dégâts": 11, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"orichalcumIngot": 3, "plank": 2, "rope": 2}, "repair": {"orichalcumIngot": 1}}
+  ]
+}

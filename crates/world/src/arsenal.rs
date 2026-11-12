@@ -161,6 +161,11 @@ impl Arsenal {
         self.gear.get(&player).and_then(|g| g.charging.as_ref()).filter(|c| c.skill.as_deref() == skill).map_or(0.0, |c| c.held)
     }
 
+    /// Le joueur tient chargé ce tir ou cette compétence
+    pub fn is_charging(&self, player: u64, skill: Option<&str>) -> bool {
+        self.gear.get(&player).and_then(|g| g.charging.as_ref()).is_some_and(|c| c.skill.as_deref() == skill)
+    }
+
     /// Fin de la charge (relâchée) : ce qu'elle a duré
     pub fn release_charge(&mut self, player: u64, skill: Option<&str>) -> f32 {
         let held = self.charge_held(player, skill);

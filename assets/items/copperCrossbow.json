@@ -1,0 +1,12 @@
+{
+  "numeric_id": 16909,
+  "name": "Arbalète de cuivre",
+  "category": "Armes",
+  "weapon": {"kind": "crossbow", "interval": 1.2, "ammo": "bolt"},
+  "max_stack": 1,
+  "icon": "icones/copperCrossbow.png",
+  "stats": {"Dégâts": 5, "Durabilité": 300},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"copperIngot": 3, "plank": 2, "rope": 2}, "repair": {"copperIngot": 1}}
+  ]
+}
