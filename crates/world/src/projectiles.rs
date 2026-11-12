@@ -217,6 +217,16 @@ impl CreatureWorld {
     /// Fait avancer les projectiles de `dt` secondes. `players` : pieds des joueurs, `keys` leurs
     /// clés (0 sans clé). Renvoie les coups portés aux joueurs.
     pub(crate) fn fly(&mut self, dt: f32, query: &mut TerrainQuery, players: &[Vec3], keys: &[u64]) -> Vec<PlayerHit> {
+        self.fly_over(dt, Some(query), players, keys)
+    }
+
+    /// Fait avancer les projectiles sans relief (un monde sans planète, celui des tests) : rien ne
+    /// les arrête que les murs et les cibles
+    pub fn advance_projectiles(&mut self, dt: f32, players: &[Vec3]) -> Vec<PlayerHit> {
+        self.fly_over(dt, None, players, &[])
+    }
+
+    fn fly_over(&mut self, dt: f32, mut query: Option<&mut TerrainQuery>, players: &[Vec3], keys: &[u64]) -> Vec<PlayerHit> {
         let block = self.geometry.block_height as f32;
         let key_of = |k: usize| keys.get(k).copied().unwrap_or(0);
         let mut player_hits = Vec::new();
@@ -254,7 +264,7 @@ impl CreatureWorld {
                     end = Some((p.position, ProjectileEnd::Range));
                     break;
                 }
-                let mut meets = self.meets(p, step, query, players, &key_of);
+                let mut meets = self.meets(p, step, query.as_deref_mut(), players, &key_of);
                 meets.sort_by(|a, b| a.0.total_cmp(&b.0));
                 let mut advanced = step;
                 let mut turned = false;
@@ -438,11 +448,11 @@ impl CreatureWorld {
     }
 
     /// Les rencontres du segment de longueur `step` que le projectile `p` parcourt depuis sa position
-    fn meets(&self, p: &Projectile, step: f32, query: &mut TerrainQuery, players: &[Vec3], key_of: &dyn Fn(usize) -> u64) -> Vec<(f32, Meet)> {
+    fn meets(&self, p: &Projectile, step: f32, query: Option<&mut TerrainQuery>, players: &[Vec3], key_of: &dyn Fn(usize) -> u64) -> Vec<(f32, Meet)> {
         let block = self.geometry.block_height as f32;
         let mut meets = Vec::new();
         let (from, dir) = (p.position, p.direction);
-        if !p.through_terrain {
+        if let (false, Some(query)) = (p.through_terrain, query) {
             let hit = raycast_blocks(&self.geometry, from.as_dvec3(), dir.as_dvec3(), step as f64, |pos| Some(query.block(pos)).filter(|b| b.is_solid()));
             if let Some(hit) = hit {
                 meets.push((hit.distance as f32, Meet::Terrain));

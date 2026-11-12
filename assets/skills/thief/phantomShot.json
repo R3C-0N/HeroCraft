@@ -24,6 +24,9 @@
         "width": 1
       }
     },
+    "projectile": {
+      "speed": 50
+    },
     "movement": {
       "dash": 10
     },
@@ -43,7 +46,7 @@
   "visuals": [
     {
       "effect": "shadowBolt",
-      "anchor": "rightHand",
+      "anchor": "projectile",
       "from": "impact"
     },
     {
@@ -55,6 +58,11 @@
       "effect": "impactSpark",
       "anchor": "target",
       "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
     }
   ]
 }

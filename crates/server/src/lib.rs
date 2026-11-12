@@ -339,6 +339,10 @@ impl Server {
         if !shots.is_empty() {
             self.broadcast(&ServerPacket::CreatureShots(shots));
         }
+        let projectiles = self.creatures.take_projectile_events();
+        if !projectiles.is_empty() {
+            self.broadcast(&ServerPacket::Projectiles(projectiles));
+        }
         // Œufs pondus, à la place de la bête : montrés au joueur le plus proche (les objets au sol
         // sont propres à chaque client, un seul peut le ramasser)
         for (feet, item) in self.creatures.take_laid() {
@@ -733,7 +737,7 @@ impl Server {
     /// Annonce une frappe à tous, et les meurtres et agressions d'habitants qu'elle a faits
     fn announce_impact(&mut self, impact: herocraft_world::SkillImpact) {
         let name = self.players.get(&impact.caster).map(|p| p.name.clone()).unwrap_or_default();
-        self.broadcast(&ServerPacket::SkillHit { player_id: impact.caster, skill: impact.skill, rank: impact.rank, center: impact.center, creatures: impact.creatures, players: impact.players });
+        self.broadcast(&ServerPacket::SkillHit { player_id: impact.caster, skill: impact.skill, rank: impact.rank, center: impact.center, creatures: impact.creatures, players: impact.players, contact: impact.contact });
         for murder in self.creatures.take_murders() {
             self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
         }

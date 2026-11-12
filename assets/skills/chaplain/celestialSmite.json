@@ -21,6 +21,9 @@
         "width": 1
       }
     },
+    "projectile": {
+      "speed": 60
+    },
     "targets": "enemies",
     "effects": [
       {
@@ -61,6 +64,11 @@
       "anchor": "target",
       "from": "hit",
       "to": "effectEnd"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
     }
   ]
 }

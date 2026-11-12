@@ -3615,6 +3615,46 @@ mod tests {
         assert!(events.iter().any(|e| matches!(e, herocraft_common::ProjectileEvent::End { reason: herocraft_common::ProjectileEnd::Blocked, .. })));
     }
 
+    #[test]
+    fn a_skill_shot_stops_on_the_ground_unless_it_goes_through_terrain() {
+        let (generator, edits, mut world, feet, _) = beasts_and_player("rampant", 0, 0.0, 73);
+        let block = world.block_size();
+        let up = feet.normalize();
+        let shot = |through_terrain| SkillShot {
+            caster: 1,
+            tag: 5,
+            skill: "piercingArrow".into(),
+            from: feet + up * 2.0 * block,
+            direction: -up,
+            speed: 40.0,
+            range: 10.0,
+            radius: 0.5,
+            pierce: 0,
+            bounces: 0,
+            bounce_range: 0.0,
+            through_terrain,
+            through_obstacles: false,
+            size: herocraft_common::ProjectileSize::Small,
+        };
+        let far = feet + up * 500.0 * block;
+        world.launch_skill_shot(shot(false));
+        for _ in 0..10 {
+            world.tick(0.05, &generator, &edits, &[far]);
+        }
+        match world.take_contacts().as_slice() {
+            [SkillContact::Over { reason, at, .. }] => {
+                assert_eq!(*reason, herocraft_common::ProjectileEnd::Terrain);
+                assert!((at.length() - feet.length()).abs() < 1.5 * block, "arrêté au sol");
+            }
+            other => panic!("{other:?}"),
+        }
+        world.launch_skill_shot(shot(true));
+        for _ in 0..10 {
+            world.tick(0.05, &generator, &edits, &[far]);
+        }
+        assert!(matches!(world.take_contacts().as_slice(), [SkillContact::Over { reason: herocraft_common::ProjectileEnd::Range, .. }]));
+    }
+
     /// Un registre où le rampant tire de loin, pour les tests des tirs ennemis
     fn shooting_registry() -> Arc<CreatureRegistry> {
         let base = CreatureRegistry::load_default();

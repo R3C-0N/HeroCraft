@@ -1393,15 +1393,105 @@ mod tests {
     /// Avance jusqu'à la frappe du lancement en attente
     fn until_impact(runner: &mut SkillRunner, catalog: &SkillCatalog, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) {
         for _ in 0..100 {
-            if !runner.tick(0.02, catalog, creatures, players).impacts.is_empty() {
+            let struck = !runner.tick(0.02, catalog, creatures, players).impacts.is_empty();
+            fly(creatures, players, 0.02);
+            if struck {
+                // Un vrai projectile : il vole jusqu'à son arrêt
+                for _ in 0..200 {
+                    if runner.flights.is_empty() {
+                        break;
+                    }
+                    runner.tick(0.02, catalog, creatures, players);
+                    fly(creatures, players, 0.02);
+                }
                 return;
             }
         }
         panic!("pas de frappe");
     }
 
+    /// Les projectiles avancent (sans relief), les joueurs `players` pour cibles
+    fn fly(creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, dt: f32) {
+        let feet: Vec<Vec3> = players.ids().into_iter().filter_map(|id| players.feet(id)).collect();
+        creatures.advance_projectiles(dt, &feet);
+    }
+
     fn health(w: &CreatureWorld, id: u64) -> f32 {
         w.creatures().iter().find(|c| c.id == id).map(|c| c.health).unwrap()
+    }
+
+    /// Un monde de vaches en file devant le lanceur (direction visée : -Z), à ces distances en blocs
+    fn cows_in_line(distances: &[f32]) -> (CreatureWorld, Vec3, Vec<u64>) {
+        let registry = Arc::new(CreatureRegistry::load_default());
+        let base_radius = 10_000.0;
+        let mut world = CreatureWorld::new(base_radius, 1, registry.clone());
+        let feet = Vec3::new(0.0, base_radius as f32, 0.0);
+        let cow = registry.find("vache").unwrap();
+        let block = world.block_size();
+        let ids = distances.iter().map(|d| world.spawn(cow, feet + Vec3::new(0.0, 0.0, -d * block))).collect();
+        (world, feet, ids)
+    }
+
+    fn hurt(w: &CreatureWorld, id: u64) -> bool {
+        w.creatures().iter().find(|c| c.id == id).is_some_and(|c| c.health < w.registry().get(c.species).unwrap().health)
+    }
+
+    #[test]
+    fn an_air_blade_flies_and_stops_on_the_first_enemy() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet, cows) = cows_in_line(&[4.0, 7.0]);
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "airBlade", None);
+        assert!(hurt(&creatures, cows[0]), "la première vache est touchée");
+        assert!(!hurt(&creatures, cows[1]), "la lame s'arrête sur elle");
+    }
+
+    #[test]
+    fn a_piercing_arrow_goes_through_every_enemy_but_not_through_a_wall() {
+        let catalog = SkillCatalog::load_default();
+        let (mut creatures, feet, cows) = cows_in_line(&[4.0, 7.0, 10.0]);
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "piercingArrow", None);
+        assert!(cows.iter().all(|&id| hurt(&creatures, id)), "les trois vaches alignées sont touchées");
+
+        // Une barricade (sauvage : du camp d'en face) devant une quatrième vache
+        let block = creatures.block_size();
+        let cow = creatures.registry().find("vache").unwrap();
+        let behind = creatures.spawn(cow, feet + Vec3::new(3.0 * block, 0.0, -9.0 * block));
+        let wall = creatures.spawn(creatures.registry().find("portableBarricade").unwrap(), feet + Vec3::new(3.0 * block, 0.0, -5.0 * block));
+        creatures.creature_mut(wall).unwrap().yaw = 0.0;
+        let mut runner = SkillRunner::new();
+        let aim = Vec3::new(3.0, 0.0, -9.0).normalize();
+        stats.skills.insert("piercingArrow".into(), 1);
+        stats.stamina = 100.0;
+        runner.cast(&catalog, 1, &mut stats, "piercingArrow", aim, None).unwrap();
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 2.0);
+        assert!(!hurt(&creatures, behind), "le mur arrête la flèche perforante");
+        // La Frappe d'Étherium traverse tout
+        stats.skills.insert("etheriumStrike".into(), 1);
+        stats.stamina = 100.0;
+        runner.cast(&catalog, 1, &mut stats, "etheriumStrike", aim, None).unwrap();
+        pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 3.0);
+        assert!(hurt(&creatures, behind), "la Frappe d'Étherium passe le mur");
+    }
+
+    #[test]
+    fn a_shock_volley_bounces_from_enemy_to_enemy() {
+        let catalog = SkillCatalog::load_default();
+        // Une vache dans l'axe, trois autres à moins de trois blocs les unes des autres, une loin
+        let (mut creatures, feet, _) = cows_in_line(&[]);
+        let block = creatures.block_size();
+        let cow = creatures.registry().find("vache").unwrap();
+        let spots = [(0.0, -6.0), (2.0, -7.0), (4.0, -6.5), (6.0, -7.5), (20.0, -7.0)];
+        let cows: Vec<u64> = spots.iter().map(|(x, z)| creatures.spawn(cow, feet + Vec3::new(x * block, 0.0, z * block))).collect();
+        let mut stats = CharacterStats::new(PlayerClass::WarPriest);
+        let mut runner = SkillRunner::new();
+        cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "shockVolley", None);
+        // Au rang 1 : la première touche, puis deux rebonds
+        let touched: Vec<bool> = cows.iter().map(|&id| hurt(&creatures, id)).collect();
+        assert_eq!(touched, vec![true, true, true, false, false], "trois vaches touchées de proche en proche");
     }
 
     #[test]
@@ -1611,6 +1701,7 @@ mod tests {
         let mut player = SoloPlayer { id: 1, feet, stats };
         for _ in 0..(seconds / 0.1).round() as usize {
             runner.tick(0.1, catalog, creatures, &mut player);
+            fly(creatures, &mut player, 0.1);
         }
     }
 

@@ -22,6 +22,9 @@
         "width": 1
       }
     },
+    "projectile": {
+      "speed": 55
+    },
     "targets": "enemies",
     "effects": [
       {
@@ -44,13 +47,18 @@
     },
     {
       "effect": "arrowTrail",
-      "anchor": "rightHand",
+      "anchor": "projectile",
       "from": "impact"
     },
     {
       "effect": "impactSpark",
       "anchor": "target",
       "from": "hit"
+    },
+    {
+      "effect": "impactSpark",
+      "anchor": "projectile",
+      "from": "blocked"
     }
   ]
 }
