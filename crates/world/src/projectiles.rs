@@ -17,6 +17,8 @@ const PLAYER_HEIGHT: f32 = 1.8;
 const DEFLECT_ANGLE: f32 = 60.0;
 /// Portée qui reste à un projectile dévié, en blocs
 const DEFLECTED_RANGE: f32 = 12.0;
+/// Marge en hauteur autour du corps d'une cible, en blocs
+const VERTICAL_SLACK: f32 = 1.0;
 /// Rebonds et déviations au plus par projectile et par instant
 const MAX_TURNS_PER_STEP: u32 = 4;
 
@@ -466,7 +468,7 @@ impl CreatureWorld {
             let scale = c.scale() * block;
             let reach = p.radius + species.body.half_width.max(TARGET_RADIUS) * scale;
             let up = c.position.normalize_or_zero();
-            if let Some(t) = capsule_entry(from, dir, step, c.position, up, species.body.height.max(0.5) * scale, reach) {
+            if let Some(t) = capsule_entry(from, dir, step, c.position, up, species.body.height.max(0.5) * scale, reach, VERTICAL_SLACK * block) {
                 meets.push((t, Meet::Creature(c.id)));
             }
         }
@@ -477,7 +479,7 @@ impl CreatureWorld {
                     continue;
                 }
                 let up = feet.normalize_or_zero();
-                if let Some(t) = capsule_entry(from, dir, step, *feet, up, PLAYER_HEIGHT * block, p.radius + TARGET_RADIUS * block) {
+                if let Some(t) = capsule_entry(from, dir, step, *feet, up, PLAYER_HEIGHT * block, p.radius + TARGET_RADIUS * block, VERTICAL_SLACK * block) {
                     meets.push((t, Meet::Player(k)));
                 }
             }
@@ -486,16 +488,17 @@ impl CreatureWorld {
     }
 }
 
-/// Où le segment `from + dir·t` (t de 0 à `length`) passe pour la première fois à moins de `reach`
-/// de l'axe vertical `base + up·u` (u de 0 à `height`)
-pub(crate) fn capsule_entry(from: Vec3, dir: Vec3, length: f32, base: Vec3, up: Vec3, height: f32, reach: f32) -> Option<f32> {
+/// Où le segment `from + dir·t` (t de 0 à `length`) entre pour la première fois dans le cylindre
+/// d'axe `base + up·u` (u de `-slack` à `height + slack`) et de rayon `reach`. La marge en hauteur
+/// pardonne un tir à hauteur de main sur une petite bête, comme le faisaient les zones.
+pub(crate) fn capsule_entry(from: Vec3, dir: Vec3, length: f32, base: Vec3, up: Vec3, height: f32, reach: f32, slack: f32) -> Option<f32> {
     // Par pas fins le long du segment : quelques dizaines de tests au plus, assez juste à l'échelle
     // d'un corps
     let samples = ((length / (reach * 0.5).max(1e-3)).ceil() as usize).clamp(1, 64);
     (0..=samples).map(|i| length * i as f32 / samples as f32).find(|&t| {
         let point = from + dir * t - base;
-        let u = point.dot(up).clamp(0.0, height);
-        (point - up * u).length() <= reach
+        let u = point.dot(up);
+        (-slack..=height + slack).contains(&u) && (point - up * u).length() <= reach
     })
 }
 

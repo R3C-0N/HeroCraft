@@ -37,5 +37,8 @@
   "collision": {
     "shape": "box",
     "resistance": 1
+  },
+  "obstacle": {
+    "shots": true
   }
 }

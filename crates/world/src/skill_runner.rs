@@ -66,6 +66,8 @@ pub struct SkillImpact {
     pub players: Vec<u64>,
     /// Entités que la frappe a fait apparaître (`summon`)
     pub summoned: Vec<u64>,
+    /// La touche d'un projectile en vol (seuls ses visuels « hit » jouent)
+    pub contact: bool,
 }
 
 /// Ce que `tick` renvoie : les frappes du moment et les joueurs dont les jauges ont changé
@@ -201,6 +203,27 @@ struct Summoned {
     advance: Option<(Vec3, f32, f32)>,
 }
 
+/// Un tir de compétence en vol : son lancement, ses touches, le facteur de ses dégâts
+#[derive(Debug, Clone)]
+struct Flight {
+    pending: Pending,
+    hits: u32,
+    damage_factor: f32,
+}
+
+/// Une défense contre les tirs (Mur vivant, Manteau de Zéphyr)
+#[derive(Debug, Clone)]
+struct Guard {
+    player: u64,
+    /// Garde frontale : direction visée au lancement, cosinus du demi-arc
+    front: Option<(Vec3, f32)>,
+    deflect: Option<herocraft_common::ProjectileSize>,
+    left: f32,
+}
+
+/// Hauteur d'où part le tir d'une compétence, en blocs au-dessus des pieds
+const SHOT_HEIGHT: f32 = 1.4;
+
 /// Distance devant un mur qui avance où il pousse les ennemis, en blocs ; demi-longueur du mur
 const ADVANCE_REACH: f32 = 1.5;
 const ADVANCE_HALF_WIDTH: f32 = 3.0;
@@ -237,6 +260,13 @@ pub struct SkillRunner {
     links: Vec<Link>,
     /// Zones qui restent posées après leur frappe
     zones: Vec<Zone>,
+    /// Tirs de compétence en vol, par repère
+    flights: HashMap<u64, Flight>,
+    next_flight: u64,
+    /// Défenses des joueurs contre les tirs
+    guards: Vec<Guard>,
+    /// Direction visée par chaque joueur à son dernier lancement
+    aims: HashMap<u64, Vec3>,
 }
 
 /// Facteur des dégâts d'un coup critique
@@ -390,7 +420,7 @@ impl SkillRunner {
         stats.fallen = true;
         stats.resurrect(LAST_STAND_HEALTH);
         let (touched, _) = self.burst(around, player, buff.rank, &buff.skill, &[feet], creatures, players);
-        Some(SkillImpact { caster: player, skill: buff.skill, rank: buff.rank, center: feet, creatures: touched, players: Vec::new(), summoned: Vec::new() })
+        Some(SkillImpact { caster: player, skill: buff.skill, rank: buff.rank, center: feet, creatures: touched, players: Vec::new(), summoned: Vec::new(), contact: false })
     }
 
     /// Joue les effets de `around` dans son rayon autour de chacun des `points`, une fois par cible :
@@ -596,6 +626,54 @@ impl SkillRunner {
             }
         }
 
+        // Les défenses contre les tirs s'usent ; le monde des créatures les apprend
+        for g in &mut self.guards {
+            g.left -= dt;
+        }
+        self.guards.retain(|g| g.left > 0.0);
+        let mut guards: Vec<crate::PlayerGuard> = Vec::new();
+        for g in &self.guards {
+            let at = match guards.iter().position(|o| o.key == g.player) {
+                Some(i) => i,
+                None => {
+                    guards.push(crate::PlayerGuard { key: g.player, front: None, deflect: None });
+                    guards.len() - 1
+                }
+            };
+            guards[at].front = guards[at].front.or(g.front);
+            guards[at].deflect = match (guards[at].deflect, g.deflect) {
+                (Some(herocraft_common::ProjectileSize::Large), _) | (_, Some(herocraft_common::ProjectileSize::Large)) => Some(herocraft_common::ProjectileSize::Large),
+                (a, b) => a.or(b),
+            };
+        }
+        creatures.set_guards(guards);
+        // Les tirs en vol ont touché ou se sont arrêtés
+        for contact in creatures.take_contacts() {
+            match contact {
+                crate::SkillContact::Hit { tag, creature, at } => {
+                    let Some(flight) = self.flights.get_mut(&tag) else { continue };
+                    flight.hits += 1;
+                    let (p, factor) = (flight.pending.clone(), flight.damage_factor);
+                    if let Some(impact) = self.touch(catalog, &p, creature, at, factor, creatures, players, &mut out.changed) {
+                        out.impacts.push(impact);
+                    }
+                }
+                crate::SkillContact::Over { tag, .. } => {
+                    let Some(flight) = self.flights.remove(&tag) else { continue };
+                    let p = flight.pending;
+                    // Perdu sans rien toucher : ce que la compétence fait quand elle manque
+                    if flight.hits == 0 {
+                        if let Some(cast) = catalog.get(&p.skill).and_then(|d| d.cast.as_ref()) {
+                            for entry in &cast.on_miss {
+                                self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, p.caster, players);
+                                out.changed.push(p.caster);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         for p in &mut self.pending {
             p.left -= dt;
         }
@@ -688,6 +766,47 @@ impl SkillRunner {
         let area = cast.area.place_scaled(p.rank, feet, p.aim, aimed, block, p.size, reach);
         let center = area.center(feet);
         let damage_factor = (1.0 + self.buff(p.caster, BuffStat::Damage)) * p.power;
+        self.aims.insert(p.caster, p.aim);
+
+        // Un vrai projectile : le tir part, ses touches viendront en vol
+        if let Some(projectile) = &cast.projectile {
+            let up = feet.normalize_or_zero();
+            let from = feet + up * SHOT_HEIGHT * block;
+            let (direction, range, radius) = match area {
+                herocraft_common::skills::PlacedArea::Line { forward, length, half_width, .. } => (forward, length / block, half_width / block),
+                herocraft_common::skills::PlacedArea::Circle { center, .. } => {
+                    let to = center + up * SHOT_HEIGHT * block - from;
+                    (to.normalize_or_zero(), to.length() / block + 1.0, 0.5)
+                }
+                _ => (p.aim, 12.0, 0.5),
+            };
+            let tag = self.next_flight;
+            self.next_flight += 1;
+            let bounce = projectile.bounce.as_ref();
+            creatures.launch_skill_shot(crate::SkillShot {
+                caster: p.caster,
+                tag,
+                skill: p.skill.clone(),
+                from,
+                direction,
+                speed: projectile.speed.at(p.rank),
+                range,
+                radius,
+                pierce: projectile.pierce.at(p.rank),
+                bounces: bounce.map_or(0, |b| b.count.at(p.rank).max(0.0).round() as u32),
+                bounce_range: bounce.map_or(0.0, |b| b.range.at(p.rank)),
+                through_terrain: projectile.through.contains(&herocraft_common::skills::Through::Terrain),
+                through_obstacles: projectile.through.contains(&herocraft_common::skills::Through::Obstacles),
+                size: projectile.size,
+            });
+            self.flights.insert(tag, Flight { pending: Pending { aimed, ..p.clone() }, hits: 0, damage_factor });
+            for entry in &cast.self_effects {
+                self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, p.caster, players);
+                changed.push(p.caster);
+            }
+            let summoned = self.summon(def.summons(), p, feet, center, &area, creatures);
+            return Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center: from, creatures: Vec::new(), players: Vec::new(), summoned, contact: false });
+        }
 
         // Dans une zone qui reste, les effets qui durent valent tant qu'on s'y trouve
         let staying: Vec<EffectEntry>;
@@ -734,7 +853,39 @@ impl SkillRunner {
         }
         touched_players.sort_unstable();
         touched_players.dedup();
-        Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched_creatures, players: touched_players, summoned })
+        Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched_creatures, players: touched_players, summoned, contact: false })
+    }
+
+    /// Le tir en vol du lancement `p` touche la créature `id` au point `at` : ses effets sur elle,
+    /// ce qu'une touche déclenche pour le lanceur, ce que fait sa mort
+    #[allow(clippy::too_many_arguments)]
+    fn touch(&mut self, catalog: &SkillCatalog, p: &Pending, id: u64, at: Vec3, damage_factor: f32, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, changed: &mut Vec<u64>) -> Option<SkillImpact> {
+        let cast = catalog.get(&p.skill)?.cast.as_ref()?;
+        let feet = players.feet(p.caster).unwrap_or(at);
+        if creatures.creatures().iter().find(|c| c.id == id)?.tamed {
+            return None;
+        }
+        for entry in &cast.effects {
+            if matches!(entry.to.unwrap_or(cast.targets), Targets::Enemies | Targets::All) {
+                self.apply_to_creature(entry, p, id, feet, damage_factor, creatures);
+            }
+        }
+        for entry in &cast.on_hit {
+            self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, p.caster, players);
+            changed.push(p.caster);
+        }
+        let mut touched_players = Vec::new();
+        let spot = creatures.creatures().iter().find(|c| c.id == id).map(|c| (c.position, c.is_alive()));
+        if let (Some(around), Some((corpse, false))) = (&cast.on_kill, spot) {
+            let (_, helped) = self.burst(around, p.caster, p.rank, &p.skill, &[corpse], creatures, players);
+            touched_players.extend(&helped);
+            changed.extend(helped);
+        }
+        if cast.effects.iter().any(|e| matches!(e.effect, Effect::Damage { .. })) {
+            let points: Vec<Vec3> = spot.map(|s| s.0).into_iter().collect();
+            changed.extend(self.ride(p.caster, &points, creatures, players));
+        }
+        Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center: at, creatures: vec![id], players: touched_players, summoned: Vec::new(), contact: true })
     }
 
     /// Applique les effets `effects` à ceux qui se trouvent dans la zone `area` : les créatures et
@@ -931,7 +1082,7 @@ impl SkillRunner {
                 }
             }
             // Sans effet sur une bête : les autres renforcements, invisibilité, résurrection, lien
-            Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } | Effect::Sacrifice { .. } => {}
+            Effect::Buff { .. } | Effect::Summon { .. } | Effect::Invisible { .. } | Effect::Revive { .. } | Effect::Link { .. } | Effect::Cleanse {} | Effect::Restore { .. } | Effect::Sacrifice { .. } | Effect::ShotGuard { .. } | Effect::Deflect { .. } => {}
         }
     }
 
@@ -1014,6 +1165,18 @@ impl SkillRunner {
                 if let Some(stats) = players.stats_mut(id) {
                     stats.resurrect(health.at(rank));
                 }
+            }
+            Effect::ShotGuard { arc, duration } => {
+                let feet = players.feet(id).unwrap_or(Vec3::Y);
+                let up = feet.normalize_or_zero();
+                let aim = self.aims.get(&id).copied().unwrap_or(Vec3::ZERO);
+                let flat = aim - up * aim.dot(up);
+                let facing = if flat.length_squared() > 1e-8 { flat.normalize() } else { herocraft_common::tangent_frame(up).1 };
+                let cos = (arc.at(rank).clamp(0.0, 360.0) * 0.5).to_radians().cos();
+                self.guards.push(Guard { player: id, front: Some((facing, cos)), deflect: None, left: duration.at(rank) });
+            }
+            Effect::Deflect { size, duration } => {
+                self.guards.push(Guard { player: id, front: None, deflect: Some(*size), left: duration.at(rank) });
             }
             // Pas de combat entre joueurs : ni dégâts, ni ralenti, ni étourdissement d'un allié (ce
             // sont les bêtes qui ralentissent et étourdissent les joueurs, `CreatureWorld::afflict`)

@@ -58,5 +58,13 @@
   "collision": {
     "shape": "box",
     "resistance": 1
+  },
+  "obstacle": {
+    "shots": true,
+    "thorns": {
+      "damage": 15,
+      "burn": 5,
+      "seconds": 3
+    }
   }
 }

@@ -3587,6 +3587,113 @@ mod tests {
     }
 
     #[test]
+    fn a_wall_in_the_line_of_fire_stops_the_shot_and_takes_it() {
+        let (generator, edits, mut world, feet, _) = beasts_and_player("rampant", 0, 0.0, 61);
+        let block = world.block_size();
+        let (east, north) = tangent_frame(feet.normalize());
+        let player = feet - east * 40.0 * block;
+        let rampant = world.registry().find("rampant").unwrap();
+        let target = world.spawn(rampant, feet + north * 8.0 * block);
+        {
+            let c = world.creature_mut(target).unwrap();
+            c.health = 1000.0;
+            c.stun = 100.0;
+        }
+        // Une barricade sauvage (pas invoquée) entre la tourelle et le monstre, en travers du tir
+        let wall = world.spawn(world.registry().find("portableBarricade").unwrap(), feet + north * 4.0 * block);
+        world.creature_mut(wall).unwrap().yaw = 0.0;
+        let turret = world.summon(world.registry().find("ballisticTurret").unwrap(), feet, 0.0, 9);
+        world.creature_mut(turret).unwrap().appearing = 0.0;
+        let mut events = Vec::new();
+        for _ in 0..60 {
+            world.tick(0.05, &generator, &edits, &[player]);
+            events.extend(world.take_projectile_events());
+        }
+        let hp = |w: &CreatureWorld, id| w.creatures().iter().find(|c| c.id == id).map_or(0.0, |c| c.health);
+        assert_eq!(hp(&world, target), 1000.0, "le mur a arrêté les carreaux");
+        assert!(hp(&world, wall) < 150.0, "le mur a encaissé");
+        assert!(events.iter().any(|e| matches!(e, herocraft_common::ProjectileEvent::End { reason: herocraft_common::ProjectileEnd::Blocked, .. })));
+    }
+
+    /// Un registre où le rampant tire de loin, pour les tests des tirs ennemis
+    fn shooting_registry() -> Arc<CreatureRegistry> {
+        let base = CreatureRegistry::load_default();
+        let mut species: Vec<CreatureSpecies> = base.iter().cloned().collect();
+        let rampant = species.iter_mut().find(|s| s.id == "rampant").unwrap();
+        let attack = rampant.attack.as_mut().unwrap();
+        attack.shot = Some(serde_json::from_str(r#"{ "range": 20, "speed": 25, "damage": 7 }"#).unwrap());
+        attack.cooldown = 0.5;
+        Arc::new(CreatureRegistry::from_species(species, PathBuf::new()))
+    }
+
+    #[test]
+    fn a_summoned_wall_shields_the_player_from_enemy_shots_and_the_mantle_deflects_them() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 67, shooting_registry());
+        world.populate = false;
+        let block = world.block_size();
+        let (_, north) = tangent_frame(feet.normalize());
+        let shooter = world.spawn(world.registry().find("rampant").unwrap(), feet + north * 12.0 * block);
+        {
+            let c = world.creature_mut(shooter).unwrap();
+            c.anger = 1000.0;
+            c.health = 1000.0;
+        }
+        let player = feet;
+        // À découvert, il est touché
+        let open: Vec<PlayerHit> = (0..80).flat_map(|_| world.tick(0.05, &generator, &edits, &[player])).collect();
+        assert!(!open.is_empty(), "le tireur touche le joueur à découvert");
+        // Derrière un mur d'os invoqué, plus rien ne passe
+        let wall = world.summon(world.registry().find("boneWall").unwrap(), feet + north * 3.0 * block, 0.0, 0);
+        world.creature_mut(wall).unwrap().appearing = 0.0;
+        world.creature_mut(wall).unwrap().health = 10_000.0;
+        let covered: Vec<PlayerHit> = (0..80).flat_map(|_| world.tick(0.05, &generator, &edits, &[player])).collect();
+        assert!(covered.is_empty(), "le mur arrête les tirs : {} coups", covered.len());
+        world.dismiss(wall);
+        // Sous le Manteau de Zéphyr, les petits tirs sont déviés
+        world.set_guards(vec![PlayerGuard { key: 0, front: None, deflect: Some(herocraft_common::ProjectileSize::Small) }]);
+        let mut events = Vec::new();
+        let mut deflected = Vec::new();
+        for _ in 0..80 {
+            deflected.extend(world.tick(0.05, &generator, &edits, &[player]));
+            events.extend(world.take_projectile_events());
+        }
+        assert!(deflected.is_empty(), "le manteau dévie les tirs : {} coups", deflected.len());
+        assert!(events.iter().any(|e| matches!(e, herocraft_common::ProjectileEvent::Turn { .. })), "un tir a été dévié");
+        // Une garde de face arrête les tirs qui viennent de devant, pas ceux de dos
+        world.set_guards(vec![PlayerGuard { key: 0, front: Some((north, 0.5)), deflect: None }]);
+        let front: Vec<PlayerHit> = (0..80).flat_map(|_| world.tick(0.05, &generator, &edits, &[player])).collect();
+        assert!(front.is_empty(), "la garde arrête les tirs de face");
+        world.set_guards(vec![PlayerGuard { key: 0, front: Some((-north, 0.5)), deflect: None }]);
+        let back: Vec<PlayerHit> = (0..80).flat_map(|_| world.tick(0.05, &generator, &edits, &[player])).collect();
+        assert!(!back.is_empty(), "de dos, la garde ne protège pas");
+    }
+
+    #[test]
+    fn a_furnace_wall_burns_the_beast_that_bites_it() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let (_, feet) = grass_column(&generator, &edits);
+        let mut world = CreatureWorld::new(generator.base_radius(), 71, registry());
+        world.populate = false;
+        let block = world.block_size();
+        let (east, north) = tangent_frame(feet.normalize());
+        let wall = world.summon(world.registry().find("furnaceBarricade").unwrap(), feet + north * 1.5 * block, 0.0, 0);
+        world.creature_mut(wall).unwrap().appearing = 0.0;
+        let wolf = world.spawn(world.registry().find("rampant").unwrap(), feet);
+        world.creature_mut(wolf).unwrap().health = 1000.0;
+        let player = feet - east * 60.0 * block;
+        for _ in 0..100 {
+            world.tick(0.05, &generator, &edits, &[player]);
+        }
+        let hp = |w: &CreatureWorld, id| w.creatures().iter().find(|c| c.id == id).map_or(0.0, |c| c.health);
+        assert!(hp(&world, wall) < 150.0, "le monstre a frappé le mur");
+        assert!(hp(&world, wolf) < 1000.0, "le mur l'a brûlé en retour");
+    }
+
+    #[test]
     fn a_hasted_turret_shoots_faster_and_a_shield_absorbs_its_wounds() {
         let (generator, edits, mut world, feet, _) = beasts_and_player("rampant", 0, 0.0, 53);
         let block = world.block_size();
