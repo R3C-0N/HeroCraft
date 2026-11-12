@@ -2,6 +2,7 @@
   "numeric_id": 16509,
   "name": "Gantelet runique de mithril",
   "category": "Armes",
+  "weapon": {"kind": "gauntlet", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/mithrilGauntlet.png",
   "stats": {"Dégâts": 17, "Durabilité": 3000},

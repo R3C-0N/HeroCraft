@@ -2,6 +2,7 @@
   "numeric_id": 16538,
   "name": "Hache de guerre en acier",
   "category": "Armes",
+  "weapon": {"kind": "axe", "interval": 0.8},
   "max_stack": 1,
   "icon": "icones/steelBattleAxe.png",
   "stats": {"Dégâts": 16, "Durabilité": 2000},

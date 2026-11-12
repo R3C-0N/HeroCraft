@@ -2,6 +2,7 @@
   "numeric_id": 16801,
   "name": "Pelle en étherium (adamantine)",
   "category": "Outils",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/etheriumAdamantineShovel.png",
   "stats": {"Dégâts": 11, "Durabilité": 5000},

@@ -1,0 +1,12 @@
+{
+  "numeric_id": 16913,
+  "name": "Arbalète de fer",
+  "category": "Armes",
+  "weapon": {"kind": "crossbow", "interval": 1.2, "ammo": "bolt"},
+  "max_stack": 1,
+  "icon": "icones/ironCrossbow.png",
+  "stats": {"Dégâts": 7, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"ironIngot": 3, "plank": 2, "rope": 2}, "repair": {"ironIngot": 1}}
+  ]
+}

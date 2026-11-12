@@ -997,14 +997,22 @@ impl OrbitCamera {
 
     /// Une compétence lance le joueur : `dash` blocs droit devant (négatif : en arrière) au ras du
     /// sol, ou `leap` blocs en bondissant, le tout en `seconds` secondes
-    pub fn launch(&mut self, dash: f32, leap: f32, seconds: f32) {
-        let (_, forward, _, _) = self.look_vectors();
+    /// Élan d'une compétence : ruée (`dash`) ou bond (`leap`) droit devant (en arrière s'ils sont
+    /// négatifs), ou bond de côté (`side`, vers la gauche si le joueur y va, sinon vers la droite),
+    /// en blocs, en `seconds` secondes
+    pub fn launch(&mut self, dash: f32, leap: f32, side: f32, seconds: f32) {
+        let (_, forward, right, _) = self.look_vectors();
         let seconds = seconds.max(0.1);
-        let distance = if leap != 0.0 { leap } else { dash };
+        let (direction, distance) = if side != 0.0 {
+            (if self.move_left && !self.move_right { -right } else { right }, side.abs())
+        } else {
+            let distance = if leap != 0.0 { leap } else { dash };
+            (forward * distance.signum(), distance.abs())
+        };
         if distance != 0.0 {
-            self.impulse = Some((forward * distance.signum(), distance.abs() / seconds, seconds));
+            self.impulse = Some((direction, distance / seconds, seconds));
         }
-        if leap != 0.0 && !self.is_flying {
+        if (leap != 0.0 || side != 0.0) && !self.is_flying {
             // Assez d'élan vertical pour rester en l'air le temps du bond
             self.vertical_velocity = (GRAVITY * seconds * 0.5).max((2.0 * GRAVITY * 0.6).sqrt()) * self.block_height();
             self.is_grounded = false;
@@ -1635,7 +1643,7 @@ mod tests {
         let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
         let (_, forward, _, _) = cam.look_vectors();
         let start = cam.player_pos;
-        cam.launch(3.0, 0.0, 0.3);
+        cam.launch(3.0, 0.0, 0.0, 0.3);
         for _ in 0..40 {
             cam.update(0.016, &gen);
         }

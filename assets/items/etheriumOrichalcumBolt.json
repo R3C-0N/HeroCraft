@@ -2,6 +2,7 @@
   "numeric_id": 16462,
   "name": "Carreau d'étherium (orichalque)",
   "category": "Armes",
+  "ammo": "bolt",
   "max_stack": 99,
   "icon": "icones/etheriumOrichalcumBolt.png",
   "stats": {"Dégâts": 18},

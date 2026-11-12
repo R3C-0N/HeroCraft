@@ -2,6 +2,7 @@
   "numeric_id": 16819,
   "name": "Couteau en fer",
   "category": "Outils",
+  "weapon": {"kind": "dagger", "interval": 0.25},
   "max_stack": 1,
   "icon": "icones/ironKnife.png",
   "stats": {"Dégâts": 5, "Durabilité": 900},

@@ -2,6 +2,7 @@
   "numeric_id": 16829,
   "name": "Couteau en orichalque",
   "category": "Outils",
+  "weapon": {"kind": "dagger", "interval": 0.25},
   "max_stack": 1,
   "icon": "icones/orichalcumKnife.png",
   "stats": {"Dégâts": 7, "Durabilité": 3000},

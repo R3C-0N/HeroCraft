@@ -2,6 +2,7 @@
   "numeric_id": 16501,
   "name": "Lance de fer",
   "category": "Armes",
+  "weapon": {"kind": "spear", "interval": 0.5, "reach": 1},
   "max_stack": 1,
   "icon": "icones/ironSpear.png",
   "stats": {"Dégâts": 14, "Durabilité": 900},

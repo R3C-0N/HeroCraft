@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 20;
+pub const PROTOCOL_VERSION: u32 = 21;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -54,6 +54,18 @@ pub enum ClientPacket {
     /// Le joueur frappe une créature (dégâts, recul et fuite décidés par le serveur)
     HitCreature {
         creature_id: u64,
+    },
+    /// Le joueur commence à tenir chargé un tir d'arc (`skill` : `None`) ou une compétence qui se
+    /// charge (`Cast::charge`) : le serveur compte le temps jusqu'au tir ou au lancement
+    BeginCharge {
+        skill: Option<String>,
+    },
+    /// Le joueur tire à l'arc ou à l'arbalète dans la direction `aim`, la munition `ammo` (numéro
+    /// d'`ItemId`) déjà retirée de son inventaire. Le serveur juge l'arme, la cadence, le chargeur
+    /// et l'arc bandé, puis annonce le tir (`PlayerShot`) ; un tir refusé est ignoré.
+    Shoot {
+        aim: Vec3,
+        ammo: u16,
     },
     /// Le joueur donne à manger à une créature l'objet `item` (numéro d'`ItemId`), déjà retiré de son
     /// inventaire : le serveur l'apprivoise, la rend amoureuse ou fait grandir le petit
@@ -246,6 +258,15 @@ pub enum ServerPacket {
         /// Lancée par la Fusion (sa recharge est celle de la Fusion), et amplifiée
         fused: bool,
         amplified: bool,
+    },
+    /// Un joueur a tiré à l'arc ou à l'arbalète (envoyé à tous, tireur compris) : d'où, jusqu'où,
+    /// la bête touchée, la munition spéciale qu'il portait (compétence qui l'a chargée)
+    PlayerShot {
+        player_id: u64,
+        from: Vec3,
+        to: Vec3,
+        target: Option<u64>,
+        special: Option<String>,
     },
     /// Le lancement de `skill` est refusé (`reason` : pourquoi, en clair) ; le client arrête le geste
     SkillRefused {

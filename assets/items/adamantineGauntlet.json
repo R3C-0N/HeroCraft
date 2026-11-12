@@ -2,6 +2,7 @@
   "numeric_id": 16388,
   "name": "Gantelet runique d'adamantine",
   "category": "Armes",
+  "weapon": {"kind": "gauntlet", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/adamantineGauntlet.png",
   "stats": {"Dégâts": 16, "Durabilité": 3000},

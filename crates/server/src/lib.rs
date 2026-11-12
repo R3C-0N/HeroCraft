@@ -611,6 +611,7 @@ impl Server {
                     player.sprinting = sprinting;
                     player.crouching = crouching;
                     player.holding = holding.map(ItemId);
+                    self.skill_runner.hold(id, player.holding, player.stats.class);
                 }
             }
             ClientPacket::Fall { blocks } => self.fall(id, blocks),
@@ -621,6 +622,8 @@ impl Server {
             ClientPacket::SkinCreature { creature_id } => self.skin_creature(id, creature_id),
             ClientPacket::LearnSkill { id: skill } => self.learn_skill(id, &skill),
             ClientPacket::CastSkill { skill, aim, aimed } => self.cast_skill(id, skill, aim, aimed),
+            ClientPacket::BeginCharge { skill } => self.skill_runner.arsenal_mut().begin_charge(id, skill.as_deref()),
+            ClientPacket::Shoot { aim, ammo } => self.shoot(id, aim, ItemId(ammo)),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
             ClientPacket::Eat { item } => self.eat(id, ItemId(item)),
             ClientPacket::Equipment(worn) => {
@@ -850,10 +853,12 @@ impl Server {
     /// que les joueurs voient avec les prochaines positions
     fn hit_creature(&mut self, id: u64, creature_id: u64) {
         let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
-        let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
+        let held = self.skill_runner.arsenal().held(id);
+        let reach = (MAX_REACH_BLOCKS as f32 + held.reach) * self.geometry.block_height as f32;
         if self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
+            // Les dégâts de l'arme, à son rythme : un coup trop rapproché est ignoré
+            let Ok(mut damage) = self.skill_runner.arsenal_mut().strike(id) else { return };
             // Frappé par un joueur invisible : il se dévoile, et le coup est critique
-            let mut damage = herocraft_common::PLAYER_HIT_DAMAGE;
             if let Some(player) = self.players.get_mut(&id).filter(|p| p.stats.is_invisible()) {
                 player.stats.invisible_time = 0.0;
                 player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
@@ -878,6 +883,37 @@ impl Server {
                 if let Some(player) = self.players.get(&assault.player) {
                     tell(player, &assault.warning());
                 }
+            }
+        }
+    }
+
+    /// Un tir d'arc ou d'arbalète du joueur `id` : la munition doit aller avec l'arme tenue, la
+    /// cadence, le chargeur et l'arc bandé sont jugés ici. Annoncé à tous (`PlayerShot`).
+    fn shoot(&mut self, id: u64, aim: Vec3, ammo: ItemId) {
+        let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
+        if !aim.is_finite() || aim.length_squared() < 1e-6 {
+            return;
+        }
+        let held = self.skill_runner.arsenal().held(id);
+        let fits = ammo.block().is_none() && held.ammo.is_some() && herocraft_common::items().get(ammo).is_some_and(|s| s.ammo == held.ammo);
+        if !fits || self.players.get(&id).is_some_and(|p| p.stats.is_stunned() || p.stats.fallen) {
+            return;
+        }
+        let Ok(fired) = self.skill_runner.arsenal_mut().fire(id) else { return };
+        if let Some(player) = self.players.get_mut(&id).filter(|p| p.stats.is_invisible()) {
+            player.stats.invisible_time = 0.0;
+            player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+        }
+        let damage = held.damage + herocraft_common::weapons::ammo_damage(ammo);
+        let hit = self.skill_runner.shoot(id, feet, aim.normalize(), damage, fired, &mut self.creatures, &mut PlayersView(&mut self.players));
+        self.broadcast(&ServerPacket::PlayerShot { player_id: id, from: feet, to: hit.to, target: hit.target, special: hit.special });
+        let name = self.players.get(&id).map(|p| p.name.clone()).unwrap_or_default();
+        for murder in self.creatures.take_murders() {
+            self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
+        }
+        for assault in self.creatures.take_assaults() {
+            if let Some(player) = self.players.get(&assault.player) {
+                tell(player, &assault.warning());
             }
         }
     }

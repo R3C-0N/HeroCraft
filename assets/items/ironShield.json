@@ -2,6 +2,7 @@
   "numeric_id": 16499,
   "name": "Bouclier de fer",
   "category": "Armes",
+  "weapon": {"kind": "shield", "interval": 0.6},
   "max_stack": 1,
   "icon": "icones/ironShield.png",
   "stats": {"Dégâts": 4, "Durabilité": 900},

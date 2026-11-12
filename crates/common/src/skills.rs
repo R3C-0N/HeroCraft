@@ -169,6 +169,10 @@ pub struct Movement {
     pub dash: Option<Ranked>,
     #[serde(default)]
     pub leap: Option<Ranked>,
+    /// Bond de côté, en blocs : vers la gauche si le joueur tient la touche de gauche, sinon vers
+    /// la droite (Esquive tactique)
+    #[serde(default)]
+    pub side: Option<Ranked>,
     #[serde(default)]
     pub teleport: Option<Teleport>,
     #[serde(default)]
@@ -441,6 +445,19 @@ pub enum Effect {
         size: crate::creature::ProjectileSize,
         duration: Ranked,
     },
+    /// Le chargeur de l'arbalète tenue se remplit d'un coup (Esquive tactique, Roulade Évasive)
+    Reload {},
+    /// Munition spéciale : les `shots` prochains tirs du joueur (tirs d'arc ou d'arbalète et
+    /// compétences de tir), dans les `duration` secondes, portent en plus `effects` à ce qu'ils
+    /// touchent ; avec `radius`, à tous les ennemis dans ce rayon autour de l'impact (Balles à
+    /// Fragmentation)
+    LoadAmmo {
+        shots: Ranked,
+        duration: Ranked,
+        #[serde(default)]
+        radius: Option<Ranked>,
+        effects: Vec<EffectEntry>,
+    },
 }
 
 /// Une garde (`Effect::Guard`)
@@ -667,8 +684,10 @@ pub enum BuffStat {
     Critical,
     /// Portée des compétences : distance de visée, longueur des lignes et des secteurs (0,3 : +30 %)
     Range,
-    /// Cadence de tir des invocations (0,5 : +50 %)
-    Haste,
+    /// Vitesse d'attaque : coups d'arme, rechargement de l'arbalète, cadence de tir des
+    /// invocations (0,5 : 50 % plus vite). `haste` est l'ancien nom.
+    #[serde(alias = "haste")]
+    AttackSpeed,
     /// Récupération du mana (0,3 : +30 % de la récupération au repos)
     ManaRegen,
     /// Récupération de l'endurance
@@ -687,10 +706,15 @@ pub struct EffectEntry {
 /// Les règles d'une compétence, que le serveur applique
 #[derive(Debug, Clone, Deserialize)]
 pub struct Cast {
-    /// Types d'arme qui la réveillent (vide : toutes). Pas encore vérifié : les objets n'ont pas
-    /// de type d'arme.
+    /// Familles d'arme à tenir en main pour la lancer (vide : n'importe quoi, mains nues comprises)
     #[serde(default)]
-    pub weapons: Vec<String>,
+    pub weapons: Vec<crate::weapons::WeaponKind>,
+    /// Elle tire un carreau du chargeur de l'arbalète : refusée tant qu'elle recharge (Tir de Recul)
+    #[serde(default)]
+    pub uses_round: bool,
+    /// Elle se charge : on tient la touche, elle part au relâchement (Tir de Baliste)
+    #[serde(default)]
+    pub charge: Option<Charge>,
     #[serde(default)]
     pub cost: Cost,
     /// Secondes avant de pouvoir la relancer
@@ -748,6 +772,27 @@ impl Cast {
     /// Type des dégâts de la compétence : `kind`, sinon celui de sa ressource
     pub fn damage_kind(&self) -> crate::DamageKind {
         self.kind.unwrap_or(if self.cost.mana.at(1) > 0.0 { crate::DamageKind::Magical } else { crate::DamageKind::Physical })
+    }
+}
+
+/// Une compétence qui se charge (`Cast::charge`) : relâchée avant `min` secondes, elle ne part pas
+/// (et n'est pas payée) ; au-delà, sa puissance va de `power[0]` à `power[1]`, atteinte à `max`
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Charge {
+    pub min: f32,
+    pub max: f32,
+    pub power: [f32; 2],
+}
+
+impl Charge {
+    /// Puissance au bout de `held` secondes de charge (`None` : pas assez)
+    pub fn power_after(&self, held: f32) -> Option<f32> {
+        if held + 1e-3 < self.min {
+            return None;
+        }
+        let t = if self.max > self.min { ((held - self.min) / (self.max - self.min)).clamp(0.0, 1.0) } else { 1.0 };
+        Some(self.power[0] + (self.power[1] - self.power[0]) * t)
     }
 }
 
@@ -1230,6 +1275,14 @@ impl SkillCatalog {
             if cast.follow_up.as_ref().is_some_and(|f| !f.delay.is_finite() || f.delay.at(1) < 0.0) {
                 return Err("follow_up : delay positif ou nul".into());
             }
+            if let Some(c) = &cast.charge {
+                if !(c.min >= 0.0 && c.max >= c.min && c.max <= 10.0 && c.power.iter().all(|p| p.is_finite() && *p > 0.0)) {
+                    return Err("charge : 0 ≤ min ≤ max ≤ 10, puissances positives".into());
+                }
+            }
+            if cast.uses_round && !cast.weapons.contains(&crate::weapons::WeaponKind::Crossbow) {
+                return Err("uses_round : une compétence d'arbalète (weapons)".into());
+            }
             if let Some(form) = skill.form.as_ref().filter(|f| !entities.contains(*f)) {
                 return Err(format!("forme inconnue {form} (absente de assets/creatures/)"));
             }
@@ -1459,6 +1512,12 @@ pub enum CastError {
     FusionLocked,
     /// Un grappin sans bloc visé à portée
     NothingToGrab,
+    /// Pas la bonne arme en main (`Cast::weapons`)
+    NoWeapon,
+    /// L'arbalète recharge (`Cast::uses_round`)
+    Reloading,
+    /// Relâchée trop tôt (`Cast::charge`)
+    NotCharged,
 }
 
 impl CastError {
@@ -1478,6 +1537,9 @@ impl CastError {
             CastError::FusionEmpty => "lance d'abord deux sorts élémentaires",
             CastError::FusionLocked => "mélange pas encore appris",
             CastError::NothingToGrab => "rien à agripper",
+            CastError::NoWeapon => "pas la bonne arme en main",
+            CastError::Reloading => "l'arbalète recharge",
+            CastError::NotCharged => "relâchée trop tôt",
         }
     }
 }

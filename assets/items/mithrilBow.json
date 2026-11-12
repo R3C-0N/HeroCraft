@@ -1,0 +1,12 @@
+{
+  "numeric_id": 16916,
+  "name": "Arc renforcé de mithril",
+  "category": "Armes",
+  "weapon": {"kind": "bow", "interval": 0.3, "ammo": "arrow"},
+  "max_stack": 1,
+  "icon": "icones/mithrilBow.png",
+  "stats": {"Dégâts": 8, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"mithrilIngot": 2, "stick": 3, "rope": 2}, "repair": {"mithrilIngot": 1}}
+  ]
+}

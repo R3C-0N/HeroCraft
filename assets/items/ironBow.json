@@ -1,0 +1,12 @@
+{
+  "numeric_id": 16912,
+  "name": "Arc renforcé de fer",
+  "category": "Armes",
+  "weapon": {"kind": "bow", "interval": 0.3, "ammo": "arrow"},
+  "max_stack": 1,
+  "icon": "icones/ironBow.png",
+  "stats": {"Dégâts": 5, "Durabilité": 900},
+  "recipes": [
+    {"station": "workbench", "ingredients": {"ironIngot": 2, "stick": 3, "rope": 2}, "repair": {"ironIngot": 1}}
+  ]
+}

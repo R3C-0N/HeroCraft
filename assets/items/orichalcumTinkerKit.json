@@ -2,6 +2,7 @@
   "numeric_id": 16533,
   "name": "Trousse d'orichalque",
   "category": "Armes",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/orichalcumTinkerKit.png",
   "stats": {"Dégâts": 9, "Durabilité": 3000},

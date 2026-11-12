@@ -2,6 +2,7 @@
   "numeric_id": 16798,
   "name": "Houe en étherium (adamantine)",
   "category": "Outils",
+  "weapon": {"kind": "tool", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/etheriumAdamantineHoe.png",
   "stats": {"Dégâts": 7, "Durabilité": 5000},

@@ -2,6 +2,7 @@
   "numeric_id": 16408,
   "name": "Bouclier de bronze",
   "category": "Armes",
+  "weapon": {"kind": "shield", "interval": 0.6},
   "max_stack": 1,
   "icon": "icones/bronzeShield.png",
   "stats": {"Dégâts": 3, "Durabilité": 500},

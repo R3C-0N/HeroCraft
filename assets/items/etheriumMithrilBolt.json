@@ -2,6 +2,7 @@
   "numeric_id": 16447,
   "name": "Carreau d'étherium (mithril)",
   "category": "Armes",
+  "ammo": "bolt",
   "max_stack": 99,
   "icon": "icones/etheriumMithrilBolt.png",
   "stats": {"Dégâts": 18},

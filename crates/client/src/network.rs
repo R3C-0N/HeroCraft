@@ -353,6 +353,8 @@ pub enum NetEvent {
     Clock { time: f64, forced: Option<herocraft_common::WeatherKind> },
     /// Un joueur (peut-être nous) lance une compétence
     SkillCast { player_id: u64, skill: String, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool },
+    /// Un joueur (peut-être nous) a tiré à l'arc ou à l'arbalète
+    PlayerShot { player_id: u64, from: Vec3, to: Vec3, target: Option<u64>, special: Option<String> },
     /// Le serveur refuse notre lancement de `skill`
     SkillRefused { skill: String, reason: String },
     /// Une compétence nous déplace (téléportation, traction vers sa cible)
@@ -449,6 +451,16 @@ impl NetClient {
     }
 
     /// Demande au serveur de lancer une compétence
+    /// Commence à tenir chargé un tir d'arc (`None`) ou une compétence
+    pub fn send_begin_charge(&mut self, skill: Option<&str>) {
+        self.connection.send(&ClientPacket::BeginCharge { skill: skill.map(str::to_string) });
+    }
+
+    /// Tire à l'arc ou à l'arbalète la munition `ammo`, déjà retirée de l'inventaire
+    pub fn send_shoot(&mut self, aim: Vec3, ammo: herocraft_common::ItemId) {
+        self.connection.send(&ClientPacket::Shoot { aim, ammo: ammo.0 });
+    }
+
     pub fn send_cast_skill(&mut self, skill: &str, aim: Vec3, aimed: Option<Vec3>) {
         self.connection.send(&ClientPacket::CastSkill { skill: skill.to_string(), aim, aimed });
     }
@@ -599,6 +611,7 @@ impl NetClient {
                 return Some(NetEvent::Loot { position, items });
             }
             ServerPacket::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified } => return Some(NetEvent::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified }),
+            ServerPacket::PlayerShot { player_id, from, to, target, special } => return Some(NetEvent::PlayerShot { player_id, from, to, target, special }),
             ServerPacket::SkillRefused { skill, reason } => return Some(NetEvent::SkillRefused { skill, reason }),
             ServerPacket::SkillMove(m) => return Some(NetEvent::SkillMove(m)),
             ServerPacket::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact } => return Some(NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact }),

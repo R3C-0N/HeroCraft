@@ -17,10 +17,10 @@
     "animation": "leap",
     "area": "self",
     "movement": {
-      "leap": [
-        -4,
-        -4.5,
-        -5
+      "side": [
+        4,
+        4.5,
+        5
       ]
     },
     "targets": "self",
@@ -38,6 +38,9 @@
           "value": 0.2,
           "duration": 4
         }
+      },
+      {
+        "reload": {}
       }
     ]
   },

@@ -2,6 +2,7 @@
   "numeric_id": 16391,
   "name": "Sabre d'adamantine",
   "category": "Armes",
+  "weapon": {"kind": "sword", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/adamantineSabre.png",
   "stats": {"Dégâts": 17, "Durabilité": 3000},

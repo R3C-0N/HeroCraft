@@ -2,6 +2,7 @@
   "numeric_id": 16407,
   "name": "Sceptre de bronze",
   "category": "Armes",
+  "weapon": {"kind": "staff", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/bronzeScepter.png",
   "stats": {"Dégâts": 5, "Durabilité": 500},

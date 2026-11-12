@@ -570,3 +570,56 @@ fn une_parade_bloque_le_coup_d_une_bete_et_riposte() {
     assert!(!hurt, "le coup paré ne blesse pas");
     assert!(creatures.contains(&brute), "la riposte renvoie le coup au rampant");
 }
+
+#[test]
+fn l_arbalete_tire_un_carreau_puis_recharge() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let (_, feet) = land(&server);
+    let alice = Client::connect(&addr, WAIT).unwrap();
+    alice.send(&ClientPacket::Connect { player_name: "Alice".into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
+    let me = pump(&mut server, &alice, |p| match p {
+        ServerPacket::ConnectAck { player_id, .. } => Some(player_id),
+        _ => None,
+    });
+    let crossbow = herocraft_common::items().find("handCrossbow").unwrap();
+    let bolt = herocraft_common::items().find("ironBolt").unwrap();
+    let arrow = herocraft_common::items().find("ironArrow").unwrap();
+    alice.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: Some(crossbow.0) });
+    let deadline = Instant::now() + WAIT;
+    while server.players().all(|p| p.position.is_none()) {
+        assert!(Instant::now() < deadline, "position d'Alice non reçue");
+        server.tick(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let block = BlockGeometry::new(herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 4242, ..Default::default() }).base_radius()).block_height as f32;
+    let north = herocraft_common::tangent_frame(feet.normalize()).1;
+    let shots = |server: &mut Server, alice: &Client, ticks: usize| {
+        let mut seen = Vec::new();
+        for _ in 0..ticks {
+            server.tick(1.0 / 60.0);
+            std::thread::sleep(Duration::from_millis(1));
+            while let Some(packet) = alice.try_recv().expect("connexion fermée") {
+                if let ServerPacket::PlayerShot { player_id, target, .. } = packet {
+                    seen.push((player_id, target));
+                }
+            }
+        }
+        seen
+    };
+
+    // Prise en main, elle se charge d'abord : le tir est ignoré
+    alice.send(&ClientPacket::Shoot { aim: north, ammo: bolt.0 });
+    assert!(shots(&mut server, &alice, 10).is_empty(), "l'arbalète n'est pas encore chargée");
+    shots(&mut server, &alice, 60);
+    // Une flèche ne va pas dans une arbalète
+    alice.send(&ClientPacket::Shoot { aim: north, ammo: arrow.0 });
+    assert!(shots(&mut server, &alice, 10).is_empty(), "une flèche dans une arbalète");
+    // Chargée : le carreau part et touche la vache
+    let cow = server.spawn_creature("vache", feet + north * 6.0 * block).expect("espèce vache");
+    alice.send(&ClientPacket::Shoot { aim: north, ammo: bolt.0 });
+    assert_eq!(shots(&mut server, &alice, 10), vec![(me, Some(cow))]);
+    // Aussitôt après : elle recharge, le tir est ignoré
+    alice.send(&ClientPacket::Shoot { aim: north, ammo: bolt.0 });
+    assert!(shots(&mut server, &alice, 10).is_empty(), "tir trop rapide accepté");
+}

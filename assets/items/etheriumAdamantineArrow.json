@@ -2,6 +2,7 @@
   "numeric_id": 16430,
   "name": "Flèche d'étherium (adamantine)",
   "category": "Armes",
+  "ammo": "arrow",
   "max_stack": 99,
   "icon": "icones/etheriumAdamantineArrow.png",
   "stats": {"Dégâts": 18},

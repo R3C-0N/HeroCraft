@@ -2,6 +2,7 @@
   "numeric_id": 16486,
   "name": "Glaive en silex",
   "category": "Armes",
+  "weapon": {"kind": "sword", "interval": 0.4},
   "max_stack": 1,
   "icon": "icones/flintSword.png",
   "stats": {"Dégâts": 4, "Durabilité": 150},

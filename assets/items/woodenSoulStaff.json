@@ -2,6 +2,7 @@
   "numeric_id": 16557,
   "name": "Bâton d'âmes en bois",
   "category": "Armes",
+  "weapon": {"kind": "staff", "interval": 0.5},
   "max_stack": 1,
   "icon": "icones/woodenSoulStaff.png",
   "stats": {"Dégâts": 2, "Durabilité": 80},

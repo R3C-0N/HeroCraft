@@ -2,6 +2,7 @@
   "numeric_id": 16822,
   "name": "Hache en mithril",
   "category": "Outils",
+  "weapon": {"kind": "axe", "interval": 0.55},
   "max_stack": 1,
   "icon": "icones/mithrilAxe.png",
   "stats": {"Dégâts": 8, "Durabilité": 3000},

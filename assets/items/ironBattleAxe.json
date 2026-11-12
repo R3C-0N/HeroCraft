@@ -2,6 +2,7 @@
   "numeric_id": 16491,
   "name": "Hache de guerre en fer",
   "category": "Armes",
+  "weapon": {"kind": "axe", "interval": 0.8},
   "max_stack": 1,
   "icon": "icones/ironBattleAxe.png",
   "stats": {"Dégâts": 13, "Durabilité": 900},

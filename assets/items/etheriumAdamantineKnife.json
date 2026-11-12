@@ -2,6 +2,7 @@
   "numeric_id": 16799,
   "name": "Couteau en étherium (adamantine)",
   "category": "Outils",
+  "weapon": {"kind": "dagger", "interval": 0.25},
   "max_stack": 1,
   "icon": "icones/etheriumAdamantineKnife.png",
   "stats": {"Dégâts": 11, "Durabilité": 5000},

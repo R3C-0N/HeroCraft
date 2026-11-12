@@ -2,6 +2,7 @@
   "numeric_id": 16393,
   "name": "Bouclier d'adamantine",
   "category": "Armes",
+  "weapon": {"kind": "shield", "interval": 0.6},
   "max_stack": 1,
   "icon": "icones/adamantineShield.png",
   "stats": {"Dégâts": 9, "Durabilité": 3000},

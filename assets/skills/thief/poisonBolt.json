@@ -10,54 +10,49 @@
     "planner": 257
   },
   "cast": {
+    "weapons": [
+      "bow",
+      "crossbow"
+    ],
     "cost": {
       "stamina": 10
     },
     "cooldown": 6,
     "animation": "crossbowShot",
-    "area": {
-      "line": {
-        "length": 14,
-        "width": 1
-      }
-    },
-    "projectile": {
-      "speed": 45
-    },
-    "targets": "enemies",
-    "effects": [
+    "area": "self",
+    "targets": "self",
+    "self_effects": [
       {
-        "damage": {
-          "power": 0.5
-        }
-      },
-      {
-        "over_time": {
-          "damage": [
-            3,
-            4,
-            5
-          ],
-          "duration": 6
+        "load_ammo": {
+          "shots": 3,
+          "duration": 15,
+          "effects": [
+            {
+              "over_time": {
+                "damage": [
+                  3,
+                  4,
+                  5
+                ],
+                "duration": 6
+              }
+            }
+          ]
         }
       }
     ]
   },
   "visuals": [
     {
-      "effect": "arrowTrail",
-      "anchor": "projectile",
-      "from": "impact"
+      "effect": "weaponGlow",
+      "anchor": "weapon",
+      "from": "start",
+      "to": "end"
     },
     {
       "effect": "poisonCloud",
       "anchor": "target",
       "from": "hit"
-    },
-    {
-      "effect": "impactSpark",
-      "anchor": "projectile",
-      "from": "blocked"
     }
   ]
 }

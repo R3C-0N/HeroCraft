@@ -1,3 +1,4 @@
+pub mod arsenal;
 pub mod caves;
 pub mod creatures;
 pub mod culture;
@@ -26,7 +27,8 @@ pub use generator::*;
 pub use ocean_currents::*;
 pub use quadtree::*;
 pub use roads::{Road, RoadMap};
-pub use skill_runner::{Casting, SkillImpact, SkillPlayers, SkillRunner, SkillTick, SoloPlayer, CRITICAL_FACTOR};
+pub use arsenal::{Arsenal, Fired, Magazine, Special};
+pub use skill_runner::{Casting, ShotHit, SkillImpact, SkillPlayers, SkillRunner, SkillTick, SoloPlayer, CRITICAL_FACTOR};
 pub use culture::Culture;
 pub use structures::{Settlement, SettlementKind, StructureMap};
 pub use tectonics::*;

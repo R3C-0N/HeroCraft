@@ -2,6 +2,7 @@
   "numeric_id": 16812,
   "name": "Hache en silex",
   "category": "Outils",
+  "weapon": {"kind": "axe", "interval": 0.55},
   "max_stack": 1,
   "icon": "icones/flintAxe.png",
   "stats": {"Dégâts": 2, "Durabilité": 150},

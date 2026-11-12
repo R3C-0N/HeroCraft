@@ -1,0 +1,12 @@
+{
+  "numeric_id": 16920,
+  "name": "Arc renforcé d'adamantine",
+  "category": "Armes",
+  "weapon": {"kind": "bow", "interval": 0.3, "ammo": "arrow"},
+  "max_stack": 1,
+  "icon": "icones/adamantineBow.png",
+  "stats": {"Dégâts": 10, "Durabilité": 3000},
+  "recipes": [
+    {"station": "astralForge", "ingredients": {"adamantineIngot": 2, "stick": 3, "rope": 2}, "repair": {"adamantineIngot": 1}}
+  ]
+}

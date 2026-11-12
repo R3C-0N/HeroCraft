@@ -138,8 +138,8 @@ pub struct SkillPlay {
     amplified: Vec<(Option<u64>, String, Instant)>,
     /// Renforcements de vitesse du joueur local : de combien, jusqu'à quand
     speed_buffs: Vec<(f32, Instant, bool)>,
-    /// Élan de la compétence locale qui commence : ruée, bond, en combien de secondes
-    motion: Option<(f32, f32, f32)>,
+    /// Élan de la compétence locale qui commence : ruée, bond, bond de côté, en combien de secondes
+    motion: Option<(f32, f32, f32, f32)>,
     /// Déplacements du joueur local à jouer, et à partir de quand : la compétence et son déplacement
     moves: Vec<(Instant, String, Motion)>,
     /// Identifiant du joueur local (en ligne, celui du serveur)
@@ -229,9 +229,27 @@ impl SkillPlay {
             (None, Some(_)) => return Err(herocraft_common::CastError::InForm.message().to_string()),
             (None, None) => {}
         }
+        // L'arme en main (jugée aussi par le serveur ; ici pour répondre tout de suite)
+        if let Some(cast) = catalog.get(skill).and_then(|d| d.cast.as_ref()) {
+            let held = self.runner.arsenal().held(SOLO_PLAYER);
+            if !cast.weapons.is_empty() && !held.kind.is_some_and(|k| cast.weapons.contains(&k)) {
+                let names: Vec<&str> = cast.weapons.iter().map(|w| w.name()).collect();
+                return Err(format!("il te faut {}", names.join(" ou ")));
+            }
+            if cast.uses_round && self.runner.arsenal().magazine(SOLO_PLAYER).is_none_or(|m| m.loaded == 0) {
+                return Err(herocraft_common::CastError::Reloading.message().to_string());
+            }
+            if let Some(charge) = &cast.charge {
+                if charge.power_after(self.runner.arsenal().charge_held(SOLO_PLAYER, Some(requested))).is_none() {
+                    self.runner.arsenal_mut().release_charge(SOLO_PLAYER, Some(requested));
+                    return Err(herocraft_common::CastError::NotCharged.message().to_string());
+                }
+            }
+        }
         let rank = match online {
             Some(send) => {
                 send(requested, aim, aimed);
+                self.predict_weapon(catalog, requested, skill);
                 // Le serveur tient le compte des sorts à mêler ; on le tient aussi pour prévoir
                 self.runner.remember(catalog, SOLO_PLAYER, requested);
                 catalog.rank(stats, skill)
@@ -241,6 +259,113 @@ impl SkillPlay {
         self.arm_cooldown(catalog, requested, skill, rank, now);
         self.start(None, skill, rank, aim, aimed, now, amplified);
         Ok(())
+    }
+
+    /// En ligne, ce que notre lancement fait à notre arme, pour l'afficher sans attendre le serveur :
+    /// charge relâchée, carreau tiré, chargeur rempli, munition spéciale chargée
+    fn predict_weapon(&mut self, catalog: &SkillCatalog, requested: &str, skill: &str) {
+        let Some(cast) = catalog.get(skill).and_then(|d| d.cast.as_ref()) else { return };
+        let arsenal = self.runner.arsenal_mut();
+        arsenal.release_charge(SOLO_PLAYER, Some(requested));
+        if cast.uses_round {
+            let _ = arsenal.use_round(SOLO_PLAYER);
+        }
+        for entry in &cast.self_effects {
+            match &entry.effect {
+                Effect::Reload {} => arsenal.reload_now(SOLO_PLAYER),
+                Effect::LoadAmmo { shots, duration, radius, effects } => arsenal.load(
+                    SOLO_PLAYER,
+                    herocraft_world::Special { skill: skill.to_string(), rank: 1, shots: shots.at(1).round().max(1.0) as u32, left: duration.at(1), radius: radius.as_ref().map(|r| r.at(1)), effects: effects.clone() },
+                ),
+                _ => {}
+            }
+        }
+    }
+
+    /// Le joueur local tient `item` en main (`None` : mains nues)
+    pub fn hold(&mut self, item: Option<herocraft_common::ItemId>, class: herocraft_common::PlayerClass) {
+        self.runner.hold(SOLO_PLAYER, item, class);
+    }
+
+    /// Ce que vaut au combat l'objet tenu
+    pub fn held(&self) -> herocraft_common::Held {
+        self.runner.arsenal().held(SOLO_PLAYER)
+    }
+
+    /// Un coup au corps à corps du joueur local : ses dégâts de base, s'il n'est pas trop tôt
+    pub fn strike(&mut self) -> Result<f32, herocraft_common::CastError> {
+        self.runner.arsenal_mut().strike(SOLO_PLAYER)
+    }
+
+    /// Le joueur local commence à bander son arc (`None`) ou à charger une compétence
+    pub fn begin_charge(&mut self, skill: Option<&str>) {
+        self.runner.arsenal_mut().begin_charge(SOLO_PLAYER, skill);
+    }
+
+    /// Il bande son arc, ou charge cette compétence
+    pub fn is_charging(&self, skill: Option<&str>) -> bool {
+        self.runner.arsenal().is_charging(SOLO_PLAYER, skill)
+    }
+
+    /// Le tir du joueur local part (arc relâché, arbalète) : refusé trop tôt, l'arbalète vide, l'arc
+    /// pas assez bandé
+    pub fn fire(&mut self) -> Result<herocraft_world::Fired, herocraft_common::CastError> {
+        self.runner.arsenal_mut().fire(SOLO_PLAYER)
+    }
+
+    /// En solo, le tir `fired` part des pieds `feet` dans la direction `aim` avec `damage` points
+    #[allow(clippy::too_many_arguments)]
+    pub fn solo_shoot(&mut self, feet: Vec3, aim: Vec3, damage: f32, fired: herocraft_world::Fired, creatures: &mut CreatureWorld, stats: &mut CharacterStats) -> herocraft_world::ShotHit {
+        let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
+        self.runner.shoot(SOLO_PLAYER, feet, aim, damage, fired, creatures, &mut player)
+    }
+
+    /// Un tir à montrer : la traînée qui file de `from` à `to`, l'étincelle sur la bête touchée, et
+    /// ce que fait la munition spéciale à l'impact (nuage de poison, explosion)
+    pub fn show_shot(&mut self, caster: Option<u64>, from: Vec3, to: Vec3, target: Option<u64>, special: Option<&str>, block: f32) {
+        let flight = (from.distance(to) / block / 60.0).clamp(0.05, 0.5);
+        let base = VisualCue { effect: "arrowTrail".into(), anchor: Anchor::Aimed, caster, point: from, creature: None, projectile: None, aim: to - from, hold: Some(flight), area_blocks: 1.0, travel: Some((to, flight)), delay: 0.0 };
+        self.cues.push(base.clone());
+        let Some(id) = target else { return };
+        self.cues.push(VisualCue { effect: "impactSpark".into(), anchor: Anchor::Target, point: to, creature: Some(id), travel: None, hold: None, delay: flight, ..base.clone() });
+        let Some(def) = special.and_then(|s| skills().get(s)) else { return };
+        let radius = def.cast.as_ref().into_iter().flat_map(|c| &c.self_effects).find_map(|e| match &e.effect {
+            Effect::LoadAmmo { radius, .. } => radius.as_ref().map(|r| r.at(1)),
+            _ => None,
+        });
+        for visual in def.visuals.iter().filter(|v| v.from == Moment::Hit) {
+            self.cues.push(VisualCue {
+                effect: visual.effect.clone(),
+                anchor: visual.anchor,
+                point: to,
+                creature: (visual.anchor == Anchor::Target).then_some(id),
+                area_blocks: radius.unwrap_or(1.0),
+                travel: None,
+                hold: None,
+                delay: flight,
+                ..base.clone()
+            });
+        }
+    }
+
+    /// Ce que l'affichage montre de l'arme : chargeur, munition spéciale, arc bandé ou compétence chargée
+    pub fn weapon_hud(&self, charging: Option<&str>) -> crate::ui::WeaponHud {
+        let catalog = skills();
+        let arsenal = self.runner.arsenal();
+        let magazine = arsenal.magazine(SOLO_PLAYER).map(|m| (m.loaded, m.size, m.reload_left, m.reload_total));
+        let special = arsenal.special(SOLO_PLAYER).map(|(skill, shots)| (catalog.get(skill).map_or(skill.to_string(), |d| d.name.clone()), shots));
+        let charge = match charging {
+            Some(skill) if arsenal.is_charging(SOLO_PLAYER, Some(skill)) => catalog.get(skill).and_then(|d| d.cast.as_ref().and_then(|c| c.charge.as_ref()).map(|c| (d, c))).map(|(def, c)| {
+                let held = arsenal.charge_held(SOLO_PLAYER, Some(skill));
+                (def.name.clone(), (held / c.max.max(1e-3)).min(1.0), c.power_after(held).is_some())
+            }),
+            _ if arsenal.is_charging(SOLO_PLAYER, None) => {
+                let held = arsenal.charge_held(SOLO_PLAYER, None);
+                Some(("Arc bandé".to_string(), (held / herocraft_common::weapons::BOW_FULL_DRAW).min(1.0), herocraft_common::weapons::bow_power(held).is_some()))
+            }
+            _ => None,
+        };
+        crate::ui::WeaponHud { magazine, special, charge }
     }
 
     /// La recharge de la case `key` (la Fusion, ou la compétence elle-même), celle de `skill`
@@ -303,8 +428,8 @@ impl SkillPlay {
         // Ruée ou bond du joueur local, jusqu'à l'impact
         if let Some(movement) = cast.movement.as_ref().filter(|_| player.is_none()) {
             let seconds = if impact >= 0.3 * duration { impact } else { 0.6 * duration };
-            let (dash, leap) = (movement.dash.as_ref().map_or(0.0, |d| d.at(rank)), movement.leap.as_ref().map_or(0.0, |l| l.at(rank)));
-            self.motion = Some((dash, leap, seconds));
+            let at = |r: &Option<herocraft_common::skills::Ranked>| r.as_ref().map_or(0.0, |d| d.at(rank));
+            self.motion = Some((at(&movement.dash), at(&movement.leap), at(&movement.side), seconds));
             if let Some(hover) = &movement.hover {
                 self.moves.push((now, skill.to_string(), Motion::Hover { height: hover.height.at(rank), duration: hover.duration.at(rank) }));
             }
@@ -601,6 +726,7 @@ impl SkillPlay {
     /// Avance d'une image : en solo, les règles tournent ; renvoie les visuels à commencer
     pub fn tick(&mut self, dt: f32, solo: Option<(&mut CreatureWorld, Vec3, &mut CharacterStats)>) -> Vec<VisualCue> {
         let now = Instant::now();
+        let ran_rules = solo.is_some();
         if let Some((creatures, feet, stats)) = solo {
             let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
             let tick = self.runner.tick(dt, skills(), creatures, &mut player);
@@ -614,6 +740,10 @@ impl SkillPlay {
             for SkillImpact { skill, rank, center, creatures, players, parried, contact, .. } in tick.impacts {
                 self.on_hit(Shown { caster: None, skill, rank, center, creatures, players, parried, contact });
             }
+        }
+        if !ran_rules {
+            // En ligne : le serveur juge, l'arme avance ici pour l'affichage
+            self.runner.tick_weapons(dt);
         }
         self.plays.retain(|p| now.duration_since(p.started).as_secs_f32() < p.duration);
         self.ready_at.retain(|_, t| *t > now);
@@ -679,8 +809,8 @@ impl SkillPlay {
         (1.0 + self.speed_buffs.iter().map(|(v, _, scaled)| if *scaled { v * missing.clamp(0.0, 1.0) } else { *v }).sum::<f32>()).max(0.0)
     }
 
-    /// Élan à donner au joueur local (ruée, bond : blocs, blocs, secondes), une seule fois
-    pub fn take_motion(&mut self) -> Option<(f32, f32, f32)> {
+    /// Élan à donner au joueur local (ruée, bond, bond de côté : blocs ; secondes), une seule fois
+    pub fn take_motion(&mut self) -> Option<(f32, f32, f32, f32)> {
         self.motion.take()
     }
 
@@ -807,8 +937,8 @@ mod tests {
 
         // Pas de Brise : une ruée vers l'avant
         play.request("breezeStep", &mut stats, Vec3::NEG_Y, None, None).unwrap();
-        let (dash, leap, seconds) = play.take_motion().expect("une ruée");
-        assert!(dash > 0.0 && leap == 0.0 && seconds > 0.0);
+        let (dash, leap, side, seconds) = play.take_motion().expect("une ruée");
+        assert!(dash > 0.0 && leap == 0.0 && side == 0.0 && seconds > 0.0);
         assert!(play.take_motion().is_none(), "une seule fois");
 
         // Manteau de Zéphyr : plus vite, une fois l'impact passé

@@ -2,6 +2,7 @@
   "numeric_id": 16418,
   "name": "Dague de cuivre",
   "category": "Armes",
+  "weapon": {"kind": "dagger", "interval": 0.25},
   "max_stack": 1,
   "icon": "icones/copperDagger.png",
   "stats": {"Dégâts": 6, "Durabilité": 300},
