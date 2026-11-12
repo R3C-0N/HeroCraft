@@ -6,7 +6,7 @@
 //! Module enfant de `creatures` : il lit directement les bêtes, le registre et la géométrie.
 
 use glam::Vec3;
-use herocraft_common::{ProjectileEnd, ProjectileEvent, ProjectileSize, Shooter};
+use herocraft_common::{DamageKind, ProjectileEnd, ProjectileEvent, ProjectileSize, Shooter};
 
 use super::{CreatureWorld, PlayerHit, TARGET_RADIUS};
 use crate::edits::{raycast_blocks, TerrainQuery};
@@ -34,7 +34,7 @@ pub(crate) enum Homing {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Payload {
     /// Tir de créature : ses dégâts, appliqués ici, et le rayon de son explosion (unités du monde)
-    Creature { species: usize, damage: f32, blast: f32 },
+    Creature { species: usize, damage: f32, kind: DamageKind, blast: f32 },
     /// Tir de compétence : `SkillRunner` applique ses effets à chaque touche (`take_contacts`)
     Skill { tag: u64 },
 }
@@ -130,7 +130,7 @@ impl CreatureWorld {
 
     /// Lance le tir d'une créature
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn launch_creature_shot(&mut self, shooter: u64, species: usize, allied: bool, from: Vec3, to: Vec3, homing: Option<Homing>, shot: &herocraft_common::CreatureShot, damage: f32) {
+    pub(crate) fn launch_creature_shot(&mut self, shooter: u64, species: usize, allied: bool, from: Vec3, to: Vec3, homing: Option<Homing>, shot: &herocraft_common::CreatureShot, damage: f32, kind: DamageKind) {
         let block = self.geometry.block_height as f32;
         let line = to - from;
         let distance = line.length().max(1e-4);
@@ -159,7 +159,7 @@ impl CreatureWorld {
             size: shot.size(),
             hit: Vec::new(),
             spared: Vec::new(),
-            payload: Payload::Creature { species, damage, blast: shot.radius * block },
+            payload: Payload::Creature { species, damage, kind, blast: shot.radius * block },
         });
         let shown = if speed > 0.0 { speed } else { distance * 20.0 };
         self.projectile_events.push(ProjectileEvent::Launch { id, shooter: Shooter::Creature { id: shooter, species: species as u32 }, skill: String::new(), from, velocity: direction * shown });
@@ -236,7 +236,7 @@ impl CreatureWorld {
         let key_of = |k: usize| keys.get(k).copied().unwrap_or(0);
         let mut player_hits = Vec::new();
         // Coups aux créatures : qui, d'où, combien
-        let mut blasts: Vec<(u64, Vec3, f32)> = Vec::new();
+        let mut blasts: Vec<(u64, Vec3, f32, DamageKind)> = Vec::new();
         let mut projectiles = std::mem::take(&mut self.projectiles);
         let mut ended: Vec<usize> = Vec::new();
 
@@ -280,8 +280,8 @@ impl CreatureWorld {
                             end = Some((at, ProjectileEnd::Terrain));
                         }
                         Meet::Obstacle(wall) => {
-                            if let Payload::Creature { damage, .. } = p.payload {
-                                blasts.push((wall, at, damage));
+                            if let Payload::Creature { damage, kind, .. } = p.payload {
+                                blasts.push((wall, at, damage, kind));
                             }
                             end = Some((at, ProjectileEnd::Blocked));
                         }
@@ -295,7 +295,7 @@ impl CreatureWorld {
                                     end = Some((at, ProjectileEnd::Hit));
                                     break;
                                 }
-                                Payload::Creature { damage, .. } => blasts.push((id, p.position, damage)),
+                                Payload::Creature { damage, kind, .. } => blasts.push((id, p.position, damage, kind)),
                                 Payload::Skill { tag } => self.contacts.push(SkillContact::Hit { tag, creature: id, at }),
                             }
                             if p.bounces > 0 && turns < MAX_TURNS_PER_STEP {
@@ -358,13 +358,13 @@ impl CreatureWorld {
                                 break;
                             }
                             p.spared.push(key);
-                            if let Payload::Creature { species, damage, blast } = p.payload {
+                            if let Payload::Creature { species, damage, kind, blast } = p.payload {
                                 if blast > 0.0 {
                                     end = Some((at, ProjectileEnd::Hit));
                                     break;
                                 }
                                 if let Shooter::Creature { id, .. } = p.shooter {
-                                    player_hits.push(PlayerHit { player: k, creature_id: id, species, damage });
+                                    player_hits.push(PlayerHit { player: k, creature_id: id, species, damage, kind });
                                 }
                             }
                             if p.pierce == 0 {
@@ -393,16 +393,16 @@ impl CreatureWorld {
             }
             if let Some((at, reason)) = end {
                 // Un tir qui explose touche tout ennemi dans son rayon, où qu'il s'arrête
-                if let Payload::Creature { species, damage, blast } = p.payload {
+                if let Payload::Creature { species, damage, kind, blast } = p.payload {
                     if blast > 0.0 {
                         for c in self.creatures.iter().filter(|c| c.is_alive() && !c.hidden && self.is_foe(p, c) && c.position.distance(at) <= blast) {
-                            blasts.push((c.id, at, damage));
+                            blasts.push((c.id, at, damage, kind));
                         }
                         if !p.allied {
                             if let Shooter::Creature { id, .. } = p.shooter {
                                 for (k, feet) in players.iter().enumerate() {
                                     if feet.distance(at) <= blast && !p.spared.contains(&key_of(k)) {
-                                        player_hits.push(PlayerHit { player: k, creature_id: id, species, damage });
+                                        player_hits.push(PlayerHit { player: k, creature_id: id, species, damage, kind });
                                     }
                                 }
                             }
@@ -411,10 +411,10 @@ impl CreatureWorld {
                         // Un tir guidé arrivé sur sa cible sans l'avoir croisée (elle s'est déplacée
                         // dans l'instant) la touche quand même
                         match p.homing {
-                            Some(Homing::Creature(id)) if !p.hit.contains(&id) => blasts.push((id, at, damage)),
+                            Some(Homing::Creature(id)) if !p.hit.contains(&id) => blasts.push((id, at, damage, kind)),
                             Some(Homing::Player(key)) if !p.spared.contains(&key) => {
                                 if let (Some(k), Shooter::Creature { id, .. }) = ((0..players.len()).find(|&k| key_of(k) == key), p.shooter) {
-                                    player_hits.push(PlayerHit { player: k, creature_id: id, species, damage });
+                                    player_hits.push(PlayerHit { player: k, creature_id: id, species, damage, kind });
                                 }
                             }
                             _ => {}
@@ -434,8 +434,8 @@ impl CreatureWorld {
         // Les tirs lancés pendant l'instant (aucun ici) s'ajoutent à ceux qui volent encore
         projectiles.append(&mut self.projectiles);
         self.projectiles = projectiles;
-        for (id, from, damage) in blasts {
-            self.strike(id, from, damage, false);
+        for (id, from, damage, kind) in blasts {
+            self.strike(id, from, damage, kind, 0.0, false);
         }
         player_hits
     }

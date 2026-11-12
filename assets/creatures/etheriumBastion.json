@@ -1,6 +1,8 @@
 {
   "name": "Bastion d'Étherium",
   "description": "Forteresse mécanique assemblée autour de l'Ingénieur, coiffée d'une tourelle de siège.",
+  "armor": 80,
+  "resist": 40,
   "body": {
     "half_width": 3.75,
     "half_length": 3.75,

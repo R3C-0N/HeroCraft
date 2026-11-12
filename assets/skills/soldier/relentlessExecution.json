@@ -27,6 +27,12 @@
     "targets": "enemies",
     "effects": [
       {
+        "shred": {
+          "amount": 1,
+          "duration": 4
+        }
+      },
+      {
         "damage": {
           "power": [
             3.0,
@@ -65,6 +71,11 @@
     },
     {
       "effect": "dustPuff",
+      "anchor": "target",
+      "from": "hit"
+    },
+    {
+      "effect": "armorShatter",
       "anchor": "target",
       "from": "hit"
     }

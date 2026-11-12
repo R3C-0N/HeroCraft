@@ -1,6 +1,8 @@
 {
   "name": "Tourelle Balistique",
   "description": "Tourelle de l'Ingénieur, posée sur trois pieds, qui tire des carreaux sur les ennemis proches.",
+  "armor": 60,
+  "resist": 20,
   "body": {
     "half_width": 0.59,
     "half_length": 0.61,

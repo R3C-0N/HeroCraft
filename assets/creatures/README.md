@@ -44,6 +44,8 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 |---|---|
 | `name`, `description` | Nom affiché et description. |
 | `tags` | Familles de l'espèce, que certaines compétences visent : `shadow` pour les créatures de l'ombre (l'Arme de l'Aube les frappe plus fort). |
+| `armor` | Armure (0 par défaut) : réduit les coups physiques, dégâts × 100 / (100 + armure). À 50, un tiers de moins ; à 100, la moitié. Certaines compétences la percent ou la brisent. |
+| `resist` | Résistance (0 par défaut) : réduit de la même façon les coups magiques. |
 | `body` | Volume utilisé pour les déplacements, en blocs : `half_width` (demi-largeur), `half_length` (demi-longueur, de la tête à la queue) et `height`. La créature ne passe que là où ce corps tient. |
 | `walk_speed` | Vitesse de promenade, en blocs par seconde. À 0, la créature ne bouge pas. |
 | `health` | Points de vie (10 par défaut). Un coup de joueur en retire 2,5 : la bête rougit, recule, puis s'enfuit ; à 0 elle bascule sur le flanc et reste à terre 10 minutes, le temps qu'on la dépèce. |
@@ -105,6 +107,7 @@ Une bête dont la fiche a un champ `attack` chasse les joueurs et ses proies qu'
 | `slow` | Son coup ralentit le joueur touché : `[part de la vitesse perdue, secondes]` (Gorgone florale, Mille-pattes géant). |
 | `stun` | Son coup étourdit le joueur touché tant de secondes (Brute cornue, Sanglier). |
 | `knockback` | Son coup repousse le joueur touché, à tant de blocs par seconde (Brute cornue, Sanglier, Ours). Une garde qui pare le coup, ou une immunité au recul, l'en protège. |
+| `kind` | Type de ses coups : `physical` (par défaut) ou `magical` (souffle du chien de l'enfer, regard de la gorgone). L'armure portée par le joueur ne réduit que les coups physiques. |
 | `burst` | Piège : la première cible à portée de `reach` le déclenche ; il retire `damage` à chaque ennemi dans `radius` blocs, l'immobilise `stun` secondes, le fait saigner (`bleed` points par seconde pendant `bleed_seconds` secondes, sans recul) et joue l'effet `effect`, puis disparaît. `spawn` (`species`, `count`, `seconds`) : ce qu'il fait apparaître autour de lui en se déclenchant, pour le même invocateur (les trois mines du Piège d'Éradication), qui disparaît au bout de `seconds` secondes si rien ne le déclenche. |
 
 Le bestiaire ne décrit pas d'attaque : `tools/importer_bestiaire.py` garde celle de la fiche existante.

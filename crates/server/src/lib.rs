@@ -18,6 +18,7 @@ use glam::Vec3;
 use herocraft_common::lan::{LanAnnounce, LanAnnouncer};
 use herocraft_common::net::{encode_frame, Connection};
 use herocraft_common::{
+    DamageKind,
     fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, ItemId, PlayerClass, PlayerState,
     ServerPacket, SkillWheel, PROTOCOL_VERSION,
 };
@@ -49,6 +50,8 @@ const MAX_REACH_BLOCKS: f64 = 12.0;
 /// Longueur maximale d'un nom de joueur et d'un message de chat, en caractères
 const MAX_NAME_CHARS: usize = 24;
 const MAX_CHAT_CHARS: usize = 256;
+/// Pièces portées au plus : les huit cases d'équipement
+const MAX_WORN: usize = 8;
 /// `/summon` : créatures au plus par commande, et distance maximale au joueur, en blocs
 const MAX_SUMMON: u32 = 20;
 const MAX_SUMMON_BLOCKS: f64 = 32.0;
@@ -85,6 +88,8 @@ pub struct ConnectedPlayer {
     pub crouching: bool,
     /// Ce qu'il tient en main : sa nourriture attire les bêtes
     pub holding: Option<ItemId>,
+    /// Protection des pièces d'armure qu'il porte (`ClientPacket::Equipment`)
+    pub protection: f32,
     /// Allure de son héros, une fois sa légende reçue
     pub appearance: Option<Box<herocraft_common::hero::Appearance>>,
     /// Créatures que son client affiche (celles qui lui ont été annoncées)
@@ -333,7 +338,7 @@ impl Server {
             let id = ids[hit.player];
             // Une garde levée pare le coup qui arrive de face, et riposte
             let facing = self.players.get(&id).and_then(|p| p.position.map(|feet| herocraft_common::yaw_direction(feet, p.yaw)));
-            let parry = self.skill_runner.parry(id, facing, hit.creature_id, hit.damage, "physical", &mut self.creatures, &mut PlayersView(&mut self.players));
+            let parry = self.skill_runner.parry(id, facing, hit.creature_id, hit.damage, hit.kind.name(), &mut self.creatures, &mut PlayersView(&mut self.players));
             if let Some(impact) = parry.impact {
                 self.announce_impact(impact);
             }
@@ -348,7 +353,7 @@ impl Server {
                 }
             }
             if parry.damage > 0.0 {
-                self.creature_attack(id, hit.species, parry.damage);
+                self.creature_attack(id, hit.species, parry.damage, hit.kind);
             } else if let Some(player) = self.players.get(&id) {
                 player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
             }
@@ -567,6 +572,7 @@ impl Server {
                 sprinting: false,
                 crouching: false,
                 holding: None,
+                protection: 0.0,
                 appearance: None,
                 known_creatures: HashSet::new(),
                 connection,
@@ -617,6 +623,11 @@ impl Server {
             ClientPacket::CastSkill { skill, aim, aimed } => self.cast_skill(id, skill, aim, aimed),
             ClientPacket::Legend(legend) => self.legend(id, *legend),
             ClientPacket::Eat { item } => self.eat(id, ItemId(item)),
+            ClientPacket::Equipment(worn) => {
+                if let Some(player) = self.players.get_mut(&id) {
+                    player.protection = herocraft_common::items().protection(worn.into_iter().take(MAX_WORN).map(ItemId));
+                }
+            }
             ClientPacket::ChatMessage(text) => {
                 let text: String = text.trim().chars().filter(|c| !c.is_control()).take(MAX_CHAT_CHARS).collect();
                 if text.is_empty() {
@@ -768,13 +779,15 @@ impl Server {
 
     /// Coup d'une créature de l'espèce de rang `species` sur un joueur ; comme une chute, celui qu'il
     /// tue revient à la vie et ses nouvelles jauges lui sont envoyées aussitôt
-    fn creature_attack(&mut self, id: u64, species: usize, damage: f32) {
+    fn creature_attack(&mut self, id: u64, species: usize, damage: f32, kind: DamageKind) {
         let cause = self.creatures.registry().get(species).map_or_else(|| "Une créature".to_string(), |s| s.name.clone());
-        let damage = damage * self.skill_runner.damage_taken_factor(id);
+        // L'armure portée, puis les renforcements de défense
+        let protection = self.players.get(&id).map_or(0.0, |p| p.protection);
+        let damage = herocraft_common::through_armor(damage, kind, protection) * self.skill_runner.damage_taken_factor(id, kind);
         // Lié par une Marque du Martyr : le chapelain encaisse sa part des dégâts
         let (damage, shared) = self.skill_runner.share_damage(id, damage);
         if let Some((martyr, part)) = shared.filter(|s| s.0 != id) {
-            let hurt = self.players.get_mut(&martyr).filter(|m| !m.stats.fallen).map(|m| m.stats.take_damage(part));
+            let hurt = self.players.get_mut(&martyr).filter(|m| !m.stats.fallen).map(|m| m.stats.take_hit(part, Some(kind)));
             if hurt == Some(true) {
                 self.falls(martyr);
             }
@@ -784,7 +797,7 @@ impl Server {
             }
         }
         let Some(player) = self.players.get_mut(&id) else { return };
-        let died = player.stats.take_damage(damage) && self.falls(id);
+        let died = player.stats.take_hit(damage, Some(kind)) && self.falls(id);
         let Some(player) = self.players.get(&id) else { return };
         player.connection.send(&ServerPacket::PlayerHurt { damage, cause: cause.clone() });
         player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));

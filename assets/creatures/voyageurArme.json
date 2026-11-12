@@ -1,6 +1,7 @@
 {
   "name": "Voyageur armé",
   "description": "Voyage l'épée au côté : il se défend contre les bêtes qui l'attaquent au lieu de fuir.",
+  "armor": 15,
   "body": {"half_width": 0.3, "half_length": 0.3, "height": 1.85},
   "walk_speed": 1.6,
   "health": 24,

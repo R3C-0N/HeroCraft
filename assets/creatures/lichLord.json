@@ -1,6 +1,8 @@
 {
   "name": "Seigneur Liche",
   "description": "Entité supérieure invoquée par le Nécromancien, le bâton de liche à la main. Il frappe en mêlée les monstres qui approchent.",
+  "armor": 20,
+  "resist": 40,
   "tags": ["shadow"],
   "body": {
     "half_width": 0.3,
@@ -12,6 +14,7 @@
   "activity": "always",
   "humanoid": true,
   "attack": {
+    "kind": "magical",
     "mode": "solo",
     "damage": 7,
     "cooldown": 1.2,

@@ -25,6 +25,7 @@
       "speed": 35
     },
     "targets": "enemies",
+    "kind": "magical",
     "effects": [
       {
         "damage": {

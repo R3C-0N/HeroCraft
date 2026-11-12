@@ -1,6 +1,7 @@
 {
   "name": "Mille-pattes géant",
   "description": "Court sur les parois des galeries et mord d’un venin qui paralyse.",
+  "armor": 40,
   "body": {"half_width": 0.5074, "half_length": 1.5049, "height": 0.7517},
   "walk_speed": 0,
   "min_group": 1,

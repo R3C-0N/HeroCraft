@@ -1,6 +1,8 @@
 {
   "name": "Tourelle d'Exécution",
   "description": "Tourelle magnétisée de l'Ingénieur : ses carreaux traversent toute la grappe d'ennemis qu'attire le piège.",
+  "armor": 60,
+  "resist": 20,
   "body": {
     "half_width": 0.59,
     "half_length": 0.61,

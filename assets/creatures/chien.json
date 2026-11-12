@@ -1,13 +1,15 @@
 {
   "name": "Chien des enfers",
   "description": "Son souffle enflamme l’herbe sèche ; il chasse toujours par deux.",
+  "armor": 10,
+  "resist": 30,
   "body": {"half_width": 0.2941, "half_length": 1.174, "height": 1.3888},
   "walk_speed": 1.9,
   "min_group": 2,
   "max_group": 2,
   "spawn": [],
   "activity": "nocturnal",
-  "attack": {"mode": "pack", "damage": 6, "cooldown": 1.0, "sight": 18, "chase_speed": 1.5, "pack_size": 2, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
+  "attack": {"kind": "magical", "mode": "pack", "damage": 6, "cooldown": 1.0, "sight": 18, "chase_speed": 1.5, "pack_size": 2, "prey": ["villageois", "voyageur", "voyageurArme", "garde"]},
   "loot": [
     {"item": "crocsIncandescents", "chance": 0.6},
     {"item": "cendresDemoniaques", "count": [1, 2]},

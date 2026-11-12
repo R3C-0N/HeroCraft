@@ -236,14 +236,15 @@ impl Inventory {
         self.slot(FIRST_EQUIPMENT + i)
     }
 
+    /// Pièces portées, dans l'ordre des cases d'équipement
+    pub fn worn(&self) -> Vec<ItemId> {
+        (0..EQUIPMENT.len()).filter_map(|i| self.equipped(i)).map(|stack| stack.item).collect()
+    }
+
     /// Protection totale de ce qui est porté : la somme de la caractéristique `Protection` des
     /// pièces
     pub fn protection(&self) -> u32 {
-        (0..EQUIPMENT.len())
-            .filter_map(|i| self.equipped(i))
-            .filter_map(|stack| items().get(stack.item).and_then(|sheet| sheet.stats.get("Protection")).copied())
-            .map(|p| p.max(0.0) as u32)
-            .sum()
+        items().protection(self.worn()) as u32
     }
 
     /// Exemplaires d'un ingrédient, toutes ses variantes comprises

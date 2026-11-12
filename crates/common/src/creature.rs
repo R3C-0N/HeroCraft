@@ -24,6 +24,40 @@ pub const CREATURE_DEATH_TIME: f32 = 0.8;
 /// Durée pendant laquelle une bête morte reste à terre, à dépecer, avant de disparaître, en secondes
 pub const CORPSE_TIME: f32 = 600.0;
 
+/// Type d'un coup : l'armure d'une cible réduit les coups physiques, sa résistance les coups magiques
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DamageKind {
+    #[default]
+    Physical,
+    Magical,
+}
+
+impl DamageKind {
+    /// Son nom dans les fichiers : `physical` ou `magical`
+    pub fn name(self) -> &'static str {
+        match self {
+            DamageKind::Physical => "physical",
+            DamageKind::Magical => "magical",
+        }
+    }
+}
+
+/// Facteur des dégâts qui passent une armure (ou une résistance) de `armor` : 100 / (100 + armor).
+/// À 50, un tiers de dégâts en moins ; à 100, la moitié ; jamais d'immunité.
+pub fn armor_factor(armor: f32) -> f32 {
+    100.0 / (100.0 + armor.max(0.0))
+}
+
+/// Ce qui reste d'un coup de `amount` points de type `kind` porté à un joueur dont l'armure a
+/// `protection` de Protection : elle ne réduit que les coups physiques
+pub fn through_armor(amount: f32, kind: DamageKind, protection: f32) -> f32 {
+    match kind {
+        DamageKind::Physical => amount * armor_factor(protection),
+        DamageKind::Magical => amount,
+    }
+}
+
 /// Une espèce de créature, telle que décrite par son fichier
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,6 +72,12 @@ pub struct CreatureSpecies {
     /// Familles de l'espèce, que certaines compétences visent (`shadow` : créature de l'ombre)
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Armure : réduit les coups physiques (voir `armor_factor`)
+    #[serde(default)]
+    pub armor: f32,
+    /// Résistance : réduit les coups magiques
+    #[serde(default)]
+    pub resist: f32,
     /// Volume du corps pour les déplacements
     pub body: CreatureBody,
     /// Vitesse de marche, en blocs par seconde
@@ -357,6 +397,9 @@ pub struct CreatureAttack {
     /// Son coup repousse le joueur touché : vitesse de départ, en blocs par seconde
     #[serde(default)]
     pub knockback: Option<f32>,
+    /// Type de ses coups (physiques par défaut)
+    #[serde(default)]
+    pub kind: DamageKind,
 }
 
 /// La garde d'une espèce (`CreatureSpecies::guard`)
