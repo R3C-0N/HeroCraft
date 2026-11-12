@@ -45,6 +45,10 @@ use crate::edits::{BlockGeometry, BlockPos, TerrainEdits, TerrainQuery, WORLD_HE
 use crate::generator::{BiomeType, ColumnSample, PlanetWorldGenerator};
 use crate::population::{PopulationSave, SleepingCreature, ZoneKey, ZONE_BLOCKS};
 
+/// Un tir à lancer à la fin de la chasse : tireur, espèce, camp (invoqué), bouche, cible visée,
+/// guidage, dégâts
+type Launch = (u64, usize, bool, Vec3, Vec3, Option<projectiles::Homing>, f32);
+
 #[path = "projectiles.rs"]
 mod projectiles;
 pub use projectiles::{PlayerGuard, SkillContact, SkillShot};
@@ -1334,8 +1338,7 @@ impl CreatureWorld {
         let mut player_hits = Vec::new();
         let mut blasts = Vec::new();
         let mut spawns: Vec<(herocraft_common::BurstSpawn, Vec3, u64)> = Vec::new();
-        // Tirs à lancer : tireur, espèce, camp, bouche, cible, guidage, dégâts
-        let mut launches: Vec<(u64, usize, bool, Vec3, Vec3, Option<projectiles::Homing>, f32)> = Vec::new();
+        let mut launches: Vec<Launch> = Vec::new();
         // Les aimants (Piège Magnétique) tirent à eux les ennemis proches
         let magnets: Vec<(u64, Vec3, f32, f32, bool)> = self
             .creatures

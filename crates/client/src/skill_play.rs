@@ -50,7 +50,20 @@ pub struct Shown {
     pub center: Vec3,
     pub creatures: Vec<u64>,
     pub players: Vec<u64>,
+    /// La touche d'un projectile en vol : seuls les visuels « hit » jouent
+    pub contact: bool,
 }
+
+/// Un projectile en vol vu du client : dernière position connue, vitesse, depuis quand
+#[derive(Debug, Clone, Copy)]
+struct LiveShot {
+    at: Vec3,
+    velocity: Vec3,
+    since: Instant,
+}
+
+/// Secondes au plus qu'un visuel suit son projectile (il s'achève à son arrêt)
+const PROJECTILE_HOLD: f32 = 8.0;
 
 /// Événement visuel d'une compétence, que le moteur d'effets joue
 #[derive(Debug, Clone)]
@@ -73,6 +86,8 @@ pub struct VisualCue {
     pub travel: Option<(Vec3, f32)>,
     /// Secondes avant que l'effet commence
     pub delay: f32,
+    /// Projectile suivi (ancre `projectile`)
+    pub projectile: Option<u64>,
 }
 
 /// L'état des compétences du joueur et de ce qui se joue autour de lui
@@ -101,6 +116,12 @@ pub struct SkillPlay {
     pub me: u64,
     /// Dernier refus, à montrer au joueur
     pub last_refusal: Option<(String, Instant)>,
+    /// Projectiles en vol, que le client fait voler entre deux nouvelles du serveur
+    live: HashMap<u64, LiveShot>,
+    /// Projectiles arrêtés dont les visuels doivent s'achever (`take_ended_projectiles`)
+    ended: Vec<u64>,
+    /// Qui a tiré chaque projectile en vol, et par quelle compétence
+    shooters: HashMap<u64, (herocraft_common::Shooter, String)>,
 }
 
 impl Default for SkillPlay {
@@ -120,6 +141,9 @@ impl Default for SkillPlay {
             motion: None,
             me: SOLO_PLAYER,
             last_refusal: None,
+            live: HashMap::new(),
+            ended: Vec::new(),
+            shooters: HashMap::new(),
         }
     }
 }
@@ -256,6 +280,7 @@ impl SkillPlay {
                 area_blocks: cast.area.size_blocks(rank) * size,
                 travel: None,
                 delay: 0.0,
+                projectile: None,
             });
         }
     }
@@ -282,7 +307,7 @@ impl SkillPlay {
     }
 
     /// Des créatures tirent : la bouche du tir, le projectile qui file, l'explosion à l'arrivée
-    pub fn on_shots(&mut self, shots: &[herocraft_common::CreatureShotEvent], registry: &herocraft_common::CreatureRegistry, block: f32) {
+    pub fn on_shots(&mut self, shots: &[herocraft_common::CreatureShotEvent], registry: &herocraft_common::CreatureRegistry) {
         for event in shots {
             let attack = registry.get(event.species as usize).and_then(|s| s.attack.as_ref());
             // Un piège qui explose
@@ -299,12 +324,12 @@ impl SkillPlay {
                         area_blocks: burst.radius.max(1.0),
                         travel: None,
                         delay: 0.0,
+                        projectile: None,
                     });
                 }
                 continue;
             }
             let Some(shot) = attack.and_then(|a| a.shot.as_ref()) else { continue };
-            let flight = shot.flight_seconds(event.from, event.to, block);
             let base = VisualCue {
                 effect: String::new(),
                 anchor: Anchor::Aimed,
@@ -316,17 +341,113 @@ impl SkillPlay {
                 area_blocks: shot.radius.max(1.0),
                 travel: None,
                 delay: 0.0,
+                projectile: None,
             };
             if let Some(effect) = &shot.muzzle {
                 self.cues.push(VisualCue { effect: effect.clone(), hold: Some(0.5), ..base.clone() });
             }
-            if let Some(effect) = shot.projectile.as_ref().filter(|_| flight > 0.0) {
-                self.cues.push(VisualCue { effect: effect.clone(), hold: Some(flight), travel: Some((event.to, flight)), ..base.clone() });
+            // Le projectile et son arrivée suivent les nouvelles du vol (`on_projectiles`)
+        }
+    }
+
+    /// Projectiles partis, déviés ou arrêtés (joueurs et créatures)
+    pub fn on_projectiles(&mut self, events: &[herocraft_common::ProjectileEvent], registry: &herocraft_common::CreatureRegistry) {
+        use herocraft_common::{ProjectileEnd, ProjectileEvent, Shooter};
+        let now = Instant::now();
+        for event in events {
+            match event {
+                ProjectileEvent::Launch { id, shooter, skill, from, velocity } => {
+                    self.live.insert(*id, LiveShot { at: *from, velocity: *velocity, since: now });
+                    let base = VisualCue {
+                        effect: String::new(),
+                        anchor: Anchor::Projectile,
+                        caster: None,
+                        point: *from,
+                        creature: None,
+                        aim: *velocity,
+                        hold: Some(PROJECTILE_HOLD),
+                        area_blocks: 1.0,
+                        travel: None,
+                        delay: 0.0,
+                        projectile: Some(*id),
+                    };
+                    match shooter {
+                        Shooter::Creature { species, .. } => {
+                            let shot = registry.get(*species as usize).and_then(|s| s.attack.as_ref()).and_then(|a| a.shot.as_ref());
+                            if let Some(effect) = shot.and_then(|s| s.projectile.as_ref()).filter(|_| shot.is_some_and(|s| s.speed > 0.0)) {
+                                self.cues.push(VisualCue { effect: effect.clone(), area_blocks: shot.map_or(1.0, |s| s.radius.max(1.0)), ..base });
+                            }
+                        }
+                        Shooter::Player(player) => {
+                            let caster = (*player != self.me).then_some(*player);
+                            let Some(def) = skills().get(skill) else { continue };
+                            for visual in def.visuals.iter().filter(|v| v.anchor == Anchor::Projectile && v.from == Moment::Impact) {
+                                self.cues.push(VisualCue { effect: visual.effect.clone(), caster, ..base.clone() });
+                            }
+                        }
+                    }
+                }
+                ProjectileEvent::Turn { id, at, velocity } => {
+                    self.live.insert(*id, LiveShot { at: *at, velocity: *velocity, since: now });
+                }
+                ProjectileEvent::End { id, at, reason } => {
+                    self.live.remove(id);
+                    self.ended.push(*id);
+                    let fixed = VisualCue {
+                        effect: String::new(),
+                        anchor: Anchor::Aimed,
+                        caster: None,
+                        point: *at,
+                        creature: None,
+                        aim: Vec3::ZERO,
+                        hold: None,
+                        area_blocks: 1.0,
+                        travel: None,
+                        delay: 0.0,
+                        projectile: None,
+                    };
+                    // Ce qui a tiré : on le retrouve par le départ, gardé dans les visuels
+                    let shooter = events.iter().find_map(|e| match e {
+                        ProjectileEvent::Launch { id: launched, shooter, skill, .. } if launched == id => Some((*shooter, skill.clone())),
+                        _ => None,
+                    });
+                    let shooter = shooter.or_else(|| self.shooters.get(id).cloned());
+                    match shooter {
+                        Some((Shooter::Creature { species, .. }, _)) => {
+                            let shot = registry.get(species as usize).and_then(|s| s.attack.as_ref()).and_then(|a| a.shot.as_ref());
+                            if let Some(effect) = shot.and_then(|s| s.impact.as_ref()) {
+                                self.cues.push(VisualCue { effect: effect.clone(), area_blocks: shot.map_or(1.0, |s| s.radius.max(1.0)), ..fixed });
+                            }
+                        }
+                        Some((Shooter::Player(_), skill)) if matches!(reason, ProjectileEnd::Blocked | ProjectileEnd::Terrain) => {
+                            if let Some(def) = skills().get(&skill) {
+                                for visual in def.visuals.iter().filter(|v| v.from == Moment::Blocked) {
+                                    self.cues.push(VisualCue { effect: visual.effect.clone(), ..fixed.clone() });
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                    self.shooters.remove(id);
+                }
             }
-            if let Some(effect) = &shot.impact {
-                self.cues.push(VisualCue { effect: effect.clone(), point: event.to, delay: flight, ..base.clone() });
+            if let ProjectileEvent::Launch { id, shooter, skill, .. } = event {
+                self.shooters.insert(*id, (*shooter, skill.clone()));
             }
         }
+        // Un projectile dont on n'a plus de nouvelles depuis longtemps est oublié
+        self.live.retain(|_, l| now.duration_since(l.since).as_secs_f32() < PROJECTILE_HOLD);
+    }
+
+    /// Où est le projectile `id` en ce moment, d'après ce que le serveur en a dit
+    pub fn projectile_at(&self, id: u64) -> Option<Vec3> {
+        let l = self.live.get(&id)?;
+        Some(l.at + l.velocity * Instant::now().duration_since(l.since).as_secs_f32())
+    }
+
+    /// Projectiles arrêtés depuis le dernier appel : leurs visuels s'achèvent
+    pub fn take_ended_projectiles(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.ended)
     }
 
     /// Une compétence frappe (d'après le serveur, ou en solo d'après nos propres règles)
@@ -334,6 +455,34 @@ impl SkillPlay {
         let catalog = skills();
         let Some(def) = catalog.get(&shown.skill) else { return };
         let Some(cast) = &def.cast else { return };
+        // La touche d'un projectile en vol : ses visuels « hit » seuls, sur la cible touchée
+        if shown.contact {
+            let effect_end = effect_seconds(&cast.effects, shown.rank);
+            for visual in def.visuals.iter().filter(|v| v.from == Moment::Hit) {
+                let hold = (visual.to == Some(Moment::EffectEnd)).then_some(effect_end);
+                let base = VisualCue {
+                    effect: visual.effect.clone(),
+                    anchor: if visual.anchor == Anchor::Target { Anchor::Target } else { Anchor::Aimed },
+                    caster: shown.caster,
+                    point: shown.center,
+                    creature: None,
+                    aim: Vec3::ZERO,
+                    hold,
+                    area_blocks: cast.area.size_blocks(shown.rank),
+                    travel: None,
+                    delay: 0.0,
+                    projectile: None,
+                };
+                if visual.anchor == Anchor::Target {
+                    for &id in &shown.creatures {
+                        self.cues.push(VisualCue { creature: Some(id), ..base.clone() });
+                    }
+                } else {
+                    self.cues.push(base);
+                }
+            }
+            return;
+        }
         let now = Instant::now();
         self.amplified.retain(|(_, _, until)| *until > now);
         let who = shown.caster.filter(|&c| c != self.me);
@@ -368,8 +517,11 @@ impl SkillPlay {
                 area_blocks: cast.area.size_blocks(shown.rank) * size,
                 travel: None,
                 delay: 0.0,
+                projectile: None,
             };
             match visual.from {
+                // Ceux du projectile partent avec lui (`on_projectiles`)
+                Moment::Impact if visual.anchor == Anchor::Projectile => {}
                 Moment::Impact => self.cues.push(base),
                 Moment::Hit if visual.anchor == Anchor::Target => {
                     for &id in &shown.creatures {
@@ -395,8 +547,8 @@ impl SkillPlay {
             let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
             let tick = self.runner.tick(dt, skills(), creatures, &mut player);
             self.solo_died |= !tick.died.is_empty();
-            for SkillImpact { skill, rank, center, creatures, players, .. } in tick.impacts {
-                self.on_hit(Shown { caster: None, skill, rank, center, creatures, players });
+            for SkillImpact { skill, rank, center, creatures, players, contact, .. } in tick.impacts {
+                self.on_hit(Shown { caster: None, skill, rank, center, creatures, players, contact });
             }
         }
         self.plays.retain(|p| now.duration_since(p.started).as_secs_f32() < p.duration);
@@ -414,7 +566,7 @@ impl SkillPlay {
     pub fn solo_last_stand(&mut self, creatures: &mut CreatureWorld, feet: Vec3, stats: &mut CharacterStats) {
         let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
         if let Some(SkillImpact { skill, rank, center, creatures, players, .. }) = self.runner.last_stand(SOLO_PLAYER, creatures, &mut player) {
-            self.on_hit(Shown { caster: None, skill, rank, center, creatures, players });
+            self.on_hit(Shown { caster: None, skill, rank, center, creatures, players, contact: false });
         }
     }
 

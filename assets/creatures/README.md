@@ -57,6 +57,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 | `model` | Le modèle 3D (voir ci-dessous). |
 | `magnet` | Aimant (Piège Magnétique) : `radius` (blocs) et `speed` (blocs par seconde au bord du rayon) ; les ennemis à portée sont tirés vers lui. |
 | `collision` | Corps solide (voir plus bas). Sans ce champ : un disque de la demi-largeur du corps, de résistance 0,5. |
+| `obstacle` | Un mur invoqué contre les tirs : `shots` (il arrête les projectiles du camp d'en face, ceux de son camp passent), `invulnerable` (rien ne l'abîme : le mur de lumière du Rempart Sacré), `thorns` (qui le frappe au corps à corps prend `damage` dégâts puis brûle de `burn` points par seconde pendant `seconds` secondes : Mur Fournaise, Bastion d'Étherium). |
 
 Chaque entrée de `spawn` a trois champs :
 - `biome` : l'un de `Plains`, `Forest`, `Desert`, `Mountains`, `SnowPeaks`, `Tundra`, `Taiga`, `Savanna`, `Jungle`, `Beach`, `Sea`, `Ocean` ou `DeepOcean` ;

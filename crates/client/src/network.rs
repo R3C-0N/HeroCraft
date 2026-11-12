@@ -355,9 +355,10 @@ pub enum NetEvent {
     /// Le serveur refuse notre lancement de `skill`
     SkillRefused { skill: String, reason: String },
     /// Une compétence frappe : centre de sa zone et cibles touchées
-    SkillHit { player_id: u64, skill: String, rank: u8, center: Vec3, creatures: Vec<u64>, players: Vec<u64> },
+    SkillHit { player_id: u64, skill: String, rank: u8, center: Vec3, creatures: Vec<u64>, players: Vec<u64>, contact: bool },
     /// Des créatures tirent (tourelles, bastion, liche)
     CreatureShots(Vec<herocraft_common::CreatureShotEvent>),
+    Projectiles(Vec<herocraft_common::ProjectileEvent>),
     /// Connexion perdue ou fermée par le serveur
     Disconnected(String),
 }
@@ -557,6 +558,7 @@ impl NetClient {
                 }
             }
             ServerPacket::CreatureShots(shots) => return Some(NetEvent::CreatureShots(shots)),
+            ServerPacket::Projectiles(events) => return Some(NetEvent::Projectiles(events)),
             ServerPacket::ChatMessage { sender, message } => {
                 if sender.is_empty() {
                     info!("[Serveur] {message}");
@@ -579,7 +581,7 @@ impl NetClient {
             }
             ServerPacket::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified } => return Some(NetEvent::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified }),
             ServerPacket::SkillRefused { skill, reason } => return Some(NetEvent::SkillRefused { skill, reason }),
-            ServerPacket::SkillHit { player_id, skill, rank, center, creatures, players } => return Some(NetEvent::SkillHit { player_id, skill, rank, center, creatures, players }),
+            ServerPacket::SkillHit { player_id, skill, rank, center, creatures, players, contact } => return Some(NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, contact }),
             ServerPacket::ConnectAck { .. } | ServerPacket::PlayerJoined { .. } => {}
         }
         None

@@ -506,6 +506,7 @@ impl CreatureWorld {
 /// Où le segment `from + dir·t` (t de 0 à `length`) entre pour la première fois dans le cylindre
 /// d'axe `base + up·u` (u de `-slack` à `height + slack`) et de rayon `reach`. La marge en hauteur
 /// pardonne un tir à hauteur de main sur une petite bête, comme le faisaient les zones.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn capsule_entry(from: Vec3, dir: Vec3, length: f32, base: Vec3, up: Vec3, height: f32, reach: f32, slack: f32) -> Option<f32> {
     // Par pas fins le long du segment : quelques dizaines de tests au plus, assez juste à l'échelle
     // d'un corps
@@ -520,6 +521,7 @@ pub(crate) fn capsule_entry(from: Vec3, dir: Vec3, length: f32, base: Vec3, up: 
 /// Où le segment `from + dir·t` (t de 0 à `length`) entre dans la boîte d'un corps solide posé en
 /// `feet`, tourné du cap `yaw` (`scale` : taille d'un bloc, à l'échelle de la bête), grossie de
 /// `margin`
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn box_entry(from: Vec3, dir: Vec3, length: f32, feet: Vec3, yaw: f32, collider: &herocraft_common::Collider, scale: f32, margin: f32) -> Option<f32> {
     let up = feet.normalize_or_zero();
     let (east, north) = herocraft_common::tangent_frame(up);
