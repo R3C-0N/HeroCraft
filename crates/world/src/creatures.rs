@@ -45,6 +45,10 @@ use crate::edits::{BlockGeometry, BlockPos, TerrainEdits, TerrainQuery, WORLD_HE
 use crate::generator::{BiomeType, ColumnSample, PlanetWorldGenerator};
 use crate::population::{PopulationSave, SleepingCreature, ZoneKey, ZONE_BLOCKS};
 
+#[path = "projectiles.rs"]
+mod projectiles;
+pub use projectiles::{PlayerGuard, SkillContact, SkillShot};
+
 /// Distance à laquelle le serveur montre une créature à un joueur, en blocs. Les zones dont le
 /// centre est à moins de cette distance (plus une demi-diagonale de zone) sont éveillées.
 pub const CREATURE_RANGE_BLOCKS: f32 = 96.0;
@@ -402,23 +406,6 @@ pub struct PlayerHit {
     pub damage: f32,
 }
 
-/// Un projectile en vol
-#[derive(Debug, Clone)]
-struct Flying {
-    shooter: u64,
-    /// Bouche du tir, et demi-largeur de ce qu'il traverse (0 : il s'arrête sur sa cible)
-    from: Vec3,
-    pierce: f32,
-    /// Le tireur est une entité invoquée : il ne touche que les bêtes hostiles
-    allied: bool,
-    species: usize,
-    target: Target,
-    to: Vec3,
-    damage: f32,
-    /// Rayon de l'explosion, en unités du monde
-    radius: f32,
-    left: f32,
-}
 
 /// Ce qu'une bête chasse
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -604,8 +591,15 @@ pub struct CreatureWorld {
     murders: Vec<Murder>,
     /// Tirs partis, pas encore montrés (voir `take_shots`)
     shots: Vec<CreatureShotEvent>,
-    /// Projectiles en vol : ils touchent à leur arrivée
-    flying: Vec<Flying>,
+    /// Projectiles en vol (voir `projectiles`)
+    projectiles: Vec<projectiles::Projectile>,
+    /// Départs, déviations et arrêts pas encore montrés (`take_projectile_events`)
+    projectile_events: Vec<herocraft_common::ProjectileEvent>,
+    /// Touches des tirs de compétence pas encore remises (`take_contacts`)
+    contacts: Vec<projectiles::SkillContact>,
+    /// Défenses des joueurs contre les tirs (`set_guards`)
+    guards: Vec<projectiles::PlayerGuard>,
+    next_projectile: u64,
     /// Entités qu'un piège a fait apparaître, pas encore remises aux compétences (`take_spawned`)
     pub(crate) spawned: Vec<(u64, u64, f32)>,
     /// Coups portés aux habitants, pas encore signalés à leur auteur (voir `take_assaults`)
@@ -723,7 +717,11 @@ impl CreatureWorld {
             lay_table,
             laid: Vec::new(),
             shots: Vec::new(),
-            flying: Vec::new(),
+            projectiles: Vec::new(),
+            projectile_events: Vec::new(),
+            contacts: Vec::new(),
+            guards: Vec::new(),
+            next_projectile: 0,
             spawned: Vec::new(),
             wanted: Vec::new(),
             murders: Vec::new(),
@@ -1235,6 +1233,10 @@ impl CreatureWorld {
             }
         }
 
+        if self.registry.get(species).and_then(|s| s.obstacle).is_some_and(|o| o.invulnerable) {
+            self.creatures[index].hurt = CREATURE_HURT_TIME;
+            return Some(false);
+        }
         let c = &mut self.creatures[index];
         // Le bouclier d'une compétence encaisse d'abord
         let absorbed = damage.min(c.shield).max(0.0);
@@ -1330,51 +1332,10 @@ impl CreatureWorld {
         let snapshot: Vec<(u64, usize, Vec3, bool, bool, bool, bool)> =
             self.creatures.iter().map(|c| (c.id, c.species, c.position, c.is_alive() && !c.hidden, c.hunting, c.tamed, c.summoner.is_some())).collect();
         let mut player_hits = Vec::new();
-        // Les projectiles arrivés touchent leur cible, ou tout ce qui est hostile au tireur dans le
-        // rayon de leur explosion
         let mut blasts = Vec::new();
         let mut spawns: Vec<(herocraft_common::BurstSpawn, Vec3, u64)> = Vec::new();
-        for f in &mut self.flying {
-            f.left -= dt;
-        }
-        let (arrived, flying): (Vec<Flying>, Vec<Flying>) = std::mem::take(&mut self.flying).into_iter().partition(|f| f.left <= 0.0);
-        self.flying = flying;
-        for f in arrived {
-            if f.pierce > 0.0 {
-                // Il traverse : tout ennemi près de sa trajectoire, prolongée jusqu'au bout de la grappe
-                let line = f.to - f.from;
-                let length = line.length().max(1e-6);
-                let along = line / length;
-                let end = length + 4.0 * f.pierce;
-                for &(id, _, position, alive, _, tamed, summoned) in &snapshot {
-                    let foe = if f.allied { !tamed && !summoned } else { summoned };
-                    let t = (position - f.from).dot(along);
-                    let off = (position - f.from - along * t).length();
-                    if alive && foe && id != f.shooter && t >= 0.0 && t <= end && off <= f.pierce + TARGET_RADIUS * block {
-                        blasts.push((id, f.from, f.damage));
-                    }
-                }
-            } else if f.radius > 0.0 {
-                for &(id, _, position, alive, _, tamed, summoned) in &snapshot {
-                    let foe = if f.allied { !tamed } else { summoned };
-                    if alive && foe && id != f.shooter && position.distance(f.to) <= f.radius {
-                        blasts.push((id, f.to, f.damage));
-                    }
-                }
-                if !f.allied {
-                    for (player, feet) in players.iter().enumerate() {
-                        if feet.distance(f.to) <= f.radius {
-                            player_hits.push(PlayerHit { player, creature_id: f.shooter, species: f.species, damage: f.damage });
-                        }
-                    }
-                }
-            } else {
-                match f.target {
-                    Target::Creature(id) => blasts.push((id, f.to, f.damage)),
-                    Target::Player(player) => player_hits.push(PlayerHit { player, creature_id: f.shooter, species: f.species, damage: f.damage }),
-                }
-            }
-        }
+        // Tirs à lancer : tireur, espèce, camp, bouche, cible, guidage, dégâts
+        let mut launches: Vec<(u64, usize, bool, Vec3, Vec3, Option<projectiles::Homing>, f32)> = Vec::new();
         // Les aimants (Piège Magnétique) tirent à eux les ennemis proches
         let magnets: Vec<(u64, Vec3, f32, f32, bool)> = self
             .creatures
@@ -1402,7 +1363,7 @@ impl CreatureWorld {
         let mut cuts = Vec::new();
         // Ennemis immobilisés par un piège, et pour combien de temps
         let mut stuns = Vec::new();
-        let Self { creatures, registry, prey_table, rng, wanted, shots, flying, .. } = self;
+        let Self { creatures, registry, prey_table, rng, wanted, shots, .. } = self;
         for (index, c) in creatures.iter_mut().enumerate() {
             if c.bleed_left > 0.0 && c.is_alive() {
                 c.bleed_left -= dt;
@@ -1679,18 +1640,11 @@ impl CreatureWorld {
                     let from = c.position + up * shot.height * block;
                     let aim = goal + up * TARGET_RADIUS * block;
                     shots.push(CreatureShotEvent { creature_id: c.id, species: c.species as u32, from, to: aim });
-                    flying.push(Flying {
-                        shooter: c.id,
-                        allied: summoned,
-                        species: c.species,
-                        target,
-                        from,
-                        pierce: shot.pierce * block,
-                        to: goal,
-                        damage: shot.damage.unwrap_or(attack.damage),
-                        radius: shot.radius * block,
-                        left: shot.flight_seconds(from, aim, block),
-                    });
+                    let homing = match target {
+                        Target::Player(k) => projectiles::Homing::Player(keys.get(k).copied().unwrap_or(0)),
+                        Target::Creature(id) => projectiles::Homing::Creature(id),
+                    };
+                    launches.push((c.id, c.species, summoned, from, aim, Some(homing), shot.damage.unwrap_or(attack.damage)));
                     continue;
                 }
                 // Un petit bond vers la cible
@@ -1708,6 +1662,10 @@ impl CreatureWorld {
         }
         for (id, from, damage) in blasts {
             self.strike(id, from, damage, false);
+        }
+        for (shooter, species, allied, from, aim, homing, damage) in launches {
+            let Some(shot) = self.registry.get(species).and_then(|s| s.attack.as_ref()).and_then(|a| a.shot.clone()) else { continue };
+            self.launch_creature_shot(shooter, species, allied, from, aim, homing, &shot, damage);
         }
         // Ce que les pièges déclenchés font apparaître, en cercle serré autour d'eux
         for (spawn, at, summoner) in spawns {
@@ -1734,8 +1692,22 @@ impl CreatureWorld {
         for (prey, from, damage, hunter) in bites {
             // Un garde reste sur le qui-vive ; une bête repue laisse les proies un moment
             let defends = self.registry.get(self.creatures[hunter].species).and_then(|s| s.attack.as_ref()).is_some_and(|a| a.defends_herd || !a.hunts_players);
+            let attacker = self.creatures[hunter].id;
             if self.strike(prey, from, damage, false) == Some(true) && !defends {
-                self.creatures[hunter].sated = SATED_TIME;
+                if let Some(c) = self.creatures.iter_mut().find(|c| c.id == attacker) {
+                    c.sated = SATED_TIME;
+                }
+            }
+            // Un mur incandescent brûle qui le frappe
+            let thorns = self.creatures.iter().find(|c| c.id == prey).and_then(|c| self.registry.get(c.species)).and_then(|s| s.obstacle).and_then(|o| o.thorns);
+            if let Some(thorns) = thorns {
+                let at = self.creatures.iter().find(|c| c.id == prey).map_or(from, |c| c.position);
+                self.strike(attacker, at, thorns.damage, false);
+                if thorns.burn > 0.0 && thorns.seconds > 0.0 {
+                    if let Some(c) = self.creatures.iter_mut().find(|c| c.id == attacker && c.is_alive()) {
+                        (c.bleed, c.bleed_left, c.bleed_next) = (thorns.burn, thorns.seconds, 1.0);
+                    }
+                }
             }
         }
         player_hits
@@ -1774,7 +1746,8 @@ impl CreatureWorld {
         villages.tick(self, &mut query, generator, players, dt);
         self.villages = villages;
         let hidden: Vec<bool> = presences.iter().map(|p| p.hidden).collect();
-        let hits = self.hunt(dt, players, keys, &hidden);
+        let mut hits = self.hunt(dt, players, keys, &hidden);
+        hits.extend(self.fly(dt, &mut query, players, keys));
         self.scare();
         self.rear(dt);
 

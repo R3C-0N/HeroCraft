@@ -192,6 +192,8 @@ pub enum ServerPacket {
     CreatureStates(Vec<CreatureState>),
     /// Tirs de créatures (tourelles, bastion, liche) partis à l'instant, pour les montrer
     CreatureShots(Vec<crate::creature::CreatureShotEvent>),
+    /// Projectiles partis, déviés ou arrêtés depuis le dernier envoi (joueurs et créatures)
+    Projectiles(Vec<crate::creature::ProjectileEvent>),
     /// Mise à jour des statistiques RPG du joueur (chaque seconde, et aussitôt après une chute)
     StatsUpdate(CharacterStats),
     /// Le joueur vient d'être mordu ou chargé par une créature (suivi de ses nouvelles jauges)
@@ -255,6 +257,8 @@ pub enum ServerPacket {
         center: Vec3,
         creatures: Vec<u64>,
         players: Vec<u64>,
+        /// La touche d'un projectile en vol : seuls les visuels « hit » jouent
+        contact: bool,
     },
     /// Erreur ou déconnexion
     Disconnect(String),

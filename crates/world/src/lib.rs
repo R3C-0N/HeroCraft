@@ -18,7 +18,7 @@ pub mod villagers;
 pub mod weather;
 
 pub use caves::{carvable_range, CaveField, CAVE_DEPTH};
-pub use creatures::{Assault, Creature, CreatureWorld, Murder, Feeding, PlayerHit, PlayerPresence, BLIND_SIGHT, CREATURE_RANGE_BLOCKS};
+pub use creatures::{Assault, Creature, CreatureWorld, Murder, Feeding, PlayerGuard, PlayerHit, PlayerPresence, SkillContact, SkillShot, BLIND_SIGHT, CREATURE_RANGE_BLOCKS};
 pub use cubed_sphere::*;
 pub use edits::*;
 pub use farming::{crop_weather_factor, tilled_block, Fields, FIELDS_FILE};
