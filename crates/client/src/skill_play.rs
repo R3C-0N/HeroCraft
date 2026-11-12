@@ -498,9 +498,9 @@ impl SkillPlay {
     /// Le coup `damage` de la créature `attacker` arrive sur le joueur solo, qui regarde vers
     /// `facing` : sa garde le pare peut-être, et sa riposte se montre. Renvoie les dégâts qui
     /// passent, et si le coup a été paré.
-    pub fn solo_parry(&mut self, creatures: &mut CreatureWorld, feet: Vec3, facing: Vec3, stats: &mut CharacterStats, attacker: u64, damage: f32) -> (f32, bool) {
+    pub fn solo_parry(&mut self, creatures: &mut CreatureWorld, feet: Vec3, facing: Vec3, stats: &mut CharacterStats, attacker: u64, damage: f32, kind: herocraft_common::DamageKind) -> (f32, bool) {
         let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
-        let parry = self.runner.parry(SOLO_PLAYER, Some(facing), attacker, damage, "physical", creatures, &mut player);
+        let parry = self.runner.parry(SOLO_PLAYER, Some(facing), attacker, damage, kind.name(), creatures, &mut player);
         if let Some(SkillImpact { skill, rank, center, creatures, players, parried, .. }) = parry.impact {
             self.on_hit(Shown { caster: None, skill, rank, center, creatures, players, parried });
         }
@@ -513,8 +513,8 @@ impl SkillPlay {
     }
 
     /// Facteur des dégâts qu'encaisse le joueur solo (renforcement de défense)
-    pub fn solo_damage_factor(&self) -> f32 {
-        self.runner.damage_taken_factor(SOLO_PLAYER)
+    pub fn solo_damage_factor(&self, kind: herocraft_common::DamageKind) -> f32 {
+        self.runner.damage_taken_factor(SOLO_PLAYER, kind)
     }
 
     /// La pose du héros local : son geste en cours par-dessus la marche

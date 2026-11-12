@@ -1494,6 +1494,9 @@ impl UiState {
                                 ui.horizontal(|ui| {
                                     ui.label(egui::RichText::new("Protection").size(12.5_f32).color(TEXT_SOFT));
                                     ui.label(egui::RichText::new(inventory.protection().to_string()).size(12.5_f32).strong().color(GOLD_BRIGHT));
+                                    // La part des coups physiques que l'armure retire
+                                    let kept = herocraft_common::armor_factor(inventory.protection() as f32);
+                                    ui.label(egui::RichText::new(format!("−{:.0} % physique", (1.0 - kept) * 100.0)).size(11.0_f32).color(TEXT_DIM));
                                 });
                                 ui.label(egui::RichText::new("Maj + clic : porter / ôter").size(11.0_f32).color(TEXT_DIM));
                             });

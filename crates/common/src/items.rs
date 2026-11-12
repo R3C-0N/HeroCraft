@@ -184,6 +184,12 @@ pub fn items() -> &'static ItemRegistry {
 }
 
 impl ItemRegistry {
+    /// Protection totale des pièces `worn` : la somme de la caractéristique `Protection` de
+    /// celles qui se portent (une armure ou un bijou)
+    pub fn protection(&self, worn: impl IntoIterator<Item = ItemId>) -> f32 {
+        worn.into_iter().filter_map(|item| self.get(item)).filter(|sheet| sheet.slot.is_some()).filter_map(|sheet| sheet.stats.get("Protection")).map(|p| p.max(0.0)).sum()
+    }
+
     /// Les objets de `assets/items/` : depuis le dossier de lancement, sinon ceux livrés avec les
     /// sources. Un fichier illisible est signalé et ignoré.
     pub fn load_default() -> Self {
@@ -284,6 +290,16 @@ mod tests {
         assert_eq!(sword.satiety(), None);
         assert_eq!(items().find("pain").unwrap().satiety(), Some(12.0));
         assert_eq!(ItemId::from(BlockId::STONE).satiety(), None);
+    }
+
+    #[test]
+    fn worn_armor_softens_physical_blows_only() {
+        let chest = items().find("steelPlateChestplate").unwrap();
+        let ingot = items().find("steelIngot").unwrap();
+        assert_eq!(items().protection([chest, ingot]), 24.0, "seules les pièces portables comptent");
+        let through = crate::through_armor(10.0, crate::DamageKind::Physical, 24.0);
+        assert!((through - 1000.0 / 124.0).abs() < 1e-4);
+        assert_eq!(crate::through_armor(10.0, crate::DamageKind::Magical, 24.0), 10.0);
     }
 
     #[test]

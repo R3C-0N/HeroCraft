@@ -12,6 +12,7 @@
   "humanoid": true,
   "taunt": 6,
   "attack": {
+    "kind": "magical",
     "mode": "solo",
     "damage": 5,
     "cooldown": 0.35,

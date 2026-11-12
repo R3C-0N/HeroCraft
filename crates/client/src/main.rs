@@ -788,6 +788,7 @@ fn main() {
                         if let Some(client) = net.as_mut() {
                             herocraft_common::prof_scope!("reseau");
                             client.send_move(&camera, ui_state.inventory.selected_item());
+                            client.send_equipment(ui_state.inventory.worn().into_iter().map(|i| i.0).collect());
                             let mut lost = None;
                             for event in client.poll() {
                                 match event {
@@ -805,7 +806,7 @@ fn main() {
                                     }
                                     NetEvent::Stats(stats) => ui_state.player.sync(stats, &mut camera),
                                     NetEvent::Hurt { damage, cause } => {
-                                        let hurt = ui_state.player.bitten(damage, &cause);
+                                        let hurt = ui_state.player.bitten(damage, None, &cause);
                                         show_wound(hurt, &cause, &mut camera, &mut ui_state, &mut audio);
                                     }
                                     NetEvent::Loot { position, items } => drop_loot(&mut dropped_items, &camera, position, &items),
@@ -883,7 +884,7 @@ fn main() {
                                         for hit in hits.into_iter().filter(|_| bench.is_none()) {
                                             // Une garde levée pare le coup qui arrive de face, et riposte
                                             let (_, facing, _, _) = camera.look_vectors();
-                                            let (damage, parried) = skill_play.solo_parry(&mut solo_creatures, camera.player_pos, facing, &mut ui_state.player.stats, hit.creature_id, hit.damage);
+                                            let (damage, parried) = skill_play.solo_parry(&mut solo_creatures, camera.player_pos, facing, &mut ui_state.player.stats, hit.creature_id, hit.damage, hit.kind);
                                             // Ralenti, étourdi, repoussé : le coup de certaines bêtes le laisse sonné
                                             if !ui_state.player.is_dead() && !parried {
                                                 let ignores = skill_play.solo_immunities();
@@ -893,7 +894,9 @@ fn main() {
                                                 }
                                             }
                                             let cause = creature_registry.get(hit.species).map_or("Une créature", |s| s.name.as_str());
-                                            let hurt = ui_state.player.bitten(damage * skill_play.solo_damage_factor(), cause);
+                                            // L'armure portée, puis les renforcements de défense
+                                            let damage = herocraft_common::through_armor(damage, hit.kind, ui_state.inventory.protection() as f32) * skill_play.solo_damage_factor(hit.kind);
+                                            let hurt = ui_state.player.bitten(damage, Some(hit.kind), cause);
                                             // Tombé sous un effet à la mort : la nova part, il se relève
                                             if ui_state.player.is_dead() {
                                                 skill_play.solo_last_stand(&mut solo_creatures, camera.player_pos, &mut ui_state.player.stats);

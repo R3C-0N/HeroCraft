@@ -139,6 +139,9 @@ pub struct CharacterStats {
     /// Part des dégâts absorbés par le bouclier qu'il rend en mana (0 : rien)
     #[serde(default)]
     pub shield_mana: f32,
+    /// Type des coups que le bouclier absorbe (aucun : tous)
+    #[serde(default)]
+    pub shield_kind: Option<crate::DamageKind>,
     /// Ralenti : part de la vitesse perdue (0 à 1), et pour combien de secondes encore
     #[serde(default)]
     pub slow: f32,
@@ -178,6 +181,7 @@ impl CharacterStats {
             shield: 0.0,
             shield_time: 0.0,
             shield_mana: 0.0,
+            shield_kind: None,
             slow: 0.0,
             slow_time: 0.0,
             stun_time: 0.0,
@@ -256,8 +260,15 @@ impl CharacterStats {
     }
 
     pub fn take_damage(&mut self, amount: f32) -> bool {
-        // Le bouclier d'une compétence encaisse d'abord
-        let absorbed = amount.min(self.shield).max(0.0);
+        self.take_hit(amount, None)
+    }
+
+    /// Comme `take_damage`, pour un coup de type `kind` : un bouclier qui ne vaut que contre un
+    /// type (`shield_kind`) laisse passer les autres, et ce qui n'a pas de type (une chute)
+    pub fn take_hit(&mut self, amount: f32, kind: Option<crate::DamageKind>) -> bool {
+        // Le bouclier d'une compétence encaisse d'abord, s'il vaut contre ce coup
+        let shielded = self.shield_kind.is_none() || self.shield_kind == kind;
+        let absorbed = if shielded { amount.min(self.shield).max(0.0) } else { 0.0 };
         self.shield -= absorbed;
         self.mana = (self.mana + absorbed * self.shield_mana).min(self.max_mana);
         let amount = amount - absorbed;
@@ -273,6 +284,7 @@ impl CharacterStats {
         if self.shield_time <= 0.0 {
             self.shield = 0.0;
             self.shield_mana = 0.0;
+            self.shield_kind = None;
         }
         self.tick_status(dt);
         let drain = SATIETY_DRAIN + if sprinting { SPRINT_SATIETY_COST } else { 0.0 };

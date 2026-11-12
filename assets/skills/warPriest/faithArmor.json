@@ -25,7 +25,8 @@
             30,
             40
           ],
-          "duration": 8
+          "duration": 8,
+          "absorbs": "physical"
         }
       }
     ]

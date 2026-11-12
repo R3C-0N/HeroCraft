@@ -1,6 +1,7 @@
 {
   "name": "Loup",
   "description": "Chasse en meute à la lisière des forêts et attaque quand il se sent en nombre.",
+  "armor": 10,
   "body": {"half_width": 0.225, "half_length": 0.8614, "height": 1.0125},
   "walk_speed": 1.7,
   "min_group": 3,

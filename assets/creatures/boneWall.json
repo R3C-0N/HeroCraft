@@ -1,6 +1,8 @@
 {
   "name": "Mur d'Os",
   "description": "Barricade d'os que le Nécromancien fait jaillir du sol.",
+  "armor": 100,
+  "resist": 50,
   "body": {
     "half_width": 2.63,
     "half_length": 0.44,

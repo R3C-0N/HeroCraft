@@ -30,7 +30,8 @@
           "duration": 6,
           "absorb_to": {
             "mana": 0.5
-          }
+          },
+          "absorbs": "magical"
         }
       }
     ]

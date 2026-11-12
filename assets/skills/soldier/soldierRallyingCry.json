@@ -44,7 +44,8 @@
             0.3,
             0.35
           ],
-          "duration": 8
+          "duration": 8,
+          "kind": "physical"
         }
       }
     ]

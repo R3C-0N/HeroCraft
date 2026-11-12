@@ -134,23 +134,24 @@ impl PlayerStats {
     /// Dommages d'une chute de `blocks` blocs : renvoie la force de la blessure (0 si la chute
     /// est sans mal). S'il en meurt, le joueur reste mort jusqu'à `respawn`.
     pub fn fall(&mut self, blocks: f32) -> f32 {
-        self.hurt(fall_damage(blocks), || format!("Chute de {:.0} blocs", blocks))
+        self.hurt(fall_damage(blocks), None, || format!("Chute de {:.0} blocs", blocks))
     }
 
     /// Dommages d'une créature (`cause` : son nom) : renvoie la force de la blessure
-    pub fn bitten(&mut self, damage: f32, cause: &str) -> f32 {
-        self.hurt(damage, || format!("Tué par : {cause}"))
+    /// (`kind` : le type du coup, que les boucliers typés distinguent)
+    pub fn bitten(&mut self, damage: f32, kind: Option<herocraft_common::DamageKind>, cause: &str) -> f32 {
+        self.hurt(damage, kind, || format!("Tué par : {cause}"))
     }
 
     /// Retire `damage` points de vie et renvoie la force de la blessure (0 sans dommage). S'il en
     /// meurt, le joueur reste mort jusqu'à `respawn`, avec la cause que donne `cause`.
-    fn hurt(&mut self, damage: f32, cause: impl FnOnce() -> String) -> f32 {
+    fn hurt(&mut self, damage: f32, kind: Option<herocraft_common::DamageKind>, cause: impl FnOnce() -> String) -> f32 {
         if damage <= 0.0 || self.is_dead() {
             return 0.0;
         }
         self.hurt_at = Some(Instant::now());
         self.hurt_strength = (3.0 * damage / self.stats.max_hp.max(1.0)).clamp(0.3, 1.0);
-        if self.stats.take_damage(damage) {
+        if self.stats.take_hit(damage, kind) {
             self.hurt_strength = 1.0;
             self.death = Some(Death { at: Instant::now(), cause: cause() });
             self.stats.fallen = true;

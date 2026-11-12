@@ -1,6 +1,7 @@
 {
   "name": "Sanglier",
   "description": "Charge en ligne droite, tête baissée, sur tout ce qui bouge près de sa bauge.",
+  "armor": 25,
   "body": {"half_width": 0.3094, "half_length": 0.7973, "height": 0.9381},
   "walk_speed": 1.2,
   "min_group": 1,
