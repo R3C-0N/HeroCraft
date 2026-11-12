@@ -64,6 +64,15 @@
           "value": 0.3,
           "duration": 20
         }
+      },
+      {
+        "invisible": {
+          "duration": [
+            3,
+            4,
+            5
+          ]
+        }
       }
     ]
   },

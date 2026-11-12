@@ -40,6 +40,15 @@
         "knockback": {
           "strength": 4
         }
+      },
+      {
+        "break_guard": {
+          "duration": [
+            2,
+            2.5,
+            3
+          ]
+        }
       }
     ]
   },

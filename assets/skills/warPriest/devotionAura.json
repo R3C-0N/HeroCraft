@@ -31,10 +31,14 @@
             2,
             2.5
           ],
-          "duration": 12
+          "duration": 20
         }
       }
-    ]
+    ],
+    "zone": {
+      "duration": 20,
+      "follow": true
+    }
   },
   "visuals": [
     {

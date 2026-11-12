@@ -37,6 +37,23 @@
         "buff": {
           "stat": "damage",
           "value": 1.0,
+          "duration": 15,
+          "rider": {
+            "radius": 3,
+            "effects": [
+              {
+                "damage": {
+                  "power": 1.2
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "buff": {
+          "stat": "attack_speed",
+          "value": 0.6,
           "duration": 15
         }
       },

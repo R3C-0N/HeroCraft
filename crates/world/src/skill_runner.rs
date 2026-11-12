@@ -255,6 +255,8 @@ fn zone_entry(entry: &EffectEntry, first: bool) -> Option<EffectEntry> {
         }
         // Chaque passage ronge un peu plus l'armure, et le bris cesse peu après la sortie
         Effect::Shred { amount, max, .. } => Effect::Shred { amount: amount.clone(), duration: hold, max: max.clone() },
+        // Une zone repousse ou aspire à chaque passage (Bastion de Lumière, Tempête des Âmes)
+        Effect::Knockback { .. } | Effect::Pull { .. } => entry.effect.clone(),
         other if first => other.clone(),
         _ => return None,
     };

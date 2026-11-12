@@ -47,7 +47,15 @@
           "duration": 4
         }
       }
-    ]
+    ],
+    "projectile": {
+      "speed": 10,
+      "size": "large",
+      "pierce": "all",
+      "through": [
+        "obstacles"
+      ]
+    }
   },
   "visuals": [
     {

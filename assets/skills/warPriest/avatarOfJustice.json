@@ -38,7 +38,31 @@
         "buff": {
           "stat": "damage",
           "value": 1.0,
-          "duration": 15
+          "duration": 15,
+          "rider": {
+            "radius": 4,
+            "effects": [
+              {
+                "damage": {
+                  "power": [
+                    0.8,
+                    1.0,
+                    1.2
+                  ]
+                }
+              },
+              {
+                "heal": {
+                  "amount": [
+                    8,
+                    10,
+                    12
+                  ]
+                },
+                "to": "allies"
+              }
+            ]
+          }
         }
       },
       {

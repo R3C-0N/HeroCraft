@@ -45,9 +45,12 @@
     ],
     "self_effects": [
       {
-        "buff": {
-          "stat": "defense",
-          "value": 0.9,
+        "immune": {
+          "from": [
+            "damage",
+            "stun",
+            "knockback"
+          ],
           "duration": 8
         }
       },

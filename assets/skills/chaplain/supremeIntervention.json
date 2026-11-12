@@ -39,9 +39,10 @@
         }
       },
       {
-        "buff": {
-          "stat": "defense",
-          "value": 0.9,
+        "immune": {
+          "from": [
+            "damage"
+          ],
           "duration": 6
         }
       },
