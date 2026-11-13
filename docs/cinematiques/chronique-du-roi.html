@@ -1,0 +1,903 @@
+<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>[hidden]{display:none!important}</style>
+<title>La Chronique du Roi</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&family=Spectral:wght@400;600&display=swap">
+<style>
+/* Mise en page : salle de projection. Scène 16:9 en tête, commandes en papier dessous, puis le découpage plan par plan. */
+:root{
+  --nuit:#16121a;        /* fond de salle */
+  --nuit-2:#211b26;      /* surfaces */
+  --papier:#eadcb9;      /* page de vieux livre */
+  --papier-2:#c9b68c;    /* papier jauni, traits */
+  --encre:#2a1d12;       /* encre sur papier */
+  --braise:#e2732c;      /* feu */
+  --neant:#a47cff;       /* Pierres du Néant */
+  --doux:#a3977f;        /* texte secondaire */
+  --f-titre:"IM Fell English SC","Iowan Old Style",Georgia,serif;
+  --f-conte:"IM Fell English","Iowan Old Style",Georgia,serif;
+  --f-ui:"Spectral",Georgia,"Times New Roman",serif;
+  color-scheme:dark;
+}
+html,body{background:var(--nuit);color:var(--papier)}
+body{font-family:var(--f-ui);font-size:16px;line-height:1.55;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 56px}
+.salle{max-width:1180px;margin:0 auto;display:grid;gap:22px}
+.entete{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 24px}
+.entete h1{font-family:var(--f-titre);font-weight:400;font-size:clamp(28px,4vw,44px);line-height:1.1;margin:0;letter-spacing:.02em;text-wrap:balance}
+.entete p{margin:0;color:var(--doux);font-size:14px;letter-spacing:.08em;text-transform:uppercase}
+.ecran{position:relative;width:100%;max-width:100%;aspect-ratio:16/9;background:#000;box-shadow:0 18px 50px rgba(0,0,0,.55),0 0 0 1px rgba(234,220,185,.08)}
+.ecran canvas{display:block;width:100%;height:100%;cursor:pointer}
+.ecran:fullscreen{display:flex;align-items:center;justify-content:center;background:#000}
+.ecran:fullscreen canvas{width:auto;height:auto;max-width:100vw;max-height:100vh;aspect-ratio:16/9}
+.chargement{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--f-conte);font-style:italic;color:var(--doux);font-size:20px}
+.commandes{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.bouton{font:600 15px var(--f-ui);color:var(--encre);background:var(--papier);border:0;padding:8px 16px;cursor:pointer;clip-path:polygon(2% 8%,30% 0,62% 6%,100% 2%,98% 92%,70% 100%,35% 94%,0 100%);transition:background .15s}
+.bouton:hover{background:#f6ead0}
+.bouton:focus-visible{outline:2px solid var(--neant);outline-offset:3px}
+.frise{flex:1 1 260px;min-width:0;display:flex;align-items:center;gap:12px}
+.frise input{flex:1;min-width:0;accent-color:var(--braise)}
+.temps{font-variant-numeric:tabular-nums;color:var(--doux);font-size:14px;white-space:nowrap}
+.case{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--doux);cursor:pointer}
+.case input{accent-color:var(--braise);width:16px;height:16px}
+.decoupage{display:grid;gap:14px;margin-top:10px}
+.decoupage h2{font-family:var(--f-titre);font-weight:400;font-size:26px;margin:0}
+.decoupage>p{margin:0;color:var(--doux);max-width:68ch}
+.plans{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.plan{background:var(--nuit-2);border-top:2px solid var(--papier-2);padding:14px 16px 16px;display:grid;gap:6px;min-width:0}
+.plan button{all:unset;cursor:pointer;display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.plan button:focus-visible{outline:2px solid var(--neant);outline-offset:4px}
+.plan h3{margin:0;font-family:var(--f-conte);font-weight:400;font-size:21px;line-height:1.2}
+.plan .t{font-variant-numeric:tabular-nums;color:var(--braise);font-size:13px;letter-spacing:.06em;white-space:nowrap}
+.plan p{margin:0;color:var(--doux);font-size:14.5px}
+.plan.actif{border-top-color:var(--neant)}
+.plan.actif h3{color:#fff6e2}
+.note{color:var(--doux);font-size:14px;max-width:72ch;margin:0}
+code{font-size:13px;background:var(--nuit-2);padding:1px 5px}
+@media (max-width:520px){.entete p{font-size:12px}.bouton{padding:7px 12px;font-size:14px}}
+</style>
+
+<div class="salle">
+  <header class="entete">
+    <h1>La Chronique du Roi</h1>
+    <p>HeroCraft · deuxième cinématique · version officielle du Roi</p>
+  </header>
+
+  <div class="ecran" id="ecran">
+    <canvas id="cine" aria-label="Cinématique : la naissance des héros et leur chute, racontées par le Roi"></canvas>
+    <div class="chargement" id="chargement">Le Roi prend la parole…</div>
+  </div>
+
+  <div class="commandes">
+    <button class="bouton" id="lecture" type="button">Pause</button>
+    <button class="bouton" id="rejouer" type="button">Rejouer</button>
+    <div class="frise">
+      <input id="frise" type="range" min="0" max="162" step="0.01" value="0" aria-label="Position dans la cinématique">
+      <span class="temps" id="temps">0:00 / 2:42</span>
+    </div>
+    <label class="case"><input id="textes" type="checkbox" checked> Textes provisoires</label>
+    <button class="bouton" id="plein" type="button">Plein écran</button>
+  </div>
+
+  <section class="decoupage">
+    <h2>Découpage plan par plan</h2>
+    <p>Chaque plan se lance d'un clic. Les bandeaux « Texte n · à écrire » marquent l'emplacement et la durée de tes textes.</p>
+    <ol class="plans" id="plans"></ol>
+    <p class="note">Pour remplacer un texte, cherche le tableau <code>TEXTES</code> en haut du script : chaque ligne donne le numéro, l'heure de début, l'heure de fin et la phrase.</p>
+  </section>
+</div>
+
+<script>
+/* ---------- Textes provisoires : Mat les remplacera ---------- */
+const TEXTES = [
+  { n:1,  de:1.2,  a:7.2,   t:"Écoutez la chronique, telle que le Roi la raconte." },
+  { n:2,  de:9.5,  a:16,    t:"Les peuples grandirent et bâtirent leurs villes." },
+  { n:3,  de:19,   a:26,    t:"Mais chacun voulait plus que ce qu'il avait." },
+  { n:4,  de:29.5, a:36,    t:"Les nations entrèrent en guerre." },
+  { n:5,  de:43,   a:49,    t:"Un jour, sous les racines, une pierre fut retrouvée." },
+  { n:6,  de:51,   a:57.4,  t:"Ceux qui la touchèrent devinrent les premiers héros.", haut:true },
+  { n:7,  de:60,   a:66.5,  t:"Les héros se dressèrent entre les armées, et la paix fut signée.", haut:true },
+  { n:8,  de:68.6, a:73.6,  t:"Mais aucun traité ne tint jamais longtemps.", haut:true },
+  { n:9,  de:75.5, a:81.5,  t:"L'un d'eux cessa de croire à la paix des traités.", haut:true },
+  { n:10, de:83,   a:89.5,  t:"Sous un seul maître, disait-il, les peuples ne se battraient plus.", haut:true },
+  { n:11, de:91,   a:97,    t:"Pour y parvenir, tout lui semblait permis.", haut:true },
+  { n:12, de:100,  a:107,   t:"Il ouvrit un portail, et les démons se déversèrent sur le monde." },
+  { n:13, de:116,  a:122.5, t:"Les héros se dressèrent contre lui." },
+  { n:14, de:124,  a:130.6, t:"Ils donnèrent leur vie pour refermer le passage et l'enfermer de l'autre côté." },
+  { n:15, de:133,  a:138.5, t:"Les rois des peuples étaient tous tombés." },
+  { n:16, de:140,  a:145.5, t:"Je n'étais pas fait pour gouverner. Mais les peuples cherchaient un sauveur.", haut:true },
+  { n:17, de:147,  a:153,   t:"Ainsi naquit le premier Haut Roi.", haut:true },
+  { n:18, de:155.5,a:161.6, t:"Titre ou dernière phrase." }
+];
+
+const PLANS = [
+  { t:0,   nom:"Le sceau",               d:"Un sceau de cire à la couronne se pose sur le parchemin : c'est le Roi qui raconte." },
+  { t:8,   nom:"Les peuples bâtissent",  d:"Les quatre familles bâtissent leurs villes, chacune sous sa bannière. Le jour passe." },
+  { t:28,  nom:"Les guerres",            d:"Au crépuscule, les villes brûlent et les armées des quatre bannières se jettent les unes sur les autres." },
+  { t:42,  nom:"La pierre retrouvée",    d:"Des mains creusent sous les racines et réveillent une Pierre du Néant endormie." },
+  { t:50,  nom:"Les premiers héros",     d:"Sept héros apparaissent un à un, chacun avec son aura et son emblème. Le Roi est au centre." },
+  { t:58,  nom:"La paix fragile",        d:"Les héros s'avancent entre deux armées, les lances s'abaissent, un traité est scellé par les quatre peuples. Puis il se déchire et les feux reprennent." },
+  { t:74,  nom:"Le raisonnement",        d:"Autour du feu, un morceau du traité brûle. L'un des héros voit l'avenir qu'il veut : une seule bannière, tous les peuples à genoux, plus aucun feu. Et derrière la bannière, les démons comme instrument." },
+  { t:87,  nom:"Le traître",             d:"Il se lève. Son aura noircit, les pierres volent vers lui et son ombre devient monstrueuse." },
+  { t:98,  nom:"Le portail",             d:"Bras levés, il déchire le ciel. Les démons se déversent, les villes tombent et brûlent." },
+  { t:114, nom:"Le sacrifice",           d:"Les héros dirigent la force des pierres vers le portail. Le traître est repoussé de l'autre côté, les héros disparaissent en étincelles, le portail se referme." },
+  { t:132, nom:"Le Roi",                 d:"À l'aube, les couronnes des rois tombés gisent dans la cendre. Un seul héros reste debout. Les peuples arrivent de partout, leurs envoyés couchent leurs bannières à ses pieds et lèvent ensemble une couronne nouvelle jusqu'à lui. Tous s'agenouillent devant le premier Haut Roi." },
+  { t:154, nom:"Fin",                    d:"Le titre, puis le sceau royal qui ferme la chronique." }
+];
+
+/* Les dix peuples jouables (assets/heros/atlas.json, branche rust) */
+const PEUPLES = [
+  { id:"humain",    nom:"Humain",        taille:1.75, peau:"#C68863", habit:"#7d4a36", jambe:"#4a3a2e", cheveux:"#4a2f1e", f:{} },
+  { id:"nain",      nom:"Nain",          taille:1.30, peau:"#B57E58", habit:"#6b5a30", jambe:"#3e3424", cheveux:"#7a4424", f:{wf:1.55, ls:0.78, barbe:1, mains:1.5} },
+  { id:"elfeBois",  nom:"Elfe des bois", taille:1.85, peau:"#C2B48B", habit:"#4f6b38", jambe:"#36452a", cheveux:"#b99a52", f:{wf:0.82, oreilles:1.7} },
+  { id:"hautElfe",  nom:"Haut-elfe",     taille:1.90, peau:"#DCC8DD", habit:"#b4a3d4", jambe:"#8c7cb0", cheveux:"#efe6f2", f:{wf:0.8, oreilles:1.7, robe:1, regard:1} },
+  { id:"demiOrque", nom:"Demi-orque",    taille:2.00, peau:"#7C8F6B", habit:"#5a4434", jambe:"#3a2e25", cheveux:"#23201c", f:{wf:1.45, voute:0.55, canines:1, mains:1.4} },
+  { id:"revenant",  nom:"Revenant",      taille:1.75, peau:"#9AA0A0", habit:"#3b3a42", jambe:"#2a2a30", cheveux:"#1e1e22", f:{wf:0.78, veines:1, robe:1, lambeaux:1, vitreux:1} },
+  { id:"sylphe",    nom:"Sylphe",        taille:1.65, peau:"#D8E6EC", habit:"#bfe0e8", jambe:"#9cc4d0", cheveux:"#e8f4f8", f:{wf:0.72, alpha:0.72, robe:1, flottant:1} },
+  { id:"gnome",     nom:"Gnome",         taille:1.00, peau:"#E0AC7E", habit:"#a8432c", jambe:"#4a3a5a", cheveux:"#d8d0c0", f:{hs:1.55, ls:0.8, grandsYeux:1} },
+  { id:"aasimar",   nom:"Aasimar",       taille:1.80, peau:"#D9C08A", habit:"#eadcae", jambe:"#c9b47e", cheveux:"#f2d27a", f:{ailes:1, halo:1, robe:1} },
+  { id:"hommeBete", nom:"Homme-bête",    taille:1.75, peau:"#A97C4E", habit:"#5e3f28", jambe:"#A97C4E", cheveux:"#6E5238", f:{oreillesBete:1, queue:1, griffes:1} }
+];
+
+const W = 1600, H = 900, DUREE = 162;
+const TITRE = new Image(); TITRE.src = 'data:image/png;base64,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';
+const TAU = Math.PI * 2;
+const CUTS = [8, 28, 42, 58, 74, 98, 114, 132, 154];          /* fondus en page déchirée */
+const BORNES = [8, 28, 42, 58, 74, 98, 114, 132, 154];    /* changements de scène */
+
+/* ---------- outils ---------- */
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const ease = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const eOut = x => 1 - Math.pow(1 - x, 3);
+const eIn = x => x * x * x;
+const back = x => { if (x <= 0) return 0; if (x >= 1) return 1; const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const Q = t => Math.floor(t * 12) / 12;   /* temps saccadé, image par image */
+function hash(n) { n = Math.imul((n | 0) ^ 0x9e3779b9, 0x85ebca6b); n ^= n >>> 13; n = Math.imul(n, 0xc2b2ae35); n ^= n >>> 16; return (n >>> 0) / 4294967296; }
+function R(seed) { let s = (Math.imul((seed | 0) + 1, 2654435761) ^ 0x5bd1e995) >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+function hx(h) { h = h.replace('#', ''); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); }
+function mix(a, b, t) { t = Math.round(clamp(t) * 8) / 8; const A = hx(a), B = hx(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); }
+
+/* ---------- papier de vieux livre ---------- */
+const MOTS = "et la de le que il en un une des les qui dans du par pour sur ne plus son au cendre feu terre ciel pierre nuit étoile monde vie sang roi ancien peuple ombre lumière vent mer souffle temps premier dernier chant forge racine aube néant ainsi alors jadis jamais toujours sous entre avant après quand comme était furent naquit tomba vint montagne braise chemin silence mémoire héros oracle livre chapitre".split(' ');
+const PAGES = [];
+function makePage(seed) {
+  const S = 512, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'), r = R(seed);
+  g.fillStyle = '#ecdfbf'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 24; i++) {
+    const x = r() * S, y = r() * S, rad = 20 + r() * 120, al = 0.04 + r() * 0.1;
+    for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) {
+      const gr = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, rad);
+      gr.addColorStop(0, `rgba(140,95,45,${al})`); gr.addColorStop(1, 'rgba(140,95,45,0)');
+      g.fillStyle = gr; g.fillRect(x + dx - rad, y + dy - rad, rad * 2, rad * 2);
+    }
+  }
+  /* fibres du papier : courts traits clairs et sombres, sans écriture */
+  for (let i = 0; i < 900; i++) {
+    const x = r() * S, y = r() * S, a = r() * TAU, l = 3 + r() * 14;
+    g.strokeStyle = r() < .5 ? `rgba(255,248,228,${.12 + r() * .2})` : `rgba(110,72,34,${.05 + r() * .1})`;
+    g.lineWidth = .5 + r() * .8; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+  }
+  /* marbrures fines, raccordées sur les bords de la tuile */
+  for (let i = 0; i < 160; i++) {
+    const x = r() * S, y = r() * S, rad = 4 + r() * 22, al = .03 + r() * .06, dark = r() < .6;
+    for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) {
+      const gr = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, rad);
+      gr.addColorStop(0, dark ? `rgba(130,88,40,${al})` : `rgba(255,246,222,${al * 1.6})`); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(x + dx - rad, y + dy - rad, rad * 2, rad * 2);
+    }
+  }
+  g.globalAlpha = 1;
+  for (let i = 0; i < 90; i++) { g.fillStyle = `rgba(120,78,38,${r() * 0.3})`; g.beginPath(); g.arc(r() * S, r() * S, r() * 2.2, 0, TAU); g.fill(); }
+  const id = g.getImageData(0, 0, S, S), d = id.data;
+  for (let i = 0; i < d.length; i += 4) { const n = (r() - 0.5) * 18; d[i] += n; d[i + 1] += n; d[i + 2] += n * 0.9; }
+  g.putImageData(id, 0, 0);
+  return c;
+}
+const TINT = new Map(), PATS = new Map();
+function tinted(col, v) {
+  v = 0; const key = col; let t = TINT.get(key); if (t) return t;
+  if (TINT.size > 160) { TINT.clear(); PATS.clear(); }
+  const pg = PAGES[v]; t = document.createElement('canvas'); t.width = t.height = pg.width;
+  const g = t.getContext('2d');
+  g.fillStyle = col; g.fillRect(0, 0, t.width, t.height);
+  g.globalCompositeOperation = 'multiply'; g.drawImage(pg, 0, 0);
+  g.globalCompositeOperation = 'soft-light'; g.globalAlpha = .25; g.drawImage(pg, 0, 0);
+  TINT.set(key, t); return t;
+}
+function pat(c, col, v) {
+  const key = c._id + '|' + col; let p = PATS.get(key);
+  if (!p) { p = c.createPattern(tinted(col, v), 'repeat'); PATS.set(key, p); }
+  return p;
+}
+
+/* ---------- découpes ---------- */
+let BOIL = 0, K = 1, PSG = 1;
+function rough(base, seed, amp = 3, step = 26) {
+  const r = R(seed), out = [];
+  for (let i = 0; i < base.length; i++) {
+    const a = base[i], b = base[(i + 1) % base.length];
+    const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
+    const n = Math.max(1, Math.round(L / step)), nx = -dy / L, ny = dx / L;
+    for (let k = 0; k < n; k++) { const f = k / n, o = (r() - .5) * amp * (k ? 2 : 1); out.push([a[0] + dx * f + nx * o, a[1] + dy * f + ny * o]); }
+  }
+  return out;
+}
+const circ = (r, n = 24) => Array.from({ length: n }, (_, i) => { const a = i / n * TAU; return [Math.cos(a) * r, Math.sin(a) * r]; });
+const ell = (rx, ry, n = 24) => Array.from({ length: n }, (_, i) => { const a = i / n * TAU; return [Math.cos(a) * rx, Math.sin(a) * ry]; });
+function blob(r, seed, n = 10, irr = .35) { const q = R(seed); return Array.from({ length: n }, (_, i) => { const a = i / n * TAU, rr = r * (1 - irr / 2 + q() * irr); return [Math.cos(a) * rr, Math.sin(a) * rr]; }); }
+const rect = (w, h) => [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
+function strip(path, w0, w1 = w0) {
+  const L = [], Rt = [], n = path.length;
+  for (let i = 0; i < n; i++) {
+    const p = path[i], q = path[Math.min(i + 1, n - 1)], o = path[Math.max(i - 1, 0)];
+    const dx = q[0] - o[0], dy = q[1] - o[1], l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l;
+    const w = lerp(w0, w1, n > 1 ? i / (n - 1) : 0) / 2;
+    L.push([p[0] + nx * w, p[1] + ny * w]); Rt.push([p[0] - nx * w, p[1] - ny * w]);
+  }
+  return L.concat(Rt.reverse());
+}
+function trace(c, pts) { c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]); c.closePath(); }
+function piece(c, o) {
+  const s = o.s ?? 1; if (s <= 0.001) return;
+  const pts = rough(o.shape, (o.seed | 0) * 131 + (o.still ? 0 : BOIL) * 7919, o.amp ?? 3, o.step ?? 26);
+  c.save();
+  c.translate(o.x || 0, o.y || 0); if (o.r) c.rotate(o.r); c.scale(s * (o.sx ?? 1), s * (o.sy ?? 1));
+  if (o.a != null) c.globalAlpha *= clamp(o.a);
+  if (o.blend) c.globalCompositeOperation = o.blend;
+  const so = o.so ?? 4;
+  if (o.shadow !== false && so > 0) {
+    /* ombre portée dessinée à la main : bien plus rapide que shadowBlur */
+    const m = c.getTransform(); c.save(); c.setTransform(m.a, m.b, m.c, m.d, m.e + so * K * .8, m.f + so * K * 1.2);
+    trace(c, pts); c.fillStyle = o.sc || 'rgba(12,6,2,0.4)'; c.fill();
+    if (o.torn) { c.lineWidth = o.torn / s; c.lineJoin = 'round'; c.strokeStyle = c.fillStyle; c.stroke(); }
+    c.restore();
+  }
+  trace(c, pts);
+  if (o.torn) { c.lineWidth = o.torn / s; c.lineJoin = 'round'; c.strokeStyle = o.tc || '#efe4c8'; c.stroke(); }
+  const p = pat(c, o.col || '#ffffff', 0), ps = (o.ps ?? .75) * PSG / s;
+  p.setTransform(new DOMMatrix([ps, 0, 0, ps, hash(o.seed | 0) * 512, hash((o.seed | 0) + 7) * 512]));
+  c.fillStyle = p; c.fill();
+  if (o.after) o.after(c, pts);
+  c.restore();
+}
+function glow(c, x, y, r, col, a = 1) {
+  if (a <= 0 || r <= 0) return;
+  c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha *= clamp(a);
+  const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); c.restore();
+}
+function bgFill(c, col, seed) {
+  c.save(); const p = pat(c, col, 0); p.setTransform(new DOMMatrix([.9, 0, 0, .9, hash(seed) * 512, hash(seed + 1) * 512]));
+  c.fillStyle = p; c.fillRect(-60, -60, W + 120, H + 120); c.restore();
+}
+function stars(c, n, seed, al, T) {
+  if (al <= 0) return; const r = R(seed);
+  c.save(); c.fillStyle = '#f1e6cc';
+  for (let i = 0; i < n; i++) {
+    const x = r() * W, y = r() * H * .9, s = .6 + r() * r() * 3.2, ph = r() * TAU;
+    c.globalAlpha = al * (.45 + .55 * Math.abs(Math.sin(T * .9 + ph)));
+    c.beginPath(); c.moveTo(x, y - s * 1.6); c.lineTo(x + s * .7, y); c.lineTo(x, y + s * 1.6); c.lineTo(x - s * .7, y); c.closePath(); c.fill();
+    if (s > 2.6) glow(c, x, y, s * 6, 'rgba(255,240,210,0.5)', al * .6);
+  }
+  c.restore();
+}
+function ridge(c, o) {
+  const r = R(o.seed), p1 = r() * TAU, p2 = r() * TAU, p3 = r() * TAU, pts = [];
+  for (let x = -500; x <= 2100; x += (o.step || 70)) pts.push([x, o.y + o.amp * (.6 * Math.sin(x * .004 + p1) + .3 * Math.sin(x * .011 + p2) + .18 * Math.sin(x * .029 + p3))]);
+  pts.push([2100, H + 80], [-500, H + 80]);
+  piece(c, { x: o.off || 0, y: 0, shape: pts, col: o.col, seed: o.seed, amp: o.amp2 ?? 5, step: 40, torn: o.torn || 0, a: o.a, so: o.so ?? 5 });
+}
+function zoom(c, z, px, py) { c.translate(px, py); c.scale(z, z); c.translate(-px, -py); }
+const STONE = [[0, -72], [30, -40], [42, 8], [18, 46], [-20, 44], [-44, 10], [-32, -36]];
+function pierre(c, x, y, s, T, seed, col = '#3b1878') {
+  piece(c, { x, y, s, shape: STONE, col, seed, amp: 1.5, step: 30, so: 3, after: g => {
+    piece(g, { shape: [[0, -72], [30, -40], [6, -8]], col: '#a685ff', seed: seed + 1, amp: 1, shadow: false, a: .9 });
+    piece(g, { shape: [[-32, -36], [0, -72], [6, -8], [-18, 12]], col: '#6b42d4', seed: seed + 2, amp: 1, shadow: false, a: .9 });
+    piece(g, { shape: [[6, -8], [42, 8], [18, 46]], col: '#5229a8', seed: seed + 3, amp: 1, shadow: false, a: .85 });
+    g.strokeStyle = 'rgba(20,8,40,.55)'; g.lineWidth = 1.6 / s; g.beginPath(); g.moveTo(0, -72); g.lineTo(6, -8); g.lineTo(18, 46); g.moveTo(6, -8); g.lineTo(-44, 10); g.stroke();
+  } });
+}
+
+function branche(c, a, b, g, w0, w1, seed, bend, col = '#fbf4e2') {
+  if (g <= 0) return; const pts = [], mx = (a[0] + b[0]) / 2 + bend, my = (a[1] + b[1]) / 2;
+  for (let k = 0; k <= 10; k++) { const f = k / 10 * g; pts.push([(1 - f) * (1 - f) * a[0] + 2 * (1 - f) * f * mx + f * f * b[0], (1 - f) * (1 - f) * a[1] + 2 * (1 - f) * f * my + f * f * b[1]]); }
+  piece(c, { shape: strip(pts, w0, lerp(w0, w1, g)), col, seed, amp: 1.5, torn: col === '#fbf4e2' ? 2 : 0, so: col === '#fbf4e2' ? 4 : 2 });
+}
+const CONTINENT = blob(330, 5300, 18, .4).map(([x, y]) => [x * 1.75, y]);
+
+/* ---------- silhouettes des peuples ---------- */
+function heros(c, x, fy, sp, M, T) {
+  const f = sp.f, h = sp.taille * M, wf = f.wf || 1, hs = f.hs || 1, ls = f.ls || 1, sd = 3000 + PEUPLES.indexOf(sp) * 60, t = Q(T);
+  const hr = h * .078 * hs, leg = h * .45 * ls, hip = fy - leg, hcy = fy - h + hr, sh = hcy + hr + h * .035;
+  const sw = h * .12 * wf, hw = h * .085 * wf, hxo = (f.voute || 0) * hr, k = M / 175;
+  c.save(); if (f.alpha) c.globalAlpha *= f.alpha; const psg0 = PSG; PSG = .5;
+  if (f.ailes) for (const s of [-1, 1]) {
+    piece(c, { x: x + s * sw * .4, y: sh + h * .05, sx: s, s: k, shape: [[0, 0], [60, -80], [130, -110], [120, -50], [150, -30], [100, 10], [120, 40], [50, 50]], col: '#fff3d0', seed: sd + 1 + s, amp: 3, so: 3, a: .78 });
+    glow(c, x + s * sw * 2.2, sh - h * .1, 90 * k, 'rgba(255,230,160,0.5)', .7 + .3 * Math.sin(T * 2));
+  }
+  if (f.queue) piece(c, { shape: strip([[x + hw * .3, hip - 4], [x + hw * 1.4, hip + h * .12], [x + hw * 2.2, hip + h * .06 + Math.sin(t * 3) * 6 * k]], h * .05, h * .02), col: sp.cheveux, seed: sd + 3, amp: 1.5, so: 2 });
+  if (!f.robe) for (const s of [-1, 1]) {
+    piece(c, { shape: strip([[x + s * hw * .55, hip - h * .02], [x + s * hw * .62, fy - h * .02]], h * .075 * wf, h * .065 * wf), col: sp.jambe, seed: sd + 5 + s, amp: 1.5, so: 3 });
+    piece(c, { x: x + s * hw * .7, y: fy - h * .015, shape: ell(h * .055 * wf, h * .022, 10), col: '#2a1e16', seed: sd + 8 + s, amp: 1, so: 2 });
+  }
+  for (const s of [-1, 1]) {
+    const hand = f.brasLeves ? [x + s * sw * 1.75, sh - h * .3] : [x + s * sw * 1.12, hip + h * .055];
+    piece(c, { shape: strip([[x + s * sw * .92, sh + h * .02], f.brasLeves ? [x + s * sw * 1.5, sh - h * .1] : [x + s * sw * 1.18, (sh + hip) / 2], hand], h * .06 * wf, h * .048 * wf), col: sp.habit, seed: sd + 10 + s, amp: 1.5, so: 3 });
+    piece(c, { x: hand[0], y: hand[1], shape: circ(h * .03 * (f.mains || 1), 10), col: sp.peau, seed: sd + 13 + s, amp: 1, so: 2 });
+    if (f.veines) { c.save(); c.strokeStyle = 'rgba(20,16,22,.75)'; c.lineWidth = 1.2 * k + .4; c.beginPath(); c.moveTo(hand[0], hand[1] - h * .02); c.lineTo(hand[0] - s * h * .01, hand[1] - h * .07); c.stroke(); c.restore(); }
+  }
+  const bas = f.robe ? fy - h * .01 : hip + h * .035, lb = f.robe ? hw * 1.65 : hw * 1.05;
+  piece(c, { shape: [[x - sw, sh - 2], [x + sw, sh - 2], [x + lb, bas], [x - lb, bas]], col: sp.habit, seed: sd + 16, amp: f.lambeaux ? 6 : 2, step: f.lambeaux ? 10 : 26, so: 4 });
+  if (f.flottant) for (let j = 0; j < 4; j++) piece(c, { shape: strip([[x + hxo, hcy - hr * .4], [x - hr * (1.5 + j * .3), hcy + hr * (.2 + j * .3) + Math.sin(T * 2 + j) * hr * .5], [x - hr * (2.6 + j * .4), hcy + hr * (.8 + j * .3) + Math.sin(T * 2.4 + j) * hr * .8]], hr * .5, hr * .1), col: sp.cheveux, seed: sd + 20 + j, amp: 1, so: 2, a: .8 });
+  if (f.oreilles) for (const s of [-1, 1]) piece(c, { x: x + hxo + s * hr * .8, y: hcy - hr * .05, shape: [[0, -hr * .25], [s * hr * f.oreilles, -hr * 1.05], [s * hr * .2, hr * .35]], col: sp.peau, seed: sd + 25 + s, amp: 1, so: 2 });
+  if (f.oreillesBete) for (const s of [-1, 1]) piece(c, { x: x + hxo + s * hr * .55, y: hcy - hr * .7, shape: [[-hr * .35, 0], [s * hr * .2, -hr * .95], [hr * .35, 0]], col: sp.cheveux, seed: sd + 28 + s, amp: 1, so: 2 });
+  piece(c, { x: x + hxo, y: hcy + (f.voute ? hr * .5 : 0), shape: circ(hr, 18), col: sp.peau, seed: sd + 30, amp: 1.2, so: 3, after: g => {
+    if (!f.oreillesBete && !f.flottant) piece(g, { y: -hr * .35, shape: [[-hr * 1.02, 0], [-hr * .7, -hr * .65], [0, -hr * .95], [hr * .7, -hr * .65], [hr * 1.02, 0], [hr * .4, -hr * .35], [-hr * .4, -hr * .3]], col: sp.cheveux, seed: sd + 31, amp: 1, shadow: false });
+    if (f.oreillesBete) piece(g, { y: -hr * .3, shape: ell(hr * .95, hr * .55, 14), col: sp.cheveux, seed: sd + 32, amp: 1, shadow: false, a: .9 });
+    const ey = hr * .08, ex = hr * .38;
+    for (const s of [-1, 1]) {
+      if (f.grandsYeux) { g.fillStyle = '#f6f0e2'; g.beginPath(); g.arc(s * ex, ey, hr * .26, 0, TAU); g.fill(); g.fillStyle = '#1a120c'; g.beginPath(); g.arc(s * ex, ey + hr * .04, hr * .12, 0, TAU); g.fill(); }
+      else if (f.regard) { glow(g, s * ex, ey, hr * .45, 'rgba(235,240,255,0.95)'); g.fillStyle = '#ffffff'; g.beginPath(); g.arc(s * ex, ey, hr * .12, 0, TAU); g.fill(); }
+      else if (f.vitreux) { g.fillStyle = '#d8dcd6'; g.beginPath(); g.arc(s * ex, ey, hr * .13, 0, TAU); g.fill(); }
+      else { g.fillStyle = '#1a120c'; g.beginPath(); g.arc(s * ex, ey, hr * .1, 0, TAU); g.fill(); }
+    }
+    if (f.canines) for (const s of [-1, 1]) { g.fillStyle = '#f1e9d6'; g.beginPath(); g.moveTo(s * hr * .3, hr * .62); g.lineTo(s * hr * .38, hr * .3); g.lineTo(s * hr * .46, hr * .62); g.closePath(); g.fill(); }
+    if (f.veines) { g.strokeStyle = 'rgba(20,16,22,.7)'; g.lineWidth = Math.max(.8, hr * .05); g.beginPath(); g.moveTo(-hr * .7, hr * .3); g.lineTo(-hr * .45, -hr * .1); g.lineTo(-hr * .55, -hr * .45); g.moveTo(hr * .6, hr * .5); g.lineTo(hr * .5, hr * .1); g.stroke(); }
+  } });
+  if (f.capuche) piece(c, { x: x + hxo, y: hcy, shape: [[-hr * 1.3, hr * 1.1], [-hr * 1.25, -hr * .6], [0, -hr * 1.5], [hr * 1.25, -hr * .6], [hr * 1.3, hr * 1.1], [hr * .78, hr * 1.1], [hr * .78, -hr * .1], [0, -hr * .78], [-hr * .78, -hr * .1], [-hr * .78, hr * 1.1]], col: sp.habit, seed: sd + 45, amp: 1, so: 2 });
+  if (f.casque) piece(c, { x: x + hxo, y: hcy, shape: [[-hr * 1.08, hr * .3], [-hr * 1.08, -hr * .6], [-hr * .5, -hr * 1.18], [hr * .5, -hr * 1.18], [hr * 1.08, -hr * .6], [hr * 1.08, hr * .3], [hr * .25, hr * .3], [hr * .25, hr * .02], [-hr * .25, hr * .02], [-hr * .25, hr * .3]], col: '#6a7178', seed: sd + 46, amp: 1, so: 2 });
+  if (f.baton) { const bx = x + sw * 1.45; piece(c, { shape: strip([[bx, fy], [bx + h * .02, sh - h * .22]], h * .025, h * .02), col: '#5a3a22', seed: sd + 47, amp: .8, so: 3 }); glow(c, bx + h * .02, sh - h * .24, h * .09, 'rgba(190,210,255,0.95)', .8 + .2 * Math.sin(T * 3)); }
+  if (f.barbe) piece(c, { x: x + hxo, y: hcy + hr * .55, shape: [[-hr * .95, -hr * .3], [hr * .95, -hr * .3], [hr * .55, hr * 1.3], [0, hr * 1.7], [-hr * .55, hr * 1.3]], col: sp.cheveux, seed: sd + 40, amp: 1.5, step: 10, so: 2 });
+  if (f.halo) { c.save(); c.globalCompositeOperation = 'lighter'; c.strokeStyle = 'rgba(255,220,130,0.9)'; c.lineWidth = Math.max(1.5, hr * .14); c.shadowColor = 'rgba(255,210,120,1)'; c.shadowBlur = 14 * K; c.beginPath(); c.ellipse(x + hxo, hcy - hr * 1.35, hr * .9, hr * .28, 0, 0, TAU); c.stroke(); c.restore(); }
+  PSG = psg0; c.restore();
+}
+
+
+/* ---------- le Cercle des héros (version du Roi) ---------- */
+/* Le peuple du roi et du traître n'est pas tranché dans la bible : capuche et heaume les gardent anonymes. */
+const CERCLE = [
+  { nom: 'traitre', sp: { id: 'traitre', taille: 1.85, peau: '#C68863', habit: '#6e2420', jambe: '#2e2422', cheveux: '#2e2422', f: { casque: 1, wf: 1.12 } }, aura: '#ff6a3a', glyphe: 'epee' },
+  { nom: 'nain', sp: null, base: 'nain', aura: '#ffb45a', glyphe: 'hache' },
+  { nom: 'elfe', sp: null, base: 'elfeBois', aura: '#8ee07a', glyphe: 'arc' },
+  { nom: 'roi', sp: { id: 'roi', taille: 1.9, peau: '#d9cdb8', habit: '#2e3570', jambe: '#22264f', cheveux: '#262a55', f: { capuche: 1, robe: 1, baton: 1, regard: 1, wf: .95 } }, aura: '#bcd0ff', glyphe: 'etoile' },
+  { nom: 'aasimar', sp: null, base: 'aasimar', aura: '#ffe08a', glyphe: 'soleil' },
+  { nom: 'bete', sp: null, base: 'hommeBete', aura: '#e09a5a', glyphe: 'griffe' },
+  { nom: 'hautElfe', sp: null, base: 'hautElfe', aura: '#8fe8ff', glyphe: 'oeil' }
+];
+CERCLE.forEach(h => { if (!h.sp) h.sp = PEUPLES.find(p => p.id === h.base); });
+const ROI = CERCLE[3], TRAITRE = CERCLE[0];
+const BANNIERES = ['#b0702c', '#2f5fa8', '#3f8a3a', '#a8322a'];
+function ciel(c, cols, seed, a = 1, tc = '#e9dcc0') {
+  for (let i = 0; i < cols.length; i++) piece(c, { x: 0, y: i * 115 - 40, shape: [[-60, 0], [W + 60, 0], [W + 60, H + 40], [-60, H + 40]], col: cols[i], seed: seed + i, amp: 8, step: 40, torn: i ? 2 : 0, tc, so: i ? 3 : 0, a });
+}
+function couronne(c, x, y, s, a = 1) {
+  piece(c, { x, y, s, a, shape: [[-40, 20], [-46, -20], [-22, 0], [0, -34], [22, 0], [46, -20], [40, 20]], col: '#d8a838', seed: 7000, amp: 1.5, torn: 2, so: 3, after: g => {
+    for (const [px, py, col] of [[0, 6, '#a8322a'], [-24, 8, '#2f5fa8'], [24, 8, '#3f8a3a']]) { g.fillStyle = col; g.beginPath(); g.arc(px, py, 5, 0, TAU); g.fill(); }
+  } });
+}
+function glyphe(g, k, col) {
+  g.save(); g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 3; g.lineCap = 'round'; g.beginPath();
+  if (k === 'epee') { g.moveTo(0, -14); g.lineTo(0, 12); g.moveTo(-7, 6); g.lineTo(7, 6); }
+  else if (k === 'hache') { g.moveTo(-2, -14); g.lineTo(-2, 14); g.moveTo(-2, -10); g.quadraticCurveTo(12, -8, 8, 4); g.lineTo(-2, 0); }
+  else if (k === 'arc') { g.arc(-6, 0, 14, -1.2, 1.2); g.moveTo(-1, -13); g.lineTo(-1, 13); g.moveTo(-8, 0); g.lineTo(12, 0); }
+  else if (k === 'etoile') { for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * TAU / 5 * 2; i ? g.lineTo(Math.cos(a) * 13, Math.sin(a) * 13) : g.moveTo(Math.cos(a) * 13, Math.sin(a) * 13); } g.closePath(); }
+  else if (k === 'soleil') { g.arc(0, 0, 6, 0, TAU); for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; g.moveTo(Math.cos(a) * 9, Math.sin(a) * 9); g.lineTo(Math.cos(a) * 14, Math.sin(a) * 14); } }
+  else if (k === 'griffe') { for (let i = -1; i <= 1; i++) { g.moveTo(i * 7 - 3, -12); g.quadraticCurveTo(i * 7 + 4, 0, i * 7 - 2, 13); } }
+  else { g.moveTo(-14, 0); g.quadraticCurveTo(0, -12, 14, 0); g.quadraticCurveTo(0, 12, -14, 0); g.moveTo(4, 0); g.arc(0, 0, 4, 0, TAU); }
+  g.stroke(); g.restore();
+}
+function heroCercle(c, h, x, fy, M, T, o = {}) {
+  const a = o.a ?? 1; if (a <= 0) return;
+  const hh = h.sp.taille * M, aura = o.aura ?? h.aura, ai = o.ai ?? 1;
+  c.save(); c.globalAlpha *= a;
+  if (ai > 0) { for (let k = 0; k < 3; k++) glow(c, x, fy - hh * (.2 + k * .3), hh * .55, aura, ai * .55 * (.8 + .2 * Math.sin(T * 2 + k + x))); }
+  const sp = o.bras ? Object.assign({}, h.sp, { f: Object.assign({}, h.sp.f, { brasLeves: 1 }) }) : h.sp;
+  heros(c, x, fy, sp, M, T);
+  if (o.yeuxRouges) { const hr = hh * .078; for (const s of [-1, 1]) glow(c, x + s * hr * .38, fy - hh + hr * 1.08, hr * .9, 'rgba(255,40,20,0.95)', o.yeuxRouges); }
+  if (o.embleme) { const s = o.embleme; piece(c, { x, y: fy - hh - 46 * M / 120, s: s * M / 120, shape: circ(22, 16), col: '#f1e4c4', seed: 7100 + CERCLE.indexOf(h), amp: 1.2, torn: 2, so: 3, after: g => glyphe(g, h.glyphe, '#3a2616') }); }
+  c.restore();
+}
+function batiment(c, x, y, k, s, toit, seed, nuit = 0) {
+  const P = o => piece(c, Object.assign({ x, y, s, amp: 1.5, torn: 2, so: 4, seed }, o));
+  const mur = mix('#d9c7a0', '#3a3036', nuit * .7);
+  if (k === 'hutte') { P({ shape: [[-30, 0], [30, 0], [30, -40], [-30, -40]], col: mur }); P({ shape: [[-40, -36], [0, -76], [40, -36]], col: toit, seed: seed + 1 }); }
+  else if (k === 'maison') { P({ shape: [[-42, 0], [42, 0], [42, -56], [-42, -56]], col: mur }); P({ shape: [[-50, -52], [-30, -92], [30, -92], [50, -52]], col: toit, seed: seed + 1 }); }
+  else if (k === 'tour') { P({ shape: [[-20, 0], [20, 0], [20, -130], [24, -130], [24, -150], [14, -150], [14, -140], [6, -140], [6, -150], [-6, -150], [-6, -140], [-14, -140], [-14, -150], [-24, -150], [-24, -130], [-20, -130]], col: mur }); P({ y: y - 150 * s, shape: [[-26, 0], [0, -44], [26, 0]], col: toit, seed: seed + 1 }); }
+  else { P({ shape: [[-46, 0], [46, 0], [46, -48], [-46, -48]], col: mur }); P({ y: y - 48 * s, shape: ell(46, 40, 16).filter(p => p[1] <= 0), col: toit, seed: seed + 1 }); }
+  if (nuit > 0) glow(c, x, y - 24 * s, 26 * s, 'rgba(255,190,90,0.8)', nuit);
+}
+const VILLES = [0, 1, 2, 3].map(i => ({ x: 230 + i * 380, toit: BANNIERES[i], b: [['hutte', -110], ['maison', -40], ['hutte', 40], ['dome', 110], ['tour', -70], ['tour', 80]] }));
+function villes(c, lt, nuit, feu) {
+  VILLES.forEach((v, i) => {
+    v.b.forEach(([k, dx], j) => {
+      const ap = back(seg(lt, 1 + j * 1.4 + i * .25, 1.6 + j * 1.4 + i * .25)); if (ap <= 0) return;
+      batiment(c, v.x + dx, 700, k, 1, v.toit, 7200 + i * 20 + j * 2, nuit);
+      if (k === 'hutte') for (let p = 0; p < 2; p++) { const ph = (lt * .15 + p * .5 + i * .2) % 1; piece(c, { x: v.x + dx + ph * 30, y: 620 - ph * 120, s: .3 + ph * .8, shape: blob(20, 7300 + i * 4 + p, 8, .5), col: '#cfc8c0', seed: 7300 + i * 4 + p, a: Math.sin(ph * Math.PI) * .5 * ap, so: 0 }); }
+    });
+    const bn = back(seg(lt, 10 + i * .3, 10.6 + i * .3));
+    if (bn > 0) { piece(c, { shape: strip([[v.x, 702], [v.x, 702 - 190 * bn]], 5, 4), col: '#4a3020', seed: 7320 + i, amp: .5, so: 3 }); piece(c, { x: v.x + 2, y: 702 - 190 * bn, shape: [[0, 0], [58 + 4 * Math.sin(lt * 4 + i), 8], [52, 22 + 3 * Math.sin(lt * 4 + i)], [0, 30]], col: v.toit, seed: 7330 + i, amp: 1.5, torn: 2, so: 3 }); }
+    if (feu > 0) for (let f = 0; f < 3; f++) { const fx = v.x + (f - 1) * 80, fl = .8 + .2 * Math.sin(lt * 9 + f + i); glow(c, fx, 650, 110, 'rgba(255,110,30,0.7)', feu * fl); flamme(c, fx, 690, feu * fl, 7340 + i * 3 + f); }
+  });
+}
+function flamme(c, x, y, s, seed) {
+  if (s <= 0) return;
+  piece(c, { x, y, s, shape: [[-22, 0], [-16, -40], [-4, -70], [4, -48], [14, -80], [22, -30], [24, 0]], col: '#e8641c', seed, amp: 4, shadow: false });
+  piece(c, { x, y, s: s * .6, shape: [[-16, 0], [-8, -44], [6, -60], [16, 0]], col: '#ffd24a', seed: seed + 1, amp: 3, shadow: false, blend: 'lighter', a: .9 });
+}
+function soldat(c, x, y, col, t, k) {
+  const b = Math.abs(Math.sin(t * 8 + k)) * 4;
+  piece(c, { shape: strip([[x + 10, y - 50 - b], [x + 14, y + 4 - b]], 3, 3), col: '#5a4030', seed: 7400 + k, amp: .5, so: 2 });
+  piece(c, { x, y: y - 14 - b, shape: rect(16, 28), col, seed: 7410 + k, amp: 1, so: 2 });
+  piece(c, { x, y: y - 34 - b, shape: circ(7, 10), col: '#c9a27a', seed: 7420 + k, amp: .8, so: 2 });
+}
+function demon(c, x, y, s, seed, T) {
+  const fl = Math.sin(T * 9 + seed) * .4;
+  for (const d of [-1, 1]) piece(c, { x, y: y - 10 * s, s, sx: d, r: d * fl, shape: [[0, 0], [40, -36], [34, -10], [56, -18], [40, 10], [14, 14]], col: '#2a1418', seed: seed + d, amp: 2, so: 3 });
+  piece(c, { x, y, s, shape: [[-16, 20], [-20, -10], [-24, -40], [-10, -26], [0, -32], [10, -26], [24, -40], [20, -10], [16, 20], [6, 30], [-6, 30]], col: '#1a0f12', seed, amp: 2.5, so: 4 });
+  for (const d of [-1, 1]) glow(c, x + d * 7 * s, y - 16 * s, 9 * s, 'rgba(255,40,20,0.95)');
+}
+function faille(c, cx, cy, hgt, ouv, T, seed, rouge) {
+  if (ouv <= 2) return;
+  const r = R(seed + BOIL), L = [], Rr = [], n = 16;
+  for (let i = 0; i <= n; i++) { const f = i / n, y = cy - hgt / 2 + f * hgt, w = Math.sin(f * Math.PI) * ouv * (1 + .25 * Math.sin(f * 9 + 1)), x = cx + Math.sin(f * 3.2) * 50; L.push([x - w / 2 - r() * 14, y]); Rr.push([x + w / 2 + r() * 14, y]); }
+  glow(c, cx, cy, hgt * .6 + ouv, rouge ? 'rgba(255,60,30,0.4)' : 'rgba(140,80,255,0.35)');
+  c.save(); trace(c, L.concat(Rr.slice().reverse())); c.clip(); c.fillStyle = '#0c0306'; c.fillRect(0, 0, W, H);
+  for (let i = 0; i < 8; i++) { const a = T * (.4 + i * .07) + i; glow(c, cx + Math.cos(a) * 50, cy + Math.sin(a * 1.3) * hgt * .35, 110, i % 3 ? 'rgba(255,70,30,0.7)' : 'rgba(255,170,40,0.5)'); }
+  c.restore();
+  c.save(); c.lineJoin = 'round'; c.strokeStyle = '#e9dcc0'; c.lineWidth = 6; c.shadowColor = 'rgba(255,90,40,.9)'; c.shadowBlur = 18 * K;
+  for (const side of [L, Rr]) { c.beginPath(); side.forEach((q, i) => i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1])); c.stroke(); }
+  c.restore();
+}
+function cadreRoyal(c) {
+  c.save(); c.strokeStyle = 'rgba(216,168,56,0.85)'; c.lineWidth = 3; c.strokeRect(22, 22, W - 44, H - 44); c.lineWidth = 1.2; c.strokeRect(32, 32, W - 64, H - 64);
+  for (const [x, y] of [[32, 32], [W - 32, 32], [32, H - 32], [W - 32, H - 32]]) { c.fillStyle = 'rgba(216,168,56,0.9)'; c.beginPath(); c.moveTo(x, y - 10); c.lineTo(x + 10, y); c.lineTo(x, y + 10); c.lineTo(x - 10, y); c.closePath(); c.fill(); }
+  c.restore();
+}
+function sceau(c, x, y, s, a = 1) {
+  piece(c, { x: x - 30 * s, y: y + 70 * s, s, r: .3, a, shape: strip([[0, -60], [-10, 30], [-30, 120]], 30, 26), col: '#d8a838', seed: 7500, amp: 1.5, so: 3 });
+  piece(c, { x: x + 30 * s, y: y + 70 * s, s, r: -.3, a, shape: strip([[0, -60], [10, 30], [30, 120]], 30, 26), col: '#c8962e', seed: 7501, amp: 1.5, so: 3 });
+  piece(c, { x, y, s, a, shape: blob(110, 7502, 14, .15), col: '#9a1f1f', seed: 7502, amp: 3, so: 7, after: g => {
+    g.strokeStyle = 'rgba(60,8,8,.6)'; g.lineWidth = 4; g.beginPath(); g.arc(0, 0, 80, 0, TAU); g.stroke();
+    g.fillStyle = 'rgba(60,8,8,.55)'; g.beginPath(); [[-40, 20], [-46, -20], [-22, 0], [0, -34], [22, 0], [46, -20], [40, 20]].forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.fill();
+    glow(g, -40, -50, 60, 'rgba(255,180,160,0.25)');
+  } });
+}
+
+/* 1. Le sceau */
+function sceneSceau(c, T) {
+  const lt = T;
+  bgFill(c, '#efe2c0', 7600);
+  const press = eOut(seg(lt, .2, 1.4)), leve = ease(seg(lt, 5.6, 7.8));
+  sceau(c, 800, 420 - leve * 60, lerp(1.7, 1, press) * (1 + leve * .3), 1 - leve);
+  if (lt > 1.2 && lt < 2) glow(c, 800, 420, 260, 'rgba(255,220,180,0.35)', 1 - seg(lt, 1.2, 2));
+}
+
+/* 2. Les peuples bâtissent */
+function sceneVilles(c, T) {
+  const lt = T - 8, t = Q(T), d = ease(seg(lt, 15, 20));
+  ciel(c, ['#8fb3c8', '#a9c3cf', '#c9d3c8', '#e3d8b8', '#efdcb0'], 7700);
+  if (d > 0) ciel(c, ['#4a2a3a', '#7a3a3a', '#a8503a', '#c8683a', '#d8803a'], 7700, d);
+  const sx = lerp(300, 1300, lt / 20), sy = 250 + Math.pow((lt - 10) / 10, 2) * 170;
+  glow(c, sx, sy, 260, 'rgba(255,220,150,0.45)'); piece(c, { x: sx, y: sy, shape: circ(50, 20), col: '#f6d48a', seed: 7710, shadow: false, a: .9 });
+  ridge(c, { y: 560, amp: 40, seed: 7720, col: mix('#7f8f6a', '#5a4048', d) });
+  ridge(c, { y: 640, amp: 26, seed: 7721, col: mix('#6f8a52', '#4a3a36', d) });
+  ridge(c, { y: 700, amp: 6, seed: 7722, col: mix('#5f7a44', '#3e3430', d), torn: 2 });
+  villes(c, lt, d, 0);
+  for (let i = 0; i < 9; i++) { if (lt < 3 + i * .5) continue; const sp = PEUPLES[i % PEUPLES.length], v = 30 + hash(i + 7730) * 30, dir = i % 2 ? 1 : -1, x = ((hash(i + 7731) * 1800 + dir * lt * v) % 1800 + 1800) % 1800 - 100; c.save(); c.translate(x, 0); c.scale(dir, 1); heros(c, 0, 770 + (i % 3) * 18, sp, 30, T); c.restore(); }
+  ridge(c, { y: 805, amp: 10, seed: 7723, col: mix('#4f6a3a', '#2e2624', d), torn: 2 });
+}
+
+/* 3. Les guerres */
+function sceneGuerre(c, T) {
+  const lt = T - 28, t = Q(T);
+  ciel(c, ['#3a1a24', '#5a2228', '#7a2e28', '#9a3e2a', '#b8522a'], 7800, 1, '#d8905a');
+  for (let i = 0; i < 6; i++) { const ph = (t * .05 + i / 6) % 1; piece(c, { x: 150 + i * 260 + ph * 80, y: 600 - ph * 420, s: .8 + ph * 2, shape: blob(50, 7810 + i, 9, .5), col: '#2a2224', seed: 7810 + i, a: Math.sin(ph * Math.PI) * .7, so: 3 }); }
+  ridge(c, { y: 560, amp: 40, seed: 7720, col: '#4a2c30' });
+  ridge(c, { y: 640, amp: 26, seed: 7721, col: '#3e2c2a' });
+  ridge(c, { y: 700, amp: 6, seed: 7722, col: '#33282a', torn: 2 });
+  villes(c, 30, .8, ease(seg(lt, 1, 5)));
+  ridge(c, { y: 805, amp: 10, seed: 7723, col: '#2a2022', torn: 2 });
+  const adv = Math.min(lt * 75, 520);
+  [[-260, 1, 0, 790], [-200, 1, 1, 850], [1860, -1, 2, 795], [1800, -1, 3, 852]].forEach(([x0, dir, b, y0]) => {
+    for (let k = 0; k < 10; k++) { const x = x0 + dir * (adv - (k % 5) * 34) , y = y0 + Math.floor(k / 5) * 18; soldat(c, x, y, BANNIERES[b], T, b * 10 + k); }
+    piece(c, { shape: strip([[x0 + dir * adv + 20 * dir, y0 + 4], [x0 + dir * adv + 20 * dir, y0 - 120]], 4, 3), col: '#4a3020', seed: 7840 + b, amp: .5, so: 2 });
+    piece(c, { x: x0 + dir * adv + 20 * dir, y: y0 - 120, sx: dir, shape: [[0, 0], [50, 8], [44, 22], [0, 28]], col: BANNIERES[b], seed: 7845 + b, amp: 1.5, torn: 2, so: 3 });
+  });
+  if (lt > 6.5) for (let i = 0; i < 16; i++) { const ph = (T * 2 + hash(i + 7850)) % 1; glow(c, 720 + hash(i + 7851) * 160, 760 + hash(i + 7852) * 80, 22, 'rgba(255,230,160,0.95)', 1 - ph); }
+  c.save(); c.strokeStyle = 'rgba(40,24,18,.9)'; c.lineWidth = 2;
+  for (let i = 0; i < 14; i++) { const ph = (T * .7 + hash(i + 7860)) % 1, dir = i % 2 ? 1 : -1, x0 = dir > 0 ? 100 : 1500, x = x0 + dir * ph * 800, y = 760 - Math.sin(ph * Math.PI) * 380; c.beginPath(); c.moveTo(x, y); c.lineTo(x - dir * 22, y + (ph < .5 ? 10 : -10)); c.stroke(); }
+  c.restore();
+}
+
+/* 4. La pierre retrouvée, puis la naissance des héros */
+function main(c, x, y, r, seed) {
+  piece(c, { shape: strip([[x - 20, -40], [x - 6, y - 60], [x, y - 20]], 34, 28), col: '#7d4a36', seed: seed + 1, amp: 1.5, so: 4 });
+  piece(c, { x, y, r, shape: [[-16, -30], [16, -30], [18, 2], [24, 10], [20, 18], [8, 12], [-2, 20], [-12, 18], [-20, 6]], col: '#C68863', seed, amp: 1.2, so: 4 });
+}
+function scenePierreTrouvee(c, T) {
+  const lt = T - 42, t = Q(T);
+  if (lt < 7.6) {
+    ciel(c, ['#c9a27a', '#d8b48a'], 7900);
+    piece(c, { x: 0, y: 0, shape: [[-60, 170], [W + 60, 176], [W + 60, H + 40], [-60, H + 40]], col: '#5f8a36', seed: 7905, amp: 4, step: 30, torn: 2 });
+    const couches = ['#4e3826', '#5a4029', '#64472c', '#6e4e30'];
+    couches.forEach((col, i) => piece(c, { x: 0, y: 0, shape: [[-60, 200 + i * 170], [W + 60, 205 + i * 170], [W + 60, H + 40], [-60, H + 40]], col, seed: 7910 + i, amp: 6, step: 30, so: 3 }));
+    for (let i = 0; i < 9; i++) { const x0 = 100 + i * 180; piece(c, { shape: strip([[x0, 190], [x0 + 30 * Math.sin(i), 360], [x0 - 20, 520 + hash(i + 7920) * 200], [x0 + 40, 700 + hash(i + 7921) * 150]], 16, 3), col: '#3a2818', seed: 7930 + i, amp: 1.5, so: 3 }); }
+    const ev = ease(seg(lt, 4.2, 5.4)), touche = seg(lt, 5.6, 6.2);
+    glow(c, 800, 560, 120 + 200 * ev, 'rgba(160,110,255,0.6)', .15 + .85 * ev);
+    pierre(c, 800, 560, 1, T, 7940, ev > .5 ? '#3b1878' : '#2a2236');
+    for (let k = 0; k < 9; k++) {
+      const st = .8 + k * .38, p = seg(lt, st, st + .9), a = k / 9 * TAU;
+      const x = 800 + Math.cos(a) * 60 + p * (k % 2 ? 1 : -1) * 500, y = 560 + Math.sin(a) * 50 - Math.sin(p * Math.PI) * 300 - p * 200;
+      piece(c, { x, y, r: p * 6, shape: blob(46, 7950 + k, 8, .5), col: '#4a3424', seed: 7950 + k, amp: 2, so: 4, a: 1 - seg(p, .7, 1) });
+    }
+    if (lt < 4.6) { const dig = Math.abs(Math.sin(lt * 5)); main(c, 700 + dig * 20, 450 + dig * 40, .4, 7970); main(c, 900 - dig * 20, 460 + (1 - dig) * 40, -.4, 7975); }
+    else { const tx = lerp(860, 818, ease(touche)), ty = lerp(380, 520, ease(touche)); main(c, tx, ty, -.2, 7975); }
+    const fl = ease(seg(lt, 6.1, 6.8)) * (1 - seg(lt, 7.2, 7.6)); if (fl > 0) { c.fillStyle = `rgba(240,230,255,${fl})`; c.fillRect(-10, -10, W + 20, H + 20); }
+  } else {
+    bgFill(c, '#241d2e', 7980); stars(c, 90, 7981, .6, T);
+    CERCLE.forEach((h, i) => { const ap = back(seg(lt, 8.2 + i * .9, 8.8 + i * .9)); if (ap <= 0) return; heroCercle(c, h, 800 + (i - 3) * 196, 770 + (1 - ap) * 30, 118, T, { a: clamp(ap), embleme: back(seg(lt, 8.6 + i * .9, 9.2 + i * .9)) }); });
+    const fl = 1 - seg(lt, 7.6, 8.4); if (fl > 0) { c.fillStyle = `rgba(240,230,255,${fl})`; c.fillRect(-10, -10, W + 20, H + 20); }
+  }
+}
+
+/* 5. La paix fragile : les héros entre les armées, un traité signé puis déchiré */
+function soldatLance(c, x, y, col, ang, dir, t, k) {
+  const b = Math.abs(Math.sin(t * 2 + k)) * 1.5, hx0 = x + 8 * dir, hy0 = y - 24 - b;
+  c.save(); c.translate(hx0, hy0); c.rotate(ang * dir); piece(c, { shape: strip([[0, 30], [0, -60]], 3, 3), col: '#5a4030', seed: 9000 + k, amp: .5, so: 2 }); piece(c, { y: -64, shape: [[-4, 0], [0, -12], [4, 0]], col: '#9aa5ab', seed: 9001 + k, amp: .3, so: 1 }); c.restore();
+  piece(c, { x, y: y - 14 - b, shape: rect(16, 28), col, seed: 9010 + k, amp: 1, so: 2 });
+  piece(c, { x, y: y - 34 - b, shape: circ(7, 10), col: '#b89a74', seed: 9020 + k, amp: .8, so: 2 });
+}
+function scenePaix(c, T) {
+  const lt = T - 58, t = Q(T), dechire = ease(seg(lt, 10.6, 12.4)), reprise = ease(seg(lt, 12, 15));
+  ciel(c, ['#2e2a34', '#3e3640', '#524648', '#665452', '#7a6258'], 9100, 1, '#9a8a80');
+  for (let i = 0; i < 4; i++) { const ph = (t * .04 + i / 4) % 1; piece(c, { x: 200 + i * 400 + ph * 60, y: 560 - ph * 380, s: .8 + ph * 1.8, shape: blob(50, 9110 + i, 9, .5), col: '#2a2426', seed: 9110 + i, a: Math.sin(ph * Math.PI) * .6, so: 2 }); }
+  ridge(c, { y: 560, amp: 30, seed: 9120, col: '#3a3034' });
+  for (let i = 0; i < 6; i++) { const x = 120 + i * 270; c.save(); c.translate(x, 575); c.rotate((hash(i + 9130) - .5) * .5); batiment(c, 0, 0, i % 2 ? 'tour' : 'maison', .55, '#3a2e2e', 9131 + i * 2, 0); c.restore(); if (reprise > 0) { glow(c, x, 545, 120, 'rgba(255,100,30,0.7)', reprise * (.8 + .2 * Math.sin(T * 8 + i))); flamme(c, x, 575, reprise * .7, 9150 + i * 2); } }
+  ridge(c, { y: 700, amp: 10, seed: 9160, col: '#2c2628', torn: 2 });
+  /* les lances : pointées vers l'ennemi, abaissées pendant la paix, relevées quand le traité se déchire */
+  const baisse = ease(seg(lt, 5.5, 7.5)) * (1 - reprise);
+  const ang = lerp(1.05, 0, baisse);
+  [[140, 1, 0], [300, 1, 1], [1300, -1, 2], [1460, -1, 3]].forEach(([x0, dir, b]) => {
+    for (let k = 0; k < 12; k++) { const x = x0 + dir * ((k % 4) * 42 - 60) + (Math.floor(k / 4) % 2) * 20, y = 760 + Math.floor(k / 4) * 32; soldatLance(c, x, y, BANNIERES[b], ang, dir, T, b * 20 + k); }
+    piece(c, { shape: strip([[x0, 770], [x0, 600]], 4, 3), col: '#4a3020', seed: 9170 + b, amp: .5, so: 2 });
+    piece(c, { x: x0, y: 600, sx: dir, shape: [[0, 0], [52, 8], [46, 22], [0, 28]], col: BANNIERES[b], seed: 9175 + b, amp: 1.5, torn: 2, so: 3 });
+  });
+  /* les héros s'avancent au milieu, sans hâte */
+  CERCLE.forEach((h, i) => { const av = ease(seg(lt, .6 + Math.abs(i - 3) * .25, 4.6 + Math.abs(i - 3) * .25)), x = 800 + (i - 3) * 82, fy = lerp(705, 830, av); heroCercle(c, h, x, fy, lerp(52, 92, av), T, { a: clamp(av * 2), ai: .8 }); });
+  /* le traité, scellé par les quatre peuples */
+  const tr = ease(seg(lt, 7, 8.4));
+  if (tr > 0) {
+    const half = (side) => {
+      const dx = side * dechire * 220, dy = dechire * dechire * 260, r = side * dechire * .5;
+      const shape = side < 0 ? [[-150, -90], [0, -90], [8, -50], [-6, -10], [10, 30], [-4, 90], [-150, 90]] : [[0, -90], [150, -90], [150, 90], [-4, 90], [10, 30], [-6, -10], [8, -50]];
+      piece(c, { x: 800 + dx, y: 330 + dy, r, sx: side < 0 ? 1 : 1, s: tr, shape, col: '#efe2c0', seed: 9190 + side, amp: 1.5, torn: 2, so: 6, a: 1 - seg(dechire, .7, 1), after: g => {
+        g.strokeStyle = 'rgba(42,29,18,.55)'; g.lineWidth = 2; g.beginPath(); for (let l = 0; l < 6; l++) { const y = -62 + l * 18; g.moveTo(side < 0 ? -130 : 14, y); g.lineTo(side < 0 ? -12 : 130, y); } g.stroke();
+        BANNIERES.forEach((col, k) => { if ((k < 2) !== (side < 0)) return; const sg = back(seg(lt, 8.6 + k * .35, 9.1 + k * .35)); if (sg <= 0) return; const px = (k < 2 ? -110 : 30) + (k % 2) * 70; piece(g, { x: px, y: 62, s: sg, shape: blob(14, 9195 + k, 10, .2), col, seed: 9195 + k, amp: 1, so: 2 }); });
+      } });
+    };
+    half(-1); half(1);
+  }
+}
+
+/* 6. Le traître (selon le Roi) */
+function sceneTraitre(c, T) {
+  const lt = T - 74, t = Q(T), cor = ease(seg(lt, 14, 22)), vis = ease(seg(lt, 4, 5.2)) * (1 - ease(seg(lt, 12, 13.2)));
+  ciel(c, ['#0e1024', '#151831', '#1d1f3c', '#262546', '#2f2a4a'], 8100, 1, '#4a4a6a');
+  stars(c, 120, 8110, 1, T);
+  ridge(c, { y: 620, amp: 30, seed: 8120, col: '#1f1d2c' });
+  if (cor > 0) { c.save(); c.globalAlpha = .55 * cor; c.filter = 'brightness(0)'; heros(c, 260 + 60 * cor, 900, TRAITRE.sp, 330 * (.6 + .4 * cor), T); c.filter = 'none'; c.restore();
+    for (const s of [-1, 1]) piece(c, { x: 260 + 60 * cor + s * 70 * cor, y: 900 - 640 * (.6 + .4 * cor), s: cor, shape: [[-14, 0], [s * 30, -110], [14, 0]], col: '#0a0608', seed: 8130 + s, amp: 2, shadow: false, a: .55 * cor }); }
+  ridge(c, { y: 790, amp: 10, seed: 8121, col: '#18161f', torn: 2 });
+  const fx = 800, fy = 790, fl = .85 + .15 * Math.sin(T * 11);
+  glow(c, fx, fy - 60, 420, 'rgba(255,140,50,0.45)', fl);
+  CERCLE.forEach((h, i) => {
+    if (i === 0) return;
+    const x = [0, 480, 640, 1010, 1180, 1350, 1500][i] + (i < 3 ? 25 : 40) * cor, recul = -cor * .05 * (i < 3 ? 1 : -1);
+    c.save(); c.translate(x, fy); c.rotate(recul); c.translate(-x, -fy);
+    heroCercle(c, h, x, fy, 112, T, { ai: 1 - cor * .6 }); c.restore();
+  });
+  const tx = 220 + 60 * cor;
+  heroCercle(c, TRAITRE, tx, fy, 112 * (1 + .12 * cor), T, { aura: cor > .5 ? 'rgba(170,10,10,0.95)' : TRAITRE.aura, ai: 1 + cor, yeuxRouges: cor, bras: cor > .6 });
+  for (let i = 0; i < 9; i++) {
+    const st = 16.5 + i * .5, p = ease(seg(lt, st, st + 1.6)); if (p <= 0) continue;
+    const a = hash(i + 8140) * Math.PI + Math.PI, x0 = 800 + Math.cos(a) * 900, y0 = 400 + Math.sin(a) * 500, x = lerp(x0, tx, p), y = lerp(y0, fy - 150, p);
+    if (p < 1) { glow(c, x, y, 40, 'rgba(180,130,255,0.9)'); pierre(c, x, y, .2, T, 8150 + i * 5); }
+  }
+  if (lt > 21.5) glow(c, tx, fy - 150, 120 + 30 * Math.sin(T * 6), 'rgba(200,40,60,0.7)', ease(seg(lt, 21.5, 22.5)));
+  for (let k = 0; k < 5; k++) flamme(c, fx + (k - 2) * 22, fy + 8, (.7 + .3 * Math.sin(T * 10 + k)) * (k === 2 ? 1.3 : .9), 8170 + k * 2);
+  /* un morceau du traité déchiré tombe dans le feu et brûle */
+  const tb = seg(lt, .6, 3.6);
+  if (tb > 0 && tb < 1) { piece(c, { x: fx + 30 - tb * 30, y: lerp(380, fy - 10, ease(tb)), r: .4 + tb * 1.2, s: 1 - tb * .5, shape: [[-70, -40], [60, -44], [52, -6], [66, 10], [44, 40], [-70, 42]], col: mix('#efe2c0', '#2a1a10', seg(tb, .55, 1)), seed: 8900, amp: 2.5, torn: 2, so: 3, a: 1 - seg(tb, .8, 1) }); glow(c, fx, fy - 30, 140, 'rgba(255,150,60,0.6)', seg(tb, .6, 1)); }
+  /* le regard tourné vers le feu : ce qu'il voit */
+  if (vis > 0) vision(c, lt, T, vis);
+}
+function vision(c, lt, T, a) {
+  c.save(); c.globalAlpha = a; c.fillStyle = 'rgba(8,6,14,0.55)'; c.fillRect(-10, -10, W + 20, H + 20); c.restore();
+  const cx = 800, cy = 405, rx = 560, ry = 250, bulle = blob(1, 8910, 22, .08).map(([x, y]) => [x * rx, y * ry]);
+  piece(c, { x: cx, y: cy, shape: bulle, col: '#cdb48a', seed: 8910, amp: 6, step: 30, torn: 3, so: 8, a, after: g => {
+    g.clip();
+    piece(g, { y: 120, shape: [[-600, 0], [600, -6], [600, 300], [-600, 300]], col: '#9a8460', seed: 8911, amp: 3, so: 2 });
+    /* la bannière unique, et les quatre bannières des peuples abaissées */
+    const mt = ease(seg(lt, 5, 6.5));
+    piece(g, { shape: strip([[0, 120], [0, 120 - 300 * mt]], 7, 6), col: '#2a1a10', seed: 8912, amp: .5, so: 3 });
+    piece(g, { x: 0, y: 120 - 300 * mt + 10, s: mt, shape: [[-62, 0], [62, 0], [62, 170], [0, 205], [-62, 170]], col: '#1a1416', seed: 8913, amp: 2, torn: 2, so: 4, after: gg => glyphe(gg, 'epee', '#c8b89a') });
+    BANNIERES.forEach((col, i) => { const x = [-430, -250, 250, 430][i], ab = ease(seg(lt, 5.8 + i * .3, 7 + i * .3)); g.save(); g.translate(x, 120); g.rotate((i < 2 ? -1 : 1) * 1.15 * ab); piece(g, { shape: strip([[0, 0], [0, -170]], 5, 4), col: '#3a2818', seed: 8920 + i, amp: .5, so: 2 }); piece(g, { x: 2, y: -170, shape: [[0, 0], [46, 6], [40, 20], [0, 26]], col, seed: 8925 + i, amp: 1.2, torn: 2, so: 2 }); g.restore(); });
+    /* tous les peuples à genoux, en silence */
+    for (let i = 0; i < 20; i++) { const ap = ease(seg(lt, 6.4 + i * .08, 7.2 + i * .08)); if (ap <= 0) continue; const row = Math.floor(i / 10), x = -470 + (i % 10) * 104 + row * 50, y = 150 + row * 34; if (Math.abs(x) < 80) continue; g.save(); g.globalAlpha *= ap; g.translate(x, y); g.scale(1, .74); heros(g, 0, 0, PEUPLES[i % PEUPLES.length], 40, T); g.restore(); }
+    /* et pour tenir cette paix : des chaînes, et les démons derrière la bannière */
+    const ch = ease(seg(lt, 8.6, 10));
+    if (ch > 0) { g.save(); g.strokeStyle = 'rgba(30,24,22,0.85)'; g.lineWidth = 3; g.setLineDash([7, 5]); g.globalAlpha *= ch; for (let row = 0; row < 2; row++) { g.beginPath(); g.moveTo(-480, 128 + row * 34); for (let x = -480; x <= 480; x += 40) g.lineTo(x, 128 + row * 34 + Math.sin(x * .05) * 4); g.stroke(); } g.restore(); }
+    const dm = ease(seg(lt, 9.4, 11));
+    if (dm > 0) for (let i = 0; i < 7; i++) { const x = (i - 3) * 120, y = -140 + Math.abs(i - 3) * 22 + Math.sin(T * 2 + i) * 6; g.save(); g.globalAlpha *= dm * .9; demon(g, x, y, .9 - Math.abs(i - 3) * .08, 8940 + i * 4, T); g.restore(); }
+    /* plus aucun feu : un ciel calme */
+    glow(g, 0, -200, 260, 'rgba(255,240,210,0.25)');
+  } });
+}
+
+/* 7. Le portail et les démons */
+function scenePortail(c, T) {
+  const lt = T - 98, t = Q(T), ouv = 280 * eOut(seg(lt, 1, 5)), feu = ease(seg(lt, 6, 14));
+  ciel(c, ['#1e0a10', '#2e0e14', '#461418', '#5e1c1a', '#7a281c'], 8200, 1, '#a8503a');
+  faille(c, 900, 300, 420, ouv, T, 8210, true);
+  ridge(c, { y: 560, amp: 30, seed: 8220, col: '#2a1416' });
+  for (let i = 0; i < 7; i++) { const tombe = ease(seg(lt, 6 + i * .9, 8 + i * .9)), x = 120 + i * 230; c.save(); c.translate(x, 580); c.rotate(tombe * (i % 2 ? .6 : -.5)); c.translate(-x, -580 - tombe * 40); batiment(c, x, 580, i % 2 ? 'tour' : 'maison', .7, '#2a1416', 8230 + i * 2, .3 * (1 - tombe)); c.restore(); }
+  for (let i = 0; i < 10; i++) { const f = feu * (.7 + .3 * Math.sin(T * 7 + i)); glow(c, 80 + i * 160, 600, 120, 'rgba(255,90,30,0.6)', f); flamme(c, 80 + i * 160, 615, f * .8, 8250 + i * 2); }
+  piece(c, { x: 0, y: 0, shape: [[-60, 700], [400, 640], [700, 610], [1000, 650], [W + 60, 700], [W + 60, H + 40], [-60, H + 40]], col: '#1e1214', seed: 8270, amp: 5, step: 30, torn: 2 });
+  heroCercle(c, TRAITRE, 640, 625, 130, T, { aura: 'rgba(170,10,10,0.95)', ai: 1.6, yeuxRouges: 1, bras: true });
+  if (ouv > 20) { c.save(); c.globalCompositeOperation = 'lighter'; const g = c.createLinearGradient(640, 420, 900, 300); g.addColorStop(0, 'rgba(255,60,40,0.6)'); g.addColorStop(1, 'rgba(255,60,40,0)'); c.strokeStyle = g; c.lineWidth = 10; c.beginPath(); c.moveTo(640, 420); c.lineTo(900, 300); c.stroke(); c.restore(); }
+  for (let i = 0; i < 42; i++) {
+    const st = 4 + i * .2, p = seg(lt, st, st + 4); if (p <= 0) continue;
+    const tx = 40 + hash(i + 8280) * 1520, ty = 160 + hash(i + 8281) * 600, e = eOut(p);
+    const x = lerp(900, tx, e) + Math.sin(T * 3 + i) * 30 * e, y = lerp(300, ty, e) + Math.cos(T * 2.4 + i) * 20 * e;
+    demon(c, x, y, .25 + e * (.6 + hash(i + 8282) * .5), 8300 + i * 4, T);
+  }
+}
+
+/* 8. Le sacrifice des héros */
+function sceneSacrifice(c, T) {
+  const lt = T - 114, t = Q(T), ouv = 280 * (1 - ease(seg(lt, 12.5, 15)));
+  ciel(c, ['#1a0c1c', '#24102a', '#341632', '#4a1c34', '#5e2234'], 8400, 1, '#8a5a6a');
+  faille(c, 800, 300, 400, ouv, T, 8210, true);
+  for (let i = 0; i < 18; i++) { const p = seg(lt, 1 + i * .35, 5 + i * .35); if (p <= 0 || p >= 1) continue; const a = hash(i + 8410) * TAU + p * 4, d = (1 - eIn(p)) * (300 + hash(i + 8411) * 400); demon(c, 800 + Math.cos(a) * d * 1.4, 300 + Math.sin(a) * d * .7, .3 + (1 - p) * .6, 8420 + i * 4, T); }
+  const tp = ease(seg(lt, 5.5, 11.5));
+  if (tp < 1) heroCercle(c, TRAITRE, lerp(800, 800, tp), lerp(520, 330, tp), 110 * (1 - tp * .9), T, { aura: 'rgba(170,10,10,0.95)', ai: 1.2, yeuxRouges: 1, a: 1 - seg(tp, .85, 1) });
+  ridge(c, { y: 700, amp: 16, seed: 8430, col: '#1e1418', torn: 2 });
+  const ligne = CERCLE.filter((h, i) => i !== 0 && i !== 3).concat([ROI]);
+  ligne.forEach((h, i) => {
+    const x = 330 + i * 190, fy = 720, roi = h === ROI, fin = roi ? 0 : ease(seg(lt, 9 + i * .9, 10.2 + i * .9));
+    const beam = seg(lt, 1 + i * .4, 1.6 + i * .4) * (1 - fin) * (ouv > 10 ? 1 : 0);
+    if (beam > 0) { c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = beam; const g = c.createLinearGradient(x, fy - 230, 800, 300); g.addColorStop(0, h.aura); g.addColorStop(1, 'rgba(255,255,255,0.1)'); c.strokeStyle = g; c.lineWidth = 9; c.lineCap = 'round'; c.beginPath(); c.moveTo(x, fy - 230); c.lineTo(800, 300); c.stroke(); c.restore(); }
+    heroCercle(c, h, x, fy, 100, T, { a: 1 - fin, bras: beam > .2 });
+    if (fin > 0 && fin < 1) for (let k = 0; k < 14; k++) { const ph = (fin + hash(k + i * 20 + 8440) * .5) % 1; glow(c, x + (hash(k + 8441) - .5) * 80, fy - 100 - ph * 400, 10, h.aura, (1 - ph) * (1 - fin * .5)); }
+  });
+  const fl = ease(seg(lt, 14.5, 15.2)) * (1 - seg(lt, 15.4, 17)); if (fl > 0) { c.fillStyle = `rgba(255,250,240,${fl})`; c.fillRect(-10, -10, W + 20, H + 20); }
+}
+
+/* 9. Le Roi : les peuples sans roi choisissent leur sauveur */
+const REPS = [{ id: 'nain', x: 590, b: 0 }, { id: 'humain', x: 685, b: 3 }, { id: 'elfeBois', x: 915, b: 2 }, { id: 'demiOrque', x: 1015, b: 1 }];
+const DECHUS = [[330, 694, -1.9], [478, 708, 1.2], [1140, 698, 2.3], [1292, 690, -1.0]];
+function sceneRoi(c, T) {
+  const lt = T - 132, t = Q(T);
+  ciel(c, ['#4a4450', '#5e5460', '#76666a', '#8a7a76', '#9a8a80'], 8500);
+  const chaud = ease(seg(lt, 8, 20)); if (chaud > 0) ciel(c, ['#5a4a5e', '#8a6a6a', '#c08a6a', '#e0b080', '#f0d0a0'], 8500, chaud);
+  const rayons = ease(seg(lt, 18, 21.5));
+  if (rayons > 0) { c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = .22 * rayons; for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI + Math.PI + Math.sin(T * .3) * .05; c.fillStyle = i % 2 ? 'rgba(255,230,160,0.5)' : 'rgba(255,240,200,0.3)'; c.beginPath(); c.moveTo(800, 420); c.lineTo(800 + Math.cos(a - .05) * 1200, 420 + Math.sin(a - .05) * 1200); c.lineTo(800 + Math.cos(a + .05) * 1200, 420 + Math.sin(a + .05) * 1200); c.closePath(); c.fill(); } c.restore(); }
+  for (let i = 0; i < 6; i++) { const x = 110 + i * 280 + (i > 2 ? 120 : 0); c.save(); c.translate(x, 600); c.rotate((hash(i + 8510) - .5) * .4); batiment(c, 0, 0, i % 2 ? 'tour' : 'maison', .8, '#4a3a3a', 8520 + i * 2, 0); c.restore(); }
+  ridge(c, { y: 640, amp: 20, seed: 8530, col: '#5a4a44' });
+  /* les bannières déchirées et les couronnes des rois tombés, dans la cendre */
+  DECHUS.forEach(([x, y, r], i) => {
+    const bx = x + (i < 2 ? -70 : 70), br = (i < 2 ? -1 : 1) * (.55 + hash(i + 8580) * .5);
+    c.save(); c.translate(bx, y + 6); c.rotate(br);
+    piece(c, { shape: strip([[0, 0], [0, -120]], 4, 3), col: '#3a2a20', seed: 8581 + i, amp: .5, so: 2 });
+    piece(c, { x: 2, y: -120, shape: [[0, 0], [46, 6], [30, 14], [42, 24], [0, 30]], col: mix(BANNIERES[i], '#3a3036', .45), seed: 8585 + i, amp: 2.5, torn: 2, so: 2 });
+    c.restore();
+    c.save(); c.translate(x, y); c.rotate(r); c.globalAlpha = .9; couronne(c, 0, 0, .5); c.restore();
+    glow(c, x, y, 40, 'rgba(120,110,110,0.35)', .6);
+  });
+  piece(c, { x: 800, y: 660, shape: [[-260, 40], [-160, -20], [-60, -60], [60, -58], [170, -18], [270, 40], [270, 300], [-260, 300]], col: '#6a5a50', seed: 8540, amp: 5, step: 24, torn: 2, so: 5 });
+  for (const s of [-1, 1]) { const b = ease(seg(lt, 16.5, 19)); if (b <= 0) continue; const x = 800 + s * 360; piece(c, { shape: strip([[x, 760], [x, 760 - 420 * b]], 8, 6), col: '#4a3020', seed: 8550 + s, amp: .5, so: 4 }); piece(c, { x, y: 760 - 420 * b + 10, shape: [[-60, 0], [60, 0], [60, 220], [0, 260], [-60, 220]], s: b, col: '#3a2a6a', seed: 8560 + s, amp: 2, torn: 2, so: 5, after: g => { couronne(g, 0, 90, .9); } }); }
+  /* le dernier héros, seul, l'aura éteinte ; elle revient quand on le choisit */
+  const ai = lerp(.25, 1.4, ease(seg(lt, 13, 17.5)));
+  heroCercle(c, ROI, 800, 604, 150, T, { ai });
+  const hh = ROI.sp.taille * 150;
+  /* les quatre envoyés des peuples */
+  const plie = ease(seg(lt, 9.3, 10.5)) * (1 - ease(seg(lt, 11.4, 12.2))) + ease(seg(lt, 15, 16.5));
+  const pose = ease(seg(lt, 9.6, 11.2)), bras = lt > 12 && lt < 15.3;
+  REPS.forEach((r, i) => {
+    const sp = PEUPLES.find(p => p.id === r.id), g = r.x < 800 ? 1 : -1;
+    const p = ease(seg(lt, 3.5 + i * .3, 9 + i * .2)), x = lerp(r.x < 800 ? -120 : W + 120, r.x, p), fy = 742;
+    const bob = p > 0 && p < 1 ? Math.abs(Math.sin(t * 8 + i)) * 5 : 0;
+    if (p <= 0) return;
+    /* la bannière portée, puis couchée au pied du héros */
+    const px = x + g * 26;
+    c.save(); c.translate(px, fy - bob); c.rotate(g * 1.42 * pose);
+    piece(c, { shape: strip([[0, 0], [0, -200]], 4, 3), col: '#4a3020', seed: 8600 + i, amp: .5, so: 3 });
+    piece(c, { x: 2 * g, y: -200, sx: g, shape: [[0, 0], [52 + 4 * Math.sin(lt * 4 + i) * (1 - pose), 8], [46, 22], [0, 30]], col: BANNIERES[r.b], seed: 8605 + i, amp: 1.5, torn: 2, so: 3 });
+    c.restore();
+    const spi = bras ? Object.assign({}, sp, { f: Object.assign({}, sp.f, { brasLeves: 1 }) }) : sp;
+    c.save(); c.translate(x, fy - bob); c.scale(g, 1 - .26 * plie); heros(c, 0, 0, spi, 84, T); c.restore();
+  });
+  /* la couronne nouvelle, levée par les peuples jusqu'à lui */
+  const ca = ease(seg(lt, 11.8, 12.6)), cr = eOut(seg(lt, 12.4, 15));
+  if (ca > 0) {
+    const cy = lerp(640, 604 - hh - 18, cr);
+    glow(c, 800, cy, lerp(50, 95, cr), 'rgba(255,220,120,0.7)', ca);
+    for (let k = 0; k < 8; k++) { const ph = (lt * .6 + hash(k + 8620)) % 1; glow(c, 800 + (hash(k + 8621) - .5) * 90, cy + 20 - ph * 70, 6, 'rgba(255,230,150,0.9)', ca * (1 - ph) * (1 - seg(lt, 15.5, 17))); }
+    couronne(c, 800, cy, lerp(.45, .62, cr), ca);
+  }
+  /* la foule de tous les peuples arrive, puis s'agenouille */
+  const kn = ease(seg(lt, 15, 16.5));
+  for (let i = 0; i < 28; i++) {
+    const row = Math.floor(i / 10), tx = 110 + (i % 10) * 150 + row * 70 + (hash(i + 8570) - .5) * 30, fy = 790 + row * 46;
+    if (Math.abs(tx - 800) < (row < 2 ? 300 : 150)) continue;
+    const d = hash(i + 8590) * 2.2, p = ease(seg(lt, 3 + d, 8.5 + d)); if (p <= 0) continue;
+    const x = lerp(tx < 800 ? -100 - hash(i + 8595) * 260 : W + 100 + hash(i + 8595) * 260, tx, p);
+    const bob = p < 1 ? Math.abs(Math.sin(t * 8 + i)) * 4 : 0;
+    c.save(); c.translate(x, fy - bob); c.scale(tx < 800 ? 1 : -1, 1 - .22 * kn); heros(c, 0, 0, PEUPLES[i % PEUPLES.length], 66, T); c.restore();
+  }
+}
+
+/* 10. Fin */
+function sceneFin(c, T) {
+  const lt = T - 154;
+  bgFill(c, '#efe2c0', 7600);
+  if (TITRE.complete && TITRE.naturalWidth) { const e = ease(seg(lt, .3, 1.5)), sc = 3.4, w = TITRE.naturalWidth * sc, h = TITRE.naturalHeight * sc; c.save(); c.globalAlpha = e; c.imageSmoothingEnabled = false; c.drawImage(TITRE, 800 - w / 2, 250 - h / 2, w, h); c.restore(); }
+  const st = eOut(seg(lt, 1.8, 2.4));
+  if (st > 0) { const sh = lt < 2.7 ? Math.sin(lt * 80) * 6 * (1 - seg(lt, 2.4, 2.7)) : 0; sceau(c, 800 + sh, 560, lerp(1.9, .8, st), clamp(st * 2)); }
+}
+
+/* ---------- textes provisoires ---------- */
+let SHOW_TEXT = true;
+function wrap(c, txt, max) { const words = txt.split(' '), lines = []; let l = ''; for (const w of words) { const t = l ? l + ' ' + w : w; if (c.measureText(t).width > max && l) { lines.push(l); l = w; } else l = t; } if (l) lines.push(l); return lines; }
+function textes(c, T) {
+  if (!SHOW_TEXT) return;
+  for (const x of TEXTES) {
+    if (T < x.de - .5 || T > x.a + .5) continue;
+    const ap = eOut(seg(T, x.de - .5, x.de + .3)) * (1 - seg(T, x.a - .2, x.a + .5)); if (ap <= 0) continue;
+    c.save(); c.font = 'italic 36px "IM Fell English", Georgia, serif';
+    const lines = wrap(c, x.t, 1000), w = Math.max(...lines.map(l => c.measureText(l).width)) + 100, hh = lines.length * 46 + 64;
+    c.restore();
+    const cy = x.haut ? 120 : H - 110 - (lines.length - 1) * 23;
+    piece(c, { x: W / 2, y: cy + (1 - ap) * 30, r: (hash(x.n + 3100) - .5) * .03, shape: rect(w, hh), col: '#f4e9cf', seed: 3100 + x.n, amp: 4, step: 30, torn: 3, a: ap, so: 6, after: g => {
+      g.fillStyle = 'rgba(246,236,212,0.62)'; g.fill();
+      g.fillStyle = '#9a3f1e'; g.font = '600 15px "Spectral", Georgia, serif'; g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+      if ('letterSpacing' in g) g.letterSpacing = '2px';
+      g.fillText(`TEXTE ${x.n} · À ÉCRIRE`, -w / 2 + 28, -hh / 2 + 26);
+      if ('letterSpacing' in g) g.letterSpacing = '0px';
+      g.fillStyle = '#2a1d12'; g.font = 'italic 36px "IM Fell English", Georgia, serif'; g.textAlign = 'center';
+      lines.forEach((l, i) => g.fillText(l, 0, -hh / 2 + 70 + i * 46));
+    } });
+  }
+}
+
+/* ---------- montage et post-traitement ---------- */
+const SCENES = [sceneSceau, sceneVilles, sceneGuerre, scenePierreTrouvee, scenePaix, sceneTraitre, scenePortail, sceneSacrifice, sceneRoi, sceneFin];
+const sceneAt = T => { let i = 0; while (i < BORNES.length && T >= BORNES[i]) i++; return i; };
+function postFX(T) {
+  /* le portail : légère séparation des couleurs et ondulation */
+  const A = ease(seg(T, 101, 106)) * (1 - seg(T, 112, 114)) * .35 + ease(seg(T, 114, 116)) * (1 - seg(T, 127, 129)) * .2;
+  return { A, ab: A * (8 + 8 * Math.abs(Math.sin(T * 4))), wave: A * 10, sl: 0 };
+}
+const cv = document.getElementById('cine'), out = cv.getContext('2d');
+const mk = () => { const c = document.createElement('canvas'); const x = c.getContext('2d'); return [c, x]; };
+const [bufA, cA] = mk(), [bufB, cB] = mk(), [tmp, cT] = mk(), [vign, cV] = mk();
+cA._id = 'a'; cB._id = 'b'; out._id = 'o';
+function prep(c) { c.setTransform(K, 0, 0, K, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.shadowColor = 'transparent'; }
+function tear(c, img, p, seed) {
+  const ex = lerp(-200, W + 200, ease(p)), r = R(seed + BOIL), pts = [];
+  for (let y = -20; y <= H + 20; y += 28) pts.push([ex + (y - H / 2) * .18 + (r() - .5) * 26, y]);
+  c.save(); c.beginPath(); c.moveTo(-300, -20); pts.forEach(q => c.lineTo(q[0], q[1])); c.lineTo(-300, H + 20); c.closePath();
+  c.save(); c.clip(); c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(img, 0, 0); c.restore();
+  c.beginPath(); pts.forEach((q, i) => i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]));
+  c.strokeStyle = '#efe4c8'; c.lineWidth = 7; c.shadowColor = 'rgba(0,0,0,.6)'; c.shadowBlur = 14 * K; c.shadowOffsetX = -6 * K; c.stroke(); c.restore();
+}
+function render(T) {
+  const fx = postFX(T);
+  BOIL = Math.floor(T * (5 + 18 * fx.A)) % 3;
+  const cut = CUTS.find(C => T > C - .6 && T < C + .6);
+  prep(cA);
+  if (cut != null) {
+    SCENES[sceneAt(cut - .01)](cA, T); prep(cB); SCENES[sceneAt(cut + .01)](cB, T);
+    prep(cA); tear(cA, bufB, seg(T, cut - .6, cut + .6), cut);
+  } else SCENES[sceneAt(T)](cA, T);
+  prep(cA); if (T > 8 && T < 154) cadreRoyal(cA); textes(cA, T);
+  post(bufA, T, fx);
+}
+function post(src, T, fx) {
+  const w = cv.width, h = cv.height;
+  out.setTransform(1, 0, 0, 1, 0, 0); out.globalAlpha = 1;
+  if (fx.ab < .3 && fx.wave < .3 && fx.sl < .01) { out.globalCompositeOperation = 'copy'; out.drawImage(src, 0, 0); }
+  else {
+    out.globalCompositeOperation = 'copy'; out.fillStyle = '#000'; out.fillRect(0, 0, w, h);
+    const offs = [[fx.ab, 0], [0, fx.ab * .3], [-fx.ab, -fx.ab * .2]], cols = ['#ff0000', '#00ff00', '#0000ff'];
+    for (let i = 0; i < 3; i++) {
+      cT.globalCompositeOperation = 'copy'; cT.drawImage(src, 0, 0);
+      cT.globalCompositeOperation = 'multiply'; cT.fillStyle = cols[i]; cT.fillRect(0, 0, w, h);
+      out.globalCompositeOperation = 'lighter'; warped(out, tmp, offs[i][0] * K, offs[i][1] * K, fx, T, i);
+    }
+  }
+  out.globalCompositeOperation = 'source-over'; out.drawImage(vign, 0, 0);
+}
+function warped(o, img, dx, dy, fx, T, ch) {
+  if (fx.wave < .3 && fx.sl < .01) { o.drawImage(img, dx, dy); return; }
+  const h = img.height, w = img.width, sh = Math.max(4, Math.round(10 * K)), fr = Math.floor(T * 14);
+  for (let y = 0; y < h; y += sh) {
+    let ox = fx.wave * K * Math.sin(y / K * .018 + T * 5 + ch * .4);
+    if (fx.sl > 0 && hash(fr * 977 + Math.floor(y / (sh * 4))) < .2 * fx.sl) ox += (hash(fr * 31 + y) - .5) * 260 * K * fx.sl;
+    const hh = Math.min(sh, h - y); o.drawImage(img, 0, y, w, hh, dx + ox, y + dy, w, hh);
+  }
+}
+function buildVignette() {
+  const w = vign.width, h = vign.height; cV.setTransform(1, 0, 0, 1, 0, 0); cV.clearRect(0, 0, w, h);
+  const g = cV.createRadialGradient(w / 2, h / 2, h * .35, w / 2, h / 2, h * .95);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(10,5,0,0.55)'); cV.fillStyle = g; cV.fillRect(0, 0, w, h);
+}
+
+/* ---------- lecteur ---------- */
+let T = 0, playing = true, last = null, lastFrame = -1, dirty = true, ready = false;
+let cout = 20, echelle = 1, dernierAjust = 0;
+const $ = id => document.getElementById(id);
+const btn = $('lecture'), frise = $('frise'), temps = $('temps');
+const fmt = s => { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+function setPlaying(p) { playing = p; last = null; btn.textContent = p ? 'Pause' : (T >= DUREE ? 'Revoir' : 'Lecture'); }
+function seek(t) { T = clamp(t, 0, DUREE); dirty = true; if (T >= DUREE) setPlaying(false); }
+function resize() {
+  const r = cv.getBoundingClientRect(); if (!r.width) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(480, Math.min(1440, Math.round(r.width * dpr)) * echelle | 0), h = Math.round(w * 9 / 16);
+  if (cv.width === w) return;
+  for (const c of [cv, bufA, bufB, tmp, vign]) { c.width = w; c.height = h; }
+  K = w / W; buildVignette(); dirty = true;
+}
+let actif = -1;
+function marquePlan() {
+  let i = 0; while (i + 1 < PLANS.length && T >= PLANS[i + 1].t) i++;
+  if (i === actif) return; actif = i;
+  document.querySelectorAll('.plan').forEach((el, j) => el.classList.toggle('actif', j === i));
+}
+function loop(now) {
+  if (ready) {
+    if (playing) { if (last != null) T += Math.min(.1, (now - last) / 1000); last = now; if (T >= DUREE) { T = DUREE; setPlaying(false); } }
+    const fi = Math.floor(T * 24);
+    if (fi !== lastFrame || dirty) {
+      const t0 = performance.now();
+      try { render(T); } catch (e) { console.error(e); }
+      if (playing) { cout = cout * .9 + (performance.now() - t0) * .1; if (cout > 60 && echelle > .5 && performance.now() - dernierAjust > 1500) { echelle *= .8; dernierAjust = performance.now(); cout = 30; resize(true); } }
+      lastFrame = fi; dirty = false;
+      if (document.activeElement !== frise) frise.value = T;
+      temps.textContent = fmt(T) + ' / ' + fmt(DUREE); marquePlan();
+    }
+  }
+  requestAnimationFrame(loop);
+}
+const plans = $('plans');
+PLANS.forEach((p, i) => {
+  const li = document.createElement('li'); li.className = 'plan';
+  li.innerHTML = `<button type="button"><h3>${p.nom}</h3><span class="t">${fmt(p.t)}</span></button><p>${p.d}</p>`;
+  li.querySelector('button').addEventListener('click', () => { seek(p.t + .01); setPlaying(true); $('ecran').scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+  plans.appendChild(li);
+});
+btn.addEventListener('click', () => { if (T >= DUREE) seek(0); setPlaying(!playing); });
+$('rejouer').addEventListener('click', () => { seek(0); setPlaying(true); });
+cv.addEventListener('click', () => { if (T >= DUREE) seek(0); setPlaying(!playing); });
+frise.addEventListener('input', () => { seek(parseFloat(frise.value)); });
+$('textes').addEventListener('change', e => { SHOW_TEXT = e.target.checked; dirty = true; });
+$('plein').addEventListener('click', () => { const el = $('ecran'); try { const p = document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen && el.requestFullscreen(); if (p && p.catch) p.catch(() => {}); } catch (e) {} });
+document.addEventListener('fullscreenchange', () => setTimeout(resize, 50));
+new ResizeObserver(resize).observe(cv);
+window.cine = { seek: t => { seek(t); setPlaying(false); render(T); }, render: t => render(t) };
+
+(async () => {
+  try { await Promise.race([Promise.all([document.fonts.load('13px "IM Fell English"'), document.fonts.load('italic 36px "IM Fell English"'), document.fonts.load('132px "IM Fell English SC"'), document.fonts.load('600 15px "Spectral"')]), new Promise(r => setTimeout(r, 2500))]); } catch (e) {}
+  for (const s of [1, 2, 3]) PAGES.push(makePage(s));
+  resize();
+  const reduit = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduit) { T = 4; setPlaying(false); }
+  $('chargement').style.display = 'none'; ready = true; dirty = true;
+  requestAnimationFrame(loop);
+})();
+</script>
