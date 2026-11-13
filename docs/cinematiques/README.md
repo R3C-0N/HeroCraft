@@ -14,13 +14,16 @@ et le titre du jeu.
 | Temps | Plan |
 |------:|------|
 | 0:00 | La déchirure |
-| 0:08 | L'espace : la planète de feu |
-| 0:24 | Le sol qui refroidit |
-| 0:58 | Le cratère |
-| 1:24 | La pluie |
-| 1:34 | Les berceaux de la vie |
-| 1:43 | La vie qui évolue |
-| 2:05 | Le sommeil |
+| 0:08 | La planète de feu |
+| 0:24 | Le sol sans vie |
+| 0:40 | La nuit tombe |
+| 0:58 | La météorite |
+| 1:10 | Les aberrations |
+| 1:24 | La pluie et les mers |
+| 1:34 | Les berceaux |
+| 1:43 | La vie apparaît |
+| 1:53 | L'arbre du vivant |
+| 2:05 | Les pierres s'endorment |
 | 2:13 | Les peuples |
 | 2:31 | Le titre |
 
