@@ -2913,41 +2913,89 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
     p.finish(SettlementKind::Village, center, biome)
 }
 
-fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Dice) -> Option<Settlement> {
-    let (x, z) = center;
-    // Le damier : rues tous les 14 blocs, remparts à 42 blocs du centre
-    const STEP: i32 = 14;
-    const HALF: i32 = 42;
-    let walls = Rect::new(x - HALF, z - HALF, x + HALF + 1, z + HALF + 1);
-    let culture = p.culture.unwrap_or(Culture::Humains);
-    let (habits, masonry) = (Habits::of(culture), Masonry::of(culture));
-    let street = street_block(culture, biome, true);
+/// Taille d'une ville fortifiée : le côté de son enceinte, en multiples de celui du bourg d'origine
+/// (85 blocs). Chaque quartier de la taille du bourg a sa petite place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TownSize {
+    /// La ville d'origine : 85 blocs de côté, une grand-place
+    Bourg,
+    /// Deux fois le côté du bourg : quatre quartiers
+    PetiteVille,
+    /// Quatre fois le côté du bourg : seize quartiers, trois portes par côté
+    GrandeVille,
+    /// Huit fois le côté du bourg : soixante-quatre quartiers et une citadelle au centre
+    Capitale,
+}
 
-    // Fontaine au milieu de la grand-place (posée en premier : elle passe avant le pavage)
-    let fountain = Rect::around(x, z, 2);
-    let floor = floor_for(p.generator, p.face, &fountain, 3)?;
-    p.take(Piece::Fountain { rect: fountain, floor }, 0);
-    // Tours d'angle, puis portes et remparts
+impl TownSize {
+    pub const ALL: [TownSize; 4] = [TownSize::Bourg, TownSize::PetiteVille, TownSize::GrandeVille, TownSize::Capitale];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            TownSize::Bourg => "bourg",
+            TownSize::PetiteVille => "petite-ville",
+            TownSize::GrandeVille => "grande-ville",
+            TownSize::Capitale => "capitale",
+        }
+    }
+
+    /// Côté de l'enceinte, en côtés de bourg
+    pub fn scale(&self) -> i32 {
+        match self {
+            TownSize::Bourg => 1,
+            TownSize::PetiteVille => 2,
+            TownSize::GrandeVille => 4,
+            TownSize::Capitale => 8,
+        }
+    }
+
+    /// Demi-côté de l'enceinte, en blocs (un multiple de trois rues)
+    pub fn half(&self) -> i32 {
+        42 * self.scale()
+    }
+}
+
+/// Écart entre deux rues d'une ville
+const TOWN_STEP: i32 = 14;
+
+/// Une enceinte carrée de demi-côté `half` autour de `center` : tours d'angle (et tous les
+/// `TOWN_STEP × 3` blocs si `towers`), portes aux décalages `gates` sur chaque côté, double rangée
+/// de remparts dont l'intérieure porte le chemin de ronde. Ses abords sont réservés.
+fn plan_enclosure(p: &mut Planner, center: (i32, i32), half: i32, masonry: Masonry, gates: &[i32], towers: bool) -> Option<()> {
+    let (x, z) = center;
+    let walls = Rect::new(x - half, z - half, x + half + 1, z + half + 1);
     for (tx, tz) in [(walls.x0, walls.z0), (walls.x1 - 1, walls.z0), (walls.x0, walls.z1 - 1), (walls.x1 - 1, walls.z1 - 1)] {
         let rect = Rect::around(tx, tz, 2);
         let floor = floor_for(p.generator, p.face, &rect, 6)?;
         p.take(Piece::Tower { rect, floor, masonry }, 0);
     }
-    let gates = [
-        Rect::new(x - 1, walls.z0, x + 2, walls.z0 + 1),
-        Rect::new(x - 1, walls.z1 - 1, x + 2, walls.z1),
-        Rect::new(walls.x0, z - 1, walls.x0 + 1, z + 2),
-        Rect::new(walls.x1 - 1, z - 1, walls.x1, z + 2),
-    ];
-    for gate in gates {
-        p.take(Piece::Gate { rect: gate, masonry, walk: false }, 0);
+    if towers {
+        // Au milieu d'un pâté sur trois, entre deux rues
+        let mut o = -half + 3 * TOWN_STEP / 2;
+        while o < half {
+            for (tx, tz) in [(x + o, walls.z0), (x + o, walls.z1 - 1), (walls.x0, z + o), (walls.x1 - 1, z + o)] {
+                let rect = Rect::around(tx, tz, 2);
+                if let Some(floor) = floor_for(p.generator, p.face, &rect, 6) {
+                    p.take(Piece::Tower { rect, floor, masonry }, 0);
+                }
+            }
+            o += 3 * TOWN_STEP;
+        }
     }
-    p.exits.extend([
-        ((x, walls.z0 - 1), Side::North),
-        ((x, walls.z1), Side::South),
-        ((walls.x0 - 1, z), Side::West),
-        ((walls.x1, z), Side::East),
-    ]);
+    for &o in gates {
+        for (gate, walk) in [
+            (Rect::new(x + o - 1, walls.z0, x + o + 2, walls.z0 + 1), false),
+            (Rect::new(x + o - 1, walls.z1 - 1, x + o + 2, walls.z1), false),
+            (Rect::new(walls.x0, z + o - 1, walls.x0 + 1, z + o + 2), false),
+            (Rect::new(walls.x1 - 1, z + o - 1, walls.x1, z + o + 2), false),
+            (Rect::new(x + o - 1, walls.z0 + 1, x + o + 2, walls.z0 + 2), true),
+            (Rect::new(x + o - 1, walls.z1 - 2, x + o + 2, walls.z1 - 1), true),
+            (Rect::new(walls.x0 + 1, z + o - 1, walls.x0 + 2, z + o + 2), true),
+            (Rect::new(walls.x1 - 2, z + o - 1, walls.x1 - 1, z + o + 2), true),
+        ] {
+            p.take(Piece::Gate { rect: gate, masonry, walk }, 0);
+        }
+    }
     for rect in [
         Rect::new(walls.x0, walls.z0, walls.x1, walls.z0 + 1),
         Rect::new(walls.x0, walls.z1 - 1, walls.x1, walls.z1),
@@ -2955,16 +3003,6 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         Rect::new(walls.x1 - 1, walls.z0, walls.x1, walls.z1),
     ] {
         p.pieces.push(Piece::Rampart { rect, masonry, walk: false });
-    }
-    // Chemin de ronde : une seconde rangée contre le mur, en dedans, sans créneaux (le passage des
-    // portes reste ouvert dessous)
-    for gate in [
-        Rect::new(x - 1, walls.z0 + 1, x + 2, walls.z0 + 2),
-        Rect::new(x - 1, walls.z1 - 2, x + 2, walls.z1 - 1),
-        Rect::new(walls.x0 + 1, z - 1, walls.x0 + 2, z + 2),
-        Rect::new(walls.x1 - 2, z - 1, walls.x1 - 1, z + 2),
-    ] {
-        p.take(Piece::Gate { rect: gate, masonry, walk: true }, 0);
     }
     for rect in [
         Rect::new(walls.x0 + 1, walls.z0 + 1, walls.x1 - 1, walls.z0 + 2),
@@ -2974,22 +3012,6 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
     ] {
         p.pieces.push(Piece::Rampart { rect, masonry, walk: true });
     }
-    // Échelles vers le chemin de ronde, au bout des rues qui butent contre le rempart (sur le bord
-    // de la rue, qui garde deux blocs de passage)
-    for offset in [-2 * STEP, -STEP, STEP, 2 * STEP] {
-        for (ladder, wall, back) in [
-            ((walls.x0 + 2, z + offset + 1), (walls.x0 + 1, z + offset + 1), Side::West),
-            ((walls.x1 - 3, z + offset + 1), (walls.x1 - 2, z + offset + 1), Side::East),
-            ((x + offset + 1, walls.z0 + 2), (x + offset + 1, walls.z0 + 1), Side::North),
-            ((x + offset + 1, walls.z1 - 3), (x + offset + 1, walls.z1 - 2), Side::South),
-        ] {
-            let top = ground_at(p.generator, p.face, wall.0, wall.1).0 + masonry.height;
-            if ground_at(p.generator, p.face, ladder.0, ladder.1).0 < top {
-                p.pieces.push(Piece::Ladder { x: ladder.0, z: ladder.1, back, top });
-            }
-        }
-    }
-    // Les remparts et leurs abords sont pris, l'intérieur reste à bâtir
     for side in [
         Rect::new(walls.x0 - 2, walls.z0 - 2, walls.x1 + 2, walls.z0 + 2),
         Rect::new(walls.x0 - 2, walls.z1 - 2, walls.x1 + 2, walls.z1 + 2),
@@ -2998,12 +3020,27 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
     ] {
         p.taken.push(side);
     }
+    Some(())
+}
 
-    // Étals de marché autour de la fontaine, tournés vers elle (posés avant le pavage de la place)
+/// Une place de demi-côté `TOWN_STEP - 2` au carrefour `at` : une fontaine ou un puits au milieu,
+/// parfois des étals tournés vers lui. Rend la place.
+fn plan_town_square(p: &mut Planner, at: (i32, i32), street: BlockId, fountain: bool, stalls: i32, dice: &mut Dice) -> Option<Rect> {
+    let (x, z) = at;
+    if fountain {
+        let rect = Rect::around(x, z, 2);
+        let floor = floor_for(p.generator, p.face, &rect, 3)?;
+        p.take(Piece::Fountain { rect, floor }, 0);
+    } else {
+        let rect = Rect::around(x, z, 1);
+        let floor = floor_for(p.generator, p.face, &rect, 3)?;
+        p.take(Piece::Well { rect, floor }, 0);
+    }
+    // Étals tournés vers le milieu (posés avant le pavage de la place)
     let mut spots: [(i32, i32); 8] = [(-7, -7), (7, -7), (-7, 7), (7, 7), (-4, -9), (4, 9), (9, -4), (-9, 4)];
     shuffle(dice, &mut spots);
     let goods = [WHEAT, CARROT, POTATO, SQUASH, PLANK, CUT_CRYSTAL];
-    for &(ox, oz) in &spots[..dice.range(4, 7) as usize] {
+    for &(ox, oz) in &spots[..stalls.clamp(0, 8) as usize] {
         let (rect, front) = if ox.abs() > oz.abs() {
             (Rect::sized(x + ox - (ox > 0) as i32, z + oz - 1, 2, 3), if ox > 0 { Side::West } else { Side::East })
         } else {
@@ -3011,53 +3048,180 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         };
         p.pieces.push(Piece::Stall(Stall { rect, front, goods: dice.pick(&goods) }));
     }
-    // Grand-place pavée autour de la fontaine
-    let plaza = Rect::around(x, z, STEP - 2);
+    let plaza = Rect::around(x, z, TOWN_STEP - 2);
     p.pieces.push(Piece::Paving { rect: plaza, block: street });
     p.taken.push(plaza.expand(1));
-    // Rues pavées
-    let mut offset = -(HALF / STEP) * STEP;
-    while offset <= HALF {
-        if offset.abs() < HALF {
-            let street_x = Rect::new(walls.x0 + 1, z + offset - 1, walls.x1 - 1, z + offset + 2);
-            let street_z = Rect::new(x + offset - 1, walls.z0 + 1, x + offset + 2, walls.z1 - 1);
-            for lane in [street_x, street_z] {
-                p.pieces.push(Piece::Paving { rect: lane, block: street });
-                p.taken.push(lane);
+    Some(plaza)
+}
+
+/// Les morceaux de `lane` hors de `hole` (deux au plus : `lane` est une rue droite)
+fn lane_around(lane: Rect, hole: &Rect) -> Vec<Rect> {
+    if !lane.intersects(hole) {
+        return vec![lane];
+    }
+    let mut parts = Vec::new();
+    if lane.width() > lane.depth() {
+        parts.push(Rect::new(lane.x0, lane.z0, hole.x0, lane.z1));
+        parts.push(Rect::new(hole.x1, lane.z0, lane.x1, lane.z1));
+    } else {
+        parts.push(Rect::new(lane.x0, lane.z0, lane.x1, hole.z0));
+        parts.push(Rect::new(lane.x0, hole.z1, lane.x1, lane.z1));
+    }
+    parts.retain(|r| r.width() > 0 && r.depth() > 0);
+    parts
+}
+
+fn plan_town(p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Dice) -> Option<Settlement> {
+    plan_town_sized(p, center, biome, dice, TownSize::Bourg)
+}
+
+fn plan_town_sized(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Dice, size: TownSize) -> Option<Settlement> {
+    let (x, z) = center;
+    // Le damier : rues tous les 14 blocs, remparts à `half` blocs du centre
+    const STEP: i32 = TOWN_STEP;
+    let half = size.half();
+    let scale = size.scale();
+    let walls = Rect::new(x - half, z - half, x + half + 1, z + half + 1);
+    let culture = p.culture.unwrap_or(Culture::Humains);
+    let (habits, masonry) = (Habits::of(culture), Masonry::of(culture));
+    let street = street_block(culture, biome, true);
+
+    // Portes : au milieu de chaque côté, et à mi-chemin des angles pour les plus grandes villes
+    let gates: Vec<i32> = if scale >= 4 { vec![-half / 2, 0, half / 2] } else { vec![0] };
+    plan_enclosure(&mut p, center, half, masonry, &gates, scale >= 2)?;
+    for &o in &gates {
+        p.exits.extend([
+            ((x + o, walls.z0 - 1), Side::North),
+            ((x + o, walls.z1), Side::South),
+            ((walls.x0 - 1, z + o), Side::West),
+            ((walls.x1, z + o), Side::East),
+        ]);
+    }
+    // Échelles vers le chemin de ronde, au bout des rues qui butent contre le rempart (sur le bord
+    // de la rue, qui garde deux blocs de passage)
+    let mut offset = -half + STEP;
+    while offset < half {
+        if !gates.contains(&offset) {
+            for (ladder, wall, back) in [
+                ((walls.x0 + 2, z + offset + 1), (walls.x0 + 1, z + offset + 1), Side::West),
+                ((walls.x1 - 3, z + offset + 1), (walls.x1 - 2, z + offset + 1), Side::East),
+                ((x + offset + 1, walls.z0 + 2), (x + offset + 1, walls.z0 + 1), Side::North),
+                ((x + offset + 1, walls.z1 - 3), (x + offset + 1, walls.z1 - 2), Side::South),
+            ] {
+                let top = ground_at(p.generator, p.face, wall.0, wall.1).0 + masonry.height;
+                if ground_at(p.generator, p.face, ladder.0, ladder.1).0 < top {
+                    p.pieces.push(Piece::Ladder { x: ladder.0, z: ladder.1, back, top });
+                }
             }
         }
         offset += STEP;
     }
-    // Un bâtiment par pâté de maisons : l'église sur la place, une ou deux tavernes et une forge
+
+    // Le cœur de la ville : la grand-place et sa fontaine, ou, dans une capitale, la citadelle et
+    // son donjon
+    let mut plazas: Vec<Rect> = Vec::new();
+    let mut citadel: Option<Rect> = None;
+    if size == TownSize::Capitale {
+        const INNER: i32 = 2 * STEP - 2;
+        let keep = Rect::around(x, z, 5);
+        let floor = floor_for(p.generator, p.face, &keep, 6)?;
+        let tall = Masonry { tower_height: masonry.tower_height + 10, ..masonry };
+        p.take(Piece::Tower { rect: keep, floor, masonry: tall }, 1);
+        plan_enclosure(&mut p, center, INNER, masonry, &[0], false)?;
+        let court = Rect::around(x, z, INNER - 2);
+        p.pieces.push(Piece::Paving { rect: court, block: street });
+        let hole = Rect::around(x, z, INNER);
+        p.taken.push(hole.expand(2));
+        citadel = Some(hole);
+    } else {
+        let stalls = dice.range(4, 7);
+        plazas.push(plan_town_square(&mut p, center, street, true, stalls, dice)?);
+    }
+    // Une petite place au milieu de la plupart des quartiers
+    if scale >= 2 {
+        for i in 0..scale {
+            for j in 0..scale {
+                let at = (x - half + 3 * STEP + 6 * STEP * i, z - half + 3 * STEP + 6 * STEP * j);
+                if scale > 2 && !dice.chance(0.55) {
+                    continue;
+                }
+                let fountain = dice.chance(0.5);
+                let stalls = if dice.chance(0.6) { dice.range(2, 6) } else { 0 };
+                if let Some(plaza) = plan_town_square(&mut p, at, street, fountain, stalls, dice) {
+                    plazas.push(plaza);
+                }
+            }
+        }
+    }
+    // Rues pavées (elles contournent la citadelle)
+    let mut offset = -(half / STEP) * STEP;
+    while offset <= half {
+        if offset.abs() < half {
+            let street_x = Rect::new(walls.x0 + 1, z + offset - 1, walls.x1 - 1, z + offset + 2);
+            let street_z = Rect::new(x + offset - 1, walls.z0 + 1, x + offset + 2, walls.z1 - 1);
+            for lane in [street_x, street_z] {
+                let parts = match &citadel {
+                    Some(hole) => lane_around(lane, hole),
+                    None => vec![lane],
+                };
+                for part in parts {
+                    p.pieces.push(Piece::Paving { rect: part, block: street });
+                    p.taken.push(part);
+                }
+            }
+        }
+        offset += STEP;
+    }
+    // Un bâtiment par pâté de maisons : les églises sur les places, des tavernes et des forges
     // ailleurs, des maisons partout autour
     let mut blocks = Vec::new();
-    let mut bz = -HALF;
-    while bz < HALF {
-        let mut bx = -HALF;
-        while bx < HALF {
+    let mut bz = -half;
+    while bz < half {
+        let mut bx = -half;
+        while bx < half {
             // Pâté de 11 × 11 entre deux rues de 3 de large
             let block = Rect::new(x + bx + 2, z + bz + 2, x + bx + STEP - 1, z + bz + STEP - 1);
-            if !block.intersects(&plaza) {
+            if !plazas.iter().any(|pl| block.intersects(pl)) && !citadel.is_some_and(|c| block.intersects(&c.expand(1))) {
                 blocks.push(block);
             }
             bx += STEP;
         }
         bz += STEP;
     }
-    // Les pâtés qui donnent sur la place d'abord : l'église prend l'un d'eux
+    // Les pâtés qui donnent sur une place d'abord : les églises en prennent
     let near_plaza = |b: &Rect| {
         let (bcx, bcz) = b.center();
-        b.expand(4).intersects(&plaza) && ((bcx - x).abs() < STEP || (bcz - z).abs() < STEP)
+        plazas.iter().any(|pl| {
+            let (px, pz) = pl.center();
+            b.expand(4).intersects(pl) && ((bcx - px).abs() < STEP || (bcz - pz).abs() < STEP)
+        })
     };
     let (mut first, mut rest): (Vec<Rect>, Vec<Rect>) = blocks.into_iter().partition(near_plaza);
     shuffle(dice, &mut first);
     shuffle(dice, &mut rest);
-    let mut specials = vec![Special::Church, Special::Tavern, Special::Forge];
-    if dice.chance(0.5) {
-        specials.push(Special::Tavern);
+    let districts = scale * scale;
+    let mut specials = vec![Special::Church; (1 + (districts - 1) / 3) as usize];
+    let mut others = Vec::new();
+    for _ in 0..districts {
+        others.push(Special::Tavern);
+        others.push(Special::Forge);
+        if dice.chance(0.5) {
+            others.push(Special::Tavern);
+        }
     }
+    shuffle(dice, &mut others);
+    // Les églises d'abord, autour des places ; les autres, semés ensuite dans tout le reste
+    let churches = specials.len();
+    let mut blocks: Vec<Rect> = first.into_iter().chain(rest).collect();
+    if districts > 1 {
+        let tail = blocks.split_off(churches.min(blocks.len()));
+        let mut tail = tail;
+        shuffle(dice, &mut tail);
+        blocks.extend(tail);
+    }
+    specials.extend(others);
     let mut houses = 0;
-    for block in first.into_iter().chain(rest) {
+    for block in blocks {
         // Porte sur la rue la plus proche du centre
         let (bcx, bcz) = block.center();
         let door = if (bcx - x).abs() > (bcz - z).abs() {
@@ -3114,19 +3278,32 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
     if houses < 6 {
         return None;
     }
-    // Lampadaires aux carrefours, au coin des rues
-    let mut lx = -(HALF / STEP) * STEP + STEP;
-    while lx < HALF {
-        let mut lz = -(HALF / STEP) * STEP + STEP;
-        while lz < HALF {
-            if (lx, lz) != (0, 0) && dice.chance(0.7) {
-                p.pieces.push(Piece::Lamp { x: x + lx + 1, z: z + lz + 1, masonry });
+    // Lampadaires aux carrefours, au coin des rues (pas au milieu des places ni dans la citadelle)
+    let mut lx = -(half / STEP) * STEP + STEP;
+    while lx < half {
+        let mut lz = -(half / STEP) * STEP + STEP;
+        while lz < half {
+            let (ax, az) = (x + lx + 1, z + lz + 1);
+            let in_square = plazas.iter().any(|pl| pl.center() == (x + lx, z + lz));
+            let in_citadel = citadel.is_some_and(|c| c.expand(2).contains(ax, az));
+            if !in_square && !in_citadel && dice.chance(0.7) {
+                p.pieces.push(Piece::Lamp { x: ax, z: az, masonry });
             }
             lz += STEP;
         }
         lx += STEP;
     }
     p.finish(SettlementKind::Town, center, biome)
+}
+
+/// Dessine, pour un aperçu, une ville de taille `size` centrée en `center`, sans tenir compte des
+/// cases ni des autres établissements (le jeu ne pose encore que des bourgs)
+pub fn preview_town(generator: &PlanetWorldGenerator, face: PlanetFace, center: (i32, i32), size: TownSize, culture: Culture, seed: u64) -> Option<Settlement> {
+    let (_, biome) = ground_at(generator, face, center.0, center.1);
+    let area = Rect::around(center.0, center.1, size.half() + 8);
+    let planner = Planner { generator, face, area, pieces: Vec::new(), taken: Vec::new(), exits: Vec::new(), culture: Some(culture) };
+    let mut dice = Dice(mix(seed ^ 0x7031_5A1E));
+    plan_town_sized(planner, center, biome, &mut dice, size)
 }
 
 fn plan_ruins(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Dice) -> Option<Settlement> {
