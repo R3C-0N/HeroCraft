@@ -1,10 +1,16 @@
-//! Cultures majeures des villes et villages : Humains, Nains, Elfes des bois et Hauts Elfes.
+//! Cultures des villes et villages : une par race jouable du créateur de personnage. Les Humains,
+//! les Nains, les Elfes des bois et les Hauts Elfes bâtissent des villes et des villages ; les
+//! Demi-orques, les Revenants, les Sylphes, les Gnomes, les Aasimars et les Hommes-bêtes, des
+//! villages seulement. Chaque race a au moins un village sur la planète (`structures`).
 //!
 //! Chaque ville ou village appartient à une culture, tirée de la graine du monde selon son climat
 //! et le « royaume » où il se trouve : de grands pans de planète (trois régions sur trois) penchent
 //! vers une même culture, si bien que des établissements voisins se ressemblent souvent sans être
 //! tous pareils. Les Nains aiment les montagnes et le froid, les Elfes des bois les forêts et les
-//! jungles, les Hauts Elfes les plaines douces et les côtes, les Humains sont partout chez eux.
+//! jungles, les Hauts Elfes les plaines douces et les côtes, les Humains sont partout chez eux. Les
+//! Demi-orques tiennent la savane, le désert et la jungle ; les Revenants les plages et la toundra ;
+//! les Sylphes les montagnes ; les Gnomes les plaines et les forêts ; les Aasimars les plateaux et la
+//! savane ; les Hommes-bêtes la savane, la jungle et la taïga.
 //!
 //! La culture choisit le style des bâtiments, des remparts et des tours (`structures`), et le
 //! peuple : la plupart des habitants en sont, quelques-uns viennent d'ailleurs
@@ -22,13 +28,38 @@ pub enum Culture {
     Nains,
     ElfesDesBois,
     HautsElfes,
+    DemiOrques,
+    Revenants,
+    Sylphes,
+    Gnomes,
+    Aasimars,
+    HommesBetes,
 }
 
 /// Part des habitants d'une ville qui sont de sa culture ; les autres viennent d'ailleurs
 pub const NATIVE_SHARE: f64 = 0.85;
 
 impl Culture {
-    pub const ALL: [Culture; 4] = [Culture::Humains, Culture::Nains, Culture::ElfesDesBois, Culture::HautsElfes];
+    pub const ALL: [Culture; 10] = [
+        Culture::Humains,
+        Culture::Nains,
+        Culture::ElfesDesBois,
+        Culture::HautsElfes,
+        Culture::DemiOrques,
+        Culture::Revenants,
+        Culture::Sylphes,
+        Culture::Gnomes,
+        Culture::Aasimars,
+        Culture::HommesBetes,
+    ];
+
+    /// Les cultures qui bâtissent des villes ; les autres n'ont que des villages
+    pub const TOWN_BUILDERS: [Culture; 4] = [Culture::Humains, Culture::Nains, Culture::ElfesDesBois, Culture::HautsElfes];
+
+    /// La culture bâtit des villes fortifiées, et pas seulement des villages
+    pub fn builds_towns(self) -> bool {
+        Self::TOWN_BUILDERS.contains(&self)
+    }
 
     /// Nom du peuple, au pluriel
     pub fn name(self) -> &'static str {
@@ -37,6 +68,12 @@ impl Culture {
             Culture::Nains => "Nains",
             Culture::ElfesDesBois => "Elfes des bois",
             Culture::HautsElfes => "Hauts Elfes",
+            Culture::DemiOrques => "Demi-orques",
+            Culture::Revenants => "Revenants",
+            Culture::Sylphes => "Sylphes",
+            Culture::Gnomes => "Gnomes",
+            Culture::Aasimars => "Aasimars",
+            Culture::HommesBetes => "Hommes-bêtes",
         }
     }
 
@@ -48,6 +85,12 @@ impl Culture {
             (Culture::Nains, false) => "nain",
             (Culture::ElfesDesBois, _) => "sylvestre",
             (Culture::HautsElfes, _) => "elfique",
+            (Culture::DemiOrques, _) => "orque",
+            (Culture::Revenants, _) => "revenante",
+            (Culture::Sylphes, _) => "sylphide",
+            (Culture::Gnomes, _) => "gnome",
+            (Culture::Aasimars, _) => "aasimar",
+            (Culture::HommesBetes, _) => "des hommes-bêtes",
         }
     }
 
@@ -58,6 +101,12 @@ impl Culture {
             Culture::Nains => "nain",
             Culture::ElfesDesBois => "elfeBois",
             Culture::HautsElfes => "hautElfe",
+            Culture::DemiOrques => "demiOrque",
+            Culture::Revenants => "revenant",
+            Culture::Sylphes => "sylphe",
+            Culture::Gnomes => "gnome",
+            Culture::Aasimars => "aasimar",
+            Culture::HommesBetes => "hommeBete",
         }
     }
 
@@ -90,26 +139,75 @@ impl Culture {
                 Savanna | Tundra => 0.5,
                 _ => 0.2,
             },
+            // Camps de clan des terres chaudes et du basalte
+            Culture::DemiOrques => match biome {
+                Savanna => 3.0,
+                Desert => 2.5,
+                Jungle => 2.0,
+                Mountains => 1.0,
+                Plains => 0.5,
+                _ => 0.2,
+            },
+            // Hameaux sur pilotis des rivages et des brumes froides
+            Culture::Revenants => match biome {
+                Beach => 4.0,
+                Tundra => 2.5,
+                Taiga => 1.0,
+                Plains | Forest => 0.4,
+                _ => 0.2,
+            },
+            // Tours perchées des hauteurs ventées
+            Culture::Sylphes => match biome {
+                Mountains => 4.0,
+                Tundra => 2.5,
+                Taiga => 1.5,
+                _ => 0.2,
+            },
+            // Buttes des plaines et des lisières
+            Culture::Gnomes => match biome {
+                Plains => 3.0,
+                Forest => 2.5,
+                Taiga | Savanna => 0.6,
+                _ => 0.2,
+            },
+            // Sanctuaires des plateaux et des terres ensoleillées
+            Culture::Aasimars => match biome {
+                Mountains => 2.5,
+                Savanna => 2.0,
+                Plains => 1.5,
+                Desert => 0.6,
+                _ => 0.3,
+            },
+            // Huttes sur plateformes des savanes, des jungles et des taïgas
+            Culture::HommesBetes => match biome {
+                Savanna | Jungle => 3.0,
+                Taiga => 2.0,
+                Forest => 1.5,
+                Plains => 0.5,
+                _ => 0.2,
+            },
         }
     }
 
-    /// Culture d'une ville du biome `biome`, dans un royaume qui penche vers `realm`, `roll` étant
-    /// un tirage uniforme dans [0, 1)
-    pub fn choose(biome: BiomeType, realm: Culture, roll: f64) -> Culture {
+    /// Culture d'une ville (`town`) ou d'un village du biome `biome`, dans un royaume qui penche vers
+    /// `realm`, `roll` étant un tirage uniforme dans [0, 1). Une ville n'est jamais d'une culture qui
+    /// ne bâtit que des villages.
+    pub fn choose(biome: BiomeType, realm: Culture, roll: f64, town: bool) -> Culture {
+        let choices: &[Culture] = if town { &Culture::TOWN_BUILDERS } else { &Culture::ALL };
         let weight = |c: Culture| c.affinity(biome) * if c == realm { 4.0 } else { 1.0 };
-        let total: f64 = Culture::ALL.iter().map(|&c| weight(c)).sum();
+        let total: f64 = choices.iter().map(|&c| weight(c)).sum();
         let mut left = roll * total;
-        for c in Culture::ALL {
+        for &c in choices {
             left -= weight(c);
             if left < 0.0 {
                 return c;
             }
         }
-        realm
+        choices[choices.len() - 1]
     }
 
     /// Culture d'un habitant d'une ville de cette culture, `roll` et `other` étant deux tirages
-    /// uniformes dans [0, 1) : celle de la ville le plus souvent, sinon l'une des trois autres
+    /// uniformes dans [0, 1) : celle de la ville le plus souvent, sinon l'une des autres
     pub fn resident(self, roll: f64, other: f64) -> Culture {
         if roll < NATIVE_SHARE {
             return self;
@@ -134,9 +232,9 @@ mod tests {
     #[test]
     fn the_climate_and_the_realm_steer_the_choice() {
         let count = |biome, realm| {
-            let mut n = [0usize; 4];
+            let mut n = [0usize; 10];
             for i in 0..1000 {
-                let c = Culture::choose(biome, realm, i as f64 / 1000.0);
+                let c = Culture::choose(biome, realm, i as f64 / 1000.0, false);
                 n[Culture::ALL.iter().position(|&x| x == c).unwrap()] += 1;
             }
             n
@@ -160,8 +258,37 @@ mod tests {
     fn most_residents_are_natives() {
         let natives = (0..100).filter(|&i| Culture::Nains.resident(i as f64 / 100.0, 0.5) == Culture::Nains).count();
         assert_eq!(natives, 85);
-        let strangers: std::collections::HashSet<Culture> = (0..3).map(|k| Culture::Nains.resident(0.9, k as f64 / 3.0 + 0.1)).collect();
-        assert_eq!(strangers.len(), 3);
+        let strangers: std::collections::HashSet<Culture> = (0..9).map(|k| Culture::Nains.resident(0.9, k as f64 / 9.0 + 0.05)).collect();
+        assert_eq!(strangers.len(), 9);
         assert!(!strangers.contains(&Culture::Nains));
+    }
+
+    #[test]
+    fn towns_belong_to_town_builders_only() {
+        for biome in BiomeType::ALL {
+            for realm in Culture::ALL {
+                for i in 0..200 {
+                    let c = Culture::choose(biome, realm, i as f64 / 200.0, true);
+                    assert!(c.builds_towns(), "ville {c:?} en {biome:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_race_has_its_climate() {
+        // Chaque race est la plus probable dans au moins un climat, dans son propre royaume
+        for c in Culture::ALL {
+            let favourite = BiomeType::ALL.into_iter().any(|biome| {
+                let mut n = [0usize; 10];
+                for i in 0..1000 {
+                    let k = Culture::choose(biome, c, i as f64 / 1000.0, false);
+                    n[Culture::ALL.iter().position(|&x| x == k).unwrap()] += 1;
+                }
+                let me = n[Culture::ALL.iter().position(|&x| x == c).unwrap()];
+                n.iter().all(|&m| m <= me)
+            });
+            assert!(favourite, "{c:?}");
+        }
     }
 }
