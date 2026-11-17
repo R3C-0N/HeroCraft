@@ -977,6 +977,48 @@ mod tests {
         }
     }
 
+    /// Un habitant de chaque race sans village encore, pour les aperçus de villages : une image
+    /// par race, de trois quarts.
+    /// `HEROCRAFT_CAPTURES=dossier cargo test -p herocraft_client snapshot_habitants_races -- --ignored`
+    #[test]
+    #[ignore]
+    fn snapshot_habitants_races() {
+        let Ok(dir) = std::env::var("HEROCRAFT_CAPTURES") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        let a = hero::atlas();
+        let mut seed = 0x5EED_2026_u64;
+        let mut rng = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        for (id, v) in [("demiOrque", 0), ("revenant", 3), ("sylphe", 1), ("gnome", 0), ("aasimar", 0), ("hommeBete", 0)] {
+            let mut cfg = a.aleatoire(&mut rng, Some(id));
+            cfg.variante = v;
+            cfg.retouch(true);
+            let cell = egui::vec2(320.0, 480.0);
+            let (width, height) = (cell.x as usize, cell.y as usize);
+            let ctx = egui::Context::default();
+            let mut snapshot = crate::ui_snapshot::Snapshot::new(width, height);
+            snapshot.set_background(None);
+            let mut preview = Preview::default();
+            let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, cell)), ..Default::default() };
+            let output = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+                    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, cell).shrink(4.0);
+                    let texture = preview.texture(ui.ctx(), &cfg);
+                    let figure = preview.figure.get(&cfg);
+                    draw_figure(ui.painter(), rect, &texture, &cfg, figure, 40.0_f32.to_radians(), (-4.0_f32).to_radians());
+                });
+            });
+            snapshot.apply_textures(&output.textures_delta);
+            let primitives = ctx.tessellate(output.shapes, output.pixels_per_point);
+            snapshot.paint(&primitives, output.pixels_per_point);
+            snapshot.save(&dir.join(format!("habitant-{id}.png")));
+        }
+    }
+
     /// Planche des articulations : quelques héros dans des poses qui plient coudes, poignets et
     /// genoux, de profil puis de trois quarts.
     /// `HEROCRAFT_CAPTURES=dossier cargo test -p herocraft_client snapshot_joints -- --ignored`
