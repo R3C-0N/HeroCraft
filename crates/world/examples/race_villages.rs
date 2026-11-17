@@ -213,10 +213,14 @@ fn demi_orques() -> Scene {
     let basalt = b("basalt");
     let pine = b("pineTrunk");
     let peat = b("peat");
-    s.house(5, G, 6, 8, 7, 3, basalt, pine, peat, b("ironPlate"));
-    s.house(6, G, 27, 7, 8, 3, basalt, pine, peat, b("ironPlate"));
-    s.house(27, G, 5, 7, 6, 3, basalt, pine, peat, b("ironPlate"));
-    s.house(28, G, 31, 6, 6, 3, basalt, pine, peat, b("ironPlate"));
+    // Toutes à l'intérieur de la palissade, toit compris : aucun coin à plus de 17,5 blocs du centre
+    for (x0, z0, w, d) in [(8, 14, 6, 5), (8, 25, 6, 5), (27, 9, 5, 6), (27, 29, 6, 5)] {
+        for (x, z) in [(x0 - 1, z0 - 1), (x0 + w, z0 - 1), (x0 - 1, z0 + d), (x0 + w, z0 + d)] {
+            let r = (((x - cx) * (x - cx) + (z - cz) * (z - cz)) as f32).sqrt();
+            assert!(r < 17.5, "hutte ({x0}, {z0}) dans la palissade");
+        }
+        s.house(x0, G, z0, w, d, 3, basalt, pine, peat, b("ironPlate"));
+    }
     // Arène au centre : anneau de pierre dure et sable
     for z in cz - 6..=cz + 6 {
         for x in cx - 6..=cx + 6 {
