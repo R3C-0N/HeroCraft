@@ -231,6 +231,9 @@ struct Town {
     inn: Option<Home>,
     /// Nom de la ville ou du village
     name: String,
+    /// Du centre à la maison la plus éloignée, en blocs : une grande ville s'éveille dès qu'un
+    /// joueur approche de ses murs, pas seulement de son centre
+    radius: f32,
     active: bool,
 }
 
@@ -332,11 +335,13 @@ pub struct Villages {
     scan_timer: f32,
     /// Habitants (hors gardes) qui ont un corps, par établissement : recompté à chaque pas
     outdoors: HashMap<TownKey, usize>,
+    /// Positions des joueurs au pas en cours
+    players: Vec<Vec3>,
 }
 
 impl Default for Villages {
     fn default() -> Self {
-        Self { seed: 0, enabled: false, species: SpeciesIds::default(), towns: HashMap::new(), people: Vec::new(), cards: HashMap::new(), rng: StdRng::seed_from_u64(0), scan_timer: 0.0, outdoors: HashMap::new() }
+        Self { seed: 0, enabled: false, species: SpeciesIds::default(), towns: HashMap::new(), people: Vec::new(), cards: HashMap::new(), rng: StdRng::seed_from_u64(0), scan_timer: 0.0, outdoors: HashMap::new(), players: Vec::new() }
     }
 }
 
@@ -345,6 +350,10 @@ impl Default for Villages {
 fn outdoor_cap(homes: usize) -> usize {
     (12 + homes / 8).min(40)
 }
+
+/// Près d'un joueur, un habitant a toujours un corps de jour (le plafond ne compte pas pour lui) :
+/// il ne rentre pas pour une tâche à l'intérieur, et celui qui est chez lui sort à son passage
+const NEAR_PLAYER_BLOCKS: f32 = 32.0;
 
 /// Durée d'une tâche à l'intérieur (atelier, cuisine, ménage), en secondes
 const INDOOR_TASK: std::ops::Range<f32> = 90.0..300.0;
@@ -677,7 +686,8 @@ impl Town {
         // Les gardes gardent leur poste libre des badauds
         let gathering = gathering.into_iter().filter(|c| posts.iter().all(|p| p.cell != *c)).collect();
         work.insert(Workplace::Rempart, posts);
-        Town { nav: Arc::new(nav), homes, work, customers, wander, plaza, gathering, gathering_center, inn, name: town_name(s), active: false }
+        let radius = homes.iter().map(|h| (((h.door.0 - s.center.0).pow(2) + (h.door.1 - s.center.1).pow(2)) as f32).sqrt()).fold(0.0, f32::max);
+        Town { nav: Arc::new(nav), homes, work, customers, wander, plaza, gathering, gathering_center, inn, name: town_name(s), radius, active: false }
     }
 
     fn random_street(&self, rng: &mut StdRng) -> Cell {
@@ -825,6 +835,8 @@ impl Villages {
             self.scan_timer = SCAN_INTERVAL;
             self.scan(world, query, generator, players);
         }
+        self.players.clear();
+        self.players.extend_from_slice(players);
         self.outdoors.clear();
         for p in &self.people {
             if let (Role::Resident { town, .. }, Some(_), false, true) = (&p.role, p.creature, p.guard, p.alive) {
@@ -882,7 +894,7 @@ impl Villages {
         let keys: Vec<TownKey> = self.towns.keys().copied().collect();
         for key in keys {
             let town = &self.towns[&key];
-            let distance = Self::nearest_player(&geometry, cell_dir(&geometry, key.0, (key.1, key.2)), players);
+            let distance = Self::nearest_player(&geometry, cell_dir(&geometry, key.0, (key.1, key.2)), players) - town.radius;
             if !town.active && distance < ACTIVE_RANGE_BLOCKS {
                 self.activate(key, world, query);
             } else if town.active && distance > ACTIVE_RANGE_BLOCKS + INACTIVE_MARGIN_BLOCKS {
@@ -1139,6 +1151,11 @@ impl Villages {
         }
     }
 
+    /// La colonne `cell` d'une face est près d'un joueur
+    fn near_player(&self, geometry: &BlockGeometry, face: PlanetFace, cell: Cell) -> bool {
+        Self::nearest_player(geometry, cell_dir(geometry, face, cell), &self.players) < NEAR_PLAYER_BLOCKS
+    }
+
     /// Il reste de la place dehors pour un habitant de l'établissement `key` (un garde sort toujours)
     fn room_outside(&self, key: TownKey, guard: bool) -> bool {
         guard || self.towns.get(&key).is_some_and(|t| self.outdoors.get(&key).copied().unwrap_or(0) < outdoor_cap(t.homes.len()))
@@ -1234,13 +1251,18 @@ impl Villages {
             if self.people[i].task == Task::Indoors && night {
                 self.people[i].timer = self.people[i].timer.min(5.0);
             }
-            // Chez lui : de jour, il sort sa tâche finie, s'il reste de la place dehors
+            // Chez lui : de jour, il sort sa tâche finie, s'il reste de la place dehors ; tout de
+            // suite, quand un joueur passe près de chez lui
             if self.people[i].task == Task::Indoors && !night {
+                let near = self.near_player(&geometry, key.0, home_spot.door);
+                if near {
+                    self.people[i].timer = self.people[i].timer.min(self.rng.gen_range(0.0..2.0));
+                }
                 self.people[i].timer -= dt;
                 if self.people[i].timer > 0.0 {
                     return;
                 }
-                if !self.room_outside(key, self.people[i].guard) {
+                if !near && !self.room_outside(key, self.people[i].guard) {
                     self.people[i].timer = self.rng.gen_range(15.0..60.0);
                     return;
                 }
@@ -1407,7 +1429,8 @@ impl Villages {
         // Une tâche à l'intérieur : de temps en temps, et toujours quand la rue est trop peuplée
         let Role::Resident { home, .. } = self.people[i].role else { return };
         let crowded = !self.room_outside(key, false) && self.outdoors.get(&key).copied().unwrap_or(0) > outdoor_cap(self.towns[&key].homes.len());
-        if !guard && (crowded || self.rng.gen_bool(0.12)) {
+        let near = self.near_player(world.geometry(), key.0, here);
+        if !guard && !near && (crowded || self.rng.gen_bool(0.12)) {
             let home_spot = self.towns[&key].homes[home];
             let door = Spot { cell: home_spot.door, look: home_spot.door, floor: Some(home_spot.floor) };
             if self.send(i, &nav, here, home_spot.out, Goal::Home, Some(door)) {
@@ -2088,6 +2111,44 @@ mod tests {
         // Et ils tournent : certains sont rentrés travailler chez eux pendant que d'autres sortaient
         let indoors_by_day = world.villages.people.iter().filter(|p| p.task == Task::Indoors && matches!(p.role, Role::Resident { town, .. } if town == key)).count();
         assert!(indoors_by_day > residents / 2);
+    }
+
+    #[test]
+    fn residents_near_a_player_always_have_a_body_by_day() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let capital = generator.structures.capital(&generator).expect("une capitale");
+        let s = generator.structures.region_settlement(&generator, capital.face, capital.region.0, capital.region.1).expect("la capitale").clone();
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let mut query = TerrainQuery::new(&generator, &edits);
+        let registry = Arc::new(CreatureRegistry::load_default());
+        let mut world = CreatureWorld::new(generator.base_radius(), 2026, registry.clone());
+        let key = (s.face, s.center.0, s.center.1);
+        let centre = feet_at(&geometry, &mut query, s.face, s.center, None).unwrap();
+        world.set_sun_dir(centre.normalize());
+        // On fonde la ville depuis le centre, puis le joueur va dans un quartier du bord, loin du centre
+        world.tick(0.1, &generator, &edits, &[centre]);
+        let far = |c: Cell| ((c.0 - s.center.0).pow(2) + (c.1 - s.center.1).pow(2)) as f32;
+        let edge = world.villages.towns[&key].homes.iter().map(|h| h.out).max_by(|a, b| far(*a).total_cmp(&far(*b))).unwrap();
+        let feet = feet_at(&geometry, &mut query, s.face, edge, None).unwrap();
+        println!("joueur à {:.0} blocs du centre", far(edge).sqrt());
+        assert!(far(edge).sqrt() > ACTIVE_RANGE_BLOCKS, "le bord doit être hors de portée du centre");
+        let mut world = CreatureWorld::new(generator.base_radius(), 2026, registry);
+        world.set_sun_dir(feet.normalize());
+        for _ in 0..300 {
+            world.tick(0.1, &generator, &edits, &[feet]);
+        }
+        assert!(world.villages.towns[&key].active, "la capitale s'éveille quand on arrive par ses quartiers");
+        let town = &world.villages.towns[&key];
+        let near: Vec<&Person> = world.villages.people.iter().filter(|p| matches!(p.role, Role::Resident { town: t, home, .. } if t == key && far_from(town.homes[home].door, edge) < 20.0)).collect();
+        let bodies = near.iter().filter(|p| p.creature.is_some()).count();
+        println!("{bodies} / {} voisins du joueur ont un corps", near.len());
+        assert!(!near.is_empty());
+        assert!(bodies * 10 >= near.len() * 9, "{bodies} / {} voisins ont un corps", near.len());
+    }
+
+    fn far_from(a: Cell, b: Cell) -> f32 {
+        (((a.0 - b.0).pow(2) + (a.1 - b.1).pow(2)) as f32).sqrt()
     }
 
     #[test]
