@@ -330,13 +330,24 @@ pub struct Villages {
     cards: HashMap<u64, Arc<VillagerCard>>,
     rng: StdRng,
     scan_timer: f32,
+    /// Habitants (hors gardes) qui ont un corps, par établissement : recompté à chaque pas
+    outdoors: HashMap<TownKey, usize>,
 }
 
 impl Default for Villages {
     fn default() -> Self {
-        Self { seed: 0, enabled: false, species: SpeciesIds::default(), towns: HashMap::new(), people: Vec::new(), cards: HashMap::new(), rng: StdRng::seed_from_u64(0), scan_timer: 0.0 }
+        Self { seed: 0, enabled: false, species: SpeciesIds::default(), towns: HashMap::new(), people: Vec::new(), cards: HashMap::new(), rng: StdRng::seed_from_u64(0), scan_timer: 0.0, outdoors: HashMap::new() }
     }
 }
+
+/// Habitants dehors en même temps dans un établissement, gardes non compris : les autres
+/// travaillent chez eux ou à l'atelier, sans corps, et sortent quand une place se libère
+fn outdoor_cap(homes: usize) -> usize {
+    (12 + homes / 8).min(40)
+}
+
+/// Durée d'une tâche à l'intérieur (atelier, cuisine, ménage), en secondes
+const INDOOR_TASK: std::ops::Range<f32> = 90.0..300.0;
 
 /// Coiffures qui se lisent comme celles d'une femme
 const FEMININE_HAIR: [&str; 7] = ["chignon", "longue", "lisse", "afro", "tresse", "nattes", "couettes"];
@@ -814,6 +825,12 @@ impl Villages {
             self.scan_timer = SCAN_INTERVAL;
             self.scan(world, query, generator, players);
         }
+        self.outdoors.clear();
+        for p in &self.people {
+            if let (Role::Resident { town, .. }, Some(_), false, true) = (&p.role, p.creature, p.guard, p.alive) {
+                *self.outdoors.entry(*town).or_insert(0) += 1;
+            }
+        }
         for i in 0..self.people.len() {
             if !self.people[i].alive {
                 continue;
@@ -1052,6 +1069,9 @@ impl Villages {
         let yaw = self.rng.gen_range(0.0..TAU);
         let id = world.spawn_managed(person.species, feet, yaw, person.herd);
         person.creature = Some(id);
+        if let (Role::Resident { town, .. }, false) = (&person.role, person.guard) {
+            *self.outdoors.entry(*town).or_insert(0) += 1;
+        }
         person.path.clear();
         person.destination = None;
         person.partner = None;
@@ -1067,6 +1087,11 @@ impl Villages {
         if let Some(id) = self.people[i].creature.take() {
             world.remove(id);
             self.cards.remove(&id);
+            if let (Role::Resident { town, .. }, false) = (&self.people[i].role, self.people[i].guard) {
+                if let Some(n) = self.outdoors.get_mut(town) {
+                    *n = n.saturating_sub(1);
+                }
+            }
         }
         self.people[i].path.clear();
         self.people[i].partner = None;
@@ -1082,9 +1107,11 @@ impl Villages {
                 continue;
             }
             let person = &self.people[i];
-            let out = !self.is_night(person, sun) || person.night_watch;
+            let out = (!self.is_night(person, sun) || person.night_watch) && self.room_outside(key, person.guard);
             if !out {
+                // Chez lui : il sortira plus tard, quand une place se libère
                 self.people[i].task = Task::Indoors;
+                self.people[i].timer = self.rng.gen_range(0.0..INDOOR_TASK.end);
                 continue;
             }
             let town = &self.towns[&key];
@@ -1110,6 +1137,11 @@ impl Villages {
                 }
             }
         }
+    }
+
+    /// Il reste de la place dehors pour un habitant de l'établissement `key` (un garde sort toujours)
+    fn room_outside(&self, key: TownKey, guard: bool) -> bool {
+        guard || self.towns.get(&key).is_some_and(|t| self.outdoors.get(&key).copied().unwrap_or(0) < outdoor_cap(t.homes.len()))
     }
 
     fn sun_height(world: &CreatureWorld, dir: Vec3) -> f32 {
@@ -1198,8 +1230,20 @@ impl Villages {
         let night = self.is_night(&self.people[i], sun) && !self.people[i].night_watch;
         let home_spot = town.homes[home];
         let Some(id) = self.people[i].creature else {
-            // Chez lui : il sort au matin
+            // La nuit chez lui, il sortira dès le matin
+            if self.people[i].task == Task::Indoors && night {
+                self.people[i].timer = self.people[i].timer.min(5.0);
+            }
+            // Chez lui : de jour, il sort sa tâche finie, s'il reste de la place dehors
             if self.people[i].task == Task::Indoors && !night {
+                self.people[i].timer -= dt;
+                if self.people[i].timer > 0.0 {
+                    return;
+                }
+                if !self.room_outside(key, self.people[i].guard) {
+                    self.people[i].timer = self.rng.gen_range(15.0..60.0);
+                    return;
+                }
                 self.people[i].task = Task::Idle;
                 self.embody(i, home_spot.out, Some(home_spot.floor), world, query);
             }
@@ -1266,6 +1310,7 @@ impl Villages {
             Goal::Home => {
                 self.release(i, world);
                 self.people[i].task = Task::Indoors;
+                self.people[i].timer = self.rng.gen_range(INDOOR_TASK);
             }
             Goal::Work => {
                 let pause = if self.people[i].guard { None } else { Some("travaille") };
@@ -1357,6 +1402,17 @@ impl Villages {
                 if self.send(i, &nav, here, spot.cell, Goal::Work, Some(spot)) {
                     return;
                 }
+            }
+        }
+        // Une tâche à l'intérieur : de temps en temps, et toujours quand la rue est trop peuplée
+        let Role::Resident { home, .. } = self.people[i].role else { return };
+        let crowded = !self.room_outside(key, false) && self.outdoors.get(&key).copied().unwrap_or(0) > outdoor_cap(self.towns[&key].homes.len());
+        if !guard && (crowded || self.rng.gen_bool(0.12)) {
+            let home_spot = self.towns[&key].homes[home];
+            let door = Spot { cell: home_spot.door, look: home_spot.door, floor: Some(home_spot.floor) };
+            if self.send(i, &nav, here, home_spot.out, Goal::Home, Some(door)) {
+                self.people[i].path.push_back(home_spot.door);
+                return;
             }
         }
         if let Some(spot) = work.filter(|_| roll < 0.55) {
@@ -1998,6 +2054,40 @@ mod tests {
             checked += 1;
         }
         assert!(at_post >= 4 && at_post * 4 >= checked * 3, "{at_post} gardes sur {checked} à leur poste");
+    }
+
+    /// Dans une capitale de plusieurs centaines d'habitants, seuls quelques dizaines ont un corps à la
+    /// fois : les autres travaillent chez eux et sortent à tour de rôle
+    #[test]
+    fn a_capital_animates_only_a_few_residents_at_a_time() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let capital = generator.structures.capital(&generator).expect("une capitale");
+        let s = generator.structures.region_settlement(&generator, capital.face, capital.region.0, capital.region.1).expect("la capitale").clone();
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let mut query = TerrainQuery::new(&generator, &edits);
+        let feet = feet_at(&geometry, &mut query, s.face, s.center, None).unwrap();
+        let registry = Arc::new(CreatureRegistry::load_default());
+        let mut world = CreatureWorld::new(generator.base_radius(), 2026, registry.clone());
+        world.set_sun_dir(feet.normalize());
+        let key = (s.face, s.center.0, s.center.1);
+        let homes = |w: &CreatureWorld| w.villages.towns[&key].homes.len();
+        let mut most = 0;
+        for k in 0..600 {
+            world.tick(0.1, &generator, &edits, &[feet]);
+            if k == 0 {
+                assert!(world.villages.towns[&key].active);
+            }
+            let out = world.villages.people.iter().filter(|p| !p.guard && p.creature.is_some() && matches!(p.role, Role::Resident { town, .. } if town == key)).count();
+            most = most.max(out);
+        }
+        let residents = world.villages.people.iter().filter(|p| matches!(p.role, Role::Resident { town, .. } if town == key)).count();
+        println!("{residents} habitants, au plus {most} dehors à la fois");
+        assert!(residents > 400, "{residents} habitants");
+        assert!(most > 10 && most <= outdoor_cap(homes(&world)), "{most} habitants dehors");
+        // Et ils tournent : certains sont rentrés travailler chez eux pendant que d'autres sortaient
+        let indoors_by_day = world.villages.people.iter().filter(|p| p.task == Task::Indoors && matches!(p.role, Role::Resident { town, .. } if town == key)).count();
+        assert!(indoors_by_day > residents / 2);
     }
 
     #[test]
