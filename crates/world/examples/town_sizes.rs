@@ -48,12 +48,12 @@ fn main() {
     }
     // Gros plan : la citadelle et ses premiers quartiers
     let (_, town) = towns.last().unwrap();
-    let zoom = Scene::build(&generator, face, town, Rect::around(center.0, center.1, 72));
+    let zoom = Scene::build(&generator, face, town, Rect::around(center.0, center.1, 64));
     zoom.iso(6, &format!("{dir}/iso-capitale-coeur.ppm"));
-    // Gros plan d'un quartier et de ses remparts, dans un coin de la capitale
-    let half = TownSize::Capitale.half();
-    let corner = Scene::build(&generator, face, town, Rect::new(center.0 + half - 110, center.1 + half - 110, center.0 + half + 8, center.1 + half + 8));
-    corner.iso(6, &format!("{dir}/iso-capitale-rempart.ppm"));
+    // Gros plan de la porte sud, où l'avenue royale entre dans la capitale
+    let south = town.bounds.z1;
+    let corner = Scene::build(&generator, face, town, Rect::new(center.0 - 60, south - 100, center.0 + 60, south + 6));
+    corner.iso(6, &format!("{dir}/iso-capitale-porte.ppm"));
 }
 
 fn accepts(biome: BiomeType) -> bool {
@@ -167,7 +167,7 @@ impl Scene {
                                         b = Some(BlockId::STONE);
                                     }
                                     let mut b = b.unwrap_or_else(|| generator.natural_block(column, face, bx, gy, bz));
-                                    if b.is_air() && wild && gy >= ground && gy < ground + VEGETATION_SPAN + 2 {
+                                    if b.is_air() && gy >= ground && gy < ground + VEGETATION_SPAN + 2 && (wild || !tile.occupies(bx, bz, 2)) {
                                         b = generator.vegetation_block(column, face, bx, gy, bz, |cx, cz| *trees.entry((cx, cz)).or_insert_with(|| generator.tree_in_cell(face, cx, cz)));
                                     }
                                     row[(y * w + x) as usize] = b;
