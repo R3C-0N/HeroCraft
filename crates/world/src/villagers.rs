@@ -367,6 +367,18 @@ fn random_name(culture: Culture, feminine: bool, rng: &mut StdRng) -> String {
         (Culture::ElfesDesBois, true) => (&["Syl", "Fae", "Nim", "Ari", "Ilv", "Lin", "Eir", "Ael"], &["wen", "rien", "iel", "wyn", "ith", "anna", "eth", "ia"]),
         (Culture::HautsElfes, false) => (&["Cael", "Vael", "Ser", "Tir", "Elo", "Ilo"], &["andor", "thas", "dris", "eon", "marin", "nael", "ion"]),
         (Culture::HautsElfes, true) => (&["Ithi", "Ara", "Lumi", "Sae", "Elo", "Ser"], &["riel", "lise", "esse", "wyn", "anne", "iel", "ena"]),
+        (Culture::DemiOrques, false) => (&["Gor", "Thrak", "Ug", "Mog", "Kru", "Zag", "Brug", "Dorg", "Grom"], &["ash", "uk", "nak", "rag", "gul", "dush", "mok", "gar"]),
+        (Culture::DemiOrques, true) => (&["Sha", "Gra", "Ur", "Mag", "Ruu", "Zhe", "Bag", "Kha"], &["ka", "rha", "gha", "dra", "mosh", "ra", "na", "gah"]),
+        (Culture::Revenants, false) => (&["Mor", "Vesp", "Ond", "Sil", "Cend", "Nocht", "Brum", "Lith"], &["ain", "rel", "ost", "ur", "ias", "orn", "ide", "al"]),
+        (Culture::Revenants, true) => (&["Morw", "Vesp", "Ond", "Sil", "Cend", "Ylv", "Brum", "Lith"], &["ine", "era", "a", "ue", "ia", "ève", "ée", "ys"]),
+        (Culture::Sylphes, false) => (&["Zeph", "Aer", "Ven", "Bris", "Cirr", "Al", "Fyr", "Sour"], &["ir", "el", "ion", "an", "us", "ast", "en", "is"]),
+        (Culture::Sylphes, true) => (&["Zeph", "Aer", "Ven", "Bris", "Cirr", "Al", "Fyr", "Sour"], &["ire", "elle", "ia", "ane", "ée", "a", "ine", "is"]),
+        (Culture::Gnomes, false) => (&["Fizz", "Bim", "Tock", "Nim", "Pip", "Gim", "Wob", "Zook", "Dabb"], &["wick", "ble", "bert", "o", "kin", "pot", "nob", "ster"]),
+        (Culture::Gnomes, true) => (&["Fizz", "Bim", "Tilly", "Nim", "Pip", "Lil", "Wob", "Zook", "Dabb"], &["ette", "belle", "a", "ina", "kin", "wyn", "ie", "ra"]),
+        (Culture::Aasimars, false) => (&["Aur", "Sol", "Cel", "Ser", "Lum", "Ori", "Hel", "Zar"], &["iel", "on", "as", "ael", "ian", "ius", "or", "eth"]),
+        (Culture::Aasimars, true) => (&["Aur", "Sol", "Cel", "Ser", "Lum", "Ori", "Hel", "Zar"], &["iela", "ine", "ise", "aëlle", "iane", "a", "ora", "eth"]),
+        (Culture::HommesBetes, false) => (&["Rakh", "Fen", "Tar", "Grif", "Kaz", "Bor", "Shir", "Vulk"], &["an", "rok", "ash", "ur", "kar", "ruk", "ix", "ok"]),
+        (Culture::HommesBetes, true) => (&["Rakh", "Fen", "Tar", "Nyr", "Kaz", "Ssa", "Shir", "Vel"], &["ia", "ra", "sha", "ya", "ka", "ri", "ix", "ane"]),
     };
     format!("{}{}", starts[rng.gen_range(0..starts.len())], ends[rng.gen_range(0..ends.len())])
 }
@@ -421,6 +433,12 @@ pub fn town_name(s: &Settlement) -> String {
         Culture::Nains => (&["Khaz", "Dur", "Bar", "Grim", "Thor", "Kar", "Ered", "Bram", "Gund", "Orm"], &["ak", "dum", "heim", "grund", "bar", "zar", "dor", "hold", "karak"]),
         Culture::ElfesDesBois => (&["Syl", "Lor", "Fael", "Eryn", "Thal", "Nim", "Aer", "Linde"], &["wen", "lindë", "dor", "lóme", "anor", "thil", "nost", "lad"]),
         Culture::HautsElfes => (&["Ith", "Caer", "Vael", "Sil", "Aer", "Lum", "Tir", "Ela"], &["ilien", "andor", "esse", "marë", "athil", "ion", "orië", "vanyar"]),
+        Culture::DemiOrques => (&["Gor", "Krag", "Thrak", "Mog", "Uruk", "Zag", "Brug", "Dush"], &["gash", "mar", "thor", "nak", "ruk", "gor", "bal", "kul"]),
+        Culture::Revenants => (&["Brume", "Noir", "Cendre", "Sel", "Morte", "Grève", "Pâle", "Ombre"], &["rive", "lac", "anse", "grève", "étang", "marais", "eau", "port"]),
+        Culture::Sylphes => (&["Zéph", "Aéri", "Ventu", "Cirr", "Alti", "Nuée", "Bris", "Hau"], &["mont", "pic", "aire", "cime", "flèche", "haut", "voile", "crête"]),
+        Culture::Gnomes => (&["Bric", "Fouil", "Taupe", "Cuivre", "Rouage", "Butte", "Terrier", "Clou"], &["bourg", "trou", "fosse", "ville", "nid", "motte", "creux", "boule"]),
+        Culture::Aasimars => (&["Aur", "Sol", "Cél", "Lumi", "Héli", "Ori", "Séra", "Zén"], &["ia", "ion", "ade", "elle", "ys", "or", "iel", "ane"]),
+        Culture::HommesBetes => (&["Croc", "Griffe", "Fauve", "Crin", "Corne", "Pelage", "Rugi", "Traque"], &["roc", "val", "sente", "terre", "lande", "gîte", "tanière", "piste"]),
     };
     let start = starts[(h % starts.len() as u64) as usize];
     let end = ends[(h / 97 % ends.len() as u64) as usize];
@@ -568,7 +586,12 @@ impl Town {
                     let (edge, out) = edge_of(rect, side);
                     work.entry(Workplace::Champ).or_default().push(Spot { cell: out, look: edge, floor: None });
                 }
-                Piece::Well { rect, .. } | Piece::Fountain { rect, .. } => {
+                Piece::Well { rect, .. }
+                | Piece::Fountain { rect, .. }
+                | Piece::Arena { rect, .. }
+                | Piece::Ossuary { rect, .. }
+                | Piece::Obelisk { rect, .. }
+                | Piece::Sanctuary { rect, .. } => {
                     nav.set_rect(*rect, true);
                     let (_, out) = edge_of(rect, Side::South);
                     plaza.get_or_insert(out);
@@ -578,7 +601,12 @@ impl Town {
                 Piece::Gate { rect, walk: false, .. } => gates.push(*rect),
                 // Sous le chemin de ronde, le passage de la porte reste ouvert
                 Piece::Gate { rect, walk: true, .. } => passages.push(*rect),
-                Piece::Lamp { x, z, .. } | Piece::Ladder { x, z, .. } => nav.set((*x, *z), true),
+                Piece::Lamp { x, z, .. } | Piece::Ladder { x, z, .. } | Piece::Totem { x, z, .. } => nav.set((*x, *z), true),
+                Piece::Terrace { rect, .. } => {
+                    let (cx, cz) = rect.center();
+                    nav.set_rect(Rect::new(cx - 1, cz - 1, cx + 1, cz + 1), true);
+                }
+                Piece::Pen { rect } => nav.set_rect(*rect, true),
                 Piece::Paving { rect, .. } => {
                     for z in (rect.z0..rect.z1).step_by(2) {
                         for x in (rect.x0..rect.x1).step_by(2) {
@@ -988,7 +1016,7 @@ impl Villages {
         }).map_or(candidates[0].0, |c| c.0);
         let p = registry.get(index).unwrap();
         // Surtout des humains, qui voyagent le plus
-        let culture = if rng.gen_bool(0.55) { Culture::Humains } else { Culture::ALL[rng.gen_range(1..4)] };
+        let culture = if rng.gen_bool(0.55) { Culture::Humains } else { Culture::ALL[rng.gen_range(1..Culture::ALL.len())] };
         let card = card_for(culture, p, "Voyageur".to_string(), rng);
         let species = self.species_of(p);
         let herd = TRAVELLER_HERD_BASE | self.rng.gen::<u32>() as u64;
