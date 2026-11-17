@@ -46,6 +46,10 @@ fn main() {
         iso.iso(s, &format!("{dir}/iso-{}.ppm", size.name()));
         println!("{} rendue", size.name());
     }
+    // Gros plan : la grand-place et l'hôtel de ville de la petite ville
+    let (_, small) = &towns[1];
+    let hall = Scene::build(&generator, face, small, Rect::around(center.0, center.1 - 4, 30));
+    hall.iso(10, &format!("{dir}/iso-hotel-de-ville.ppm"));
     // Gros plan : la citadelle et ses premiers quartiers
     let (_, town) = towns.last().unwrap();
     let zoom = Scene::build(&generator, face, town, Rect::around(center.0, center.1, 64));

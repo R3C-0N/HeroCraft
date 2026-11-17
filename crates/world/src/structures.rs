@@ -1574,6 +1574,8 @@ pub enum Piece {
     Keep { rect: Rect, floor: i32, masonry: Masonry },
     /// Douves : de l'eau jusqu'au ras du sol
     Moat { rect: Rect },
+    /// Hôtel de ville : une halle à deux niveaux, son beffroi au milieu de la façade sud
+    TownHall { rect: Rect, floor: i32 },
 }
 
 impl Piece {
@@ -1601,7 +1603,8 @@ impl Piece {
             | Piece::Terrace { rect, .. }
             | Piece::Pen { rect }
             | Piece::Keep { rect, .. }
-            | Piece::Moat { rect } => *rect,
+            | Piece::Moat { rect }
+            | Piece::TownHall { rect, .. } => *rect,
             Piece::Totem { x, z, .. } => Rect::sized(*x, *z, 1, 1),
         }
     }
@@ -1633,6 +1636,7 @@ impl Piece {
             Piece::Pen { .. } => ground..ground + 1,
             Piece::Keep { floor, .. } => span(*floor, 1, floor + KEEP_TOP),
             Piece::Moat { .. } => ground - MOAT_DEPTH..ground,
+            Piece::TownHall { floor, .. } => span(*floor, 1, floor + HALL_TOP),
         }
     }
 
@@ -1830,6 +1834,7 @@ impl Piece {
             }
             Piece::Keep { rect, floor, masonry } => keep_block(rect, *floor, masonry, x, y, z, ground),
             Piece::Moat { .. } => (y >= ground - MOAT_DEPTH && y < ground).then_some(WATER),
+            Piece::TownHall { rect, floor } => town_hall_block(rect, *floor, x, y, z, ground),
         }
     }
 }
@@ -1840,6 +1845,99 @@ const KEEP_TOP: i32 = KEEP_TIERS[2].2 + 8;
 const KEEP_TIERS: [(i32, i32, i32); 3] = [(0, 0, 16), (4, 16, 28), (7, 28, 38)];
 /// Profondeur des douves
 const MOAT_DEPTH: i32 = 4;
+
+/// Plus haut niveau (exclu) de l'hôtel de ville (la pointe de son beffroi)
+const HALL_TOP: i32 = 33;
+/// Hauteur des murs de la halle de l'hôtel de ville
+const HALL_WALL: i32 = 9;
+
+/// Bloc de l'hôtel de ville en (x, y, z) : halle de briques blanchies, chaînes d'angle et
+/// bandeaux de pierre taillée, toit de briques à deux pans ; beffroi carré au milieu de la façade
+/// sud (porte dorée, horloge, chambre des cloches ouverte, flèche à pointe dorée)
+fn town_hall_block(rect: &Rect, floor: i32, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
+    let f = floor;
+    if y < f - 1 {
+        return (y >= ground).then_some(CUT_STONE);
+    }
+    if y == f - 1 {
+        return Some(CUT_STONE);
+    }
+    let level = y - f;
+    let (cx, _) = rect.center();
+    let dx = x - cx;
+    // Beffroi : 5 × 5 contre la façade sud
+    let (bz0, bz1) = (rect.z1 - 5, rect.z1);
+    if dx.abs() <= 2 && z >= bz0 && z < bz1 {
+        let edge = dx.abs() == 2 || z == bz0 || z == bz1 - 1;
+        let corner = dx.abs() == 2 && (z == bz0 || z == bz1 - 1);
+        let front = z == bz1 - 1;
+        let bz = z - (bz0 + 2);
+        return match level {
+            // Portail doré
+            0..=2 if front && dx.abs() <= 1 => Some(BlockId::AIR),
+            3 if front && dx.abs() <= 1 => Some(GILDING),
+            l if l < 18 => {
+                if !edge {
+                    return Some(if l == 4 || l == 12 || l == 17 { PLANK } else { BlockId::AIR });
+                }
+                if corner || l == 17 {
+                    return Some(CUT_STONE);
+                }
+                // Horloge
+                if (front || z == bz0) && dx.abs() <= 1 && (14..=16).contains(&l) {
+                    return Some(if dx == 0 && l == 15 { GILDING } else if dx == 0 || l == 15 { BRONZE_TRIM } else { WHITE_BRICK });
+                }
+                if (l == 7 || l == 10) && !corner && (dx == 0 || bz == 0) {
+                    return Some(GLASS);
+                }
+                Some(WHITE_BRICK)
+            }
+            // Chambre des cloches : piliers d'angle, une lanterne au milieu
+            18..=20 => Some(if corner { CUT_STONE } else if (dx, bz) == (0, 0) && level == 19 { LANTERN } else { BlockId::AIR }),
+            21 => Some(if edge { CUT_STONE } else { PLANK }),
+            22 if corner => Some(CUT_STONE),
+            l => {
+                let k = l - 22;
+                let ring = dx.abs().max(bz.abs());
+                if ring <= 2 - k / 3 && k < 9 {
+                    return Some(BRICK);
+                }
+                if (dx, bz) == (0, 0) && (9..11).contains(&k) {
+                    return Some(GILDING);
+                }
+                (y < ground).then_some(BlockId::AIR)
+            }
+        };
+    }
+    // Halle : toit à deux pans le long de x
+    let half_d = rect.depth() / 2;
+    let dz = z - (rect.z0 + half_d);
+    let edge = x == rect.x0 || x == rect.x1 - 1 || z == rect.z0 || z == rect.z1 - 1;
+    let corner = (x == rect.x0 || x == rect.x1 - 1) && (z == rect.z0 || z == rect.z1 - 1);
+    if level < HALL_WALL {
+        if !edge {
+            return Some(if level == 4 { PLANK } else { BlockId::AIR });
+        }
+        if corner || level == 4 || level == HALL_WALL - 1 {
+            return Some(CUT_STONE);
+        }
+        let along = if z == rect.z0 || z == rect.z1 - 1 { dx } else { dz };
+        if (level == 2 || level == 6) && along.rem_euclid(2) == 0 {
+            return Some(GLASS);
+        }
+        return Some(WHITE_BRICK);
+    }
+    let k = level - HALL_WALL;
+    let reach = half_d - k;
+    if reach >= 0 && dz.abs() <= reach && x >= rect.x0 && x < rect.x1 {
+        // Pignons de brique blanche aux deux bouts, toit de brique ailleurs
+        if (x == rect.x0 || x == rect.x1 - 1) && dz.abs() < reach {
+            return Some(WHITE_BRICK);
+        }
+        return Some(if dz.abs() == reach { BRICK } else if reach == 0 { BRICK_SLAB } else { BlockId::AIR });
+    }
+    (y < ground).then_some(BlockId::AIR)
+}
 
 /// Bloc du donjon royal en (x, y, z)
 fn keep_block(rect: &Rect, floor: i32, m: &Masonry, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
@@ -2417,6 +2515,7 @@ fn piece_floor_top(piece: &Piece) -> i32 {
         Piece::Sanctuary { floor, .. } => floor + 14,
         Piece::Terrace { floor, height, .. } => floor + height + 2,
         Piece::Keep { floor, .. } => floor + KEEP_TOP,
+        Piece::TownHall { floor, .. } => floor + HALL_TOP,
         _ => i32::MIN,
     }
 }
@@ -3601,7 +3700,7 @@ fn plan_town_organic(mut p: Planner, center: (i32, i32), biome: BiomeType, dice:
     // Places : disques un peu irréguliers, une fontaine ou un puits au milieu, des étals autour
     let mut squares: Vec<((i32, i32), i32, bool)> = Vec::new();
     if !capital {
-        squares.push((center, 11, true));
+        squares.push((center, 15, true));
     }
     let rings: &[f64] = match size {
         TownSize::PetiteVille => &[0.5],
@@ -3629,6 +3728,14 @@ fn plan_town_organic(mut p: Planner, center: (i32, i32), biome: BiomeType, dice:
                 }
             }
         }
+        // La grand-place : l'hôtel de ville au nord, sa fontaine devant lui
+        let main = (sx, sz) == center;
+        if main {
+            let hall = Rect::sized(sx - 9, sz - 14, 19, 13);
+            let floor = floor_for(p.generator, p.face, &hall, 6)?;
+            p.take(Piece::TownHall { rect: hall, floor }, 1);
+        }
+        let (sx, sz) = if main { (sx, sz + 6) } else { (sx, sz) };
         let piece = if fountain { Rect::around(sx, sz, 2) } else { Rect::around(sx, sz, 1) };
         let Some(floor) = floor_for(p.generator, p.face, &piece, 3) else { continue };
         p.take(if fountain { Piece::Fountain { rect: piece, floor } } else { Piece::Well { rect: piece, floor } }, 0);
