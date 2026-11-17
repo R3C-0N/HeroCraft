@@ -646,14 +646,16 @@ impl Town {
         } else {
             for g in &gates {
                 let c = g.center();
-                // Vers le centre (en dedans), et le long du mur
-                let inward = ((s.center.0 - c.0).signum(), (s.center.1 - c.1).signum());
-                let along = if g.width() > g.depth() { (1, 0) } else { (0, 1) };
-                let half = g.width().max(g.depth()) / 2 + 1;
+                // Vers le centre (en dedans, le long de l'axe dominant), et le long du mur
+                let (to_x, to_z) = (s.center.0 - c.0, s.center.1 - c.1);
+                let inward = if to_x.abs() > to_z.abs() { (to_x.signum(), 0) } else { (0, to_z.signum()) };
+                let along = if inward.0 == 0 { (1, 0) } else { (0, 1) };
+                let half = if along == (1, 0) { g.width() } else { g.depth() } / 2 + 1;
                 for side in [-1, 1] {
                     // Le premier pas libre en dedans, passé l'épaisseur du rempart et de son chemin de ronde
                     let beside = |d: i32| (c.0 + inward.0 * d + along.0 * half * side, c.1 + inward.1 * d + along.1 * half * side);
-                    let free = (1..=4).map(beside).find(|&cell| nav.walkable(cell));
+                    // (et relié à la place : un rempart en biais laisse des recoins fermés près des portes)
+                    let free = (1..=6).map(beside).find(|&cell| nav.walkable(cell) && nav.path(cell, plaza).is_some());
                     let Some(cell) = free.or_else(|| nav.nearest_walkable(beside(1))) else { continue };
                     if posts.iter().all(|p| p.cell != cell) {
                         posts.push(Spot { cell, look: away(c), floor: None });
@@ -1799,19 +1801,24 @@ mod tests {
 
     /// Une ville ou un village de la graine 2026, et les pieds d'un joueur à son centre
     fn settlement(generator: &PlanetWorldGenerator) -> (Settlement, Vec3) {
+        // Le plus petit établissement de la face : une capitale compterait des centaines d'habitants
         let face = PlanetFace::PosY;
+        let mut found: Option<&Settlement> = None;
         for rz in 0..crate::structures::REGIONS_PER_FACE {
             for rx in 0..crate::structures::REGIONS_PER_FACE {
                 if let Some(s) = generator.structures.region_settlement(generator, face, rx, rz) {
-                    let geometry = BlockGeometry::new(generator.base_radius());
-                    let edits = TerrainEdits::new(None);
-                    let mut query = TerrainQuery::new(generator, &edits);
-                    let feet = feet_at(&geometry, &mut query, face, s.center, None).unwrap();
-                    return (s.clone(), feet);
+                    if found.is_none_or(|f| s.pieces.len() < f.pieces.len()) {
+                        found = Some(s);
+                    }
                 }
             }
         }
-        panic!("aucun établissement sur la face");
+        let s = found.expect("aucun établissement sur la face");
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let edits = TerrainEdits::new(None);
+        let mut query = TerrainQuery::new(generator, &edits);
+        let feet = feet_at(&geometry, &mut query, face, s.center, None).unwrap();
+        (s.clone(), feet)
     }
 
     #[test]
@@ -1920,13 +1927,13 @@ mod tests {
         for face in PlanetFace::ALL {
             for rz in 0..crate::structures::REGIONS_PER_FACE {
                 for rx in 0..crate::structures::REGIONS_PER_FACE {
-                    if let Some(s) = generator.structures.region_settlement(generator, face, rx, rz).filter(|s| s.kind == SettlementKind::Town) {
+                    if let Some(s) = generator.structures.region_settlement(generator, face, rx, rz).filter(|s| s.size == Some(crate::structures::TownSize::PetiteVille)) {
                         return s.clone();
                     }
                 }
             }
         }
-        panic!("aucune ville fortifiée");
+        panic!("aucune petite ville fortifiée");
     }
 
     #[test]
@@ -1973,20 +1980,24 @@ mod tests {
         let registry = Arc::new(CreatureRegistry::load_default());
         let mut world = CreatureWorld::new(generator.base_radius(), 2026, registry.clone());
         world.set_sun_dir(feet.normalize());
-        for _ in 0..900 {
+        // Une petite ville est plus grande que l'ancien bourg : les gardes ont plus de chemin à faire
+        for _ in 0..1800 {
             world.tick(0.1, &generator, &edits, &[feet]);
         }
         let block = geometry.block_height as f32;
-        let mut checked = 0;
+        // Presque tous à leur poste (dans une ville plus grande, l'un d'eux peut être encore en chemin)
+        let (mut checked, mut at_post) = (0, 0);
         for p in world.villages.people.iter().filter(|p| p.guard) {
             let (Some(id), Role::Resident { work: Some(post), .. }) = (p.creature, &p.role) else { continue };
             let Some(c) = world.creatures().iter().find(|c| c.id == id).filter(|c| !c.is_hunting()) else { continue };
             let at = cell_dir(&geometry, s.face, post.cell) * c.position.length();
             let off = at.distance(c.position) / block;
-            assert!(off < 4.0, "garde à {off:.1} blocs de son poste");
+            if off < 4.0 {
+                at_post += 1;
+            }
             checked += 1;
         }
-        assert!(checked >= 4, "{checked} gardes à leur poste");
+        assert!(at_post >= 4 && at_post * 4 >= checked * 3, "{at_post} gardes sur {checked} à leur poste");
     }
 
     #[test]

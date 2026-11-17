@@ -128,7 +128,7 @@ impl Scene {
             for tx in 0..tiles_x {
                 let r = Rect::sized(area.x0 + tx * TILE, area.z0 + tz * TILE, TILE, TILE);
                 let mut t = town.clone();
-                t.pieces.retain(|p| p.rect().intersects(&r));
+                t.retain_pieces(|p| p.rect().intersects(&r));
                 tiles.push(t);
             }
         }
