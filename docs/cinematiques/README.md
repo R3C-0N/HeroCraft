@@ -4,6 +4,9 @@ Deux cinématiques muettes en motion design, façon collage de papier découpé 
 Ce sont des prototypes (POC) : chaque page HTML est autonome (images intégrées, seules les polices
 viennent de Google Fonts) et s'ouvre directement dans un navigateur.
 
+Les cinématiques jouées dans le moteur, elles, sont décrites par les fichiers de
+[`assets/cinematics/`](../../assets/cinematics/README.md).
+
 Les textes affichés sont provisoires (« TEXTE n · À ÉCRIRE ») et restent à écrire.
 
 ## La Genèse (`genese.html`, 2:41)
