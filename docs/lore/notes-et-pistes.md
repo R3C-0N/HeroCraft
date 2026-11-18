@@ -139,3 +139,14 @@ Problème soulevé par Mat : « le seul héros qui veut plus de pouvoir cause la
 
 46. *(Validée par Mat.)* **Les parents gardaient-ils un fragment de la Pierre du roi ?** (lecture de Claude à confirmer) Si oui, le joueur porterait sans le savoir un morceau de la mémoire du roi.
 47. *(Validée par Mat : Pierre reconstituée.)* **À accorder avec le combat final :** la section 9 dit que le roi garde sa Pierre dans son donjon et se l'enfonce dans le torse. Est-ce la Pierre reconstituée à partir des fragments que les élus lui ont rapportés ?
+
+### 18/11/2026 : La ville-souvenir (bible, section 8)
+- Activer le sanctuaire du temple en ruine projette dans les souvenirs : une ville en guerre dont on ne peut pas sortir, avec des ennemis partout.
+- Des missions (à définir) mènent pas à pas au temple, au centre de la ville. Le combat final a lieu dans une arène à l'entrée du temple, contre un monstre du Néant (à choisir).
+- Ces monstres sont des héros des nations transformés après avoir absorbé une Pierre du Néant, et non des membres du Cercle.
+
+### Questions ouvertes par la ville-souvenir
+36. **Les héros des nations et les Pierres.** Si un héros d'une nation absorbe une Pierre sans en être le descendant, il devient un monstre du Néant. Est-ce la règle (le « prix à payer » de la section 4) ?
+37. **Le monstre du temple.** Est-ce le héros de la nation qui tient le temple, transformé par la Pierre que le joueur vient chercher ?
+38. **La ville au présent.** Au réveil, le joueur voit-il les ruines de toute la ville autour du temple, ou seulement le temple ?
+
