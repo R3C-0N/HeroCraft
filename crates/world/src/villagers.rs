@@ -231,6 +231,9 @@ struct Town {
     inn: Option<Home>,
     /// Nom de la ville ou du village
     name: String,
+    /// Du centre à la maison la plus éloignée, en blocs : une grande ville s'éveille dès qu'un
+    /// joueur approche de ses murs, pas seulement de son centre
+    radius: f32,
     active: bool,
 }
 
@@ -330,13 +333,30 @@ pub struct Villages {
     cards: HashMap<u64, Arc<VillagerCard>>,
     rng: StdRng,
     scan_timer: f32,
+    /// Habitants (hors gardes) qui ont un corps, par établissement : recompté à chaque pas
+    outdoors: HashMap<TownKey, usize>,
+    /// Positions des joueurs au pas en cours
+    players: Vec<Vec3>,
 }
 
 impl Default for Villages {
     fn default() -> Self {
-        Self { seed: 0, enabled: false, species: SpeciesIds::default(), towns: HashMap::new(), people: Vec::new(), cards: HashMap::new(), rng: StdRng::seed_from_u64(0), scan_timer: 0.0 }
+        Self { seed: 0, enabled: false, species: SpeciesIds::default(), towns: HashMap::new(), people: Vec::new(), cards: HashMap::new(), rng: StdRng::seed_from_u64(0), scan_timer: 0.0, outdoors: HashMap::new(), players: Vec::new() }
     }
 }
+
+/// Habitants dehors en même temps dans un établissement, gardes non compris : les autres
+/// travaillent chez eux ou à l'atelier, sans corps, et sortent quand une place se libère
+fn outdoor_cap(homes: usize) -> usize {
+    (12 + homes / 8).min(40)
+}
+
+/// Près d'un joueur, un habitant a toujours un corps de jour (le plafond ne compte pas pour lui) :
+/// il ne rentre pas pour une tâche à l'intérieur, et celui qui est chez lui sort à son passage
+const NEAR_PLAYER_BLOCKS: f32 = 32.0;
+
+/// Durée d'une tâche à l'intérieur (atelier, cuisine, ménage), en secondes
+const INDOOR_TASK: std::ops::Range<f32> = 90.0..300.0;
 
 /// Coiffures qui se lisent comme celles d'une femme
 const FEMININE_HAIR: [&str; 7] = ["chignon", "longue", "lisse", "afro", "tresse", "nattes", "couettes"];
@@ -646,14 +666,16 @@ impl Town {
         } else {
             for g in &gates {
                 let c = g.center();
-                // Vers le centre (en dedans), et le long du mur
-                let inward = ((s.center.0 - c.0).signum(), (s.center.1 - c.1).signum());
-                let along = if g.width() > g.depth() { (1, 0) } else { (0, 1) };
-                let half = g.width().max(g.depth()) / 2 + 1;
+                // Vers le centre (en dedans, le long de l'axe dominant), et le long du mur
+                let (to_x, to_z) = (s.center.0 - c.0, s.center.1 - c.1);
+                let inward = if to_x.abs() > to_z.abs() { (to_x.signum(), 0) } else { (0, to_z.signum()) };
+                let along = if inward.0 == 0 { (1, 0) } else { (0, 1) };
+                let half = if along == (1, 0) { g.width() } else { g.depth() } / 2 + 1;
                 for side in [-1, 1] {
                     // Le premier pas libre en dedans, passé l'épaisseur du rempart et de son chemin de ronde
                     let beside = |d: i32| (c.0 + inward.0 * d + along.0 * half * side, c.1 + inward.1 * d + along.1 * half * side);
-                    let free = (1..=4).map(beside).find(|&cell| nav.walkable(cell));
+                    // (et relié à la place : un rempart en biais laisse des recoins fermés près des portes)
+                    let free = (1..=6).map(beside).find(|&cell| nav.walkable(cell) && nav.path(cell, plaza).is_some());
                     let Some(cell) = free.or_else(|| nav.nearest_walkable(beside(1))) else { continue };
                     if posts.iter().all(|p| p.cell != cell) {
                         posts.push(Spot { cell, look: away(c), floor: None });
@@ -664,7 +686,8 @@ impl Town {
         // Les gardes gardent leur poste libre des badauds
         let gathering = gathering.into_iter().filter(|c| posts.iter().all(|p| p.cell != *c)).collect();
         work.insert(Workplace::Rempart, posts);
-        Town { nav: Arc::new(nav), homes, work, customers, wander, plaza, gathering, gathering_center, inn, name: town_name(s), active: false }
+        let radius = homes.iter().map(|h| (((h.door.0 - s.center.0).pow(2) + (h.door.1 - s.center.1).pow(2)) as f32).sqrt()).fold(0.0, f32::max);
+        Town { nav: Arc::new(nav), homes, work, customers, wander, plaza, gathering, gathering_center, inn, name: town_name(s), radius, active: false }
     }
 
     fn random_street(&self, rng: &mut StdRng) -> Cell {
@@ -812,6 +835,14 @@ impl Villages {
             self.scan_timer = SCAN_INTERVAL;
             self.scan(world, query, generator, players);
         }
+        self.players.clear();
+        self.players.extend_from_slice(players);
+        self.outdoors.clear();
+        for p in &self.people {
+            if let (Role::Resident { town, .. }, Some(_), false, true) = (&p.role, p.creature, p.guard, p.alive) {
+                *self.outdoors.entry(*town).or_insert(0) += 1;
+            }
+        }
         for i in 0..self.people.len() {
             if !self.people[i].alive {
                 continue;
@@ -863,7 +894,7 @@ impl Villages {
         let keys: Vec<TownKey> = self.towns.keys().copied().collect();
         for key in keys {
             let town = &self.towns[&key];
-            let distance = Self::nearest_player(&geometry, cell_dir(&geometry, key.0, (key.1, key.2)), players);
+            let distance = Self::nearest_player(&geometry, cell_dir(&geometry, key.0, (key.1, key.2)), players) - town.radius;
             if !town.active && distance < ACTIVE_RANGE_BLOCKS {
                 self.activate(key, world, query);
             } else if town.active && distance > ACTIVE_RANGE_BLOCKS + INACTIVE_MARGIN_BLOCKS {
@@ -1050,6 +1081,9 @@ impl Villages {
         let yaw = self.rng.gen_range(0.0..TAU);
         let id = world.spawn_managed(person.species, feet, yaw, person.herd);
         person.creature = Some(id);
+        if let (Role::Resident { town, .. }, false) = (&person.role, person.guard) {
+            *self.outdoors.entry(*town).or_insert(0) += 1;
+        }
         person.path.clear();
         person.destination = None;
         person.partner = None;
@@ -1065,6 +1099,11 @@ impl Villages {
         if let Some(id) = self.people[i].creature.take() {
             world.remove(id);
             self.cards.remove(&id);
+            if let (Role::Resident { town, .. }, false) = (&self.people[i].role, self.people[i].guard) {
+                if let Some(n) = self.outdoors.get_mut(town) {
+                    *n = n.saturating_sub(1);
+                }
+            }
         }
         self.people[i].path.clear();
         self.people[i].partner = None;
@@ -1080,9 +1119,11 @@ impl Villages {
                 continue;
             }
             let person = &self.people[i];
-            let out = !self.is_night(person, sun) || person.night_watch;
+            let out = (!self.is_night(person, sun) || person.night_watch) && self.room_outside(key, person.guard);
             if !out {
+                // Chez lui : il sortira plus tard, quand une place se libère
                 self.people[i].task = Task::Indoors;
+                self.people[i].timer = self.rng.gen_range(0.0..INDOOR_TASK.end);
                 continue;
             }
             let town = &self.towns[&key];
@@ -1108,6 +1149,16 @@ impl Villages {
                 }
             }
         }
+    }
+
+    /// La colonne `cell` d'une face est près d'un joueur
+    fn near_player(&self, geometry: &BlockGeometry, face: PlanetFace, cell: Cell) -> bool {
+        Self::nearest_player(geometry, cell_dir(geometry, face, cell), &self.players) < NEAR_PLAYER_BLOCKS
+    }
+
+    /// Il reste de la place dehors pour un habitant de l'établissement `key` (un garde sort toujours)
+    fn room_outside(&self, key: TownKey, guard: bool) -> bool {
+        guard || self.towns.get(&key).is_some_and(|t| self.outdoors.get(&key).copied().unwrap_or(0) < outdoor_cap(t.homes.len()))
     }
 
     fn sun_height(world: &CreatureWorld, dir: Vec3) -> f32 {
@@ -1196,8 +1247,25 @@ impl Villages {
         let night = self.is_night(&self.people[i], sun) && !self.people[i].night_watch;
         let home_spot = town.homes[home];
         let Some(id) = self.people[i].creature else {
-            // Chez lui : il sort au matin
+            // La nuit chez lui, il sortira dès le matin
+            if self.people[i].task == Task::Indoors && night {
+                self.people[i].timer = self.people[i].timer.min(5.0);
+            }
+            // Chez lui : de jour, il sort sa tâche finie, s'il reste de la place dehors ; tout de
+            // suite, quand un joueur passe près de chez lui
             if self.people[i].task == Task::Indoors && !night {
+                let near = self.near_player(&geometry, key.0, home_spot.door);
+                if near {
+                    self.people[i].timer = self.people[i].timer.min(self.rng.gen_range(0.0..2.0));
+                }
+                self.people[i].timer -= dt;
+                if self.people[i].timer > 0.0 {
+                    return;
+                }
+                if !near && !self.room_outside(key, self.people[i].guard) {
+                    self.people[i].timer = self.rng.gen_range(15.0..60.0);
+                    return;
+                }
                 self.people[i].task = Task::Idle;
                 self.embody(i, home_spot.out, Some(home_spot.floor), world, query);
             }
@@ -1264,6 +1332,7 @@ impl Villages {
             Goal::Home => {
                 self.release(i, world);
                 self.people[i].task = Task::Indoors;
+                self.people[i].timer = self.rng.gen_range(INDOOR_TASK);
             }
             Goal::Work => {
                 let pause = if self.people[i].guard { None } else { Some("travaille") };
@@ -1355,6 +1424,18 @@ impl Villages {
                 if self.send(i, &nav, here, spot.cell, Goal::Work, Some(spot)) {
                     return;
                 }
+            }
+        }
+        // Une tâche à l'intérieur : de temps en temps, et toujours quand la rue est trop peuplée
+        let Role::Resident { home, .. } = self.people[i].role else { return };
+        let crowded = !self.room_outside(key, false) && self.outdoors.get(&key).copied().unwrap_or(0) > outdoor_cap(self.towns[&key].homes.len());
+        let near = self.near_player(world.geometry(), key.0, here);
+        if !guard && !near && (crowded || self.rng.gen_bool(0.12)) {
+            let home_spot = self.towns[&key].homes[home];
+            let door = Spot { cell: home_spot.door, look: home_spot.door, floor: Some(home_spot.floor) };
+            if self.send(i, &nav, here, home_spot.out, Goal::Home, Some(door)) {
+                self.people[i].path.push_back(home_spot.door);
+                return;
             }
         }
         if let Some(spot) = work.filter(|_| roll < 0.55) {
@@ -1799,19 +1880,24 @@ mod tests {
 
     /// Une ville ou un village de la graine 2026, et les pieds d'un joueur à son centre
     fn settlement(generator: &PlanetWorldGenerator) -> (Settlement, Vec3) {
+        // Le plus petit établissement de la face : une capitale compterait des centaines d'habitants
         let face = PlanetFace::PosY;
+        let mut found: Option<&Settlement> = None;
         for rz in 0..crate::structures::REGIONS_PER_FACE {
             for rx in 0..crate::structures::REGIONS_PER_FACE {
                 if let Some(s) = generator.structures.region_settlement(generator, face, rx, rz) {
-                    let geometry = BlockGeometry::new(generator.base_radius());
-                    let edits = TerrainEdits::new(None);
-                    let mut query = TerrainQuery::new(generator, &edits);
-                    let feet = feet_at(&geometry, &mut query, face, s.center, None).unwrap();
-                    return (s.clone(), feet);
+                    if found.is_none_or(|f| s.pieces.len() < f.pieces.len()) {
+                        found = Some(s);
+                    }
                 }
             }
         }
-        panic!("aucun établissement sur la face");
+        let s = found.expect("aucun établissement sur la face");
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let edits = TerrainEdits::new(None);
+        let mut query = TerrainQuery::new(generator, &edits);
+        let feet = feet_at(&geometry, &mut query, face, s.center, None).unwrap();
+        (s.clone(), feet)
     }
 
     #[test]
@@ -1920,13 +2006,13 @@ mod tests {
         for face in PlanetFace::ALL {
             for rz in 0..crate::structures::REGIONS_PER_FACE {
                 for rx in 0..crate::structures::REGIONS_PER_FACE {
-                    if let Some(s) = generator.structures.region_settlement(generator, face, rx, rz).filter(|s| s.kind == SettlementKind::Town) {
+                    if let Some(s) = generator.structures.region_settlement(generator, face, rx, rz).filter(|s| s.size == Some(crate::structures::TownSize::PetiteVille)) {
                         return s.clone();
                     }
                 }
             }
         }
-        panic!("aucune ville fortifiée");
+        panic!("aucune petite ville fortifiée");
     }
 
     #[test]
@@ -1973,20 +2059,96 @@ mod tests {
         let registry = Arc::new(CreatureRegistry::load_default());
         let mut world = CreatureWorld::new(generator.base_radius(), 2026, registry.clone());
         world.set_sun_dir(feet.normalize());
-        for _ in 0..900 {
+        // Une petite ville est plus grande que l'ancien bourg : les gardes ont plus de chemin à faire
+        for _ in 0..1800 {
             world.tick(0.1, &generator, &edits, &[feet]);
         }
         let block = geometry.block_height as f32;
-        let mut checked = 0;
+        // Presque tous à leur poste (dans une ville plus grande, l'un d'eux peut être encore en chemin)
+        let (mut checked, mut at_post) = (0, 0);
         for p in world.villages.people.iter().filter(|p| p.guard) {
             let (Some(id), Role::Resident { work: Some(post), .. }) = (p.creature, &p.role) else { continue };
             let Some(c) = world.creatures().iter().find(|c| c.id == id).filter(|c| !c.is_hunting()) else { continue };
             let at = cell_dir(&geometry, s.face, post.cell) * c.position.length();
             let off = at.distance(c.position) / block;
-            assert!(off < 4.0, "garde à {off:.1} blocs de son poste");
+            if off < 4.0 {
+                at_post += 1;
+            }
             checked += 1;
         }
-        assert!(checked >= 4, "{checked} gardes à leur poste");
+        assert!(at_post >= 4 && at_post * 4 >= checked * 3, "{at_post} gardes sur {checked} à leur poste");
+    }
+
+    /// Dans une capitale de plusieurs centaines d'habitants, seuls quelques dizaines ont un corps à la
+    /// fois : les autres travaillent chez eux et sortent à tour de rôle
+    #[test]
+    fn a_capital_animates_only_a_few_residents_at_a_time() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let capital = generator.structures.capital(&generator).expect("une capitale");
+        let s = generator.structures.region_settlement(&generator, capital.face, capital.region.0, capital.region.1).expect("la capitale").clone();
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let mut query = TerrainQuery::new(&generator, &edits);
+        let feet = feet_at(&geometry, &mut query, s.face, s.center, None).unwrap();
+        let registry = Arc::new(CreatureRegistry::load_default());
+        let mut world = CreatureWorld::new(generator.base_radius(), 2026, registry.clone());
+        world.set_sun_dir(feet.normalize());
+        let key = (s.face, s.center.0, s.center.1);
+        let homes = |w: &CreatureWorld| w.villages.towns[&key].homes.len();
+        let mut most = 0;
+        for k in 0..600 {
+            world.tick(0.1, &generator, &edits, &[feet]);
+            if k == 0 {
+                assert!(world.villages.towns[&key].active);
+            }
+            let out = world.villages.people.iter().filter(|p| !p.guard && p.creature.is_some() && matches!(p.role, Role::Resident { town, .. } if town == key)).count();
+            most = most.max(out);
+        }
+        let residents = world.villages.people.iter().filter(|p| matches!(p.role, Role::Resident { town, .. } if town == key)).count();
+        println!("{residents} habitants, au plus {most} dehors à la fois");
+        assert!(residents > 400, "{residents} habitants");
+        assert!(most > 10 && most <= outdoor_cap(homes(&world)), "{most} habitants dehors");
+        // Et ils tournent : certains sont rentrés travailler chez eux pendant que d'autres sortaient
+        let indoors_by_day = world.villages.people.iter().filter(|p| p.task == Task::Indoors && matches!(p.role, Role::Resident { town, .. } if town == key)).count();
+        assert!(indoors_by_day > residents / 2);
+    }
+
+    #[test]
+    fn residents_near_a_player_always_have_a_body_by_day() {
+        let generator = generator();
+        let edits = TerrainEdits::new(None);
+        let capital = generator.structures.capital(&generator).expect("une capitale");
+        let s = generator.structures.region_settlement(&generator, capital.face, capital.region.0, capital.region.1).expect("la capitale").clone();
+        let geometry = BlockGeometry::new(generator.base_radius());
+        let mut query = TerrainQuery::new(&generator, &edits);
+        let registry = Arc::new(CreatureRegistry::load_default());
+        let mut world = CreatureWorld::new(generator.base_radius(), 2026, registry.clone());
+        let key = (s.face, s.center.0, s.center.1);
+        let centre = feet_at(&geometry, &mut query, s.face, s.center, None).unwrap();
+        world.set_sun_dir(centre.normalize());
+        // On fonde la ville depuis le centre, puis le joueur va dans un quartier du bord, loin du centre
+        world.tick(0.1, &generator, &edits, &[centre]);
+        let far = |c: Cell| ((c.0 - s.center.0).pow(2) + (c.1 - s.center.1).pow(2)) as f32;
+        let edge = world.villages.towns[&key].homes.iter().map(|h| h.out).max_by(|a, b| far(*a).total_cmp(&far(*b))).unwrap();
+        let feet = feet_at(&geometry, &mut query, s.face, edge, None).unwrap();
+        println!("joueur à {:.0} blocs du centre", far(edge).sqrt());
+        assert!(far(edge).sqrt() > ACTIVE_RANGE_BLOCKS, "le bord doit être hors de portée du centre");
+        let mut world = CreatureWorld::new(generator.base_radius(), 2026, registry);
+        world.set_sun_dir(feet.normalize());
+        for _ in 0..300 {
+            world.tick(0.1, &generator, &edits, &[feet]);
+        }
+        assert!(world.villages.towns[&key].active, "la capitale s'éveille quand on arrive par ses quartiers");
+        let town = &world.villages.towns[&key];
+        let near: Vec<&Person> = world.villages.people.iter().filter(|p| matches!(p.role, Role::Resident { town: t, home, .. } if t == key && far_from(town.homes[home].door, edge) < 20.0)).collect();
+        let bodies = near.iter().filter(|p| p.creature.is_some()).count();
+        println!("{bodies} / {} voisins du joueur ont un corps", near.len());
+        assert!(!near.is_empty());
+        assert!(bodies * 10 >= near.len() * 9, "{bodies} / {} voisins ont un corps", near.len());
+    }
+
+    fn far_from(a: Cell, b: Cell) -> f32 {
+        (((a.0 - b.0).pow(2) + (a.1 - b.1).pow(2)) as f32).sqrt()
     }
 
     #[test]

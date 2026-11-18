@@ -1570,6 +1570,12 @@ pub enum Piece {
     Totem { x: i32, z: i32, top: BlockId },
     /// Enclos de chasse : une barrière de chêne et son passage
     Pen { rect: Rect },
+    /// Donjon royal : trois étages en retrait, fenêtres, couronne dorée et flèche
+    Keep { rect: Rect, floor: i32, masonry: Masonry },
+    /// Douves : de l'eau jusqu'au ras du sol
+    Moat { rect: Rect },
+    /// Hôtel de ville : une halle à deux niveaux, son beffroi au milieu de la façade sud
+    TownHall { rect: Rect, floor: i32 },
 }
 
 impl Piece {
@@ -1595,7 +1601,10 @@ impl Piece {
             | Piece::Obelisk { rect, .. }
             | Piece::Sanctuary { rect, .. }
             | Piece::Terrace { rect, .. }
-            | Piece::Pen { rect } => *rect,
+            | Piece::Pen { rect }
+            | Piece::Keep { rect, .. }
+            | Piece::Moat { rect }
+            | Piece::TownHall { rect, .. } => *rect,
             Piece::Totem { x, z, .. } => Rect::sized(*x, *z, 1, 1),
         }
     }
@@ -1625,6 +1634,9 @@ impl Piece {
             Piece::Terrace { floor, height, .. } => (*floor).min(ground) - 1..(floor + height + 2).max(ground),
             Piece::Totem { .. } => ground..ground + TOTEM_HEIGHT + 1,
             Piece::Pen { .. } => ground..ground + 1,
+            Piece::Keep { floor, .. } => span(*floor, 1, floor + KEEP_TOP),
+            Piece::Moat { .. } => ground - MOAT_DEPTH..ground,
+            Piece::TownHall { floor, .. } => span(*floor, 1, floor + HALL_TOP),
         }
     }
 
@@ -1820,8 +1832,185 @@ impl Piece {
                 let (cx, _) = rect.center();
                 Some(if z == rect.z0 && (x - cx).abs() <= 0 { BlockId::AIR } else { OAK_FENCE })
             }
+            Piece::Keep { rect, floor, masonry } => keep_block(rect, *floor, masonry, x, y, z, ground),
+            Piece::Moat { .. } => (y >= ground - MOAT_DEPTH && y < ground).then_some(WATER),
+            Piece::TownHall { rect, floor } => town_hall_block(rect, *floor, x, y, z, ground),
         }
     }
+}
+
+/// Plus haut niveau (exclu) du donjon royal au-dessus de son plancher
+const KEEP_TOP: i32 = KEEP_TIERS[2].2 + 8;
+/// Étages du donjon royal : retrait depuis le bord, premier et dernier niveau (exclu)
+const KEEP_TIERS: [(i32, i32, i32); 3] = [(0, 0, 16), (4, 16, 28), (7, 28, 38)];
+/// Profondeur des douves
+const MOAT_DEPTH: i32 = 4;
+
+/// Plus haut niveau (exclu) de l'hôtel de ville (la pointe de son beffroi)
+const HALL_TOP: i32 = 33;
+/// Hauteur des murs de la halle de l'hôtel de ville
+const HALL_WALL: i32 = 9;
+
+/// Bloc de l'hôtel de ville en (x, y, z) : halle de briques blanchies, chaînes d'angle et
+/// bandeaux de pierre taillée, toit de briques à deux pans ; beffroi carré au milieu de la façade
+/// sud (porte dorée, horloge, chambre des cloches ouverte, flèche à pointe dorée)
+fn town_hall_block(rect: &Rect, floor: i32, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
+    let f = floor;
+    if y < f - 1 {
+        return (y >= ground).then_some(CUT_STONE);
+    }
+    if y == f - 1 {
+        return Some(CUT_STONE);
+    }
+    let level = y - f;
+    let (cx, _) = rect.center();
+    let dx = x - cx;
+    // Beffroi : 5 × 5 contre la façade sud
+    let (bz0, bz1) = (rect.z1 - 5, rect.z1);
+    if dx.abs() <= 2 && z >= bz0 && z < bz1 {
+        let edge = dx.abs() == 2 || z == bz0 || z == bz1 - 1;
+        let corner = dx.abs() == 2 && (z == bz0 || z == bz1 - 1);
+        let front = z == bz1 - 1;
+        let bz = z - (bz0 + 2);
+        return match level {
+            // Portail doré
+            0..=2 if front && dx.abs() <= 1 => Some(BlockId::AIR),
+            3 if front && dx.abs() <= 1 => Some(GILDING),
+            l if l < 18 => {
+                if !edge {
+                    return Some(if l == 4 || l == 12 || l == 17 { PLANK } else { BlockId::AIR });
+                }
+                if corner || l == 17 {
+                    return Some(CUT_STONE);
+                }
+                // Horloge
+                if (front || z == bz0) && dx.abs() <= 1 && (14..=16).contains(&l) {
+                    return Some(if dx == 0 && l == 15 { GILDING } else if dx == 0 || l == 15 { BRONZE_TRIM } else { WHITE_BRICK });
+                }
+                if (l == 7 || l == 10) && !corner && (dx == 0 || bz == 0) {
+                    return Some(GLASS);
+                }
+                Some(WHITE_BRICK)
+            }
+            // Chambre des cloches : piliers d'angle, une lanterne au milieu
+            18..=20 => Some(if corner { CUT_STONE } else if (dx, bz) == (0, 0) && level == 19 { LANTERN } else { BlockId::AIR }),
+            21 => Some(if edge { CUT_STONE } else { PLANK }),
+            22 if corner => Some(CUT_STONE),
+            l => {
+                let k = l - 22;
+                let ring = dx.abs().max(bz.abs());
+                if ring <= 2 - k / 3 && k < 9 {
+                    return Some(BRICK);
+                }
+                if (dx, bz) == (0, 0) && (9..11).contains(&k) {
+                    return Some(GILDING);
+                }
+                (y < ground).then_some(BlockId::AIR)
+            }
+        };
+    }
+    // Halle : toit à deux pans le long de x
+    let half_d = rect.depth() / 2;
+    let dz = z - (rect.z0 + half_d);
+    let edge = x == rect.x0 || x == rect.x1 - 1 || z == rect.z0 || z == rect.z1 - 1;
+    let corner = (x == rect.x0 || x == rect.x1 - 1) && (z == rect.z0 || z == rect.z1 - 1);
+    if level < HALL_WALL {
+        if !edge {
+            return Some(if level == 4 { PLANK } else { BlockId::AIR });
+        }
+        if corner || level == 4 || level == HALL_WALL - 1 {
+            return Some(CUT_STONE);
+        }
+        let along = if z == rect.z0 || z == rect.z1 - 1 { dx } else { dz };
+        if (level == 2 || level == 6) && along.rem_euclid(2) == 0 {
+            return Some(GLASS);
+        }
+        return Some(WHITE_BRICK);
+    }
+    let k = level - HALL_WALL;
+    let reach = half_d - k;
+    if reach >= 0 && dz.abs() <= reach && x >= rect.x0 && x < rect.x1 {
+        // Pignons de brique blanche aux deux bouts, toit de brique ailleurs
+        if (x == rect.x0 || x == rect.x1 - 1) && dz.abs() < reach {
+            return Some(WHITE_BRICK);
+        }
+        return Some(if dz.abs() == reach { BRICK } else if reach == 0 { BRICK_SLAB } else { BlockId::AIR });
+    }
+    (y < ground).then_some(BlockId::AIR)
+}
+
+/// Bloc du donjon royal en (x, y, z)
+fn keep_block(rect: &Rect, floor: i32, m: &Masonry, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
+    let f = floor;
+    if y < f - 1 {
+        return (y >= ground).then_some(m.wall);
+    }
+    if y == f - 1 {
+        return Some(m.cap);
+    }
+    let level = y - f;
+    let (cx, cz) = rect.center();
+    let half = rect.width() / 2;
+    let (dx, dz) = (x - cx, z - cz);
+    let ring = dx.abs().max(dz.abs());
+    let corner = dx.abs() == dz.abs();
+    // Flèche au-dessus du dernier étage, couronne dorée à son pied
+    let (inset, _, last) = KEEP_TIERS[2];
+    if level >= last {
+        let k = level - last;
+        let width = half - inset - 1 - k;
+        if ring == half - inset && k == 0 {
+            return Some(if (x + z) % 2 == 0 { GILDING } else { BlockId::AIR });
+        }
+        if width >= 0 && ring <= width {
+            return Some(FLINT_BRICK);
+        }
+        // Aiguille dorée à la pointe
+        if (dx, dz) == (0, 0) && (-3..0).contains(&width) {
+            return Some(GILDING);
+        }
+        return (y < ground).then_some(BlockId::AIR);
+    }
+    for (t, &(inset, lo, hi)) in KEEP_TIERS.iter().enumerate() {
+        if level < lo || level >= hi {
+            continue;
+        }
+        let edge = half - inset;
+        if ring > edge {
+            // Terrasse de l'étage du dessous : créneaux sur son bord
+            let below = half - KEEP_TIERS[t - 1].0;
+            if ring == below && level == lo {
+                return Some(if (x + z) % 2 == 0 { m.cap } else { BlockId::AIR });
+            }
+            return (y < ground).then_some(BlockId::AIR);
+        }
+        if level == hi - 1 {
+            return Some(if ring == edge { m.cap } else { m.deck });
+        }
+        if ring < edge {
+            // Planchers tous les cinq niveaux, le reste vide
+            return Some(if level % 5 == 4 { m.deck } else { BlockId::AIR });
+        }
+        // Façade : portail au sud, chaînes d'angle, bandeau doré, fenêtres
+        if t == 0 && dz == half && dx.abs() <= 1 && level < 4 {
+            return Some(BlockId::AIR);
+        }
+        if t == 0 && dz == half && dx.abs() <= 2 && level == 4 {
+            return Some(GILDING);
+        }
+        if corner {
+            return Some(m.accent);
+        }
+        if level == hi - 2 {
+            return Some(GILDING);
+        }
+        let along = if dx.abs() == edge { dz } else { dx };
+        if level % 4 == 2 && level > 4 && along.rem_euclid(3) == 0 {
+            return Some(GLASS);
+        }
+        return Some(m.wall);
+    }
+    None
 }
 
 /// Hauteur d'un mât totem (sa coiffe est au-dessus)
@@ -1994,12 +2183,65 @@ pub struct Settlement {
     /// Bouts des rues où un chemin vers un autre établissement peut s'attacher : la colonne juste
     /// au-delà du bout de la rue (ou de la porte de ville) et le côté vers lequel elle part
     pub exits: Vec<((i32, i32), Side)>,
+    /// Taille d'une ville (`None` : village ou ruines)
+    pub size: Option<TownSize>,
+    /// Pièces rangées par carreaux de colonnes, construit à la première lecture (une capitale en
+    /// compte des milliers)
+    index: OnceLock<PieceIndex>,
+}
+
+/// Côté d'un carreau de l'index des pièces d'un établissement
+const INDEX_TILE: i32 = 16;
+
+/// Les pièces d'un établissement rangées par carreaux de `INDEX_TILE` colonnes, dans leur ordre
+#[derive(Debug, Clone, Default)]
+struct PieceIndex {
+    x0: i32,
+    z0: i32,
+    w: i32,
+    d: i32,
+    tiles: Vec<Vec<u32>>,
+}
+
+impl PieceIndex {
+    fn build(bounds: &Rect, pieces: &[Piece]) -> PieceIndex {
+        let (x0, z0) = (bounds.x0.div_euclid(INDEX_TILE), bounds.z0.div_euclid(INDEX_TILE));
+        let (w, d) = ((bounds.x1 - 1).div_euclid(INDEX_TILE) - x0 + 1, (bounds.z1 - 1).div_euclid(INDEX_TILE) - z0 + 1);
+        let mut tiles = vec![Vec::new(); (w.max(0) * d.max(0)) as usize];
+        for (i, piece) in pieces.iter().enumerate() {
+            let r = piece.rect();
+            for tz in r.z0.div_euclid(INDEX_TILE).max(z0)..=(r.z1 - 1).div_euclid(INDEX_TILE).min(z0 + d - 1) {
+                for tx in r.x0.div_euclid(INDEX_TILE).max(x0)..=(r.x1 - 1).div_euclid(INDEX_TILE).min(x0 + w - 1) {
+                    tiles[((tz - z0) * w + tx - x0) as usize].push(i as u32);
+                }
+            }
+        }
+        PieceIndex { x0, z0, w, d, tiles }
+    }
+
+    fn tile(&self, x: i32, z: i32) -> &[u32] {
+        let (tx, tz) = (x.div_euclid(INDEX_TILE) - self.x0, z.div_euclid(INDEX_TILE) - self.z0);
+        if tx < 0 || tz < 0 || tx >= self.w || tz >= self.d {
+            return &[];
+        }
+        &self.tiles[(tz * self.w + tx) as usize]
+    }
 }
 
 impl Settlement {
+    fn index(&self) -> &PieceIndex {
+        self.index.get_or_init(|| PieceIndex::build(&self.bounds, &self.pieces))
+    }
+
+    /// Ne garde que les pièces que `keep` retient (l'index est refait)
+    pub fn retain_pieces(&mut self, keep: impl FnMut(&Piece) -> bool) {
+        self.pieces.retain(keep);
+        self.index = OnceLock::new();
+    }
+
     /// Pièces qui couvrent la colonne (x, z)
     fn pieces_at(&self, x: i32, z: i32) -> impl Iterator<Item = &Piece> {
-        self.pieces.iter().filter(move |p| p.rect().contains(x, z))
+        self.index().tile(x, z).iter().map(|&i| &self.pieces[i as usize]).filter(move |p| p.rect().contains(x, z))
     }
 
     /// Bloc imposé par le plan en (x, y, z), `ground` étant l'altitude du premier bloc d'air
@@ -2068,7 +2310,19 @@ impl Settlement {
     /// La colonne est sous une pièce du plan, ou à moins de `margin` colonnes d'une pièce (là où
     /// rien d'autre, un arbre par exemple, ne devrait pousser)
     pub fn occupies(&self, x: i32, z: i32, margin: i32) -> bool {
-        self.bounds.expand(margin).contains(x, z) && self.pieces.iter().any(|p| p.rect().expand(margin).contains(x, z))
+        if !self.bounds.expand(margin).contains(x, z) {
+            return false;
+        }
+        let index = self.index();
+        let near = Rect::around(x, z, margin);
+        for tz in near.z0.div_euclid(INDEX_TILE)..=(near.z1 - 1).div_euclid(INDEX_TILE) {
+            for tx in near.x0.div_euclid(INDEX_TILE)..=(near.x1 - 1).div_euclid(INDEX_TILE) {
+                if index.tile(tx * INDEX_TILE, tz * INDEX_TILE).iter().any(|&i| self.pieces[i as usize].rect().expand(margin).contains(x, z)) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Culture du `n`-ième habitant : celle de la ville le plus souvent (`culture::NATIVE_SHARE`),
@@ -2088,6 +2342,18 @@ pub struct StructureMap {
     cells: Vec<OnceLock<Option<Settlement>>>,
     /// Les régions réservées au village de chaque race (`plan_pins`)
     pins: OnceLock<Vec<Pin>>,
+    /// Case de la ville ou du village de chaque région (s'il y en a un)
+    hosts: Vec<OnceLock<Option<(i32, i32)>>>,
+    /// La région de la capitale de la planète (`plan_capital`)
+    capital: OnceLock<Option<Capital>>,
+}
+
+/// La capitale de la planète : la seule, posée dans la case `cell` de sa région
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Capital {
+    pub face: PlanetFace,
+    pub region: (i32, i32),
+    pub cell: (i32, i32),
 }
 
 impl Default for StructureMap {
@@ -2098,7 +2364,17 @@ impl Default for StructureMap {
 
 impl StructureMap {
     pub fn new() -> Self {
-        Self { cells: (0..6 * CELLS_PER_FACE * CELLS_PER_FACE).map(|_| OnceLock::new()).collect(), pins: OnceLock::new() }
+        Self {
+            cells: (0..6 * CELLS_PER_FACE * CELLS_PER_FACE).map(|_| OnceLock::new()).collect(),
+            pins: OnceLock::new(),
+            hosts: (0..6 * REGIONS_PER_FACE * REGIONS_PER_FACE).map(|_| OnceLock::new()).collect(),
+            capital: OnceLock::new(),
+        }
+    }
+
+    /// La capitale de la planète, choisie à la première lecture
+    pub fn capital(&self, generator: &PlanetWorldGenerator) -> Option<Capital> {
+        *self.capital.get_or_init(|| plan_capital(generator))
     }
 
     /// Les régions réservées au village de chaque race, calculées à la première lecture
@@ -2121,8 +2397,15 @@ impl StructureMap {
 
     /// L'établissement dont le plan couvre la colonne (x, z) d'une face, s'il y en a un
     pub fn at(&self, generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32) -> Option<&Settlement> {
-        let settlement = self.cell(generator, face, x.div_euclid(CELL), z.div_euclid(CELL))?;
-        settlement.bounds.contains(x, z).then_some(settlement)
+        let (cx, cz) = (x.div_euclid(CELL), z.div_euclid(CELL));
+        if let Some(settlement) = self.cell(generator, face, cx, cz) {
+            if settlement.bounds.contains(x, z) {
+                return Some(settlement);
+            }
+        }
+        // Une ville déborde de sa case, jamais de sa région
+        let town = self.region_settlement(generator, face, cx.div_euclid(REGION_CELLS), cz.div_euclid(REGION_CELLS))?;
+        (town.kind == SettlementKind::Town && town.bounds.contains(x, z)).then_some(town)
     }
 
     /// Les établissements dont le plan touche le rectangle de colonnes `area` d'une face
@@ -2133,6 +2416,17 @@ impl StructureMap {
                 if let Some(s) = self.cell(generator, face, cx, cz) {
                     if s.bounds.intersects(&area) {
                         found.push(s);
+                    }
+                }
+            }
+        }
+        // Les villes des régions touchées, qui débordent de leur case
+        let region = |v: i32| v.div_euclid(CELL).div_euclid(REGION_CELLS);
+        for rz in region(area.z0)..=region(area.z1 - 1) {
+            for rx in region(area.x0)..=region(area.x1 - 1) {
+                if let Some(town) = self.region_settlement(generator, face, rx, rz) {
+                    if town.kind == SettlementKind::Town && town.bounds.intersects(&area) && !found.iter().any(|s| std::ptr::eq(*s, town)) {
+                        found.push(town);
                     }
                 }
             }
@@ -2148,7 +2442,9 @@ impl StructureMap {
         if !(0..REGIONS_PER_FACE).contains(&rx) || !(0..REGIONS_PER_FACE).contains(&rz) {
             return None;
         }
-        region_candidates(generator, face, rx, rz).into_iter().find_map(|(cx, cz)| self.cell(generator, face, cx, cz))
+        let index = (face_index(face) * REGIONS_PER_FACE * REGIONS_PER_FACE + rz * REGIONS_PER_FACE + rx) as usize;
+        let host = self.hosts[index].get_or_init(|| region_candidates(generator, face, rx, rz).into_iter().find(|&(cx, cz)| self.cell(generator, face, cx, cz).is_some()));
+        host.and_then(|(cx, cz)| self.cell(generator, face, cx, cz))
     }
 }
 
@@ -2169,6 +2465,12 @@ fn ground_at(generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32)
 /// Relève le terrain du carré de demi-côté `radius` autour de (x, z), par pas de `step` colonnes.
 /// Faux si une colonne est sous la mer, d'un biome que `kind` refuse, ou si le relief est trop accidenté.
 fn site_fits(generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32, radius: i32, step: i32, kind: SettlementKind) -> bool {
+    site_fits_relief(generator, face, x, z, radius, step, kind, kind.max_relief())
+}
+
+/// `site_fits`, avec un écart d'altitude admis donné
+#[allow(clippy::too_many_arguments)]
+fn site_fits_relief(generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32, radius: i32, step: i32, kind: SettlementKind, max_relief: i32) -> bool {
     let (mut min, mut max) = (i32::MAX, i32::MIN);
     let mut dz = -radius;
     while dz <= radius {
@@ -2180,7 +2482,7 @@ fn site_fits(generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32,
             }
             min = min.min(g);
             max = max.max(g);
-            if max - min > kind.max_relief() {
+            if max - min > max_relief {
                 return false;
             }
             dx += step;
@@ -2232,7 +2534,12 @@ impl<'a> Planner<'a> {
     }
 
     /// Pose un bâtiment (son plancher est calculé ici) ; sans son porche s'il gêne
-    fn try_building(&mut self, mut house: House) -> bool {
+    fn try_building(&mut self, house: House) -> bool {
+        self.try_building_spaced(house, 1)
+    }
+
+    /// Pose un bâtiment en gardant `clear` colonnes libres autour de son emprise (avant-toits compris)
+    fn try_building_spaced(&mut self, mut house: House, clear: i32) -> bool {
         // Les avant-toits peuvent toucher la rue, pas les murs
         let room = |h: &House| h.rect().union(&h.foot.expand(1));
         if house.porch && !self.free(&room(&house)) {
@@ -2249,7 +2556,7 @@ impl<'a> Planner<'a> {
             return false;
         };
         house.floor = floor + house.stilts;
-        self.take(Piece::House(house), 1);
+        self.take(Piece::House(house), clear);
         true
     }
 
@@ -2300,7 +2607,7 @@ impl<'a> Planner<'a> {
         // Les pièces qui suivent le terrain restent à quelques blocs du relief : le plus haut bloc est
         // celui d'un bâtiment
         let top = self.pieces.iter().map(piece_floor_top).max()?;
-        Some(Settlement { kind, face: self.face, center, biome, culture: self.culture, bounds, top, pieces: self.pieces, exits: self.exits })
+        Some(Settlement { kind, face: self.face, center, biome, culture: self.culture, bounds, top, pieces: self.pieces, exits: self.exits, size: None, index: OnceLock::new() })
     }
 }
 
@@ -2320,6 +2627,8 @@ fn piece_floor_top(piece: &Piece) -> i32 {
         Piece::Obelisk { floor, .. } => floor + OBELISK_HEIGHT + 2,
         Piece::Sanctuary { floor, .. } => floor + 14,
         Piece::Terrace { floor, height, .. } => floor + height + 2,
+        Piece::Keep { floor, .. } => floor + KEEP_TOP,
+        Piece::TownHall { floor, .. } => floor + HALL_TOP,
         _ => i32::MIN,
     }
 }
@@ -2355,6 +2664,10 @@ fn region_candidates(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32
     found
 }
 
+/// Cases autour d'un site de ville ou de village où rien d'autre ne se pose : une capitale déborde
+/// de sa case de 210 blocs au plus
+const TOWN_REACH_CELLS: i32 = 2;
+
 /// Ce que la graine destine à une case : le rang de ville ou de village de sa région qu'elle
 /// essaie (`Some(rang)`), des ruines (`None`), ou rien (`Err`)
 fn cell_role(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i32) -> Result<Option<usize>, ()> {
@@ -2363,7 +2676,7 @@ fn cell_role(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
         return Ok(Some(rank));
     }
     // Rien autour des sites de villes et villages : ils ne dépendent ainsi d'aucune case voisine
-    if candidates.iter().any(|c| (c.0 - cx).abs() <= 1 && (c.1 - cz).abs() <= 1) {
+    if candidates.iter().any(|c| (c.0 - cx).abs() <= TOWN_REACH_CELLS && (c.1 - cz).abs() <= TOWN_REACH_CELLS) {
         return Err(());
     }
     if unit(cell_seed(generator, face, cx, cz) ^ 0x2A1E) < RUINS_CHANCE {
@@ -2378,12 +2691,16 @@ fn plan_cell(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
     herocraft_common::prof_scope!("world::structures::plan_cell");
     match cell_role(generator, face, cx, cz) {
         Err(()) => None,
-        Ok(None) => plan_site(generator, face, cx, cz, SettlementKind::Ruins, None),
+        Ok(None) => plan_site(generator, face, cx, cz, SettlementKind::Ruins, None, None),
         Ok(Some(rank)) => {
             let (rx, rz) = (cx.div_euclid(REGION_CELLS), cz.div_euclid(REGION_CELLS));
+            // La région de la capitale la garde dans la case choisie, et rien ailleurs
+            if let Some(capital) = generator.structures.capital(generator).filter(|c| c.face == face && c.region == (rx, rz)) {
+                return if capital.cell == (cx, cz) { plan_site(generator, face, cx, cz, SettlementKind::Town, None, Some(TownSize::Capitale)) } else { None };
+            }
             // Une région réservée à une race garde son village dans la case choisie, et rien ailleurs
             if let Some(pin) = generator.structures.pins(generator).iter().find(|pin| pin.face == face && pin.region == (rx, rz)) {
-                return if pin.cell == (cx, cz) { plan_site(generator, face, cx, cz, SettlementKind::Village, Some(pin.culture)) } else { None };
+                return if pin.cell == (cx, cz) { plan_site(generator, face, cx, cz, SettlementKind::Village, Some(pin.culture), None) } else { None };
             }
             // La région a déjà sa ville ou son village dans une case candidate précédente
             let earlier = region_candidates(generator, face, rx, rz);
@@ -2392,17 +2709,19 @@ fn plan_cell(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
             }
             let mut dice = Dice(cell_seed(generator, face, cx, cz));
             let wanted = if unit(dice.next()) < 0.46 { SettlementKind::Town } else { SettlementKind::Village };
-            plan_site(generator, face, cx, cz, wanted, None)
+            let size = if unit(dice.next()) < 0.4 { TownSize::GrandeVille } else { TownSize::PetiteVille };
+            plan_site(generator, face, cx, cz, wanted, None, (wanted == SettlementKind::Town).then_some(size))
         }
     }
 }
 
 /// Cherche dans la case un site pour un établissement `wanted` et en dessine le plan. `forced` :
 /// la culture du village, imposée (sinon tirée du climat et du royaume).
-fn plan_site(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i32, wanted: SettlementKind, forced: Option<Culture>) -> Option<Settlement> {
+fn plan_site(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i32, wanted: SettlementKind, forced: Option<Culture>, size: Option<TownSize>) -> Option<Settlement> {
     let mut dice = Dice(cell_seed(generator, face, cx, cz));
     if wanted != SettlementKind::Ruins {
-        // Le tirage de la ville ou du village (voir `plan_cell`)
+        // Les tirages de la ville ou du village et de sa taille (voir `plan_cell`)
+        dice.next();
         dice.next();
     }
     let cell = Rect::sized(cx * CELL, cz * CELL, CELL, CELL);
@@ -2417,18 +2736,26 @@ fn plan_site(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
         .filter(|&(nx, nz)| (0..CELLS_PER_FACE).contains(&nx) && (0..CELLS_PER_FACE).contains(&nz) && rank(nx, nz) > mine)
         .filter_map(|(nx, nz)| generator.structures.cell(generator, face, nx, nz).map(|s| s.bounds))
         .collect();
-    // Un site refusé à une ville peut accueillir un village, puis des ruines
-    let kinds: &[SettlementKind] = match wanted {
-        SettlementKind::Town => &[SettlementKind::Town, SettlementKind::Village],
-        SettlementKind::Village => &[SettlementKind::Village],
-        SettlementKind::Ruins => &[SettlementKind::Ruins],
+    // Un site refusé à une grande ville peut accueillir une petite ville, puis un village (jamais
+    // une capitale, qui cherche ailleurs)
+    let kinds: Vec<(SettlementKind, Option<TownSize>)> = match (wanted, size) {
+        (SettlementKind::Town, Some(TownSize::Capitale)) => vec![(SettlementKind::Town, Some(TownSize::Capitale))],
+        (SettlementKind::Town, Some(TownSize::GrandeVille)) => {
+            vec![(SettlementKind::Town, Some(TownSize::GrandeVille)), (SettlementKind::Town, Some(TownSize::PetiteVille)), (SettlementKind::Village, None)]
+        }
+        (SettlementKind::Town, _) => vec![(SettlementKind::Town, Some(TownSize::PetiteVille)), (SettlementKind::Village, None)],
+        (kind, _) => vec![(kind, None)],
     };
-    for &kind in kinds {
-        let margin = kind.radius() + 4;
+    for (kind, size) in kinds {
+        // Une ville déborde de sa case : son centre y reste, son plan tient dans sa région
+        let (radius, margin) = match size {
+            Some(s) => (s.reach(), 8),
+            None => (kind.radius(), kind.radius() + 4),
+        };
         for _ in 0..10 {
             let x = dice.range(cell.x0 + margin, cell.x1 - margin);
             let z = dice.range(cell.z0 + margin, cell.z1 - margin);
-            let reach = Rect::around(x, z, kind.radius() + MIN_GAP);
+            let reach = Rect::around(x, z, radius + MIN_GAP);
             if neighbours.iter().any(|n| n.intersects(&reach)) {
                 continue;
             }
@@ -2436,17 +2763,24 @@ fn plan_site(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
             if !kind.accepts(biome) || (g as f64) <= SEA_LEVEL_BLOCKS + 1.0 {
                 continue;
             }
-            let step = if kind == SettlementKind::Ruins { 7 } else { 8 };
-            if !site_fits(generator, face, x, z, kind.radius(), step, kind) {
+            let fits = match size {
+                Some(s) => site_fits_relief(generator, face, x, z, s.half(), 12, kind, s.max_relief()),
+                None => site_fits(generator, face, x, z, kind.radius(), if kind == SettlementKind::Ruins { 7 } else { 8 }, kind),
+            };
+            if !fits {
                 continue;
             }
             let culture = match kind {
                 SettlementKind::Ruins => None,
                 _ => Some(forced.unwrap_or_else(|| settlement_culture(generator, face, (x, z), biome, kind == SettlementKind::Town))),
             };
-            let planner = Planner { generator, face, area: cell.expand(-2), pieces: Vec::new(), taken: Vec::new(), exits: Vec::new(), culture };
+            let area = match size {
+                Some(s) => Rect::around(x, z, s.reach() + 4),
+                None => cell.expand(-2),
+            };
+            let planner = Planner { generator, face, area, pieces: Vec::new(), taken: Vec::new(), exits: Vec::new(), culture };
             let settlement = match kind {
-                SettlementKind::Town => plan_town(planner, (x, z), biome, &mut dice),
+                SettlementKind::Town => plan_town_sized(planner, (x, z), biome, &mut dice, size.unwrap_or(TownSize::PetiteVille)),
                 SettlementKind::Village => plan_village(planner, (x, z), biome, &mut dice),
                 SettlementKind::Ruins => plan_ruins(planner, (x, z), biome, &mut dice),
             };
@@ -2506,7 +2840,7 @@ fn plan_pins(generator: &PlanetWorldGenerator) -> Vec<Pin> {
         for (_, _, face, (rx, rz)) in choices {
             let site = region_candidates(generator, face, rx, rz)
                 .into_iter()
-                .find(|&(cx, cz)| plan_site(generator, face, cx, cz, SettlementKind::Village, Some(culture)).is_some());
+                .find(|&(cx, cz)| plan_site(generator, face, cx, cz, SettlementKind::Village, Some(culture), None).is_some());
             if let Some(cell) = site {
                 pins.push(Pin { face, region: (rx, rz), cell, culture });
                 break;
@@ -2514,6 +2848,39 @@ fn plan_pins(generator: &PlanetWorldGenerator) -> Vec<Pin> {
         }
     }
     pins
+}
+
+/// La capitale de la planète : la première région, dans un ordre tiré de la graine, qui n'est pas
+/// réservée au village d'une race et où une capitale trouve sa place
+fn plan_capital(generator: &PlanetWorldGenerator) -> Option<Capital> {
+    herocraft_common::prof_scope!("world::structures::plan_capital");
+    let seed = generator.planet.seed ^ 0xCA91_7A1E_0000_0000;
+    let pins = generator.structures.pins(generator);
+    let mut regions: Vec<(u64, PlanetFace, (i32, i32))> = Vec::new();
+    for face in PlanetFace::ALL {
+        for rz in 0..REGIONS_PER_FACE {
+            for rx in 0..REGIONS_PER_FACE {
+                if pins.iter().any(|p| p.face == face && p.region == (rx, rz)) {
+                    continue;
+                }
+                regions.push((hash2(seed ^ ((face_index(face) as u64) << 40), rx, rz), face, (rx, rz)));
+            }
+        }
+    }
+    regions.sort_by_key(|&(h, face, region)| (h, face_index(face), region));
+    for (_, face, (rx, rz)) in regions {
+        for (cx, cz) in region_candidates(generator, face, rx, rz) {
+            // Le centre de la case doit être sur la terre ferme, sinon inutile de chercher
+            let (g, biome) = ground_at(generator, face, cx * CELL + CELL / 2, cz * CELL + CELL / 2);
+            if (g as f64) <= SEA_LEVEL_BLOCKS + 1.0 || !SettlementKind::Town.accepts(biome) {
+                continue;
+            }
+            if plan_site(generator, face, cx, cz, SettlementKind::Town, None, Some(TownSize::Capitale)).is_some() {
+                return Some(Capital { face, region: (rx, rz), cell: (cx, cz) });
+            }
+        }
+    }
+    None
 }
 
 /// Culture d'une ville ou d'un village dont le centre est en `center`, au climat `biome` : tirée
@@ -2913,41 +3280,105 @@ fn plan_village(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut
     p.finish(SettlementKind::Village, center, biome)
 }
 
-fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Dice) -> Option<Settlement> {
-    let (x, z) = center;
-    // Le damier : rues tous les 14 blocs, remparts à 42 blocs du centre
-    const STEP: i32 = 14;
-    const HALF: i32 = 42;
-    let walls = Rect::new(x - HALF, z - HALF, x + HALF + 1, z + HALF + 1);
-    let culture = p.culture.unwrap_or(Culture::Humains);
-    let (habits, masonry) = (Habits::of(culture), Masonry::of(culture));
-    let street = street_block(culture, biome, true);
+/// Taille d'une ville fortifiée : le côté de son enceinte, en multiples de celui du bourg d'origine
+/// (85 blocs). Chaque quartier de la taille du bourg a sa petite place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TownSize {
+    /// La ville d'origine : 85 blocs de côté, une grand-place
+    Bourg,
+    /// Deux fois le côté du bourg : quatre quartiers
+    PetiteVille,
+    /// Quatre fois le côté du bourg : seize quartiers, trois portes par côté
+    GrandeVille,
+    /// Huit fois le côté du bourg : soixante-quatre quartiers et une citadelle au centre
+    Capitale,
+}
 
-    // Fontaine au milieu de la grand-place (posée en premier : elle passe avant le pavage)
-    let fountain = Rect::around(x, z, 2);
-    let floor = floor_for(p.generator, p.face, &fountain, 3)?;
-    p.take(Piece::Fountain { rect: fountain, floor }, 0);
-    // Tours d'angle, puis portes et remparts
+impl TownSize {
+    pub const ALL: [TownSize; 4] = [TownSize::Bourg, TownSize::PetiteVille, TownSize::GrandeVille, TownSize::Capitale];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            TownSize::Bourg => "bourg",
+            TownSize::PetiteVille => "petite-ville",
+            TownSize::GrandeVille => "grande-ville",
+            TownSize::Capitale => "capitale",
+        }
+    }
+
+    /// Largeur de l'enceinte, en largeurs de bourg
+    pub fn scale(&self) -> f64 {
+        match self {
+            TownSize::Bourg => 1.0,
+            TownSize::PetiteVille => 1.5,
+            TownSize::GrandeVille => 3.0,
+            TownSize::Capitale => 4.0,
+        }
+    }
+
+    /// Demi-largeur moyenne de l'enceinte, en blocs
+    pub fn half(&self) -> i32 {
+        (42.0 * self.scale()).round() as i32
+    }
+
+    /// Distance au centre que le plan ne dépasse jamais (l'enceinte ondule, les grandes rues
+    /// sortent un peu des portes)
+    pub fn reach(&self) -> i32 {
+        (self.half() as f64 * 1.22) as i32 + 8
+    }
+
+    /// Écart d'altitude admis sur le site
+    fn max_relief(&self) -> i32 {
+        match self {
+            TownSize::Bourg => 16,
+            TownSize::PetiteVille => 20,
+            TownSize::GrandeVille => 30,
+            TownSize::Capitale => 34,
+        }
+    }
+}
+
+/// Écart entre deux rues d'une ville
+const TOWN_STEP: i32 = 14;
+
+/// Une enceinte carrée de demi-côté `half` autour de `center` : tours d'angle (et tous les
+/// `TOWN_STEP × 3` blocs si `towers`), portes aux décalages `gates` sur chaque côté, double rangée
+/// de remparts dont l'intérieure porte le chemin de ronde. Ses abords sont réservés.
+fn plan_enclosure(p: &mut Planner, center: (i32, i32), half: i32, masonry: Masonry, gates: &[i32], towers: bool) -> Option<()> {
+    let (x, z) = center;
+    let walls = Rect::new(x - half, z - half, x + half + 1, z + half + 1);
     for (tx, tz) in [(walls.x0, walls.z0), (walls.x1 - 1, walls.z0), (walls.x0, walls.z1 - 1), (walls.x1 - 1, walls.z1 - 1)] {
         let rect = Rect::around(tx, tz, 2);
         let floor = floor_for(p.generator, p.face, &rect, 6)?;
         p.take(Piece::Tower { rect, floor, masonry }, 0);
     }
-    let gates = [
-        Rect::new(x - 1, walls.z0, x + 2, walls.z0 + 1),
-        Rect::new(x - 1, walls.z1 - 1, x + 2, walls.z1),
-        Rect::new(walls.x0, z - 1, walls.x0 + 1, z + 2),
-        Rect::new(walls.x1 - 1, z - 1, walls.x1, z + 2),
-    ];
-    for gate in gates {
-        p.take(Piece::Gate { rect: gate, masonry, walk: false }, 0);
+    if towers {
+        // Au milieu d'un pâté sur trois, entre deux rues
+        let mut o = -half + 3 * TOWN_STEP / 2;
+        while o < half {
+            for (tx, tz) in [(x + o, walls.z0), (x + o, walls.z1 - 1), (walls.x0, z + o), (walls.x1 - 1, z + o)] {
+                let rect = Rect::around(tx, tz, 2);
+                if let Some(floor) = floor_for(p.generator, p.face, &rect, 6) {
+                    p.take(Piece::Tower { rect, floor, masonry }, 0);
+                }
+            }
+            o += 3 * TOWN_STEP;
+        }
     }
-    p.exits.extend([
-        ((x, walls.z0 - 1), Side::North),
-        ((x, walls.z1), Side::South),
-        ((walls.x0 - 1, z), Side::West),
-        ((walls.x1, z), Side::East),
-    ]);
+    for &o in gates {
+        for (gate, walk) in [
+            (Rect::new(x + o - 1, walls.z0, x + o + 2, walls.z0 + 1), false),
+            (Rect::new(x + o - 1, walls.z1 - 1, x + o + 2, walls.z1), false),
+            (Rect::new(walls.x0, z + o - 1, walls.x0 + 1, z + o + 2), false),
+            (Rect::new(walls.x1 - 1, z + o - 1, walls.x1, z + o + 2), false),
+            (Rect::new(x + o - 1, walls.z0 + 1, x + o + 2, walls.z0 + 2), true),
+            (Rect::new(x + o - 1, walls.z1 - 2, x + o + 2, walls.z1 - 1), true),
+            (Rect::new(walls.x0 + 1, z + o - 1, walls.x0 + 2, z + o + 2), true),
+            (Rect::new(walls.x1 - 2, z + o - 1, walls.x1 - 1, z + o + 2), true),
+        ] {
+            p.take(Piece::Gate { rect: gate, masonry, walk }, 0);
+        }
+    }
     for rect in [
         Rect::new(walls.x0, walls.z0, walls.x1, walls.z0 + 1),
         Rect::new(walls.x0, walls.z1 - 1, walls.x1, walls.z1),
@@ -2955,16 +3386,6 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         Rect::new(walls.x1 - 1, walls.z0, walls.x1, walls.z1),
     ] {
         p.pieces.push(Piece::Rampart { rect, masonry, walk: false });
-    }
-    // Chemin de ronde : une seconde rangée contre le mur, en dedans, sans créneaux (le passage des
-    // portes reste ouvert dessous)
-    for gate in [
-        Rect::new(x - 1, walls.z0 + 1, x + 2, walls.z0 + 2),
-        Rect::new(x - 1, walls.z1 - 2, x + 2, walls.z1 - 1),
-        Rect::new(walls.x0 + 1, z - 1, walls.x0 + 2, z + 2),
-        Rect::new(walls.x1 - 2, z - 1, walls.x1 - 1, z + 2),
-    ] {
-        p.take(Piece::Gate { rect: gate, masonry, walk: true }, 0);
     }
     for rect in [
         Rect::new(walls.x0 + 1, walls.z0 + 1, walls.x1 - 1, walls.z0 + 2),
@@ -2974,22 +3395,6 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
     ] {
         p.pieces.push(Piece::Rampart { rect, masonry, walk: true });
     }
-    // Échelles vers le chemin de ronde, au bout des rues qui butent contre le rempart (sur le bord
-    // de la rue, qui garde deux blocs de passage)
-    for offset in [-2 * STEP, -STEP, STEP, 2 * STEP] {
-        for (ladder, wall, back) in [
-            ((walls.x0 + 2, z + offset + 1), (walls.x0 + 1, z + offset + 1), Side::West),
-            ((walls.x1 - 3, z + offset + 1), (walls.x1 - 2, z + offset + 1), Side::East),
-            ((x + offset + 1, walls.z0 + 2), (x + offset + 1, walls.z0 + 1), Side::North),
-            ((x + offset + 1, walls.z1 - 3), (x + offset + 1, walls.z1 - 2), Side::South),
-        ] {
-            let top = ground_at(p.generator, p.face, wall.0, wall.1).0 + masonry.height;
-            if ground_at(p.generator, p.face, ladder.0, ladder.1).0 < top {
-                p.pieces.push(Piece::Ladder { x: ladder.0, z: ladder.1, back, top });
-            }
-        }
-    }
-    // Les remparts et leurs abords sont pris, l'intérieur reste à bâtir
     for side in [
         Rect::new(walls.x0 - 2, walls.z0 - 2, walls.x1 + 2, walls.z0 + 2),
         Rect::new(walls.x0 - 2, walls.z1 - 2, walls.x1 + 2, walls.z1 + 2),
@@ -2998,12 +3403,27 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
     ] {
         p.taken.push(side);
     }
+    Some(())
+}
 
-    // Étals de marché autour de la fontaine, tournés vers elle (posés avant le pavage de la place)
+/// Une place de demi-côté `TOWN_STEP - 2` au carrefour `at` : une fontaine ou un puits au milieu,
+/// parfois des étals tournés vers lui. Rend la place.
+fn plan_town_square(p: &mut Planner, at: (i32, i32), street: BlockId, fountain: bool, stalls: i32, dice: &mut Dice) -> Option<Rect> {
+    let (x, z) = at;
+    if fountain {
+        let rect = Rect::around(x, z, 2);
+        let floor = floor_for(p.generator, p.face, &rect, 3)?;
+        p.take(Piece::Fountain { rect, floor }, 0);
+    } else {
+        let rect = Rect::around(x, z, 1);
+        let floor = floor_for(p.generator, p.face, &rect, 3)?;
+        p.take(Piece::Well { rect, floor }, 0);
+    }
+    // Étals tournés vers le milieu (posés avant le pavage de la place)
     let mut spots: [(i32, i32); 8] = [(-7, -7), (7, -7), (-7, 7), (7, 7), (-4, -9), (4, 9), (9, -4), (-9, 4)];
     shuffle(dice, &mut spots);
     let goods = [WHEAT, CARROT, POTATO, SQUASH, PLANK, CUT_CRYSTAL];
-    for &(ox, oz) in &spots[..dice.range(4, 7) as usize] {
+    for &(ox, oz) in &spots[..stalls.clamp(0, 8) as usize] {
         let (rect, front) = if ox.abs() > oz.abs() {
             (Rect::sized(x + ox - (ox > 0) as i32, z + oz - 1, 2, 3), if ox > 0 { Side::West } else { Side::East })
         } else {
@@ -3011,53 +3431,179 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
         };
         p.pieces.push(Piece::Stall(Stall { rect, front, goods: dice.pick(&goods) }));
     }
-    // Grand-place pavée autour de la fontaine
-    let plaza = Rect::around(x, z, STEP - 2);
+    let plaza = Rect::around(x, z, TOWN_STEP - 2);
     p.pieces.push(Piece::Paving { rect: plaza, block: street });
     p.taken.push(plaza.expand(1));
-    // Rues pavées
-    let mut offset = -(HALF / STEP) * STEP;
-    while offset <= HALF {
-        if offset.abs() < HALF {
-            let street_x = Rect::new(walls.x0 + 1, z + offset - 1, walls.x1 - 1, z + offset + 2);
-            let street_z = Rect::new(x + offset - 1, walls.z0 + 1, x + offset + 2, walls.z1 - 1);
-            for lane in [street_x, street_z] {
-                p.pieces.push(Piece::Paving { rect: lane, block: street });
-                p.taken.push(lane);
+    Some(plaza)
+}
+
+/// Les morceaux de `lane` hors de `hole` (deux au plus : `lane` est une rue droite)
+fn lane_around(lane: Rect, hole: &Rect) -> Vec<Rect> {
+    if !lane.intersects(hole) {
+        return vec![lane];
+    }
+    let mut parts = Vec::new();
+    if lane.width() > lane.depth() {
+        parts.push(Rect::new(lane.x0, lane.z0, hole.x0, lane.z1));
+        parts.push(Rect::new(hole.x1, lane.z0, lane.x1, lane.z1));
+    } else {
+        parts.push(Rect::new(lane.x0, lane.z0, lane.x1, hole.z0));
+        parts.push(Rect::new(lane.x0, hole.z1, lane.x1, lane.z1));
+    }
+    parts.retain(|r| r.width() > 0 && r.depth() > 0);
+    parts
+}
+
+fn plan_town_sized(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Dice, size: TownSize) -> Option<Settlement> {
+    if size != TownSize::Bourg {
+        return plan_town_organic(p, center, biome, dice, size);
+    }
+    let (x, z) = center;
+    // Le damier : rues tous les 14 blocs, remparts à `half` blocs du centre
+    const STEP: i32 = TOWN_STEP;
+    let half = size.half();
+    let scale: i32 = (half / 42).max(1);
+    let walls = Rect::new(x - half, z - half, x + half + 1, z + half + 1);
+    let culture = p.culture.unwrap_or(Culture::Humains);
+    let (habits, masonry) = (Habits::of(culture), Masonry::of(culture));
+    let street = street_block(culture, biome, true);
+
+    // Portes : au milieu de chaque côté, et à mi-chemin des angles pour les plus grandes villes
+    let gates: Vec<i32> = if scale >= 4 { vec![-half / 2, 0, half / 2] } else { vec![0] };
+    plan_enclosure(&mut p, center, half, masonry, &gates, scale >= 2)?;
+    for &o in &gates {
+        p.exits.extend([
+            ((x + o, walls.z0 - 1), Side::North),
+            ((x + o, walls.z1), Side::South),
+            ((walls.x0 - 1, z + o), Side::West),
+            ((walls.x1, z + o), Side::East),
+        ]);
+    }
+    // Échelles vers le chemin de ronde, au bout des rues qui butent contre le rempart (sur le bord
+    // de la rue, qui garde deux blocs de passage)
+    let mut offset = -half + STEP;
+    while offset < half {
+        if !gates.contains(&offset) {
+            for (ladder, wall, back) in [
+                ((walls.x0 + 2, z + offset + 1), (walls.x0 + 1, z + offset + 1), Side::West),
+                ((walls.x1 - 3, z + offset + 1), (walls.x1 - 2, z + offset + 1), Side::East),
+                ((x + offset + 1, walls.z0 + 2), (x + offset + 1, walls.z0 + 1), Side::North),
+                ((x + offset + 1, walls.z1 - 3), (x + offset + 1, walls.z1 - 2), Side::South),
+            ] {
+                let top = ground_at(p.generator, p.face, wall.0, wall.1).0 + masonry.height;
+                if ground_at(p.generator, p.face, ladder.0, ladder.1).0 < top {
+                    p.pieces.push(Piece::Ladder { x: ladder.0, z: ladder.1, back, top });
+                }
             }
         }
         offset += STEP;
     }
-    // Un bâtiment par pâté de maisons : l'église sur la place, une ou deux tavernes et une forge
+
+    // Le cœur de la ville : la grand-place et sa fontaine, ou, dans une capitale, la citadelle et
+    // son donjon
+    let mut plazas: Vec<Rect> = Vec::new();
+    let mut citadel: Option<Rect> = None;
+    if size == TownSize::Capitale {
+        const INNER: i32 = 2 * STEP - 2;
+        let keep = Rect::around(x, z, 5);
+        let floor = floor_for(p.generator, p.face, &keep, 6)?;
+        let tall = Masonry { tower_height: masonry.tower_height + 10, ..masonry };
+        p.take(Piece::Tower { rect: keep, floor, masonry: tall }, 1);
+        plan_enclosure(&mut p, center, INNER, masonry, &[0], false)?;
+        let court = Rect::around(x, z, INNER - 2);
+        p.pieces.push(Piece::Paving { rect: court, block: street });
+        let hole = Rect::around(x, z, INNER);
+        p.taken.push(hole.expand(2));
+        citadel = Some(hole);
+    } else {
+        let stalls = dice.range(4, 7);
+        plazas.push(plan_town_square(&mut p, center, street, true, stalls, dice)?);
+    }
+    // Une petite place au milieu de la plupart des quartiers
+    if scale >= 2 {
+        for i in 0..scale {
+            for j in 0..scale {
+                let at = (x - half + 3 * STEP + 6 * STEP * i, z - half + 3 * STEP + 6 * STEP * j);
+                if scale > 2 && !dice.chance(0.55) {
+                    continue;
+                }
+                let fountain = dice.chance(0.5);
+                let stalls = if dice.chance(0.6) { dice.range(2, 6) } else { 0 };
+                if let Some(plaza) = plan_town_square(&mut p, at, street, fountain, stalls, dice) {
+                    plazas.push(plaza);
+                }
+            }
+        }
+    }
+    // Rues pavées (elles contournent la citadelle)
+    let mut offset = -(half / STEP) * STEP;
+    while offset <= half {
+        if offset.abs() < half {
+            let street_x = Rect::new(walls.x0 + 1, z + offset - 1, walls.x1 - 1, z + offset + 2);
+            let street_z = Rect::new(x + offset - 1, walls.z0 + 1, x + offset + 2, walls.z1 - 1);
+            for lane in [street_x, street_z] {
+                let parts = match &citadel {
+                    Some(hole) => lane_around(lane, hole),
+                    None => vec![lane],
+                };
+                for part in parts {
+                    p.pieces.push(Piece::Paving { rect: part, block: street });
+                    p.taken.push(part);
+                }
+            }
+        }
+        offset += STEP;
+    }
+    // Un bâtiment par pâté de maisons : les églises sur les places, des tavernes et des forges
     // ailleurs, des maisons partout autour
     let mut blocks = Vec::new();
-    let mut bz = -HALF;
-    while bz < HALF {
-        let mut bx = -HALF;
-        while bx < HALF {
+    let mut bz = -half;
+    while bz < half {
+        let mut bx = -half;
+        while bx < half {
             // Pâté de 11 × 11 entre deux rues de 3 de large
             let block = Rect::new(x + bx + 2, z + bz + 2, x + bx + STEP - 1, z + bz + STEP - 1);
-            if !block.intersects(&plaza) {
+            if !plazas.iter().any(|pl| block.intersects(pl)) && !citadel.is_some_and(|c| block.intersects(&c.expand(1))) {
                 blocks.push(block);
             }
             bx += STEP;
         }
         bz += STEP;
     }
-    // Les pâtés qui donnent sur la place d'abord : l'église prend l'un d'eux
+    // Les pâtés qui donnent sur une place d'abord : les églises en prennent
     let near_plaza = |b: &Rect| {
         let (bcx, bcz) = b.center();
-        b.expand(4).intersects(&plaza) && ((bcx - x).abs() < STEP || (bcz - z).abs() < STEP)
+        plazas.iter().any(|pl| {
+            let (px, pz) = pl.center();
+            b.expand(4).intersects(pl) && ((bcx - px).abs() < STEP || (bcz - pz).abs() < STEP)
+        })
     };
     let (mut first, mut rest): (Vec<Rect>, Vec<Rect>) = blocks.into_iter().partition(near_plaza);
     shuffle(dice, &mut first);
     shuffle(dice, &mut rest);
-    let mut specials = vec![Special::Church, Special::Tavern, Special::Forge];
-    if dice.chance(0.5) {
-        specials.push(Special::Tavern);
+    let districts = scale * scale;
+    let mut specials = vec![Special::Church; (1 + (districts - 1) / 3) as usize];
+    let mut others = Vec::new();
+    for _ in 0..districts {
+        others.push(Special::Tavern);
+        others.push(Special::Forge);
+        if dice.chance(0.5) {
+            others.push(Special::Tavern);
+        }
     }
+    shuffle(dice, &mut others);
+    // Les églises d'abord, autour des places ; les autres, semés ensuite dans tout le reste
+    let churches = specials.len();
+    let mut blocks: Vec<Rect> = first.into_iter().chain(rest).collect();
+    if districts > 1 {
+        let tail = blocks.split_off(churches.min(blocks.len()));
+        let mut tail = tail;
+        shuffle(dice, &mut tail);
+        blocks.extend(tail);
+    }
+    specials.extend(others);
     let mut houses = 0;
-    for block in first.into_iter().chain(rest) {
+    for block in blocks {
         // Porte sur la rue la plus proche du centre
         let (bcx, bcz) = block.center();
         let door = if (bcx - x).abs() > (bcz - z).abs() {
@@ -3114,19 +3660,752 @@ fn plan_town(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Di
     if houses < 6 {
         return None;
     }
-    // Lampadaires aux carrefours, au coin des rues
-    let mut lx = -(HALF / STEP) * STEP + STEP;
-    while lx < HALF {
-        let mut lz = -(HALF / STEP) * STEP + STEP;
-        while lz < HALF {
-            if (lx, lz) != (0, 0) && dice.chance(0.7) {
-                p.pieces.push(Piece::Lamp { x: x + lx + 1, z: z + lz + 1, masonry });
+    // Lampadaires aux carrefours, au coin des rues (pas au milieu des places ni dans la citadelle)
+    let mut lx = -(half / STEP) * STEP + STEP;
+    while lx < half {
+        let mut lz = -(half / STEP) * STEP + STEP;
+        while lz < half {
+            let (ax, az) = (x + lx + 1, z + lz + 1);
+            let in_square = plazas.iter().any(|pl| pl.center() == (x + lx, z + lz));
+            let in_citadel = citadel.is_some_and(|c| c.expand(2).contains(ax, az));
+            if !in_square && !in_citadel && dice.chance(0.7) {
+                p.pieces.push(Piece::Lamp { x: ax, z: az, masonry });
             }
             lz += STEP;
         }
         lx += STEP;
     }
     p.finish(SettlementKind::Town, center, biome)
+}
+
+/// Ce que porte une colonne du plan d'une ville aux formes libres
+mod cell {
+    pub const OUT: u8 = 0;
+    pub const IN: u8 = 1;
+    pub const WALL: u8 = 2;
+    pub const WALK: u8 = 3;
+    pub const GATE: u8 = 4;
+    pub const GATE_WALK: u8 = 5;
+    pub const ROAD: u8 = 6;
+    pub const SQUARE: u8 = 7;
+    pub const BUILT: u8 = 8;
+    pub const RESERVED: u8 = 9;
+    /// Sous l'avant-toit d'un bâtiment, ou devant sa porte : pas de mur, mais rien d'autre non plus
+    pub const EAVES: u8 = 10;
+    /// Passage d'une porte de ville
+    pub const GATEHOUSE: u8 = 11;
+}
+
+/// Plan colonne par colonne d'une ville aux formes libres, autour de son centre
+struct TownMask {
+    x0: i32,
+    z0: i32,
+    n: i32,
+    cells: Vec<u8>,
+}
+
+impl TownMask {
+    fn get(&self, x: i32, z: i32) -> u8 {
+        let (i, j) = (x - self.x0, z - self.z0);
+        if i < 0 || j < 0 || i >= self.n || j >= self.n {
+            return cell::OUT;
+        }
+        self.cells[(j * self.n + i) as usize]
+    }
+
+    fn set(&mut self, x: i32, z: i32, v: u8) {
+        let (i, j) = (x - self.x0, z - self.z0);
+        if i >= 0 && j >= 0 && i < self.n && j < self.n {
+            self.cells[(j * self.n + i) as usize] = v;
+        }
+    }
+
+    /// Les colonnes que `keep` retient, en rectangles (rangées fusionnées quand elles se suivent)
+    fn runs(&self, keep: impl Fn(u8) -> bool) -> Vec<Rect> {
+        let mut done: Vec<Rect> = Vec::new();
+        let mut open: Vec<Rect> = Vec::new();
+        for j in 0..self.n {
+            let mut row = Vec::new();
+            let mut i = 0;
+            while i < self.n {
+                if keep(self.cells[(j * self.n + i) as usize]) {
+                    let start = i;
+                    while i < self.n && keep(self.cells[(j * self.n + i) as usize]) {
+                        i += 1;
+                    }
+                    row.push((self.x0 + start, self.x0 + i));
+                } else {
+                    i += 1;
+                }
+            }
+            let z = self.z0 + j;
+            let mut next = Vec::new();
+            for (a, b) in row {
+                if let Some(k) = open.iter().position(|r| r.x0 == a && r.x1 == b) {
+                    let mut r = open.swap_remove(k);
+                    r.z1 = z + 1;
+                    next.push(r);
+                } else {
+                    next.push(Rect::new(a, z, b, z + 1));
+                }
+            }
+            done.append(&mut open);
+            open = next;
+        }
+        done.append(&mut open);
+        done
+    }
+
+    /// Trace une rue de demi-largeur `r` le long de `points`, en changeant les colonnes selon `paint`
+    fn stroke(&mut self, points: &[(f64, f64)], r: f64, paint: impl Fn(u8) -> Option<u8>) {
+        for w in points.windows(2) {
+            let ((ax, az), (bx, bz)) = (w[0], w[1]);
+            let len = ((bx - ax).powi(2) + (bz - az).powi(2)).sqrt();
+            let steps = (len * 2.0).ceil().max(1.0) as i32;
+            for s in 0..=steps {
+                let t = s as f64 / steps as f64;
+                let (px, pz) = (ax + (bx - ax) * t, az + (bz - az) * t);
+                let reach = r.ceil() as i32 + 1;
+                for dz in -reach..=reach {
+                    for dx in -reach..=reach {
+                        let (cx, cz) = (px.floor() as i32 + dx, pz.floor() as i32 + dz);
+                        let (ex, ez) = (cx as f64 + 0.5 - px, cz as f64 + 0.5 - pz);
+                        if ex * ex + ez * ez <= r * r {
+                            if let Some(v) = paint(self.get(cx, cz)) {
+                                self.set(cx, cz, v);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Un tracé qui serpente doucement de `a` à `b` (`amp` : écart maximal à la ligne droite)
+fn wobbly(a: (f64, f64), b: (f64, f64), amp: f64, dice: &mut Dice) -> Vec<(f64, f64)> {
+    let (dx, dz) = (b.0 - a.0, b.1 - a.1);
+    let len = (dx * dx + dz * dz).sqrt().max(1.0);
+    let (nx, nz) = (-dz / len, dx / len);
+    let (f1, p1, p2) = (1.0 + unit(dice.next()) * 1.5, unit(dice.next()) * 6.283, unit(dice.next()) * 6.283);
+    let n = (len / 4.0).ceil() as i32;
+    (0..=n)
+        .map(|i| {
+            let t = i as f64 / n as f64;
+            let off = amp * (std::f64::consts::PI * t).sin() * (0.65 * (t * std::f64::consts::PI * 2.0 * f1 + p1).sin() + 0.35 * (t * std::f64::consts::PI * 5.0 + p2).sin());
+            (a.0 + dx * t + nx * off, a.1 + dz * t + nz * off)
+        })
+        .collect()
+}
+
+/// Côté vers lequel pointe la direction (dx, dz)
+fn side_toward(dx: f64, dz: f64) -> Side {
+    if dx.abs() > dz.abs() {
+        if dx > 0.0 { Side::East } else { Side::West }
+    } else if dz > 0.0 {
+        Side::South
+    } else {
+        Side::North
+    }
+}
+
+/// Une ville aux formes libres : une enceinte qui ondule, des grandes rues qui serpentent du
+/// centre aux portes, des rues en anneau et des ruelles entre elles, des maisons alignées sur les
+/// rues, des places aux carrefours ; la citadelle royale au cœur d'une capitale.
+fn plan_town_organic(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Dice, size: TownSize) -> Option<Settlement> {
+    use cell::*;
+    use std::f64::consts::{PI, TAU};
+    let (x, z) = center;
+    let (fx, fz) = (x as f64 + 0.5, z as f64 + 0.5);
+    let culture = p.culture.unwrap_or(Culture::Humains);
+    let (habits, masonry) = (Habits::of(culture), Masonry::of(culture));
+    let street = street_block(culture, biome, true);
+    let capital = size == TownSize::Capitale;
+    let big_r = size.half() as f64;
+
+    // Contour : un cercle déformé par trois ondulations
+    let waves: Vec<(f64, f64, f64)> = [(2.0, 0.07, 0.11), (3.0, 0.04, 0.07), (5.0, 0.015, 0.03)]
+        .iter()
+        .map(|&(k, lo, hi)| (k, lo + (hi - lo) * unit(dice.next()), unit(dice.next()) * TAU))
+        .collect();
+    let rad = |t: f64| big_r * (1.0 + waves.iter().map(|&(k, a, ph)| a * (k * t + ph).sin()).sum::<f64>());
+    let ext = (big_r * 1.3) as i32 + 12;
+    let n = 2 * ext + 1;
+    let mut m = TownMask { x0: x - ext, z0: z - ext, n, cells: vec![OUT; (n * n) as usize] };
+    // Colonnes prises par un étal, une fontaine, un puits ou l'hôtel de ville, et celles devant
+    // une porte (rien ne s'y pose)
+    let mut occupied: std::collections::HashSet<(i32, i32)> = Default::default();
+    let mark = |set: &mut std::collections::HashSet<(i32, i32)>, r: &Rect| {
+        for cz in r.z0..r.z1 {
+            for cx in r.x0..r.x1 {
+                set.insert((cx, cz));
+            }
+        }
+    };
+    for cz in z - ext..=z + ext {
+        for cx in x - ext..=x + ext {
+            let (dx, dz) = (cx as f64 + 0.5 - fx, cz as f64 + 0.5 - fz);
+            if (dx * dx + dz * dz).sqrt() <= rad(dz.atan2(dx)) {
+                m.set(cx, cz, IN);
+            }
+        }
+    }
+    // Les deux rangées du rempart : la plus à l'extérieur, puis celle du chemin de ronde
+    let dirs = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+    for (from, to, next_to) in [(IN, WALL, OUT), (IN, WALK, WALL)] {
+        let mut hits = Vec::new();
+        for cz in z - ext..=z + ext {
+            for cx in x - ext..=x + ext {
+                if m.get(cx, cz) == from && dirs.iter().any(|&(dx, dz)| m.get(cx + dx, cz + dz) == next_to) {
+                    hits.push((cx, cz));
+                }
+            }
+        }
+        for (cx, cz) in hits {
+            m.set(cx, cz, to);
+        }
+    }
+
+    // Portes : réparties autour de l'enceinte ; celle du sud, dans une capitale, ouvre l'avenue royale
+    let gate_count = match size {
+        TownSize::PetiteVille => 4,
+        TownSize::GrandeVille => 6,
+        _ => 8,
+    };
+    let turn = unit(dice.next()) * TAU;
+    let gates: Vec<f64> = (0..gate_count)
+        .map(|i| {
+            if capital {
+                PI / 2.0 + TAU * i as f64 / gate_count as f64 + if i == 0 { 0.0 } else { (unit(dice.next()) - 0.5) * 0.25 }
+            } else {
+                turn + TAU * i as f64 / gate_count as f64 + (unit(dice.next()) - 0.5) * 0.35
+            }
+        })
+        .collect();
+    let near_gate = |t: f64, margin: f64| gates.iter().any(|&g| ((t - g + PI).rem_euclid(TAU) - PI).abs() < margin);
+
+    // Le cœur : la citadelle royale ou la grand-place
+    if capital {
+        for cz in z - CITADEL - 11..=z + CITADEL + 11 {
+            for cx in x - CITADEL - 11..=x + CITADEL + 11 {
+                let ring = (cx - x).abs().max((cz - z).abs());
+                m.set(cx, cz, if ring <= CITADEL + 6 { RESERVED } else { SQUARE });
+            }
+        }
+        plan_citadel(&mut p, center, masonry, street, culture, biome, dice)?;
+    }
+    // Places : disques un peu irréguliers, une fontaine ou un puits au milieu, des étals autour
+    let mut squares: Vec<((i32, i32), i32, bool)> = Vec::new();
+    if !capital {
+        squares.push((center, 15, true));
+    }
+    let rings: &[f64] = match size {
+        TownSize::PetiteVille => &[0.5],
+        TownSize::GrandeVille => &[0.36, 0.68],
+        _ => &[0.36, 0.58, 0.8],
+    };
+    for (k, &f) in rings.iter().enumerate() {
+        for &g in &gates {
+            if dice.chance(if k == 0 { 0.6 } else { 0.4 }) {
+                let r = f * rad(g);
+                let at = ((fx + r * g.cos()) as i32, (fz + r * g.sin()) as i32);
+                squares.push((at, dice.range(6, 9), dice.chance(0.5)));
+            }
+        }
+    }
+    let mut plazas: Vec<Rect> = Vec::new();
+    for &((sx, sz), r, fountain) in &squares {
+        let wob = unit(dice.next()) * TAU;
+        for dz in -r - 2..=r + 2 {
+            for dx in -r - 2..=r + 2 {
+                let t = (dz as f64).atan2(dx as f64);
+                let rr = r as f64 * (1.0 + 0.15 * (3.0 * t + wob).sin());
+                if ((dx * dx + dz * dz) as f64).sqrt() <= rr && m.get(sx + dx, sz + dz) == IN {
+                    m.set(sx + dx, sz + dz, SQUARE);
+                }
+            }
+        }
+        // La grand-place : l'hôtel de ville au nord, sa fontaine devant lui
+        let main = (sx, sz) == center;
+        if main {
+            let hall = Rect::sized(sx - 9, sz - 14, 19, 13);
+            let floor = floor_for(p.generator, p.face, &hall, 6)?;
+            p.take(Piece::TownHall { rect: hall, floor }, 1);
+            mark(&mut occupied, &hall.expand(1));
+        }
+        let (sx, sz) = if main { (sx, sz + 6) } else { (sx, sz) };
+        let piece = if fountain { Rect::around(sx, sz, 2) } else { Rect::around(sx, sz, 1) };
+        let Some(floor) = floor_for(p.generator, p.face, &piece, 5) else { continue };
+        p.take(if fountain { Piece::Fountain { rect: piece, floor } } else { Piece::Well { rect: piece, floor } }, 0);
+        mark(&mut occupied, &piece);
+        plazas.push(Rect::around(sx, sz, r));
+        // Étals tournés vers le milieu de la place
+        let goods = [WHEAT, CARROT, POTATO, SQUASH, PLANK, CUT_CRYSTAL];
+        // Le marché : sur la grand-place, ou sur la première place d'une capitale
+        let market = main || (capital && plazas.len() == 1);
+        let stalls = if market { dice.range(4, 8) } else if dice.chance(0.6) { dice.range(2, 5) } else { 0 };
+        let mut placed = 0;
+        for _ in 0..stalls * 6 {
+            if placed == stalls {
+                break;
+            }
+            let t = unit(dice.next()) * TAU;
+            let d = if market && !capital { 5.0 + unit(dice.next()) * 2.0 } else { (r as f64 * 0.6).max(4.0) };
+            let (ox, oz) = ((t.cos() * d) as i32, (t.sin() * d) as i32);
+            let (rect, front) = if ox.abs() > oz.abs() {
+                (Rect::sized(sx + ox - (ox > 0) as i32, sz + oz - 1, 2, 3), if ox > 0 { Side::West } else { Side::East })
+            } else {
+                (Rect::sized(sx + ox - 1, sz + oz - (oz > 0) as i32, 3, 2), if oz > 0 { Side::North } else { Side::South })
+            };
+            if p.free(&rect.expand(1)) {
+                p.take(Piece::Stall(Stall { rect, front, goods: dice.pick(&goods) }), 0);
+                mark(&mut occupied, &rect);
+                placed += 1;
+            }
+        }
+    }
+
+    // Grandes rues : du centre aux portes, un peu au-delà du rempart
+    let mut exits = Vec::new();
+    let mut gatehouses: Vec<Rect> = Vec::new();
+    for (i, &g) in gates.iter().enumerate() {
+        let r = rad(g) + 6.0;
+        let end = (fx + r * g.cos(), fz + r * g.sin());
+        let line = wobbly((fx, fz), end, big_r * 0.06, dice);
+        let half_width = if capital && i == 0 { 2.5 } else { 1.6 };
+        m.stroke(&line, half_width, |c| match c {
+            IN | OUT => Some(ROAD),
+            WALL => Some(GATE),
+            WALK => Some(GATE_WALK),
+            _ => None,
+        });
+        exits.push(((end.0 as i32, end.1 as i32), side_toward(g.cos(), g.sin())));
+        // La porte : un passage droit de trois blocs de large, voûté, là où la rue passe le rempart
+        let Some(&(px, pz)) = line.iter().find(|&&(px, pz)| {
+            let (dx, dz) = (px - fx, pz - fz);
+            (dx * dx + dz * dz).sqrt() >= rad(dz.atan2(dx)) - 1.5
+        }) else {
+            continue;
+        };
+        let (px, pz) = (px.floor() as i32, pz.floor() as i32);
+        let wide = if capital && i == 0 { 2 } else { 1 };
+        let rect = if g.cos().abs() >= g.sin().abs() {
+            Rect::new(px - 2, pz - wide, px + 3, pz + wide + 1)
+        } else {
+            Rect::new(px - wide, pz - 2, px + wide + 1, pz + 3)
+        };
+        for cz in rect.z0..rect.z1 {
+            for cx in rect.x0..rect.x1 {
+                m.set(cx, cz, GATEHOUSE);
+            }
+        }
+        gatehouses.push(rect);
+    }
+    // La rue a pu entamer le rempart à côté de la porte : il est refermé
+    for cz in z - ext..=z + ext {
+        for cx in x - ext..=x + ext {
+            match m.get(cx, cz) {
+                GATE => m.set(cx, cz, WALL),
+                GATE_WALK => m.set(cx, cz, WALK),
+                _ => {}
+            }
+        }
+    }
+    // Rues en anneau, et celle qui longe le rempart
+    let mut ring_lines: Vec<f64> = rings.to_vec();
+    ring_lines.push(-1.0);
+    for &f in &ring_lines {
+        let ph = unit(dice.next()) * TAU;
+        let steps = (big_r * f.abs().max(0.9) * TAU / 4.0) as i32;
+        let line: Vec<(f64, f64)> = (0..=steps)
+            .map(|i| {
+                let t = TAU * i as f64 / steps as f64;
+                let r = if f < 0.0 { rad(t) - 5.0 } else { f * rad(t) + big_r * 0.025 * (4.0 * t + ph).sin() };
+                (fx + r * t.cos(), fz + r * t.sin())
+            })
+            .collect();
+        m.stroke(&line, 1.5, |c| (c == IN).then_some(ROAD));
+    }
+    // Ruelles entre deux anneaux (et entre le premier et le centre)
+    let mut bands: Vec<(f64, f64)> = Vec::new();
+    let mut inner = if capital { 0.28 } else { 0.12 };
+    for &f in rings.iter().chain([&0.97]) {
+        bands.push((inner, f));
+        inner = f;
+    }
+    for &(a, b) in &bands {
+        let count = ((a + b) * 0.5 * big_r * TAU / 22.0).round() as i32;
+        for _ in 0..count {
+            let t = unit(dice.next()) * TAU;
+            if near_gate(t, 0.15) {
+                continue;
+            }
+            let t2 = t + (unit(dice.next()) - 0.5) * 0.2;
+            let from = (fx + a * rad(t) * t.cos(), fz + a * rad(t) * t.sin());
+            let to = (fx + (b * rad(t2) - if b > 0.9 { 5.0 } else { 0.0 }) * t2.cos(), fz + (b * rad(t2) - if b > 0.9 { 5.0 } else { 0.0 }) * t2.sin());
+            let line = wobbly(from, to, 3.0, dice);
+            m.stroke(&line, 1.1, |c| (c == IN).then_some(ROAD));
+        }
+    }
+
+    // Tours le long du rempart, loin des portes
+    let perimeter = TAU * big_r;
+    let tower_count = (perimeter / 36.0).round() as i32;
+    for i in 0..tower_count {
+        let t = TAU * (i as f64 + 0.5) / tower_count as f64 + turn;
+        if near_gate(t, 9.0 / big_r) {
+            continue;
+        }
+        let r = rad(t) - 1.0;
+        let rect = Rect::around((fx + r * t.cos()).floor() as i32, (fz + r * t.sin()).floor() as i32, 2);
+        if let Some(floor) = floor_for(p.generator, p.face, &rect, 6) {
+            p.take(Piece::Tower { rect, floor, masonry }, 0);
+        }
+    }
+    // Échelles vers le chemin de ronde, entre les tours
+    for i in 0..2 * tower_count {
+        let t = TAU * (i as f64 * 0.5 + 0.25) / tower_count as f64 + turn;
+        if near_gate(t, 8.0 / big_r) {
+            continue;
+        }
+        let mut prev = None;
+        let mut r = rad(t) - 8.0;
+        while r < rad(t) + 2.0 {
+            let c = ((fx + r * t.cos()).floor() as i32, (fz + r * t.sin()).floor() as i32);
+            if m.get(c.0, c.1) == WALK {
+                break;
+            }
+            prev = Some(c);
+            r += 0.5;
+        }
+        let Some((lx, lz)) = prev else { continue };
+        if !matches!(m.get(lx, lz), IN | ROAD) {
+            continue;
+        }
+        let Some(&(dx, dz)) = dirs.iter().find(|&&(dx, dz)| m.get(lx + dx, lz + dz) == WALK) else { continue };
+        let back = match (dx, dz) {
+            (1, _) => Side::East,
+            (-1, _) => Side::West,
+            (_, 1) => Side::South,
+            _ => Side::North,
+        };
+        let top = ground_at(p.generator, p.face, lx + dx, lz + dz).0 + masonry.height;
+        if ground_at(p.generator, p.face, lx, lz).0 < top {
+            p.pieces.push(Piece::Ladder { x: lx, z: lz, back, top });
+            m.set(lx, lz, BUILT);
+        }
+    }
+    // Portes, remparts, pavés
+    for &rect in &gatehouses {
+        p.pieces.push(Piece::Gate { rect, masonry, walk: false });
+    }
+    for rect in m.runs(|c| c == WALL) {
+        p.pieces.push(Piece::Rampart { rect, masonry, walk: false });
+    }
+    for rect in m.runs(|c| c == WALK) {
+        p.pieces.push(Piece::Rampart { rect, masonry, walk: true });
+    }
+    for rect in m.runs(|c| c == ROAD || c == SQUARE) {
+        p.pieces.push(Piece::Paving { rect, block: street });
+    }
+    p.exits.extend(exits);
+
+    // Un bâtiment posé : son emprise est bâtie, ses avant-toits et son seuil restent libres de murs
+    let claim = |m: &mut TownMask, used: &Rect, foot: &Rect| {
+        for cz in used.z0..used.z1 {
+            for cx in used.x0..used.x1 {
+                if foot.contains(cx, cz) {
+                    m.set(cx, cz, BUILT);
+                } else if m.get(cx, cz) == IN {
+                    m.set(cx, cz, EAVES);
+                }
+            }
+        }
+    };
+    // Maisons alignées sur les rues, la porte sur la rue ; celles des places d'abord
+    let mut fronts: Vec<((i32, i32), (i32, i32), bool)> = Vec::new();
+    for cz in z - ext..=z + ext {
+        for cx in x - ext..=x + ext {
+            let c = m.get(cx, cz);
+            if c != ROAD && c != SQUARE {
+                continue;
+            }
+            for &(dx, dz) in &dirs {
+                if m.get(cx + dx, cz + dz) == IN {
+                    fronts.push(((cx, cz), (dx, dz), c == SQUARE));
+                }
+            }
+        }
+    }
+    let (mut first, mut rest): (Vec<_>, Vec<_>) = fronts.into_iter().partition(|f| f.2);
+    shuffle(dice, &mut first);
+    shuffle(dice, &mut rest);
+    let districts = (size.scale() * size.scale()).round() as i32;
+    let mut specials = vec![Special::Church; (1 + (districts - 1) / 3) as usize];
+    let mut others = Vec::new();
+    for _ in 0..districts {
+        others.push(Special::Tavern);
+        others.push(Special::Forge);
+        if dice.chance(0.5) {
+            others.push(Special::Tavern);
+        }
+    }
+    shuffle(dice, &mut others);
+    specials.extend(others);
+    let mut houses = 0;
+    for (k, ((rx, rz), (dx, dz), _)) in first.into_iter().chain(rest).enumerate() {
+        if m.get(rx + dx, rz + dz) != IN {
+            continue;
+        }
+        // Les églises sur les places ; les autres bâtiments publics semés dans toute la ville
+        let special = specials.first().copied().filter(|s| *s == Special::Church || k % 7 == 0);
+        let door = match (dx, dz) {
+            (1, _) => Side::West,
+            (-1, _) => Side::East,
+            (_, 1) => Side::North,
+            _ => Side::South,
+        };
+        let style = Style::town(culture, biome, dice);
+        let (w, d, house) = match special {
+            Some(s) => {
+                let (w, d) = s.size(dice, true);
+                (w, d, s.house(dice, style))
+            }
+            None => {
+                if !dice.chance(0.92) {
+                    continue;
+                }
+                let storeys = if dice.chance(habits.upstairs.1) { 2 } else { 1 };
+                (dice.range(5, 10), dice.range(5, 9), Some(random_home(dice, storeys, style, 0.2 * habits.porch / 0.3, habits.hip)))
+            }
+        };
+        let back = match &house {
+            Some(h) if h.porch => 2,
+            Some(_) if special.is_none() => dice.range(0, 2),
+            _ => 0,
+        };
+        let shift = dice.range(-1, 2);
+        let foot = match door {
+            Side::West => Rect::sized(rx + 1 + back, rz - w / 2 + shift, d, w),
+            Side::East => Rect::sized(rx - back - d, rz - w / 2 + shift, d, w),
+            Side::North => Rect::sized(rx - w / 2 + shift, rz + 1 + back, w, d),
+            Side::South => Rect::sized(rx - w / 2 + shift, rz - back - d, w, d),
+        };
+        let fits = (foot.z0..foot.z1).all(|cz| (foot.x0..foot.x1).all(|cx| m.get(cx, cz) == IN && !occupied.contains(&(cx, cz))));
+        let clear = |r: &Rect| (r.z0..r.z1).all(|cz| (r.x0..r.x1).all(|cx| matches!(m.get(cx, cz), IN | ROAD | SQUARE | BUILT | EAVES)));
+        if !fits || !clear(&foot.expand(1)) {
+            continue;
+        }
+        let front = {
+            let probe = House::home(foot, 0, 1, door, style);
+            let (dx, dz) = probe.door_column();
+            let (ox, oz) = door.delta();
+            (dx + ox, dz + oz)
+        };
+        if occupied.contains(&front) || !matches!(m.get(front.0, front.1), IN | ROAD | SQUARE | EAVES) {
+            continue;
+        }
+        let before = p.pieces.len();
+        let placed = match house {
+            Some(h) => p.try_building_spaced(House { foot, door, ..h }, 0),
+            None => p.try_forge(foot, door),
+        };
+        if !placed {
+            continue;
+        }
+        let used = p.pieces[before..].iter().map(|piece| piece.rect()).reduce(|a, b| a.union(&b)).unwrap_or(foot);
+        claim(&mut m, &used, &foot);
+        occupied.insert(front);
+        if special.is_some() {
+            specials.remove(0);
+        } else {
+            houses += 1;
+        }
+    }
+    // Arrière-cours : de petites maisons derrière les premières, la porte vers la rue la plus proche
+    let mut spots: Vec<(i32, i32)> = Vec::new();
+    for cz in (z - ext..=z + ext).step_by(3) {
+        for cx in (x - ext..=x + ext).step_by(3) {
+            if m.get(cx, cz) == IN {
+                spots.push((cx, cz));
+            }
+        }
+    }
+    shuffle(dice, &mut spots);
+    for (cx, cz) in spots {
+        if m.get(cx, cz) != IN {
+            continue;
+        }
+        // La rue la plus proche dans l'une des quatre directions
+        let Some((dist, (dx, dz))) = dirs
+            .iter()
+            .filter_map(|&(dx, dz)| (1..16).find(|&k| matches!(m.get(cx + dx * k, cz + dz * k), ROAD | SQUARE)).map(|k| (k, (dx, dz))))
+            .min_by_key(|e| e.0)
+        else {
+            continue;
+        };
+        let _ = dist;
+        let door = match (dx, dz) {
+            (1, _) => Side::East,
+            (-1, _) => Side::West,
+            (_, 1) => Side::South,
+            _ => Side::North,
+        };
+        let (w, d) = (dice.range(5, 8), dice.range(5, 8));
+        let foot = Rect::sized(cx - w / 2, cz - d / 2, w, d);
+        let fits = (foot.z0..foot.z1).all(|cz| (foot.x0..foot.x1).all(|cx| m.get(cx, cz) == IN && !occupied.contains(&(cx, cz))));
+        let clear = (foot.z0 - 1..foot.z1 + 1).all(|cz| (foot.x0 - 1..foot.x1 + 1).all(|cx| matches!(m.get(cx, cz), IN | ROAD | SQUARE | BUILT | EAVES)));
+        if !fits || !clear {
+            continue;
+        }
+        let style = Style::town(culture, biome, dice);
+        let storeys = if dice.chance(habits.upstairs.1) { 2 } else { 1 };
+        let mut house = random_home(dice, storeys, style, 0.0, habits.hip);
+        house.foot = foot;
+        house.door = door;
+        let front = {
+            let (dx, dz) = house.door_column();
+            let (ox, oz) = door.delta();
+            (dx + ox, dz + oz)
+        };
+        if occupied.contains(&front) || !matches!(m.get(front.0, front.1), IN | ROAD | SQUARE | EAVES) {
+            continue;
+        }
+        let before = p.pieces.len();
+        if p.try_building_spaced(house, 0) {
+            let used = p.pieces[before].rect();
+            claim(&mut m, &used, &foot);
+            occupied.insert(front);
+            if m.get(front.0, front.1) == IN {
+                m.set(front.0, front.1, EAVES);
+            }
+            houses += 1;
+        }
+    }
+    if houses < 12 {
+        return None;
+    }
+    // Lampadaires au bord des rues, de loin en loin
+    let seed = dice.next();
+    for cz in z - ext..=z + ext {
+        for cx in x - ext..=x + ext {
+            if m.get(cx, cz) == ROAD && !occupied.contains(&(cx, cz)) && hash2(seed, cx, cz) % 40 == 0 && dirs.iter().any(|&(dx, dz)| matches!(m.get(cx + dx, cz + dz), IN | BUILT)) {
+                p.pieces.push(Piece::Lamp { x: cx, z: cz, masonry });
+            }
+        }
+    }
+    let _ = plazas;
+    let mut town = p.finish(SettlementKind::Town, center, biome)?;
+    town.size = Some(size);
+    Some(town)
+}
+
+/// Demi-côté de l'enceinte de la citadelle royale
+const CITADEL: i32 = 34;
+
+/// La citadelle royale au cœur d'une capitale : douves, haute enceinte flanquée de tours à
+/// flèches, châtelet d'entrée au sud, cour d'honneur, chapelle, caserne et donjon royal à trois
+/// étages couronné d'or
+fn plan_citadel(p: &mut Planner, center: (i32, i32), masonry: Masonry, street: BlockId, culture: Culture, biome: BiomeType, dice: &mut Dice) -> Option<()> {
+    const C: i32 = CITADEL;
+    let (x, z) = center;
+    let spire = Some(masonry.spire.unwrap_or(FLINT_BRICK));
+    let royal = Masonry { height: masonry.height + 4, tower_height: masonry.tower_height + 8, spire, ..masonry };
+    let turret = Masonry { tower_height: royal.tower_height + 12, ..royal };
+    let gatehouse = Masonry { tower_height: royal.tower_height + 4, ..royal };
+    // Donjon et ses quatre tourelles
+    let keep = Rect::around(x, z - 7, 10);
+    let floor = floor_for(p.generator, p.face, &keep, 10)?;
+    for (tx, tz) in [(keep.x0, keep.z0), (keep.x1 - 1, keep.z0), (keep.x0, keep.z1 - 1), (keep.x1 - 1, keep.z1 - 1)] {
+        p.take(Piece::Tower { rect: Rect::around(tx, tz, 2), floor, masonry: turret }, 0);
+    }
+    p.take(Piece::Keep { rect: keep, floor, masonry: royal }, 1);
+    // Tours de l'enceinte : angles, milieux des côtés, châtelet d'entrée
+    let mut towers: Vec<((i32, i32), Masonry)> = vec![
+        ((x - C, z - C), royal),
+        ((x + C, z - C), royal),
+        ((x - C, z + C), royal),
+        ((x + C, z + C), royal),
+        ((x - C, z), royal),
+        ((x + C, z), royal),
+        ((x, z - C), royal),
+    ];
+    towers.push(((x - 6, z + C), gatehouse));
+    towers.push(((x + 6, z + C), gatehouse));
+    for ((tx, tz), m) in towers {
+        let rect = Rect::around(tx, tz, 3);
+        let floor = floor_for(p.generator, p.face, &rect, 8)?;
+        p.take(Piece::Tower { rect, floor, masonry: m }, 0);
+    }
+    // Porte et pont-levis au sud
+    p.take(Piece::Gate { rect: Rect::new(x - 2, z + C, x + 3, z + C + 1), masonry: royal, walk: false }, 0);
+    p.take(Piece::Gate { rect: Rect::new(x - 2, z + C - 1, x + 3, z + C), masonry: royal, walk: true }, 0);
+    p.pieces.push(Piece::Paving { rect: Rect::new(x - 2, z + C + 1, x + 3, z + C + 7), block: PLANK });
+    for (lx, lz) in [(x - 3, z + C + 7), (x + 3, z + C + 7), (x - 3, z + C + 1), (x + 3, z + C + 1)] {
+        p.pieces.push(Piece::Lamp { x: lx, z: lz, masonry });
+    }
+    // Enceinte : rangée crénelée et chemin de ronde
+    let walls = Rect::new(x - C, z - C, x + C + 1, z + C + 1);
+    for (rect, walk) in [
+        (Rect::new(walls.x0, walls.z0, walls.x1, walls.z0 + 1), false),
+        (Rect::new(walls.x0, walls.z1 - 1, walls.x1, walls.z1), false),
+        (Rect::new(walls.x0, walls.z0, walls.x0 + 1, walls.z1), false),
+        (Rect::new(walls.x1 - 1, walls.z0, walls.x1, walls.z1), false),
+        (Rect::new(walls.x0 + 1, walls.z0 + 1, walls.x1 - 1, walls.z0 + 2), true),
+        (Rect::new(walls.x0 + 1, walls.z1 - 2, walls.x1 - 1, walls.z1 - 1), true),
+        (Rect::new(walls.x0 + 1, walls.z0 + 1, walls.x0 + 2, walls.z1 - 1), true),
+        (Rect::new(walls.x1 - 2, walls.z0 + 1, walls.x1 - 1, walls.z1 - 1), true),
+    ] {
+        p.pieces.push(Piece::Rampart { rect, masonry: royal, walk });
+    }
+    // Douves bordées de pierre taillée
+    let (o, i) = (Rect::around(x, z, C + 5), Rect::around(x, z, C + 1));
+    let ring = |outer: Rect, inner: Rect| {
+        [
+            Rect::new(outer.x0, outer.z0, outer.x1, inner.z0),
+            Rect::new(outer.x0, inner.z1, outer.x1, outer.z1),
+            Rect::new(outer.x0, inner.z0, inner.x0, inner.z1),
+            Rect::new(inner.x1, inner.z0, outer.x1, inner.z1),
+        ]
+    };
+    for rect in ring(o, i) {
+        p.pieces.push(Piece::Moat { rect });
+    }
+    for rect in ring(Rect::around(x, z, C + 1), Rect::around(x, z, C)).into_iter().chain(ring(Rect::around(x, z, C + 6), o)) {
+        p.pieces.push(Piece::Paving { rect, block: CUT_STONE });
+    }
+    // Cour d'honneur : deux fontaines, l'allée bordée de lanternes, la chapelle et la caserne
+    for fx in [x - 13, x + 13] {
+        let rect = Rect::around(fx, z + 19, 2);
+        if let Some(floor) = floor_for(p.generator, p.face, &rect, 3) {
+            p.take(Piece::Fountain { rect, floor }, 0);
+        }
+    }
+    for k in 0..5 {
+        for lx in [x - 3, x + 3] {
+            p.pieces.push(Piece::Lamp { x: lx, z: z + 7 + 5 * k, masonry });
+        }
+    }
+    let style = Style::town(culture, biome, dice);
+    if let Some(chapel) = Special::Church.house(dice, style) {
+        p.try_building(House { foot: Rect::sized(x + 19, z - 10, 9, 7), door: Side::West, ..chapel });
+    }
+    if let Some(hall) = Special::Tavern.house(dice, style) {
+        p.try_building(House { foot: Rect::sized(x - 28, z - 10, 9, 8), door: Side::East, porch: false, ..hall });
+    }
+    p.pieces.push(Piece::Paving { rect: Rect::around(x, z, C - 2), block: street });
+    p.taken.push(Rect::around(x, z, C + 6));
+    Some(())
+}
+
+/// Dessine, pour un aperçu, une ville de taille `size` centrée en `center`, sans tenir compte des
+/// cases ni des autres établissements (le jeu ne pose encore que des bourgs)
+pub fn preview_town(generator: &PlanetWorldGenerator, face: PlanetFace, center: (i32, i32), size: TownSize, culture: Culture, seed: u64) -> Option<Settlement> {
+    let (_, biome) = ground_at(generator, face, center.0, center.1);
+    let area = Rect::around(center.0, center.1, size.half() + 8);
+    let planner = Planner { generator, face, area, pieces: Vec::new(), taken: Vec::new(), exits: Vec::new(), culture: Some(culture) };
+    let mut dice = Dice(mix(seed ^ 0x7031_5A1E));
+    plan_town_sized(planner, center, biome, &mut dice, size)
 }
 
 fn plan_ruins(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut Dice) -> Option<Settlement> {
@@ -3290,6 +4569,7 @@ mod tests {
 
     #[test]
     fn test_planet_has_towns_villages_and_ruins() {
+        let mut grandes = 0;
         for seed in [2026, 1234567890] {
             let generator = generator(seed);
             let settlements = all_settlements(&generator);
@@ -3300,13 +4580,25 @@ mod tests {
             assert!(villages >= 5, "seulement {villages} villages");
             assert!(ruins >= 5, "seulement {ruins} ruines");
             for s in &settlements {
-                // Le plan reste dans sa case, donc sur sa face
+                // Le plan reste dans sa case (une ville, dans sa région), donc sur sa face
                 let (cx, cz) = (s.center.0.div_euclid(CELL), s.center.1.div_euclid(CELL));
-                let cell = Rect::sized(cx * CELL, cz * CELL, CELL, CELL);
-                assert!(cell.contains(s.bounds.x0, s.bounds.z0) && cell.contains(s.bounds.x1 - 1, s.bounds.z1 - 1), "{:?} sort de sa case", s.kind);
+                let home = if s.kind == SettlementKind::Town {
+                    let (rx, rz) = (cx.div_euclid(REGION_CELLS), cz.div_euclid(REGION_CELLS));
+                    Rect::sized(rx * REGION_BLOCKS, rz * REGION_BLOCKS, REGION_BLOCKS, REGION_BLOCKS)
+                } else {
+                    Rect::sized(cx * CELL, cz * CELL, CELL, CELL)
+                };
+                assert!(home.contains(s.bounds.x0, s.bounds.z0) && home.contains(s.bounds.x1 - 1, s.bounds.z1 - 1), "{:?} sort de sa case", s.kind);
                 assert!(s.top <= crate::edits::WORLD_HEIGHT);
             }
+            // Une capitale, une seule, et des villes des deux autres tailles
+            let sized = |z| settlements.iter().filter(|s| s.size == Some(z)).count();
+            println!("  {} petites villes, {} grandes villes", sized(TownSize::PetiteVille), sized(TownSize::GrandeVille));
+            assert_eq!(sized(TownSize::Capitale), 1, "une capitale par planète");
+            assert!(sized(TownSize::PetiteVille) >= 1);
+            grandes += sized(TownSize::GrandeVille);
         }
+        assert!(grandes >= 1, "aucune grande ville");
     }
 
     #[test]
@@ -3415,8 +4707,9 @@ mod tests {
             let masonry = Masonry::of(culture);
             for piece in &s.pieces {
                 match piece {
+                    // La citadelle d'une capitale a des murs plus hauts, de la même pierre
                     Piece::Rampart { masonry: m, .. } | Piece::Gate { masonry: m, .. } | Piece::Tower { masonry: m, .. } | Piece::Lamp { masonry: m, .. } => {
-                        assert_eq!(*m, masonry, "{} {culture:?} : remparts d'une autre culture", s.kind.name())
+                        assert_eq!((m.wall, m.accent, m.cap, m.palisade), (masonry.wall, masonry.accent, masonry.cap, masonry.palisade), "{} {culture:?} : remparts d'une autre culture", s.kind.name())
                     }
                     Piece::House(h) if h.usage == Use::Home && culture == Culture::ElfesDesBois => {
                         assert!(matches!(h.style.roof, Some(GREEN_LEAF | DARK_LEAF | LIGHT_LEAF)), "toit de feuillage elfe")
@@ -3575,9 +4868,11 @@ mod tests {
         let towns: Vec<_> = all.iter().filter(|s| s.kind == SettlementKind::Town).collect();
         assert!(!towns.is_empty());
         for town in &towns {
-            assert_eq!(usage(town, Use::Church), 1, "une église par ville");
+            assert!(usage(town, Use::Church) >= 1, "une église par ville");
+            assert!(town.pieces.iter().any(|p| matches!(p, Piece::TownHall { .. } | Piece::Keep { .. })), "ni hôtel de ville ni donjon");
             assert!(usage(town, Use::Tavern) >= 1, "pas de taverne");
-            assert!(town.pieces.iter().filter(|p| matches!(p, Piece::Stall(_))).count() >= 4, "pas de marché");
+            let stalls = town.pieces.iter().filter(|p| matches!(p, Piece::Stall(_))).count();
+            assert!(stalls >= 4, "pas de marché : {stalls} étals dans {:?} {:?}", town.size, town.center);
         }
         let villages: Vec<_> = all.iter().filter(|s| s.kind == SettlementKind::Village).collect();
         for u in [Use::Church, Use::Tavern, Use::Barn] {

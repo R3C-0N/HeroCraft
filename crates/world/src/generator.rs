@@ -241,6 +241,14 @@ impl PlanetWorldGenerator {
         if let Some(block) = self.structure_block(column, face, x, y, z) {
             return block;
         }
+        self.natural_block(column, face, x, y, z)
+    }
+
+    /// Le terrain nu en (x, y, z) : le relief, les grottes et l'eau, sans structure ni végétation
+    pub fn natural_block(&self, column: &ColumnSample, face: PlanetFace, x: i32, y: i32, z: i32) -> BlockId {
+        if y < 0 {
+            return BlockId::STONE;
+        }
         let global_y = y as f64;
         let elev_floor = column.elevation.floor();
         if global_y < elev_floor {
