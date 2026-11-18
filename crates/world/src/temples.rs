@@ -9,10 +9,11 @@
 //!   sanctuaire aux murs de ce peuple, autel doré où repose la Pierre, barricade de pieux sur le
 //!   rebord du podium, ouverte devant l'entrée, et lanternes.
 //!
-//! Devant l'entrée s'étend une arène (`TempleSite::arena`) : un sol de sable une marche sous le
-//! temple, cerné d'un mur ouvert contre le podium et percé d'une seule porte au bout opposé. C'est
-//! là que se livre le combat final de la vision contre un monstre du Néant (bible, section 8). Au
-//! présent, ses murs sont effondrés et l'herbe envahit le sable.
+//! Devant l'entrée s'étend un parvis sacré (`TempleSite::arena`), qui sert d'arène au combat final
+//! de la vision contre un monstre du Néant (bible, section 8) : une cour dallée une marche sous le
+//! temple, une allée processionnelle, un cercle ornementé au centre, des vasques de lumière, une
+//! colonnade couverte d'un linteau tout autour, ouverte contre le podium, et un portique à deux
+//! piliers pour seule entrée. Au présent, ses colonnes sont brisées et l'herbe perce les dalles.
 //!
 //! Les deux époques changent exactement les mêmes colonnes et les mêmes altitudes : passer de l'une
 //! à l'autre ne demande que de régénérer les chunks du temple (`TempleSite::chunks`) avec un
@@ -126,7 +127,7 @@ impl TempleSite {
         BlockPos::new(self.face, x, y, z)
     }
 
-    /// L'arène devant l'entrée du temple, où se livre le combat final de la vision
+    /// Le parvis devant l'entrée du temple, l'arène où se livre le combat final de la vision
     pub fn arena(&self) -> Rect {
         self.temple.arena
     }

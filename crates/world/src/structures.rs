@@ -1414,7 +1414,7 @@ impl RuinHouse {
 pub struct Temple {
     /// Le podium du temple
     pub foot: Rect,
-    /// L'arène devant l'entrée, contre le podium, du côté `door`
+    /// Le parvis (l'arène du combat final) devant l'entrée, contre le podium, du côté `door`
     pub arena: Rect,
     /// Côté de l'entrée du temple, qui donne sur l'arène
     pub door: Side,
@@ -1443,11 +1443,13 @@ impl Temple {
         Some(if r < 0.35 { Self::COLUMN_HEIGHT } else if r < 0.85 { 1 + (r * 37.0) as i32 % (Self::COLUMN_HEIGHT - 1) } else { 0 })
     }
 
-    /// Largeur de l'arène (en travers de l'axe de l'entrée) et sa profondeur (le long de l'axe)
+    /// Largeur du parvis (en travers de l'axe de l'entrée) et sa profondeur (le long de l'axe)
     pub const ARENA: (i32, i32) = (17, 15);
-    /// Hauteur des murs de l'arène
-    const ARENA_WALL: i32 = 3;
-    /// Demi-largeur de la porte de l'arène, au bout opposé au temple
+    /// Hauteur des colonnes du parvis (le linteau les couvre au niveau suivant)
+    const ARENA_COLUMN: i32 = 4;
+    /// Hauteur des piliers du portique (le linteau orné les couvre au niveau suivant)
+    const PYLON: i32 = 6;
+    /// Demi-largeur de la porte du parvis, sous le portique, au bout opposé au temple
     const ARENA_GATE: i32 = 1;
 
     /// Pose un temple de podium `side` × `side` et son arène, l'ensemble centré sur `center`
@@ -1495,10 +1497,13 @@ impl Temple {
         }
     }
 
-    /// Bloc de l'arène : un sol de sable une marche sous le temple, cerné d'un mur ouvert contre le
-    /// podium et percé d'une porte au bout opposé. `holder` : le peuple qui la tient dans le passé
-    /// (murs entiers, couronnés, lanternes aux coins), `None` au présent (murs effondrés, sable
-    /// envahi d'herbe et de gravier).
+    /// Bloc du parvis (l'arène du combat final) : une cour dallée une marche sous le temple, une
+    /// allée processionnelle de brique blanche sur l'axe, un cercle sacré ornementé en son centre,
+    /// cernée d'une colonnade couverte d'un linteau, une balustrade entre les colonnes, ouverte
+    /// contre le podium, et un portique à deux piliers au bout opposé ; des vasques de lumière sur
+    /// piédestal le long de l'allée. `holder` : le peuple qui le tient dans le passé (piliers du
+    /// portique de sa pierre, ornements de sa couleur), `None` au présent (colonnes brisées,
+    /// linteaux tombés, dalles envahies d'herbe et de gravier).
     fn arena_block(&self, holder: Option<Culture>, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
         let af = self.arena_floor();
         let arena = &self.arena;
@@ -1506,65 +1511,135 @@ impl Temple {
             return (y >= ground).then_some(COBBLE);
         }
         let (u, v) = self.arena_local(x, z);
-        let ad = Self::ARENA.1;
+        let (aw, ad) = Self::ARENA;
+        let (side, far) = (aw / 2, ad - 1);
         let edge = arena.on_edge(x, z);
-        // Le bord contre le podium reste ouvert devant lui ; la porte s'ouvre au bout opposé
         let facing_temple = v == 0 && u.abs() <= self.foot.width() / 2;
-        let gate = v == ad - 1 && u.abs() <= Self::ARENA_GATE;
-        let wall = edge && !facing_temple && !gate;
+        let gate = v == far && u.abs() <= Self::ARENA_GATE;
+        let pylon = v == far && u.abs() == Self::ARENA_GATE + 1;
+        let column = edge && !facing_temple && ((u.abs() == side && v % 2 == 0) || (v == far && u % 2 == 0) || (v == 0 && u.abs() == side));
         let h = hash2(self.seed ^ 0xA2E7A, x, z);
+        let trim = holder.map(temple_trim).unwrap_or(GILDING);
+        // Cercle sacré au centre du parvis
+        let (cu, cv) = (0, ad / 2);
+        let r = (((u - cu) * (u - cu) + (v - cv) * (v - cv)) as f64).sqrt();
+        let pedestal = u.abs() == 5 && (v == 4 || v == far - 4);
         if y < af {
             if y == af - 2 {
                 return Some(COBBLE);
             }
-            // Le sol : sable, bordé de pierre taillée au pied des murs
-            if wall || (edge && gate) {
-                return Some(CUT_STONE);
-            }
+            let paved = if (2.5..3.5).contains(&r) {
+                trim
+            } else if u.abs() <= 1 && !edge {
+                WHITE_BRICK
+            } else {
+                CUT_STONE
+            };
             return Some(match holder {
-                Some(_) => SAND,
-                None if unit(h) < 0.35 => GRASS,
-                None if unit(h) < 0.5 => GRAVEL,
-                None => SAND,
+                Some(_) => paved,
+                None => {
+                    let roll = unit(h);
+                    if edge || roll >= 0.5 {
+                        if paved == GILDING || paved == trim { CUT_STONE } else { paved }
+                    } else if roll < 0.35 {
+                        GRASS
+                    } else {
+                        GRAVEL
+                    }
+                }
             });
         }
         let level = y - af;
-        if wall {
-            let corner = arena.on_corner(x, z);
+        let present_height = |max: i32| -> i32 { (unit(mix(h ^ 0xC01)) * (max + 1) as f64) as i32 };
+        // Portique : deux piliers qui encadrent la porte, un linteau orné, un cristal au sommet
+        if v == far && u.abs() <= Self::ARENA_GATE + 1 {
             match holder {
                 Some(people) => {
                     let masonry = Masonry::of(people);
-                    if level < Self::ARENA_WALL {
-                        return Some(if corner { masonry.accent } else { masonry.wall });
+                    if pylon && level < Self::PYLON {
+                        return Some(masonry.accent);
                     }
-                    if level == Self::ARENA_WALL {
-                        return Some(if corner { masonry.light } else { masonry.cap });
+                    if level == Self::PYLON {
+                        return Some(trim);
+                    }
+                    if gate && level == Self::ARENA_COLUMN {
+                        return Some(CUT_STONE);
+                    }
+                    if level == Self::PYLON + 1 && u == 0 {
+                        return Some(CUT_CRYSTAL);
                     }
                 }
                 None => {
-                    // Le mur s'est effondré par pans
-                    let along = u.abs() + v;
-                    let a = unit(hash2(self.seed ^ 0xA2E7B, along.div_euclid(3), 0));
-                    let height = (a * (Self::ARENA_WALL + 1) as f64) as i32 + if corner { 1 } else { 0 };
-                    if level < height.min(Self::ARENA_WALL) {
-                        return Some(if unit(mix(h ^ 0x7)) < 0.3 { COBBLE } else { STONE });
+                    // Un pilier tient encore debout, l'autre est brisé
+                    let height = if u < 0 { Self::PYLON } else { 2 };
+                    if pylon && level < height {
+                        return Some(CUT_STONE);
                     }
                 }
             }
             return (y < ground).then_some(BlockId::AIR);
         }
-        // Gravats au sol de la ruine
-        if holder.is_none() && level == 0 && !edge && unit(mix(h ^ 0x13)) < 0.04 {
-            return Some(COBBLE);
+        if edge && !facing_temple {
+            let corner = arena.on_corner(x, z);
+            match holder {
+                Some(_) => {
+                    if column && level < Self::ARENA_COLUMN {
+                        return Some(CUT_STONE);
+                    }
+                    if level == Self::ARENA_COLUMN {
+                        return Some(if corner { trim } else { CUT_STONE });
+                    }
+                    if !column && level == 0 {
+                        return Some(CUT_STONE_FENCE);
+                    }
+                }
+                None => {
+                    if column && level < present_height(Self::ARENA_COLUMN) {
+                        return Some(CUT_STONE);
+                    }
+                    if !column && level == 0 && unit(mix(h ^ 0xBA1)) < 0.3 {
+                        return Some(CUT_STONE_FENCE);
+                    }
+                }
+            }
+            return (y < ground).then_some(BlockId::AIR);
+        }
+        // Piédestaux des vasques de lumière, le long de l'allée
+        if pedestal {
+            match (holder, level) {
+                (_, 0) => return Some(CUT_STONE),
+                (Some(people), 1) => return Some(Masonry::of(people).light),
+                _ => {}
+            }
+        }
+        // Fûts tombés au sol de la ruine
+        if holder.is_none() && level == 0 && unit(mix(h ^ 0x13)) < 0.04 {
+            return Some(CUT_STONE);
         }
         (y < ground).then_some(BlockId::AIR)
     }
 
-    /// Lumières de l'arène dans le passé : les lanternes au sommet des quatre coins de son mur
-    fn arena_light_spots(&self) -> [(i32, i32, i32); 4] {
-        let a = &self.arena;
-        let y = self.arena_floor() + Self::ARENA_WALL;
-        [(a.x0, y, a.z0), (a.x1 - 1, y, a.z0), (a.x0, y, a.z1 - 1), (a.x1 - 1, y, a.z1 - 1)]
+    /// Lumières du parvis dans le passé : les vasques sur leurs piédestaux
+    fn arena_light_spots(&self) -> Vec<(i32, i32, i32)> {
+        let y = self.arena_floor() + 1;
+        let far = Self::ARENA.1 - 1;
+        let mut spots = Vec::new();
+        for (u, v) in [(-5, 4), (5, 4), (-5, far - 4), (5, far - 4)] {
+            let (x, z) = self.arena_world(u, v);
+            spots.push((x, y, z));
+        }
+        spots
+    }
+
+    /// Colonne du monde d'un point (u, v) du repère du parvis (l'inverse de `arena_local`)
+    fn arena_world(&self, u: i32, v: i32) -> (i32, i32) {
+        let (cx, cz) = self.foot.center();
+        match self.door {
+            Side::South => (cx + u, self.arena.z0 + v),
+            Side::North => (cx - u, self.arena.z1 - 1 - v),
+            Side::East => (self.arena.x0 + v, cz - u),
+            Side::West => (self.arena.x1 - 1 - v, cz + u),
+        }
     }
 
     /// Murs du sanctuaire (la cella) du temple intact : son pourtour est le mur, l'intérieur la salle
