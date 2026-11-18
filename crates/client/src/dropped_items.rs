@@ -1,10 +1,12 @@
 //! Objets tombés au sol : un bloc cassé laisse un petit cube, un objet (butin d'une plante ou
 //! d'une bête) une petite plaque à son icône. Il tombe, se pose sur le relief et tourne sur
 //! lui-même. Le joueur qui passe à proximité l'attire puis le ramasse dans son
-//! inventaire (s'il y a de la place). Un objet oublié disparaît au bout de quelques minutes.
+//! inventaire (s'il y a de la place). Un objet oublié disparaît au bout de quelques minutes,
+//! sauf une Pierre du Néant : elle reste là où elle est, brille, et son ramassage est signalé
+//! (`StoneEvent::Obtained`).
 
 use glam::{Quat, Vec3};
-use herocraft_common::{blocks, BlockId, ItemId};
+use herocraft_common::{blocks, BlockId, ItemId, StoneEvent, StoneKind};
 use herocraft_world::PlanetWorldGenerator;
 
 use crate::block_textures::{block_textures, face_uv};
@@ -50,6 +52,8 @@ pub struct DroppedItem {
 #[derive(Default)]
 pub struct DroppedItems {
     items: Vec<DroppedItem>,
+    /// Pierres du Néant ramassées depuis le dernier `take_stone_events`
+    stone_events: Vec<StoneEvent>,
     /// Les objets ont bougé depuis le dernier maillage
     dirty: bool,
 }
@@ -87,9 +91,7 @@ impl DroppedItems {
             phase,
             attracted: true,
         });
-        if self.items.len() > MAX_ITEMS {
-            self.items.remove(0);
-        }
+        self.evict_oldest();
         self.dirty = true;
     }
 
@@ -98,10 +100,31 @@ impl DroppedItems {
     pub fn lay(&mut self, item: impl Into<ItemId>, center: Vec3) {
         let phase = (center.x * 12.9898 + center.y * 78.233 + center.z * 37.719).sin().fract().abs() * std::f32::consts::TAU;
         self.items.push(DroppedItem { item: item.into(), position: center, velocity: Vec3::ZERO, age: 0.0, phase, attracted: false });
-        if self.items.len() > MAX_ITEMS {
-            self.items.remove(0);
-        }
+        self.evict_oldest();
         self.dirty = true;
+    }
+
+    /// Pose `item` en `center`, sans saut (une Pierre du Néant sur l'autel d'un temple) : il
+    /// tombe droit au sol et s'attire vers le joueur qui s'approche, comme un butin
+    pub fn place(&mut self, item: impl Into<ItemId>, center: Vec3) {
+        let phase = (center.x * 12.9898 + center.y * 78.233 + center.z * 37.719).sin().fract().abs() * std::f32::consts::TAU;
+        self.items.push(DroppedItem { item: item.into(), position: center, velocity: Vec3::ZERO, age: 0.0, phase, attracted: true });
+        self.evict_oldest();
+        self.dirty = true;
+    }
+
+    /// Au-delà de `MAX_ITEMS`, le plus ancien objet disparaît (jamais une Pierre du Néant)
+    fn evict_oldest(&mut self) {
+        if self.items.len() > MAX_ITEMS {
+            if let Some(oldest) = self.items.iter().position(|item| !item.item.is_void_stone()) {
+                self.items.remove(oldest);
+            }
+        }
+    }
+
+    /// Les Pierres du Néant ramassées depuis le dernier appel (« Pierre obtenue »)
+    pub fn take_stone_events(&mut self) -> Vec<StoneEvent> {
+        std::mem::take(&mut self.stone_events)
     }
 
     /// Chute, pose sur le relief, attraction vers le joueur et ramassage. `player_center` est le
@@ -123,9 +146,11 @@ impl DroppedItems {
         let h = collider.block_height();
         let half = ITEM_SIZE * 0.5 * h;
         let mut picked = 0;
+        let stone_events = &mut self.stone_events;
         self.items.retain_mut(|item| {
             item.age += dt;
-            if item.age > LIFETIME {
+            // Une Pierre du Néant ne disparaît jamais d'elle-même
+            if item.age > LIFETIME && !item.item.is_void_stone() {
                 return false;
             }
             let up = item.position.normalize_or_zero();
@@ -136,6 +161,9 @@ impl DroppedItems {
                 let distance = to_player.length() / h;
                 if distance < PICKUP_RADIUS && inventory.add(item.item) {
                     picked += 1;
+                    if let Some(kind) = StoneKind::of(item.item) {
+                        stone_events.push(StoneEvent::Obtained { kind, item: item.item, position: item.position.to_array() });
+                    }
                     return false;
                 }
                 if item.attracted && distance < ATTRACT_RADIUS && inventory.has_room_for(item.item) {
@@ -184,7 +212,7 @@ impl DroppedItems {
             let bob = (0.5 + 0.5 * (item.phase + time * 2.5).sin()) * 0.12 * block_height;
             let center = item.position + up * bob;
             match item.item.block() {
-                Some(block) => push_cube(&mut mesh, center, [ax * half, up * half, az * half], block),
+                Some(block) => push_cube(&mut mesh, center, [ax * half, up * half, az * half], block, 0.0),
                 None => push_icon(&mut mesh, center, ax * half * ICON_SCALE, up * half * ICON_SCALE, item.item),
             }
         }
@@ -195,8 +223,10 @@ impl DroppedItems {
 /// Plaque verticale de l'icône de l'objet `item`, centrée en `center`, de demi-largeur `right` et
 /// de demi-hauteur `up`, dessinée des deux côtés. Un objet sans icône chargée reste un cube gris.
 fn push_icon(mesh: &mut PlanetMesh, center: Vec3, right: Vec3, up: Vec3, item: ItemId) {
+    // Une Pierre du Néant luit de sa propre lumière, même dans la nuit d'une crypte
+    let light = if item.is_void_stone() { 1.0 } else { 0.0 };
     let Some(layer) = block_textures().icon_layer(item) else {
-        push_cube(mesh, center, [right / ICON_SCALE, up / ICON_SCALE, right.cross(up).normalize_or_zero() * right.length() / ICON_SCALE], BlockId::AIR);
+        push_cube(mesh, center, [right / ICON_SCALE, up / ICON_SCALE, right.cross(up).normalize_or_zero() * right.length() / ICON_SCALE], BlockId::AIR, light);
         return;
     };
     let mean = block_textures().mean(layer).unwrap_or([1.0; 3]);
@@ -209,15 +239,15 @@ fn push_icon(mesh: &mut PlanetMesh, center: Vec3, right: Vec3, up: Vec3, item: I
             let tu = if su * side > 0.0 { 16 } else { 0 };
             let tv = if sv > 0.0 { 0 } else { 16 };
             let texture = PlanetVertex::pack_texture(layer, tu, tv);
-            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: (normal * side).to_array(), color: [mean[0], mean[1], mean[2], 1.0], texture, light: 0.0 });
+            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: (normal * side).to_array(), color: [mean[0], mean[1], mean[2], 1.0], texture, light });
         }
         mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
 }
 
 /// Cube du bloc `block` centré en `center`, de demi-axes `axes` (le deuxième est le haut),
-/// couvert de ses textures comme dans le terrain
-fn push_cube(mesh: &mut PlanetMesh, center: Vec3, axes: [Vec3; 3], block: BlockId) {
+/// couvert de ses textures comme dans le terrain, éclairé de `light` (`PlanetVertex::light`)
+fn push_cube(mesh: &mut PlanetMesh, center: Vec3, axes: [Vec3; 3], block: BlockId, light: f32) {
     let (top, side) = item_colors(block);
     // Faces dans l'ordre de `FACE_DIRS` : +X, -X, +Y, -Y, +Z, -Z
     for (dir, (axis, sign)) in [(0, 1.0), (0, -1.0), (1, 1.0), (1, -1.0), (2, 1.0), (2, -1.0)].into_iter().enumerate() {
@@ -237,7 +267,7 @@ fn push_cube(mesh: &mut PlanetMesh, center: Vec3, axes: [Vec3; 3], block: BlockI
             }
             let (tu, tv) = face_uv(dir, local);
             let texture = PlanetVertex::pack_texture(layer, tu, tv);
-            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: normal.to_array(), color: [color[0], color[1], color[2], 1.0], texture, light: 0.0 });
+            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: normal.to_array(), color: [color[0], color[1], color[2], 1.0], texture, light });
         }
         mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
@@ -305,5 +335,56 @@ mod tests {
             assert_eq!(drops.update(1.0 / 60.0, &generator, collider, Some(center), &mut inventory), 0);
         }
         assert_eq!(drops.items().len(), 1);
+    }
+
+    /// Une Pierre du Néant posée ne disparaît jamais, brille, et son ramassage est signalé
+    #[test]
+    fn test_void_stone_stays_glows_and_signals_its_pickup() {
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
+        let mut camera = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
+        camera.set_terrain(std::sync::Arc::new(herocraft_world::TerrainEdits::new(None)));
+        let collider = camera.collider.as_ref().unwrap();
+        let h = BlockGeometry::new(crate::camera::DEFAULT_RADIUS as f64).block_height as f32;
+        let stone = StoneKind::Whole.item().unwrap();
+        let feet = camera.player_pos;
+        let up = feet.normalize();
+        let (t1, _) = crate::camera::tangent_frame(up);
+        let mut drops = DroppedItems::new();
+        let mut inventory = Inventory::default();
+        drops.place(stone, feet + t1 * 20.0 * h + up * 1.0 * h);
+        drops.spawn(BlockId::STONE, feet + t1 * 20.0 * h + up * 1.0 * h, h);
+
+        // Bien après la durée de vie d'un objet ordinaire, la Pierre est toujours là
+        for _ in 0..((LIFETIME + 5.0) * 10.0) as usize {
+            drops.update(0.1, &generator, collider, None, &mut inventory);
+        }
+        assert_eq!(drops.items().len(), 1);
+        assert_eq!(drops.items()[0].item, stone);
+        assert!(drops.take_stone_events().is_empty(), "rien de ramassé");
+        let mesh = drops.take_mesh(h, 0.0).unwrap();
+        assert!(mesh.vertices.iter().all(|v| v.light == 1.0), "la Pierre luit");
+
+        // Le joueur s'approche : elle est ramassée, et « Pierre obtenue » est signalé une fois
+        let near = drops.items()[0].position - t1 * 2.0 * h;
+        for _ in 0..60 {
+            drops.update(1.0 / 60.0, &generator, collider, Some(near), &mut inventory);
+        }
+        assert_eq!(inventory.count(stone), 1);
+        let events = drops.take_stone_events();
+        assert!(matches!(events.as_slice(), [StoneEvent::Obtained { kind: StoneKind::Whole, item, .. }] if *item == stone));
+        assert!(drops.take_stone_events().is_empty());
+    }
+
+    /// Trop d'objets au sol : le plus ancien disparaît, mais jamais une Pierre
+    #[test]
+    fn test_void_stone_is_never_evicted() {
+        let stone = StoneKind::Whole.item().unwrap();
+        let mut drops = DroppedItems::new();
+        drops.place(stone, Vec3::X);
+        for _ in 0..MAX_ITEMS + 10 {
+            drops.lay(BlockId::STONE, Vec3::X);
+        }
+        assert_eq!(drops.items().len(), MAX_ITEMS);
+        assert_eq!(drops.items()[0].item, stone);
     }
 }

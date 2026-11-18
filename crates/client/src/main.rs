@@ -56,6 +56,7 @@ mod ui;
 mod ui_skin;
 #[cfg(test)]
 mod ui_snapshot;
+mod void_stones;
 mod voxel_mesh;
 mod weather;
 mod world_map;
@@ -261,6 +262,8 @@ fn main() {
     let mut block_interaction = BlockInteraction::new();
     // Blocs cassés tombés au sol, ramassés en passant à proximité
     let mut dropped_items = dropped_items::DroppedItems::new();
+    // Pierres du Néant obtenues, touchées ou absorbées dans l'image (voir `void_stones::dispatch`)
+    let mut stone_events = herocraft_common::StoneEvents::new();
     let game_start = Instant::now();
     let mut last_autosave = Instant::now();
     let mut last_mouse_pos = (0.0_f64, 0.0_f64);
@@ -382,9 +385,13 @@ fn main() {
                                     && action == block_interaction::BlockAction::Place
                                     && station.is_none()
                                     && feed_aimed_creature(&camera, &block_interaction, &creature_views, &creature_registry, net.as_mut(), &mut solo_creatures, &mut ui_state, &mut audio);
+                                // Une Pierre du Néant en main : le joueur la touche
+                                let stone = void_stones::held_stone(&ui_state.inventory).filter(|_| action == block_interaction::BlockAction::Place && station.is_none() && !fed && corpse.is_none());
                                 // Sinon, un aliment en main : le joueur le mange
                                 let food = ui_state.inventory.selected_food().filter(|_| action == block_interaction::BlockAction::Place && station.is_none() && !fed);
-                                if let Some(id) = corpse {
+                                if let Some(item) = stone {
+                                    void_stones::touch(item, &mut stone_events);
+                                } else if let Some(id) = corpse {
                                     skin_creature(id, net.as_mut(), &mut solo_creatures, &mut dropped_items, &camera);
                                     audio.block_placed(audio::synth::Material::Dirt, 0.0, &ui_state.audio_settings);
                                 } else if fed {
@@ -1219,10 +1226,14 @@ fn main() {
                                 let body = on_ground.then(|| camera.player_pos + camera.player_pos.normalize_or_zero() * 0.9 * h);
                                 dropped_items.update(dt, &generator, collider, body, &mut ui_state.inventory);
                             }
+                            for event in dropped_items.take_stone_events() {
+                                stone_events.push(event);
+                            }
                             if let Some(mesh) = dropped_items.take_mesh(h, game_start.elapsed().as_secs_f32()) {
                                 state.set_dropped_items(&mesh);
                             }
                         }
+                        void_stones::dispatch(&mut stone_events, &mut ui_state.chat);
                         {
                             herocraft_common::prof_scope!("blocs::contour");
                             // Une bête visée cache le contour et les fissures du bloc derrière elle
@@ -1313,6 +1324,7 @@ fn main() {
                                         pending_actions: &mut pending_actions,
                                         next_planet_seed: &mut next_planet_seed,
                                         weather: &mut client_weather,
+                                        dropped: &mut dropped_items,
                                     };
                                     run_command(command, &mut game)
                                 });
@@ -2200,6 +2212,8 @@ struct Game<'a> {
     next_planet_seed: &'a mut Option<u64>,
     /// Météo du joueur (`/weather`, `/season`)
     weather: &'a mut weather::ClientWeather,
+    /// Objets au sol (`/drop`)
+    dropped: &'a mut dropped_items::DroppedItems,
 }
 
 /// Température de l'échelle des biomes en degrés Celsius, à peu près : 0,4 (neige) vers 0 °C,
@@ -2302,6 +2316,17 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
                 n if n < count => one(format!("Gave {n} × {} (inventory full)", id.name())),
                 n => one(format!("Gave {n} × {}", id.name())),
             }
+        }
+        Command::Drop { item, count } => {
+            let id = find_item(&item).ok_or_else(|| format!("Unknown item: {item} (Tab lists the names)"))?;
+            // Deux blocs devant le joueur, un peu au-dessus du sol : l'objet y tombe
+            let (_, forward, _, _) = game.camera.look_vectors();
+            let ahead = (game.camera.player_pos + forward * 2.0 * block).normalize_or_zero();
+            let center = ahead * (game.camera.ground_radius_at(ahead, game.generator) + 0.6 * block);
+            for _ in 0..count {
+                game.dropped.place(id, center);
+            }
+            one(format!("Dropped {count} × {}", id.name()))
         }
         Command::Fly => {
             if game.camera.target_distance > game.camera.base_radius {
