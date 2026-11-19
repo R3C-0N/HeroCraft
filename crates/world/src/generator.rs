@@ -4,6 +4,7 @@ use crate::ocean_currents::OceanicCurrentSimulation;
 use crate::roads::{road_block, RoadMap};
 use crate::structures::{Rect, Settlement, StructureMap};
 use crate::tectonics::TectonicSimulation;
+use crate::temples::Epoch;
 use crate::vegetation::{VegetationField, VEGETATION_SPAN};
 use glam::DVec3;
 use std::ops::Range;
@@ -110,6 +111,8 @@ pub struct PlanetWorldGenerator {
     pub structures: Arc<StructureMap>,
     /// Chemins entre villes et villages, tracés liaison par liaison à la première lecture
     pub roads: Arc<RoadMap>,
+    /// Époque à laquelle les temples sont dessinés (`Epoch::Present` : en ruine). Voir `temples`.
+    pub epoch: Epoch,
 }
 
 impl PlanetWorldGenerator {
@@ -123,6 +126,7 @@ impl PlanetWorldGenerator {
             ocean_currents,
             structures: Arc::new(StructureMap::new()),
             roads: Arc::new(RoadMap::new()),
+            epoch: Epoch::Present,
         }
     }
 
@@ -281,7 +285,7 @@ impl PlanetWorldGenerator {
         if let Some(s) = self.settlement_at(face, x, z) {
             // Le plan passe avant les chemins qui l'abordent
             if !s.span(x, z, ground).is_empty() {
-                return s.block(x, y, z, ground);
+                return s.block_in(self.epoch, x, y, z, ground);
             }
         }
         // Un chemin ne change que le dessus du sol : les autres altitudes n'ont rien à chercher
@@ -294,7 +298,7 @@ impl PlanetWorldGenerator {
     /// Blocs qui éclairent posés par les structures dans les colonnes `area` d'une face : position
     /// et bloc. `ground(x, z)` : altitude du premier bloc d'air au-dessus du relief de la colonne.
     pub fn structure_lights(&self, face: PlanetFace, area: crate::structures::Rect, ground: impl Fn(i32, i32) -> i32) -> Vec<(i32, i32, i32, BlockId)> {
-        self.structures.touching(self, face, area).into_iter().flat_map(|s| s.lights(area, &ground)).collect()
+        self.structures.touching(self, face, area).into_iter().flat_map(|s| s.lights_in(self.epoch, area, &ground)).collect()
     }
 
     /// Altitudes de la colonne (x, z) qu'une structure peut changer (vide si aucune n'y touche)
@@ -553,7 +557,7 @@ impl PlanetWorldGenerator {
                     let ground = column.elevation.floor() as i32;
                     let span = settlement.span(bx, bz, ground);
                     for y in span.start.max(layer_base)..span.end.min(layer_base + size) {
-                        if let Some(block) = settlement.block(bx, y, bz, ground) {
+                        if let Some(block) = settlement.block_in(self.epoch, bx, y, bz, ground) {
                             chunk.set_voxel(x as u8, (y - layer_base) as u8, z as u8, block);
                         }
                     }
