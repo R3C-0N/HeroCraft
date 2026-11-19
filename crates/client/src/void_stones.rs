@@ -62,12 +62,6 @@ const SCAN_RADIUS_BLOCKS: f32 = 64.0;
 const DUST_PER_STONE: u32 = 28;
 /// Durée de la chute d'une poussière vers le cœur, en secondes
 const DUST_SECONDS: f32 = 2.6;
-/// Avancée de la fenêtre sur le néant devant le centre de la Pierre, en blocs : juste devant la
-/// coque, qui mesure 5/16 de bloc de demi-largeur
-const WINDOW_DEPTH_BLOCKS: f32 = 0.33;
-/// Taille du losange dessiné, rapportée à la fenêtre : l'ombre qui assombrit le cristal autour
-/// d'elle déborde (`VOID_FRAME` de `effects.wgsl`)
-const VOID_FRAME: f32 = 1.5;
 /// Rayon de départ des poussières, en blocs
 const DUST_RADIUS_BLOCKS: f32 = 1.3;
 
@@ -76,22 +70,41 @@ pub fn placed_block() -> Option<BlockId> {
     blocks().find(PLACED_BLOCK)
 }
 
+/// Une Pierre posée : le centre de son bloc et ses trois arêtes (x, haut, z), repère du monde.
+/// Le shader y retrouve le cristal par lancer de rayon.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StoneSite {
+    pub center: Vec3,
+    pub edges: [Vec3; 3],
+}
+
+impl StoneSite {
+    /// Le bloc `corners` (bit 0 = x + 1, bit 1 = y + 1, bit 2 = z + 1)
+    pub fn from_corners(corners: &[glam::DVec3; 8]) -> Self {
+        let center = (corners.iter().copied().sum::<glam::DVec3>() / 8.0).as_vec3();
+        let edge = |bit: usize| {
+            let sum: glam::DVec3 = (0..8).filter(|i| i & bit == 0).map(|i| corners[i | bit] - corners[i]).sum();
+            (sum / 4.0).as_vec3()
+        };
+        Self { center, edges: [edge(1), edge(2), edge(4)] }
+    }
+}
+
 /// Les Pierres posées près du joueur, retrouvées dans les blocs modifiés
 #[derive(Debug, Default)]
 pub struct VoidStoneSites {
-    /// Centre de chaque Pierre, repère du monde
-    centers: Vec<Vec3>,
+    sites: Vec<StoneSite>,
     since_scan: f32,
 }
 
 impl VoidStoneSites {
     pub fn new() -> Self {
-        Self { centers: Vec::new(), since_scan: SCAN_INTERVAL }
+        Self { sites: Vec::new(), since_scan: SCAN_INTERVAL }
     }
 
     #[allow(dead_code)]
-    pub fn centers(&self) -> &[Vec3] {
-        &self.centers
+    pub fn sites(&self) -> &[StoneSite] {
+        &self.sites
     }
 
     /// Cherche de temps en temps les Pierres posées dans les chunks modifiés proches de `player`
@@ -106,7 +119,7 @@ impl VoidStoneSites {
 
     /// Cherche tout de suite (une Pierre vient d'être posée ou cassée)
     pub fn scan(&mut self, edits: &TerrainEdits, geometry: &BlockGeometry, player: Vec3) {
-        self.centers.clear();
+        self.sites.clear();
         let Some(stone) = placed_block() else { return };
         let h = geometry.block_height as f32;
         let size = herocraft_voxel_engine::chunk::CHUNK_SIZE as i32;
@@ -128,9 +141,9 @@ impl VoidStoneSites {
                         }
                         let pos = BlockPos::new(coord.face, origin.x + x, origin.y + y, origin.z + z);
                         let corners = geometry.block_corners(pos);
-                        let center = (corners.iter().copied().sum::<glam::DVec3>() / 8.0).as_vec3();
-                        if center.distance(player) <= SCAN_RADIUS_BLOCKS * h {
-                            self.centers.push(center);
+                        let site = StoneSite::from_corners(&corners);
+                        if site.center.distance(player) <= SCAN_RADIUS_BLOCKS * h {
+                            self.sites.push(site);
                         }
                     }
                 }
@@ -140,8 +153,8 @@ impl VoidStoneSites {
 
     /// Le cœur et les poussières de chaque Pierre, vus de `eye` (`block` : hauteur d'un bloc)
     pub fn push_quads(&self, time: f32, eye: Vec3, block: f32, out: &mut Vec<EffectQuad>) {
-        for (index, &center) in self.centers.iter().enumerate() {
-            push_stone(center, index as u32, time, eye, block, out);
+        for (index, site) in self.sites.iter().enumerate() {
+            push_stone(site, index as u32, time, eye, block, out);
         }
     }
 }
@@ -153,28 +166,20 @@ fn hash(n: u32) -> f32 {
     x as f32 / u32::MAX as f32
 }
 
-/// Le néant d'une Pierre posée : un losange tourné vers l'œil, droit sur la planète, et des
-/// poussières qui spiralent vers lui
-fn push_stone(center: Vec3, seed: u32, time: f32, eye: Vec3, block: f32, out: &mut Vec<EffectQuad>) {
+/// Le néant d'une Pierre posée, et des poussières qui spiralent vers lui. La fenêtre est un
+/// seul quadrilatère : le vertex shader le tourne vers l'œil et le fragment shader retrouve les
+/// faces du cristal dans le repère du bloc (`stone_window` de `effects.wgsl`).
+fn push_stone(site: &StoneSite, seed: u32, time: f32, eye: Vec3, block: f32, out: &mut Vec<EffectQuad>) {
+    let center = site.center;
     let up = center.normalize_or_zero();
-    let to_center = (center - eye).normalize_or_zero();
-    // Axe vertical : le haut de la planète, ramené dans le plan face à l'œil
-    let mut v = (up - to_center * up.dot(to_center)).normalize_or_zero();
-    if v == Vec3::ZERO {
-        v = herocraft_common::tangent_frame(up).0;
-    }
-    let u = v.cross(to_center).normalize_or_zero();
-    // Le cœur bat lentement. Il est posé juste devant la coque, côté œil : le cristal l'encadre
-    // comme une fenêtre taillée dans la Pierre, et le néant qu'on y voit dépend de la direction
-    // du regard, pas de la position du losange.
-    let beat = 1.0 + 0.06 * (time * 1.7 + seed as f32).sin();
-    let window = center - to_center * WINDOW_DEPTH_BLOCKS * block;
+    let [x, y, z] = site.edges;
     out.push(EffectQuad {
-        center: [window.x, window.y, window.z, KIND_VOID as f32],
-        // Paramètre 0 : l'horloge du néant (dérive des brumes, scintillement), en secondes
-        axis_u: (u * 0.2 * VOID_FRAME * block * beat).extend(time % 3600.0).to_array(),
-        axis_v: (v * 0.34 * VOID_FRAME * block * beat).extend(0.0).to_array(),
-        color: [1.0, 1.0, 1.0, 1.0],
+        center: [center.x, center.y, center.z, KIND_VOID as f32],
+        // Paramètre 0 : l'horloge du néant (dérive des brumes, bord qui ondule), en secondes
+        axis_u: x.extend(time % 3600.0).to_array(),
+        axis_v: z.extend(0.0).to_array(),
+        // Le haut du bloc
+        color: y.extend(1.0).to_array(),
         extra: [NO_TEXTURE as f32, 0.0, 0.0, 0.0],
     });
 
@@ -243,14 +248,16 @@ mod tests {
     fn a_placed_stone_draws_its_void_and_dust() {
         let block = 1.0;
         let center = Vec3::new(0.0, 1000.0, 0.0);
-        let sites = VoidStoneSites { centers: vec![center], since_scan: 0.0 };
+        let site = StoneSite { center, edges: [Vec3::X, Vec3::Y, Vec3::Z] };
+        let sites = VoidStoneSites { sites: vec![site], since_scan: 0.0 };
         let mut out = Vec::new();
         sites.push_quads(3.0, center + Vec3::new(4.0, 1.0, 0.0), block, &mut out);
         assert_eq!(out.len(), 1 + DUST_PER_STONE as usize);
         assert_eq!(out[0].center[3] as u32, KIND_VOID);
-        // Le losange se dresse le long du haut de la planète
-        let v = Vec3::from_slice(&out[0].axis_v[..3]);
-        assert!(v.normalize().dot(Vec3::Y) > 0.9, "{v}");
+        // Le shader reçoit les arêtes du bloc : x, z dans les demi-axes, le haut dans la couleur
+        assert_eq!(Vec3::from_slice(&out[0].axis_u[..3]), Vec3::X);
+        assert_eq!(Vec3::from_slice(&out[0].axis_v[..3]), Vec3::Z);
+        assert_eq!(Vec3::from_slice(&out[0].color[..3]), Vec3::Y);
         for dust in &out[1..] {
             let p = Vec3::from_slice(&dust.center[..3]);
             assert!(p.distance(center) <= DUST_RADIUS_BLOCKS * block + 1e-3);
@@ -268,10 +275,16 @@ mod tests {
         let near = geometry.block_corners(pos)[0].as_vec3();
         let mut sites = VoidStoneSites::new();
         sites.scan(&edits, &geometry, near);
-        assert_eq!(sites.centers().len(), 1);
-        assert!(sites.centers()[0].distance(near) < geometry.block_height as f32 * 2.0);
+        assert_eq!(sites.sites().len(), 1);
+        let site = sites.sites()[0];
+        let h = geometry.block_height as f32;
+        assert!(site.center.distance(near) < h * 2.0);
+        // Le haut du bloc suit la verticale de la planète, sur une hauteur de bloc
+        assert!((site.edges[1].length() - h).abs() < h * 0.05, "{:?}", site.edges);
+        assert!(site.edges[1].normalize().dot(site.center.normalize()) > 0.99);
+        assert!(site.edges[0].normalize().dot(site.edges[1].normalize()).abs() < 0.1);
         // Trop loin : rien
         sites.scan(&edits, &geometry, near * 2.0);
-        assert!(sites.centers().is_empty());
+        assert!(sites.sites().is_empty());
     }
 }

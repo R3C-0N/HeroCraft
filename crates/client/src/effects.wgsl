@@ -16,9 +16,14 @@ const KIND_ARC: u32 = 2u;
 const KIND_DOME: u32 = 3u;
 const KIND_BEAM: u32 = 4u;
 const KIND_DISC: u32 = 5u;
+// Pierre du Néant posée : le quadrilatère est tourné vers l'œil par le vertex shader, et le
+// fragment retrouve le cristal par lancer de rayon dans le repère du bloc
 const KIND_VOID: u32 = 6u;
-// Taille du quadrilatère d'une fenêtre sur le néant, rapportée à la fenêtre (son ombre déborde)
-const VOID_FRAME: f32 = 1.5;
+// Rayon de la sphère qui enveloppe le cristal, en hauteurs de bloc
+const STONE_RADIUS: f32 = 0.6;
+// Demi-largeur et demi-hauteur de la fenêtre, en blocs (le cristal fait 5/16 et 8/16)
+const STONE_HALF_U: f32 = 0.3125;
+const STONE_HALF_V: f32 = 0.5;
 const NO_TEXTURE: u32 = 255u;
 
 struct VertexOutput {
@@ -34,6 +39,11 @@ struct VertexOutput {
     @location(4) half_angle: f32,
     // Position dans le monde (avant aplatissement), pour la fenêtre sur le néant
     @location(5) world: vec3<f32>,
+    // Pierre du Néant : coin du bloc et lignes de l'inverse de son repère (arêtes du bloc)
+    @location(6) @interpolate(flat) stone_origin: vec3<f32>,
+    @location(7) @interpolate(flat) stone_r0: vec3<f32>,
+    @location(8) @interpolate(flat) stone_r1: vec3<f32>,
+    @location(9) @interpolate(flat) stone_r2: vec3<f32>,
 };
 
 @vertex
@@ -54,8 +64,37 @@ fn vs_effect(
         case 5u: { q = vec2<f32>(-1.0, 1.0); }
         default: {}
     }
-    let p = center.xyz + axis_u.xyz * q.x + axis_v.xyz * q.y;
+    var p = center.xyz + axis_u.xyz * q.x + axis_v.xyz * q.y;
     var out: VertexOutput;
+    out.stone_origin = vec3<f32>(0.0);
+    out.stone_r0 = vec3<f32>(0.0);
+    out.stone_r1 = vec3<f32>(0.0);
+    out.stone_r2 = vec3<f32>(0.0);
+    if (u32(center.w + 0.5) == KIND_VOID) {
+        // Arêtes du bloc : x et z dans les demi-axes, le haut dans la couleur
+        let ax = axis_u.xyz;
+        let ay = color.xyz;
+        let az = axis_v.xyz;
+        let c = center.xyz;
+        let to_c = c - camera.camera_pos;
+        let dist = length(to_c);
+        let f = to_c / max(dist, 1e-6);
+        let radius = STONE_RADIUS * length(ay);
+        var v = normalize(ay) - f * dot(normalize(ay), f);
+        if (length(v) < 1e-4) {
+            v = normalize(ax);
+        }
+        v = normalize(v);
+        let u = cross(v, f);
+        // Devant le cristal, assez grand pour couvrir sa silhouette ; rien si l'œil est dedans
+        let size = select(0.0, radius, dist > radius * 1.2);
+        p = c - f * radius + (u * q.x + v * q.y) * size;
+        let det = dot(ax, cross(ay, az));
+        out.stone_origin = c - (ax + ay + az) * 0.5;
+        out.stone_r0 = cross(ay, az) / det;
+        out.stone_r1 = cross(az, ax) / det;
+        out.stone_r2 = cross(ax, ay) / det;
+    }
     out.quad = q;
     out.color = color;
     out.kind = vec2<u32>(u32(center.w + 0.5), u32(extra.x + 0.5));
@@ -105,6 +144,81 @@ fn void_sky(dir: vec3<f32>, time: f32) -> vec3<f32> {
     return c;
 }
 
+// La fenêtre sur le néant d'une Pierre posée, comme dans la maquette validée : le rayon de l'œil
+// retrouve la face du cristal qu'il touche ; chaque texel de cette face prend sa part d'un
+// losange tourné vers l'œil. Dedans, le néant ; autour, une ombre qui boit la lumière du cristal
+// et s'efface en fondu, au bord qui ondule. La coque elle-même vient du terrain, dessous.
+fn stone_window(in: VertexOutput) -> vec4<f32> {
+    let time = in.params.x;
+    let dir = normalize(in.world - camera.camera_pos);
+    let o = camera.camera_pos - in.stone_origin;
+    // Repère du bloc, en seizièmes : le cristal y est fait de boîtes alignées
+    let ro = vec3<f32>(dot(in.stone_r0, o), dot(in.stone_r1, o), dot(in.stone_r2, o)) * 16.0;
+    let rd = vec3<f32>(dot(in.stone_r0, dir), dot(in.stone_r1, dir), dot(in.stone_r2, dir)) * 16.0;
+    // Les boîtes de `assets/blocks/voidStonePlaced.json`
+    var lo = array<vec3<f32>, 8>(
+        vec3<f32>(6.0, 0.0, 6.0), vec3<f32>(5.0, 2.0, 5.0), vec3<f32>(4.0, 4.0, 4.0), vec3<f32>(3.0, 6.0, 3.0),
+        vec3<f32>(3.0, 8.0, 3.0), vec3<f32>(4.0, 10.0, 4.0), vec3<f32>(5.0, 12.0, 5.0), vec3<f32>(6.0, 14.0, 6.0),
+    );
+    var hi = array<vec3<f32>, 8>(
+        vec3<f32>(10.0, 2.0, 10.0), vec3<f32>(11.0, 4.0, 11.0), vec3<f32>(12.0, 6.0, 12.0), vec3<f32>(13.0, 8.0, 13.0),
+        vec3<f32>(13.0, 10.0, 13.0), vec3<f32>(12.0, 12.0, 12.0), vec3<f32>(11.0, 14.0, 11.0), vec3<f32>(10.0, 16.0, 10.0),
+    );
+    let inv = 1.0 / select(rd, vec3<f32>(1e-6), abs(rd) < vec3<f32>(1e-6));
+    var best = 1e30;
+    var axis = -1;
+    for (var i = 0; i < 8; i++) {
+        let t0 = (lo[i] - ro) * inv;
+        let t1 = (hi[i] - ro) * inv;
+        let mn = min(t0, t1);
+        let mx = max(t0, t1);
+        let tn = max(max(mn.x, mn.y), mn.z);
+        let tf = min(min(mx.x, mx.y), mx.z);
+        if (tn < tf && tn > 0.0 && tn < best) {
+            best = tn;
+            axis = select(select(2, 1, mn.y >= mn.z), 0, mn.x >= mn.y && mn.x >= mn.z);
+        }
+    }
+    if (axis < 0) {
+        discard;
+    }
+    // Le point touché, ramené au centre de son texel sur la face
+    let hit = ro + rd * best;
+    var snapped = floor(hit + 1e-3) + 0.5;
+    if (axis == 0) {
+        snapped.x = hit.x;
+    } else if (axis == 1) {
+        snapped.y = hit.y;
+    } else {
+        snapped.z = hit.z;
+    }
+    let rel = snapped / 16.0 - vec3<f32>(0.5);
+    let to_eye = normalize(-(ro / 16.0 - vec3<f32>(0.5)));
+    // Losange face à l'œil, droit sur le haut du bloc
+    var v = vec3<f32>(0.0, 1.0, 0.0) - to_eye * to_eye.y;
+    if (length(v) < 1e-4) {
+        v = vec3<f32>(0.0, 0.0, 1.0);
+    }
+    v = normalize(v);
+    let u = cross(v, -to_eye);
+    let qu = dot(rel, u) / STONE_HALF_U;
+    let qv = dot(rel, v) / STONE_HALF_V;
+    let m = abs(qu) + abs(qv);
+    let ang = atan2(qu, qv);
+    let edge = 0.66 + 0.16 * void_noise(vec3<f32>(cos(ang) * 3.0, sin(ang) * 3.0, time * 0.8));
+    if (m < edge) {
+        // Une lueur violette sourde monte du fond vers le bord, par paliers
+        let deep = pow(clamp(floor((m - 0.15) / max(edge - 0.15, 0.01) * 4.0) / 4.0, 0.0, 1.0), 4.0);
+        return vec4<f32>(void_sky(dir, time) + vec3<f32>(0.12, 0.03, 0.30) * deep, 1.0);
+    }
+    let x = clamp((m - edge) / 0.34, 0.0, 1.0);
+    let shadow = 0.92 * (1.0 - x * x * (3.0 - 2.0 * x));
+    if (shadow <= 0.002) {
+        discard;
+    }
+    return vec4<f32>(vec3<f32>(0.01, 0.0, 0.03) * shadow, shadow);
+}
+
 fn sample_layer(layer: u32, q: vec2<f32>, rotation: f32) -> vec4<f32> {
     let c = cos(rotation);
     let s = sin(rotation);
@@ -118,6 +232,9 @@ fn fs_effect(in: VertexOutput) -> @location(0) vec4<f32> {
     let q = in.quad;
     let d = length(q);
     let kind = in.kind.x;
+    if (kind == KIND_VOID) {
+        return stone_window(in);
+    }
     let layer = in.kind.y;
     var shape = 0.0;
     var tint = vec3<f32>(1.0);
@@ -172,22 +289,6 @@ fn fs_effect(in: VertexOutput) -> @location(0) vec4<f32> {
                 shape *= t.a;
                 tint = t.rgb;
             }
-        }
-        case KIND_VOID: {
-            // Le quadrilatère déborde de la fenêtre (`VOID_FRAME`) : au-delà du bord, une ombre
-            // assombrit le cristal en approchant, comme si le néant buvait sa lumière
-            let m = (abs(q.x) + abs(q.y)) * VOID_FRAME;
-            // Bord rongé qui ondule lentement, comme une déchirure vivante
-            let ang = atan2(q.x, q.y);
-            let edge = 0.84 + 0.14 * void_noise(vec3<f32>(cos(ang) * 3.0, sin(ang) * 3.0, in.params.x * 0.8));
-            let inside = 1.0 - smoothstep(edge - 0.03, edge, m);
-            let shadow = (1.0 - smoothstep(edge, edge + 0.45, m)) * 0.85;
-            shape = max(inside, shadow);
-            let dir = normalize(in.world - camera.camera_pos);
-            // Une lueur violette sourde monte du fond vers le bord, sans liseré
-            let deep = pow(clamp((m - 0.5) / max(edge - 0.5, 0.01), 0.0, 1.0), 2.0);
-            let sky = void_sky(dir, in.params.x) + vec3<f32>(0.12, 0.03, 0.30) * deep;
-            tint = mix(vec3<f32>(0.01, 0.0, 0.03), sky, inside / max(shape, 1e-4));
         }
         default: {}
     }
