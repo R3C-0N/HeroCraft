@@ -156,6 +156,14 @@ Dans un monde qui peine encore à se relever d'une apocalypse ancienne, des indi
 * **Où est la ville :** au même endroit que la ruine (Mat, 19/11/2026). Dans le passé, la ville fermée se dessine autour du temple, sur le terrain réel ; au réveil, le joueur retrouve le même lieu en ruine.
 * **La ville au présent :** il n'en reste rien (Mat, 19/11/2026). Au réveil, seul le temple en ruine se dresse sur le terrain ; la ville n'existe plus que dans la vision.
 
+### L'ouverture de la vision : l'assaut et l'éclat (Mat, 19/11/2026)
+* **Arrivée par l'extérieur, en assaut.** La vision commence devant les murailles, au milieu de l'armée qui assiège la ville. Le rempart a une vraie porte.
+* **La porte se referme sur le joueur.** Au passage, un écran de fumée cache le joueur, qui disparaît et réapparaît à sa place dans la ville ; la porte est refermée derrière lui. En multijoueur, chacun est ainsi replacé sans téléportation visible.
+* **Les arènes vivantes.** Pas de foule simulée : lors des mini-boss, les soldats alliés et ennemis s'écartent et forment un cercle qui repousse **tout le monde** (héros et mini-boss) vers le centre.
+* **Le tutoriel, vécu en solo.** L'ancien héros incarné n'est d'abord qu'un soldat parmi les autres, en équipement standard (fer), avec les compétences les plus basiques. L'armée se prépare, la charge finale va commencer.
+* **L'éclat.** Le héros entend un éclat de la Pierre du Néant. Le temps semble s'arrêter, tout se teinte de violet, avec des effets du Néant (à décider). Il se déplace entre les soldats figés (tuto déplacement) et trouve une roche luisante d'un éclat violet. Il ouvre son inventaire pour y prendre une pioche (tuto inventaire) et brise la roche (tuto outils). En ramassant l'éclat qui en sort, des rayons de lumière jaillissent du contact : le simple soldat devient un héros et ses premières compétences s'ouvrent.
+* **La charge.** Puis tout le monde charge.
+
 ### SECRET DE LA BIBLE : les Pierres gardent la mémoire des héros (Mat, 17/11/2026)
 * Les héros ont initialement eu leur pouvoir des Pierres. Ils y ont donc été liés, et les Pierres abritent leur mémoire.
 * Toucher une Pierre ne donne pas automatiquement ses pouvoirs. Il faut que la mémoire du héros puisse se lier à celui qui la touche, et pour cela il doit être un **descendant du héros de la Pierre**.
