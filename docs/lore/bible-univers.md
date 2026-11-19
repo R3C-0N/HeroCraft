@@ -153,6 +153,7 @@ Dans un monde qui peine encore à se relever d'une apocalypse ancienne, des indi
 * **Le combat final :** il a lieu dans une **arène à l'entrée du temple**, contre un **monstre du Néant**. Les monstres seront choisis plus tard.
 * **Qui sont ces monstres :** ce ne sont pas des membres du Cercle des anciens héros. Ce sont des **héros de chaque nation, transformés après avoir absorbé une Pierre du Néant**.
 * **Conséquence pour le temple :** il comporte, devant son entrée, une zone qui sert d'arène.
+* **Où est la ville :** au même endroit que la ruine (Mat, 19/11/2026). Dans le passé, la ville fermée se dessine autour du temple, sur le terrain réel ; au réveil, le joueur retrouve le même lieu en ruine.
 
 ### SECRET DE LA BIBLE : les Pierres gardent la mémoire des héros (Mat, 17/11/2026)
 * Les héros ont initialement eu leur pouvoir des Pierres. Ils y ont donc été liés, et les Pierres abritent leur mémoire.

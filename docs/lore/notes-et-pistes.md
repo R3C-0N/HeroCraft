@@ -144,6 +144,7 @@ Problème soulevé par Mat : « le seul héros qui veut plus de pouvoir cause la
 - Activer le sanctuaire du temple en ruine projette dans les souvenirs : une ville en guerre dont on ne peut pas sortir, avec des ennemis partout.
 - Des missions (à définir) mènent pas à pas au temple, au centre de la ville. Le combat final a lieu dans une arène à l'entrée du temple, contre un monstre du Néant (à choisir).
 - Ces monstres sont des héros des nations transformés après avoir absorbé une Pierre du Néant, et non des membres du Cercle.
+- 19/11 : Mat choisit de placer la ville au même endroit que la ruine. Dans le passé, elle entoure le temple sur le terrain réel ; au présent, le même lieu est en ruine.
 
 ### Questions ouvertes par la ville-souvenir
 36. **Les héros des nations et les Pierres.** Si un héros d'une nation absorbe une Pierre sans en être le descendant, il devient un monstre du Néant. Est-ce la règle (le « prix à payer » de la section 4) ?
