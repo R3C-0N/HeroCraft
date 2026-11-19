@@ -264,6 +264,8 @@ fn main() {
     let mut dropped_items = dropped_items::DroppedItems::new();
     // Pierres du Néant obtenues, touchées ou absorbées dans l'image (voir `void_stones::dispatch`)
     let mut stone_events = herocraft_common::StoneEvents::new();
+    // Pierres du Néant posées près du joueur : leur fenêtre sur le néant et leurs poussières
+    let mut void_sites = void_stones::VoidStoneSites::new();
     let game_start = Instant::now();
     let mut last_autosave = Instant::now();
     let mut last_mouse_pos = (0.0_f64, 0.0_f64);
@@ -1131,6 +1133,11 @@ fn main() {
                                 let projectile_at = |id: u64| shots.projectile_at(id);
                                 let world = effects::AnchorWorld { hero: hero_anchors, hero_forward, players: &players, creatures: &creature_feet, projectiles: &projectile_at, eye: camera.eye_position(), block };
                                 skill_effects.update(anim_dt, &world, &mut effect_quads);
+                            }
+                            {
+                                let geometry = herocraft_world::BlockGeometry::new(camera.base_radius as f64);
+                                void_sites.update(anim_dt, lod_manager.terrain_edits(), &geometry, camera.player_pos);
+                                void_sites.push_quads(game_start.elapsed().as_secs_f32(), camera.eye_position(), block, &mut effect_quads);
                             }
                             state.update_effects(&effect_quads);
                             state.set_creature_frame(&frame);

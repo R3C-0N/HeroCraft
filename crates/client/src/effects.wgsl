@@ -16,6 +16,7 @@ const KIND_ARC: u32 = 2u;
 const KIND_DOME: u32 = 3u;
 const KIND_BEAM: u32 = 4u;
 const KIND_DISC: u32 = 5u;
+const KIND_VOID: u32 = 6u;
 const NO_TEXTURE: u32 = 255u;
 
 struct VertexOutput {
@@ -29,6 +30,8 @@ struct VertexOutput {
     @location(3) params: vec4<f32>,
     // Demi-angle d'un arc
     @location(4) half_angle: f32,
+    // Position dans le monde (avant aplatissement), pour la fenêtre sur le néant
+    @location(5) world: vec3<f32>,
 };
 
 @vertex
@@ -56,8 +59,48 @@ fn vs_effect(
     out.kind = vec2<u32>(u32(center.w + 0.5), u32(extra.x + 0.5));
     out.params = vec4<f32>(axis_u.w, axis_v.w, extra.y, extra.z);
     out.half_angle = extra.z;
+    out.world = p;
     out.clip_position = camera.view_proj * vec4<f32>(flatten_point(p).pos, 1.0);
     return out;
+}
+
+fn void_hash(p: vec3<f32>) -> f32 {
+    let q = fract(p * vec3<f32>(0.1031, 0.1030, 0.0973));
+    let r = q + dot(q, q.yxz + 33.33);
+    return fract((r.x + r.y) * r.z);
+}
+
+fn void_noise(p: vec3<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+    let a = mix(mix(void_hash(i), void_hash(i + vec3<f32>(1.0, 0.0, 0.0)), u.x), mix(void_hash(i + vec3<f32>(0.0, 1.0, 0.0)), void_hash(i + vec3<f32>(1.0, 1.0, 0.0)), u.x), u.y);
+    let b = mix(mix(void_hash(i + vec3<f32>(0.0, 0.0, 1.0)), void_hash(i + vec3<f32>(1.0, 0.0, 1.0)), u.x), mix(void_hash(i + vec3<f32>(0.0, 1.0, 1.0)), void_hash(i + vec3<f32>(1.0, 1.0, 1.0)), u.x), u.y);
+    return mix(a, b, u.z);
+}
+
+// Le néant vu dans la direction `dir` : un noir profond, des brumes violettes qui dérivent et
+// des étoiles qui scintillent. Ne dépend que de la direction : il reste fixe dans le monde, et
+// on le voit défiler derrière la Pierre en tournant autour, comme par une fenêtre.
+fn void_sky(dir: vec3<f32>, time: f32) -> vec3<f32> {
+    var c = vec3<f32>(0.004, 0.0, 0.012);
+    let drift = vec3<f32>(time * 0.03, time * 0.017, -time * 0.021);
+    let mist = void_noise(dir * 3.0 + drift) * 0.6 + void_noise(dir * 7.0 - drift) * 0.4;
+    c += vec3<f32>(0.10, 0.02, 0.22) * pow(mist, 3.0);
+    for (var k = 0; k < 2; k++) {
+        let scale = select(90.0, 45.0, k == 0);
+        let p = dir * scale;
+        let cell = floor(p);
+        let h = void_hash(cell + f32(k) * 17.0);
+        if (h > 0.93) {
+            let star = cell + 0.5 + (vec3<f32>(void_hash(cell + 3.1), void_hash(cell + 7.7), void_hash(cell + 11.3)) - 0.5) * 0.5;
+            let d = length(p - star);
+            let twinkle = 0.6 + 0.4 * sin(time * (2.0 + h * 5.0) + h * 40.0);
+            let tint = mix(vec3<f32>(0.75, 0.6, 1.0), vec3<f32>(1.0), h);
+            c += tint * (1.0 - smoothstep(0.0, 0.22, d)) * twinkle * select(1.6, 3.0, k == 0);
+        }
+    }
+    return c;
 }
 
 fn sample_layer(layer: u32, q: vec2<f32>, rotation: f32) -> vec4<f32> {
@@ -127,6 +170,14 @@ fn fs_effect(in: VertexOutput) -> @location(0) vec4<f32> {
                 shape *= t.a;
                 tint = t.rgb;
             }
+        }
+        case KIND_VOID: {
+            // Losange aux bords fondus, cerclé d'un liseré violet qui luit
+            let m = abs(q.x) + abs(q.y);
+            shape = 1.0 - smoothstep(0.88, 1.0, m);
+            let dir = normalize(in.world - camera.camera_pos);
+            let rim = smoothstep(0.55, 0.95, m);
+            tint = void_sky(dir, in.params.x) + vec3<f32>(0.45, 0.15, 1.1) * rim * rim;
         }
         default: {}
     }

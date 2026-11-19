@@ -3,6 +3,9 @@
 
     python3 tools/icones_pierres_du_neant.py
 
+Écrit aussi la texture du bloc posé, `assets/blocks/textures/PierreDuNeant.png` (facettes
+sombres veinées de violet).
+
 Écrit `assets/items/icones/voidStone.png` (la Pierre entière : un cristal à facettes, noir
 violacé, au cœur lumineux) et `assets/items/icones/voidStoneFragment.png` (un petit éclat brisé).
 """
@@ -63,6 +66,26 @@ FRAGMENT = [
 ]
 
 
+TEXTURE_BLOC = [
+    "dddmmmdd#ddmmmdd",
+    "ddmmlmmd#dmmlmmd",
+    "dmmlhlmmddmlhlmm",
+    "mmlvvlmmdmmlvlmm",
+    "mlvcvlmd#mlvvlmd",
+    "dmlvlmmd#dmmlmmd",
+    "ddmmmmdd##ddmmdd",
+    "##dddd######dddd",
+    "dddmmmdd#ddmmmdd",
+    "ddmmlmmddddmlmmd",
+    "dmmlvlmd#dmlvlmm",
+    "mmlvcvlmdmlvcvlm",
+    "mmmlvlmd#dmlvlmm",
+    "dmmmlmmd#ddmlmmd",
+    "ddmmmmdd##ddmmdd",
+    "#dddd########ddd",
+]
+
+
 def dessine(motif):
     image = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
     for y, ligne in enumerate(motif):
@@ -77,4 +100,5 @@ if __name__ == "__main__":
     ICONES.mkdir(parents=True, exist_ok=True)
     dessine(PIERRE).save(ICONES / "voidStone.png", optimize=True)
     dessine(FRAGMENT).save(ICONES / "voidStoneFragment.png", optimize=True)
-    print("Icônes écrites dans", ICONES)
+    dessine(TEXTURE_BLOC).save(ICONES.parent.parent / "blocks/textures/PierreDuNeant.png", optimize=True)
+    print("Icônes écrites dans", ICONES, "et texture du bloc posé")
