@@ -1,0 +1,9 @@
+{
+  "numeric_id": 129,
+  "name": "Roche du néant",
+  "description": "Une roche noire et violacée, dure comme le diamant. Rien à voir avec les Pierres du Néant des légendes, sinon la couleur.",
+  "category": "Minéraux",
+  "hardness": 40,
+  "color": {"side": "#311f3d"},
+  "textures": {"side": "textures/VoidStone.png"}
+}

@@ -49,6 +49,8 @@ pub struct Cinematics {
     world: Option<std::path::PathBuf>,
 }
 
+/// Émis par `fin-de-la-vision` : la Pierre obtenue est absorbée
+pub const VISION_ENDED: &str = "vision_ended";
 /// Événement envoyé une fois, à la première image du jeu (la Genèse s'y joue)
 pub const LAUNCH_EVENT: &str = "game_launched";
 

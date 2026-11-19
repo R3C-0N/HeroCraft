@@ -29,6 +29,9 @@ pub enum Command {
     Planet(Option<u64>),
     /// Donne `count` exemplaires d'un bloc ou d'un objet (identifiant de sa fiche)
     Give { item: String, count: u16 },
+    /// Pose `count` exemplaires d'un bloc ou d'un objet au sol, devant le joueur (pour essayer
+    /// le ramassage, une Pierre du Néant par exemple)
+    Drop { item: String, count: u16 },
     /// Vole ou cesse de voler
     Fly,
     /// Multiplicateur de vitesse de déplacement
@@ -75,6 +78,7 @@ pub const COMMANDS: &[CommandHelp] = &[
     CommandHelp { name: "seed", usage: "/seed", description: "Show the planet seed" },
     CommandHelp { name: "planet", usage: "/planet [seed]", description: "Generate a new planet, random or from a seed (single player only)" },
     CommandHelp { name: "give", usage: "/give <item> [count]", description: "Put blocks or items in your inventory (Tab completes the name)" },
+    CommandHelp { name: "drop", usage: "/drop <item> [count]", description: "Drop blocks or items on the ground in front of you (Tab completes the name)" },
     CommandHelp { name: "fly", usage: "/fly", description: "Toggle flight" },
     CommandHelp { name: "speed", usage: "/speed <factor>", description: "Movement speed multiplier (1 = normal, up to 20)" },
     CommandHelp { name: "summon", usage: "/summon <creature> [count]", description: "Spawn creatures in front of you" },
@@ -90,6 +94,8 @@ pub const COMMANDS: &[CommandHelp] = &[
 /// Exemplaires au plus d'un `/give`, de créatures d'un `/summon`, et vitesse maximale
 pub const MAX_GIVE: u16 = 64 * 36;
 pub const MAX_SUMMON: u32 = 20;
+/// Exemplaires au plus d'un `/drop`
+pub const MAX_DROP: u16 = 64;
 pub const MAX_SPEED: f32 = 20.0;
 pub const MAX_XP: u64 = 1_000_000;
 
@@ -132,6 +138,13 @@ pub fn parse(line: &str) -> Result<Command, String> {
                 None => 1,
             };
             Command::Give { item: item.to_string(), count }
+        }
+        ("drop", [item, rest @ ..]) if rest.len() <= 1 => {
+            let count = match rest.first() {
+                Some(n) => n.parse::<u16>().ok().filter(|n| (1..=MAX_DROP).contains(n)).ok_or_else(|| wrong(&format!("Invalid count \"{n}\" (1 to {MAX_DROP})")))?,
+                None => 1,
+            };
+            Command::Drop { item: item.to_string(), count }
         }
         ("fly", []) => Command::Fly,
         ("speed", [factor]) => {
@@ -226,7 +239,7 @@ pub fn complete(line: &str, sources: &CompletionSources) -> Vec<String> {
     let candidates: Vec<String> = match before {
         [] => COMMANDS.iter().map(|c| c.name.to_string()).collect(),
         [command] => match command.to_lowercase().as_str() {
-            "give" => sources.items.to_vec(),
+            "give" | "drop" => sources.items.to_vec(),
             "summon" => sources.creatures.to_vec(),
             "cast" => herocraft_common::skills().iter().filter(|s| s.is_castable()).map(|s| s.id.clone()).collect(),
             "tp" | "teleport" => sources.players.to_vec(),
@@ -338,6 +351,8 @@ mod tests {
         assert_eq!(parse("/weather pluie"), Ok(Command::Weather(Some(Some(WeatherKind::Rain)))));
         assert_eq!(parse("/weather auto"), Ok(Command::Weather(Some(None))));
         assert!(parse("/weather hail").is_err());
+        assert_eq!(parse("/drop voidStone"), Ok(Command::Drop { item: "voidStone".into(), count: 1 }));
+        assert!(parse("/drop voidStone 65").unwrap_err().contains("1 to 64"));
         assert_eq!(parse("/season winter"), Ok(Command::Season(Some(herocraft_world::Season::Winter))));
         assert!(parse("/season monsoon").is_err());
         let sources = CompletionSources { items: &[], creatures: &[], players: &[], cinematics: &[] };

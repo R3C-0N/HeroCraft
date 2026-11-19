@@ -1,0 +1,8 @@
+{
+  "numeric_id": 17000,
+  "name": "Pierre du Néant",
+  "description": "Un cristal tombé du ciel aux premiers jours du monde. Il garde la mémoire du héros qui s'y est lié, et murmure à qui le touche.",
+  "category": "Artefacts",
+  "max_stack": 1,
+  "icon": "icones/voidStone.png"
+}
