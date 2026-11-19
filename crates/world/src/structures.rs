@@ -24,6 +24,7 @@ use herocraft_common::{BlockId, PlanetFace};
 
 use crate::culture::Culture;
 use crate::generator::{BiomeType, PlanetWorldGenerator, SEA_LEVEL_BLOCKS};
+use crate::temples::Epoch;
 
 /// Côté d'une case de structures, en blocs : le plus grand plan (une ville) y tient
 pub const CELL: i32 = 128;
@@ -290,13 +291,13 @@ impl Rect {
 
     /// La colonne est sur le pourtour
     #[inline]
-    fn on_edge(&self, x: i32, z: i32) -> bool {
+    pub fn on_edge(&self, x: i32, z: i32) -> bool {
         x == self.x0 || x == self.x1 - 1 || z == self.z0 || z == self.z1 - 1
     }
 
     /// La colonne est un coin
     #[inline]
-    fn on_corner(&self, x: i32, z: i32) -> bool {
+    pub fn on_corner(&self, x: i32, z: i32) -> bool {
         (x == self.x0 || x == self.x1 - 1) && (z == self.z0 || z == self.z1 - 1)
     }
 }
@@ -1406,68 +1407,627 @@ impl RuinHouse {
     }
 }
 
-/// Temple en ruine : un podium de pierre taillée, des colonnes dont beaucoup sont brisées, un autel
+/// Temple rond : une enceinte circulaire dont l'intérieur sert d'arène, et au fond, derrière un mur
+/// courbe bombé vers l'arène, un sanctuaire fermé où l'autel se dresse sous un puits de lumière.
+/// Une base haute fait le tour de l'enceinte (on n'entre que par l'avant) ; des colonnes posées
+/// dessus, un peu plus hautes vers le fond, sont reliées par une couronne ; autour du sanctuaire,
+/// le tour devient un mur plein qui monte jusqu'à la couronne.
+///
+/// Au présent, c'est une ruine : base et colonnes brisées, couronne et toit tombés, dalles envahies
+/// d'herbe, la Pierre cachée sous l'autel. Dans le passé (`temples`), le même temple est intact et
+/// tenu en guerre par un peuple. Les deux époques occupent exactement les mêmes colonnes.
 #[derive(Debug, Clone, Copy)]
 pub struct Temple {
-    pub foot: Rect,
-    /// Dessus du podium (premier bloc d'air)
+    /// Colonne du centre de l'enceinte
+    pub center: (i32, i32),
+    /// Rayon de l'enceinte, base comprise
+    pub radius: i32,
+    /// Côté de l'entrée
+    pub door: Side,
+    /// Sol de l'arène (premier bloc d'air au-dessus du dallage)
     pub floor: i32,
+    /// Sol naturel devant l'entrée (premier bloc d'air), là où descend l'escalier
+    pub forecourt: i32,
     pub seed: u64,
 }
 
 impl Temple {
-    const COLUMN_HEIGHT: i32 = 6;
+    /// Hauteur de la base qui fait le tour de l'enceinte
+    const BASE: i32 = 3;
+    /// Niveau de la couronne à l'entrée ; elle monte de `CROWN_RISE` vers le fond
+    const CROWN_LOW: i32 = 5;
+    const CROWN_RISE: i32 = 3;
+    /// Demi-largeur de l'entrée et de la porte du sanctuaire
+    const GATE: i32 = 1;
+    /// Niveau du toit du sanctuaire, celui de la couronne au fond
+    const ROOF: i32 = Self::CROWN_LOW + Self::CROWN_RISE;
+    /// Marches de l'escalier de l'entrée, au plus
+    const STEPS_MAX: i32 = 4;
+    /// Hauteur du podium sur lequel se dresse le temple, au-dessus du sol naturel moyen
+    const PODIUM: i32 = 2;
+    /// Profondeur et demi-largeur du parvis, au pied de l'escalier
+    const PARVIS_DEPTH: i32 = 5;
+    const PARVIS_HALF: i32 = 5;
 
-    fn column_height(&self, x: i32, z: i32) -> Option<i32> {
-        let inner = self.foot.expand(-1);
-        let (dx, dz) = (x - inner.x0, z - inner.z0);
-        if !inner.on_edge(x, z) || dx % 2 != 0 || dz % 2 != 0 {
-            return None;
-        }
-        let r = unit(hash2(self.seed ^ 0x7e, x, z));
-        Some(if r < 0.35 { Self::COLUMN_HEIGHT } else if r < 0.85 { 1 + (r * 37.0) as i32 % (Self::COLUMN_HEIGHT - 1) } else { 0 })
+    /// Côté de l'entrée
+    pub fn door(&self) -> Side {
+        self.door
     }
 
-    fn block(&self, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
-        let f = self.floor;
-        let foot = &self.foot;
-        if y < f - 2 {
+    /// Colonnes de l'enceinte seule, sans l'escalier ni le parvis
+    fn enclosure(&self) -> Rect {
+        Rect::around(self.center.0, self.center.1, self.radius + 1)
+    }
+
+    /// Toutes les colonnes que le temple change : l'enceinte, et devant l'entrée la place de
+    /// l'escalier le plus long et du parvis
+    pub fn rect(&self) -> Rect {
+        let far = -self.radius - Self::STEPS_MAX - Self::PARVIS_DEPTH;
+        let (ax, az) = self.world(-Self::PARVIS_HALF, far);
+        let (bx, bz) = self.world(Self::PARVIS_HALF, far);
+        self.enclosure().union(&Rect::new(ax.min(bx), az.min(bz), ax.max(bx) + 1, az.max(bz) + 1))
+    }
+
+    /// Marches de l'escalier qui descend de l'entrée jusqu'au parvis
+    fn steps(&self) -> i32 {
+        (self.floor - self.forecourt).clamp(0, Self::STEPS_MAX)
+    }
+
+    /// Sol du parvis (premier bloc d'air au-dessus du dallage)
+    pub fn parvis_floor(&self) -> i32 {
+        self.floor - self.steps()
+    }
+
+    /// Colonne (x, z) dans le repère du temple : `u` en travers de l'axe, `v` le long de l'axe, de
+    /// `-radius` (l'entrée) à `radius` (le fond)
+    fn local(&self, x: i32, z: i32) -> (i32, i32) {
+        let (a, b) = (x - self.center.0, z - self.center.1);
+        let (dx, dz) = self.door.delta();
+        (dz * a - dx * b, -(dx * a + dz * b))
+    }
+
+    /// Colonne du monde d'un point (u, v) du repère du temple
+    fn world(&self, u: i32, v: i32) -> (i32, i32) {
+        let (dx, dz) = self.door.delta();
+        (self.center.0 - dx * v + dz * u, self.center.1 - dz * v - dx * u)
+    }
+
+    fn dist(u: i32, v: i32) -> f64 {
+        ((u * u + v * v) as f64).sqrt()
+    }
+
+    /// Le cercle du mur du sanctuaire : centre sur l'axe, au-delà du fond, et rayon. Le mur est
+    /// bombé vers l'arène et coupe l'axe au tiers de l'enceinte.
+    fn wall_circle(&self) -> (f64, f64) {
+        let r = self.radius as f64;
+        let c = r + 8.0;
+        (c, c - r / 3.0)
+    }
+
+    fn wall_dist(&self, u: i32, v: i32) -> f64 {
+        let (c, _) = self.wall_circle();
+        ((u * u) as f64 + (v as f64 - c).powi(2)).sqrt()
+    }
+
+    /// Le tour de l'enceinte (base, colonnes, couronne)
+    fn on_ring(&self, u: i32, v: i32) -> bool {
+        let d = Self::dist(u, v);
+        let r = self.radius as f64;
+        d > r - 1.5 && d <= r + 0.5
+    }
+
+    /// Dans l'enceinte, en deçà du tour
+    fn inside(&self, u: i32, v: i32) -> bool {
+        Self::dist(u, v) <= self.radius as f64 - 1.5
+    }
+
+    /// Dans la salle du sanctuaire (en deçà de son mur)
+    fn in_sanctum_local(&self, u: i32, v: i32) -> bool {
+        self.inside(u, v) && self.wall_dist(u, v) < self.wall_circle().1 - 0.75
+    }
+
+    /// Sur le mur courbe du sanctuaire
+    fn on_sanctum_wall(&self, u: i32, v: i32) -> bool {
+        self.inside(u, v) && (self.wall_dist(u, v) - self.wall_circle().1).abs() <= 0.75
+    }
+
+    /// Le tour autour du sanctuaire, qui devient un mur plein jusqu'à la couronne
+    fn ring_of_sanctum(&self, u: i32, v: i32) -> bool {
+        self.on_ring(u, v) && self.wall_dist(u, v) < self.wall_circle().1 + 0.75
+    }
+
+    /// La colonne (x, z) est dans la salle du sanctuaire
+    pub fn in_sanctum(&self, x: i32, z: i32) -> bool {
+        let (u, v) = self.local(x, z);
+        self.in_sanctum_local(u, v)
+    }
+
+    /// Niveau de la couronne (et du toit du sanctuaire) au-dessus du sol de l'arène
+    fn crown(&self, v: i32) -> i32 {
+        let t = (v + self.radius) as f64 / (2 * self.radius) as f64;
+        Self::CROWN_LOW + (Self::CROWN_RISE as f64 * t.clamp(0.0, 1.0)).round() as i32
+    }
+
+    /// Une colonne se dresse sur la base (une tous les trois blocs du tour)
+    fn is_column(&self, u: i32, v: i32) -> bool {
+        let s = (u as f64).atan2(v as f64) * self.radius as f64;
+        (s.round() as i32).rem_euclid(3) == 0
+    }
+
+    /// L'entrée, percée dans le tour à l'avant
+    fn is_gate(&self, u: i32, v: i32) -> bool {
+        v < 0 && u.abs() <= Self::GATE
+    }
+
+    /// Point (u, v) de l'autel : au centre du sanctuaire, sur l'axe
+    fn altar_local(&self) -> (i32, i32) {
+        let (c, rw) = self.wall_circle();
+        let front = (c - rw).ceil() as i32;
+        (0, (front + self.radius - 1) / 2)
+    }
+
+    /// Colonne de l'autel
+    pub fn altar(&self) -> (i32, i32) {
+        let (u, v) = self.altar_local();
+        self.world(u, v)
+    }
+
+    /// Centre de l'arène, entre l'entrée et le mur du sanctuaire
+    pub fn arena_center(&self) -> (i32, i32) {
+        let (c, rw) = self.wall_circle();
+        let front = (c - rw).floor() as i32;
+        self.world(0, (front - self.radius) / 2)
+    }
+
+    /// Colonne au bord du parvis, face à l'escalier de l'entrée
+    pub fn approach(&self) -> (i32, i32) {
+        self.world(0, -self.radius - self.steps() - Self::PARVIS_DEPTH)
+    }
+
+    /// Sol de l'escalier ou du parvis au point (u, v) devant l'entrée, et demi-largeur de cette
+    /// rangée ; `None` hors de l'escalier et du parvis
+    fn forecourt_at(&self, u: i32, v: i32) -> Option<(i32, i32)> {
+        let k = -self.radius - v;
+        let n = self.steps();
+        let (level, half) = if (1..=n).contains(&k) {
+            (self.floor - k, (2 + k).min(Self::PARVIS_HALF))
+        } else if k > n && k <= n + Self::PARVIS_DEPTH {
+            (self.floor - n, Self::PARVIS_HALF)
+        } else {
+            return None;
+        };
+        (u.abs() <= half).then_some((level, half))
+    }
+
+    /// Les deux braseros du parvis, de part et d'autre de l'axe : (u, v)
+    fn parvis_braziers(&self) -> [(i32, i32); 2] {
+        let v = -self.radius - self.steps() - 3;
+        [(-(Self::PARVIS_HALF - 1), v), (Self::PARVIS_HALF - 1, v)]
+    }
+
+    /// Bloc de l'escalier ou du parvis dont le sol est à `level`
+    #[allow(clippy::too_many_arguments)]
+    fn forecourt_block(&self, u: i32, v: i32, y: i32, ground: i32, level: i32, half: i32, holder: Option<Culture>, h: u64) -> Option<BlockId> {
+        let past = holder.is_some();
+        let masonry = holder.map(Masonry::of);
+        if y < level - 1 {
             return (y >= ground).then_some(HARD_STONE);
         }
-        if y < f {
-            // Podium de deux blocs, son rebord en dalles brisées
-            if y == f - 1 && foot.on_edge(x, z) && unit(hash2(self.seed ^ 0x33, x, z)) < 0.3 {
-                return Some(COBBLE_SLAB);
+        if y == level - 1 {
+            let paved = if u.abs() <= Self::GATE { WHITE_BRICK } else if u.abs() == half { COBBLE } else { CUT_STONE };
+            if past {
+                return Some(paved);
             }
-            return Some(CUT_STONE);
+            let roll = unit(mix(h ^ 0xF0));
+            return Some(if roll < 0.3 { GRASS } else if roll < 0.42 { GRAVEL } else { paved });
         }
-        let level = y - f;
-        if let Some(height) = self.column_height(x, z) {
-            if level < height {
-                return Some(CUT_STONE);
-            }
-            if level == height && height == Self::COLUMN_HEIGHT {
-                return Some(COBBLE_SLAB);
-            }
-        }
-        // Autel au milieu, un cristal posé dessus
-        let (cx, cz) = foot.center();
-        if (x, z) == (cx, cz) {
-            match level {
-                0 => return Some(CUT_STONE),
-                1 => return Some(CUT_CRYSTAL),
+        let [left, right] = self.parvis_braziers();
+        let lift = y - level;
+        if (u, v) == left || (u, v) == right {
+            match lift {
+                0 => return Some(masonry.map(|m| m.wall).unwrap_or(COBBLE)),
+                1 if past => return Some(masonry.map(|m| m.light).unwrap_or(LANTERN)),
                 _ => {}
             }
+            // Au présent, le brasero de droite est renversé
+            if !past && (u, v) == right && lift == 0 {
+                return (y < ground).then_some(BlockId::AIR);
+            }
         }
-        // Fûts tombés : des blocs de pierre taillée couchés au pied des colonnes brisées
-        if level == 0 && unit(hash2(self.seed ^ 0x99, x, z)) < 0.06 {
-            return Some(CUT_STONE);
+        if !past && lift == 0 && u == right.0 && (v == right.1 - 1 || v == right.1 - 2) {
+            return Some(COBBLE);
         }
         (y < ground).then_some(BlockId::AIR)
     }
 
-    fn top(&self) -> i32 {
-        self.floor + Self::COLUMN_HEIGHT + 1
+    /// Rayon de la mosaïque de l'arène
+    fn mosaic_radius(&self) -> i32 {
+        let (c, rw) = self.wall_circle();
+        let front = (c - rw).floor() as i32;
+        ((front + self.radius) / 2 - 2).min(7)
+    }
+
+    /// Dallage de l'arène en (u, v) : l'allée processionnelle sur l'axe, et autour du centre la
+    /// mosaïque du peuple (cercle extérieur rouge, bande sombre, cercle d'ornement, huit rayons et
+    /// l'emblème là où paraît le monstre). Au présent, elle est usée et fendue.
+    fn arena_paving(&self, u: i32, v: i32, trim: BlockId, past: bool, h: u64) -> BlockId {
+        let (_, av) = self.local(self.arena_center().0, self.arena_center().1);
+        let w = v - av;
+        let r = Self::dist(u, w);
+        let m = self.mosaic_radius() as f64;
+        let trim = if past { trim } else { CUT_STONE };
+        let tile = if r <= 1.5 {
+            trim
+        } else if (m - 0.5..m + 0.5).contains(&r) {
+            BRICK
+        } else if (m - 1.5..m - 0.5).contains(&r) {
+            BASALT
+        } else if (m - 2.5..m - 1.5).contains(&r) {
+            trim
+        } else if (r < m - 2.5 && (u == 0 || w == 0 || u.abs() == w.abs())) || (u.abs() <= Self::GATE && r >= m + 0.5) {
+            // Les rayons de la mosaïque, et l'allée processionnelle autour d'elle
+            WHITE_BRICK
+        } else {
+            CUT_STONE
+        };
+        if past {
+            return tile;
+        }
+        // La fente qui traverse la mosaïque
+        let a = unit(mix(self.seed ^ 0xF1)) * std::f64::consts::PI;
+        if r < m + 1.0 && (u as f64 * a.sin() - w as f64 * a.cos()).abs() < 0.6 {
+            return GRAVEL;
+        }
+        let roll = unit(h);
+        if roll < 0.3 {
+            GRASS
+        } else if roll < 0.42 {
+            GRAVEL
+        } else {
+            tile
+        }
+    }
+
+    /// Tambours de colonnes tombés au présent : extrémité (u, v), et s'ils sont couchés le long de
+    /// l'axe ; dans l'arène, puis dehors autour de l'enceinte
+    fn drums(&self) -> (Vec<Drum>, Vec<Drum>) {
+        let r = self.radius as f64;
+        let (c, rw) = self.wall_circle();
+        let front = (c - rw).floor() as i32;
+        let mut inside = Vec::new();
+        let mut outside = Vec::new();
+        for i in 0..12u64 {
+            let h = mix(self.seed ^ 0xD0 ^ (i << 8));
+            let along = h & 1 == 0;
+            let a = unit(mix(h ^ 1)) * std::f64::consts::TAU;
+            if i < 7 {
+                let d = 3.0 + unit(mix(h ^ 2)) * (r - 6.0);
+                let (u, v) = ((d * a.sin()).round() as i32, (d * a.cos()).round() as i32);
+                // Pas sur l'allée, ni contre le mur du sanctuaire
+                let cells = (0..3).map(|k| if along { (u, v + k) } else { (u + k, v) });
+                if cells.clone().all(|(cu, cv)| cu.abs() > Self::GATE + 1 && self.inside(cu, cv) && cv < front - 1) {
+                    inside.push((u, v, along));
+                }
+            } else {
+                let d = r + 2.0 + unit(mix(h ^ 2)) * 1.5;
+                let (u, v) = ((d * a.sin()).round() as i32, (d * a.cos()).round() as i32);
+                if v > -self.radius || u.abs() > Self::PARVIS_HALF + 1 {
+                    outside.push((u, v, along));
+                }
+            }
+        }
+        (inside, outside)
+    }
+
+    fn on_drum(drums: &[Drum], u: i32, v: i32) -> bool {
+        drums.iter().any(|&(du, dv, along)| if along { u == du && (dv..dv + 3).contains(&v) } else { v == dv && (du..du + 3).contains(&u) })
+    }
+
+    /// Un brasero brûle au sommet de la colonne (u, v) dans le passé : une colonne sur quatre, sur
+    /// le bord extérieur du tour
+    fn has_brazier(&self, u: i32, v: i32) -> bool {
+        if !self.on_ring(u, v) || self.ring_of_sanctum(u, v) || self.is_gate(u, v) || !self.is_column(u, v) {
+            return false;
+        }
+        if Self::dist(u, v) <= self.radius as f64 - 0.5 {
+            return false;
+        }
+        let s = ((u as f64).atan2(v as f64) * self.radius as f64).round() as i32;
+        s.rem_euclid(12) == 6
+    }
+
+    /// Éclats du Néant semés au présent autour de la cache de la Pierre
+    fn void_shard(&self, u: i32, v: i32) -> bool {
+        let (au, av) = self.altar_local();
+        let ring = (u - au).abs().max((v - av).abs());
+        (2..=3).contains(&ring) && unit(hash2(self.seed ^ 0x5A, u, v)) < 0.3
+    }
+
+    /// Lanternes posées sur la base dans le passé : (u, v)
+    fn ring_lights(&self) -> Vec<(i32, i32)> {
+        let r = self.radius as f64 - 0.5;
+        [40.0f64, 75.0, 110.0, -40.0, -75.0, -110.0]
+            .iter()
+            .map(|deg| {
+                // angle compté depuis l'entrée
+                let a = (180.0 - deg).to_radians();
+                ((r * a.sin()).round() as i32, (r * a.cos()).round() as i32)
+            })
+            .filter(|&(u, v)| self.on_ring(u, v) && !self.ring_of_sanctum(u, v) && !self.is_column(u, v))
+            .collect()
+    }
+
+    /// Retrait du point (u, v) depuis le bord du toit du sanctuaire (négatif : hors du toit)
+    fn roof_inset(&self, u: i32, v: i32) -> f64 {
+        let to_ring = self.radius as f64 + 0.5 - Self::dist(u, v);
+        let to_wall = self.wall_dist(u, v) - (self.wall_circle().1 - 0.75);
+        to_ring.min(-to_wall)
+    }
+
+    /// Toit du sanctuaire intact, au niveau `level` (au moins `ROOF`) : une dalle au niveau de la
+    /// couronne bordée d'une corniche, deux gradins en retrait, et au sommet un lanternon autour du
+    /// puits de lumière, coiffé de cristaux à ses coins. Le puits reste ouvert jusqu'au ciel.
+    fn roof_block(&self, u: i32, v: i32, level: i32, trim: BlockId) -> Option<BlockId> {
+        let inset = self.roof_inset(u, v);
+        if inset < 0.0 {
+            return None;
+        }
+        let (au, av) = self.altar_local();
+        let (ru, rv) = ((u - au).abs(), (v - av).abs());
+        if ru <= 1 && rv <= 1 {
+            return None;
+        }
+        let tier = level - Self::ROOF;
+        let lantern = ru.max(rv) == 2;
+        match tier {
+            0 => Some(if inset < 1.0 { trim } else { CUT_STONE }),
+            1 if inset >= 2.0 => Some(CUT_STONE),
+            2 if inset >= 4.0 || lantern => Some(CUT_STONE),
+            3 if lantern => Some(if ru == 2 && rv == 2 { CUT_CRYSTAL } else { trim }),
+            _ => None,
+        }
+    }
+
+    /// Bloc du temple à l'époque donnée : `holder` est le peuple qui le tient dans le passé, `None`
+    /// au présent
+    fn block_at(&self, holder: Option<Culture>, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
+        let (u, v) = self.local(x, z);
+        let d = Self::dist(u, v);
+        let h = hash2(self.seed ^ 0x7E3B, x, z);
+        let past = holder.is_some();
+        if d > self.radius as f64 + 0.5 {
+            if let Some((level, half)) = self.forecourt_at(u, v) {
+                return self.forecourt_block(u, v, y, ground, level, half, holder, h);
+            }
+            // Au présent, des tambours de colonnes ont roulé hors de l'enceinte
+            if !past && y == ground && Self::on_drum(&self.drums().1, u, v) {
+                return Some(CUT_STONE);
+            }
+            return None;
+        }
+        let f = self.floor;
+        let masonry = holder.map(Masonry::of);
+        let trim = holder.map(temple_trim).unwrap_or(GILDING);
+        if y < f - 2 {
+            return (y >= ground).then_some(HARD_STONE);
+        }
+        let ring = self.on_ring(u, v);
+        let gate = ring && self.is_gate(u, v);
+        let sanct_ring = self.ring_of_sanctum(u, v);
+        let sanct = self.in_sanctum_local(u, v);
+        let sanct_wall = self.on_sanctum_wall(u, v);
+        let altar = (u, v) == self.altar_local();
+        if y < f {
+            if y == f - 2 {
+                return Some(CUT_STONE);
+            }
+            // Le dallage : allée processionnelle sur l'axe, mosaïque autour du centre de l'arène
+            if ring || sanct || sanct_wall {
+                return Some(CUT_STONE);
+            }
+            return Some(self.arena_paving(u, v, trim, past, h));
+        }
+        let level = y - f;
+        let crown = self.crown(v);
+        let broken = |max: i32, salt: u64| -> i32 { (unit(mix(h ^ salt)) * (max + 1) as f64) as i32 };
+        // Le tour de l'enceinte
+        if ring && !gate {
+            if sanct_ring {
+                // Mur plein autour du sanctuaire, jusqu'au toit
+                if past && level >= Self::ROOF {
+                    return self.roof_block(u, v, level, trim).or((y < ground).then_some(BlockId::AIR));
+                }
+                let top = if past { Self::ROOF } else { 1 + self.fallen(u, v, Self::ROOF - 1, 0x51) };
+                if level < top {
+                    if !past && d > self.radius as f64 - 0.5 && unit(mix(h ^ 0x1D ^ level as u64)) < 0.18 {
+                        return Some(DARK_LEAF);
+                    }
+                    return Some(masonry.map(|m| m.wall).unwrap_or(COBBLE));
+                }
+                if !past && level == top && unit(mix(h ^ 0x30)) < 0.3 {
+                    return Some(GREEN_LEAF);
+                }
+                return (y < ground).then_some(BlockId::AIR);
+            }
+            let column = self.is_column(u, v);
+            if past {
+                if level < Self::BASE {
+                    return Some(masonry.map(|m| m.wall).unwrap_or(COBBLE));
+                }
+                if column && level < crown {
+                    return Some(CUT_STONE);
+                }
+                if level == crown {
+                    return Some(if d > self.radius as f64 - 0.5 { trim } else { CUT_STONE });
+                }
+                if level == crown + 1 && self.has_brazier(u, v) {
+                    return Some(masonry.map(|m| m.light).unwrap_or(LANTERN));
+                }
+                if level == Self::BASE && self.ring_lights().contains(&(u, v)) {
+                    return Some(masonry.map(|m| m.light).unwrap_or(LANTERN));
+                }
+            } else {
+                // La base s'est effondrée par pans, les colonnes sont brisées, la couronne est tombée
+                let chunk = ((u as f64).atan2(v as f64) * self.radius as f64 / 4.0).round() as i32;
+                let base = (unit(hash2(self.seed ^ 0xBA5E, chunk, 0)) * (Self::BASE + 1) as f64) as i32;
+                let outer = d > self.radius as f64 - 0.5;
+                if level < base.max(1) {
+                    // Le lierre couvre la face extérieure par plaques
+                    if outer && unit(mix(h ^ 0x1D)) < 0.2 {
+                        return Some(DARK_LEAF);
+                    }
+                    return Some(if unit(mix(h ^ 0x7)) < 0.3 { COBBLE } else { STONE });
+                }
+                let stump = if column { broken(crown, 0xC01) } else { 0 };
+                if level < stump {
+                    return Some(if outer && unit(mix(h ^ 0x1E ^ level as u64)) < 0.15 { DARK_LEAF } else { CUT_STONE });
+                }
+                // La mousse coiffe ce qui reste debout
+                if level == base.max(1).max(stump) && unit(mix(h ^ 0x30)) < 0.3 {
+                    return Some(GREEN_LEAF);
+                }
+            }
+            return (y < ground).then_some(BlockId::AIR);
+        }
+        if gate {
+            // Le linteau de l'entrée porte la couronne
+            if past && level == crown {
+                return Some(trim);
+            }
+            return (y < ground).then_some(BlockId::AIR);
+        }
+        // Le mur courbe du sanctuaire, sa porte face à l'arène
+        if sanct_wall {
+            let door = u.abs() <= Self::GATE && (1..=3).contains(&level);
+            if level == 0 {
+                return Some(CUT_STONE);
+            }
+            if door {
+                return Some(BlockId::AIR);
+            }
+            if past && level >= Self::ROOF {
+                return self.roof_block(u, v, level, trim).or((y < ground).then_some(BlockId::AIR));
+            }
+            let top = if past { Self::ROOF - 1 } else { 2 + self.fallen(u, v, Self::ROOF - 2, 0x52) };
+            if level <= top {
+                return Some(masonry.map(|m| m.wall).unwrap_or(COBBLE));
+            }
+            return (y < ground).then_some(BlockId::AIR);
+        }
+        if sanct {
+            // Le sol surélevé d'un bloc
+            if level == 0 {
+                return Some(if altar && !past { BlockId::AIR } else { CUT_STONE });
+            }
+            if altar {
+                match level {
+                    1 => return Some(if past { GILDING } else { CUT_STONE }),
+                    2 => return Some(if past { BlockId::AIR } else { CUT_CRYSTAL }),
+                    _ => {}
+                }
+            }
+            if past {
+                // Le toit, ouvert au-dessus de l'autel en puits de lumière
+                let (au, av) = self.altar_local();
+                if level >= Self::ROOF {
+                    return self.roof_block(u, v, level, trim).or((y < ground).then_some(BlockId::AIR));
+                }
+                // Deux lanternes de part et d'autre de l'autel
+                if level == 1 && v == av && (u - au).abs() == 2 {
+                    return Some(masonry.map(|m| m.light).unwrap_or(LANTERN));
+                }
+            } else if level == 1 && self.void_shard(u, v) {
+                return Some(VOID_STONE);
+            } else if level == 1 && unit(mix(h ^ 0x13)) < 0.06 {
+                return Some(CUT_STONE);
+            }
+            return (y < ground).then_some(BlockId::AIR);
+        }
+        // L'arène : au présent, des tambours de colonnes tombés et des pierres éparses
+        if !past && level == 0 && (Self::on_drum(&self.drums().0, u, v) || unit(mix(h ^ 0x13)) < 0.03) {
+            return Some(CUT_STONE);
+        }
+        // Une marche devant la porte du sanctuaire
+        if level == 0 && u.abs() <= Self::GATE && self.wall_dist(u, v) - self.wall_circle().1 <= 1.75 {
+            return Some(COBBLE_SLAB);
+        }
+        (y < ground).then_some(BlockId::AIR)
+    }
+
+    /// Hauteur restante d'un pan de mur effondré au point (u, v), de 0 à `max` : les pans de quatre
+    /// blocs de long tombent ensemble, si bien que la ruine garde des murs et non des piquets
+    fn fallen(&self, u: i32, v: i32, max: i32, salt: u64) -> i32 {
+        let chunk = ((u as f64).atan2(v as f64 - self.radius as f64) * self.radius as f64 / 4.0).round() as i32;
+        let a = unit(hash2(self.seed ^ salt, chunk, 0));
+        (a * a * (max + 1) as f64) as i32
+    }
+
+    /// Bloc de la ruine, au présent
+    fn block(&self, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
+        self.block_at(None, x, y, z, ground)
+    }
+
+    /// Bloc du temple intact, dans le passé, tenu par le peuple `holder`
+    pub(crate) fn past_block(&self, holder: Culture, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
+        self.block_at(Some(holder), x, y, z, ground)
+    }
+
+    /// Blocs qui éclairent le temple intact : position (altitude comprise)
+    pub(crate) fn past_light_spots(&self) -> Vec<(i32, i32, i32)> {
+        let f = self.floor;
+        let mut spots: Vec<(i32, i32, i32)> = self
+            .ring_lights()
+            .into_iter()
+            .map(|(u, v)| {
+                let (x, z) = self.world(u, v);
+                (x, f + Self::BASE, z)
+            })
+            .collect();
+        let (au, av) = self.altar_local();
+        for du in [-2, 2] {
+            let (x, z) = self.world(au + du, av);
+            spots.push((x, f + 1, z));
+        }
+        let r = self.radius;
+        for v in -r..=r {
+            for u in -r..=r {
+                if self.has_brazier(u, v) {
+                    let (x, z) = self.world(u, v);
+                    spots.push((x, f + self.crown(v) + 1, z));
+                }
+            }
+        }
+        for (u, v) in self.parvis_braziers() {
+            let (x, z) = self.world(u, v);
+            spots.push((x, self.parvis_floor() + 1, z));
+        }
+        spots
+    }
+
+    /// Emplacement de la Pierre du Néant : au présent, la cache creusée sous l'autel ; dans le
+    /// passé, sur l'autel doré, sous le puits de lumière. Le générateur y laisse de l'air.
+    pub fn stone_slot(&self, past: bool) -> (i32, i32, i32) {
+        let (x, z) = self.altar();
+        (x, if past { self.floor + 2 } else { self.floor }, z)
+    }
+
+    /// Plus haut bloc (exclu) que pose le temple, à l'une ou l'autre époque
+    pub(crate) fn top(&self) -> i32 {
+        self.floor + Self::ROOF + 5
+    }
+}
+
+/// Tambour de colonne couché, long de trois blocs : extrémité (u, v) dans le repère du temple, et
+/// s'il est couché le long de l'axe
+type Drum = (i32, i32, bool);
+
+/// Ornement de la corniche d'un temple tenu par `holder`
+fn temple_trim(holder: Culture) -> BlockId {
+    match holder {
+        Culture::Nains | Culture::Gnomes => BRONZE_TRIM,
+        Culture::HautsElfes | Culture::Aasimars | Culture::Sylphes => SILVER_TRIM,
+        Culture::DemiOrques | Culture::Revenants => IRON_TRIM,
+        _ => GILDING,
     }
 }
 
@@ -1594,7 +2154,7 @@ impl Piece {
             Piece::Stall(stall) => stall.rect,
             Piece::Lamp { x, z, .. } | Piece::Ladder { x, z, .. } => Rect::sized(*x, *z, 1, 1),
             Piece::RuinHouse(r) => r.foot,
-            Piece::Temple(t) => t.foot,
+            Piece::Temple(t) => t.rect(),
             Piece::RuinTower(t) => Rect::around(t.center.0, t.center.1, t.radius),
             Piece::Arena { rect, .. }
             | Piece::Ossuary { rect, .. }
@@ -1625,7 +2185,7 @@ impl Piece {
             Piece::Fountain { floor, .. } => span(*floor, 3, floor + 3),
             Piece::Tower { floor, masonry, .. } => span(*floor, 1, floor + masonry.tower_top()),
             Piece::RuinHouse(r) => span(r.floor, 1, r.top()),
-            Piece::Temple(t) => span(t.floor, 3, t.top()),
+            Piece::Temple(t) => span(t.parvis_floor(), 3, t.top()),
             Piece::RuinTower(t) => span(t.floor, 1, t.top()),
             Piece::Arena { floor, .. } => span(*floor, 3, floor + 4),
             Piece::Ossuary { floor, .. } => span(*floor, 3, floor + 7),
@@ -2247,10 +2807,24 @@ impl Settlement {
     /// Bloc imposé par le plan en (x, y, z), `ground` étant l'altitude du premier bloc d'air
     /// au-dessus du relief naturel de la colonne. `None` : le terrain naturel reste.
     pub fn block(&self, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
+        self.block_in(Epoch::Present, x, y, z, ground)
+    }
+
+    /// `block` à l'époque `epoch` : dans le passé, les temples sont intacts (voir `temples`), le
+    /// reste du plan est celui du présent
+    pub fn block_in(&self, epoch: Epoch, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
         if !self.bounds.contains(x, z) {
             return None;
         }
-        self.pieces_at(x, z).find_map(|p| if p.span(ground).contains(&y) { p.block(x, y, z, ground) } else { None })
+        self.pieces_at(x, z).find_map(|p| {
+            if !p.span(ground).contains(&y) {
+                return None;
+            }
+            match (p, epoch) {
+                (Piece::Temple(t), Epoch::Past(holder)) => t.past_block(holder, x, y, z, ground),
+                _ => p.block(x, y, z, ground),
+            }
+        })
     }
 
     /// Blocs qui éclairent (torches, lampadaires, fontaines) posés par le plan dans les colonnes
@@ -2258,6 +2832,11 @@ impl Settlement {
     /// du relief naturel de la colonne (le pied d'un lampadaire). Seuls ceux que le plan pose
     /// vraiment à cet endroit sont gardés.
     pub fn lights(&self, area: Rect, ground: impl Fn(i32, i32) -> i32) -> Vec<(i32, i32, i32, BlockId)> {
+        self.lights_in(Epoch::Present, area, ground)
+    }
+
+    /// `lights` à l'époque `epoch`
+    pub fn lights_in(&self, epoch: Epoch, area: Rect, ground: impl Fn(i32, i32) -> i32) -> Vec<(i32, i32, i32, BlockId)> {
         let mut found = Vec::new();
         if !self.bounds.intersects(&area) {
             return found;
@@ -2283,13 +2862,14 @@ impl Settlement {
                     let (cx, cz) = rect.center();
                     spots.push((cx, *floor, cz));
                 }
+                Piece::Temple(t) if matches!(epoch, Epoch::Past(_)) => spots.extend(t.past_light_spots()),
                 _ => continue,
             }
             for (x, y, z) in spots {
                 if !area.contains(x, z) {
                     continue;
                 }
-                if let Some(block) = self.block(x, y, z, ground(x, z)) {
+                if let Some(block) = self.block_in(epoch, x, y, z, ground(x, z)) {
                     if block.light() > 0 {
                         found.push((x, y, z, block));
                     }
@@ -4413,11 +4993,24 @@ fn plan_ruins(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &mut D
     let seed = dice.next();
     match dice.range(0, 3) {
         0 => {
-            // Temple : podium de 9 à 13 de côté, colonnes une sur deux sur le pourtour
-            let side = 9 + 2 * dice.range(0, 3);
-            let foot = Rect::around(x, z, side / 2);
-            let floor = floor_for(p.generator, p.face, &foot, 8)? + 1;
-            p.take(Piece::Temple(Temple { foot, floor, seed }), 0);
+            // Temple rond de 12 ou 13 blocs de rayon, son arène et son sanctuaire
+            let radius = dice.range(12, 14);
+            // L'entrée regarde vers l'intérieur de la case, pour que l'escalier et le parvis y tiennent
+            let pick = dice.range(0, 4) as usize;
+            let (ax, az) = p.area.center();
+            let toward = |side: &Side| {
+                let (dx, dz) = side.delta();
+                dx * (ax - x) + dz * (az - z)
+            };
+            let best = Side::ALL.iter().map(toward).max().unwrap_or(0);
+            let doors: Vec<Side> = Side::ALL.into_iter().filter(|s| toward(s) == best).collect();
+            let door = doors[pick % doors.len()];
+            let temple = Temple { center, radius, door, floor: 0, forecourt: 0, seed };
+            let floor = floor_for(p.generator, p.face, &temple.enclosure(), 8)? + 1 + Temple::PODIUM;
+            // Le sol naturel au milieu du parvis le plus long fixe le nombre de marches
+            let (px, pz) = temple.world(0, -radius - Temple::STEPS_MAX - Temple::PARVIS_DEPTH / 2);
+            let forecourt = ground_at(p.generator, p.face, px, pz).0 + 1;
+            p.take(Piece::Temple(Temple { floor, forecourt, ..temple }), 0);
         }
         1 => {
             // Vieille tour, avec une maison effondrée à son pied

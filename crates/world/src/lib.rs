@@ -14,6 +14,7 @@ pub mod skill_runner;
 pub mod sky;
 pub mod structures;
 pub mod tectonics;
+pub mod temples;
 pub mod vegetation;
 pub mod villagers;
 pub mod weather;
@@ -32,5 +33,6 @@ pub use skill_runner::{Casting, ShotHit, SkillImpact, SkillPlayers, SkillRunner,
 pub use culture::Culture;
 pub use structures::{Capital, Settlement, SettlementKind, StructureMap, TownSize};
 pub use tectonics::*;
+pub use temples::{Epoch, TempleId, TempleSite};
 pub use vegetation::{Tree, TreeKind, VegetationField, TREE_CELL, TREE_REACH, VEGETATION_SPAN};
 pub use weather::{crop_growth_factor, Season, SkyClock, WeatherKind, WeatherModel, WeatherSample};

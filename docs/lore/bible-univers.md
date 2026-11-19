@@ -145,6 +145,16 @@ Dans un monde qui peine encore à se relever d'une apocalypse ancienne, des indi
 * **Pourquoi l'ancien héros nous ressemble :** pour que le joueur se sente impliqué sans comprendre que c'est une vision, et aussi parce qu'il existe un lien entre l'âme des anciens héros et celle des nouveaux.
 * **Les compétences du tutoriel :** celles de la future classe du joueur, qui sont aussi celles de l'ancien héros.
 
+### Le déroulé de la vision : la ville-souvenir (Mat, 18/11/2026)
+* **Le déclencheur :** au présent, le joueur active le sanctuaire du temple en ruine. Il est projeté dans les souvenirs.
+* **La ville-souvenir :** les héros se retrouvent dans une ville en guerre, **sans possibilité d'en sortir**, avec des ennemis un peu partout.
+* **Les missions :** il y a toujours quelque chose à faire dans la ville. Le détail des missions sera décidé plus tard.
+* **La progression :** à la fin de chaque mission, les actions accomplies rapprochent les héros du **temple, au centre de la ville**.
+* **Le combat final :** il a lieu dans une **arène à l'entrée du temple**, contre un **monstre du Néant**. Les monstres seront choisis plus tard.
+* **Qui sont ces monstres :** ce ne sont pas des membres du Cercle des anciens héros. Ce sont des **héros de chaque nation, transformés après avoir absorbé une Pierre du Néant**.
+* **Conséquence pour le temple :** il comporte, devant son entrée, une zone qui sert d'arène.
+* **Où est la ville :** au même endroit que la ruine (Mat, 19/11/2026). Dans le passé, la ville fermée se dessine autour du temple, sur le terrain réel ; au réveil, le joueur retrouve le même lieu en ruine.
+
 ### SECRET DE LA BIBLE : les Pierres gardent la mémoire des héros (Mat, 17/11/2026)
 * Les héros ont initialement eu leur pouvoir des Pierres. Ils y ont donc été liés, et les Pierres abritent leur mémoire.
 * Toucher une Pierre ne donne pas automatiquement ses pouvoirs. Il faut que la mémoire du héros puisse se lier à celui qui la touche, et pour cela il doit être un **descendant du héros de la Pierre**.
