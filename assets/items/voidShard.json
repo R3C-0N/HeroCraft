@@ -5,6 +5,6 @@
   "max_stack": 64,
   "icon": "icones/voidShard.png",
   "recipes": [
-    {"station": "astralForge", "ingredients": {"voidStone": 1}, "count": 2}
+    {"station": "astralForge", "ingredients": {"voidRock": 1}, "count": 2}
   ]
 }

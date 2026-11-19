@@ -1,0 +1,8 @@
+{
+  "numeric_id": 17001,
+  "name": "Fragment de Pierre du Néant",
+  "description": "Un éclat d'une Pierre brisée. Sa mémoire s'est dispersée avec lui ; réunis, les fragments pourraient la recomposer.",
+  "category": "Artefacts",
+  "max_stack": 16,
+  "icon": "icones/voidStoneFragment.png"
+}

@@ -114,8 +114,14 @@ def lire_json(chemin):
     return json.loads(re.sub(r",(\s*[}\]])", r"\1", "".join(sortie)))
 
 
+# Blocs renommés ici : identifiant du module -> le nôtre. Le bloc « VoidStone » du module est
+# une simple roche ; « voidStone » désigne la Pierre du Néant du lore (assets/items/voidStone.json).
+RENOMMES = {"voidStone": "voidRock"}
+
+
 def ident(nom):
-    return nom[0].lower() + nom[1:]
+    identifiant = nom[0].lower() + nom[1:]
+    return RENOMMES.get(identifiant, identifiant)
 
 
 def numeros_existants(dossier):
@@ -280,6 +286,9 @@ def importer_blocs(modules):
             "color": {"top": dessus, "side": cotes} if dessus != cotes else {"side": cotes},
             "textures": textures,
         }
+        if identifiant == "voidRock":
+            # À ne pas confondre avec la Pierre du Néant du lore
+            fiche["name"] = "Roche du néant"
         if teinte:
             fiche["texture_tint"] = hexa([v * 255 for v in teinte])
         if plante:
