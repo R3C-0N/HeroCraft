@@ -26,6 +26,9 @@ use crate::culture::Culture;
 use crate::generator::{BiomeType, PlanetWorldGenerator, SEA_LEVEL_BLOCKS};
 use crate::temples::Epoch;
 
+mod memory_city;
+pub use memory_city::{MemoryCity, Ring};
+
 /// Côté d'une case de structures, en blocs : le plus grand plan (une ville) y tient
 pub const CELL: i32 = 128;
 /// Cases par arête de face
@@ -2926,6 +2929,9 @@ pub struct StructureMap {
     hosts: Vec<OnceLock<Option<(i32, i32)>>>,
     /// La région de la capitale de la planète (`plan_capital`)
     capital: OnceLock<Option<Capital>>,
+    /// Les villes-souvenirs des temples, case par case, pour chaque peuple qui peut les tenir dans
+    /// la vision (dessinées à la première lecture dans le passé)
+    memories: Vec<OnceLock<Vec<OnceLock<Option<MemoryCity>>>>>,
 }
 
 /// La capitale de la planète : la seule, posée dans la case `cell` de sa région
@@ -2949,6 +2955,7 @@ impl StructureMap {
             pins: OnceLock::new(),
             hosts: (0..6 * REGIONS_PER_FACE * REGIONS_PER_FACE).map(|_| OnceLock::new()).collect(),
             capital: OnceLock::new(),
+            memories: Culture::ALL.iter().map(|_| OnceLock::new()).collect(),
         }
     }
 
@@ -3016,6 +3023,55 @@ impl StructureMap {
 }
 
 impl StructureMap {
+    /// La ville-souvenir du temple de la case (cx, cz) d'une face, tenue dans la vision par le
+    /// peuple `holder`, s'il y a un temple dans la case
+    pub fn memory_city(&self, generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i32, holder: Culture) -> Option<&MemoryCity> {
+        let index = Self::cell_index(face, cx, cz)?;
+        let k = Culture::ALL.iter().position(|&c| c == holder)?;
+        let cells = self.memories[k].get_or_init(|| (0..self.cells.len()).map(|_| OnceLock::new()).collect());
+        cells[index]
+            .get_or_init(|| {
+                let ruins = self.cell(generator, face, cx, cz).filter(|s| s.kind == SettlementKind::Ruins)?;
+                let temple = ruins.pieces.iter().find_map(|p| match p {
+                    Piece::Temple(t) => Some(*t),
+                    _ => None,
+                })?;
+                memory_city::plan_memory_city(generator, face, temple, ruins.biome, holder)
+            })
+            .as_ref()
+    }
+
+    /// La ville-souvenir tenue par `holder` qui prend la colonne (x, z) d'une face. Une ville ne
+    /// déborde que sur les cases voisines de celle de son temple.
+    pub fn memory_at(&self, generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32, holder: Culture) -> Option<&MemoryCity> {
+        let (cx, cz) = (x.div_euclid(CELL), z.div_euclid(CELL));
+        for dz in -1..=1 {
+            for dx in -1..=1 {
+                if let Some(city) = self.memory_city(generator, face, cx + dx, cz + dz, holder) {
+                    if city.covers(x, z) {
+                        return Some(city);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Les villes-souvenirs tenues par `holder` dont le plan touche le rectangle `area` d'une face
+    pub fn memories_touching(&self, generator: &PlanetWorldGenerator, face: PlanetFace, area: Rect, holder: Culture) -> Vec<&MemoryCity> {
+        let mut found = Vec::new();
+        for cz in area.z0.div_euclid(CELL) - 1..=(area.z1 - 1).div_euclid(CELL) + 1 {
+            for cx in area.x0.div_euclid(CELL) - 1..=(area.x1 - 1).div_euclid(CELL) + 1 {
+                if let Some(city) = self.memory_city(generator, face, cx, cz, holder) {
+                    if city.settlement.bounds.intersects(&area) {
+                        found.push(city);
+                    }
+                }
+            }
+        }
+        found
+    }
+
     /// La ville ou le village de la région (rx, rz) d'une face (régions de `REGION_CELLS` cases de
     /// côté), s'il y en a un
     pub fn region_settlement(&self, generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i32) -> Option<&Settlement> {

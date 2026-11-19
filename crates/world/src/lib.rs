@@ -31,7 +31,7 @@ pub use roads::{Road, RoadMap};
 pub use arsenal::{Arsenal, Fired, Magazine, Special};
 pub use skill_runner::{Casting, ShotHit, SkillImpact, SkillPlayers, SkillRunner, SkillTick, SoloPlayer, CRITICAL_FACTOR};
 pub use culture::Culture;
-pub use structures::{Capital, Settlement, SettlementKind, StructureMap, TownSize};
+pub use structures::{Capital, MemoryCity, Ring, Settlement, SettlementKind, StructureMap, TownSize};
 pub use tectonics::*;
 pub use temples::{Epoch, TempleId, TempleSite};
 pub use vegetation::{Tree, TreeKind, VegetationField, TREE_CELL, TREE_REACH, VEGETATION_SPAN};
