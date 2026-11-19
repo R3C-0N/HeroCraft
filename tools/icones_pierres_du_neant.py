@@ -4,7 +4,7 @@
     python3 tools/icones_pierres_du_neant.py
 
 Écrit `assets/items/icones/voidStone.png` (la Pierre entière : un cristal à facettes, noir
-violacé, au cœur lumineux) et `assets/items/icones/voidStoneFragment.png` (un éclat brisé).
+violacé, au cœur lumineux) et `assets/items/icones/voidStoneFragment.png` (un petit éclat brisé).
 """
 from pathlib import Path
 
@@ -47,16 +47,16 @@ FRAGMENT = [
     "................",
     "................",
     "................",
-    "........##......",
-    ".......#hl#.....",
-    "......#hlm#.....",
-    ".....#hlvmd#....",
-    "....#lmcvmd#....",
-    "....#lvwvdd#....",
-    "....#mmvmdd#....",
-    "....#dmmmd#.....",
-    ".....#ddd#......",
-    "......###.......",
+    "................",
+    "................",
+    "........#.......",
+    ".......#h#......",
+    "......#hld#.....",
+    "......#lcd#.....",
+    "......#vwd#.....",
+    ".......#md#.....",
+    ".......###......",
+    "................",
     "................",
     "................",
     "................",
