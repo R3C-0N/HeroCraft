@@ -53,6 +53,10 @@ pub enum Command {
     Weather(Option<Option<herocraft_common::WeatherKind>>),
     /// Saison et jour de l'année (`None`), ou passage au début d'une saison (hémisphère nord)
     Season(Option<herocraft_world::Season>),
+    /// Liste des cinématiques (`None`), ou lecture de l'une d'elles
+    Cinematic(Option<String>),
+    /// Envoie un événement du jeu (`nom clé=valeur…`), qui peut déclencher une cinématique
+    Event(String),
 }
 
 /// Une commande : nom, arguments, description (affichés par `/help`)
@@ -83,6 +87,8 @@ pub const COMMANDS: &[CommandHelp] = &[
     CommandHelp { name: "xp", usage: "/xp <amount>", description: "Gain experience points" },
     CommandHelp { name: "list", usage: "/list", description: "List the players online" },
     CommandHelp { name: "clear", usage: "/clear", description: "Clear the chat" },
+    CommandHelp { name: "cinematic", usage: "/cinematic [name]", description: "List the cinematics, or play one (Tab completes the name)" },
+    CommandHelp { name: "event", usage: "/event <name> [key=value ...]", description: "Send a game event at your feet, as the game would (e.g. /event stone_obtained stone=voidStone kind=whole)" },
 ];
 
 /// Exemplaires au plus d'un `/give`, de créatures d'un `/summon`, et vitesse maximale
@@ -165,6 +171,14 @@ pub fn parse(line: &str) -> Result<Command, String> {
         }
         ("season" | "saison", []) => Command::Season(None),
         ("season" | "saison", [season]) => Command::Season(Some(herocraft_world::Season::parse(season).ok_or_else(|| wrong(&format!("Unknown season \"{season}\"")))?)),
+        ("cinematic" | "cine", []) => Command::Cinematic(None),
+        ("cinematic" | "cine", [id]) => Command::Cinematic(Some(id.to_string())),
+        ("event", [_, ..]) => {
+            if args[1..].iter().any(|a| !a.contains('=') || a.starts_with('=')) {
+                return Err(wrong("Tags are written key=value"));
+            }
+            Command::Event(args.join(" "))
+        }
         ("", _) => return Err("Type /help to list the commands".into()),
         (other, _) if COMMANDS.iter().any(|c| c.name == other) => return Err(wrong("Wrong arguments")),
         (other, _) => return Err(format!("Unknown command /{other}. Type /help to list the commands")),
@@ -213,6 +227,7 @@ pub struct CompletionSources<'a> {
     pub items: &'a [String],
     pub creatures: &'a [String],
     pub players: &'a [String],
+    pub cinematics: &'a [String],
 }
 
 /// Suites possibles du dernier mot de `line` (« /gi » → « /give », « /give cob » → « /give
@@ -232,6 +247,7 @@ pub fn complete(line: &str, sources: &CompletionSources) -> Vec<String> {
             "time" => vec!["set".into(), "speed".into()],
             "weather" | "meteo" => ["clear", "cloudy", "rain", "storm", "snow", "auto"].map(String::from).to_vec(),
             "season" | "saison" => ["spring", "summer", "autumn", "winter"].map(String::from).to_vec(),
+            "cinematic" | "cine" => sources.cinematics.to_vec(),
             _ => Vec::new(),
         },
         [command, sub] if command.eq_ignore_ascii_case("time") && sub.eq_ignore_ascii_case("set") => {
@@ -284,6 +300,10 @@ mod tests {
         assert_eq!(parse("  /speed 4 "), Ok(Command::Speed(4.0)));
         assert_eq!(parse("/fly"), Ok(Command::Fly));
         assert_eq!(parse("/xp 250"), Ok(Command::Experience(250)));
+        assert_eq!(parse("/cinematic"), Ok(Command::Cinematic(None)));
+        assert_eq!(parse("/cinematic fin-de-la-vision"), Ok(Command::Cinematic(Some("fin-de-la-vision".into()))));
+        assert_eq!(parse("/event stone_obtained stone=voidStone"), Ok(Command::Event("stone_obtained stone=voidStone".into())));
+        assert!(parse("/event stone_obtained voidStone").is_err());
     }
 
     #[test]
@@ -312,7 +332,7 @@ mod tests {
         let items = ["cobbleStone".to_string(), "coalOre".to_string(), "stone".to_string()];
         let creatures = ["loup".to_string(), "lapin".to_string()];
         let players = ["Mat".to_string()];
-        let sources = CompletionSources { items: &items, creatures: &creatures, players: &players };
+        let sources = CompletionSources { items: &items, creatures: &creatures, players: &players, cinematics: &[] };
         assert_eq!(complete("/gi", &sources), vec!["/give"]);
         assert_eq!(complete("/give co", &sources), vec!["/give coalOre", "/give cobbleStone"]);
         assert_eq!(complete("/give COBB", &sources), vec!["/give cobbleStone"]);
@@ -335,7 +355,7 @@ mod tests {
         assert!(parse("/drop voidStone 65").unwrap_err().contains("1 to 64"));
         assert_eq!(parse("/season winter"), Ok(Command::Season(Some(herocraft_world::Season::Winter))));
         assert!(parse("/season monsoon").is_err());
-        let sources = CompletionSources { items: &[], creatures: &[], players: &[] };
+        let sources = CompletionSources { items: &[], creatures: &[], players: &[], cinematics: &[] };
         assert_eq!(complete("/weather st", &sources), vec!["/weather storm".to_string()]);
     }
 
@@ -345,7 +365,7 @@ mod tests {
             assert!(help(Some(c.name)).is_ok());
         }
         // Chaque commande sans argument obligatoire se lit telle quelle
-        for name in ["help", "spawn", "pos", "time", "seed", "planet", "fly", "heal", "list", "clear", "weather", "season"] {
+        for name in ["help", "spawn", "pos", "time", "seed", "planet", "fly", "heal", "list", "clear", "weather", "season", "cinematic"] {
             assert!(parse(&format!("/{name}")).is_ok(), "/{name}");
         }
     }

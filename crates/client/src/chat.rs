@@ -71,6 +71,8 @@ pub struct Chat {
     pub items: Vec<String>,
     pub creatures: Vec<String>,
     pub players: Vec<String>,
+    /// Cinématiques (`/cinematic`)
+    pub cinematics: Vec<String>,
 }
 
 struct Completion {
@@ -189,7 +191,7 @@ impl Chat {
             self.input = c.candidates[c.index].clone();
             return;
         }
-        let sources = CompletionSources { items: &self.items, creatures: &self.creatures, players: &self.players };
+        let sources = CompletionSources { items: &self.items, creatures: &self.creatures, players: &self.players, cinematics: &self.cinematics };
         let candidates = commands::complete(&self.input, &sources);
         let Some(first) = candidates.first() else {
             self.completion = None;

@@ -30,7 +30,6 @@ pub fn touch(item: ItemId, events: &mut StoneEvents) {
 
 /// La Pierre `item` donne ses dernières forces : elle quitte l'inventaire, détruite, et
 /// `Absorbed` est signalé. Faux si l'inventaire ne la contient pas.
-#[allow(dead_code)] // appelée par la fin de la vision tutoriel (fil des cinématiques)
 pub fn absorb(item: ItemId, inventory: &mut Inventory, events: &mut StoneEvents) -> bool {
     if StoneKind::of(item) != Some(StoneKind::Whole) || !inventory.take_one(item) {
         return false;
@@ -39,9 +38,10 @@ pub fn absorb(item: ItemId, inventory: &mut Inventory, events: &mut StoneEvents)
     true
 }
 
-/// Distribue les événements de l'image. C'est ici que se branchent les autres systèmes.
-pub fn dispatch(events: &mut StoneEvents, chat: &mut Chat) {
-    for event in events.drain() {
+/// Distribue les événements de l'image et les rend, pour les autres systèmes (cinématiques)
+pub fn dispatch(events: &mut StoneEvents, chat: &mut Chat) -> Vec<StoneEvent> {
+    let events = events.drain();
+    for event in events.iter().cloned() {
         log::info!("Pierre du Néant : {event:?}");
         match event {
             StoneEvent::Obtained { kind: StoneKind::Whole, .. } => chat.info("Vous avez obtenu une Pierre du Néant. Une mémoire ancienne y dort."),
@@ -50,6 +50,18 @@ pub fn dispatch(events: &mut StoneEvents, chat: &mut Chat) {
             StoneEvent::Absorbed { .. } => chat.info("La Pierre du Néant s'éteint et se brise : sa force est en vous."),
         }
     }
+    events
+}
+
+/// L'événement de cinématique d'une Pierre obtenue (`stone_obtained`, `stone=voidStone`,
+/// `kind=whole|fragment`, à l'endroit du ramassage) ; aucun pour un autre événement
+pub fn cinematic_event(event: &StoneEvent) -> Option<herocraft_common::cinematics::GameEvent> {
+    let StoneEvent::Obtained { kind, position, .. } = event else { return None };
+    let kind = match kind {
+        StoneKind::Whole => "whole",
+        StoneKind::Fragment => "fragment",
+    };
+    Some(herocraft_common::cinematics::GameEvent::new("stone_obtained").tag("stone", "voidStone").tag("kind", kind).at(glam::Vec3::from(*position)))
 }
 
 /// Identifiant de la fiche du bloc posé
@@ -218,6 +230,19 @@ fn push_stone(site: &StoneSite, seed: u32, time: f32, eye: Vec3, block: f32, out
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_whole_stone_starts_the_vision() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/cinematics");
+        let (catalog, _) = herocraft_common::cinematics::CinematicCatalog::load_dir(&dir);
+        let obtained = |kind: StoneKind| StoneEvent::Obtained { kind, item: kind.item().unwrap(), position: [1.0, 2.0, 3.0] };
+        let whole = cinematic_event(&obtained(StoneKind::Whole)).unwrap();
+        let started: Vec<_> = catalog.triggered_by(&whole).map(|c| c.id.clone()).collect();
+        assert_eq!(started, ["fin-de-la-vision"]);
+        let fragment = cinematic_event(&obtained(StoneKind::Fragment)).unwrap();
+        assert_eq!(catalog.triggered_by(&fragment).count(), 0, "un fragment ne montre pas la vision");
+        assert!(cinematic_event(&StoneEvent::Touched { item: StoneKind::Whole.item().unwrap() }).is_none());
+    }
 
     #[test]
     fn absorbing_destroys_the_held_stone() {

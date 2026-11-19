@@ -827,7 +827,7 @@ fn load_textures() -> Vec<u8> {
     pixels
 }
 
-fn read_png(path: &Path) -> Option<(usize, usize, Vec<u8>)> {
+pub(crate) fn read_png(path: &Path) -> Option<(usize, usize, Vec<u8>)> {
     let mut decoder = png::Decoder::new(std::fs::File::open(path).ok()?);
     decoder.set_transformations(png::Transformations::EXPAND);
     let mut reader = decoder.read_info().ok()?;

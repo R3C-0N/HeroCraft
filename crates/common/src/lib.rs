@@ -1,4 +1,5 @@
 pub mod blocks;
+pub mod cinematics;
 pub mod character;
 pub mod crafting;
 pub mod farming;

@@ -1,0 +1,57 @@
+{
+  "title": "La fin de la vision",
+  "description": "Le héros du Cercle saisit la Pierre du Néant au cœur du temple. Elle s'éveille, déverse des souvenirs qui ne sont pas les siens, puis la lumière efface tout. Au plus blanc, le jeu renvoie le joueur au présent (`vision_ended`).",
+  "triggers": [
+    {"event": "stone_obtained", "when": {"stone": "voidStone", "kind": "whole"}}
+  ],
+  "shots": [
+    {
+      "name": "La Pierre s'éveille",
+      "duration": 5.5,
+      "position": [[0.7, 1.75, 2.6], [0.35, 1.6, 1.5]],
+      "look_at": [[0, 1.45, 0], [0, 1.35, 0]],
+      "fov": [45, 36],
+      "ease": "out"
+    },
+    {
+      "name": "Les souvenirs affluent",
+      "duration": 6.5,
+      "orbit": {"radius": [3.2, 2.4], "height": [0.6, 1.2], "angle": [200, 330]},
+      "look_at": [0, 1.3, 0],
+      "fov": [40, 48],
+      "roll": [0, -6],
+      "shake": 0.025,
+      "ease": "in_out"
+    },
+    {
+      "name": "La lumière efface tout",
+      "duration": 5.0,
+      "position": [[0, 3, -4], [0, 16, -9]],
+      "look_at": [0, 1, 0],
+      "fov": [50, 62],
+      "roll": [-6, 0],
+      "shake": 0.06,
+      "ease": "in"
+    },
+    {
+      "name": "Blanc",
+      "duration": 2.5,
+      "position": [0, 16, -9],
+      "look_at": [0, 1, 0],
+      "fov": 62
+    }
+  ],
+  "fades": [
+    {"at": 0, "duration": 1.2, "from": 0.6, "to": 0, "color": "#FFFFFF"},
+    {"at": 13.5, "duration": 3.0, "from": 0, "to": 1, "color": "#FFFFFF"}
+  ],
+  "captions": [
+    {"at": 1.2, "duration": 4.0, "text": "La Pierre pulse entre tes mains. Elle se souvient.", "style": "narration"},
+    {"at": 6.0, "duration": 5.5, "text": "Des voix, des visages, des batailles qui ne sont pas les tiennes.", "style": "narration"},
+    {"at": 12.0, "duration": 3.5, "text": "Puis la lumière efface tout.", "style": "narration"}
+  ],
+  "cues": [
+    {"at": 16.6, "emit": "vision_ended", "tags": {"stone": "voidStone"}}
+  ],
+  "next": "reveil-au-present"
+}

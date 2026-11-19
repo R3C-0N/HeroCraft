@@ -627,6 +627,8 @@ pub struct UiState {
     pub fusion_face: Option<(String, bool)>,
     /// Dernier refus d'une compétence (pas assez de mana, pas rechargée…), montré au-dessus de la barre
     pub skill_notice: Option<(String, std::time::Instant)>,
+    /// Cinématique en cours : elle tient tout l'écran, HUD et chat compris
+    pub cinematic: Option<crate::cinematic::Overlay>,
     /// Demandes faites sur l'écran des compétences depuis la dernière image, que le jeu applique
     pub skill_requests: SkillScreenRequests,
     /// Écran de carte ouvert (touche M)
@@ -699,6 +701,7 @@ impl UiState {
             skill_icons: crate::skill_bar::SkillIcons::default(),
             skill_cooldowns: [(0.0, 0.0); crate::skill_bar::SKILL_SLOTS],
             fusion_face: None,
+            cinematic: None,
             skill_notice: None,
             skill_screen: SkillScreen::default(),
             skill_requests: SkillScreenRequests::default(),
@@ -1118,6 +1121,11 @@ impl UiState {
         // Le contexte egui est un Arc : le cloner libère `self` pour les méthodes de dessin
         let egui_ctx = self.ctx.clone();
         let full_output = egui_ctx.run(raw_input, |ctx| {
+            // Cinématique : ni réticule, ni HUD, ni chat, ni menu
+            if let Some(overlay) = &self.cinematic {
+                crate::cinematic::draw(ctx, overlay);
+                return;
+            }
             // 1. Réticule de visée en mode FPS (quand le menu est fermé)
             if is_ground && !self.is_settings_open && !self.screen_open() && !self.player.is_dead() {
                 let center = ctx.screen_rect().center();
