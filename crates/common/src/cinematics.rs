@@ -346,10 +346,19 @@ pub struct Card {
     /// Secondes d'apparition et de disparition
     #[serde(default)]
     pub fade: f32,
+    /// Opacité (0 à 1), en plus du fondu : la feuille se dessine point par point
+    #[serde(default = "one_track")]
+    pub opacity: Track<f32>,
     /// Centre de la carte, en blocs dans le repère de l'ancre (une paire : elle se déplace)
+    #[serde(default = "origin_track")]
     pub position: Track<[f32; 3]>,
     /// Largeur en blocs ; la hauteur suit les proportions de l'image, ou `height`
+    #[serde(default = "one_track")]
     pub width: Track<f32>,
+    /// Trajet image par image : des étapes, en secondes depuis `at`, entre lesquelles la carte
+    /// glisse en ligne droite. Elles remplacent `position`, `width` et `opacity`.
+    #[serde(default)]
+    pub keys: Vec<CardKey>,
     #[serde(default)]
     pub height: Option<Track<f32>>,
     /// Rotation autour de la verticale, en degrés (0 : la carte regarde vers l'arrière de
@@ -381,6 +390,48 @@ pub struct Card {
     pub ease: Ease,
 }
 
+fn one_track() -> Track<f32> {
+    Track::Fixed(1.0)
+}
+
+fn origin_track() -> Track<[f32; 3]> {
+    Track::Fixed([0.0; 3])
+}
+
+/// Une étape du trajet d'une carte (`keys`)
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct CardKey {
+    /// Secondes depuis le début de la carte
+    pub t: f32,
+    pub position: [f32; 3],
+    pub width: f32,
+    #[serde(default = "one")]
+    pub opacity: f32,
+    /// Teinte multipliée à la couleur de la carte (rouge, vert, bleu linéaires ; 1 : inchangée)
+    #[serde(default = "white")]
+    pub tint: [f32; 3],
+}
+
+fn white() -> [f32; 3] {
+    [1.0; 3]
+}
+
+impl Card {
+    /// Position, largeur, opacité et teinte le long des étapes, `dt` secondes après le début
+    fn key_at(&self, dt: f32) -> Option<(Vec3, f32, f32, Vec3)> {
+        let keys = &self.keys;
+        let last = keys.last()?;
+        let i = keys.partition_point(|k| k.t <= dt);
+        let (a, b) = match i {
+            0 => (keys[0], keys[0]),
+            i if i >= keys.len() => (*last, *last),
+            i => (keys[i - 1], keys[i]),
+        };
+        let k = if b.t > a.t { ((dt - a.t) / (b.t - a.t)).clamp(0.0, 1.0) } else { 0.0 };
+        Some((Vec3::from(a.position).lerp(Vec3::from(b.position), k), a.width + (b.width - a.width) * k, a.opacity + (b.opacity - a.opacity) * k, Vec3::from(a.tint).lerp(Vec3::from(b.tint), k)))
+    }
+}
+
 fn default_curl() -> f32 {
     0.04
 }
@@ -402,6 +453,8 @@ pub struct CardSample<'a> {
     pub pitch: f32,
     pub roll: f32,
     pub opacity: f32,
+    /// Teinte des étapes (`keys`), multipliée à la couleur de la carte
+    pub tint: [f32; 3],
 }
 
 fn yes() -> bool {
@@ -530,14 +583,17 @@ impl Cinematic {
             if card.at < 0.0 || card.duration.is_some_and(|d| !(d > 0.0)) || card.fade < 0.0 {
                 return Err(format!("{name} : début, durée ou fondu invalide"));
             }
-            if !(card.width.start() > 0.0 && card.width.end() > 0.0) || card.height.is_some_and(|h| !(h.start() > 0.0 && h.end() > 0.0)) {
+            if !(card.width.start() > 0.0 && card.width.end() > 0.0) || card.height.is_some_and(|h| !(h.start() > 0.0 && h.end() > 0.0)) || card.keys.iter().any(|k| !(k.width > 0.0)) {
                 return Err(format!("{name} : taille nulle"));
             }
             if let Some(color) = &card.color {
                 parse_color(color).ok_or_else(|| format!("{name} : couleur « {color} » invalide"))?;
             }
-            if card.image.as_deref().is_some_and(|i| i.is_empty() || i.contains("..") || i.contains('/') || i.contains('\\')) {
+            if card.image.as_deref().is_some_and(|i| i.is_empty() || i.contains("..") || i.starts_with('/') || i.contains('\\')) {
                 return Err(format!("{name} : nom d'image invalide (un fichier de cards/)"));
+            }
+            if card.keys.windows(2).any(|w| !(w[1].t >= w[0].t)) || card.keys.first().is_some_and(|k| k.t < 0.0) {
+                return Err(format!("{name} : étapes (`keys`) dans le désordre"));
             }
         }
         if let Some(color) = &self.stage.backdrop {
@@ -572,14 +628,17 @@ impl Cinematic {
                 }
                 let life = (stop - card.at).max(1e-3);
                 let k = card.ease.apply((t - card.at) / life);
-                let opacity = if card.fade > 0.0 { ((t - card.at) / card.fade).min((stop - t) / card.fade).clamp(0.0, 1.0) } else { 1.0 };
+                let fade = if card.fade > 0.0 { ((t - card.at) / card.fade).min((stop - t) / card.fade).clamp(0.0, 1.0) } else { 1.0 };
+                let keyed = card.key_at(t - card.at);
+                let opacity = fade * keyed.map_or(card.opacity.at(k), |(_, _, o, _)| o).clamp(0.0, 1.0);
                 // Balancement lent, décalé d'une carte à l'autre
                 let phase = card.position.start()[0] * 1.7 + card.position.start()[2] * 0.9;
                 let sway = (card.sway.to_radians()) * (t * 1.3 + phase).sin();
                 Some(CardSample {
                     card,
-                    center: card.position.at(k),
-                    width: card.width.at(k),
+                    center: keyed.map_or(card.position.at(k), |(p, _, _, _)| p),
+                    width: keyed.map_or(card.width.at(k), |(_, w, _, _)| w),
+                    tint: keyed.map_or([1.0; 3], |(_, _, _, c)| c.to_array()),
                     height: card.height.map(|h| h.at(k)),
                     yaw: card.yaw.at(k).to_radians(),
                     pitch: card.pitch.at(k).to_radians(),
@@ -594,6 +653,33 @@ impl Cinematic {
     pub fn card_images(&self) -> impl Iterator<Item = &str> {
         let mut seen = HashSet::new();
         self.cards.iter().filter_map(|c| c.image.as_deref()).filter(move |i| seen.insert(*i))
+    }
+
+    /// Le plan en cours à l'instant `t` : son rang, son début et sa fin (le dernier plan dure
+    /// jusqu'à la fin de la cinématique)
+    pub fn shot_span_at(&self, t: f32) -> (usize, f32, f32) {
+        let mut start = 0.0;
+        for (i, shot) in self.shots.iter().enumerate() {
+            if t < start + shot.duration && i + 1 < self.shots.len() {
+                return (i, start, start + shot.duration);
+            }
+            start += shot.duration;
+        }
+        let last = self.shots.len().saturating_sub(1);
+        (last, start - self.shots.last().map_or(0.0, |s| s.duration), self.duration().max(start))
+    }
+
+    /// Les images des cartes visibles entre `t0` et `t1`, sans doublon : ce qu'il faut charger
+    /// pour un plan (les découpes se chargent plan par plan)
+    pub fn card_images_between(&self, t0: f32, t1: f32) -> Vec<&str> {
+        let end = self.duration();
+        let mut seen = HashSet::new();
+        self.cards
+            .iter()
+            .filter(|c| c.at <= t1 && c.duration.map_or(end, |d| c.at + d) >= t0)
+            .filter_map(|c| c.image.as_deref())
+            .filter(|i| seen.insert(*i))
+            .collect()
     }
 
     /// Le plan en cours à l'instant `t` et son avancement (0 à 1, avant la courbe)
@@ -1083,6 +1169,49 @@ mod tests {
         assert_eq!(c.cards_at(1.25)[1].opacity, 0.5);
         assert!(Cinematic::from_json("x", &json.replace("planete.png", "../x.png")).is_err());
         assert!(Cinematic::from_json("x", &json.replace("\"width\": 3", "\"width\": 0")).is_err());
+        assert!(Cinematic::from_json("x", &json.replace("planete.png", "genese/planete.png")).is_ok());
+    }
+
+    #[test]
+    fn test_card_images_by_shot() {
+        let json = r##"{
+            "title": "Papier", "anchor": "stage",
+            "shots": [{"duration": 4, "position": [0, 2, -6]}, {"duration": 3, "position": [0, 2, -6]}],
+            "cards": [
+                {"image": "a.png", "duration": 4, "position": [0, 0, 0], "width": 1},
+                {"image": "b.png", "at": 3.5, "duration": 2, "position": [0, 0, 0], "width": 1},
+                {"image": "c.png", "at": 5, "position": [0, 0, 0], "width": 1}
+            ],
+            "captions": [{"at": 6, "duration": 3, "text": "fin"}]
+        }"##;
+        let c = Cinematic::from_json("plans", json).unwrap();
+        assert_eq!(c.shot_span_at(1.0), (0, 0.0, 4.0));
+        assert_eq!(c.shot_span_at(4.0), (1, 4.0, 9.0));
+        assert_eq!(c.shot_span_at(8.5), (1, 4.0, 9.0));
+        assert_eq!(c.card_images_between(0.0, 4.0), ["a.png", "b.png"]);
+        assert_eq!(c.card_images_between(4.0, 9.0), ["a.png", "b.png", "c.png"]);
+        assert_eq!(c.card_images_between(4.5, 9.0), ["b.png", "c.png"]);
+    }
+
+    #[test]
+    fn test_card_keys() {
+        let json = r##"{
+            "title": "Papier", "anchor": "stage",
+            "shots": [{"duration": 4, "position": [0, 2, -6]}],
+            "cards": [{"image": "a.png", "at": 1, "duration": 3, "keys": [
+                {"t": 0, "position": [0, 0, 0], "width": 2},
+                {"t": 1, "position": [2, 0, 0], "width": 4, "opacity": 0.5, "tint": [0.5, 1, 1]},
+                {"t": 2, "position": [2, 2, 0], "width": 4}
+            ]}]
+        }"##;
+        let c = Cinematic::from_json("cles", json).unwrap();
+        let s = &c.cards_at(1.5)[0];
+        assert!((s.center - Vec3::new(1.0, 0.0, 0.0)).length() < 1e-4);
+        assert!((s.width - 3.0).abs() < 1e-4 && (s.opacity - 0.75).abs() < 1e-4);
+        assert!((s.tint[0] - 0.75).abs() < 1e-4 && s.tint[1] == 1.0);
+        let s = &c.cards_at(3.5)[0];
+        assert!((s.center - Vec3::new(2.0, 2.0, 0.0)).length() < 1e-4 && s.opacity == 1.0);
+        assert!(Cinematic::from_json("x", &json.replace("\"t\": 2", "\"t\": 0.5")).is_err());
     }
 
     #[test]

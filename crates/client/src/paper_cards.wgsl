@@ -1,7 +1,7 @@
 // =========================================================================
 // HeroCraft - Cartes de papier découpé des cinématiques (paper_cards.rs)
 // Une carte par instance : une grille de 8 × 8 cases, gondolée sur le GPU. La découpe vient d'une
-// couche de texture ; un champ de distances autour d'elle dessine le liseré blanc. Le papier a son
+// page de l'atlas ; un champ de distances autour d'elle dessine le liseré blanc. Le papier a son
 // grain, ses fibres et son épaisseur sombre au bord ; la lumière est celle de la scène.
 // =========================================================================
 
@@ -23,9 +23,8 @@ struct CardUniform {
 
 const GRID: u32 = 8u;
 const NO_TEXTURE: u32 = 65535u;
-// Distance (en pixels de texture) que couvre le champ du liseré, voir paper_cards.rs
+// Distance (en pixels de l'atlas) que couvre le champ du liseré, voir paper_cards.rs
 const OUTLINE_RANGE: f32 = 16.0;
-const TEXTURE_SIZE: f32 = 512.0;
 // Lumière du jour du jeu : un papier blanc au soleil y prend la clarté du sol éclairé
 const LIGHT_SCALE: f32 = 2.2;
 
@@ -35,10 +34,12 @@ struct VertexOutput {
     @location(1) world_pos: vec3<f32>,
     @location(2) normal: vec3<f32>,
     @location(3) color: vec4<f32>,
-    // x : couche, y : liseré (part de la largeur), z : lueur, w : feuille de fond
+    // x : page, y : liseré (en pixels de l'atlas), z : lueur, w : feuille de fond
     @location(4) @interpolate(flat) look: vec4<f32>,
     // Taille de la carte en blocs (grain du papier)
     @location(5) size_blocks: vec2<f32>,
+    // Coordonnées dans la page de l'atlas
+    @location(6) uv: vec2<f32>,
 };
 
 @vertex
@@ -49,6 +50,7 @@ fn vs_card(
     @location(2) axis_v: vec4<f32>,
     @location(3) color: vec4<f32>,
     @location(4) extra: vec4<f32>,
+    @location(5) uv_rect: vec4<f32>,
 ) -> VertexOutput {
     // Case de la grille et coin de la case (deux triangles)
     let cell = vi / 6u;
@@ -78,6 +80,7 @@ fn vs_card(
 
     var out: VertexOutput;
     out.quad = q;
+    out.uv = mix(uv_rect.xy, uv_rect.zw, vec2<f32>(g.x, 1.0 - g.y));
     out.world_pos = p;
     out.normal = normalize(cross(du, dv));
     out.color = color;
@@ -121,7 +124,7 @@ fn bayer(pixel: vec2<f32>) -> f32 {
 @fragment
 fn fs_card(in: VertexOutput) -> @location(0) vec4<f32> {
     let q = in.quad;
-    let uv = vec2<f32>(q.x * 0.5 + 0.5, 0.5 - q.y * 0.5);
+    let uv = in.uv;
     let layer = u32(in.look.x + 0.5);
     let backdrop = in.look.w > 0.5;
 
@@ -130,8 +133,8 @@ fn fs_card(in: VertexOutput) -> @location(0) vec4<f32> {
     var edge = 1.0;
     if (layer != NO_TEXTURE) {
         let t = textureSampleLevel(cut_outs, card_sampler, uv, i32(layer), 0.0);
-        // Distance au dessin, en part de la largeur de la texture
-        let outside = textureSampleLevel(outlines, card_sampler, uv, i32(layer), 0.0).r * OUTLINE_RANGE / TEXTURE_SIZE;
+        // Distance au dessin, en pixels de l'atlas
+        let outside = textureSampleLevel(outlines, card_sampler, uv, i32(layer), 0.0).r * OUTLINE_RANGE;
         let border = in.look.y;
         if (t.a < 0.5) {
             if (outside > border || border <= 0.0) {

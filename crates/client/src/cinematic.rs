@@ -9,7 +9,7 @@ use glam::Vec3;
 use herocraft_common::cinematics::{CaptionStyle, CinematicCatalog, CinematicPlayer, GameEvent, SkipRequest};
 
 use crate::camera::{CinematicView, OrbitCamera};
-use crate::paper_cards::{CardInstance, CardUniform};
+use crate::paper_cards::{CardInstance, CardSet, CardUniform};
 
 /// Hauteur de la scène de papier au-dessus du joueur, en blocs
 const STAGE_HEIGHT_BLOCKS: f32 = 1500.0;
@@ -59,6 +59,20 @@ impl Cinematics {
 
     pub fn is_playing(&self) -> bool {
         self.player.is_playing()
+    }
+
+    /// Les découpes du plan en cours, et celles du plan suivant (à préparer d'avance)
+    pub fn card_sets(&self) -> (Option<CardSet>, Option<CardSet>) {
+        let Some(playing) = self.player.playing() else { return (None, None) };
+        let cinematic = &playing.cinematic;
+        let set = |t: f32| {
+            let (shot, start, end) = cinematic.shot_span_at(t);
+            let images: Vec<String> = cinematic.card_images_between(start, end).into_iter().map(str::to_string).collect();
+            (CardSet { key: format!("{}#{shot}", cinematic.id), images }, end)
+        };
+        let (current, end) = set(playing.time);
+        let next = (end < cinematic.duration()).then(|| set(end + 1e-3).0);
+        (Some(current), next)
     }
 
     /// Change de monde (sauvegarde `dir`) : la lecture s'arrête et les cinématiques déjà vues sont
@@ -190,32 +204,34 @@ impl Cinematics {
                 axis_v: (up * half_h).extend(0.0).to_array(),
                 color: [r, g, b, 1.0],
                 extra: [1.0, 1.0, 0.0, 0.0],
+                uv: [0.0, 0.0, 1.0, 1.0],
             });
         }
 
         for sample in cinematic.cards_at(playing.time) {
             let card = sample.card;
-            let (layer, aspect) = match card.image.as_deref() {
-                Some(image) => match layers.get(image) {
-                    Some(found) => found,
-                    // Image absente : signalée au chargement par les tests, la carte reste unie
-                    None => (crate::paper_cards::NO_TEXTURE, 1.0),
-                },
-                None => (crate::paper_cards::NO_TEXTURE, 1.0),
-            };
+            let sprite = card.image.as_deref().and_then(|image| layers.get(image));
+            // Image absente : signalée au chargement par les tests, la carte reste unie
+            let aspect = sprite.map_or(1.0, |s| s.aspect());
             let width = sample.width;
             let height = sample.height.unwrap_or(width / aspect.max(0.01));
+            // La carte s'étend sur la marge de la découpe, où se dessine le liseré
+            let [mx, my] = sprite.map_or([0.0; 2], |s| s.margin());
             // Repère de la carte dans celui de l'ancre : face vers l'arrière (-z), puis tournée
             let rotation = glam::Quat::from_rotation_y(-sample.yaw) * glam::Quat::from_rotation_x(sample.pitch) * glam::Quat::from_rotation_z(-sample.roll);
-            let u = to_world_dir(rotation * Vec3::X) * width * 0.5 * anchor.block;
-            let v = to_world_dir(rotation * Vec3::Y) * height * 0.5 * anchor.block;
+            let u = to_world_dir(rotation * Vec3::X) * width * (0.5 + mx) * anchor.block;
+            let v = to_world_dir(rotation * Vec3::Y) * height * (0.5 + my) * anchor.block;
             let [r, g, b] = card.color.as_deref().map_or([1.0; 3], linear_color);
+            let [r, g, b] = [r * sample.tint[0], g * sample.tint[1], b * sample.tint[2]];
+            // Le liseré en pixels de l'atlas, au plus la marge
+            let border = sprite.map_or(0.0, |s| (card.border.max(0.0) * s.size[0]).min(crate::paper_cards::PAD as f32 - 1.0));
             out.push(CardInstance {
-                center: anchor.to_world(sample.center).extend(layer as f32).to_array(),
+                center: anchor.to_world(sample.center).extend(sprite.map_or(crate::paper_cards::NO_TEXTURE, |s| s.page) as f32).to_array(),
                 axis_u: u.extend(card.curl.max(0.0)).to_array(),
-                axis_v: v.extend(card.border.max(0.0)).to_array(),
+                axis_v: v.extend(border).to_array(),
                 color: [r, g, b, sample.opacity],
                 extra: [card.glow, 0.0, 0.0, 0.0],
+                uv: sprite.map_or([0.0, 0.0, 1.0, 1.0], |s| s.uv),
             });
         }
         (uniform, out)
@@ -414,7 +430,7 @@ mod tests {
     /// Captures 3D de la scène de papier, rendues hors écran par le shader des cartes seul (sans
     /// ciel, monde ni textes ; tonemapping simplifié) : `HEROCRAFT_CAPTURES=captures cargo test -p
     /// herocraft_client snapshot_paper_stage -- --ignored` (cinématique au choix avec
-    /// `HEROCRAFT_CINEMATIQUE`, `essai-papier` par défaut)
+    /// `HEROCRAFT_CINEMATIQUE`, `essai-papier` par défaut ; instants avec `HEROCRAFT_TEMPS`)
     #[test]
     #[ignore]
     fn snapshot_paper_stage() {
@@ -426,7 +442,7 @@ mod tests {
         let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/cinematics");
         let (catalog, _) = CinematicCatalog::load_dir(&source);
         let duration = catalog.get(&id).expect("cinématique inconnue").duration();
-        let images = crate::paper_cards::CardImages::load_dir(&source.join("cards"));
+        let images = crate::paper_cards::CardImages::empty();
 
         let instance = wgpu::Instance::default();
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("aucun adaptateur graphique");
@@ -458,15 +474,20 @@ mod tests {
 
         let generator = herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 2026, ..Default::default() });
         let radius = crate::camera::DEFAULT_RADIUS;
-        let frames = 6;
-        for f in 0..frames {
-            let t = duration * (f as f32 + 0.5) / frames as f32;
+        // Instants des captures (`HEROCRAFT_TEMPS=12,30.5`), six régulières par défaut
+        let times: Vec<f32> = match std::env::var("HEROCRAFT_TEMPS") {
+            Ok(list) => list.split(',').filter_map(|t| t.trim().parse().ok()).collect(),
+            Err(_) => (0..6).map(|f| duration * (f as f32 + 0.5) / 6.0).collect(),
+        };
+        for (f, &t) in times.iter().enumerate() {
             let mut camera = OrbitCamera::new(0.0, radius, &generator);
             camera.aspect = width as f32 / height as f32;
             let mut cinematics = Cinematics { player: CinematicPlayer::new(catalog.clone()), anchor: None, world: None };
             cinematics.player.play(&id).unwrap();
             cinematics.update(0.0, &mut camera, &generator);
             cinematics.update(t, &mut camera, &generator);
+            let (current, _) = cinematics.card_sets();
+            renderer.prepare(&device, &queue, current.as_ref(), None);
             let (uniform, cards) = cinematics.cards(&camera, &renderer.layers);
             renderer.update(&queue, &uniform, &cards);
             let mut encoder = device.create_command_encoder(&Default::default());

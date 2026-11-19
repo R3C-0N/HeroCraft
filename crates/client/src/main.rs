@@ -645,7 +645,8 @@ fn main() {
                         for event in cinematics.update(dt, &mut camera, &generator) {
                             info!("Événement de cinématique : {} {:?}", event.name, event.tags);
                         }
-                        // Cartes de papier de la cinématique (aucune sinon)
+                        // Cartes de papier de la cinématique (aucune sinon), et l'atlas de ses découpes
+                        state.prepare_cards(cinematics.card_sets());
                         let (card_uniform, card_instances) = cinematics.cards(&camera, state.card_layers());
                         state.update_cards(&card_uniform, &card_instances);
                         if cinematics.is_playing() && !was_playing {

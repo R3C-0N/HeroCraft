@@ -650,7 +650,7 @@ impl State {
         });
         let precipitation = crate::precipitation::Precipitation::new(&device, &atmosphere.scene_layout, scene_target, integrated_gpu);
         let effects = crate::effects::EffectRenderer::new(&device, &queue, &atmosphere.scene_layout, scene_target);
-        let cards = crate::paper_cards::CardRenderer::new(&device, &queue, scene_target, crate::paper_cards::CardImages::load_default());
+        let cards = crate::paper_cards::CardRenderer::new(&device, &queue, scene_target, crate::paper_cards::CardImages::empty());
 
         // -------------------------------------------------------------
         // Rendu Interface Utilisateur egui
@@ -1123,6 +1123,11 @@ impl State {
     /// Les cartes de papier de la cinématique en cours (aucune hors des cinématiques)
     pub fn update_cards(&mut self, uniform: &crate::paper_cards::CardUniform, cards: &[crate::paper_cards::CardInstance]) {
         self.cards.update(&self.queue, uniform, cards);
+    }
+
+    /// Charge l'atlas des découpes du plan en cours (`None` : le libère) et prépare le suivant
+    pub fn prepare_cards(&mut self, (current, next): (Option<crate::paper_cards::CardSet>, Option<crate::paper_cards::CardSet>)) {
+        self.cards.prepare(&self.device, &self.queue, current.as_ref(), next.as_ref());
     }
 
     /// Les découpes chargées pour les cartes de papier
