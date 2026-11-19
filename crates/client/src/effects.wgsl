@@ -17,6 +17,8 @@ const KIND_DOME: u32 = 3u;
 const KIND_BEAM: u32 = 4u;
 const KIND_DISC: u32 = 5u;
 const KIND_VOID: u32 = 6u;
+// Taille du quadrilatère d'une fenêtre sur le néant, rapportée à la fenêtre (son ombre déborde)
+const VOID_FRAME: f32 = 1.5;
 const NO_TEXTURE: u32 = 255u;
 
 struct VertexOutput {
@@ -172,12 +174,20 @@ fn fs_effect(in: VertexOutput) -> @location(0) vec4<f32> {
             }
         }
         case KIND_VOID: {
-            // Losange aux bords fondus, cerclé d'un liseré violet qui luit
-            let m = abs(q.x) + abs(q.y);
-            shape = 1.0 - smoothstep(0.88, 1.0, m);
+            // Le quadrilatère déborde de la fenêtre (`VOID_FRAME`) : au-delà du bord, une ombre
+            // assombrit le cristal en approchant, comme si le néant buvait sa lumière
+            let m = (abs(q.x) + abs(q.y)) * VOID_FRAME;
+            // Bord rongé qui ondule lentement, comme une déchirure vivante
+            let ang = atan2(q.x, q.y);
+            let edge = 0.84 + 0.14 * void_noise(vec3<f32>(cos(ang) * 3.0, sin(ang) * 3.0, in.params.x * 0.8));
+            let inside = 1.0 - smoothstep(edge - 0.03, edge, m);
+            let shadow = (1.0 - smoothstep(edge, edge + 0.45, m)) * 0.85;
+            shape = max(inside, shadow);
             let dir = normalize(in.world - camera.camera_pos);
-            let rim = smoothstep(0.55, 0.95, m);
-            tint = void_sky(dir, in.params.x) + vec3<f32>(0.45, 0.15, 1.1) * rim * rim;
+            // Une lueur violette sourde monte du fond vers le bord, sans liseré
+            let deep = pow(clamp((m - 0.5) / max(edge - 0.5, 0.01), 0.0, 1.0), 2.0);
+            let sky = void_sky(dir, in.params.x) + vec3<f32>(0.12, 0.03, 0.30) * deep;
+            tint = mix(vec3<f32>(0.01, 0.0, 0.03), sky, inside / max(shape, 1e-4));
         }
         default: {}
     }

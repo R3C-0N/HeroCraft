@@ -6,8 +6,8 @@
 //!
 //! Le bloc posé (`voidStonePlaced`) a une coque de cristal violet, dessinée avec le terrain ;
 //! `VoidStoneSites` y ajoute, par les effets, une fenêtre taillée dans la Pierre qui donne sur le
-//! néant (un ciel noir étoilé fixe, qu'on voit défiler en tournant autour) et des poussières
-//! aspirées vers elle.
+//! néant (un ciel noir étoilé fixe, qu'on voit défiler en tournant autour), au bord rongé qui
+//! ondule et entouré d'une ombre qui boit la lumière du cristal, et des poussières aspirées.
 
 use glam::Vec3;
 use herocraft_common::{blocks, BlockId, ItemId, StoneEvent, StoneEvents, StoneKind};
@@ -65,6 +65,9 @@ const DUST_SECONDS: f32 = 2.6;
 /// Avancée de la fenêtre sur le néant devant le centre de la Pierre, en blocs : juste devant la
 /// coque, qui mesure 5/16 de bloc de demi-largeur
 const WINDOW_DEPTH_BLOCKS: f32 = 0.33;
+/// Taille du losange dessiné, rapportée à la fenêtre : l'ombre qui assombrit le cristal autour
+/// d'elle déborde (`VOID_FRAME` de `effects.wgsl`)
+const VOID_FRAME: f32 = 1.5;
 /// Rayon de départ des poussières, en blocs
 const DUST_RADIUS_BLOCKS: f32 = 1.3;
 
@@ -169,8 +172,8 @@ fn push_stone(center: Vec3, seed: u32, time: f32, eye: Vec3, block: f32, out: &m
     out.push(EffectQuad {
         center: [window.x, window.y, window.z, KIND_VOID as f32],
         // Paramètre 0 : l'horloge du néant (dérive des brumes, scintillement), en secondes
-        axis_u: (u * 0.2 * block * beat).extend(time % 3600.0).to_array(),
-        axis_v: (v * 0.34 * block * beat).extend(0.0).to_array(),
+        axis_u: (u * 0.2 * VOID_FRAME * block * beat).extend(time % 3600.0).to_array(),
+        axis_v: (v * 0.34 * VOID_FRAME * block * beat).extend(0.0).to_array(),
         color: [1.0, 1.0, 1.0, 1.0],
         extra: [NO_TEXTURE as f32, 0.0, 0.0, 0.0],
     });
