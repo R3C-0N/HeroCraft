@@ -214,6 +214,7 @@ fn main() {
     // Cinématiques (assets/cinematics/) : déclenchées par les événements du jeu, ou par /cinematic
     let mut cinematics = cinematic::Cinematics::load();
     ui_state.chat.cinematics = cinematics.player.catalog.ids();
+    let mut launch_announced = false;
     let mut effect_quads: Vec<effects::EffectQuad> = Vec::new();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
     // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
@@ -641,6 +642,14 @@ fn main() {
                         // Cinématique : elle tient la caméra, ferme les écrans et renvoie ses
                         // événements au jeu (changer d'époque à la fin de la vision…)
                         cinematics.set_world(std::path::PathBuf::from(solo_save_dir(current_seed)));
+                        // Le lancement du jeu, une fois le monde chargé : la Genèse s'y joue (pas pendant
+                        // le banc d'essai)
+                        if !launch_announced {
+                            launch_announced = true;
+                            if bench.is_none() {
+                                cinematics.notify(&herocraft_common::cinematics::GameEvent::new(cinematic::LAUNCH_EVENT));
+                            }
+                        }
                         let was_playing = cinematics.is_playing();
                         for event in cinematics.update(dt, &mut camera, &generator) {
                             info!("Événement de cinématique : {} {:?}", event.name, event.tags);

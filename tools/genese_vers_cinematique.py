@@ -282,8 +282,11 @@ def main():
     ]
     cinematic = {
         "title": "La Genèse",
-        "description": "Le récit des origines, porté de la maquette docs/cinematiques/genese.html en cartes de papier découpé : la déchirure, la planète de feu, la pluie des Pierres du Néant, la vie qui naît puis les peuples. Généré par tools/genese_vers_cinematique.py (ne pas modifier à la main). Se joue par `/cinematic genese`.",
+        "description": "Le récit des origines, porté de la maquette docs/cinematiques/genese.html en cartes de papier découpé : la déchirure, la planète de feu, la pluie des Pierres du Néant, la vie qui naît puis les peuples. Se joue à chaque lancement du jeu (`game_launched`), ou par `/cinematic genese`. Généré par tools/genese_vers_cinematique.py (ne pas modifier à la main).",
         "anchor": "stage",
+        # À chaque lancement du jeu (on la passe par Échap, Espace ou Entrée)
+        "once": False,
+        "triggers": [{"event": "game_launched"}],
         "letterbox": False,
         "stage": {"backdrop": "#0B0710", "light": {"direction": [0.0, 0.3, -1.0], "color": "#FFF6E8", "intensity": 0.55, "ambient": 0.85}},
         "shots": shots,

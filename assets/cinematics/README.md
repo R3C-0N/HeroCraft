@@ -184,7 +184,7 @@ Le jeu reçoit ces événements comme ceux qu'il envoie : ils peuvent aussi déc
 |---|---|---|
 | `fin-de-la-vision` | Pierre du Néant entière obtenue | La Pierre s'éveille, des souvenirs qui ne sont pas ceux du joueur, puis la lumière efface tout (fondu au blanc, `vision_ended`). Enchaîne sur `reveil-au-present`. (19,5 s) |
 | `essai-papier` | `/cinematic essai-papier` | Scène d'essai des cartes de papier : un paysage en couches qui glissent sous la caméra, puis une planète de feu derrière des nuages. (16 s) |
-| `genese` | `/cinematic genese` | Le récit des origines, porté de la maquette `docs/cinematiques/genese.html` : 832 cartes de papier en dix scènes. Généré, ne pas modifier à la main (voir plus bas). (161 s) |
+| `genese` | À chaque lancement du jeu (`game_launched`), ou `/cinematic genese` | Le récit des origines, porté de la maquette `docs/cinematiques/genese.html` : 832 cartes de papier en dix scènes. Généré, ne pas modifier à la main (voir plus bas). (161 s) |
 | `reveil-au-present` | Après la fin de la vision | Le joueur s'éveille dans les ruines du temple, sans autre souvenir que la vision ; la caméra descend du ciel et se pose derrière lui. (15 s) |
 
 Les textes sont une première version, à reprendre avec l'écriture du scénario.

@@ -49,6 +49,9 @@ pub struct Cinematics {
     world: Option<std::path::PathBuf>,
 }
 
+/// Événement envoyé une fois, à la première image du jeu (la Genèse s'y joue)
+pub const LAUNCH_EVENT: &str = "game_launched";
+
 /// Fichier des cinématiques déjà vues, dans la sauvegarde du monde
 pub const SEEN_FILE: &str = "cinematiques.json";
 
