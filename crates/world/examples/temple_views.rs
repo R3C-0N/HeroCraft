@@ -8,7 +8,7 @@ use herocraft_world::{Culture, Epoch, PlanetDescriptor, PlanetWorldGenerator, Te
 use std::io::Write;
 
 /// Côté d'un bloc à l'écran, en pixels
-const S: i32 = 10;
+const S: i32 = 13;
 /// Demi-côté de la vue autour de l'autel
 const HALF: i32 = 17;
 
@@ -29,20 +29,22 @@ fn main() {
     let site = PlanetFace::ALL
         .into_iter()
         .filter_map(|f| generator.nearest_temple(f, mid, mid, herocraft_world::FACE_BLOCKS))
-        .max_by_key(|t| t.foot().width())
+        .max_by_key(|t| t.radius())
         .expect("un temple sur la planète");
     let holder = site.holder_for(player);
     println!(
-        "Temple en {:?} ({}, {}), {} de côté, entrée {:?}, tenu dans le passé par les {} (joueur : {})",
+        "Temple en {:?} ({}, {}), rayon {}, entrée {:?}, tenu dans le passé par les {} (joueur : {})",
         site.face,
         site.center().0,
         site.center().1,
-        site.foot().width(),
+        site.radius(),
         site.door(),
         holder.name(),
         player.name()
     );
     let past = generator.with_epoch(Epoch::Past(holder));
+    render_plan(&past, &site, past.epoch, site.floor() + 3, &format!("{dir}/temple-passe-plan.ppm"));
+    render_plan(&generator, &site, Epoch::Present, site.floor() + 3, &format!("{dir}/temple-present-plan.ppm"));
     render(
         &generator,
         &site,
@@ -125,7 +127,7 @@ fn render(generator: &PlanetWorldGenerator, site: &TempleSite, epoch: Epoch, cut
             for y in 0..h {
                 let wy = y0 + y;
                 let mut b = generator.column_block(&column, face, bx, wy, bz);
-                if cut && wy >= site.floor() + 2 {
+                if cut && wy >= site.floor() + 4 {
                     b = BlockId::AIR;
                 }
                 // Les arbres autour masquent le temple : la vue les ôte
@@ -209,6 +211,52 @@ fn render(generator: &PlanetWorldGenerator, site: &TempleSite, epoch: Epoch, cut
     }
     let mut f = std::fs::File::create(out).expect("création du fichier");
     write!(f, "P6\n{width} {height}\n255\n").unwrap();
+    for p in img {
+        f.write_all(&p).unwrap();
+    }
+}
+
+/// Plan vu de dessus : le plus haut bloc de chaque colonne sous `ceiling` (exclu), 16 pixels par
+/// bloc, l'emplacement de la Pierre en violet
+fn render_plan(generator: &PlanetWorldGenerator, site: &TempleSite, epoch: Epoch, ceiling: i32, out: &str) {
+    const P: i32 = 16;
+    let rect = site.rect().expand(2);
+    let (w, d) = (rect.width(), rect.depth());
+    let slot = site.stone_slot(epoch);
+    let mut img = vec![[18u8, 22, 30]; (w * P * d * P) as usize];
+    // Entrée en bas de l'image
+    let (dx, dz) = site.door().delta();
+    let (cx, cz) = site.center();
+    let half = w / 2;
+    for j in 0..d {
+        for i in 0..w {
+            let (u, v) = (i - half, half - j);
+            let (x, z) = (cx - dx * v + dz * u, cz - dz * v - dx * u);
+            let mut found = None;
+            for y in (site.floor() - 6..ceiling).rev() {
+                let b = generator.block_at(site.face, x, y, z);
+                if (x, y, z) == (slot.x, slot.y, slot.z) {
+                    found = Some(([0.75, 0.2, 1.0], y));
+                    break;
+                }
+                if !b.is_air() {
+                    found = Some((color(b, true), y));
+                    break;
+                }
+            }
+            let Some((c, y)) = found else { continue };
+            let shade = (0.6 + 0.05 * (y - site.floor()) as f32).clamp(0.45, 1.15);
+            let px = c.map(|v| ((v * shade).clamp(0.0, 1.0) * 255.0) as u8);
+            for py in 0..P {
+                for qx in 0..P {
+                    let edge = py == 0 || qx == 0;
+                    img[((j * P + py) * w * P + i * P + qx) as usize] = if edge { px.map(|v| (v as f32 * 0.8) as u8) } else { px };
+                }
+            }
+        }
+    }
+    let mut f = std::fs::File::create(out).expect("création du fichier");
+    write!(f, "P6\n{} {}\n255\n", w * P, d * P).unwrap();
     for p in img {
         f.write_all(&p).unwrap();
     }

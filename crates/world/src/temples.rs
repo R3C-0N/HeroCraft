@@ -1,19 +1,19 @@
 //! Temples à deux époques.
 //!
-//! Un temple existe au même endroit à deux époques :
-//! - **au présent** (`Epoch::Present`), la ruine que le générateur pose déjà parmi les ruines de la
-//!   planète : podium, colonnes brisées, autel coiffé d'un cristal. Sous l'autel, une cache creusée
-//!   dans le podium attend la Pierre du Néant ;
-//! - **dans le passé** (`Epoch::Past`), le même temple intact, tenu en guerre par un peuple : podium
-//!   entier, péristyle de colonnes pleines sous une architrave, toit à gradins coiffé d'un cristal,
-//!   sanctuaire aux murs de ce peuple, autel doré où repose la Pierre, barricade de pieux sur le
-//!   rebord du podium, ouverte devant l'entrée, et lanternes.
+//! Un temple est rond. Une base haute fait le tour de son enceinte, et on n'y entre que par
+//! l'avant. Des colonnes posées sur la base, un peu plus hautes vers le fond, sont reliées par une
+//! couronne. L'intérieur de l'enceinte est l'arène où se livre le combat final de la vision contre
+//! un monstre du Néant (bible, section 8). Au fond, derrière un mur courbe bombé vers l'arène, le
+//! sanctuaire est fermé : on n'y entre que par sa porte, depuis l'arène, et autour de lui le tour
+//! de l'enceinte devient un mur plein qui monte jusqu'à la couronne. L'autel se dresse au centre du
+//! sanctuaire, sous un puits de lumière.
 //!
-//! Devant l'entrée s'étend un parvis sacré (`TempleSite::arena`), qui sert d'arène au combat final
-//! de la vision contre un monstre du Néant (bible, section 8) : une cour dallée une marche sous le
-//! temple, une allée processionnelle, un cercle ornementé au centre, des vasques de lumière, une
-//! colonnade couverte d'un linteau tout autour, ouverte contre le podium, et un portique à deux
-//! piliers pour seule entrée. Au présent, ses colonnes sont brisées et l'herbe perce les dalles.
+//! Il existe au même endroit à deux époques :
+//! - **au présent** (`Epoch::Present`), c'est une ruine. La base et les colonnes sont brisées, la
+//!   couronne et le toit sont tombés, et l'herbe perce les dalles. Sous l'autel, une cache creusée
+//!   dans le sol du sanctuaire attend la Pierre du Néant ;
+//! - **dans le passé** (`Epoch::Past`), c'est le même temple intact, tenu en guerre par un peuple,
+//!   avec les murs et les lanternes de ce peuple et la Pierre posée sur l'autel doré.
 //!
 //! Les deux époques changent exactement les mêmes colonnes et les mêmes altitudes : passer de l'une
 //! à l'autre ne demande que de régénérer les chunks du temple (`TempleSite::chunks`) avec un
@@ -24,8 +24,8 @@
 //! - choisir qui le tient dans la vision : `TempleSite::holder_for` (un peuple autre que celui du
 //!   joueur), puis `Epoch::Past(peuple)` ;
 //! - poser la Pierre : `TempleSite::stone_slot(epoch)`, un bloc d'air réservé à elle ;
-//! - mettre le joueur en place : `TempleSite::approach` (devant la porte de l'arène, dehors),
-//!   `TempleSite::arena_center` (où attendre le monstre) et `TempleSite::sanctum` (la salle de
+//! - mettre le joueur en place : `TempleSite::approach` (devant l'entrée, dehors),
+//!   `TempleSite::arena_center` (où attendre le monstre) et `TempleSite::in_sanctum` (la salle de
 //!   l'autel).
 
 use herocraft_common::PlanetFace;
@@ -88,29 +88,26 @@ impl TempleSite {
 
     pub fn id(&self) -> TempleId {
         let (x, z) = self.center();
-        TempleId {
-            face: self.face,
-            x,
-            z,
-        }
+        TempleId { face: self.face, x, z }
     }
 
-    /// Colonne de l'autel
+    /// Colonne du centre de l'enceinte
     pub fn center(&self) -> (i32, i32) {
-        self.temple.foot.center()
+        self.temple.center
     }
 
-    /// Colonnes du temple (le podium)
-    pub fn foot(&self) -> Rect {
-        self.temple.foot
+    /// Rayon de l'enceinte, base comprise
+    pub fn radius(&self) -> i32 {
+        self.temple.radius
     }
 
-    /// Toutes les colonnes que le temple et son arène changent
+    /// Toutes les colonnes que le temple change
     pub fn rect(&self) -> Rect {
         self.temple.rect()
     }
 
-    /// Altitude du sol du temple (premier bloc d'air au-dessus du podium)
+    /// Altitude du sol de l'arène (premier bloc d'air au-dessus du dallage). Le sanctuaire est un
+    /// bloc plus haut.
     pub fn floor(&self) -> i32 {
         self.temple.floor
     }
@@ -120,41 +117,35 @@ impl TempleSite {
         self.temple.door()
     }
 
-    /// Emplacement de la Pierre du Néant à l'époque `epoch` : dans le passé sur l'autel doré du
-    /// sanctuaire, au présent dans la cache creusée sous l'autel. Le générateur y laisse de l'air.
+    /// Colonne de l'autel, au centre du sanctuaire
+    pub fn altar(&self) -> (i32, i32) {
+        self.temple.altar()
+    }
+
+    /// Emplacement de la Pierre du Néant à l'époque `epoch` : dans le passé sur l'autel doré, sous
+    /// le puits de lumière ; au présent dans la cache creusée sous l'autel. Le générateur y laisse
+    /// de l'air.
     pub fn stone_slot(&self, epoch: Epoch) -> BlockPos {
         let (x, y, z) = self.temple.stone_slot(epoch.is_past());
         BlockPos::new(self.face, x, y, z)
     }
 
-    /// Le parvis devant l'entrée du temple, l'arène où se livre le combat final de la vision
-    pub fn arena(&self) -> Rect {
-        self.temple.arena
-    }
-
     /// Le centre de l'arène, au niveau de son sol (là où attendre le monstre du Néant)
     pub fn arena_center(&self) -> BlockPos {
-        let (x, z) = self.temple.arena.center();
-        BlockPos::new(self.face, x, self.temple.arena_floor(), z)
+        let (x, z) = self.temple.arena_center();
+        BlockPos::new(self.face, x, self.temple.floor, z)
     }
 
-    /// Où se tenir pour aborder le temple : la colonne juste devant la porte de l'arène, dehors,
-    /// à la hauteur du sol de l'arène (les pieds y sont à une marche près)
+    /// Où se tenir pour aborder le temple : la colonne juste devant l'entrée, dehors, à la hauteur
+    /// du sol de l'arène (les pieds y sont à une marche près)
     pub fn approach(&self) -> BlockPos {
-        let arena = self.temple.arena;
-        let (cx, cz) = self.temple.foot.center();
-        let (x, z) = match self.door() {
-            Side::North => (cx, arena.z0 - 1),
-            Side::South => (cx, arena.z1),
-            Side::West => (arena.x0 - 1, cz),
-            Side::East => (arena.x1, cz),
-        };
-        BlockPos::new(self.face, x, self.temple.arena_floor(), z)
+        let (x, z) = self.temple.approach();
+        BlockPos::new(self.face, x, self.temple.floor, z)
     }
 
-    /// La salle du sanctuaire du temple intact (l'intérieur de ses murs), où se dresse l'autel
-    pub fn sanctum(&self) -> Rect {
-        self.temple.cella().expand(-1)
+    /// La colonne (x, z) est dans la salle du sanctuaire, où se dresse l'autel
+    pub fn in_sanctum(&self, x: i32, z: i32) -> bool {
+        self.temple.in_sanctum(x, z)
     }
 
     /// Le peuple qui tient le temple dans la vision d'un joueur du peuple `player` : toujours un
@@ -272,10 +263,7 @@ mod tests {
     use herocraft_common::BlockId;
 
     fn generator(seed: u64) -> PlanetWorldGenerator {
-        PlanetWorldGenerator::new(PlanetDescriptor {
-            seed,
-            ..Default::default()
-        })
+        PlanetWorldGenerator::new(PlanetDescriptor { seed, ..Default::default() })
     }
 
     /// Un temple de la planète et son générateur
@@ -283,9 +271,7 @@ mod tests {
         let generator = generator(seed);
         let face = PlanetFace::ALL[0];
         let mid = crate::edits::FACE_BLOCKS / 2;
-        let site = generator
-            .nearest_temple(face, mid, mid, crate::edits::FACE_BLOCKS)
-            .expect("au moins un temple sur la face");
+        let site = generator.nearest_temple(face, mid, mid, crate::edits::FACE_BLOCKS).expect("au moins un temple sur la face");
         (generator, site)
     }
 
@@ -293,24 +279,26 @@ mod tests {
         generator.block_at(pos.face, pos.x, pos.y, pos.z)
     }
 
+    /// Altitude où l'on se tient debout dans la colonne (x, z), cherchée de `low` à `high`
+    fn standing(generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32, low: i32, high: i32) -> Option<i32> {
+        (low..=high).find(|&y| generator.block_at(face, x, y - 1, z).is_solid() && !generator.block_at(face, x, y, z).is_solid() && !generator.block_at(face, x, y + 1, z).is_solid())
+    }
+
+    /// Distance de la colonne (x, z) à l'axe de l'entrée
+    fn off_axis(site: &TempleSite, x: i32, z: i32) -> i32 {
+        let (cx, cz) = site.center();
+        let (dx, dz) = site.door().delta();
+        (dz * (x - cx) - dx * (z - cz)).abs()
+    }
+
     #[test]
     fn nearest_temple_is_found_and_stable() {
         let (generator, site) = some_temple(42);
         let (x, z) = site.center();
-        let again = generator
-            .temple_at(site.face, x, z)
-            .expect("le temple couvre son autel");
+        let again = generator.temple_at(site.face, x, z).expect("le temple couvre son centre");
         assert_eq!(again.id(), site.id());
-        assert_eq!(
-            generator
-                .nearest_temple(site.face, x, z, 64)
-                .map(|t| t.id()),
-            Some(site.id())
-        );
-        assert!(generator
-            .temples_touching(site.face, Rect::around(x, z, 2))
-            .iter()
-            .any(|t| t.id() == site.id()));
+        assert_eq!(generator.nearest_temple(site.face, x, z, 64).map(|t| t.id()), Some(site.id()));
+        assert!(generator.temples_touching(site.face, Rect::around(x, z, 2)).iter().any(|t| t.id() == site.id()));
         // Une autre partie sur la même graine trouve le même temple
         assert_eq!(some_temple(42).1.id(), site.id());
     }
@@ -318,30 +306,22 @@ mod tests {
     #[test]
     fn the_two_epochs_share_the_same_place() {
         let (present, site) = some_temple(42);
-        let holder = site.holder_for(Culture::Humains);
-        let past = present.with_epoch(Epoch::Past(holder));
-        let foot = site.rect();
+        let past = present.with_epoch(Epoch::Past(site.holder_for(Culture::Humains)));
+        let rect = site.rect();
         let mut differs = 0;
-        // Autour du temple, rien ne change ; sur le podium, le temple change de visage
-        for z in foot.z0 - 4..foot.z1 + 4 {
-            for x in foot.x0 - 4..foot.x1 + 4 {
+        // Autour du temple, rien ne change ; dans l'enceinte, le temple change de visage
+        for z in rect.z0 - 4..rect.z1 + 4 {
+            for x in rect.x0 - 4..rect.x1 + 4 {
                 for y in site.floor() - 4..site.top() + 2 {
-                    let (a, b) = (
-                        present.block_at(site.face, x, y, z),
-                        past.block_at(site.face, x, y, z),
-                    );
-                    if a != b {
-                        assert!(foot.contains(x, z), "({x}, {y}, {z}) change hors du temple");
+                    if present.block_at(site.face, x, y, z) != past.block_at(site.face, x, y, z) {
+                        assert!(rect.contains(x, z), "({x}, {y}, {z}) change hors du temple");
                         assert!(y < site.top(), "({x}, {y}, {z}) change au-dessus du temple");
                         differs += 1;
                     }
                 }
             }
         }
-        assert!(
-            differs > 50,
-            "le temple intact diffère de la ruine ({differs} blocs)"
-        );
+        assert!(differs > 200, "le temple intact diffère de la ruine ({differs} blocs)");
     }
 
     #[test]
@@ -350,100 +330,83 @@ mod tests {
         let past = present.with_epoch(Epoch::Past(site.holder_for(Culture::Nains)));
         for (generator, epoch) in [(&present, Epoch::Present), (&past, past.epoch)] {
             let slot = site.stone_slot(epoch);
-            assert!(
-                block(generator, slot).is_air(),
-                "{epoch:?} : l'emplacement de la Pierre est libre"
-            );
-            let below = BlockPos {
-                y: slot.y - 1,
-                ..slot
-            };
-            assert!(
-                !block(generator, below).is_air(),
-                "{epoch:?} : la Pierre repose sur quelque chose"
-            );
-            assert_eq!((slot.x, slot.z), site.center());
+            assert!(block(generator, slot).is_air(), "{epoch:?} : l'emplacement de la Pierre est libre");
+            assert!(!block(generator, BlockPos { y: slot.y - 1, ..slot }).is_air(), "{epoch:?} : la Pierre repose sur quelque chose");
+            assert_eq!((slot.x, slot.z), site.altar());
+            assert!(site.in_sanctum(slot.x, slot.z));
         }
         // Au présent, la Pierre est cachée : l'autel la recouvre
         let slot = site.stone_slot(Epoch::Present);
-        assert!(!block(
-            &present,
-            BlockPos {
-                y: slot.y + 1,
-                ..slot
-            }
-        )
-        .is_air());
-        // Dans le passé, elle est sous le toit du sanctuaire, à l'abri des murs
+        assert!(!block(&present, BlockPos { y: slot.y + 1, ..slot }).is_air());
+        // Dans le passé, la lumière tombe sur elle : rien au-dessus jusqu'au ciel
         let slot = site.stone_slot(past.epoch);
-        assert!(site.sanctum().contains(slot.x, slot.z));
+        assert!((slot.y..site.top() + 2).all(|y| block(&past, BlockPos { y, ..slot }).is_air()));
+        // Et le toit du sanctuaire couvre le reste de la salle
+        let (ax, az) = site.altar();
+        let (dx, dz) = site.door().delta();
+        let (x, z) = (ax - 3 * dz, az + 3 * dx);
+        assert!(site.in_sanctum(x, z));
+        assert!((site.floor() + 2..site.top()).any(|y| past.block_at(site.face, x, y, z).is_solid()));
     }
 
     #[test]
-    fn the_past_temple_is_whole_and_open() {
+    fn one_walks_from_the_entrance_to_the_altar() {
         let (present, site) = some_temple(42);
         let past = present.with_epoch(Epoch::Past(Culture::Nains));
-        let (cx, cz) = site.center();
-        // Le toit couvre l'autel
-        assert!(
-            (site.floor() + 2..site.top()).any(|y| !past.block_at(site.face, cx, y, cz).is_air())
-        );
-        // On entre : de l'approche jusqu'à l'autel, deux blocs d'air libres au-dessus du sol
-        let approach = site.approach();
+        let (ax, az) = site.altar();
         let (dx, dz) = site.door().delta();
-        let (mut x, mut z) = (approach.x, approach.z);
-        while (x, z) != (cx, cz) {
+        let start = site.approach();
+        let (mut x, mut z) = (start.x - dx, start.z - dz);
+        let mut previous = standing(&past, site.face, start.x, start.z, site.floor() - 3, site.floor() + 1).expect("on se tient devant l'entrée");
+        while (x - dx, z - dz) != (ax, az) {
+            let here = standing(&past, site.face, x, z, previous - 1, previous + 1).unwrap_or_else(|| panic!("({x}, {z}) bouche le chemin de l'autel"));
+            previous = here;
             x -= dx;
             z -= dz;
-            if (x, z) == (cx, cz) {
-                break;
-            }
-            let floor = if site.arena().contains(x, z) && !site.foot().contains(x, z) {
-                site.floor() - 1
-            } else {
-                site.floor()
-            };
-            for y in floor..floor + 2 {
-                let b = past.block_at(site.face, x, y, z);
-                assert!(!b.is_solid(), "({x}, {y}, {z}) bouche l'entrée : {b:?}");
-            }
         }
     }
 
     #[test]
-    fn the_arena_is_closed_but_for_its_gate() {
+    fn the_enclosure_and_the_sanctum_are_closed_but_for_their_doors() {
         let (present, site) = some_temple(42);
         let past = present.with_epoch(Epoch::Past(Culture::HautsElfes));
-        let arena = site.arena();
-        let floor = site.floor() - 1;
-        let (mut open, mut walled) = (0, 0);
-        for z in arena.z0..arena.z1 {
-            for x in arena.x0..arena.x1 {
-                if !(x == arena.x0 || x == arena.x1 - 1 || z == arena.z0 || z == arena.z1 - 1)
-                    || site.foot().expand(1).contains(x, z)
-                {
-                    continue;
-                }
-                if (floor..floor + 2).all(|y| !past.block_at(site.face, x, y, z).is_solid()) {
-                    open += 1;
-                } else {
-                    walled += 1;
+        let (cx, cz) = site.center();
+        let r = site.radius() as f64;
+        let free = |x: i32, z: i32, y0: i32| (y0..y0 + 3).all(|y| !past.block_at(site.face, x, y, z).is_solid());
+        // Le tour de l'enceinte : on ne passe que par l'entrée
+        let rect = site.rect();
+        let mut gaps = 0;
+        for z in rect.z0..rect.z1 {
+            for x in rect.x0..rect.x1 {
+                let d = (((x - cx) * (x - cx) + (z - cz) * (z - cz)) as f64).sqrt();
+                if d > r - 1.5 && d <= r + 0.5 && free(x, z, site.floor()) {
+                    let a = site.approach();
+                    assert!(off_axis(&site, x, z) <= 1 && (x - a.x).abs() + (z - a.z).abs() <= 4, "brèche dans le tour en ({x}, {z})");
+                    gaps += 1;
                 }
             }
         }
-        assert_eq!(
-            open, 3,
-            "seule la porte de trois blocs s'ouvre dans le mur de l'arène"
-        );
-        assert!(walled > 30);
-        // Le sol de l'arène est plat, une marche sous le temple
-        let center = site.arena_center();
-        assert!(past
-            .block_at(site.face, center.x, center.y, center.z)
-            .is_air());
-        assert!(!past
-            .block_at(site.face, center.x, center.y - 1, center.z)
-            .is_air());
+        assert!(gaps > 0, "l'entrée est ouverte");
+        // Le sanctuaire : on n'en sort que par sa porte, vers l'arène
+        let mut doors = 0;
+        for z in rect.z0..rect.z1 {
+            for x in rect.x0..rect.x1 {
+                if !site.in_sanctum(x, z) {
+                    continue;
+                }
+                for (nx, nz) in [(x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1)] {
+                    if site.in_sanctum(nx, nz) {
+                        continue;
+                    }
+                    // Le voisin est le mur : il ne laisse passer qu'à la porte
+                    if free(nx, nz, site.floor() + 1) {
+                        assert!(off_axis(&site, nx, nz) <= 1, "brèche dans le sanctuaire en ({nx}, {nz})");
+                        doors += 1;
+                    }
+                }
+            }
+        }
+        assert!(doors > 0, "la porte du sanctuaire est ouverte");
     }
 
     #[test]
@@ -461,8 +424,6 @@ mod tests {
         let chunks = site.chunks();
         let size = CHUNK_SIZE as i32;
         let slot = site.stone_slot(Epoch::Present);
-        assert!(chunks.iter().any(|c| c.x == slot.x.div_euclid(size)
-            && c.y == slot.z.div_euclid(size)
-            && c.altitude_layer == slot.y.div_euclid(size)));
+        assert!(chunks.iter().any(|c| c.x == slot.x.div_euclid(size) && c.y == slot.z.div_euclid(size) && c.altitude_layer == slot.y.div_euclid(size)));
     }
 }
