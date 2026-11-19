@@ -40,6 +40,10 @@ struct VertexOutput {
     @location(5) size_blocks: vec2<f32>,
     // Coordonnées dans la page de l'atlas
     @location(6) uv: vec2<f32>,
+    // Mélange : 0 découpée, 1 translucide, 2 lumineuse
+    @location(7) @interpolate(flat) blend: f32,
+    // Position à l'écran (pour la vignette)
+    @location(8) clip: vec4<f32>,
 };
 
 @vertex
@@ -85,8 +89,10 @@ fn vs_card(
     out.normal = normalize(cross(du, dv));
     out.color = color;
     out.look = vec4<f32>(center.w, axis_v.w, extra.x, extra.y);
+    out.blend = extra.z;
     out.size_blocks = vec2<f32>(half_w, length(v)) * 2.0 / max(scene.params.x, 1e-6);
     out.clip_position = scene.view_proj * vec4<f32>(p, 1.0);
+    out.clip = out.clip_position;
     return out;
 }
 
@@ -121,6 +127,31 @@ fn bayer(pixel: vec2<f32>) -> f32 {
     return (m[y * 4u + x] + 0.5) / 16.0;
 }
 
+// Couleur prémultipliée : une carte découpée est opaque, une translucide garde l'opacité de son
+// image, une lumineuse s'ajoute à ce qui est derrière
+// La vignette des maquettes : un voile sombre de 0,35 à 0,95 hauteur d'image du centre
+fn vignette(clip: vec4<f32>) -> f32 {
+    let ndc = clip.xy / max(clip.w, 1e-6);
+    let d = length(vec2<f32>(ndc.x * scene.params.z, ndc.y)) * 0.5;
+    return scene.params.y * clamp((d - 0.35) / 0.6, 0.0, 1.0);
+}
+
+// Couleur prémultipliée : une carte découpée est opaque, une translucide garde l'opacité de son
+// image, une lumineuse s'ajoute à ce qui est derrière. La vignette se pose sur chacune, ce qui
+// revient à la poser sur l'image entière.
+fn finish(lit: vec3<f32>, coverage: f32, blend: f32, clip: vec4<f32>) -> vec4<f32> {
+    let k = vignette(clip);
+    let veil = vec3<f32>(0.003, 0.0015, 0.0);
+    let rgb = lit * (1.0 - k);
+    if (blend < 0.5) {
+        return vec4<f32>(rgb + veil * k, 1.0);
+    }
+    if (blend > 1.5) {
+        return vec4<f32>(rgb * coverage, 0.0);
+    }
+    return vec4<f32>((rgb + veil * k) * coverage, coverage);
+}
+
 @fragment
 fn fs_card(in: VertexOutput) -> @location(0) vec4<f32> {
     let q = in.quad;
@@ -131,7 +162,16 @@ fn fs_card(in: VertexOutput) -> @location(0) vec4<f32> {
     var albedo = in.color.rgb;
     // Bord de la découpe : 1 au cœur, 0 hors du liseré
     var edge = 1.0;
-    if (layer != NO_TEXTURE) {
+    let blended = in.blend > 0.5;
+    var coverage = in.color.a;
+    if (layer != NO_TEXTURE && blended) {
+        let t = textureSampleLevel(cut_outs, card_sampler, uv, i32(layer), 0.0);
+        coverage = t.a * in.color.a;
+        if (coverage < 0.002) {
+            discard;
+        }
+        albedo = t.rgb * in.color.rgb;
+    } else if (layer != NO_TEXTURE) {
         let t = textureSampleLevel(cut_outs, card_sampler, uv, i32(layer), 0.0);
         // Distance au dessin, en pixels de l'atlas
         let outside = textureSampleLevel(outlines, card_sampler, uv, i32(layer), 0.0).r * OUTLINE_RANGE;
@@ -149,7 +189,7 @@ fn fs_card(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Une carte qui apparaît ou s'efface
-    if (in.color.a < 0.999 && in.color.a <= bayer(in.clip_position.xy)) {
+    if (!blended && in.color.a < 0.999 && in.color.a <= bayer(in.clip_position.xy)) {
         discard;
     }
 
@@ -159,14 +199,14 @@ fn fs_card(in: VertexOutput) -> @location(0) vec4<f32> {
     // Lumière vive : la carte brille et ne prend pas d'ombre
     let glow = in.look.z;
     if (glow > 1.0) {
-        return vec4<f32>(albedo * glow * LIGHT_SCALE * 0.6, 1.0);
+        return finish(albedo * glow * LIGHT_SCALE * 0.6, coverage, in.blend, in.clip);
     }
 
     if (backdrop) {
         // Le fond : un papier éclairé de face, assombri vers les bords comme sous une lampe
         let vignette = 1.0 - 0.35 * smoothstep(0.35, 1.25, length(q * vec2<f32>(0.8, 1.0)));
         let light = scene.light_color.rgb * (0.55 + 0.45 * scene.light_dir.w);
-        return vec4<f32>(albedo * light * LIGHT_SCALE * 0.7 * vignette, 1.0);
+        return finish(albedo * light * LIGHT_SCALE * 0.7 * vignette, coverage, in.blend, in.clip);
     }
 
     // Deux faces : une carte vue de dos est éclairée comme son recto
@@ -180,5 +220,5 @@ fn fs_card(in: VertexOutput) -> @location(0) vec4<f32> {
     // L'épaisseur du papier : la tranche de la découpe un peu plus sombre
     let rim = mix(0.82, 1.0, smoothstep(0.0, 0.35, edge));
     let light = scene.light_color.rgb * (ambient + (1.0 - ambient) * diffuse);
-    return vec4<f32>(albedo * light * LIGHT_SCALE * rim, 1.0);
+    return finish(albedo * light * LIGHT_SCALE * rim, coverage, in.blend, in.clip);
 }

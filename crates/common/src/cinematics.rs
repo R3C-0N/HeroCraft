@@ -326,6 +326,9 @@ pub struct Stage {
     pub backdrop: Option<String>,
     #[serde(default)]
     pub light: StageLight,
+    /// Bords de l'image assombris, comme sous une lampe (0 : aucun, 0,55 : celui des maquettes)
+    #[serde(default)]
+    pub vignette: f32,
 }
 
 /// Une carte de papier découpé, posée dans la scène 3D
@@ -386,8 +389,25 @@ pub struct Card {
     /// Liseré blanc autour de la découpe, en part de la largeur (0 : aucun)
     #[serde(default = "default_border")]
     pub border: f32,
+    /// Comment la carte se pose sur ce qui est derrière : découpée (par défaut), translucide ou
+    /// lumineuse (elle s'ajoute)
+    #[serde(default)]
+    pub blend: CardBlend,
     #[serde(default)]
     pub ease: Ease,
+}
+
+/// Mélange d'une carte avec ce qui est derrière elle
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardBlend {
+    /// Une découpe nette et opaque, qui cache ce qui est derrière (apparition par tramage)
+    #[default]
+    Cut,
+    /// L'opacité de l'image compte : ombres douces, voiles, papier translucide
+    Alpha,
+    /// La carte s'ajoute à ce qui est derrière : lueurs, halos
+    Add,
 }
 
 fn one_track() -> Track<f32> {
@@ -410,6 +430,12 @@ pub struct CardKey {
     /// Teinte multipliée à la couleur de la carte (rouge, vert, bleu linéaires ; 1 : inchangée)
     #[serde(default = "white")]
     pub tint: [f32; 3],
+    /// Rotation dans son plan, en degrés (en plus de `roll`)
+    #[serde(default)]
+    pub roll: f32,
+    /// Hauteur en blocs (sans : les proportions de l'image)
+    #[serde(default)]
+    pub height: Option<f32>,
 }
 
 fn white() -> [f32; 3] {
@@ -418,7 +444,7 @@ fn white() -> [f32; 3] {
 
 impl Card {
     /// Position, largeur, opacité et teinte le long des étapes, `dt` secondes après le début
-    fn key_at(&self, dt: f32) -> Option<(Vec3, f32, f32, Vec3)> {
+    fn key_at(&self, dt: f32) -> Option<(Vec3, f32, f32, Vec3, f32, Option<f32>)> {
         let keys = &self.keys;
         let last = keys.last()?;
         let i = keys.partition_point(|k| k.t <= dt);
@@ -428,7 +454,11 @@ impl Card {
             i => (keys[i - 1], keys[i]),
         };
         let k = if b.t > a.t { ((dt - a.t) / (b.t - a.t)).clamp(0.0, 1.0) } else { 0.0 };
-        Some((Vec3::from(a.position).lerp(Vec3::from(b.position), k), a.width + (b.width - a.width) * k, a.opacity + (b.opacity - a.opacity) * k, Vec3::from(a.tint).lerp(Vec3::from(b.tint), k)))
+        let height = match (a.height, b.height) {
+            (Some(ha), Some(hb)) => Some(ha + (hb - ha) * k),
+            (h, None) | (None, h) => h,
+        };
+        Some((Vec3::from(a.position).lerp(Vec3::from(b.position), k), a.width + (b.width - a.width) * k, a.opacity + (b.opacity - a.opacity) * k, Vec3::from(a.tint).lerp(Vec3::from(b.tint), k), a.roll + (b.roll - a.roll) * k, height))
     }
 }
 
@@ -630,19 +660,19 @@ impl Cinematic {
                 let k = card.ease.apply((t - card.at) / life);
                 let fade = if card.fade > 0.0 { ((t - card.at) / card.fade).min((stop - t) / card.fade).clamp(0.0, 1.0) } else { 1.0 };
                 let keyed = card.key_at(t - card.at);
-                let opacity = fade * keyed.map_or(card.opacity.at(k), |(_, _, o, _)| o).clamp(0.0, 1.0);
+                let opacity = fade * keyed.map_or(card.opacity.at(k), |key| key.2).clamp(0.0, 1.0);
                 // Balancement lent, décalé d'une carte à l'autre
                 let phase = card.position.start()[0] * 1.7 + card.position.start()[2] * 0.9;
                 let sway = (card.sway.to_radians()) * (t * 1.3 + phase).sin();
                 Some(CardSample {
                     card,
-                    center: keyed.map_or(card.position.at(k), |(p, _, _, _)| p),
-                    width: keyed.map_or(card.width.at(k), |(_, w, _, _)| w),
-                    tint: keyed.map_or([1.0; 3], |(_, _, _, c)| c.to_array()),
-                    height: card.height.map(|h| h.at(k)),
+                    center: keyed.map_or(card.position.at(k), |key| key.0),
+                    width: keyed.map_or(card.width.at(k), |key| key.1),
+                    tint: keyed.map_or([1.0; 3], |key| key.3.to_array()),
+                    height: keyed.and_then(|key| key.5).or(card.height.map(|h| h.at(k))),
                     yaw: card.yaw.at(k).to_radians(),
                     pitch: card.pitch.at(k).to_radians(),
-                    roll: card.roll.at(k).to_radians() + sway,
+                    roll: (card.roll.at(k) + keyed.map_or(0.0, |key| key.4)).to_radians() + sway,
                     opacity,
                 })
             })

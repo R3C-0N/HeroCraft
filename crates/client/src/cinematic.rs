@@ -188,7 +188,7 @@ impl Cinematics {
             view_proj: camera.build_view_projection_matrix().to_cols_array_2d(),
             light_dir: to_world_dir(Vec3::from(light.direction)).extend(light.ambient.clamp(0.0, 1.0)).to_array(),
             light_color: [lr * light.intensity, lg * light.intensity, lb * light.intensity, playing.time],
-            params: [anchor.block, 0.0, 0.0, 0.0],
+            params: [anchor.block, stage.vignette.clamp(0.0, 1.0), camera.aspect.max(0.1), 0.0],
             eye: view.eye.extend(1.0).to_array(),
         };
 
@@ -233,7 +233,16 @@ impl Cinematics {
                 axis_u: u.extend(card.curl.max(0.0)).to_array(),
                 axis_v: v.extend(border).to_array(),
                 color: [r, g, b, sample.opacity],
-                extra: [card.glow, 0.0, 0.0, 0.0],
+                extra: [
+                    card.glow,
+                    0.0,
+                    match card.blend {
+                        herocraft_common::cinematics::CardBlend::Cut => crate::paper_cards::BLEND_CUT,
+                        herocraft_common::cinematics::CardBlend::Alpha => crate::paper_cards::BLEND_ALPHA,
+                        herocraft_common::cinematics::CardBlend::Add => crate::paper_cards::BLEND_ADD,
+                    },
+                    0.0,
+                ],
                 uv: sprite.map_or([0.0, 0.0, 1.0, 1.0], |s| s.uv),
             });
         }
@@ -430,6 +439,18 @@ mod tests {
         }
     }
 
+    /// Un demi-flottant IEEE en `f32`
+    fn half_to_f32(h: u16) -> f32 {
+        let sign = if h & 0x8000 != 0 { -1.0 } else { 1.0 };
+        let exp = ((h >> 10) & 0x1f) as i32;
+        let frac = (h & 0x3ff) as f32;
+        sign * match exp {
+            0 => frac / 1024.0 * 2f32.powi(-14),
+            31 => f32::INFINITY,
+            e => (1.0 + frac / 1024.0) * 2f32.powi(e - 15),
+        }
+    }
+
     /// Captures 3D de la scène de papier, rendues hors écran par le shader des cartes seul (sans
     /// ciel, monde ni textes ; tonemapping simplifié) : `HEROCRAFT_CAPTURES=captures cargo test -p
     /// herocraft_client snapshot_paper_stage -- --ignored` (cinématique au choix avec
@@ -450,7 +471,8 @@ mod tests {
         let instance = wgpu::Instance::default();
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("aucun adaptateur graphique");
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None)).unwrap();
-        let format = wgpu::TextureFormat::Rgba32Float;
+        // Demi-flottants : mélangeables, comme la cible HDR du jeu
+        let format = wgpu::TextureFormat::Rgba16Float;
         let mut renderer = crate::paper_cards::CardRenderer::new(&device, &queue, crate::post::SceneTarget { sample_count: 1, format }, images);
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
         let color = device.create_texture(&wgpu::TextureDescriptor {
@@ -473,7 +495,7 @@ mod tests {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
-        let readback = device.create_buffer(&wgpu::BufferDescriptor { label: None, size: (width * height * 16) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor { label: None, size: (width * height * 8) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
 
         let generator = herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 2026, ..Default::default() });
         let radius = crate::camera::DEFAULT_RADIUS;
@@ -508,13 +530,13 @@ mod tests {
             }
             encoder.copy_texture_to_buffer(
                 wgpu::ImageCopyTexture { texture: &color, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                wgpu::ImageCopyBuffer { buffer: &readback, layout: wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(width * 16), rows_per_image: Some(height) } },
+                wgpu::ImageCopyBuffer { buffer: &readback, layout: wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(width * 8), rows_per_image: Some(height) } },
                 size,
             );
             queue.submit([encoder.finish()]);
             readback.slice(..).map_async(wgpu::MapMode::Read, |_| {});
             device.poll(wgpu::Maintain::Wait);
-            let data: Vec<f32> = bytemuck::cast_slice(&readback.slice(..).get_mapped_range()).to_vec();
+            let data: Vec<f32> = bytemuck::cast_slice::<u8, u16>(&readback.slice(..).get_mapped_range()).iter().map(|&h| half_to_f32(h)).collect();
             readback.unmap();
             // Exposition du jeu (-0,3 EV), courbe filmique simple, puis sRGB ; voile de la cinématique
             let frame = cinematics.player.frame().unwrap();

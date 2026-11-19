@@ -27,8 +27,10 @@ FOV = 40.0  # champ vertical, en degrés
 DEPTH = 20.0  # profondeur du dernier plan des pièces
 BACK = 30.0  # profondeur du fond
 DENSITY = 0.6  # pixels de découpe par pixel de la page (1600 × 900)
+SHOT_MAX = 4.5  # secondes au plus par plan
+VARIANT_BUDGET = 3.0e6  # pixels d'images au plus par pièce animée
 STEP = 0.5  # pas d'échantillonnage de l'export, en secondes
-BACKGROUND_CHANGE = 4.0  # écart moyen (sur 255) au-delà duquel le fond change
+BACKGROUND_CHANGE = 1.5  # écart moyen (sur 255) au-delà duquel le fond change
 
 
 def linear(col):
@@ -44,6 +46,140 @@ def tint_of(col, reference):
     if not a or not b:
         return [1.0, 1.0, 1.0]
     return [round(max(0.0, min(4.0, x / y)), 3) if y > 0.01 else 1.0 for x, y in zip(a, b)]
+
+
+GLOW_IMAGE = "lueur.png"
+# Le canevas ajoute ses lueurs en sRGB, le jeu en lumière linéaire : plus fort à opacité égale
+GLOW_STRENGTH = 0.55
+
+
+def parse_css(col):
+    """`rgba(r,g,b,a)` ou `#rrggbb` en [r, g, b, a] (r, g, b de 0 à 255)"""
+    col = (col or "").strip()
+    if col.startswith("#") and len(col) == 7:
+        return [int(col[i : i + 2], 16) for i in (1, 3, 5)] + [1.0]
+    if col.startswith("rgb"):
+        v = [float(x) for x in col[col.index("(") + 1 : col.index(")")].split(",")]
+        return [round(v[0]), round(v[1]), round(v[2]), v[3] if len(v) > 3 else 1.0]
+    return [255, 255, 255, 1.0]
+
+
+def affine_mul(a, b):
+    """a ∘ b, matrices du canevas [a, b, c, d, e, f]"""
+    return [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3], a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]]
+
+
+def affine_inverse(m):
+    det = m[0] * m[3] - m[1] * m[2]
+    det = det if abs(det) > 1e-12 else 1e-12
+    a, b, c, d = m[3] / det, -m[1] / det, -m[2] / det, m[0] / det
+    return [a, b, c, d, -(a * m[4] + c * m[5]), -(b * m[4] + d * m[5])]
+
+
+def glow_image(path):
+    """La lueur : blanche, d'opacité (1 - r)² comme un dégradé radial ajouté du canevas"""
+    n = 256
+    im = Image.new("RGBA", (n, n))
+    px = im.load()
+    for y in range(n):
+        for x in range(n):
+            r = math.hypot(x + 0.5 - n / 2, y + 0.5 - n / 2) / (n / 2)
+            px[x, y] = (255, 255, 255, round(255 * max(0.0, 1.0 - r) ** 2))
+    im.save(path, optimize=True)
+
+
+def save_small(image, path, force=False):
+    """PNG à palette (256 couleurs tramées, transparence comprise) : trois fois plus léger, et le
+    tramage se fond dans le grain du papier"""
+    small = image.quantize(colors=256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.FLOYDSTEINBERG)
+    # Un grand dégradé (la surface de la planète) se verrait en paliers : il garde ses couleurs
+    if not force and max(ImageStat.Stat(ImageChops.difference(small.convert("RGBA"), image)).mean[:3]) > 2.5:
+        image.save(path, optimize=True)
+    else:
+        small.save(path, optimize=True)
+
+
+FINE_IMAGES = {"trait": "trait.png", "trainee": "trainee.png", "point": "point.png"}
+FINE_DEPTH = 0.3  # devant les pièces, derrière les textes
+
+
+def fine_images():
+    """Les images des traits et points fins : blanches, teintées par la carte"""
+    trait = Image.new("RGBA", (32, 8))
+    trainee = Image.new("RGBA", (64, 8))
+    for x in range(64):
+        for y in range(8):
+            edge = max(0.0, 1.0 - abs(y + 0.5 - 4) / 4) ** 0.5
+            trainee.putpixel((x, y), (255, 255, 255, round(255 * edge * (1 - x / 63))))
+            if x < 32:
+                ends = min(1.0, (x + 0.5) / 3, (32 - x - 0.5) / 3)
+                trait.putpixel((x, y), (255, 255, 255, round(255 * edge * ends)))
+    trait.save(CARDS / FINE_IMAGES["trait"])
+    trainee.save(CARDS / FINE_IMAGES["trainee"])
+    Image.new("RGBA", (8, 8), (255, 255, 255, 255)).save(CARDS / FINE_IMAGES["point"])
+
+
+def fine_cards(scene, S, cards):
+    """Pluie, cendres, traînées : une carte par trait ou point, tant qu'il glisse sans sauter"""
+    tracks = {}
+    for smp in scene.get("particles", []):
+        for q in smp["prims"]:
+            tracks.setdefault(q[0], []).append((smp["T"], q))
+    step = 1 / 12
+    for pid, track in tracks.items():
+        runs, current = [], []
+        for T, q in track:
+            if current:
+                pT, pq = current[-1]
+                # Là où il devrait être s'il glissait comme avant ; loin de là, il a sauté (la goutte
+                # repart d'en haut)
+                guess = pq[2:4] if len(current) < 2 else [2 * a - b for a, b in zip(pq[2:4], current[-2][1][2:4])]
+                jump = math.dist(q[2:4], guess) / S
+                if T - pT > step * 1.5 or jump > (30 if len(current) >= 2 else 150) or q[1] != pq[1] or q[-3] != pq[-3]:
+                    runs.append(current)
+                    current = []
+            current.append((T, q))
+        runs.append(current)
+        for run in runs:
+            if len(run) < 2:
+                continue
+            kind, col = run[0][1][1], run[0][1][-3]
+            rgba = parse_css(col)
+            at = max(scene["start"], run[0][0] - step / 2)
+            stop = min(scene["end"], run[-1][0] + step / 2)
+            keys = []
+            for T, q in run:
+                if kind == "point":
+                    x, y, w, h = q[2], q[3], q[4], q[5]
+                    position, width = to_world(x / S, y / S, max(w, 1) / S, FINE_DEPTH)
+                    key = {"t": round(T - at, 3), "position": position, "width": width, "height": round(width * max(h, 1) / max(w, 1), 4), "opacity": round(min(1.0, rgba[3] * q[-2]), 3)}
+                else:
+                    x0, y0, x1, y1, w = q[2], q[3], q[4], q[5], q[6]
+                    length = max(math.hypot(x1 - x0, y1 - y0), 1.0)
+                    position, width = to_world((x0 + x1) / 2 / S, (y0 + y1) / 2 / S, length / S, FINE_DEPTH)
+                    key = {"t": round(T - at, 3), "position": position, "width": width, "height": round(width * max(w, 1) / length, 4), "opacity": round(min(1.0, rgba[3] * q[-2]), 3), "roll": round(math.degrees(math.atan2(y1 - y0, x1 - x0)), 2)}
+                key["tint"] = [1.0, 1.0, 1.0]
+                keys.append(key)
+            keys = simplify(keys, 1.5, 0.05, 0.05)
+            for k in keys:
+                del k["tint"]
+            card = {"name": f"Scène {scene['idx'] + 1}, {kind} {pid}", "image": f"genese/{FINE_IMAGES[kind]}", "at": round(at, 3), "duration": round(max(stop - at, 0.05), 3), "curl": 0, "border": 0, "blend": "add" if run[0][1][-1] else "alpha", "color": "#%02X%02X%02X" % tuple(rgba[:3]), "keys": keys}
+            cards.append(card)
+
+
+TEAR_DEPTH = -1.0  # devant tout, textes compris
+
+
+def camera_at(shots, t):
+    """L'œil de la caméra à l'instant t (plans en ligne droite, à vitesse constante)"""
+    start = 0.0
+    for shot in shots:
+        if t < start + shot["duration"] or shot is shots[-1]:
+            k = min(1.0, max(0.0, (t - start) / shot["duration"]))
+            a, b = shot["position"]
+            return [a[n] + (b[n] - a[n]) * k for n in range(3)]
+        start += shot["duration"]
+    return [0.0, 0.0, -DISTANCE]
 
 
 def unit(z):
@@ -98,6 +234,10 @@ def simplify(keys, tol_pos, tol_w, tol_a):
                 k = (m["t"] - a["t"]) / max(b["t"] - a["t"], 1e-6)
                 p = [a["position"][n] + (b["position"][n] - a["position"][n]) * k for n in range(3)]
                 tint = [a["tint"][n] + (b["tint"][n] - a["tint"][n]) * k for n in range(3)]
+                roll = a.get("roll", 0.0) + (b.get("roll", 0.0) - a.get("roll", 0.0)) * k
+                if abs(roll - m.get("roll", 0.0)) > 0.5 or ("height" in m) != ("height" in a) or ("height" in m and abs(a["height"] + (b.get("height", a["height"]) - a["height"]) * k - m["height"]) > 0.01 * m["height"]):
+                    ok = False
+                    break
                 if max(abs(x - y) for x, y in zip(tint, m["tint"])) > 0.03 or math.dist(p, m["position"]) > tol_pos * unit(m["position"][2]) or abs(a["width"] + (b["width"] - a["width"]) * k - m["width"]) > tol_w * m["width"] or abs(a["opacity"] + (b["opacity"] - a["opacity"]) * k - m["opacity"]) > tol_a:
                     ok = False
                     break
@@ -116,6 +256,8 @@ def main():
     CARDS.mkdir(parents=True, exist_ok=True)
     for old in CARDS.glob("*.png"):
         old.unlink()
+    glow_image(CARDS / GLOW_IMAGE)
+    fine_images()
 
     cards, shots, fades = [], [], []
     previous_veiled_end = False
@@ -144,9 +286,9 @@ def main():
         scene_samples = [smp for smp in samples if start <= smp["T"] <= end]
         for j, (bg, image) in enumerate(kept):
             name = f"{idx}-fond-{j}.png"
-            image.save(CARDS / name, optimize=True)
+            save_small(image.convert('RGBA'), CARDS / name)
             z = BACK - 0.2 * j
-            position, width = to_world(800, 450, 1600 * 1.12, z)
+            position, width = to_world(800, 450, 1600 * 1.04, z)
             card = {"name": f"Scène {idx + 1}, fond {j + 1}", "image": f"genese/{name}", "at": round(start if j == 0 else kept[j - 1][0]["T"], 3), "duration": None, "position": position, "width": width, "curl": 0, "border": 0}
             card["duration"] = round(end - card["at"], 3)
             # Fondu depuis le fond d'avant, et la nuit qui l'assombrit
@@ -168,31 +310,58 @@ def main():
                 card["keys"] = keys
             cards.append(card)
 
-        # Les pièces : place à l'écran à chaque échantillon
+        # Les pièces : place à l'écran à chaque échantillon, par la transformation de la pièce
+        # rapportée à celle de l'instant où sa découpe a été dessinée
         best = {}
         for s in samples:
             for r in s["records"]:
+                if r.get("glow"):
+                    continue
                 b = r["box"]
                 area = (b[2] - b[0]) * (b[3] - b[1]) * (1 if r["alpha"] > 0.05 else 0.001)
                 if r["key"] not in best or area > best[r["key"]][0]:
-                    best[r["key"]] = (area, b, r.get("col"))
+                    best[r["key"]] = (area, r["m"], r.get("col"))
         tracks = {}
         for s in samples:
             for i, r in enumerate(s["records"]):
+                if r.get("covered"):  # une lueur restée dans le fond
+                    continue
                 tracks.setdefault(r["key"], []).append((s["T"], dict(r, shade=shade(s, i))))
         for key in order:
-            img = scene["images"].get(key)
-            if not img:
+            if key not in tracks:
                 continue
-            ib, rb = img["box"], best[key][1]
-            # Découpe réduite à la densité voulue
-            source = Image.open(src / "pieces" / img["file"]).convert("RGBA")
-            page_w = (ib[2] - ib[0]) / S
-            target_w = max(4, min(source.width, round(page_w * DENSITY)))
-            if target_w < source.width:
-                source = source.resize((target_w, max(4, round(source.height * target_w / source.width))), Image.LANCZOS)
-            name = f"{idx}-{key}.png"
-            source.save(CARDS / name, optimize=True)
+            glow = key.startswith("lueur")
+            img = scene["images"].get(key)
+            if not img and not glow:
+                continue
+            caption = key.startswith("31") and len(key.split("_")[0]) == 4
+            if key.startswith("3113_"):  # « Phrase finale ou sous-titre. » : à écrire
+                continue
+            if glow:
+                variants = [(-1e9, GLOW_IMAGE, None)]
+            else:
+                ib, mb = img["box"], best[key][1]
+                # Les images de la pièce (une de plus chaque fois que ce qu'elle porte change),
+                # réduites à la densité voulue (les textes restent nets)
+                variants = []
+                # Au plus `VARIANT_BUDGET` pixels d'images par pièce : une grande pièce change
+                # d'image moins souvent (la planète, la rivière de lave)
+                texels = ((ib[2] - ib[0]) / S * DENSITY) * ((ib[3] - ib[1]) / S * DENSITY)
+                keep = max(2, int(VARIANT_BUDGET / max(texels, 1.0)))
+                chosen = img["variants"]
+                if len(chosen) > keep:
+                    chosen = [chosen[round(i * (len(chosen) - 1) / (keep - 1))] for i in range(keep)]
+                for i, v in enumerate(chosen):
+                    source = Image.open(src / "pieces" / v["file"]).convert("RGBA")
+                    page_w = (ib[2] - ib[0]) / S
+                    target_w = max(4, min(source.width, round(page_w * (1.0 if caption else DENSITY))))
+                    if target_w < source.width:
+                        source = source.resize((target_w, max(4, round(source.height * target_w / source.width))), Image.LANCZOS)
+                    name = f"{idx}-{key}-{i}.png"
+                    save_small(source, CARDS / name)
+                    variants.append((v["T"], name, v.get("col")))
+                inverse = affine_inverse(mb)
+                centre = ((ib[0] + ib[2]) / 2, (ib[1] + ib[3]) / 2)
 
             z = depth[key]
             # Les échantillons d'affilée ; une absence coupe la pièce en deux cartes
@@ -203,43 +372,77 @@ def main():
                     current = []
                 current.append((T, r))
             runs.append(current)
+            # Une carte par image : la pièce change d'image d'un échantillon à l'autre
+            split = []
             for run in runs:
+                part, current_image = [], None
+                for T, r in run:
+                    image = [(n, col) for vt, n, col in variants if vt <= T + 1e-3][-1:] or [variants[0][1:]]
+                    if part and image[0][0] != current_image:
+                        split.append((current_image, part))
+                        part = []
+                    current_image = image[0][0]
+                    part.append((T, dict(r, reference=image[0][1])))
+                split.append((current_image, part))
+            for name, run in split:
                 at = max(start, run[0][0] - STEP / 2)
                 stop = min(end, run[-1][0] + STEP / 2)
                 keys = []
                 for T, r in run:
-                    b = r["box"]
-                    sx = (b[2] - b[0]) / max(rb[2] - rb[0], 1e-6)
-                    sy = (b[3] - b[1]) / max(rb[3] - rb[1], 1e-6)
-                    x0, x1 = b[0] + (ib[0] - rb[0]) * sx, b[0] + (ib[2] - rb[0]) * sx
-                    y0, y1 = b[1] + (ib[1] - rb[1]) * sy, b[1] + (ib[3] - rb[1]) * sy
-                    position, width = to_world((x0 + x1) / 2 / S, (y0 + y1) / 2 / S, (x1 - x0) / S, z)
-                    keys.append({"t": round(T - at, 3), "position": position, "width": width, "opacity": round(min(1.0, r["alpha"]), 3), "tint": [round(c * r["shade"], 3) for c in tint_of(r.get("col"), best[key][2])]})
+                    if glow:
+                        rgba = parse_css(r["col"])
+                        position, width = to_world(r["x"] / S, r["y"] / S, 2 * r["r"] / S, z)
+                        keys.append({"t": round(T - at, 3), "position": position, "width": width, "opacity": round(min(1.0, GLOW_STRENGTH * rgba[3] * r["alpha"]), 3), "tint": [1.0, 1.0, 1.0]})
+                        continue
+                    d = affine_mul(r["m"], inverse)
+                    cx, cy = d[0] * centre[0] + d[2] * centre[1] + d[4], d[1] * centre[0] + d[3] * centre[1] + d[5]
+                    sx, sy = math.hypot(d[0], d[1]), math.hypot(d[2], d[3])
+                    position, width = to_world(cx / S, cy / S, (ib[2] - ib[0]) * sx / S, z)
+                    key_ = {"t": round(T - at, 3), "position": position, "width": width, "opacity": round(min(1.0, r["alpha"]), 3), "tint": [round(c * r["shade"], 3) for c in tint_of(r.get("col"), r.get("reference"))]}
+                    # Sens de la page (y vers le bas) : un angle positif tourne dans le sens des aiguilles
+                    key_["roll"] = round(math.degrees(math.atan2(d[1], d[0])), 2)
+                    if abs(sy / max(sx, 1e-6) - 1.0) > 0.01:
+                        key_["height"] = round(width * (ib[3] - ib[1]) * sy / max((ib[2] - ib[0]) * sx, 1e-6), 4)
+                    keys.append(key_)
                 keys = simplify(keys, 1.0, 0.01, 0.03)
                 for k in keys:
                     if all(abs(c - 1.0) < 0.01 for c in k["tint"]):
                         del k["tint"]
-                if all(k["opacity"] < 0.02 for k in keys):
+                    if abs(k.get("roll", 0.0)) < 0.05:
+                        k.pop("roll", None)
+                if all(k["opacity"] < 0.004 for k in keys):
                     continue
-                card = {"name": f"Scène {idx + 1}, pièce {key}", "image": f"genese/{name}", "at": round(at, 3), "duration": round(max(stop - at, 0.05), 3), "curl": 0, "border": 0}
-                blends = {r["blend"] for _, r in run}
-                if "lighter" in blends or "screen" in blends:
-                    card["glow"] = 1.6
+                card = {"name": f"Scène {idx + 1}, {'lueur' if glow else 'texte' if caption else 'pièce'} {key}", "image": f"genese/{name}", "at": round(at, 3), "duration": round(max(stop - at, 0.05), 3), "curl": 0, "border": 0, "blend": "alpha"}
+                blends = {r.get("blend") for _, r in run}
+                if glow:
+                    card["blend"] = "add"
+                    card["color"] = "#%02X%02X%02X" % tuple(parse_css(run[0][1]["col"])[:3])
+                elif "lighter" in blends or "screen" in blends:
+                    card["blend"] = "add"
                 card["keys"] = keys
                 cards.append(card)
 
         # Une scène, un plan : la caméra glisse doucement, les plans se décalent
         side = 1 if idx % 2 == 0 else -1
-        a = [-0.8 * side, 0.0, -DISTANCE]
-        b = [0.8 * side, 0.15, -DISTANCE + 1.2]
-        shots.append({
-            "name": next((p["nom"] for p in reversed(manifest["plans"]) if p["t"] <= start + 0.01), f"Scène {idx + 1}"),
-            "duration": round(end - start, 3),
-            "position": [a, b],
-            "look_at": [[a[0], a[1], 0], [b[0], b[1], 0]],
-            "fov": FOV,
-            "ease": "in_out",
-        })
+        a = [-0.5 * side, 0.0, -DISTANCE]
+        b = [0.5 * side, 0.1, -DISTANCE + 1.0]
+        fine_cards(scene, S, cards)
+
+        # Plans d'au plus `SHOT_MAX` secondes (les découpes se chargent plan par plan), le long d'un
+        # même glissement
+        name = next((p["nom"] for p in reversed(manifest["plans"]) if p["t"] <= start + 0.01), f"Scène {idx + 1}")
+        parts = max(1, math.ceil((end - start) / SHOT_MAX - 1e-6))
+        lerp = lambda u, v, k: [round(u[n] + (v[n] - u[n]) * k, 4) for n in range(3)]
+        for part in range(parts):
+            p0, p1 = lerp(a, b, part / parts), lerp(a, b, (part + 1) / parts)
+            shots.append({
+                "name": name if parts == 1 else f"{name} ({part + 1}/{parts})",
+                "duration": round((end - start) / parts, 4),
+                "position": [p0, p1],
+                "look_at": [[p0[0], p0[1], 0], [p1[0], p1[1], 0]],
+                "fov": FOV,
+                "ease": "linear",
+            })
         # Les voiles de la maquette (la nuit qui tombe, un éclair) : des fondus, d'un échantillon au
         # suivant, fusionnés tant qu'ils vont en ligne droite
         veils = [(smp["T"], veil_of([v for v in smp.get("veils", []) if not is_dark(v)])) for smp in samples]
@@ -265,21 +468,30 @@ def main():
         fades.extend(segments)
         # Les coupes : un bref passage au noir, sauf d'un voile (un éclair blanc) à l'autre
         veiled_start, veiled_end = veils[0][1][1] > 0.8, veils[-1][1][1] > 0.8
-        if start > 0 and not veiled_start and not previous_veiled_end:
+        torn = any(abs(t["cut"] - start) < 1e-3 for t in manifest.get("tears", []))
+        if start > 0 and not veiled_start and not previous_veiled_end and not torn:
             fades.append({"at": round(start - 0.25, 3), "duration": 0.25, "from": 0, "to": 1, "color": "#0B0710"})
             fades.append({"at": round(start, 3), "duration": 0.35, "from": 1, "to": 0, "color": "#0B0710"})
         previous_veiled_end = veiled_end
+
+    # Les coupes en page déchirée : les images de la maquette, devant tout, centrées sur la caméra
+    for tear in manifest.get("tears", []):
+        for i, f in enumerate(tear["frames"]):
+            name = f"coupe-{tear['cut']}-{i}.png"
+            # Une image ne reste à l'écran qu'un douzième de seconde : la palette suffit toujours
+            save_small(Image.open(src / "pieces" / f["file"]).convert("RGBA"), CARDS / name, force=True)
+            eye = camera_at(shots, f["T"])
+            position, width = to_world(800, 450, 1600 * 1.02, TEAR_DEPTH)
+            position = [round(position[0] + eye[0], 3), round(position[1] + eye[1], 3), position[2]]
+            cards.append({"name": f"Coupe {tear['cut']} s, image {i + 1}", "image": f"genese/{name}", "at": round(f["T"] - 1 / 24, 4), "duration": round(1 / 12, 4), "position": position, "width": width, "curl": 0, "border": 0})
 
     duration = manifest["scenes"][-1]["end"]
     fades.insert(0, {"at": 0, "duration": 1.2, "from": 1, "to": 0, "color": "#0B0710"})
     fades.append({"at": round(duration - 1.5, 3), "duration": 1.5, "from": 0, "to": 1, "color": "#0B0710"})
     # Le fondu en cours est le dernier commencé
     fades.sort(key=lambda f: (f["at"], f["duration"] > 0.01))
-    captions = [
-        {"at": t["de"], "duration": round(t["a"] - t["de"], 3), "text": t["t"], "style": "narration", "fade": 0.6}
-        for t in manifest["textes"]
-        if not t["t"].startswith("Phrase finale")
-    ]
+    # Les textes sont des pièces de papier déchiré (cartes « texte »), comme dans la maquette
+    captions = []
     cinematic = {
         "title": "La Genèse",
         "description": "Le récit des origines, porté de la maquette docs/cinematiques/genese.html en cartes de papier découpé : la déchirure, la planète de feu, la pluie des Pierres du Néant, la vie qui naît puis les peuples. Se joue à chaque lancement du jeu (`game_launched`), ou par `/cinematic genese`. Généré par tools/genese_vers_cinematique.py (ne pas modifier à la main).",
@@ -288,7 +500,7 @@ def main():
         "once": False,
         "triggers": [{"event": "game_launched"}],
         "letterbox": False,
-        "stage": {"backdrop": "#0B0710", "light": {"direction": [0.0, 0.3, -1.0], "color": "#FFF6E8", "intensity": 0.55, "ambient": 0.85}},
+        "stage": {"backdrop": "#0B0710", "light": {"direction": [0.0, 0.3, -1.0], "color": "#FFF6E8", "intensity": 0.55, "ambient": 0.85}, "vignette": 0.55},
         "shots": shots,
         "captions": captions,
         "fades": fades,

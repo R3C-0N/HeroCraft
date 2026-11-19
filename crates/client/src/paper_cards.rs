@@ -24,6 +24,11 @@ pub const OUTLINE_RANGE: f32 = 16.0;
 pub const PAD: u32 = 16;
 /// Couche « sans image » (feuille unie)
 pub const NO_TEXTURE: u32 = 65535;
+/// Mélanges d'une carte (`CardInstance::extra[2]`) : découpée et opaque, translucide, lumineuse
+pub const BLEND_CUT: f32 = 0.0;
+pub const BLEND_ALPHA: f32 = 1.0;
+pub const BLEND_ADD: f32 = 2.0;
+
 /// Cartes dessinées au plus à la fois
 pub const MAX_CARDS: usize = 1024;
 /// Cases de la grille d'une carte, de côté (voir le shader)
@@ -44,7 +49,8 @@ pub struct CardInstance {
     pub axis_v: [f32; 4],
     /// Teinte linéaire (rgb), opacité (a)
     pub color: [f32; 4],
-    /// x : lueur (au-dessus de 1, la carte brille), y : 1 pour la feuille de fond
+    /// x : lueur (au-dessus de 1, la carte brille), y : 1 pour la feuille de fond, z : mélange
+    /// (`BLEND_CUT`, `BLEND_ALPHA`, `BLEND_ADD`)
     pub extra: [f32; 4],
     /// Coins de la découpe et de sa marge dans la page (u0, v0, u1, v1)
     pub uv: [f32; 4],
@@ -59,7 +65,7 @@ pub struct CardUniform {
     pub light_dir: [f32; 4],
     /// Couleur et intensité de la lumière (rgb), temps (w)
     pub light_color: [f32; 4],
-    /// x : taille d'un bloc
+    /// x : taille d'un bloc, y : vignette, z : largeur / hauteur de l'image
     pub params: [f32; 4],
     /// Œil de la caméra (xyz)
     pub eye: [f32; 4],
@@ -272,6 +278,10 @@ fn outline_field(rgba: &[u8], side: usize) -> Vec<u8> {
 
 pub struct CardRenderer {
     pipeline: wgpu::RenderPipeline,
+    /// Cartes translucides et lumineuses : mélangées à ce qui est derrière, sans écrire la profondeur
+    blended: wgpu::RenderPipeline,
+    /// Les cartes découpées viennent d'abord dans le tampon, puis les autres du fond vers l'avant
+    opaque_count: u32,
     layout: wgpu::PipelineLayout,
     bind_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
@@ -286,7 +296,7 @@ pub struct CardRenderer {
     pub layers: CardLayers,
 }
 
-fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget) -> wgpu::RenderPipeline {
+fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget, blended: bool) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("Paper Cards Shader"), source: wgpu::ShaderSource::Wgsl(include_str!("paper_cards.wgsl").into()) });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Paper Cards Pipeline"),
@@ -304,7 +314,8 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         fragment: Some(wgpu::FragmentState {
             module: &shader,
             entry_point: Some("fs_card"),
-            targets: &[Some(wgpu::ColorTargetState { format: target.format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+            // Couleurs prémultipliées : une carte lumineuse a une opacité nulle et s'ajoute
+            targets: &[Some(wgpu::ColorTargetState { format: target.format, blend: blended.then_some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })],
             compilation_options: Default::default(),
         }),
         primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
@@ -312,7 +323,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         // entre elles et avec le monde par la profondeur
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: true,
+            depth_write_enabled: !blended,
             depth_compare: wgpu::CompareFunction::LessEqual,
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
@@ -403,11 +414,12 @@ impl CardRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self { pipeline: create_pipeline(device, &layout, target), layout, bind_layout, sampler, bind_group, uniform, instances, count: 0, loaded: None, pending: None, layers: images.layers }
+        Self { pipeline: create_pipeline(device, &layout, target, false), blended: create_pipeline(device, &layout, target, true), opaque_count: 0, layout, bind_layout, sampler, bind_group, uniform, instances, count: 0, loaded: None, pending: None, layers: images.layers }
     }
 
     pub fn set_target(&mut self, device: &wgpu::Device, target: post::SceneTarget) {
-        self.pipeline = create_pipeline(device, &self.layout, target);
+        self.pipeline = create_pipeline(device, &self.layout, target, false);
+        self.blended = create_pipeline(device, &self.layout, target, true);
     }
 
     /// Charge l'atlas du plan en cours s'il ne l'est pas déjà (`None` : le libère), et prépare
@@ -441,11 +453,12 @@ impl CardRenderer {
 
     /// Les cartes de cette image (aucune hors des cinématiques de papier)
     pub fn update(&mut self, queue: &wgpu::Queue, uniform: &CardUniform, cards: &[CardInstance]) {
-        let cards = &cards[..cards.len().min(MAX_CARDS)];
+        let cards = order_cards(uniform, &cards[..cards.len().min(MAX_CARDS)]);
         self.count = cards.len() as u32;
+        self.opaque_count = cards.iter().take_while(|c| c.extra[2] < 0.5).count() as u32;
         if !cards.is_empty() {
             queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(uniform));
-            queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(cards));
+            queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(&cards));
         }
     }
 
@@ -454,11 +467,28 @@ impl CardRenderer {
         if self.count == 0 {
             return;
         }
-        pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_vertex_buffer(0, self.instances.slice(..));
-        pass.draw(0..GRID * GRID * 6, 0..self.count);
+        if self.opaque_count > 0 {
+            pass.set_pipeline(&self.pipeline);
+            pass.draw(0..GRID * GRID * 6, 0..self.opaque_count);
+        }
+        if self.count > self.opaque_count {
+            pass.set_pipeline(&self.blended);
+            pass.draw(0..GRID * GRID * 6, self.opaque_count..self.count);
+        }
     }
+}
+
+/// Les cartes découpées d'abord, puis les autres de la plus lointaine à la plus proche (leur
+/// profondeur vue de la caméra), pour qu'elles se mélangent dans l'ordre
+fn order_cards(uniform: &CardUniform, cards: &[CardInstance]) -> Vec<CardInstance> {
+    let view_proj = glam::Mat4::from_cols_array_2d(&uniform.view_proj);
+    let depth = |c: &CardInstance| (view_proj * glam::Vec3::from_slice(&c.center[..3]).extend(1.0)).w;
+    let (mut out, mut blended): (Vec<_>, Vec<_>) = cards.iter().copied().partition(|c| c.extra[2] < 0.5);
+    blended.sort_by(|a, b| depth(b).total_cmp(&depth(a)));
+    out.extend(blended);
+    out
 }
 
 #[cfg(test)]
@@ -500,6 +530,15 @@ mod tests {
         let out = resize(w, h, &rgba, 1, 1);
         assert_eq!(&out[..3], &[255, 0, 0]);
         assert_eq!(out[3], 128);
+    }
+
+    #[test]
+    fn test_blended_cards_come_last_far_to_near() {
+        let uniform = CardUniform { view_proj: glam::Mat4::perspective_rh(1.0, 1.0, 0.1, 100.0).to_cols_array_2d(), ..Default::default() };
+        let card = |z: f32, blend: f32| CardInstance { center: [0.0, 0.0, z, 0.0], extra: [1.0, 0.0, blend, 0.0], ..bytemuck::Zeroable::zeroed() };
+        let ordered = order_cards(&uniform, &[card(-2.0, BLEND_ALPHA), card(-9.0, BLEND_CUT), card(-5.0, BLEND_ADD), card(-1.0, BLEND_CUT)]);
+        let z: Vec<f32> = ordered.iter().map(|c| c.center[2]).collect();
+        assert_eq!(z, [-9.0, -1.0, -5.0, -2.0]);
     }
 
     #[test]

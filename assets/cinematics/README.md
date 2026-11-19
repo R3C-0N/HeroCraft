@@ -132,7 +132,8 @@ Les découpes sont les PNG à transparence de `cards/` et de ses sous-dossiers (
 | `glow` | Au-dessus de 1, la feuille brille (soleil, lave, Pierre) et ignore la lumière ; 1,3 à 2 suffisent. |
 | `opacity` | Opacité de 0 à 1, en plus du fondu (une paire : elle apparaît ou s'efface). |
 | `border` | Largeur du liseré blanc, en part de la largeur de l'image (0,012 par défaut, 0 : aucun ; au plus 15 pixels de l'image). |
-| `keys` | Trajet image par image : des étapes `{"t", "position", "width", "opacity", "tint"}` (`t` en secondes depuis `at`, `tint` une teinte multipliée en rouge, vert, bleu linéaires) entre lesquelles la carte glisse en ligne droite. Elles remplacent `position`, `width` et `opacity`. |
+| `keys` | Trajet image par image : des étapes `{"t", "position", "width", "opacity", "tint", "roll", "height"}` (`t` en secondes depuis `at`, `tint` une teinte multipliée en rouge, vert, bleu linéaires, `roll` en degrés, `height` facultative) entre lesquelles la carte glisse en ligne droite. Elles remplacent `position`, `width`, `opacity` et `roll`. |
+| `blend` | `cut` (par défaut : une découpe opaque, qui s'efface point par point), `alpha` (vraie transparence : ombres, voiles, fumée) ou `add` (une lueur qui s'ajoute à ce qui est derrière). Les cartes transparentes se dessinent de la plus lointaine à la plus proche. |
 | `ease` | Courbe des valeurs en paire, comme pour les plans. |
 
 Les paires d'une carte sont parcourues pendant sa vie (de `at` à sa fin), pas pendant un plan.
@@ -145,6 +146,7 @@ Les paires d'une carte sont parcourues pendant sa vie (de `at` à sa fin), pas p
 | `light.direction` | D'où vient la lumière, dans le repère de l'ancre (`[-0.6, 0.7, -0.6]` : de gauche, d'en haut, du côté de la caméra). |
 | `light.color`, `light.intensity` | Couleur (`#FFF4E0` par défaut) et force (1 par défaut). |
 | `light.ambient` | Part de lumière qui ne dépend pas de l'orientation, de 0 (contrasté) à 1 (plat) ; 0,45 par défaut. |
+| `vignette` | Assombrissement des bords de l'image, de 0 (aucun, par défaut) à 1. |
 
 Une cinématique sur fond de papier se joue d'ordinaire avec l'ancre `stage` : loin au-dessus du joueur, rien du monde ne passe devant les cartes. Le relief reste détaillé autour du joueur pendant ce temps. Les ombres portées d'une carte sur l'autre ne sont pas encore dessinées.
 
@@ -198,4 +200,13 @@ node tools/exporter_genese.js /tmp/export-genese   # Playwright : chaque pièce 
 python3 tools/genese_vers_cinematique.py /tmp/export-genese
 ```
 
-Chaque pièce que dessine une scène devient une carte, posée à une profondeur qui suit l'ordre de dessin et à la place qui la montre, vue de la caméra, là où la maquette la montre. La caméra glisse un peu à chaque scène : les plans se décalent. Le fond de chaque scène (ciel, étoiles, lueurs) est une feuille tout au fond ; la nuit qui tombe assombrit les pièces qu'elle couvre, un éclair blanc devient un fondu. Ne passent pas encore : la pluie et les traits fins dessinés hors des pièces, les lueurs posées devant elles, les rotations d'une pièce dans son plan, les ombres portées (étape suivante).
+Chaque pièce que dessine une scène devient une carte, posée à une profondeur qui suit l'ordre de dessin et à la place qui la montre, vue de la caméra, là où la maquette la montre (rotation dans son plan comprise). La caméra glisse un peu à chaque plan. En plus :
+
+- une pièce qui change d'aspect en cours de route (continents, aube) a plusieurs découpes, échangées au fil du temps, et une teinte pour le reste ;
+- ombres, fumée et voiles sont de vraies cartes transparentes (`alpha`), les lueurs des cartes `add` ;
+- le fond de chaque scène (ciel, étoiles) est une feuille tout au fond ; la nuit qui tombe assombrit les pièces qu'elle couvre, un éclair blanc devient un fondu ;
+- la pluie, les cendres et les traînées des météores sont saisies à 12 images par seconde, en petits traits teintés ;
+- les textes sont des bandes de papier découpées dans la maquette ;
+- les coupes en page déchirée sont les images mêmes de la maquette, à 12 images par seconde, devant tout.
+
+Les découpes sont en PNG à palette quand cela ne se voit pas. Le jeu ne charge que celles du plan en cours et prépare le suivant en arrière-plan. Ne passent pas encore : le léger tremblé des contours (« boil ») et les ombres portées d'une carte sur l'autre (étape suivante).
