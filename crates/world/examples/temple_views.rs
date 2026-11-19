@@ -10,7 +10,7 @@ use std::io::Write;
 /// Côté d'un bloc à l'écran, en pixels
 const S: i32 = 13;
 /// Demi-côté de la vue autour de l'autel
-const HALF: i32 = 17;
+const HALF: i32 = 24;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -102,7 +102,7 @@ fn color(block: BlockId, top: bool) -> [f32; 3] {
 const SLOT: BlockId = BlockId(u16::MAX);
 
 fn render(generator: &PlanetWorldGenerator, site: &TempleSite, epoch: Epoch, cut: bool, out: &str) {
-    let (cx, cz) = site.rect().center();
+    let (cx, cz) = site.center();
     let face = site.face;
     let (y0, y1) = (site.floor() - 7, site.top() + 1);
     let (w, d, h) = (2 * HALF + 1, 2 * HALF + 1, y1 - y0);
@@ -221,8 +221,8 @@ fn render(generator: &PlanetWorldGenerator, site: &TempleSite, epoch: Epoch, cut
 /// bloc, l'emplacement de la Pierre en violet
 fn render_plan(generator: &PlanetWorldGenerator, site: &TempleSite, epoch: Epoch, ceiling: i32, out: &str) {
     const P: i32 = 16;
-    let rect = site.rect().expand(2);
-    let (w, d) = (rect.width(), rect.depth());
+    let side = 2 * (site.radius() + 11) + 1;
+    let (w, d) = (side, side);
     let slot = site.stone_slot(epoch);
     let mut img = vec![[18u8, 22, 30]; (w * P * d * P) as usize];
     // Entrée en bas de l'image

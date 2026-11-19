@@ -6,14 +6,19 @@
 //! un monstre du Néant (bible, section 8). Au fond, derrière un mur courbe bombé vers l'arène, le
 //! sanctuaire est fermé : on n'y entre que par sa porte, depuis l'arène, et autour de lui le tour
 //! de l'enceinte devient un mur plein qui monte jusqu'à la couronne. L'autel se dresse au centre du
-//! sanctuaire, sous un puits de lumière.
+//! sanctuaire, sous un puits de lumière. Devant l'entrée, un escalier descend jusqu'au sol naturel
+//! et s'ouvre sur un parvis encadré de deux braseros. Au centre de l'arène, une mosaïque aux
+//! couleurs du peuple marque l'endroit où paraît le monstre.
 //!
 //! Il existe au même endroit à deux époques :
 //! - **au présent** (`Epoch::Present`), c'est une ruine. La base et les colonnes sont brisées, la
-//!   couronne et le toit sont tombés, et l'herbe perce les dalles. Sous l'autel, une cache creusée
-//!   dans le sol du sanctuaire attend la Pierre du Néant ;
+//!   couronne et le toit sont tombés, des tambours de colonnes jonchent l'arène et ses abords, le
+//!   lierre et la mousse couvrent les pierres, l'herbe perce les dalles et fend la mosaïque. Sous
+//!   l'autel, une cache creusée dans le sol du sanctuaire attend la Pierre du Néant, et des éclats
+//!   du Néant percent le sol autour d'elle ;
 //! - **dans le passé** (`Epoch::Past`), c'est le même temple intact, tenu en guerre par un peuple,
-//!   avec les murs et les lanternes de ce peuple et la Pierre posée sur l'autel doré.
+//!   avec les murs et les lanternes de ce peuple, des braseros allumés au sommet des colonnes, et
+//!   la Pierre posée sur l'autel doré.
 //!
 //! Les deux époques changent exactement les mêmes colonnes et les mêmes altitudes : passer de l'une
 //! à l'autre ne demande que de régénérer les chunks du temple (`TempleSite::chunks`) avec un
@@ -24,7 +29,7 @@
 //! - choisir qui le tient dans la vision : `TempleSite::holder_for` (un peuple autre que celui du
 //!   joueur), puis `Epoch::Past(peuple)` ;
 //! - poser la Pierre : `TempleSite::stone_slot(epoch)`, un bloc d'air réservé à elle ;
-//! - mettre le joueur en place : `TempleSite::approach` (devant l'entrée, dehors),
+//! - mettre le joueur en place : `TempleSite::approach` (au bord du parvis, face à l'escalier),
 //!   `TempleSite::arena_center` (où attendre le monstre) et `TempleSite::in_sanctum` (la salle de
 //!   l'autel).
 
@@ -136,11 +141,11 @@ impl TempleSite {
         BlockPos::new(self.face, x, self.temple.floor, z)
     }
 
-    /// Où se tenir pour aborder le temple : la colonne juste devant l'entrée, dehors, à la hauteur
-    /// du sol de l'arène (les pieds y sont à une marche près)
+    /// Où se tenir pour aborder le temple : au bord du parvis, sur l'axe, face à l'escalier qui
+    /// monte à l'entrée (les pieds sur le dallage du parvis)
     pub fn approach(&self) -> BlockPos {
         let (x, z) = self.temple.approach();
-        BlockPos::new(self.face, x, self.temple.floor, z)
+        BlockPos::new(self.face, x, self.temple.parvis_floor(), z)
     }
 
     /// La colonne (x, z) est dans la salle du sanctuaire, où se dresse l'autel
@@ -357,7 +362,7 @@ mod tests {
         let (dx, dz) = site.door().delta();
         let start = site.approach();
         let (mut x, mut z) = (start.x - dx, start.z - dz);
-        let mut previous = standing(&past, site.face, start.x, start.z, site.floor() - 3, site.floor() + 1).expect("on se tient devant l'entrée");
+        let mut previous = standing(&past, site.face, start.x, start.z, start.y - 1, start.y + 1).expect("on se tient devant l'entrée");
         while (x - dx, z - dz) != (ax, az) {
             let here = standing(&past, site.face, x, z, previous - 1, previous + 1).unwrap_or_else(|| panic!("({x}, {z}) bouche le chemin de l'autel"));
             previous = here;
@@ -380,8 +385,8 @@ mod tests {
             for x in rect.x0..rect.x1 {
                 let d = (((x - cx) * (x - cx) + (z - cz) * (z - cz)) as f64).sqrt();
                 if d > r - 1.5 && d <= r + 0.5 && free(x, z, site.floor()) {
-                    let a = site.approach();
-                    assert!(off_axis(&site, x, z) <= 1 && (x - a.x).abs() + (z - a.z).abs() <= 4, "brèche dans le tour en ({x}, {z})");
+                    let (dx, dz) = site.door().delta();
+                    assert!(off_axis(&site, x, z) <= 1 && dx * (x - cx) + dz * (z - cz) > 0, "brèche dans le tour en ({x}, {z})");
                     gaps += 1;
                 }
             }
