@@ -1437,6 +1437,8 @@ impl Temple {
     const CROWN_RISE: i32 = 3;
     /// Demi-largeur de l'entrée et de la porte du sanctuaire
     const GATE: i32 = 1;
+    /// Niveau du toit du sanctuaire, celui de la couronne au fond
+    const ROOF: i32 = Self::CROWN_LOW + Self::CROWN_RISE;
 
     /// Côté de l'entrée
     pub fn door(&self) -> Side {
@@ -1568,6 +1570,37 @@ impl Temple {
             .collect()
     }
 
+    /// Retrait du point (u, v) depuis le bord du toit du sanctuaire (négatif : hors du toit)
+    fn roof_inset(&self, u: i32, v: i32) -> f64 {
+        let to_ring = self.radius as f64 + 0.5 - Self::dist(u, v);
+        let to_wall = self.wall_dist(u, v) - (self.wall_circle().1 - 0.75);
+        to_ring.min(-to_wall)
+    }
+
+    /// Toit du sanctuaire intact, au niveau `level` (au moins `ROOF`) : une dalle au niveau de la
+    /// couronne bordée d'une corniche, deux gradins en retrait, et au sommet un lanternon autour du
+    /// puits de lumière, coiffé de cristaux à ses coins. Le puits reste ouvert jusqu'au ciel.
+    fn roof_block(&self, u: i32, v: i32, level: i32, trim: BlockId) -> Option<BlockId> {
+        let inset = self.roof_inset(u, v);
+        if inset < 0.0 {
+            return None;
+        }
+        let (au, av) = self.altar_local();
+        let (ru, rv) = ((u - au).abs(), (v - av).abs());
+        if ru <= 1 && rv <= 1 {
+            return None;
+        }
+        let tier = level - Self::ROOF;
+        let lantern = ru.max(rv) == 2;
+        match tier {
+            0 => Some(if inset < 1.0 { trim } else { CUT_STONE }),
+            1 if inset >= 2.0 => Some(CUT_STONE),
+            2 if inset >= 4.0 || lantern => Some(CUT_STONE),
+            3 if lantern => Some(if ru == 2 && rv == 2 { CUT_CRYSTAL } else { trim }),
+            _ => None,
+        }
+    }
+
     /// Bloc du temple à l'époque donnée : `holder` est le peuple qui le tient dans le passé, `None`
     /// au présent
     fn block_at(&self, holder: Option<Culture>, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
@@ -1622,11 +1655,13 @@ impl Temple {
         // Le tour de l'enceinte
         if ring && !gate {
             if sanct_ring {
-                // Mur plein autour du sanctuaire, jusqu'à la couronne
-                let top = if past { crown } else { 1 + self.fallen(u, v, crown - 1, 0x51) };
-                if level < top || (past && level == crown) {
-                    let wall = masonry.map(|m| m.wall).unwrap_or(COBBLE);
-                    return Some(if past && level == crown && d > self.radius as f64 - 0.5 { trim } else { wall });
+                // Mur plein autour du sanctuaire, jusqu'au toit
+                if past && level >= Self::ROOF {
+                    return self.roof_block(u, v, level, trim).or((y < ground).then_some(BlockId::AIR));
+                }
+                let top = if past { Self::ROOF } else { 1 + self.fallen(u, v, Self::ROOF - 1, 0x51) };
+                if level < top {
+                    return Some(masonry.map(|m| m.wall).unwrap_or(COBBLE));
                 }
                 return (y < ground).then_some(BlockId::AIR);
             }
@@ -1673,7 +1708,10 @@ impl Temple {
             if door {
                 return Some(BlockId::AIR);
             }
-            let top = if past { crown } else { 2 + self.fallen(u, v, crown - 2, 0x52) };
+            if past && level >= Self::ROOF {
+                return self.roof_block(u, v, level, trim).or((y < ground).then_some(BlockId::AIR));
+            }
+            let top = if past { Self::ROOF - 1 } else { 2 + self.fallen(u, v, Self::ROOF - 2, 0x52) };
             if level <= top {
                 return Some(masonry.map(|m| m.wall).unwrap_or(COBBLE));
             }
@@ -1692,11 +1730,10 @@ impl Temple {
                 }
             }
             if past {
-                // Le toit suit la couronne ; il s'ouvre au-dessus de l'autel en puits de lumière
+                // Le toit, ouvert au-dessus de l'autel en puits de lumière
                 let (au, av) = self.altar_local();
-                let shaft = (u - au).abs() <= 1 && (v - av).abs() <= 1;
-                if level == crown && !shaft {
-                    return Some(CUT_STONE);
+                if level >= Self::ROOF {
+                    return self.roof_block(u, v, level, trim).or((y < ground).then_some(BlockId::AIR));
                 }
                 // Deux lanternes de part et d'autre de l'autel
                 if level == 1 && v == av && (u - au).abs() == 2 {
@@ -1764,7 +1801,7 @@ impl Temple {
 
     /// Plus haut bloc (exclu) que pose le temple, à l'une ou l'autre époque
     pub(crate) fn top(&self) -> i32 {
-        self.floor + Self::CROWN_LOW + Self::CROWN_RISE + 2
+        self.floor + Self::ROOF + 5
     }
 }
 

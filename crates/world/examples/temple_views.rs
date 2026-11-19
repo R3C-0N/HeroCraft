@@ -116,7 +116,8 @@ fn render(generator: &PlanetWorldGenerator, site: &TempleSite, epoch: Epoch, cut
             Side::East => (v, -u),
             Side::West => (-v, u),
         };
-        (cx + a, cz + b)
+        let flip = if std::env::var("TEMPLE_VUE_ARRIERE").is_ok() { -1 } else { 1 };
+        (cx + flip * a, cz + flip * b)
     };
     let mut grid = vec![BlockId::AIR; (w * d * h) as usize];
     let idx = |x: i32, y: i32, z: i32| ((y * d + z) * w + x) as usize;
