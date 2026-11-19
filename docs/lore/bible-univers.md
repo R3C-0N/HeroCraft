@@ -162,7 +162,10 @@ Dans un monde qui peine encore à se relever d'une apocalypse ancienne, des indi
 * **Les arènes vivantes.** Pas de foule simulée : lors des mini-boss, les soldats alliés et ennemis s'écartent et forment un cercle qui repousse **tout le monde** (héros et mini-boss) vers le centre.
 * **Le tutoriel, vécu en solo.** L'ancien héros incarné n'est d'abord qu'un soldat parmi les autres, en équipement standard (fer), avec les compétences les plus basiques. L'armée se prépare, la charge finale va commencer.
 * **L'éclat.** Le héros entend un éclat de la Pierre du Néant. Le temps semble s'arrêter, tout se teinte de violet, avec des effets du Néant (à décider). Il se déplace entre les soldats figés (tuto déplacement) et trouve une roche luisante d'un éclat violet. Il ouvre son inventaire pour y prendre une pioche (tuto inventaire) et brise la roche (tuto outils). En ramassant l'éclat qui en sort, des rayons de lumière jaillissent du contact : le simple soldat devient un héros et ses premières compétences s'ouvrent.
-* **La charge.** Puis tout le monde charge.
+* **La charge.** Le temps repart, l'armée charge la porte et un bélier la défonce. Quand la porte vole en éclats, un énorme rayon violet s'élève du centre de la ville.
+* **La traversée.** Des barricades ennemies forcent le joueur à des détours, où il tombe sur des ennemis de plus en plus nombreux, et sur des mini-boss en chemin. Beaucoup d'alliés meurent.
+* **L'arène.** Le joueur arrive presque seul dans l'arène du temple. Un ennemi l'attend seul au centre. Dans une explosion qui tue les derniers alliés, il prend la forme d'un monstre du Néant : c'est le boss final du souvenir.
+* **La fin du souvenir.** Une fois le monstre vaincu, le cristal appelle à nouveau le héros, qui se dirige vers lui et en récupère la puissance. Il ressort du souvenir avec cette puissance et un éclat de cristal trouvé en vrai, mais sans mémoire. L'histoire commence.
 
 ### SECRET DE LA BIBLE : les Pierres gardent la mémoire des héros (Mat, 17/11/2026)
 * Les héros ont initialement eu leur pouvoir des Pierres. Ils y ont donc été liés, et les Pierres abritent leur mémoire.
