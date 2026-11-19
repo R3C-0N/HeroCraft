@@ -1218,6 +1218,12 @@ impl OrbitCamera {
         self.cinematic.map_or(self.effective_eye, |c| c.eye)
     }
 
+    /// Point autour duquel le relief se détaille : l'œil du joueur, même quand une cinématique
+    /// tient la caméra (la scène de papier, loin au-dessus, ne doit pas faire perdre le sol)
+    pub fn lod_eye(&self) -> Vec3 {
+        self.effective_eye
+    }
+
     /// Matrice View-Projection avec FOV adaptatif selon le mode (FPS immersif -> Satellite téléobjectif)
     pub fn build_view_projection_matrix(&self) -> Mat4 {
         if let Some(c) = self.cinematic {

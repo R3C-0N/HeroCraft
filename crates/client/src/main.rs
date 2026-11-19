@@ -20,6 +20,7 @@ mod block_outline;
 mod block_textures;
 mod camera;
 mod chat;
+mod paper_cards;
 mod cinematic;
 mod cloud_mesh;
 mod collision;
@@ -145,7 +146,7 @@ fn main() {
     let mut lod_manager = PlanetLodManager::new(base_radius, current_seed);
     camera.set_terrain(terrain_edits.clone());
     lod_manager.set_terrain_edits(terrain_edits);
-    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
+    lod_manager.update(camera.lod_eye(), &generator, &mut chunk_cache, 0.0, None);
     let visible_meshes = lod_manager.visible_meshes();
     info!(
         "QuadTree initialisé : {} sommets, {} polygones ({} feuilles actives).",
@@ -644,6 +645,9 @@ fn main() {
                         for event in cinematics.update(dt, &mut camera, &generator) {
                             info!("Événement de cinématique : {} {:?}", event.name, event.tags);
                         }
+                        // Cartes de papier de la cinématique (aucune sinon)
+                        let (card_uniform, card_instances) = cinematics.cards(&camera, state.card_layers());
+                        state.update_cards(&card_uniform, &card_instances);
                         if cinematics.is_playing() && !was_playing {
                             ui_state.set_inventory_open(false);
                             ui_state.set_skills_open(false);
@@ -1270,7 +1274,7 @@ fn main() {
                         // Mise à jour adaptative du QuadTree LOD
                         herocraft_common::prof_scope!("frame::lod_and_upload" => lod_guard);
                         let section = Instant::now();
-                        if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, dt, None)
+                        if lod_manager.update(camera.lod_eye(), &generator, &mut chunk_cache, dt, None)
                             || terrain_edited
                             || state.has_pending_lod_uploads()
                         {
@@ -1582,7 +1586,7 @@ fn main() {
                                 UiAction::ToggleTectonics | UiAction::ToggleOceanCurrents => {
                                     let filter = ui_state.active_filter();
                                     lod_manager.set_filter(filter);
-                                    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
+                                    lod_manager.update(camera.lod_eye(), &generator, &mut chunk_cache, 0.0, None);
                                     state.sync_lod_meshes(&lod_manager);
                                     info!("Filtre de visualisation sélectionné : {:?}", filter);
                                 }
@@ -1855,7 +1859,7 @@ fn switch_planet(
     if ui_state.player.is_dead() {
         ui_state.player.respawn();
     }
-    lod_manager.update(camera.eye_position(), generator, chunk_cache, 0.0, None);
+    lod_manager.update(camera.lod_eye(), generator, chunk_cache, 0.0, None);
     state.sync_lod_meshes(lod_manager);
     state.update_cloud_mesh(camera.base_radius, seed);
     ui_state.set_seed(seed);

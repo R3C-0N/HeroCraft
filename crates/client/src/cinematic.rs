@@ -9,6 +9,21 @@ use glam::Vec3;
 use herocraft_common::cinematics::{CaptionStyle, CinematicCatalog, CinematicPlayer, GameEvent, SkipRequest};
 
 use crate::camera::{CinematicView, OrbitCamera};
+use crate::paper_cards::{CardInstance, CardUniform};
+
+/// Hauteur de la scène de papier au-dessus du joueur, en blocs
+const STAGE_HEIGHT_BLOCKS: f32 = 1500.0;
+/// Distance du fond de papier à la caméra, en blocs
+const BACKDROP_BLOCKS: f32 = 120.0;
+
+/// Couleur `#RRGGBB` en composantes linéaires
+fn linear_color(text: &str) -> [f32; 3] {
+    let srgb = herocraft_common::cinematics::parse_color(text).unwrap_or([255, 255, 255]);
+    srgb.map(|c| {
+        let c = c as f32 / 255.0;
+        if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    })
+}
 
 /// Repère de la cinématique en cours, figé à son début : origine et axes du monde, taille d'un bloc
 #[derive(Debug, Clone, Copy)]
@@ -127,13 +142,83 @@ impl Cinematics {
             .filter(|p| p.cinematic.anchor == herocraft_common::cinematics::Anchor::Event)
             .and_then(|p| p.event.as_ref())
             .and_then(|e| e.position);
-        let origin = at_event.unwrap_or(camera.player_pos);
+        let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+        let mut origin = at_event.unwrap_or(camera.player_pos);
         let up = origin.normalize_or_zero();
+        // La scène de papier : loin au-dessus du joueur, au-dessus des nuages et hors du monde
+        if playing.is_some_and(|p| p.cinematic.anchor == herocraft_common::cinematics::Anchor::Stage) {
+            origin += up * STAGE_HEIGHT_BLOCKS * block;
+        }
         // Le regard du joueur, ramené dans le plan du sol de l'origine
         let forward = (forward - up * forward.dot(up)).normalize_or(forward);
         let right = forward.cross(up).normalize_or(right);
-        let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
         AnchorFrame { origin, right, up, forward, block }
+    }
+
+    /// Les cartes de papier de la cinématique en cours, et la lumière qui les éclaire (aucune
+    /// carte hors des cinématiques)
+    pub fn cards(&self, camera: &OrbitCamera, layers: &crate::paper_cards::CardLayers) -> (CardUniform, Vec<CardInstance>) {
+        let mut out = Vec::new();
+        let (Some(playing), Some(anchor), Some(view)) = (self.player.playing(), self.anchor, camera.cinematic) else {
+            return (CardUniform::default(), out);
+        };
+        let cinematic = &playing.cinematic;
+        let stage = &cinematic.stage;
+        let light = &stage.light;
+        let to_world_dir = |v: Vec3| (anchor.right * v.x + anchor.up * v.y + anchor.forward * v.z).normalize_or(anchor.up);
+        let [lr, lg, lb] = linear_color(&light.color);
+        let uniform = CardUniform {
+            view_proj: camera.build_view_projection_matrix().to_cols_array_2d(),
+            light_dir: to_world_dir(Vec3::from(light.direction)).extend(light.ambient.clamp(0.0, 1.0)).to_array(),
+            light_color: [lr * light.intensity, lg * light.intensity, lb * light.intensity, playing.time],
+            params: [anchor.block, 0.0, 0.0, 0.0],
+            eye: view.eye.extend(1.0).to_array(),
+        };
+
+        // Le fond : une grande feuille face à la caméra, derrière tout le reste
+        if let Some(color) = &stage.backdrop {
+            let look = (view.target - view.eye).normalize_or(anchor.forward);
+            let distance = BACKDROP_BLOCKS * anchor.block;
+            let half_h = distance * (view.fov * 0.5).tan() * 1.15;
+            let half_w = half_h * camera.aspect.max(0.1) * 1.1;
+            let right = look.cross(view.up).normalize_or(anchor.right);
+            let up = right.cross(look).normalize_or(anchor.up);
+            let [r, g, b] = linear_color(color);
+            out.push(CardInstance {
+                center: (view.eye + look * distance).extend(crate::paper_cards::NO_TEXTURE as f32).to_array(),
+                axis_u: (right * half_w).extend(0.0).to_array(),
+                axis_v: (up * half_h).extend(0.0).to_array(),
+                color: [r, g, b, 1.0],
+                extra: [1.0, 1.0, 0.0, 0.0],
+            });
+        }
+
+        for sample in cinematic.cards_at(playing.time) {
+            let card = sample.card;
+            let (layer, aspect) = match card.image.as_deref() {
+                Some(image) => match layers.get(image) {
+                    Some(found) => found,
+                    // Image absente : signalée au chargement par les tests, la carte reste unie
+                    None => (crate::paper_cards::NO_TEXTURE, 1.0),
+                },
+                None => (crate::paper_cards::NO_TEXTURE, 1.0),
+            };
+            let width = sample.width;
+            let height = sample.height.unwrap_or(width / aspect.max(0.01));
+            // Repère de la carte dans celui de l'ancre : face vers l'arrière (-z), puis tournée
+            let rotation = glam::Quat::from_rotation_y(-sample.yaw) * glam::Quat::from_rotation_x(sample.pitch) * glam::Quat::from_rotation_z(-sample.roll);
+            let u = to_world_dir(rotation * Vec3::X) * width * 0.5 * anchor.block;
+            let v = to_world_dir(rotation * Vec3::Y) * height * 0.5 * anchor.block;
+            let [r, g, b] = card.color.as_deref().map_or([1.0; 3], linear_color);
+            out.push(CardInstance {
+                center: anchor.to_world(sample.center).extend(layer as f32).to_array(),
+                axis_u: u.extend(card.curl.max(0.0)).to_array(),
+                axis_v: v.extend(card.border.max(0.0)).to_array(),
+                color: [r, g, b, sample.opacity],
+                extra: [card.glow, 0.0, 0.0, 0.0],
+            });
+        }
+        (uniform, out)
     }
 
     /// Ce que l'interface doit peindre par-dessus le jeu, `skip_key` étant le nom de la touche
@@ -323,6 +408,109 @@ mod tests {
                 snapshot.paint(&primitives, output.pixels_per_point);
                 snapshot.save(&dir.join(format!("{id}-{}.png", i + 1)));
             }
+        }
+    }
+
+    /// Captures 3D de la scène de papier, rendues hors écran par le shader des cartes seul (sans
+    /// ciel, monde ni textes ; tonemapping simplifié) : `HEROCRAFT_CAPTURES=captures cargo test -p
+    /// herocraft_client snapshot_paper_stage -- --ignored` (cinématique au choix avec
+    /// `HEROCRAFT_CINEMATIQUE`, `essai-papier` par défaut)
+    #[test]
+    #[ignore]
+    fn snapshot_paper_stage() {
+        let Ok(dir) = std::env::var("HEROCRAFT_CAPTURES") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let id = std::env::var("HEROCRAFT_CINEMATIQUE").unwrap_or_else(|_| "essai-papier".into());
+        let (width, height) = (1280_u32, 720_u32);
+        let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/cinematics");
+        let (catalog, _) = CinematicCatalog::load_dir(&source);
+        let duration = catalog.get(&id).expect("cinématique inconnue").duration();
+        let images = crate::paper_cards::CardImages::load_dir(&source.join("cards"));
+
+        let instance = wgpu::Instance::default();
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("aucun adaptateur graphique");
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None)).unwrap();
+        let format = wgpu::TextureFormat::Rgba32Float;
+        let mut renderer = crate::paper_cards::CardRenderer::new(&device, &queue, crate::post::SceneTarget { sample_count: 1, format }, images);
+        let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
+        let color = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let depth = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor { label: None, size: (width * height * 16) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+
+        let generator = herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 2026, ..Default::default() });
+        let radius = crate::camera::DEFAULT_RADIUS;
+        let frames = 6;
+        for f in 0..frames {
+            let t = duration * (f as f32 + 0.5) / frames as f32;
+            let mut camera = OrbitCamera::new(0.0, radius, &generator);
+            camera.aspect = width as f32 / height as f32;
+            let mut cinematics = Cinematics { player: CinematicPlayer::new(catalog.clone()), anchor: None, world: None };
+            cinematics.player.play(&id).unwrap();
+            cinematics.update(0.0, &mut camera, &generator);
+            cinematics.update(t, &mut camera, &generator);
+            let (uniform, cards) = cinematics.cards(&camera, &renderer.layers);
+            renderer.update(&queue, &uniform, &cards);
+            let mut encoder = device.create_command_encoder(&Default::default());
+            {
+                let color_view = color.create_view(&Default::default());
+                let depth_view = depth.create_view(&Default::default());
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &color_view, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store } })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &depth_view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                renderer.draw(&mut pass);
+            }
+            encoder.copy_texture_to_buffer(
+                wgpu::ImageCopyTexture { texture: &color, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                wgpu::ImageCopyBuffer { buffer: &readback, layout: wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(width * 16), rows_per_image: Some(height) } },
+                size,
+            );
+            queue.submit([encoder.finish()]);
+            readback.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+            device.poll(wgpu::Maintain::Wait);
+            let data: Vec<f32> = bytemuck::cast_slice(&readback.slice(..).get_mapped_range()).to_vec();
+            readback.unmap();
+            // Exposition du jeu (-0,3 EV), courbe filmique simple, puis sRGB ; voile de la cinématique
+            let frame = cinematics.player.frame().unwrap();
+            let ([fr, fg, fb], fade) = frame.fade;
+            let veil = [fr, fg, fb].map(|c| c as f32 / 255.0);
+            let mut rgb = Vec::with_capacity((width * height * 3) as usize);
+            for px in data.chunks(4) {
+                for (i, &c) in px[..3].iter().enumerate() {
+                    let x = c * 2f32.powf(-0.3);
+                    let mapped = (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14);
+                    let srgb = if mapped <= 0.0031308 { mapped * 12.92 } else { 1.055 * mapped.clamp(0.0, 1.0).powf(1.0 / 2.4) - 0.055 };
+                    let v = srgb.clamp(0.0, 1.0) * (1.0 - fade) + veil[i] * fade;
+                    rgb.push((v * 255.0).round() as u8);
+                }
+            }
+            let file = std::fs::File::create(dir.join(format!("{id}-3d-{}.png", f + 1))).unwrap();
+            let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+            encoder.set_color(png::ColorType::Rgb);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder.write_header().unwrap().write_image_data(&rgb).unwrap();
         }
     }
 }

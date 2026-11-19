@@ -272,6 +272,136 @@ pub enum Anchor {
     /// La position de l'événement déclencheur, tournée comme le regard du joueur (le joueur à
     /// défaut de position)
     Event,
+    /// La scène de papier : loin au-dessus du joueur, hors du monde, devant le fond de `stage`
+    Stage,
+}
+
+/// Lumière de la scène de papier, dans le repère de l'ancre
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StageLight {
+    /// Direction d'où vient la lumière (`[x, y, z]`, vers la source)
+    #[serde(default = "default_light_direction")]
+    pub direction: [f32; 3],
+    /// `#RRGGBB`
+    #[serde(default = "default_light_color")]
+    pub color: String,
+    /// Force de la lumière directe
+    #[serde(default = "one")]
+    pub intensity: f32,
+    /// Lumière ambiante, de 0 (ombres noires) à 1 (aucune ombre)
+    #[serde(default = "default_ambient")]
+    pub ambient: f32,
+}
+
+fn default_light_direction() -> [f32; 3] {
+    [-0.4, 0.8, -0.5]
+}
+
+fn default_light_color() -> String {
+    "#FFF4E0".into()
+}
+
+fn default_ambient() -> f32 {
+    0.45
+}
+
+fn one() -> f32 {
+    1.0
+}
+
+impl Default for StageLight {
+    fn default() -> Self {
+        Self { direction: default_light_direction(), color: default_light_color(), intensity: 1.0, ambient: default_ambient() }
+    }
+}
+
+/// Réglages des cartes de papier : la lumière qui les éclaire, et le fond de la scène
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Stage {
+    /// Couleur du papier de fond (`#RRGGBB`), tendu derrière tout ce que voit la caméra ; sans
+    /// fond, les cartes se posent dans le monde
+    #[serde(default)]
+    pub backdrop: Option<String>,
+    #[serde(default)]
+    pub light: StageLight,
+}
+
+/// Une carte de papier découpé, posée dans la scène 3D
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Card {
+    /// Nom pour s'y retrouver
+    #[serde(default)]
+    pub name: String,
+    /// Découpe de `assets/cinematics/cards/` (PNG à transparence). Sans image : une feuille unie.
+    #[serde(default)]
+    pub image: Option<String>,
+    /// Début et durée, en secondes (par défaut, toute la cinématique)
+    #[serde(default)]
+    pub at: f32,
+    #[serde(default)]
+    pub duration: Option<f32>,
+    /// Secondes d'apparition et de disparition
+    #[serde(default)]
+    pub fade: f32,
+    /// Centre de la carte, en blocs dans le repère de l'ancre (une paire : elle se déplace)
+    pub position: Track<[f32; 3]>,
+    /// Largeur en blocs ; la hauteur suit les proportions de l'image, ou `height`
+    pub width: Track<f32>,
+    #[serde(default)]
+    pub height: Option<Track<f32>>,
+    /// Rotation autour de la verticale, en degrés (0 : la carte regarde vers l'arrière de
+    /// l'ancre, là où se tient d'ordinaire la caméra)
+    #[serde(default = "zero_track")]
+    pub yaw: Track<f32>,
+    /// Bascule vers l'avant ou l'arrière, en degrés (90 : couchée à plat, face au ciel)
+    #[serde(default = "zero_track")]
+    pub pitch: Track<f32>,
+    /// Rotation dans son plan, en degrés
+    #[serde(default = "zero_track")]
+    pub roll: Track<f32>,
+    /// Balancement, en degrés, comme une pièce tenue par un fil
+    #[serde(default)]
+    pub sway: f32,
+    /// Gondolement du papier, en part de la largeur (0,03 : à peine, 0,15 : très courbé)
+    #[serde(default = "default_curl")]
+    pub curl: f32,
+    /// Teinte multipliée à l'image (`#RRGGBB`), ou couleur d'une feuille unie
+    #[serde(default)]
+    pub color: Option<String>,
+    /// Lueur : au-dessus de 1, la carte brille (lave, Pierre, soleil) et ne prend pas d'ombre
+    #[serde(default = "one")]
+    pub glow: f32,
+    /// Liseré blanc autour de la découpe, en part de la largeur (0 : aucun)
+    #[serde(default = "default_border")]
+    pub border: f32,
+    #[serde(default)]
+    pub ease: Ease,
+}
+
+fn default_curl() -> f32 {
+    0.04
+}
+
+fn default_border() -> f32 {
+    0.012
+}
+
+/// Une carte à un instant, dans le repère de l'ancre
+#[derive(Debug, Clone, PartialEq)]
+pub struct CardSample<'a> {
+    pub card: &'a Card,
+    pub center: Vec3,
+    pub width: f32,
+    /// `None` : les proportions de l'image
+    pub height: Option<f32>,
+    /// Radians
+    pub yaw: f32,
+    pub pitch: f32,
+    pub roll: f32,
+    pub opacity: f32,
 }
 
 fn yes() -> bool {
@@ -308,6 +438,12 @@ pub struct Cinematic {
     pub fades: Vec<Fade>,
     #[serde(default)]
     pub cues: Vec<Cue>,
+    /// Cartes de papier découpé posées dans la scène 3D
+    #[serde(default)]
+    pub cards: Vec<Card>,
+    /// Lumière des cartes, et fond de papier
+    #[serde(default)]
+    pub stage: Stage,
     /// Événements renvoyés au jeu à la fin, qu'elle soit allée au bout ou ait été passée
     #[serde(default)]
     pub on_end: Vec<String>,
@@ -389,6 +525,25 @@ impl Cinematic {
             }
             parse_color(&fade.color).ok_or_else(|| format!("fondu : couleur « {} » invalide", fade.color))?;
         }
+        for (i, card) in self.cards.iter().enumerate() {
+            let name = if card.name.is_empty() { format!("carte {}", i + 1) } else { format!("carte « {} »", card.name) };
+            if card.at < 0.0 || card.duration.is_some_and(|d| !(d > 0.0)) || card.fade < 0.0 {
+                return Err(format!("{name} : début, durée ou fondu invalide"));
+            }
+            if !(card.width.start() > 0.0 && card.width.end() > 0.0) || card.height.is_some_and(|h| !(h.start() > 0.0 && h.end() > 0.0)) {
+                return Err(format!("{name} : taille nulle"));
+            }
+            if let Some(color) = &card.color {
+                parse_color(color).ok_or_else(|| format!("{name} : couleur « {color} » invalide"))?;
+            }
+            if card.image.as_deref().is_some_and(|i| i.is_empty() || i.contains("..") || i.contains('/') || i.contains('\\')) {
+                return Err(format!("{name} : nom d'image invalide (un fichier de cards/)"));
+            }
+        }
+        if let Some(color) = &self.stage.backdrop {
+            parse_color(color).ok_or_else(|| format!("fond : couleur « {color} » invalide"))?;
+        }
+        parse_color(&self.stage.light.color).ok_or_else(|| format!("lumière : couleur « {} » invalide", self.stage.light.color))?;
         if self.cues.iter().any(|c| c.at < 0.0 || c.emit.is_empty()) {
             return Err("événement (`cues`) : début négatif ou nom vide".into());
         }
@@ -401,7 +556,44 @@ impl Cinematic {
         let captions = self.captions.iter().map(|c| c.at + c.duration);
         let fades = self.fades.iter().map(|f| f.at + f.duration);
         let cues = self.cues.iter().map(|c| c.at);
-        captions.chain(fades).chain(cues).fold(shots, f32::max)
+        let cards = self.cards.iter().filter_map(|c| c.duration.map(|d| c.at + d));
+        captions.chain(fades).chain(cues).chain(cards).fold(shots, f32::max)
+    }
+
+    /// Les cartes visibles à l'instant `t`
+    pub fn cards_at(&self, t: f32) -> Vec<CardSample<'_>> {
+        let end = self.duration();
+        self.cards
+            .iter()
+            .filter_map(|card| {
+                let stop = card.duration.map_or(end, |d| card.at + d);
+                if t < card.at || t > stop {
+                    return None;
+                }
+                let life = (stop - card.at).max(1e-3);
+                let k = card.ease.apply((t - card.at) / life);
+                let opacity = if card.fade > 0.0 { ((t - card.at) / card.fade).min((stop - t) / card.fade).clamp(0.0, 1.0) } else { 1.0 };
+                // Balancement lent, décalé d'une carte à l'autre
+                let phase = card.position.start()[0] * 1.7 + card.position.start()[2] * 0.9;
+                let sway = (card.sway.to_radians()) * (t * 1.3 + phase).sin();
+                Some(CardSample {
+                    card,
+                    center: card.position.at(k),
+                    width: card.width.at(k),
+                    height: card.height.map(|h| h.at(k)),
+                    yaw: card.yaw.at(k).to_radians(),
+                    pitch: card.pitch.at(k).to_radians(),
+                    roll: card.roll.at(k).to_radians() + sway,
+                    opacity,
+                })
+            })
+            .collect()
+    }
+
+    /// Les images citées par les cartes, sans doublon
+    pub fn card_images(&self) -> impl Iterator<Item = &str> {
+        let mut seen = HashSet::new();
+        self.cards.iter().filter_map(|c| c.image.as_deref()).filter(move |i| seen.insert(*i))
     }
 
     /// Le plan en cours à l'instant `t` et son avancement (0 à 1, avant la courbe)
@@ -865,6 +1057,32 @@ mod tests {
         p.update(10.0);
         assert_eq!(p.playing().unwrap().cinematic.id, "suite");
         assert!(p.take_started());
+    }
+
+    #[test]
+    fn test_cards() {
+        let json = r##"{
+            "title": "Papier", "anchor": "stage",
+            "stage": {"backdrop": "#E9DFC7", "light": {"ambient": 0.5}},
+            "shots": [{"duration": 4, "position": [0, 2, -6]}],
+            "cards": [
+                {"image": "planete.png", "position": [[0, 2, 0], [0, 4, 0]], "width": 3, "ease": "linear"},
+                {"at": 1, "duration": 2, "fade": 0.5, "position": [1, 0, 2], "width": 10, "height": 6, "color": "#C0A080"}
+            ]
+        }"##;
+        let c = Cinematic::from_json("papier", json).unwrap();
+        assert_eq!(c.anchor, Anchor::Stage);
+        assert_eq!(c.stage.light.ambient, 0.5);
+        assert_eq!(c.card_images().collect::<Vec<_>>(), ["planete.png"]);
+        let cards = c.cards_at(0.5);
+        assert_eq!(cards.len(), 1);
+        let cards = c.cards_at(2.0);
+        assert_eq!(cards.len(), 2);
+        assert!((cards[0].center - Vec3::new(0.0, 3.0, 0.0)).length() < 1e-4);
+        assert_eq!(cards[1].opacity, 1.0);
+        assert_eq!(c.cards_at(1.25)[1].opacity, 0.5);
+        assert!(Cinematic::from_json("x", &json.replace("planete.png", "../x.png")).is_err());
+        assert!(Cinematic::from_json("x", &json.replace("\"width\": 3", "\"width\": 0")).is_err());
     }
 
     #[test]
