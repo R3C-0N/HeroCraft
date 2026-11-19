@@ -186,18 +186,19 @@ Le jeu reçoit ces événements comme ceux qu'il envoie : ils peuvent aussi déc
 |---|---|---|
 | `fin-de-la-vision` | Pierre du Néant entière obtenue | La Pierre s'éveille, des souvenirs qui ne sont pas ceux du joueur, puis la lumière efface tout (fondu au blanc, `vision_ended`). Enchaîne sur `reveil-au-present`. (19,5 s) |
 | `essai-papier` | `/cinematic essai-papier` | Scène d'essai des cartes de papier : un paysage en couches qui glissent sous la caméra, puis une planète de feu derrière des nuages. (16 s) |
-| `genese` | À chaque lancement du jeu (`game_launched`), ou `/cinematic genese` | Le récit des origines, porté de la maquette `docs/cinematiques/genese.html` : 832 cartes de papier en dix scènes. Généré, ne pas modifier à la main (voir plus bas). (161 s) |
+| `genese` | À chaque lancement du jeu (`game_launched`), ou `/cinematic genese` | Le récit des origines, porté de la maquette `docs/cinematiques/genese.html` : environ 7 000 cartes de papier en dix scènes. Généré, ne pas modifier à la main (voir plus bas). (161 s) |
+| `chronique-du-roi` | Sur `king_chronicle` (à envoyer quand le Roi la raconte), ou `/cinematic chronique-du-roi` | L'histoire des peuples, la naissance des héros et leur chute, racontée par le Roi, portée de la maquette `docs/cinematiques/chronique-du-roi.html`. Générée, ne pas modifier à la main. (162 s) |
 | `reveil-au-present` | Après la fin de la vision | Le joueur s'éveille dans les ruines du temple, sans autre souvenir que la vision ; la caméra descend du ciel et se pose derrière lui. (15 s) |
 
 Les textes sont une première version, à reprendre avec l'écriture du scénario.
 
-### La Genèse, depuis la maquette HTML
+### La Genèse et la Chronique du Roi, depuis les maquettes HTML
 
-`genese.json` et `cards/genese/` se refont depuis la maquette, après l'avoir modifiée :
+`<nom>.json` et `cards/<nom>/` (`genese`, `chronique-du-roi`) se refont depuis leur maquette, après l'avoir modifiée :
 
 ```sh
-node tools/exporter_genese.js /tmp/export-genese   # Playwright : chaque pièce de papier en PNG, sa place image par image
-python3 tools/genese_vers_cinematique.py /tmp/export-genese
+node tools/exporter_maquette.js genese /tmp/export-genese   # Playwright : chaque pièce de papier en PNG, sa place image par image
+python3 tools/maquette_vers_cinematique.py genese /tmp/export-genese
 ```
 
 Chaque pièce que dessine une scène devient une carte, posée à une profondeur qui suit l'ordre de dessin et à la place qui la montre, vue de la caméra, là où la maquette la montre (rotation dans son plan comprise). La caméra glisse un peu à chaque plan. En plus :
@@ -207,6 +208,9 @@ Chaque pièce que dessine une scène devient une carte, posée à une profondeur
 - le fond de chaque scène (ciel, étoiles) est une feuille tout au fond ; la nuit qui tombe assombrit les pièces qu'elle couvre, un éclair blanc devient un fondu ;
 - la pluie, les cendres et les traînées des météores sont saisies à 12 images par seconde, en petits traits teintés ;
 - les textes sont des bandes de papier découpées dans la maquette ;
-- les coupes en page déchirée sont les images mêmes de la maquette, à 12 images par seconde, devant tout.
+- les coupes en page déchirée sont les images mêmes de la maquette, à 12 images par seconde, devant tout ;
+- la faille de la Chronique est une pièce entière (ses lueurs intérieures figées) et son cadre doré une carte devant tout.
+
+Titre, description, déclencheurs et textes encore à écrire de chaque maquette sont dans `MAQUETTES` (`tools/maquette_vers_cinematique.py`). Un plan dont les découpes dépasseraient l'atlas est coupé en deux.
 
 Les découpes sont en PNG à palette quand cela ne se voit pas. Le jeu ne charge que celles du plan en cours et prépare le suivant en arrière-plan. Ne passent pas encore : le léger tremblé des contours (« boil ») et les ombres portées d'une carte sur l'autre (étape suivante).

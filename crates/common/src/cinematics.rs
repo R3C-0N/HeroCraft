@@ -706,7 +706,8 @@ impl Cinematic {
         let mut seen = HashSet::new();
         self.cards
             .iter()
-            .filter(|c| c.at <= t1 && c.duration.map_or(end, |d| c.at + d) >= t0)
+            // Une carte qui commence à la fin du plan (la scène suivante) ou finit à son début n'y est pas
+            .filter(|c| c.at < t1 && c.duration.map_or(end, |d| c.at + d) > t0)
             .filter_map(|c| c.image.as_deref())
             .filter(|i| seen.insert(*i))
             .collect()
@@ -1219,7 +1220,9 @@ mod tests {
         assert_eq!(c.shot_span_at(4.0), (1, 4.0, 9.0));
         assert_eq!(c.shot_span_at(8.5), (1, 4.0, 9.0));
         assert_eq!(c.card_images_between(0.0, 4.0), ["a.png", "b.png"]);
-        assert_eq!(c.card_images_between(4.0, 9.0), ["a.png", "b.png", "c.png"]);
+        // Une carte qui finit au début du plan, ou commence à sa fin, n'y est pas
+        assert_eq!(c.card_images_between(4.0, 9.0), ["b.png", "c.png"]);
+        assert_eq!(c.card_images_between(0.0, 3.5), ["a.png"]);
         assert_eq!(c.card_images_between(4.5, 9.0), ["b.png", "c.png"]);
     }
 
