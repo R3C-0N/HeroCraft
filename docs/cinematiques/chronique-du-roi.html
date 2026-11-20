@@ -311,7 +311,7 @@ const CONTINENT = blob(330, 5300, 18, .4).map(([x, y]) => [x * 1.75, y]);
 
 /* ---------- silhouettes des peuples ---------- */
 function heros(c, x, fy, sp, M, T) {
-  const f = sp.f, h = sp.taille * M, wf = f.wf || 1, hs = f.hs || 1, ls = f.ls || 1, sd = 3000 + PEUPLES.indexOf(sp) * 60, t = Q(T);
+  const f = sp.f, h = sp.taille * M, wf = f.wf || 1, hs = f.hs || 1, ls = f.ls || 1, sd = 3000 + PEUPLES.indexOf(sp.base || sp) * 60, t = Q(T);
   const hr = h * .078 * hs, leg = h * .45 * ls, hip = fy - leg, hcy = fy - h + hr, sh = hcy + hr + h * .035;
   const sw = h * .12 * wf, hw = h * .085 * wf, hxo = (f.voute || 0) * hr, k = M / 175;
   c.save(); if (f.alpha) c.globalAlpha *= f.alpha; const psg0 = PSG; PSG = .5;
@@ -395,7 +395,7 @@ function heroCercle(c, h, x, fy, M, T, o = {}) {
   const hh = h.sp.taille * M, aura = o.aura ?? h.aura, ai = o.ai ?? 1;
   c.save(); c.globalAlpha *= a;
   if (ai > 0) { for (let k = 0; k < 3; k++) glow(c, x, fy - hh * (.2 + k * .3), hh * .55, aura, ai * .55 * (.8 + .2 * Math.sin(T * 2 + k + x))); }
-  const sp = o.bras ? Object.assign({}, h.sp, { f: Object.assign({}, h.sp.f, { brasLeves: 1 }) }) : h.sp;
+  const sp = o.bras ? Object.assign({}, h.sp, { base: h.sp, f: Object.assign({}, h.sp.f, { brasLeves: 1 }) }) : h.sp;
   heros(c, x, fy, sp, M, T);
   if (o.yeuxRouges) { const hr = hh * .078; for (const s of [-1, 1]) glow(c, x + s * hr * .38, fy - hh + hr * 1.08, hr * .9, 'rgba(255,40,20,0.95)', o.yeuxRouges); }
   if (o.embleme) { const s = o.embleme; piece(c, { x, y: fy - hh - 46 * M / 120, s: s * M / 120, shape: circ(22, 16), col: '#f1e4c4', seed: 7100 + CERCLE.indexOf(h), amp: 1.2, torn: 2, so: 3, after: g => glyphe(g, h.glyphe, '#3a2616') }); }
@@ -718,7 +718,7 @@ function sceneRoi(c, T) {
     piece(c, { shape: strip([[0, 0], [0, -200]], 4, 3), col: '#4a3020', seed: 8600 + i, amp: .5, so: 3 });
     piece(c, { x: 2 * g, y: -200, sx: g, shape: [[0, 0], [52 + 4 * Math.sin(lt * 4 + i) * (1 - pose), 8], [46, 22], [0, 30]], col: BANNIERES[r.b], seed: 8605 + i, amp: 1.5, torn: 2, so: 3 });
     c.restore();
-    const spi = bras ? Object.assign({}, sp, { f: Object.assign({}, sp.f, { brasLeves: 1 }) }) : sp;
+    const spi = bras ? Object.assign({}, sp, { base: sp.base || sp, f: Object.assign({}, sp.f, { brasLeves: 1 }) }) : sp;
     c.save(); c.translate(x, fy - bob); c.scale(g, 1 - .26 * plie); heros(c, 0, 0, spi, 84, T); c.restore();
   });
   /* la couronne nouvelle, levée par les peuples jusqu'à lui */

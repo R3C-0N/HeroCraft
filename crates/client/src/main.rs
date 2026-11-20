@@ -20,6 +20,8 @@ mod block_outline;
 mod block_textures;
 mod camera;
 mod chat;
+mod paper_cards;
+mod cinematic;
 mod cloud_mesh;
 mod collision;
 mod commands;
@@ -56,6 +58,7 @@ mod ui;
 mod ui_skin;
 #[cfg(test)]
 mod ui_snapshot;
+mod void_stones;
 mod voxel_mesh;
 mod weather;
 mod world_map;
@@ -144,7 +147,7 @@ fn main() {
     let mut lod_manager = PlanetLodManager::new(base_radius, current_seed);
     camera.set_terrain(terrain_edits.clone());
     lod_manager.set_terrain_edits(terrain_edits);
-    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
+    lod_manager.update(camera.lod_eye(), &generator, &mut chunk_cache, 0.0, None);
     let visible_meshes = lod_manager.visible_meshes();
     info!(
         "QuadTree initialisé : {} sommets, {} polygones ({} feuilles actives).",
@@ -212,6 +215,10 @@ fn main() {
     // Compétences : lancements, recharges, gestes du héros et frappes à montrer
     let mut skill_play = skill_play::SkillPlay::default();
     let mut skill_effects = effects::Effects::default();
+    // Cinématiques (assets/cinematics/) : déclenchées par les événements du jeu, ou par /cinematic
+    let mut cinematics = cinematic::Cinematics::load();
+    ui_state.chat.cinematics = cinematics.player.catalog.ids();
+    let mut launch_announced = false;
     let mut effect_quads: Vec<effects::EffectQuad> = Vec::new();
     let (creature_models, creature_textures) = creatures::CreatureModels::load(&creature_registry);
     // Créatures dessinées à la dernière image, que le réticule peut viser, et délai avant le
@@ -264,6 +271,12 @@ fn main() {
     let mut block_interaction = BlockInteraction::new();
     // Blocs cassés tombés au sol, ramassés en passant à proximité
     let mut dropped_items = dropped_items::DroppedItems::new();
+    // Pierres du Néant obtenues, touchées ou absorbées dans l'image (voir `void_stones::dispatch`)
+    let mut stone_events = herocraft_common::StoneEvents::new();
+    // La dernière Pierre entière obtenue, qu'absorbe la fin de sa vision (`vision_ended`)
+    let mut vision_stone: Option<herocraft_common::ItemId> = None;
+    // Pierres du Néant posées près du joueur : leur fenêtre sur le néant et leurs poussières
+    let mut void_sites = void_stones::VoidStoneSites::new();
     let game_start = Instant::now();
     let mut last_autosave = Instant::now();
     let mut last_mouse_pos = (0.0_f64, 0.0_f64);
@@ -339,7 +352,9 @@ fn main() {
                     // Souris capturée, les clics restent libres pour l'interaction avec les blocs.
                     WindowEvent::MouseInput { state: btn_state, button, .. } => {
                         // Changé en bête : le clic gauche et le clic droit lancent ses deux attaques
-                        if let Some(attacks) = ui_state.beast_attacks.as_ref().filter(|_| cursor_captured) {
+                        if cinematics.is_playing() {
+                            // Cinématique : les clics ne touchent ni les blocs ni les bêtes
+                        } else if let Some(attacks) = ui_state.beast_attacks.as_ref().filter(|_| cursor_captured) {
                             if *btn_state == ElementState::Pressed {
                                 match button {
                                     MouseButton::Left => ui_state.skill_casts.push(attacks[0].clone()),
@@ -385,9 +400,13 @@ fn main() {
                                     && action == block_interaction::BlockAction::Place
                                     && station.is_none()
                                     && feed_aimed_creature(&camera, &block_interaction, &creature_views, &creature_registry, net.as_mut(), &mut solo_creatures, &mut ui_state, &mut audio);
+                                // Une Pierre du Néant en main : le joueur la touche
+                                let stone = void_stones::held_stone(&ui_state.inventory).filter(|_| action == block_interaction::BlockAction::Place && station.is_none() && !fed && corpse.is_none());
                                 // Sinon, un aliment en main : le joueur le mange
                                 let food = ui_state.inventory.selected_food().filter(|_| action == block_interaction::BlockAction::Place && station.is_none() && !fed);
-                                if let Some(id) = corpse {
+                                if let Some(item) = stone {
+                                    void_stones::touch(item, &mut stone_events);
+                                } else if let Some(id) = corpse {
                                     skin_creature(id, net.as_mut(), &mut solo_creatures, &mut dropped_items, &camera);
                                     audio.block_placed(audio::synth::Material::Dirt, 0.0, &ui_state.audio_settings);
                                 } else if fed {
@@ -490,7 +509,13 @@ fn main() {
                             ui_state.controls.learn_label(key_code, logical_key);
                         }
 
-                        if key_code == KeyCode::Escape && is_pressed && ui_state.chat.open {
+                        if cinematics.is_playing() {
+                            // Cinématique : le joueur ne fait que la regarder, ou la passer
+                            let skip_key = matches!(key_code, KeyCode::Escape | KeyCode::Space | KeyCode::Enter | KeyCode::NumpadEnter);
+                            if skip_key && is_pressed && !*repeat {
+                                cinematics.request_skip();
+                            }
+                        } else if key_code == KeyCode::Escape && is_pressed && ui_state.chat.open {
                             // Échap referme d'abord le chat
                             ui_state.chat.close();
                         } else if key_code == KeyCode::Escape && is_pressed {
@@ -587,7 +612,7 @@ fn main() {
 
                         // Touches prises aux autres programmes par le crochet clavier depuis l'image précédente
                         for hooked in keyboard_hook::drain() {
-                            let in_game = !ui_state.is_settings_open && !ui_state.screen_open() && !ui_state.chat.open;
+                            let in_game = !ui_state.is_settings_open && !ui_state.screen_open() && !ui_state.chat.open && !cinematics.is_playing();
                             if let (true, Some(action)) = (in_game, ui_state.controls.action_for(hooked.key)) {
                                 let first_press = hooked.pressed && !hooked.repeat;
                                 game_key(action, hooked.pressed, first_press, &mut camera, &mut ui_state, &mut pending_actions, &mut jump_tap, &mut zoom_modifier_held);
@@ -626,6 +651,39 @@ fn main() {
                             );
                             ui_state.set_pointer_captured(want_capture);
                             is_dragging = false;
+                        }
+
+                        // Cinématique : elle tient la caméra, ferme les écrans et renvoie ses
+                        // événements au jeu (changer d'époque à la fin de la vision…)
+                        cinematics.set_world(std::path::PathBuf::from(solo_save_dir(current_seed)));
+                        // Le lancement du jeu, une fois le monde chargé : la Genèse s'y joue (pas pendant
+                        // le banc d'essai)
+                        if !launch_announced {
+                            launch_announced = true;
+                            if bench.is_none() {
+                                cinematics.notify(&herocraft_common::cinematics::GameEvent::new(cinematic::LAUNCH_EVENT));
+                            }
+                        }
+                        let was_playing = cinematics.is_playing();
+                        for event in cinematics.update(dt, &mut camera, &generator) {
+                            info!("Événement de cinématique : {} {:?}", event.name, event.tags);
+                            if event.name == cinematic::VISION_ENDED {
+                                if let Some(item) = vision_stone.take() {
+                                    void_stones::absorb(item, &mut ui_state.inventory, &mut stone_events);
+                                }
+                            }
+                        }
+                        // Cartes de papier de la cinématique (aucune sinon), et l'atlas de ses découpes
+                        state.prepare_cards(cinematics.card_sets());
+                        let (card_uniform, card_instances) = cinematics.cards(&camera, state.card_layers());
+                        state.update_cards(&card_uniform, &card_instances);
+                        if cinematics.is_playing() && !was_playing {
+                            ui_state.set_inventory_open(false);
+                            ui_state.set_skills_open(false);
+                            ui_state.set_map_open(false);
+                            ui_state.trade = None;
+                            ui_state.chat.close();
+                            block_interaction.reset();
                         }
 
                         // Mise à jour de la caméra uniquement si le menu n'est pas ouvert
@@ -1133,6 +1191,11 @@ fn main() {
                                 let world = effects::AnchorWorld { hero: hero_anchors, hero_forward, players: &players, creatures: &creature_feet, projectiles: &projectile_at, eye: camera.eye_position(), block };
                                 skill_effects.update(anim_dt, &world, &mut effect_quads);
                             }
+                            {
+                                let geometry = herocraft_world::BlockGeometry::new(camera.base_radius as f64);
+                                void_sites.update(anim_dt, lod_manager.terrain_edits(), &geometry, camera.player_pos);
+                                void_sites.push_quads(game_start.elapsed().as_secs_f32(), camera.eye_position(), block, &mut effect_quads);
+                            }
                             state.update_effects(&effect_quads);
                             state.set_creature_frame(&frame);
                             creature_vertices = frame.vertices.len();
@@ -1231,8 +1294,21 @@ fn main() {
                                 let body = on_ground.then(|| camera.player_pos + camera.player_pos.normalize_or_zero() * 0.9 * h);
                                 dropped_items.update(dt, &generator, collider, body, &mut ui_state.inventory);
                             }
+                            for event in dropped_items.take_stone_events() {
+                                stone_events.push(event);
+                            }
                             if let Some(mesh) = dropped_items.take_mesh(h, game_start.elapsed().as_secs_f32()) {
                                 state.set_dropped_items(&mesh);
+                            }
+                        }
+                        for event in void_stones::dispatch(&mut stone_events, &mut ui_state.chat) {
+                            // Une Pierre entière obtenue : la vision (`fin-de-la-vision`), puis
+                            // `vision_ended` la fait absorber
+                            if let herocraft_common::StoneEvent::Obtained { kind: herocraft_common::StoneKind::Whole, item, .. } = event {
+                                vision_stone = Some(item);
+                            }
+                            if let Some(cinematic_event) = void_stones::cinematic_event(&event) {
+                                cinematics.notify(&cinematic_event);
                             }
                         }
                         {
@@ -1254,7 +1330,7 @@ fn main() {
                         // Mise à jour adaptative du QuadTree LOD
                         herocraft_common::prof_scope!("frame::lod_and_upload" => lod_guard);
                         let section = Instant::now();
-                        if lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, dt, None)
+                        if lod_manager.update(camera.lod_eye(), &generator, &mut chunk_cache, dt, None)
                             || terrain_edited
                             || state.has_pending_lod_uploads()
                         {
@@ -1278,6 +1354,7 @@ fn main() {
                             ui_state.fusion_face = skill_play.fusion_face(&ui_state.player.stats);
                             ui_state.skill_cooldowns[slot] = ui_state.skill_bar.get(slot).map_or((0.0, 0.0), |id| skill_play.cooldown(id, cooldown_now));
                         }
+                        ui_state.cinematic = cinematics.overlay();
                         let (full_output, maybe_action) = ui_state.update_ui(is_ground);
 
                         // Roue des compétences : point investi et expérience d'essai. En ligne, le
@@ -1325,6 +1402,8 @@ fn main() {
                                         pending_actions: &mut pending_actions,
                                         next_planet_seed: &mut next_planet_seed,
                                         weather: &mut client_weather,
+                                        cinematics: &mut cinematics,
+                                        dropped: &mut dropped_items,
                                     };
                                     run_command(command, &mut game)
                                 });
@@ -1596,7 +1675,7 @@ fn main() {
                                 UiAction::ToggleTectonics | UiAction::ToggleOceanCurrents => {
                                     let filter = ui_state.active_filter();
                                     lod_manager.set_filter(filter);
-                                    lod_manager.update(camera.eye_position(), &generator, &mut chunk_cache, 0.0, None);
+                                    lod_manager.update(camera.lod_eye(), &generator, &mut chunk_cache, 0.0, None);
                                     state.sync_lod_meshes(&lod_manager);
                                     info!("Filtre de visualisation sélectionné : {:?}", filter);
                                 }
@@ -1674,7 +1753,7 @@ fn main() {
             // Mouvement brut de la souris : oriente le regard quand le curseur est capturé
             Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => {
                 herocraft_common::prof_scope!("boucle::mouvement_souris");
-                if cursor_captured {
+                if cursor_captured && !cinematics.is_playing() {
                     let controls = &ui_state.controls;
                     let step = input::LOOK_RADIANS_PER_COUNT * controls.mouse_sensitivity;
                     let pitch_sign = if controls.invert_y { 1.0 } else { -1.0 };
@@ -1924,7 +2003,7 @@ fn switch_planet(
     if ui_state.player.is_dead() {
         ui_state.player.respawn();
     }
-    lod_manager.update(camera.eye_position(), generator, chunk_cache, 0.0, None);
+    lod_manager.update(camera.lod_eye(), generator, chunk_cache, 0.0, None);
     state.sync_lod_meshes(lod_manager);
     state.update_cloud_mesh(camera.base_radius, seed);
     ui_state.set_seed(seed);
@@ -2299,6 +2378,10 @@ struct Game<'a> {
     next_planet_seed: &'a mut Option<u64>,
     /// Météo du joueur (`/weather`, `/season`)
     weather: &'a mut weather::ClientWeather,
+    /// Cinématiques (`/cinematic`, `/event`)
+    cinematics: &'a mut cinematic::Cinematics,
+    /// Objets au sol (`/drop`)
+    dropped: &'a mut dropped_items::DroppedItems,
 }
 
 /// Température de l'échelle des biomes en degrés Celsius, à peu près : 0,4 (neige) vers 0 °C,
@@ -2401,6 +2484,17 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
                 n if n < count => one(format!("Gave {n} × {} (inventory full)", id.name())),
                 n => one(format!("Gave {n} × {}", id.name())),
             }
+        }
+        Command::Drop { item, count } => {
+            let id = find_item(&item).ok_or_else(|| format!("Unknown item: {item} (Tab lists the names)"))?;
+            // Deux blocs devant le joueur, un peu au-dessus du sol : l'objet y tombe
+            let (_, forward, _, _) = game.camera.look_vectors();
+            let ahead = (game.camera.player_pos + forward * 2.0 * block).normalize_or_zero();
+            let center = ahead * (game.camera.ground_radius_at(ahead, game.generator) + 0.6 * block);
+            for _ in 0..count {
+                game.dropped.place(id, center);
+            }
+            one(format!("Dropped {count} × {}", id.name()))
         }
         Command::Fly => {
             if game.camera.target_distance > game.camera.base_radius {
@@ -2533,6 +2627,23 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
         Command::ClearChat => {
             game.ui.chat.clear();
             Ok(Vec::new())
+        }
+        Command::Cinematic(None) => {
+            let ids = game.cinematics.player.catalog.ids();
+            if ids.is_empty() {
+                return Ok(vec!["No cinematics".into()]);
+            }
+            Ok(vec![format!("Cinematics: {}", ids.join(", "))])
+        }
+        Command::Cinematic(Some(id)) => {
+            game.cinematics.player.play(&id)?;
+            Ok(Vec::new())
+        }
+        Command::Event(text) => {
+            let mut event = herocraft_common::cinematics::GameEvent::parse(&text).ok_or("Usage: /event <name> [key=value ...]")?;
+            event.position = Some(game.camera.player_pos);
+            let started = game.cinematics.notify(&event);
+            Ok(vec![format!("Event {} sent: {started} cinematic(s) triggered", event.name)])
         }
     }
 }

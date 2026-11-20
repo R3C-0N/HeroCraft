@@ -168,6 +168,8 @@ pub struct State {
     precipitation: crate::precipitation::Precipitation,
     /// Effets des compétences
     effects: crate::effects::EffectRenderer,
+    /// Cartes de papier découpé des cinématiques
+    cards: crate::paper_cards::CardRenderer,
 
     // Pipeline Planète & Voxels 3D
     pub render_pipeline: wgpu::RenderPipeline,
@@ -648,6 +650,7 @@ impl State {
         });
         let precipitation = crate::precipitation::Precipitation::new(&device, &atmosphere.scene_layout, scene_target, integrated_gpu);
         let effects = crate::effects::EffectRenderer::new(&device, &queue, &atmosphere.scene_layout, scene_target);
+        let cards = crate::paper_cards::CardRenderer::new(&device, &queue, scene_target, crate::paper_cards::CardImages::empty());
 
         // -------------------------------------------------------------
         // Rendu Interface Utilisateur egui
@@ -682,6 +685,7 @@ impl State {
             cloud_weather,
             precipitation,
             effects,
+            cards,
             render_pipeline: scene_pipelines.terrain,
             render_pipeline_layout,
             terrain_pipeline_layout,
@@ -796,6 +800,7 @@ impl State {
         self.block_cracks.set_target(device, &self.render_pipeline_layout, target);
         self.precipitation.set_target(device, target);
         self.effects.set_target(device, target);
+        self.cards.set_target(device, target);
         log::info!("Anti-Aliasing MSAA : sample_count = {}, cible HDR : {}", sample_count, target.describe());
         herocraft_common::profiler::set_meta("msaa_sample_count", sample_count.to_string());
         crate::benchmark::set_meta("Cible HDR", target.describe());
@@ -1115,6 +1120,21 @@ impl State {
         self.effects.update(&self.queue, quads);
     }
 
+    /// Les cartes de papier de la cinématique en cours (aucune hors des cinématiques)
+    pub fn update_cards(&mut self, uniform: &crate::paper_cards::CardUniform, cards: &[crate::paper_cards::CardInstance]) {
+        self.cards.update(&self.queue, uniform, cards);
+    }
+
+    /// Charge l'atlas des découpes du plan en cours (`None` : le libère) et prépare le suivant
+    pub fn prepare_cards(&mut self, (current, next): (Option<crate::paper_cards::CardSet>, Option<crate::paper_cards::CardSet>)) {
+        self.cards.prepare(&self.device, &self.queue, current.as_ref(), next.as_ref());
+    }
+
+    /// Les découpes chargées pour les cartes de papier
+    pub fn card_layers(&self) -> &crate::paper_cards::CardLayers {
+        &self.cards.layers
+    }
+
     pub fn render(
         &mut self,
         paint_jobs: &[egui::ClippedPrimitive],
@@ -1276,6 +1296,9 @@ impl State {
                 render_pass.set_index_buffer(self.cloud_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.draw_indexed(0..self.num_cloud_indices, 0, 0..1);
             }
+
+            // 1.c bis. Cartes de papier des cinématiques, opaques
+            self.cards.draw(&mut render_pass);
 
             // 1.d. Pluie et neige, transparentes, devant le relief et les nuages
             self.precipitation.draw(&mut render_pass, &self.atmosphere.scene_bind_group);

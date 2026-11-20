@@ -1,0 +1,40 @@
+{
+  "title": "Le réveil au présent",
+  "description": "Enchaînée après la fin de la vision : le joueur s'éveille au présent, dans les ruines du temple, sans autre souvenir que cette vision. La caméra descend du ciel et vient se poser derrière le héros, puis la main revient au joueur.",
+  "shots": [
+    {
+      "name": "Du ciel",
+      "duration": 6.0,
+      "position": [[1.5, 22, -6], [1.0, 7, -2.5]],
+      "look_at": [[0, 0, 0], [0, 0.8, 0]],
+      "fov": [55, 48],
+      "ease": "out"
+    },
+    {
+      "name": "Les ruines",
+      "duration": 6.0,
+      "orbit": {"radius": [5, 3.5], "height": [2.5, 1.2], "angle": [140, 20]},
+      "look_at": [0, 1.4, 0],
+      "fov": [48, 52],
+      "ease": "in_out"
+    },
+    {
+      "name": "Derrière le héros",
+      "duration": 3.0,
+      "position": [[1.2, 2.3, -3.4], [0, 2.0, -3.0]],
+      "look_at": [[0, 1.5, 0], [0, 1.6, 4]],
+      "fov": [52, 60],
+      "ease": "in_out"
+    }
+  ],
+  "fades": [
+    {"at": 0, "duration": 3.5, "from": 1, "to": 0, "color": "#FFFFFF"}
+  ],
+  "captions": [
+    {"at": 2.5, "duration": 4.5, "text": "Le présent · les ruines du temple", "style": "place"},
+    {"at": 4.0, "duration": 4.0, "text": "Tu ouvres les yeux. Le temple n'est plus qu'une ruine.", "style": "narration"},
+    {"at": 8.5, "duration": 4.5, "text": "Ton nom, ton passé… plus rien. Il ne te reste que cette vision.", "style": "narration"},
+    {"at": 13.2, "duration": 2.6, "text": "HeroCraft", "style": "title", "fade": 0.8}
+  ],
+  "on_end": ["awakened"]
+}

@@ -1,0 +1,23 @@
+{
+  "numeric_id": 164,
+  "name": "Pierre du Néant posée",
+  "description": "Une Pierre du Néant dressée sur sa pointe : un cristal violet, et en son cœur une fenêtre sur le néant. Brisée, elle rend la Pierre.",
+  "category": "Artefacts",
+  "hardness": 20,
+  "color": {"side": "#8a4ce0"},
+  "textures": {"side": "textures/PierreDuNeant.png"},
+  "shape": {"boxes": [
+    [6, 0, 6, 10, 2, 10],
+    [5, 2, 5, 11, 4, 11],
+    [4, 4, 4, 12, 6, 12],
+    [3, 6, 3, 13, 8, 13],
+    [3, 8, 3, 13, 10, 13],
+    [4, 10, 4, 12, 12, 12],
+    [5, 12, 5, 11, 14, 11],
+    [6, 14, 6, 10, 16, 10]
+  ]},
+  "opaque": false,
+  "light": 9,
+  "drop": null,
+  "loot": [{"item": "voidStone"}]
+}

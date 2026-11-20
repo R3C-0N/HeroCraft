@@ -1,0 +1,49 @@
+{
+  "title": "Essai de la scène de papier",
+  "description": "Scène d'essai des cartes de papier découpé : un paysage en couches qui glissent les unes devant les autres quand la caméra passe, puis une planète de feu qui tourne derrière des nuages. Se joue par `/cinematic essai-papier`.",
+  "once": false,
+  "anchor": "stage",
+  "stage": {
+    "backdrop": "#EFE4C8",
+    "light": {"direction": [-0.6, 0.7, -0.6], "color": "#FFF1DA", "intensity": 1.0, "ambient": 0.5}
+  },
+  "shots": [
+    {
+      "name": "Le paysage en couches",
+      "duration": 8,
+      "position": [[-5, 3, -6], [5, 3.6, -4]],
+      "look_at": [[-2, 4, 20], [2, 4, 20]],
+      "fov": 45,
+      "ease": "in_out"
+    },
+    {
+      "name": "La planète de feu",
+      "duration": 8,
+      "orbit": {"radius": [22, 17], "height": [1, 0], "angle": [-25, 20]},
+      "look_at": [0, 4, 40],
+      "fov": [42, 36],
+      "ease": "in_out"
+    }
+  ],
+  "cards": [
+    {"name": "Soleil", "image": "essai-soleil.png", "at": 0, "duration": 8.6, "fade": 0.6, "position": [6, 13, 30], "width": 6, "glow": 1.4, "border": 0, "roll": [0, 25]},
+    {"name": "Montagnes", "image": "essai-montagnes.png", "at": 0, "duration": 8.6, "fade": 0.6, "position": [0, 4, 26], "width": 70, "curl": 0.02},
+    {"name": "Nuage lointain", "image": "essai-nuage.png", "at": 0, "duration": 8.6, "fade": 0.6, "position": [[-14, 11, 22], [-8, 11, 22]], "width": 9, "sway": 2},
+    {"name": "Collines", "image": "essai-collines.png", "at": 0, "duration": 8.6, "fade": 0.6, "position": [0, -0.5, 15], "width": 46, "curl": 0.02},
+    {"name": "Sapin", "image": "essai-sapin.png", "at": 0, "duration": 8.6, "fade": 0.6, "position": [-6, 1.6, 7], "width": 2.2, "sway": 3},
+    {"name": "Sapin", "image": "essai-sapin.png", "at": 0, "duration": 8.6, "fade": 0.6, "position": [-3.8, 1.2, 8.5], "width": 1.6, "sway": 3},
+    {"name": "Sapin", "image": "essai-sapin.png", "at": 0, "duration": 8.6, "fade": 0.6, "position": [7, 1.8, 9], "width": 2.4, "sway": 3},
+
+    {"name": "Planète", "image": "essai-planete.png", "at": 7.6, "fade": 0.8, "position": [0, 4, 40], "width": 9, "roll": [0, 40], "sway": 2},
+    {"name": "Nuage devant", "image": "essai-nuage.png", "at": 7.6, "fade": 0.8, "position": [[-12, 1.5, 34], [10, 2, 34]], "width": 6, "sway": 3, "ease": "linear"},
+    {"name": "Nuage haut", "image": "essai-nuage.png", "at": 7.6, "fade": 0.8, "position": [[9, 8, 37], [-6, 8, 37]], "width": 5, "sway": 2, "ease": "linear"}
+  ],
+  "fades": [
+    {"at": 0, "duration": 1.5, "from": 1, "to": 0},
+    {"at": 14.5, "duration": 1.5, "from": 0, "to": 1}
+  ],
+  "captions": [
+    {"at": 1.5, "duration": 5, "text": "Chaque couche est une feuille découpée, posée à sa profondeur.", "style": "narration"},
+    {"at": 9.5, "duration": 4.5, "text": "La caméra tourne : les plans glissent les uns devant les autres.", "style": "narration"}
+  ]
+}

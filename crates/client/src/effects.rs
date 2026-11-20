@@ -26,19 +26,22 @@ const TEXTURE_SIZE: u32 = 64;
 /// Noms des textures, dans l'ordre des couches du tableau (`TEXTURES[i]` est la couche `i`)
 const TEXTURES: [&str; 7] = ["soft.png", "spark.png", "flame.png", "smoke.png", "shard.png", "star.png", "rune.png"];
 /// Aucune texture : tache ronde calculée par le shader
-const NO_TEXTURE: u32 = 255;
+pub const NO_TEXTURE: u32 = 255;
 /// Durée d'une couche sans durée ni boucle, en secondes
 const DEFAULT_LAYER_SECONDS: f32 = 0.5;
 
 // Formes, telles que le shader les lit (`kind`)
 /// Secondes de trajet dont un sillage se souvient au plus
 const TRAIL_MEMORY: f32 = 0.6;
-const KIND_SPRITE: u32 = 0;
+pub const KIND_SPRITE: u32 = 0;
 const KIND_RING: u32 = 1;
 const KIND_ARC: u32 = 2;
 const KIND_DOME: u32 = 3;
 const KIND_BEAM: u32 = 4;
 const KIND_DISC: u32 = 5;
+/// Fenêtre sur le néant (le cœur d'une Pierre du Néant posée) : un losange qui montre un ciel
+/// noir étoilé, fixe dans le monde (`void_stones`)
+pub const KIND_VOID: u32 = 6;
 
 // ------------------------------------------------------------------------------------------------
 // Format
@@ -824,7 +827,7 @@ fn load_textures() -> Vec<u8> {
     pixels
 }
 
-fn read_png(path: &Path) -> Option<(usize, usize, Vec<u8>)> {
+pub(crate) fn read_png(path: &Path) -> Option<(usize, usize, Vec<u8>)> {
     let mut decoder = png::Decoder::new(std::fs::File::open(path).ok()?);
     decoder.set_transformations(png::Transformations::EXPAND);
     let mut reader = decoder.read_info().ok()?;

@@ -107,7 +107,7 @@ pub mod block {
     pub const GRASS: BlockId = BlockId::GRASS;
     pub const SAND: BlockId = BlockId::SAND;
     pub const PEAT: BlockId = BlockId(134);
-    pub const VOID_STONE: BlockId = BlockId(129);
+    pub const VOID_ROCK: BlockId = BlockId(129);
     pub const PINE_FENCE: BlockId = BlockId(150);
     pub const BRONZE_FENCE: BlockId = BlockId(160);
 
@@ -117,7 +117,7 @@ pub mod block {
         (GRASS, "grass"),
         (SAND, "sand"),
         (PEAT, "peat"),
-        (VOID_STONE, "voidStone"),
+        (VOID_ROCK, "voidRock"),
         (PINE_FENCE, "barrierePin"),
         (BRONZE_FENCE, "barriereBronze"),
         (LANTERN, "lanterne"),
@@ -377,7 +377,7 @@ impl Style {
             // Hutte basse de basalte et de pin, toit de tourbe au faîte de fer
             Culture::DemiOrques => Style { wall: BASALT, corner: PINE_LOG, floor: PLANK, foundation: HARD_STONE, roof: Some(PEAT), ridge: IRON_TRIM },
             // Pierre sombre et bois flotté, toit de silex au faîte de pierre du vide
-            Culture::Revenants => Style { wall: HARD_STONE, corner: OAK_LOG, floor: PLANK, foundation: OAK_LOG, roof: Some(FLINT_BRICK), ridge: VOID_STONE },
+            Culture::Revenants => Style { wall: HARD_STONE, corner: OAK_LOG, floor: PLANK, foundation: OAK_LOG, roof: Some(FLINT_BRICK), ridge: VOID_ROCK },
             // Murs blancs et bouleau, toit de verre au faîte de cristal
             Culture::Sylphes => Style { wall: WHITE_BRICK, corner: BIRCH_LOG, floor: PLANK, foundation: CUT_STONE, roof: Some(GLASS), ridge: CUT_CRYSTAL },
             // Butte de terre coiffée d'herbe (`Form::Burrow`), porte cerclée de bronze
@@ -1940,7 +1940,7 @@ impl Temple {
                     return Some(masonry.map(|m| m.light).unwrap_or(LANTERN));
                 }
             } else if level == 1 && self.void_shard(u, v) {
-                return Some(VOID_STONE);
+                return Some(VOID_ROCK);
             } else if level == 1 && unit(mix(h ^ 0x13)) < 0.06 {
                 return Some(CUT_STONE);
             }
@@ -2626,7 +2626,7 @@ fn ossuary_block(rect: &Rect, f: i32, x: i32, y: i32, z: i32, ground: i32) -> Op
             if x == cx && (z == cz || z == cz + 1) && level <= 2 {
                 return Some(BlockId::AIR);
             }
-            Some(VOID_STONE)
+            Some(VOID_ROCK)
         }
         4 if ring <= 1 => Some(CUT_STONE),
         5 if ring == 0 => Some(GLOWBELL_BLOOM),

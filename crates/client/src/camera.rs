@@ -167,6 +167,18 @@ pub struct OrbitCamera {
     pub is_dead: bool,
     /// Avancement de cet effondrement, de 0 (debout) à 1 (couché)
     death_fall: f32,
+    /// Cinématique en cours : elle tient la caméra (le joueur reste où il est)
+    pub cinematic: Option<CinematicView>,
+}
+
+/// Caméra imposée par une cinématique, dans le repère du monde
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CinematicView {
+    pub eye: Vec3,
+    pub target: Vec3,
+    pub up: Vec3,
+    /// Champ de vision vertical, en radians
+    pub fov: f32,
 }
 
 /// Rayon de base de la planète par défaut
@@ -233,6 +245,7 @@ impl Default for OrbitCamera {
             hurt_strength: 0.0,
             is_dead: false,
             death_fall: 0.0,
+            cinematic: None,
         }
     }
 }
@@ -358,7 +371,10 @@ impl OrbitCamera {
 
     /// Mode de caméra déduit du continuum de distance effective
     pub fn view_mode(&self) -> CameraViewMode {
-        if self.effective_distance <= 0.05 {
+        // Cinématique : le héros est vu de l'extérieur, comme en troisième personne
+        if self.cinematic.is_some() {
+            CameraViewMode::ThirdPerson
+        } else if self.effective_distance <= 0.05 {
             CameraViewMode::FirstPerson
         } else if self.effective_distance <= self.base_radius {
             CameraViewMode::ThirdPerson
@@ -1199,11 +1215,21 @@ impl OrbitCamera {
 
     /// Position 3D de l'œil de la caméra dans l'espace monde (garantie strictement au-dessus du sol)
     pub fn eye_position(&self) -> Vec3 {
+        self.cinematic.map_or(self.effective_eye, |c| c.eye)
+    }
+
+    /// Point autour duquel le relief se détaille : l'œil du joueur, même quand une cinématique
+    /// tient la caméra (la scène de papier, loin au-dessus, ne doit pas faire perdre le sol)
+    pub fn lod_eye(&self) -> Vec3 {
         self.effective_eye
     }
 
     /// Matrice View-Projection avec FOV adaptatif selon le mode (FPS immersif -> Satellite téléobjectif)
     pub fn build_view_projection_matrix(&self) -> Mat4 {
+        if let Some(c) = self.cinematic {
+            let view = Mat4::look_at_rh(c.eye, c.target, c.up);
+            return Mat4::perspective_rh(c.fov, self.aspect, 0.01, self.z_far) * view;
+        }
         let eye = self.effective_eye;
         let (up, _, _, look_dir) = self.look_vectors();
         let eye_height = self.eye_height();
