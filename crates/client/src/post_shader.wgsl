@@ -231,18 +231,23 @@ fn time_frozen(c: vec3<f32>, uv: vec2<f32>, pixel: vec2<f32>) -> vec3<f32> {
     let r = length(p);
     let angle = atan2(p.y, p.x);
     let l = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
-    var v = mix(vec3<f32>(0.035, 0.0, 0.09), vec3<f32>(0.9, 0.78, 1.0), smoothstep(0.0, 1.0, pow(l, 0.85)));
-    v = mix(v, c * vec3<f32>(0.75, 0.55, 1.0), 0.12);
+    let vio = vec3<f32>(0.549, 0.0, 1.0);
+    var v = mix(vio * 0.07, mix(vec3<f32>(1.0), vio, 0.3), smoothstep(0.0, 1.0, pow(l, 0.85)));
+    v = mix(v, c * mix(vec3<f32>(1.0), vio, 0.6), 0.3);
     // Le Néant ronge les bords : une frontière qui ondule (bruit sur l'angle, qui dérive lentement)
-    let n = frozen_noise(vec2<f32>(angle * 3.0 + t * 0.07, t * 0.11)) * 0.7 + frozen_noise(vec2<f32>(angle * 9.0 - t * 0.13, 4.0)) * 0.3;
-    let edge = 0.62 + 0.1 * n + (1.0 - amount) * 0.6;
+    // Le halo vit : sa frontière ondule et respire, des flammèches de lumière en font le tour
+    let n = frozen_noise(vec2<f32>(angle * 3.0 + t * 0.4, t * 0.6)) * 0.7 + frozen_noise(vec2<f32>(angle * 9.0 - t * 0.8, t * 0.5)) * 0.3;
+    let edge = 0.62 + 0.1 * n + 0.025 * sin(t * 1.6) + (1.0 - amount) * 0.6;
     let void_dark = smoothstep(edge - 0.05, edge + 0.22, r);
     v *= 1.0 - 0.55 * void_dark;
     let rim = exp(-pow((r - edge) * 30.0, 2.0));
-    v += vec3<f32>(0.55, 0.25, 1.0) * rim * 0.45 * (0.7 + 0.3 * sin(t * 1.3 + angle * 5.0));
+    let flames = 0.5 + 0.5 * sin(angle * 3.0 - t * 2.2) * sin(angle * 5.0 + t * 1.3);
+    let flicker = 0.75 + 0.25 * frozen_noise(vec2<f32>(angle * 12.0, t * 6.0));
+    let rim2 = exp(-pow((r - edge - 0.05 - 0.02 * sin(t * 2.0 + angle * 4.0)) * 45.0, 2.0));
+    v += vio * (rim * (0.35 + 0.6 * flames) * flicker + rim2 * 0.25 * flames);
     // L'onde qui part du centre quand le temps s'arrête
     let wave = exp(-pow((r - amount * 1.1) * 9.0, 2.0)) * (1.0 - amount) * 4.0 * amount;
-    v += vec3<f32>(0.7, 0.45, 1.0) * wave;
+    v += mix(vio, vec3<f32>(1.0), 0.25) * wave;
     // Grain figé : il ne bouge pas, comme le reste
     v += (frozen_hash(floor(pixel * 0.5)) - 0.5) * 0.02;
     return mix(c, clamp(v, vec3<f32>(0.0), vec3<f32>(1.0)), amount);

@@ -47,6 +47,10 @@ pub struct CameraUniform {
     /// Saisons (`weather::season_uniform`) : rougeur d'automne et dépouillement d'hiver des
     /// feuillus, au nord (x, y) puis au sud (z, w)
     pub season: [f32; 4],
+    /// Temps figé de la vision : x = part de l'effet, y = secondes depuis l'arrêt
+    pub frozen: [f32; 4],
+    /// Temps figé : position du héros, d'où partent les veines du Néant
+    pub frozen_center: [f32; 4],
 }
 
 /// Part de vue orbitale (0 au sol, 1 en orbite haute), la même pour tout l'écran : l'eau y lisse
@@ -555,6 +559,8 @@ impl State {
             ],
             weather: [0.0; 4],
             season: [0.0; 4],
+            frozen: [0.0; 4],
+            frozen_center: [0.0; 4],
         };
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -924,6 +930,8 @@ impl State {
             scales: [herocraft_world::block_scale(camera.base_radius as f64) as f32, block, 0.0, 0.0],
             weather: weather.weather_uniform(),
             season: weather.season,
+            frozen: [self.frozen, self.frozen_clock, 0.0, 0.0],
+            frozen_center: [camera.player_pos.x, camera.player_pos.y, camera.player_pos.z, 0.0],
         };
         self.terrain_cull = Some(crate::terrain_cull::TerrainCull::new(view_proj, eye, sea_radius, uniform.flatten, block));
         self.queue
@@ -954,7 +962,7 @@ impl State {
 
     /// Vitesse du temps du monde : un ralenti énorme quand le temps est figé, jamais tout à fait nul
     pub fn time_scale(&self) -> f32 {
-        0.025 + 0.975 * (1.0 - self.frozen).powi(3)
+        0.01 + 0.99 * (1.0 - self.frozen).powi(3)
     }
 
     /// `overcast` : ciel voilé par la météo au joueur (0 à 1)

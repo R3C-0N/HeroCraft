@@ -33,6 +33,10 @@ struct CameraUniform {
     // Saisons : rougeur d'automne et dépouillement d'hiver des feuillus, au nord (x, y) puis au
     // sud (z, w)
     season: vec4<f32>,
+    // Temps figé de la vision : x = part de l'effet (0 à 1), y = secondes depuis l'arrêt
+    frozen: vec4<f32>,
+    // Temps figé : position du héros (xyz), d'où partent les veines du Néant
+    frozen_center: vec4<f32>,
 };
 
 @group(0) @binding(0)
