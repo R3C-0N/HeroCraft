@@ -851,7 +851,7 @@ impl State {
         } else {
             self.frozen_clock = 0.0;
         }
-        self.simulated_time += dt * lighting.moon_speed * (1.0 - self.frozen);
+        self.simulated_time += dt * lighting.moon_speed * self.time_scale();
 
         let view_proj = camera.build_view_projection_matrix();
         let inv_view_proj = view_proj.inverse();
@@ -950,6 +950,11 @@ impl State {
     /// Paramètres de l'atmosphère, à appeler après `update_shadows` (les rayons suivent les ombres)
     pub fn update_atmosphere(&mut self, camera: &OrbitCamera, settings: &AtmosphereSettings, lighting: &LightingSettings) {
         self.atmosphere.update(&self.device, &self.queue, settings, lighting, camera.base_radius, self.shadows.is_active());
+    }
+
+    /// Vitesse du temps du monde : un ralenti énorme quand le temps est figé, jamais tout à fait nul
+    pub fn time_scale(&self) -> f32 {
+        0.025 + 0.975 * (1.0 - self.frozen).powi(3)
     }
 
     /// `overcast` : ciel voilé par la météo au joueur (0 à 1)

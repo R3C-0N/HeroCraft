@@ -222,7 +222,7 @@ fn frozen_noise(p: vec2<f32>) -> f32 {
 }
 
 /// Le temps figé : couleurs vidées puis teintes de violet (ombres d'encre, lumières lilas), bords
-/// rongés par le Néant qui ondule lentement avec un liseré qui luit, onde à l'arrêt du temps, et
+/// assombris par le Néant qui ondule lentement avec un liseré qui luit, onde à l'arrêt du temps, et
 /// grain immobile (le temps ne passe plus)
 fn time_frozen(c: vec3<f32>, uv: vec2<f32>, pixel: vec2<f32>) -> vec3<f32> {
     let amount = post.frozen.x;
@@ -237,7 +237,7 @@ fn time_frozen(c: vec3<f32>, uv: vec2<f32>, pixel: vec2<f32>) -> vec3<f32> {
     let n = frozen_noise(vec2<f32>(angle * 3.0 + t * 0.07, t * 0.11)) * 0.7 + frozen_noise(vec2<f32>(angle * 9.0 - t * 0.13, 4.0)) * 0.3;
     let edge = 0.62 + 0.1 * n + (1.0 - amount) * 0.6;
     let void_dark = smoothstep(edge - 0.05, edge + 0.22, r);
-    v = mix(v, vec3<f32>(0.01, 0.0, 0.03), void_dark * 0.92);
+    v *= 1.0 - 0.55 * void_dark;
     let rim = exp(-pow((r - edge) * 30.0, 2.0));
     v += vec3<f32>(0.55, 0.25, 1.0) * rim * 0.45 * (0.7 + 0.3 * sin(t * 1.3 + angle * 5.0));
     // L'onde qui part du centre quand le temps s'arrête

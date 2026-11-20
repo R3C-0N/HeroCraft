@@ -1006,8 +1006,8 @@ fn main() {
                                             block_interaction.invalidate();
                                         }
                                         // Morsures et charges des bêtes agressives
-                                        // Le temps figé de la vision arrête aussi les bêtes
-                                        let hits = solo_creatures.tick_with_presences(dt * (1.0 - state.frozen), &generator, lod_manager.terrain_edits(), &[player]);
+                                        // Le temps figé de la vision ralentit aussi les bêtes
+                                        let hits = solo_creatures.tick_with_presences(dt * state.time_scale(), &generator, lod_manager.terrain_edits(), &[player]);
                                         // Banc d'essai : les bêtes ne blessent pas le joueur
                                         for hit in hits.into_iter().filter(|_| bench.is_none()) {
                                             // Une garde levée pare le coup qui arrive de face, et riposte
