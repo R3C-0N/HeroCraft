@@ -35,7 +35,7 @@
 //!
 //! Dans le passé, le temple se dresse au cœur de sa ville-souvenir, une ville en guerre dont on ne
 //! sort pas (voir `structures::memory_city`) : `PlanetWorldGenerator::memory_city` en donne le plan,
-//! le point de réveil du joueur, la brèche de la palissade, la porte de la citadelle et les postes
+//! le rassemblement de l'armée, la grande porte, les places des mini-boss, la porte de la citadelle et les postes
 //! des ennemis. Pour passer d'une époque à l'autre, `PlanetWorldGenerator::vision_chunks` donne
 //! tous les chunks à régénérer, ville comprise. Au présent, il ne reste de la ville que le temple.
 
@@ -379,7 +379,8 @@ mod tests {
             for x in (cx - reach..=cx + reach).step_by(3) {
                 // Les arbres coupés au pied du rempart n'étendent plus leurs branches au-dehors
                 let d = (((x - cx).pow(2) + (z - cz).pow(2)) as f64).sqrt();
-                if d <= (city.outer + 2 + crate::vegetation::TREE_REACH) as f64 {
+                let r = crate::vegetation::TREE_REACH + 2;
+                if d <= (city.outer + r) as f64 || city.field.expand(r).contains(x, z) {
                     continue;
                 }
                 let ground = present.sample_block_column(site.face, x, z).elevation.floor() as i32;
@@ -405,8 +406,9 @@ mod tests {
         (near - 12..=near + 1).rev().find(|&y| holds(y) && free(y) && free(y + 1) && (y..=near + 1).all(free))
     }
 
-    /// Les colonnes qu'on atteint à pied depuis `start` sans dépasser `limit` du centre `center`
-    fn walk(generator: &PlanetWorldGenerator, face: PlanetFace, start: (i32, i32), center: (i32, i32), limit: f64) -> std::collections::HashMap<(i32, i32), i32> {
+    /// Les colonnes qu'on atteint à pied depuis `start` sans dépasser `limit` du centre `center`,
+    /// sans passer par les colonnes que `shut` ferme
+    fn walk(generator: &PlanetWorldGenerator, face: PlanetFace, start: (i32, i32), center: (i32, i32), limit: f64, shut: impl Fn(i32, i32) -> bool) -> std::collections::HashMap<(i32, i32), i32> {
         let ground = generator.sample_block_column(face, start.0, start.1).elevation.floor() as i32;
         let y0 = feet(generator, face, start.0, start.1, ground + 2).expect("on se tient au point de départ");
         let mut seen = std::collections::HashMap::from([(start, y0)]);
@@ -417,7 +419,7 @@ mod tests {
                     continue;
                 }
                 let d = (((nx - center.0).pow(2) + (nz - center.1).pow(2)) as f64).sqrt();
-                if d > limit {
+                if d > limit || shut(nx, nz) {
                     seen.insert((nx, nz), i32::MIN);
                     continue;
                 }
@@ -431,29 +433,41 @@ mod tests {
     }
 
     #[test]
-    fn the_memory_city_is_closed_and_leads_to_the_temple() {
+    fn the_memory_city_is_stormed_through_its_gate_and_leads_to_the_temple() {
         let (present, site) = some_temple(42);
         let holder = site.holder_for(Culture::Gnomes);
         let past = present.with_epoch(Epoch::Past(holder));
         let city = past.memory_city(&site, holder).expect("la ville-souvenir du temple").clone();
         assert!(city.outer >= 42, "le rempart est assez large ({})", city.outer);
-        assert!(city.citadel > site.radius() + 10 && city.palisade > city.citadel + 8 && city.outer > city.palisade + 8);
-        assert!(!city.posts.is_empty());
+        assert!(city.citadel > site.radius() + 10 && city.middle > city.citadel + 8 && city.outer > city.middle + 8);
+        assert_eq!(city.arenas.len(), 3);
         assert!([Ring::Outskirts, Ring::Barracks, Ring::Citadel].iter().all(|r| city.posts.iter().any(|p| p.1 == *r)), "des ennemis dans chaque cercle");
-        // Le réveil est dans les faubourgs, au fond du temple
-        assert_eq!(city.ring(city.wake.0, city.wake.1), Some(Ring::Outskirts));
+        // L'armée se masse dehors, devant la grande porte, dans l'axe de l'entrée du temple
         let (dx, dz) = site.door().delta();
         let (cx, cz) = site.center();
-        assert!(dx * (city.wake.0 - cx) + dz * (city.wake.1 - cz) < 0, "on se réveille derrière le temple");
-        // À pied depuis le réveil, on ne quitte jamais la ville, et on arrive au centre de l'arène
-        let reached = walk(&past, site.face, city.wake, city.center, city.outer as f64 + 6.0);
-        let escaped: Vec<_> = reached.iter().filter(|(&(x, z), &y)| y != i32::MIN && !city.covers(x, z)).map(|(c, _)| *c).collect();
-        assert!(escaped.is_empty(), "on sort de la ville par {:?}", &escaped[..escaped.len().min(5)]);
+        assert_eq!(city.ring(city.muster.0, city.muster.1), None);
+        assert!(city.covers(city.muster.0, city.muster.1));
+        assert!(dx * (city.muster.0 - cx) + dz * (city.muster.1 - cz) > city.outer, "l'armée attaque face à l'entrée du temple");
         let arena = site.arena_center();
-        assert!(reached.get(&(arena.x, arena.z)).is_some_and(|&y| y != i32::MIN), "on n'atteint pas l'arène depuis le réveil");
-        // La palissade ne s'ouvre qu'à la brèche, la citadelle qu'à sa porte : on y passe forcément
-        let through = |at: (i32, i32)| reached.iter().any(|(&(x, z), &y)| y != i32::MIN && (x - at.0).abs() <= 2 && (z - at.1).abs() <= 2);
-        assert!(through(city.breach) && through(city.citadel_gate));
+        let reaches = |seen: &std::collections::HashMap<(i32, i32), i32>, at: (i32, i32)| seen.iter().any(|(&(x, z), &y)| y != i32::MIN && (x - at.0).abs() <= 2 && (z - at.1).abs() <= 2);
+        // Porte ouverte : depuis le rassemblement, on entre et on arrive dans l'arène
+        let open = walk(&past, site.face, city.muster, city.center, (city.outer + 40) as f64, |_, _| false);
+        assert!(reaches(&open, (arena.x, arena.z)), "on n'atteint pas l'arène depuis la porte");
+        assert!(reaches(&open, city.citadel_gate));
+        // Porte refermée derrière le joueur : on ne sort plus de la ville
+        let inside = (city.gate.0 - 7 * dx, city.gate.1 - 7 * dz);
+        let shut = city.gate_rect;
+        let closed = walk(&past, site.face, inside, city.center, (city.outer + 40) as f64, |x, z| shut.contains(x, z));
+        let escaped: Vec<_> = closed.iter().filter(|(&(x, z), &y)| y != i32::MIN && city.ring(x, z).is_none()).map(|(c, _)| *c).collect();
+        assert!(escaped.is_empty(), "on sort de la ville par {:?}", &escaped[..escaped.len().min(5)]);
+        assert!(reaches(&closed, (arena.x, arena.z)), "on n'atteint pas l'arène une fois la porte refermée");
+        // La grande rue de l'axe est barrée : tout droit, on bute sur une barricade
+        let barred = (city.citadel + 2..city.outer - 3).any(|k| {
+            let (x, z) = (cx + dx * k, cz + dz * k);
+            let ground = past.sample_block_column(site.face, x, z).elevation.floor() as i32;
+            past.block_at(site.face, x, ground, z).is_solid() && past.block_at(site.face, x, ground + 1, z).is_solid()
+        });
+        assert!(barred, "la grande rue de l'axe n'est pas barrée");
     }
 
     #[test]
@@ -462,8 +476,8 @@ mod tests {
         let holder = site.holder_for(Culture::Humains);
         let past = present.with_epoch(Epoch::Past(holder));
         let city = past.memory_city(&site, holder).expect("la ville-souvenir du temple");
-        assert!(present.memory_city_at(site.face, city.wake.0, city.wake.1).is_none());
-        assert!(past.memory_city_at(site.face, city.wake.0, city.wake.1).is_some());
+        assert!(present.memory_city_at(site.face, city.muster.0, city.muster.1).is_none());
+        assert!(past.memory_city_at(site.face, city.muster.0, city.muster.1).is_some());
         // Le rempart du passé n'existe pas au présent
         let (x, z) = (city.center.0 + city.outer, city.center.1);
         let ground = present.sample_block_column(site.face, x, z).elevation.floor() as i32;

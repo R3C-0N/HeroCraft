@@ -1,5 +1,5 @@
-//! Vues de la ville-souvenir d'un temple : plan vu de dessus dans le passé (le réveil en bleu, la
-//! brèche et la porte de la citadelle en jaune, les postes des ennemis en rouge) et au présent, et
+//! Vues de la ville-souvenir d'un temple : plan vu de dessus dans le passé (le rassemblement de
+//! l'armée en bleu, les deux portes en jaune, les places des mini-boss en orange, les postes des ennemis en rouge) et au présent, et
 //! deux vues isométriques du passé, depuis l'entrée du temple et depuis le fond. Une image PPM par
 //! vue.
 //! Usage : cargo run -p herocraft_world --release --example memory_city_views -- [graine] [dossier] [peuple du joueur]
@@ -23,14 +23,14 @@ fn main() {
     let past = generator.with_epoch(Epoch::Past(holder));
     let city = past.memory_city(&site, holder).expect("la ville-souvenir").clone();
     println!(
-        "Temple en {:?} ({}, {}), entrée {:?}, tenu par les {} ; rempart {}, palissade {}, citadelle {}, {} postes, {} chunks à régénérer",
+        "Temple en {:?} ({}, {}), entrée {:?}, tenu par les {} ; rempart {}, milieu {}, citadelle {}, {} postes, {} chunks à régénérer",
         site.face,
         site.center().0,
         site.center().1,
         site.door(),
         holder.name(),
         city.outer,
-        city.palisade,
+        city.middle,
         city.citadel,
         city.posts.len(),
         past.vision_chunks(&site, holder).len()
@@ -64,7 +64,7 @@ fn save(out: &str, w: i32, h: i32, img: &[[u8; 3]]) {
 
 impl View {
     fn new(site: &TempleSite, city: &MemoryCity) -> View {
-        View { face: site.face, center: site.center(), door: site.door().delta(), half: city.outer + 8 }
+        View { face: site.face, center: site.center(), door: site.door().delta(), half: city.outer + 26 }
     }
 
     /// Colonne du monde du point (i, j) de l'image : l'entrée du temple vers le bas (ou vers le
@@ -84,8 +84,9 @@ impl View {
         let mut marks: Vec<((i32, i32), [u8; 3])> = Vec::new();
         if let Some(c) = city {
             marks.extend(c.posts.iter().map(|p| (p.0, [220, 40, 40])));
-            marks.push((c.wake, [80, 150, 255]));
-            marks.push((c.breach, [255, 220, 60]));
+            marks.push((c.muster, [80, 150, 255]));
+            marks.push((c.gate, [255, 220, 60]));
+            marks.extend(c.arenas.iter().map(|&a| (a, [255, 140, 0])));
             marks.push((c.citadel_gate, [255, 220, 60]));
         }
         for j in 0..side {

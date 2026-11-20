@@ -5,21 +5,21 @@
 //! posée sur le terrain réel, au même endroit que la ruine du présent. Au présent, il n'en reste
 //! rien : seul le temple en ruine demeure (choix de Mat, question 38 des notes).
 //!
-//! La ville est ronde et se lit en trois cercles, du rempart vers le temple :
-//! - **le cercle des faubourgs**, entre le rempart et une palissade de pieux. Le rempart est plus
-//!   haut que tout le reste, sans porte ni échelle : on ne sort pas de la ville. Le joueur se
-//!   réveille ici, dos au rempart, du côté du fond du temple (`MemoryCity::wake`) : il voit le
-//!   temple, mais c'est le mur plein du sanctuaire qui lui fait face. Des maisons sont en ruine,
-//!   des barricades coupent les grandes rues ;
-//! - **le cercle des casernes et du marché**, derrière la palissade. On y passe par une seule
-//!   brèche, sur le côté (`MemoryCity::breach`) ;
+//! La ville est ronde et se traverse en assaut (bible, section 8, « L'ouverture de la vision ») :
+//! - **dehors, devant la grande porte**, l'armée se masse (`MemoryCity::muster`) sur un terrain
+//!   dégagé (`MemoryCity::field`). La porte du rempart (`MemoryCity::gate`) s'ouvre dans l'axe de
+//!   l'entrée du temple : de là, on voit le rayon violet monter du centre. Le jeu la referme
+//!   derrière le joueur (écran de fumée) ; le générateur la laisse ouverte. Le rempart est plus
+//!   haut que tout le reste, sans autre porte ni échelle ;
+//! - **les faubourgs** puis **le cercle des casernes et du marché** : des barricades ennemies
+//!   coupent la grande rue de l'axe à plusieurs endroits et forcent les détours par les rues en
+//!   anneau et les ruelles. Des places dégagées accueillent les mini-boss
+//!   (`MemoryCity::arenas`), où les soldats forment le cercle. Des maisons ont brûlé ;
 //! - **la citadelle**, une enceinte crénelée autour du temple, dont la seule porte
 //!   (`MemoryCity::citadel_gate`) s'ouvre dans l'axe de l'entrée du temple, sur l'esplanade et le
-//!   parvis.
+//!   parvis, puis l'arène du temple où attend le boss du souvenir.
 //!
-//! Le trajet fait ainsi presque tout le tour du temple avant d'y entrer. Les missions qui ouvrent
-//! la brèche et la porte restent à écrire ; le plan donne les colonnes où poster les ennemis
-//! (`MemoryCity::posts`), cercle par cercle.
+//! Le plan donne aussi les colonnes où poster les ennemis (`MemoryCity::posts`), cercle par cercle.
 
 use super::cell::*;
 use super::*;
@@ -32,8 +32,11 @@ const OUTER_MIN: i32 = 42;
 /// Espace entre le parvis du temple et le mur de la citadelle
 const ESPLANADE: i32 = 4;
 
-/// Palissade entre les faubourgs et le cercle du milieu
-const PALISADE: u8 = 20;
+/// Profondeur et demi-largeur du terrain dégagé devant la grande porte, où l'armée se masse
+const FIELD_DEPTH: i32 = 22;
+const FIELD_HALF: i32 = 16;
+/// Rayon des places des mini-boss
+const ARENA: i32 = 6;
 /// Les deux rangées du mur de la citadelle
 const KEEP_WALL: u8 = 21;
 const KEEP_WALK: u8 = 22;
@@ -62,14 +65,20 @@ pub struct MemoryCity {
     pub center: (i32, i32),
     /// Rayon du rempart extérieur
     pub outer: i32,
-    /// Rayon de la palissade
-    pub palisade: i32,
+    /// Rayon de la limite entre les faubourgs et le cercle des casernes (une rue en anneau la suit)
+    pub middle: i32,
     /// Rayon du mur de la citadelle
     pub citadel: i32,
-    /// Où le joueur se réveille : contre le rempart, à l'opposé de l'entrée du temple
-    pub wake: (i32, i32),
-    /// Milieu de la brèche de la palissade, seul passage des faubourgs au cercle du milieu
-    pub breach: (i32, i32),
+    /// Où l'armée se masse avant l'assaut, dehors, face à la grande porte
+    pub muster: (i32, i32),
+    /// Milieu de la grande porte du rempart, dans l'axe de l'entrée du temple
+    pub gate: (i32, i32),
+    /// Le passage de la grande porte : les colonnes à boucher quand elle se referme
+    pub gate_rect: Rect,
+    /// Le terrain dégagé devant la grande porte
+    pub field: Rect,
+    /// Centres des places des mini-boss, de la porte vers le temple
+    pub arenas: Vec<(i32, i32)>,
     /// Milieu de la porte de la citadelle, dans l'axe de l'entrée du temple
     pub citadel_gate: (i32, i32),
     /// Colonnes où poster des ennemis (rues, places, chemin de ronde), avec leur cercle
@@ -81,7 +90,7 @@ impl MemoryCity {
     /// dessine dans le passé
     pub fn covers(&self, x: i32, z: i32) -> bool {
         let (dx, dz) = ((x - self.center.0) as f64, (z - self.center.1) as f64);
-        (dx * dx + dz * dz).sqrt() <= self.outer as f64 + 1.5
+        (dx * dx + dz * dz).sqrt() <= self.outer as f64 + 1.5 || self.field.contains(x, z)
     }
 
     /// Cercle de la colonne (x, z), `None` hors du rempart
@@ -89,7 +98,7 @@ impl MemoryCity {
         let d = dist(self.center, x, z);
         if d <= self.citadel as f64 {
             Some(Ring::Citadel)
-        } else if d <= self.palisade as f64 {
+        } else if d <= self.middle as f64 {
             Some(Ring::Barracks)
         } else if d <= self.outer as f64 {
             Some(Ring::Outskirts)
@@ -133,25 +142,24 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
     let outer = outer_radius(generator, face, c);
     // Le parvis descend jusqu'à `radius + STEPS_MAX + PARVIS_DEPTH` du centre
     let citadel = temple.radius + Temple::STEPS_MAX + Temple::PARVIS_DEPTH + ESPLANADE + 2;
-    let palisade = ((outer as f64 * 0.68).round() as i32).max(citadel + 10);
+    let middle = ((outer as f64 * 0.68).round() as i32).max(citadel + 10);
     let (habits, masonry) = (Habits::of(holder), Masonry::of(holder));
     let street = street_block(holder, biome, true);
     // Le rempart dépasse les toits les plus hauts ; la citadelle est crénelée à la façon du peuple
     let wall = Masonry { height: masonry.height.max(5) + 4, tower_height: masonry.tower_height + 4, palisade: false, ..masonry };
     let keep = Masonry { height: masonry.height + 1, tower_height: masonry.tower_height + 1, ..masonry };
-    let stakes = Masonry { height: 4, palisade: true, light: masonry.light, ..Masonry::of(Culture::ElfesDesBois) };
-    let barricade = Masonry { height: 2, ..stakes };
+    // Barricades de pieux, trop hautes pour être sautées
+    let barricade = Masonry { height: 2, palisade: true, light: masonry.light, ..Masonry::of(Culture::ElfesDesBois) };
 
-    // Directions : `front` sort par l'entrée du temple, `back` par le fond, `side` vers la brèche
+    // `front` sort par l'entrée du temple, vers la grande porte
     let (dx, dz) = temple.door().delta();
     let front = (dx as f64, dz as f64);
-    let side = if dice.chance(0.5) { (dz as f64, -dx as f64) } else { (-dz as f64, dx as f64) };
     let at = |dir: (f64, f64), r: f64| ((fx + dir.0 * r).floor() as i32, (fz + dir.1 * r).floor() as i32);
     let angle = |dir: (f64, f64)| dir.1.atan2(dir.0);
-    let (a_front, a_side) = (angle(front), angle(side));
+    let a_front = angle(front);
     let off = |t: f64, a: f64| ((t - a + PI).rem_euclid(TAU) - PI).abs();
 
-    let ext = outer + 3;
+    let ext = outer + FIELD_DEPTH + 3;
     let n = 2 * ext + 1;
     let mut m = TownMask { x0: c.0 - ext, z0: c.1 - ext, n, cells: vec![OUT; (n * n) as usize] };
     let inside = |r: i32, x: i32, z: i32| dist(c, x, z) <= r as f64;
@@ -164,8 +172,6 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
                 WALL
             } else if edge(outer - 1, x, z) {
                 WALK
-            } else if edge(palisade, x, z) {
-                PALISADE
             } else if edge(citadel, x, z) {
                 KEEP_WALL
             } else if edge(citadel - 1, x, z) {
@@ -192,7 +198,7 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
         let line = wobbly((fx + dir.0 * (citadel as f64 + 1.0), fz + dir.1 * (citadel as f64 + 1.0)), (fx + dir.0 * (outer as f64 - 2.0), fz + dir.1 * (outer as f64 - 2.0)), 3.0, &mut dice);
         m.stroke(&line, 1.6, |v| (v == IN).then_some(ROAD));
     }
-    for (r, half) in [(outer as f64 - 4.0, 1.5), (palisade as f64 + 2.5, 1.5), (palisade as f64 - 2.5, 1.5), (citadel as f64 + 2.5, 1.6)] {
+    for (r, half) in [(outer as f64 - 4.0, 1.5), (middle as f64 + 2.5, 1.5), (middle as f64 - 2.5, 1.5), (citadel as f64 + 2.5, 1.6)] {
         let steps = (r * TAU / 3.0) as i32;
         let line: Vec<(f64, f64)> = (0..=steps).map(|i| {
             let t = TAU * i as f64 / steps as f64;
@@ -201,7 +207,7 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
         m.stroke(&line, half, |v| (v == IN).then_some(ROAD));
     }
     // Ruelles entre les anneaux
-    for (a, b) in [(citadel as f64 + 3.0, palisade as f64 - 3.0), (palisade as f64 + 3.0, outer as f64 - 4.0)] {
+    for (a, b) in [(citadel as f64 + 3.0, middle as f64 - 3.0), (middle as f64 + 3.0, outer as f64 - 4.0)] {
         let count = ((a + b) * 0.5 * TAU / 30.0).round() as i32;
         for _ in 0..count {
             let t = unit(dice.next()) * TAU;
@@ -214,17 +220,27 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
         }
     }
 
-    // La brèche de la palissade, sur le côté : cinq colonnes de pieux tombés
-    let breach = at(side, palisade as f64);
-    for z in breach.1 - 4..=breach.1 + 4 {
-        for x in breach.0 - 4..=breach.0 + 4 {
-            if m.get(x, z) == PALISADE && dist(breach, x, z) <= 2.6 {
-                m.set(x, z, ROAD);
-            }
+    // La grande porte du rempart, dans l'axe de l'entrée du temple : un passage de cinq de large,
+    // et la rue qui en sort vers le terrain où l'armée se masse
+    let gate = at(front, outer as f64 - 0.5);
+    let outer_gate = Rect::new(gate.0 - 2, gate.1 - 2, gate.0 + 3, gate.1 + 3);
+    for z in outer_gate.z0..outer_gate.z1 {
+        for x in outer_gate.x0..outer_gate.x1 {
+            m.set(x, z, GATEHOUSE);
         }
     }
-    let breach_way = wobbly(at(side, palisade as f64 - 4.0).into_f(), at(side, palisade as f64 + 4.0).into_f(), 0.0, &mut dice);
-    m.stroke(&breach_way, 1.6, |v| matches!(v, IN | ROAD).then_some(ROAD));
+    let gate_way = wobbly(at(front, outer as f64 - 5.0).into_f(), at(front, outer as f64 + 6.0).into_f(), 0.0, &mut dice);
+    m.stroke(&gate_way, 2.4, |v| matches!(v, IN | OUT | ROAD).then_some(ROAD));
+    let muster = at(front, (outer + FIELD_DEPTH / 2 + 2) as f64);
+    let (fa, fb) = (at(front, outer as f64 + 2.0), at(front, (outer + FIELD_DEPTH) as f64));
+    let (px, pz) = (-dz, dx);
+    let corners = [(fa.0 + px * FIELD_HALF, fa.1 + pz * FIELD_HALF), (fa.0 - px * FIELD_HALF, fa.1 - pz * FIELD_HALF), (fb.0 + px * FIELD_HALF, fb.1 + pz * FIELD_HALF), (fb.0 - px * FIELD_HALF, fb.1 - pz * FIELD_HALF)];
+    let field = Rect::new(
+        corners.iter().map(|c| c.0).min().unwrap_or(0),
+        corners.iter().map(|c| c.1).min().unwrap_or(0),
+        corners.iter().map(|c| c.0).max().unwrap_or(0) + 1,
+        corners.iter().map(|c| c.1).max().unwrap_or(0) + 1,
+    );
 
     // La porte de la citadelle, dans l'axe de l'entrée du temple : un passage voûté de trois de large
     let citadel_gate = at(front, citadel as f64 - 0.5);
@@ -238,25 +254,44 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
             m.set(x, z, GATEHOUSE);
         }
     }
-    let approach = wobbly(at(front, citadel as f64 + 1.0).into_f(), at(front, palisade as f64 - 2.0).into_f(), 0.0, &mut dice);
+    let approach = wobbly(at(front, citadel as f64 + 1.0).into_f(), at(front, middle as f64 - 2.0).into_f(), 0.0, &mut dice);
     m.stroke(&approach, 1.6, |v| (v == IN).then_some(ROAD));
 
-    // Barricades en travers des grandes rues des faubourgs, un passage d'un bloc au milieu
-    for &a in &avenues {
-        if off(a, a_side) < 0.5 || !dice.chance(0.7) {
-            continue;
+    // Places des mini-boss : sur les détours, de part et d'autre de l'axe
+    let side_sign = if dice.chance(0.5) { 1.0 } else { -1.0 };
+    let arenas: Vec<(i32, i32)> = [((outer + middle) as f64 * 0.5, a_front + side_sign * 0.55), (middle as f64 - 2.5, a_front - side_sign * 0.75), ((middle + citadel) as f64 * 0.5 + 1.0, a_front + side_sign * 0.9)]
+        .iter()
+        .map(|&(r, t)| ((fx + r * t.cos()).floor() as i32, (fz + r * t.sin()).floor() as i32))
+        .collect();
+    for &(ax, az) in &arenas {
+        for z in az - ARENA..=az + ARENA {
+            for x in ax - ARENA..=ax + ARENA {
+                if dist((ax, az), x, z) <= ARENA as f64 && matches!(m.get(x, z), IN | ROAD) {
+                    m.set(x, z, SQUARE);
+                }
+            }
         }
-        let r = (palisade as f64 + outer as f64) * 0.5 + 2.0;
-        let (bx, bz) = (fx + r * a.cos(), fz + r * a.sin());
-        let (px, pz) = (-a.sin(), a.cos());
-        for k in -3..=3 {
-            if k == 0 {
-                continue;
+    }
+    // Barricades ennemies : la grande rue de l'axe est coupée net en trois endroits (on fait le
+    // détour par les rues en anneau) ; les autres grandes rues gardent un passage d'un bloc
+    let cut = |m: &mut TownMask, r: f64, a: f64, half: f64, gap: bool| {
+        for z in c.1 - ext..=c.1 + ext {
+            for x in c.0 - ext..=c.0 + ext {
+                let (ux, uz) = (x as f64 + 0.5 - fx, z as f64 + 0.5 - fz);
+                let along = ux * a.cos() + uz * a.sin();
+                let across = -ux * a.sin() + uz * a.cos();
+                if (along - r).abs() <= 0.6 && across.abs() <= half && !(gap && across.abs() < 0.6) && m.get(x, z) == ROAD {
+                    m.set(x, z, BARRICADE);
+                }
             }
-            let (x, z) = ((bx + px * k as f64).floor() as i32, (bz + pz * k as f64).floor() as i32);
-            if m.get(x, z) == ROAD {
-                m.set(x, z, BARRICADE);
-            }
+        }
+    };
+    for r in [outer as f64 - 9.0, middle as f64 + 0.5, citadel as f64 + 7.5] {
+        cut(&mut m, r, a_front, 6.0, false);
+    }
+    for &a in avenues.iter().skip(1) {
+        if dice.chance(0.6) {
+            cut(&mut m, (middle + outer) as f64 * 0.5 + 2.0, a, 3.5, true);
         }
     }
 
@@ -269,11 +304,14 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
     for rect in m.runs(|v| v == COURT) {
         p.pieces.push(Piece::Paving { rect, block: street });
     }
-    // Tours : sur le rempart, loin du réveil ; de part et d'autre de la porte de la citadelle
+    // Tours : sur le rempart, hors de la grande porte ; de part et d'autre de la porte de la citadelle
     let a_back = a_front + PI;
     let towers = ((TAU * outer as f64) / 34.0).round() as i32;
     for i in 0..towers {
         let t = a_back + TAU * (i as f64 + 0.5) / towers as f64;
+        if off(t, a_front) < 6.0 / outer as f64 {
+            continue;
+        }
         let r = outer as f64 - 1.0;
         let rect = Rect::around((fx + r * t.cos()).floor() as i32, (fz + r * t.sin()).floor() as i32, 2);
         if let Some(floor) = floor_for(generator, face, &rect, 8) {
@@ -301,13 +339,11 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
     for rect in m.runs(|v| v == KEEP_WALK) {
         p.pieces.push(Piece::Rampart { rect, masonry: keep, walk: true });
     }
-    for rect in m.runs(|v| v == PALISADE) {
-        p.pieces.push(Piece::Rampart { rect, masonry: stakes, walk: false });
-    }
+    p.pieces.push(Piece::Gate { rect: outer_gate, masonry: wall, walk: false });
     for rect in m.runs(|v| v == BARRICADE) {
         p.pieces.push(Piece::Rampart { rect, masonry: barricade, walk: false });
     }
-    for rect in m.runs(|v| v == ROAD || v == GATEHOUSE) {
+    for rect in m.runs(|v| v == ROAD || v == GATEHOUSE || v == SQUARE) {
         p.pieces.push(Piece::Paving { rect, block: street });
     }
     // Les colonnes prises jusqu'ici ne reçoivent pas de maison
@@ -363,7 +399,7 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
             continue;
         }
         let (hx, hz) = foot.center();
-        let outskirts = dist(c, hx, hz) > palisade as f64;
+        let outskirts = dist(c, hx, hz) > middle as f64;
         let burnt = dice.chance(if outskirts { 0.33 } else { 0.12 });
         let used = if burnt {
             let Some(floor) = floor_for(generator, face, &foot, 5) else { continue };
@@ -422,7 +458,7 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
             continue;
         }
         let (hx, hz) = foot.center();
-        let burnt = dice.chance(if dist(c, hx, hz) > palisade as f64 { 0.33 } else { 0.12 });
+        let burnt = dice.chance(if dist(c, hx, hz) > middle as f64 { 0.33 } else { 0.12 });
         let used = if burnt {
             let Some(floor) = floor_for(generator, face, &foot, 5) else { continue };
             p.take(Piece::RuinHouse(RuinHouse { foot, floor, height: dice.range(2, 5), seed: dice.next() }), 0);
@@ -454,29 +490,28 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
     let seed = dice.next();
     for z in c.1 - ext..=c.1 + ext {
         for x in c.0 - ext..=c.0 + ext {
-            if m.get(x, z) == ROAD && dist(c, x, z) < palisade as f64 - 1.0 && hash2(seed, x, z).is_multiple_of(36) && dirs.iter().any(|&(ox, oz)| matches!(m.get(x + ox, z + oz), IN | BUILT)) {
+            if m.get(x, z) == ROAD && dist(c, x, z) < middle as f64 - 1.0 && hash2(seed, x, z).is_multiple_of(36) && dirs.iter().any(|&(ox, oz)| matches!(m.get(x + ox, z + oz), IN | BUILT)) {
                 p.pieces.push(Piece::Lamp { x, z, masonry });
             }
         }
     }
 
     // Postes des ennemis : dans les rues, de loin en loin, et sur les chemins de ronde
-    let wake = at((-front.0, -front.1), outer as f64 - 6.0);
     let mut posts = Vec::new();
     let seed = dice.next();
     for z in c.1 - ext..=c.1 + ext {
         for x in c.0 - ext..=c.0 + ext {
             let v = m.get(x, z);
             let d = dist(c, x, z);
-            let ring = if d <= citadel as f64 { Ring::Citadel } else if d <= palisade as f64 { Ring::Barracks } else { Ring::Outskirts };
+            let ring = if d <= citadel as f64 { Ring::Citadel } else if d <= middle as f64 { Ring::Barracks } else { Ring::Outskirts };
             let spot = match v {
-                ROAD => hash2(seed, x, z).is_multiple_of(70),
+                ROAD | SQUARE => dist(c, x, z) < outer as f64 - 1.5 && hash2(seed, x, z).is_multiple_of(70),
                 COURT => !temple_rect.contains(x, z) && hash2(seed, x, z).is_multiple_of(55),
                 WALK | KEEP_WALK => hash2(seed ^ 1, x, z).is_multiple_of(24),
                 _ => false,
             };
-            // Personne à moins de douze blocs du réveil
-            if spot && dist(wake, x, z) > 12.0 {
+            // Personne juste derrière la grande porte : l'armée doit pouvoir y entrer
+            if spot && dist(gate, x, z) > 10.0 {
                 posts.push(((x, z), ring));
             }
         }
@@ -495,8 +530,8 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
     let mut settlement = p.finish(SettlementKind::Ruins, c, biome)?;
     settlement.top = settlement.top.max(wall_top);
     // Le rempart borne le plan : les rues qui le touchent n'en sortent pas
-    settlement.bounds = Rect::around(c.0, c.1, outer + 2).union(&settlement.bounds);
-    Some(MemoryCity { settlement, center: c, outer, palisade, citadel, wake, breach, citadel_gate, posts })
+    settlement.bounds = Rect::around(c.0, c.1, outer + 2).union(&settlement.bounds).union(&field);
+    Some(MemoryCity { settlement, center: c, outer, middle, citadel, muster, gate, gate_rect: outer_gate, field, arenas, citadel_gate, posts })
 }
 
 trait IntoF {
