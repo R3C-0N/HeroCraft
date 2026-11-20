@@ -10,8 +10,8 @@
 // - Textures des blocs : rapport à leur couleur moyenne, qui module la couleur du sommet
 // =========================================================================
 
-#import herocraft::common::{camera, flatten_point, rotate_by, screen_ndc, quantization_dither}
-#import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective}
+#import herocraft::common::{camera, flatten_point, rotate_by, screen_ndc, quantization_dither, void_veins}
+#import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective, frozen_air}
 #import herocraft::shadow::sun_visibility
 
 // Textures des blocs (block_textures.rs) : une couche par texture, ses texels divisés par sa
@@ -152,46 +152,6 @@ fn bayer4x4(pos: vec2<u32>) -> f32 {
 // - Période orbitale : 21 minutes (1260 secondes)
 // - Inclinaison orbitale lunaire : ~28.5° (0.497 rad)
 // - Déphasage initial (+3.69 rad) pour garantir une pleine lune majestueuse dès la première nuit
-
-fn vein_hash(p: vec3<f32>) -> f32 {
-    var q = fract(p * 0.1031);
-    q += dot(q, q.zyx + 31.32);
-    return fract((q.x + q.y) * q.z);
-}
-
-fn vein_noise(p: vec3<f32>) -> f32 {
-    let i = floor(p);
-    let f = fract(p);
-    let u = f * f * (3.0 - 2.0 * f);
-    let a = mix(mix(vein_hash(i), vein_hash(i + vec3<f32>(1.0, 0.0, 0.0)), u.x), mix(vein_hash(i + vec3<f32>(0.0, 1.0, 0.0)), vein_hash(i + vec3<f32>(1.0, 1.0, 0.0)), u.x), u.y);
-    let b = mix(mix(vein_hash(i + vec3<f32>(0.0, 0.0, 1.0)), vein_hash(i + vec3<f32>(1.0, 0.0, 1.0)), u.x), mix(vein_hash(i + vec3<f32>(0.0, 1.0, 1.0)), vein_hash(i + vec3<f32>(1.0, 1.0, 1.0)), u.x), u.y);
-    return mix(a, b, u.z);
-}
-
-fn vein_fbm(p: vec3<f32>) -> f32 {
-    return vein_noise(p) * 0.55 + vein_noise(p * 2.1 + 3.7) * 0.3 + vein_noise(p * 4.3 - 1.3) * 0.15;
-}
-
-/// Veines du Néant (maquette validée, temps-fige.html) : filaments lumineux qui glissent, gagnent
-/// le décor depuis le héros à 12 blocs par seconde, et qu'une pulsation parcourt toutes les 1,6 s
-fn void_veins(world_pos: vec3<f32>) -> vec3<f32> {
-    let t = camera.frozen.y;
-    let block = camera.scales.y;
-    // En blocs, autour du héros (la précision reste bonne loin du centre de la planète)
-    let p = (world_pos - camera.frozen_center.xyz) / block;
-    let d = length(p);
-    let v = vein_fbm(p * 0.45 + vec3<f32>(t * 0.05, -t * 0.03, t * 0.04));
-    let line = 1.0 - smoothstep(0.0, 0.045, abs(v - 0.5));
-    let core = 1.0 - smoothstep(0.0, 0.02, abs(v - 0.5));
-    let pulse = 0.55 + 0.45 * sin(d * 1.6 - t * 2.2);
-    let reach = clamp((t * 12.0 - d) / 3.0, 0.0, 1.0);
-    let ph = fract(t / 1.6);
-    let ring = exp(-pow((d - ph * 22.0) * 0.6, 2.0)) * (1.0 - ph * 0.7);
-    let beads = 0.55 + 0.45 * sin(vein_fbm(p * 1.3) * 18.0 - t * 7.0);
-    // Couleur du Néant (#8C00FF, en linéaire)
-    let lit = vec3<f32>(0.262, 0.0, 1.0) * line * (1.4 * pulse + 4.0 * ring * beads) + vec3<f32>(1.0, 0.9, 1.0) * core * ring * beads * 1.5;
-    return lit * reach;
-}
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -403,7 +363,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dist = length(in.to_eye);
     // Air vu depuis la caméra : dans son propre repère, sans rotation
     let aerial = aerial_perspective_screen(camera.camera_pos, -view_dir, screen_ndc(in.clip_position.xy), dist, normalize(camera.light_dir), 12);
-    lit_rgb = apply_aerial_perspective(lit_rgb, aerial);
+    lit_rgb = apply_aerial_perspective(lit_rgb, frozen_air(aerial));
 
     // Brume nocturne : l'air n'est plus éclairé par le soleil, une lueur bleutée argentée
     // (vers la Lune) remplace la diffusion là où l'air atténue la surface

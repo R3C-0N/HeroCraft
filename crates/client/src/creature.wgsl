@@ -5,8 +5,8 @@
 // Les os sont déjà appliqués (creatures.rs) : les sommets arrivent dans le repère du monde.
 // =========================================================================
 
-#import herocraft::common::{camera, flatten_point, rotate_by, screen_ndc}
-#import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective}
+#import herocraft::common::{camera, flatten_point, rotate_by, screen_ndc, void_veins}
+#import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective, frozen_air}
 #import herocraft::shadow::sun_visibility
 
 @group(2) @binding(0) var creature_texture: texture_2d<f32>;
@@ -76,8 +76,13 @@ fn fs_creature(in: VertexOutput) -> @location(0) vec4<f32> {
     let light = night_ambient * night_factor + sky_light(in.world_pos, n, l) * 0.6 + sun_light_at(in.world_pos, l) * direct_level;
     var lit_rgb = albedo * light;
 
+    // Temps figé de la vision : les créatures aussi s'assombrissent et les veines les parcourent
+    if camera.frozen.x > 0.0 {
+        lit_rgb = mix(lit_rgb, lit_rgb * 0.7, camera.frozen.x) + void_veins(in.world_pos) * camera.frozen.x;
+    }
+
     let dist = length(in.to_eye);
     let aerial = aerial_perspective_screen(camera.camera_pos, -view_dir, screen_ndc(in.clip_position.xy), dist, normalize(camera.light_dir), 12);
-    lit_rgb = apply_aerial_perspective(lit_rgb, aerial);
+    lit_rgb = apply_aerial_perspective(lit_rgb, frozen_air(aerial));
     return vec4<f32>(lit_rgb, 1.0);
 }
