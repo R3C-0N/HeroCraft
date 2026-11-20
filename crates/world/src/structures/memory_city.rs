@@ -375,7 +375,7 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
         }
         let (hx, hz) = foot.center();
         let rich = dist(c, hx, hz) < inner as f64;
-        let used = if dice.chance(if rich { 0.08 } else { 0.3 }) {
+        let used = if dice.chance(if rich { 0.02 } else { 0.05 }) {
             let Some(floor) = floor_for(generator, face, &foot, 5) else { return false };
             p.take(Piece::RuinHouse(RuinHouse { foot, floor, height: dice.range(2, 5), seed: dice.next() }), 0);
             foot
