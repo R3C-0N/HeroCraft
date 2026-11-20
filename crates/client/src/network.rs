@@ -368,6 +368,9 @@ pub enum NetEvent {
     /// Des créatures tirent (tourelles, bastion, liche)
     CreatureShots(Vec<herocraft_common::CreatureShotEvent>),
     Projectiles(Vec<herocraft_common::ProjectileEvent>),
+    /// Le serveur nous fait entrer dans la vision d'un temple (peuple qui tient la ville) ou en
+    /// revenir (`None`), les pieds en `feet`
+    Vision { holder: Option<herocraft_world::Culture>, feet: Vec3 },
     /// Connexion perdue ou fermée par le serveur
     Disconnected(String),
 }
@@ -494,6 +497,11 @@ impl NetClient {
         self.connection.send(&ClientPacket::Heal);
     }
 
+    /// `/vision` : entrer dans la vision du temple le plus proche, ou en revenir
+    pub fn send_vision(&mut self, enter: bool) {
+        self.connection.send(&ClientPacket::Vision { enter });
+    }
+
     /// `/time set`, `/season`, `/weather` : le ciel du serveur change pour tous
     pub fn send_sky(&mut self, time: Option<f64>, forced: Option<Option<herocraft_common::WeatherKind>>) {
         self.connection.send(&ClientPacket::SetSky { time, forced });
@@ -617,6 +625,13 @@ impl NetClient {
             ServerPacket::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact } => return Some(NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact }),
             ServerPacket::SkillCooldown { skill, seconds } => return Some(NetEvent::SkillCooldown { skill, seconds }),
             ServerPacket::PlayerPushed { direction, speed } => return Some(NetEvent::Pushed { direction, speed }),
+            ServerPacket::Vision { holder, feet } => {
+                // Dans la vision on est seul ; au retour, le serveur annonce de nouveau les autres
+                self.players.clear();
+                self.creatures.clear();
+                let holder = holder.and_then(|k| herocraft_world::Culture::ALL.get(k as usize).copied());
+                return Some(NetEvent::Vision { holder, feet });
+            }
             ServerPacket::ConnectAck { .. } | ServerPacket::PlayerJoined { .. } => {}
         }
         None

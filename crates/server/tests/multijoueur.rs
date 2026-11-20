@@ -623,3 +623,71 @@ fn l_arbalete_tire_un_carreau_puis_recharge() {
     alice.send(&ClientPacket::Shoot { aim: north, ammo: bolt.0 });
     assert!(shots(&mut server, &alice, 10).is_empty(), "tir trop rapide accepté");
 }
+
+#[test]
+fn un_joueur_vit_seul_la_vision_du_temple_puis_revient() {
+    let mut server = test_server();
+    let addr = server.local_addr().unwrap().to_string();
+    let generator = herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 4242, ..Default::default() });
+    let geometry = BlockGeometry::new(generator.base_radius());
+    let mid = herocraft_world::FACE_BLOCKS / 2;
+    let site = generator.nearest_temple(PlanetFace::PosX, mid, mid, herocraft_world::FACE_BLOCKS).expect("un temple");
+    // Alice attend à côté du temple, au présent
+    let (x, z) = (site.center().0 + 3, site.center().1 + 3);
+    let top = (0..WORLD_HEIGHT).rev().find(|&y| server.block(BlockPos::new(site.face, x, y, z)).is_solid()).unwrap();
+    let feet = geometry.corner(site.face, x as f64 + 0.5, (top + 1) as f64, z as f64 + 0.5).as_vec3();
+
+    let mut join = |name: &str| {
+        let client = Client::connect(&addr, WAIT).unwrap();
+        client.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
+        let id = pump(&mut server, &client, |p| match p {
+            ServerPacket::ConnectAck { player_id, .. } => Some(player_id),
+            _ => None,
+        });
+        client.send(&ClientPacket::PlayerMove { position: feet, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
+        (client, id)
+    };
+    let (alice, alice_id) = join("Alice");
+    let (bob, _) = join("Bob");
+    let deadline = Instant::now() + WAIT;
+    while server.players().any(|p| p.position.is_none()) {
+        assert!(Instant::now() < deadline, "positions non reçues");
+        server.tick(1.0 / 60.0);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+
+    // Alice entre dans la vision : elle est posée devant la grande porte de la ville-souvenir,
+    // et Bob ne la voit plus
+    alice.send(&ClientPacket::Vision { enter: true });
+    let (holder, inside) = pump(&mut server, &alice, |p| match p {
+        ServerPacket::Vision { holder, feet } => Some((holder, feet)),
+        _ => None,
+    });
+    let holder = herocraft_world::Culture::ALL[holder.expect("une vision") as usize];
+    let past = generator.with_epoch(herocraft_world::Epoch::Past(holder));
+    let city = past.memory_city(&site, holder).expect("la ville-souvenir").clone();
+    let at = geometry.block_at_point(inside.as_dvec3()).unwrap();
+    assert_eq!((at.face, at.x, at.z), (site.face, city.muster.0, city.muster.1));
+    pump(&mut server, &bob, |p| matches!(p, ServerPacket::PlayerLeft { player_id } if player_id == alice_id).then_some(()));
+
+    // Elle casse le sol du passé sous ses pieds : elle seule le voit, le présent n'a pas bougé
+    let below = BlockPos::new(at.face, at.x, at.y - 1, at.z);
+    let present = server.block(below);
+    alice.send(&ClientPacket::PlayerMove { position: inside, yaw: 0.0, pitch: 0.0, sprinting: false, crouching: false, holding: None });
+    alice.send(&ClientPacket::InteractBlock { block: below.into(), action: BlockInteractionAction::Break });
+    let id = pump(&mut server, &alice, |p| match p {
+        ServerPacket::VoxelUpdate { block, block_id } if block == below.into() => Some(block_id),
+        _ => None,
+    });
+    assert_eq!(id, 0);
+    assert_eq!(server.block(below), present);
+
+    // Elle revient là où elle était, et Bob la revoit
+    alice.send(&ClientPacket::Vision { enter: false });
+    let back = pump(&mut server, &alice, |p| match p {
+        ServerPacket::Vision { holder: None, feet } => Some(feet),
+        _ => None,
+    });
+    assert!(back.distance(feet) < 1e-3);
+    pump(&mut server, &bob, |p| matches!(p, ServerPacket::PlayerJoined { player_id, .. } if player_id == alice_id).then_some(()));
+}

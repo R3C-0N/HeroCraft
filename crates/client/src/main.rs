@@ -179,6 +179,9 @@ fn main() {
         PendingJoin::start(addr, launch.pseudo.clone())
     });
     let mut net: Option<NetClient> = None;
+    // Vision de temple en cours : les blocs modifiés du présent, mis de côté, et en solo l'endroit
+    // où le joueur revient
+    let mut vision: Option<PresentWorld> = None;
     let mut hosted: Option<HostedServer> = None;
     let mut lan_browser: Option<LanBrowser> = None;
     let mut lan_retry_at = Instant::now();
@@ -839,6 +842,11 @@ fn main() {
                             let mut lost = None;
                             for event in client.poll() {
                                 match event {
+                                    NetEvent::Vision { holder, feet } => {
+                                        switch_epoch(holder, feet, None, None, &mut vision, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state);
+                                        block_interaction.invalidate();
+                                        terrain_edited = true;
+                                    }
                                     NetEvent::BlockChanged(pos, block) => {
                                         let previous = lod_manager.terrain_edits().block(&generator, pos);
                                         if lod_manager.set_block(&generator, pos, block) {
@@ -1137,6 +1145,10 @@ fn main() {
                             let addr = pending_join.take().map(|p| p.addr).unwrap_or_default();
                             match result {
                                 Ok(world) => {
+                                    if vision.take().is_some() {
+                                        generator = generator.with_epoch(herocraft_world::Epoch::Present);
+                                        lod_manager.clear(current_seed);
+                                    }
                                     let edits = Arc::new(herocraft_world::TerrainEdits::from_chunks(world.edited_chunks));
                                     if let Some(host) = hosted.as_ref().filter(|_| world.seed == current_seed) {
                                         // Notre propre partie : même planète et mêmes blocs, la vue et le
@@ -1366,6 +1378,33 @@ fn main() {
                             herocraft_common::prof_scope!("frame::ui_action");
                             match action {
                                 UiAction::PreviewSound => audio.preview(&ui_state.audio_settings),
+                                UiAction::Vision(true) if vision.is_none() => {
+                                    let geometry = herocraft_world::BlockGeometry::new(camera.base_radius as f64);
+                                    let entry = geometry
+                                        .block_at_point(camera.player_pos.as_dvec3())
+                                        .and_then(|at| generator.vision_entry(at.face, at.x, at.z, VISION_TEMPLE_BLOCKS, herocraft_world::Culture::Humains));
+                                    match entry {
+                                        Some(entry) => {
+                                            info!("Vision du temple {:?} ({}, {}), tenu par les {}.", entry.site.face, entry.site.center().0, entry.site.center().1, entry.holder.name());
+                                            // Les blocs du présent sont enregistrés avant de les mettre de côté
+                                            let _ = chunk_cache.flush_dirty();
+                                            save_terrain_edits(&lod_manager);
+                                            let feet = geometry.corner(entry.feet.face, entry.feet.x as f64 + 0.5, entry.feet.y as f64, entry.feet.z as f64 + 0.5).as_vec3();
+                                            let back = camera.player_pos;
+                                            switch_epoch(Some(entry.holder), feet, Some(back), None, &mut vision, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state);
+                                            block_interaction.invalidate();
+                                        }
+                                        None => ui_state.chat.error("No temple nearby"),
+                                    }
+                                }
+                                UiAction::Vision(false) => {
+                                    if let Some(back) = vision.as_ref().and_then(|v| v.back) {
+                                        let storage = solo_terrain(current_seed).0;
+                                        switch_epoch(None, back, None, storage, &mut vision, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state);
+                                        block_interaction.invalidate();
+                                    }
+                                }
+                                UiAction::Vision(true) => {}
                                 UiAction::LegendSealed => {
                                     let Some(legend) = ui_state.take_sealed_legend() else { continue };
                                     let online = ui_state.multiplayer.status != NetStatus::Solo && hosted.is_none();
@@ -1485,6 +1524,10 @@ fn main() {
                                     pending_join = Some(PendingJoin::start(addr, pseudo));
                                 }
                                 UiAction::LeaveServer => {
+                                    if vision.take().is_some() {
+                                        generator = generator.with_epoch(herocraft_world::Epoch::Present);
+                                        lod_manager.clear(current_seed);
+                                    }
                                     if let Some(mut client) = net.take() {
                                         client.disconnect();
                                     }
@@ -1523,6 +1566,7 @@ fn main() {
                                     info!("Retour à la partie solo (planète #{}).", current_seed);
                                 }
                                 UiAction::GenerateNewPlanet => {
+                                    vision = None;
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
                                     save_solo_creatures(&solo_creatures, &solo_fields);
@@ -1790,6 +1834,61 @@ fn solo_terrain(seed: u64) -> (Option<herocraft_voxel_engine::ChunkStorage>, Arc
     let storage = herocraft_voxel_engine::ChunkStorage::new(solo_save_dir(seed)).ok();
     let edits = Arc::new(herocraft_world::TerrainEdits::new(storage.clone()));
     (storage, edits)
+}
+
+/// Une vision de temple tient le monde du présent de côté
+struct PresentWorld {
+    /// Blocs modifiés du présent
+    edits: Arc<herocraft_world::TerrainEdits>,
+    /// En solo, là où le joueur se tenait avant la vision (en ligne, le serveur le sait)
+    back: Option<glam::Vec3>,
+}
+
+/// Le temple de la vision est cherché à moins de tant de blocs du joueur
+const VISION_TEMPLE_BLOCKS: i32 = 2048;
+
+/// Entre dans la vision tenue par `holder` (`Some`), seul dans le passé avec des blocs modifiés
+/// vierges, ou en revient (`None`) avec les blocs du présent mis de côté ; le terrain est refait et
+/// le joueur posé en `feet`. `back` : en solo, là où revenir ; `storage` : sauvegarde des blocs du
+/// présent, au retour en solo.
+#[allow(clippy::too_many_arguments)]
+fn switch_epoch(
+    holder: Option<herocraft_world::Culture>,
+    feet: glam::Vec3,
+    back: Option<glam::Vec3>,
+    storage: Option<herocraft_voxel_engine::ChunkStorage>,
+    vision: &mut Option<PresentWorld>,
+    generator: &mut herocraft_world::PlanetWorldGenerator,
+    chunk_cache: &mut herocraft_voxel_engine::WorldChunkCache,
+    lod_manager: &mut PlanetLodManager,
+    camera: &mut OrbitCamera,
+    state: &mut State,
+) {
+    let edits = match holder {
+        Some(holder) => {
+            *generator = generator.with_epoch(herocraft_world::Epoch::Past(holder));
+            let present = lod_manager.terrain_edits().clone();
+            // Une vision dans une vision : on garde le vrai présent
+            vision.get_or_insert(PresentWorld { edits: present, back });
+            *chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(None, 256);
+            Arc::new(herocraft_world::TerrainEdits::new(None))
+        }
+        None => {
+            *generator = generator.with_epoch(herocraft_world::Epoch::Present);
+            *chunk_cache = herocraft_voxel_engine::WorldChunkCache::new(storage, 256);
+            match vision.take() {
+                Some(present) => present.edits,
+                None => lod_manager.terrain_edits().clone(),
+            }
+        }
+    };
+    lod_manager.clear(generator.planet.seed);
+    camera.set_terrain(edits.clone());
+    lod_manager.set_terrain_edits(edits);
+    camera.player_pos = feet;
+    camera.sync_orbit_to_ground();
+    lod_manager.update(camera.eye_position(), generator, chunk_cache, 0.0, None);
+    state.sync_lod_meshes(lod_manager);
 }
 
 /// Remplace la planète affichée (nouvelle graine, partie en ligne ou retour au solo) : générateur,
@@ -2342,6 +2441,17 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
             None => Err(format!("Unknown skill: {skill}")),
             Some(_) => {
                 game.ui.skill_casts.push(skill);
+                Ok(Vec::new())
+            }
+        },
+        // En ligne, le serveur ouvre la vision ; en solo, le client change d'époque lui-même
+        Command::Vision(enter) => match game.net.as_deref_mut() {
+            Some(client) => {
+                client.send_vision(enter);
+                Ok(Vec::new())
+            }
+            None => {
+                game.pending_actions.push(UiAction::Vision(enter));
                 Ok(Vec::new())
             }
         },

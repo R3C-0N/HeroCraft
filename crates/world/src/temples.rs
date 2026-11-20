@@ -67,6 +67,16 @@ impl Epoch {
     }
 }
 
+/// Entrée dans la vision d'un temple (`PlanetWorldGenerator::vision_entry`)
+#[derive(Debug, Clone)]
+pub struct VisionEntry {
+    pub site: TempleSite,
+    /// Peuple qui tient la ville dans le passé : l'époque de la vision est `Epoch::Past(holder)`
+    pub holder: Culture,
+    /// Bloc où se tiennent les pieds du héros à son arrivée
+    pub feet: BlockPos,
+}
+
 /// Un temple de la planète, tel que les deux époques le partagent
 #[derive(Debug, Clone, Copy)]
 pub struct TempleSite {
@@ -255,6 +265,19 @@ impl PlanetWorldGenerator {
             .filter_map(TempleSite::of)
             .filter(|t| t.temple.rect().intersects(&area))
             .collect()
+    }
+
+    /// La vision qu'ouvre, pour un héros du peuple `player`, le temple le plus proche de la colonne
+    /// (x, z) (à moins de `max_blocks` blocs) : le temple, le peuple qui tient sa ville-souvenir, et
+    /// le bloc où le héros apparaît, au rassemblement de l'armée devant la grande porte
+    pub fn vision_entry(&self, face: PlanetFace, x: i32, z: i32, max_blocks: i32, player: Culture) -> Option<VisionEntry> {
+        let site = self.nearest_temple(face, x, z, max_blocks)?;
+        let holder = site.holder_for(player);
+        let past = self.with_epoch(Epoch::Past(holder));
+        let (mx, mz) = past.memory_city(&site, holder)?.muster;
+        let ground = past.sample_block_column(site.face, mx, mz).elevation.floor() as i32;
+        let y = (ground..ground + 64).find(|&y| !past.block_at(site.face, mx, y, mz).is_solid() && !past.block_at(site.face, mx, y + 1, mz).is_solid())?;
+        Some(VisionEntry { feet: BlockPos::new(site.face, mx, y, mz), site, holder })
     }
 
     /// Le temple le plus proche de la colonne (x, z) d'une face, cherché jusqu'à `max_blocks` blocs

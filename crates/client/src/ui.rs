@@ -46,6 +46,8 @@ pub enum UiAction {
     /// Le créateur vient de sceller la légende du héros (`UiState::take_sealed_legend`) : elle est
     /// à enregistrer
     LegendSealed,
+    /// `/vision` en solo : entrer dans la vision du temple le plus proche (`true`) ou en revenir
+    Vision(bool),
 }
 
 /// État de la partie en ligne, affiché dans la page Multijoueur

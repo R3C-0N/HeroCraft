@@ -50,6 +50,8 @@ pub enum Command {
     Weather(Option<Option<herocraft_common::WeatherKind>>),
     /// Saison et jour de l'année (`None`), ou passage au début d'une saison (hémisphère nord)
     Season(Option<herocraft_world::Season>),
+    /// Entre dans la vision du temple le plus proche (`true`) ou en revient
+    Vision(bool),
 }
 
 /// Une commande : nom, arguments, description (affichés par `/help`)
@@ -75,6 +77,7 @@ pub const COMMANDS: &[CommandHelp] = &[
     CommandHelp { name: "speed", usage: "/speed <factor>", description: "Movement speed multiplier (1 = normal, up to 20)" },
     CommandHelp { name: "summon", usage: "/summon <creature> [count]", description: "Spawn creatures in front of you" },
     CommandHelp { name: "heal", usage: "/heal", description: "Restore health, mana and stamina" },
+    CommandHelp { name: "vision", usage: "/vision [end]", description: "Enter the vision of the nearest temple, or leave it" },
     CommandHelp { name: "cast", usage: "/cast <skill>", description: "Cast a learned skill (Tab completes the name)" },
     CommandHelp { name: "xp", usage: "/xp <amount>", description: "Gain experience points" },
     CommandHelp { name: "list", usage: "/list", description: "List the players online" },
@@ -139,6 +142,8 @@ pub fn parse(line: &str) -> Result<Command, String> {
             Command::Summon { species: species.to_string(), count }
         }
         ("heal", []) => Command::Heal,
+        ("vision", []) => Command::Vision(true),
+        ("vision", ["end" | "leave" | "exit"]) => Command::Vision(false),
         ("cast", [skill]) => Command::Cast(skill.to_string()),
         ("xp" | "experience", [amount]) => {
             Command::Experience(amount.parse().ok().filter(|n| (1..=MAX_XP).contains(n)).ok_or_else(|| wrong(&format!("Invalid amount \"{amount}\" (1 to {MAX_XP})")))?)
@@ -330,7 +335,7 @@ mod tests {
             assert!(help(Some(c.name)).is_ok());
         }
         // Chaque commande sans argument obligatoire se lit telle quelle
-        for name in ["help", "spawn", "pos", "time", "seed", "planet", "fly", "heal", "list", "clear", "weather", "season"] {
+        for name in ["help", "spawn", "pos", "time", "seed", "planet", "fly", "heal", "vision", "list", "clear", "weather", "season"] {
             assert!(parse(&format!("/{name}")).is_ok(), "/{name}");
         }
     }
