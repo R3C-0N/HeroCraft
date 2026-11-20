@@ -145,6 +145,12 @@ fn draw_set_fingerprint(ids: &[LodMeshId]) -> u64 {
 const LOD_GPU_MESH_TTL: u64 = 120;
 
 pub struct State {
+    /// Temps figé par la vision (`time_frozen`) : le ciel s'arrête et l'image se teinte de violet
+    pub time_frozen: bool,
+    /// Part de l'effet du temps figé, qui suit `time_frozen` en fondu
+    pub frozen: f32,
+    /// Secondes depuis que le temps s'est figé (l'ondulation du Néant)
+    frozen_clock: f32,
     #[allow(dead_code)]
     pub window: Arc<Window>,
     pub surface: wgpu::Surface<'static>,
@@ -721,6 +727,9 @@ impl State {
             vsync_mode,
             novsync_mode,
             simulated_time: 0.0,
+            time_frozen: false,
+            frozen: 0.0,
+            frozen_clock: 0.0,
             last_uniform_time: std::time::Instant::now(),
             gpu_timer,
             render_timings: RenderTimings::default(),
@@ -834,7 +843,15 @@ impl State {
         let dt = now.duration_since(self.last_uniform_time).as_secs_f32();
         self.last_uniform_time = now;
         self.view_mode = camera.view_mode();
-        self.simulated_time += dt * lighting.moon_speed;
+        // Le temps figé de la vision vient et repart en un peu plus d'une seconde ; le ciel s'arrête
+        let step = dt / 1.2;
+        self.frozen = if self.time_frozen { (self.frozen + step).min(1.0) } else { (self.frozen - step).max(0.0) };
+        if self.frozen > 0.0 {
+            self.frozen_clock += dt;
+        } else {
+            self.frozen_clock = 0.0;
+        }
+        self.simulated_time += dt * lighting.moon_speed * (1.0 - self.frozen);
 
         let view_proj = camera.build_view_projection_matrix();
         let inv_view_proj = view_proj.inverse();
@@ -938,7 +955,8 @@ impl State {
     /// `overcast` : ciel voilé par la météo au joueur (0 à 1)
     pub fn update_post(&mut self, settings: &PostSettings, overcast: f32) {
         self.bloom_enabled = settings.bloom_enabled && settings.bloom_intensity > 0.0;
-        self.post.update(&self.queue, settings, overcast);
+        let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
+        self.post.update(&self.queue, settings, overcast, [self.frozen, self.frozen_clock, aspect]);
     }
 
     /// Synchronise les buffers GPU avec les feuilles LOD affichées : seuls les nouveaux maillages

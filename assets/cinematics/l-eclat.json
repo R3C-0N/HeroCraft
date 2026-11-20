@@ -1,0 +1,53 @@
+{
+  "title": "L'éclat",
+  "description": "À l'entrée dans la vision : le héros n'est qu'un soldat de l'armée qui se masse devant la grande porte. Un éclat de la Pierre du Néant murmure, et le temps s'arrête : tout se teinte de violet, le Néant ronge les bords du monde (`time_frozen`). La main revient au joueur dans le temps figé.",
+  "triggers": [{"event": "vision_entered"}],
+  "shots": [
+    {
+      "name": "L'armée se prépare",
+      "duration": 5.0,
+      "position": [[3.5, 7, -11], [2.2, 4, -7]],
+      "look_at": [[0, 2, 10], [0, 1.6, 6]],
+      "fov": [55, 50],
+      "ease": "out"
+    },
+    {
+      "name": "Le murmure",
+      "duration": 4.5,
+      "position": [[0.7, 1.75, 1.7], [0.45, 1.68, 1.15]],
+      "look_at": [0, 1.55, 0],
+      "fov": [42, 32],
+      "shake": 0.01,
+      "ease": "in_out"
+    },
+    {
+      "name": "Le temps figé",
+      "duration": 6.0,
+      "orbit": {"radius": [3.5, 6], "height": [0.4, 2.2], "angle": [170, 320]},
+      "look_at": [0, 1.4, 0],
+      "fov": [50, 56],
+      "ease": "linear"
+    },
+    {
+      "name": "Derrière le héros",
+      "duration": 3.0,
+      "position": [[1.6, 2.6, -4.2], [0, 2.0, -3.0]],
+      "look_at": [[0, 1.5, 0], [0, 1.6, 4]],
+      "fov": [56, 60],
+      "ease": "in_out"
+    }
+  ],
+  "fades": [
+    {"at": 0, "duration": 2.5, "from": 1, "to": 0},
+    {"at": 8.6, "duration": 0.25, "from": 0, "to": 0.7, "color": "#8A4FE0"},
+    {"at": 8.85, "duration": 1.4, "from": 0.7, "to": 0, "color": "#8A4FE0"}
+  ],
+  "captions": [
+    {"at": 0.6, "duration": 4.0, "text": "Le passé · devant la grande porte", "style": "place"},
+    {"at": 1.2, "duration": 3.6, "text": "L'armée se masse devant la porte. Tu n'es qu'un soldat parmi les autres.", "style": "narration"},
+    {"at": 5.4, "duration": 3.0, "text": "Un murmure, tout près. Une voix qui n'a rien d'humain.", "style": "narration"},
+    {"at": 10.0, "duration": 3.0, "text": "Le temps s'est arrêté.", "style": "narration"},
+    {"at": 13.4, "duration": 4.0, "text": "Quelque chose t'appelle, plus loin, entre les soldats figés.", "style": "narration"}
+  ],
+  "cues": [{"at": 8.6, "emit": "time_frozen"}]
+}

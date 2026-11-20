@@ -165,6 +165,7 @@ Le jeu envoie des événements au lecteur (`Cinematics::notify` dans le client, 
 
 | Événement | Envoyé par | Étiquettes |
 |---|---|---|
+| `vision_entered` | l'entrée dans la vision d'un temple (`/vision`) | aucune |
 | `stone_obtained` | les Pierres du Néant, quand le joueur en obtient une | `stone` (identifiant de l'objet : `voidStone`, `voidStoneFragment`), `kind` (`whole` ou `fragment`) ; position de la Pierre |
 
 ### Ce que la cinématique renvoie au jeu (`cues`, `on_end`)
@@ -177,6 +178,7 @@ Le jeu reçoit ces événements comme ceux qu'il envoie : ils peuvent aussi déc
 
 | Événement | Renvoyé par | Rôle attendu |
 |---|---|---|
+| `time_frozen` | `l-eclat`, au murmure de l'éclat | Le temps s'arrête : le monde se teinte de violet, le Néant ronge les bords de l'image, le ciel et les bêtes se figent. `time_resumed` le fait repartir. |
 | `vision_ended` | `fin-de-la-vision`, au plus blanc du fondu | Fin de la vision tutoriel : le jeu renvoie le joueur au présent (ruines du temple) et détruit la Pierre absorbée. |
 | `awakened` | `reveil-au-present`, à la fin | Le joueur a repris la main au présent. |
 
@@ -184,6 +186,7 @@ Le jeu reçoit ces événements comme ceux qu'il envoie : ils peuvent aussi déc
 
 | Fichier | Quand | Ce qu'elle montre |
 |---|---|---|
+| `l-eclat` | Entrée dans la vision (`vision_entered`) | Le héros n'est qu'un soldat devant la grande porte ; un éclat murmure et le temps s'arrête (`time_frozen`). (18,5 s) |
 | `fin-de-la-vision` | Pierre du Néant entière obtenue | La Pierre s'éveille, des souvenirs qui ne sont pas ceux du joueur, puis la lumière efface tout (fondu au blanc, `vision_ended`). Enchaîne sur `reveil-au-present`. (19,5 s) |
 | `essai-papier` | `/cinematic essai-papier` | Scène d'essai des cartes de papier : un paysage en couches qui glissent sous la caméra, puis une planète de feu derrière des nuages. (16 s) |
 | `genese` | À chaque lancement du jeu (`game_launched`), ou `/cinematic genese` | Le récit des origines, porté de la maquette `docs/cinematiques/genese.html` : environ 7 000 cartes de papier en dix scènes. Généré, ne pas modifier à la main (voir plus bas). (161 s) |

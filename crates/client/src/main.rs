@@ -667,9 +667,15 @@ fn main() {
                         let was_playing = cinematics.is_playing();
                         for event in cinematics.update(dt, &mut camera, &generator) {
                             info!("Événement de cinématique : {} {:?}", event.name, event.tags);
+                            state.time_frozen = cinematic::frozen_after(&event, state.time_frozen);
                             if event.name == cinematic::VISION_ENDED {
                                 if let Some(item) = vision_stone.take() {
                                     void_stones::absorb(item, &mut ui_state.inventory, &mut stone_events);
+                                }
+                                // Fin de la vision : retour au présent
+                                match net.as_mut() {
+                                    Some(client) => client.send_vision(false),
+                                    None => pending_actions.push(UiAction::Vision(false)),
                                 }
                             }
                         }
@@ -902,6 +908,9 @@ fn main() {
                                 match event {
                                     NetEvent::Vision { holder, feet } => {
                                         switch_epoch(holder, feet, None, None, &mut vision, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state);
+                                        if holder.is_some() {
+                                            cinematics.notify(&herocraft_common::cinematics::GameEvent::new(cinematic::VISION_ENTERED));
+                                        }
                                         block_interaction.invalidate();
                                         terrain_edited = true;
                                     }
@@ -997,7 +1006,8 @@ fn main() {
                                             block_interaction.invalidate();
                                         }
                                         // Morsures et charges des bêtes agressives
-                                        let hits = solo_creatures.tick_with_presences(dt, &generator, lod_manager.terrain_edits(), &[player]);
+                                        // Le temps figé de la vision arrête aussi les bêtes
+                                        let hits = solo_creatures.tick_with_presences(dt * (1.0 - state.frozen), &generator, lod_manager.terrain_edits(), &[player]);
                                         // Banc d'essai : les bêtes ne blessent pas le joueur
                                         for hit in hits.into_iter().filter(|_| bench.is_none()) {
                                             // Une garde levée pare le coup qui arrive de face, et riposte
@@ -1471,6 +1481,7 @@ fn main() {
                                             let feet = geometry.corner(entry.feet.face, entry.feet.x as f64 + 0.5, entry.feet.y as f64, entry.feet.z as f64 + 0.5).as_vec3();
                                             let back = camera.player_pos;
                                             switch_epoch(Some(entry.holder), feet, Some(back), None, &mut vision, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state);
+                                            cinematics.notify(&herocraft_common::cinematics::GameEvent::new(cinematic::VISION_ENTERED));
                                             block_interaction.invalidate();
                                         }
                                         None => ui_state.chat.error("No temple nearby"),
@@ -1961,6 +1972,10 @@ fn switch_epoch(
             }
         }
     };
+    // Le temps ne reste pas figé hors de la vision
+    if holder.is_none() {
+        state.time_frozen = false;
+    }
     lod_manager.clear(generator.planet.seed);
     camera.set_terrain(edits.clone());
     lod_manager.set_terrain_edits(edits);
@@ -2642,6 +2657,7 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
         Command::Event(text) => {
             let mut event = herocraft_common::cinematics::GameEvent::parse(&text).ok_or("Usage: /event <name> [key=value ...]")?;
             event.position = Some(game.camera.player_pos);
+            game.sky.time_frozen = cinematic::frozen_after(&event, game.sky.time_frozen);
             let started = game.cinematics.notify(&event);
             Ok(vec![format!("Event {} sent: {started} cinematic(s) triggered", event.name)])
         }

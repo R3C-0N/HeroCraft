@@ -57,6 +57,8 @@ const MIN_BLOOM_SIZE: u32 = 8;
 struct PostUniform {
     params: [f32; 4],
     mode: [u32; 4],
+    /// Temps figé : part de l'effet, horloge en secondes, largeur / hauteur
+    frozen: [f32; 4],
 }
 
 /// Textures dépendant de la taille de la fenêtre
@@ -126,7 +128,7 @@ impl PostProcess {
 
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Post Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[PostUniform { params: [1.0, 0.0, 1.0, 0.5], mode: [1, 0, 0, 0] }]),
+            contents: bytemuck::cast_slice(&[PostUniform { params: [1.0, 0.0, 1.0, 0.5], mode: [1, 0, 0, 0], frozen: [0.0; 4] }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -354,11 +356,13 @@ impl PostProcess {
     }
 
     /// `overcast` : ciel voilé par la météo (0 à 1), qui ternit les couleurs de toute l'image
-    pub fn update(&self, queue: &wgpu::Queue, settings: &PostSettings, overcast: f32) {
+    /// `frozen` : temps figé de la vision (part de l'effet, horloge en secondes, largeur / hauteur)
+    pub fn update(&self, queue: &wgpu::Queue, settings: &PostSettings, overcast: f32, frozen: [f32; 3]) {
         let bloom = if settings.bloom_enabled { settings.bloom_intensity } else { 0.0 };
         let uniform = PostUniform {
             params: [2f32.powf(settings.exposure_ev), bloom, settings.bloom_threshold, settings.bloom_knee],
             mode: [settings.tonemapper.shader_index(), u32::from(!self.output_is_srgb), overcast.clamp(0.0, 1.0).to_bits(), 0],
+            frozen: [frozen[0].clamp(0.0, 1.0), frozen[1], frozen[2], 0.0],
         };
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
