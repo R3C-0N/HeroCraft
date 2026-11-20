@@ -35,7 +35,7 @@
 //!
 //! Dans le passé, le temple se dresse au cœur de sa ville-souvenir, une ville en guerre dont on ne
 //! sort pas (voir `structures::memory_city`) : `PlanetWorldGenerator::memory_city` en donne le plan,
-//! le rassemblement de l'armée, la grande porte, les places des mini-boss, la porte de la citadelle et les postes
+//! le rassemblement de l'armée, la grande porte, les places des mini-boss, la porte de la ville haute (au fond, à l'opposé de la grande porte) et les postes
 //! des ennemis. Pour passer d'une époque à l'autre, `PlanetWorldGenerator::vision_chunks` donne
 //! tous les chunks à régénérer, ville comprise. Au présent, il ne reste de la ville que le temple.
 
@@ -439,9 +439,9 @@ mod tests {
         let past = present.with_epoch(Epoch::Past(holder));
         let city = past.memory_city(&site, holder).expect("la ville-souvenir du temple").clone();
         assert!(city.outer >= 42, "le rempart est assez large ({})", city.outer);
-        assert!(city.citadel > site.radius() + 10 && city.middle > city.citadel + 8 && city.outer > city.middle + 8);
+        assert!(city.court > site.radius() && city.inner > city.court + 10 && city.outer > city.inner + 12);
         assert_eq!(city.arenas.len(), 3);
-        assert!([Ring::Outskirts, Ring::Barracks, Ring::Citadel].iter().all(|r| city.posts.iter().any(|p| p.1 == *r)), "des ennemis dans chaque cercle");
+        assert!([Ring::Lower, Ring::Upper, Ring::Temple].iter().all(|r| city.posts.iter().any(|p| p.1 == *r)), "des ennemis dans chaque cercle");
         // L'armée se masse dehors, devant la grande porte, dans l'axe de l'entrée du temple
         let (dx, dz) = site.door().delta();
         let (cx, cz) = site.center();
@@ -453,7 +453,8 @@ mod tests {
         // Porte ouverte : depuis le rassemblement, on entre et on arrive dans l'arène
         let open = walk(&past, site.face, city.muster, city.center, (city.outer + 40) as f64, |_, _| false);
         assert!(reaches(&open, (arena.x, arena.z)), "on n'atteint pas l'arène depuis la porte");
-        assert!(reaches(&open, city.citadel_gate));
+        assert!(reaches(&open, city.inner_gate));
+        assert!(dx * (city.inner_gate.0 - cx) + dz * (city.inner_gate.1 - cz) < 0, "la porte de la ville haute est au fond");
         // Porte refermée derrière le joueur : on ne sort plus de la ville
         let inside = (city.gate.0 - 7 * dx, city.gate.1 - 7 * dz);
         let shut = city.gate_rect;
@@ -462,7 +463,7 @@ mod tests {
         assert!(escaped.is_empty(), "on sort de la ville par {:?}", &escaped[..escaped.len().min(5)]);
         assert!(reaches(&closed, (arena.x, arena.z)), "on n'atteint pas l'arène une fois la porte refermée");
         // La grande rue de l'axe est barrée : tout droit, on bute sur une barricade
-        let barred = (city.citadel + 2..city.outer - 3).any(|k| {
+        let barred = (city.inner + 4..city.outer - 3).any(|k| {
             let (x, z) = (cx + dx * k, cz + dz * k);
             let ground = past.sample_block_column(site.face, x, z).elevation.floor() as i32;
             past.block_at(site.face, x, ground, z).is_solid() && past.block_at(site.face, x, ground + 1, z).is_solid()
