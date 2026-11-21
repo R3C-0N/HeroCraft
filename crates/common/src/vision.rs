@@ -54,6 +54,17 @@ impl PresentSkills {
         stats.skills = self.skills;
         stats.skill_points = self.skill_points;
     }
+
+    /// Il revient au présent après avoir pris la force du cristal : il retrouve les siennes et
+    /// garde celles que l'éclat a éveillées (au plus haut rang des deux)
+    pub fn keep_awakened(self, stats: &mut CharacterStats) {
+        let awakened = std::mem::replace(&mut stats.skills, self.skills);
+        for (id, rank) in awakened {
+            let kept = stats.skills.entry(id).or_insert(0);
+            *kept = (*kept).max(rank);
+        }
+        stats.skill_points = self.skill_points;
+    }
 }
 
 /// Les nœuds du premier palier de la voie, sans prérequis : ce que l'éclat éveille
@@ -108,6 +119,23 @@ mod tests {
         present.restore(&mut stats);
         assert_eq!(stats.skills.get("seismicBreach"), Some(&2));
         assert!(!stats.skills.contains_key("heavyStrike"));
+        assert_eq!(stats.skill_points, 3);
+    }
+
+    #[test]
+    fn the_hero_who_took_the_crystal_keeps_its_power() {
+        let mut stats = CharacterStats::new(PlayerClass::Soldier);
+        stats.skills.insert("seismicBreach".into(), 2);
+        stats.skills.insert("heavyStrike".into(), 3);
+        stats.skill_points = 3;
+        let present = PresentSkills::set_aside(&mut stats);
+        awaken(&mut stats);
+        present.keep_awakened(&mut stats);
+        assert_eq!(stats.skills.get("seismicBreach"), Some(&2));
+        assert_eq!(stats.skills.get("heavyStrike"), Some(&3), "le rang le plus haut");
+        for id in first_skills(PlayerClass::Soldier) {
+            assert!(stats.skills.get(&id).is_some_and(|&r| r >= 1), "{id} gardée");
+        }
         assert_eq!(stats.skill_points, 3);
     }
 }

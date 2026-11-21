@@ -30,7 +30,7 @@ const WHISPER_REACH_BLOCKS: f32 = 45.0;
 /// Murmure le plus faible, tant qu'il n'a pas trouvé l'éclat : on l'entend toujours un peu
 const WHISPER_FLOOR: f32 = 0.12;
 /// Espèce des soldats figés
-const SOLDIER_SPECIES: &str = "garde";
+const SOLDIER_SPECIES: &str = "soldatAllie";
 /// Écart entre deux soldats d'un rang, en blocs
 const SOLDIER_SPACING_BLOCKS: f32 = 2.6;
 /// Les rangs débordent de tant de blocs autour du héros et de la roche
@@ -81,6 +81,8 @@ pub struct VisionTutorial {
     clock: f32,
     /// La charge qui suit l'éveil (porte, bélier, herse), quand la ville-souvenir est connue
     pub charge: Option<crate::vision_charge::VisionCharge>,
+    /// Passé la herse : les rues, les trois places, le héraut et la Pierre
+    pub assault: Option<crate::vision_assault::VisionAssault>,
 }
 
 impl VisionTutorial {
@@ -90,7 +92,7 @@ impl VisionTutorial {
         let present = std::mem::replace(inventory, Inventory::soldier_kit());
         let corners = geometry.block_corners(shard);
         let shard_center = (corners.iter().copied().sum::<glam::DVec3>() / 8.0).as_vec3();
-        Self { step: Step::Arriving, shard, shard_center, present_inventory: Some(present), soldiers: Vec::new(), whisper: 0.0, clock: 0.0, charge: None }
+        Self { step: Step::Arriving, shard, shard_center, present_inventory: Some(present), soldiers: Vec::new(), whisper: 0.0, clock: 0.0, charge: None, assault: None }
     }
 
     /// La roche à poser (avec `lod.set_block`) : le bloc et sa place

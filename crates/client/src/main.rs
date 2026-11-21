@@ -58,6 +58,7 @@ mod ui;
 mod ui_skin;
 #[cfg(test)]
 mod ui_snapshot;
+mod vision_assault;
 mod vision_charge;
 mod vision_tutorial;
 mod void_stones;
@@ -1246,6 +1247,26 @@ fn main() {
                                             charge.tick_hint(anim_dt);
                                         }
                                         apply_charge_events(charge_events, &mut camera, &generator, &mut lod_manager, &mut state, &mut solo_creatures, &mut skill_effects, &mut audio, &ui_state.audio_settings, &mut cinematics);
+                                        // Passé la herse : les rues, les trois places, le héraut, la Pierre
+                                        let sealed = t.charge.as_ref().is_some_and(|c| c.phase() == vision_charge::Phase::Sealed);
+                                        if let Some(assault) = t.assault.as_mut().filter(|_| sealed) {
+                                            let mut assault_events = Vec::new();
+                                            if assault.phase() == vision_assault::Phase::Waiting {
+                                                let allies: Vec<u64> = solo_creatures.creatures().iter().filter(|c| c.is_alive() && soldiers.contains(&c.id)).map(|c| c.id).collect();
+                                                assault.start(&allies);
+                                            }
+                                            let ground = |dir: glam::Vec3| dir * camera.ground_radius_at(dir, &generator);
+                                            assault.update(anim_dt, camera.player_pos, &mut solo_creatures, &ground, &mut assault_events);
+                                            if ui_state.vision_hint.is_none() && !cinematics.is_playing() {
+                                                ui_state.vision_hint = assault.hint(&solo_creatures);
+                                            }
+                                            // Le cristal appelle : le murmure revient, de plus en plus fort près de l'autel
+                                            if let Some(stone) = assault.calling() {
+                                                let near = 1.0 - (camera.player_pos.distance(stone) / block / 60.0).clamp(0.0, 1.0);
+                                                audio.set_whisper(0.25 + 0.75 * near, &ui_state.audio_settings);
+                                            }
+                                            apply_assault_events(assault_events, &mut camera, &generator, &mut lod_manager, &mut state, &mut skill_effects, &mut audio, &ui_state.audio_settings, &mut cinematics);
+                                        }
                                     }
                                     None => audio.set_whisper(0.0, &ui_state.audio_settings),
                                 }
@@ -1363,6 +1384,9 @@ fn main() {
                                 vision_stone = Some(item);
                             }
                             // L'éclat du tutoriel ramassé : le soldat s'éveille en héros
+                            if let Some(assault) = tutorial.as_mut().and_then(|t| t.assault.as_mut()) {
+                                assault.on_stone(&event);
+                            }
                             if tutorial.as_mut().is_some_and(|t| t.on_stone(&event)) {
                                 match net.as_mut() {
                                     Some(client) => {
@@ -1570,7 +1594,24 @@ fn main() {
                                     if let Some(back) = vision.as_ref().and_then(|v| v.back) {
                                         let storage = solo_terrain(current_seed).0;
                                         switch_epoch(None, back, None, storage, &mut vision, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state);
-                                        end_vision_tutorial(&mut tutorial, &mut ui_state, &mut solo_creatures);
+                                        // Le souvenir achevé : il revient dans un nuage de fumée violette
+                                        if end_vision_tutorial(&mut tutorial, &mut ui_state, &mut solo_creatures) {
+                                            let feet = camera.player_pos;
+                                            skill_effects.start(["shadowSmoke", "mistCloud"].into_iter().map(|effect| skill_play::VisualCue {
+                                                effect: effect.into(),
+                                                anchor: herocraft_common::skills::Anchor::Feet,
+                                                caster: None,
+                                                point: feet,
+                                                creature: None,
+                                                aim: glam::Vec3::ZERO,
+                                                hold: None,
+                                                area_blocks: 1.0,
+                                                travel: None,
+                                                delay: 0.0,
+                                                projectile: None,
+                                            }).collect());
+                                            ui_state.chat.info("Tu reviens au présent sans souvenir de la bataille. Mais sa force est restée en toi, et un éclat du cristal brille dans ton sac.");
+                                        }
                                         block_interaction.invalidate();
                                     }
                                 }
@@ -1603,7 +1644,16 @@ fn main() {
                                     if let Some(client) = net.as_mut() {
                                         client.send_respawn();
                                     }
-                                    camera.spawn_on_ground(&generator);
+                                    // Tombé dans le souvenir : il se relève au dernier point franchi
+                                    let checkpoint = tutorial.as_ref().and_then(|t| t.assault.as_ref()).and_then(|a| a.checkpoint());
+                                    match checkpoint {
+                                        Some(dir) => {
+                                            let dir = dir.normalize_or_zero();
+                                            camera.player_pos = dir * camera.ground_radius_at(dir, &generator);
+                                            camera.sync_orbit_to_ground();
+                                        }
+                                        None => camera.spawn_on_ground(&generator),
+                                    }
                                     audio.reset_player();
                                     info!("Réapparition au point d'apparition.");
                                 }
@@ -2033,6 +2083,7 @@ fn begin_vision_tutorial(
             lod.set_block(generator, pos, block);
         }
         tutorial.charge = Some(charge);
+        tutorial.assault = Some(vision_assault::VisionAssault::new(city, &entry.site, geometry));
     }
     if let Some((world, registry)) = solo {
         ui_state.player.enter_vision();
@@ -2132,13 +2183,80 @@ fn apply_charge_events(
 
 /// Le tutoriel de la vision s'achève (retour au présent) : l'inventaire et les compétences du
 /// présent reviennent, les soldats figés s'en vont
-fn end_vision_tutorial(tutorial: &mut Option<vision_tutorial::VisionTutorial>, ui_state: &mut UiState, solo: &mut herocraft_world::CreatureWorld) {
-    let Some(t) = tutorial.take() else { return };
-    for id in t.end(&mut ui_state.inventory) {
+///
+/// Rend vrai pour un souvenir achevé (la Pierre prise) : le héros garde alors la force que
+/// l'éclat a éveillée et revient avec un éclat du cristal
+fn end_vision_tutorial(tutorial: &mut Option<vision_tutorial::VisionTutorial>, ui_state: &mut UiState, solo: &mut herocraft_world::CreatureWorld) -> bool {
+    let Some(t) = tutorial.take() else { return false };
+    let completed = t.assault.as_ref().is_some_and(|a| a.completed());
+    let fighters: Vec<u64> = t.assault.as_ref().map(|a| a.creatures().collect()).unwrap_or_default();
+    for id in fighters.into_iter().chain(t.end(&mut ui_state.inventory)) {
         solo.despawn(id);
     }
-    ui_state.player.leave_vision();
+    if completed {
+        ui_state.player.leave_vision_with_power();
+        if let Some(shard) = herocraft_common::StoneKind::Fragment.item() {
+            ui_state.inventory.add(shard);
+        }
+    } else {
+        ui_state.player.leave_vision();
+    }
     ui_state.vision_hint = None;
+    completed
+}
+
+/// Applique ce que l'assaut de la ville demande : effets, événements de cinématique, blocs
+/// (la Pierre sur l'autel), héros repoussé vers le centre d'une place, secousses et grondements
+#[allow(clippy::too_many_arguments)]
+fn apply_assault_events(
+    events: Vec<vision_assault::AssaultEvent>,
+    camera: &mut OrbitCamera,
+    generator: &herocraft_world::PlanetWorldGenerator,
+    lod: &mut PlanetLodManager,
+    state: &mut State,
+    effects: &mut effects::Effects,
+    audio: &mut audio::Audio,
+    settings: &audio::AudioSettings,
+    cinematics: &mut cinematic::Cinematics,
+) {
+    use vision_assault::AssaultEvent;
+    let mut remesh = false;
+    for event in events {
+        match event {
+            AssaultEvent::Effect(effect, point, hold) => effects.start(vec![skill_play::VisualCue {
+                effect: effect.into(),
+                anchor: herocraft_common::skills::Anchor::Area,
+                caster: None,
+                point,
+                creature: None,
+                aim: glam::Vec3::ZERO,
+                hold,
+                area_blocks: 1.0,
+                travel: None,
+                delay: 0.0,
+                projectile: None,
+            }]),
+            AssaultEvent::Notify(name, at) => {
+                cinematics.notify(&herocraft_common::cinematics::GameEvent::new(name).at(at));
+            }
+            AssaultEvent::Blocks(blocks) => {
+                for (pos, id) in blocks {
+                    remesh |= lod.set_block(generator, pos, id);
+                }
+            }
+            AssaultEvent::Push(delta) => {
+                let feet = camera.player_pos + delta;
+                let dir = feet.normalize_or_zero();
+                camera.player_pos = dir * camera.ground_radius_at(dir, generator).max(feet.length());
+                camera.sync_orbit_to_ground();
+            }
+            AssaultEvent::Shake(amount) => camera.hurt(amount),
+            AssaultEvent::Rumble(amount) => audio.thunder(amount, settings),
+        }
+    }
+    if remesh {
+        state.sync_lod_meshes(lod);
+    }
 }
 
 /// Une vision de temple tient le monde du présent de côté

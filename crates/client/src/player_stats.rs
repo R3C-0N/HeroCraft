@@ -123,6 +123,14 @@ impl PlayerStats {
         }
     }
 
+    /// En solo, il revient d'une vision achevée : ses compétences du présent, plus celles que
+    /// l'éclat a éveillées
+    pub fn leave_vision_with_power(&mut self) {
+        if let Some(present) = self.present_skills.take() {
+            present.keep_awakened(&mut self.stats);
+        }
+    }
+
     /// Avance les jauges de `dt` secondes (le sprint consomme l'endurance) et coupe le sprint du
     /// joueur épuisé jusqu'à ce qu'il ait repris son souffle
     pub fn tick(&mut self, dt: f32, camera: &mut OrbitCamera) {

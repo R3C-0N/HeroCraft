@@ -140,7 +140,6 @@ impl VisionCharge {
         Self { siege, geometry, phase: Phase::Waiting, timer: 0.0, hits: 0, ram_forward: false, soldiers: Vec::new() }
     }
 
-    #[allow(dead_code)]
     pub fn phase(&self) -> Phase {
         self.phase
     }

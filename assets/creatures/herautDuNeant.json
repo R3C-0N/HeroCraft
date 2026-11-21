@@ -1,0 +1,54 @@
+{
+  "name": "Héraut du Néant",
+  "description": "Seul au centre de l'arène du temple, il attend le héros. Une Pierre du Néant l'a transformé : il devient le monstre du Néant (boss final de la vision).",
+  "tint": [
+    0.75,
+    0.5,
+    1.2
+  ],
+  "armor": 500,
+  "resist": 500,
+  "body": {
+    "half_width": 0.3,
+    "half_length": 0.3,
+    "height": 1.85
+  },
+  "walk_speed": 0,
+  "health": 1000,
+  "activity": "always",
+  "humanoid": true,
+  "model": {
+    "animations": {
+      "travaille": {
+        "cycle": 2.0,
+        "pause": {
+          "poids": 0,
+          "duree": [
+            4,
+            10
+          ]
+        }
+      },
+      "discute": {
+        "cycle": 1.6,
+        "pause": {
+          "poids": 0,
+          "duree": [
+            3,
+            8
+          ]
+        }
+      },
+      "sommeil": {
+        "cycle": 4,
+        "pause": {
+          "poids": 0,
+          "duree": [
+            10,
+            20
+          ]
+        }
+      }
+    }
+  }
+}

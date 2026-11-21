@@ -1,0 +1,62 @@
+{
+  "name": "Soldat du cercle",
+  "description": "Pendant le combat d'un mini-boss de la vision, alliés et ennemis s'écartent et forment un cercle qui repousse tout le monde vers le centre.",
+  "tint": [
+    0.95,
+    0.9,
+    0.85
+  ],
+  "armor": 200,
+  "resist": 200,
+  "body": {
+    "half_width": 0.3,
+    "half_length": 0.3,
+    "height": 1.85
+  },
+  "walk_speed": 0,
+  "health": 1000,
+  "activity": "always",
+  "humanoid": true,
+  "collision": {
+    "shape": "circle",
+    "size": [
+      0.6,
+      0.6
+    ],
+    "resistance": 1
+  },
+  "model": {
+    "animations": {
+      "travaille": {
+        "cycle": 2.0,
+        "pause": {
+          "poids": 0,
+          "duree": [
+            4,
+            10
+          ]
+        }
+      },
+      "discute": {
+        "cycle": 1.6,
+        "pause": {
+          "poids": 0,
+          "duree": [
+            3,
+            8
+          ]
+        }
+      },
+      "sommeil": {
+        "cycle": 4,
+        "pause": {
+          "poids": 0,
+          "duree": [
+            10,
+            20
+          ]
+        }
+      }
+    }
+  }
+}
