@@ -9,8 +9,8 @@
 //! vision ») :
 //! - **dehors, devant la grande porte**, l'armée se masse (`MemoryCity::muster`) sur un terrain
 //!   dégagé (`MemoryCity::field`). La porte du rempart (`MemoryCity::gate`) s'ouvre dans l'axe de
-//!   l'entrée du temple. Le jeu la referme derrière le joueur (écran de fumée) ; le générateur la
-//!   laisse ouverte. Le rempart est plus haut que tout le reste, sans autre porte ni échelle ;
+//!   l'entrée du temple. Le jeu la ferme, le bélier de la charge l'enfonce et une herse tombe
+//!   derrière le joueur (`vision_charge`, côté client) ; le générateur la laisse ouverte. Le rempart est plus haut que tout le reste, sans autre porte ni échelle ;
 //! - **la ville basse**, entre le rempart et une seconde muraille : des maisons pauvres, petites,
 //!   serrées les unes contre les autres, beaucoup brûlées ;
 //! - **la seconde muraille** est fermée du côté de la grande porte : sa seule porte
