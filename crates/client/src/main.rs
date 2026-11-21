@@ -58,6 +58,7 @@ mod ui;
 mod ui_skin;
 #[cfg(test)]
 mod ui_snapshot;
+mod vision_charge;
 mod vision_tutorial;
 mod void_stones;
 mod voxel_mesh;
@@ -1233,6 +1234,18 @@ fn main() {
                                         }
                                         audio.set_whisper(t.whisper(), &ui_state.audio_settings);
                                         t.push_quads(camera.eye_position(), block, &mut effect_quads);
+                                        // La charge : au cri du capitaine (le temps reparti après l'éveil)
+                                        let awakened = t.step() == vision_tutorial::Step::Awakened && !state.time_frozen;
+                                        let soldiers = t.soldiers().to_vec();
+                                        let mut charge_events = Vec::new();
+                                        if let Some(charge) = t.charge.as_mut() {
+                                            if awakened {
+                                                charge.start(&soldiers, &mut charge_events);
+                                            }
+                                            charge.update(anim_dt, camera.player_pos, &mut charge_events);
+                                            charge.tick_hint(anim_dt);
+                                        }
+                                        apply_charge_events(charge_events, &mut camera, &generator, &mut lod_manager, &mut state, &mut solo_creatures, &mut skill_effects, &mut audio, &ui_state.audio_settings, &mut cinematics);
                                     }
                                     None => audio.set_whisper(0.0, &ui_state.audio_settings),
                                 }
@@ -2013,16 +2026,108 @@ fn begin_vision_tutorial(
     if let Some((pos, rock)) = tutorial.shard_rock() {
         lod.set_block(generator, pos, rock);
     }
+    // La grande porte, fermée, et le bélier qui l'attend
+    if let Some(city) = generator.memory_city(&entry.site, entry.holder) {
+        let charge = vision_charge::VisionCharge::new(vision_charge::Siege::of(city, entry.site.face, generator), geometry);
+        for (pos, block) in charge.initial_blocks() {
+            lod.set_block(generator, pos, block);
+        }
+        tutorial.charge = Some(charge);
+    }
     if let Some((world, registry)) = solo {
         ui_state.player.enter_vision();
         if let Some(species) = registry.find(vision_tutorial::VisionTutorial::soldier_species()) {
             let block = geometry.block_height as f32;
-            let ids: Vec<u64> = tutorial.soldier_spots(feet, block).into_iter().map(|dir| world.spawn(species, dir * camera.ground_radius_at(dir, generator))).collect();
+            let ids: Vec<u64> = tutorial.soldier_spots(feet, block).into_iter().map(|dir| {
+                    let feet = dir * camera.ground_radius_at(dir, generator);
+                    let yaw = tutorial.charge.as_ref().map_or(0.0, |c| c.facing_gate(feet));
+                    world.spawn_led(species, feet, yaw)
+                })
+                .collect();
             info!("Tutoriel de la vision : {} soldats figés, l'éclat en {:?}.", ids.len(), entry.shard);
             tutorial.add_soldiers(ids);
         }
     }
     Some(tutorial)
+}
+
+/// Applique ce que la charge de la vision demande : blocs de la porte et du bélier, soldats qui
+/// courent (solo), coups de bélier, porte qui vole en éclats, rayon violet et herse
+#[allow(clippy::too_many_arguments)]
+fn apply_charge_events(
+    events: Vec<vision_charge::ChargeEvent>,
+    camera: &mut OrbitCamera,
+    generator: &herocraft_world::PlanetWorldGenerator,
+    lod: &mut PlanetLodManager,
+    state: &mut State,
+    solo: &mut herocraft_world::CreatureWorld,
+    effects: &mut effects::Effects,
+    audio: &mut audio::Audio,
+    settings: &audio::AudioSettings,
+    cinematics: &mut cinematic::Cinematics,
+) {
+    use vision_charge::ChargeEvent;
+    if events.is_empty() {
+        return;
+    }
+    let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
+    let player = camera.player_pos;
+    let distance = |p: glam::Vec3| player.distance(p) / block;
+    let cue = |effect: &str, point: glam::Vec3, hold: Option<f32>| skill_play::VisualCue {
+        effect: effect.into(),
+        anchor: herocraft_common::skills::Anchor::Area,
+        caster: None,
+        point,
+        creature: None,
+        aim: glam::Vec3::ZERO,
+        hold,
+        area_blocks: 1.0,
+        travel: None,
+        delay: 0.0,
+        projectile: None,
+    };
+    let mut remesh = false;
+    for event in events {
+        match event {
+            ChargeEvent::Blocks(blocks) => {
+                for (pos, id) in blocks {
+                    remesh |= lod.set_block(generator, pos, id);
+                }
+            }
+            ChargeEvent::March(orders) => {
+                for (id, toward, pace) in orders {
+                    solo.send_to(id, toward, pace);
+                }
+            }
+            ChargeEvent::RamHit(at) => {
+                audio.block_broken(audio::synth::Material::Wood, distance(at) * 0.5, settings);
+                audio.block_hit(audio::synth::Material::Wood, settings);
+                effects.start(vec![cue("dustPuff", at, None), cue("impactSpark", at, None)]);
+                if distance(at) < 30.0 {
+                    camera.hurt(0.35);
+                }
+            }
+            ChargeEvent::GateBroken(at) => {
+                for _ in 0..3 {
+                    audio.block_broken(audio::synth::Material::Wood, distance(at) * 0.3, settings);
+                }
+                audio.thunder(0.5, settings);
+                effects.start(vec![cue("groundBurst", at, None), cue("dustPuff", at, None), cue("armorShatter", at, None), cue("shockRing", at, None)]);
+                camera.hurt(0.8);
+                cinematics.notify(&herocraft_common::cinematics::GameEvent::new(cinematic::GATE_BROKEN).at(at));
+            }
+            ChargeEvent::Beam(at) => effects.start(vec![cue("rayonDuNeant", at, Some(3600.0))]),
+            ChargeEvent::Sealed(at) => {
+                audio.block_placed(audio::synth::Material::Stone, distance(at), settings);
+                audio.thunder(0.25, settings);
+                effects.start(vec![cue("dustPuff", at, None)]);
+                camera.hurt(0.4);
+            }
+        }
+    }
+    if remesh {
+        state.sync_lod_meshes(lod);
+    }
 }
 
 /// Le tutoriel de la vision s'achève (retour au présent) : l'inventaire et les compétences du

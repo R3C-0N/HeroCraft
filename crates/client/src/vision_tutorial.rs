@@ -79,6 +79,8 @@ pub struct VisionTutorial {
     whisper: f32,
     /// Secondes depuis le début, pour la lueur
     clock: f32,
+    /// La charge qui suit l'éveil (porte, bélier, herse), quand la ville-souvenir est connue
+    pub charge: Option<crate::vision_charge::VisionCharge>,
 }
 
 impl VisionTutorial {
@@ -88,7 +90,7 @@ impl VisionTutorial {
         let present = std::mem::replace(inventory, Inventory::soldier_kit());
         let corners = geometry.block_corners(shard);
         let shard_center = (corners.iter().copied().sum::<glam::DVec3>() / 8.0).as_vec3();
-        Self { step: Step::Arriving, shard, shard_center, present_inventory: Some(present), soldiers: Vec::new(), whisper: 0.0, clock: 0.0 }
+        Self { step: Step::Arriving, shard, shard_center, present_inventory: Some(present), soldiers: Vec::new(), whisper: 0.0, clock: 0.0, charge: None }
     }
 
     /// La roche à poser (avec `lod.set_block`) : le bloc et sa place
@@ -162,6 +164,11 @@ impl VisionTutorial {
         self.soldiers.extend(ids);
     }
 
+    /// Les soldats posés en solo
+    pub fn soldiers(&self) -> &[u64] {
+        &self.soldiers
+    }
+
     /// Espèce des soldats figés
     pub fn soldier_species() -> &'static str {
         SOLDIER_SPECIES
@@ -218,8 +225,10 @@ impl VisionTutorial {
     }
 
     /// La roche ne cède qu'à la pioche : le joueur qui la frappe d'autre chose n'avance pas
+    /// (la porte, le bélier et la herse de la charge, eux, ne cèdent à rien)
     pub fn blocks_mining(&self, target: Option<BlockPos>, inventory: &Inventory) -> bool {
-        self.step != Step::Awakened && target == Some(self.shard) && !inventory.holds_pickaxe()
+        let siege = target.is_some_and(|pos| self.charge.as_ref().is_some_and(|c| c.protects(pos)));
+        siege || (self.step != Step::Awakened && target == Some(self.shard) && !inventory.holds_pickaxe())
     }
 
     /// Volume du murmure, de 0 à 1
@@ -231,7 +240,8 @@ impl VisionTutorial {
     pub fn hint(&self, controls: &Controls, aiming_rock: bool) -> Option<String> {
         let key = |a: Action| controls.action_key_label(a);
         Some(match self.step {
-            Step::Arriving | Step::Awakened => return None,
+            Step::Arriving => return None,
+            Step::Awakened => return self.charge.as_ref().and_then(|c| c.hint()),
             Step::Walk => format!(
                 "Un murmure t'appelle, un peu plus loin entre les soldats figés. Suis-le : {} {} {} {} pour marcher.",
                 key(Action::MoveForward),

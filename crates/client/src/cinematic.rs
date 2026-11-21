@@ -58,6 +58,8 @@ pub const TIME_FROZEN: &str = "time_frozen";
 pub const TIME_RESUMED: &str = "time_resumed";
 /// Le tutoriel de la vision : l'éclat est ramassé, le soldat s'éveille en héros (`l-eveil`)
 pub const VISION_AWAKENED: &str = "vision_awakened";
+/// La charge de la vision : le bélier a fait voler la grande porte en éclats (`la-porte-cede`)
+pub const GATE_BROKEN: &str = "gate_broken";
 
 /// Le temps est-il figé après l'événement `event`, s'il l'était (`frozen`) avant ?
 pub fn frozen_after(event: &GameEvent, frozen: bool) -> bool {

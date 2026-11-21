@@ -2139,6 +2139,24 @@ impl CreatureWorld {
         self.creatures.retain(|c| !(c.id == id && c.summoner.is_some()));
     }
 
+    /// Fait apparaître une créature que le jeu mène lui-même (`send_to`) : ni rangée dans une zone,
+    /// ni enregistrée (les soldats de la vision)
+    pub fn spawn_led(&mut self, species: usize, feet: Vec3, yaw: f32) -> u64 {
+        self.spawn_managed(species, feet, yaw, 0)
+    }
+
+    /// Envoie la créature menée `id` vers `toward` (direction depuis le centre de la planète), à
+    /// `pace` fois sa marche
+    pub fn send_to(&mut self, id: u64, toward: Vec3, pace: f32) {
+        if let Some(c) = self.creatures.iter_mut().find(|c| c.id == id && c.managed) {
+            c.guide = Some(toward.normalize_or_zero());
+            c.guide_pace = pace;
+            c.arrived = false;
+            c.sleeping = false;
+            c.timer = 0.0;
+        }
+    }
+
     /// Retire une créature posée pour un temps (les soldats figés du tutoriel de la vision)
     pub fn despawn(&mut self, id: u64) {
         self.remove(id);
