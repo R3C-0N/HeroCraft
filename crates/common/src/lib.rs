@@ -14,6 +14,7 @@ pub mod profiler;
 pub mod protocol;
 pub mod skills;
 pub mod villager;
+pub mod vision;
 pub mod void_stones;
 pub mod voxel;
 pub mod weapons;

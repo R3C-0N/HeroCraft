@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 22;
+pub const PROTOCOL_VERSION: u32 = 23;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -133,6 +133,9 @@ pub enum ClientPacket {
     Respawn,
     /// Commande de test : entrer dans la vision du temple le plus proche (`true`) ou en revenir
     Vision { enter: bool },
+    /// Dans la vision, le joueur a ramassé l'éclat du tutoriel : il s'éveille en héros et les
+    /// premières compétences de sa voie s'ouvrent (`vision::awaken`)
+    VisionAwaken,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

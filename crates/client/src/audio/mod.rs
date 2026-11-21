@@ -22,6 +22,8 @@ pub const AUDIO_FILE: &str = "config/audio.json";
 const VARIANTS: usize = 4;
 /// Durée de la boucle de vent
 const WIND_LOOP_SECONDS: f32 = 12.0;
+/// Durée de la boucle du murmure de l'éclat, en secondes
+const WHISPER_LOOP_SECONDS: f32 = 9.0;
 /// Durée de la boucle de pluie
 const RAIN_LOOP_SECONDS: f32 = 8.0;
 /// Au-delà, un bloc changé par un autre joueur ne s'entend plus (en blocs)
@@ -168,6 +170,8 @@ struct Output {
     device: MixerDeviceSink,
     wind: Player,
     rain: Player,
+    /// Murmure de l'éclat du tutoriel de la vision, muet ailleurs
+    whisper: Player,
     bank: SoundBank,
 }
 
@@ -198,8 +202,11 @@ impl Audio {
                 let rain = Player::connect_new(device.mixer());
                 rain.set_volume(0.0);
                 rain.append(buffer(synth::rain_loop(RAIN_LOOP_SECONDS, 1)).repeat_infinite());
+                let whisper = Player::connect_new(device.mixer());
+                whisper.set_volume(0.0);
+                whisper.append(buffer(synth::whisper_loop(WHISPER_LOOP_SECONDS, 1)).repeat_infinite());
                 info!("Son prêt ({} ms de synthèse).", started.elapsed().as_millis());
-                Some(Output { device, wind, rain, bank })
+                Some(Output { device, wind, rain, whisper, bank })
             }
             Err(e) => {
                 warn!("Aucune sortie audio ({}) : le jeu continue sans le son.", e);
@@ -294,6 +301,13 @@ impl Audio {
     /// Coup de tonnerre d'un éclair, de force 0 à 1 (lointain : faible)
     pub fn thunder(&mut self, loudness: f32, settings: &AudioSettings) {
         self.play(|b| &b.thunders, settings.ambience_gain() * 0.9 * loudness.clamp(0.0, 1.0), 0.12);
+    }
+
+    /// Volume du murmure de l'éclat, de 0 (muet) à 1 (tout près)
+    pub fn set_whisper(&mut self, level: f32, settings: &AudioSettings) {
+        if let Some(output) = &self.output {
+            output.whisper.set_volume(level.clamp(0.0, 1.0) * settings.effects_gain() * 0.9);
+        }
     }
 
     /// Son d'essai joué en réglant les volumes
@@ -494,6 +508,7 @@ mod tests {
         write("oiseau", synth::bird_song(0));
         write("grillons", synth::cricket_chirps(0));
         write("vent", synth::wind_loop(WIND_LOOP_SECONDS, 1));
+        write("murmure", synth::whisper_loop(WHISPER_LOOP_SECONDS, 1));
         write("pluie", synth::rain_loop(RAIN_LOOP_SECONDS, 1));
         write("tonnerre", synth::thunder(0));
         println!("Sons écrits dans {}", dir.display());

@@ -56,6 +56,8 @@ pub const VISION_ENTERED: &str = "vision_entered";
 /// Renvoyé par `l-eclat` : le temps s'arrête ; `TIME_RESUMED` le fait repartir
 pub const TIME_FROZEN: &str = "time_frozen";
 pub const TIME_RESUMED: &str = "time_resumed";
+/// Le tutoriel de la vision : l'éclat est ramassé, le soldat s'éveille en héros (`l-eveil`)
+pub const VISION_AWAKENED: &str = "vision_awakened";
 
 /// Le temps est-il figé après l'événement `event`, s'il l'était (`frozen`) avant ?
 pub fn frozen_after(event: &GameEvent, frozen: bool) -> bool {

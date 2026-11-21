@@ -110,6 +110,10 @@ pub struct Vision {
     edits: TerrainEdits,
     /// Là où le joueur se tenait avant la vision : il y revient en sortant
     back: Vec3,
+    /// Ses compétences du présent, rendues au retour (il vit la vision en simple soldat)
+    present_skills: herocraft_common::vision::PresentSkills,
+    /// L'éclat du tutoriel a déjà éveillé ses compétences
+    awakened: bool,
 }
 
 /// Connexion ouverte qui n'a pas encore envoyé `Connect`
@@ -693,6 +697,7 @@ impl Server {
                 info!("{} change le ciel (temps {:?}, météo {:?}).", player.name, time, forced);
                 self.set_sky(time, forced);
             }
+            ClientPacket::VisionAwaken => self.awaken_in_vision(id),
             ClientPacket::Vision { enter: true } => {
                 if let Err(reason) = self.enter_vision(id) {
                     if let Some(player) = self.players.get(&id) {
@@ -1091,7 +1096,11 @@ impl Server {
     }
 
     fn leave(&mut self, id: u64, reason: &str) {
-        let Some(player) = self.players.remove(&id) else { return };
+        let Some(mut player) = self.players.remove(&id) else { return };
+        // Ses compétences du présent lui reviennent, celles de la vision s'effacent
+        if let Some(vision) = player.vision.as_mut() {
+            std::mem::take(&mut vision.present_skills).restore(&mut player.stats);
+        }
         self.skill_runner.forget_with(id, &mut self.creatures);
         info!("{} a quitté la partie ({reason}).", player.name);
         // Parti en pleine vision : il revient là où il l'avait commencée
@@ -1121,12 +1130,33 @@ impl Server {
         let rank = Culture::ALL.iter().position(|&c| c == holder).expect("peuple connu") as u8;
         let player = self.players.get_mut(&id).expect("joueur en ligne");
         info!("{} entre dans la vision du temple {:?} ({}, {}), tenu par les {}.", player.name, site.face, site.center().0, site.center().1, holder.name());
-        player.vision = Some(Box::new(Vision { site, holder, generator, edits: TerrainEdits::new(None), back }));
+        // Un simple soldat : ses compétences sont mises de côté jusqu'à l'éveil
+        let present_skills = herocraft_common::vision::PresentSkills::set_aside(&mut player.stats);
+        // L'éclat du tutoriel, pris dans sa roche, sur le terrain de l'armée
+        let edits = TerrainEdits::new(None);
+        if let Some(rock) = herocraft_common::blocks().find(herocraft_common::vision::SHARD_ROCK) {
+            edits.set_block(&generator, entry.shard, rock);
+        }
+        player.vision = Some(Box::new(Vision { site, holder, generator, edits, back, present_skills, awakened: false }));
         player.position = Some(feet);
         player.connection.send(&ServerPacket::Vision { holder: Some(rank), feet });
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
         // Les autres ne le voient plus
         self.broadcast(&ServerPacket::PlayerLeft { player_id: id });
         Ok(())
+    }
+
+    /// Le joueur `id` a ramassé l'éclat de sa vision : les premières compétences de sa voie
+    /// s'ouvrent, une seule fois
+    fn awaken_in_vision(&mut self, id: u64) {
+        let Some(player) = self.players.get_mut(&id) else { return };
+        let Some(vision) = player.vision.as_mut() else { return };
+        if std::mem::replace(&mut vision.awakened, true) {
+            return;
+        }
+        let names = herocraft_common::vision::awaken(&mut player.stats);
+        info!("{} s'éveille dans la vision : {}.", player.name, names.join(", "));
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
     }
 
     /// Ramène le joueur `id` de sa vision, là où il l'avait commencée ; ses blocs de la vision
@@ -1134,6 +1164,8 @@ impl Server {
     pub fn leave_vision(&mut self, id: u64) {
         let Some(player) = self.players.get_mut(&id) else { return };
         let Some(vision) = player.vision.take() else { return };
+        vision.present_skills.restore(&mut player.stats);
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
         player.position = Some(vision.back);
         player.connection.send(&ServerPacket::Vision { holder: None, feet: vision.back });
         info!("{} revient de la vision.", player.name);

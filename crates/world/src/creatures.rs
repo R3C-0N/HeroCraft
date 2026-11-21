@@ -2139,6 +2139,11 @@ impl CreatureWorld {
         self.creatures.retain(|c| !(c.id == id && c.summoner.is_some()));
     }
 
+    /// Retire une créature posée pour un temps (les soldats figés du tutoriel de la vision)
+    pub fn despawn(&mut self, id: u64) {
+        self.remove(id);
+    }
+
     /// Retire une créature (elle rentre chez elle pour de bon, ou s'éloigne de tous les joueurs)
     pub(crate) fn remove(&mut self, id: u64) {
         self.creatures.retain(|c| c.id != id);

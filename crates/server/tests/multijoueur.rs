@@ -664,10 +664,30 @@ fn un_joueur_vit_seul_la_vision_du_temple_puis_revient() {
         _ => None,
     });
     let holder = herocraft_world::Culture::ALL[holder.expect("une vision") as usize];
+    // Un simple soldat, sans compétence ; l'éclat ramassé, les premières s'ouvrent
+    let soldier = pump(&mut server, &alice, |p| match p {
+        ServerPacket::StatsUpdate(stats) => Some(stats),
+        _ => None,
+    });
+    assert!(soldier.skills.is_empty());
+    alice.send(&ClientPacket::VisionAwaken);
+    let hero = pump(&mut server, &alice, |p| match p {
+        ServerPacket::StatsUpdate(stats) => Some(stats),
+        _ => None,
+    });
+    assert_eq!(hero.skills.len(), herocraft_common::vision::first_skills(hero.class).len());
+    assert!(herocraft_common::skills().castable(&hero).next().is_some());
     let past = generator.with_epoch(herocraft_world::Epoch::Past(holder));
     let city = past.memory_city(&site, holder).expect("la ville-souvenir").clone();
     let at = geometry.block_at_point(inside.as_dvec3()).unwrap();
     assert_eq!((at.face, at.x, at.z), (site.face, city.muster.0, city.muster.1));
+    // L'éclat du tutoriel luit sur le terrain de l'armée, à une douzaine de blocs, posé au sol
+    let entry = generator.vision_entry(at.face, at.x, at.z, 2048, herocraft_world::Culture::Humains).expect("l'entrée de la vision");
+    let shard = entry.shard;
+    assert!(city.field.contains(shard.x, shard.z), "{shard:?}");
+    let away = (((shard.x - at.x).pow(2) + (shard.z - at.z).pow(2)) as f64).sqrt();
+    assert!((10.0..=16.0).contains(&away), "{away}");
+    assert!(past.block_at(shard.face, shard.x, shard.y - 1, shard.z).is_solid());
     pump(&mut server, &bob, |p| matches!(p, ServerPacket::PlayerLeft { player_id } if player_id == alice_id).then_some(()));
 
     // Elle casse le sol du passé sous ses pieds : elle seule le voit, le présent n'a pas bougé
@@ -684,6 +704,11 @@ fn un_joueur_vit_seul_la_vision_du_temple_puis_revient() {
 
     // Elle revient là où elle était, et Bob la revoit
     alice.send(&ClientPacket::Vision { enter: false });
+    let present_stats = pump(&mut server, &alice, |p| match p {
+        ServerPacket::StatsUpdate(stats) => Some(stats),
+        _ => None,
+    });
+    assert!(present_stats.skills.is_empty(), "les compétences de la vision s'effacent");
     let back = pump(&mut server, &alice, |p| match p {
         ServerPacket::Vision { holder: None, feet } => Some(feet),
         _ => None,

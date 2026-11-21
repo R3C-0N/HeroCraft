@@ -2,6 +2,7 @@
   "title": "L'éclat",
   "description": "À l'entrée dans la vision : le héros n'est qu'un soldat de l'armée qui se masse devant la grande porte. Un éclat de la Pierre du Néant murmure, et le temps s'arrête : tout se teinte de violet, le Néant ronge les bords du monde (`time_frozen`). La main revient au joueur dans le temps figé.",
   "triggers": [{"event": "vision_entered"}],
+  "once": false,
   "shots": [
     {
       "name": "L'armée se prépare",

@@ -75,7 +75,15 @@ pub struct VisionEntry {
     pub holder: Culture,
     /// Bloc où se tiennent les pieds du héros à son arrivée
     pub feet: BlockPos,
+    /// Bloc où luit l'éclat de la Pierre du Néant du tutoriel : sur le terrain de l'armée, à
+    /// l'écart du héros et un peu en arrière, pour qu'il traverse les rangs pour l'atteindre
+    pub shard: BlockPos,
 }
+
+/// L'éclat du tutoriel est à tant de blocs sur le côté du point de rassemblement…
+const SHARD_SIDE_BLOCKS: f64 = 12.0;
+/// … et à tant de blocs en arrière, loin de la porte
+const SHARD_BACK_BLOCKS: f64 = 5.0;
 
 /// Un temple de la planète, tel que les deux époques le partagent
 #[derive(Debug, Clone, Copy)]
@@ -274,10 +282,22 @@ impl PlanetWorldGenerator {
         let site = self.nearest_temple(face, x, z, max_blocks)?;
         let holder = site.holder_for(player);
         let past = self.with_epoch(Epoch::Past(holder));
-        let (mx, mz) = past.memory_city(&site, holder)?.muster;
-        let ground = past.sample_block_column(site.face, mx, mz).elevation.floor() as i32;
-        let y = (ground..ground + 64).find(|&y| !past.block_at(site.face, mx, y, mz).is_solid() && !past.block_at(site.face, mx, y + 1, mz).is_solid())?;
-        Some(VisionEntry { feet: BlockPos::new(site.face, mx, y, mz), site, holder })
+        let city = past.memory_city(&site, holder)?;
+        let (mx, mz) = city.muster;
+        // Les premiers pieds libres de la colonne (x, z), au-dessus du sol
+        let standing = |x: i32, z: i32| {
+            let ground = past.sample_block_column(site.face, x, z).elevation.floor() as i32;
+            (ground..ground + 64).find(|&y| !past.block_at(site.face, x, y, z).is_solid() && !past.block_at(site.face, x, y + 1, z).is_solid())
+        };
+        let y = standing(mx, mz)?;
+        // Dos à la porte, puis sur le côté
+        let (bx, bz) = ((mx - city.gate.0) as f64, (mz - city.gate.1) as f64);
+        let len = (bx * bx + bz * bz).sqrt().max(1.0);
+        let (bx, bz) = (bx / len, bz / len);
+        let sx = (mx as f64 - bz * SHARD_SIDE_BLOCKS + bx * SHARD_BACK_BLOCKS).round() as i32;
+        let sz = (mz as f64 + bx * SHARD_SIDE_BLOCKS + bz * SHARD_BACK_BLOCKS).round() as i32;
+        let shard = BlockPos::new(site.face, sx, standing(sx, sz).unwrap_or(y), sz);
+        Some(VisionEntry { feet: BlockPos::new(site.face, mx, y, mz), shard, site, holder })
     }
 
     /// Le temple le plus proche de la colonne (x, z) d'une face, cherché jusqu'à `max_blocks` blocs

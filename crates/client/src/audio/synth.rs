@@ -350,6 +350,50 @@ pub fn wind_loop(seconds: f32, seed: u32) -> Vec<f32> {
     normalize(out, 0.6)
 }
 
+/// Murmure de l'éclat de la Pierre du Néant, en boucle : un souffle chuchoté (bruit passé dans
+/// deux formants de voyelle, haché en syllabes qui ne disent rien) sur un bourdon grave et
+/// dissonant qui ondule. La fin se fond dans le début.
+pub fn whisper_loop(seconds: f32, seed: u32) -> Vec<f32> {
+    let mut rng = Noise::new(seed ^ 0x5EC7);
+    let n = samples(seconds);
+    let fade = samples(1.0).min(n / 4);
+    let total = n + fade;
+    let mut raw = vec![0.0; total];
+    let (mut f1, mut f2, mut air) = (BandPass::new(), BandPass::new(), OnePole::new());
+    // Syllabes : début, durée, formants (Hz)
+    let mut syllables = Vec::new();
+    let mut t = 0.2;
+    while t < seconds + 1.0 {
+        let length = 0.12 + 0.28 * rng.unit();
+        let vowel = [(700.0, 1200.0), (350.0, 2300.0), (450.0, 900.0), (300.0, 800.0), (550.0, 1800.0)][(rng.unit() * 5.0) as usize % 5];
+        syllables.push((t, length, vowel));
+        // Des mots, puis des silences
+        t += length + if rng.unit() < 0.25 { 0.6 + 0.9 * rng.unit() } else { 0.04 + 0.08 * rng.unit() };
+    }
+    let mut current = 0;
+    for (i, s) in raw.iter_mut().enumerate() {
+        let t = i as f32 / SAMPLE_RATE as f32;
+        while current + 1 < syllables.len() && syllables[current].0 + syllables[current].1 < t {
+            current += 1;
+        }
+        let (start, length, (a, b)) = syllables[current];
+        let local = ((t - start) / length).clamp(0.0, 1.0);
+        let env = if t < start { 0.0 } else { (local * std::f32::consts::PI).sin().powf(0.6) };
+        let noise = rng.next();
+        let voice = f1.process(noise, a, 6.0) * 0.8 + f2.process(noise, b, 8.0) * 0.5 + (noise - air.low(noise, 4000.0)) * 0.15;
+        // Bourdon : quinte un peu fausse, qui respire lentement (périodes ramenées à la boucle)
+        let breath = 0.6 + 0.4 * (TAU * 2.0 * t / seconds).sin();
+        let hum = ((TAU * 98.0 * t).sin() + 0.6 * (TAU * 146.0 * t).sin() + 0.3 * (TAU * 207.5 * t).sin()) * 0.05 * breath;
+        *s = voice * env + hum;
+    }
+    let mut out = raw[..n].to_vec();
+    for i in 0..fade {
+        let k = i as f32 / fade as f32;
+        out[i] = out[i] * k + raw[n + i] * (1.0 - k);
+    }
+    normalize(out, 0.55)
+}
+
 /// Pluie en boucle : un souffle doux (bruit filtré) semé de petits impacts de gouttes. Comme le
 /// vent, la fin se fond dans le début.
 pub fn rain_loop(seconds: f32, seed: u32) -> Vec<f32> {

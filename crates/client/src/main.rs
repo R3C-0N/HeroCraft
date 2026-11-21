@@ -58,6 +58,7 @@ mod ui;
 mod ui_skin;
 #[cfg(test)]
 mod ui_snapshot;
+mod vision_tutorial;
 mod void_stones;
 mod voxel_mesh;
 mod weather;
@@ -275,6 +276,8 @@ fn main() {
     let mut stone_events = herocraft_common::StoneEvents::new();
     // La dernière Pierre entière obtenue, qu'absorbe la fin de sa vision (`vision_ended`)
     let mut vision_stone: Option<herocraft_common::ItemId> = None;
+    // Le tutoriel de la vision (« L'éclat ») : le soldat, la roche à l'éclat et ses consignes
+    let mut tutorial: Option<vision_tutorial::VisionTutorial> = None;
     // Pierres du Néant posées près du joueur : leur fenêtre sur le néant et leurs poussières
     let mut void_sites = void_stones::VoidStoneSites::new();
     let game_start = Instant::now();
@@ -879,7 +882,12 @@ fn main() {
                                     ui_state.chat.server(&assault.warning());
                                 }
                             }
-                            let action = if striking.is_some() || shooting { None } else { block_interaction.tick(dt) };
+                            // La roche à l'éclat ne cède qu'à la pioche
+                            let bare_hands = tutorial.as_ref().is_some_and(|t| t.blocks_mining(block_interaction.target().map(|h| h.block), &ui_state.inventory));
+                            if bare_hands {
+                                block_interaction.pause_mining();
+                            }
+                            let action = if striking.is_some() || shooting || bare_hands { None } else { block_interaction.tick(dt) };
                             if let Some(block) = block_interaction.take_hit() {
                                 audio.block_hit(audio::synth::Material::of(block), &ui_state.audio_settings);
                             }
@@ -909,7 +917,13 @@ fn main() {
                                     NetEvent::Vision { holder, feet } => {
                                         switch_epoch(holder, feet, None, None, &mut vision, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state);
                                         if holder.is_some() {
+                                            if tutorial.is_none() {
+                                                tutorial = begin_vision_tutorial(feet, &camera, &generator, &mut lod_manager, &mut ui_state, None);
+                                                state.sync_lod_meshes(&lod_manager);
+                                            }
                                             cinematics.notify(&herocraft_common::cinematics::GameEvent::new(cinematic::VISION_ENTERED));
+                                        } else {
+                                            end_vision_tutorial(&mut tutorial, &mut ui_state, &mut solo_creatures);
                                         }
                                         block_interaction.invalidate();
                                         terrain_edited = true;
@@ -1205,6 +1219,23 @@ fn main() {
                                 let geometry = herocraft_world::BlockGeometry::new(camera.base_radius as f64);
                                 void_sites.update(anim_dt, lod_manager.terrain_edits(), &geometry, camera.player_pos);
                                 void_sites.push_quads(game_start.elapsed().as_secs_f32(), camera.eye_position(), block, &mut effect_quads);
+                                // Le tutoriel de la vision : ses étapes, sa consigne, le murmure et la lueur de l'éclat
+                                ui_state.vision_hint = None;
+                                match tutorial.as_mut() {
+                                    Some(t) => {
+                                        let outcome = t.update(anim_dt, camera.player_pos, block, cinematics.is_playing(), state.time_frozen, &ui_state.inventory, &generator, lod_manager.terrain_edits());
+                                        if outcome.freeze {
+                                            state.time_frozen = true;
+                                        }
+                                        let aiming_rock = block_interaction.target().is_some_and(|h| Some(h.block) == t.shard_rock().map(|(p, _)| p));
+                                        if !cinematics.is_playing() {
+                                            ui_state.vision_hint = t.hint(&ui_state.controls, aiming_rock);
+                                        }
+                                        audio.set_whisper(t.whisper(), &ui_state.audio_settings);
+                                        t.push_quads(camera.eye_position(), block, &mut effect_quads);
+                                    }
+                                    None => audio.set_whisper(0.0, &ui_state.audio_settings),
+                                }
                             }
                             state.update_effects(&effect_quads);
                             state.set_creature_frame(&frame);
@@ -1218,6 +1249,7 @@ fn main() {
                             let addr = pending_join.take().map(|p| p.addr).unwrap_or_default();
                             match result {
                                 Ok(world) => {
+                                    end_vision_tutorial(&mut tutorial, &mut ui_state, &mut solo_creatures);
                                     if vision.take().is_some() {
                                         generator = generator.with_epoch(herocraft_world::Epoch::Present);
                                         lod_manager.clear(current_seed);
@@ -1316,6 +1348,36 @@ fn main() {
                             // `vision_ended` la fait absorber
                             if let herocraft_common::StoneEvent::Obtained { kind: herocraft_common::StoneKind::Whole, item, .. } = event {
                                 vision_stone = Some(item);
+                            }
+                            // L'éclat du tutoriel ramassé : le soldat s'éveille en héros
+                            if tutorial.as_mut().is_some_and(|t| t.on_stone(&event)) {
+                                match net.as_mut() {
+                                    Some(client) => {
+                                        client.send_vision_awaken();
+                                        ui_state.chat.info("La force de l'éclat t'envahit : tes premières compétences s'ouvrent.");
+                                    }
+                                    None => {
+                                        let names = herocraft_common::vision::awaken(&mut ui_state.player.stats);
+                                        let stats = ui_state.player.stats.clone();
+                                        ui_state.skill_bar.fill_learned(&stats);
+                                        ui_state.chat.info(format!("La force de l'éclat t'envahit : {} s'ouvrent.", names.join(", ")));
+                                    }
+                                }
+                                let (_, forward, _, _) = camera.look_vectors();
+                                skill_effects.start(vec![skill_play::VisualCue {
+                                    effect: "eclatEveil".into(),
+                                    anchor: herocraft_common::skills::Anchor::Feet,
+                                    caster: None,
+                                    point: camera.player_pos,
+                                    creature: None,
+                                    aim: forward,
+                                    hold: None,
+                                    area_blocks: 1.0,
+                                    travel: None,
+                                    delay: 0.0,
+                                    projectile: None,
+                                }]);
+                                cinematics.notify(&herocraft_common::cinematics::GameEvent::new(cinematic::VISION_AWAKENED).at(camera.player_pos));
                             }
                             if let Some(cinematic_event) = void_stones::cinematic_event(&event) {
                                 cinematics.notify(&cinematic_event);
@@ -1481,6 +1543,10 @@ fn main() {
                                             let feet = geometry.corner(entry.feet.face, entry.feet.x as f64 + 0.5, entry.feet.y as f64, entry.feet.z as f64 + 0.5).as_vec3();
                                             let back = camera.player_pos;
                                             switch_epoch(Some(entry.holder), feet, Some(back), None, &mut vision, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state);
+                                            if tutorial.is_none() {
+                                                tutorial = begin_vision_tutorial(feet, &camera, &generator, &mut lod_manager, &mut ui_state, Some((&mut solo_creatures, &creature_registry)));
+                                                state.sync_lod_meshes(&lod_manager);
+                                            }
                                             cinematics.notify(&herocraft_common::cinematics::GameEvent::new(cinematic::VISION_ENTERED));
                                             block_interaction.invalidate();
                                         }
@@ -1491,6 +1557,7 @@ fn main() {
                                     if let Some(back) = vision.as_ref().and_then(|v| v.back) {
                                         let storage = solo_terrain(current_seed).0;
                                         switch_epoch(None, back, None, storage, &mut vision, &mut generator, &mut chunk_cache, &mut lod_manager, &mut camera, &mut state);
+                                        end_vision_tutorial(&mut tutorial, &mut ui_state, &mut solo_creatures);
                                         block_interaction.invalidate();
                                     }
                                 }
@@ -1614,6 +1681,7 @@ fn main() {
                                     pending_join = Some(PendingJoin::start(addr, pseudo));
                                 }
                                 UiAction::LeaveServer => {
+                                    end_vision_tutorial(&mut tutorial, &mut ui_state, &mut solo_creatures);
                                     if vision.take().is_some() {
                                         generator = generator.with_epoch(herocraft_world::Epoch::Present);
                                         lod_manager.clear(current_seed);
@@ -1656,6 +1724,7 @@ fn main() {
                                     info!("Retour à la partie solo (planète #{}).", current_seed);
                                 }
                                 UiAction::GenerateNewPlanet => {
+                                    end_vision_tutorial(&mut tutorial, &mut ui_state, &mut solo_creatures);
                                     vision = None;
                                     let _ = chunk_cache.flush_dirty();
                                     save_terrain_edits(&lod_manager);
@@ -1924,6 +1993,47 @@ fn solo_terrain(seed: u64) -> (Option<herocraft_voxel_engine::ChunkStorage>, Arc
     let storage = herocraft_voxel_engine::ChunkStorage::new(solo_save_dir(seed)).ok();
     let edits = Arc::new(herocraft_world::TerrainEdits::new(storage.clone()));
     (storage, edits)
+}
+
+/// Le tutoriel de la vision commence aux pieds `feet` : le soldat revêt son paquetage, l'éclat
+/// est posé dans sa roche, et en solo (`solo`) les compétences du présent sont mises de côté et
+/// les soldats figés posés autour de lui (en ligne, le serveur tient les compétences)
+fn begin_vision_tutorial(
+    feet: glam::Vec3,
+    camera: &OrbitCamera,
+    generator: &herocraft_world::PlanetWorldGenerator,
+    lod: &mut PlanetLodManager,
+    ui_state: &mut UiState,
+    solo: Option<(&mut herocraft_world::CreatureWorld, &herocraft_common::CreatureRegistry)>,
+) -> Option<vision_tutorial::VisionTutorial> {
+    let geometry = herocraft_world::BlockGeometry::new(camera.base_radius as f64);
+    let at = geometry.block_at_point(feet.as_dvec3())?;
+    let entry = generator.vision_entry(at.face, at.x, at.z, VISION_TEMPLE_BLOCKS, herocraft_world::Culture::Humains)?;
+    let mut tutorial = vision_tutorial::VisionTutorial::begin(entry.shard, &geometry, &mut ui_state.inventory);
+    if let Some((pos, rock)) = tutorial.shard_rock() {
+        lod.set_block(generator, pos, rock);
+    }
+    if let Some((world, registry)) = solo {
+        ui_state.player.enter_vision();
+        if let Some(species) = registry.find(vision_tutorial::VisionTutorial::soldier_species()) {
+            let block = geometry.block_height as f32;
+            let ids: Vec<u64> = tutorial.soldier_spots(feet, block).into_iter().map(|dir| world.spawn(species, dir * camera.ground_radius_at(dir, generator))).collect();
+            info!("Tutoriel de la vision : {} soldats figés, l'éclat en {:?}.", ids.len(), entry.shard);
+            tutorial.add_soldiers(ids);
+        }
+    }
+    Some(tutorial)
+}
+
+/// Le tutoriel de la vision s'achève (retour au présent) : l'inventaire et les compétences du
+/// présent reviennent, les soldats figés s'en vont
+fn end_vision_tutorial(tutorial: &mut Option<vision_tutorial::VisionTutorial>, ui_state: &mut UiState, solo: &mut herocraft_world::CreatureWorld) {
+    let Some(t) = tutorial.take() else { return };
+    for id in t.end(&mut ui_state.inventory) {
+        solo.despawn(id);
+    }
+    ui_state.player.leave_vision();
+    ui_state.vision_hint = None;
 }
 
 /// Une vision de temple tient le monde du présent de côté

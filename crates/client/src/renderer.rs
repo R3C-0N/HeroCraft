@@ -1548,7 +1548,7 @@ mod tests {
 
     #[test]
     fn test_camera_uniform_size_and_alignment() {
-        assert_eq!(std::mem::size_of::<CameraUniform>(), 304);
+        assert_eq!(std::mem::size_of::<CameraUniform>(), 336);
         assert_eq!(std::mem::align_of::<CameraUniform>(), 16);
     }
 

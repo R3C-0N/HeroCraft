@@ -502,6 +502,11 @@ impl NetClient {
         self.connection.send(&ClientPacket::Vision { enter });
     }
 
+    /// L'éclat de la vision est ramassé : le serveur ouvre les premières compétences
+    pub fn send_vision_awaken(&mut self) {
+        self.connection.send(&ClientPacket::VisionAwaken);
+    }
+
     /// `/time set`, `/season`, `/weather` : le ciel du serveur change pour tous
     pub fn send_sky(&mut self, time: Option<f64>, forced: Option<Option<herocraft_common::WeatherKind>>) {
         self.connection.send(&ClientPacket::SetSky { time, forced });

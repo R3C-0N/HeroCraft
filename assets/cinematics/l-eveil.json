@@ -1,0 +1,47 @@
+{
+  "title": "L'éveil",
+  "description": "Le soldat ramasse l'éclat de la Pierre du Néant : des rayons de lumière jaillissent du contact, il devient un héros et ses premières compétences s'ouvrent. Puis le temps repart d'un coup sur le cri de la charge (`time_resumed`).",
+  "triggers": [{"event": "vision_awakened"}],
+  "once": false,
+  "shots": [
+    {
+      "name": "Le contact",
+      "duration": 2.6,
+      "position": [[0.9, 1.5, 1.6], [0.6, 1.4, 1.1]],
+      "look_at": [0, 1.2, 0],
+      "fov": [40, 30],
+      "shake": 0.02,
+      "ease": "out"
+    },
+    {
+      "name": "Les rayons",
+      "duration": 4.0,
+      "orbit": {"radius": [2.4, 5.5], "height": [0.2, 2.8], "angle": [150, 290]},
+      "look_at": [[0, 1.2, 0], [0, 3.5, 0]],
+      "fov": [44, 58],
+      "shake": 0.04,
+      "ease": "in_out"
+    },
+    {
+      "name": "Un héros",
+      "duration": 2.4,
+      "position": [[1.4, 2.2, -3.6], [0.4, 1.9, -2.6]],
+      "look_at": [[0, 1.6, 0], [0, 1.6, 6]],
+      "fov": [58, 62],
+      "ease": "in_out"
+    }
+  ],
+  "fades": [
+    {"at": 0.15, "duration": 0.2, "from": 0, "to": 0.85, "color": "#F4E6FF"},
+    {"at": 0.35, "duration": 1.6, "from": 0.85, "to": 0, "color": "#F4E6FF"},
+    {"at": 8.5, "duration": 0.15, "from": 0, "to": 0.5, "color": "#FFFFFF"},
+    {"at": 8.65, "duration": 0.6, "from": 0.5, "to": 0, "color": "#FFFFFF"}
+  ],
+  "captions": [
+    {"at": 0.9, "duration": 2.6, "text": "La lumière jaillit de l'éclat et remonte le long de ton bras.", "style": "narration"},
+    {"at": 3.8, "duration": 2.8, "text": "Tu n'es plus un simple soldat.", "style": "title"},
+    {"at": 6.8, "duration": 1.8, "text": "Le temps se remet en marche.", "style": "narration"},
+    {"at": 8.6, "duration": 2.2, "text": "À la charge !", "speaker": "Le capitaine"}
+  ],
+  "cues": [{"at": 8.6, "emit": "time_resumed"}]
+}
