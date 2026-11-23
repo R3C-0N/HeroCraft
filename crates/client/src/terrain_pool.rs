@@ -298,7 +298,11 @@ impl TerrainPool {
             indirect_capacity: 1024,
             indirect_cursor: 0,
             multi_draw,
-            gpu_cull: (multi_draw && device.limits().max_compute_workgroups_per_dimension > 0 && !cpu_culling_forced()).then(|| GpuCull::new(device)),
+            gpu_cull: {
+                let gpu = multi_draw && device.limits().max_compute_workgroups_per_dimension > 0 && !cpu_culling_forced();
+                log::info!("Relief : morceaux triés sur le {}", if gpu { "GPU" } else { "CPU" });
+                gpu.then(|| GpuCull::new(device))
+            },
         }
     }
 

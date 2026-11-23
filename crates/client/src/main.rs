@@ -1126,7 +1126,7 @@ fn main() {
                                 beasts.push(creatures::CreatureView { id: *id, species: creature_registry.find(form), feet: *feet, yaw: *yaw, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None });
                             }
                             creature_animator.update(&beasts, &creature_registry, &creature_models, anim_dt, block);
-                            let mut frame = creatures::build_frame(&beasts, &creature_registry, &creature_models, &creature_animator, block, if state.gpu_skinning() { creatures::Skinning::Gpu } else { creatures::Skinning::Cpu });
+                            let mut frame = creatures::build_frame(&beasts, &creature_registry, &creature_models, &creature_animator, block, if state.gpu_skinning() { creatures::Skinning::Gpu } else { creatures::Skinning::Cpu }, Some(camera.eye_position()));
                             villager_animator.update(&creature_views, &creature_registry, anim_dt, block);
                             state.begin_villagers();
                             {

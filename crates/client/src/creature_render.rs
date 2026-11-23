@@ -521,8 +521,8 @@ mod tests {
             }
             animator.update(&moving, &registry, &models, 1.0 / 60.0, 1.0);
         }
-        let cpu = build_frame(&moving, &registry, &models, &animator, 1.0, Skinning::Cpu);
-        let gpu = build_frame(&moving, &registry, &models, &animator, 1.0, Skinning::Gpu);
+        let cpu = build_frame(&moving, &registry, &models, &animator, 1.0, Skinning::Cpu, None);
+        let gpu = build_frame(&moving, &registry, &models, &animator, 1.0, Skinning::Gpu, None);
         assert!(gpu.vertices.is_empty());
         assert_eq!(gpu.skinned_vertices as usize, cpu.vertices.len());
         assert_eq!(gpu.indices.iter().map(|i| i & !SKINNED_INDEX).collect::<Vec<_>>(), cpu.indices);
