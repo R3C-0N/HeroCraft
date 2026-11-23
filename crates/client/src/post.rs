@@ -190,7 +190,7 @@ impl PostProcess {
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
-                cache: None,
+                cache: crate::shaders::pipeline_cache(),
             })
         };
         let additive = wgpu::BlendState {

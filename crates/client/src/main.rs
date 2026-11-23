@@ -329,6 +329,7 @@ fn main() {
                         ui_state.inventory.save();
                         ui_state.player.save();
                         write_profile_report();
+                        crate::shaders::save_pipeline_cache();
                         target.exit();
                     }
 
@@ -1123,7 +1124,7 @@ fn main() {
                                 beasts.push(creatures::CreatureView { id: *id, species: creature_registry.find(form), feet: *feet, yaw: *yaw, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None });
                             }
                             creature_animator.update(&beasts, &creature_registry, &creature_models, anim_dt, block);
-                            let mut frame = creatures::build_frame(&beasts, &creature_registry, &creature_models, &creature_animator, block, creatures::Skinning::Gpu);
+                            let mut frame = creatures::build_frame(&beasts, &creature_registry, &creature_models, &creature_animator, block, if state.gpu_skinning() { creatures::Skinning::Gpu } else { creatures::Skinning::Cpu });
                             villager_animator.update(&creature_views, &creature_registry, anim_dt, block);
                             state.begin_villagers();
                             {
@@ -1283,7 +1284,7 @@ fn main() {
                             }
                             state.update_effects(&effect_quads);
                             state.set_creature_frame(&frame);
-                            creature_vertices = frame.vertices.len();
+                            creature_vertices = frame.vertices.len() + frame.skinned_vertices as usize;
                             probe.section("créatures : animation et maillage", section);
                         }
 
@@ -1696,6 +1697,7 @@ fn main() {
                                     ui_state.player.save();
                                     info!("Bouton cliqué : Sauvegarde des chunks et fermeture du jeu.");
                                     write_profile_report();
+                                    crate::shaders::save_pipeline_cache();
                                     target.exit();
                                 }
                                 UiAction::ToggleVsync => {
@@ -1901,6 +1903,7 @@ fn main() {
                             if b.after_frame(dt, &record, shown, creature_vertices) {
                                 info!("Banc d'essai terminé : rapport dans ./benchmark/.");
                                 write_profile_report();
+                                crate::shaders::save_pipeline_cache();
                                 target.exit();
                             }
                         }

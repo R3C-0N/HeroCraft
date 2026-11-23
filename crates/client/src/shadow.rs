@@ -311,7 +311,7 @@ impl Shadows {
             }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
-            cache: None,
+            cache: crate::shaders::pipeline_cache(),
         });
 
         let cloud_shader = crate::shaders::create_shader_module(device, "Cloud Shadow Shader", include_str!("cloud_shader.wgsl"), "cloud_shader.wgsl");
@@ -350,7 +350,7 @@ impl Shadows {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
-            cache: None,
+            cache: crate::shaders::pipeline_cache(),
         });
 
         // Lecture par le shader du terrain

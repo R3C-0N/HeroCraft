@@ -303,7 +303,7 @@ impl Atmosphere {
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
-                cache: None,
+                cache: crate::shaders::pipeline_cache(),
             });
             Lut { view, pipeline, bind_group }
         };
@@ -358,7 +358,7 @@ impl Atmosphere {
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
-                cache: None,
+                cache: crate::shaders::pipeline_cache(),
             });
             CameraLut {
                 inscatter: create_view(&format!("{label} Inscatter"), size),
@@ -493,7 +493,7 @@ impl Atmosphere {
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
-                cache: None,
+                cache: crate::shaders::pipeline_cache(),
             })
         };
         let god_rays_trace_pipeline = fullscreen_pipeline(

@@ -105,7 +105,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         }),
         multisample: wgpu::MultisampleState { count: target.sample_count, mask: !0, alpha_to_coverage_enabled: false },
         multiview: None,
-        cache: None,
+        cache: crate::shaders::pipeline_cache(),
     })
 }
 

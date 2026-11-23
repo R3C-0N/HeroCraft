@@ -327,7 +327,7 @@ impl ScenePipelines {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
-            cache: None,
+            cache: crate::shaders::pipeline_cache(),
         });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -371,7 +371,7 @@ impl ScenePipelines {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
-            cache: None,
+            cache: crate::shaders::pipeline_cache(),
         });
 
         // -------------------------------------------------------------
@@ -420,7 +420,7 @@ impl ScenePipelines {
                 alpha_to_coverage_enabled: false,
             },
             multiview: None,
-            cache: None,
+            cache: crate::shaders::pipeline_cache(),
         });
 
         Self { sky: sky_pipeline, terrain: render_pipeline, cloud: cloud_pipeline }
@@ -479,8 +479,9 @@ impl State {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     // Cible HDR allégée de la passe 3D quand la carte sait y dessiner (`SceneTarget`)
+                    // Cache des pipelines du pilote (Vulkan) quand il existe : `shaders::init_pipeline_cache`
                     required_features: GpuTimer::wanted_features(adapter.features())
-                        | (adapter.features() & wgpu::Features::RG11B10UFLOAT_RENDERABLE),
+                        | (adapter.features() & (wgpu::Features::RG11B10UFLOAT_RENDERABLE | wgpu::Features::PIPELINE_CACHE)),
                     required_limits,
                     label: Some("HeroCraft Device"),
                     memory_hints: Default::default(),
@@ -489,6 +490,7 @@ impl State {
             )
             .await
             .expect("Échec d'obtention du device WGPU");
+        crate::shaders::init_pipeline_cache(&adapter_info, &device);
         let gpu_timer = GpuTimer::new(&device, &queue);
 
         // 5. Configuration de la surface
@@ -1072,7 +1074,14 @@ impl State {
 
     /// Modèles des espèces : leurs os sont appliqués sur le GPU (`creatures::Skinning::Gpu`)
     pub fn set_creature_models(&mut self, models: &crate::creatures::CreatureModels) {
-        self.creatures.set_models(&self.device, models);
+        if self.gpu_skinning() {
+            self.creatures.set_models(&self.device, models);
+        }
+    }
+
+    /// Les os des créatures peuvent être appliqués sur le GPU (compute shaders disponibles)
+    pub fn gpu_skinning(&self) -> bool {
+        self.device.limits().max_compute_workgroups_per_dimension > 0 && self.device.limits().max_storage_buffers_per_shader_stage >= 6
     }
 
     /// Planche du héros vu à la troisième personne

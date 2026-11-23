@@ -128,7 +128,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         }),
         multisample: wgpu::MultisampleState { count: target.sample_count, mask: !0, alpha_to_coverage_enabled: false },
         multiview: None,
-        cache: None,
+        cache: crate::shaders::pipeline_cache(),
     })
 }
 
@@ -385,7 +385,7 @@ impl GpuSkinning {
             module: &module,
             entry_point: Some("cs_skin"),
             compilation_options: Default::default(),
-            cache: None,
+            cache: crate::shaders::pipeline_cache(),
         });
         use wgpu::util::DeviceExt;
         let placeholder = [crate::creatures::GpuModelVertex { position: [0.0; 4], normal: [0.0; 4], weights: [0.0; 4], joints: [0; 4] }];
