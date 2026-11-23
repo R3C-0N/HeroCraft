@@ -1035,6 +1035,13 @@ impl State {
 
         if complete {
             self.terrain_fingerprint = draw_set_fingerprint(&new_list);
+            if self.terrain_pool.gpu_culling() {
+                // Table du tri sur le GPU, du plus proche au plus lointain (ordre de la passe 3D)
+                let eye = self.camera_eye;
+                let mut table: Vec<&GpuMesh> = new_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).collect();
+                table.sort_by_cached_key(|m| m.center.distance_squared(eye).to_bits());
+                self.terrain_pool.set_draw_table(&self.device, &self.queue, table.into_iter().map(|m| (&m.slot, m.center, m.radius, m.max_radius)));
+            }
             self.lod_draw_list = new_list;
         } else {
             // Ensemble incomplet : l'ancien reste affiché, ses maillages sont protégés
@@ -1237,17 +1244,32 @@ impl State {
         // 0. Tables de l'atmosphère (seulement si la planète ou les réglages ont changé), puis
         // ombres : cascades du relief et carte des nuages, vues depuis le soleil
         self.atmosphere.encode_luts(&mut encoder);
+        // Dessins du relief de la passe 3D quand ils sont triés sur le GPU
+        let mut main_terrain: Option<crate::terrain_pool::PreparedDraws> = None;
         // Os des créatures appliqués sur le GPU, avant les ombres et la passe 3D qui lisent leurs sommets
         self.creatures.encode_skinning(&mut encoder);
         {
             herocraft_common::prof_scope!("render::encode_shadows");
             // Le relief, positions seules ; les créatures portent leur ombre dans la cascade proche
             // Au plus un dessin par morceau et par passe : chaque cascade, puis la passe 3D
-            self.terrain_pool.begin_frame(&self.device, self.lod_draw_list.len() * (self.shadows.cascade_count() + 1));
             let mut terrain: Vec<Option<crate::terrain_pool::PreparedDraws>> = (0..self.shadows.cascade_count()).map(|_| None).collect();
-            for i in self.shadows.cascades_to_draw() {
-                let meshes = self.lod_draw_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).filter(|m| self.shadows.touches(i, m.center, m.radius));
-                terrain[i] = Some(self.terrain_pool.prepare_draws(&self.queue, meshes.map(|m| &m.slot)));
+            if self.terrain_pool.gpu_culling() {
+                // Tri sur le GPU : chaque cascade redessinée, puis la passe 3D
+                herocraft_common::prof_scope!("render::terrain_gpu_cull");
+                let cascades = self.shadows.cascades_to_draw();
+                let mut passes: Vec<_> = cascades.iter().filter_map(|&i| self.shadows.cull_pass(i)).collect();
+                passes.push(self.terrain_cull.map_or_else(crate::terrain_pool::CullPass::everything, |c| c.gpu_pass()));
+                let mut draws = self.terrain_pool.cull(&self.device, &self.queue, &mut encoder, &mut passes);
+                main_terrain = draws.pop();
+                for (i, d) in cascades.into_iter().zip(draws) {
+                    terrain[i] = Some(d);
+                }
+            } else {
+                self.terrain_pool.begin_frame(&self.device, self.lod_draw_list.len() * (self.shadows.cascade_count() + 1));
+                for i in self.shadows.cascades_to_draw() {
+                    let meshes = self.lod_draw_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).filter(|m| self.shadows.touches(i, m.center, m.radius));
+                    terrain[i] = Some(self.terrain_pool.prepare_draws(&self.queue, meshes.map(|m| &m.slot)));
+                }
             }
             let clouds = (self.num_cloud_indices > 0)
                 .then_some((&self.cloud_vertex_buffer, &self.cloud_weather_buffer, &self.cloud_index_buffer, self.num_cloud_indices));
@@ -1296,24 +1318,33 @@ impl State {
             // 1.a. Relief planétaire & Voxels, du plus proche au plus lointain : le test de
             // profondeur précoce élimine les fragments cachés avant d'exécuter le shader
             // Les morceaux hors du champ de vision ou sous l'horizon ne sont pas dessinés
-            let (meshes, eye, cull) = (&self.lod_gpu_meshes, self.camera_eye, self.terrain_cull);
-            self.lod_visible_list.clear();
-            self.lod_visible_list.extend(self.lod_draw_list.iter().copied().filter(|id| {
-                meshes.get(id).is_some_and(|m| cull.is_none_or(|c| c.is_visible(m.center, m.radius, m.max_radius)))
-            }));
-            self.lod_visible_list.sort_by_cached_key(|id| {
-                meshes.get(id).map_or(u32::MAX, |m| m.center.distance_squared(eye).to_bits())
-            });
-            herocraft_common::prof_value!("render.draws_terrain_visibles", self.lod_visible_list.len());
-            if !self.lod_visible_list.is_empty() {
-                // Tous les morceaux visibles en un dessin indirect (ou un dessin chacun), depuis
-                // les tampons partagés attachés une seule fois
-                let draws = self.terrain_pool.prepare_draws(&self.queue, self.lod_visible_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).map(|m| &m.slot));
+            if let Some(draws) = main_terrain.take() {
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
                 render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
                 render_pass.set_bind_group(2, &self.block_textures.bind_group, &[]);
                 self.terrain_pool.draw(&mut render_pass, &draws, true);
+            }
+            let (meshes, eye, cull) = (&self.lod_gpu_meshes, self.camera_eye, self.terrain_cull);
+            self.lod_visible_list.clear();
+            if !self.terrain_pool.gpu_culling() {
+                self.lod_visible_list.extend(self.lod_draw_list.iter().copied().filter(|id| {
+                    meshes.get(id).is_some_and(|m| cull.is_none_or(|c| c.is_visible(m.center, m.radius, m.max_radius)))
+                }));
+                self.lod_visible_list.sort_by_cached_key(|id| {
+                    meshes.get(id).map_or(u32::MAX, |m| m.center.distance_squared(eye).to_bits())
+                });
+                herocraft_common::prof_value!("render.draws_terrain_visibles", self.lod_visible_list.len());
+                if !self.lod_visible_list.is_empty() {
+                    // Tous les morceaux visibles en un dessin indirect (ou un dessin chacun), depuis
+                    // les tampons partagés attachés une seule fois
+                    let draws = self.terrain_pool.prepare_draws(&self.queue, self.lod_visible_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).map(|m| &m.slot));
+                    render_pass.set_pipeline(&self.render_pipeline);
+                    render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
+                    render_pass.set_bind_group(2, &self.block_textures.bind_group, &[]);
+                    self.terrain_pool.draw(&mut render_pass, &draws, true);
+                }
             }
             // Créatures, éclairées comme le relief
             self.creatures.draw(&mut render_pass, &self.atmosphere.scene_bind_group, &self.shadows.receiver_bind_group);

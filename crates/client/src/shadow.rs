@@ -600,6 +600,13 @@ impl Shadows {
         d.dot(right).abs() <= reach && d.dot(up).abs() <= reach
     }
 
+    /// La cascade `i` pour le tri du relief sur le GPU : même test que `touches`
+    pub fn cull_pass(&self, i: usize) -> Option<crate::terrain_pool::CullPass> {
+        let pass = self.cascades.get(i)?;
+        let (right, up) = light_basis(self.light_dir);
+        Some(crate::terrain_pool::CullPass::cascade(pass.center, pass.extent, right, up))
+    }
+
     /// Encode les passes depuis le soleil. `terrain` : pour chaque cascade redessinée, les morceaux
     /// du relief qui la touchent (`touches`), tirés de `pool` ; `moving` : ce qui bouge seul
     /// (créatures), dans la cascade proche seulement, la seule redessinée à chaque image.

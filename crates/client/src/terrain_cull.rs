@@ -79,6 +79,19 @@ impl TerrainCull {
         self.planes.iter().all(|p| p.truncate().dot(drawn) + p.w >= -r)
     }
 
+    /// La même vue pour le tri sur le GPU (`terrain_cull.wgsl`)
+    pub fn gpu_pass(&self) -> crate::terrain_pool::CullPass {
+        crate::terrain_pool::CullPass {
+            kind: crate::terrain_pool::CullPass::CAMERA,
+            planes: self.planes.map(|p| p.to_array()),
+            eye: self.eye.extend(self.sea_radius).to_array(),
+            up: self.up.extend(self.big_radius).to_array(),
+            flatten: self.flatten,
+            margins: [self.min_eye_height, BOUNDS_MARGIN, HORIZON_MARGIN, FOLDED_ANGLE],
+            ..Default::default()
+        }
+    }
+
     /// Copie de `flatten_point` (common.wgsl) : position où le shader dessine `p`
     fn flatten_point(&self, p: Vec3) -> Vec3 {
         let extra = self.flatten[0];
@@ -171,5 +184,74 @@ mod tests {
         assert!(drawn.y > far.y);
         let big_center = -Vec3::Y * R;
         assert!(((drawn - big_center).length() - 2.0 * R).abs() < 1e-2);
+    }
+
+    /// Le tri sur le GPU (`terrain_cull.wgsl`) garde les mêmes morceaux que le CPU, pour la passe 3D
+    /// (avec et sans aplatissement) et pour une cascade d'ombre. Demande une carte graphique
+    /// (lavapipe convient) : `cargo test -- --ignored gpu_cull`
+    #[test]
+    #[ignore]
+    fn test_gpu_cull_matches_cpu() {
+        use crate::terrain_pool::{CullPass, PoolSlot, TerrainPool};
+        let instance = wgpu::Instance::default();
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("aucun adaptateur graphique");
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
+        let mut pool = TerrainPool::new(&device);
+        assert!(pool.gpu_culling());
+
+        // Morceaux semés tout autour de la planète, à diverses hauteurs et tailles
+        let mut seed = 12345u32;
+        let mut rand = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as f32 / u32::MAX as f32
+        };
+        let mut meshes = Vec::new();
+        for k in 0..3000u32 {
+            let dir = Vec3::new(rand() * 2.0 - 1.0, rand() * 2.0 - 1.0, rand() * 2.0 - 1.0).normalize_or(Vec3::Y);
+            // La moitié tout près de la caméra (pôle +Y), où le champ de vision décide
+            let dir = if k % 2 == 0 { (Vec3::Y + dir * 0.05).normalize() } else { dir };
+            let height = rand() * 40.0 * BLOCK;
+            let radius = (1.0 + rand() * 63.0) * BLOCK;
+            let format = if k % 3 == 0 { wgpu::IndexFormat::Uint32 } else { wgpu::IndexFormat::Uint16 };
+            let slot = PoolSlot { vertices: k * 10..k * 10 + 10, indices: k * 30..k * 30 + 30, num_indices: 30, format };
+            meshes.push((slot, dir * (R + height), radius, R + height + radius));
+        }
+        pool.set_draw_table(&device, &queue, meshes.iter().map(|(s, c, r, m)| (s, *c, *r, *m)));
+        // Ordre de la table : indices courts puis longs
+        let table: Vec<_> = meshes.iter().filter(|m| m.0.format == wgpu::IndexFormat::Uint16).chain(meshes.iter().filter(|m| m.0.format == wgpu::IndexFormat::Uint32)).collect();
+
+        let views = [ground_view([0.0, 1.0, 0.0, 0.0]), ground_view([R, 2.0, 0.0, 10.0 * BLOCK])];
+        let (right, up) = (Vec3::X, Vec3::Z);
+        let (cascade_center, extent) = (Vec3::Y * R + Vec3::X * 20.0 * BLOCK, 50.0 * BLOCK);
+        let mut passes = vec![views[0].gpu_pass(), views[1].gpu_pass(), CullPass::cascade(cascade_center, extent, right, up), CullPass::everything()];
+        let mut encoder = device.create_command_encoder(&Default::default());
+        let draws = pool.cull(&device, &queue, &mut encoder, &mut passes);
+        queue.submit([encoder.finish()]);
+
+        for (p, prepared) in draws.iter().enumerate() {
+            let args = pool.read_culled(&device, &queue, prepared);
+            assert_eq!(args.len(), table.len());
+            let mut mismatches = 0;
+            let mut shown = 0;
+            for (a, (slot, center, radius, max_radius)) in args.iter().zip(&table) {
+                assert_eq!((a.first_index, a.base_vertex, a.index_count), (slot.indices.start, slot.vertices.start as i32, 30));
+                let cpu = match p {
+                    0 | 1 => views[p].is_visible(*center, *radius, *max_radius),
+                    2 => {
+                        let d = *center - cascade_center;
+                        d.dot(right).abs() <= extent + radius && d.dot(up).abs() <= extent + radius
+                    }
+                    _ => true,
+                };
+                shown += cpu as usize;
+                mismatches += (cpu != (a.instance_count == 1)) as usize;
+            }
+            eprintln!("passe {p} : {shown} visibles, {mismatches} écarts");
+            // Quelques écarts d'arrondi au bord sont tolérés (aucun sur des milliers en pratique)
+            assert!(mismatches <= 3, "passe {p} : {mismatches} morceaux triés autrement que sur le CPU");
+            assert!(shown > 0 && (p == 3 || shown < table.len()), "passe {p} : test sans intérêt ({shown} visibles)");
+        }
     }
 }

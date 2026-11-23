@@ -3,6 +3,12 @@
 //! chacun. La passe 3D et les ombres n'attachent ces tampons qu'une fois, puis dessinent chaque
 //! morceau par sa plage (`base_vertex`, `first_index`) ; quand la carte le permet, tous les
 //! morceaux visibles partent en un seul `multi_draw_indexed_indirect`.
+//!
+//! Tri sur le GPU (`terrain_cull.wgsl`) : la liste des morceaux à afficher est envoyée une fois,
+//! quand elle change (`set_draw_table`) ; à chaque image, un compute shader écrit pour chaque passe
+//! (la passe 3D, chaque cascade d'ombre redessinée) les dessins indirects de toute la table, sans
+//! instance pour les morceaux que la passe ne voit pas. Le CPU ne trie plus rien et n'envoie plus
+//! d'arguments de dessin.
 
 use std::ops::Range;
 
@@ -89,6 +95,149 @@ pub struct TerrainPool {
     indirect_cursor: u32,
     /// La carte sait enchaîner les dessins indirects (`Features::MULTI_DRAW_INDIRECT`)
     multi_draw: bool,
+    /// Tri des morceaux sur le GPU, quand la carte a des compute shaders
+    gpu_cull: Option<GpuCull>,
+}
+
+/// Fils par groupe de `terrain_cull.wgsl`
+const CULL_GROUP: u32 = 64;
+
+/// Morceau de la table du relief, tel que le lit `terrain_cull.wgsl`
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CullRecord {
+    /// Centre (xyz) et rayon de la sphère englobante (w)
+    pub sphere: [f32; 4],
+    pub max_radius: f32,
+    pub index_count: u32,
+    pub first_index: u32,
+    pub base_vertex: i32,
+}
+
+/// Une passe vue par `terrain_cull.wgsl` : la passe 3D (`TerrainCull::gpu_pass`), une cascade
+/// d'ombre (`CullPass::cascade`) ou tout (`CullPass::everything`)
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CullPass {
+    pub kind: u32,
+    pub first_draw: u32,
+    pub _pad: [u32; 2],
+    pub planes: [[f32; 4]; 4],
+    pub eye: [f32; 4],
+    pub up: [f32; 4],
+    pub flatten: [f32; 4],
+    pub margins: [f32; 4],
+    pub cascade: [f32; 4],
+    pub right: [f32; 4],
+    pub light_up: [f32; 4],
+}
+
+impl CullPass {
+    pub const CAMERA: u32 = 0;
+    pub const CASCADE: u32 = 1;
+    pub const EVERYTHING: u32 = 2;
+
+    pub fn everything() -> Self {
+        Self { kind: Self::EVERYTHING, ..Default::default() }
+    }
+
+    /// Cascade de centre `center` et de demi-côté `extent`, dans le plan (`right`, `up`) de la lumière
+    pub fn cascade(center: glam::Vec3, extent: f32, right: glam::Vec3, up: glam::Vec3) -> Self {
+        Self { kind: Self::CASCADE, cascade: center.extend(extent).to_array(), right: right.extend(0.0).to_array(), light_up: up.extend(0.0).to_array(), ..Default::default() }
+    }
+}
+
+/// Ce que demande le tri sur le GPU : la table des morceaux, les passes de l'image et leurs dessins
+struct GpuCull {
+    pipeline: wgpu::ComputePipeline,
+    layout: wgpu::BindGroupLayout,
+    records: wgpu::Buffer,
+    passes: wgpu::Buffer,
+    params: wgpu::Buffer,
+    /// Dessins indirects écrits par le shader, une plage de la taille de la table par passe
+    draws: wgpu::Buffer,
+    /// Morceaux, passes et dessins que peuvent contenir les tampons
+    capacity: (u32, u32, u32),
+    bind_group: Option<wgpu::BindGroup>,
+    /// Morceaux de la table aux indices courts, puis aux indices longs (dans cet ordre)
+    counts: [u32; 2],
+}
+
+fn cull_buffer(device: &wgpu::Device, label: &str, size: u64, usage: wgpu::BufferUsages) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: size.max(16), usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false })
+}
+
+impl GpuCull {
+    fn new(device: &wgpu::Device) -> Self {
+        let storage = |binding, read_only| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only }, has_dynamic_offset: false, min_binding_size: None },
+            count: None,
+        };
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Terrain Cull Layout"),
+            entries: &[
+                storage(0, true),
+                storage(1, true),
+                storage(2, false),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
+            ],
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Terrain Cull Pipeline Layout"), bind_group_layouts: &[Some(&layout)], immediate_size: 0 });
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("Terrain Cull Shader"), source: wgpu::ShaderSource::Wgsl(include_str!("terrain_cull.wgsl").into()) });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Terrain Cull Pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &module,
+            entry_point: Some("cs_cull"),
+            compilation_options: Default::default(),
+            cache: crate::shaders::pipeline_cache(),
+        });
+        let capacity = (1024, 8, 8 * 1024);
+        Self {
+            pipeline,
+            layout,
+            records: cull_buffer(device, "Terrain Cull Records", capacity.0 as u64 * std::mem::size_of::<CullRecord>() as u64, wgpu::BufferUsages::STORAGE),
+            passes: cull_buffer(device, "Terrain Cull Passes", capacity.1 as u64 * std::mem::size_of::<CullPass>() as u64, wgpu::BufferUsages::STORAGE),
+            params: cull_buffer(device, "Terrain Cull Params", 16, wgpu::BufferUsages::UNIFORM),
+            draws: cull_buffer(device, "Terrain Culled Draws", capacity.2 as u64 * std::mem::size_of::<DrawIndexedIndirectArgs>() as u64, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_SRC),
+            capacity,
+            bind_group: None,
+            counts: [0, 0],
+        }
+    }
+
+    fn total(&self) -> u32 {
+        self.counts[0] + self.counts[1]
+    }
+}
+
+#[cfg(test)]
+impl TerrainPool {
+    /// Relit les dessins de `draws` écrits par le tri sur le GPU (attend la fin du GPU)
+    pub fn read_culled(&self, device: &wgpu::Device, queue: &wgpu::Queue, draws: &PreparedDraws) -> Vec<DrawIndexedIndirectArgs> {
+        let (PreparedDraws::Gpu { offset, counts }, Some(cull)) = (draws, self.gpu_cull.as_ref()) else { return Vec::new() };
+        let size = (counts[0] + counts[1]) as u64 * std::mem::size_of::<DrawIndexedIndirectArgs>() as u64;
+        let readback = device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let mut encoder = device.create_command_encoder(&Default::default());
+        encoder.copy_buffer_to_buffer(&cull.draws, *offset, &readback, 0, size);
+        queue.submit([encoder.finish()]);
+        readback.slice(..).map_async(wgpu::MapMode::Read, |_| ());
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let data = readback.slice(..).get_mapped_range().expect("lecture du tampon").to_vec();
+        data.chunks_exact(20)
+            .map(|c| {
+                let u = |i: usize| u32::from_le_bytes(c[i * 4..i * 4 + 4].try_into().unwrap());
+                DrawIndexedIndirectArgs { index_count: u(0), instance_count: u(1), first_index: u(2), base_vertex: u(3) as i32, first_instance: u(4) }
+            })
+            .collect()
+    }
 }
 
 fn vertex_buffers(device: &wgpu::Device, vertices: u32) -> (wgpu::Buffer, wgpu::Buffer) {
@@ -149,7 +298,88 @@ impl TerrainPool {
             indirect_capacity: 1024,
             indirect_cursor: 0,
             multi_draw,
+            gpu_cull: (multi_draw && device.limits().max_compute_workgroups_per_dimension > 0 && !cpu_culling_forced()).then(|| GpuCull::new(device)),
         }
+    }
+
+    /// Les morceaux sont triés sur le GPU (`set_draw_table`, `cull`) plutôt que par `prepare_draws`
+    pub fn gpu_culling(&self) -> bool {
+        self.gpu_cull.is_some()
+    }
+
+    /// Nouvelle liste des morceaux à afficher (sphère englobante, plus grande distance au centre de
+    /// la planète), du plus proche au plus lointain : la passe 3D les dessine dans cet ordre
+    pub fn set_draw_table<'s>(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, meshes: impl Iterator<Item = (&'s PoolSlot, glam::Vec3, f32, f32)>) {
+        let Some(cull) = self.gpu_cull.as_mut() else { return };
+        let mut groups: [Vec<CullRecord>; 2] = [Vec::new(), Vec::new()];
+        for (slot, center, radius, max_radius) in meshes {
+            let group = if slot.format == wgpu::IndexFormat::Uint16 { 0 } else { 1 };
+            groups[group].push(CullRecord {
+                sphere: center.extend(radius).to_array(),
+                max_radius,
+                index_count: slot.num_indices,
+                first_index: slot.indices.start,
+                base_vertex: slot.vertices.start as i32,
+            });
+        }
+        cull.counts = [groups[0].len() as u32, groups[1].len() as u32];
+        let total = cull.total();
+        if total > cull.capacity.0 {
+            cull.capacity.0 = total.next_power_of_two();
+            cull.records = cull_buffer(device, "Terrain Cull Records", cull.capacity.0 as u64 * std::mem::size_of::<CullRecord>() as u64, wgpu::BufferUsages::STORAGE);
+            cull.bind_group = None;
+        }
+        if total > 0 {
+            let records: Vec<CullRecord> = groups.concat();
+            queue.write_buffer(&cull.records, 0, bytemuck::cast_slice(&records));
+        }
+    }
+
+    /// Trie la table pour chaque passe de `passes` sur le GPU (encodé dans `encoder`, avant les
+    /// passes de rendu) ; rend les dessins de chaque passe, dans l'ordre
+    pub fn cull(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, passes: &mut [CullPass]) -> Vec<PreparedDraws> {
+        let Some(cull) = self.gpu_cull.as_mut() else { return Vec::new() };
+        let total = cull.total();
+        let empty = || PreparedDraws::Gpu { offset: 0, counts: [0, 0] };
+        if total == 0 || passes.is_empty() {
+            return passes.iter().map(|_| empty()).collect();
+        }
+        let pass_count = passes.len() as u32;
+        if pass_count > cull.capacity.1 {
+            cull.capacity.1 = pass_count.next_power_of_two();
+            cull.passes = cull_buffer(device, "Terrain Cull Passes", cull.capacity.1 as u64 * std::mem::size_of::<CullPass>() as u64, wgpu::BufferUsages::STORAGE);
+            cull.bind_group = None;
+        }
+        if pass_count * total > cull.capacity.2 {
+            cull.capacity.2 = (pass_count * total).next_power_of_two();
+            cull.draws = cull_buffer(device, "Terrain Culled Draws", cull.capacity.2 as u64 * std::mem::size_of::<DrawIndexedIndirectArgs>() as u64, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_SRC);
+            cull.bind_group = None;
+        }
+        for (i, pass) in passes.iter_mut().enumerate() {
+            pass.first_draw = i as u32 * total;
+        }
+        queue.write_buffer(&cull.passes, 0, bytemuck::cast_slice(passes));
+        queue.write_buffer(&cull.params, 0, bytemuck::cast_slice(&[total, 0, 0, 0]));
+        let bind_group = cull.bind_group.get_or_insert_with(|| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Terrain Cull Bind Group"),
+                layout: &cull.layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: cull.records.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: cull.passes.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: cull.draws.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 3, resource: cull.params.as_entire_binding() },
+                ],
+            })
+        });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("Terrain Cull"), timestamp_writes: None });
+            pass.set_pipeline(&cull.pipeline);
+            pass.set_bind_group(0, &*bind_group, &[]);
+            pass.dispatch_workgroups(total.div_ceil(CULL_GROUP), pass_count, 1);
+        }
+        let stride = std::mem::size_of::<DrawIndexedIndirectArgs>() as u64;
+        passes.iter().map(|p| PreparedDraws::Gpu { offset: p.first_draw as u64 * stride, counts: cull.counts }).collect()
     }
 
     pub fn index_buffer(&self, format: wgpu::IndexFormat) -> &wgpu::Buffer {
@@ -244,18 +474,37 @@ impl TerrainPool {
             queue.write_buffer(&self.indirect, offset, &bytes);
             self.indirect_cursor += total;
         }
-        PreparedDraws { groups, offset: indirect.then_some(offset) }
+        PreparedDraws::Cpu { groups, offset: indirect.then_some(offset) }
     }
 
     /// Dessine les morceaux préparés ; le pipeline et les groupes de liaison sont déjà en place.
     /// `with_attributes` : la passe lit aussi le second tampon (la passe 3D, pas les ombres).
     pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, draws: &PreparedDraws, with_attributes: bool) {
+        if draws.is_empty() {
+            return;
+        }
         pass.set_vertex_buffer(0, self.positions.slice(..));
         if with_attributes {
             pass.set_vertex_buffer(1, self.attributes.slice(..));
         }
-        let mut offset = draws.offset;
-        for (group, format) in draws.groups.iter().zip([wgpu::IndexFormat::Uint16, wgpu::IndexFormat::Uint32]) {
+        let (groups, offset) = match draws {
+            PreparedDraws::Cpu { groups, offset } => (groups, offset),
+            PreparedDraws::Gpu { offset, counts } => {
+                let Some(cull) = self.gpu_cull.as_ref() else { return };
+                let mut at = *offset;
+                for (&count, format) in counts.iter().zip([wgpu::IndexFormat::Uint16, wgpu::IndexFormat::Uint32]) {
+                    if count == 0 {
+                        continue;
+                    }
+                    pass.set_index_buffer(self.index_buffer(format).slice(..), format);
+                    pass.multi_draw_indexed_indirect(&cull.draws, at, count);
+                    at += count as u64 * std::mem::size_of::<DrawIndexedIndirectArgs>() as u64;
+                }
+                return;
+            }
+        };
+        let mut offset = *offset;
+        for (group, format) in groups.iter().zip([wgpu::IndexFormat::Uint16, wgpu::IndexFormat::Uint32]) {
             if group.is_empty() {
                 continue;
             }
@@ -278,16 +527,29 @@ impl TerrainPool {
 }
 
 /// Dessins d'une passe, par format d'indices
-pub struct PreparedDraws {
-    groups: [Vec<DrawIndexedIndirectArgs>; 2],
-    /// Place des arguments dans le tampon indirect (`None` : un `draw_indexed` par morceau)
-    offset: Option<u64>,
+pub enum PreparedDraws {
+    /// Triés sur le CPU (`prepare_draws`)
+    Cpu {
+        groups: [Vec<DrawIndexedIndirectArgs>; 2],
+        /// Place des arguments dans le tampon indirect (`None` : un `draw_indexed` par morceau)
+        offset: Option<u64>,
+    },
+    /// Triés sur le GPU (`cull`) : toute la table, à partir de `offset` dans ses dessins
+    Gpu { offset: u64, counts: [u32; 2] },
 }
 
 impl PreparedDraws {
     pub fn is_empty(&self) -> bool {
-        self.groups.iter().all(Vec::is_empty)
+        match self {
+            Self::Cpu { groups, .. } => groups.iter().all(Vec::is_empty),
+            Self::Gpu { counts, .. } => counts == &[0, 0],
+        }
     }
+}
+
+/// `HEROCRAFT_TRI=cpu` garde l'ancien tri des morceaux sur le CPU (comparaisons, cartes capricieuses)
+fn cpu_culling_forced() -> bool {
+    std::env::var("HEROCRAFT_TRI").is_ok_and(|v| v.eq_ignore_ascii_case("cpu"))
 }
 
 #[cfg(test)]
