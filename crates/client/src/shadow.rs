@@ -577,15 +577,38 @@ impl Shadows {
         queue.write_buffer(&self.receiver_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
     }
 
-    /// Encode les passes depuis le soleil. `terrain` : maillages du relief, dessinés dans toutes
-    /// les cascades ; `moving` : ce qui bouge seul (créatures), dans la cascade proche seulement,
-    /// la seule redessinée à chaque image. Seuls les maillages qui touchent une cascade y sont
-    /// dessinés.
+    /// Cascades redessinées à cette image (aucune sans ombres)
+    pub fn cascades_to_draw(&self) -> Vec<usize> {
+        if !self.active {
+            return Vec::new();
+        }
+        self.cascades.iter().enumerate().filter(|(_, pass)| pass.refresh).map(|(i, _)| i).collect()
+    }
+
+    /// Nombre de cascades
+    pub fn cascade_count(&self) -> usize {
+        self.cascades.len()
+    }
+
+    /// Le maillage de centre `center` et de demi-diagonale `radius` touche la cascade `i` (test
+    /// dans le plan de la lumière : la profondeur couvre déjà tout le volume)
+    pub fn touches(&self, i: usize, center: Vec3, radius: f32) -> bool {
+        let Some(pass) = self.cascades.get(i) else { return false };
+        let (right, up) = light_basis(self.light_dir);
+        let d = center - pass.center;
+        let reach = pass.extent + radius;
+        d.dot(right).abs() <= reach && d.dot(up).abs() <= reach
+    }
+
+    /// Encode les passes depuis le soleil. `terrain` : pour chaque cascade redessinée, les morceaux
+    /// du relief qui la touchent (`touches`), tirés de `pool` ; `moving` : ce qui bouge seul
+    /// (créatures), dans la cascade proche seulement, la seule redessinée à chaque image.
     pub fn encode<'a>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         camera_bind_group: &wgpu::BindGroup,
-        terrain: impl Iterator<Item = Caster<'a>> + Clone,
+        pool: &crate::terrain_pool::TerrainPool,
+        terrain: &[Option<crate::terrain_pool::PreparedDraws>],
         moving: Option<Caster<'a>>,
         clouds: Option<(&wgpu::Buffer, &wgpu::Buffer, &wgpu::Buffer, u32)>,
         timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
@@ -619,7 +642,11 @@ impl Shadows {
                 render_pass.set_pipeline(&self.terrain_pipeline);
                 render_pass.set_bind_group(0, camera_bind_group, &[]);
                 render_pass.set_bind_group(1, &pass.bind_group, &[]);
-                for caster in terrain.clone().chain(moving.filter(|_| i == 0)) {
+                // Le relief : les morceaux qui touchent la cascade, tirés des tampons partagés
+                if let Some(Some(draws)) = terrain.get(i) {
+                    pool.draw(&mut render_pass, draws, false);
+                }
+                for caster in moving.filter(|_| i == 0) {
                     // Test dans le plan de la lumière : la profondeur couvre déjà tout le volume
                     let d = caster.center - pass.center;
                     let reach = pass.extent + caster.radius;
