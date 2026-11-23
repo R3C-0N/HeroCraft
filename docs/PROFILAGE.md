@@ -70,3 +70,33 @@ herocraft_common::prof_value!("lod.feuilles", leaves.len());
 
 Éviter d'instrumenter les fonctions de quelques dizaines de nanosecondes (bruit, `fbm_3d`) :
 le coût de la mesure dominerait.
+
+## Tracy (profileur en direct)
+
+Avec la feature `tracy`, les mêmes portées (`prof_scope!`), valeurs (`prof_value!`) et images
+partent aussi vers [Tracy](https://github.com/wolfpld/tracy), qui montre la chronologie de tous
+les threads pendant que le jeu tourne :
+
+```bash
+cargo run --release --features tracy --bin herocraft_client
+```
+
+Puis lancer l'interface de Tracy et se connecter au jeu. L'interface doit être de la version qui
+correspond à `tracy-client-sys` dans `Cargo.lock` (tableau de versions du README de
+[rust_tracy_client](https://github.com/nagisa/rust_tracy_client)). La feature `tracy` comprend
+`profiling` : le rapport texte et la trace Perfetto sont toujours écrits.
+
+## Compilation guidée par un profil (PGO)
+
+Le profil `distribution` (`Cargo.toml`) fait une LTO complète. On peut en plus laisser le
+compilateur s'appuyer sur une partie réelle, jouée par le banc d'essai :
+
+```bash
+cargo install cargo-pgo
+rustup component add llvm-tools-preview
+cargo pgo build -- --bin herocraft_client                 # binaire instrumenté
+./target/x86_64-pc-windows-msvc/release/herocraft_client --benchmark   # ou le triple de la machine
+cargo pgo optimize build -- --bin herocraft_client        # binaire optimisé avec le profil
+```
+
+Comparer ensuite deux bancs d'essai (avec et sans PGO) : le gain dépend de la machine.

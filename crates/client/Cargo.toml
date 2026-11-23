@@ -46,6 +46,8 @@ windows-sys = { version = "0.48", features = ["Win32_Foundation", "Win32_System_
 [features]
 # cargo run --release --features profiling --bin herocraft_client
 profiling = ["herocraft_common/profiling"]
+# cargo run --release --features tracy --bin herocraft_client, puis l'interface de Tracy (docs/PROFILAGE.md)
+tracy = ["profiling", "herocraft_common/tracy"]
 
 [dev-dependencies]
 naga = { version = "23", features = ["wgsl-in"] }

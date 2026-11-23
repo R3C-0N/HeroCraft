@@ -12,10 +12,15 @@ serde_json = { workspace = true }
 log = { workspace = true }
 # Sinus de fdlibm : le bruit du peintre de héros, au bit près celui de la maquette
 libm = "0.2"
+# Profileur Tracy (feature `tracy`) : l'interface doit être de la version que donne le tableau du README de
+# tracy-client pour cette version
+tracy-client = { version = "0.18", optional = true }
 
 [features]
 # Active l'instrumentation des portées (`prof_scope!`) et l'écriture du rapport de profilage
 profiling = []
+# En plus, envoie les portées, les valeurs et les images à Tracy (profileur en direct)
+tracy = ["profiling", "dep:tracy-client"]
 
 [dev-dependencies]
 png = "0.17"

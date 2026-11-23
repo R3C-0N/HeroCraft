@@ -266,10 +266,21 @@ mod imp {
         id
     }
 
+    /// Nom de courbe Tracy d'une valeur, créé une fois par nom
+    #[cfg(feature = "tracy")]
+    fn tracy_plot(name: &'static str) -> tracy_client::PlotName {
+        static NAMES: OnceLock<Mutex<std::collections::HashMap<&'static str, tracy_client::PlotName>>> = OnceLock::new();
+        let mut names = NAMES.get_or_init(Default::default).lock().unwrap();
+        *names.entry(name).or_insert_with(|| tracy_client::PlotName::new_leak(name.trim_start_matches('#').to_string()))
+    }
+
     pub struct Scope {
         site: &'static Site,
         start: Instant,
         saved_child_ns: u64,
+        /// La même portée dans Tracy (feature `tracy`), fermée avec elle
+        #[cfg(feature = "tracy")]
+        _tracy: Option<tracy_client::Span>,
     }
 
     impl Scope {
@@ -277,7 +288,13 @@ mod imp {
         pub fn enter(site: &'static Site) -> Self {
             DEPTH.with(|d| d.set(d.get() + 1));
             let saved_child_ns = CHILD_NS.with(|c| c.replace(0));
-            Scope { site, start: Instant::now(), saved_child_ns }
+            Scope {
+                site,
+                start: Instant::now(),
+                saved_child_ns,
+                #[cfg(feature = "tracy")]
+                _tracy: tracy_client::Client::running().map(|c| c.span_alloc(Some(site.name), "", "", 0, 0)),
+            }
         }
     }
 
@@ -326,6 +343,10 @@ mod imp {
     }
 
     pub fn record_value(site: &'static Site, value: u64) {
+        #[cfg(feature = "tracy")]
+        if let Some(client) = tracy_client::Client::running() {
+            client.plot(tracy_plot(site.name), value as f64);
+        }
         let id = site_id(site);
         LOCAL.with(|local| {
             let mut t = local.lock().unwrap();
@@ -379,6 +400,9 @@ mod imp {
 
     /// À appeler au début de `main` : démarre l'horloge et désigne le thread des frames.
     pub fn init_main_thread() {
+        // Tracy (feature `tracy`) : l'interface de Tracy se connecte au jeu pendant qu'il tourne
+        #[cfg(feature = "tracy")]
+        let _ = tracy_client::Client::start();
         let _ = global();
         IS_FRAME_THREAD.with(|f| f.set(true));
         set_meta("os", format!("{} {}", std::env::consts::OS, std::env::consts::ARCH));
@@ -400,6 +424,10 @@ mod imp {
 
     /// À appeler une fois par frame, à la fin, sur le thread principal.
     pub fn frame_mark() {
+        #[cfg(feature = "tracy")]
+        if let Some(client) = tracy_client::Client::running() {
+            client.frame_mark();
+        }
         let now = Instant::now();
         let prev = LAST_FRAME.with(|l| l.replace(Some(now)));
         let index = FRAME_INDEX.with(|i| {

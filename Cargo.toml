@@ -41,3 +41,10 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 panic = "abort"
+
+# Version à distribuer : LTO complète, plus lente à compiler que `release`, quelques pour cent de
+# CPU en plus. cargo build --profile distribution ; avec un profil d'exécution (PGO), voir
+# docs/PROFILAGE.md.
+[profile.distribution]
+inherits = "release"
+lto = "fat"
