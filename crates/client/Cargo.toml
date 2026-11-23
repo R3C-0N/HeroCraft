@@ -26,6 +26,7 @@ pollster = "0.3"
 dotenvy = "0.15"
 bytemuck = { version = "1.18", features = ["derive"] }
 rayon = "1.10"
+thread-priority = "3"
 egui = { version = "0.37", features = ["default_fonts", "monochrome_emoji_fonts"] }
 egui-wgpu = "0.37"
 naga = "30"

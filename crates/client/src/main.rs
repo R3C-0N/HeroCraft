@@ -55,6 +55,7 @@ mod skill_bar;
 mod skill_play;
 mod terrain_cull;
 mod terrain_pool;
+mod threads;
 mod ui;
 mod ui_skin;
 #[cfg(test)]

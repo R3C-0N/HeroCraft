@@ -527,7 +527,10 @@ impl WorldMap {
     pub fn new() -> Self {
         let (jobs, job_rx) = mpsc::channel();
         let (reply_tx, replies) = mpsc::channel();
-        let spawned = std::thread::Builder::new().name("carte".into()).spawn(move || worker(job_rx, reply_tx));
+        let spawned = std::thread::Builder::new().name("carte".into()).spawn(move || {
+            crate::threads::lower_current_thread_priority();
+            worker(job_rx, reply_tx)
+        });
         if let Err(e) = spawned {
             log::warn!("Fil de la carte impossible à lancer : {e}");
         }

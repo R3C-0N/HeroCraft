@@ -144,15 +144,24 @@ pub struct PlanetLodManager {
     revisions: HashMap<QuadNodeKey, u32>,
 }
 
+/// Range les morceaux du plus proche au plus lointain de `camera_pos` (angle au centre de la planète)
+fn nearest_first(keys: &mut [QuadNodeKey], camera_pos: Vec3) {
+    let toward = camera_pos.as_dvec3().normalize_or_zero();
+    keys.sort_by(|a, b| b.center_direction().dot(toward).total_cmp(&a.center_direction().dot(toward)));
+}
+
 impl PlanetLodManager {
     pub fn new(base_radius: f32, current_seed: u64) -> Self {
         herocraft_common::prof_scope!("lod::PlanetLodManager::new");
         let num_cpus = std::thread::available_parallelism()
             .map(|p| p.get())
             .unwrap_or(4);
+        // Fils de génération en priorité basse : le fil principal (simulation, rendu) passe devant
+        // eux quand tous les cœurs sont pris, et un cœur lui reste réservé
         let thread_pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(num_cpus.min(8))
+            .num_threads((num_cpus - 1).clamp(1, 8))
             .thread_name(|idx| format!("herocraft-worker-{}", idx))
+            .start_handler(|_| crate::threads::lower_current_thread_priority())
             .build()
             .expect("Échec d'initialisation du pool de workers Rayon");
 
@@ -160,12 +169,14 @@ impl PlanetLodManager {
         let patch_pool = rayon::ThreadPoolBuilder::new()
             .num_threads((num_cpus / 3).clamp(2, 4))
             .thread_name(|idx| format!("herocraft-patch-{}", idx))
+            .start_handler(|_| crate::threads::lower_current_thread_priority())
             .build()
             .expect("Échec d'initialisation du pool de patchs Rayon");
         let (patch_tx, patch_rx) = std::sync::mpsc::channel::<VoxelBuildResult>();
         let detail_pool = rayon::ThreadPoolBuilder::new()
             .num_threads((num_cpus / 2).clamp(1, 4))
             .thread_name(|idx| format!("herocraft-detail-{}", idx))
+            .start_handler(|_| crate::threads::lower_current_thread_priority())
             .build()
             .expect("Échec d'initialisation du pool de patchs détaillés Rayon");
 
@@ -513,6 +524,8 @@ impl PlanetLodManager {
                 // Génération en tâche de fond : les feuilles actuelles restent affichées en attendant
                 herocraft_common::prof_scope!("lod::spawn_patch_tasks");
                 herocraft_common::prof_value!("lod.patchs_manquants_par_maj", missing_patch_keys.len());
+                let mut missing_patch_keys = missing_patch_keys;
+                nearest_first(&mut missing_patch_keys, camera_pos);
                 for key in missing_patch_keys {
                     if self.pending_patches.insert(key) {
                         let tx = self.patch_tx.clone();
@@ -527,10 +540,15 @@ impl PlanetLodManager {
 
             // Déclenchement en arrière-plan des maillages de voxels 3D non encore calculés
             herocraft_common::prof_scope!("lod::spawn_voxel_tasks");
-            for leaf in &new_leaves {
-                if leaf.kind == QuadLeafKind::VoxelChunk && !self.voxel_cache.contains_key(&leaf.key) {
-                    self.spawn_voxel_task(leaf.key, generator);
-                }
+            // Les plus proches d'abord : la file des tâches est servie dans l'ordre d'arrivée
+            let mut voxel_keys: Vec<QuadNodeKey> = new_leaves
+                .iter()
+                .filter(|l| l.kind == QuadLeafKind::VoxelChunk && !self.voxel_cache.contains_key(&l.key))
+                .map(|l| l.key)
+                .collect();
+            nearest_first(&mut voxel_keys, camera_pos);
+            for key in voxel_keys {
+                self.spawn_voxel_task(key, generator);
             }
 
             self.pending_leaves = Some(new_leaves);
