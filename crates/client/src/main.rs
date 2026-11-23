@@ -667,7 +667,8 @@ fn main() {
                         // le banc d'essai)
                         if !launch_announced {
                             launch_announced = true;
-                            if bench.is_none() {
+                            // `--sans-genese` : directement dans le monde (scénarios de test)
+                            if bench.is_none() && !std::env::args().any(|a| a == "--sans-genese") {
                                 cinematics.notify(&herocraft_common::cinematics::GameEvent::new(cinematic::LAUNCH_EVENT));
                             }
                         }
