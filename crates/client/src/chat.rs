@@ -137,6 +137,11 @@ impl Chat {
         self.lines.iter()
     }
 
+    /// Ligne ajoutée comme si le joueur l'avait validée (commandes d'un fichier de test)
+    pub fn inject(&mut self, line: String) {
+        self.submitted.push(line);
+    }
+
     /// Lignes validées depuis le dernier appel
     pub fn take_submitted(&mut self) -> Vec<String> {
         std::mem::take(&mut self.submitted)

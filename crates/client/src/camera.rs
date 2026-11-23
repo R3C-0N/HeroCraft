@@ -596,6 +596,18 @@ impl OrbitCamera {
         dir * (self.ground_radius_at(dir, generator) + height_blocks * self.block_height())
     }
 
+    /// Caméra posée à `distance` blocs du héros (0 : première personne), tournée vers `yaw`
+    /// degrés et inclinée de `pitch` degrés (commande `/camera`)
+    pub fn set_view(&mut self, distance: f32, yaw: Option<f32>, pitch: Option<f32>) {
+        self.target_distance = distance * self.block_height();
+        if let Some(yaw) = yaw {
+            self.player_yaw = yaw.to_radians();
+        }
+        if let Some(pitch) = pitch {
+            self.player_pitch = pitch.to_radians();
+        }
+    }
+
     /// Zoom continu via la molette : passe sans couture de Satellite à TPS puis à FPS
     pub fn zoom(&mut self, delta_y: f32) {
         // Au plus près, la caméra se tient à quelques blocs du héros pour qu'on le voie en entier

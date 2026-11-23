@@ -280,6 +280,8 @@ fn main() {
     let mut vision_stone: Option<herocraft_common::ItemId> = None;
     // Le tutoriel de la vision (« L'éclat ») : le soldat, la roche à l'éclat et ses consignes
     let mut tutorial: Option<vision_tutorial::VisionTutorial> = None;
+    // Fichier de commandes de test, lu à chaque image (`HEROCRAFT_COMMANDES`)
+    let command_file = std::env::var_os("HEROCRAFT_COMMANDES").map(std::path::PathBuf::from);
     // Pierres du Néant posées près du joueur : leur fenêtre sur le néant et leurs poussières
     let mut void_sites = void_stones::VoidStoneSites::new();
     let game_start = Instant::now();
@@ -1494,6 +1496,16 @@ fn main() {
                             }
                         }
 
+                        // Commandes de test (`HEROCRAFT_COMMANDES=fichier`) : les lignes déposées dans
+                        // le fichier passent comme si elles avaient été tapées dans le chat
+                        if let Some(file) = command_file.as_ref() {
+                            if let Some(text) = std::fs::read_to_string(file).ok().filter(|t| !t.trim().is_empty()) {
+                                let _ = std::fs::write(file, "");
+                                for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+                                    ui_state.chat.inject(line.to_string());
+                                }
+                            }
+                        }
                         // Chat : message envoyé aux autres (en ligne) ou commande exécutée ici
                         for line in ui_state.chat.take_submitted() {
                             if line.starts_with('/') {
@@ -2850,6 +2862,10 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
             }
             game.camera.toggle_flight();
             one(format!("Flight {}", if game.camera.is_flying { "on" } else { "off" }))
+        }
+        Command::Camera { distance, yaw, pitch } => {
+            game.camera.set_view(distance, yaw, pitch);
+            one(format!("Camera {distance} blocks behind"))
         }
         Command::Speed(factor) => {
             game.camera.speed_multiplier = factor;
