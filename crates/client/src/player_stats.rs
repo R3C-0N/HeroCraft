@@ -37,6 +37,9 @@ pub struct PlayerStats {
     revived_seen: u32,
     /// Instant de la dernière réapparition : les jauges d'avant, encore en route, ne le retuent pas
     respawned_at: Option<Instant>,
+    /// En solo, pendant une vision : les compétences du présent, mises de côté (le héros y vit en
+    /// simple soldat) ; ce sont elles qu'on enregistre
+    present_skills: Option<herocraft_common::vision::PresentSkills>,
 }
 
 /// Ce qui se garde d'une partie solo à l'autre
@@ -56,7 +59,7 @@ struct SavedProgress {
 impl Default for PlayerStats {
     /// Même personnage que celui que le serveur donne à chaque nouveau joueur
     fn default() -> Self {
-        Self { stats: CharacterStats::new(PlayerClass::Adventurer), hurt_at: None, hurt_strength: 0.0, death: None, progress_path: None, revived_seen: 0, respawned_at: None }
+        Self { stats: CharacterStats::new(PlayerClass::Adventurer), hurt_at: None, hurt_strength: 0.0, death: None, progress_path: None, revived_seen: 0, respawned_at: None, present_skills: None }
     }
 }
 
@@ -91,8 +94,8 @@ impl PlayerStats {
         let saved = SavedProgress {
             level: self.stats.level,
             experience: self.stats.experience,
-            skill_points: self.stats.skill_points,
-            skills: self.stats.skills.clone(),
+            skill_points: self.present_skills.as_ref().map_or(self.stats.skill_points, |p| p.skill_points),
+            skills: self.present_skills.as_ref().map_or_else(|| self.stats.skills.clone(), |p| p.skills.clone()),
             satiety: Some(self.stats.satiety),
         };
         let result = (|| -> std::io::Result<()> {
@@ -103,6 +106,28 @@ impl PlayerStats {
         })();
         if let Err(e) = result {
             log::warn!("Impossible d'enregistrer la progression dans {} : {}", path.display(), e);
+        }
+    }
+
+    /// En solo, le héros entre dans la vision en simple soldat : ses compétences sont mises de côté
+    pub fn enter_vision(&mut self) {
+        if self.present_skills.is_none() {
+            self.present_skills = Some(herocraft_common::vision::PresentSkills::set_aside(&mut self.stats));
+        }
+    }
+
+    /// En solo, il revient de la vision et retrouve ses compétences du présent
+    pub fn leave_vision(&mut self) {
+        if let Some(present) = self.present_skills.take() {
+            present.restore(&mut self.stats);
+        }
+    }
+
+    /// En solo, il revient d'une vision achevée : ses compétences du présent, plus celles que
+    /// l'éclat a éveillées
+    pub fn leave_vision_with_power(&mut self) {
+        if let Some(present) = self.present_skills.take() {
+            present.keep_awakened(&mut self.stats);
         }
     }
 

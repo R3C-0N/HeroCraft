@@ -1,0 +1,70 @@
+{
+  "name": "Soldat de l'armée",
+  "description": "Un soldat de l'armée qui assiège la ville-souvenir (vision) : il charge avec le héros et se bat contre les défenseurs.",
+  "tint": [
+    0.8,
+    0.9,
+    1.15
+  ],
+  "armor": 25,
+  "body": {
+    "half_width": 0.3,
+    "half_length": 0.3,
+    "height": 1.85
+  },
+  "walk_speed": 1.7,
+  "health": 26,
+  "activity": "always",
+  "humanoid": true,
+  "guard": {
+    "block": 0.5,
+    "arc": 120
+  },
+  "attack": {
+    "mode": "solo",
+    "damage": 3.5,
+    "cooldown": 1.2,
+    "sight": 14,
+    "reach": 1.0,
+    "chase_speed": 1.7,
+    "hunts_players": false,
+    "prey": [
+      "soldatEnnemi",
+      "capitaineEnnemi"
+    ]
+  },
+  "model": {
+    "animations": {
+      "travaille": {
+        "cycle": 2.0,
+        "pause": {
+          "poids": 0,
+          "duree": [
+            4,
+            10
+          ]
+        }
+      },
+      "discute": {
+        "cycle": 1.6,
+        "pause": {
+          "poids": 0,
+          "duree": [
+            3,
+            8
+          ]
+        }
+      },
+      "sommeil": {
+        "cycle": 4,
+        "pause": {
+          "poids": 0,
+          "duree": [
+            10,
+            20
+          ]
+        }
+      }
+    }
+  }
+}

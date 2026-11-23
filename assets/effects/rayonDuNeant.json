@@ -1,0 +1,49 @@
+{
+  "description": "L'énorme rayon violet qui s'élève du centre de la ville-souvenir quand la grande porte cède (charge de la vision) : une colonne qui monte jusqu'au ciel, un cœur blanc, et des braises violettes qu'elle aspire.",
+  "layers": [
+    {
+      "shape": "column",
+      "loop": true,
+      "fade_in": 1.5,
+      "radius": 5,
+      "height": 600,
+      "color": "#8C00FFB0",
+      "glow": 4
+    },
+    {
+      "shape": "column",
+      "loop": true,
+      "fade_in": 0.8,
+      "radius": 1.6,
+      "height": 600,
+      "color": "#F2E0FFE0",
+      "glow": 6
+    },
+    {
+      "shape": "ring",
+      "on_ground": true,
+      "duration": 2.5,
+      "radius": [2, 40],
+      "thickness": 1.5,
+      "color": ["#D9B3FF", "#8C00FF00"],
+      "glow": 4
+    },
+    {
+      "loop": true,
+      "particles": {
+        "rate": 60,
+        "origin": "ring",
+        "origin_radius": 9,
+        "direction": "inward",
+        "spread": 20,
+        "speed": [3, 6],
+        "life": [1.5, 2.5],
+        "gravity": -4,
+        "size": [0.5, 0.0],
+        "color": ["#C58BFF", "#8C00FF00"],
+        "glow": 3,
+        "texture": "soft.png"
+      }
+    }
+  ]
+}

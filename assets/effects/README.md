@@ -116,6 +116,8 @@ Une valeur seule est constante. Une couleur s'écrit `#RRGGBB` ou `#RRGGBBAA` (l
 | `auraRing` | cercle lumineux persistant |
 | `healSparkles` | paillettes de soin montantes |
 | `holyBeam` | colonne de lumière |
+| `rayonDuNeant` | rayon violet géant au centre de la ville-souvenir (charge de la vision) |
+| `eclatEveil` | éveil du héros : rayons de lumière et colonne violette (vision) |
 | `runeCircle` | sceau magique au sol |
 | `handFlame` | flamme dans la main |
 | `fireOrb` | boule de feu en vol |

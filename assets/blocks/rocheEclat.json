@@ -1,0 +1,12 @@
+{
+  "numeric_id": 165,
+  "name": "Roche à l'éclat",
+  "description": "Une roche fendue d'où filtre une lueur violette : un éclat de Pierre du Néant y est pris. Elle ne cède qu'à la pioche, et rend l'éclat.",
+  "category": "Artefacts",
+  "hardness": 25,
+  "color": {"side": "#5a2a8c"},
+  "textures": {"side": "textures/VoidStone.png"},
+  "light": 11,
+  "drop": null,
+  "loot": [{"item": "voidStoneFragment"}]
+}

@@ -1,0 +1,58 @@
+{
+  "description": "L'éveil du héros : des rayons de lumière jaillissent de l'éclat ramassé, une colonne violette monte au ciel et une onde court au sol.",
+  "layers": [
+    {
+      "shape": "column",
+      "duration": 2.4,
+      "radius": [0.3, 1.4],
+      "height": 40,
+      "color": ["#FFFFFFF0", "#8C00FF00"],
+      "glow": 5
+    },
+    {
+      "shape": "ring",
+      "on_ground": true,
+      "duration": 1.2,
+      "radius": [0.5, 9],
+      "thickness": 0.35,
+      "color": ["#F4E6FF", "#8C00FF00"],
+      "glow": 4
+    },
+    {
+      "particles": {
+        "count": 48,
+        "origin": "sphere",
+        "origin_radius": 0.3,
+        "offset": [0, 1.1, 0],
+        "direction": "outward",
+        "spread": 180,
+        "speed": [14, 26],
+        "life": [0.5, 1.1],
+        "drag": 1.5,
+        "size": [0.18, 0.02],
+        "color": ["#FFFFFF", "#B266FF00"],
+        "glow": 5,
+        "texture": "spark.png"
+      }
+    },
+    {
+      "delay": 0.3,
+      "duration": 2.5,
+      "particles": {
+        "rate": 40,
+        "origin": "cylinder",
+        "origin_radius": 0.6,
+        "origin_height": 1.8,
+        "direction": "up",
+        "spread": 25,
+        "speed": [1.5, 3.5],
+        "life": [1.0, 2.0],
+        "gravity": -0.5,
+        "size": [0.12, 0.0],
+        "color": ["#E9CCFF", "#8C00FF00"],
+        "glow": 3,
+        "texture": "soft.png"
+      }
+    }
+  ]
+}

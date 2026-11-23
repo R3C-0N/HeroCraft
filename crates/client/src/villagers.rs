@@ -141,7 +141,7 @@ pub fn push_villagers(
         let copied = view.copy.filter(|&c| c == herocraft_common::COPY_SUMMONER).and(view.summoner).and_then(hero_of);
         let appearance = copied.as_ref().or(card.as_ref().map(|c| &c.appearance)).unwrap_or(stranger());
         let mut pose = animator.pose(view, registry);
-        if let Some(tint) = view.tint {
+        if let Some(tint) = view.tint.or_else(|| view.species.and_then(|s| registry.get(s)).and_then(|s| s.tint)) {
             pose.tint = [0, 1, 2].map(|i| pose.tint[i] * tint[i]);
         }
         let slot = texture(SheetSource::Painted(appearance));

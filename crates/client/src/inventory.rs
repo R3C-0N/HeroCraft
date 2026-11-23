@@ -47,6 +47,14 @@ pub fn fits(index: usize, item: ItemId) -> bool {
     }
 }
 
+/// La pioche du paquetage du soldat
+pub const SOLDIER_PICKAXE: &str = "ironPickaxe";
+
+/// Une pioche, quel qu'en soit le métal
+pub fn is_pickaxe(item: ItemId) -> bool {
+    item.block().is_none() && herocraft_common::items().get(item).is_some_and(|sheet| sheet.id.to_ascii_lowercase().contains("pickaxe"))
+}
+
 /// Pile de blocs ou d'objets identiques dans une case
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemStack {
@@ -118,6 +126,36 @@ impl Inventory {
             }
         }
         self.selected = self.selected.min(HOTBAR_SLOTS - 1);
+    }
+
+    /// Le paquetage du soldat de la vision (bible, section 8) : maille de fer portée, épée en
+    /// main, et une pioche rangée dans le sac (le tutoriel la fait prendre). Il ne s'enregistre
+    /// nulle part : l'inventaire du présent revient au retour.
+    pub fn soldier_kit() -> Self {
+        let mut kit = Self::default();
+        let find = |id: &str| herocraft_common::items().find(id);
+        for (i, id) in ["ironMailHelmet", "ironMailChestplate", "ironMailLeggings", "ironMailBoots"].into_iter().enumerate() {
+            if let Some(item) = find(id).filter(|&item| fits(FIRST_EQUIPMENT + i, item)) {
+                kit.slots[FIRST_EQUIPMENT + i] = Some(ItemStack { item, count: 1 });
+            }
+        }
+        if let Some(sword) = find("ironSword") {
+            kit.slots[0] = Some(ItemStack { item: sword, count: 1 });
+        }
+        if let Some(pickaxe) = find(SOLDIER_PICKAXE) {
+            kit.slots[HOTBAR_SLOTS + 4] = Some(ItemStack { item: pickaxe, count: 1 });
+        }
+        kit
+    }
+
+    /// Une pioche est dans la barre d'objets
+    pub fn pickaxe_in_hotbar(&self) -> bool {
+        self.slots[..HOTBAR_SLOTS].iter().flatten().any(|s| is_pickaxe(s.item))
+    }
+
+    /// Le joueur tient une pioche
+    pub fn holds_pickaxe(&self) -> bool {
+        self.selected_item().is_some_and(is_pickaxe)
     }
 
     pub fn save(&self) {

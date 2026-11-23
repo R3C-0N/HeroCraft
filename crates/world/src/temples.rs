@@ -32,6 +32,12 @@
 //! - mettre le joueur en place : `TempleSite::approach` (au bord du parvis, face à l'escalier),
 //!   `TempleSite::arena_center` (où attendre le monstre) et `TempleSite::in_sanctum` (la salle de
 //!   l'autel).
+//!
+//! Dans le passé, le temple se dresse au cœur de sa ville-souvenir, une ville en guerre dont on ne
+//! sort pas (voir `structures::memory_city`) : `PlanetWorldGenerator::memory_city` en donne le plan,
+//! le rassemblement de l'armée, la grande porte, les places des mini-boss, la porte de la ville haute (au fond, à l'opposé de la grande porte) et les postes
+//! des ennemis. Pour passer d'une époque à l'autre, `PlanetWorldGenerator::vision_chunks` donne
+//! tous les chunks à régénérer, ville comprise. Au présent, il ne reste de la ville que le temple.
 
 use herocraft_common::PlanetFace;
 
@@ -39,7 +45,7 @@ use crate::culture::Culture;
 use crate::edits::BlockPos;
 use crate::generator::PlanetWorldGenerator;
 use crate::structures::{
-    mix, Piece, Rect, Settlement, SettlementKind, Side, Temple, CELL, CELLS_PER_FACE,
+    mix, MemoryCity, Piece, Rect, Settlement, SettlementKind, Side, Temple, CELL, CELLS_PER_FACE,
 };
 use herocraft_common::PlanetChunkCoord;
 use herocraft_voxel_engine::CHUNK_SIZE;
@@ -60,6 +66,24 @@ impl Epoch {
         matches!(self, Epoch::Past(_))
     }
 }
+
+/// Entrée dans la vision d'un temple (`PlanetWorldGenerator::vision_entry`)
+#[derive(Debug, Clone)]
+pub struct VisionEntry {
+    pub site: TempleSite,
+    /// Peuple qui tient la ville dans le passé : l'époque de la vision est `Epoch::Past(holder)`
+    pub holder: Culture,
+    /// Bloc où se tiennent les pieds du héros à son arrivée
+    pub feet: BlockPos,
+    /// Bloc où luit l'éclat de la Pierre du Néant du tutoriel : sur le terrain de l'armée, à
+    /// l'écart du héros et un peu en arrière, pour qu'il traverse les rangs pour l'atteindre
+    pub shard: BlockPos,
+}
+
+/// L'éclat du tutoriel est à tant de blocs sur le côté du point de rassemblement…
+const SHARD_SIDE_BLOCKS: f64 = 12.0;
+/// … et à tant de blocs en arrière, loin de la porte
+const SHARD_BACK_BLOCKS: f64 = 5.0;
 
 /// Un temple de la planète, tel que les deux époques le partagent
 #[derive(Debug, Clone, Copy)]
@@ -196,6 +220,45 @@ impl PlanetWorldGenerator {
         }
     }
 
+    /// La ville-souvenir qui entoure le temple `site` dans la vision, tenue par le peuple `holder`
+    /// (quelle que soit l'époque de ce générateur). `None` si le terrain ne s'y prête pas.
+    pub fn memory_city(&self, site: &TempleSite, holder: Culture) -> Option<&MemoryCity> {
+        let (x, z) = site.center();
+        self.structures.memory_city(self, site.face, x.div_euclid(CELL), z.div_euclid(CELL), holder).filter(|c| c.center == site.center())
+    }
+
+    /// Les chunks à régénérer pour passer d'une époque à l'autre autour du temple `site` quand la
+    /// vision est tenue par `holder` : ceux de la ville-souvenir, à toutes les altitudes qu'elle
+    /// change, et ceux du temple
+    pub fn vision_chunks(&self, site: &TempleSite, holder: Culture) -> Vec<PlanetChunkCoord> {
+        let mut found = site.chunks();
+        let Some(city) = self.memory_city(site, holder) else {
+            return found;
+        };
+        let size = CHUNK_SIZE as i32;
+        let foot = city.settlement.bounds;
+        // Le plan descend d'un bloc sous le sol (rues, remparts) ou jusqu'au plancher des maisons
+        let mut low = i32::MAX;
+        for z in (foot.z0..foot.z1).step_by(4) {
+            for x in (foot.x0..foot.x1).step_by(4) {
+                low = low.min(self.sample_block_column(site.face, x, z).elevation.floor() as i32);
+            }
+        }
+        let low = (low - 8).max(0).div_euclid(size);
+        let high = (city.settlement.top - 1).div_euclid(size);
+        for cz in foot.z0.div_euclid(size)..=(foot.z1 - 1).div_euclid(size) {
+            for cx in foot.x0.div_euclid(size)..=(foot.x1 - 1).div_euclid(size) {
+                for layer in low..=high {
+                    let chunk = PlanetChunkCoord::new(site.face, cx, cz, layer);
+                    if !found.contains(&chunk) {
+                        found.push(chunk);
+                    }
+                }
+            }
+        }
+        found
+    }
+
     /// Le temple dont le podium couvre la colonne (x, z) d'une face, s'il y en a un
     pub fn temple_at(&self, face: PlanetFace, x: i32, z: i32) -> Option<TempleSite> {
         let site = TempleSite::of(self.settlement_at(face, x, z)?)?;
@@ -210,6 +273,31 @@ impl PlanetWorldGenerator {
             .filter_map(TempleSite::of)
             .filter(|t| t.temple.rect().intersects(&area))
             .collect()
+    }
+
+    /// La vision qu'ouvre, pour un héros du peuple `player`, le temple le plus proche de la colonne
+    /// (x, z) (à moins de `max_blocks` blocs) : le temple, le peuple qui tient sa ville-souvenir, et
+    /// le bloc où le héros apparaît, au rassemblement de l'armée devant la grande porte
+    pub fn vision_entry(&self, face: PlanetFace, x: i32, z: i32, max_blocks: i32, player: Culture) -> Option<VisionEntry> {
+        let site = self.nearest_temple(face, x, z, max_blocks)?;
+        let holder = site.holder_for(player);
+        let past = self.with_epoch(Epoch::Past(holder));
+        let city = past.memory_city(&site, holder)?;
+        let (mx, mz) = city.muster;
+        // Les premiers pieds libres de la colonne (x, z), au-dessus du sol
+        let standing = |x: i32, z: i32| {
+            let ground = past.sample_block_column(site.face, x, z).elevation.floor() as i32;
+            (ground..ground + 64).find(|&y| !past.block_at(site.face, x, y, z).is_solid() && !past.block_at(site.face, x, y + 1, z).is_solid())
+        };
+        let y = standing(mx, mz)?;
+        // Dos à la porte, puis sur le côté
+        let (bx, bz) = ((mx - city.gate.0) as f64, (mz - city.gate.1) as f64);
+        let len = (bx * bx + bz * bz).sqrt().max(1.0);
+        let (bx, bz) = (bx / len, bz / len);
+        let sx = (mx as f64 - bz * SHARD_SIDE_BLOCKS + bx * SHARD_BACK_BLOCKS).round() as i32;
+        let sz = (mz as f64 + bx * SHARD_SIDE_BLOCKS + bz * SHARD_BACK_BLOCKS).round() as i32;
+        let shard = BlockPos::new(site.face, sx, standing(sx, sz).unwrap_or(y), sz);
+        Some(VisionEntry { feet: BlockPos::new(site.face, mx, y, mz), shard, site, holder })
     }
 
     /// Le temple le plus proche de la colonne (x, z) d'une face, cherché jusqu'à `max_blocks` blocs
@@ -265,6 +353,7 @@ impl PlanetWorldGenerator {
 mod tests {
     use super::*;
     use crate::cubed_sphere::PlanetDescriptor;
+    use crate::structures::Ring;
     use herocraft_common::BlockId;
 
     fn generator(seed: u64) -> PlanetWorldGenerator {
@@ -311,22 +400,138 @@ mod tests {
     #[test]
     fn the_two_epochs_share_the_same_place() {
         let (present, site) = some_temple(42);
-        let past = present.with_epoch(Epoch::Past(site.holder_for(Culture::Humains)));
+        let holder = site.holder_for(Culture::Humains);
+        let past = present.with_epoch(Epoch::Past(holder));
+        let city = past.memory_city(&site, holder).expect("la ville-souvenir du temple");
         let rect = site.rect();
         let mut differs = 0;
-        // Autour du temple, rien ne change ; dans l'enceinte, le temple change de visage
+        // Dans l'enceinte, le temple change de visage ; hors de la ville-souvenir, rien ne change
         for z in rect.z0 - 4..rect.z1 + 4 {
             for x in rect.x0 - 4..rect.x1 + 4 {
                 for y in site.floor() - 4..site.top() + 2 {
-                    if present.block_at(site.face, x, y, z) != past.block_at(site.face, x, y, z) {
-                        assert!(rect.contains(x, z), "({x}, {y}, {z}) change hors du temple");
-                        assert!(y < site.top(), "({x}, {y}, {z}) change au-dessus du temple");
+                    if present.block_at(site.face, x, y, z) != past.block_at(site.face, x, y, z) && rect.contains(x, z) {
                         differs += 1;
                     }
                 }
             }
         }
         assert!(differs > 200, "le temple intact diffère de la ruine ({differs} blocs)");
+        let (cx, cz) = site.center();
+        let reach = city.outer + 12;
+        for z in (cz - reach..=cz + reach).step_by(3) {
+            for x in (cx - reach..=cx + reach).step_by(3) {
+                // Les arbres coupés au pied du rempart n'étendent plus leurs branches au-dehors
+                let d = (((x - cx).pow(2) + (z - cz).pow(2)) as f64).sqrt();
+                let r = crate::vegetation::TREE_REACH + 2;
+                if d <= (city.outer + r) as f64 || city.field.expand(r).contains(x, z) {
+                    continue;
+                }
+                let ground = present.sample_block_column(site.face, x, z).elevation.floor() as i32;
+                for y in ground - 3..ground + 12 {
+                    assert_eq!(present.block_at(site.face, x, y, z), past.block_at(site.face, x, y, z), "({x}, {y}, {z}) change hors de la ville-souvenir");
+                }
+            }
+        }
+    }
+
+    /// Altitude des pieds de qui se tient dans la colonne (x, z) au plus près de `near`, et si on
+    /// peut y rester debout (deux blocs libres au-dessus d'un bloc qui porte)
+    fn feet(generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32, near: i32) -> Option<i32> {
+        let holds = |y: i32| {
+            let b = generator.block_at(face, x, y - 1, z);
+            b.is_solid() || b.is_liquid()
+        };
+        let free = |y: i32| {
+            let b = generator.block_at(face, x, y, z);
+            !b.is_solid()
+        };
+        // Une marche d'un bloc se monte ; on peut descendre de haut
+        (near - 12..=near + 1).rev().find(|&y| holds(y) && free(y) && free(y + 1) && (y..=near + 1).all(free))
+    }
+
+    /// Les colonnes qu'on atteint à pied depuis `start` sans dépasser `limit` du centre `center`,
+    /// sans passer par les colonnes que `shut` ferme
+    fn walk(generator: &PlanetWorldGenerator, face: PlanetFace, start: (i32, i32), center: (i32, i32), limit: f64, shut: impl Fn(i32, i32) -> bool) -> std::collections::HashMap<(i32, i32), i32> {
+        let ground = generator.sample_block_column(face, start.0, start.1).elevation.floor() as i32;
+        let y0 = feet(generator, face, start.0, start.1, ground + 2).expect("on se tient au point de départ");
+        let mut seen = std::collections::HashMap::from([(start, y0)]);
+        let mut queue = std::collections::VecDeque::from([(start, y0)]);
+        while let Some(((x, z), y)) = queue.pop_front() {
+            for (nx, nz) in [(x + 1, z), (x - 1, z), (x, z + 1), (x, z - 1)] {
+                if seen.contains_key(&(nx, nz)) {
+                    continue;
+                }
+                let d = (((nx - center.0).pow(2) + (nz - center.1).pow(2)) as f64).sqrt();
+                if d > limit || shut(nx, nz) {
+                    seen.insert((nx, nz), i32::MIN);
+                    continue;
+                }
+                if let Some(ny) = feet(generator, face, nx, nz, y) {
+                    seen.insert((nx, nz), ny);
+                    queue.push_back(((nx, nz), ny));
+                }
+            }
+        }
+        seen
+    }
+
+    #[test]
+    fn the_memory_city_is_stormed_through_its_gate_and_leads_to_the_temple() {
+        let (present, site) = some_temple(42);
+        let holder = site.holder_for(Culture::Gnomes);
+        let past = present.with_epoch(Epoch::Past(holder));
+        let city = past.memory_city(&site, holder).expect("la ville-souvenir du temple").clone();
+        assert!(city.outer >= 42, "le rempart est assez large ({})", city.outer);
+        assert!(city.court > site.radius() && city.inner > city.court + 10 && city.outer > city.inner + 12);
+        assert_eq!(city.arenas.len(), 3);
+        assert!([Ring::Lower, Ring::Upper, Ring::Temple].iter().all(|r| city.posts.iter().any(|p| p.1 == *r)), "des ennemis dans chaque cercle");
+        // L'armée se masse dehors, devant la grande porte, dans l'axe de l'entrée du temple
+        let (dx, dz) = site.door().delta();
+        let (cx, cz) = site.center();
+        assert_eq!(city.ring(city.muster.0, city.muster.1), None);
+        assert!(city.covers(city.muster.0, city.muster.1));
+        assert!(dx * (city.muster.0 - cx) + dz * (city.muster.1 - cz) > city.outer, "l'armée attaque face à l'entrée du temple");
+        let arena = site.arena_center();
+        let reaches = |seen: &std::collections::HashMap<(i32, i32), i32>, at: (i32, i32)| seen.iter().any(|(&(x, z), &y)| y != i32::MIN && (x - at.0).abs() <= 2 && (z - at.1).abs() <= 2);
+        // Porte ouverte : depuis le rassemblement, on entre et on arrive dans l'arène
+        let open = walk(&past, site.face, city.muster, city.center, (city.outer + 40) as f64, |_, _| false);
+        assert!(reaches(&open, (arena.x, arena.z)), "on n'atteint pas l'arène depuis la porte");
+        assert!(reaches(&open, city.inner_gate));
+        assert!(dx * (city.inner_gate.0 - cx) + dz * (city.inner_gate.1 - cz) < 0, "la porte de la ville haute est au fond");
+        // Porte refermée derrière le joueur : on ne sort plus de la ville
+        let inside = (city.gate.0 - 7 * dx, city.gate.1 - 7 * dz);
+        let shut = city.gate_rect;
+        let closed = walk(&past, site.face, inside, city.center, (city.outer + 40) as f64, |x, z| shut.contains(x, z));
+        let escaped: Vec<_> = closed.iter().filter(|(&(x, z), &y)| y != i32::MIN && city.ring(x, z).is_none()).map(|(c, _)| *c).collect();
+        assert!(escaped.is_empty(), "on sort de la ville par {:?}", &escaped[..escaped.len().min(5)]);
+        assert!(reaches(&closed, (arena.x, arena.z)), "on n'atteint pas l'arène une fois la porte refermée");
+        // La grande rue de l'axe est barrée : tout droit, on bute sur une barricade
+        let barred = (city.inner + 4..city.outer - 3).any(|k| {
+            let (x, z) = (cx + dx * k, cz + dz * k);
+            let ground = past.sample_block_column(site.face, x, z).elevation.floor() as i32;
+            past.block_at(site.face, x, ground, z).is_solid() && past.block_at(site.face, x, ground + 1, z).is_solid()
+        });
+        assert!(barred, "la grande rue de l'axe n'est pas barrée");
+    }
+
+    #[test]
+    fn only_the_temple_remains_in_the_present() {
+        let (present, site) = some_temple(42);
+        let holder = site.holder_for(Culture::Humains);
+        let past = present.with_epoch(Epoch::Past(holder));
+        let city = past.memory_city(&site, holder).expect("la ville-souvenir du temple");
+        assert!(present.memory_city_at(site.face, city.muster.0, city.muster.1).is_none());
+        assert!(past.memory_city_at(site.face, city.muster.0, city.muster.1).is_some());
+        // Le rempart du passé n'existe pas au présent
+        let (x, z) = (city.center.0 + city.outer, city.center.1);
+        let ground = present.sample_block_column(site.face, x, z).elevation.floor() as i32;
+        assert!((ground..ground + 6).all(|y| past.block_at(site.face, x, y, z).is_solid()), "le rempart se dresse dans le passé");
+        assert!((ground..ground + 6).any(|y| present.block_at(site.face, x, y, z) != past.block_at(site.face, x, y, z)), "pas de rempart au présent");
+        // Les chunks de la vision couvrent toute la ville
+        let chunks = past.vision_chunks(&site, holder);
+        let size = CHUNK_SIZE as i32;
+        assert!(chunks.iter().any(|c| c.x == x.div_euclid(size) && c.y == z.div_euclid(size) && c.altitude_layer == ground.div_euclid(size)));
+        assert!(chunks.len() > site.chunks().len());
     }
 
     #[test]

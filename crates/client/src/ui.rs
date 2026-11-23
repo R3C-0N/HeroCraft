@@ -46,6 +46,8 @@ pub enum UiAction {
     /// Le créateur vient de sceller la légende du héros (`UiState::take_sealed_legend`) : elle est
     /// à enregistrer
     LegendSealed,
+    /// `/vision` en solo : entrer dans la vision du temple le plus proche (`true`) ou en revenir
+    Vision(bool),
 }
 
 /// État de la partie en ligne, affiché dans la page Multijoueur
@@ -608,6 +610,8 @@ pub struct UiState {
     pub skill_screen: SkillScreen,
     /// Compétences que le joueur vient de lancer (touches de la barre, `/cast`), que le jeu lance
     pub skill_casts: Vec<String>,
+    /// Consigne du tutoriel de la vision, affichée en haut de l'écran
+    pub vision_hint: Option<String>,
     /// Compétences qui se chargent dont la touche vient d'être enfoncée (elles partent au relâchement)
     pub skill_charges: Vec<String>,
     /// La compétence dont la touche est tenue enfoncée, qui se charge
@@ -693,6 +697,7 @@ impl UiState {
             skills_open: false,
             skill_wheel: SkillWheel::standard(),
             skill_casts: Vec::new(),
+            vision_hint: None,
             skill_charges: Vec::new(),
             skill_charging: None,
             weapon_hud: WeaponHud::default(),
@@ -1163,6 +1168,7 @@ impl UiState {
                 }
             } else if is_ground && !self.is_settings_open {
                 self.draw_vitals_hud(ctx);
+                self.draw_vision_hint(ctx);
                 if self.player.is_dead() {
                     self.draw_death_screen(ctx, &mut action);
                 } else if self.trade.is_some() {
@@ -1219,6 +1225,26 @@ impl UiState {
 
     /// Barre d'objets en bas de l'écran : la case choisie est cerclée d'or, le nom de son bloc
     /// s'affiche au-dessus
+    /// La consigne du tutoriel de la vision, en haut au centre, teintée du violet du Néant
+    fn draw_vision_hint(&self, ctx: &egui::Context) {
+        let Some(hint) = &self.vision_hint else { return };
+        egui::Area::new(egui::Id::new("vision_hint"))
+            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0_f32, 64.0_f32))
+            .interactable(false)
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                egui::Frame::none()
+                    .fill(egui::Color32::from_rgba_unmultiplied(14, 4, 24, 205))
+                    .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(140, 0, 255)))
+                    .rounding(6.0_f32)
+                    .inner_margin(egui::Margin::symmetric(16.0_f32, 10.0_f32))
+                    .show(ui, |ui| {
+                        ui.set_max_width(560.0_f32);
+                        ui.label(egui::RichText::new(hint).size(16.0_f32).color(egui::Color32::from_rgb(236, 222, 255)));
+                    });
+            });
+    }
+
     fn draw_hotbar(&self, ctx: &egui::Context) {
         let screen = ctx.screen_rect();
         let bottom = screen.bottom() - SCREEN_MARGIN;

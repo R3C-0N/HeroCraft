@@ -150,4 +150,5 @@ Problème soulevé par Mat : « le seul héros qui veut plus de pouvoir cause la
 36. **Les héros des nations et les Pierres.** Si un héros d'une nation absorbe une Pierre sans en être le descendant, il devient un monstre du Néant. Est-ce la règle (le « prix à payer » de la section 4) ?
 37. **Le monstre du temple.** Est-ce le héros de la nation qui tient le temple, transformé par la Pierre que le joueur vient chercher ?
 38. **La ville au présent.** Au réveil, le joueur voit-il les ruines de toute la ville autour du temple, ou seulement le temple ?
+    - *Réponse de Mat (19/11/2026) :* seulement le temple. La ville n'existe que dans la vision.
 

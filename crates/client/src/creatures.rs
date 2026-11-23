@@ -389,7 +389,7 @@ pub fn build_frame(views: &[CreatureView], registry: &CreatureRegistry, models: 
         let roll = view.death.clamp(0.0, 1.0) * std::f32::consts::FRAC_PI_2;
         let (left, up) = (left * roll.cos() - up * roll.sin(), up * roll.cos() + left * roll.sin());
         let hurt = view.hurt.clamp(0.0, 1.0);
-        let base = view.tint.unwrap_or([1.0; 3]);
+        let base = view.tint.or_else(|| view.species.and_then(|s| registry.get(s)).and_then(|s| s.tint)).unwrap_or([1.0; 3]);
         let tint = [0, 1, 2].map(|i| base[i] * (1.0 + (HURT_TINT[i] - 1.0) * hurt));
         // Un petit est dessiné plus petit
         let size = block * view.scale.clamp(0.1, 1.0);

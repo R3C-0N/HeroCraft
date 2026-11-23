@@ -5,7 +5,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Version du protocole : un client et un serveur de versions différentes refusent de se parler
-pub const PROTOCOL_VERSION: u32 = 21;
+pub const PROTOCOL_VERSION: u32 = 23;
 /// Port d'écoute du serveur par défaut
 pub const DEFAULT_PORT: u16 = 7777;
 
@@ -131,6 +131,11 @@ pub enum ClientPacket {
     Disconnect,
     /// Le joueur tombé réapparaît (écran de mort quitté) : une résurrection ne peut plus le relever
     Respawn,
+    /// Commande de test : entrer dans la vision du temple le plus proche (`true`) ou en revenir
+    Vision { enter: bool },
+    /// Dans la vision, le joueur a ramassé l'éclat du tutoriel : il s'éveille en héros et les
+    /// premières compétences de sa voie s'ouvrent (`vision::awaken`)
+    VisionAwaken,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -300,6 +305,10 @@ pub enum ServerPacket {
         direction: Vec3,
         speed: f32,
     },
+    /// Le joueur entre dans la vision d'un temple, seul dans le passé de la ville tenue par le
+    /// peuple `holder` (rang dans `Culture::ALL`), ou en revient (`None`) : le client change
+    /// d'époque, oublie les blocs modifiés de l'autre monde et pose le joueur en `feet`
+    Vision { holder: Option<u8>, feet: Vec3 },
     /// Erreur ou déconnexion
     Disconnect(String),
 }

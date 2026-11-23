@@ -2,7 +2,7 @@ use crate::caves::{block_carved, carvable_range, CaveField};
 use crate::cubed_sphere::{base_solar_temperature, unit_sphere_to_lat_lon, PlanetDescriptor, FACE_SCALE};
 use crate::ocean_currents::OceanicCurrentSimulation;
 use crate::roads::{road_block, RoadMap};
-use crate::structures::{Rect, Settlement, StructureMap};
+use crate::structures::{MemoryCity, Rect, Settlement, StructureMap};
 use crate::tectonics::TectonicSimulation;
 use crate::temples::Epoch;
 use crate::vegetation::{VegetationField, VEGETATION_SPAN};
@@ -272,9 +272,30 @@ impl PlanetWorldGenerator {
         }
     }
 
-    /// La ville, le village ou les ruines dont le plan couvre la colonne (x, z) d'une face
+    /// La ville, le village ou les ruines dont le plan couvre la colonne (x, z) d'une face. Dans le
+    /// passé, la ville-souvenir d'un temple passe avant tout le reste.
     pub fn settlement_at(&self, face: PlanetFace, x: i32, z: i32) -> Option<&Settlement> {
+        if let Some(city) = self.memory_city_at(face, x, z) {
+            return Some(&city.settlement);
+        }
         self.structures.at(self, face, x, z)
+    }
+
+    /// Dans le passé, la ville-souvenir qui prend la colonne (x, z) d'une face (voir
+    /// `structures::memory_city`) ; au présent, aucune
+    pub fn memory_city_at(&self, face: PlanetFace, x: i32, z: i32) -> Option<&MemoryCity> {
+        match self.epoch {
+            Epoch::Past(holder) => self.structures.memory_at(self, face, x, z, holder),
+            Epoch::Present => None,
+        }
+    }
+
+    /// Dans le passé, les villes-souvenirs qui touchent le rectangle de colonnes `area` d'une face
+    pub fn memory_cities_touching(&self, face: PlanetFace, area: Rect) -> Vec<&MemoryCity> {
+        match self.epoch {
+            Epoch::Past(holder) => self.structures.memories_touching(self, face, area, holder),
+            Epoch::Present => Vec::new(),
+        }
     }
 
     /// Bloc qu'une structure impose en (x, y, z) (`column` étant sa colonne), `None` si le terrain
@@ -282,6 +303,11 @@ impl PlanetWorldGenerator {
     #[inline]
     pub fn structure_block(&self, column: &ColumnSample, face: PlanetFace, x: i32, y: i32, z: i32) -> Option<BlockId> {
         let ground = column.elevation.floor() as i32;
+        // Dans le passé, une ville-souvenir efface tout ce qui se trouvait là
+        if let Some(city) = self.memory_city_at(face, x, z) {
+            let s = &city.settlement;
+            return if s.span(x, z, ground).contains(&y) { s.block_in(self.epoch, x, y, z, ground) } else { None };
+        }
         if let Some(s) = self.settlement_at(face, x, z) {
             // Le plan passe avant les chemins qui l'abordent
             if !s.span(x, z, ground).is_empty() {
@@ -298,12 +324,20 @@ impl PlanetWorldGenerator {
     /// Blocs qui éclairent posés par les structures dans les colonnes `area` d'une face : position
     /// et bloc. `ground(x, z)` : altitude du premier bloc d'air au-dessus du relief de la colonne.
     pub fn structure_lights(&self, face: PlanetFace, area: crate::structures::Rect, ground: impl Fn(i32, i32) -> i32) -> Vec<(i32, i32, i32, BlockId)> {
-        self.structures.touching(self, face, area).into_iter().flat_map(|s| s.lights_in(self.epoch, area, &ground)).collect()
+        let cities = self.memory_cities_touching(face, area);
+        let covered = |x: i32, z: i32| cities.iter().any(|c| c.covers(x, z));
+        let mut lights: Vec<(i32, i32, i32, BlockId)> =
+            self.structures.touching(self, face, area).into_iter().flat_map(|s| s.lights_in(self.epoch, area, &ground)).filter(|l| !covered(l.0, l.2)).collect();
+        lights.extend(cities.iter().flat_map(|c| c.settlement.lights_in(self.epoch, area, &ground).into_iter().filter(|l| c.covers(l.0, l.2))));
+        lights
     }
 
     /// Altitudes de la colonne (x, z) qu'une structure peut changer (vide si aucune n'y touche)
     pub fn structure_span(&self, column: &ColumnSample, face: PlanetFace, x: i32, z: i32) -> Range<i32> {
         let ground = column.elevation.floor() as i32;
+        if let Some(city) = self.memory_city_at(face, x, z) {
+            return city.settlement.span(x, z, ground);
+        }
         if let Some(s) = self.settlement_at(face, x, z) {
             let span = s.span(x, z, ground);
             if !span.is_empty() {
@@ -321,6 +355,9 @@ impl PlanetWorldGenerator {
     /// d'une construction : rien d'autre (un arbre par exemple) ne doit y pousser
     pub fn is_built(&self, face: PlanetFace, x: i32, z: i32, margin: i32) -> bool {
         let area = Rect::around(x, z, margin.max(0));
+        if self.memory_city_at(face, x, z).is_some() {
+            return true;
+        }
         self.structures.touching(self, face, area).iter().any(|s| s.occupies(x, z, margin)) || self.roads.near(self, face, x, z, margin.max(0))
     }
 
@@ -328,7 +365,8 @@ impl PlanetWorldGenerator {
     pub fn structures_top(&self, face: PlanetFace, chunk_x: i32, chunk_y: i32, border: i32) -> Option<i32> {
         let size = CHUNK_SIZE as i32;
         let area = Rect::new(chunk_x * size - border, chunk_y * size - border, (chunk_x + 1) * size + border, (chunk_y + 1) * size + border);
-        self.structures.touching(self, face, area).iter().map(|s| s.top).max()
+        let cities = self.memory_cities_touching(face, area);
+        self.structures.touching(self, face, area).iter().map(|s| s.top).chain(cities.iter().map(|c| c.settlement.top)).max()
     }
 
     /// Le bloc plein (x, y, z) d'une face est creusé par une grotte (`column` étant sa colonne)
@@ -538,8 +576,12 @@ impl PlanetWorldGenerator {
     fn place_structures(&self, coord: &PlanetChunkCoord, columns: &[ColumnSample], border: i32, chunk: &mut ChunkData) {
         let size = CHUNK_SIZE as i32;
         let (x0, z0) = (coord.x * size, coord.y * size);
-        let settlements = self.structures.touching(self, coord.face, Rect::sized(x0, z0, size, size));
+        let mut settlements = self.structures.touching(self, coord.face, Rect::sized(x0, z0, size, size));
         let roads = self.roads.touching(self, coord.face, Rect::sized(x0, z0, size, size));
+        // Dans le passé, les villes-souvenirs effacent ce qui se trouvait dans leurs colonnes
+        let cities = self.memory_cities_touching(coord.face, Rect::sized(x0, z0, size, size));
+        let covered = |x: i32, z: i32| cities.iter().any(|c| c.covers(x, z));
+        settlements.extend(cities.iter().map(|c| &c.settlement));
         if settlements.is_empty() && roads.is_empty() {
             return;
         }
@@ -551,6 +593,10 @@ impl PlanetWorldGenerator {
                 for x in 0..size {
                     let (bx, bz) = (x0 + x, z0 + z);
                     if !settlement.bounds.contains(bx, bz) {
+                        continue;
+                    }
+                    // Une colonne d'une ville-souvenir n'appartient qu'à elle
+                    if covered(bx, bz) && !cities.iter().any(|c| std::ptr::eq(&c.settlement, settlement) && c.covers(bx, bz)) {
                         continue;
                     }
                     let column = &columns[((z + border) * side + x + border) as usize];
@@ -575,7 +621,7 @@ impl PlanetWorldGenerator {
                     let column = &columns[((z + border) * side + x + border) as usize];
                     let ground = column.elevation.floor() as i32;
                     let y = ground - 1;
-                    if !(layer_base..layer_base + size).contains(&y) || settlements.iter().any(|s| !s.span(bx, bz, ground).is_empty()) {
+                    if !(layer_base..layer_base + size).contains(&y) || covered(bx, bz) || settlements.iter().any(|s| !s.span(bx, bz, ground).is_empty()) {
                         continue;
                     }
                     if let Some(block) = road_block(surface, y, ground) {

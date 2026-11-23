@@ -23,7 +23,7 @@ use herocraft_common::{
     ServerPacket, SkillWheel, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
-use herocraft_world::{BlockGeometry, BlockPos, CreatureWorld, Fields, PlanetDescriptor, PlanetWorldGenerator, SkillPlayers, SkillRunner, TerrainEdits, CREATURE_RANGE_BLOCKS};
+use herocraft_world::{BlockGeometry, BlockPos, Culture, CreatureWorld, Epoch, TempleSite, Fields, PlanetDescriptor, PlanetWorldGenerator, SkillPlayers, SkillRunner, TerrainEdits, CREATURE_RANGE_BLOCKS};
 use log::{info, warn};
 
 /// Ticks de simulation par seconde
@@ -57,6 +57,8 @@ const MAX_SUMMON: u32 = 20;
 const MAX_SUMMON_BLOCKS: f64 = 32.0;
 /// `/xp` : points au plus par commande
 const MAX_EXPERIENCE: u64 = 1_000_000;
+/// Une vision s'ouvre au temple le plus proche à moins de tant de blocs
+const VISION_TEMPLE_BLOCKS: i32 = 2048;
 
 type ClientConnection = Connection<ServerPacket, ClientPacket>;
 
@@ -94,7 +96,24 @@ pub struct ConnectedPlayer {
     pub appearance: Option<Box<herocraft_common::hero::Appearance>>,
     /// Créatures que son client affiche (celles qui lui ont été annoncées)
     known_creatures: HashSet<u64>,
+    /// Vision de temple qu'il vit en ce moment, seul dans le passé
+    pub vision: Option<Box<Vision>>,
     connection: ClientConnection,
+}
+
+/// Vision d'un temple vécue par un joueur : seul dans le passé de la ville-souvenir, avec ses
+/// propres blocs modifiés, que personne d'autre ne voit et qui s'effacent à la sortie
+pub struct Vision {
+    pub site: TempleSite,
+    pub holder: Culture,
+    generator: PlanetWorldGenerator,
+    edits: TerrainEdits,
+    /// Là où le joueur se tenait avant la vision : il y revient en sortant
+    back: Vec3,
+    /// Ses compétences du présent, rendues au retour (il vit la vision en simple soldat)
+    present_skills: herocraft_common::vision::PresentSkills,
+    /// L'éclat du tutoriel a déjà éveillé ses compétences
+    awakened: bool,
 }
 
 /// Connexion ouverte qui n'a pas encore envoyé `Connect`
@@ -268,7 +287,7 @@ impl Server {
         let (name, rest) = line.split_once(' ').map_or((line, ""), |(n, r)| (n, r.trim()));
         match name.to_lowercase().as_str() {
             "help" | "?" => vec![
-                "Commands: help, list, seed, say <message>, weather [clear|cloudy|rain|storm|snow|auto], season [spring|summer|autumn|winter], stop".to_string(),
+                "Commands: help, list, seed, say <message>, weather [clear|cloudy|rain|storm|snow|auto], season [spring|summer|autumn|winter], vision <player> [end], stop".to_string(),
             ],
             "list" | "who" => {
                 let mut names: Vec<&str> = self.players.values().map(|p| p.name.as_str()).collect();
@@ -305,6 +324,21 @@ impl Server {
                 }
                 None => vec!["Usage: season <spring|summer|autumn|winter>".to_string()],
             },
+            "vision" if !rest.is_empty() => {
+                let (who, end) = rest.split_once(' ').map_or((rest, false), |(w, e)| (w, e.trim().eq_ignore_ascii_case("end")));
+                let Some(id) = self.players.values().find(|p| p.name.eq_ignore_ascii_case(who)).map(|p| p.id) else {
+                    return vec![format!("No player named {who}")];
+                };
+                if end {
+                    self.leave_vision(id);
+                    return vec![format!("{who} is back from the vision")];
+                }
+                match self.enter_vision(id) {
+                    Ok(()) => vec![format!("{who} enters the vision")],
+                    Err(reason) => vec![reason],
+                }
+            }
+            "vision" => vec!["Usage: vision <player> [end]".to_string()],
             "" => Vec::new(),
             other => vec![format!("Unknown command: {other} (type help)")],
         }
@@ -575,6 +609,7 @@ impl Server {
                 protection: 0.0,
                 appearance: None,
                 known_creatures: HashSet::new(),
+                vision: None,
                 connection,
             },
         );
@@ -662,6 +697,15 @@ impl Server {
                 info!("{} change le ciel (temps {:?}, météo {:?}).", player.name, time, forced);
                 self.set_sky(time, forced);
             }
+            ClientPacket::VisionAwaken => self.awaken_in_vision(id),
+            ClientPacket::Vision { enter: true } => {
+                if let Err(reason) = self.enter_vision(id) {
+                    if let Some(player) = self.players.get(&id) {
+                        tell(player, &reason);
+                    }
+                }
+            }
+            ClientPacket::Vision { enter: false } => self.leave_vision(id),
             ClientPacket::Disconnect => self.leave(id, "déconnexion"),
         }
     }
@@ -818,7 +862,11 @@ impl Server {
         if !pos.is_valid() {
             return;
         }
-        let current = self.edits.block(&self.generator, pos);
+        let (generator, edits) = match &player.vision {
+            Some(v) => (&v.generator, &v.edits),
+            None => (&self.generator, &self.edits),
+        };
+        let current = edits.block(generator, pos);
         let target = match action {
             BlockInteractionAction::Break if current.is_targetable() => Some(BlockId::AIR),
             // Seul un bloc décrit par une fiche se pose, à la place de l'air ou d'un liquide
@@ -839,6 +887,14 @@ impl Server {
         });
 
         match target {
+            // Dans une vision, le bloc ne change que pour lui
+            Some(block) if in_reach && player.vision.is_some() => {
+                let player = self.players.get_mut(&id).expect("joueur en ligne");
+                let vision = player.vision.as_mut().expect("vision en cours");
+                if vision.edits.set_block(&vision.generator, pos, block) {
+                    player.connection.send(&ServerPacket::VoxelUpdate { block: pos.into(), block_id: block.0 });
+                }
+            }
             Some(block) if in_reach && self.edits.set_block(&self.generator, pos, block) => {
                 self.fields.observe(pos, block);
                 self.broadcast(&ServerPacket::VoxelUpdate { block: pos.into(), block_id: block.0 });
@@ -1040,15 +1096,91 @@ impl Server {
     }
 
     fn leave(&mut self, id: u64, reason: &str) {
-        let Some(player) = self.players.remove(&id) else { return };
+        let Some(mut player) = self.players.remove(&id) else { return };
+        // Ses compétences du présent lui reviennent, celles de la vision s'effacent
+        if let Some(vision) = player.vision.as_mut() {
+            std::mem::take(&mut vision.present_skills).restore(&mut player.stats);
+        }
         self.skill_runner.forget_with(id, &mut self.creatures);
         info!("{} a quitté la partie ({reason}).", player.name);
-        if let Some(position) = player.position {
+        // Parti en pleine vision : il revient là où il l'avait commencée
+        if let Some(position) = player.vision.as_ref().map(|v| v.back).or(player.position) {
             self.last_positions.insert(player.name.clone(), position);
         }
         self.last_stats.insert(player.name.clone(), player.stats);
         self.broadcast(&ServerPacket::PlayerLeft { player_id: id });
         self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{} a quitté la partie", player.name) });
+    }
+
+    /// Fait entrer le joueur `id` dans la vision du temple le plus proche : il se retrouve seul
+    /// dans le passé, devant la grande porte de la ville-souvenir, avec l'armée qui s'y masse.
+    /// Renvoie la raison d'un refus.
+    pub fn enter_vision(&mut self, id: u64) -> Result<(), String> {
+        let player = self.players.get(&id).ok_or("joueur inconnu")?;
+        if player.vision.is_some() {
+            return Err("Déjà dans une vision".into());
+        }
+        let back = player.position.ok_or("position encore inconnue")?;
+        let pos = self.geometry.block_at_point(back.as_dvec3()).ok_or("position hors de la planète")?;
+        // Le peuple du joueur viendra de sa légende ; d'ici là, la vision est celle d'un humain
+        let entry = self.generator.vision_entry(pos.face, pos.x, pos.z, VISION_TEMPLE_BLOCKS, Culture::Humains).ok_or("Aucun temple à proximité")?;
+        let (site, holder) = (entry.site, entry.holder);
+        let generator = self.generator.with_epoch(Epoch::Past(holder));
+        let feet = self.geometry.corner(site.face, entry.feet.x as f64 + 0.5, entry.feet.y as f64, entry.feet.z as f64 + 0.5).as_vec3();
+        let rank = Culture::ALL.iter().position(|&c| c == holder).expect("peuple connu") as u8;
+        let player = self.players.get_mut(&id).expect("joueur en ligne");
+        info!("{} entre dans la vision du temple {:?} ({}, {}), tenu par les {}.", player.name, site.face, site.center().0, site.center().1, holder.name());
+        // Un simple soldat : ses compétences sont mises de côté jusqu'à l'éveil
+        let present_skills = herocraft_common::vision::PresentSkills::set_aside(&mut player.stats);
+        // L'éclat du tutoriel, pris dans sa roche, sur le terrain de l'armée
+        let edits = TerrainEdits::new(None);
+        if let Some(rock) = herocraft_common::blocks().find(herocraft_common::vision::SHARD_ROCK) {
+            edits.set_block(&generator, entry.shard, rock);
+        }
+        player.vision = Some(Box::new(Vision { site, holder, generator, edits, back, present_skills, awakened: false }));
+        player.position = Some(feet);
+        player.connection.send(&ServerPacket::Vision { holder: Some(rank), feet });
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+        // Les autres ne le voient plus
+        self.broadcast(&ServerPacket::PlayerLeft { player_id: id });
+        Ok(())
+    }
+
+    /// Le joueur `id` a ramassé l'éclat de sa vision : les premières compétences de sa voie
+    /// s'ouvrent, une seule fois
+    fn awaken_in_vision(&mut self, id: u64) {
+        let Some(player) = self.players.get_mut(&id) else { return };
+        let Some(vision) = player.vision.as_mut() else { return };
+        if std::mem::replace(&mut vision.awakened, true) {
+            return;
+        }
+        let names = herocraft_common::vision::awaken(&mut player.stats);
+        info!("{} s'éveille dans la vision : {}.", player.name, names.join(", "));
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+    }
+
+    /// Ramène le joueur `id` de sa vision, là où il l'avait commencée ; ses blocs de la vision
+    /// s'effacent
+    pub fn leave_vision(&mut self, id: u64) {
+        let Some(player) = self.players.get_mut(&id) else { return };
+        let Some(vision) = player.vision.take() else { return };
+        vision.present_skills.restore(&mut player.stats);
+        player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
+        player.position = Some(vision.back);
+        player.connection.send(&ServerPacket::Vision { holder: None, feet: vision.back });
+        info!("{} revient de la vision.", player.name);
+        let (name, appearance) = (player.name.clone(), player.appearance.clone());
+        let player = &self.players[&id];
+        for other in self.players.values().filter(|p| p.id != id && p.vision.is_none()) {
+            player.connection.send(&ServerPacket::PlayerJoined { player_id: other.id, name: other.name.clone() });
+            if let Some(appearance) = &other.appearance {
+                player.connection.send(&ServerPacket::PlayerAppearance { player_id: other.id, appearance: appearance.clone() });
+            }
+            other.connection.send(&ServerPacket::PlayerJoined { player_id: id, name: name.clone() });
+            if let Some(appearance) = &appearance {
+                other.connection.send(&ServerPacket::PlayerAppearance { player_id: id, appearance: appearance.clone() });
+            }
+        }
     }
 
     fn broadcast_player_states(&self) {
@@ -1058,10 +1190,11 @@ impl Server {
         let states: Vec<PlayerState> = self
             .players
             .values()
+            .filter(|p| p.vision.is_none())
             .filter_map(|p| p.position.map(|position| PlayerState { player_id: p.id, position, yaw: p.yaw, pitch: p.pitch }))
             .collect();
-        // Chacun reçoit les autres, pas lui-même
-        for player in self.players.values() {
+        // Chacun reçoit les autres, pas lui-même ; celui qui vit une vision y est seul
+        for player in self.players.values().filter(|p| p.vision.is_none()) {
             let others: Vec<PlayerState> = states.iter().filter(|s| s.player_id != player.id).copied().collect();
             if !others.is_empty() {
                 player.connection.send(&ServerPacket::PlayerStates(others));
@@ -1076,9 +1209,11 @@ impl Server {
         let (creatures, registry) = (self.creatures.creatures(), self.creatures.registry());
         for player in self.players.values_mut() {
             let Some(feet) = player.position else { continue };
+            // Les bêtes du présent n'entrent pas dans une vision
+            let present = player.vision.is_none();
             let mut visible = HashSet::new();
             let mut states: Vec<CreatureState> = Vec::new();
-            for creature in creatures.iter().filter(|c| !c.is_hidden() && c.position.distance(feet) <= range) {
+            for creature in creatures.iter().filter(|c| present && !c.is_hidden() && c.position.distance(feet) <= range) {
                 visible.insert(creature.id);
                 if player.known_creatures.contains(&creature.id) {
                     states.push(creature.state());

@@ -10,8 +10,8 @@
 // - Textures des blocs : rapport à leur couleur moyenne, qui module la couleur du sommet
 // =========================================================================
 
-#import herocraft::common::{camera, flatten_point, rotate_by, screen_ndc, quantization_dither}
-#import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective}
+#import herocraft::common::{camera, flatten_point, rotate_by, screen_ndc, quantization_dither, void_veins}
+#import herocraft::atmosphere::{sun_light_at, sky_light, aerial_perspective_screen, apply_aerial_perspective, frozen_air}
 #import herocraft::shadow::sun_visibility
 
 // Textures des blocs (block_textures.rs) : une couche par texture, ses texels divisés par sa
@@ -350,6 +350,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Couleur éclairée de base avec Ambient Occlusion (AO) per-vertex interpolé
     var lit_rgb = base_color * (total_light + emissive) + specular_light;
 
+    // Temps figé de la vision : la lumière baisse, et les veines du Néant rampent sur les blocs
+    // depuis le héros, parcourues de pulsations
+    if camera.frozen.x > 0.0 {
+        lit_rgb = mix(lit_rgb, lit_rgb * 0.7, camera.frozen.x) + void_veins(in.world_pos) * camera.frozen.x;
+    }
+
     // 6. Perspective aérienne : l'air entre la caméra et la surface diffuse la lumière du soleil
     // et du ciel (bleu au loin, doré face au soleil couchant) et atténue la surface. Le même
     // calcul donne la couleur du ciel à l'horizon : le relief lointain s'y fond. Dans
@@ -357,7 +363,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let dist = length(in.to_eye);
     // Air vu depuis la caméra : dans son propre repère, sans rotation
     let aerial = aerial_perspective_screen(camera.camera_pos, -view_dir, screen_ndc(in.clip_position.xy), dist, normalize(camera.light_dir), 12);
-    lit_rgb = apply_aerial_perspective(lit_rgb, aerial);
+    lit_rgb = apply_aerial_perspective(lit_rgb, frozen_air(aerial));
 
     // Brume nocturne : l'air n'est plus éclairé par le soleil, une lueur bleutée argentée
     // (vers la Lune) remplace la diffusion là où l'air atténue la surface

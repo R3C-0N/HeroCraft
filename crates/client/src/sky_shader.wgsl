@@ -212,5 +212,7 @@ fn fs_sky(in: SkyVertexOutput) -> @location(0) vec4<f32> {
     let veil = 1.0 - 0.97 * smoothstep(0.15, 0.7, overcast);
     let flash = vec3<f32>(0.9, 0.95, 1.2) * camera.weather.w * camera.lighting_params_ext.w;
     let sky = inscatter + night_glow + (sun_color + moon_color + visible_stars) * behind * veil + flash;
-    return vec4<f32>(quantization_dither(sky, in.clip_pos.xy), 1.0);
+    // Temps figé de la vision : la nuit tombe, le ciel vire au violet du Néant
+    let frozen_sky = mix(sky, vec3<f32>(0.262, 0.0, 1.0) * 0.02 + sky * 0.08, camera.frozen.x);
+    return vec4<f32>(quantization_dither(frozen_sky, in.clip_pos.xy), 1.0);
 }

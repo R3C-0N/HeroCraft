@@ -51,6 +51,25 @@ pub struct Cinematics {
 
 /// Émis par `fin-de-la-vision` : la Pierre obtenue est absorbée
 pub const VISION_ENDED: &str = "vision_ended";
+/// Envoyé à l'entrée dans la vision d'un temple (`l-eclat` s'y joue)
+pub const VISION_ENTERED: &str = "vision_entered";
+/// Renvoyé par `l-eclat` : le temps s'arrête ; `TIME_RESUMED` le fait repartir
+pub const TIME_FROZEN: &str = "time_frozen";
+pub const TIME_RESUMED: &str = "time_resumed";
+/// Le tutoriel de la vision : l'éclat est ramassé, le soldat s'éveille en héros (`l-eveil`)
+pub const VISION_AWAKENED: &str = "vision_awakened";
+/// La charge de la vision : le bélier a fait voler la grande porte en éclats (`la-porte-cede`)
+pub const GATE_BROKEN: &str = "gate_broken";
+
+/// Le temps est-il figé après l'événement `event`, s'il l'était (`frozen`) avant ?
+pub fn frozen_after(event: &GameEvent, frozen: bool) -> bool {
+    match event.name.as_str() {
+        TIME_FROZEN => true,
+        TIME_RESUMED | VISION_ENDED => false,
+        _ => frozen,
+    }
+}
+
 /// Événement envoyé une fois, à la première image du jeu (la Genèse s'y joue)
 pub const LAUNCH_EVENT: &str = "game_launched";
 

@@ -154,6 +154,19 @@ Dans un monde qui peine encore à se relever d'une apocalypse ancienne, des indi
 * **Qui sont ces monstres :** ce ne sont pas des membres du Cercle des anciens héros. Ce sont des **héros de chaque nation, transformés après avoir absorbé une Pierre du Néant**.
 * **Conséquence pour le temple :** il comporte, devant son entrée, une zone qui sert d'arène.
 * **Où est la ville :** au même endroit que la ruine (Mat, 19/11/2026). Dans le passé, la ville fermée se dessine autour du temple, sur le terrain réel ; au réveil, le joueur retrouve le même lieu en ruine.
+* **La ville au présent :** il n'en reste rien (Mat, 19/11/2026). Au réveil, seul le temple en ruine se dresse sur le terrain ; la ville n'existe plus que dans la vision.
+
+### L'ouverture de la vision : l'assaut et l'éclat (Mat, 19/11/2026)
+* **Arrivée par l'extérieur, en assaut.** La vision commence devant les murailles, au milieu de l'armée qui assiège la ville. Le rempart a une vraie porte.
+* **La porte se referme sur le joueur.** ~~Au passage, un écran de fumée cache le joueur, qui disparaît et réapparaît à sa place dans la ville.~~ Le joueur entre lui-même dans la ville, avec l'armée, sans téléportation ; une herse s'abat derrière lui. L'écran de fumée est réservé à la sortie du souvenir (Mat, 21/11/2026).
+* **Les arènes vivantes.** Pas de foule simulée : lors des mini-boss, les soldats alliés et ennemis s'écartent et forment un cercle qui repousse **tout le monde** (héros et mini-boss) vers le centre.
+* **Un souvenir solo.** Il n'y a pas de multijoueur dans ce souvenir (Mat, 22/11/2026).
+* **Le tutoriel, vécu en solo.** L'ancien héros incarné n'est d'abord qu'un soldat parmi les autres, en équipement standard (fer), avec les compétences les plus basiques. L'armée se prépare, la charge finale va commencer.
+* **L'éclat.** Le héros entend un éclat de la Pierre du Néant. Le temps semble s'arrêter, tout se teinte de violet, avec des effets du Néant (à décider). Il se déplace entre les soldats figés (tuto déplacement) et trouve une roche luisante d'un éclat violet. Il ouvre son inventaire pour y prendre une pioche (tuto inventaire) et brise la roche (tuto outils). En ramassant l'éclat qui en sort, des rayons de lumière jaillissent du contact : le simple soldat devient un héros et ses premières compétences s'ouvrent.
+* **La charge.** Le temps repart, l'armée charge la porte et un bélier la défonce. Quand la porte vole en éclats, un énorme rayon violet s'élève du centre de la ville.
+* **La traversée.** Des barricades ennemies forcent le joueur à des détours, où il tombe sur des ennemis de plus en plus nombreux, et sur des mini-boss en chemin. Beaucoup d'alliés meurent.
+* **L'arène.** Le joueur arrive presque seul dans l'arène du temple. Un ennemi l'attend seul au centre. Dans une explosion qui tue les derniers alliés, il prend la forme d'un monstre du Néant : c'est le boss final du souvenir.
+* **La fin du souvenir.** Une fois le monstre vaincu, le cristal appelle à nouveau le héros, qui se dirige vers lui et en récupère la puissance. Il ressort du souvenir avec cette puissance et un éclat de cristal trouvé en vrai, mais sans mémoire. L'histoire commence.
 
 ### SECRET DE LA BIBLE : les Pierres gardent la mémoire des héros (Mat, 17/11/2026)
 * Les héros ont initialement eu leur pouvoir des Pierres. Ils y ont donc été liés, et les Pierres abritent leur mémoire.

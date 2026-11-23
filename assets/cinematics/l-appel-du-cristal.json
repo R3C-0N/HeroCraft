@@ -1,0 +1,24 @@
+{
+  "title": "L'appel du cristal",
+  "description": "Le monstre du Néant abattu : un rayon descend sur l'autel du sanctuaire et la Pierre du Néant y apparaît. Elle murmure au héros de venir la prendre.",
+  "triggers": [{"event": "monster_slain"}],
+  "once": false,
+  "anchor": "event",
+  "shots": [
+    {
+      "name": "La Pierre sur l'autel",
+      "duration": 3.5,
+      "position": [[3, 2.5, -6], [1.5, 1.8, -4]],
+      "look_at": [0, 1, 0],
+      "fov": [55, 42],
+      "shake": 0.0,
+      "ease": "in_out"
+    }
+  ],
+  "fades": [
+    {"at": 0, "duration": 0.3, "from": 0.6, "to": 0, "color": "#FFFFFF"}
+  ],
+  "captions": [
+    {"at": 0.3, "duration": 3.0, "text": "Sur l'autel, le cristal s'éveille. Il t'appelle.", "style": "narration"}
+  ]
+}

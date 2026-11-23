@@ -11,6 +11,8 @@ struct PostUniform {
     // x : tonemapper (0 écrêtage, 1 épaule douce, 2 ACES, 3 AgX), y : 1 si la swapchain n'encode pas en sRGB,
     // z : ciel voilé par la météo (f32 en bits), qui ternit les couleurs
     mode: vec4<u32>,
+    // Temps figé (vision) : x part de l'effet (0 à 1), y horloge en secondes, z largeur / hauteur
+    frozen: vec4<f32>,
 };
 
 @group(0) @binding(0) var src_tex: texture_2d<f32>;
@@ -208,9 +210,58 @@ fn interleaved_gradient_noise(p: vec2<f32>) -> f32 {
     return fract(52.9829189 * fract(dot(p, vec2<f32>(0.06711056, 0.00583715))));
 }
 
+fn frozen_hash(p: vec2<f32>) -> f32 {
+    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
+}
+
+fn frozen_noise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(frozen_hash(i), frozen_hash(i + vec2<f32>(1.0, 0.0)), u.x), mix(frozen_hash(i + vec2<f32>(0.0, 1.0)), frozen_hash(i + vec2<f32>(1.0, 1.0)), u.x), u.y);
+}
+
+/// Le temps figé : couleurs vidées puis teintes de violet (ombres d'encre, lumières lilas), bords
+/// assombris par le Néant qui ondule lentement avec un liseré qui luit, onde à l'arrêt du temps, et
+/// grain immobile (le temps ne passe plus)
+fn time_frozen(c: vec3<f32>, uv: vec2<f32>, pixel: vec2<f32>) -> vec3<f32> {
+    let amount = post.frozen.x;
+    let t = post.frozen.y;
+    let p = (uv - 0.5) * vec2<f32>(post.frozen.z, 1.0);
+    let r = length(p);
+    let angle = atan2(p.y, p.x);
+    let l = dot(c, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let vio = vec3<f32>(0.549, 0.0, 1.0);
+    var v = mix(vio * 0.07, mix(vec3<f32>(1.0), vio, 0.3), smoothstep(0.0, 1.0, pow(l, 0.85)));
+    v = mix(v, c * mix(vec3<f32>(1.0), vio, 0.6), 0.3);
+    // Le Néant ronge les bords : une frontière qui ondule (bruit sur l'angle, qui dérive lentement)
+    // Le halo vit : sa frontière ondule et respire, des flammèches de lumière en font le tour
+    let n = frozen_noise(vec2<f32>(angle * 3.0 + t * 0.4, t * 0.6)) * 0.7 + frozen_noise(vec2<f32>(angle * 9.0 - t * 0.8, t * 0.5)) * 0.3;
+    let edge = 0.62 + 0.1 * n + 0.025 * sin(t * 1.6) + (1.0 - amount) * 0.6;
+    let void_dark = smoothstep(edge - 0.05, edge + 0.22, r);
+    v *= 1.0 - 0.55 * void_dark;
+    let rim = exp(-pow((r - edge) * 30.0, 2.0));
+    let flames = 0.5 + 0.5 * sin(angle * 3.0 - t * 2.2) * sin(angle * 5.0 + t * 1.3);
+    let flicker = 0.75 + 0.25 * frozen_noise(vec2<f32>(angle * 12.0, t * 6.0));
+    let rim2 = exp(-pow((r - edge - 0.05 - 0.02 * sin(t * 2.0 + angle * 4.0)) * 45.0, 2.0));
+    v += vio * (rim * (0.35 + 0.6 * flames) * flicker + rim2 * 0.25 * flames);
+    // L'onde qui part du centre quand le temps s'arrête
+    let wave = exp(-pow((r - amount * 1.1) * 9.0, 2.0)) * (1.0 - amount) * 4.0 * amount;
+    v += mix(vio, vec3<f32>(1.0), 0.25) * wave;
+    // Grain figé : il ne bouge pas, comme le reste
+    v += (frozen_hash(floor(pixel * 0.5)) - 0.5) * 0.02;
+    return mix(c, clamp(v, vec3<f32>(0.0), vec3<f32>(1.0)), amount);
+}
+
 @fragment
 fn fs_composite(in: FullscreenOutput) -> @location(0) vec4<f32> {
-    let hdr = sanitize(textureSampleLevel(src_tex, src_sampler, in.uv, 0.0).rgb);
+    var hdr = sanitize(textureSampleLevel(src_tex, src_sampler, in.uv, 0.0).rgb);
+    // Temps figé : léger dédoublement des couleurs vers les bords, comme une image arrêtée
+    if post.frozen.x > 0.0 {
+        let shift = (in.uv - 0.5) * 0.006 * post.frozen.x;
+        hdr.r = sanitize(textureSampleLevel(src_tex, src_sampler, in.uv + shift, 0.0).rgb).r;
+        hdr.b = sanitize(textureSampleLevel(src_tex, src_sampler, in.uv - shift, 0.0).rgb).b;
+    }
     let bloom = textureSampleLevel(bloom_tex, src_sampler, in.uv, 0.0).rgb;
     var c = (hdr + bloom * post.params.y) * post.params.x;
     // Temps couvert : lumière grise et diffuse, couleurs ternies (le ciel bleu devient gris)
@@ -223,6 +274,10 @@ fn fs_composite(in: FullscreenOutput) -> @location(0) vec4<f32> {
         case 2u: { mapped = tonemap_aces(c); }
         case 3u: { mapped = tonemap_agx(c); }
         default: { mapped = tonemap_soft_shoulder(c); }
+    }
+
+    if post.frozen.x > 0.0 {
+        mapped = time_frozen(mapped, in.uv, in.clip_pos.xy);
     }
 
     // Tramage d'un demi-pas de quantification, appliqué dans l'espace encodé

@@ -34,6 +34,9 @@ pub enum Command {
     Drop { item: String, count: u16 },
     /// Vole ou cesse de voler
     Fly,
+    /// Recule la caméra à `distance` blocs du héros (0 : première personne), tournée vers
+    /// `yaw` degrés (0 : nord, 90 : est) et inclinée de `pitch` degrés (négatif : vers le bas)
+    Camera { distance: f32, yaw: Option<f32>, pitch: Option<f32> },
     /// Multiplicateur de vitesse de déplacement
     Speed(f32),
     /// Fait apparaître `count` créatures devant le joueur (identifiant de l'espèce)
@@ -53,6 +56,8 @@ pub enum Command {
     Weather(Option<Option<herocraft_common::WeatherKind>>),
     /// Saison et jour de l'année (`None`), ou passage au début d'une saison (hémisphère nord)
     Season(Option<herocraft_world::Season>),
+    /// Entre dans la vision du temple le plus proche (`true`) ou en revient
+    Vision(bool),
     /// Liste des cinématiques (`None`), ou lecture de l'une d'elles
     Cinematic(Option<String>),
     /// Envoie un événement du jeu (`nom clé=valeur…`), qui peut déclencher une cinématique
@@ -80,9 +85,11 @@ pub const COMMANDS: &[CommandHelp] = &[
     CommandHelp { name: "give", usage: "/give <item> [count]", description: "Put blocks or items in your inventory (Tab completes the name)" },
     CommandHelp { name: "drop", usage: "/drop <item> [count]", description: "Drop blocks or items on the ground in front of you (Tab completes the name)" },
     CommandHelp { name: "fly", usage: "/fly", description: "Toggle flight" },
+    CommandHelp { name: "camera", usage: "/camera <distance> [yaw|~] [pitch|~]", description: "Put the camera some blocks behind the hero (0 = first person), facing yaw degrees (0 = north) and tilted pitch degrees (negative = down); ~ keeps the current angle" },
     CommandHelp { name: "speed", usage: "/speed <factor>", description: "Movement speed multiplier (1 = normal, up to 20)" },
     CommandHelp { name: "summon", usage: "/summon <creature> [count]", description: "Spawn creatures in front of you" },
     CommandHelp { name: "heal", usage: "/heal", description: "Restore health, mana and stamina" },
+    CommandHelp { name: "vision", usage: "/vision [end]", description: "Enter the vision of the nearest temple, or leave it" },
     CommandHelp { name: "cast", usage: "/cast <skill>", description: "Cast a learned skill (Tab completes the name)" },
     CommandHelp { name: "xp", usage: "/xp <amount>", description: "Gain experience points" },
     CommandHelp { name: "list", usage: "/list", description: "List the players online" },
@@ -147,6 +154,13 @@ pub fn parse(line: &str) -> Result<Command, String> {
             Command::Drop { item: item.to_string(), count }
         }
         ("fly", []) => Command::Fly,
+        ("camera" | "cam", [distance, rest @ ..]) if rest.len() <= 2 => {
+            let distance = number(distance).filter(|d| (0.0..=2000.0).contains(d)).ok_or_else(|| wrong(&format!("Invalid distance \"{distance}\" (0 to 2000 blocks)")))?;
+            let angle = |i: usize, max: f32| -> Result<Option<f32>, String> {
+                rest.get(i).filter(|a| **a != "~").map(|a| number(a).filter(|v| v.abs() <= max).ok_or_else(|| wrong(&format!("Invalid angle \"{a}\""))) ).transpose()
+            };
+            Command::Camera { distance, yaw: angle(0, 360.0)?, pitch: angle(1, 89.0)? }
+        }
         ("speed", [factor]) => {
             Command::Speed(number(factor).filter(|f| (0.1..=MAX_SPEED).contains(f)).ok_or_else(|| wrong(&format!("Invalid speed \"{factor}\" (0.1 to {MAX_SPEED})")))?)
         }
@@ -158,6 +172,8 @@ pub fn parse(line: &str) -> Result<Command, String> {
             Command::Summon { species: species.to_string(), count }
         }
         ("heal", []) => Command::Heal,
+        ("vision", []) => Command::Vision(true),
+        ("vision", ["end" | "leave" | "exit"]) => Command::Vision(false),
         ("cast", [skill]) => Command::Cast(skill.to_string()),
         ("xp" | "experience", [amount]) => {
             Command::Experience(amount.parse().ok().filter(|n| (1..=MAX_XP).contains(n)).ok_or_else(|| wrong(&format!("Invalid amount \"{amount}\" (1 to {MAX_XP})")))?)
@@ -299,6 +315,10 @@ mod tests {
         assert_eq!(parse("/summon loup 3"), Ok(Command::Summon { species: "loup".into(), count: 3 }));
         assert_eq!(parse("  /speed 4 "), Ok(Command::Speed(4.0)));
         assert_eq!(parse("/fly"), Ok(Command::Fly));
+        assert_eq!(parse("/camera 12 90 -30"), Ok(Command::Camera { distance: 12.0, yaw: Some(90.0), pitch: Some(-30.0) }));
+        assert_eq!(parse("/camera 0"), Ok(Command::Camera { distance: 0.0, yaw: None, pitch: None }));
+        assert!(parse("/camera 12 90 -95").is_err());
+        assert_eq!(parse("/camera 20 ~ -40"), Ok(Command::Camera { distance: 20.0, yaw: None, pitch: Some(-40.0) }));
         assert_eq!(parse("/xp 250"), Ok(Command::Experience(250)));
         assert_eq!(parse("/cinematic"), Ok(Command::Cinematic(None)));
         assert_eq!(parse("/cinematic fin-de-la-vision"), Ok(Command::Cinematic(Some("fin-de-la-vision".into()))));
@@ -365,7 +385,7 @@ mod tests {
             assert!(help(Some(c.name)).is_ok());
         }
         // Chaque commande sans argument obligatoire se lit telle quelle
-        for name in ["help", "spawn", "pos", "time", "seed", "planet", "fly", "heal", "list", "clear", "weather", "season", "cinematic"] {
+        for name in ["help", "spawn", "pos", "time", "seed", "planet", "fly", "heal", "vision", "list", "clear", "weather", "season", "cinematic"] {
             assert!(parse(&format!("/{name}")).is_ok(), "/{name}");
         }
     }

@@ -475,3 +475,13 @@ fn aerial_perspective_screen(origin: vec3<f32>, dir: vec3<f32>, ndc: vec2<f32>, 
     return result;
 }
 
+
+/// Air du temps figé : la nuit tombe aussi dans l'air entre l'œil et le décor (comme le ciel,
+/// sky_shader.wgsl) : la diffusion du jour s'éteint, une brume violette sombre la remplace
+fn frozen_air(aerial: Scattering) -> Scattering {
+    var out = aerial;
+    let haze = 1.0 - dot(aerial.transmittance, vec3<f32>(1.0 / 3.0));
+    let night = vec3<f32>(0.262, 0.0, 1.0) * 0.02 * haze + aerial.inscatter * 0.08;
+    out.inscatter = mix(aerial.inscatter, night, camera.frozen.x);
+    return out;
+}

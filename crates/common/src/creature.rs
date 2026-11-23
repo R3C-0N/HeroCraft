@@ -72,6 +72,9 @@ pub struct CreatureSpecies {
     /// Familles de l'espèce, que certaines compétences visent (`shadow` : créature de l'ombre)
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Teinte multipliée à sa couleur, en rouge, vert, bleu (les deux camps de la vision)
+    #[serde(default)]
+    pub tint: Option<[f32; 3]>,
     /// Armure : réduit les coups physiques (voir `armor_factor`)
     #[serde(default)]
     pub armor: f32,

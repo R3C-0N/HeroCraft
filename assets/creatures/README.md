@@ -44,6 +44,7 @@ Les 19 créatures actuelles viennent du module `HeroBestiary` de la branche `dev
 |---|---|
 | `name`, `description` | Nom affiché et description. |
 | `tags` | Familles de l'espèce, que certaines compétences visent : `shadow` pour les créatures de l'ombre (l'Arme de l'Aube les frappe plus fort). |
+| `tint` | Teinte multipliée à sa couleur, `[rouge, vert, bleu]` (1 : inchangée) : les deux camps de la vision (soldats de l'armée bleutés, défenseurs rougis). |
 | `armor` | Armure (0 par défaut) : réduit les coups physiques, dégâts × 100 / (100 + armure). À 50, un tiers de moins ; à 100, la moitié. Certaines compétences la percent ou la brisent. |
 | `resist` | Résistance (0 par défaut) : réduit de la même façon les coups magiques. |
 | `body` | Volume utilisé pour les déplacements, en blocs : `half_width` (demi-largeur), `half_length` (demi-longueur, de la tête à la queue) et `height`. La créature ne passe que là où ce corps tient. |
