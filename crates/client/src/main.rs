@@ -243,6 +243,7 @@ fn main() {
     // Puce intégrée : ombres et rayons allégés, MSAA coupé (réglables dans les options)
     ui_state.adapt_to_gpu(state.integrated_gpu());
     state.set_creature_textures(&creature_textures);
+    state.set_creature_models(&creature_models);
     state.sync_lod_meshes(&lod_manager);
 
     // Banc d'essai (`--benchmark`) : le jeu joue seul une suite de phases et mesure chacune
@@ -1122,7 +1123,7 @@ fn main() {
                                 beasts.push(creatures::CreatureView { id: *id, species: creature_registry.find(form), feet: *feet, yaw: *yaw, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None });
                             }
                             creature_animator.update(&beasts, &creature_registry, &creature_models, anim_dt, block);
-                            let mut frame = creatures::build_frame(&beasts, &creature_registry, &creature_models, &creature_animator, block);
+                            let mut frame = creatures::build_frame(&beasts, &creature_registry, &creature_models, &creature_animator, block, creatures::Skinning::Gpu);
                             villager_animator.update(&creature_views, &creature_registry, anim_dt, block);
                             state.begin_villagers();
                             {

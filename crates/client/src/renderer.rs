@@ -1070,6 +1070,11 @@ impl State {
         self.creatures.set_textures(&self.device, &self.queue, textures);
     }
 
+    /// Modèles des espèces : leurs os sont appliqués sur le GPU (`creatures::Skinning::Gpu`)
+    pub fn set_creature_models(&mut self, models: &crate::creatures::CreatureModels) {
+        self.creatures.set_models(&self.device, models);
+    }
+
     /// Planche du héros vu à la troisième personne
     pub fn set_hero_sheet(&mut self, appearance: &herocraft_common::hero::Appearance) {
         self.creatures.set_hero_sheet(&self.device, &self.queue, appearance);
@@ -1208,6 +1213,8 @@ impl State {
         // 0. Tables de l'atmosphère (seulement si la planète ou les réglages ont changé), puis
         // ombres : cascades du relief et carte des nuages, vues depuis le soleil
         self.atmosphere.encode_luts(&mut encoder);
+        // Os des créatures appliqués sur le GPU, avant les ombres et la passe 3D qui lisent leurs sommets
+        self.creatures.encode_skinning(&mut encoder);
         {
             herocraft_common::prof_scope!("render::encode_shadows");
             // Le relief, positions seules ; les créatures portent leur ombre dans la cascade proche
