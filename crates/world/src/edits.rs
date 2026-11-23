@@ -6,6 +6,8 @@
 //! client lit le terrain (maillage, visée), et il est enregistré dans la sauvegarde du monde.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
+
+use rustc_hash::FxHashMap;
 use std::io;
 use std::sync::{Arc, RwLock};
 
@@ -75,9 +77,9 @@ impl From<BlockAddress> for BlockPos {
 
 #[derive(Default)]
 struct EditsInner {
-    chunks: HashMap<PlanetChunkCoord, Arc<ChunkData>>,
+    chunks: FxHashMap<PlanetChunkCoord, Arc<ChunkData>>,
     /// Couches modifiées de chaque colonne de chunks (face, x, y) : le maillage d'une colonne les lit
-    layers: HashMap<(PlanetFace, i32, i32), BTreeSet<i32>>,
+    layers: FxHashMap<(PlanetFace, i32, i32), BTreeSet<i32>>,
     /// Chunks modifiés depuis le dernier enregistrement
     dirty: HashSet<PlanetChunkCoord>,
 }
@@ -233,27 +235,48 @@ impl TerrainEdits {
 pub struct TerrainQuery<'a> {
     generator: &'a PlanetWorldGenerator,
     edits: &'a TerrainEdits,
-    columns: HashMap<(PlanetFace, i32, i32), ColumnSample>,
+    columns: FxHashMap<(PlanetFace, i32, i32), ColumnSample>,
     /// Arbres des cases déjà regardées (`TREE_CELL` blocs de côté)
-    trees: HashMap<(PlanetFace, i32, i32), Option<Tree>>,
+    trees: FxHashMap<(PlanetFace, i32, i32), Option<Tree>>,
+}
+
+/// Ce que `TerrainQuery` a déjà lu du générateur, gardé d'une image à l'autre : colonnes et arbres
+/// ne dépendent que de la graine, jamais des modifications du terrain. Hachage FxHash : les clés
+/// sont des entiers, le SipHash de la bibliothèque standard y coûtait plusieurs fois plus cher.
+#[derive(Default)]
+pub struct QueryCache {
+    columns: FxHashMap<(PlanetFace, i32, i32), ColumnSample>,
+    trees: FxHashMap<(PlanetFace, i32, i32), Option<Tree>>,
+}
+
+impl QueryCache {
+    /// Nombre de colonnes gardées
+    pub fn len(&self) -> usize {
+        self.columns.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.columns.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.columns.clear();
+        self.trees.clear();
+    }
 }
 
 impl<'a> TerrainQuery<'a> {
     pub fn new(generator: &'a PlanetWorldGenerator, edits: &'a TerrainEdits) -> Self {
-        Self { generator, edits, columns: HashMap::new(), trees: HashMap::new() }
+        Self { generator, edits, columns: FxHashMap::default(), trees: FxHashMap::default() }
     }
 
-    /// Reprend des colonnes déjà échantillonnées (cache gardé d'une image à l'autre)
-    pub fn with_columns(
-        generator: &'a PlanetWorldGenerator,
-        edits: &'a TerrainEdits,
-        columns: HashMap<(PlanetFace, i32, i32), ColumnSample>,
-    ) -> Self {
-        Self { generator, edits, columns, trees: HashMap::new() }
+    /// Reprend des colonnes et des arbres déjà échantillonnés (cache gardé d'une image à l'autre)
+    pub fn with_columns(generator: &'a PlanetWorldGenerator, edits: &'a TerrainEdits, cache: QueryCache) -> Self {
+        Self { generator, edits, columns: cache.columns, trees: cache.trees }
     }
 
-    pub fn into_columns(self) -> HashMap<(PlanetFace, i32, i32), ColumnSample> {
-        self.columns
+    pub fn into_columns(self) -> QueryCache {
+        QueryCache { columns: self.columns, trees: self.trees }
     }
 
     fn column(&mut self, face: PlanetFace, x: i32, z: i32) -> &ColumnSample {

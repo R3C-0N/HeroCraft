@@ -8,6 +8,12 @@ use log::{error, info, warn};
 
 const USAGE: &str = "Usage : herocraft_server [--bind ADRESSE:PORT] [--port PORT] [--seed GRAINE] [--name NOM] [--no-lan]";
 
+
+/// Allocateur mimalloc : les fils de génération et de maillage allouent beaucoup de petits `Vec`
+/// en parallèle, cas où l'allocateur du système (surtout celui de Windows) est le plus lent
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() {
     if std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", "info");

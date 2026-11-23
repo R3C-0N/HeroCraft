@@ -14,6 +14,7 @@ herocraft_voxel_engine = { path = "../voxel_engine" }
 herocraft_world = { path = "../world" }
 herocraft_server = { path = "../server" }
 glam = { workspace = true }
+mimalloc = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 bincode = { workspace = true }

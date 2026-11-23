@@ -75,6 +75,12 @@ use herocraft_common::lan::LanBrowser;
 use renderer::State;
 use ui::{MenuPage, NetStatus, UiAction, UiState};
 
+
+/// Allocateur mimalloc : les fils de génération et de maillage allouent beaucoup de petits `Vec`
+/// en parallèle, cas où l'allocateur du système (surtout celui de Windows) est le plus lent
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() {
     // Variables du fichier `.env` (sans écraser celles déjà définies dans l'environnement)
     let _ = dotenvy::dotenv();

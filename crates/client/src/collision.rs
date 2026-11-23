@@ -2,12 +2,10 @@
 //! bloc par bloc dans le terrain (générateur + modifications), là où le maillage voxel les dessine.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use glam::{DVec3, Vec3};
 use herocraft_common::{BlockId, PlanetFace};
-use herocraft_world::generator::ColumnSample;
 use herocraft_world::{BlockGeometry, BlockPos, PlanetWorldGenerator, TerrainEdits, TerrainQuery, WORLD_HEIGHT};
 
 /// Au-delà, le cache de colonnes est vidé (le joueur ne touche qu'une poignée de colonnes par image)
@@ -17,12 +15,12 @@ pub struct VoxelCollider {
     edits: Arc<TerrainEdits>,
     geometry: BlockGeometry,
     /// Colonnes du générateur déjà échantillonnées : le bruit coûte cher, le joueur reste sur place
-    columns: RefCell<HashMap<(PlanetFace, i32, i32), ColumnSample>>,
+    columns: RefCell<herocraft_world::edits::QueryCache>,
 }
 
 impl VoxelCollider {
     pub fn new(edits: Arc<TerrainEdits>, base_radius: f32) -> Self {
-        Self { edits, geometry: BlockGeometry::new(base_radius as f64), columns: RefCell::new(HashMap::new()) }
+        Self { edits, geometry: BlockGeometry::new(base_radius as f64), columns: RefCell::new(Default::default()) }
     }
 
     /// Hauteur d'un bloc en unités du monde
