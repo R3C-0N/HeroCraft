@@ -315,8 +315,8 @@ impl ScenePipelines {
             // la marche dans l'atmosphère n'est pas calculée sous le relief
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -325,7 +325,7 @@ impl ScenePipelines {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
             cache: crate::shaders::pipeline_cache(),
         });
 
@@ -335,7 +335,7 @@ impl ScenePipelines {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[PlanetVertex::position_layout(), PlanetVertex::attribute_layout()],
+                buffers: &[Some(PlanetVertex::position_layout()), Some(PlanetVertex::attribute_layout())],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -359,8 +359,8 @@ impl ScenePipelines {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -369,7 +369,7 @@ impl ScenePipelines {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
             cache: crate::shaders::pipeline_cache(),
         });
 
@@ -384,7 +384,7 @@ impl ScenePipelines {
             vertex: wgpu::VertexState {
                 module: &cloud_shader,
                 entry_point: Some("vs_cloud"),
-                buffers: &[crate::cloud_mesh::CloudVertex::desc(), crate::cloud_mesh::CLOUD_WEATHER_LAYOUT],
+                buffers: &[Some(crate::cloud_mesh::CloudVertex::desc()), Some(crate::cloud_mesh::CLOUD_WEATHER_LAYOUT)],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -408,8 +408,8 @@ impl ScenePipelines {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -418,12 +418,21 @@ impl ScenePipelines {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
             cache: crate::shaders::pipeline_cache(),
         });
 
         Self { sky: sky_pipeline, terrain: render_pipeline, cloud: cloud_pipeline }
     }
+}
+
+/// Image de la fenêtre qu'on n'a pas pu obtenir pour cette frame
+#[derive(Debug)]
+pub enum FrameError {
+    /// Surface périmée ou perdue : la reconfigurer
+    Lost,
+    /// Fenêtre cachée, délai dépassé... : sauter la frame
+    Skipped(String),
 }
 
 impl State {
@@ -435,7 +444,7 @@ impl State {
         // 1. Instance WGPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
 
         // 2. Surface
@@ -449,6 +458,7 @@ impl State {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
+                apply_limit_buckets: false,
             })
             .await
             .expect("Aucun adaptateur GPU compatible trouvé");
@@ -479,14 +489,14 @@ impl State {
                 &wgpu::DeviceDescriptor {
                     // Cible HDR allégée de la passe 3D quand la carte sait y dessiner (`SceneTarget`)
                     // Cache des pipelines du pilote (Vulkan) quand il existe : `shaders::init_pipeline_cache`
-                    // Dessins indirects enchaînés pour le relief quand la carte les sait (`terrain_pool`)
                     required_features: GpuTimer::wanted_features(adapter.features())
-                        | (adapter.features() & (wgpu::Features::RG11B10UFLOAT_RENDERABLE | wgpu::Features::PIPELINE_CACHE | wgpu::Features::MULTI_DRAW_INDIRECT)),
+                        | (adapter.features() & (wgpu::Features::RG11B10UFLOAT_RENDERABLE | wgpu::Features::PIPELINE_CACHE)),
                     required_limits,
                     label: Some("HeroCraft Device"),
                     memory_hints: Default::default(),
+                    experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                    trace: wgpu::Trace::Off,
                 },
-                None,
             )
             .await
             .expect("Échec d'obtention du device WGPU");
@@ -527,6 +537,7 @@ impl State {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
+            color_space: Default::default(),
             width: size.width.max(1),
             height: size.height.max(1),
             present_mode,
@@ -630,8 +641,8 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&atmosphere.scene_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&atmosphere.scene_layout)],
+                immediate_size: 0,
             });
         let creatures = CreatureRenderer::new(&device, &queue, &atmosphere.scene_layout, &shadows.receiver_layout, scene_target);
         // Le terrain lit aussi les textures des blocs (groupe 2)
@@ -639,8 +650,8 @@ impl State {
         let terrain_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Terrain Pipeline Layout"),
-                bind_group_layouts: &[&atmosphere.scene_layout, &shadows.receiver_layout, &block_textures.layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&atmosphere.scene_layout), Some(&shadows.receiver_layout), Some(&block_textures.layout)],
+                immediate_size: 0,
             });
 
         let scene_pipelines = ScenePipelines::new(&device, &render_pipeline_layout, &terrain_pipeline_layout, scene_target);
@@ -676,13 +687,7 @@ impl State {
         let player_outlines =
             BlockOutline::players(&device, &render_pipeline_layout, scene_target, crate::network::MAX_REMOTE_PLAYERS);
 
-        let egui_renderer = egui_wgpu::Renderer::new(
-            &device,
-            config.format,
-            None,
-            1,
-            false,
-        );
+        let egui_renderer = egui_wgpu::Renderer::new(&device, config.format, egui_wgpu::RendererOptions::default());
 
         Self {
             window,
@@ -1189,14 +1194,16 @@ impl State {
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &egui_wgpu::ScreenDescriptor,
         textures_delta: &egui::TexturesDelta,
-    ) -> Result<(), wgpu::SurfaceError> {
+    ) -> Result<(), FrameError> {
         herocraft_common::prof_scope!("render::render");
         let start = std::time::Instant::now();
         self.render_timings = RenderTimings::default();
         {
             herocraft_common::prof_scope!("render::egui_textures");
             for (id, delta) in &textures_delta.set {
-                self.egui_renderer.update_texture(&self.device, &self.queue, *id, delta);
+                for delta in delta {
+                    self.egui_renderer.update_texture(&self.device, &self.queue, *id, delta);
+                }
             }
         }
 
@@ -1204,7 +1211,11 @@ impl State {
         let acquire_start = std::time::Instant::now();
         let output = {
             herocraft_common::prof_scope!("render::acquire_frame");
-            self.surface.get_current_texture()?
+            match self.surface.get_current_texture() {
+                wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+                wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => return Err(FrameError::Lost),
+                other => return Err(FrameError::Skipped(format!("{other:?}"))),
+            }
         };
         self.render_timings.acquire = acquire_start.elapsed();
         let swapchain_view = output
@@ -1251,9 +1262,9 @@ impl State {
             // Avec MSAA, seule la cible HDR résolue est relue par le post-traitement
             let store_op = if resolve_target.is_some() { wgpu::StoreOp::Discard } else { wgpu::StoreOp::Store };
 
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
                 label: Some("3D World Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { depth_slice: None,
                     view: color_view,
                     resolve_target,
                     ops: wgpu::Operations {
@@ -1381,9 +1392,9 @@ impl State {
 
         {
             herocraft_common::prof_scope!("render::encode_egui_pass");
-            let mut ui_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut ui_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
                 label: Some("egui Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { depth_slice: None,
                     view: &swapchain_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -1419,7 +1430,7 @@ impl State {
         self.render_timings.submit = present_start.duration_since(submit_start);
         {
             herocraft_common::prof_scope!("render::present");
-            output.present();
+            self.queue.present(output);
         }
         self.render_timings.present = present_start.elapsed();
 

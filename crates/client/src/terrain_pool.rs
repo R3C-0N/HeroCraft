@@ -133,7 +133,8 @@ fn regrow(device: &wgpu::Device, queue: &wgpu::Queue, old: &wgpu::Buffer, new: w
 
 impl TerrainPool {
     pub fn new(device: &wgpu::Device) -> Self {
-        let multi_draw = device.features().contains(wgpu::Features::MULTI_DRAW_INDIRECT);
+        // Les dessins indirects enchaînés existent partout depuis wgpu 27 (rejoués un à un là où la carte ne les sait pas)
+        let multi_draw = device.adapter_info().backend != wgpu::Backend::Gl;
         log::info!("Relief : tampons partagés, {}", if multi_draw { "dessins indirects enchaînés" } else { "un dessin par morceau" });
         let (positions, attributes) = vertex_buffers(device, START_VERTICES);
         Self {

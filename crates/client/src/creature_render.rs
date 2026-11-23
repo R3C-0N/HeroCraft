@@ -98,13 +98,13 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
             module: &shader,
             entry_point: Some("vs_creature"),
             buffers: &[
-                PlanetVertex::position_layout(),
-                PlanetVertex::attribute_layout(),
-                wgpu::VertexBufferLayout {
+                Some(PlanetVertex::position_layout()),
+                Some(PlanetVertex::attribute_layout()),
+                Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &wgpu::vertex_attr_array![3 => Float32x2],
-                },
+                }),
             ],
             compilation_options: Default::default(),
         },
@@ -121,13 +121,13 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::LessEqual,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState { count: target.sample_count, mask: !0, alpha_to_coverage_enabled: false },
-        multiview: None,
+        multiview_mask: None,
         cache: crate::shaders::pipeline_cache(),
     })
 }
@@ -158,8 +158,8 @@ impl CreatureRenderer {
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Creature Pipeline Layout"),
-            bind_group_layouts: &[scene_layout, shadow_layout, &texture_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(scene_layout), Some(shadow_layout), Some(&texture_layout)],
+            immediate_size: 0,
         });
         let pipeline = create_pipeline(device, &layout, target);
         // Texels nets : la peinture du bestiaire est faite au texel près
@@ -377,7 +377,7 @@ impl GpuSkinning {
                 },
             ],
         });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Creature Skinning Pipeline Layout"), bind_group_layouts: &[&layout], push_constant_ranges: &[] });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Creature Skinning Pipeline Layout"), bind_group_layouts: &[Some(&layout)], immediate_size: 0 });
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("Creature Skinning Shader"), source: wgpu::ShaderSource::Wgsl(include_str!("skinning.wgsl").into()) });
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Creature Skinning Pipeline"),
@@ -476,9 +476,9 @@ fn texture_bind_group(device: &wgpu::Device, queue: &wgpu::Queue, layout: &wgpu:
         view_formats: &[],
     });
     queue.write_texture(
-        wgpu::ImageCopyTexture { texture: &gpu, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+        wgpu::TexelCopyTextureInfo { texture: &gpu, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
         &texture.rgba,
-        wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(4 * texture.width), rows_per_image: Some(texture.height) },
+        wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * texture.width), rows_per_image: Some(texture.height) },
         size,
     );
     let view = gpu.create_view(&wgpu::TextureViewDescriptor::default());
@@ -529,7 +529,7 @@ mod tests {
 
         let instance = wgpu::Instance::default();
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("aucun adaptateur graphique");
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None)).unwrap();
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
         let mut skin = GpuSkinning::new(&device, &models);
         let n = cpu.vertices.len();
         let output = |size: usize| device.create_buffer(&wgpu::BufferDescriptor { label: None, size: size as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
@@ -548,8 +548,8 @@ mod tests {
         queue.submit([encoder.finish()]);
         let read = |b: &wgpu::Buffer| {
             b.slice(..).map_async(wgpu::MapMode::Read, |_| ());
-            device.poll(wgpu::Maintain::Wait);
-            let data = b.slice(..).get_mapped_range().to_vec();
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            let data = b.slice(..).get_mapped_range().expect("lecture du tampon").to_vec();
             data
         };
         let positions: Vec<[f32; 3]> = bytemuck::cast_slice(&read(&readback[0])).to_vec();

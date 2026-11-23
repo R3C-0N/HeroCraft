@@ -164,8 +164,8 @@ impl PostProcess {
         let pipeline = |label: &str, layout: &wgpu::BindGroupLayout, entry: &str, format: wgpu::TextureFormat, blend: wgpu::BlendState| {
             let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some(label),
-                bind_group_layouts: &[layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(layout)],
+                immediate_size: 0,
             });
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
@@ -189,7 +189,7 @@ impl PostProcess {
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: crate::shaders::pipeline_cache(),
             })
         };
@@ -383,9 +383,9 @@ impl PostProcess {
                                pipeline: &wgpu::RenderPipeline,
                                bind_group: &wgpu::BindGroup,
                                timestamp_writes: Option<wgpu::RenderPassTimestampWrites>| {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
                 label: Some(label),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { depth_slice: None,
                     view: target,
                     resolve_target: None,
                     ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },

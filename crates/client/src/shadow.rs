@@ -282,8 +282,8 @@ impl Shadows {
         // Pipelines des passes depuis le soleil
         let caster_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Shadow Caster Pipeline Layout"),
-            bind_group_layouts: &[camera_layout, &pass_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(camera_layout), Some(&pass_layout)],
+            immediate_size: 0,
         });
         let terrain_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shadow Caster Shader"),
@@ -296,21 +296,21 @@ impl Shadows {
                 module: &terrain_shader,
                 entry_point: Some("vs_shadow"),
                 // Les positions seules : 12 octets lus par sommet
-                buffers: &[crate::planet_mesh::PlanetVertex::position_layout()],
+                buffers: &[Some(crate::planet_mesh::PlanetVertex::position_layout())],
                 compilation_options: Default::default(),
             },
             fragment: None,
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: SHADOW_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 // Biais proportionnel à la pente : supprime l'acné sur les faces rasantes
                 bias: wgpu::DepthBiasState { constant: 2, slope_scale: 2.0, clamp: 0.0 },
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: crate::shaders::pipeline_cache(),
         });
 
@@ -321,7 +321,7 @@ impl Shadows {
             vertex: wgpu::VertexState {
                 module: &cloud_shader,
                 entry_point: Some("vs_cloud_shadow"),
-                buffers: &[crate::cloud_mesh::CloudVertex::desc(), crate::cloud_mesh::CLOUD_WEATHER_LAYOUT],
+                buffers: &[Some(crate::cloud_mesh::CloudVertex::desc()), Some(crate::cloud_mesh::CLOUD_WEATHER_LAYOUT)],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -349,7 +349,7 @@ impl Shadows {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: crate::shaders::pipeline_cache(),
         });
 
@@ -628,7 +628,7 @@ impl Shadows {
             let (right, up) = light_basis(self.light_dir);
             // La cascade 0, toujours redessinée, porte le timestamp de début
             for (i, pass) in self.cascades.iter().enumerate().filter(|(_, pass)| pass.refresh) {
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
                     label: Some("Shadow Cascade Pass"),
                     color_attachments: &[],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -664,9 +664,9 @@ impl Shadows {
         // nouveau dessin, la carte de la frame précédente est gardée.
         let redraw_clouds = !self.active || self.cloud.refresh;
         let load = if redraw_clouds { wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT) } else { wgpu::LoadOp::Load };
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
             label: Some("Cloud Shadow Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment { depth_slice: None,
                 view: self.cloud.view.as_ref().expect("carte des nuages"),
                 resolve_target: None,
                 ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },

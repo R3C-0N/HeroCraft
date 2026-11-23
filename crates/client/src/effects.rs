@@ -774,11 +774,11 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_effect"),
-            buffers: &[wgpu::VertexBufferLayout {
+            buffers: &[Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<EffectQuad>() as wgpu::BufferAddress,
                 step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4, 4 => Float32x4],
-            }],
+            })],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -790,13 +790,13 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: false,
-            depth_compare: wgpu::CompareFunction::LessEqual,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState { count: target.sample_count, mask: !0, alpha_to_coverage_enabled: false },
-        multiview: None,
+        multiview_mask: None,
         cache: crate::shaders::pipeline_cache(),
     })
 }
@@ -857,9 +857,9 @@ impl EffectRenderer {
             view_formats: &[],
         });
         queue.write_texture(
-            wgpu::ImageCopyTexture { texture: &texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo { texture: &texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             &load_textures(),
-            wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(TEXTURE_SIZE * 4), rows_per_image: Some(TEXTURE_SIZE) },
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(TEXTURE_SIZE * 4), rows_per_image: Some(TEXTURE_SIZE) },
             wgpu::Extent3d { width: TEXTURE_SIZE, height: TEXTURE_SIZE, depth_or_array_layers: TEXTURES.len() as u32 },
         );
         let view = texture.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
@@ -888,7 +888,7 @@ impl EffectRenderer {
             layout: &texture_layout,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) }, wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) }],
         });
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Effects Pipeline Layout"), bind_group_layouts: &[scene_layout, &texture_layout], push_constant_ranges: &[] });
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Effects Pipeline Layout"), bind_group_layouts: &[Some(scene_layout), Some(&texture_layout)], immediate_size: 0 });
         let quads = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Effects Quads"),
             size: (MAX_QUADS * std::mem::size_of::<EffectQuad>()) as wgpu::BufferAddress,

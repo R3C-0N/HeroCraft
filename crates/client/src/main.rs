@@ -457,8 +457,8 @@ fn main() {
                         if !cursor_captured && matches!(button, MouseButton::Left | MouseButton::Right) {
                             let is_over_ui = ui_state.is_settings_open
                                 || ui_state.chat.open
-                                || ui_state.ctx.is_pointer_over_area()
-                                || ui_state.ctx.wants_pointer_input();
+                                || ui_state.ctx.is_pointer_over_egui()
+                                || ui_state.ctx.egui_wants_pointer_input();
                             is_dragging = *btn_state == ElementState::Pressed && !is_over_ui;
                         }
                     }
@@ -482,8 +482,8 @@ fn main() {
                             !(ui_state.is_settings_open
                                 || ui_state.screen_open()
                                 || ui_state.chat.open
-                                || ui_state.ctx.is_pointer_over_area()
-                                || ui_state.ctx.wants_pointer_input())
+                                || ui_state.ctx.is_pointer_over_egui()
+                                || ui_state.ctx.egui_wants_pointer_input())
                         };
 
                         if cursor_captured && !zoom_modifier_held && ui_state.beast_attacks.is_none() {
@@ -563,7 +563,7 @@ fn main() {
                         } else if ui_state.inventory_open {
                             // Écran d'inventaire : seule sa touche le referme, sauf pendant la saisie
                             // d'une recherche dans les recettes
-                            let typing = ui_state.ctx.wants_keyboard_input();
+                            let typing = ui_state.ctx.egui_wants_keyboard_input();
                             if is_pressed && !*repeat && !typing && ui_state.controls.action_for(key_code) == Some(Action::OpenInventory) {
                                 ui_state.set_inventory_open(false);
                             }
@@ -1861,9 +1861,8 @@ fn main() {
                         // 4. Rendu WGPU (3D + egui pass)
                         match state.render(&paint_jobs, &screen_descriptor, &full_output.textures_delta) {
                             Ok(_) => {}
-                            Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                            Err(wgpu::SurfaceError::OutOfMemory) => target.exit(),
-                            Err(e) => log::warn!("Erreur lors du rendu : {:?}", e),
+                            Err(renderer::FrameError::Lost) => state.resize(state.size),
+                            Err(e) => log::debug!("Image sautée : {:?}", e),
                         }
                         let timings = state.render_timings;
                         probe.push("rendu : attente d'une image libre", timings.acquire);

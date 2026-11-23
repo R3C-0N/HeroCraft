@@ -554,6 +554,8 @@ pub struct TradeScreen {
 pub struct UiState {
     pub ctx: egui::Context,
     pub raw_input: egui::RawInput,
+    /// Touches de modification tenues (egui ne les garde plus dans `RawInput`)
+    modifiers: egui::Modifiers,
     pub scale_factor: f32,
     pub pointer_pos: egui::Pos2,
     pub current_seed: u64,
@@ -660,6 +662,7 @@ impl UiState {
         Self {
             ctx,
             raw_input: egui::RawInput::default(),
+            modifiers: egui::Modifiers::default(),
             scale_factor: 1.0_f32,
             pointer_pos: egui::Pos2::ZERO,
             current_seed: initial_seed,
@@ -757,12 +760,12 @@ impl UiState {
         let mut visuals = egui::Visuals::dark();
         let edge = egui::Color32::from_rgb(23, 13, 8);
 
-        visuals.window_rounding = egui::Rounding::ZERO;
-        visuals.menu_rounding = egui::Rounding::ZERO;
+        visuals.window_corner_radius = egui::CornerRadius::ZERO;
+        visuals.menu_corner_radius = egui::CornerRadius::ZERO;
         visuals.window_fill = egui::Color32::from_rgba_premultiplied(32, 18, 10, 245);
         visuals.window_stroke = egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(92, 65, 45));
         visuals.panel_fill = egui::Color32::from_rgba_premultiplied(32, 18, 10, 220);
-        visuals.window_shadow = egui::epaint::Shadow { offset: egui::vec2(3.0_f32, 4.0_f32), blur: 0.0_f32, spread: 0.0_f32, color: egui::Color32::from_black_alpha(110) };
+        visuals.window_shadow = egui::epaint::Shadow { offset: [3, 4], blur: 0, spread: 0, color: egui::Color32::from_black_alpha(110) };
         visuals.popup_shadow = visuals.window_shadow;
         // Champs de saisie : creux de bois sombre
         visuals.extreme_bg_color = egui::Color32::from_rgb(23, 16, 12);
@@ -774,32 +777,32 @@ impl UiState {
         visuals.widgets.noninteractive.weak_bg_fill = WOOD_DEEP;
         visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, TEXT_DIM.gamma_multiply(0.45_f32));
         visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, TEXT);
-        visuals.widgets.noninteractive.rounding = egui::Rounding::ZERO;
+        visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::ZERO;
 
         // Widgets au repos : bois, liseré sombre ; le rail des curseurs est un creux sombre
         visuals.widgets.inactive.bg_fill = WOOD_DARK;
         visuals.widgets.inactive.weak_bg_fill = WOOD;
-        visuals.widgets.inactive.rounding = egui::Rounding::ZERO;
+        visuals.widgets.inactive.corner_radius = egui::CornerRadius::ZERO;
         visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, edge);
         visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, TEXT);
 
         // Survol : bois clair, liseré doré
         visuals.widgets.hovered.bg_fill = WOOD_LIGHT;
         visuals.widgets.hovered.weak_bg_fill = WOOD_LIGHT;
-        visuals.widgets.hovered.rounding = egui::Rounding::ZERO;
+        visuals.widgets.hovered.corner_radius = egui::CornerRadius::ZERO;
         visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.5_f32, GOLD);
         visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.5_f32, TEXT);
 
         // Clic : bois enfoncé, texte doré
         visuals.widgets.active.bg_fill = WOOD_LIGHT;
         visuals.widgets.active.weak_bg_fill = WOOD_MID;
-        visuals.widgets.active.rounding = egui::Rounding::ZERO;
+        visuals.widgets.active.corner_radius = egui::CornerRadius::ZERO;
         visuals.widgets.active.bg_stroke = egui::Stroke::new(2.0_f32, GOLD_BRIGHT);
         visuals.widgets.active.fg_stroke = egui::Stroke::new(2.0_f32, GOLD_BRIGHT);
 
         visuals.widgets.open.bg_fill = WOOD_MID;
         visuals.widgets.open.weak_bg_fill = WOOD_MID;
-        visuals.widgets.open.rounding = egui::Rounding::ZERO;
+        visuals.widgets.open.corner_radius = egui::CornerRadius::ZERO;
         visuals.widgets.open.bg_stroke = egui::Stroke::new(1.0_f32, GOLD);
         visuals.widgets.open.fg_stroke = egui::Stroke::new(1.0_f32, TEXT);
 
@@ -809,14 +812,14 @@ impl UiState {
         visuals.slider_trailing_fill = true;
         visuals.handle_shape = egui::style::HandleShape::Rect { aspect_ratio: 0.6_f32 };
 
-        let mut style = (*ctx.style()).clone();
+        let mut style = (*ctx.global_style()).clone();
         style.visuals = visuals;
         style.spacing.item_spacing = egui::vec2(8.0_f32, 8.0_f32);
         style.spacing.button_padding = egui::vec2(12.0_f32, 6.0_f32);
         // Barres de défilement fines qui s'élargissent au survol
         style.spacing.scroll = egui::style::ScrollStyle::thin();
 
-        ctx.set_style(style);
+        ctx.set_global_style(style);
     }
 
     pub fn set_scale_factor(&mut self, factor: f32) {
@@ -1068,18 +1071,19 @@ impl UiState {
             // Clavier : saisie dans les champs de texte (nom du joueur, adresse du serveur)
             WindowEvent::ModifiersChanged(modifiers) => {
                 let state = modifiers.state();
-                self.raw_input.modifiers = egui::Modifiers {
+                self.modifiers = egui::Modifiers {
                     alt: state.alt_key(),
                     ctrl: state.control_key(),
                     shift: state.shift_key(),
                     mac_cmd: false,
                     command: state.control_key(),
                 };
+                self.raw_input.events.push(egui::Event::ModifiersChanged(self.modifiers));
             }
 
             WindowEvent::KeyboardInput { event, .. } => {
                 let pressed = event.state == ElementState::Pressed;
-                let modifiers = self.raw_input.modifiers;
+                let modifiers = self.modifiers;
                 if let Some(key) = egui_key(&event.logical_key) {
                     self.raw_input.events.push(egui::Event::Key { key, physical_key: None, pressed, repeat: event.repeat, modifiers });
                 }
@@ -1099,7 +1103,9 @@ impl UiState {
                 self.raw_input.events.push(egui::Event::MouseWheel {
                     unit: egui::MouseWheelUnit::Point,
                     delta: egui::vec2(dx, dy),
-                    modifiers: egui::Modifiers::default(),
+                    phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Unknown,
+                    modifiers: self.modifiers,
                 });
             }
 
@@ -1125,7 +1131,7 @@ impl UiState {
 
         // Le contexte egui est un Arc : le cloner libère `self` pour les méthodes de dessin
         let egui_ctx = self.ctx.clone();
-        let full_output = egui_ctx.run(raw_input, |ctx| {
+        let full_output = egui_ctx.run_pass(raw_input, |ctx| {
             // Cinématique : ni réticule, ni HUD, ni chat, ni menu
             if let Some(overlay) = &self.cinematic {
                 crate::cinematic::draw(ctx, overlay);
@@ -1133,8 +1139,8 @@ impl UiState {
             }
             // 1. Réticule de visée en mode FPS (quand le menu est fermé)
             if is_ground && !self.is_settings_open && !self.screen_open() && !self.player.is_dead() {
-                let center = ctx.screen_rect().center();
-                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("crosshair")));
+                let center = ctx.content_rect().center();
+                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("crosshair")));
                 let stroke = egui::Stroke::new(1.5_f32, egui::Color32::from_white_alpha(180));
                 painter.line_segment([center - egui::vec2(6.0_f32, 0.0_f32), center + egui::vec2(6.0_f32, 0.0_f32)], stroke);
                 painter.line_segment([center - egui::vec2(0.0_f32, 6.0_f32), center + egui::vec2(0.0_f32, 6.0_f32)], stroke);
@@ -1143,7 +1149,7 @@ impl UiState {
 
             // Noms des autres joueurs au-dessus de leur tête
             if !self.is_settings_open && !self.name_tags.is_empty() {
-                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("name_tags")));
+                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("name_tags")));
                 for (pos, name) in &self.name_tags {
                     let pos = egui::pos2(pos.x / ppp, pos.y / ppp);
                     let galley = painter.layout_no_wrap(name.clone(), egui::FontId::proportional(14.0_f32), egui::Color32::WHITE);
@@ -1210,10 +1216,10 @@ impl UiState {
             self.draw_status_hud(ctx);
 
             // 4. Menu de pause (Échap) : voile en fondu puis panneau centré
-            let fade = ctx.animate_bool_with_time(egui::Id::new("pause_backdrop"), self.is_settings_open, 0.15_f32);
+            let fade = ctx.animate_bool_with_time(egui::Id::unique("pause_backdrop"), self.is_settings_open, 0.15_f32);
             if fade > 0.0_f32 {
-                ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("backdrop")))
-                    .rect_filled(ctx.screen_rect(), 0.0_f32, egui::Color32::from_black_alpha((170.0_f32 * fade) as u8));
+                ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("backdrop")))
+                    .rect_filled(ctx.content_rect(), 0.0_f32, egui::Color32::from_black_alpha((170.0_f32 * fade) as u8));
             }
             if self.is_settings_open {
                 self.draw_pause_menu(ctx, &mut action);
@@ -1228,16 +1234,16 @@ impl UiState {
     /// La consigne du tutoriel de la vision, en haut au centre, teintée du violet du Néant
     fn draw_vision_hint(&self, ctx: &egui::Context) {
         let Some(hint) = &self.vision_hint else { return };
-        egui::Area::new(egui::Id::new("vision_hint"))
+        egui::Area::new(egui::Id::unique("vision_hint"))
             .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0_f32, 64.0_f32))
             .interactable(false)
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
-                egui::Frame::none()
+                egui::Frame::NONE
                     .fill(egui::Color32::from_rgba_unmultiplied(14, 4, 24, 205))
                     .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(140, 0, 255)))
-                    .rounding(6.0_f32)
-                    .inner_margin(egui::Margin::symmetric(16.0_f32, 10.0_f32))
+                    .corner_radius(6.0_f32)
+                    .inner_margin(egui::Margin::symmetric(16, 10))
                     .show(ui, |ui| {
                         ui.set_max_width(560.0_f32);
                         ui.label(egui::RichText::new(hint).size(16.0_f32).color(egui::Color32::from_rgb(236, 222, 255)));
@@ -1246,9 +1252,9 @@ impl UiState {
     }
 
     fn draw_hotbar(&self, ctx: &egui::Context) {
-        let screen = ctx.screen_rect();
+        let screen = ctx.content_rect();
         let bottom = screen.bottom() - SCREEN_MARGIN;
-        egui::Area::new(egui::Id::new("hotbar"))
+        egui::Area::new(egui::Id::unique("hotbar"))
             .order(egui::Order::Background)
             .pivot(egui::Align2::CENTER_BOTTOM)
             .fixed_pos(egui::pos2(screen.center().x, bottom))
@@ -1262,7 +1268,7 @@ impl UiState {
                     let (rect, _) = ui.allocate_exact_size(galley.size() + egui::vec2(16.0_f32, 4.0_f32), egui::Sense::hover());
                     ui.painter().rect_filled(rect, 4.0_f32, egui::Color32::from_black_alpha(150));
                     ui.painter().galley(rect.min + egui::vec2(8.0_f32, 2.0_f32), galley, TEXT_SOFT);
-                    hud_frame(egui::Margin::same(6.0_f32)).show(ui, |ui| {
+                    hud_frame(crate::ui_skin::Margin::same(6.0_f32)).show(ui, |ui| {
                         ui.spacing_mut().item_spacing = egui::vec2(3.0_f32, 0.0_f32);
                         ui.horizontal(|ui| {
                             for i in 0..HOTBAR_SLOTS {
@@ -1288,7 +1294,7 @@ impl UiState {
     /// spéciale chargée ; sous le réticule, la jauge de l'arc bandé ou de la compétence chargée
     fn draw_weapon_hud(&self, ctx: &egui::Context) {
         let hud = &self.weapon_hud;
-        let screen = ctx.screen_rect();
+        let screen = ctx.content_rect();
         let mut parts: Vec<String> = Vec::new();
         if let Some((loaded, size, left, _)) = hud.magazine {
             let mut text = format!("Carreaux {loaded}/{size}");
@@ -1301,7 +1307,7 @@ impl UiState {
             parts.push(format!("{name} ×{shots}"));
         }
         if !parts.is_empty() {
-            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("weapon_hud")));
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("weapon_hud")));
             let bottom = screen.bottom() - SCREEN_MARGIN - HOTBAR_SLOT_SIZE - 52.0_f32;
             let galley = painter.layout_no_wrap(parts.join("   "), egui::FontId::proportional(12.0_f32), TEXT_SOFT);
             let rect = egui::Rect::from_center_size(egui::pos2(screen.center().x, bottom - galley.size().y / 2.0_f32), galley.size() + egui::vec2(16.0_f32, 6.0_f32));
@@ -1315,7 +1321,7 @@ impl UiState {
             }
         }
         if let Some((label, progress, ready)) = &hud.charge {
-            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("charge_gauge")));
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("charge_gauge")));
             let center = screen.center() + egui::vec2(0.0_f32, 28.0_f32);
             let back = egui::Rect::from_center_size(center, egui::vec2(90.0_f32, 6.0_f32));
             painter.rect_filled(back, 2.0_f32, egui::Color32::from_black_alpha(160));
@@ -1328,14 +1334,14 @@ impl UiState {
     fn draw_skill_bar(&self, ctx: &egui::Context) {
         use crate::skill_bar::SKILL_SLOTS;
         const SLOT_ACTIONS: [Action; SKILL_SLOTS] = [Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4];
-        let screen = ctx.screen_rect();
+        let screen = ctx.content_rect();
         let bottom = screen.bottom() - SCREEN_MARGIN;
         // Le bord droit de la barre d'objets, à l'image d'avant (une estimation à la première)
         let hotbar_right = ctx
-            .memory(|m| m.area_rect(egui::Id::new("hotbar")))
+            .memory(|m| m.area_rect(egui::Id::unique("hotbar")))
             .map_or(screen.center().x + (HOTBAR_SLOTS as f32 * (HOTBAR_SLOT_SIZE + 3.0_f32) + 12.0_f32) / 2.0_f32, |r| r.right());
         let catalog = herocraft_common::skills();
-        egui::Area::new(egui::Id::new("skill_bar"))
+        egui::Area::new(egui::Id::unique("skill_bar"))
             .order(egui::Order::Background)
             .pivot(egui::Align2::LEFT_BOTTOM)
             .fixed_pos(egui::pos2(hotbar_right + 12.0_f32, bottom))
@@ -1350,7 +1356,7 @@ impl UiState {
                         ui.painter().rect_filled(rect, 4.0_f32, egui::Color32::from_black_alpha(150));
                         ui.painter().galley(rect.min + egui::vec2(8.0_f32, 2.0_f32), galley, TEXT_SOFT);
                     }
-                    hud_frame(egui::Margin::same(6.0_f32)).show(ui, |ui| {
+                    hud_frame(crate::ui_skin::Margin::same(6.0_f32)).show(ui, |ui| {
                         ui.spacing_mut().item_spacing = egui::vec2(3.0_f32, 0.0_f32);
                         ui.horizontal(|ui| {
                             for (slot, action) in SLOT_ACTIONS.into_iter().enumerate() {
@@ -1399,7 +1405,7 @@ impl UiState {
         let mut done: Option<usize> = None;
         let mut close = false;
         let mut hovered: Option<(ItemId, Option<u16>)> = None;
-        egui::Area::new(egui::Id::new("trade_screen"))
+        egui::Area::new(egui::Id::unique("trade_screen"))
             .order(egui::Order::Middle)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
@@ -1458,7 +1464,7 @@ impl UiState {
                 });
             });
         if let Some((item, count)) = hovered {
-            egui::show_tooltip_at_pointer(ctx, egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("trade_tip")), egui::Id::new("trade_tip"), |ui| item_tooltip(ui, item, count));
+            show_tooltip_at_pointer(ctx, "trade_tip", |ui| item_tooltip(ui, item, count));
         }
         if let Some(index) = done {
             let offer = &card.trades[index];
@@ -1493,7 +1499,7 @@ impl UiState {
         let hovered_cell: std::cell::Cell<Option<(ItemId, Option<u16>)>> = std::cell::Cell::new(None);
         let mut crafted: Option<(usize, bool)> = None;
         let mut hovered: Option<(ItemId, Option<u16>)> = None;
-        egui::Area::new(egui::Id::new("inventory_screen"))
+        egui::Area::new(egui::Id::unique("inventory_screen"))
             .order(egui::Order::Middle)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
@@ -1553,7 +1559,7 @@ impl UiState {
                                     });
                                     let (well, _) = ui.allocate_exact_size(egui::vec2(PORTRAIT_WIDTH, column_height), egui::Sense::hover());
                                     ui.painter().rect_filled(well, 4.0_f32, egui::Color32::from_black_alpha(90));
-                                    ui.painter().rect_stroke(well, 4.0_f32, egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(18)));
+                                    ui.painter().rect_stroke(well, 4.0_f32, egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(18)), egui::StrokeKind::Middle);
                                     match &self.legend {
                                         Some(legend) => self.hero_portrait.paint(ui.painter(), well.shrink(4.0_f32), &legend.appearance),
                                         None => {
@@ -1651,16 +1657,16 @@ impl UiState {
         // Pile tenue sous le curseur, sinon fiche de l'objet survolé
         if let Some(held) = self.inventory.held() {
             if let Some(pos) = ctx.pointer_latest_pos() {
-                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("held_stack")));
+                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("held_stack")));
                 let rect = egui::Rect::from_center_size(pos, egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE));
                 paint_stack(&painter, &self.icons, rect, held);
             }
         } else if let Some((item, count)) = hovered {
-            egui::show_tooltip_at_pointer(ctx, egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("inventory_tip")), egui::Id::new("inventory_tip"), |ui| {
+            show_tooltip_at_pointer(ctx, "inventory_tip", |ui| {
                 item_tooltip(ui, item, count);
             });
         } else if let Some(kind) = hovered_empty.get() {
-            egui::show_tooltip_at_pointer(ctx, egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("inventory_tip")), egui::Id::new("inventory_tip"), |ui| {
+            show_tooltip_at_pointer(ctx, "inventory_tip", |ui| {
                 ui.label(egui::RichText::new(kind.name()).strong().color(GOLD_BRIGHT));
                 ui.label(egui::RichText::new("Rien de porté").size(11.0_f32).color(TEXT_DIM));
             });
@@ -1672,10 +1678,10 @@ impl UiState {
     fn draw_death_screen(&mut self, ctx: &egui::Context, action: &mut Option<UiAction>) {
         let Some(death) = self.player.death.clone() else { return };
         let fade = (death.at.elapsed().as_secs_f32() / 0.8_f32).min(1.0_f32);
-        ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("death_backdrop")))
-            .rect_filled(ctx.screen_rect(), 0.0_f32, egui::Color32::from_rgba_unmultiplied(60, 0, 0, (170.0_f32 * fade) as u8));
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("death_backdrop")))
+            .rect_filled(ctx.content_rect(), 0.0_f32, egui::Color32::from_rgba_unmultiplied(60, 0, 0, (170.0_f32 * fade) as u8));
         let wait = self.player.respawn_in().unwrap_or(0.0_f32);
-        egui::Area::new(egui::Id::new("death_screen"))
+        egui::Area::new(egui::Id::unique("death_screen"))
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0_f32, -30.0_f32))
             .show(ctx, |ui| {
@@ -1715,20 +1721,20 @@ impl UiState {
         }
         let vignette = flash.max(pulse);
         if vignette > 0.0_f32 {
-            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("hurt_flash")));
-            painter.rect_filled(ctx.screen_rect(), 0.0_f32, egui::Color32::from_rgba_unmultiplied(200, 20, 20, (70.0_f32 * flash) as u8));
-            painter.add(red_vignette(ctx.screen_rect(), (220.0_f32 * vignette) as u8));
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("hurt_flash")));
+            painter.rect_filled(ctx.content_rect(), 0.0_f32, egui::Color32::from_rgba_unmultiplied(200, 20, 20, (70.0_f32 * flash) as u8));
+            painter.add(red_vignette(ctx.content_rect(), (220.0_f32 * vignette) as u8));
         }
 
-        let screen = ctx.screen_rect();
+        let screen = ctx.content_rect();
         // Classe, niveau et expérience en bas à gauche
-        egui::Area::new(egui::Id::new("class_hud"))
+        egui::Area::new(egui::Id::unique("class_hud"))
             .order(egui::Order::Background)
             .pivot(egui::Align2::LEFT_BOTTOM)
             .fixed_pos(egui::pos2(SCREEN_MARGIN, screen.bottom() - SCREEN_MARGIN))
             .interactable(false)
             .show(ctx, |ui| {
-                hud_frame(egui::Margin::symmetric(12.0_f32, 8.0_f32)).show(ui, |ui| {
+                hud_frame(crate::ui_skin::Margin::symmetric(12.0_f32, 8.0_f32)).show(ui, |ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(8.0_f32, 4.0_f32);
                     if let Some(legend) = &self.legend {
                         ui.label(egui::RichText::new(&legend.appearance.nom).size(15.0_f32).strong().color(TEXT_SOFT));
@@ -1749,7 +1755,7 @@ impl UiState {
             });
 
         // Vie, mana et endurance empilées en bas à droite, sans cadre
-        egui::Area::new(egui::Id::new("vitals_hud"))
+        egui::Area::new(egui::Id::unique("vitals_hud"))
             .order(egui::Order::Background)
             .pivot(egui::Align2::RIGHT_BOTTOM)
             .fixed_pos(egui::pos2(screen.right() - SCREEN_MARGIN, screen.bottom() - SCREEN_MARGIN))
@@ -1798,13 +1804,13 @@ impl UiState {
 
     /// Compteur FPS en haut à droite, seul élément permanent de l'écran
     fn draw_status_hud(&self, ctx: &egui::Context) {
-        let screen = ctx.screen_rect();
-        egui::Area::new(egui::Id::new("top_right_hud"))
+        let screen = ctx.content_rect();
+        egui::Area::new(egui::Id::unique("top_right_hud"))
             .pivot(egui::Align2::RIGHT_TOP)
             .fixed_pos(egui::pos2(screen.right() - SCREEN_MARGIN, SCREEN_MARGIN))
             .interactable(false)
             .show(ctx, |ui| {
-                hud_frame(egui::Margin::symmetric(12.0_f32, 8.0_f32)).show(ui, |ui| {
+                hud_frame(crate::ui_skin::Margin::symmetric(12.0_f32, 8.0_f32)).show(ui, |ui| {
                     let fps_color = if self.current_fps >= 55 {
                         egui::Color32::from_rgb(80, 220, 100)
                     } else if self.current_fps >= 30 {
@@ -1823,7 +1829,7 @@ impl UiState {
 
     /// Menu de pause : panneau centré, borné à l'écran, dont le corps défile au besoin
     fn draw_pause_menu(&mut self, ctx: &egui::Context, action: &mut Option<UiAction>) {
-        let screen = ctx.screen_rect();
+        let screen = ctx.content_rect();
         let page = self.menu_page;
         // Largeur du contenu ; le panneau de planches y ajoute ses bords
         let content_width = match page {
@@ -1847,10 +1853,10 @@ impl UiState {
         let inner_width = width - margin.left - margin.right;
         let inner_max_height = max_height - margin.top - margin.bottom;
         // Hauteur du pied de page mesurée à la frame précédente, pour réserver sa place
-        let footer_id = egui::Id::new(("pause_menu_footer", page));
+        let footer_id = egui::Id::unique(("pause_menu_footer", page));
         let footer_height = ctx.data(|d| d.get_temp::<f32>(footer_id)).unwrap_or(48.0_f32);
 
-        egui::Area::new(egui::Id::new(("pause_menu", page)))
+        egui::Area::new(egui::Id::unique(("pause_menu", page)))
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
@@ -2128,10 +2134,11 @@ impl UiState {
         ui.label(egui::RichText::new(tab.subtitle()).size(11.0_f32).color(TEXT_DIM));
         ui.add_space(2.0_f32);
 
-        let scroll_height = (height - (ui.cursor().top() - top)).max(60.0_f32);
+        let scroll_height = (height - (ui.cursor().top() - top)).max(24.0_f32);
         egui::ScrollArea::vertical()
             .id_salt(("options_content_scroll", tab))
             .max_height(scroll_height)
+            .min_scrolled_height(scroll_height)
             .auto_shrink([false, true])
             .show(ui, |ui| {
                 // Curseurs aussi larges que possible sans déborder (libellés ~45 %, valeur ~60 pt)
@@ -2433,7 +2440,7 @@ const PORTRAIT_WIDTH: f32 = 112.0;
 /// tenue à la souris peut s'y poser
 fn paint_equipment_placeholder(painter: &egui::Painter, rect: egui::Rect, kind: herocraft_common::EquipSlot, empty: bool, accepts_held: bool) {
     if accepts_held {
-        painter.rect_stroke(rect.shrink(3.0_f32), 2.0_f32, egui::Stroke::new(1.5_f32, GOLD_BRIGHT));
+        painter.rect_stroke(rect.shrink(3.0_f32), 2.0_f32, egui::Stroke::new(1.5_f32, GOLD_BRIGHT), egui::StrokeKind::Middle);
     }
     if empty {
         let color = if accepts_held { GOLD_BRIGHT } else { TEXT_DIM.gamma_multiply(0.75_f32) };
@@ -2751,7 +2758,7 @@ impl CraftingPanel {
             }
         });
         ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Rechercher…").desired_width(CRAFTING_WIDTH - 110.0_f32));
+            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Rechercher…").margin(egui::Margin::symmetric(4, 2)).desired_width(CRAFTING_WIDTH - 110.0_f32));
             ui.checkbox(&mut self.only_craftable, "Faisables");
         });
         ui.add_space(2.0_f32);
@@ -2860,7 +2867,7 @@ fn paint_recipe(
     };
     painter.rect_filled(rect, 4.0_f32, fill);
     let border = if times > 0 { egui::Stroke::new(1.0_f32, GOLD) } else { egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(55, 70, 95)) };
-    painter.rect_stroke(rect, 4.0_f32, border);
+    painter.rect_stroke(rect, 4.0_f32, border, egui::StrokeKind::Middle);
 
     let icon = egui::Rect::from_min_size(rect.min + egui::vec2(3.0_f32, 3.0_f32), egui::vec2(RECIPE_ICON_SIZE, RECIPE_ICON_SIZE));
     paint_stack(painter, icons, icon, ItemStack { item: recipe.result, count: recipe.count });
@@ -2906,7 +2913,7 @@ fn paint_recipe(
 fn gauge(ui: &mut egui::Ui, width: f32, height: f32, fraction: f32, color: egui::Color32, text: Option<&str>) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let painter = ui.painter();
-    let rounding = egui::Rounding::ZERO;
+    let rounding = egui::CornerRadius::ZERO;
     painter.rect_filled(rect, rounding, egui::Color32::from_rgba_premultiplied(23, 13, 8, 210));
     let fraction = if fraction.is_finite() { fraction.clamp(0.0_f32, 1.0_f32) } else { 0.0_f32 };
     if fraction > 0.0_f32 {
@@ -2914,8 +2921,8 @@ fn gauge(ui: &mut egui::Ui, width: f32, height: f32, fraction: f32, color: egui:
         painter.rect_filled(filled, rounding, color);
     }
     // Liseré de bois clair puis bord sombre, comme les cadres de l'ancien HUD
-    painter.rect_stroke(rect, rounding, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(92, 65, 45)));
-    painter.rect_stroke(rect.expand(1.0_f32), rounding, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(23, 13, 8)));
+    painter.rect_stroke(rect, rounding, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(92, 65, 45)), egui::StrokeKind::Middle);
+    painter.rect_stroke(rect.expand(1.0_f32), rounding, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(23, 13, 8)), egui::StrokeKind::Middle);
     if let Some(text) = text {
         let font = egui::FontId::proportional(11.5_f32);
         painter.text(rect.center() + egui::vec2(1.0_f32, 1.0_f32), egui::Align2::CENTER_CENTER, text, font.clone(), egui::Color32::from_black_alpha(200));
@@ -2962,7 +2969,7 @@ pub struct WeaponHud {
     pub charge: Option<(String, f32, bool)>,
 }
 
-fn hud_frame(margin: egui::Margin) -> crate::ui_skin::SkinFrame {
+fn hud_frame(margin: crate::ui_skin::Margin) -> crate::ui_skin::SkinFrame {
     crate::ui_skin::SkinFrame::area(margin)
 }
 
@@ -2988,7 +2995,7 @@ fn menu_entry(ui: &mut egui::Ui, size: egui::Vec2, text: &str, hint: Option<&str
 
 /// Touche dessinée comme un capuchon de clavier
 fn keycap(ui: &mut egui::Ui, key: &str) {
-    crate::ui_skin::SkinFrame::new(crate::ui_skin::BOX, 0.5_f32, egui::Margin::symmetric(9.0_f32, 5.0_f32)).show(ui, |ui| {
+    crate::ui_skin::SkinFrame::new(crate::ui_skin::BOX, 0.5_f32, crate::ui_skin::Margin::symmetric(9.0_f32, 5.0_f32)).show(ui, |ui| {
         ui.label(egui::RichText::new(key).monospace().size(11.5_f32).color(crate::ui_skin::TEXT));
     });
 }
@@ -3387,7 +3394,7 @@ mod tests {
 
                 let rect = ui
                     .ctx
-                    .memory(|m| m.area_rect(egui::Id::new(("pause_menu", page))))
+                    .memory(|m| m.area_rect(egui::Id::unique(("pause_menu", page))))
                     .expect("menu de pause dessiné");
                 let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w / scale, h / scale));
                 assert!(
@@ -3520,11 +3527,11 @@ mod tests {
         for _ in 0..3 {
             ui.update_ui(true);
         }
-        let hotbar = ui.ctx.memory(|m| m.area_rect(egui::Id::new("hotbar"))).expect("barre d'objets dessinée");
+        let hotbar = ui.ctx.memory(|m| m.area_rect(egui::Id::unique("hotbar"))).expect("barre d'objets dessinée");
         assert!(hotbar.bottom() <= 720.0 && hotbar.left() >= 0.0 && hotbar.right() <= 1280.0, "{:?}", hotbar);
         // Ni les jauges (à droite) ni la classe (à gauche) ne chevauchent la barre d'objets
         for id in ["vitals_hud", "class_hud"] {
-            let other = ui.ctx.memory(|m| m.area_rect(egui::Id::new(id))).expect("HUD du joueur dessiné");
+            let other = ui.ctx.memory(|m| m.area_rect(egui::Id::unique(id))).expect("HUD du joueur dessiné");
             assert!(!other.intersects(hotbar), "{id} chevauche la barre d'objets : {:?} / {:?}", other, hotbar);
         }
         assert!(hotbar.top() > 360.0, "{:?}", hotbar);
@@ -3533,7 +3540,7 @@ mod tests {
         for _ in 0..3 {
             ui.update_ui(true);
         }
-        let screen = ui.ctx.memory(|m| m.area_rect(egui::Id::new("inventory_screen"))).expect("inventaire dessiné");
+        let screen = ui.ctx.memory(|m| m.area_rect(egui::Id::unique("inventory_screen"))).expect("inventaire dessiné");
         assert!(screen.top() >= 0.0 && screen.bottom() <= 720.0 && screen.left() >= 0.0 && screen.right() <= 1280.0, "{:?}", screen);
     }
 
@@ -3549,7 +3556,7 @@ mod tests {
         for _ in 0..3 {
             ui.update_ui(true);
         }
-        let screen = ui.ctx.memory(|m| m.area_rect(egui::Id::new("skills_screen"))).expect("roue dessinée");
+        let screen = ui.ctx.memory(|m| m.area_rect(egui::Id::unique("skills_screen"))).expect("roue dessinée");
         assert!(screen.top() >= 0.0 && screen.bottom() <= 720.0 && screen.left() >= 0.0 && screen.right() <= 1280.0, "{:?}", screen);
         assert_eq!(ui.skill_requests, SkillScreenRequests::default(), "rien n'est demandé sans clic");
 
@@ -3569,20 +3576,20 @@ mod tests {
         for _ in 0..3 {
             ui.update_ui(true);
         }
-        let rect = ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).expect("jauges dessinées");
+        let rect = ui.ctx.memory(|m| m.area_rect(egui::Id::unique("vitals_hud"))).expect("jauges dessinées");
         assert!(rect.bottom() <= 720.0 && rect.top() > 360.0, "{:?}", rect);
         assert!(rect.width() < 640.0, "{:?}", rect);
         assert!(rect.left() > 640.0, "jauges à droite : {:?}", rect);
-        let class = ui.ctx.memory(|m| m.area_rect(egui::Id::new("class_hud"))).expect("classe dessinée");
+        let class = ui.ctx.memory(|m| m.area_rect(egui::Id::unique("class_hud"))).expect("classe dessinée");
         assert!(class.right() < 640.0 && class.bottom() <= 720.0, "classe à gauche : {:?}", class);
         // Plus de panneau en haut à gauche
-        assert!(ui.ctx.memory(|m| m.area_rect(egui::Id::new("top_left_hud"))).is_none());
+        assert!(ui.ctx.memory(|m| m.area_rect(egui::Id::unique("top_left_hud"))).is_none());
 
         let mut ui = UiState::new(1);
         for _ in 0..3 {
             ui.update_ui(false);
         }
-        assert!(ui.ctx.memory(|m| m.area_rect(egui::Id::new("vitals_hud"))).is_none());
+        assert!(ui.ctx.memory(|m| m.area_rect(egui::Id::unique("vitals_hud"))).is_none());
     }
 
     /// Les pictogrammes du menu existent dans les polices embarquées d'egui
@@ -3595,7 +3602,7 @@ mod tests {
             .into_iter()
             .chain(OptionsTab::ALL.iter().map(|t| t.icon()));
         for icon in icons {
-            assert!(ui.ctx.fonts(|f| f.has_glyphs(&font, icon)), "glyphe manquant : {}", icon);
+            assert!(ui.ctx.fonts_mut(|f| f.has_glyphs(&font, icon)), "glyphe manquant : {}", icon);
         }
     }
 
@@ -3835,4 +3842,23 @@ mod tests {
         }
     }
 
+}
+
+/// Défilement de la molette reçu cette frame, sans le lissage d'egui
+pub fn raw_scroll_delta(input: &egui::InputState) -> egui::Vec2 {
+    input
+        .raw
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            egui::Event::MouseWheel { delta, .. } => Some(*delta),
+            _ => None,
+        })
+        .fold(egui::Vec2::ZERO, |a, b| a + b)
+}
+
+/// Bulle d'aide qui suit le pointeur
+fn show_tooltip_at_pointer(ctx: &egui::Context, id: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
+    let id = egui::Id::unique(id);
+    egui::Tooltip::always_open(ctx.clone(), egui::LayerId::new(egui::Order::Tooltip, id), id, egui::PopupAnchor::Pointer).show(add_contents);
 }

@@ -165,14 +165,14 @@ impl BlockTextureSet {
             for (level, pixels) in layer.mips.iter().enumerate() {
                 let side = TEXTURE_SIZE >> level;
                 queue.write_texture(
-                    wgpu::ImageCopyTexture {
+                    wgpu::TexelCopyTextureInfo {
                         texture: &texture,
                         mip_level: level as u32,
                         origin: wgpu::Origin3d { x: 0, y: 0, z: index as u32 },
                         aspect: wgpu::TextureAspect::All,
                     },
                     pixels,
-                    wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(4 * side), rows_per_image: Some(side) },
+                    wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * side), rows_per_image: Some(side) },
                     wgpu::Extent3d { width: side, height: side, depth_or_array_layers: 1 },
                 );
             }
@@ -189,7 +189,7 @@ impl BlockTextureSet {
             address_mode_v: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
         // Genre de végétation de chaque couche, pour les saisons (2 bits par couche)

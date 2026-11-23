@@ -102,11 +102,11 @@ impl GpuTimer {
 
     /// Relit les résultats disponibles puis réserve un slot pour la frame (None si tous sont en vol)
     pub fn begin_frame(&mut self, device: &wgpu::Device, view_mode: CameraViewMode) -> Option<&wgpu::QuerySet> {
-        device.poll(wgpu::Maintain::Poll);
+        let _ = device.poll(wgpu::PollType::Poll);
         for slot in &mut self.slots {
             if slot.in_flight && slot.mapped.load(Ordering::Acquire) {
                 {
-                    let data = slot.readback_buffer.slice(..).get_mapped_range();
+                    let data = slot.readback_buffer.slice(..).get_mapped_range().expect("lecture du tampon");
                     let ts: &[u64] = bytemuck::cast_slice(&data);
                     record(ts, self.period_ns, slot.view_mode, self.inside_passes);
                 }

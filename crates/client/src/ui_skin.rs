@@ -122,7 +122,7 @@ fn decode_png(bytes: &[u8]) -> Result<egui::ColorImage, png::DecodingError> {
 }
 
 fn skin_id() -> egui::Id {
-    egui::Id::new("herocraft_ui_skin")
+    egui::Id::unique("herocraft_ui_skin")
 }
 
 /// Charge les textures et les polices de l'habillage dans ce contexte egui
@@ -150,11 +150,11 @@ fn install_fonts(ctx: &egui::Context) {
     let grenze_tweak = egui::FontTweak { scale: 1.12_f32, y_offset_factor: 0.02_f32, ..Default::default() };
     fonts.font_data.insert(
         "Grenze".to_owned(),
-        Arc::new(egui::FontData::from_static(include_bytes!("../assets/ui/fonts/Grenze-Regular.ttf")).tweak(grenze_tweak)),
+        Arc::new(egui::FontData::from_static(include_bytes!("../assets/ui/fonts/Grenze-Regular.ttf")).tweak(grenze_tweak.clone())),
     );
     fonts.font_data.insert(
         "Grenze-SemiBold".to_owned(),
-        Arc::new(egui::FontData::from_static(include_bytes!("../assets/ui/fonts/Grenze-SemiBold.ttf")).tweak(grenze_tweak)),
+        Arc::new(egui::FontData::from_static(include_bytes!("../assets/ui/fonts/Grenze-SemiBold.ttf")).tweak(grenze_tweak.clone())),
     );
     fonts.font_data.insert(
         "Uncial".to_owned(),
@@ -211,10 +211,13 @@ impl Slice {
 /// Panneau principal des menus (planches cerclées de fer, liseré d'herbe en haut)
 pub const PANEL: Slice = Slice::uniform(Tex::PanelSlim, 60.0);
 /// Marge intérieure du panneau, à l'échelle 1
-pub const PANEL_MARGIN: egui::Margin = egui::Margin { left: 46.0, right: 46.0, top: 38.0, bottom: 46.0 };
+/// Marge en points flottants (celle d'egui est en entiers depuis la 0.31)
+pub type Margin = egui::epaint::MarginF32;
+
+pub const PANEL_MARGIN: Margin = Margin { left: 46.0, right: 46.0, top: 38.0, bottom: 46.0 };
 /// Marge intérieure du panneau à l'échelle donnée
-pub fn panel_margin(scale: f32) -> egui::Margin {
-    egui::Margin {
+pub fn panel_margin(scale: f32) -> Margin {
+    Margin {
         left: PANEL_MARGIN.left * scale,
         right: PANEL_MARGIN.right * scale,
         top: PANEL_MARGIN.top * scale,
@@ -300,12 +303,12 @@ fn tile(mesh: &mut egui::Mesh, dst: egui::Rect, src: egui::Rect, tile_w: f32, ti
 pub struct SkinFrame {
     slice: Slice,
     scale: f32,
-    margin: egui::Margin,
+    margin: Margin,
     tint: egui::Color32,
 }
 
 impl SkinFrame {
-    pub fn new(slice: Slice, scale: f32, margin: egui::Margin) -> Self {
+    pub fn new(slice: Slice, scale: f32, margin: Margin) -> Self {
         Self { slice, scale, margin, tint: egui::Color32::WHITE }
     }
 
@@ -320,7 +323,7 @@ impl SkinFrame {
     }
 
     /// Petit cadre sombre (HUD, bulles)
-    pub fn area(margin: egui::Margin) -> Self {
+    pub fn area(margin: Margin) -> Self {
         Self::new(AREA, 1.0_f32, margin)
     }
 
@@ -454,7 +457,7 @@ impl egui::Widget for SkinButton {
         };
         let size = egui::vec2(galley.size().x + (pad_left + pad_right) * s, natural_height).max(self.min_size);
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), galley.text()));
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), galley.text()));
 
         if ui.is_rect_visible(rect) {
             let enabled = ui.is_enabled();

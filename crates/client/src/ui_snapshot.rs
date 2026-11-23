@@ -55,10 +55,9 @@ impl Snapshot {
 
     /// Prend en compte les textures créées, modifiées ou libérées par egui
     pub fn apply_textures(&mut self, delta: &egui::TexturesDelta) {
-        for (id, image_delta) in &delta.set {
+        for (id, image_delta) in delta.set.iter().flat_map(|(id, deltas)| deltas.iter().map(move |d| (id, d))) {
             let (size, pixels): ([usize; 2], Vec<egui::Color32>) = match &image_delta.image {
                 egui::ImageData::Color(image) => (image.size, image.pixels.clone()),
-                egui::ImageData::Font(font) => (font.size, font.srgba_pixels(None).collect()),
             };
             let nearest = image_delta.options.magnification == egui::TextureFilter::Nearest;
             match image_delta.pos {

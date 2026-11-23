@@ -304,11 +304,11 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_card"),
-            buffers: &[wgpu::VertexBufferLayout {
+            buffers: &[Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<CardInstance>() as wgpu::BufferAddress,
                 step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4, 4 => Float32x4, 5 => Float32x4],
-            }],
+            })],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -323,13 +323,13 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         // entre elles et avec le monde par la profondeur
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: !blended,
-            depth_compare: wgpu::CompareFunction::LessEqual,
+            depth_write_enabled: Some(!blended),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState { count: target.sample_count, mask: !0, alpha_to_coverage_enabled: false },
-        multiview: None,
+        multiview_mask: None,
         cache: crate::shaders::pipeline_cache(),
     })
 }
@@ -347,9 +347,9 @@ fn texture_array(device: &wgpu::Device, queue: &wgpu::Queue, label: &str, format
         view_formats: &[],
     });
     queue.write_texture(
-        wgpu::ImageCopyTexture { texture: &texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+        wgpu::TexelCopyTextureInfo { texture: &texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
         data,
-        wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(PAGE_SIZE * bytes_per_pixel), rows_per_image: Some(PAGE_SIZE) },
+        wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(PAGE_SIZE * bytes_per_pixel), rows_per_image: Some(PAGE_SIZE) },
         size,
     );
     texture.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() })
@@ -407,7 +407,7 @@ impl CardRenderer {
             ],
         });
         let bind_group = create_bind_group(device, queue, &bind_layout, &uniform, &sampler, &images);
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Paper Cards Pipeline Layout"), bind_group_layouts: &[&bind_layout], push_constant_ranges: &[] });
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Paper Cards Pipeline Layout"), bind_group_layouts: &[Some(&bind_layout)], immediate_size: 0 });
         let instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Paper Cards Instances"),
             size: (MAX_CARDS * std::mem::size_of::<CardInstance>()) as wgpu::BufferAddress,

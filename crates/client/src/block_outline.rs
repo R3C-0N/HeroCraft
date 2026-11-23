@@ -47,11 +47,11 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_outline"),
-            buffers: &[wgpu::VertexBufferLayout {
+            buffers: &[Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<OutlineVertex>() as wgpu::BufferAddress,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &wgpu::vertex_attr_array![0 => Float32x3],
-            }],
+            })],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -71,8 +71,8 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: false,
-            depth_compare: wgpu::CompareFunction::LessEqual,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
@@ -81,7 +81,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-        multiview: None,
+        multiview_mask: None,
         cache: crate::shaders::pipeline_cache(),
     })
 }

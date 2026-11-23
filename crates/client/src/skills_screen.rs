@@ -113,15 +113,15 @@ impl SkillScreen {
         if right {
             self.turn(1, count);
         }
-        egui::Area::new(egui::Id::new("skills_screen"))
+        egui::Area::new(egui::Id::unique("skills_screen"))
             .order(egui::Order::Middle)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
-                egui::Frame::none()
+                egui::Frame::NONE
                     .fill(egui::Color32::from_rgba_premultiplied(14, 18, 28, 245))
                     .stroke(egui::Stroke::new(1.5_f32, GOLD))
-                    .rounding(egui::Rounding::same(10.0_f32))
-                    .inner_margin(egui::Margin::same(MENU_PADDING))
+                    .corner_radius(egui::CornerRadius::same(10))
+                    .inner_margin(egui::epaint::MarginF32::same(MENU_PADDING))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.label(egui::RichText::new("COMPÉTENCES").strong().size(16.0_f32).color(GOLD_BRIGHT));
@@ -135,7 +135,7 @@ impl SkillScreen {
                         });
                         ui.add_space(6.0_f32);
                         ui.horizontal_top(|ui| {
-                            let size = (ctx.screen_rect().height() - 2.0 * MENU_PADDING - 60.0).clamp(WHEEL_MIN_SIZE, WHEEL_MAX_SIZE);
+                            let size = (ctx.content_rect().height() - 2.0 * MENU_PADDING - 60.0).clamp(WHEEL_MIN_SIZE, WHEEL_MAX_SIZE);
                             self.draw_wheel(ui, wheel, stats, size);
                             ui.add_space(12.0_f32);
                             ui.vertical(|ui| {
@@ -201,7 +201,7 @@ impl SkillScreen {
         }
         // Molette sur la roue : une classe par cran
         if response.hovered() {
-            self.scroll += ui.input(|i| i.raw_scroll_delta.y + i.raw_scroll_delta.x);
+            self.scroll += ui.input(|i| { let d = crate::ui::raw_scroll_delta(i); d.y + d.x });
             while self.scroll.abs() >= SCROLL_STEP {
                 let step = self.scroll.signum();
                 self.turn(-(step as i32), count);
@@ -213,9 +213,9 @@ impl SkillScreen {
 
         let ctx = ui.ctx().clone();
         let weights: Vec<f32> = (0..count)
-            .map(|i| ctx.animate_bool_with_time(egui::Id::new(("skills_focus", i)), i == self.focus, TURN_SECS))
+            .map(|i| ctx.animate_bool_with_time(egui::Id::unique(("skills_focus", i)), i == self.focus, TURN_SECS))
             .collect();
-        let track = ctx.animate_value_with_time(egui::Id::new("skills_track"), self.track as f32, TURN_SECS);
+        let track = ctx.animate_value_with_time(egui::Id::unique("skills_track"), self.track as f32, TURN_SECS);
         let painter = ui.painter_at(rect);
         let layout = WheelLayout::new(rect.center(), size / 2.0 - 2.0, wheel.rings(), &weights, track);
         let (centre, outer, hub) = (layout.centre, layout.outer, layout.hub_radius());
