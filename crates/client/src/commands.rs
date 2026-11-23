@@ -85,7 +85,7 @@ pub const COMMANDS: &[CommandHelp] = &[
     CommandHelp { name: "give", usage: "/give <item> [count]", description: "Put blocks or items in your inventory (Tab completes the name)" },
     CommandHelp { name: "drop", usage: "/drop <item> [count]", description: "Drop blocks or items on the ground in front of you (Tab completes the name)" },
     CommandHelp { name: "fly", usage: "/fly", description: "Toggle flight" },
-    CommandHelp { name: "camera", usage: "/camera <distance> [yaw] [pitch]", description: "Put the camera some blocks behind the hero (0 = first person), facing yaw degrees (0 = north) and tilted pitch degrees (negative = down)" },
+    CommandHelp { name: "camera", usage: "/camera <distance> [yaw|~] [pitch|~]", description: "Put the camera some blocks behind the hero (0 = first person), facing yaw degrees (0 = north) and tilted pitch degrees (negative = down); ~ keeps the current angle" },
     CommandHelp { name: "speed", usage: "/speed <factor>", description: "Movement speed multiplier (1 = normal, up to 20)" },
     CommandHelp { name: "summon", usage: "/summon <creature> [count]", description: "Spawn creatures in front of you" },
     CommandHelp { name: "heal", usage: "/heal", description: "Restore health, mana and stamina" },
@@ -157,7 +157,7 @@ pub fn parse(line: &str) -> Result<Command, String> {
         ("camera" | "cam", [distance, rest @ ..]) if rest.len() <= 2 => {
             let distance = number(distance).filter(|d| (0.0..=2000.0).contains(d)).ok_or_else(|| wrong(&format!("Invalid distance \"{distance}\" (0 to 2000 blocks)")))?;
             let angle = |i: usize, max: f32| -> Result<Option<f32>, String> {
-                rest.get(i).map(|a| number(a).filter(|v| v.abs() <= max).ok_or_else(|| wrong(&format!("Invalid angle \"{a}\""))) ).transpose()
+                rest.get(i).filter(|a| **a != "~").map(|a| number(a).filter(|v| v.abs() <= max).ok_or_else(|| wrong(&format!("Invalid angle \"{a}\""))) ).transpose()
             };
             Command::Camera { distance, yaw: angle(0, 360.0)?, pitch: angle(1, 89.0)? }
         }
@@ -318,6 +318,7 @@ mod tests {
         assert_eq!(parse("/camera 12 90 -30"), Ok(Command::Camera { distance: 12.0, yaw: Some(90.0), pitch: Some(-30.0) }));
         assert_eq!(parse("/camera 0"), Ok(Command::Camera { distance: 0.0, yaw: None, pitch: None }));
         assert!(parse("/camera 12 90 -95").is_err());
+        assert_eq!(parse("/camera 20 ~ -40"), Ok(Command::Camera { distance: 20.0, yaw: None, pitch: Some(-40.0) }));
         assert_eq!(parse("/xp 250"), Ok(Command::Experience(250)));
         assert_eq!(parse("/cinematic"), Ok(Command::Cinematic(None)));
         assert_eq!(parse("/cinematic fin-de-la-vision"), Ok(Command::Cinematic(Some("fin-de-la-vision".into()))));
