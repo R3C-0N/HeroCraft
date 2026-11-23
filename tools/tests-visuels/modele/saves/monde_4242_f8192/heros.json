@@ -1,0 +1,21 @@
+{
+  "appearance": {
+    "nom": "Eldra",
+    "espece": "humain",
+    "variante": 0,
+    "taille": 1.75,
+    "corpulence": 0.5,
+    "peau": "#E0AC7E",
+    "formeTete": "ovale",
+    "yeux": "amande",
+    "couleurYeux": "#4A2E18",
+    "bouche": "neutre",
+    "marques": "aucune",
+    "coiffure": "courte",
+    "couleurCheveux": "#3E2A1C",
+    "barbe": "aucune",
+    "tenue": "tunique",
+    "couleurTenue": "#6B4A2E"
+  },
+  "class": "Soldier"
+}
