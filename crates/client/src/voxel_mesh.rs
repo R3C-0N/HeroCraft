@@ -67,6 +67,9 @@ pub struct VoxelColumnSource {
     columns: Vec<ColumnSample>,
     /// Arbres qui touchent la colonne et sa bordure
     vegetation: VegetationField,
+    /// Direction depuis le centre de la planète de chaque coin entier de la grille du chunk
+    /// (33x33, indexée par `z * 33 + x`) : les sommets des cubes y tombent presque tous
+    corner_dirs: Vec<Vec3>,
 }
 
 /// Place d'une couche d'altitude dans le maillage d'une colonne
@@ -446,20 +449,21 @@ impl VoxelMeshBuilder {
             if e > max_elev { max_elev = e; }
         }
 
+        // Colonnes du chunk + bordure d'une colonne (voisins des faces et de l'AO), échantillonnées
+        // une seule fois et partagées par toutes les couches d'altitude ; elles donnent aussi la
+        // couleur de chaque colonne (le même échantillon que ses blocs)
+        let columns = generator.sample_chunk_columns(face, chunk_x, chunk_y, COLUMN_BORDER);
+        let side = CHUNK_SIZE + 2 * COLUMN_BORDER as usize;
         let mut column_colors = vec![[0.0_f32; 4]; 32 * 32];
         for cz in 0..32 {
             herocraft_common::prof_scope!("voxel_mesh::column_colors_row");
             for cx in 0..32 {
-                let u = base_u + (cx as f64 + 0.5) * voxel_span_uv;
-                let v = base_v + (cz as f64 + 0.5) * voxel_span_uv;
-                let dir = face.uv_to_sphere_direction(u, v);
-                let (lat, _lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
-                let (raw_elevation, biome) = generator.sample_elevation_and_biome(dir, lat);
+                let column = &columns[(cz + COLUMN_BORDER as usize) * side + cx + COLUMN_BORDER as usize];
+                let (dir, raw_elevation, biome) = (column.dir, column.elevation, column.biome);
                 if raw_elevation < min_elev { min_elev = raw_elevation; }
                 if raw_elevation > max_elev { max_elev = raw_elevation; }
 
                 let mut biome_color = PlanetMesh::relief_biome_color(biome, raw_elevation);
-
                 match filter {
                     herocraft_world::VisualizationFilter::Standard => {}
                     herocraft_world::VisualizationFilter::Tectonics => {
@@ -474,10 +478,6 @@ impl VoxelMeshBuilder {
                 column_colors[cz * 32 + cx] = biome_color;
             }
         }
-
-        // Colonnes du chunk + bordure d'une colonne (voisins des faces et de l'AO), échantillonnées
-        // une seule fois et partagées par toutes les couches d'altitude
-        let columns = generator.sample_chunk_columns(face, chunk_x, chunk_y, COLUMN_BORDER);
         let cave_bottom = columns.iter().map(carvable_range).filter(|r| !r.is_empty()).map(|r| r.start).min();
         let vegetation = generator.chunk_vegetation(face, chunk_x, chunk_y, &columns, COLUMN_BORDER);
 
@@ -488,7 +488,13 @@ impl VoxelMeshBuilder {
             min_elev -= 8.0;
         }
 
-        VoxelColumnSource { face, chunk_x, chunk_y, base_radius, min_elev, max_elev, cave_bottom, column_colors, columns, vegetation }
+        let corner_dirs = (0..33 * 33)
+            .map(|i| {
+                let dir = face.uv_to_sphere_direction(base_u + (i % 33) as f64 * voxel_span_uv, base_v + (i / 33) as f64 * voxel_span_uv);
+                Vec3::new(dir.x as f32, dir.y as f32, dir.z as f32)
+            })
+            .collect();
+        VoxelColumnSource { face, chunk_x, chunk_y, base_radius, min_elev, max_elev, cave_bottom, column_colors, columns, vegetation, corner_dirs }
     }
 
     /// Couches d'altitude à mailler : celles que le relief et la mer occupent, plus celles que le
@@ -600,13 +606,19 @@ impl VoxelMeshBuilder {
         let base_v = -1.0 + (chunk_y as f64) * chunk_span_uv;
         let sea = herocraft_world::generator::SEA_LEVEL_BLOCKS;
 
+        let corner_dirs = &source.corner_dirs;
         let get_corner = |vx: f64, vy: f64, vz: f64, layer: i32| -> Vec3 {
-            let u = base_u + vx * voxel_span_uv;
-            let v = base_v + vz * voxel_span_uv;
-            let dir = face.uv_to_sphere_direction(u, v);
+            // Coin entier de la grille : direction déjà calculée (exactement la même)
+            let (ix, iz) = (vx as usize, vz as usize);
+            let dir = if vx == ix as f64 && vz == iz as f64 && ix <= 32 && iz <= 32 && vx >= 0.0 && vz >= 0.0 {
+                corner_dirs[iz * 33 + ix]
+            } else {
+                let dir = face.uv_to_sphere_direction(base_u + vx * voxel_span_uv, base_v + vz * voxel_span_uv);
+                Vec3::new(dir.x as f32, dir.y as f32, dir.z as f32)
+            };
             let global_y = (layer as f64) * 32.0 + vy;
             let r = base_radius + (global_y as f32) * altitude_scale;
-            Vec3::new(dir.x as f32, dir.y as f32, dir.z as f32) * r
+            dir * r
         };
 
         let coord = PlanetChunkCoord::new(face, chunk_x, chunk_y, layer);

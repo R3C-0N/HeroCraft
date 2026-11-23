@@ -896,6 +896,64 @@ mod tests {
         }
     }
 
+    /// Coût de la génération du monde autour du point d'apparition, sur un seul fil : colonnes de
+    /// voxels (échantillonnage du générateur, puis maillage) et patchs LOD (rapides et détaillés).
+    /// `cargo test --release -p herocraft_client bench_generation_monde -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_generation_monde() {
+        use crate::voxel_mesh::VoxelMeshBuilder;
+        let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 4242, ..Default::default() });
+        let mut camera = crate::camera::OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
+        camera.distance = 0.0;
+        camera.target_distance = 0.0;
+        camera.update_camera_bounds(&generator);
+        let lod = PlanetLodManager::new(crate::camera::DEFAULT_RADIUS, 4242);
+        let leaves = lod.quadtree.evaluate_with_generator(camera.eye_position().as_dvec3(), Some(&generator));
+        let voxels: Vec<QuadNodeKey> = leaves.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).map(|l| l.key).take(48).collect();
+        let patches: Vec<QuadNodeKey> = leaves.iter().filter(|l| l.kind == QuadLeafKind::LodPatch).map(|l| l.key).collect();
+        let edits = TerrainEdits::new(None);
+        let (mut sample, mut mesh) = (std::time::Duration::ZERO, std::time::Duration::ZERO);
+        let mut checksum = 0u64;
+        for key in &voxels {
+            let t = Instant::now();
+            let source = VoxelMeshBuilder::sample_column_source(&generator, key.face, key.x as i32, key.y as i32, crate::camera::DEFAULT_RADIUS, lod.active_filter);
+            sample += t.elapsed();
+            let t = Instant::now();
+            let column = VoxelMeshBuilder::build_column(&generator, &edits, Arc::new(source));
+            mesh += t.elapsed();
+            for v in &column.mesh.vertices {
+                for x in v.position {
+                    checksum = checksum.rotate_left(7) ^ x.to_bits() as u64;
+                }
+            }
+        }
+        let n = voxels.len() as u32;
+        // Détail de l'échantillonnage
+        let (mut columns_t, mut vegetation_t, mut structures_t) = (std::time::Duration::ZERO, std::time::Duration::ZERO, std::time::Duration::ZERO);
+        for key in &voxels {
+            let (face, x, y) = (key.face, key.x as i32, key.y as i32);
+            let t = Instant::now();
+            let columns = generator.sample_chunk_columns(face, x, y, 1);
+            columns_t += t.elapsed();
+            let t = Instant::now();
+            std::hint::black_box(generator.chunk_vegetation(face, x, y, &columns, 1));
+            vegetation_t += t.elapsed();
+            let t = Instant::now();
+            std::hint::black_box(generator.structures_top(face, x, y, 1));
+            structures_t += t.elapsed();
+        }
+        println!("  dont colonnes {:.2?}, végétation {:.2?}, constructions {:.2?} par colonne", columns_t / n, vegetation_t / n, structures_t / n);
+        println!("{n} colonnes de voxels : échantillonnage {:.2?} par colonne, maillage {:.2?} par colonne (empreinte des sommets {checksum:016x})", sample / n, mesh / n);
+        for (name, detail) in [("rapides", quick_detail as fn(u8) -> PatchDetail), ("détaillés", |l| patch_detail(l, crate::ui::LodPrecisionSetting::Normale))] {
+            let t = Instant::now();
+            for key in &patches {
+                std::hint::black_box(PlanetMesh::generate_lod_patch_stepped(&generator, key, crate::camera::DEFAULT_RADIUS, detail(key.level), lod.active_filter));
+            }
+            println!("{} patchs {name} : {:.2?} en tout, {:.2?} par patch", patches.len(), t.elapsed(), t.elapsed() / patches.len() as u32);
+        }
+    }
+
     /// Changer de précision ne vide pas l'écran : les feuilles et leurs anciens patchs restent
     /// affichés (pas de retour aux 6 faces de la vue satellite), puis les nouveaux les remplacent
     #[test]
