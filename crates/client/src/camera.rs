@@ -325,7 +325,7 @@ impl OrbitCamera {
         self.update_camera_bounds(generator);
     }
 
-    /// `--visiter ville|village|ruines` : place le joueur au bord du premier établissement de ce
+    /// `--visiter ville|village|ruines|temple` : place le joueur au bord du premier établissement de ce
     /// genre que porte la planète. Renvoie la direction de son centre.
     fn visit_settlement(&mut self, generator: &PlanetWorldGenerator) -> Option<Vec3> {
         use herocraft_world::structures::CELLS_PER_FACE;
@@ -340,11 +340,16 @@ impl OrbitCamera {
             }
             found
         });
-        let mut found = herocraft_common::PlanetFace::ALL.into_iter().flat_map(|face| {
+        let found = herocraft_common::PlanetFace::ALL.into_iter().flat_map(|face| {
             (0..CELLS_PER_FACE * CELLS_PER_FACE).filter_map(move |i| generator.structures.cell(generator, face, i % CELLS_PER_FACE, i / CELLS_PER_FACE))
         });
         let mut found = found.filter(|s| culture.is_none() || s.culture == culture);
-        let Some(settlement) = found.find(|s| s.kind.name() == wanted.as_str()).and_then(|first| {
+        // `temple` : les ruines qui gardent un temple (celui d'une ville-souvenir)
+        let temple = wanted.as_str() == "temple";
+        let has_temple = |s: &herocraft_world::structures::Settlement| s.pieces.iter().any(|p| matches!(p, herocraft_world::structures::Piece::Temple(_)));
+        let mut found = found.filter(|s| !temple || has_temple(s));
+        let kind = if temple { "ruines" } else { wanted.as_str() };
+        let Some(settlement) = found.find(|s| s.kind.name() == kind).and_then(|first| {
             if rank <= 1 { Some(first) } else { found.filter(|s| s.kind == first.kind).nth(rank - 2) }
         }) else {
             log::warn!("--visiter {wanted} : aucun établissement de ce genre sur cette planète (ville, village ou ruines).");
