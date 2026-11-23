@@ -238,7 +238,16 @@ pub struct TerrainQuery<'a> {
     columns: FxHashMap<(PlanetFace, i32, i32), ColumnSample>,
     /// Arbres des cases déjà regardées (`TREE_CELL` blocs de côté)
     trees: FxHashMap<(PlanetFace, i32, i32), Option<Tree>>,
+    /// Blocs du générateur déjà lus (grottes et arbres compris, hors modifications)
+    blocks: FxHashMap<BlockPos, BlockId>,
+    /// Hauteurs où une construction change chaque colonne déjà regardée
+    spans: FxHashMap<(PlanetFace, i32, i32), std::ops::Range<i32>>,
+    /// Blocs du sol déjà testés : creusés par une grotte ou non
+    caves: FxHashMap<BlockPos, bool>,
 }
+
+/// Au-delà, le cache des blocs générés repart de zéro (un bloc y tient en ~24 octets)
+const MAX_CACHED_BLOCKS: usize = 1 << 18;
 
 /// Ce que `TerrainQuery` a déjà lu du générateur, gardé d'une image à l'autre : colonnes et arbres
 /// ne dépendent que de la graine, jamais des modifications du terrain. Hachage FxHash : les clés
@@ -247,6 +256,9 @@ pub struct TerrainQuery<'a> {
 pub struct QueryCache {
     columns: FxHashMap<(PlanetFace, i32, i32), ColumnSample>,
     trees: FxHashMap<(PlanetFace, i32, i32), Option<Tree>>,
+    blocks: FxHashMap<BlockPos, BlockId>,
+    spans: FxHashMap<(PlanetFace, i32, i32), std::ops::Range<i32>>,
+    caves: FxHashMap<BlockPos, bool>,
 }
 
 impl QueryCache {
@@ -262,21 +274,46 @@ impl QueryCache {
     pub fn clear(&mut self) {
         self.columns.clear();
         self.trees.clear();
+        self.blocks.clear();
+        self.spans.clear();
+        self.caves.clear();
     }
 }
 
 impl<'a> TerrainQuery<'a> {
     pub fn new(generator: &'a PlanetWorldGenerator, edits: &'a TerrainEdits) -> Self {
-        Self { generator, edits, columns: FxHashMap::default(), trees: FxHashMap::default() }
+        Self { generator, edits, columns: FxHashMap::default(), trees: FxHashMap::default(), blocks: FxHashMap::default(), spans: FxHashMap::default(), caves: FxHashMap::default() }
     }
 
     /// Reprend des colonnes et des arbres déjà échantillonnés (cache gardé d'une image à l'autre)
     pub fn with_columns(generator: &'a PlanetWorldGenerator, edits: &'a TerrainEdits, cache: QueryCache) -> Self {
-        Self { generator, edits, columns: cache.columns, trees: cache.trees }
+        let QueryCache { columns, trees, mut blocks, mut spans, mut caves } = cache;
+        if blocks.len() > MAX_CACHED_BLOCKS {
+            blocks.clear();
+        }
+        if caves.len() > MAX_CACHED_BLOCKS {
+            caves.clear();
+        }
+        if spans.len() > MAX_CACHED_BLOCKS / 8 {
+            spans.clear();
+        }
+        Self { generator, edits, columns, trees, blocks, spans, caves }
     }
 
     pub fn into_columns(self) -> QueryCache {
-        QueryCache { columns: self.columns, trees: self.trees }
+        QueryCache { columns: self.columns, trees: self.trees, blocks: self.blocks, spans: self.spans, caves: self.caves }
+    }
+
+    /// `structure_span` du générateur, gardé par colonne
+    fn structure_span(&mut self, column: &ColumnSample, face: PlanetFace, x: i32, z: i32) -> std::ops::Range<i32> {
+        let generator = self.generator;
+        self.spans.entry((face, x, z)).or_insert_with(|| generator.structure_span(column, face, x, z)).clone()
+    }
+
+    /// `is_cave` du générateur, gardé par bloc
+    fn is_cave(&mut self, column: &ColumnSample, face: PlanetFace, x: i32, y: i32, z: i32) -> bool {
+        let generator = self.generator;
+        *self.caves.entry(BlockPos::new(face, x, y, z)).or_insert_with(|| generator.is_cave(column, face, x, y, z))
     }
 
     fn column(&mut self, face: PlanetFace, x: i32, z: i32) -> &ColumnSample {
@@ -294,6 +331,16 @@ impl<'a> TerrainQuery<'a> {
             let (x, y, z) = pos.local();
             return chunk.get_voxel(x, y, z);
         }
+        if let Some(&block) = self.blocks.get(&pos) {
+            return block;
+        }
+        let block = self.generated_block(pos);
+        self.blocks.insert(pos, block);
+        block
+    }
+
+    /// Bloc posé par le générateur (relief, grottes, végétation), sans les modifications
+    fn generated_block(&mut self, pos: BlockPos) -> BlockId {
         let generator = self.generator;
         let column = *self.column(pos.face, pos.x, pos.z);
         let block = generator.column_block_without_vegetation(&column, pos.face, pos.x, pos.y, pos.z);
@@ -331,7 +378,7 @@ impl<'a> TerrainQuery<'a> {
         let natural_top = ground_top.max(crate::generator::SEA_LEVEL_BLOCKS.ceil() as i32);
         let caves = carvable_range(&column);
         // Altitudes où une ville, un village ou des ruines changent la colonne : lues bloc par bloc
-        let built = self.generator.structure_span(&column, face, x, z);
+        let built = self.structure_span(&column, face, x, z);
         // Arbres de la colonne : leurs blocs portent aussi (mais pas les herbes et les fleurs)
         let tree_top = if column.elevation.floor() >= crate::generator::SEA_LEVEL_BLOCKS {
             self.tree_top(face, x, z).min(ground_top + VEGETATION_SPAN)
@@ -354,7 +401,7 @@ impl<'a> TerrainQuery<'a> {
                 y -= 1;
             } else if y < natural_top {
                 // Sol naturel : porteur, sauf là où une grotte l'a creusé
-                if y < ground_top && caves.contains(&y) && self.generator.is_cave(&column, face, x, y, z) {
+                if y < ground_top && caves.contains(&y) && self.is_cave(&column, face, x, y, z) {
                     y -= 1;
                 } else {
                     return y + 1;
