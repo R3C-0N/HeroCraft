@@ -131,7 +131,7 @@ impl HeroCreator {
     /// Dessine l'écran sur tout l'écran ; renvoie ce que le joueur vient de décider
     pub fn show(&mut self, ctx: &egui::Context) -> Option<CreatorEvent> {
         let mut event = None;
-        let screen = ctx.screen_rect();
+        let screen = ctx.content_rect();
         // Le temps réel écoulé (et non le pas prévu par egui) : la figure tourne à la même allure
         // quel que soit le nombre d'images par seconde
         let now = std::time::Instant::now();
@@ -140,7 +140,7 @@ impl HeroCreator {
         self.preview.update(dt);
         ctx.request_repaint();
 
-        egui::Area::new(egui::Id::new("hero_creator"))
+        egui::Area::new(egui::Id::unique("hero_creator"))
             .order(egui::Order::Foreground)
             .fixed_pos(screen.min)
             .show(ctx, |ui| {
@@ -154,8 +154,8 @@ impl HeroCreator {
                 let left = egui::Rect::from_min_size(inner.min, egui::vec2(left_w, inner.height()));
                 let right = egui::Rect::from_min_max(egui::pos2(left.right() + gap, inner.top()), inner.max);
 
-                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(left), |ui| self.draw_preview_panel(ui, left));
-                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(right), |ui| {
+                ui.scope_builder(egui::UiBuilder::new().max_rect(left), |ui| self.draw_preview_panel(ui, left));
+                ui.scope_builder(egui::UiBuilder::new().max_rect(right), |ui| {
                     event = self.draw_step_panel(ui, right);
                 });
             });
@@ -173,8 +173,8 @@ impl HeroCreator {
 
         // Le puits sombre et le héros qui y tourne
         ui.painter().rect_filled(well, 6.0_f32, WELL);
-        ui.painter().rect_stroke(well, 6.0_f32, egui::Stroke::new(1.0_f32, EDGE));
-        let response = ui.interact(well, egui::Id::new("hero_preview"), egui::Sense::drag());
+        ui.painter().rect_stroke(well, 6.0_f32, egui::Stroke::new(1.0_f32, EDGE), egui::StrokeKind::Middle);
+        let response = ui.interact(well, egui::Id::unique("hero_preview"), egui::Sense::drag());
         if response.dragged() {
             let d = response.drag_delta();
             self.preview.angle += d.x * 0.0096_f32 * 1.6_f32;
@@ -190,7 +190,7 @@ impl HeroCreator {
 
         // Rotation : la case de la maquette, en haut à droite du puits
         let toggle = egui::Rect::from_min_size(egui::pos2(well.right() - 112.0_f32, well.top() + 8.0_f32), egui::vec2(104.0_f32, 24.0_f32));
-        let toggle_resp = ui.interact(toggle, egui::Id::new("hero_rotation"), egui::Sense::click());
+        let toggle_resp = ui.interact(toggle, egui::Id::unique("hero_rotation"), egui::Sense::click());
         if toggle_resp.clicked() {
             self.preview.turning = !self.preview.turning;
         }
@@ -198,7 +198,7 @@ impl HeroCreator {
 
         // La fiche, sous le puits
         let info = egui::Rect::from_min_max(egui::pos2(content.left(), well.bottom() + 10.0_f32), content.max);
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(info), |ui| {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(info), |ui| {
             ui.spacing_mut().item_spacing = egui::vec2(6.0_f32, 4.0_f32);
             let sp = self.cfg.species();
             let title = match self.sheet() {
@@ -244,7 +244,7 @@ impl HeroCreator {
         let footer = egui::Rect::from_min_max(egui::pos2(content.left(), body.bottom()), content.max);
         let frozen = self.sealed.is_some();
 
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(body), |ui| {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
             ui.spacing_mut().item_spacing = egui::vec2(8.0_f32, 6.0_f32);
             // Les trois pas, en haut
             ui.horizontal(|ui| {
@@ -278,7 +278,7 @@ impl HeroCreator {
         });
 
         // Pied : où en est le joueur, Retour et Suivant
-        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(footer), |ui| {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(footer), |ui| {
             ui.painter().line_segment([footer.left_top(), footer.right_top()], egui::Stroke::new(1.0_f32, EDGE));
             ui.add_space(10.0_f32);
             ui.horizontal(|ui| {
@@ -696,11 +696,11 @@ fn paint_planks(painter: &egui::Painter, rect: egui::Rect) {
 
 fn panel_frame(painter: &egui::Painter, rect: egui::Rect) {
     painter.rect_filled(rect, 8.0_f32, PANEL);
-    painter.rect_stroke(rect, 8.0_f32, egui::Stroke::new(1.5_f32, GOLD.gamma_multiply(0.7_f32)));
+    painter.rect_stroke(rect, 8.0_f32, egui::Stroke::new(1.5_f32, GOLD.gamma_multiply(0.7_f32)), egui::StrokeKind::Middle);
 }
 
 fn well_frame() -> egui::Frame {
-    egui::Frame::none().fill(WELL.gamma_multiply(0.9_f32)).stroke(egui::Stroke::new(1.0_f32, EDGE)).rounding(6.0_f32).inner_margin(12.0_f32)
+    egui::Frame::NONE.fill(WELL.gamma_multiply(0.9_f32)).stroke(egui::Stroke::new(1.0_f32, EDGE)).corner_radius(6.0_f32).inner_margin(12.0_f32)
 }
 
 /// Filet doré orné d'un losange central
@@ -765,7 +765,7 @@ fn selector(ui: &mut egui::Ui, label: &str, liste: &[(String, String)], current:
         let width = (ui.available_width() - 42.0_f32).max(60.0_f32);
         let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 30.0_f32), egui::Sense::hover());
         ui.painter().rect_filled(rect, 4.0_f32, WELL);
-        ui.painter().rect_stroke(rect, 4.0_f32, egui::Stroke::new(1.0_f32, EDGE));
+        ui.painter().rect_stroke(rect, 4.0_f32, egui::Stroke::new(1.0_f32, EDGE), egui::StrokeKind::Middle);
         ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, &liste[i].1, egui::FontId::proportional(14.5_f32), INK);
         if arrow(ui, "›").clicked() {
             next = Some((i + 1) % liste.len());
@@ -804,7 +804,7 @@ fn swatches(ui: &mut egui::Ui, label: &str, palette: &[String], current: &mut St
             } else {
                 egui::Stroke::new(1.0_f32, EDGE)
             };
-            ui.painter().rect_stroke(rect, 5.0_f32, stroke);
+            ui.painter().rect_stroke(rect, 5.0_f32, stroke, egui::StrokeKind::Middle);
             if response.clicked() && !on {
                 *current = hex.clone();
                 changed = true;
@@ -843,9 +843,9 @@ fn case(ui: &mut egui::Ui, width: f32, title: &str, detail: Option<&str>, on: bo
     };
     let painter = ui.painter();
     painter.rect_filled(rect, 4.0_f32, fill);
-    painter.rect_stroke(rect, 4.0_f32, egui::Stroke::new(if on { 1.5_f32 } else { 1.0_f32 }, if on { GOLD } else { EDGE }));
+    painter.rect_stroke(rect, 4.0_f32, egui::Stroke::new(if on { 1.5_f32 } else { 1.0_f32 }, if on { GOLD } else { EDGE }), egui::StrokeKind::Middle);
     let check = egui::Rect::from_center_size(egui::pos2(rect.left() + 16.0_f32, rect.center().y), egui::vec2(12.0_f32, 12.0_f32));
-    painter.rect_stroke(check, 2.0_f32, egui::Stroke::new(1.0_f32, if on { GOLD_BRIGHT } else { INK_DIM }));
+    painter.rect_stroke(check, 2.0_f32, egui::Stroke::new(1.0_f32, if on { GOLD_BRIGHT } else { INK_DIM }), egui::StrokeKind::Middle);
     if on {
         painter.rect_filled(check.shrink(3.0_f32), 1.0_f32, GOLD_BRIGHT);
     }
@@ -859,9 +859,9 @@ fn case(ui: &mut egui::Ui, width: f32, title: &str, detail: Option<&str>, on: bo
 /// Case à cocher dessinée (Rotation de l'aperçu)
 fn paint_check(painter: &egui::Painter, rect: egui::Rect, label: &str, on: bool, hovered: bool) {
     painter.rect_filled(rect, 4.0_f32, if hovered { CASE_HOVER } else { CASE.gamma_multiply(0.8_f32) });
-    painter.rect_stroke(rect, 4.0_f32, egui::Stroke::new(1.0_f32, EDGE));
+    painter.rect_stroke(rect, 4.0_f32, egui::Stroke::new(1.0_f32, EDGE), egui::StrokeKind::Middle);
     let check = egui::Rect::from_center_size(egui::pos2(rect.left() + 13.0_f32, rect.center().y), egui::vec2(11.0_f32, 11.0_f32));
-    painter.rect_stroke(check, 2.0_f32, egui::Stroke::new(1.0_f32, if on { GOLD_BRIGHT } else { INK_DIM }));
+    painter.rect_stroke(check, 2.0_f32, egui::Stroke::new(1.0_f32, if on { GOLD_BRIGHT } else { INK_DIM }), egui::StrokeKind::Middle);
     if on {
         painter.rect_filled(check.shrink(2.5_f32), 1.0_f32, GOLD_BRIGHT);
     }
@@ -879,7 +879,7 @@ mod tests {
     fn run(creator: &mut HeroCreator, ctx: &egui::Context) -> Option<CreatorEvent> {
         let mut event = None;
         let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 720.0))), ..Default::default() };
-        let _ = ctx.run(input, |ctx| event = creator.show(ctx));
+        let _ = ctx.run_pass(input, |ctx| event = creator.show(ctx));
         event
     }
 
@@ -958,8 +958,8 @@ mod tests {
             snapshot.set_background(None);
             let mut previews: Vec<Preview> = heroes.iter().map(|_| Preview::default()).collect();
             let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))), ..Default::default() };
-            let output = ctx.run(input, |ctx| {
-                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+            let output = ctx.run_ui(input, |root| {
+                egui::CentralPanel::default().frame(egui::Frame::NONE).show(root, |ui| {
                     for (i, (cfg, preview)) in heroes.iter().zip(previews.iter_mut()).enumerate() {
                         let min = egui::pos2((i % cols) as f32 * cell.x, (i / cols) as f32 * cell.y);
                         let rect = egui::Rect::from_min_size(min, cell).shrink(4.0);
@@ -1004,8 +1004,8 @@ mod tests {
             snapshot.set_background(None);
             let mut preview = Preview::default();
             let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, cell)), ..Default::default() };
-            let output = ctx.run(input, |ctx| {
-                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+            let output = ctx.run_ui(input, |root| {
+                egui::CentralPanel::default().frame(egui::Frame::NONE).show(root, |ui| {
                     let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, cell).shrink(4.0);
                     let texture = preview.texture(ui.ctx(), &cfg);
                     let figure = preview.figure.get(&cfg);
@@ -1062,8 +1062,8 @@ mod tests {
             snapshot.set_background(None);
             let mut previews: Vec<Preview> = heroes.iter().map(|_| Preview::default()).collect();
             let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))), ..Default::default() };
-            let output = ctx.run(input, |ctx| {
-                egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
+            let output = ctx.run_ui(input, |root| {
+                egui::CentralPanel::default().frame(egui::Frame::NONE).show(root, |ui| {
                     for (row, (cfg, preview)) in heroes.iter().zip(previews.iter_mut()).enumerate() {
                         let texture = preview.texture(ui.ctx(), cfg);
                         let figure = preview.figure.get(cfg).clone();

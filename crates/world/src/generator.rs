@@ -853,16 +853,46 @@ fn hash_u64(mut x: u64) -> u64 {
     x
 }
 
-fn grad3(x: i64, y: i64, z: i64, seed: u64) -> DVec3 {
-    let h = hash_u64(
-        (x as u64).wrapping_mul(73856093)
-            ^ (y as u64).wrapping_mul(19349663)
-            ^ (z as u64).wrapping_mul(83492791)
-            ^ seed,
-    );
+/// Gradient du nœud de hachage `h` (direction tirée de ses bits)
+fn gradient_of_hash(h: u64) -> DVec3 {
     let theta = (h as f64 / u64::MAX as f64) * std::f64::consts::TAU;
     let phi = (((h >> 32) as u32) as f64 / u32::MAX as f64) * std::f64::consts::PI;
     DVec3::new(phi.sin() * theta.cos(), phi.sin() * theta.sin(), phi.cos())
+}
+
+fn lattice_hash(x: i64, y: i64, z: i64, seed: u64) -> u64 {
+    hash_u64((x as u64).wrapping_mul(73856093) ^ (y as u64).wrapping_mul(19349663) ^ (z as u64).wrapping_mul(83492791) ^ seed)
+}
+
+/// Gradients déjà calculés par ce fil, rangés par leur hachage : les points voisins d'un même
+/// échantillonnage tombent dans les mêmes mailles du réseau, et chaque gradient coûte quatre
+/// sinus et cosinus. Le cache rend exactement les mêmes valeurs (le relief ne change pas).
+const GRADIENT_CACHE: usize = 1 << 13;
+
+struct GradientCache {
+    /// Hachage de chaque case (une case vide porte un hachage qui ne peut pas y tomber)
+    tags: Box<[u64]>,
+    grads: Box<[DVec3]>,
+}
+
+impl GradientCache {
+    fn new() -> Self {
+        Self { tags: (0..GRADIENT_CACHE as u64).map(|i| i + 1).collect(), grads: vec![DVec3::ZERO; GRADIENT_CACHE].into_boxed_slice() }
+    }
+
+    #[inline]
+    fn get(&mut self, h: u64) -> DVec3 {
+        let slot = (h ^ (h >> 29)) as usize & (GRADIENT_CACHE - 1);
+        if self.tags[slot] != h {
+            self.tags[slot] = h;
+            self.grads[slot] = gradient_of_hash(h);
+        }
+        self.grads[slot]
+    }
+}
+
+thread_local! {
+    static GRADIENTS: std::cell::RefCell<GradientCache> = std::cell::RefCell::new(GradientCache::new());
 }
 
 pub fn gradient_noise_3d(p: DVec3, seed: u64) -> f64 {
@@ -878,11 +908,20 @@ pub fn gradient_noise_3d(p: DVec3, seed: u64) -> f64 {
     let v = fy * fy * fy * (fy * (fy * 6.0 - 15.0) + 10.0);
     let w = fz * fz * fz * (fz * (fz * 6.0 - 15.0) + 10.0);
 
+    let mut grads = [DVec3::ZERO; 8];
+    GRADIENTS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        for (k, g) in grads.iter_mut().enumerate() {
+            let (dx, dy, dz) = ((k >> 2) as i64, ((k >> 1) & 1) as i64, (k & 1) as i64);
+            *g = cache.get(lattice_hash(x0 + dx, y0 + dy, z0 + dz, seed));
+        }
+    });
+
     let mut result = 0.0;
     for dx in 0..=1 {
         for dy in 0..=1 {
             for dz in 0..=1 {
-                let grad = grad3(x0 + dx, y0 + dy, z0 + dz, seed);
+                let grad = grads[(dx * 4 + dy * 2 + dz) as usize];
                 let d = DVec3::new(fx - dx as f64, fy - dy as f64, fz - dz as f64);
                 let dot = grad.dot(d);
                 let wx = if dx == 0 { 1.0 - u } else { u };
@@ -1192,5 +1231,29 @@ mod tests {
         // Entre 180 et 290 sur un continent : biome Montagnes
         let biome_mountain = generator.determine_biome(lat, 250.0, land_dir);
         assert_eq!(biome_mountain, BiomeType::Mountains);
+    }
+}
+
+#[cfg(test)]
+mod empreinte {
+    use super::*;
+    use herocraft_common::PlanetFace;
+
+    /// Empreinte du relief : doit rester identique quand on accélère le générateur
+    #[test]
+    fn empreinte_du_relief() {
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 4242, ..Default::default() });
+        let mut h: u64 = 0;
+        for face in PlanetFace::ALL {
+            for i in 0..60 {
+                for j in 0..60 {
+                    let s = generator.sample_column(face, -0.99 + i as f64 * 0.033, -0.99 + j as f64 * 0.033 + 0.0001 * i as f64);
+                    h = h.rotate_left(5) ^ s.elevation.to_bits() ^ (s.biome as u64) << 3;
+                }
+            }
+        }
+        let chunk = generator.generate_chunk(&PlanetChunkCoord::new(PlanetFace::PosZ, 300, 512, 3));
+        for x in 0..32 { for y in 0..32 { for z in 0..32 { h = h.rotate_left(3) ^ chunk.get_voxel(x, y, z).0 as u64; } } }
+        assert_eq!(format!("{h:016x}"), "2d5896e2c6625d89", "le relief généré a changé");
     }
 }

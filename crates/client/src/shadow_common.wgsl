@@ -22,6 +22,16 @@ struct ShadowUniform {
 @group(1) @binding(3) var cloud_shadow_map: texture_2d<f32>;
 @group(1) @binding(4) var cloud_sampler: sampler;
 
+// Matrice de la cascade `i`, lue avec un indice constant : llvmpipe (pilote Vulkan logiciel)
+// plante sur la lecture d'un tableau uniforme à indice variable quand les fils divergent
+fn cascade_matrix(i: i32) -> mat4x4<f32> {
+    switch i {
+        case 0: { return shadow.cascades[0]; }
+        case 1: { return shadow.cascades[1]; }
+        default: { return shadow.cascades[2]; }
+    }
+}
+
 fn to_shadow_uv(clip: vec4<f32>) -> vec3<f32> {
     let ndc = clip.xyz / clip.w;
     return vec3<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5, ndc.z);
@@ -31,7 +41,7 @@ fn to_shadow_uv(clip: vec4<f32>) -> vec3<f32> {
 // cascade qui le contient, 1 hors des cascades. Pour les points de l'air (rayons crépusculaires).
 fn relief_light_visibility(p: vec3<f32>) -> f32 {
     for (var i = 0; i < 3; i = i + 1) {
-        let uvz = to_shadow_uv(shadow.cascades[i] * vec4<f32>(p, 1.0));
+        let uvz = to_shadow_uv(cascade_matrix(i) * vec4<f32>(p, 1.0));
         if (all(uvz.xy > vec2<f32>(0.0)) && all(uvz.xy < vec2<f32>(1.0)) && uvz.z > 0.0 && uvz.z < 1.0) {
             return textureSampleCompareLevel(shadow_maps, shadow_sampler, uvz.xy, i, uvz.z - 0.0002);
         }
@@ -74,7 +84,7 @@ fn sun_visibility(world_pos: vec3<f32>, n: vec3<f32>, l: vec3<f32>) -> f32 {
     let light_filter = shadow.params.z > 1.5;
     for (var i = 0; i < 3; i = i + 1) {
         let offset = n * (shadow.extents[i] * shadow.params.w * slope);
-        let uvz = to_shadow_uv(shadow.cascades[i] * vec4<f32>(world_pos + offset, 1.0));
+        let uvz = to_shadow_uv(cascade_matrix(i) * vec4<f32>(world_pos + offset, 1.0));
         let edge = max(abs(uvz.x - 0.5), abs(uvz.y - 0.5)) * 2.0;
         if (edge < 0.98 && uvz.z > 0.0 && uvz.z < 1.0) {
             if (light_filter) {

@@ -256,8 +256,8 @@ mod portraits {
                 time: Some(frame as f64),
                 ..Default::default()
             };
-            let output = ctx.run(input, |ctx| {
-                egui::CentralPanel::default().frame(egui::Frame::none().fill(egui::Color32::from_rgb(52, 58, 66))).show(ctx, |ui| {
+            let output = ctx.run_ui(input, |root| {
+                egui::CentralPanel::default().frame(egui::Frame::NONE.fill(egui::Color32::from_rgb(52, 58, 66))).show(root, |ui| {
                     let painter = ui.painter().clone();
                     let cell = width as f32 / cards.len() as f32;
                     for (i, (card, preview)) in cards.iter().zip(previews.iter_mut()).enumerate() {

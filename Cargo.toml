@@ -22,6 +22,8 @@ serde_json = "1.0"
 log = "0.4"
 env_logger = "0.11"
 rand = "0.8"
+rustc-hash = "2"
+mimalloc = { version = "0.1", default-features = false }
 
 # La compilation incrémentale reste active (défaut de Cargo). Pour compiler depuis
 # Windows sur un partage WSL (\\wsl.localhost\...), où elle provoque des erreurs de
@@ -39,3 +41,10 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 panic = "abort"
+
+# Version à distribuer : LTO complète, plus lente à compiler que `release`, quelques pour cent de
+# CPU en plus. cargo build --profile distribution ; avec un profil d'exécution (PGO), voir
+# docs/PROFILAGE.md.
+[profile.distribution]
+inherits = "release"
+lto = "fat"

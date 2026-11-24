@@ -144,15 +144,24 @@ pub struct PlanetLodManager {
     revisions: HashMap<QuadNodeKey, u32>,
 }
 
+/// Range les morceaux du plus proche au plus lointain de `camera_pos` (angle au centre de la planète)
+fn nearest_first(keys: &mut [QuadNodeKey], camera_pos: Vec3) {
+    let toward = camera_pos.as_dvec3().normalize_or_zero();
+    keys.sort_by(|a, b| b.center_direction().dot(toward).total_cmp(&a.center_direction().dot(toward)));
+}
+
 impl PlanetLodManager {
     pub fn new(base_radius: f32, current_seed: u64) -> Self {
         herocraft_common::prof_scope!("lod::PlanetLodManager::new");
         let num_cpus = std::thread::available_parallelism()
             .map(|p| p.get())
             .unwrap_or(4);
+        // Fils de génération en priorité basse : le fil principal (simulation, rendu) passe devant
+        // eux quand tous les cœurs sont pris, et un cœur lui reste réservé
         let thread_pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(num_cpus.min(8))
+            .num_threads((num_cpus - 1).clamp(1, 8))
             .thread_name(|idx| format!("herocraft-worker-{}", idx))
+            .start_handler(|_| crate::threads::lower_current_thread_priority())
             .build()
             .expect("Échec d'initialisation du pool de workers Rayon");
 
@@ -160,12 +169,14 @@ impl PlanetLodManager {
         let patch_pool = rayon::ThreadPoolBuilder::new()
             .num_threads((num_cpus / 3).clamp(2, 4))
             .thread_name(|idx| format!("herocraft-patch-{}", idx))
+            .start_handler(|_| crate::threads::lower_current_thread_priority())
             .build()
             .expect("Échec d'initialisation du pool de patchs Rayon");
         let (patch_tx, patch_rx) = std::sync::mpsc::channel::<VoxelBuildResult>();
         let detail_pool = rayon::ThreadPoolBuilder::new()
             .num_threads((num_cpus / 2).clamp(1, 4))
             .thread_name(|idx| format!("herocraft-detail-{}", idx))
+            .start_handler(|_| crate::threads::lower_current_thread_priority())
             .build()
             .expect("Échec d'initialisation du pool de patchs détaillés Rayon");
 
@@ -513,6 +524,8 @@ impl PlanetLodManager {
                 // Génération en tâche de fond : les feuilles actuelles restent affichées en attendant
                 herocraft_common::prof_scope!("lod::spawn_patch_tasks");
                 herocraft_common::prof_value!("lod.patchs_manquants_par_maj", missing_patch_keys.len());
+                let mut missing_patch_keys = missing_patch_keys;
+                nearest_first(&mut missing_patch_keys, camera_pos);
                 for key in missing_patch_keys {
                     if self.pending_patches.insert(key) {
                         let tx = self.patch_tx.clone();
@@ -527,10 +540,15 @@ impl PlanetLodManager {
 
             // Déclenchement en arrière-plan des maillages de voxels 3D non encore calculés
             herocraft_common::prof_scope!("lod::spawn_voxel_tasks");
-            for leaf in &new_leaves {
-                if leaf.kind == QuadLeafKind::VoxelChunk && !self.voxel_cache.contains_key(&leaf.key) {
-                    self.spawn_voxel_task(leaf.key, generator);
-                }
+            // Les plus proches d'abord : la file des tâches est servie dans l'ordre d'arrivée
+            let mut voxel_keys: Vec<QuadNodeKey> = new_leaves
+                .iter()
+                .filter(|l| l.kind == QuadLeafKind::VoxelChunk && !self.voxel_cache.contains_key(&l.key))
+                .map(|l| l.key)
+                .collect();
+            nearest_first(&mut voxel_keys, camera_pos);
+            for key in voxel_keys {
+                self.spawn_voxel_task(key, generator);
             }
 
             self.pending_leaves = Some(new_leaves);
@@ -893,6 +911,64 @@ mod tests {
                 let block_per_cell = (herocraft_world::FACE_BLOCKS >> level) as f64 / res as f64;
                 println!("  niveau {level} : {n} patchs, {res}² cellules ({block_per_cell} blocs/cellule), {v} sommets");
             }
+        }
+    }
+
+    /// Coût de la génération du monde autour du point d'apparition, sur un seul fil : colonnes de
+    /// voxels (échantillonnage du générateur, puis maillage) et patchs LOD (rapides et détaillés).
+    /// `cargo test --release -p herocraft_client bench_generation_monde -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_generation_monde() {
+        use crate::voxel_mesh::VoxelMeshBuilder;
+        let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 4242, ..Default::default() });
+        let mut camera = crate::camera::OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &generator);
+        camera.distance = 0.0;
+        camera.target_distance = 0.0;
+        camera.update_camera_bounds(&generator);
+        let lod = PlanetLodManager::new(crate::camera::DEFAULT_RADIUS, 4242);
+        let leaves = lod.quadtree.evaluate_with_generator(camera.eye_position().as_dvec3(), Some(&generator));
+        let voxels: Vec<QuadNodeKey> = leaves.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).map(|l| l.key).take(48).collect();
+        let patches: Vec<QuadNodeKey> = leaves.iter().filter(|l| l.kind == QuadLeafKind::LodPatch).map(|l| l.key).collect();
+        let edits = TerrainEdits::new(None);
+        let (mut sample, mut mesh) = (std::time::Duration::ZERO, std::time::Duration::ZERO);
+        let mut checksum = 0u64;
+        for key in &voxels {
+            let t = Instant::now();
+            let source = VoxelMeshBuilder::sample_column_source(&generator, key.face, key.x as i32, key.y as i32, crate::camera::DEFAULT_RADIUS, lod.active_filter);
+            sample += t.elapsed();
+            let t = Instant::now();
+            let column = VoxelMeshBuilder::build_column(&generator, &edits, Arc::new(source));
+            mesh += t.elapsed();
+            for v in &column.mesh.vertices {
+                for x in v.position {
+                    checksum = checksum.rotate_left(7) ^ x.to_bits() as u64;
+                }
+            }
+        }
+        let n = voxels.len() as u32;
+        // Détail de l'échantillonnage
+        let (mut columns_t, mut vegetation_t, mut structures_t) = (std::time::Duration::ZERO, std::time::Duration::ZERO, std::time::Duration::ZERO);
+        for key in &voxels {
+            let (face, x, y) = (key.face, key.x as i32, key.y as i32);
+            let t = Instant::now();
+            let columns = generator.sample_chunk_columns(face, x, y, 1);
+            columns_t += t.elapsed();
+            let t = Instant::now();
+            std::hint::black_box(generator.chunk_vegetation(face, x, y, &columns, 1));
+            vegetation_t += t.elapsed();
+            let t = Instant::now();
+            std::hint::black_box(generator.structures_top(face, x, y, 1));
+            structures_t += t.elapsed();
+        }
+        println!("  dont colonnes {:.2?}, végétation {:.2?}, constructions {:.2?} par colonne", columns_t / n, vegetation_t / n, structures_t / n);
+        println!("{n} colonnes de voxels : échantillonnage {:.2?} par colonne, maillage {:.2?} par colonne (empreinte des sommets {checksum:016x})", sample / n, mesh / n);
+        for (name, detail) in [("rapides", quick_detail as fn(u8) -> PatchDetail), ("détaillés", |l| patch_detail(l, crate::ui::LodPrecisionSetting::Normale))] {
+            let t = Instant::now();
+            for key in &patches {
+                std::hint::black_box(PlanetMesh::generate_lod_patch_stepped(&generator, key, crate::camera::DEFAULT_RADIUS, detail(key.level), lod.active_filter));
+            }
+            println!("{} patchs {name} : {:.2?} en tout, {:.2?} par patch", patches.len(), t.elapsed(), t.elapsed() / patches.len() as u32);
         }
     }
 

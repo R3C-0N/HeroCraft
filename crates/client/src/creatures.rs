@@ -102,6 +102,10 @@ const STILL_RATIO: f32 = 0.1;
 const BLEND_TIME: f32 = 0.3;
 /// Côté du pavé gris d'une espèce sans modèle, en blocs
 const PLACEHOLDER_SIZE: f32 = 0.6;
+/// Niveaux de détail de l'animation : au-delà de ces distances à la caméra (en blocs), la pose
+/// d'une bête n'est recalculée qu'une image sur 2, puis une sur 4 (les images sont réparties entre
+/// les bêtes). De loin, la différence ne se voit pas ; le calcul des os, lui, est divisé d'autant.
+const POSE_LOD_DISTANCES: [f32; 2] = [40.0, 90.0];
 
 /// Mouvement d'un os de la fiche, son nœud trouvé dans le modèle, angles en radians
 #[derive(Debug, Clone, Copy)]
@@ -242,6 +246,50 @@ impl CreatureModels {
     fn get(&self, species: Option<usize>) -> Option<&Rig> {
         self.rigs.get(species?)?.as_ref()
     }
+
+    /// Pour chaque espèce, la distance de ses pieds au plus lointain de ses sommets au repos, en
+    /// tailles de bête, avec une marge pour les membres qui s'étendent en bougeant
+    pub fn reaches(&self) -> Vec<f32> {
+        self.rigs
+            .iter()
+            .map(|rig| {
+                rig.as_ref().map_or(0.0, |rig| {
+                    let lift = Vec3::Y * rig.model.feet_height;
+                    rig.model.vertices.iter().map(|v| (v.position + lift).length()).fold(0.0, f32::max) * 1.5
+                })
+            })
+            .collect()
+    }
+
+    /// Sommets de liaison de tous les modèles, pour le GPU (`skinning.wgsl`), et pour chaque espèce
+    /// (dans l'ordre du registre) son premier sommet dans cette liste (0 sans modèle)
+    pub fn gpu_vertices(&self) -> (Vec<GpuModelVertex>, Vec<u32>) {
+        let mut vertices = Vec::new();
+        let mut starts = Vec::with_capacity(self.rigs.len());
+        for rig in &self.rigs {
+            starts.push(vertices.len() as u32);
+            if let Some(rig) = rig {
+                vertices.extend(rig.model.vertices.iter().map(|v| GpuModelVertex {
+                    position: v.position.extend(v.uv[0]).to_array(),
+                    normal: v.normal.extend(v.uv[1]).to_array(),
+                    weights: v.weights,
+                    joints: v.joints.map(u32::from),
+                }));
+            }
+        }
+        (vertices, starts)
+    }
+}
+
+/// Sommet de liaison d'un modèle tel que le lit `skinning.wgsl` : position et u, normale et v,
+/// poids et rangs des quatre os
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct GpuModelVertex {
+    pub position: [f32; 4],
+    pub normal: [f32; 4],
+    pub weights: [f32; 4],
+    pub joints: [u32; 4],
 }
 
 /// Pose d'une créature : l'animation du glTF jouée dessous et son instant, puis la rotation et le
@@ -252,6 +300,21 @@ type Pose<'r> = (Option<(&'r Animation, f32)>, Vec<(Quat, Vec3)>);
 #[derive(Default)]
 pub struct CreatureAnimator {
     gaits: HashMap<u64, Gait>,
+    /// Images animées (une par `update`)
+    frame: u64,
+    /// Dernière pose calculée de chaque bête, et l'image où elle l'a été (niveaux de détail)
+    poses: std::cell::RefCell<HashMap<u64, (u64, Option<usize>, Vec<glam::Mat4>)>>,
+}
+
+/// Une image sur combien la pose d'une bête à `distance` blocs de la caméra est recalculée
+fn pose_interval(distance: f32) -> u64 {
+    if distance > POSE_LOD_DISTANCES[1] {
+        4
+    } else if distance > POSE_LOD_DISTANCES[0] {
+        2
+    } else {
+        1
+    }
 }
 
 struct Gait {
@@ -272,6 +335,8 @@ impl CreatureAnimator {
     /// depuis l'image précédente (`dt` secondes) ; `block` : taille d'un bloc
     pub fn update(&mut self, views: &[CreatureView], registry: &CreatureRegistry, models: &CreatureModels, dt: f32, block: f32) {
         self.gaits.retain(|id, _| views.iter().any(|v| v.id == *id));
+        self.poses.get_mut().retain(|id, _| views.iter().any(|v| v.id == *id));
+        self.frame += 1;
         for view in views {
             let gait = self.gaits.entry(view.id).or_insert(Gait { last_feet: view.feet, speed: 0.0, current: String::new(), phase: 0.0, previous: None, blend: 1.0 });
             let up = view.feet.normalize_or_zero();
@@ -325,6 +390,29 @@ impl CreatureAnimator {
         self.gaits.get(&id).map(|g| g.current.as_str())
     }
 
+    /// Matrices des os de la bête pour cette image : recalculées, ou celles d'une image récente
+    /// si elle est loin de `eye` (`pose_interval`) ; `block` : taille d'un bloc
+    fn bone_matrices(&self, view: &CreatureView, species: &CreatureSpecies, rig: &Rig, eye: Option<Vec3>, block: f32) -> Vec<glam::Mat4> {
+        let interval = eye.map_or(1, |eye| pose_interval(view.feet.distance(eye) / block));
+        let mut poses = self.poses.borrow_mut();
+        if interval > 1 {
+            // Une bête qui change d'espèce (forme d'un joueur) n'a plus les mêmes os
+            if let Some((at, _, matrices)) = poses.get(&view.id).filter(|p| p.1 == view.species) {
+                // Chaque bête a son tour, décalé selon son identifiant
+                let due = (self.frame + view.id) % interval == 0;
+                if !due && self.frame - at < interval {
+                    return matrices.clone();
+                }
+            }
+        }
+        let (clip, offsets) = self.pose(view, species, rig);
+        let matrices = rig.model.posed_matrices(clip.map(|(a, _)| a), clip.map_or(0.0, |(_, t)| t), &offsets);
+        if eye.is_some() {
+            poses.insert(view.id, (self.frame, view.species, matrices.clone()));
+        }
+        matrices
+    }
+
     /// Pose de la créature : l'animation du glTF à jouer dessous, et la rotation et le déplacement
     /// ajoutés à chaque nœud
     fn pose<'r>(&self, view: &CreatureView, species: &CreatureSpecies, rig: &'r Rig) -> Pose<'r> {
@@ -364,13 +452,56 @@ fn wanted_animation<'a>(view: &CreatureView, species: &'a CreatureSpecies, rig: 
 pub struct CreatureFrame {
     pub vertices: Vec<PlanetVertex>,
     pub uvs: Vec<[f32; 2]>,
+    /// Indices ; ceux qui portent `SKINNED_INDEX` désignent un sommet animé sur le GPU (rang dans
+    /// la sortie de `skinned`), placé après `vertices` à l'envoi
     pub indices: Vec<u32>,
     /// Plages d'indices, chacune avec la texture de son espèce (`None` : pavés gris, sans texture)
     pub draws: Vec<(Option<usize>, Range<u32>)>,
+    /// Bêtes dont le GPU applique les os (`Skinning::Gpu`), et les matrices de leurs os
+    pub skinned: Vec<SkinnedInstance>,
+    pub bone_matrices: Vec<[[f32; 4]; 4]>,
+    /// Sommets que produit le GPU pour `skinned`
+    pub skinned_vertices: u32,
+}
+
+/// Bit des indices qui désignent un sommet animé sur le GPU (`CreatureFrame::indices`)
+pub const SKINNED_INDEX: u32 = 1 << 31;
+
+/// Où sont appliqués les os des bêtes
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Skinning {
+    /// Chaque sommet transformé ici, puis envoyé (tests, et référence du GPU)
+    #[cfg_attr(not(test), allow(dead_code))]
+    Cpu,
+    /// Les matrices des os seules sont envoyées : un compute shader (`skinning.wgsl`) place les
+    /// sommets, des milliers de fois plus vite qu'ici
+    Gpu,
+}
+
+/// Une bête animée sur le GPU : son repère, sa taille, sa teinte, et où lire et écrire
+/// (miroir de `Instance` dans `skinning.wgsl`)
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SkinnedInstance {
+    /// x vers sa gauche, y vers le haut, z vers l'avant, multipliés par sa taille
+    pub left: [f32; 4],
+    pub up: [f32; 4],
+    pub forward: [f32; 4],
+    /// Pieds (xyz) et hauteur des pieds du modèle (w)
+    pub feet: [f32; 4],
+    /// Teinte (rgb)
+    pub tint: [f32; 4],
+    /// Espèce, nombre de sommets du modèle, première matrice d'os, premier sommet de sortie
+    pub species: u32,
+    pub vertex_count: u32,
+    pub first_matrix: u32,
+    pub first_output: u32,
 }
 
 /// Construit le maillage de toutes les créatures ; `block` : taille d'un bloc
-pub fn build_frame(views: &[CreatureView], registry: &CreatureRegistry, models: &CreatureModels, animator: &CreatureAnimator, block: f32) -> CreatureFrame {
+/// `eye` : position de la caméra, pour animer moins souvent les bêtes lointaines (`None` : toutes
+/// à chaque image)
+pub fn build_frame(views: &[CreatureView], registry: &CreatureRegistry, models: &CreatureModels, animator: &CreatureAnimator, block: f32, skinning: Skinning, eye: Option<Vec3>) -> CreatureFrame {
     let mut frame = CreatureFrame::default();
     let mut hearts = Vec::new();
     let mut views = views.to_vec();
@@ -399,8 +530,34 @@ pub fn build_frame(views: &[CreatureView], registry: &CreatureRegistry, models: 
         match (models.get(texture), texture.and_then(|s| registry.get(s))) {
             (Some(rig), Some(species)) => {
                 let model = &rig.model;
-                let (clip, offsets) = animator.pose(view, species, rig);
-                let matrices = model.posed_matrices(clip.map(|(a, _)| a), clip.map_or(0.0, |(_, t)| t), &offsets);
+                let matrices = animator.bone_matrices(view, species, rig, eye, block);
+                if skinning == Skinning::Gpu {
+                    let (left, up, forward) = (left * size, up * size, forward * size);
+                    let first_output = frame.skinned_vertices;
+                    frame.skinned.push(SkinnedInstance {
+                        left: left.extend(0.0).to_array(),
+                        up: up.extend(0.0).to_array(),
+                        forward: forward.extend(0.0).to_array(),
+                        feet: view.feet.extend(model.feet_height).to_array(),
+                        tint: [tint[0], tint[1], tint[2], 1.0],
+                        species: texture.unwrap_or(0) as u32,
+                        vertex_count: model.vertices.len() as u32,
+                        first_matrix: frame.bone_matrices.len() as u32,
+                        first_output,
+                    });
+                    frame.bone_matrices.extend(matrices.iter().map(|m| m.to_cols_array_2d()));
+                    frame.skinned_vertices += model.vertices.len() as u32;
+                    frame.indices.extend(model.indices.iter().map(|i| SKINNED_INDEX | (first_output + i)));
+                    let end = frame.indices.len() as u32;
+                    match frame.draws.last_mut() {
+                        Some((last, range)) if *last == texture && range.end == start => range.end = end,
+                        _ => frame.draws.push((texture, start..end)),
+                    }
+                    if view.mood & MOOD_HEARTS != 0 && view.death <= 0.0 {
+                        hearts.push((view.feet + up / size * (species.body.height * view.scale + HEART_GAP) * block, up / size, forward / size));
+                    }
+                    continue;
+                }
                 let base = frame.vertices.len() as u32;
                 for v in &model.vertices {
                     let p = skin_point(&matrices, v, v.position) + Vec3::Y * model.feet_height;
@@ -560,6 +717,92 @@ mod tests {
         (registry, models)
     }
 
+    /// Mesure : `cargo test --release -p herocraft_client bench_build_frame -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_build_frame() {
+        let (registry, models) = setup();
+        let species: Vec<usize> = (0..registry.len()).filter(|&s| models.get(Some(s)).is_some()).collect();
+        let views: Vec<CreatureView> = (0..80)
+            .map(|i| {
+                let feet = Vec3::new(i as f32 * 2.0, 0.0, 1000.0);
+                let action = if i % 2 == 0 { CreatureAction::Marche } else { CreatureAction::Repos };
+                CreatureView { id: i as u64, species: Some(species[i % species.len()]), feet, yaw: i as f32, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None }
+            })
+            .collect();
+        let mut animator = CreatureAnimator::default();
+        let mut moving = views.clone();
+        let (mut total, mut total_gpu) = (std::time::Duration::ZERO, std::time::Duration::ZERO);
+        let mut vertices = 0;
+        for frame in 0..300 {
+            for v in moving.iter_mut() {
+                v.feet.x += 0.05;
+            }
+            animator.update(&moving, &registry, &models, 1.0 / 60.0, 1.0);
+            let t = std::time::Instant::now();
+            let built = build_frame(&moving, &registry, &models, &animator, 1.0, Skinning::Cpu, None);
+            let cpu = t.elapsed();
+            let t = std::time::Instant::now();
+            let gpu = std::hint::black_box(build_frame(&moving, &registry, &models, &animator, 1.0, Skinning::Gpu, None));
+            if frame >= 60 {
+                total += cpu;
+                total_gpu += t.elapsed();
+            }
+            assert_eq!(gpu.skinned_vertices as usize, built.vertices.len());
+            vertices = built.vertices.len();
+        }
+        println!(
+            "build_frame, 80 bêtes, {vertices} sommets : {:.3} ms par image avec les os sur le CPU, {:.4} ms sur le GPU",
+            total.as_secs_f64() * 1000.0 / 240.0,
+            total_gpu.as_secs_f64() * 1000.0 / 240.0
+        );
+        // Niveaux de détail : les mêmes bêtes vues depuis l'une d'elles, réparties sur 160 blocs
+        let eye = Some(Vec3::new(0.0, 0.0, 1000.0));
+        let mut lod_total = std::time::Duration::ZERO;
+        for frame in 0..300 {
+            for v in moving.iter_mut() {
+                v.feet.x += 0.05;
+            }
+            animator.update(&moving, &registry, &models, 1.0 / 60.0, 1.0);
+            let t = std::time::Instant::now();
+            std::hint::black_box(build_frame(&moving, &registry, &models, &animator, 1.0, Skinning::Gpu, eye));
+            if frame >= 60 {
+                lod_total += t.elapsed();
+            }
+        }
+        println!("  avec les niveaux de détail (bêtes de 0 à 160 blocs) : {:.4} ms", lod_total.as_secs_f64() * 1000.0 / 240.0);
+    }
+
+    /// Une bête lointaine garde sa pose entre deux recalculs, une proche est recalculée à chaque image
+    #[test]
+    fn distant_creatures_are_posed_less_often() {
+        let (registry, models) = setup();
+        let species = (0..registry.len()).find(|&s| models.get(Some(s)).is_some()).unwrap();
+        let view = |id: u64, z: f32| CreatureView { id, species: Some(species), feet: Vec3::new(0.0, 0.0, z), yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Marche, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
+        let eye = Some(Vec3::ZERO);
+        let mut animator = CreatureAnimator::default();
+        let (mut near_changes, mut far_changes) = (0, 0);
+        let mut last: Option<(Vec<f32>, Vec<f32>)> = None;
+        for step in 0..16 {
+            let views = [view(1, 10.0 + step as f32 * 0.1), view(2, 200.0 + step as f32 * 0.1)];
+            animator.update(&views, &registry, &models, 1.0 / 60.0, 1.0);
+            let frame = build_frame(&views, &registry, &models, &animator, 1.0, Skinning::Gpu, eye);
+            let bones = |k: usize| {
+                let n = frame.skinned[k].first_matrix as usize;
+                let end = frame.skinned.get(k + 1).map_or(frame.bone_matrices.len(), |i| i.first_matrix as usize);
+                frame.bone_matrices[n..end].iter().flatten().flatten().copied().collect::<Vec<f32>>()
+            };
+            let now = (bones(0), bones(1));
+            if let Some((near, far)) = &last {
+                near_changes += (near != &now.0) as usize;
+                far_changes += (far != &now.1) as usize;
+            }
+            last = Some(now);
+        }
+        assert_eq!(near_changes, 15, "la bête proche bouge à chaque image");
+        assert!((3..=4).contains(&far_changes), "la bête lointaine change de pose une image sur 4 ({far_changes} fois sur 15)");
+    }
+
     #[test]
     fn test_model_stands_on_the_feet_and_faces_its_heading() {
         let (registry, models) = setup();
@@ -569,7 +812,7 @@ mod tests {
         let animator = CreatureAnimator::default();
         for (yaw, heading) in [(0.0, north), (std::f32::consts::FRAC_PI_2, east)] {
             let view = CreatureView { id: 1, species: Some(boar), feet, yaw, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
-            let frame = build_frame(&[view], &registry, &models, &animator, 1.0);
+            let frame = build_frame(&[view], &registry, &models, &animator, 1.0, Skinning::Cpu, None);
             assert_eq!(frame.draws, vec![(Some(boar), 0..frame.indices.len() as u32)]);
             assert_eq!(frame.vertices.len(), frame.uvs.len());
             let points: Vec<Vec3> = frame.vertices.iter().map(|v| Vec3::from(v.position)).collect();
@@ -596,7 +839,7 @@ mod tests {
         let (_, north) = tangent_frame(feet.normalize());
         let mut animator = CreatureAnimator::default();
         let mut view = CreatureView { id: 7, species: Some(boar), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
-        let mesh = |animator: &CreatureAnimator, view: CreatureView| build_frame(&[view], &registry, &models, animator, 1.0).vertices;
+        let mesh = |animator: &CreatureAnimator, view: CreatureView| build_frame(&[view], &registry, &models, animator, 1.0, Skinning::Cpu, None).vertices;
         let still = mesh(&animator, view);
 
         // Au repos, elle respire à peine
@@ -660,14 +903,14 @@ mod tests {
         let mut animator = CreatureAnimator::default();
         let mut view = CreatureView { id: 2, species: Some(cow), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
         animator.update(&[view], &registry, &models, 0.05, 1.0);
-        let standing = height(&build_frame(&[view], &registry, &models, &animator, 1.0).vertices);
+        let standing = height(&build_frame(&[view], &registry, &models, &animator, 1.0, Skinning::Cpu, None).vertices);
         view.action = CreatureAction::Pause(sleep);
         animator.update(&[view], &registry, &models, 0.05, 1.0);
-        let midway = height(&build_frame(&[view], &registry, &models, &animator, 1.0).vertices);
+        let midway = height(&build_frame(&[view], &registry, &models, &animator, 1.0, Skinning::Cpu, None).vertices);
         for _ in 0..20 {
             animator.update(&[view], &registry, &models, 0.05, 1.0);
         }
-        let lying = height(&build_frame(&[view], &registry, &models, &animator, 1.0).vertices);
+        let lying = height(&build_frame(&[view], &registry, &models, &animator, 1.0, Skinning::Cpu, None).vertices);
         assert!(lying < standing - 0.3, "debout {standing}, couchée {lying}");
         // Le fondu passe par une hauteur intermédiaire
         assert!(midway < standing - 0.01 && midway > lying + 0.01, "{standing} {midway} {lying}");
@@ -698,7 +941,7 @@ mod tests {
             CreatureView { id: 3, species: None, feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None },
             CreatureView { id: 4, species: registry.find("lapin"), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 1.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None },
         ];
-        let frame = build_frame(&views, &registry, &models, &CreatureAnimator::default(), 1.0);
+        let frame = build_frame(&views, &registry, &models, &CreatureAnimator::default(), 1.0, Skinning::Cpu, None);
         assert_eq!(frame.draws.len(), 2);
         assert_eq!(frame.draws[0].0, None);
         assert_eq!(frame.draws[0].1, 0..36);
@@ -711,7 +954,7 @@ mod tests {
         let feet = Vec3::new(0.0, 0.0, 1000.0);
         let animator = CreatureAnimator::default();
         let view = CreatureView { id: 1, species: Some(cow), feet, yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
-        let frame = |view: CreatureView| build_frame(&[view], &registry, &models, &animator, 1.0).vertices;
+        let frame = |view: CreatureView| build_frame(&[view], &registry, &models, &animator, 1.0, Skinning::Cpu, None).vertices;
         assert!(frame(view).iter().all(|v| v.color == [1.0; 4]));
         assert!(frame(CreatureView { hurt: 1.0, ..view }).iter().all(|v| v.color[0] == 1.0 && v.color[1] < 0.5));
 
@@ -840,7 +1083,7 @@ pub(crate) mod apercu {
                 v.feet += north * species.walk_speed.max(0.5) * 0.05;
                 animator.update(&[v], &registry, &models, 0.05, 1.0);
             }
-            let frame = build_frame(&[CreatureView { feet, ..v }], &registry, &models, &animator, 1.0);
+            let frame = build_frame(&[CreatureView { feet, ..v }], &registry, &models, &animator, 1.0, Skinning::Cpu, None);
             rasterize(&mut img, &mut depth, w, &frame, textures[i].as_ref().unwrap(), feet, ((i % cols) * cell, (i / cols) * cell, cell), scale_for(species, cell));
         }
         save(&img, w, h);
@@ -864,7 +1107,7 @@ pub(crate) mod apercu {
             let species = registry.get(i).unwrap();
             for (col, (scale, mood)) in [(1.0, MOOD_HEARTS), (0.5, 0), (0.75, MOOD_HEARTS)].into_iter().enumerate() {
                 let view = CreatureView { id: i as u64, species: Some(i), feet, yaw: 0.6, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale, mood, summoner: None, copy: None, tint: None };
-                let frame = build_frame(&[view], &registry, &models, &animator, 1.0);
+                let frame = build_frame(&[view], &registry, &models, &animator, 1.0, Skinning::Cpu, None);
                 // Même échelle pour l'adulte et ses petits, cœurs compris
                 rasterize(&mut img, &mut depth, w, &frame, textures[i].as_ref().unwrap(), feet, (col * cell, row * cell, cell), scale_for(species, cell) * 0.8);
             }
@@ -896,7 +1139,7 @@ pub(crate) mod apercu {
                 let coup = name == "coup";
                 animator.gaits.insert(1, Gait { last_feet: feet, speed: 0.0, current: if coup { "repos".into() } else { name.clone() }, phase, previous: None, blend: 1.0 });
                 let view = CreatureView { id: 1, species: Some(i), feet, yaw: 1.2, hurt: if coup { 1.0 - phase } else { 0.0 }, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
-                let frame = build_frame(&[view], &registry, &models, &animator, 1.0);
+                let frame = build_frame(&[view], &registry, &models, &animator, 1.0, Skinning::Cpu, None);
                 rasterize(&mut img, &mut depth, w, &frame, textures[i].as_ref().unwrap(), feet, (col * cell, row * cell, cell), scale_for(s, cell));
             }
         }

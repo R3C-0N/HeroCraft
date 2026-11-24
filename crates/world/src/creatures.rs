@@ -43,7 +43,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use crate::edits::{BlockGeometry, BlockPos, TerrainEdits, TerrainQuery, WORLD_HEIGHT};
-use crate::generator::{BiomeType, ColumnSample, PlanetWorldGenerator};
+use crate::generator::{BiomeType, PlanetWorldGenerator};
 use crate::population::{PopulationSave, SleepingCreature, ZoneKey, ZONE_BLOCKS};
 
 /// Un tir à lancer à la fin de la chasse : tireur, espèce, camp (invoqué), bouche, cible visée,
@@ -661,7 +661,7 @@ pub struct CreatureWorld {
     /// Fichier où la population est enregistrée, ou `None` pour ne rien enregistrer
     save_path: Option<PathBuf>,
     /// Colonnes du générateur déjà échantillonnées : les créatures restent longtemps sur les mêmes
-    columns: HashMap<(PlanetFace, i32, i32), ColumnSample>,
+    columns: crate::edits::QueryCache,
 }
 
 impl CreatureWorld {
@@ -767,7 +767,7 @@ impl CreatureWorld {
             climate: None,
             populate: true,
             save_path: None,
-            columns: HashMap::new(),
+            columns: Default::default(),
         }
     }
 

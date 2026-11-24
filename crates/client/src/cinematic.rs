@@ -321,8 +321,8 @@ fn faded(color: egui::Color32, alpha: f32) -> egui::Color32 {
 
 /// Peint la cinématique par-dessus le jeu : bandeaux, voile, textes, invitation à passer
 pub fn draw(ctx: &egui::Context, overlay: &Overlay) {
-    let screen = ctx.screen_rect();
-    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("cinematic")));
+    let screen = ctx.content_rect();
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("cinematic")));
     let band = screen.height() * LETTERBOX_SHARE * overlay.letterbox;
 
     // Voile du fondu, sous les bandeaux
@@ -413,7 +413,7 @@ mod tests {
         crate::ui_skin::install(&ctx);
         // Les polices installées servent à partir de l'image suivante
         for _ in 0..2 {
-            let _ = ctx.run(egui::RawInput::default(), |ctx| draw(ctx, &overlay));
+            let _ = ctx.run_pass(egui::RawInput::default(), |ctx| draw(ctx, &overlay));
         }
     }
 
@@ -448,7 +448,7 @@ mod tests {
                         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))),
                         ..Default::default()
                     };
-                    let output = ctx.run(input, |ctx| draw(ctx, &overlay));
+                    let output = ctx.run_pass(input, |ctx| draw(ctx, &overlay));
                     snapshot.apply_textures(&output.textures_delta);
                     last = Some(output);
                 }
@@ -491,7 +491,7 @@ mod tests {
 
         let instance = wgpu::Instance::default();
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("aucun adaptateur graphique");
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None)).unwrap();
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
         // Demi-flottants : mélangeables, comme la cible HDR du jeu
         let format = wgpu::TextureFormat::Rgba16Float;
         let mut renderer = crate::paper_cards::CardRenderer::new(&device, &queue, crate::post::SceneTarget { sample_count: 1, format }, images);
@@ -540,9 +540,9 @@ mod tests {
             {
                 let color_view = color.create_view(&Default::default());
                 let depth_view = depth.create_view(&Default::default());
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
                     label: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &color_view, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store } })],
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment { depth_slice: None, view: &color_view, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store } })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &depth_view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
                     timestamp_writes: None,
                     occlusion_query_set: None,
@@ -550,14 +550,14 @@ mod tests {
                 renderer.draw(&mut pass);
             }
             encoder.copy_texture_to_buffer(
-                wgpu::ImageCopyTexture { texture: &color, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                wgpu::ImageCopyBuffer { buffer: &readback, layout: wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(width * 8), rows_per_image: Some(height) } },
+                wgpu::TexelCopyTextureInfo { texture: &color, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                wgpu::TexelCopyBufferInfo { buffer: &readback, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(width * 8), rows_per_image: Some(height) } },
                 size,
             );
             queue.submit([encoder.finish()]);
             readback.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-            device.poll(wgpu::Maintain::Wait);
-            let data: Vec<f32> = bytemuck::cast_slice::<u8, u16>(&readback.slice(..).get_mapped_range()).iter().map(|&h| half_to_f32(h)).collect();
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            let data: Vec<f32> = bytemuck::cast_slice::<u8, u16>(&readback.slice(..).get_mapped_range().expect("lecture du tampon")).iter().map(|&h| half_to_f32(h)).collect();
             readback.unmap();
             // Exposition du jeu (-0,3 EV), courbe filmique simple, puis sRGB ; voile de la cinématique
             let frame = cinematics.player.frame().unwrap();

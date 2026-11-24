@@ -78,11 +78,11 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_precip"),
-            buffers: &[wgpu::VertexBufferLayout {
+            buffers: &[Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<Column>() as wgpu::BufferAddress,
                 step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &wgpu::vertex_attr_array![0 => Float32x4],
-            }],
+            })],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -98,14 +98,14 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
         primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: false,
-            depth_compare: wgpu::CompareFunction::LessEqual,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::LessEqual),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState { count: target.sample_count, mask: !0, alpha_to_coverage_enabled: false },
-        multiview: None,
-        cache: None,
+        multiview_mask: None,
+        cache: crate::shaders::pipeline_cache(),
     })
 }
 
@@ -122,8 +122,8 @@ impl Precipitation {
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Precipitation Pipeline Layout"),
-            bind_group_layouts: &[scene_layout, &uniform_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(scene_layout), Some(&uniform_layout)],
+            immediate_size: 0,
         });
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Precipitation Uniform"),

@@ -282,8 +282,8 @@ impl Shadows {
         // Pipelines des passes depuis le soleil
         let caster_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Shadow Caster Pipeline Layout"),
-            bind_group_layouts: &[camera_layout, &pass_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(camera_layout), Some(&pass_layout)],
+            immediate_size: 0,
         });
         let terrain_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shadow Caster Shader"),
@@ -296,22 +296,22 @@ impl Shadows {
                 module: &terrain_shader,
                 entry_point: Some("vs_shadow"),
                 // Les positions seules : 12 octets lus par sommet
-                buffers: &[crate::planet_mesh::PlanetVertex::position_layout()],
+                buffers: &[Some(crate::planet_mesh::PlanetVertex::position_layout())],
                 compilation_options: Default::default(),
             },
             fragment: None,
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: SHADOW_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 // Biais proportionnel à la pente : supprime l'acné sur les faces rasantes
                 bias: wgpu::DepthBiasState { constant: 2, slope_scale: 2.0, clamp: 0.0 },
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
+            multiview_mask: None,
+            cache: crate::shaders::pipeline_cache(),
         });
 
         let cloud_shader = crate::shaders::create_shader_module(device, "Cloud Shadow Shader", include_str!("cloud_shader.wgsl"), "cloud_shader.wgsl");
@@ -321,7 +321,7 @@ impl Shadows {
             vertex: wgpu::VertexState {
                 module: &cloud_shader,
                 entry_point: Some("vs_cloud_shadow"),
-                buffers: &[crate::cloud_mesh::CloudVertex::desc(), crate::cloud_mesh::CLOUD_WEATHER_LAYOUT],
+                buffers: &[Some(crate::cloud_mesh::CloudVertex::desc()), Some(crate::cloud_mesh::CLOUD_WEATHER_LAYOUT)],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -349,8 +349,8 @@ impl Shadows {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
+            multiview_mask: None,
+            cache: crate::shaders::pipeline_cache(),
         });
 
         // Lecture par le shader du terrain
@@ -577,15 +577,45 @@ impl Shadows {
         queue.write_buffer(&self.receiver_buffer, 0, bytemuck::cast_slice(&[self.uniform]));
     }
 
-    /// Encode les passes depuis le soleil. `terrain` : maillages du relief, dessinés dans toutes
-    /// les cascades ; `moving` : ce qui bouge seul (créatures), dans la cascade proche seulement,
-    /// la seule redessinée à chaque image. Seuls les maillages qui touchent une cascade y sont
-    /// dessinés.
+    /// Cascades redessinées à cette image (aucune sans ombres)
+    pub fn cascades_to_draw(&self) -> Vec<usize> {
+        if !self.active {
+            return Vec::new();
+        }
+        self.cascades.iter().enumerate().filter(|(_, pass)| pass.refresh).map(|(i, _)| i).collect()
+    }
+
+    /// Nombre de cascades
+    pub fn cascade_count(&self) -> usize {
+        self.cascades.len()
+    }
+
+    /// Le maillage de centre `center` et de demi-diagonale `radius` touche la cascade `i` (test
+    /// dans le plan de la lumière : la profondeur couvre déjà tout le volume)
+    pub fn touches(&self, i: usize, center: Vec3, radius: f32) -> bool {
+        let Some(pass) = self.cascades.get(i) else { return false };
+        let (right, up) = light_basis(self.light_dir);
+        let d = center - pass.center;
+        let reach = pass.extent + radius;
+        d.dot(right).abs() <= reach && d.dot(up).abs() <= reach
+    }
+
+    /// La cascade `i` pour le tri du relief sur le GPU : même test que `touches`
+    pub fn cull_pass(&self, i: usize) -> Option<crate::terrain_pool::CullPass> {
+        let pass = self.cascades.get(i)?;
+        let (right, up) = light_basis(self.light_dir);
+        Some(crate::terrain_pool::CullPass::cascade(pass.center, pass.extent, right, up))
+    }
+
+    /// Encode les passes depuis le soleil. `terrain` : pour chaque cascade redessinée, les morceaux
+    /// du relief qui la touchent (`touches`), tirés de `pool` ; `moving` : ce qui bouge seul
+    /// (créatures), dans la cascade proche seulement, la seule redessinée à chaque image.
     pub fn encode<'a>(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         camera_bind_group: &wgpu::BindGroup,
-        terrain: impl Iterator<Item = Caster<'a>> + Clone,
+        pool: &crate::terrain_pool::TerrainPool,
+        terrain: &[Option<crate::terrain_pool::PreparedDraws>],
         moving: Option<Caster<'a>>,
         clouds: Option<(&wgpu::Buffer, &wgpu::Buffer, &wgpu::Buffer, u32)>,
         timestamps: Option<(&wgpu::QuerySet, u32, u32)>,
@@ -605,7 +635,7 @@ impl Shadows {
             let (right, up) = light_basis(self.light_dir);
             // La cascade 0, toujours redessinée, porte le timestamp de début
             for (i, pass) in self.cascades.iter().enumerate().filter(|(_, pass)| pass.refresh) {
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
                     label: Some("Shadow Cascade Pass"),
                     color_attachments: &[],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -619,7 +649,11 @@ impl Shadows {
                 render_pass.set_pipeline(&self.terrain_pipeline);
                 render_pass.set_bind_group(0, camera_bind_group, &[]);
                 render_pass.set_bind_group(1, &pass.bind_group, &[]);
-                for caster in terrain.clone().chain(moving.filter(|_| i == 0)) {
+                // Le relief : les morceaux qui touchent la cascade, tirés des tampons partagés
+                if let Some(Some(draws)) = terrain.get(i) {
+                    pool.draw(&mut render_pass, draws, false);
+                }
+                for caster in moving.filter(|_| i == 0) {
                     // Test dans le plan de la lumière : la profondeur couvre déjà tout le volume
                     let d = caster.center - pass.center;
                     let reach = pass.extent + caster.radius;
@@ -637,9 +671,9 @@ impl Shadows {
         // nouveau dessin, la carte de la frame précédente est gardée.
         let redraw_clouds = !self.active || self.cloud.refresh;
         let load = if redraw_clouds { wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT) } else { wgpu::LoadOp::Load };
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
             label: Some("Cloud Shadow Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment { depth_slice: None,
                 view: self.cloud.view.as_ref().expect("carte des nuages"),
                 resolve_target: None,
                 ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },

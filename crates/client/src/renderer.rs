@@ -104,11 +104,8 @@ pub fn planet_flattening(eye_radius: f32, base_radius: f32, strength: f32) -> f3
 /// Maillage du relief sur le GPU : positions seules (lues aussi par les passes d'ombre), puis
 /// attributs tassés (`GpuMeshData`)
 struct GpuMesh {
-    positions: wgpu::Buffer,
-    attributes: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    index_format: wgpu::IndexFormat,
-    num_indices: u32,
+    /// Place dans les tampons partagés du relief (`terrain_pool`)
+    slot: crate::terrain_pool::PoolSlot,
     last_used_sync: u64,
     /// Centre de la boîte englobante, pour trier les draws du plus proche au plus lointain
     center: glam::Vec3,
@@ -208,6 +205,8 @@ pub struct State {
     clouds_visible: bool,
     /// Un couple de buffers par maillage de feuille LOD, envoyé une seule fois au GPU
     lod_gpu_meshes: HashMap<LodMeshId, GpuMesh>,
+    /// Tampons partagés où vivent tous les maillages du relief
+    terrain_pool: crate::terrain_pool::TerrainPool,
     /// Maillages à dessiner cette frame, dans l'ordre des feuilles
     lod_draw_list: Vec<LodMeshId>,
     /// Empreinte de cet ensemble (`draw_set_fingerprint`), lue par les ombres lointaines
@@ -316,8 +315,8 @@ impl ScenePipelines {
             // la marche dans l'atmosphère n'est pas calculée sous le relief
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -326,8 +325,8 @@ impl ScenePipelines {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
-            cache: None,
+            multiview_mask: None,
+            cache: crate::shaders::pipeline_cache(),
         });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -336,7 +335,7 @@ impl ScenePipelines {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[PlanetVertex::position_layout(), PlanetVertex::attribute_layout()],
+                buffers: &[Some(PlanetVertex::position_layout()), Some(PlanetVertex::attribute_layout())],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -360,8 +359,8 @@ impl ScenePipelines {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -370,8 +369,8 @@ impl ScenePipelines {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
-            cache: None,
+            multiview_mask: None,
+            cache: crate::shaders::pipeline_cache(),
         });
 
         // -------------------------------------------------------------
@@ -385,7 +384,7 @@ impl ScenePipelines {
             vertex: wgpu::VertexState {
                 module: &cloud_shader,
                 entry_point: Some("vs_cloud"),
-                buffers: &[crate::cloud_mesh::CloudVertex::desc(), crate::cloud_mesh::CLOUD_WEATHER_LAYOUT],
+                buffers: &[Some(crate::cloud_mesh::CloudVertex::desc()), Some(crate::cloud_mesh::CLOUD_WEATHER_LAYOUT)],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -409,8 +408,8 @@ impl ScenePipelines {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -419,12 +418,21 @@ impl ScenePipelines {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
-            cache: None,
+            multiview_mask: None,
+            cache: crate::shaders::pipeline_cache(),
         });
 
         Self { sky: sky_pipeline, terrain: render_pipeline, cloud: cloud_pipeline }
     }
+}
+
+/// Image de la fenêtre qu'on n'a pas pu obtenir pour cette frame
+#[derive(Debug)]
+pub enum FrameError {
+    /// Surface périmée ou perdue : la reconfigurer
+    Lost,
+    /// Fenêtre cachée, délai dépassé... : sauter la frame
+    Skipped(String),
 }
 
 impl State {
@@ -436,7 +444,7 @@ impl State {
         // 1. Instance WGPU
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
 
         // 2. Surface
@@ -450,6 +458,7 @@ impl State {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
+                apply_limit_buckets: false,
             })
             .await
             .expect("Aucun adaptateur GPU compatible trouvé");
@@ -479,16 +488,20 @@ impl State {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     // Cible HDR allégée de la passe 3D quand la carte sait y dessiner (`SceneTarget`)
+                    // Cache des pipelines du pilote (Vulkan) quand il existe : `shaders::init_pipeline_cache`
                     required_features: GpuTimer::wanted_features(adapter.features())
-                        | (adapter.features() & wgpu::Features::RG11B10UFLOAT_RENDERABLE),
+                        | (adapter.features() & (wgpu::Features::RG11B10UFLOAT_RENDERABLE | wgpu::Features::PIPELINE_CACHE)),
                     required_limits,
                     label: Some("HeroCraft Device"),
                     memory_hints: Default::default(),
+                    experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                    trace: wgpu::Trace::Off,
                 },
-                None,
             )
             .await
             .expect("Échec d'obtention du device WGPU");
+        crate::shaders::init_pipeline_cache(&adapter_info, &device);
+        let terrain_pool = crate::terrain_pool::TerrainPool::new(&device);
         let gpu_timer = GpuTimer::new(&device, &queue);
 
         // 5. Configuration de la surface
@@ -524,6 +537,7 @@ impl State {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
+            color_space: Default::default(),
             width: size.width.max(1),
             height: size.height.max(1),
             present_mode,
@@ -627,8 +641,8 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&atmosphere.scene_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&atmosphere.scene_layout)],
+                immediate_size: 0,
             });
         let creatures = CreatureRenderer::new(&device, &queue, &atmosphere.scene_layout, &shadows.receiver_layout, scene_target);
         // Le terrain lit aussi les textures des blocs (groupe 2)
@@ -636,8 +650,8 @@ impl State {
         let terrain_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Terrain Pipeline Layout"),
-                bind_group_layouts: &[&atmosphere.scene_layout, &shadows.receiver_layout, &block_textures.layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&atmosphere.scene_layout), Some(&shadows.receiver_layout), Some(&block_textures.layout)],
+                immediate_size: 0,
             });
 
         let scene_pipelines = ScenePipelines::new(&device, &render_pipeline_layout, &terrain_pipeline_layout, scene_target);
@@ -673,13 +687,7 @@ impl State {
         let player_outlines =
             BlockOutline::players(&device, &render_pipeline_layout, scene_target, crate::network::MAX_REMOTE_PLAYERS);
 
-        let egui_renderer = egui_wgpu::Renderer::new(
-            &device,
-            config.format,
-            None,
-            1,
-            false,
-        );
+        let egui_renderer = egui_wgpu::Renderer::new(&device, config.format, egui_wgpu::RendererOptions::default());
 
         Self {
             window,
@@ -716,6 +724,7 @@ impl State {
             ground_factor: 0.0,
             clouds_visible: false,
             lod_gpu_meshes: HashMap::new(),
+            terrain_pool,
             lod_draw_list: Vec::new(),
             terrain_fingerprint: 0,
             lod_visible_list: Vec::new(),
@@ -978,7 +987,6 @@ impl State {
     /// n'est pas entièrement sur le GPU, l'ancien reste affiché (voir `has_pending_lod_uploads`).
     pub fn sync_lod_meshes(&mut self, lod: &PlanetLodManager) {
         use rayon::prelude::*;
-        use wgpu::util::DeviceExt;
         herocraft_common::prof_scope!("render::sync_lod_meshes");
         self.lod_sync_count += 1;
         let sync = self.lod_sync_count;
@@ -1011,15 +1019,12 @@ impl State {
             to_upload.par_iter().map(|(id, mesh)| (*id, GpuMeshData::new(mesh), mesh_bounds(&mesh.vertices))).collect()
         };
         for (id, data, (center, radius, max_radius)) in packed {
-            let buffer = |label: &str, contents: &[u8], usage| {
-                self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some(label), contents, usage })
-            };
+            let slot = self.terrain_pool.insert(&self.device, &self.queue, &data);
+            if let Some(old) = self.lod_gpu_meshes.remove(&id) {
+                self.terrain_pool.release(old.slot);
+            }
             let gpu_mesh = GpuMesh {
-                positions: buffer("LOD Position Buffer", bytemuck::cast_slice(&data.positions), wgpu::BufferUsages::VERTEX),
-                attributes: buffer("LOD Attribute Buffer", bytemuck::cast_slice(&data.attributes), wgpu::BufferUsages::VERTEX),
-                index_buffer: buffer("LOD Index Buffer", data.indices.bytes(), wgpu::BufferUsages::INDEX),
-                index_format: data.indices.format(),
-                num_indices: data.num_indices,
+                slot,
                 last_used_sync: sync,
                 center,
                 radius,
@@ -1030,6 +1035,13 @@ impl State {
 
         if complete {
             self.terrain_fingerprint = draw_set_fingerprint(&new_list);
+            if self.terrain_pool.gpu_culling() {
+                // Table du tri sur le GPU, du plus proche au plus lointain (ordre de la passe 3D)
+                let eye = self.camera_eye;
+                let mut table: Vec<&GpuMesh> = new_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).collect();
+                table.sort_by_cached_key(|m| m.center.distance_squared(eye).to_bits());
+                self.terrain_pool.set_draw_table(&self.device, &self.queue, table.into_iter().map(|m| (&m.slot, m.center, m.radius, m.max_radius)));
+            }
             self.lod_draw_list = new_list;
         } else {
             // Ensemble incomplet : l'ancien reste affiché, ses maillages sont protégés
@@ -1042,9 +1054,15 @@ impl State {
         self.lod_uploads_pending = !complete;
 
         let generation = lod.generation();
+        let pool = &mut self.terrain_pool;
         self.lod_gpu_meshes.retain(|id, m| {
-            (id.generation == generation || m.last_used_sync == sync) && sync - m.last_used_sync <= LOD_GPU_MESH_TTL
+            let keep = (id.generation == generation || m.last_used_sync == sync) && sync - m.last_used_sync <= LOD_GPU_MESH_TTL;
+            if !keep {
+                pool.release(m.slot.clone());
+            }
+            keep
         });
+        herocraft_common::prof_value!("render.terrain_pool_octets", self.terrain_pool.reserved_bytes());
         herocraft_common::prof_value!("render.upload_octets", uploaded_bytes);
         herocraft_common::prof_value!("render.draws_terrain", self.lod_draw_list.len());
         herocraft_common::prof_value!("render.maillages_gpu_en_memoire", self.lod_gpu_meshes.len());
@@ -1068,6 +1086,18 @@ impl State {
     /// Textures des espèces de créatures, dans l'ordre du registre
     pub fn set_creature_textures(&mut self, textures: &[Option<crate::skinned_model::Texture>]) {
         self.creatures.set_textures(&self.device, &self.queue, textures);
+    }
+
+    /// Modèles des espèces : leurs os sont appliqués sur le GPU (`creatures::Skinning::Gpu`)
+    pub fn set_creature_models(&mut self, models: &crate::creatures::CreatureModels) {
+        if self.gpu_skinning() {
+            self.creatures.set_models(&self.device, models);
+        }
+    }
+
+    /// Les os des créatures peuvent être appliqués sur le GPU (compute shaders disponibles)
+    pub fn gpu_skinning(&self) -> bool {
+        self.device.limits().max_compute_workgroups_per_dimension > 0 && self.device.limits().max_storage_buffers_per_shader_stage >= 6
     }
 
     /// Planche du héros vu à la troisième personne
@@ -1171,14 +1201,16 @@ impl State {
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &egui_wgpu::ScreenDescriptor,
         textures_delta: &egui::TexturesDelta,
-    ) -> Result<(), wgpu::SurfaceError> {
+    ) -> Result<(), FrameError> {
         herocraft_common::prof_scope!("render::render");
         let start = std::time::Instant::now();
         self.render_timings = RenderTimings::default();
         {
             herocraft_common::prof_scope!("render::egui_textures");
             for (id, delta) in &textures_delta.set {
-                self.egui_renderer.update_texture(&self.device, &self.queue, *id, delta);
+                for delta in delta {
+                    self.egui_renderer.update_texture(&self.device, &self.queue, *id, delta);
+                }
             }
         }
 
@@ -1186,7 +1218,11 @@ impl State {
         let acquire_start = std::time::Instant::now();
         let output = {
             herocraft_common::prof_scope!("render::acquire_frame");
-            self.surface.get_current_texture()?
+            match self.surface.get_current_texture() {
+                wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+                wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => return Err(FrameError::Lost),
+                other => return Err(FrameError::Skipped(format!("{other:?}"))),
+            }
         };
         self.render_timings.acquire = acquire_start.elapsed();
         let swapchain_view = output
@@ -1208,21 +1244,37 @@ impl State {
         // 0. Tables de l'atmosphère (seulement si la planète ou les réglages ont changé), puis
         // ombres : cascades du relief et carte des nuages, vues depuis le soleil
         self.atmosphere.encode_luts(&mut encoder);
+        // Dessins du relief de la passe 3D quand ils sont triés sur le GPU
+        let mut main_terrain: Option<crate::terrain_pool::PreparedDraws> = None;
+        // Os des créatures appliqués sur le GPU, avant les ombres et la passe 3D qui lisent leurs sommets
+        self.creatures.encode_skinning(&mut encoder);
         {
             herocraft_common::prof_scope!("render::encode_shadows");
             // Le relief, positions seules ; les créatures portent leur ombre dans la cascade proche
-            let terrain = self.lod_draw_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).map(|m| crate::shadow::Caster {
-                center: m.center,
-                radius: m.radius,
-                positions: &m.positions,
-                indices: &m.index_buffer,
-                index_format: m.index_format,
-                num_indices: m.num_indices,
-            });
+            // Au plus un dessin par morceau et par passe : chaque cascade, puis la passe 3D
+            let mut terrain: Vec<Option<crate::terrain_pool::PreparedDraws>> = (0..self.shadows.cascade_count()).map(|_| None).collect();
+            if self.terrain_pool.gpu_culling() {
+                // Tri sur le GPU : chaque cascade redessinée, puis la passe 3D
+                herocraft_common::prof_scope!("render::terrain_gpu_cull");
+                let cascades = self.shadows.cascades_to_draw();
+                let mut passes: Vec<_> = cascades.iter().filter_map(|&i| self.shadows.cull_pass(i)).collect();
+                passes.push(self.terrain_cull.map_or_else(crate::terrain_pool::CullPass::everything, |c| c.gpu_pass()));
+                let mut draws = self.terrain_pool.cull(&self.device, &self.queue, &mut encoder, &mut passes);
+                main_terrain = draws.pop();
+                for (i, d) in cascades.into_iter().zip(draws) {
+                    terrain[i] = Some(d);
+                }
+            } else {
+                self.terrain_pool.begin_frame(&self.device, self.lod_draw_list.len() * (self.shadows.cascade_count() + 1));
+                for i in self.shadows.cascades_to_draw() {
+                    let meshes = self.lod_draw_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).filter(|m| self.shadows.touches(i, m.center, m.radius));
+                    terrain[i] = Some(self.terrain_pool.prepare_draws(&self.queue, meshes.map(|m| &m.slot)));
+                }
+            }
             let clouds = (self.num_cloud_indices > 0)
                 .then_some((&self.cloud_vertex_buffer, &self.cloud_weather_buffer, &self.cloud_index_buffer, self.num_cloud_indices));
             let timestamps = timer_queries.map(|q| (q, gpu_timer::TS_SHADOW_BEGIN, gpu_timer::TS_SHADOW_END));
-            self.shadows.encode(&mut encoder, &self.camera_bind_group, terrain, self.creatures.shadow_caster(), clouds, timestamps);
+            self.shadows.encode(&mut encoder, &self.camera_bind_group, &self.terrain_pool, &terrain, self.creatures.shadow_caster(), clouds, timestamps);
         }
 
         // 1. Passe 3D HDR (Ciel étoilé + Soleil + Halo atmosphérique + Planète & Voxels avec MSAA 4x si supporté)
@@ -1232,9 +1284,9 @@ impl State {
             // Avec MSAA, seule la cible HDR résolue est relue par le post-traitement
             let store_op = if resolve_target.is_some() { wgpu::StoreOp::Discard } else { wgpu::StoreOp::Store };
 
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
                 label: Some("3D World Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { depth_slice: None,
                     view: color_view,
                     resolve_target,
                     ops: wgpu::Operations {
@@ -1266,27 +1318,32 @@ impl State {
             // 1.a. Relief planétaire & Voxels, du plus proche au plus lointain : le test de
             // profondeur précoce élimine les fragments cachés avant d'exécuter le shader
             // Les morceaux hors du champ de vision ou sous l'horizon ne sont pas dessinés
-            let (meshes, eye, cull) = (&self.lod_gpu_meshes, self.camera_eye, self.terrain_cull);
-            self.lod_visible_list.clear();
-            self.lod_visible_list.extend(self.lod_draw_list.iter().copied().filter(|id| {
-                meshes.get(id).is_some_and(|m| cull.is_none_or(|c| c.is_visible(m.center, m.radius, m.max_radius)))
-            }));
-            self.lod_visible_list.sort_by_cached_key(|id| {
-                meshes.get(id).map_or(u32::MAX, |m| m.center.distance_squared(eye).to_bits())
-            });
-            herocraft_common::prof_value!("render.draws_terrain_visibles", self.lod_visible_list.len());
-            if !self.lod_visible_list.is_empty() {
+            if let Some(draws) = main_terrain.take() {
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
                 render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
                 render_pass.set_bind_group(2, &self.block_textures.bind_group, &[]);
-                for id in &self.lod_visible_list {
-                    if let Some(mesh) = self.lod_gpu_meshes.get(id) {
-                        render_pass.set_vertex_buffer(0, mesh.positions.slice(..));
-                        render_pass.set_vertex_buffer(1, mesh.attributes.slice(..));
-                        render_pass.set_index_buffer(mesh.index_buffer.slice(..), mesh.index_format);
-                        render_pass.draw_indexed(0..mesh.num_indices, 0, 0..1);
-                    }
+                self.terrain_pool.draw(&mut render_pass, &draws, true);
+            }
+            let (meshes, eye, cull) = (&self.lod_gpu_meshes, self.camera_eye, self.terrain_cull);
+            self.lod_visible_list.clear();
+            if !self.terrain_pool.gpu_culling() {
+                self.lod_visible_list.extend(self.lod_draw_list.iter().copied().filter(|id| {
+                    meshes.get(id).is_some_and(|m| cull.is_none_or(|c| c.is_visible(m.center, m.radius, m.max_radius)))
+                }));
+                self.lod_visible_list.sort_by_cached_key(|id| {
+                    meshes.get(id).map_or(u32::MAX, |m| m.center.distance_squared(eye).to_bits())
+                });
+                herocraft_common::prof_value!("render.draws_terrain_visibles", self.lod_visible_list.len());
+                if !self.lod_visible_list.is_empty() {
+                    // Tous les morceaux visibles en un dessin indirect (ou un dessin chacun), depuis
+                    // les tampons partagés attachés une seule fois
+                    let draws = self.terrain_pool.prepare_draws(&self.queue, self.lod_visible_list.iter().filter_map(|id| self.lod_gpu_meshes.get(id)).map(|m| &m.slot));
+                    render_pass.set_pipeline(&self.render_pipeline);
+                    render_pass.set_bind_group(0, &self.atmosphere.scene_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.shadows.receiver_bind_group, &[]);
+                    render_pass.set_bind_group(2, &self.block_textures.bind_group, &[]);
+                    self.terrain_pool.draw(&mut render_pass, &draws, true);
                 }
             }
             // Créatures, éclairées comme le relief
@@ -1366,9 +1423,9 @@ impl State {
 
         {
             herocraft_common::prof_scope!("render::encode_egui_pass");
-            let mut ui_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut ui_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
                 label: Some("egui Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { depth_slice: None,
                     view: &swapchain_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -1404,7 +1461,7 @@ impl State {
         self.render_timings.submit = present_start.duration_since(submit_start);
         {
             herocraft_common::prof_scope!("render::present");
-            output.present();
+            self.queue.present(output);
         }
         self.render_timings.present = present_start.elapsed();
 

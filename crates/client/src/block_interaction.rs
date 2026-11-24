@@ -4,11 +4,9 @@
 //! de la barre d'objets, et répète la pose tant qu'il reste enfoncé. La modification est
 //! appliquée et remaillée dans la frame même.
 
-use std::collections::HashMap;
 
 use glam::Vec3;
-use herocraft_common::{cultures, opposite_face, BlockId, BlockRotation, PlanetFace, ATTACHED_FACES, FACE_DIRS};
-use herocraft_world::generator::ColumnSample;
+use herocraft_common::{cultures, opposite_face, BlockId, BlockRotation, ATTACHED_FACES, FACE_DIRS};
 use herocraft_world::{raycast_blocks, BlockGeometry, BlockPos, PlanetWorldGenerator, RayHit, TerrainEdits, TerrainQuery};
 use winit::event::MouseButton;
 
@@ -67,7 +65,7 @@ pub struct BlockInteraction {
     last_aim: Option<AimKey>,
     /// Colonnes du générateur déjà échantillonnées, gardées d'une frame à l'autre : en tournant la
     /// vue, le rayon repasse sur les mêmes colonnes et le bruit du relief n'est pas recalculé
-    columns: HashMap<(PlanetFace, i32, i32), ColumnSample>,
+    columns: herocraft_world::edits::QueryCache,
 }
 
 impl BlockInteraction {
@@ -458,7 +456,7 @@ mod tests {
         camera.distance = 0.0;
         camera.target_distance = 0.0;
         camera.update_camera_bounds(&generator);
-        let target = BlockPos::new(PlanetFace::PosX, 300, 200, 400);
+        let target = BlockPos::new(herocraft_common::PlanetFace::PosX, 300, 200, 400);
         let place = |block: BlockId, d: (i32, i32, i32)| {
             let pos = BlockPos { x: target.x + d.0, y: target.y + d.1, z: target.z + d.2, ..target };
             let hit = RayHit { block: target, before: Some(pos), distance: 0.0 };

@@ -218,9 +218,9 @@ impl Chat {
         if !self.open && self.lines.back().is_none_or(|l| now.duration_since(l.at) >= LINE_VISIBLE) {
             return;
         }
-        let screen = ctx.screen_rect();
+        let screen = ctx.content_rect();
         let width = CHAT_WIDTH.min(screen.width() - 32.0);
-        let input_id = egui::Id::new("chat_input");
+        let input_id = egui::Id::unique("chat_input");
 
         if self.open {
             // Touches du chat, retirées avant que le champ de saisie ne les voie
@@ -246,7 +246,7 @@ impl Chat {
             }
         }
 
-        egui::Area::new(egui::Id::new("chat"))
+        egui::Area::new(egui::Id::unique("chat"))
             .order(egui::Order::Foreground)
             .pivot(egui::Align2::LEFT_BOTTOM)
             .fixed_pos(egui::pos2(16.0, screen.bottom() - CHAT_BOTTOM_OFFSET))
@@ -254,7 +254,7 @@ impl Chat {
             .show(ctx, |ui| {
                 ui.set_width(width);
                 if self.open {
-                    egui::Frame::none().fill(egui::Color32::from_black_alpha(150)).rounding(4.0).inner_margin(6.0).show(ui, |ui| {
+                    egui::Frame::NONE.fill(egui::Color32::from_black_alpha(150)).corner_radius(4.0).inner_margin(6.0).show(ui, |ui| {
                         ui.set_width(width - 12.0);
                         egui::ScrollArea::vertical().max_height(CHAT_HISTORY_HEIGHT).stick_to_bottom(true).auto_shrink([false, true]).show(ui, |ui| {
                             for line in &self.lines {
@@ -263,14 +263,14 @@ impl Chat {
                         });
                     });
                     self.draw_suggestions(ui);
-                    let response = egui::Frame::none().fill(egui::Color32::from_black_alpha(190)).rounding(4.0).inner_margin(4.0).show(ui, |ui| {
+                    let response = egui::Frame::NONE.fill(egui::Color32::from_black_alpha(190)).corner_radius(4.0).inner_margin(4.0).show(ui, |ui| {
                         ui.add(
                             egui::TextEdit::singleline(&mut self.input)
                                 .id(input_id)
                                 .desired_width(width - 8.0)
                                 .char_limit(MAX_INPUT_CHARS)
                                 .lock_focus(true)
-                                .frame(false)
+                                .frame(egui::Frame::NONE)
                                 .hint_text("Message, or /help for the commands")
                                 .font(egui::FontId::proportional(15.0)),
                         )
@@ -290,7 +290,7 @@ impl Chat {
                     for line in recent.into_iter().rev() {
                         let left = LINE_VISIBLE.saturating_sub(now.duration_since(line.at));
                         let alpha = (left.as_secs_f32() / LINE_FADE.as_secs_f32()).min(1.0);
-                        egui::Frame::none().fill(egui::Color32::from_black_alpha((110.0 * alpha) as u8)).inner_margin(egui::Margin::symmetric(5.0, 1.0)).show(ui, |ui| {
+                        egui::Frame::NONE.fill(egui::Color32::from_black_alpha((110.0 * alpha) as u8)).inner_margin(egui::Margin::symmetric(5, 1)).show(ui, |ui| {
                             ui.label(line_text(line, alpha));
                         });
                     }
@@ -315,7 +315,7 @@ impl Chat {
                 if i == c.index { text.color(egui::Color32::from_rgb(255, 215, 0)) } else { text.color(egui::Color32::from_gray(200)) }
             })
             .collect();
-        egui::Frame::none().fill(egui::Color32::from_black_alpha(150)).rounding(4.0).inner_margin(4.0).show(ui, |ui| {
+        egui::Frame::NONE.fill(egui::Color32::from_black_alpha(150)).corner_radius(4.0).inner_margin(4.0).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 for word in words {
                     ui.label(word);

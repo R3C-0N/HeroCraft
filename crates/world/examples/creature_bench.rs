@@ -1,6 +1,8 @@
 //! Mesure le coût par image de la simulation des créatures (partie solo : appelée à chaque image
 //! sur le fil du rendu). Un joueur marche ou vole en ligne droite sur la face +Z.
-//! Usage : cargo run -p herocraft_world --release --example creature_bench -- [vitesse en blocs/s] [secondes]
+//! Usage : cargo run -p herocraft_world --release --example creature_bench -- [vitesse en blocs/s] [secondes] [x] [z] [bêtes en plus]
+//! Les bêtes en plus sont posées autour du point de départ, comme la phase « Beaucoup de créatures »
+//! du banc d'essai du client.
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -15,7 +17,8 @@ fn main() {
     let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 4242, ..Default::default() });
     let edits = TerrainEdits::new(None);
     let geometry = BlockGeometry::new(generator.base_radius());
-    let mut world = CreatureWorld::new(generator.base_radius(), 4242, Arc::new(CreatureRegistry::load_default()));
+    let registry = Arc::new(CreatureRegistry::load_default());
+    let mut world = CreatureWorld::new(generator.base_radius(), 4242, registry.clone());
     world.set_sun_dir(Vec3::new(0.3, 0.2, 1.0));
     let mut query = TerrainQuery::new(&generator, &edits);
     let dt = 1.0 / 60.0;
@@ -24,6 +27,15 @@ fn main() {
     let mut x: f32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(300.0);
     let z: f32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(512.0);
     let mut max_creatures = 0;
+    let extra: usize = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(0);
+    for i in 0..extra {
+        let angle = i as f32 * 2.399_963;
+        let dist = 4.0 + (i % 12) as f32 * 1.5;
+        let (bx, bz) = (x + angle.cos() * dist, z + angle.sin() * dist);
+        let top = query.support_top(PlanetFace::PosZ, bx as i32, bz as i32, 255);
+        let feet = geometry.corner(PlanetFace::PosZ, bx as f64, top as f64, bz as f64).as_vec3();
+        world.spawn(i % registry.len(), feet);
+    }
     for _ in 0..frames {
         x += speed * dt;
         let top = query.support_top(PlanetFace::PosZ, x as i32, z as i32, 255);

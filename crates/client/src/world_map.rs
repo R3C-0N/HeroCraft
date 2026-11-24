@@ -395,7 +395,7 @@ fn render_terrain(generator: &PlanetWorldGenerator, center: DVec3, bpp: f64) -> 
         -c.dot(center)
     };
     regions.sort_by(|a, b| region_dist(a).total_cmp(&region_dist(b)));
-    Terrain { image: egui::ColorImage { size: [n, n], pixels }, cells, regions }
+    Terrain { image: egui::ColorImage::new([n, n], pixels), cells, regions }
 }
 
 /// Chemins qui passent par une région
@@ -527,7 +527,10 @@ impl WorldMap {
     pub fn new() -> Self {
         let (jobs, job_rx) = mpsc::channel();
         let (reply_tx, replies) = mpsc::channel();
-        let spawned = std::thread::Builder::new().name("carte".into()).spawn(move || worker(job_rx, reply_tx));
+        let spawned = std::thread::Builder::new().name("carte".into()).spawn(move || {
+            crate::threads::lower_current_thread_priority();
+            worker(job_rx, reply_tx)
+        });
         if let Err(e) = spawned {
             log::warn!("Fil de la carte impossible à lancer : {e}");
         }
@@ -633,7 +636,7 @@ impl WorldMap {
 
     /// Dessine l'écran de carte : une feuille de parchemin entière, titre, carte et légende à l'encre
     pub fn draw_screen(&mut self, ctx: &egui::Context, close_hint: &str) {
-        let screen = ctx.screen_rect();
+        let screen = ctx.content_rect();
         let side = ((screen.height() - 24.0) / SHEET_H).min((screen.width() - 24.0) / SHEET_W).clamp(220.0, 760.0);
         if self.parchment.is_none() {
             let w = (SHEET_W * SHEET_TEXELS) as usize;
@@ -643,7 +646,7 @@ impl WorldMap {
         }
         let ink = egui::Color32::from_rgb(74, 50, 32);
         let faded = egui::Color32::from_rgb(120, 92, 62);
-        egui::Area::new(egui::Id::new("map_screen"))
+        egui::Area::new(egui::Id::unique("map_screen"))
             .order(egui::Order::Middle)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
@@ -671,7 +674,7 @@ impl WorldMap {
                 );
 
                 // Carte
-                let response = ui.interact(map_rect, egui::Id::new("map_canvas"), egui::Sense::click_and_drag());
+                let response = ui.interact(map_rect, egui::Id::unique("map_canvas"), egui::Sense::click_and_drag());
                 self.map_input(ui, map_rect, &response);
                 self.paint_map(ui, map_rect, sheet, response.hover_pos());
 
@@ -680,7 +683,7 @@ impl WorldMap {
                 self.scale_bar(painter, egui::pos2(map_rect.left() + 4.0, row_y), u, ink);
                 let recenter = painter.layout_no_wrap("⌖ Recentrer".to_string(), crate::ui_skin::strong_font(13.0), ink);
                 let r = egui::Rect::from_min_size(egui::pos2(map_rect.right() - recenter.size().x, row_y - recenter.size().y / 2.0), recenter.size()).expand(3.0);
-                let button = ui.interact(r, egui::Id::new("map_recenter"), egui::Sense::click());
+                let button = ui.interact(r, egui::Id::unique("map_recenter"), egui::Sense::click());
                 let color = if button.hovered() { egui::Color32::from_rgb(150, 44, 32) } else { ink };
                 ink_text(painter, r.center(), egui::Align2::CENTER_CENTER, "⌖ Recentrer", crate::ui_skin::strong_font(13.0), color);
                 if button.hovered() {
@@ -743,7 +746,7 @@ impl WorldMap {
             }
         }
         if response.hovered() {
-            self.scroll += ui.input(|i| i.raw_scroll_delta.y);
+            self.scroll += ui.input(|i| crate::ui::raw_scroll_delta(i).y);
             let (plus, minus) = ui.input(|i| {
                 (i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals), i.key_pressed(egui::Key::Minus))
             });
@@ -896,7 +899,7 @@ impl WorldMap {
                 }
                 painter.rect_filled(r.translate(egui::vec2(2.0, 3.0)), 2.0, egui::Color32::from_black_alpha(60));
                 painter.rect_filled(r, 2.0, egui::Color32::from_rgb(243, 232, 204));
-                painter.rect_stroke(r, 2.0, egui::Stroke::new(1.0_f32, ink));
+                painter.rect_stroke(r, 2.0, egui::Stroke::new(1.0_f32, ink), egui::StrokeKind::Middle);
                 painter.galley(r.min + egui::vec2(5.0, 5.0), galley, ink);
             }
         }
@@ -918,7 +921,7 @@ impl WorldMap {
             let cell = egui::Rect::from_min_size(bar.min + egui::vec2(width * k as f32 / 4.0, 0.0), egui::vec2(width / 4.0, 5.0));
             painter.rect_filled(cell, 0.0, if k % 2 == 0 { ink } else { egui::Color32::from_rgb(238, 226, 196) });
         }
-        painter.rect_stroke(bar, 0.0, stroke);
+        painter.rect_stroke(bar, 0.0, stroke, egui::StrokeKind::Middle);
         painter.text(bar.right_center() + egui::vec2(8.0, 0.0), egui::Align2::LEFT_CENTER, format_distance(nice as f64), egui::FontId::proportional(12.5), ink);
     }
 
@@ -929,12 +932,12 @@ impl WorldMap {
     /// Boussole en haut de l'écran : cap du regard, établissements des environs et repère
     pub fn draw_compass(&self, ctx: &egui::Context, top: f32) {
         let Some(nav) = self.navigation else { return };
-        let screen = ctx.screen_rect();
+        let screen = ctx.content_rect();
         let width = (screen.width() * 0.4).clamp(260.0, 440.0);
         let rect = egui::Rect::from_center_size(egui::pos2(screen.center().x, top + 14.0), egui::vec2(width, 28.0));
-        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("compass")));
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("compass")));
         painter.rect_filled(rect, 4.0, egui::Color32::from_black_alpha(140));
-        painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0_f32, GOLD.gamma_multiply(0.55)));
+        painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0_f32, GOLD.gamma_multiply(0.55)), egui::StrokeKind::Middle);
         let clip = painter.with_clip_rect(rect.shrink(1.0));
         // Demi-champ de la boussole : 90° de part et d'autre du regard
         let half_span = PI / 2.0;
@@ -1265,7 +1268,7 @@ fn sheet_image(w: usize, h: usize, hole: bool) -> egui::ColorImage {
                 .collect()
         })
         .collect();
-    egui::ColorImage { size: [w, h], pixels: rows.into_iter().flatten().collect() }
+    egui::ColorImage::new([w, h], rows.into_iter().flatten().collect())
 }
 
 /// Texte à l'encre, détouré de papier clair pour rester lisible sur le relief
