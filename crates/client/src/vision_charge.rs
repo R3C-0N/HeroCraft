@@ -41,7 +41,7 @@ pub enum ChargeEvent {
     Blocks(Vec<(BlockPos, BlockId)>),
     /// Envoyer ces soldats (solo) vers ces points (direction depuis le centre de la planète), à
     /// cette allure
-    March(Vec<(u64, Vec3, f32)>),
+    March(Vec<(herocraft_common::CreatureId, Vec3, f32)>),
     /// Un coup de bélier contre la porte (son, secousse, poussière), au point de l'impact
     RamHit(Vec3),
     /// La porte vole en éclats, en ce point
@@ -132,7 +132,7 @@ pub struct VisionCharge {
     hits: u32,
     /// Le bélier est contre la porte
     ram_forward: bool,
-    soldiers: Vec<u64>,
+    soldiers: Vec<herocraft_common::CreatureId>,
 }
 
 impl VisionCharge {
@@ -210,7 +210,7 @@ impl VisionCharge {
     }
 
     /// Le cri de la charge : les soldats `soldiers` (solo, vide en ligne) courent vers la porte
-    pub fn start(&mut self, soldiers: &[u64], out: &mut Vec<ChargeEvent>) {
+    pub fn start(&mut self, soldiers: &[herocraft_common::CreatureId], out: &mut Vec<ChargeEvent>) {
         if self.phase != Phase::Waiting {
             return;
         }
@@ -352,7 +352,7 @@ mod tests {
         // Rien ne bouge avant l'éveil
         c.update(1.0, feet(&c, &g, 30.0), &mut out);
         assert!(out.is_empty() && c.phase() == Phase::Waiting);
-        c.start(&[7, 8, 9], &mut out);
+        c.start(&[7, 8, 9].map(herocraft_common::CreatureId), &mut out);
         assert!(matches!(&out[0], ChargeEvent::March(m) if m.len() == 3));
         out.clear();
         // Le joueur court vers la porte : le bélier frappe

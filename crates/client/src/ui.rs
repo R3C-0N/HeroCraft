@@ -545,7 +545,7 @@ const OPTIONS_SIDEBAR_WIDTH: f32 = 150.0;
 /// Échanges ouverts avec un habitant ou un voyageur
 pub struct TradeScreen {
     /// Créature qui l'incarne (les échanges se ferment s'il s'éloigne)
-    pub creature_id: u64,
+    pub creature_id: herocraft_common::CreatureId,
     pub card: std::sync::Arc<herocraft_common::VillagerCard>,
     /// Résultat du dernier échange
     notice: Option<String>,
@@ -914,7 +914,7 @@ impl UiState {
     }
 
     /// Ouvre les échanges avec l'habitant qu'incarne la créature `creature_id`
-    pub fn open_trade(&mut self, creature_id: u64, card: std::sync::Arc<herocraft_common::VillagerCard>) {
+    pub fn open_trade(&mut self, creature_id: herocraft_common::CreatureId, card: std::sync::Arc<herocraft_common::VillagerCard>) {
         self.set_inventory_open(false);
         self.skills_open = false;
         self.map_open = false;
@@ -3383,8 +3383,7 @@ mod tests {
         ui.set_pointer_captured(true);
         ui.raw_input.events.clear();
         let window_event = WindowEvent::MouseWheel {
-            // SAFETY: identifiant factice, seulement comparé et jamais passé au système
-            device_id: unsafe { winit::event::DeviceId::dummy() },
+            device_id: winit::event::DeviceId::dummy(),
             delta: MouseScrollDelta::LineDelta(0.0, 1.0),
             phase: winit::event::TouchPhase::Moved,
         };
@@ -3784,7 +3783,7 @@ mod tests {
                 let (ingot, coal) = (herocraft_common::villager::find_item("ironIngot").unwrap(), herocraft_common::villager::find_item("coal").unwrap());
                 ui.inventory.add_many(ingot, 5);
                 ui.inventory.add_many(coal, 3);
-                ui.open_trade(1, std::sync::Arc::new(card));
+                ui.open_trade(herocraft_common::CreatureId(1), std::sync::Arc::new(card));
             }, true, None),
             ("inventaire_equipe", |ui| {
                 let appearance = herocraft_common::hero::Appearance { nom: "Aldric".to_string(), ..Default::default() };

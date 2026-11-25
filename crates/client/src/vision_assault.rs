@@ -113,11 +113,11 @@ pub struct VisionAssault {
     /// Juste derrière la grande porte, dans la ville : premier point de reprise
     inside: (i32, i32),
     phase: Phase,
-    allies: Vec<u64>,
-    enemies: Vec<u64>,
-    ring: Vec<u64>,
-    boss: Option<u64>,
-    herald: Option<u64>,
+    allies: Vec<herocraft_common::CreatureId>,
+    enemies: Vec<herocraft_common::CreatureId>,
+    ring: Vec<herocraft_common::CreatureId>,
+    boss: Option<herocraft_common::CreatureId>,
+    herald: Option<herocraft_common::CreatureId>,
     order_in: f32,
     /// Où reprendre si le héros tombe (colonne)
     checkpoint: Option<(i32, i32)>,
@@ -178,7 +178,7 @@ impl VisionAssault {
     }
 
     /// La herse est tombée : la traversée commence, avec les soldats qui ont passé la porte
-    pub fn start(&mut self, allies: &[u64]) {
+    pub fn start(&mut self, allies: &[herocraft_common::CreatureId]) {
         if self.phase == Phase::Waiting {
             self.phase = Phase::Streets;
             self.allies = allies.to_vec();
@@ -209,15 +209,15 @@ impl VisionAssault {
     }
 
     /// Les créatures du souvenir, à retirer au retour
-    pub fn creatures(&self) -> impl Iterator<Item = u64> + '_ {
+    pub fn creatures(&self) -> impl Iterator<Item = herocraft_common::CreatureId> + '_ {
         self.allies.iter().chain(&self.enemies).chain(&self.ring).chain(&self.boss).chain(&self.herald).copied()
     }
 
-    fn alive(world: &CreatureWorld, id: u64) -> bool {
+    fn alive(world: &CreatureWorld, id: herocraft_common::CreatureId) -> bool {
         world.creatures().iter().any(|c| c.id == id && c.is_alive())
     }
 
-    fn position(world: &CreatureWorld, id: u64) -> Option<Vec3> {
+    fn position(world: &CreatureWorld, id: herocraft_common::CreatureId) -> Option<Vec3> {
         world.creatures().iter().find(|c| c.id == id && c.is_alive()).map(|c| c.position)
     }
 
@@ -229,7 +229,7 @@ impl VisionAssault {
         d.dot(east).atan2(d.dot(north)).rem_euclid(std::f32::consts::TAU)
     }
 
-    fn spawn(world: &mut CreatureWorld, species: &str, feet: Vec3, yaw: f32) -> Option<u64> {
+    fn spawn(world: &mut CreatureWorld, species: &str, feet: Vec3, yaw: f32) -> Option<herocraft_common::CreatureId> {
         let index = world.registry().find(species)?;
         Some(world.spawn_led(index, feet, yaw))
     }
@@ -423,7 +423,7 @@ impl VisionAssault {
         }
         for &id in &self.allies {
             if Self::position(world, id).is_some_and(|p| p.distance(at) / block < BLAST_BLOCKS) {
-                world.wound(id, at, 0, 10_000.0);
+                world.wound(id, at, herocraft_common::PlayerId(0), 10_000.0);
             }
         }
         let up = at.normalize_or_zero();
@@ -519,7 +519,7 @@ mod tests {
         s.geometry.corner(s.site.face, x as f64 + 0.5, ground, z as f64 + 0.5).as_vec3()
     }
 
-    fn alive(world: &CreatureWorld, species: &str) -> Vec<u64> {
+    fn alive(world: &CreatureWorld, species: &str) -> Vec<herocraft_common::CreatureId> {
         let index = world.registry().find(species).unwrap();
         world.creatures().iter().filter(|c| c.species == index && c.is_alive()).map(|c| c.id).collect()
     }
@@ -535,7 +535,7 @@ mod tests {
         s.assault.update(0.1, feet_at(&s, s.city.gate), &mut s.world, ground, &mut out);
         assert_eq!(s.assault.phase(), Phase::Waiting);
         let inside = feet_at(&s, s.assault.inside);
-        let allies: Vec<u64> = (0..6).filter_map(|_| VisionAssault::spawn(&mut s.world, "soldatAllie", inside, 0.0)).collect();
+        let allies: Vec<herocraft_common::CreatureId> = (0..6).filter_map(|_| VisionAssault::spawn(&mut s.world, "soldatAllie", inside, 0.0)).collect();
         s.assault.start(&allies);
         assert!(s.assault.checkpoint().is_some());
         // Dans les rues : les défenseurs prennent leurs postes à l'approche
@@ -558,7 +558,7 @@ mod tests {
             let far = (center.0 + 12, center.1);
             s.assault.update(0.1, feet_at(&s, far), &mut s.world, ground, &mut out);
             assert!(out.iter().any(|e| matches!(e, AssaultEvent::Push(_))));
-            s.world.wound(boss[0], feet_at(&s, center), 0, 100_000.0);
+            s.world.wound(boss[0], feet_at(&s, center), herocraft_common::PlayerId(0), 100_000.0);
             s.assault.update(0.1, feet_at(&s, center), &mut s.world, ground, &mut out);
             assert_eq!(s.assault.phase(), Phase::Streets);
             assert!(alive(&s.world, RING).is_empty());
@@ -575,7 +575,7 @@ mod tests {
         assert!(alive(&s.world, HERALD).is_empty());
         let monster = alive(&s.world, MONSTER);
         assert_eq!(monster.len(), 1);
-        s.world.wound(monster[0], feet_at(&s, arena), 0, 100_000.0);
+        s.world.wound(monster[0], feet_at(&s, arena), herocraft_common::PlayerId(0), 100_000.0);
         out.clear();
         s.assault.update(0.1, feet_at(&s, arena), &mut s.world, ground, &mut out);
         assert_eq!(s.assault.phase(), Phase::Crystal);

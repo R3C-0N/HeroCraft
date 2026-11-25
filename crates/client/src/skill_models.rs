@@ -47,16 +47,16 @@ fn dir() -> PathBuf {
     herocraft_common::skills::asset_dir("assets/skills/models").unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/skills/models"))
 }
 
-fn read_catalogue() -> Result<Catalogue, String> {
+fn read_catalogue() -> anyhow::Result<Catalogue> {
     let path = dir().join("humanoids.json");
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("{} : {e}", path.display()))?;
-    serde_json::from_str(&text).map_err(|e| format!("{} : {e}", path.display()))
+    let text = std::fs::read_to_string(&path).map_err(|e| anyhow::anyhow!("{} : {e}", path.display()))?;
+    serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("{} : {e}", path.display()))
 }
 
-fn load_sheet(file: &str) -> Result<Sheet, String> {
-    let texture = Texture::load(&dir().join(file)).map_err(|e| format!("{file} : {e}"))?;
+fn load_sheet(file: &str) -> anyhow::Result<Sheet> {
+    let texture = Texture::load(&dir().join(file)).map_err(|e| anyhow::anyhow!("{file} : {e}"))?;
     if (texture.width, texture.height) != (SHEET_SIZE as u32, SHEET_SIZE as u32) {
-        return Err(format!("{file} : la planche doit faire {SHEET_SIZE} × {SHEET_SIZE}"));
+        anyhow::bail!("{file} : la planche doit faire {SHEET_SIZE} × {SHEET_SIZE}");
     }
     Ok(Sheet { rgba: texture.rgba })
 }
@@ -75,11 +75,11 @@ pub struct Graft {
 }
 
 impl Graft {
-    fn load(id: &str) -> Result<Self, String> {
-        let model = SkinnedModel::load(&dir().join(format!("{id}.gltf"))).map_err(|e| format!("{id} : {e}"))?;
-        let texture = Texture::load(&dir().join(format!("{id}.png"))).map_err(|e| format!("{id} : {e}"))?;
+    fn load(id: &str) -> anyhow::Result<Self> {
+        let model = SkinnedModel::load(&dir().join(format!("{id}.gltf"))).map_err(|e| anyhow::anyhow!("{id} : {e}"))?;
+        let texture = Texture::load(&dir().join(format!("{id}.png"))).map_err(|e| anyhow::anyhow!("{id} : {e}"))?;
         if let Some(name) = model.vertices.iter().filter_map(|v| model.joint_name(v.joints[0])).find(|n| Bone::from_name(n).is_none()) {
-            return Err(format!("{id} : {name} n'est pas un os du héros"));
+            anyhow::bail!("{id} : {name} n'est pas un os du héros");
         }
         Ok(Self { id: id.to_string(), model, texture })
     }

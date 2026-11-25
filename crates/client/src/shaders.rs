@@ -20,7 +20,7 @@ const MODULES: [(&str, &str); 3] = [
 static COMPOSED: OnceLock<Mutex<HashMap<(String, usize), naga::Module>>> = OnceLock::new();
 
 /// Assemble un shader WGSL et ses imports en un module naga (message d'erreur lisible sinon)
-pub fn compose(source: &str, file_path: &str) -> Result<naga::Module, String> {
+pub fn compose(source: &str, file_path: &str) -> anyhow::Result<naga::Module> {
     let key = (file_path.to_string(), source.len());
     let composed = COMPOSED.get_or_init(Default::default);
     if let Some(module) = composed.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
@@ -31,7 +31,7 @@ pub fn compose(source: &str, file_path: &str) -> Result<naga::Module, String> {
     Ok(module)
 }
 
-fn compose_uncached(source: &str, file_path: &str) -> Result<naga::Module, String> {
+fn compose_uncached(source: &str, file_path: &str) -> anyhow::Result<naga::Module> {
     herocraft_common::prof_scope!("render::shaders::compose");
     let mut composer = Composer::default();
     for &(source, file_path) in MODULES.iter() {
@@ -42,7 +42,7 @@ fn compose_uncached(source: &str, file_path: &str) -> Result<naga::Module, Strin
             ..Default::default()
         });
         if let Err(e) = added {
-            return Err(e.emit_to_string(&composer));
+            return Err(anyhow::anyhow!(e.emit_to_string(&composer)));
         }
     }
     composer
@@ -52,7 +52,7 @@ fn compose_uncached(source: &str, file_path: &str) -> Result<naga::Module, Strin
             shader_type: ShaderType::Wgsl,
             ..Default::default()
         })
-        .map_err(|e| e.emit_to_string(&composer))
+        .map_err(|e| anyhow::anyhow!(e.emit_to_string(&composer)))
 }
 
 /// Crée un module de shader wgpu à partir d'une source WGSL utilisant les imports partagés

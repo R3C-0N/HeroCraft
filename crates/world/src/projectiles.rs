@@ -6,7 +6,7 @@
 //! Module enfant de `creatures` : il lit directement les bêtes, le registre et la géométrie.
 
 use glam::Vec3;
-use herocraft_common::{DamageKind, ProjectileEnd, ProjectileEvent, ProjectileSize, Shooter};
+use herocraft_common::{CreatureId, PlayerId, ProjectileId, DamageKind, ProjectileEnd, ProjectileEvent, ProjectileSize, Shooter};
 
 use super::{CreatureWorld, PlayerHit, TARGET_RADIUS};
 use crate::edits::{raycast_blocks, TerrainQuery};
@@ -25,9 +25,9 @@ const MAX_TURNS_PER_STEP: u32 = 4;
 /// Ce qu'un tir suit
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Homing {
-    Creature(u64),
+    Creature(CreatureId),
     /// Un joueur, par sa clé
-    Player(u64),
+    Player(PlayerId),
 }
 
 /// Ce que porte un projectile, et qui juge de ses touches
@@ -41,7 +41,7 @@ pub(crate) enum Payload {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Projectile {
-    pub id: u64,
+    pub id: ProjectileId,
     pub shooter: Shooter,
     /// Tiré par le camp des joueurs (joueur, invocation) : il touche les bêtes hostiles
     pub allied: bool,
@@ -64,16 +64,16 @@ pub(crate) struct Projectile {
     pub through_obstacles: bool,
     pub size: ProjectileSize,
     /// Créatures déjà touchées : il ne les touche qu'une fois
-    pub hit: Vec<u64>,
+    pub hit: Vec<CreatureId>,
     /// Joueurs (clés) qui l'ont dévié : il ne peut plus les toucher
-    pub spared: Vec<u64>,
+    pub spared: Vec<PlayerId>,
     pub payload: Payload,
 }
 
 /// Les défenses d'un joueur contre les tirs, que `SkillRunner` donne à chaque instant
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlayerGuard {
-    pub key: u64,
+    pub key: PlayerId,
     /// Garde frontale (Mur vivant) : direction (unitaire) et cosinus du demi-angle de l'arc
     pub front: Option<(Vec3, f32)>,
     /// Déviation (Manteau de Zéphyr) : la plus grande taille de projectile déviée
@@ -84,7 +84,7 @@ pub struct PlayerGuard {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SkillContact {
     /// Il touche la créature `creature` au point `at`
-    Hit { tag: u64, creature: u64, at: Vec3 },
+    Hit { tag: u64, creature: CreatureId, at: Vec3 },
     /// Il s'arrête en `at`
     Over { tag: u64, at: Vec3, reason: ProjectileEnd },
 }
@@ -92,7 +92,7 @@ pub enum SkillContact {
 /// Un tir de compétence à lancer (`CreatureWorld::launch_skill_shot`), longueurs en blocs
 #[derive(Debug, Clone)]
 pub struct SkillShot {
-    pub caster: u64,
+    pub caster: PlayerId,
     /// Repère du tir chez `SkillRunner`, rendu à chaque touche
     pub tag: u64,
     pub skill: String,
@@ -116,20 +116,20 @@ pub struct SkillShot {
 enum Meet {
     Terrain,
     /// Un mur (identifiant)
-    Obstacle(u64),
-    Creature(u64),
+    Obstacle(CreatureId),
+    Creature(CreatureId),
     /// Un joueur (rang dans la liste de l'instant)
     Player(usize),
 }
 
 impl CreatureWorld {
-    fn next_projectile_id(&mut self) -> u64 {
+    fn next_projectile_id(&mut self) -> ProjectileId {
         self.next_projectile += 1;
-        self.next_projectile
+        ProjectileId(self.next_projectile)
     }
 
     /// Lance le tir d'une créature
-    pub(crate) fn launch_creature_shot(&mut self, shooter: u64, species: usize, allied: bool, from: Vec3, to: Vec3, homing: Option<Homing>, shot: &herocraft_common::CreatureShot, damage: f32, kind: DamageKind) {
+    pub(crate) fn launch_creature_shot(&mut self, shooter: CreatureId, species: usize, allied: bool, from: Vec3, to: Vec3, homing: Option<Homing>, shot: &herocraft_common::CreatureShot, damage: f32, kind: DamageKind) {
         let block = self.geometry.block_height as f32;
         let line = to - from;
         let distance = line.length().max(1e-4);
@@ -165,7 +165,7 @@ impl CreatureWorld {
     }
 
     /// Lance le tir d'une compétence ; ses touches sont rendues par `take_contacts`
-    pub fn launch_skill_shot(&mut self, shot: SkillShot) -> u64 {
+    pub fn launch_skill_shot(&mut self, shot: SkillShot) -> ProjectileId {
         let block = self.geometry.block_height as f32;
         let id = self.next_projectile_id();
         let direction = shot.direction.normalize_or_zero();
@@ -214,13 +214,13 @@ impl CreatureWorld {
     }
 
     /// Projectiles en vol : identifiant, position
-    pub fn projectiles(&self) -> impl Iterator<Item = (u64, Vec3)> + '_ {
+    pub fn projectiles(&self) -> impl Iterator<Item = (ProjectileId, Vec3)> + '_ {
         self.projectiles.iter().map(|p| (p.id, p.position))
     }
 
     /// Fait avancer les projectiles de `dt` secondes. `players` : pieds des joueurs, `keys` leurs
     /// clés (0 sans clé). Renvoie les coups portés aux joueurs.
-    pub(crate) fn fly(&mut self, dt: f32, query: &mut TerrainQuery, players: &[Vec3], keys: &[u64]) -> Vec<PlayerHit> {
+    pub(crate) fn fly(&mut self, dt: f32, query: &mut TerrainQuery, players: &[Vec3], keys: &[PlayerId]) -> Vec<PlayerHit> {
         self.fly_over(dt, Some(query), players, keys)
     }
 
@@ -230,12 +230,12 @@ impl CreatureWorld {
         self.fly_over(dt, None, players, &[])
     }
 
-    fn fly_over(&mut self, dt: f32, mut query: Option<&mut TerrainQuery>, players: &[Vec3], keys: &[u64]) -> Vec<PlayerHit> {
+    fn fly_over(&mut self, dt: f32, mut query: Option<&mut TerrainQuery>, players: &[Vec3], keys: &[PlayerId]) -> Vec<PlayerHit> {
         let block = self.geometry.block_height as f32;
-        let key_of = |k: usize| keys.get(k).copied().unwrap_or(0);
+        let key_of = |k: usize| keys.get(k).copied().unwrap_or(PlayerId(0));
         let mut player_hits = Vec::new();
         // Coups aux créatures : qui, d'où, combien
-        let mut blasts: Vec<(u64, Vec3, f32, DamageKind)> = Vec::new();
+        let mut blasts: Vec<(CreatureId, Vec3, f32, DamageKind)> = Vec::new();
         let mut projectiles = std::mem::take(&mut self.projectiles);
         let mut ended: Vec<usize> = Vec::new();
 
@@ -344,7 +344,7 @@ impl CreatureWorld {
                             if deflects && turns < MAX_TURNS_PER_STEP {
                                 turns += 1;
                                 let up = at.normalize_or_zero();
-                                let side = if p.id % 2 == 0 { 1.0 } else { -1.0 };
+                                let side = if p.id.0 % 2 == 0 { 1.0 } else { -1.0 };
                                 let angle = side * DEFLECT_ANGLE.to_radians();
                                 p.direction = (p.direction * angle.cos() + up.cross(p.direction) * angle.sin()).normalize_or_zero();
                                 p.position = at;
@@ -452,7 +452,7 @@ impl CreatureWorld {
     }
 
     /// Les rencontres du segment de longueur `step` que le projectile `p` parcourt depuis sa position
-    fn meets(&self, p: &Projectile, step: f32, query: Option<&mut TerrainQuery>, players: &[Vec3], key_of: &dyn Fn(usize) -> u64) -> Vec<(f32, Meet)> {
+    fn meets(&self, p: &Projectile, step: f32, query: Option<&mut TerrainQuery>, players: &[Vec3], key_of: &dyn Fn(usize) -> PlayerId) -> Vec<(f32, Meet)> {
         let block = self.geometry.block_height as f32;
         let mut meets = Vec::new();
         let (from, dir) = (p.position, p.direction);

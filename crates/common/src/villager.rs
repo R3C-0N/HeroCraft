@@ -131,6 +131,25 @@ pub fn find_item(id: &str) -> Option<ItemId> {
     blocks().find(id).map(ItemId::from).or_else(|| items().find(id))
 }
 
+/// Fiche de métier impossible à lire ou qui ne tient pas debout
+#[derive(Debug, thiserror::Error)]
+pub enum ProfessionError {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error("poids négatif ou par_lieu nul")]
+    WeightOrCount,
+    #[error("« {0} » : quantité nulle")]
+    ZeroCount(String),
+    #[error("objet « {0} » inconnu")]
+    UnknownItem(String),
+    #[error("un échange donne au moins un objet et en reçoit exactement un")]
+    TradeShape,
+    #[error("couleur invalide (format #rrggbb)")]
+    Colour,
+}
+
 impl Profession {
     /// Nom du métier accordé à qui l'exerce
     pub fn name_for(&self, feminine: bool) -> &str {
@@ -142,28 +161,30 @@ impl Profession {
     }
 
     /// Lit la fiche JSON d'un métier ; `find` donne le numéro d'un objet d'après son identifiant
-    pub fn parse(id: &str, json: &str, find: &impl Fn(&str) -> Option<ItemId>) -> Result<Self, String> {
-        let sheet: ProfessionSheet = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    pub fn parse(id: &str, json: &str, find: &impl Fn(&str) -> Option<ItemId>) -> Result<Self, ProfessionError> {
+        let sheet: ProfessionSheet = serde_json::from_str(json)?;
         if (sheet.poids.is_nan() || sheet.poids < 0.0) || sheet.par_lieu == 0 {
-            return Err("poids négatif ou par_lieu nul".into());
+            return Err(ProfessionError::WeightOrCount);
         }
-        let resolve = |key: &str, count: u16| -> Result<(ItemId, u16), String> {
+        let resolve = |key: &str, count: u16| -> Result<(ItemId, u16), ProfessionError> {
             if count == 0 {
-                return Err(format!("« {key} » : quantité nulle"));
+                return Err(ProfessionError::ZeroCount(key.to_string()));
             }
-            find(key).map(|item| (item, count)).ok_or_else(|| format!("objet « {key} » inconnu"))
+            find(key).map(|item| (item, count)).ok_or_else(|| ProfessionError::UnknownItem(key.to_string()))
         };
         let mut trades = Vec::new();
         for trade in &sheet.echanges {
-            if trade.donne.is_empty() || trade.recoit.len() != 1 {
-                return Err("un échange donne au moins un objet et en reçoit exactement un".into());
+            let (Some((key, count)), 1) = (trade.recoit.iter().next(), trade.recoit.len()) else {
+                return Err(ProfessionError::TradeShape);
+            };
+            if trade.donne.is_empty() {
+                return Err(ProfessionError::TradeShape);
             }
             let give = trade.donne.iter().map(|(k, c)| resolve(k, *c)).collect::<Result<Vec<_>, _>>()?;
-            let (key, count) = trade.recoit.iter().next().unwrap();
             trades.push(Trade { give, get: resolve(key, *count)? });
         }
         if sheet.couleurs.iter().any(|c| !(c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|h| h.is_ascii_hexdigit()))) {
-            return Err("couleur invalide (format #rrggbb)".into());
+            return Err(ProfessionError::Colour);
         }
         Ok(Profession {
             id: id.to_string(),
@@ -222,7 +243,7 @@ impl ProfessionRegistry {
                 continue;
             }
             let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
-            let result = std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|text| Profession::parse(&id, &text, find));
+            let result = std::fs::read_to_string(&path).map_err(ProfessionError::from).and_then(|text| Profession::parse(&id, &text, find));
             match result {
                 Ok(p) => professions.push(p),
                 Err(e) => errors.push(format!("Métier {} ignoré : {e}", path.display())),
@@ -389,9 +410,9 @@ mod tests {
         assert_eq!(p.workplace, Workplace::Etal);
         assert_eq!(p.species, "villageois");
         assert_eq!(p.trades, vec![Trade { give: vec![(ItemId(20000), 6)], get: (ItemId(20001), 1) }]);
-        assert!(Profession::parse("x", &ok.replace("pain", "brioche"), &find).unwrap_err().contains("brioche"));
-        assert!(Profession::parse("x", &ok.replace("etal", "moulin"), &find).is_err());
-        assert!(Profession::parse("x", &ok.replace(": 6", ": 0"), &find).is_err());
-        assert!(Profession::parse("x", &ok.replace("\"lieu\"", "\"couleurs\": [\"rouge\"], \"lieu\""), &find).is_err());
+        assert!(matches!(Profession::parse("x", &ok.replace("pain", "brioche"), &find), Err(ProfessionError::UnknownItem(item)) if item == "brioche"));
+        assert!(matches!(Profession::parse("x", &ok.replace("etal", "moulin"), &find), Err(ProfessionError::Json(_))));
+        assert!(matches!(Profession::parse("x", &ok.replace(": 6", ": 0"), &find), Err(ProfessionError::ZeroCount(_))));
+        assert!(matches!(Profession::parse("x", &ok.replace("\"lieu\"", "\"couleurs\": [\"rouge\"], \"lieu\""), &find), Err(ProfessionError::Colour)));
     }
 }

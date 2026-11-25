@@ -19,9 +19,11 @@ mimalloc = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
 env_logger = { workspace = true }
 wgpu = { version = "30", features = ["naga-ir"] }
-winit = { version = "0.29", features = ["serde"] }
+winit = { version = "0.30", features = ["serde"] }
 pollster = "0.3"
 dotenvy = "0.15"
 bytemuck = { version = "1.18", features = ["derive"] }

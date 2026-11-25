@@ -1047,6 +1047,75 @@ pub fn asset_dir(dir: &str) -> Option<PathBuf> {
     [PathBuf::from(dir), Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(dir)].into_iter().find(|d| d.is_dir())
 }
 
+/// Fichier JSON illisible
+#[derive(Debug, thiserror::Error)]
+enum FileError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+}
+
+/// Ce qui cloche dans une fiche de compétence : nombres, références aux autres compétences, aux
+/// gestes et aux espèces
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SkillError {
+    #[error("palier de 1 à 4, anneau et rang maximal à partir de 1")]
+    Wheel,
+    #[error("compétence inconnue {0}")]
+    UnknownSkill(String),
+    #[error("fusion : compétence inconnue {0}")]
+    FusionUnknownSkill(String),
+    #[error("fusion : deux éléments différents par mélange (un même élément deux fois s'amplifie)")]
+    FusionSameElement,
+    #[error("fusion : facteurs d'amplification positifs")]
+    FusionAmplify,
+    #[error("geste inconnu {0}")]
+    UnknownGesture(String),
+    #[error("speed positive, impact de 0 à 1")]
+    SpeedOrImpact,
+    #[error("nombre invalide dans cast")]
+    CastNumber,
+    #[error("projectile : vitesse positive, nombres valides")]
+    ProjectileNumbers,
+    #[error("projectile : zone line ou circle (portée et point visé)")]
+    ProjectileArea,
+    #[error("grapple : range et speed positives")]
+    Grapple,
+    #[error("hover : height en nombre, duration positive")]
+    Hover,
+    #[error("teleport : nombres, delay positif ou nul")]
+    Teleport,
+    #[error("teleport et grapple vers la cible : une zone qui touche des ennemis")]
+    MovementArea,
+    #[error("follow_up : delay positif ou nul")]
+    FollowUp,
+    #[error("charge : 0 ≤ min ≤ max ≤ 10, puissances positives")]
+    Charge,
+    #[error("uses_round : une compétence d'arbalète (weapons)")]
+    UsesRound,
+    #[error("forme inconnue {0} (absente de assets/creatures/)")]
+    UnknownForm(String),
+    #[error("form_attacks : deux attaques (clic gauche, clic droit), avec une forme")]
+    FormAttacks,
+    #[error("attaque de forme inconnue {0}")]
+    UnknownFormAttack(String),
+    #[error("invocation inconnue {0} (absente de assets/creatures/)")]
+    UnknownSummon(String),
+    #[error("invocation {0} : count à partir de 1, duration et limit en nombres")]
+    SummonNumbers(String),
+    #[error("guard : nombres finis, arc de 0 à 360 degrés, miss_cooldown positif")]
+    GuardNumbers,
+    #[error("guard : type de dégâts inconnu {0} (physical, magical)")]
+    GuardKind(String),
+    #[error("immune : au moins un état dans from, et une durée")]
+    Immune,
+    #[error("damage : pierce de 0 à 1")]
+    Pierce,
+    #[error("shred : amount et max de 0 à 1, duration en secondes")]
+    Shred,
+}
+
 impl SkillCatalog {
     /// Les compétences de `assets/skills/` et les gestes de `assets/hero/animations/`. Un fichier
     /// invalide est signalé et ignoré.
@@ -1089,7 +1158,7 @@ impl SkillCatalog {
         let mut timing = HashMap::new();
         for path in json_files(gestures) {
             let name = stem(&path);
-            match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| serde_json::from_str::<GestureTiming>(&t).map_err(|e| e.to_string())) {
+            match std::fs::read_to_string(&path).map_err(FileError::from).and_then(|t| Ok(serde_json::from_str::<GestureTiming>(&t)?)) {
                 Ok(t) if t.duration > 0.0 && t.duration.is_finite() => {
                     timing.insert(name, t);
                 }
@@ -1206,33 +1275,33 @@ impl SkillCatalog {
     }
 
     /// Ce qui cloche dans `skill` : nombres, références aux autres compétences et aux gestes
-    fn check(&self, skill: &SkillDef, ids: &HashSet<String>, entities: &HashSet<String>) -> Result<(), String> {
+    fn check(&self, skill: &SkillDef, ids: &HashSet<String>, entities: &HashSet<String>) -> Result<(), SkillError> {
         if let Some(w) = &skill.wheel {
             if !(1..=4).contains(&w.tier) || w.max_rank == 0 || w.ring.unwrap_or(w.tier as f32) < 1.0 {
-                return Err("palier de 1 à 4, anneau et rang maximal à partir de 1".into());
+                return Err(SkillError::Wheel);
             }
             if let Some(missing) = w.requires.iter().chain(&w.grants).find(|r| !ids.contains(*r)) {
-                return Err(format!("compétence inconnue {missing}"));
+                return Err(SkillError::UnknownSkill(missing.clone()));
             }
         }
         if let Some(fusion) = &skill.fusion {
             if let Some(missing) = fusion.mixes.iter().flat_map(|m| m.elements.iter().chain([&m.skill])).find(|r| !ids.contains(*r)) {
-                return Err(format!("fusion : compétence inconnue {missing}"));
+                return Err(SkillError::FusionUnknownSkill(missing.clone()));
             }
             if fusion.mixes.iter().any(|m| m.elements[0] == m.elements[1]) {
-                return Err("fusion : deux éléments différents par mélange (un même élément deux fois s'amplifie)".into());
+                return Err(SkillError::FusionSameElement);
             }
             let a = &fusion.amplify;
             if ![a.power, a.area, a.cost].iter().all(|v| v.is_finite() && *v > 0.0) {
-                return Err("fusion : facteurs d'amplification positifs".into());
+                return Err(SkillError::FusionAmplify);
             }
         }
         if let Some(cast) = &skill.cast {
             if !self.gestures.contains_key(&cast.animation) {
-                return Err(format!("geste inconnu {}", cast.animation));
+                return Err(SkillError::UnknownGesture(cast.animation.clone()));
             }
             if !(cast.speed > 0.0 && cast.speed.is_finite()) || cast.impact.is_some_and(|i| !(0.0..=1.0).contains(&i)) {
-                return Err("speed positive, impact de 0 à 1".into());
+                return Err(SkillError::SpeedOrImpact);
             }
             let numbers: Vec<&Ranked> = match &cast.area {
                 Area::Circle { radius, distance, .. } => vec![radius, distance],
@@ -1241,7 +1310,7 @@ impl SkillCatalog {
                 Area::Caster => vec![],
             };
             if !numbers.iter().chain([&&cast.cooldown, &&cast.cost.mana, &&cast.cost.stamina]).all(|r| r.is_finite()) {
-                return Err("nombre invalide dans cast".into());
+                return Err(SkillError::CastNumber);
             }
             if let Some(p) = &cast.projectile {
                 let mut values = vec![&p.speed];
@@ -1252,53 +1321,53 @@ impl SkillCatalog {
                     values.extend([&b.count, &b.range]);
                 }
                 if !values.iter().all(|r| r.is_finite()) || p.speed.at(1) <= 0.0 {
-                    return Err("projectile : vitesse positive, nombres valides".into());
+                    return Err(SkillError::ProjectileNumbers);
                 }
                 if matches!(cast.area, Area::Arc { .. } | Area::Caster) {
-                    return Err("projectile : zone line ou circle (portée et point visé)".into());
+                    return Err(SkillError::ProjectileArea);
                 }
             }
             if let Some(m) = &cast.movement {
                 if m.grapple.as_ref().is_some_and(|g| !(g.range.is_finite() && g.range.at(1) > 0.0 && g.speed.is_finite() && g.speed.at(1) > 0.0 && g.stop.is_finite())) {
-                    return Err("grapple : range et speed positives".into());
+                    return Err(SkillError::Grapple);
                 }
                 if m.hover.as_ref().is_some_and(|h| !(h.height.is_finite() && h.duration.is_finite() && h.duration.at(1) > 0.0)) {
-                    return Err("hover : height en nombre, duration positive".into());
+                    return Err(SkillError::Hover);
                 }
                 if m.teleport.as_ref().is_some_and(|t| ![&t.behind, &t.above, &t.side, &t.delay].iter().all(|r| r.is_finite()) || t.delay.at(1) < 0.0) {
-                    return Err("teleport : nombres, delay positif ou nul".into());
+                    return Err(SkillError::Teleport);
                 }
                 if (m.teleport.is_some() || m.grapple.as_ref().is_some_and(|g| g.to == GrappleTo::Target)) && matches!(cast.area, Area::Caster) {
-                    return Err("teleport et grapple vers la cible : une zone qui touche des ennemis".into());
+                    return Err(SkillError::MovementArea);
                 }
             }
             if cast.follow_up.as_ref().is_some_and(|f| !f.delay.is_finite() || f.delay.at(1) < 0.0) {
-                return Err("follow_up : delay positif ou nul".into());
+                return Err(SkillError::FollowUp);
             }
             if let Some(c) = &cast.charge {
                 if !(c.min >= 0.0 && c.max >= c.min && c.max <= 10.0 && c.power.iter().all(|p| p.is_finite() && *p > 0.0)) {
-                    return Err("charge : 0 ≤ min ≤ max ≤ 10, puissances positives".into());
+                    return Err(SkillError::Charge);
                 }
             }
             if cast.uses_round && !cast.weapons.contains(&crate::weapons::WeaponKind::Crossbow) {
-                return Err("uses_round : une compétence d'arbalète (weapons)".into());
+                return Err(SkillError::UsesRound);
             }
             if let Some(form) = skill.form.as_ref().filter(|f| !entities.contains(*f)) {
-                return Err(format!("forme inconnue {form} (absente de assets/creatures/)"));
+                return Err(SkillError::UnknownForm(form.clone()));
             }
             if !skill.form_attacks.is_empty() && (skill.form.is_none() || skill.form_attacks.len() != 2) {
-                return Err("form_attacks : deux attaques (clic gauche, clic droit), avec une forme".into());
+                return Err(SkillError::FormAttacks);
             }
             if let Some(missing) = skill.form_attacks.iter().find(|a| !ids.contains(*a)) {
-                return Err(format!("attaque de forme inconnue {missing}"));
+                return Err(SkillError::UnknownFormAttack(missing.clone()));
             }
             for summon in skill.summons() {
                 if let Effect::Summon { species, count, duration, limit, .. } = summon {
                     if !entities.contains(species) {
-                        return Err(format!("invocation inconnue {species} (absente de assets/creatures/)"));
+                        return Err(SkillError::UnknownSummon(species.clone()));
                     }
                     if !(count.is_finite() && count.at(1) >= 1.0) || duration.as_ref().is_some_and(|d| !d.is_finite()) || limit.as_ref().is_some_and(|l| !l.is_finite()) {
-                        return Err(format!("invocation {species} : count à partir de 1, duration et limit en nombres"));
+                        return Err(SkillError::SummonNumbers(species.clone()));
                     }
                 }
             }
@@ -1317,18 +1386,18 @@ impl SkillCatalog {
                     Effect::Guard(guard) => {
                         let numbers = [Some(&guard.duration), Some(&guard.block), guard.hits.as_ref(), guard.reflect.as_ref(), guard.counter.as_ref().map(|c| &c.around.radius)];
                         if !numbers.iter().flatten().all(|r| r.is_finite()) || guard.arc.is_some_and(|a| !(a > 0.0 && a <= 360.0)) || guard.miss_cooldown.is_some_and(|m| !(m.is_finite() && m > 0.0)) {
-                            return Err("guard : nombres finis, arc de 0 à 360 degrés, miss_cooldown positif".into());
+                            return Err(SkillError::GuardNumbers);
                         }
                         if let Some(kind) = guard.kinds.iter().find(|k| !matches!(k.as_str(), "physical" | "magical")) {
-                            return Err(format!("guard : type de dégâts inconnu {kind} (physical, magical)"));
+                            return Err(SkillError::GuardKind(kind.clone()));
                         }
                     }
                     Effect::Immune { from, duration } if from.is_empty() || !duration.is_finite() => {
-                        return Err("immune : au moins un état dans from, et une durée".into());
+                        return Err(SkillError::Immune);
                     }
-                    Effect::Damage { pierce, .. } if !share(pierce) => return Err("damage : pierce de 0 à 1".into()),
+                    Effect::Damage { pierce, .. } if !share(pierce) => return Err(SkillError::Pierce),
                     Effect::Shred { amount, duration, max } if !share(amount) || !duration.is_finite() || max.as_ref().is_some_and(|m| !share(m)) => {
-                        return Err("shred : amount et max de 0 à 1, duration en secondes".into());
+                        return Err(SkillError::Shred);
                     }
                     _ => {}
                 }
@@ -1490,7 +1559,8 @@ impl SkillCatalog {
 }
 
 /// Pourquoi une compétence ne se lance pas
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("{}", self.message())]
 pub enum CastError {
     Unknown,
     NotPlayable,
@@ -1748,7 +1818,8 @@ pub struct SkillWheel {
 }
 
 /// Pourquoi une compétence ne peut pas être apprise
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("{}", self.message())]
 pub enum LearnError {
     Unknown,
     NoPoint,

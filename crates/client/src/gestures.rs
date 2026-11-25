@@ -1,6 +1,7 @@
 //! Gestes du héros joués par les compétences (`assets/hero/animations/*.json`, décrits dans le
 //! README du dossier) : une suite de poses clés, interpolées entre elles.
 
+use anyhow::Context;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -73,15 +74,15 @@ pub struct Gesture {
 }
 
 impl Gesture {
-    fn from_file(file: GestureFile) -> Result<Self, String> {
+    fn from_file(file: GestureFile) -> anyhow::Result<Self> {
         if (file.duration.is_nan() || file.duration <= 0.0) || file.keys.len() < 2 {
-            return Err("durée positive et deux clés au moins".into());
+            anyhow::bail!("durée positive et deux clés au moins");
         }
         let mut keys = Vec::new();
         for key in file.keys {
             let mut bones = [(Quat::IDENTITY, Vec3::ZERO); Bone::COUNT];
             for (name, pose) in key.bones {
-                let bone = Bone::from_name(&name).ok_or_else(|| format!("os inconnu {name}"))?;
+                let bone = Bone::from_name(&name).with_context(|| format!("os inconnu {name}"))?;
                 if let Some(r) = pose.rotation {
                     bones[bone.index()].0 = bone.rotation_from_degrees(r);
                 }
@@ -141,8 +142,8 @@ impl GestureLibrary {
             }
             let name = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
             let parsed = std::fs::read_to_string(&path)
-                .map_err(|e| e.to_string())
-                .and_then(|t| serde_json::from_str::<GestureFile>(&t).map_err(|e| e.to_string()))
+                .map_err(anyhow::Error::from)
+                .and_then(|t| Ok(serde_json::from_str::<GestureFile>(&t)?))
                 .and_then(Gesture::from_file);
             match parsed {
                 Ok(g) => {

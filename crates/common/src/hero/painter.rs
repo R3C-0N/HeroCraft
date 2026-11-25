@@ -321,9 +321,9 @@ pub fn paint(cfg: &Appearance) -> Sheet {
     let peau = rgb(&cfg.peau);
     let peau_f = shade(peau, -0.1);
     let cheveux = rgb(&cfg.couleur_cheveux);
-    let relief = if vrai_f(t.relief) { t.relief.unwrap() } else { 1.0 };
+    let relief = t.relief.filter(|&v| vrai_f(Some(v))).unwrap_or(1.0);
 
-    g.global_alpha = if vrai_f(t.alpha) { t.alpha.unwrap() } else { 1.0 };
+    g.global_alpha = t.alpha.filter(|&v| vrai_f(Some(v))).unwrap_or(1.0);
 
     /* 1 -- peau */
     for (i, membre) in MEMBRES1.iter().enumerate() {
@@ -333,7 +333,7 @@ pub fn paint(cfg: &Appearance) -> Sheet {
                 "dessous" => shade(peau, -0.18),
                 _ => peau,
             };
-            let amp = if vrai_f(t.pelage) { 0.13 * t.pelage.unwrap() } else { 0.06 };
+            let amp = t.pelage.filter(|&v| vrai_f(Some(v))).map_or(0.06, |p| 0.13 * p);
             plaque(g, face(membre, f), base, (i * 7 + j) as i32, amp);
         }
     }
@@ -401,7 +401,7 @@ fn eclaircir(c: u32, l: f64) -> u32 {
 fn pelage(g: &mut Toile, peau: u32, t: &Traits) {
     let clair = shade(peau, 0.18);
     let sombre = shade(peau, -0.22);
-    let force = if vrai_f(t.pelage) { t.pelage.unwrap() } else { 1.0 };
+    let force = t.pelage.filter(|&v| vrai_f(Some(v))).unwrap_or(1.0);
     let seuil = 0.86 - 0.08 * (force - 1.0);
     let zones = [("torse", "devant"), ("torse", "derriere"), ("brasD", "devant"), ("brasG", "devant"), ("jambeD", "devant"), ("jambeG", "devant")];
     for (i, (p, f)) in zones.iter().enumerate() {
@@ -950,10 +950,7 @@ fn couche2(g: &mut Toile, cfg: &Appearance, t: &Traits, cheveux: u32, peau: u32)
     let volume = if vrai_b(t.chevelure_etheree) { shade(cheveux, 0.2) } else { cheveux };
     let ombre = shade(volume, -0.12);
 
-    let plafond = match &co.der {
-        Some(der) if !der.is_empty() => *der.iter().min().unwrap(),
-        _ => 8,
-    };
+    let plafond = co.der.as_ref().and_then(|der| der.iter().min().copied()).unwrap_or(8);
     if co.dev.is_some() || co.cot.is_some() || co.der.is_some() {
         plaque(g, face("tete2", "dessus"), volume, 12, 0.08);
         colonnes(g, "devant", co.dev.as_ref(), volume, false, 8);
@@ -966,8 +963,7 @@ fn couche2(g: &mut Toile, cfg: &Appearance, t: &Traits, cheveux: u32, peau: u32)
     }
 
     /* oreilles pointues */
-    if vrai_i(t.oreilles) {
-        let l = t.oreilles.unwrap();
+    if let Some(l) = t.oreilles.filter(|&l| vrai_i(Some(l))) {
         for f in ["droite", "gauche"] {
             let b = Brosse::sur("tete2", f);
             b.pxw(g, 4, 3, peau, l, 1);

@@ -510,7 +510,7 @@ mod tests {
             .map(|i| {
                 let feet = glam::Vec3::new(i as f32 * 3.0, 50.0, 1000.0);
                 let action = [CreatureAction::Marche, CreatureAction::Repos, CreatureAction::Course][i % 3];
-                CreatureView { id: i as u64, species: Some(species[i % species.len()]), feet, yaw: i as f32 * 0.7, hurt: if i == 5 { 0.5 } else { 0.0 }, death: if i == 7 { 0.6 } else { 0.0 }, action, scale: if i == 3 { 0.5 } else { 1.0 }, mood: 0, summoner: None, copy: None, tint: None }
+                CreatureView { id: herocraft_common::CreatureId(i as u64), species: Some(species[i % species.len()]), feet, yaw: i as f32 * 0.7, hurt: if i == 5 { 0.5 } else { 0.0 }, death: if i == 7 { 0.6 } else { 0.0 }, action, scale: if i == 3 { 0.5 } else { 1.0 }, mood: 0, summoner: None, copy: None, tint: None }
             })
             .collect();
         let mut animator = CreatureAnimator::default();

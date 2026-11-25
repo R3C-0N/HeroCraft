@@ -572,71 +572,123 @@ pub struct Frame<'a> {
 /// Secondes pour que les bandeaux noirs entrent ou sortent
 pub const LETTERBOX_SECS: f32 = 0.8;
 
+/// Cinématique illisible ou qui ne se tient pas, avec son identifiant
+#[derive(Debug, thiserror::Error)]
+#[error("{id} : {issue}")]
+pub struct CinematicError {
+    pub id: String,
+    pub issue: CinematicIssue,
+}
+
+/// Ce qui cloche dans une cinématique (`name` : « plan 2 », « carte « titre » »…)
+#[derive(Debug, thiserror::Error)]
+pub enum CinematicIssue {
+    #[error(transparent)]
+    Io(std::io::Error),
+    #[error(transparent)]
+    Json(serde_json::Error),
+    #[error("aucun plan (`shots`)")]
+    NoShots,
+    #[error("{0} : durée nulle")]
+    ShotDuration(String),
+    #[error("{0} : ni `position` ni `orbit`")]
+    NoPlacement(String),
+    #[error("{0} : `position` et `orbit` à la fois")]
+    TwoPlacements(String),
+    #[error("{0} : champ de vision hors de 1 à 170 degrés")]
+    Fov(String),
+    #[error("texte « {0} » : début ou durée invalide")]
+    CaptionTiming(String),
+    #[error("fondu : début ou durée invalide")]
+    FadeTiming,
+    #[error("fondu : opacité hors de 0 à 1")]
+    FadeOpacity,
+    #[error("{what} : couleur « {color} » invalide")]
+    Color { what: String, color: String },
+    #[error("{0} : début, durée ou fondu invalide")]
+    CardTiming(String),
+    #[error("{0} : taille nulle")]
+    CardSize(String),
+    #[error("{0} : nom d'image invalide (un fichier de cards/)")]
+    CardImage(String),
+    #[error("{0} : étapes (`keys`) dans le désordre")]
+    CardKeys(String),
+    #[error("événement (`cues`) : début négatif ou nom vide")]
+    Cue,
+}
+
+/// `/cinematic` d'une cinématique que le catalogue ne connaît pas
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("Unknown cinematic \"{0}\"")]
+pub struct UnknownCinematic(pub String);
+
 impl Cinematic {
     /// Lit une cinématique et vérifie qu'elle se tient
-    pub fn from_json(id: &str, text: &str) -> Result<Self, String> {
-        let mut cinematic: Cinematic = serde_json::from_str(text).map_err(|e| format!("{id} : {e}"))?;
+    pub fn from_json(id: &str, text: &str) -> Result<Self, CinematicError> {
+        let error = |issue| CinematicError { id: id.to_string(), issue };
+        let mut cinematic: Cinematic = serde_json::from_str(text).map_err(|e| error(CinematicIssue::Json(e)))?;
         cinematic.id = id.to_string();
-        cinematic.validate().map_err(|e| format!("{id} : {e}"))?;
+        cinematic.validate().map_err(error)?;
         Ok(cinematic)
     }
 
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), CinematicIssue> {
+        use CinematicIssue as I;
         if self.shots.is_empty() {
-            return Err("aucun plan (`shots`)".into());
+            return Err(I::NoShots);
         }
         for (i, shot) in self.shots.iter().enumerate() {
             let name = if shot.name.is_empty() { format!("plan {}", i + 1) } else { format!("plan « {} »", shot.name) };
             if shot.duration.is_nan() || shot.duration <= 0.0 {
-                return Err(format!("{name} : durée nulle"));
+                return Err(I::ShotDuration(name));
             }
             match (&shot.position, &shot.orbit) {
-                (None, None) => return Err(format!("{name} : ni `position` ni `orbit`")),
-                (Some(_), Some(_)) => return Err(format!("{name} : `position` et `orbit` à la fois")),
+                (None, None) => return Err(I::NoPlacement(name)),
+                (Some(_), Some(_)) => return Err(I::TwoPlacements(name)),
                 _ => {}
             }
             if !(1.0..=170.0).contains(&shot.fov.start()) || !(1.0..=170.0).contains(&shot.fov.end()) {
-                return Err(format!("{name} : champ de vision hors de 1 à 170 degrés"));
+                return Err(I::Fov(name));
             }
         }
         for caption in &self.captions {
             if caption.at < 0.0 || caption.duration.is_nan() || caption.duration <= 0.0 {
-                return Err(format!("texte « {} » : début ou durée invalide", caption.text));
+                return Err(I::CaptionTiming(caption.text.clone()));
             }
         }
         for fade in &self.fades {
             if fade.at < 0.0 || fade.duration < 0.0 {
-                return Err("fondu : début ou durée invalide".into());
+                return Err(I::FadeTiming);
             }
             if !(0.0..=1.0).contains(&fade.from) || !(0.0..=1.0).contains(&fade.to) {
-                return Err("fondu : opacité hors de 0 à 1".into());
+                return Err(I::FadeOpacity);
             }
-            parse_color(&fade.color).ok_or_else(|| format!("fondu : couleur « {} » invalide", fade.color))?;
+            parse_color(&fade.color).ok_or_else(|| I::Color { what: "fondu".into(), color: fade.color.clone() })?;
         }
         for (i, card) in self.cards.iter().enumerate() {
             let name = if card.name.is_empty() { format!("carte {}", i + 1) } else { format!("carte « {} »", card.name) };
             if card.at < 0.0 || card.duration.is_some_and(|d| d.is_nan() || d <= 0.0) || card.fade < 0.0 {
-                return Err(format!("{name} : début, durée ou fondu invalide"));
+                return Err(I::CardTiming(name));
             }
             if !card.width.is_positive() || card.height.is_some_and(|h| !h.is_positive()) || card.keys.iter().any(|k| k.width.is_nan() || k.width <= 0.0) {
-                return Err(format!("{name} : taille nulle"));
+                return Err(I::CardSize(name));
             }
             if let Some(color) = &card.color {
-                parse_color(color).ok_or_else(|| format!("{name} : couleur « {color} » invalide"))?;
+                parse_color(color).ok_or_else(|| I::Color { what: name.clone(), color: color.clone() })?;
             }
             if card.image.as_deref().is_some_and(|i| i.is_empty() || i.contains("..") || i.starts_with('/') || i.contains('\\')) {
-                return Err(format!("{name} : nom d'image invalide (un fichier de cards/)"));
+                return Err(I::CardImage(name));
             }
             if card.keys.windows(2).any(|w| w[1].t.partial_cmp(&w[0].t).is_none_or(std::cmp::Ordering::is_lt)) || card.keys.first().is_some_and(|k| k.t < 0.0) {
-                return Err(format!("{name} : étapes (`keys`) dans le désordre"));
+                return Err(I::CardKeys(name));
             }
         }
         if let Some(color) = &self.stage.backdrop {
-            parse_color(color).ok_or_else(|| format!("fond : couleur « {color} » invalide"))?;
+            parse_color(color).ok_or_else(|| I::Color { what: "fond".into(), color: color.clone() })?;
         }
-        parse_color(&self.stage.light.color).ok_or_else(|| format!("lumière : couleur « {} » invalide", self.stage.light.color))?;
+        parse_color(&self.stage.light.color).ok_or_else(|| I::Color { what: "lumière".into(), color: self.stage.light.color.clone() })?;
         if self.cues.iter().any(|c| c.at < 0.0 || c.emit.is_empty()) {
-            return Err("événement (`cues`) : début négatif ou nom vide".into());
+            return Err(I::Cue);
         }
         Ok(())
     }
@@ -826,9 +878,9 @@ impl CinematicCatalog {
         files.sort();
         for path in files {
             let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
-            match std::fs::read_to_string(&path).map_err(|e| format!("{id} : {e}")).and_then(|text| Cinematic::from_json(&id, &text)) {
+            match std::fs::read_to_string(&path).map_err(|e| CinematicError { id: id.clone(), issue: CinematicIssue::Io(e) }).and_then(|text| Cinematic::from_json(&id, &text)) {
                 Ok(cinematic) => catalog.insert(cinematic),
-                Err(e) => errors.push(e),
+                Err(e) => errors.push(e.to_string()),
             }
         }
         for cinematic in catalog.cinematics.values() {
@@ -944,8 +996,8 @@ impl CinematicPlayer {
     }
 
     /// Joue une cinématique par son identifiant, vue ou non (commande `/cinematic`)
-    pub fn play(&mut self, id: &str) -> Result<(), String> {
-        let cinematic = self.catalog.get(id).cloned().ok_or_else(|| format!("Unknown cinematic \"{id}\""))?;
+    pub fn play(&mut self, id: &str) -> Result<(), UnknownCinematic> {
+        let cinematic = self.catalog.get(id).cloned().ok_or_else(|| UnknownCinematic(id.to_string()))?;
         self.enqueue(cinematic, None);
         Ok(())
     }
@@ -1115,10 +1167,10 @@ mod tests {
 
     #[test]
     fn test_invalid_files_are_explained() {
-        assert!(Cinematic::from_json("x", r#"{"title": "x", "shots": []}"#).unwrap_err().contains("aucun plan"));
-        assert!(Cinematic::from_json("x", r#"{"title": "x", "shots": [{"duration": 1}]}"#).unwrap_err().contains("ni `position`"));
+        assert!(matches!(Cinematic::from_json("x", r#"{"title": "x", "shots": []}"#).unwrap_err().issue, CinematicIssue::NoShots));
+        assert!(Cinematic::from_json("x", r#"{"title": "x", "shots": [{"duration": 1}]}"#).unwrap_err().to_string().contains("ni `position`"));
         let bad_color = r##"{"title": "x", "shots": [{"duration": 1, "position": [0,0,0]}], "fades": [{"at": 0, "duration": 1, "from": 0, "to": 1, "color": "rouge"}]}"##;
-        assert!(Cinematic::from_json("x", bad_color).unwrap_err().contains("couleur"));
+        assert!(matches!(Cinematic::from_json("x", bad_color).unwrap_err().issue, CinematicIssue::Color { .. }));
         assert!(Cinematic::from_json("x", r#"{"title": "x", "shots": [{"duration": 1, "position": [0,0,0]}], "typo": 1}"#).is_err());
     }
 

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use glam::Vec3;
 use herocraft_common::skills::{Around, BuffStat, CastError, Center, Copies, CounterAt, Effect, EffectEntry, Facing, Fused, GrappleTo, Guard, PlacedArea, SkillCatalog, SkillMove, Status, Targets, SKILL_BASE_DAMAGE};
-use herocraft_common::{CharacterStats, DamageKind};
+use herocraft_common::{CharacterStats, CreatureId, DamageKind, PlayerId};
 
 use crate::arsenal::{Arsenal, Fired, Special};
 use crate::CreatureWorld;
@@ -21,29 +21,29 @@ const OVER_TIME_STEP: f32 = 0.5;
 /// Les joueurs, tels que les compétences les voient
 pub trait SkillPlayers {
     /// Identifiants des joueurs en jeu
-    fn ids(&self) -> Vec<u64>;
+    fn ids(&self) -> Vec<PlayerId>;
     /// Pieds du joueur, s'il est placé
-    fn feet(&self, id: u64) -> Option<Vec3>;
-    fn stats_mut(&mut self, id: u64) -> Option<&mut CharacterStats>;
+    fn feet(&self, id: PlayerId) -> Option<Vec3>;
+    fn stats_mut(&mut self, id: PlayerId) -> Option<&mut CharacterStats>;
 }
 
 /// Un seul joueur : la partie solo
 pub struct SoloPlayer<'a> {
-    pub id: u64,
+    pub id: PlayerId,
     pub feet: Vec3,
     pub stats: &'a mut CharacterStats,
 }
 
 impl SkillPlayers for SoloPlayer<'_> {
-    fn ids(&self) -> Vec<u64> {
+    fn ids(&self) -> Vec<PlayerId> {
         vec![self.id]
     }
 
-    fn feet(&self, id: u64) -> Option<Vec3> {
+    fn feet(&self, id: PlayerId) -> Option<Vec3> {
         (id == self.id).then_some(self.feet)
     }
 
-    fn stats_mut(&mut self, id: u64) -> Option<&mut CharacterStats> {
+    fn stats_mut(&mut self, id: PlayerId) -> Option<&mut CharacterStats> {
         (id == self.id).then_some(&mut *self.stats)
     }
 }
@@ -51,22 +51,22 @@ impl SkillPlayers for SoloPlayer<'_> {
 /// Qui subit un effet qui dure
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SkillTarget {
-    Creature(u64),
-    Player(u64),
+    Creature(CreatureId),
+    Player(PlayerId),
 }
 
 /// Ce qu'a fait une compétence en frappant, pour l'annoncer aux joueurs
 #[derive(Debug, Clone, PartialEq)]
 pub struct SkillImpact {
-    pub caster: u64,
+    pub caster: PlayerId,
     pub skill: String,
     pub rank: u8,
     /// Centre de la zone
     pub center: Vec3,
-    pub creatures: Vec<u64>,
-    pub players: Vec<u64>,
+    pub creatures: Vec<CreatureId>,
+    pub players: Vec<PlayerId>,
     /// Entités que la frappe a fait apparaître (`summon`)
-    pub summoned: Vec<u64>,
+    pub summoned: Vec<CreatureId>,
     /// La touche d'un projectile en vol (seuls ses visuels « hit » jouent)
     pub contact: bool,
     /// La riposte d'une garde qui vient de parer un coup : le client n'en joue que les visuels
@@ -90,13 +90,13 @@ pub struct Parry {
 pub struct SkillTick {
     pub impacts: Vec<SkillImpact>,
     /// Joueurs à qui renvoyer leurs statistiques
-    pub changed: Vec<u64>,
+    pub changed: Vec<PlayerId>,
     /// Joueurs qu'un effet sur la durée vient de tuer
-    pub died: Vec<u64>,
+    pub died: Vec<PlayerId>,
     /// Déplacements imposés aux lanceurs (téléportation, traction vers une cible) : à qui, lequel
-    pub moves: Vec<(u64, SkillMove)>,
+    pub moves: Vec<(PlayerId, SkillMove)>,
     /// Gardes fermées sans avoir rien paré : joueur, compétence, secondes de recharge en plus
-    pub missed: Vec<(u64, String, f32)>,
+    pub missed: Vec<(PlayerId, String, f32)>,
 }
 
 /// Ce qu'une frappe laisse pour plus tard, sur les ennemis qu'elle a trouvés
@@ -111,7 +111,7 @@ enum Later {
 #[derive(Debug, Clone)]
 struct Delayed {
     pending: Pending,
-    targets: Vec<u64>,
+    targets: Vec<CreatureId>,
     left: f32,
     what: Later,
 }
@@ -123,7 +123,7 @@ const EYE_HEIGHT: f32 = 1.6;
 
 #[derive(Debug, Clone)]
 struct Pending {
-    caster: u64,
+    caster: PlayerId,
     skill: String,
     rank: u8,
     aim: Vec3,
@@ -149,7 +149,7 @@ pub struct Casting {
 
 #[derive(Debug, Clone)]
 struct OverTime {
-    caster: u64,
+    caster: PlayerId,
     target: SkillTarget,
     /// Points par seconde : négatifs pour des dégâts, positifs pour des soins
     per_second: f32,
@@ -165,7 +165,7 @@ struct OverTime {
 
 #[derive(Debug, Clone)]
 struct Buff {
-    player: u64,
+    player: PlayerId,
     stat: BuffStat,
     value: f32,
     left: f32,
@@ -186,7 +186,7 @@ struct Buff {
 /// Une garde levée (`Effect::Guard`)
 #[derive(Debug, Clone)]
 struct Guarding {
-    player: u64,
+    player: PlayerId,
     skill: String,
     rank: u8,
     guard: Guard,
@@ -202,7 +202,7 @@ struct Guarding {
 /// Une immunité (`Effect::Immune`) : qui, à quoi, secondes restantes
 #[derive(Debug, Clone)]
 struct Immunity {
-    player: u64,
+    player: PlayerId,
     from: Vec<Status>,
     left: f32,
 }
@@ -213,8 +213,8 @@ const LAST_STAND_HEALTH: f32 = 0.1;
 /// Un allié lié à un lanceur, qui encaisse une part de ses dégâts
 #[derive(Debug, Clone)]
 struct Link {
-    caster: u64,
-    ally: u64,
+    caster: PlayerId,
+    ally: PlayerId,
     share: f32,
     left: f32,
     /// Coups que le lien encaisse encore avant de se défaire (`None` : jusqu'à sa durée)
@@ -266,9 +266,9 @@ fn zone_entry(entry: &EffectEntry, first: bool) -> Option<EffectEntry> {
 /// Une entité invoquée, suivie jusqu'à sa disparition
 #[derive(Debug, Clone)]
 struct Summoned {
-    caster: u64,
+    caster: PlayerId,
     species: String,
-    id: u64,
+    id: CreatureId,
     /// Secondes avant qu'elle disparaisse (`None` : jusqu'à sa destruction)
     left: Option<f32>,
     /// Effets sur le lanceur à la fin de sa durée, et le rang de la compétence
@@ -289,7 +289,7 @@ struct Flight {
 /// Une défense contre les tirs (Mur vivant, Manteau de Zéphyr)
 #[derive(Debug, Clone)]
 struct ShotWard {
-    player: u64,
+    player: PlayerId,
     /// Garde frontale : direction visée au lancement, cosinus du demi-arc
     front: Option<(Vec3, f32)>,
     deflect: Option<herocraft_common::ProjectileSize>,
@@ -322,15 +322,15 @@ pub struct SkillRunner {
     /// Entités invoquées, de la plus ancienne à la plus récente
     summoned: Vec<Summoned>,
     /// Joueurs changés en bête (formes du Druide) : qui, par quelle compétence, secondes restantes
-    forms: Vec<(u64, String, f32)>,
+    forms: Vec<(PlayerId, String, f32)>,
     /// Recharge restante de chaque compétence de chaque joueur, en secondes
-    cooldowns: HashMap<(u64, String), f32>,
+    cooldowns: HashMap<(PlayerId, String), f32>,
     /// Bêtes marquées : par qui, laquelle, chance de critique en plus, secondes restantes
-    marks: Vec<(u64, u64, f32, f32)>,
+    marks: Vec<(PlayerId, CreatureId, f32, f32)>,
     /// État du tirage des coups critiques
     luck: u64,
     /// Les deux derniers sorts élémentaires de chaque joueur, que la Fusion mêle
-    recent: HashMap<u64, Vec<String>>,
+    recent: HashMap<PlayerId, Vec<String>>,
     /// Alliés liés à un lanceur (Marque du Martyr, Intervention Vertueuse)
     links: Vec<Link>,
     /// Zones qui restent posées après leur frappe
@@ -341,11 +341,11 @@ pub struct SkillRunner {
     /// Défenses des joueurs contre les tirs (Mur vivant, Manteau de Zéphyr)
     wards: Vec<ShotWard>,
     /// Direction visée par chaque joueur à son dernier lancement
-    aims: HashMap<u64, Vec3>,
+    aims: HashMap<PlayerId, Vec3>,
     /// Secondes frappes et téléportations en attente
     delayed: Vec<Delayed>,
     /// Déplacements des lanceurs décidés par les frappes, rendus par `tick`
-    moves: Vec<(u64, SkillMove)>,
+    moves: Vec<(PlayerId, SkillMove)>,
     /// Gardes levées
     guards: Vec<Guarding>,
     /// Immunités en cours
@@ -358,7 +358,7 @@ pub struct SkillRunner {
 /// s'arrête, et la munition spéciale qu'il portait
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShotHit {
-    pub target: Option<u64>,
+    pub target: Option<CreatureId>,
     pub to: Vec3,
     pub special: Option<String>,
 }
@@ -381,14 +381,14 @@ impl SkillRunner {
     }
 
     /// Le joueur `player`, de voie `class`, tient `item` en main (`None` : mains nues)
-    pub fn hold(&mut self, player: u64, item: Option<herocraft_common::ItemId>, class: herocraft_common::PlayerClass) {
+    pub fn hold(&mut self, player: PlayerId, item: Option<herocraft_common::ItemId>, class: herocraft_common::PlayerClass) {
         self.arsenal.hold(player, item, class);
     }
 
     /// Avance les armes de `dt` secondes, à la vitesse d'attaque de chacun (appelé par `tick` ; le
     /// client en ligne l'appelle seul pour prévoir son chargeur)
     pub fn tick_weapons(&mut self, dt: f32) {
-        let speeds: HashMap<u64, f32> = self.buffs.iter().filter(|b| b.stat == BuffStat::AttackSpeed).fold(HashMap::new(), |mut m, b| {
+        let speeds: HashMap<PlayerId, f32> = self.buffs.iter().filter(|b| b.stat == BuffStat::AttackSpeed).fold(HashMap::new(), |mut m, b| {
             *m.entry(b.player).or_insert(1.0) += b.value * b.scale;
             m
         });
@@ -398,7 +398,7 @@ impl SkillRunner {
     /// Le tir `fired` du joueur `caster` part de ses pieds `feet` dans la direction `aim`, avec
     /// `damage` points (arme et munition, avant renforcements) : il frappe la première bête ennemie
     /// de son couloir, et y porte sa munition spéciale
-    pub fn shoot(&mut self, caster: u64, feet: Vec3, aim: Vec3, damage: f32, fired: Fired, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> ShotHit {
+    pub fn shoot(&mut self, caster: PlayerId, feet: Vec3, aim: Vec3, damage: f32, fired: Fired, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> ShotHit {
         use herocraft_common::skills::{Area, Ranked};
         use herocraft_common::weapons::{SHOT_RANGE_BLOCKS, SHOT_WIDTH_BLOCKS};
         let block = creatures.block_size();
@@ -430,7 +430,7 @@ impl SkillRunner {
 
     /// Les effets d'une munition spéciale sur les bêtes `targets` : sur elles seules, ou sur tous les
     /// ennemis dans son rayon autour de chacune
-    fn apply_special(&mut self, special: &Special, caster: u64, targets: &[u64], creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) {
+    fn apply_special(&mut self, special: &Special, caster: PlayerId, targets: &[CreatureId], creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) {
         use herocraft_common::skills::Ranked;
         let points: Vec<Vec3> = targets.iter().filter_map(|&id| creatures.creatures().iter().find(|c| c.id == id).map(|c| c.position)).collect();
         match special.radius {
@@ -452,20 +452,20 @@ impl SkillRunner {
     }
 
     /// Recharge restante de `skill` pour le joueur `player`, en secondes
-    pub fn cooldown(&self, player: u64, skill: &str) -> f32 {
+    pub fn cooldown(&self, player: PlayerId, skill: &str) -> f32 {
         self.cooldowns.get(&(player, skill.to_string())).copied().unwrap_or(0.0)
     }
 
     /// Le joueur `caster` lance `skill` : refusé s'il ne l'a pas apprise, si elle n'est pas
     /// rechargée ou s'il n'a pas de quoi la payer ; sinon le coût est payé, la recharge armée, et
     /// la frappe attend l'impact du geste. Renvoie le rang de la compétence.
-    pub fn cast(&mut self, catalog: &SkillCatalog, caster: u64, stats: &mut CharacterStats, skill: &str, aim: Vec3, aimed: Option<Vec3>) -> Result<u8, CastError> {
+    pub fn cast(&mut self, catalog: &SkillCatalog, caster: PlayerId, stats: &mut CharacterStats, skill: &str, aim: Vec3, aimed: Option<Vec3>) -> Result<u8, CastError> {
         self.cast_as(catalog, caster, stats, skill, aim, aimed).map(|c| c.rank)
     }
 
     /// Comme `cast`, et dit ce qui est vraiment lancé : la Fusion lance le mélange des deux derniers
     /// sorts élémentaires du joueur, ou le dernier amplifié s'ils sont du même élément
-    pub fn cast_as(&mut self, catalog: &SkillCatalog, caster: u64, stats: &mut CharacterStats, requested: &str, aim: Vec3, aimed: Option<Vec3>) -> Result<Casting, CastError> {
+    pub fn cast_as(&mut self, catalog: &SkillCatalog, caster: PlayerId, stats: &mut CharacterStats, requested: &str, aim: Vec3, aimed: Option<Vec3>) -> Result<Casting, CastError> {
         if !aim.is_finite() || aimed.is_some_and(|p| !p.is_finite()) {
             return Err(CastError::Unknown);
         }
@@ -557,7 +557,7 @@ impl SkillRunner {
 
     /// Ce que la Fusion du joueur `caster` lancerait maintenant : refusée sans deux sorts
     /// élémentaires, ou si leur mélange n'est pas appris
-    pub fn fusion_preview(&self, catalog: &SkillCatalog, caster: u64, stats: &CharacterStats) -> Result<Fused, CastError> {
+    pub fn fusion_preview(&self, catalog: &SkillCatalog, caster: PlayerId, stats: &CharacterStats) -> Result<Fused, CastError> {
         let recent = self.recent.get(&caster).map(Vec::as_slice).unwrap_or_default();
         let [first, last] = recent else { return Err(CastError::FusionEmpty) };
         let fused = catalog.fuse(first, last).ok_or(CastError::FusionEmpty)?;
@@ -569,7 +569,7 @@ impl SkillRunner {
 
     /// Le joueur `caster` a lancé `skill` : un sort élémentaire entre dans ce que la Fusion mêlera,
     /// la Fusion consomme les deux. Appelé par `cast_as` ; le client en ligne l'appelle pour prévoir.
-    pub fn remember(&mut self, catalog: &SkillCatalog, caster: u64, skill: &str) {
+    pub fn remember(&mut self, catalog: &SkillCatalog, caster: PlayerId, skill: &str) {
         if catalog.get(skill).is_some_and(|d| d.fusion.is_some()) {
             self.recent.remove(&caster);
         } else if catalog.element_of(skill).is_some() {
@@ -582,14 +582,14 @@ impl SkillRunner {
     }
 
     /// Les sorts élémentaires que la Fusion du joueur `caster` mêlera (deux au plus, le dernier en fin)
-    pub fn recent_spells(&self, caster: u64) -> &[String] {
+    pub fn recent_spells(&self, caster: PlayerId) -> &[String] {
         self.recent.get(&caster).map(Vec::as_slice).unwrap_or_default()
     }
 
     /// Le joueur `player` subit `damage` points : la part qu'il garde, et celle qu'encaisse le
     /// lanceur qui l'a lié (Marque du Martyr), s'il en est un. Un lien compté en coups (Intervention
     /// Vertueuse) s'use, et se défait à son dernier.
-    pub fn share_damage(&mut self, player: u64, damage: f32) -> (f32, Option<(u64, f32)>) {
+    pub fn share_damage(&mut self, player: PlayerId, damage: f32) -> (f32, Option<(PlayerId, f32)>) {
         let Some(i) = self.links.iter().position(|l| l.ally == player) else { return (damage, None) };
         let link = &mut self.links[i];
         let (caster, share) = (link.caster, link.share);
@@ -606,7 +606,7 @@ impl SkillRunner {
     /// de mort (Abomination de l'Étherium), ses effets partent autour de lui, le renforcement et
     /// les saignements de sa compétence s'arrêtent, et il survit avec un peu de vie : renvoie alors
     /// la frappe à annoncer. `None` : il meurt.
-    pub fn last_stand(&mut self, player: u64, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> Option<SkillImpact> {
+    pub fn last_stand(&mut self, player: PlayerId, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> Option<SkillImpact> {
         let buff = self.buffs.iter().find(|b| b.player == player && b.on_death.is_some())?.clone();
         let around = buff.on_death.as_ref()?;
         let feet = players.feet(player)?;
@@ -622,11 +622,11 @@ impl SkillRunner {
 
     /// Joue les effets de `around` dans son rayon autour de chacun des `points`, une fois par cible :
     /// renvoie les créatures et les joueurs touchés
-    fn burst(&mut self, around: &Around, caster: u64, rank: u8, skill: &str, points: &[Vec3], creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> (Vec<u64>, Vec<u64>) {
+    fn burst(&mut self, around: &Around, caster: PlayerId, rank: u8, skill: &str, points: &[Vec3], creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> (Vec<CreatureId>, Vec<PlayerId>) {
         let radius = around.radius.at(rank) * creatures.block_size();
         let near = |at: Vec3| points.iter().any(|p| p.distance(at) <= radius);
-        let beasts: Vec<(u64, bool)> = creatures.creatures().iter().filter(|c| c.is_alive() && near(c.position)).map(|c| (c.id, c.tamed)).collect();
-        let people: Vec<u64> = players.ids().into_iter().filter(|&id| players.feet(id).is_some_and(near)).collect();
+        let beasts: Vec<(CreatureId, bool)> = creatures.creatures().iter().filter(|c| c.is_alive() && near(c.position)).map(|c| (c.id, c.tamed)).collect();
+        let people: Vec<PlayerId> = players.ids().into_iter().filter(|&id| players.feet(id).is_some_and(near)).collect();
         let feet = players.feet(caster).or(points.first().copied()).unwrap_or(Vec3::ZERO);
         let p = Pending { caster, skill: skill.to_string(), rank, aim: Vec3::ZERO, aimed: None, left: 0.0, crit: false, power: 1.0, size: 1.0, kind: DamageKind::Physical };
         let damage_factor = 1.0 + self.buff(caster, BuffStat::Damage);
@@ -655,7 +655,7 @@ impl SkillRunner {
 
     /// Une attaque du joueur `caster` a touché aux points `points` : ses renforcements qui portent
     /// des effets (Marteau Consacré) les jouent autour. Renvoie les joueurs dont les jauges changent.
-    pub fn ride(&mut self, caster: u64, points: &[Vec3], creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> Vec<u64> {
+    pub fn ride(&mut self, caster: PlayerId, points: &[Vec3], creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> Vec<PlayerId> {
         let riders: Vec<(Around, u8, String)> = self.buffs.iter().filter(|b| b.player == caster).filter_map(|b| b.rider.clone().map(|r| (r, b.rank, b.skill.clone()))).collect();
         let mut changed = Vec::new();
         if points.is_empty() {
@@ -669,30 +669,30 @@ impl SkillRunner {
 
     /// Dégâts en plus du joueur `player` contre la créature `id`, selon la famille de son espèce
     /// (Arme de l'Aube contre les créatures de l'ombre)
-    fn against(&self, player: u64, id: u64, creatures: &CreatureWorld) -> f32 {
+    fn against(&self, player: PlayerId, id: CreatureId, creatures: &CreatureWorld) -> f32 {
         let Some(species) = creatures.creatures().iter().find(|c| c.id == id).and_then(|c| creatures.registry().get(c.species)) else { return 0.0 };
         self.buffs.iter().filter(|b| b.player == player && b.stat == BuffStat::Damage).filter_map(|b| b.against.as_ref()).filter(|(tag, _)| species.tags.contains(tag)).map(|(_, value)| value).sum()
     }
 
     /// Facteur des dégâts d'un coup d'arme du joueur `player` sur la créature `id` : ses renforcements
     /// de dégâts, famille de la créature comprise
-    pub fn hit_factor(&self, player: u64, id: u64, creatures: &CreatureWorld) -> f32 {
+    pub fn hit_factor(&self, player: PlayerId, id: CreatureId, creatures: &CreatureWorld) -> f32 {
         1.0 + self.buff(player, BuffStat::Damage) + self.against(player, id, creatures)
     }
 
     /// La forme (compétence du Druide) que le joueur `player` a prise en ce moment
-    pub fn form(&self, player: u64) -> Option<&str> {
+    pub fn form(&self, player: PlayerId) -> Option<&str> {
         self.forms.iter().find(|f| f.0 == player).map(|f| f.1.as_str())
     }
 
     /// Renforcement de `stat` du joueur `player` (0 : aucun ; 0,3 : +30 %)
-    pub fn buff(&self, player: u64, stat: BuffStat) -> f32 {
+    pub fn buff(&self, player: PlayerId, stat: BuffStat) -> f32 {
         self.buffs.iter().filter(|b| b.player == player && b.stat == stat).map(|b| b.value * b.scale).sum()
     }
 
     /// Facteur des dégâts de type `kind` que subit le joueur `player` : ses renforcements de
     /// défense qui valent contre tous les coups, ou contre ce type
-    pub fn damage_taken_factor(&self, player: u64, kind: DamageKind) -> f32 {
+    pub fn damage_taken_factor(&self, player: PlayerId, kind: DamageKind) -> f32 {
         if self.immune(player, Status::Damage) {
             return 0.0;
         }
@@ -701,12 +701,12 @@ impl SkillRunner {
     }
 
     /// Le joueur `player` est immunisé contre `status` en ce moment
-    pub fn immune(&self, player: u64, status: Status) -> bool {
+    pub fn immune(&self, player: PlayerId, status: Status) -> bool {
         self.immunities.iter().any(|i| i.player == player && i.from.contains(&status))
     }
 
     /// Tout ce que le joueur `player` ignore en ce moment
-    pub fn immunities(&self, player: u64) -> Vec<Status> {
+    pub fn immunities(&self, player: PlayerId) -> Vec<Status> {
         let mut out: Vec<Status> = self.immunities.iter().filter(|i| i.player == player).flat_map(|i| i.from.iter().copied()).collect();
         out.sort_unstable_by_key(|s| *s as u8);
         out.dedup();
@@ -714,14 +714,14 @@ impl SkillRunner {
     }
 
     /// Le joueur `player` garde en ce moment : la compétence de sa garde
-    pub fn guarding(&self, player: u64) -> Option<&str> {
+    pub fn guarding(&self, player: PlayerId) -> Option<&str> {
         self.guards.iter().find(|g| g.player == player).map(|g| g.skill.as_str())
     }
 
     /// Le joueur `player`, qui regarde vers `facing` (s'il est connu), reçoit de la créature
     /// `attacker` un coup de `damage` points, de type `kind` (`physical`, `magical`). Sa garde, s'il
     /// en a levé une et que le coup arrive de face, en bloque sa part et lance sa riposte.
-    pub fn parry(&mut self, player: u64, facing: Option<Vec3>, attacker: u64, damage: f32, kind: &str, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> Parry {
+    pub fn parry(&mut self, player: PlayerId, facing: Option<Vec3>, attacker: CreatureId, damage: f32, kind: &str, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> Parry {
         let untouched = Parry { damage, parried: false, impact: None };
         let Some(i) = self.guards.iter().position(|g| g.player == player && g.guard.blocks(kind)) else { return untouched };
         let Some(feet) = players.feet(player) else { return untouched };
@@ -762,12 +762,12 @@ impl SkillRunner {
     }
 
     /// Entités invoquées par le joueur `player` encore présentes
-    pub fn summoned_by(&self, player: u64) -> impl Iterator<Item = u64> + '_ {
+    pub fn summoned_by(&self, player: PlayerId) -> impl Iterator<Item = CreatureId> + '_ {
         self.summoned.iter().filter(move |s| s.caster == player).map(|s| s.id)
     }
 
     /// Oublie le joueur `player` (il quitte la partie) ; ses invocations disparaissent avec lui
-    pub fn forget_with(&mut self, player: u64, creatures: &mut CreatureWorld) {
+    pub fn forget_with(&mut self, player: PlayerId, creatures: &mut CreatureWorld) {
         for s in self.summoned.iter().filter(|s| s.caster == player) {
             creatures.dismiss(s.id);
         }
@@ -775,7 +775,7 @@ impl SkillRunner {
     }
 
     /// Oublie le joueur `player` (il quitte la partie)
-    pub fn forget(&mut self, player: u64) {
+    pub fn forget(&mut self, player: PlayerId) {
         self.summoned.retain(|s| s.caster != player);
         self.pending.retain(|p| p.caster != player);
         self.over_time.retain(|o| o.caster != player && o.target != SkillTarget::Player(player));
@@ -865,7 +865,7 @@ impl SkillRunner {
             *left -= step;
             creatures.slide(s.id, *dir * step * block);
             if let Some(at) = creatures.creatures().iter().find(|c| c.id == s.id).map(|c| c.position) {
-                let ahead: Vec<u64> = creatures
+                let ahead: Vec<CreatureId> = creatures
                     .creatures()
                     .iter()
                     .filter(|c| c.is_alive() && !c.tamed && c.summoner.is_none())
@@ -886,7 +886,7 @@ impl SkillRunner {
             }
         }
         // Les invocations détruites sont oubliées ; celles dont la durée est passée disparaissent
-        let alive: std::collections::HashSet<u64> = creatures.creatures().iter().filter(|c| c.is_alive()).map(|c| c.id).collect();
+        let alive: std::collections::HashSet<CreatureId> = creatures.creatures().iter().filter(|c| c.is_alive()).map(|c| c.id).collect();
         let mut ended = Vec::new();
         self.summoned.retain_mut(|s| {
             if !alive.contains(&s.id) {
@@ -1043,7 +1043,7 @@ impl SkillRunner {
     }
 
     /// La frappe du lancement `p` : zone posée devant le lanceur, effets sur chaque cible
-    fn strike(&mut self, catalog: &SkillCatalog, p: &Pending, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, changed: &mut Vec<u64>) -> Option<SkillImpact> {
+    fn strike(&mut self, catalog: &SkillCatalog, p: &Pending, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, changed: &mut Vec<PlayerId>) -> Option<SkillImpact> {
         let def = catalog.get(&p.skill)?;
         let cast = def.cast.as_ref()?;
         let feet = players.feet(p.caster)?;
@@ -1057,7 +1057,7 @@ impl SkillRunner {
                 herocraft_common::skills::Area::Circle { distance, .. } => distance.at(p.rank) * reach * block,
                 _ => f32::MAX,
             };
-            let marked: Vec<u64> = self.marks.iter().filter(|m| m.0 == p.caster).map(|m| m.1).collect();
+            let marked: Vec<CreatureId> = self.marks.iter().filter(|m| m.0 == p.caster).map(|m| m.1).collect();
             aimed = creatures
                 .creatures()
                 .iter()
@@ -1134,15 +1134,15 @@ impl SkillRunner {
         touched_creatures.sort_unstable();
         touched_creatures.dedup();
         // Ce que la frappe déclenche : par ennemi touché, si elle manque, autour de ceux qu'elle tue
-        let enemies: Vec<u64> = touched_creatures.iter().copied().filter(|id| creature_hits.contains(&(*id, false))).collect();
+        let enemies: Vec<CreatureId> = touched_creatures.iter().copied().filter(|id| creature_hits.contains(&(*id, false))).collect();
         // Déplacements et seconde frappe : vers les ennemis de la zone, le plus proche d'abord
-        let mut found: Vec<(u64, f32)> = creature_hits
+        let mut found: Vec<(CreatureId, f32)> = creature_hits
             .iter()
             .filter(|(_, tamed)| !tamed)
             .filter_map(|&(id, _)| creatures.creatures().iter().find(|c| c.id == id).map(|c| (id, c.position.distance(feet))))
             .collect();
         found.sort_by(|a, b| a.1.total_cmp(&b.1));
-        let found: Vec<u64> = found.into_iter().map(|f| f.0).collect();
+        let found: Vec<CreatureId> = found.into_iter().map(|f| f.0).collect();
         if let (Some(&first), Some(movement)) = (found.first(), cast.movement.as_ref()) {
             if let Some(teleport) = &movement.teleport {
                 self.delayed.push(Delayed { pending: p.clone(), targets: vec![first], left: teleport.delay.at(p.rank), what: Later::Teleport });
@@ -1163,7 +1163,7 @@ impl SkillRunner {
                 changed.push(p.caster);
             }
         }
-        let place = |creatures: &CreatureWorld, id: u64| creatures.creatures().iter().find(|c| c.id == id).map(|c| (c.position, c.is_alive()));
+        let place = |creatures: &CreatureWorld, id: CreatureId| creatures.creatures().iter().find(|c| c.id == id).map(|c| (c.position, c.is_alive()));
         let spots: Vec<(Vec3, bool)> = enemies.iter().filter_map(|&id| place(creatures, id)).collect();
         if let Some(around) = &cast.on_kill {
             let corpses: Vec<Vec3> = spots.iter().filter(|s| !s.1).map(|s| s.0).collect();
@@ -1191,7 +1191,7 @@ impl SkillRunner {
 
     /// Le tir en vol du lancement `p` touche la créature `id` au point `at` : ses effets sur elle,
     /// ce qu'une touche déclenche pour le lanceur, ce que fait sa mort
-    fn touch(&mut self, catalog: &SkillCatalog, p: &Pending, id: u64, at: Vec3, damage_factor: f32, first: bool, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, changed: &mut Vec<u64>) -> Option<SkillImpact> {
+    fn touch(&mut self, catalog: &SkillCatalog, p: &Pending, id: CreatureId, at: Vec3, damage_factor: f32, first: bool, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, changed: &mut Vec<PlayerId>) -> Option<SkillImpact> {
         let cast = catalog.get(&p.skill)?.cast.as_ref()?;
         let feet = players.feet(p.caster).unwrap_or(at);
         if creatures.creatures().iter().find(|c| c.id == id)?.tamed {
@@ -1255,12 +1255,12 @@ impl SkillRunner {
     }
 
     /// La seconde frappe (`follow_up`) sur les ennemis trouvés par la première, encore en vie
-    fn follow_up(&mut self, catalog: &SkillCatalog, d: &Delayed, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, changed: &mut Vec<u64>) -> Option<SkillImpact> {
+    fn follow_up(&mut self, catalog: &SkillCatalog, d: &Delayed, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, changed: &mut Vec<PlayerId>) -> Option<SkillImpact> {
         let p = &d.pending;
         let follow = catalog.get(&p.skill)?.cast.as_ref()?.follow_up.as_ref()?;
         let feet = players.feet(p.caster)?;
         let damage_factor = (1.0 + self.buff(p.caster, BuffStat::Damage)) * p.power;
-        let alive: Vec<(u64, Vec3)> = d.targets.iter().filter_map(|&id| creatures.creatures().iter().find(|c| c.id == id && c.is_alive()).map(|c| (id, c.position))).collect();
+        let alive: Vec<(CreatureId, Vec3)> = d.targets.iter().filter_map(|&id| creatures.creatures().iter().find(|c| c.id == id && c.is_alive()).map(|c| (id, c.position))).collect();
         let center = alive.first()?.1;
         for entry in &follow.effects {
             match entry.to.unwrap_or(Targets::Enemies) {
@@ -1276,19 +1276,19 @@ impl SkillRunner {
                 Targets::Allies | Targets::Summons => {}
             }
         }
-        let touched: Vec<u64> = alive.iter().map(|a| a.0).collect();
+        let touched: Vec<CreatureId> = alive.iter().map(|a| a.0).collect();
         Some(SkillImpact { caster: p.caster, skill: p.skill.clone(), rank: p.rank, center, creatures: touched, players: Vec::new(), summoned: Vec::new(), parried: false, contact: false })
     }
 
     /// Applique les effets `effects` à ceux qui se trouvent dans la zone `area` : les créatures et
     /// les joueurs touchés, et les créatures vivantes de la zone (identifiant, alliée ou non)
     #[allow(clippy::type_complexity)]
-    fn sweep(&mut self, targets: Targets, effects: &[EffectEntry], p: &Pending, feet: Vec3, area: &PlacedArea, damage_factor: f32, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> (Vec<u64>, Vec<u64>, Vec<(u64, bool)>) {
+    fn sweep(&mut self, targets: Targets, effects: &[EffectEntry], p: &Pending, feet: Vec3, area: &PlacedArea, damage_factor: f32, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> (Vec<CreatureId>, Vec<PlayerId>, Vec<(CreatureId, bool)>) {
         let block = creatures.block_size();
         // Les cibles de la zone : créatures vivantes (les bêtes apprivoisées sont des alliées) et joueurs
         let in_area = |point: Vec3| area.contains(point, block);
-        let found: Vec<(u64, bool, bool)> = creatures.creatures().iter().filter(|c| c.is_alive() && in_area(c.position)).map(|c| (c.id, c.tamed, c.summoner == Some(p.caster))).collect();
-        let player_hits: Vec<u64> = players
+        let found: Vec<(CreatureId, bool, bool)> = creatures.creatures().iter().filter(|c| c.is_alive() && in_area(c.position)).map(|c| (c.id, c.tamed, c.summoner == Some(p.caster))).collect();
+        let player_hits: Vec<PlayerId> = players
             .ids()
             .into_iter()
             .filter(|&id| id == p.caster && matches!(area, PlacedArea::Caster) || players.feet(id).is_some_and(in_area))
@@ -1326,7 +1326,7 @@ impl SkillRunner {
     }
 
     /// Les zones qui restent posées rejouent leurs effets sur ceux qui s'y trouvent
-    fn pulse_zones(&mut self, dt: f32, catalog: &SkillCatalog, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, changed: &mut Vec<u64>) {
+    fn pulse_zones(&mut self, dt: f32, catalog: &SkillCatalog, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, changed: &mut Vec<PlayerId>) {
         let block = creatures.block_size();
         let mut zones = std::mem::take(&mut self.zones);
         for zone in &mut zones {
@@ -1352,13 +1352,13 @@ impl SkillRunner {
     }
 
     /// Zones encore posées : compétence, lanceur et secondes restantes
-    pub fn zones(&self) -> impl Iterator<Item = (&str, u64, f32)> + '_ {
+    pub fn zones(&self) -> impl Iterator<Item = (&str, PlayerId, f32)> + '_ {
         self.zones.iter().map(|z| (z.pending.skill.as_str(), z.pending.caster, z.left))
     }
 
     /// Les apparitions d'une frappe, une fois par lancement : en cercle autour de leur point,
     /// les plus anciennes du lanceur disparaissant au-delà de la limite
-    fn summon<'a>(&mut self, summons: impl Iterator<Item = &'a Effect>, p: &Pending, feet: Vec3, center: Vec3, area: &PlacedArea, creatures: &mut CreatureWorld) -> Vec<u64> {
+    fn summon<'a>(&mut self, summons: impl Iterator<Item = &'a Effect>, p: &Pending, feet: Vec3, center: Vec3, area: &PlacedArea, creatures: &mut CreatureWorld) -> Vec<CreatureId> {
         let mut out = Vec::new();
         let block = creatures.block_size();
         for effect in summons {
@@ -1367,7 +1367,7 @@ impl SkillRunner {
             let left = duration.as_ref().map(|d| d.at(p.rank));
             // Une par cadavre de la zone, à sa place et à son allure ; le cadavre disparaît
             if *copies == Some(Copies::Corpse) {
-                let corpses: Vec<(u64, usize, Vec3, f32)> =
+                let corpses: Vec<(CreatureId, usize, Vec3, f32)> =
                     creatures.creatures().iter().filter(|c| !c.is_alive() && c.summoner.is_none() && area.contains(c.position, block)).map(|c| (c.id, c.species, c.position, c.yaw)).collect();
                 for (corpse, kind, position, yaw) in corpses {
                     creatures.remove(corpse);
@@ -1404,7 +1404,7 @@ impl SkillRunner {
             }
             if let Some(limit) = limit {
                 let limit = limit.at(p.rank).round().max(1.0) as usize;
-                let mine: Vec<u64> = self.summoned.iter().filter(|s| s.caster == p.caster && s.species == *species).map(|s| s.id).collect();
+                let mine: Vec<CreatureId> = self.summoned.iter().filter(|s| s.caster == p.caster && s.species == *species).map(|s| s.id).collect();
                 for &old in mine.iter().take(mine.len().saturating_sub(limit)) {
                     creatures.dismiss(old);
                     out.retain(|&id| id != old);
@@ -1417,7 +1417,7 @@ impl SkillRunner {
     }
 
     /// Chance de coup critique du joueur `caster` sur la créature `id` : son renforcement, plus ses marques
-    pub fn critical_chance(&self, caster: u64, id: u64) -> f32 {
+    pub fn critical_chance(&self, caster: PlayerId, id: CreatureId) -> f32 {
         self.buff(caster, BuffStat::Critical) + self.marks.iter().filter(|m| m.0 == caster && m.1 == id).map(|m| m.2).sum::<f32>()
     }
 
@@ -1431,7 +1431,7 @@ impl SkillRunner {
         (z >> 40) as f32 / (1u64 << 24) as f32
     }
 
-    fn apply_to_creature(&mut self, entry: &EffectEntry, p: &Pending, id: u64, feet: Vec3, damage_factor: f32, creatures: &mut CreatureWorld) {
+    fn apply_to_creature(&mut self, entry: &EffectEntry, p: &Pending, id: CreatureId, feet: Vec3, damage_factor: f32, creatures: &mut CreatureWorld) {
         let rank = p.rank;
         let damage_factor = damage_factor + self.against(p.caster, id, creatures) * p.power;
         match &entry.effect {
@@ -1487,7 +1487,7 @@ impl SkillRunner {
 
     /// Effet `entry` de la compétence `skill` du lanceur `caster` sur le joueur `id`, ses soins et
     /// boucliers multipliés par `power`
-    fn apply_to_player(&mut self, entry: &EffectEntry, caster: u64, rank: u8, power: f32, skill: &str, id: u64, players: &mut dyn SkillPlayers) {
+    fn apply_to_player(&mut self, entry: &EffectEntry, caster: PlayerId, rank: u8, power: f32, skill: &str, id: PlayerId, players: &mut dyn SkillPlayers) {
         match &entry.effect {
             Effect::Heal { amount } => {
                 if let Some(stats) = players.stats_mut(id) {
@@ -1659,15 +1659,15 @@ mod tests {
         stats.skills.insert("judgment".into(), 1);
         let mana = stats.mana;
         let mut runner = SkillRunner::new();
-        assert_eq!(runner.cast(&catalog, 7, &mut stats, "judgment", Vec3::NEG_Z, None), Ok(1));
+        assert_eq!(runner.cast(&catalog, PlayerId(7), &mut stats, "judgment", Vec3::NEG_Z, None), Ok(1));
         assert!(stats.mana < mana, "le mana est payé");
-        assert_eq!(runner.cast(&catalog, 7, &mut stats, "judgment", Vec3::NEG_Z, None), Err(CastError::Cooldown));
+        assert_eq!(runner.cast(&catalog, PlayerId(7), &mut stats, "judgment", Vec3::NEG_Z, None), Err(CastError::Cooldown));
 
         let near = creatures.creatures()[0].id;
         let health = |w: &CreatureWorld, id| w.creatures().iter().find(|c| c.id == id).map(|c| c.health).unwrap();
         let before = health(&creatures, near);
         // Rien avant l'impact du geste (0,315 s)
-        let mut player = SoloPlayer { id: 7, feet, stats: &mut stats };
+        let mut player = SoloPlayer { id: PlayerId(7), feet, stats: &mut stats };
         let tick = runner.tick(0.2, &catalog, &mut creatures, &mut player);
         assert!(tick.impacts.is_empty());
         let tick = runner.tick(0.2, &catalog, &mut creatures, &mut player);
@@ -1679,7 +1679,7 @@ mod tests {
         for _ in 0..80 {
             runner.tick(0.1, &catalog, &mut creatures, &mut player);
         }
-        assert_eq!(runner.cooldown(7, "judgment"), 0.0);
+        assert_eq!(runner.cooldown(PlayerId(7), "judgment"), 0.0);
     }
 
     #[test]
@@ -1689,10 +1689,10 @@ mod tests {
         let mut stats = CharacterStats::new(PlayerClass::WarPriest);
         stats.skills.insert("faithArmor".into(), 2);
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 1, &mut stats, "faithArmor", Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.cast(&catalog, PlayerId(1), &mut stats, "faithArmor", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         let tick = runner.tick(1.0, &catalog, &mut creatures, &mut player);
-        assert_eq!(tick.changed, vec![1]);
+        assert_eq!(tick.changed, vec![PlayerId(1)]);
         assert_eq!(stats.shield, 30.0);
         let hp = stats.hp;
         stats.take_hit(10.0, Some(DamageKind::Physical));
@@ -1709,8 +1709,8 @@ mod tests {
         let mut runner = SkillRunner::new();
         let mut mines = Vec::new();
         for _ in 0..4 {
-            runner.cast(&catalog, 3, &mut stats, "shrapnelMine", Vec3::NEG_Z, None).unwrap();
-            let mut player = SoloPlayer { id: 3, feet, stats: &mut stats };
+            runner.cast(&catalog, PlayerId(3), &mut stats, "shrapnelMine", Vec3::NEG_Z, None).unwrap();
+            let mut player = SoloPlayer { id: PlayerId(3), feet, stats: &mut stats };
             let mut summoned = Vec::new();
             for _ in 0..20 {
                 summoned.extend(runner.tick(0.5, &catalog, &mut creatures, &mut player).impacts.into_iter().flat_map(|i| i.summoned));
@@ -1719,15 +1719,15 @@ mod tests {
             mines.extend(summoned);
         }
         // Trois mines au plus au rang 1 : la plus ancienne a disparu
-        let present: Vec<u64> = runner.summoned_by(3).collect();
+        let present: Vec<herocraft_common::CreatureId> = runner.summoned_by(PlayerId(3)).collect();
         assert_eq!(present, mines[1..].to_vec());
         assert!(creatures.creatures().iter().all(|c| c.id != mines[0]));
         let mine = creatures.creatures().iter().find(|c| c.id == mines[3]).unwrap();
-        assert!(mine.tamed && mine.summoner == Some(3), "alliée du lanceur");
+        assert!(mine.tamed && mine.summoner == Some(PlayerId(3)), "alliée du lanceur");
         assert!(mine.position.distance(feet) > creatures.block_size(), "posée devant, au point visé");
 
         // En quittant la partie, l'ingénieur emporte ses mines
-        runner.forget_with(3, &mut creatures);
+        runner.forget_with(PlayerId(3), &mut creatures);
         assert!(creatures.creatures().iter().all(|c| c.summoner.is_none()));
     }
 
@@ -1747,34 +1747,34 @@ mod tests {
         let (mut creatures, feet) = world();
         let near = creatures.creatures()[0].id;
         let cow = creatures.creatures()[0].species;
-        creatures.wound(near, feet, 5, 10_000.0);
+        creatures.wound(near, feet, PlayerId(5), 10_000.0);
         let mut stats = CharacterStats::new(PlayerClass::Necromancer);
         stats.skills.insert("voidLegion".into(), 1);
         stats.skills.insert("shadowDecoy".into(), 1);
         stats.mana = 1000.0;
         stats.stamina = 1000.0;
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 5, &mut stats, "voidLegion", Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 5, feet, stats: &mut stats };
-        let summoned: Vec<u64> = (0..10).flat_map(|_| runner.tick(0.2, &catalog, &mut creatures, &mut player).impacts).flat_map(|i| i.summoned).collect();
+        runner.cast(&catalog, PlayerId(5), &mut stats, "voidLegion", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(5), feet, stats: &mut stats };
+        let summoned: Vec<herocraft_common::CreatureId> = (0..10).flat_map(|_| runner.tick(0.2, &catalog, &mut creatures, &mut player).impacts).flat_map(|i| i.summoned).collect();
         assert_eq!(summoned.len(), 1, "une ombre par cadavre");
         assert!(creatures.creatures().iter().all(|c| c.id != near), "le cadavre est devenu l'ombre");
         let shade = creatures.creatures().iter().find(|c| c.id == summoned[0]).unwrap();
         assert_eq!(shade.copy, Some(cow as u32));
         assert_eq!(stats.shield, 0.0, "pas de bouclier avant l'implosion");
         // Au bout de leur durée (8 s au rang 1), les ombres implosent en bouclier
-        let mut player = SoloPlayer { id: 5, feet, stats: &mut stats };
+        let mut player = SoloPlayer { id: PlayerId(5), feet, stats: &mut stats };
         for _ in 0..40 {
             runner.tick(0.2, &catalog, &mut creatures, &mut player);
         }
         assert!(creatures.creatures().iter().all(|c| c.id != summoned[0]), "l'ombre a implosé");
         assert!(stats.shield > 0.0, "le nécromancien reçoit son bouclier à l'implosion");
 
-        runner.cast(&catalog, 5, &mut stats, "shadowDecoy", Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 5, feet, stats: &mut stats };
-        let decoy: Vec<u64> = (0..10).flat_map(|_| runner.tick(0.2, &catalog, &mut creatures, &mut player).impacts).flat_map(|i| i.summoned).collect();
+        runner.cast(&catalog, PlayerId(5), &mut stats, "shadowDecoy", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(5), feet, stats: &mut stats };
+        let decoy: Vec<herocraft_common::CreatureId> = (0..10).flat_map(|_| runner.tick(0.2, &catalog, &mut creatures, &mut player).impacts).flat_map(|i| i.summoned).collect();
         let decoy = creatures.creatures().iter().find(|c| c.id == decoy[0]).unwrap();
-        assert_eq!((decoy.copy, decoy.summoner), (Some(herocraft_common::COPY_SUMMONER), Some(5)));
+        assert_eq!((decoy.copy, decoy.summoner), (Some(herocraft_common::COPY_SUMMONER), Some(PlayerId(5))));
     }
 
     #[test]
@@ -1788,41 +1788,41 @@ mod tests {
         stats.mana = 1000.0;
         stats.stamina = 1000.0;
         let mut runner = SkillRunner::new();
-        assert_eq!(runner.cast(&catalog, 5, &mut stats, "stagAntlers", Vec3::NEG_Z, None), Err(CastError::NotInForm));
-        runner.cast(&catalog, 5, &mut stats, "ancientStag", Vec3::NEG_Z, None).unwrap();
-        assert_eq!(runner.form(5), Some("ancientStag"));
-        assert_eq!(runner.cast(&catalog, 5, &mut stats, "packClaws", Vec3::NEG_Z, None), Err(CastError::InForm));
-        runner.cast(&catalog, 5, &mut stats, "stagAntlers", Vec3::NEG_Z, None).unwrap();
+        assert_eq!(runner.cast(&catalog, PlayerId(5), &mut stats, "stagAntlers", Vec3::NEG_Z, None), Err(CastError::NotInForm));
+        runner.cast(&catalog, PlayerId(5), &mut stats, "ancientStag", Vec3::NEG_Z, None).unwrap();
+        assert_eq!(runner.form(PlayerId(5)), Some("ancientStag"));
+        assert_eq!(runner.cast(&catalog, PlayerId(5), &mut stats, "packClaws", Vec3::NEG_Z, None), Err(CastError::InForm));
+        runner.cast(&catalog, PlayerId(5), &mut stats, "stagAntlers", Vec3::NEG_Z, None).unwrap();
         // Le cerf régénère : la vie remonte
         stats.hp = 10.0;
-        let mut player = SoloPlayer { id: 5, feet, stats: &mut stats };
+        let mut player = SoloPlayer { id: PlayerId(5), feet, stats: &mut stats };
         for _ in 0..20 {
             runner.tick(0.25, &catalog, &mut creatures, &mut player);
         }
         assert!(stats.hp > 12.0, "{}", stats.hp);
         // La forme passée, plus d'attaques de cerf
-        let mut player = SoloPlayer { id: 5, feet, stats: &mut stats };
+        let mut player = SoloPlayer { id: PlayerId(5), feet, stats: &mut stats };
         for _ in 0..100 {
             runner.tick(0.25, &catalog, &mut creatures, &mut player);
         }
-        assert_eq!(runner.form(5), None);
+        assert_eq!(runner.form(PlayerId(5)), None);
     }
 
     /// Deux joueurs côte à côte
     struct Pair<'a> {
         feet: Vec3,
-        a: (u64, &'a mut CharacterStats),
-        b: (u64, &'a mut CharacterStats),
+        a: (PlayerId, &'a mut CharacterStats),
+        b: (PlayerId, &'a mut CharacterStats),
     }
 
     impl SkillPlayers for Pair<'_> {
-        fn ids(&self) -> Vec<u64> {
+        fn ids(&self) -> Vec<PlayerId> {
             vec![self.a.0, self.b.0]
         }
-        fn feet(&self, id: u64) -> Option<Vec3> {
+        fn feet(&self, id: PlayerId) -> Option<Vec3> {
             (id == self.a.0 || id == self.b.0).then_some(self.feet)
         }
-        fn stats_mut(&mut self, id: u64) -> Option<&mut CharacterStats> {
+        fn stats_mut(&mut self, id: PlayerId) -> Option<&mut CharacterStats> {
             if id == self.a.0 {
                 Some(&mut *self.a.1)
             } else if id == self.b.0 {
@@ -1859,12 +1859,12 @@ mod tests {
         creatures.advance_projectiles(dt, &feet);
     }
 
-    fn health(w: &CreatureWorld, id: u64) -> f32 {
+    fn health(w: &CreatureWorld, id: CreatureId) -> f32 {
         w.creatures().iter().find(|c| c.id == id).map(|c| c.health).unwrap()
     }
 
     /// Un monde de vaches en file devant le lanceur (direction visée : -Z), à ces distances en blocs
-    fn cows_in_line(distances: &[f32]) -> (CreatureWorld, Vec3, Vec<u64>) {
+    fn cows_in_line(distances: &[f32]) -> (CreatureWorld, Vec3, Vec<CreatureId>) {
         let registry = Arc::new(CreatureRegistry::load_default());
         let base_radius = 10_000.0;
         let mut world = CreatureWorld::new(base_radius, 1, registry.clone());
@@ -1875,7 +1875,7 @@ mod tests {
         (world, feet, ids)
     }
 
-    fn hurt(w: &CreatureWorld, id: u64) -> bool {
+    fn hurt(w: &CreatureWorld, id: CreatureId) -> bool {
         w.creatures().iter().find(|c| c.id == id).is_some_and(|c| c.health < w.registry().get(c.species).unwrap().health)
     }
 
@@ -1909,13 +1909,13 @@ mod tests {
         let aim = Vec3::new(3.0, 0.0, -9.0).normalize();
         stats.skills.insert("piercingArrow".into(), 1);
         stats.stamina = 100.0;
-        runner.cast(&catalog, 1, &mut stats, "piercingArrow", aim, None).unwrap();
+        runner.cast(&catalog, PlayerId(1), &mut stats, "piercingArrow", aim, None).unwrap();
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 2.0);
         assert!(!hurt(&creatures, behind), "le mur arrête la flèche perforante");
         // La Frappe d'Étherium traverse tout
         stats.skills.insert("etheriumStrike".into(), 1);
         stats.stamina = 100.0;
-        runner.cast(&catalog, 1, &mut stats, "etheriumStrike", aim, None).unwrap();
+        runner.cast(&catalog, PlayerId(1), &mut stats, "etheriumStrike", aim, None).unwrap();
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 3.0);
         assert!(hurt(&creatures, behind), "la Frappe d'Étherium passe le mur");
     }
@@ -1928,7 +1928,7 @@ mod tests {
         let block = creatures.block_size();
         let cow = creatures.registry().find("vache").unwrap();
         let spots = [(0.0, -6.0), (2.0, -7.0), (4.0, -6.5), (6.0, -7.5), (20.0, -7.0)];
-        let cows: Vec<u64> = spots.iter().map(|(x, z)| creatures.spawn(cow, feet + Vec3::new(x * block, 0.0, z * block))).collect();
+        let cows: Vec<herocraft_common::CreatureId> = spots.iter().map(|(x, z)| creatures.spawn(cow, feet + Vec3::new(x * block, 0.0, z * block))).collect();
         let mut stats = CharacterStats::new(PlayerClass::WarPriest);
         let mut runner = SkillRunner::new();
         cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "shockVolley", None);
@@ -1946,13 +1946,13 @@ mod tests {
         // Mur vivant : une garde de face, dans la direction visée
         cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "livingWall", None);
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 0.2);
-        let guard = creatures.guards().iter().find(|g| g.key == 1).copied().expect("une garde");
+        let guard = creatures.guards().iter().find(|g| g.key == PlayerId(1)).copied().expect("une garde");
         let (facing, cos) = guard.front.expect("de face");
         assert!(facing.dot(Vec3::NEG_Z) > 0.99 && (cos - 0.5).abs() < 1e-3, "{facing} {cos}");
         // Manteau de Zéphyr : les petits projectiles sont déviés
         cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "zephyrMantle", None);
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 0.2);
-        let guard = creatures.guards().iter().find(|g| g.key == 1).copied().unwrap();
+        let guard = creatures.guards().iter().find(|g| g.key == PlayerId(1)).copied().unwrap();
         assert_eq!(guard.deflect, Some(herocraft_common::ProjectileSize::Small));
         // Les deux cessent avec leur durée
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 9.0);
@@ -1973,12 +1973,12 @@ mod tests {
         stats.skills.insert("purification".into(), 1);
         stats.hp = 50.0;
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 1, &mut stats, "purification", Vec3::NEG_Z, None).unwrap();
+        runner.cast(&catalog, PlayerId(1), &mut stats, "purification", Vec3::NEG_Z, None).unwrap();
         // Ralenti, étourdi et empoisonné après le lancement, avant la frappe
         stats.apply_slow(0.5, 20.0);
         stats.apply_stun(20.0);
-        runner.over_time.push(OverTime { caster: 9, target: SkillTarget::Player(1), per_second: -4.0, left: 20.0, next: OVER_TIME_STEP, moving: 1.0, last: None, kind: DamageKind::Physical });
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.over_time.push(OverTime { caster: PlayerId(9), target: SkillTarget::Player(PlayerId(1)), per_second: -4.0, left: 20.0, next: OVER_TIME_STEP, moving: 1.0, last: None, kind: DamageKind::Physical });
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         until_impact(&mut runner, &catalog, &mut creatures, &mut player);
         assert!(stats.hp > 50.0, "la Purification soigne");
         assert!(!stats.is_stunned() && stats.status_speed() == 1.0, "ralenti et étourdissement retirés");
@@ -1994,11 +1994,11 @@ mod tests {
         paladin.stamina = 100.0;
         let mut ally = CharacterStats::new(PlayerClass::WarPriest);
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 1, &mut paladin, "virtuousIntervention", Vec3::NEG_Z, None).unwrap();
-        let mut pair = Pair { feet, a: (1, &mut paladin), b: (2, &mut ally) };
+        runner.cast(&catalog, PlayerId(1), &mut paladin, "virtuousIntervention", Vec3::NEG_Z, None).unwrap();
+        let mut pair = Pair { feet, a: (PlayerId(1), &mut paladin), b: (PlayerId(2), &mut ally) };
         until_impact(&mut runner, &catalog, &mut creatures, &mut pair);
-        assert_eq!(runner.share_damage(2, 20.0), (0.0, Some((1, 20.0))), "le paladin encaisse le coup en entier");
-        assert_eq!(runner.share_damage(2, 20.0), (20.0, None), "le lien se défait après un coup");
+        assert_eq!(runner.share_damage(PlayerId(2), 20.0), (0.0, Some((PlayerId(1), 20.0))), "le paladin encaisse le coup en entier");
+        assert_eq!(runner.share_damage(PlayerId(2), 20.0), (20.0, None), "le lien se défait après un coup");
     }
 
     #[test]
@@ -2009,8 +2009,8 @@ mod tests {
         stats.skills.insert("glimmeringGuard".into(), 1);
         stats.stamina = 100.0;
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 1, &mut stats, "glimmeringGuard", Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.cast(&catalog, PlayerId(1), &mut stats, "glimmeringGuard", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         until_impact(&mut runner, &catalog, &mut creatures, &mut player);
         stats.mana = 10.0;
         let hp = stats.hp;
@@ -2036,12 +2036,12 @@ mod tests {
         let mut stats = CharacterStats::new(PlayerClass::WarPriest);
         stats.skills.insert("dawnWeapon".into(), 1);
         let mut runner = SkillRunner::new();
-        assert_eq!(runner.hit_factor(1, shadow, &creatures), 1.0);
-        runner.cast(&catalog, 1, &mut stats, "dawnWeapon", Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        assert_eq!(runner.hit_factor(PlayerId(1), shadow, &creatures), 1.0);
+        runner.cast(&catalog, PlayerId(1), &mut stats, "dawnWeapon", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         until_impact(&mut runner, &catalog, &mut creatures, &mut player);
-        assert!((runner.hit_factor(1, cow, &creatures) - 1.4).abs() < 1e-5, "bonus de dégâts ordinaire");
-        assert!((runner.hit_factor(1, shadow, &creatures) - 1.8).abs() < 1e-5, "doublé contre une créature de l'ombre");
+        assert!((runner.hit_factor(PlayerId(1), cow, &creatures) - 1.4).abs() < 1e-5, "bonus de dégâts ordinaire");
+        assert!((runner.hit_factor(PlayerId(1), shadow, &creatures) - 1.8).abs() < 1e-5, "doublé contre une créature de l'ombre");
     }
 
     #[test]
@@ -2055,15 +2055,15 @@ mod tests {
         stats.stamina = 100.0;
         stats.hp = 50.0;
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 1, &mut stats, "frenziedMutilation", Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.cast(&catalog, PlayerId(1), &mut stats, "frenziedMutilation", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         until_impact(&mut runner, &catalog, &mut creatures, &mut player);
         assert_eq!(stats.hp, 55.0, "un ennemi touché : un soin");
         // Loin de tout, la rafale manque et blesse
         let far = feet + Vec3::new(0.0, 0.0, 8.0 * creatures.block_size());
         runner.cooldowns.clear();
-        runner.cast(&catalog, 1, &mut stats, "frenziedMutilation", Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet: far, stats: &mut stats };
+        runner.cast(&catalog, PlayerId(1), &mut stats, "frenziedMutilation", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet: far, stats: &mut stats };
         until_impact(&mut runner, &catalog, &mut creatures, &mut player);
         assert_eq!(stats.hp, 47.0, "aucun ennemi touché : 8 points perdus");
     }
@@ -2076,16 +2076,16 @@ mod tests {
         stats.skills.insert("dyingFrenzy".into(), 1);
         stats.stamina = 100.0;
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 1, &mut stats, "dyingFrenzy", Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.cast(&catalog, PlayerId(1), &mut stats, "dyingFrenzy", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         until_impact(&mut runner, &catalog, &mut creatures, &mut player);
-        assert!(runner.buff(1, BuffStat::Damage) < 0.05, "presque rien à pleine vie");
+        assert!(runner.buff(PlayerId(1), BuffStat::Damage) < 0.05, "presque rien à pleine vie");
         stats.hp = stats.max_hp * 0.25;
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         runner.tick(0.01, &catalog, &mut creatures, &mut player);
-        assert!((runner.buff(1, BuffStat::Damage) - 0.6).abs() < 0.01, "les trois quarts du bonus aux trois quarts de vie perdus");
-        assert!((runner.buff(1, BuffStat::AttackSpeed) - 0.3).abs() < 0.01, "sa vitesse d'attaque suit aussi");
-        assert_eq!(runner.buff(1, BuffStat::Speed), 0.0, "plus de vitesse de déplacement");
+        assert!((runner.buff(PlayerId(1), BuffStat::Damage) - 0.6).abs() < 0.01, "les trois quarts du bonus aux trois quarts de vie perdus");
+        assert!((runner.buff(PlayerId(1), BuffStat::AttackSpeed) - 0.3).abs() < 0.01, "sa vitesse d'attaque suit aussi");
+        assert_eq!(runner.buff(PlayerId(1), BuffStat::Speed), 0.0, "plus de vitesse de déplacement");
     }
 
     #[test]
@@ -2098,13 +2098,13 @@ mod tests {
         stats.skills.insert("etheriumAbomination".into(), 1);
         stats.stamina = 100.0;
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 1, &mut stats, "etheriumAbomination", Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.cast(&catalog, PlayerId(1), &mut stats, "etheriumAbomination", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         until_impact(&mut runner, &catalog, &mut creatures, &mut player);
         let before = health(&creatures, cow);
         // Il se vide de son sang jusqu'à zéro : la nova part, il survit
         stats.hp = 1.0;
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         let mut novas = 0;
         let mut died = false;
         for _ in 0..40 {
@@ -2114,14 +2114,14 @@ mod tests {
         }
         assert_eq!((novas, died), (1, false), "une nova, et pas de mort");
         assert!(health(&creatures, cow) <= before - 6.0 * SKILL_BASE_DAMAGE, "la nova frappe autour");
-        assert!(stats.hp > 0.0 && runner.buff(1, BuffStat::Damage) == 0.0, "il survit, l'Abomination consumée");
+        assert!(stats.hp > 0.0 && runner.buff(PlayerId(1), BuffStat::Damage) == 0.0, "il survit, l'Abomination consumée");
         // Sans elle, le même saignement tue
         let mut plain = CharacterStats::new(PlayerClass::WarPriest);
         plain.hp = 1.0;
-        runner.over_time.push(OverTime { caster: 2, target: SkillTarget::Player(2), per_second: -4.0, left: 5.0, next: OVER_TIME_STEP, moving: 1.0, last: None, kind: DamageKind::Physical });
-        let mut player = SoloPlayer { id: 2, feet, stats: &mut plain };
-        let died: Vec<u64> = (0..10).flat_map(|_| runner.tick(0.1, &catalog, &mut creatures, &mut player).died).collect();
-        assert_eq!(died, vec![2]);
+        runner.over_time.push(OverTime { caster: PlayerId(2), target: SkillTarget::Player(PlayerId(2)), per_second: -4.0, left: 5.0, next: OVER_TIME_STEP, moving: 1.0, last: None, kind: DamageKind::Physical });
+        let mut player = SoloPlayer { id: PlayerId(2), feet, stats: &mut plain };
+        let died: Vec<herocraft_common::PlayerId> = (0..10).flat_map(|_| runner.tick(0.1, &catalog, &mut creatures, &mut player).died).collect();
+        assert_eq!(died, vec![PlayerId(2)]);
     }
 
     #[test]
@@ -2137,26 +2137,26 @@ mod tests {
         // Le coup ne tue pas : pas de soin
         creatures.creature_mut(cow).unwrap().health = 1000.0;
         stats.hp = 20.0;
-        runner.cast(&catalog, 1, &mut stats, "condemnation", Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.cast(&catalog, PlayerId(1), &mut stats, "condemnation", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         until_impact(&mut runner, &catalog, &mut creatures, &mut player);
         assert!(stats.hp < 25.0, "la cible survit : pas d'explosion de soin");
         // Marteau Consacré : chaque attaque soigne autour de la cible
-        runner.cast(&catalog, 1, &mut stats, "hallowedHammer", Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.cast(&catalog, PlayerId(1), &mut stats, "hallowedHammer", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         until_impact(&mut runner, &catalog, &mut creatures, &mut player);
         stats.hp = 20.0;
         let at = creatures.creatures()[0].position;
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
-        assert_eq!(runner.ride(1, &[at], &mut creatures, &mut player), vec![1]);
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
+        assert_eq!(runner.ride(PlayerId(1), &[at], &mut creatures, &mut player), vec![PlayerId(1)]);
         assert_eq!(stats.hp, 26.0, "un coup d'arme soigne les alliés proches de la cible");
         // Le coup tue : le cadavre éclate en soin
         creatures.creature_mut(cow).unwrap().health = 1.0;
         runner.cooldowns.clear();
         runner.buffs.clear();
         stats.hp = 20.0;
-        runner.cast(&catalog, 1, &mut stats, "condemnation", Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.cast(&catalog, PlayerId(1), &mut stats, "condemnation", Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         until_impact(&mut runner, &catalog, &mut creatures, &mut player);
         assert!(stats.hp >= 50.0, "30 points rendus autour du cadavre");
     }
@@ -2166,14 +2166,14 @@ mod tests {
         stats.skills.insert(skill.into(), 1);
         stats.mana = 100.0;
         stats.stamina = 100.0;
-        runner.cast(catalog, 1, stats, skill, Vec3::NEG_Z, aimed).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats };
+        runner.cast(catalog, PlayerId(1), stats, skill, Vec3::NEG_Z, aimed).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats };
         until_impact(runner, catalog, creatures, &mut player);
     }
 
     /// Avance de `seconds`, le joueur 1 aux pieds `feet`
     fn pass(runner: &mut SkillRunner, catalog: &SkillCatalog, creatures: &mut CreatureWorld, stats: &mut CharacterStats, feet: Vec3, seconds: f32) {
-        let mut player = SoloPlayer { id: 1, feet, stats };
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats };
         for _ in 0..(seconds / 0.1).round() as usize {
             runner.tick(0.1, catalog, creatures, &mut player);
             fly(creatures, &mut player, 0.1);
@@ -2239,7 +2239,7 @@ mod tests {
         let mut stats = CharacterStats::new(PlayerClass::WarPriest);
         let mut runner = SkillRunner::new();
         // Le mélange se lance par la Fusion : ici la frappe est posée telle quelle
-        runner.pending.push(Pending { caster: 1, skill: "soothingMist".into(), rank: 1, aim: Vec3::NEG_Z, aimed: None, left: 0.0, crit: false, power: 1.0, size: 1.0, kind: DamageKind::Physical });
+        runner.pending.push(Pending { caster: PlayerId(1), skill: "soothingMist".into(), rank: 1, aim: Vec3::NEG_Z, aimed: None, left: 0.0, crit: false, power: 1.0, size: 1.0, kind: DamageKind::Physical });
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 0.1);
         assert!(stats.is_invisible());
         // Le brouillard le recache tant qu'il y reste
@@ -2283,8 +2283,8 @@ mod tests {
         let (mut creatures, feet) = world();
         let block = creatures.block_size();
         let skeleton = creatures.registry().find("skeletonServant").unwrap();
-        let mine = creatures.summon(skeleton, feet + Vec3::new(block, 0.0, 0.0), 0.0, 1);
-        let theirs = creatures.summon(skeleton, feet + Vec3::new(-block, 0.0, 0.0), 0.0, 2);
+        let mine = creatures.summon(skeleton, feet + Vec3::new(block, 0.0, 0.0), 0.0, PlayerId(1));
+        let theirs = creatures.summon(skeleton, feet + Vec3::new(-block, 0.0, 0.0), 0.0, PlayerId(2));
         creatures.creature_mut(mine).unwrap().health = 5.0;
         creatures.creature_mut(theirs).unwrap().health = 5.0;
         let mut stats = CharacterStats::new(PlayerClass::WarPriest);
@@ -2306,9 +2306,9 @@ mod tests {
         let mut stats = CharacterStats::new(PlayerClass::WarPriest);
         let mut runner = SkillRunner::new();
         // Le mélange se lance par la Fusion : ici la frappe est posée telle quelle
-        runner.pending.push(Pending { caster: 1, skill: "magmaWall".into(), rank: 1, aim: Vec3::NEG_Z, aimed: Some(spot), left: 0.0, crit: false, power: 1.0, size: 1.0, kind: DamageKind::Physical });
+        runner.pending.push(Pending { caster: PlayerId(1), skill: "magmaWall".into(), rank: 1, aim: Vec3::NEG_Z, aimed: Some(spot), left: 0.0, crit: false, power: 1.0, size: 1.0, kind: DamageKind::Physical });
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 0.5);
-        assert_eq!(runner.summoned_by(1).count(), 1, "le mur est là");
+        assert_eq!(runner.summoned_by(PlayerId(1)).count(), 1, "le mur est là");
         creatures.creature_mut(cow).unwrap().position = spot + Vec3::new(block, 0.0, 0.0);
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
         assert!(health(&creatures, cow) < 1000.0, "la lave brûle qui la traverse");
@@ -2322,9 +2322,9 @@ mod tests {
         let mut stats = CharacterStats::new(PlayerClass::WarPriest);
         let mut runner = SkillRunner::new();
         // Donné par le nœud de la Terre : ici la frappe est posée telle quelle
-        runner.pending.push(Pending { caster: 1, skill: "telluricRampart".into(), rank: 1, aim: Vec3::NEG_Z, aimed: None, left: 0.0, crit: false, power: 1.0, size: 1.0, kind: DamageKind::Physical });
+        runner.pending.push(Pending { caster: PlayerId(1), skill: "telluricRampart".into(), rank: 1, aim: Vec3::NEG_Z, aimed: None, left: 0.0, crit: false, power: 1.0, size: 1.0, kind: DamageKind::Physical });
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 0.1);
-        let wall = runner.summoned_by(1).next().expect("le mur");
+        let wall = runner.summoned_by(PlayerId(1)).next().expect("le mur");
         let at = |c: &CreatureWorld| c.creatures().iter().find(|x| x.id == wall).unwrap().position;
         let start = at(&creatures);
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 3.0);
@@ -2340,8 +2340,8 @@ mod tests {
         let (mut creatures, feet) = world();
         let block = creatures.block_size();
         let turret = creatures.registry().find("ballisticTurret").unwrap();
-        let mine = creatures.summon(turret, feet + Vec3::new(3.0 * block, 0.0, 0.0), 0.0, 1);
-        let theirs = creatures.summon(turret, feet + Vec3::new(-3.0 * block, 0.0, 0.0), 0.0, 2);
+        let mine = creatures.summon(turret, feet + Vec3::new(3.0 * block, 0.0, 0.0), 0.0, PlayerId(1));
+        let theirs = creatures.summon(turret, feet + Vec3::new(-3.0 * block, 0.0, 0.0), 0.0, PlayerId(2));
         creatures.creature_mut(mine).unwrap().health = 10.0;
         creatures.creature_mut(theirs).unwrap().health = 10.0;
         let mut stats = CharacterStats::new(PlayerClass::WarPriest);
@@ -2362,12 +2362,12 @@ mod tests {
         let mut stats = CharacterStats::new(PlayerClass::WarPriest);
         let mut runner = SkillRunner::new();
         let mine = creatures.registry().find("shrapnelMine").unwrap();
-        let id = creatures.summon(mine, feet + Vec3::new(0.0, 0.0, 40.0 * creatures.block_size()), 0.0, 1);
-        creatures.spawned.push((1, id, 2.0));
+        let id = creatures.summon(mine, feet + Vec3::new(0.0, 0.0, 40.0 * creatures.block_size()), 0.0, PlayerId(1));
+        creatures.spawned.push((PlayerId(1), id, 2.0));
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
-        assert_eq!(runner.summoned_by(1).collect::<Vec<_>>(), vec![id]);
+        assert_eq!(runner.summoned_by(PlayerId(1)).collect::<Vec<_>>(), vec![id]);
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.5);
-        assert_eq!(runner.summoned_by(1).count(), 0);
+        assert_eq!(runner.summoned_by(PlayerId(1)).count(), 0);
     }
 
     #[test]
@@ -2380,13 +2380,13 @@ mod tests {
         stats.skills.insert("shadowVeil".into(), 1);
         stats.skills.insert("ambush".into(), 1);
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 4, &mut stats, "shadowVeil", Vec3::NEG_Z, None).unwrap();
-        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 4, feet, stats: &mut stats });
+        runner.cast(&catalog, PlayerId(4), &mut stats, "shadowVeil", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(4), feet, stats: &mut stats });
         assert!(stats.is_invisible(), "le voile ne rend pas invisible");
 
-        runner.cast(&catalog, 4, &mut stats, "ambush", Vec3::NEG_Z, None).unwrap();
+        runner.cast(&catalog, PlayerId(4), &mut stats, "ambush", Vec3::NEG_Z, None).unwrap();
         assert!(!stats.is_invisible(), "l'attaque ne dévoile pas");
-        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 4, feet, stats: &mut stats });
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(4), feet, stats: &mut stats });
         let expected = 2.4 * SKILL_BASE_DAMAGE * CRITICAL_FACTOR;
         assert!((1000.0 - health(&creatures, cow) - expected).abs() < 0.01, "pas de critique : {} dégâts", 1000.0 - health(&creatures, cow));
     }
@@ -2402,16 +2402,16 @@ mod tests {
         stats.skills.insert("hawkEye".into(), 1);
         let mut runner = SkillRunner::new();
         // Chasse mortelle : le point faible est toujours trouvé
-        runner.cast(&catalog, 2, &mut stats, "deadlyHunt", Vec3::NEG_Z, None).unwrap();
-        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 2, feet, stats: &mut stats });
+        runner.cast(&catalog, PlayerId(2), &mut stats, "deadlyHunt", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(2), feet, stats: &mut stats });
         let expected = 1.8 * SKILL_BASE_DAMAGE * CRITICAL_FACTOR;
         assert!((1000.0 - health(&creatures, cow) - expected).abs() < 0.01, "pas de critique : {} dégâts", 1000.0 - health(&creatures, cow));
 
-        runner.tick(1.0, &catalog, &mut creatures, &mut SoloPlayer { id: 2, feet, stats: &mut stats });
-        assert_eq!(runner.critical_chance(2, cow), 0.0, "la marque de la chasse ne dure pas");
-        runner.cast(&catalog, 2, &mut stats, "hawkEye", Vec3::NEG_Z, None).unwrap();
-        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 2, feet, stats: &mut stats });
-        assert!((runner.critical_chance(2, cow) - 0.3).abs() < 1e-6, "l'œil de faucon : {}", runner.critical_chance(2, cow));
+        runner.tick(1.0, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(2), feet, stats: &mut stats });
+        assert_eq!(runner.critical_chance(PlayerId(2), cow), 0.0, "la marque de la chasse ne dure pas");
+        runner.cast(&catalog, PlayerId(2), &mut stats, "hawkEye", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(2), feet, stats: &mut stats });
+        assert!((runner.critical_chance(PlayerId(2), cow) - 0.3).abs() < 1e-6, "l'œil de faucon : {}", runner.critical_chance(PlayerId(2), cow));
 
         // Sur mille tirages à 30 %, à peu près trois cents critiques
         let crits = (0..1000).filter(|_| runner.roll() < 0.3).count();
@@ -2428,13 +2428,13 @@ mod tests {
         stats.skills.insert("tracerRound".into(), 1);
         stats.skills.insert("radiantStrike".into(), 1);
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 3, &mut stats, "tracerRound", Vec3::NEG_Z, None).unwrap();
-        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 3, feet, stats: &mut stats });
-        assert!(runner.critical_chance(3, cow) > 0.0, "la balle traçante ne marque pas");
-        assert_eq!(runner.critical_chance(4, cow), 0.0, "la marque ne sert que son tireur");
+        runner.cast(&catalog, PlayerId(3), &mut stats, "tracerRound", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(3), feet, stats: &mut stats });
+        assert!(runner.critical_chance(PlayerId(3), cow) > 0.0, "la balle traçante ne marque pas");
+        assert_eq!(runner.critical_chance(PlayerId(4), cow), 0.0, "la marque ne sert que son tireur");
 
-        runner.cast(&catalog, 3, &mut stats, "radiantStrike", Vec3::NEG_Z, None).unwrap();
-        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 3, feet, stats: &mut stats });
+        runner.cast(&catalog, PlayerId(3), &mut stats, "radiantStrike", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(3), feet, stats: &mut stats });
         assert!(creatures.is_blind(cow), "la frappe radieuse n'aveugle pas");
     }
 
@@ -2449,8 +2449,8 @@ mod tests {
         // Tombé : le serveur l'a déjà ranimé, il attend sur son écran de mort
         ally.fallen = true;
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 1, &mut chaplain, "supremeIntervention", Vec3::NEG_Z, None).unwrap();
-        until_impact(&mut runner, &catalog, &mut creatures, &mut Pair { feet, a: (1, &mut chaplain), b: (2, &mut ally) });
+        runner.cast(&catalog, PlayerId(1), &mut chaplain, "supremeIntervention", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut Pair { feet, a: (PlayerId(1), &mut chaplain), b: (PlayerId(2), &mut ally) });
         assert!(!ally.fallen && ally.revived == 1, "l'allié n'est pas relevé");
         assert!((ally.hp - 0.5 * ally.max_hp).abs() < 0.01, "relevé avec {} / {}", ally.hp, ally.max_hp);
         assert_eq!(chaplain.revived, 0, "le chapelain debout n'est pas « relevé »");
@@ -2463,9 +2463,9 @@ mod tests {
         stats.skills.insert("judgment".into(), 1);
         stats.apply_stun(1.0);
         let mut runner = SkillRunner::new();
-        assert_eq!(runner.cast(&catalog, 7, &mut stats, "judgment", Vec3::NEG_Z, None), Err(CastError::Stunned));
+        assert_eq!(runner.cast(&catalog, PlayerId(7), &mut stats, "judgment", Vec3::NEG_Z, None), Err(CastError::Stunned));
         stats.tick_status(1.5);
-        assert_eq!(runner.cast(&catalog, 7, &mut stats, "judgment", Vec3::NEG_Z, None), Ok(1));
+        assert_eq!(runner.cast(&catalog, PlayerId(7), &mut stats, "judgment", Vec3::NEG_Z, None), Ok(1));
     }
     #[test]
     fn fusion_mixes_the_last_two_spells_or_amplifies_the_same_element() {
@@ -2481,38 +2481,38 @@ mod tests {
         stats.mana = 10_000.0;
         let mut runner = SkillRunner::new();
         let run = |runner: &mut SkillRunner, stats: &mut CharacterStats, creatures: &mut CreatureWorld| {
-            until_impact(runner, &catalog, creatures, &mut SoloPlayer { id: 6, feet, stats });
-            runner.tick(6.0, &catalog, creatures, &mut SoloPlayer { id: 6, feet, stats });
+            until_impact(runner, &catalog, creatures, &mut SoloPlayer { id: PlayerId(6), feet, stats });
+            runner.tick(6.0, &catalog, creatures, &mut SoloPlayer { id: PlayerId(6), feet, stats });
         };
-        assert_eq!(runner.cast(&catalog, 6, &mut stats, "fusion", Vec3::NEG_Z, Some(at)), Err(CastError::FusionEmpty));
-        assert_eq!(runner.cast(&catalog, 6, &mut stats, "scaldingTyphoon", Vec3::NEG_Z, Some(at)), Err(CastError::FusionOnly));
+        assert_eq!(runner.cast(&catalog, PlayerId(6), &mut stats, "fusion", Vec3::NEG_Z, Some(at)), Err(CastError::FusionEmpty));
+        assert_eq!(runner.cast(&catalog, PlayerId(6), &mut stats, "scaldingTyphoon", Vec3::NEG_Z, Some(at)), Err(CastError::FusionOnly));
 
         // Feu puis eau : le Typhon Bouillant, s'il est appris
-        runner.cast(&catalog, 6, &mut stats, "igneousOrb", Vec3::NEG_Z, Some(at)).unwrap();
+        runner.cast(&catalog, PlayerId(6), &mut stats, "igneousOrb", Vec3::NEG_Z, Some(at)).unwrap();
         run(&mut runner, &mut stats, &mut creatures);
-        runner.cast(&catalog, 6, &mut stats, "foamingWhip", Vec3::NEG_Z, None).unwrap();
+        runner.cast(&catalog, PlayerId(6), &mut stats, "foamingWhip", Vec3::NEG_Z, None).unwrap();
         run(&mut runner, &mut stats, &mut creatures);
-        assert_eq!(runner.cast(&catalog, 6, &mut stats, "fusion", Vec3::NEG_Z, Some(at)), Err(CastError::FusionLocked));
+        assert_eq!(runner.cast(&catalog, PlayerId(6), &mut stats, "fusion", Vec3::NEG_Z, Some(at)), Err(CastError::FusionLocked));
         stats.skills.insert("scaldingTyphoon".into(), 1);
-        let casting = runner.cast_as(&catalog, 6, &mut stats, "fusion", Vec3::NEG_Z, Some(at)).unwrap();
+        let casting = runner.cast_as(&catalog, PlayerId(6), &mut stats, "fusion", Vec3::NEG_Z, Some(at)).unwrap();
         assert_eq!((casting.skill.as_str(), casting.amplified), ("scaldingTyphoon", false));
         run(&mut runner, &mut stats, &mut creatures);
-        assert!(runner.recent_spells(6).is_empty(), "la Fusion consomme ses deux sorts");
+        assert!(runner.recent_spells(PlayerId(6)).is_empty(), "la Fusion consomme ses deux sorts");
 
         // Deux orbes : la seconde relancée amplifiée
-        runner.cast(&catalog, 6, &mut stats, "igneousOrb", Vec3::NEG_Z, Some(at)).unwrap();
+        runner.cast(&catalog, PlayerId(6), &mut stats, "igneousOrb", Vec3::NEG_Z, Some(at)).unwrap();
         run(&mut runner, &mut stats, &mut creatures);
-        runner.cast(&catalog, 6, &mut stats, "igneousOrb", Vec3::NEG_Z, Some(at)).unwrap();
+        runner.cast(&catalog, PlayerId(6), &mut stats, "igneousOrb", Vec3::NEG_Z, Some(at)).unwrap();
         run(&mut runner, &mut stats, &mut creatures);
         let before = health(&creatures, cow);
         let mana = stats.mana;
-        let casting = runner.cast_as(&catalog, 6, &mut stats, "fusion", Vec3::NEG_Z, Some(at)).unwrap();
+        let casting = runner.cast_as(&catalog, PlayerId(6), &mut stats, "fusion", Vec3::NEG_Z, Some(at)).unwrap();
         assert_eq!((casting.skill.as_str(), casting.amplified), ("igneousOrb", true));
         assert!((mana - stats.mana - 12.0 * 1.5).abs() < 0.01, "coût amplifié : {}", mana - stats.mana);
-        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 6, feet, stats: &mut stats });
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(6), feet, stats: &mut stats });
         let expected = 1.3 * SKILL_BASE_DAMAGE * 1.75;
         assert!((before - health(&creatures, cow) - expected).abs() < 0.01, "dégâts amplifiés : {}", before - health(&creatures, cow));
-        assert!(runner.cooldown(6, "fusion") > 0.0, "la Fusion a sa propre recharge");
+        assert!(runner.cooldown(PlayerId(6), "fusion") > 0.0, "la Fusion a sa propre recharge");
     }
 
     #[test]
@@ -2523,11 +2523,11 @@ mod tests {
         chaplain.skills.insert("martyrsMark".into(), 1);
         let mut ally = CharacterStats::new(PlayerClass::Soldier);
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 1, &mut chaplain, "martyrsMark", Vec3::NEG_Z, None).unwrap();
-        until_impact(&mut runner, &catalog, &mut creatures, &mut Pair { feet, a: (1, &mut chaplain), b: (2, &mut ally) });
-        let (kept, shared) = runner.share_damage(2, 10.0);
-        assert!((kept - 6.0).abs() < 1e-4 && shared == Some((1, 4.0)), "{kept} {shared:?}");
-        assert_eq!(runner.share_damage(1, 10.0), (10.0, None), "le chapelain ne se lie pas à lui-même");
+        runner.cast(&catalog, PlayerId(1), &mut chaplain, "martyrsMark", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut Pair { feet, a: (PlayerId(1), &mut chaplain), b: (PlayerId(2), &mut ally) });
+        let (kept, shared) = runner.share_damage(PlayerId(2), 10.0);
+        assert!((kept - 6.0).abs() < 1e-4 && shared == Some((PlayerId(1), 4.0)), "{kept} {shared:?}");
+        assert_eq!(runner.share_damage(PlayerId(1), 10.0), (10.0, None), "le chapelain ne se lie pas à lui-même");
     }
 
     #[test]
@@ -2542,19 +2542,19 @@ mod tests {
         stats.skills.insert("detonatingMark".into(), 1);
         stats.mana = 1000.0;
         let mut runner = SkillRunner::new();
-        runner.cast(&catalog, 3, &mut stats, "tracerRound", Vec3::NEG_Z, None).unwrap();
-        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 3, feet, stats: &mut stats });
+        runner.cast(&catalog, PlayerId(3), &mut stats, "tracerRound", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(3), feet, stats: &mut stats });
         let before = health(&creatures, cow);
         // Visé loin de la vache, à dix blocs sur le côté : le tir la retrouve
-        runner.cast(&catalog, 3, &mut stats, "detonatingMark", Vec3::X, Some(feet + Vec3::X * 10.0 * block)).unwrap();
-        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 3, feet, stats: &mut stats });
+        runner.cast(&catalog, PlayerId(3), &mut stats, "detonatingMark", Vec3::X, Some(feet + Vec3::X * 10.0 * block)).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(3), feet, stats: &mut stats });
         assert!(health(&creatures, cow) < before, "le tir n'a pas cherché la bête marquée");
 
         let mut archer = CharacterStats::new(PlayerClass::Archer);
         archer.skills.insert("hawkEye".into(), 1);
-        runner.cast(&catalog, 4, &mut archer, "hawkEye", Vec3::NEG_Z, None).unwrap();
-        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 4, feet, stats: &mut archer });
-        assert!((runner.buff(4, BuffStat::Range) - 0.3).abs() < 1e-6, "l'œil de faucon n'allonge pas la portée");
+        runner.cast(&catalog, PlayerId(4), &mut archer, "hawkEye", Vec3::NEG_Z, None).unwrap();
+        until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(4), feet, stats: &mut archer });
+        assert!((runner.buff(PlayerId(4), BuffStat::Range) - 0.3).abs() < 1e-6, "l'œil de faucon n'allonge pas la portée");
     }
 
     #[test]
@@ -2568,14 +2568,14 @@ mod tests {
             let mut stats = CharacterStats::new(PlayerClass::Archer);
             stats.skills.insert("deadlyHunt".into(), 1);
             let mut runner = SkillRunner::new();
-            runner.cast(&catalog, 2, &mut stats, "deadlyHunt", Vec3::NEG_Z, None).unwrap();
-            until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: 2, feet, stats: &mut stats });
+            runner.cast(&catalog, PlayerId(2), &mut stats, "deadlyHunt", Vec3::NEG_Z, None).unwrap();
+            until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(2), feet, stats: &mut stats });
             let after_hit = health(&creatures, cow);
             for _ in 0..20 {
                 if moves {
                     creatures.creature_mut(cow).unwrap().position += Vec3::X * 0.5 * block;
                 }
-                runner.tick(0.25, &catalog, &mut creatures, &mut SoloPlayer { id: 2, feet, stats: &mut stats });
+                runner.tick(0.25, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(2), feet, stats: &mut stats });
             }
             after_hit - health(&creatures, cow)
         };
@@ -2589,8 +2589,8 @@ mod tests {
         stats.skills.insert(skill.into(), 1);
         stats.mana = 100.0;
         stats.stamina = 100.0;
-        runner.cast(catalog, 1, stats, skill, Vec3::NEG_Z, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats };
+        runner.cast(catalog, PlayerId(1), stats, skill, Vec3::NEG_Z, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats };
         let (mut impacts, mut moves) = (Vec::new(), Vec::new());
         for i in 1..=(seconds / 0.02).round() as usize {
             fly(creatures, &mut player, 0.02);
@@ -2625,8 +2625,8 @@ mod tests {
         let mut runner = SkillRunner::new();
         stats.skills.insert("phantomShot".into(), 1);
         stats.stamina = 100.0;
-        runner.cast(&catalog, 1, &mut stats, "phantomShot", Vec3::X, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        runner.cast(&catalog, PlayerId(1), &mut stats, "phantomShot", Vec3::X, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         let moved = (0..50).any(|_| !runner.tick(0.02, &catalog, &mut creatures, &mut player).moves.is_empty());
         assert!(!moved);
     }
@@ -2638,10 +2638,10 @@ mod tests {
         stats.skills.insert("grappleBolt".into(), 1);
         let stamina = stats.stamina;
         let mut runner = SkillRunner::new();
-        assert_eq!(runner.cast(&catalog, 1, &mut stats, "grappleBolt", Vec3::NEG_Z, None), Err(CastError::NothingToGrab));
+        assert_eq!(runner.cast(&catalog, PlayerId(1), &mut stats, "grappleBolt", Vec3::NEG_Z, None), Err(CastError::NothingToGrab));
         assert_eq!(stats.stamina, stamina, "rien n'est payé");
-        assert_eq!(runner.cooldown(1, "grappleBolt"), 0.0);
-        assert!(runner.cast(&catalog, 1, &mut stats, "grappleBolt", Vec3::NEG_Z, Some(Vec3::new(0.0, 10_000.0, -50.0))).is_ok());
+        assert_eq!(runner.cooldown(PlayerId(1), "grappleBolt"), 0.0);
+        assert!(runner.cast(&catalog, PlayerId(1), &mut stats, "grappleBolt", Vec3::NEG_Z, Some(Vec3::new(0.0, 10_000.0, -50.0))).is_ok());
     }
 
     #[test]
@@ -2704,8 +2704,8 @@ mod tests {
         stats.skills.insert(skill.into(), 1);
         stats.stamina = 1000.0;
         stats.mana = 1000.0;
-        runner.cast(catalog, 1, stats, skill, aim, None).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats };
+        runner.cast(catalog, PlayerId(1), stats, skill, aim, None).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats };
         for _ in 0..40 {
             if !runner.tick(0.05, catalog, creatures, &mut player).impacts.is_empty() {
                 return;
@@ -2723,20 +2723,20 @@ mod tests {
         let mut stats = CharacterStats::new(PlayerClass::Champion);
         let mut runner = SkillRunner::new();
         cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "perfectRiposte", toward);
-        assert_eq!(runner.guarding(1), Some("perfectRiposte"));
+        assert_eq!(runner.guarding(PlayerId(1)), Some("perfectRiposte"));
         let health = |w: &CreatureWorld| w.creatures().iter().find(|c| c.id == near).map(|c| c.health).unwrap();
         let before = health(&creatures);
 
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
-        let parry = runner.parry(1, Some(toward), near, 10.0, "physical", &mut creatures, &mut player);
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
+        let parry = runner.parry(PlayerId(1), Some(toward), near, 10.0, "physical", &mut creatures, &mut player);
         assert!(parry.parried && parry.damage == 0.0, "le coup de face est paré en entier");
         let impact = parry.impact.expect("la riposte part");
         assert!(impact.parried && impact.creatures.contains(&near), "la riposte touche l'attaquant");
         assert!(health(&creatures) < before);
         // Un seul coup paré : le suivant passe
-        let again = runner.parry(1, Some(toward), near, 10.0, "physical", &mut creatures, &mut player);
+        let again = runner.parry(PlayerId(1), Some(toward), near, 10.0, "physical", &mut creatures, &mut player);
         assert!(!again.parried && again.damage == 10.0);
-        assert_eq!(runner.guarding(1), None);
+        assert_eq!(runner.guarding(PlayerId(1)), None);
     }
 
     #[test]
@@ -2748,14 +2748,14 @@ mod tests {
         let mut stats = CharacterStats::new(PlayerClass::Champion);
         let mut runner = SkillRunner::new();
         cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "ironGuard", toward);
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
-        let back = runner.parry(1, Some(-toward), near, 10.0, "physical", &mut creatures, &mut player);
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
+        let back = runner.parry(PlayerId(1), Some(-toward), near, 10.0, "physical", &mut creatures, &mut player);
         assert!(!back.parried && back.damage == 10.0, "le dos n'est pas gardé");
-        let magic = runner.parry(1, Some(toward), near, 10.0, "magical", &mut creatures, &mut player);
+        let magic = runner.parry(PlayerId(1), Some(toward), near, 10.0, "magical", &mut creatures, &mut player);
         assert!(!magic.parried, "la Garde de fer ne bloque que le physique");
-        let front = runner.parry(1, Some(toward), near, 10.0, "physical", &mut creatures, &mut player);
+        let front = runner.parry(PlayerId(1), Some(toward), near, 10.0, "physical", &mut creatures, &mut player);
         assert!(front.parried && front.damage == 0.0 && front.impact.is_none(), "bloqué, sans riposte");
-        assert_eq!(runner.guarding(1), Some("ironGuard"), "elle pare jusqu'à la fin de sa fenêtre");
+        assert_eq!(runner.guarding(PlayerId(1)), Some("ironGuard"), "elle pare jusqu'à la fin de sa fenêtre");
     }
 
     #[test]
@@ -2765,19 +2765,19 @@ mod tests {
         let mut stats = CharacterStats::new(PlayerClass::Champion);
         let mut runner = SkillRunner::new();
         cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "perfectRiposte", Vec3::NEG_Z);
-        let left = runner.cooldown(1, "perfectRiposte");
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        let left = runner.cooldown(PlayerId(1), "perfectRiposte");
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         let mut missed = Vec::new();
         for _ in 0..20 {
             missed.extend(runner.tick(0.1, &catalog, &mut creatures, &mut player).missed);
         }
-        assert_eq!(missed, vec![(1, "perfectRiposte".to_string(), 10.0)]);
-        let now = runner.cooldown(1, "perfectRiposte");
+        assert_eq!(missed, vec![(PlayerId(1), "perfectRiposte".to_string(), 10.0)]);
+        let now = runner.cooldown(PlayerId(1), "perfectRiposte");
         assert!((now - (left - 2.0 + 10.0)).abs() < 0.01, "dix secondes de plus : {left} puis {now}");
 
         // La Garde de fer, qui ne riposte pas, garde sa recharge
         cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "ironGuard", Vec3::NEG_Z);
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         let missed: Vec<_> = (0..50).flat_map(|_| runner.tick(0.1, &catalog, &mut creatures, &mut player).missed).collect();
         assert!(missed.is_empty());
     }
@@ -2789,24 +2789,24 @@ mod tests {
         let mut stats = CharacterStats::new(PlayerClass::Champion);
         let mut runner = SkillRunner::new();
         cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "phalanx", Vec3::NEG_Z);
-        assert!(runner.immune(1, Status::Stun) && runner.immune(1, Status::Knockback));
-        assert!(!runner.immune(1, Status::Damage));
+        assert!(runner.immune(PlayerId(1), Status::Stun) && runner.immune(PlayerId(1), Status::Knockback));
+        assert!(!runner.immune(PlayerId(1), Status::Damage));
 
         cast_and_strike(&mut runner, &catalog, &mut creatures, feet, &mut stats, "divineAegis", Vec3::NEG_Z);
-        assert_eq!(runner.damage_taken_factor(1, DamageKind::Physical), 0.0, "l'Égide rend insensible aux dégâts");
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+        assert_eq!(runner.damage_taken_factor(PlayerId(1), DamageKind::Physical), 0.0, "l'Égide rend insensible aux dégâts");
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
         for _ in 0..30 {
             runner.tick(0.1, &catalog, &mut creatures, &mut player);
         }
-        assert!(runner.damage_taken_factor(1, DamageKind::Physical) > 0.0, "puis l'immunité passe");
+        assert!(runner.damage_taken_factor(PlayerId(1), DamageKind::Physical) > 0.0, "puis l'immunité passe");
 
         // Inarrêtable : l'étourdissement en cours tombe
         stats.apply_stun(5.0);
         stats.skills.insert("voidWarmaster".into(), 1);
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
-        runner.apply_to_player(&EffectEntry { effect: Effect::Immune { from: vec![Status::Stun], duration: herocraft_common::skills::Ranked::One(3.0) }, to: None }, 1, 1, 1.0, "voidWarmaster", 1, &mut player);
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
+        runner.apply_to_player(&EffectEntry { effect: Effect::Immune { from: vec![Status::Stun], duration: herocraft_common::skills::Ranked::One(3.0) }, to: None }, PlayerId(1), 1, 1.0, "voidWarmaster", PlayerId(1), &mut player);
         assert!(!stats.is_stunned());
-        let immune = runner.immunities(1);
+        let immune = runner.immunities(PlayerId(1));
         assert!(immune.contains(&Status::Stun) && immune.contains(&Status::Knockback));
     }
 
@@ -2833,7 +2833,7 @@ mod tests {
     }
 
     /// Une bête de l'espèce `species` aux pieds du joueur, très solide pour compter les dégâts
-    fn armored(creatures: &mut CreatureWorld, feet: Vec3, species: &str) -> u64 {
+    fn armored(creatures: &mut CreatureWorld, feet: Vec3, species: &str) -> CreatureId {
         let index = creatures.registry().find(species).unwrap();
         let block = creatures.block_size();
         creatures.spawn(index, feet + Vec3::new(0.0, 0.0, -2.0 * block));
@@ -2843,9 +2843,9 @@ mod tests {
     }
 
     /// Dégâts que prend la bête `id` d'un coup de 10 points de type `kind` qui perce `pierce`
-    fn blow(creatures: &mut CreatureWorld, id: u64, feet: Vec3, kind: DamageKind, pierce: f32) -> f32 {
+    fn blow(creatures: &mut CreatureWorld, id: CreatureId, feet: Vec3, kind: DamageKind, pierce: f32) -> f32 {
         let before = health(creatures, id);
-        creatures.wound_with(id, feet, 1, 10.0, kind, pierce);
+        creatures.wound_with(id, feet, PlayerId(1), 10.0, kind, pierce);
         let after = health(creatures, id);
         creatures.creature_mut(id).unwrap().health = 10_000.0;
         before - after
@@ -2901,7 +2901,7 @@ mod tests {
         let mut runner = SkillRunner::new();
         // Un arc bandé à fond
         hold(&mut runner, "shortBow", PlayerClass::WarPriest);
-        runner.arsenal_mut().begin_charge(1, Some("ballistaShot"));
+        runner.arsenal_mut().begin_charge(PlayerId(1), Some("ballistaShot"));
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 2.0);
         cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "ballistaShot", None);
         assert_eq!(creatures.armor(knight), 0.0, "toute l'armure brisée");
@@ -2942,8 +2942,8 @@ mod tests {
         let mut stats = CharacterStats::new(PlayerClass::WarPriest);
         let mut runner = SkillRunner::new();
         cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "soldierRallyingCry", None);
-        assert!((runner.damage_taken_factor(1, DamageKind::Physical) - 0.75).abs() < 1e-5);
-        assert_eq!(runner.damage_taken_factor(1, DamageKind::Magical), 1.0);
+        assert!((runner.damage_taken_factor(PlayerId(1), DamageKind::Physical) - 0.75).abs() < 1e-5);
+        assert_eq!(runner.damage_taken_factor(PlayerId(1), DamageKind::Magical), 1.0);
     }
 
     #[test]
@@ -2985,13 +2985,13 @@ mod tests {
         let mut runner = SkillRunner::new();
         cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "voidMonolith", None);
         let at = creatures.creatures().iter().find(|c| c.id == knight).unwrap().position;
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
-        runner.ride(1, &[at], &mut creatures, &mut player);
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
+        runner.ride(PlayerId(1), &[at], &mut creatures, &mut player);
         assert_eq!(creatures.armor(knight), 0.0, "un coup d'épée sous le Monolithe désintègre l'armure");
     }
 
     fn hold(runner: &mut SkillRunner, id: &str, class: PlayerClass) {
-        runner.hold(1, Some(herocraft_common::items().find(id).unwrap()), class);
+        runner.hold(PlayerId(1), Some(herocraft_common::items().find(id).unwrap()), class);
     }
 
     #[test]
@@ -3002,16 +3002,16 @@ mod tests {
         stats.skills.insert("recoilShot".into(), 1);
         stats.stamina = 100.0;
         let mut runner = SkillRunner::new();
-        assert_eq!(runner.cast(&catalog, 1, &mut stats, "recoilShot", Vec3::NEG_Z, None), Err(CastError::NoWeapon), "mains nues");
+        assert_eq!(runner.cast(&catalog, PlayerId(1), &mut stats, "recoilShot", Vec3::NEG_Z, None), Err(CastError::NoWeapon), "mains nues");
         hold(&mut runner, "shortBow", PlayerClass::Ranger);
-        assert_eq!(runner.cast(&catalog, 1, &mut stats, "recoilShot", Vec3::NEG_Z, None), Err(CastError::NoWeapon), "un arc n'est pas une arbalète");
+        assert_eq!(runner.cast(&catalog, PlayerId(1), &mut stats, "recoilShot", Vec3::NEG_Z, None), Err(CastError::NoWeapon), "un arc n'est pas une arbalète");
         hold(&mut runner, "handCrossbow", PlayerClass::Ranger);
         let stamina = stats.stamina;
-        assert_eq!(runner.cast(&catalog, 1, &mut stats, "recoilShot", Vec3::NEG_Z, None), Err(CastError::Reloading), "elle se charge à la prise en main");
+        assert_eq!(runner.cast(&catalog, PlayerId(1), &mut stats, "recoilShot", Vec3::NEG_Z, None), Err(CastError::Reloading), "elle se charge à la prise en main");
         assert_eq!(stats.stamina, stamina, "un refus ne coûte rien");
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
-        assert_eq!(runner.cast(&catalog, 1, &mut stats, "recoilShot", Vec3::NEG_Z, None), Ok(1));
-        assert_eq!(runner.arsenal().magazine(1).unwrap().loaded, 1, "le Rôdeur garde son second carreau");
+        assert_eq!(runner.cast(&catalog, PlayerId(1), &mut stats, "recoilShot", Vec3::NEG_Z, None), Ok(1));
+        assert_eq!(runner.arsenal().magazine(PlayerId(1)).unwrap().loaded, 1, "le Rôdeur garde son second carreau");
     }
 
     #[test]
@@ -3021,9 +3021,9 @@ mod tests {
         let mut stats = CharacterStats::new(PlayerClass::MonsterHunter);
         let mut runner = SkillRunner::new();
         hold(&mut runner, "handCrossbow", PlayerClass::MonsterHunter);
-        assert_eq!(runner.arsenal().magazine(1).unwrap().loaded, 0);
+        assert_eq!(runner.arsenal().magazine(PlayerId(1)).unwrap().loaded, 0);
         cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "tacticalDodge", None);
-        assert_eq!(runner.arsenal().magazine(1).unwrap().loaded, 1, "rechargée d'un coup");
+        assert_eq!(runner.arsenal().magazine(PlayerId(1)).unwrap().loaded, 1, "rechargée d'un coup");
         assert!(catalog.get("tacticalDodge").unwrap().cast.as_ref().unwrap().movement.as_ref().unwrap().side.is_some(), "un bond de côté");
     }
 
@@ -3039,10 +3039,10 @@ mod tests {
             stats.stamina = 100.0;
             let mut runner = SkillRunner::new();
             hold(&mut runner, "shortBow", PlayerClass::Archer);
-            runner.arsenal_mut().begin_charge(1, Some("ballistaShot"));
+            runner.arsenal_mut().begin_charge(PlayerId(1), Some("ballistaShot"));
             pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, held);
-            runner.cast(&catalog, 1, &mut stats, "ballistaShot", Vec3::NEG_Z, None)?;
-            let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
+            runner.cast(&catalog, PlayerId(1), &mut stats, "ballistaShot", Vec3::NEG_Z, None)?;
+            let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
             until_impact(&mut runner, &catalog, &mut creatures, &mut player);
             Ok(1000.0 - health(&creatures, cow))
         };
@@ -3061,18 +3061,18 @@ mod tests {
         let mut runner = SkillRunner::new();
         hold(&mut runner, "shortBow", PlayerClass::Rogue);
         cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "poisonBolt", None);
-        assert_eq!(runner.arsenal().special(1), Some(("poisonBolt", 3)));
-        runner.arsenal_mut().begin_charge(1, None);
+        assert_eq!(runner.arsenal().special(PlayerId(1)), Some(("poisonBolt", 3)));
+        runner.arsenal_mut().begin_charge(PlayerId(1), None);
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 1.0);
-        let fired = runner.arsenal_mut().fire(1).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
-        let hit = runner.shoot(1, feet, Vec3::NEG_Z, 5.0, fired, &mut creatures, &mut player);
+        let fired = runner.arsenal_mut().fire(PlayerId(1)).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
+        let hit = runner.shoot(PlayerId(1), feet, Vec3::NEG_Z, 5.0, fired, &mut creatures, &mut player);
         assert_eq!((hit.target, hit.special.as_deref()), (Some(cow), Some("poisonBolt")));
         let after_shot = health(&creatures, cow);
         assert_eq!(after_shot, 995.0, "le tir lui-même : arc et flèche");
         pass(&mut runner, &catalog, &mut creatures, &mut stats, feet, 3.0);
         assert!(health(&creatures, cow) < after_shot, "le poison continue");
-        assert_eq!(runner.arsenal().special(1), Some(("poisonBolt", 2)));
+        assert_eq!(runner.arsenal().special(PlayerId(1)), Some(("poisonBolt", 2)));
     }
 
     #[test]
@@ -3090,10 +3090,10 @@ mod tests {
         let mut runner = SkillRunner::new();
         hold(&mut runner, "handCrossbow", PlayerClass::Ranger);
         cast_at(&mut runner, &catalog, &mut creatures, &mut stats, feet, "fragRounds", None);
-        runner.arsenal_mut().reload_now(1);
-        let fired = runner.arsenal_mut().fire(1).unwrap();
-        let mut player = SoloPlayer { id: 1, feet, stats: &mut stats };
-        runner.shoot(1, feet, Vec3::NEG_Z, 5.0, fired, &mut creatures, &mut player);
+        runner.arsenal_mut().reload_now(PlayerId(1));
+        let fired = runner.arsenal_mut().fire(PlayerId(1)).unwrap();
+        let mut player = SoloPlayer { id: PlayerId(1), feet, stats: &mut stats };
+        runner.shoot(PlayerId(1), feet, Vec3::NEG_Z, 5.0, fired, &mut creatures, &mut player);
         assert!(health(&creatures, beside) < 1000.0, "l'explosion touche la voisine");
     }
 }

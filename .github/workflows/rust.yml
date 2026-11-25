@@ -1,10 +1,11 @@
 name: Rust
 
+# La CI est longue (environ 15 minutes) : elle tourne seulement sur `rust`, après chaque fusion,
+# et à la demande depuis l'onglet Actions (« Run workflow »), pas sur chaque PR
 on:
   push:
     branches: [rust]
-  pull_request:
-    branches: [rust]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,8 +30,8 @@ jobs:
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - name: Clippy
-        # Les erreurs font échouer la CI ; les avertissements seront traités par la configuration des lints
-        run: cargo clippy --workspace --all-targets --locked
+        # Le moindre avertissement fait échouer la CI
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
         run: cargo test --workspace --locked
 

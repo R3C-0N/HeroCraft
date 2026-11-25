@@ -19,7 +19,7 @@ use herocraft_common::lan::{LanAnnounce, LanAnnouncer};
 use herocraft_common::net::{encode_frame, Connection};
 use herocraft_common::{
     DamageKind,
-    fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureRegistry, CreatureState, ItemId, PlayerClass, PlayerState,
+    fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureId, CreatureRegistry, CreatureState, ItemId, PlayerClass, PlayerId, PlayerState,
     ServerPacket, SkillWheel, PROTOCOL_VERSION,
 };
 use herocraft_voxel_engine::ChunkStorage;
@@ -62,6 +62,21 @@ const VISION_TEMPLE_BLOCKS: i32 = 2048;
 
 type ClientConnection = Connection<ServerPacket, ClientPacket>;
 
+/// Pourquoi un joueur ne peut pas entrer dans une vision (dit au joueur tel quel)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum VisionError {
+    #[error("joueur inconnu")]
+    UnknownPlayer,
+    #[error("Déjà dans une vision")]
+    AlreadyInVision,
+    #[error("position encore inconnue")]
+    UnknownPosition,
+    #[error("position hors de la planète")]
+    OffPlanet,
+    #[error("Aucun temple à proximité")]
+    NoTemple,
+}
+
 pub struct ServerConfig {
     /// Adresse d'écoute (ex. `0.0.0.0:7777`)
     pub bind: String,
@@ -77,7 +92,7 @@ impl ServerConfig {
 }
 
 pub struct ConnectedPlayer {
-    pub id: u64,
+    pub id: PlayerId,
     pub name: String,
     pub stats: CharacterStats,
     /// Pieds du joueur, `None` tant qu'il n'a pas envoyé sa première position
@@ -95,7 +110,7 @@ pub struct ConnectedPlayer {
     /// Allure de son héros, une fois sa légende reçue
     pub appearance: Option<Box<herocraft_common::hero::Appearance>>,
     /// Créatures que son client affiche (celles qui lui ont été annoncées)
-    known_creatures: HashSet<u64>,
+    known_creatures: HashSet<CreatureId>,
     /// Vision de temple qu'il vit en ce moment, seul dans le passé
     pub vision: Option<Box<Vision>>,
     connection: ClientConnection,
@@ -136,7 +151,7 @@ pub struct Server {
     weather: herocraft_world::WeatherModel,
     save_dir: Option<PathBuf>,
     pending: Vec<PendingClient>,
-    players: HashMap<u64, ConnectedPlayer>,
+    players: HashMap<PlayerId, ConnectedPlayer>,
     /// Dernière position connue de chaque joueur passé sur le serveur (par nom), pour le replacer
     last_positions: HashMap<String, Vec3>,
     /// Statistiques (niveau, points et compétences) de chaque joueur parti, par nom, rendues s'il
@@ -149,7 +164,7 @@ pub struct Server {
     /// Tirage du butin des bêtes tuées
     loot_rng: herocraft_common::LootRng,
     /// Combien de fois on a parlé à chaque habitant (il enchaîne ses répliques)
-    talks: HashMap<u64, usize>,
+    talks: HashMap<CreatureId, usize>,
     next_player_id: u64,
     tick_counter: u64,
     /// Annonce de la partie sur le réseau local, avec son nom
@@ -247,7 +262,7 @@ impl Server {
 
     /// Fait apparaître une créature de l'espèce `species` (nom de son fichier) aux pieds `feet` ;
     /// elle s'endormira avec sa zone si aucun joueur n'est près. `None` si l'espèce est inconnue.
-    pub fn spawn_creature(&mut self, species: &str, feet: Vec3) -> Option<u64> {
+    pub fn spawn_creature(&mut self, species: &str, feet: Vec3) -> Option<CreatureId> {
         let species = self.creatures.registry().find(species)?;
         Some(self.creatures.spawn(species, feet))
     }
@@ -335,7 +350,7 @@ impl Server {
                 }
                 match self.enter_vision(id) {
                     Ok(()) => vec![format!("{who} enters the vision")],
-                    Err(reason) => vec![reason],
+                    Err(reason) => vec![reason.to_string()],
                 }
             }
             "vision" => vec!["Usage: vision <player> [end]".to_string()],
@@ -366,7 +381,7 @@ impl Server {
         self.creatures.set_sun_dir(herocraft_world::sky::compute_sun_dir(self.clock.time as f32));
         self.creatures.set_climate(&self.weather, self.clock.time);
 
-        let (ids, presences): (Vec<u64>, Vec<herocraft_world::PlayerPresence>) =
+        let (ids, presences): (Vec<PlayerId>, Vec<herocraft_world::PlayerPresence>) =
             self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching, holding: p.holding, hidden: p.stats.is_invisible() || p.stats.fallen }))).unzip();
         for hit in self.creatures.tick_players(dt, &self.generator, &self.edits, &presences, &ids) {
             let id = ids[hit.player];
@@ -565,7 +580,7 @@ impl Server {
     /// son arrivée aux autres. Tout part dans le même tick : aucun bloc modifié entre-temps n'est
     /// manqué.
     fn join(&mut self, connection: ClientConnection, name: String) {
-        let id = self.next_player_id;
+        let id = PlayerId(self.next_player_id);
         self.next_player_id += 1;
 
         let chunks = self.edits.snapshot();
@@ -616,14 +631,14 @@ impl Server {
     }
 
     fn process_players(&mut self) {
-        let ids: Vec<u64> = self.players.keys().copied().collect();
+        let ids: Vec<PlayerId> = self.players.keys().copied().collect();
         for id in ids {
             while let Some(player) = self.players.get(&id) {
                 match player.connection.try_recv() {
                     Ok(Some(packet)) => self.handle_packet(id, packet),
                     Ok(None) => break,
                     Err(reason) => {
-                        self.leave(id, &reason);
+                        self.leave(id, &reason.to_string());
                         break;
                     }
                 }
@@ -631,7 +646,7 @@ impl Server {
         }
     }
 
-    fn handle_packet(&mut self, id: u64, packet: ClientPacket) {
+    fn handle_packet(&mut self, id: PlayerId, packet: ClientPacket) {
         match packet {
             ClientPacket::Connect { .. } => {}
             ClientPacket::PlayerMove { position, yaw, pitch, sprinting, crouching, holding } => {
@@ -700,7 +715,7 @@ impl Server {
             ClientPacket::Vision { enter: true } => {
                 if let Err(reason) = self.enter_vision(id) {
                     if let Some(player) = self.players.get(&id) {
-                        tell(player, &reason);
+                        tell(player, &reason.to_string());
                     }
                 }
             }
@@ -711,7 +726,7 @@ impl Server {
 
     /// Le joueur mange : sa satiété remonte de ce que rend l'aliment, et ses jauges lui sont
     /// renvoyées (même refusé, pour que son client se recale)
-    fn eat(&mut self, id: u64, item: ItemId) {
+    fn eat(&mut self, id: PlayerId, item: ItemId) {
         let Some(player) = self.players.get_mut(&id) else { return };
         if let Some(satiety) = item.satiety() {
             player.stats.eat(satiety);
@@ -721,7 +736,7 @@ impl Server {
 
     /// Légende d'un héros : refusée si un choix sort de l'atlas, sinon sa voie devient celle du
     /// joueur, qui reçoit aussitôt ses jauges
-    fn legend(&mut self, id: u64, mut legend: herocraft_common::hero::Legend) {
+    fn legend(&mut self, id: PlayerId, mut legend: herocraft_common::hero::Legend) {
         let Some(player) = self.players.get_mut(&id) else { return };
         if let Err(reason) = legend.verify() {
             warn!("Légende de {} refusée : {}", player.name, reason);
@@ -736,7 +751,7 @@ impl Server {
     }
 
     /// `/xp` : le joueur gagne `amount` points d'expérience, ses nouvelles jauges lui sont envoyées
-    pub fn grant_experience(&mut self, id: u64, amount: u64) {
+    pub fn grant_experience(&mut self, id: PlayerId, amount: u64) {
         let Some(player) = self.players.get_mut(&id) else { return };
         let level = player.stats.level;
         player.stats.add_experience(amount);
@@ -750,7 +765,7 @@ impl Server {
     }
 
     /// `/summon` : `count` créatures de l'espèce `species` aux pieds `feet`, s'ils sont près du joueur
-    fn summon(&mut self, id: u64, species: &str, count: u32, feet: Vec3) {
+    fn summon(&mut self, id: PlayerId, species: &str, count: u32, feet: Vec3) {
         let Some(player) = self.players.get(&id) else { return };
         let near = player.position.is_some_and(|p| p.distance(feet) as f64 <= MAX_SUMMON_BLOCKS * self.geometry.block_height);
         let reply = match self.creatures.registry().find(species) {
@@ -773,7 +788,7 @@ impl Server {
 
     /// Dommages d'une chute ; le joueur tué revient à la vie (son client le replace au point
     /// d'apparition). Ses nouvelles jauges lui sont envoyées aussitôt.
-    fn fall(&mut self, id: u64, blocks: f32) {
+    fn fall(&mut self, id: PlayerId, blocks: f32) {
         let damage = fall_damage(blocks);
         let Some(player) = self.players.get_mut(&id) else { return };
         if damage <= 0.0 {
@@ -792,7 +807,7 @@ impl Server {
     /// Le joueur `id` vient de tomber à zéro point de vie. Un effet à la mort (Abomination de
     /// l'Étherium) le sauve : sa nova est annoncée, et il reste debout (faux). Sinon il tombe (vrai) :
     /// ranimé pour la suite, il attend de réapparaître.
-    fn falls(&mut self, id: u64) -> bool {
+    fn falls(&mut self, id: PlayerId) -> bool {
         let stand = self.skill_runner.last_stand(id, &mut self.creatures, &mut PlayersView(&mut self.players));
         match stand {
             Some(impact) => {
@@ -825,7 +840,7 @@ impl Server {
 
     /// Coup d'une créature de l'espèce de rang `species` sur un joueur ; comme une chute, celui qu'il
     /// tue revient à la vie et ses nouvelles jauges lui sont envoyées aussitôt
-    fn creature_attack(&mut self, id: u64, species: usize, damage: f32, kind: DamageKind) {
+    fn creature_attack(&mut self, id: PlayerId, species: usize, damage: f32, kind: DamageKind) {
         let cause = self.creatures.registry().get(species).map_or_else(|| "Une créature".to_string(), |s| s.name.clone());
         // L'armure portée, puis les renforcements de défense
         let protection = self.players.get(&id).map_or(0.0, |p| p.protection);
@@ -856,7 +871,7 @@ impl Server {
 
     /// Valide et applique une action sur un bloc, puis diffuse le résultat. Une action refusée
     /// renvoie à son auteur le vrai bloc, qui annule ce que son client avait déjà affiché.
-    fn interact_block(&mut self, id: u64, pos: BlockPos, action: BlockInteractionAction) {
+    fn interact_block(&mut self, id: PlayerId, pos: BlockPos, action: BlockInteractionAction) {
         let Some(player) = self.players.get(&id) else { return };
         if !pos.is_valid() {
             return;
@@ -906,7 +921,7 @@ impl Server {
 
     /// Coup d'un joueur sur une créature à sa portée : la simulation en tire dégâts, recul et fuite,
     /// que les joueurs voient avec les prochaines positions
-    fn hit_creature(&mut self, id: u64, creature_id: u64) {
+    fn hit_creature(&mut self, id: PlayerId, creature_id: CreatureId) {
         let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
         let held = self.skill_runner.arsenal().held(id);
         let reach = (MAX_REACH_BLOCKS as f32 + held.reach) * self.geometry.block_height as f32;
@@ -944,7 +959,7 @@ impl Server {
 
     /// Un tir d'arc ou d'arbalète du joueur `id` : la munition doit aller avec l'arme tenue, la
     /// cadence, le chargeur et l'arc bandé sont jugés ici. Annoncé à tous (`PlayerShot`).
-    fn shoot(&mut self, id: u64, aim: Vec3, ammo: ItemId) {
+    fn shoot(&mut self, id: PlayerId, aim: Vec3, ammo: ItemId) {
         let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
         if !aim.is_finite() || aim.length_squared() < 1e-6 {
             return;
@@ -975,13 +990,13 @@ impl Server {
 
     /// Un joueur parle à un habitant à sa portée : sa réplique va, dans le chat, à tous les joueurs
     /// qui l'entendent (à moins de `VILLAGER_HEARING_BLOCKS` de lui), et à eux seuls
-    fn talk_to_villager(&mut self, id: u64, creature_id: u64) {
+    fn talk_to_villager(&mut self, id: PlayerId, creature_id: CreatureId) {
         let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
         let block = self.geometry.block_height as f32;
         let Some(at) = self.creatures.creatures().iter().find(|c| c.id == creature_id && c.is_alive() && c.position.distance(feet) <= MAX_REACH_BLOCKS as f32 * block).map(|c| c.position) else { return };
         let Some(card) = self.creatures.villager_card(creature_id).cloned() else { return };
         // Les habitants disparus sont oubliés
-        let alive: Vec<u64> = self.creatures.creatures().iter().map(|c| c.id).collect();
+        let alive: Vec<CreatureId> = self.creatures.creatures().iter().map(|c| c.id).collect();
         self.talks.retain(|k, _| alive.contains(k));
         let turn = self.talks.entry(creature_id).or_insert(0);
         let line = card.line(*turn, herocraft_common::professions().lines_of(&card));
@@ -996,7 +1011,7 @@ impl Server {
 
     /// Un joueur dépèce une bête morte à sa portée (son client a vérifié qu'il tient un couteau ou
     /// une dague) : le butin tombe chez lui seul, les objets au sol étant propres à chaque client
-    fn skin_creature(&mut self, id: u64, creature_id: u64) {
+    fn skin_creature(&mut self, id: PlayerId, creature_id: CreatureId) {
         let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
         let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
         if !self.creatures.creatures().iter().any(|c| c.id == creature_id && !c.is_alive() && c.position.distance(feet) <= reach) {
@@ -1011,7 +1026,7 @@ impl Server {
     }
 
     /// Repas donné par un joueur à une créature à sa portée : il la prévient de ce qu'il a obtenu
-    fn feed_creature(&mut self, id: u64, creature_id: u64, item: ItemId) {
+    fn feed_creature(&mut self, id: PlayerId, creature_id: CreatureId, item: ItemId) {
         let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
         let reach = MAX_REACH_BLOCKS as f32 * self.geometry.block_height as f32;
         if !self.creatures.creatures().iter().any(|c| c.id == creature_id && c.position.distance(feet) <= reach) {
@@ -1026,7 +1041,7 @@ impl Server {
 
     /// Un bloc posé là enfermerait un autre joueur (bloc des pieds ou de la tête). L'auteur de
     /// l'action n'est pas testé : son client le fait déjà, avec sa position exacte.
-    fn overlaps_other_player(&self, id: u64, pos: BlockPos) -> bool {
+    fn overlaps_other_player(&self, id: PlayerId, pos: BlockPos) -> bool {
         self.players.values().filter(|p| p.id != id).filter_map(|p| p.position).any(|feet| {
             let Some(feet_block) = self.geometry.block_at_point(feet.as_dvec3()) else { return false };
             feet_block.face == pos.face && feet_block.x == pos.x && feet_block.z == pos.z && (pos.y == feet_block.y || pos.y == feet_block.y + 1)
@@ -1037,7 +1052,7 @@ impl Server {
     /// ses statistiques (inchangées en cas de refus, ce qui défait ce que son client a affiché)
     /// Le joueur lance une compétence : refusée (et il le sait), ou annoncée à tous ; elle frappera
     /// à l'impact de son geste (`tick_skills`)
-    fn cast_skill(&mut self, id: u64, skill: String, aim: Vec3, aimed: Option<Vec3>) {
+    fn cast_skill(&mut self, id: PlayerId, skill: String, aim: Vec3, aimed: Option<Vec3>) {
         let Some(player) = self.players.get_mut(&id) else { return };
         match self.skill_runner.cast_as(herocraft_common::skills(), id, &mut player.stats, &skill, aim, aimed) {
             Ok(casting) => {
@@ -1086,7 +1101,7 @@ impl Server {
         }
     }
 
-    fn learn_skill(&mut self, id: u64, skill: &str) {
+    fn learn_skill(&mut self, id: PlayerId, skill: &str) {
         let Some(player) = self.players.get_mut(&id) else { return };
         if let Err(error) = self.skill_wheel.learn(&mut player.stats, skill) {
             warn!("{} n'apprend pas {skill} : {}.", player.name, error.message());
@@ -1094,7 +1109,7 @@ impl Server {
         player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
     }
 
-    fn leave(&mut self, id: u64, reason: &str) {
+    fn leave(&mut self, id: PlayerId, reason: &str) {
         let Some(mut player) = self.players.remove(&id) else { return };
         // Ses compétences du présent lui reviennent, celles de la vision s'effacent
         if let Some(vision) = player.vision.as_mut() {
@@ -1114,15 +1129,15 @@ impl Server {
     /// Fait entrer le joueur `id` dans la vision du temple le plus proche : il se retrouve seul
     /// dans le passé, devant la grande porte de la ville-souvenir, avec l'armée qui s'y masse.
     /// Renvoie la raison d'un refus.
-    pub fn enter_vision(&mut self, id: u64) -> Result<(), String> {
-        let player = self.players.get(&id).ok_or("joueur inconnu")?;
+    pub fn enter_vision(&mut self, id: PlayerId) -> Result<(), VisionError> {
+        let player = self.players.get(&id).ok_or(VisionError::UnknownPlayer)?;
         if player.vision.is_some() {
-            return Err("Déjà dans une vision".into());
+            return Err(VisionError::AlreadyInVision);
         }
-        let back = player.position.ok_or("position encore inconnue")?;
-        let pos = self.geometry.block_at_point(back.as_dvec3()).ok_or("position hors de la planète")?;
+        let back = player.position.ok_or(VisionError::UnknownPosition)?;
+        let pos = self.geometry.block_at_point(back.as_dvec3()).ok_or(VisionError::OffPlanet)?;
         // Le peuple du joueur viendra de sa légende ; d'ici là, la vision est celle d'un humain
-        let entry = self.generator.vision_entry(pos.face, pos.x, pos.z, VISION_TEMPLE_BLOCKS, Culture::Humains).ok_or("Aucun temple à proximité")?;
+        let entry = self.generator.vision_entry(pos.face, pos.x, pos.z, VISION_TEMPLE_BLOCKS, Culture::Humains).ok_or(VisionError::NoTemple)?;
         let (site, holder) = (entry.site, entry.holder);
         let generator = self.generator.with_epoch(Epoch::Past(holder));
         let feet = self.geometry.corner(site.face, entry.feet.x as f64 + 0.5, entry.feet.y as f64, entry.feet.z as f64 + 0.5).as_vec3();
@@ -1147,7 +1162,7 @@ impl Server {
 
     /// Le joueur `id` a ramassé l'éclat de sa vision : les premières compétences de sa voie
     /// s'ouvrent, une seule fois
-    fn awaken_in_vision(&mut self, id: u64) {
+    fn awaken_in_vision(&mut self, id: PlayerId) {
         let Some(player) = self.players.get_mut(&id) else { return };
         let Some(vision) = player.vision.as_mut() else { return };
         if std::mem::replace(&mut vision.awakened, true) {
@@ -1160,7 +1175,7 @@ impl Server {
 
     /// Ramène le joueur `id` de sa vision, là où il l'avait commencée ; ses blocs de la vision
     /// s'effacent
-    pub fn leave_vision(&mut self, id: u64) {
+    pub fn leave_vision(&mut self, id: PlayerId) {
         let Some(player) = self.players.get_mut(&id) else { return };
         let Some(vision) = player.vision.take() else { return };
         vision.present_skills.restore(&mut player.stats);
@@ -1225,7 +1240,7 @@ impl Server {
                     player.connection.send(&ServerPacket::CreatureSpawned { species, state: creature.state() });
                 }
             }
-            let gone: Vec<u64> = player.known_creatures.difference(&visible).copied().collect();
+            let gone: Vec<CreatureId> = player.known_creatures.difference(&visible).copied().collect();
             if !gone.is_empty() {
                 player.connection.send(&ServerPacket::CreaturesDespawned(gone));
             }
@@ -1247,18 +1262,18 @@ impl Server {
 
 /// Réponse d'une commande, au seul joueur qui l'a tapée
 /// Les joueurs connectés, tels que les compétences les voient
-struct PlayersView<'a>(&'a mut HashMap<u64, ConnectedPlayer>);
+struct PlayersView<'a>(&'a mut HashMap<PlayerId, ConnectedPlayer>);
 
 impl SkillPlayers for PlayersView<'_> {
-    fn ids(&self) -> Vec<u64> {
+    fn ids(&self) -> Vec<PlayerId> {
         self.0.keys().copied().collect()
     }
 
-    fn feet(&self, id: u64) -> Option<Vec3> {
+    fn feet(&self, id: PlayerId) -> Option<Vec3> {
         self.0.get(&id).and_then(|p| p.position)
     }
 
-    fn stats_mut(&mut self, id: u64) -> Option<&mut CharacterStats> {
+    fn stats_mut(&mut self, id: PlayerId) -> Option<&mut CharacterStats> {
         self.0.get_mut(&id).map(|p| &mut p.stats)
     }
 }

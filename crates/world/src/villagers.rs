@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use glam::Vec3;
 use herocraft_common::hero::atlas;
-use herocraft_common::{professions, CreatureRegistry, PlanetFace, Profession, VillagerCard, Workplace};
+use herocraft_common::{CreatureId, professions, CreatureRegistry, PlanetFace, Profession, VillagerCard, Workplace};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
@@ -297,7 +297,7 @@ struct Person {
     guard: bool,
     /// Garde de nuit : il reste dehors quand les autres dorment
     night_watch: bool,
-    creature: Option<u64>,
+    creature: Option<CreatureId>,
     alive: bool,
     task: Task,
     timer: f32,
@@ -330,7 +330,7 @@ pub struct Villages {
     towns: HashMap<TownKey, Town>,
     people: Vec<Person>,
     /// Fiche de chaque créature qui incarne quelqu'un
-    cards: HashMap<u64, Arc<VillagerCard>>,
+    cards: HashMap<CreatureId, Arc<VillagerCard>>,
     rng: StdRng,
     scan_timer: f32,
     /// Habitants (hors gardes) qui ont un corps, par établissement : recompté à chaque pas
@@ -791,7 +791,7 @@ impl Villages {
     /// Fiche de la personne qu'incarne la créature `id`
     /// Nom de la ville où vit (ou séjourne) la personne qu'incarne la créature `id` ; `None` sur
     /// les routes
-    pub fn town_of(&self, id: u64) -> Option<&str> {
+    pub fn town_of(&self, id: CreatureId) -> Option<&str> {
         let person = self.people.iter().find(|p| p.creature == Some(id))?;
         let key = match &person.role {
             Role::Resident { town, .. } => *town,
@@ -800,7 +800,7 @@ impl Villages {
         self.towns.get(&key).map(|t| t.name.as_str())
     }
 
-    pub fn card(&self, id: u64) -> Option<&Arc<VillagerCard>> {
+    pub fn card(&self, id: CreatureId) -> Option<&Arc<VillagerCard>> {
         self.cards.get(&id)
     }
 
@@ -1185,7 +1185,7 @@ impl Villages {
         world.geometry().block_at_point(position.as_dvec3()).map(|b| (b.face, (b.x, b.z)))
     }
 
-    fn set_pause(&self, world: &mut CreatureWorld, id: u64, species: usize, name: Option<&'static str>, look: Option<Vec3>) {
+    fn set_pause(&self, world: &mut CreatureWorld, id: CreatureId, species: usize, name: Option<&'static str>, look: Option<Vec3>) {
         let pause = name.and_then(|n| self.species.pauses.get(&(species, n)).copied());
         if let Some(c) = world.creature_mut(id) {
             c.pause = pause;
@@ -1515,6 +1515,8 @@ impl Villages {
             (d < CHAT_RADIUS_BLOCKS).then_some((j, pos, d))
         }).min_by(|a, b| a.2.total_cmp(&b.2));
         let Some((j, pos, _)) = partner else { return false };
+        // Le voisin retenu a forcément une créature : sa position vient d'elle
+        let Some(pid) = self.people[j].creature else { return false };
         let Some((_, there)) = Self::cell_of(world, pos) else { return false };
         // Il s'arrête à côté de lui, du côté d'où il vient
         let (dx, dz) = ((here.0 - there.0).signum(), (here.1 - there.1).signum());
@@ -1525,7 +1527,6 @@ impl Villages {
         }
         self.people[i].partner = Some(j);
         // Il l'attend en le regardant venir
-        let pid = self.people[j].creature.unwrap();
         let species = self.people[j].species;
         self.set_pause(world, pid, species, None, Some(me));
         let other = &mut self.people[j];
@@ -1811,6 +1812,7 @@ impl Villages {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use herocraft_common::PlayerId;
     use crate::edits::TerrainEdits;
     use crate::cubed_sphere::PlanetDescriptor;
 
@@ -1941,7 +1943,7 @@ mod tests {
         let humanoids = |w: &CreatureWorld| w.creatures().iter().filter(|c| c.managed && w.villager_card(c.id).is_some()).count();
         let out = humanoids(&world);
         assert!(out > 3, "{out} habitants dehors en plein jour");
-        let start: Vec<(u64, Vec3)> = world.creatures().iter().filter(|c| c.managed).map(|c| (c.id, c.position)).collect();
+        let start: Vec<(CreatureId, Vec3)> = world.creatures().iter().filter(|c| c.managed).map(|c| (c.id, c.position)).collect();
         for _ in 0..600 {
             world.tick(0.1, &generator, &edits, &[feet]);
         }
@@ -1983,12 +1985,12 @@ mod tests {
             .expect("un habitant dehors");
         assert!(card.origin.ends_with(&name), "{} / {name}", card.origin);
         // Le premier coup est signalé à son auteur, une fois, avec la ville
-        assert!(world.hit_by(id, position, 5));
+        assert!(world.hit_by(id, position, PlayerId(5)));
         let assaults = world.take_assaults();
         assert_eq!(assaults.len(), 1);
         let warning = assaults[0].warning();
         assert!(warning.contains(&card.name) && warning.contains(&name) && warning.contains("gardes"), "{warning}");
-        while world.hit_by(id, position, 5) {}
+        while world.hit_by(id, position, PlayerId(5)) {}
         assert!(world.take_assaults().is_empty(), "averti à chaque coup");
         let murders = world.take_murders();
         assert_eq!(murders.len(), 1);
@@ -1996,7 +1998,7 @@ mod tests {
         let line = murders[0].announce("Mat");
         println!("{line}");
         assert!(line.starts_with(&format!("Mat a tué {}", card.name)) && line.contains(&name) && line.contains("gardes"), "{line}");
-        assert!(world.is_wanted(5, herd));
+        assert!(world.is_wanted(PlayerId(5), herd));
         assert!(world.take_murders().is_empty(), "annoncé deux fois");
     }
 
