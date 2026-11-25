@@ -924,7 +924,7 @@ impl App {
     }
 
     /// Tessellation egui, puis rendu WGPU (3D + egui pass)
-    fn render(&mut self, full_output: egui::FullOutput, ui_section: Instant) {
+    fn render(&mut self, mut full_output: egui::FullOutput, ui_section: Instant) {
         let Self { ui_state, state, probe, .. } = self;
         herocraft_common::prof_scope!("frame::egui_tessellate" => tess_guard);
         let paint_jobs = ui_state.ctx.tessellate(full_output.shapes, ui_state.scale_factor);
@@ -940,6 +940,9 @@ impl App {
             Err(renderer::FrameError::Lost) => state.resize(state.size),
             Err(e) => log::debug!("Image sautée : {:?}", e),
         }
+        // Les textures d'egui ont été appliquées par le rendu : la liste est vidée, sinon egui 0.37
+        // s'arrête en debug à sa destruction (comme avant en release, une image sautée les perd)
+        full_output.textures_delta.clear();
         let timings = state.render_timings;
         probe.push("rendu : attente d'une image libre", timings.acquire);
         probe.push("rendu : préparation", timings.prepare);
