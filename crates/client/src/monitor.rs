@@ -11,7 +11,7 @@
 
 use log::{info, warn};
 use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::event_loop::EventLoop;
+use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::monitor::MonitorHandle;
 
 pub const MONITOR_VAR: &str = "HEROCRAFT_MONITOR";
@@ -24,7 +24,7 @@ pub fn requested() -> Option<String> {
 /// Crée la boucle d'événements. Sous Linux, Wayland ne laisse pas une application placer
 /// sa fenêtre : si un écran est demandé, on passe par X11 (XWayland sous WSLg).
 pub fn build_event_loop(wants_monitor: bool) -> EventLoop<()> {
-    let mut builder = winit::event_loop::EventLoopBuilder::new();
+    let mut builder = EventLoop::builder();
     #[cfg(target_os = "linux")]
     if wants_monitor {
         use winit::platform::x11::EventLoopBuilderExtX11;
@@ -36,7 +36,7 @@ pub fn build_event_loop(wants_monitor: bool) -> EventLoop<()> {
 }
 
 /// Retrouve l'écran correspondant à `wanted` parmi ceux que voit winit.
-pub fn find(event_loop: &EventLoop<()>, wanted: &str) -> Option<MonitorHandle> {
+pub fn find(event_loop: &ActiveEventLoop, wanted: &str) -> Option<MonitorHandle> {
     let monitors: Vec<MonitorHandle> = event_loop.available_monitors().collect();
     let key = normalize(wanted);
 

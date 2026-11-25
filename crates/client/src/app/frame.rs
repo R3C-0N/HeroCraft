@@ -14,7 +14,15 @@ struct Aim {
 impl App {
     /// Une image : simulation du jeu, interface, puis rendu
     pub(super) fn redraw(&mut self, event_loop: &EventLoopTarget) {
-        herocraft_common::prof_scope!("frame" => frame_guard);
+        {
+            herocraft_common::prof_scope!("frame");
+            self.frame(event_loop);
+        }
+        herocraft_common::profiler::frame_mark();
+    }
+
+    /// Les étapes de l'image
+    fn frame(&mut self, event_loop: &EventLoopTarget) {
         let (now, dt) = self.tick_clock();
 
         self.drive_benchmark(dt);
@@ -61,9 +69,6 @@ impl App {
         self.render(full_output, ui_section);
         self.limit_fps();
         self.finish_frame(now, dt, creature_vertices, event_loop);
-
-        drop(frame_guard);
-        herocraft_common::profiler::frame_mark();
     }
 
     /// Temps écoulé depuis l'image précédente, et compteur FPS
@@ -761,15 +766,16 @@ impl App {
 
     /// Mise à jour adaptative du QuadTree LOD, et envoi de ses maillages au GPU
     fn update_lod(&mut self, dt: f32, terrain_edited: bool) {
-        herocraft_common::prof_scope!("frame::lod_and_upload" => lod_guard);
         let section = Instant::now();
-        if self.lod_manager.update(self.camera.lod_eye(), &self.generator, &mut self.chunk_cache, dt, None)
-            || terrain_edited
-            || self.state.has_pending_lod_uploads()
         {
-            self.state.sync_lod_meshes(&self.lod_manager);
+            herocraft_common::prof_scope!("frame::lod_and_upload");
+            if self.lod_manager.update(self.camera.lod_eye(), &self.generator, &mut self.chunk_cache, dt, None)
+                || terrain_edited
+                || self.state.has_pending_lod_uploads()
+            {
+                self.state.sync_lod_meshes(&self.lod_manager);
+            }
         }
-        drop(lod_guard);
         self.probe.section("LOD et envoi au GPU", section);
     }
 
@@ -926,9 +932,10 @@ impl App {
     /// Tessellation egui, puis rendu WGPU (3D + egui pass)
     fn render(&mut self, mut full_output: egui::FullOutput, ui_section: Instant) {
         let Self { ui_state, state, probe, .. } = self;
-        herocraft_common::prof_scope!("frame::egui_tessellate" => tess_guard);
-        let paint_jobs = ui_state.ctx.tessellate(full_output.shapes, ui_state.scale_factor);
-        drop(tess_guard);
+        let paint_jobs = {
+            herocraft_common::prof_scope!("frame::egui_tessellate");
+            ui_state.ctx.tessellate(full_output.shapes, ui_state.scale_factor)
+        };
         probe.section("interface", ui_section);
         let screen_descriptor = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [state.size.width, state.size.height],

@@ -17,6 +17,7 @@ mod window_input;
 
 use super::*;
 use winit::dpi::PhysicalSize;
+use winit::application::ApplicationHandler;
 use winit::event_loop::EventLoop;
 use winit::keyboard::Key;
 
@@ -138,8 +139,7 @@ impl App {
         // Banc d'essai : toujours la même planète, sauf graine imposée
         let current_seed = launch.seed.or(benchmark::requested().then_some(benchmark::DEFAULT_SEED)).unwrap_or_else(herocraft_world::random_seed);
         info!("Planète de graine #{current_seed} (relancer avec --seed {current_seed} pour la retrouver).");
-        let mut planet_desc = herocraft_world::PlanetDescriptor::default();
-        planet_desc.seed = current_seed;
+        let planet_desc = herocraft_world::PlanetDescriptor { seed: current_seed, ..Default::default() };
 
         info!("Initialisation de la planète et du gestionnaire QuadTree...");
         let generator = herocraft_world::PlanetWorldGenerator::new(planet_desc);
@@ -353,20 +353,49 @@ impl App {
 }
 
 /// La boucle d'événements telle que la voient les gestionnaires (pour quitter le jeu)
-pub(crate) type EventLoopTarget = winit::event_loop::EventLoopWindowTarget<()>;
+pub(crate) type EventLoopTarget = ActiveEventLoop;
 
-/// Fait tourner la boucle d'événements de winit sur l'application jusqu'à la fermeture du jeu
-pub(crate) fn run(event_loop: EventLoop<()>, mut app: App) {
-    event_loop
-        .run(move |event, target| {
-            target.set_control_flow(ControlFlow::Poll);
-            match event {
-                Event::WindowEvent { window_id, ref event } if window_id == app.window.id() => app.window_event(target, event),
-                // Mouvement brut de la souris : oriente le regard quand le curseur est capturé
-                Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta }, .. } => app.mouse_motion(delta),
-                Event::AboutToWait => app.window.request_redraw(),
-                _ => {}
-            }
-        })
-        .expect("Erreur dans la boucle d'événements");
+/// L'application vue par winit : la partie (`App`) n'existe qu'une fois la fenêtre ouverte, à la
+/// première reprise de l'application
+struct Launcher {
+    /// Écran demandé pour la fenêtre (`HEROCRAFT_MONITOR`)
+    wanted_monitor: Option<String>,
+    app: Option<App>,
+}
+
+impl ApplicationHandler for Launcher {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.app.is_none() {
+            let window = create_window(event_loop, self.wanted_monitor.as_deref());
+            self.app = Some(App::new(Arc::new(window)));
+        }
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
+        if let Some(app) = self.app.as_mut().filter(|app| app.window.id() == window_id) {
+            app.window_event(event_loop, &event);
+        }
+    }
+
+    fn device_event(&mut self, _event_loop: &ActiveEventLoop, _device_id: DeviceId, event: DeviceEvent) {
+        // Mouvement brut de la souris : oriente le regard quand le curseur est capturé
+        if let (Some(app), DeviceEvent::MouseMotion { delta }) = (self.app.as_mut(), event) {
+            app.mouse_motion(delta);
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(app) = self.app.as_ref() {
+            app.window.request_redraw();
+        }
+    }
+}
+
+/// Fait tourner la boucle d'événements de winit jusqu'à la fermeture du jeu : la fenêtre s'ouvre
+/// (sur l'écran `wanted_monitor` s'il est demandé) et la partie se prépare au démarrage
+pub(crate) fn run(event_loop: EventLoop<()>, wanted_monitor: Option<String>) {
+    // Le jeu dessine en continu
+    event_loop.set_control_flow(ControlFlow::Poll);
+    let mut launcher = Launcher { wanted_monitor, app: None };
+    event_loop.run_app(&mut launcher).expect("Erreur dans la boucle d'événements");
 }

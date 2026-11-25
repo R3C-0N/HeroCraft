@@ -4,10 +4,10 @@ use std::time::Instant;
 use log::{info, warn};
 use winit::{
     dpi::{LogicalSize, PhysicalPosition},
-    event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
-    event_loop::ControlFlow,
+    event::{DeviceEvent, DeviceId, ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent},
+    event_loop::{ActiveEventLoop, ControlFlow},
     keyboard::{KeyCode, ModifiersState, PhysicalKey},
-    window::{CursorGrabMode, Window, WindowBuilder},
+    window::{CursorGrabMode, Window, WindowId},
 };
 
 mod app;
@@ -118,18 +118,19 @@ fn main() {
 
     let wanted_monitor = monitor::requested();
     let event_loop = monitor::build_event_loop(wanted_monitor.is_some());
-    let window = WindowBuilder::new()
-        .with_title(WINDOW_TITLE)
-        .with_inner_size(LogicalSize::new(1280, 720))
-        .build(&event_loop)
-        .expect("Échec de création de la fenêtre Winit");
-    if let Some(m) = wanted_monitor.as_deref().and_then(|name| monitor::find(&event_loop, name)) {
+    // La fenêtre s'ouvre et la partie se prépare à la reprise de l'application (`resumed`)
+    app::run(event_loop, wanted_monitor);
+}
+
+/// Ouvre la fenêtre du jeu, sur l'écran `wanted_monitor` s'il est demandé (`HEROCRAFT_MONITOR`)
+fn create_window(event_loop: &ActiveEventLoop, wanted_monitor: Option<&str>) -> Window {
+    let attributes = Window::default_attributes().with_title(WINDOW_TITLE).with_inner_size(LogicalSize::new(1280, 720));
+    let window = event_loop.create_window(attributes).expect("Échec de création de la fenêtre Winit");
+    if let Some(m) = wanted_monitor.and_then(|name| monitor::find(event_loop, name)) {
         window.set_outer_position(monitor::centered_position(&m, window.outer_size()));
         info!("Fenêtre ouverte sur l'écran {:?}.", m.name());
     }
-
-    let app = app::App::new(Arc::new(window));
-    app::run(event_loop, app);
+    window
 }
 
 /// Titre de la fenêtre en solo
