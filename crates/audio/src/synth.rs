@@ -45,7 +45,8 @@ impl Noise {
         Self(seed.wrapping_mul(0x9E37_79B9) | 1)
     }
 
-    /// Valeur uniforme dans [-1, 1]
+    /// Valeur uniforme dans [-1, 1]. Le générateur ne s'arrête jamais : ce n'est pas un `Iterator`.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> f32 {
         let mut x = self.0;
         x ^= x << 13;

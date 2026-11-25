@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use herocraft_common::{skills, CharacterStats};
 
-use crate::skinned_model::Texture;
+use herocraft_render::skinned_model::Texture;
 
 /// Nombre de cases de la barre
 pub const SKILL_SLOTS: usize = 4;

@@ -5,6 +5,9 @@ members = [
     "crates/world",
     "crates/voxel_engine",
     "crates/meshing",
+    "crates/render",
+    "crates/ui",
+    "crates/audio",
     "crates/server",
     "crates/client",
 ]

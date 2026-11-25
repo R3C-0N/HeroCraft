@@ -14,7 +14,7 @@ use std::f32::consts::{PI, TAU};
 use herocraft_common::skills::{rank, SkillNode};
 use herocraft_common::{CharacterStats, SkillWheel};
 
-use crate::ui::{GOLD, GOLD_BRIGHT, MENU_PADDING, TEXT_DIM, TEXT_SOFT};
+use crate::theme::{GOLD, GOLD_BRIGHT, MENU_PADDING, TEXT_DIM, TEXT_SOFT};
 
 /// Diamètre de la roue, en points d'écran : la hauteur de l'écran moins l'en-tête, dans ces bornes
 const WHEEL_MIN_SIZE: f32 = 380.0;
@@ -201,7 +201,7 @@ impl SkillScreen {
         }
         // Molette sur la roue : une classe par cran
         if response.hovered() {
-            self.scroll += ui.input(|i| { let d = crate::ui::raw_scroll_delta(i); d.y + d.x });
+            self.scroll += ui.input(|i| { let d = crate::theme::raw_scroll_delta(i); d.y + d.x });
             while self.scroll.abs() >= SCROLL_STEP {
                 let step = self.scroll.signum();
                 self.turn(-(step as i32), count);

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use herocraft_common::{blocks, items, BlockId, ItemId};
 
-use crate::skinned_model::Texture;
+use herocraft_render::skinned_model::Texture;
 
 /// Images déjà envoyées à egui, par fichier (aucune si le fichier est illisible)
 #[derive(Default)]

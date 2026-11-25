@@ -62,44 +62,16 @@ fn orbit_factor(eye_distance: f32, planet_radius: f32, ground_factor: f32) -> f3
     ((altitude - 3.0 * scale) / (12.0 * scale)).clamp(0.0, 1.0).min(1.0 - ground_factor)
 }
 
-/// Plus haut relief (en blocs au-dessus de la mer) pris en compte pour borner l'aplatissement
-const FLATTEN_MOUNTAIN_BLOCKS: f32 = 150.0;
+pub use herocraft_render::flattening::planet_flattening;
 
 /// Distance au sol (en blocs) sur laquelle l'aplatissement passe de rien à complet
 const FLATTEN_BLEND_BLOCKS: f32 = 16.0;
-
-/// Altitudes de l'œil au-dessus de la mer (en blocs) entre lesquelles l'aplatissement s'efface :
-/// complet en dessous, vraie courbure au-dessus. Vue de haut, la planète entière est visible et
-/// n'a plus besoin d'être aplatie : le dézoom vers l'orbite la ramène doucement à sa forme.
-const FLATTEN_FADE_BLOCKS: (f32, f32) = (40.0, 400.0);
 
 /// Recul de la caméra en troisième personne (en blocs) pris en compte dans la zone laissée
 /// intacte autour d'elle : au-delà, la zone grandirait avec le recul et l'aplatissement, alors
 /// déjà fort à son bord, s'y ferait d'un coup (relief étiré en traînées)
 const FLATTEN_ARM_BLOCKS: f32 = 4.0;
 
-/// Rayon apparent de la planète vue du sol, en multiple de son vrai rayon (k >= 1).
-///
-/// Le relief est redessiné sur un globe k fois plus grand, tangent à la vraie planète sous la
-/// caméra : l'horizon recule de √k. Toute la planète tient alors dans une calotte de ce grand
-/// globe, dont le bord (les antipodes) ne doit jamais se voir : la distance de l'horizon depuis
-/// l'œil, plus celle d'où l'on voit encore un sommet au-delà, reste sous 0,9 demi-tour de la vraie
-/// planète. k décroît donc avec l'altitude, et s'efface tout à fait entre 40 et 400 blocs
-/// au-dessus de la mer (`FLATTEN_FADE_BLOCKS`). `strength` (0..1) va de la vraie courbure (0) à
-/// ce maximum (1), en progression géométrique.
-pub fn planet_flattening(eye_radius: f32, base_radius: f32, strength: f32) -> f32 {
-    let block = base_radius * std::f32::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f32);
-    let sea_radius = base_radius + herocraft_world::SEA_LEVEL_BLOCKS as f32 * block;
-    // Au moins la hauteur des yeux : k varierait sinon très vite au ras de l'eau
-    let h = (eye_radius - sea_radius).max(2.0 * block);
-    let reach = h.sqrt() + (FLATTEN_MOUNTAIN_BLOCKS * block).sqrt();
-    // (0,9 π)² / 2 ≈ 4 : √(2 k R h) + √(2 k R H) <= 0,9 π R
-    let k_max = (4.0 * sea_radius / (reach * reach)).max(1.0);
-    let (fade_low, fade_high) = FLATTEN_FADE_BLOCKS;
-    let t = ((h / block - fade_low) / (fade_high - fade_low)).clamp(0.0, 1.0);
-    let fade = 1.0 - t * t * (3.0 - 2.0 * t);
-    k_max.powf(strength.clamp(0.0, 1.0) * fade)
-}
 
 /// Maillage du relief sur le GPU : positions seules (lues aussi par les passes d'ombre), puis
 /// attributs tassés (`GpuMeshData`)
@@ -376,7 +348,7 @@ impl ScenePipelines {
         // -------------------------------------------------------------
         // Pipeline Nuages 3D physiques réels (traversables et visibles à leur altitude)
         // -------------------------------------------------------------
-        let cloud_shader = crate::shaders::create_shader_module(device, "Cloud Shader", include_str!("cloud_shader.wgsl"), "cloud_shader.wgsl");
+        let cloud_shader = crate::shaders::create_shader_module(device, "Cloud Shader", crate::shaders::CLOUD_SHADER, "cloud_shader.wgsl");
 
         let cloud_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Cloud Render Pipeline"),
@@ -1541,37 +1513,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_planet_flattening_bounds() {
-        let r = 50.0_f32;
-        let block = r * std::f32::consts::FRAC_PI_4 * (2.0 / herocraft_world::FACE_BLOCKS as f32);
-        let sea = r + herocraft_world::SEA_LEVEL_BLOCKS as f32 * block;
-        // Réglage à 0 : vraie courbure à toute altitude
-        assert_eq!(planet_flattening(sea + 2.0 * block, r, 0.0), 1.0);
-        // Au sol : le globe apparent est bien plus grand, l'horizon recule d'au moins 3 fois
-        let k_ground = planet_flattening(sea + 1.7 * block, r, 1.0);
-        assert!(k_ground > 9.0, "k au sol = {k_ground}");
-        // Décroît avec l'altitude et revient à 1 bien avant l'orbite
-        let k_high = planet_flattening(sea + 100.0 * block, r, 1.0);
-        assert!(k_high > 1.0 && k_high < k_ground);
-        assert_eq!(planet_flattening(sea + 400.0 * block, r, 1.0), 1.0);
-        assert_eq!(planet_flattening(r * 6.6, r, 1.0), 1.0);
-        // Sans saut pendant le dézoom
-        let mut last = planet_flattening(sea, r, 1.0);
-        for i in 0..=800 {
-            let k = planet_flattening(sea + i as f32 * 0.5 * block, r, 1.0);
-            assert!(k <= last + 1e-3 && last / k < 1.05, "saut de k à {} blocs : {last} -> {k}", i as f32 * 0.5);
-            last = k;
-        }
-        // Les antipodes restent cachées : horizon + portée d'un sommet sous 0,9 demi-tour
-        for h_blocks in [0.0_f32, 2.0, 30.0, 300.0] {
-            let k = planet_flattening(sea + h_blocks * block, r, 1.0);
-            let big = k * sea;
-            let seen = (2.0 * big * h_blocks * block).sqrt() + (2.0 * big * FLATTEN_MOUNTAIN_BLOCKS * block).sqrt();
-            assert!(seen <= 0.9 * std::f32::consts::PI * sea * 1.001, "h = {h_blocks} : {seen}");
-        }
-    }
-
-    #[test]
     fn test_draw_set_fingerprint_ignores_order() {
         let id = |x: u32| LodMeshId {
             generation: 3,
@@ -1614,34 +1555,18 @@ mod tests {
         let sky_shader = include_str!("sky_shader.wgsl");
         let terrain_shader = include_str!("shader.wgsl");
         let ui_shader = include_str!("ui_shader.wgsl");
-        let cloud_shader = include_str!("cloud_shader.wgsl");
-        let post_shader = include_str!("post_shader.wgsl");
-        let shadow_caster = include_str!("shadow_caster.wgsl");
-        let atmosphere_lut = include_str!("atmosphere_lut.wgsl");
-        let god_rays = include_str!("god_rays.wgsl");
-        let block_outline = include_str!("block_outline.wgsl");
-        let block_cracks = include_str!("block_cracks.wgsl");
         let creature = include_str!("creature.wgsl");
-        let precipitation = include_str!("precipitation.wgsl");
         let effects = include_str!("effects.wgsl");
 
         for (name, source) in [
             ("sky_shader.wgsl", sky_shader),
             ("shader.wgsl", terrain_shader),
             ("ui_shader.wgsl", ui_shader),
-            ("cloud_shader.wgsl", cloud_shader),
-            ("post_shader.wgsl", post_shader),
-            ("shadow_caster.wgsl", shadow_caster),
-            ("atmosphere_lut.wgsl", atmosphere_lut),
-            ("god_rays.wgsl", god_rays),
-            ("block_outline.wgsl", block_outline),
-            ("block_cracks.wgsl", block_cracks),
             ("creature.wgsl", creature),
-            ("precipitation.wgsl", precipitation),
             ("effects.wgsl", effects),
         ] {
             // Assemblage naga_oil (imports de common.wgsl) puis validation complète
-            let module = if matches!(name, "ui_shader.wgsl" | "post_shader.wgsl" | "shadow_caster.wgsl") {
+            let module = if name == "ui_shader.wgsl" {
                 naga::front::wgsl::parse_str(source).unwrap_or_else(|e| panic!("Failed to parse {name}:\n{e}"))
             } else {
                 crate::shaders::compose(source, name).unwrap_or_else(|e| panic!("Failed to compose {name}:\n{e}"))

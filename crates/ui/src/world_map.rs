@@ -26,7 +26,7 @@ use herocraft_world::structures::{Rect, CELL, REGIONS_PER_FACE, REGION_BLOCKS};
 use herocraft_world::{PlanetWorldGenerator, SettlementKind};
 use rayon::prelude::*;
 
-use crate::ui::{GOLD, GOLD_BRIGHT, TEXT_DIM, TEXT_SOFT};
+use crate::theme::{GOLD, GOLD_BRIGHT, TEXT_DIM, TEXT_SOFT};
 
 /// Côté de l'image du relief, en pixels de carte
 pub const MAP_PIXELS: usize = 320;
@@ -149,7 +149,7 @@ fn column_of(dir: DVec3) -> (PlanetFace, i32, i32) {
 }
 
 /// Direction du centre de la colonne (x, z) d'une face (coordonnées continues de blocs)
-pub(crate) fn dir_of(face: PlanetFace, x: f64, z: f64) -> DVec3 {
+pub fn dir_of(face: PlanetFace, x: f64, z: f64) -> DVec3 {
     let span = 2.0 / FACE_BLOCKS as f64;
     face.uv_to_sphere_direction(-1.0 + x * span, -1.0 + z * span)
 }
@@ -528,7 +528,7 @@ impl WorldMap {
         let (jobs, job_rx) = mpsc::channel();
         let (reply_tx, replies) = mpsc::channel();
         let spawned = std::thread::Builder::new().name("carte".into()).spawn(move || {
-            crate::threads::lower_current_thread_priority();
+            herocraft_common::threads::lower_current_thread_priority();
             worker(job_rx, reply_tx)
         });
         if let Err(e) = spawned {
@@ -746,7 +746,7 @@ impl WorldMap {
             }
         }
         if response.hovered() {
-            self.scroll += ui.input(|i| crate::ui::raw_scroll_delta(i).y);
+            self.scroll += ui.input(|i| crate::theme::raw_scroll_delta(i).y);
             let (plus, minus) = ui.input(|i| {
                 (i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals), i.key_pressed(egui::Key::Minus))
             });

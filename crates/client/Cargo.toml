@@ -14,6 +14,9 @@ herocraft_voxel_engine = { path = "../voxel_engine" }
 herocraft_world = { path = "../world" }
 herocraft_server = { path = "../server" }
 herocraft_meshing = { path = "../meshing" }
+herocraft_render = { path = "../render" }
+herocraft_ui = { path = "../ui" }
+herocraft_audio = { path = "../audio" }
 glam = { workspace = true }
 mimalloc = { workspace = true }
 serde = { workspace = true }
@@ -28,19 +31,12 @@ pollster = "0.3"
 dotenvy = "0.15"
 bytemuck = { version = "1.18", features = ["derive"] }
 rayon = "1.10"
-thread-priority = "3"
 egui = { version = "0.37", features = ["default_fonts", "monochrome_emoji_fonts"] }
 egui-wgpu = "0.37"
 naga = "30"
 naga_oil = { version = "0.23", default-features = false }
-# Son : mixage et sortie audio (les sons sont synthétisés par le jeu, aucun décodeur requis)
-rodio = { version = "0.23", default-features = false, features = ["playback"] }
 png = "0.17"
 base64 = "0.22"
-
-# Son sous Linux : PulseAudio (et PipeWire) d'abord, ALSA en secours. WSLg n'expose que PulseAudio.
-[target.'cfg(target_os = "linux")'.dependencies]
-cpal = { version = "0.18", features = ["pulseaudio"] }
 
 # Crochet clavier : les touches du jeu passent avant PowerToys et les autres programmes
 [target.'cfg(windows)'.dependencies]
@@ -54,6 +50,7 @@ tracy = ["profiling", "herocraft_common/tracy"]
 
 [dev-dependencies]
 naga = { version = "30", features = ["wgsl-in"] }
+herocraft_ui = { path = "../ui", features = ["snapshot"] }
 
 [lints]
 workspace = true
