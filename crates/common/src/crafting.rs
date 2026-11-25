@@ -305,10 +305,9 @@ fn resolve(sheet: &RecipeSheet, result: ItemId, stations: &[Station], find: &imp
     if sheet.ingredients.0.is_empty() {
         return Err(RecipeError::NoIngredient);
     }
-    if let Some(block) = result.block() {
-        if blocks.drop_of(block) != Some(block) {
-            return Err(RecipeError::BlockNotKept);
-        }
+    if let Some(block) = result.block()
+        && blocks.drop_of(block) != Some(block) {
+        return Err(RecipeError::BlockNotKept);
     }
     let station = match &sheet.station {
         None => None,

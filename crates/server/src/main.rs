@@ -16,10 +16,8 @@ const USAGE: &str = "Usage : herocraft_server [--bind ADRESSE:PORT] [--port PORT
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> anyhow::Result<()> {
-    if std::env::var_os("RUST_LOG").is_none() {
-        std::env::set_var("RUST_LOG", "info");
-    }
-    env_logger::init();
+    // Niveau `info` par défaut, `RUST_LOG` le remplace s'il est défini
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let mut bind = format!("0.0.0.0:{DEFAULT_PORT}");
     let mut seed = 2026_u64;

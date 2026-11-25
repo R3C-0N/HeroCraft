@@ -750,10 +750,9 @@ impl UiState {
                 if let Some(key) = egui_key(&event.logical_key) {
                     self.raw_input.events.push(egui::Event::Key { key, physical_key: None, pressed, repeat: event.repeat, modifiers });
                 }
-                if pressed && !modifiers.ctrl {
-                    if let Some(text) = event.text.as_ref().filter(|t| t.chars().all(|c| !c.is_control())) {
-                        self.raw_input.events.push(egui::Event::Text(text.to_string()));
-                    }
+                if pressed && !modifiers.ctrl
+                    && let Some(text) = event.text.as_ref().filter(|t| t.chars().all(|c| !c.is_control())) {
+                    self.raw_input.events.push(egui::Event::Text(text.to_string()));
                 }
             }
 
@@ -1887,10 +1886,9 @@ impl UiState {
                 "Vue au sol : la planète est dessinée moins courbe pour voir plus loin (0 = vraie courbure)",
             );
         });
-        if let Some(q) = chosen {
-            if self.apply_graphics_quality(q) {
-                *action = Some(UiAction::SetLodDistance);
-            }
+        if let Some(q) = chosen
+            && self.apply_graphics_quality(q) {
+            *action = Some(UiAction::SetLodDistance);
         }
         ui.add_space(4.0_f32);
         ui.label(egui::RichText::new(format!("Détail actuel : {}", self.video_settings.lod_distance.label())).size(11.0_f32).color(TEXT_DIM));

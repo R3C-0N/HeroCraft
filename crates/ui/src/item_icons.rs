@@ -59,10 +59,9 @@ impl ItemIcons {
         let ctx = painter.ctx();
         let tint = sheet.texture_tint.map_or(egui::Color32::WHITE, |t| to_color(t.0, 1.0));
         let side = self.block_texture(ctx, &sheet.textures.side);
-        if block.is_plant() {
-            if let Some(texture) = side {
-                return paint_flat(painter, rect.shrink(rect.width() * 0.14), texture, tint);
-            }
+        if block.is_plant()
+            && let Some(texture) = side {
+            return paint_flat(painter, rect.shrink(rect.width() * 0.14), texture, tint);
         }
         let top = self.block_texture(ctx, &sheet.textures.top).or(side);
         paint_cube(painter, rect, [top, side], [sheet.top_color(), sheet.side_color()], tint);

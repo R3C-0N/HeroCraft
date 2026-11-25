@@ -165,12 +165,11 @@ impl Rig {
             }
             animations.insert(name.clone(), RigAnimation { clip: animation.clip.clone(), cycle: animation.cycle, foulee: animation.foulee, motions });
         }
-        if animations.is_empty() {
-            if let Some(clip) = model.animation("repos") {
-                let cycle = clip.duration.max(1e-3);
-                let foulee = Some(species.walk_speed.max(0.1) * cycle);
-                animations.insert("marche".into(), RigAnimation { clip: Some("repos".into()), cycle, foulee, motions: Vec::new() });
-            }
+        if animations.is_empty()
+            && let Some(clip) = model.animation("repos") {
+            let cycle = clip.duration.max(1e-3);
+            let foulee = Some(species.walk_speed.max(0.1) * cycle);
+            animations.insert("marche".into(), RigAnimation { clip: Some("repos".into()), cycle, foulee, motions: Vec::new() });
         }
         (Self { model, animations }, missing)
     }
@@ -351,14 +350,13 @@ impl CreatureAnimator {
             gait.speed += (moved / dt - gait.speed) * (SPEED_SMOOTHING * dt).min(1.0);
             let (Some(species), Some(rig)) = (view.species.and_then(|s| registry.get(s)), models.get(view.species)) else { continue };
             // Une entité invoquée qui apparaît joue son apparition une seule fois, au rythme du serveur
-            if let CreatureAction::Apparition(done) = view.action {
-                if rig.animations.contains_key("apparition") {
-                    gait.current = "apparition".into();
-                    gait.phase = (done as f32 / 255.0).min(0.999);
-                    gait.previous = None;
-                    gait.blend = 1.0;
-                    continue;
-                }
+            if let CreatureAction::Apparition(done) = view.action
+                && rig.animations.contains_key("apparition") {
+                gait.current = "apparition".into();
+                gait.phase = (done as f32 / 255.0).min(0.999);
+                gait.previous = None;
+                gait.blend = 1.0;
+                continue;
             }
 
             let wanted = wanted_animation(view, species, rig, gait.speed);

@@ -572,10 +572,9 @@ impl Preview {
 
     fn texture(&mut self, ctx: &egui::Context, cfg: &Appearance) -> egui::TextureHandle {
         let key = cfg.sheet_key();
-        if let Some((k, tex)) = &self.texture {
-            if *k == key {
-                return tex.clone();
-            }
+        if let Some((k, tex)) = &self.texture
+            && *k == key {
+            return tex.clone();
         }
         let sheet = hero::paint(cfg);
         let image = egui::ColorImage::from_rgba_unmultiplied([SHEET_SIZE, SHEET_SIZE], &sheet.rgba);

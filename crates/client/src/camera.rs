@@ -987,17 +987,16 @@ impl OrbitCamera {
         }
 
         // Plafond : la tête qui monte dans un bloc s'y arrête
-        if current_radius > previous_radius {
-            if let Some(collider) = &self.collider {
-                let h = collider.block_height();
-                let head = new_up * (current_radius + self.hero_height * h);
-                if collider.any_solid(generator, &footprint(head, h)) {
-                    // Arrêt contre le dessous du bloc touché par la tête
-                    let ceiling_altitude = ((head.length() - self.base_radius) / h).floor();
-                    let ceiling_radius = self.base_radius + ceiling_altitude * h;
-                    current_radius = (ceiling_radius - (self.hero_height + 0.01) * h).clamp(previous_radius, current_radius);
-                    self.vertical_velocity = 0.0;
-                }
+        if current_radius > previous_radius
+            && let Some(collider) = &self.collider {
+            let h = collider.block_height();
+            let head = new_up * (current_radius + self.hero_height * h);
+            if collider.any_solid(generator, &footprint(head, h)) {
+                // Arrêt contre le dessous du bloc touché par la tête
+                let ceiling_altitude = ((head.length() - self.base_radius) / h).floor();
+                let ceiling_radius = self.base_radius + ceiling_altitude * h;
+                current_radius = (ceiling_radius - (self.hero_height + 0.01) * h).clamp(previous_radius, current_radius);
+                self.vertical_velocity = 0.0;
             }
         }
 
@@ -1407,8 +1406,8 @@ mod tests {
             seed: 2026,
             ..Default::default()
         };
-        let gen = PlanetWorldGenerator::new(desc);
-        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &gen);
+        let world_gen = PlanetWorldGenerator::new(desc);
+        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &world_gen);
 
         // Test à différentes distances (FPS, TPS court, TPS long, Transition, Satellite)
         // et sous différents angles de tangage (regard en l'air, vers le sol, etc.)
@@ -1416,9 +1415,9 @@ mod tests {
             for &pitch in &[-1.4, -0.7, 0.0, 0.7, 1.4] {
                 cam.distance = dist;
                 cam.player_pitch = pitch;
-                cam.update_camera_bounds(&gen);
+                cam.update_camera_bounds(&world_gen);
 
-                let ground_r = cam.ground_radius_at(cam.effective_eye, &gen);
+                let ground_r = cam.ground_radius_at(cam.effective_eye, &world_gen);
                 assert!(
                     cam.effective_eye.length() >= ground_r + 0.02,
                     "Camera went underground! Eye radius {}, ground radius {} at dist {}, pitch {}",
@@ -1453,8 +1452,8 @@ mod tests {
             seed: 2026,
             ..Default::default()
         };
-        let gen = PlanetWorldGenerator::new(desc);
-        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &gen);
+        let world_gen = PlanetWorldGenerator::new(desc);
+        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &world_gen);
 
         // Au départ en orbite
         let start = 6.6 * crate::camera::DEFAULT_RADIUS;
@@ -1462,14 +1461,14 @@ mod tests {
         assert_eq!(cam.distance, start);
 
         // Déclenchement d'une transition vers le sol (FPS)
-        cam.transition_to_ground(&gen);
+        cam.transition_to_ground(&world_gen);
         assert_eq!(cam.target_distance, 0.0);
         assert_eq!(cam.distance, start); // La distance ne se téléporte pas !
 
         // Simulation de quelques frames
         let mut intermediate_distances = Vec::new();
         for _ in 0..60 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
             intermediate_distances.push(cam.distance);
         }
 
@@ -1486,16 +1485,16 @@ mod tests {
             seed: 2026,
             ..Default::default()
         };
-        let gen = PlanetWorldGenerator::new(desc);
-        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &gen);
-        cam.spawn_on_ground(&gen);
-        cam.update(0.016, &gen);
-        (cam, gen)
+        let world_gen = PlanetWorldGenerator::new(desc);
+        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &world_gen);
+        cam.spawn_on_ground(&world_gen);
+        cam.update(0.016, &world_gen);
+        (cam, world_gen)
     }
 
     #[test]
     fn test_jump_leaves_ground_and_lands() {
-        let (mut cam, gen) = ground_test_camera();
+        let (mut cam, world_gen) = ground_test_camera();
         let ground = cam.player_pos.length();
         assert!(cam.is_grounded);
 
@@ -1503,7 +1502,7 @@ mod tests {
         let mut peak = ground;
         let mut airborne = 0;
         for _ in 0..120 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
             peak = peak.max(cam.player_pos.length());
             airborne += usize::from(!cam.is_grounded);
         }
@@ -1518,12 +1517,12 @@ mod tests {
 
     #[test]
     fn test_fall_is_measured_from_the_peak() {
-        let (mut cam, gen) = ground_test_camera();
+        let (mut cam, world_gen) = ground_test_camera();
         let block = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
         // Un saut sur place ne blesse pas
         cam.jump_requested = true;
         for _ in 0..240 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         let jump = cam.take_landing().expect("le saut retombe au sol");
         assert!(jump < herocraft_common::SAFE_FALL_BLOCKS, "saut de {jump} blocs");
@@ -1534,7 +1533,7 @@ mod tests {
         cam.player_pos += up * 12.0 * block;
         cam.is_grounded = false;
         for _ in 0..240 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         let fall = cam.take_landing().expect("la chute se termine au sol");
         assert!((fall - 12.0).abs() < 0.5, "chute de {fall} blocs");
@@ -1543,12 +1542,12 @@ mod tests {
         cam.toggle_flight();
         cam.ascend_held = true;
         for _ in 0..60 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         cam.ascend_held = false;
         cam.descend_held = true;
         for _ in 0..600 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         assert!(cam.is_grounded && !cam.is_flying);
         assert_eq!(cam.take_landing(), None);
@@ -1556,12 +1555,12 @@ mod tests {
 
     #[test]
     fn test_crouching_slows_walking_and_lowers_the_eyes() {
-        let (mut cam, gen) = ground_test_camera();
+        let (mut cam, world_gen) = ground_test_camera();
         let walk = |cam: &mut OrbitCamera| {
             let start = cam.player_pos;
             cam.move_forward = true;
             for _ in 0..30 {
-                cam.update(0.016, &gen);
+                cam.update(0.016, &world_gen);
             }
             cam.move_forward = false;
             cam.player_pos.distance(start)
@@ -1586,7 +1585,7 @@ mod tests {
 
     #[test]
     fn test_flight_climbs_hovers_and_lands() {
-        let (mut cam, gen) = ground_test_camera();
+        let (mut cam, world_gen) = ground_test_camera();
         let ground = cam.player_pos.length();
 
         cam.toggle_flight();
@@ -1595,7 +1594,7 @@ mod tests {
         // Saut maintenu : montée sans gravité
         cam.ascend_held = true;
         for _ in 0..30 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         cam.ascend_held = false;
         let altitude = cam.player_pos.length();
@@ -1603,14 +1602,14 @@ mod tests {
 
         // Rien de maintenu : le joueur plane
         for _ in 0..30 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         assert!((cam.player_pos.length() - altitude).abs() < 1e-3, "le vol ne doit pas retomber");
 
         // Descendre jusqu'au sol met fin au vol
         cam.descend_held = true;
         for _ in 0..300 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         assert!(!cam.is_flying, "se poser doit terminer le vol");
         assert!(cam.is_grounded);
@@ -1619,11 +1618,11 @@ mod tests {
     /// Joueur sur une aire plate de 9×9 blocs taillée autour de ses pieds, collisions par blocs actives.
     /// Renvoie aussi l'altitude (en blocs) du dessus de l'aire.
     fn voxel_test_camera() -> (OrbitCamera, PlanetWorldGenerator, Arc<TerrainEdits>, i32) {
-        let gen = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 2026, ..Default::default() });
-        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &gen);
+        let world_gen = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 2026, ..Default::default() });
+        let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &world_gen);
         let edits = Arc::new(TerrainEdits::new(None));
         cam.set_terrain(edits.clone());
-        cam.spawn_on_ground(&gen);
+        cam.spawn_on_ground(&world_gen);
         let geometry = herocraft_world::BlockGeometry::new(cam.base_radius as f64);
         // Au milieu de son bloc : le trou de 3 × 3 blocs creusé autour couvre toute son empreinte
         let (pos, frac) = geometry.locate(cam.player_pos.as_dvec3()).unwrap();
@@ -1632,16 +1631,16 @@ mod tests {
         for (dx, dz) in (-4..=4).flat_map(|i| (-4..=4).map(move |j| (i as f32, j as f32))) {
             let column = cell_at(&cam, dx, dz, 0);
             for y in floor - 3..floor {
-                edits.set_block(&gen, herocraft_world::BlockPos { y, ..column }, herocraft_common::BlockId::STONE);
+                edits.set_block(&world_gen, herocraft_world::BlockPos { y, ..column }, herocraft_common::BlockId::STONE);
             }
             for y in floor..floor + 6 {
-                edits.set_block(&gen, herocraft_world::BlockPos { y, ..column }, herocraft_common::BlockId::AIR);
+                edits.set_block(&world_gen, herocraft_world::BlockPos { y, ..column }, herocraft_common::BlockId::AIR);
             }
         }
         for _ in 0..30 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
-        (cam, gen, edits, floor)
+        (cam, world_gen, edits, floor)
     }
 
     /// Bloc décalé de (avant, droite) blocs des pieds du joueur, à l'altitude `y`
@@ -1658,36 +1657,36 @@ mod tests {
         (cam.player_pos.length() - cam.base_radius) / h
     }
 
-    fn fill(cam: &OrbitCamera, gen: &PlanetWorldGenerator, edits: &TerrainEdits, forwards: &[f32], ys: &[i32], block: herocraft_common::BlockId) {
+    fn fill(cam: &OrbitCamera, world_gen: &PlanetWorldGenerator, edits: &TerrainEdits, forwards: &[f32], ys: &[i32], block: herocraft_common::BlockId) {
         for &f in forwards {
             for r in [-1.0, 0.0, 1.0] {
                 for &y in ys {
-                    edits.set_block(gen, cell_at(cam, f, r, y), block);
+                    edits.set_block(world_gen, cell_at(cam, f, r, y), block);
                 }
             }
         }
     }
 
-    fn walk(cam: &mut OrbitCamera, gen: &PlanetWorldGenerator, seconds: f32) {
+    fn walk(cam: &mut OrbitCamera, world_gen: &PlanetWorldGenerator, seconds: f32) {
         cam.move_forward = true;
         for _ in 0..(seconds / 0.016) as usize {
-            cam.update(0.016, gen);
+            cam.update(0.016, world_gen);
         }
         cam.move_forward = false;
         for _ in 0..60 {
-            cam.update(0.016, gen);
+            cam.update(0.016, world_gen);
         }
     }
 
     #[test]
     fn a_skill_dash_carries_the_player_forward() {
-        let (mut cam, gen, _, _) = voxel_test_camera();
+        let (mut cam, world_gen, _, _) = voxel_test_camera();
         let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
         let (_, forward, _, _) = cam.look_vectors();
         let start = cam.player_pos;
         cam.launch(3.0, 0.0, 0.0, 0.3);
         for _ in 0..40 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         let ahead = (cam.player_pos - start).dot(forward) / h;
         assert!((ahead - 3.0).abs() < 0.3, "ruée de {ahead} blocs");
@@ -1695,29 +1694,29 @@ mod tests {
 
     #[test]
     fn a_skill_teleport_lands_on_the_nearest_free_spot_and_turns_the_view() {
-        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        let (mut cam, world_gen, edits, floor) = voxel_test_camera();
         let geometry = herocraft_world::BlockGeometry::new(cam.base_radius as f64);
         let h = geometry.block_height as f32;
         let (_, forward, _, _) = cam.look_vectors();
         let centre = |p: herocraft_world::BlockPos| geometry.corner(p.face, p.x as f64 + 0.5, p.y as f64, p.z as f64 + 0.5).as_vec3();
         // Une place libre, trois blocs devant : il y est, le regard tourné vers l'arrière
         let free = centre(cell_at(&cam, 3.0, 0.0, floor));
-        assert!(cam.skill_teleport(free, -forward, &gen));
+        assert!(cam.skill_teleport(free, -forward, &world_gen));
         assert!(cam.player_pos.distance(free) < 1e-3);
         let (_, now_forward, _, _) = cam.look_vectors();
         assert!(now_forward.dot(-forward) > 0.99, "regard vers l'arrière");
         for _ in 0..60 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         assert_eq!(cam.take_landing(), None, "une téléportation n'est pas une chute");
 
         // Dans un pilier de pierre : à côté, à deux blocs au plus
         let pillar = cell_at(&cam, 2.0, 0.0, floor);
         for y in floor..floor + 3 {
-            edits.set_block(&gen, herocraft_world::BlockPos { y, ..pillar }, herocraft_common::BlockId::STONE);
+            edits.set_block(&world_gen, herocraft_world::BlockPos { y, ..pillar }, herocraft_common::BlockId::STONE);
         }
         let inside = centre(pillar);
-        assert!(cam.skill_teleport(inside, forward, &gen));
+        assert!(cam.skill_teleport(inside, forward, &world_gen));
         let landed = geometry.block_at_point(cam.player_pos.as_dvec3()).unwrap();
         assert!((landed.x, landed.z) != (pillar.x, pillar.z), "pas dans le pilier");
         assert!(cam.player_pos.distance(inside) <= (TELEPORT_SLACK + 1.1) * h);
@@ -1725,10 +1724,10 @@ mod tests {
 
     #[test]
     fn a_grapple_pulls_the_player_up_onto_a_ledge() {
-        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        let (mut cam, world_gen, edits, floor) = voxel_test_camera();
         let geometry = herocraft_world::BlockGeometry::new(cam.base_radius as f64);
         // Un mur de trois blocs de haut, trois blocs devant
-        fill(&cam, &gen, &edits, &[3.0], &[floor, floor + 1, floor + 2], herocraft_common::BlockId::STONE);
+        fill(&cam, &world_gen, &edits, &[3.0], &[floor, floor + 1, floor + 2], herocraft_common::BlockId::STONE);
         let wall = cell_at(&cam, 3.0, 0.0, floor + 2);
         // Accroché au haut de sa face, côté joueur
         let anchor = geometry.corner(wall.face, wall.x as f64 + 0.5, wall.y as f64 + 0.9, wall.z as f64 + 0.5).as_vec3();
@@ -1736,7 +1735,7 @@ mod tests {
         let anchor = anchor - forward * 0.45 * geometry.block_height as f32;
         cam.pull(anchor, 25.0, 0.0, true);
         for _ in 0..120 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         let on = geometry.block_at_point(cam.player_pos.as_dvec3()).unwrap();
         assert_eq!((on.x, on.z), (wall.x, wall.z), "hissé sur le mur");
@@ -1746,14 +1745,14 @@ mod tests {
 
     #[test]
     fn a_hover_lifts_the_player_and_lets_him_down_unhurt() {
-        let (mut cam, gen, _, floor) = voxel_test_camera();
+        let (mut cam, world_gen, _, floor) = voxel_test_camera();
         cam.hover(2.0, 0.5);
         for _ in 0..40 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         assert!((altitude_blocks(&cam) - (floor + 2) as f32).abs() < 0.1, "en l'air : {}", altitude_blocks(&cam));
         for _ in 0..120 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         assert!((altitude_blocks(&cam) - floor as f32).abs() < 0.1, "redescendu");
         assert_eq!(cam.take_landing(), None, "sans chute");
@@ -1761,7 +1760,7 @@ mod tests {
 
     #[test]
     fn a_summoned_wall_cannot_be_walked_through() {
-        let (mut cam, gen, _, _) = voxel_test_camera();
+        let (mut cam, world_gen, _, _) = voxel_test_camera();
         let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
         let (_, forward, _, _) = cam.look_vectors();
         let start = cam.player_pos;
@@ -1770,12 +1769,12 @@ mod tests {
         let wall = herocraft_common::Collider { shape: herocraft_common::CollisionShape::Box, half_width: 2.6, half_length: 0.6, height: 3.0, resistance: 1.0 };
         let yaw = forward.dot(east).atan2(forward.dot(north));
         cam.obstacles = vec![(start + forward * 2.0 * h, yaw, wall, true)];
-        walk(&mut cam, &gen, 1.5);
+        walk(&mut cam, &world_gen, 1.5);
         let ahead = (cam.player_pos - start).dot(forward) / h;
         assert!(ahead > 0.8 && ahead < 2.0 - 0.6 - 0.3 + 0.05, "le joueur est passé à {ahead} blocs");
         // Sans le mur, il passe
         cam.obstacles.clear();
-        walk(&mut cam, &gen, 0.5);
+        walk(&mut cam, &world_gen, 0.5);
         assert!((cam.player_pos - start).dot(forward) / h > 2.0);
     }
 
@@ -1788,10 +1787,10 @@ mod tests {
 
     #[test]
     fn test_voxel_player_falls_into_a_dug_hole() {
-        let (mut cam, gen, edits, floor) = voxel_test_camera();
-        fill(&cam, &gen, &edits, &[-1.0, 0.0, 1.0], &[floor - 1, floor - 2], herocraft_common::BlockId::AIR);
+        let (mut cam, world_gen, edits, floor) = voxel_test_camera();
+        fill(&cam, &world_gen, &edits, &[-1.0, 0.0, 1.0], &[floor - 1, floor - 2], herocraft_common::BlockId::AIR);
         for _ in 0..60 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         assert!(cam.is_grounded);
         assert!((altitude_blocks(&cam) - (floor - 2) as f32).abs() < 1e-2, "pieds à {}", altitude_blocks(&cam));
@@ -1799,10 +1798,10 @@ mod tests {
 
     #[test]
     fn test_voxel_one_block_step_needs_a_jump() {
-        let (mut cam, gen, edits, floor) = voxel_test_camera();
-        fill(&cam, &gen, &edits, &[1.5, 2.5, 3.5], &[floor], herocraft_common::BlockId::STONE);
+        let (mut cam, world_gen, edits, floor) = voxel_test_camera();
+        fill(&cam, &world_gen, &edits, &[1.5, 2.5, 3.5], &[floor], herocraft_common::BlockId::STONE);
         let start = cam.player_pos;
-        walk(&mut cam, &gen, 1.0);
+        walk(&mut cam, &world_gen, 1.0);
         let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
         let travelled = (cam.player_pos.normalize() - start.normalize()).length() * cam.base_radius / h;
         assert!(travelled < 1.5, "la marche doit arrêter le joueur ({} blocs parcourus)", travelled);
@@ -1811,25 +1810,25 @@ mod tests {
 
     #[test]
     fn test_voxel_slabs_are_climbed_without_jumping() {
-        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        let (mut cam, world_gen, edits, floor) = voxel_test_camera();
         let slab = herocraft_common::blocks().find("plankSlab").unwrap();
-        fill(&cam, &gen, &edits, &[1.5, 2.5, 3.5], &[floor], slab);
-        walk(&mut cam, &gen, 0.45);
+        fill(&cam, &world_gen, &edits, &[1.5, 2.5, 3.5], &[floor], slab);
+        walk(&mut cam, &world_gen, 0.45);
         assert!(cam.is_grounded);
         assert!((altitude_blocks(&cam) - (floor as f32 + 0.5)).abs() < 1e-2, "debout sur la dalle : pieds à {}", altitude_blocks(&cam));
     }
 
     #[test]
     fn test_voxel_stairs_are_climbed_step_by_step() {
-        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        let (mut cam, world_gen, edits, floor) = voxel_test_camera();
         let stairs = herocraft_common::blocks().find("plankStairs").unwrap();
         // Escalier tourné vers le joueur (marche basse devant lui), puis palier d'un bloc
         for r in [-1.0, 0.0, 1.0] {
             let pos = cell_at(&cam, 1.5, r, floor);
-            edits.set_block(&gen, pos, stairs.with_rotation(facing(&cam, pos)));
+            edits.set_block(&world_gen, pos, stairs.with_rotation(facing(&cam, pos)));
         }
-        fill(&cam, &gen, &edits, &[2.5, 3.5], &[floor], herocraft_common::BlockId::STONE);
-        walk(&mut cam, &gen, 0.55);
+        fill(&cam, &world_gen, &edits, &[2.5, 3.5], &[floor], herocraft_common::BlockId::STONE);
+        walk(&mut cam, &world_gen, 0.55);
         assert!((altitude_blocks(&cam) - (floor + 1) as f32).abs() < 1e-2, "en haut de l'escalier : pieds à {}", altitude_blocks(&cam));
     }
 
@@ -1852,33 +1851,33 @@ mod tests {
 
     /// Mur de pierre de 4 blocs devant le joueur, une échelle plaquée contre lui
     fn ladder_test_camera() -> (OrbitCamera, PlanetWorldGenerator, i32) {
-        let (cam, gen, edits, floor) = voxel_test_camera();
+        let (cam, world_gen, edits, floor) = voxel_test_camera();
         let ys: Vec<i32> = (floor..floor + 4).collect();
-        fill(&cam, &gen, &edits, &[2.5, 3.5], &ys, herocraft_common::BlockId::STONE);
+        fill(&cam, &world_gen, &edits, &[2.5, 3.5], &ys, herocraft_common::BlockId::STONE);
         let ladder = herocraft_common::blocks().find("ladder").unwrap();
         for r in [-1.0, 0.0, 1.0] {
             for &y in &ys {
                 let pos = cell_at(&cam, 1.5, r, y);
-                edits.set_block(&gen, pos, ladder.with_rotation(facing(&cam, pos)));
+                edits.set_block(&world_gen, pos, ladder.with_rotation(facing(&cam, pos)));
             }
         }
-        (cam, gen, floor)
+        (cam, world_gen, floor)
     }
 
     #[test]
     fn test_voxel_ladder_is_climbed_to_the_top_of_the_wall() {
-        let (mut cam, gen, floor) = ladder_test_camera();
+        let (mut cam, world_gen, floor) = ladder_test_camera();
         // Pousser contre l'échelle fait monter, jusqu'à prendre pied sur le mur
         cam.move_forward = true;
         for _ in 0..300 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
             if cam.is_grounded && altitude_blocks(&cam) > floor as f32 + 3.5 {
                 break;
             }
         }
         cam.move_forward = false;
         for _ in 0..30 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         assert!(cam.is_grounded);
         assert!((altitude_blocks(&cam) - (floor + 4) as f32).abs() < 1e-2, "en haut du mur : pieds à {}", altitude_blocks(&cam));
@@ -1886,10 +1885,10 @@ mod tests {
 
         // Demi-tour : s'écarter du mur au-dessus de l'échelle fait descendre, sans chute
         cam.player_yaw += std::f32::consts::PI;
-        walk(&mut cam, &gen, 0.3);
+        walk(&mut cam, &world_gen, 0.3);
         cam.move_forward = true;
         for _ in 0..200 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
             if altitude_blocks(&cam) < floor as f32 + 0.01 {
                 break;
             }
@@ -1901,15 +1900,15 @@ mod tests {
 
     #[test]
     fn test_voxel_player_hangs_on_a_ladder() {
-        let (mut cam, gen, floor) = ladder_test_camera();
+        let (mut cam, world_gen, floor) = ladder_test_camera();
         // Contre l'échelle (pousser contre elle fait déjà monter un peu), puis Saut maintenu
-        walk(&mut cam, &gen, 0.3);
-        assert!(cam.collider.as_ref().is_some_and(|c| ladder_contact(c, &gen, cam.player_pos).is_some()), "contre l'échelle");
+        walk(&mut cam, &world_gen, 0.3);
+        assert!(cam.collider.as_ref().is_some_and(|c| ladder_contact(c, &world_gen, cam.player_pos).is_some()), "contre l'échelle");
         let start = altitude_blocks(&cam);
         cam.ascend_held = true;
         cam.jump_requested = true;
         for _ in 0..25 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         cam.ascend_held = false;
         let hanging = altitude_blocks(&cam);
@@ -1917,32 +1916,32 @@ mod tests {
         assert!((hanging - start - 0.4 * CLIMB_SPEED).abs() < 0.2, "monté de {} blocs en 0,4 s", hanging - start);
         // Rien d'appuyé : le joueur reste accroché
         for _ in 0..60 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         assert!((altitude_blocks(&cam) - hanging).abs() < 1e-3, "accroché, il ne doit pas glisser");
         // Descendre maintenu : retour au sol
         cam.descend_held = true;
         for _ in 0..120 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         assert!(cam.is_grounded && (altitude_blocks(&cam) - floor as f32).abs() < 1e-2, "au pied de l'échelle : pieds à {}", altitude_blocks(&cam));
     }
 
     #[test]
     fn test_voxel_jump_while_walking_climbs_a_step() {
-        let (mut cam, gen, edits, floor) = voxel_test_camera();
-        fill(&cam, &gen, &edits, &[1.5, 2.5, 3.5], &[floor], herocraft_common::BlockId::STONE);
+        let (mut cam, world_gen, edits, floor) = voxel_test_camera();
+        fill(&cam, &world_gen, &edits, &[1.5, 2.5, 3.5], &[floor], herocraft_common::BlockId::STONE);
         // Avance jusqu'à toucher la marche, puis saute sans lâcher la touche d'avance
         cam.move_forward = true;
         for _ in 0..60 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         cam.jump_requested = true;
         let mut peak = 0.0_f32;
         for frame in 0..60 {
             // Lâche l'avance une fois au-dessus de la marche pour rester dessus
             cam.move_forward = frame < 20;
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
             peak = peak.max(altitude_blocks(&cam));
         }
         assert!(peak > floor as f32 + 1.2, "le saut en marchant doit décoller (pic à {})", peak);
@@ -1951,14 +1950,14 @@ mod tests {
 
     #[test]
     fn test_voxel_jump_while_walking_on_flat_ground() {
-        let (mut cam, gen, _, floor) = voxel_test_camera();
+        let (mut cam, world_gen, _, floor) = voxel_test_camera();
         cam.move_forward = true;
-        cam.update(0.016, &gen);
+        cam.update(0.016, &world_gen);
         let start = cam.player_pos;
         cam.jump_requested = true;
         let mut peak = 0.0_f32;
         for _ in 0..20 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
             peak = peak.max(altitude_blocks(&cam));
         }
         let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
@@ -1969,10 +1968,10 @@ mod tests {
 
     #[test]
     fn test_voxel_wall_stops_the_player() {
-        let (mut cam, gen, edits, floor) = voxel_test_camera();
+        let (mut cam, world_gen, edits, floor) = voxel_test_camera();
         let start = cam.player_pos;
-        fill(&cam, &gen, &edits, &[2.0], &[floor, floor + 1], herocraft_common::BlockId::STONE);
-        walk(&mut cam, &gen, 1.0);
+        fill(&cam, &world_gen, &edits, &[2.0], &[floor, floor + 1], herocraft_common::BlockId::STONE);
+        walk(&mut cam, &world_gen, 1.0);
         let h = herocraft_world::BlockGeometry::new(cam.base_radius as f64).block_height as f32;
         let travelled = (cam.player_pos.normalize() - start.normalize()).length() * cam.base_radius / h;
         assert!(travelled > 0.3 && travelled < 1.5, "le mur doit arrêter le joueur ({} blocs parcourus)", travelled);
@@ -1981,12 +1980,12 @@ mod tests {
 
     #[test]
     fn test_voxel_ceiling_stops_a_jump() {
-        let (mut cam, gen, edits, floor) = voxel_test_camera();
-        fill(&cam, &gen, &edits, &[-1.0, 0.0, 1.0], &[floor + 2], herocraft_common::BlockId::STONE);
+        let (mut cam, world_gen, edits, floor) = voxel_test_camera();
+        fill(&cam, &world_gen, &edits, &[-1.0, 0.0, 1.0], &[floor + 2], herocraft_common::BlockId::STONE);
         cam.jump_requested = true;
         let mut peak = 0.0_f32;
         for _ in 0..120 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
             peak = peak.max(altitude_blocks(&cam));
         }
         assert!(peak > floor as f32 + 0.05 && peak < floor as f32 + 0.5, "pic du saut à {} sous un plafond à {}", peak, floor + 2);
@@ -1995,14 +1994,14 @@ mod tests {
 
     #[test]
     fn test_fall_accelerates_then_reaches_terminal_speed() {
-        let (mut cam, gen) = ground_test_camera();
+        let (mut cam, world_gen) = ground_test_camera();
         let block = cam.block_height();
         let up = cam.player_pos.normalize();
         cam.player_pos += up * 200.0 * block;
         cam.is_grounded = false;
         let mut speeds = Vec::new();
         for _ in 0..150 {
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
             speeds.push(-cam.vertical_velocity / block);
         }
         // La chute part de l'arrêt et accélère de `GRAVITY` blocs/s chaque seconde…
@@ -2017,12 +2016,12 @@ mod tests {
 
     #[test]
     fn test_hurt_shakes_then_death_lays_the_view_down() {
-        let (mut cam, gen) = ground_test_camera();
+        let (mut cam, world_gen) = ground_test_camera();
         assert_eq!(cam.view_roll(), 0.0);
         cam.hurt(1.0);
-        cam.update(HURT_SHAKE_SECS * 0.5, &gen);
+        cam.update(HURT_SHAKE_SECS * 0.5, &world_gen);
         assert!(cam.view_roll() > 0.5 * HURT_ROLL, "la vue penche ({})", cam.view_roll());
-        cam.update(HURT_SHAKE_SECS, &gen);
+        cam.update(HURT_SHAKE_SECS, &world_gen);
         assert_eq!(cam.view_roll(), 0.0, "puis se redresse");
 
         // Mort : les entrées sont ignorées, la vue se couche
@@ -2031,14 +2030,14 @@ mod tests {
         for _ in 0..60 {
             cam.move_forward = true;
             cam.jump_requested = true;
-            cam.update(0.016, &gen);
+            cam.update(0.016, &world_gen);
         }
         assert!((cam.player_pos - start).length() < 1e-4, "un mort ne bouge plus");
         assert!((cam.view_roll() - DEATH_ROLL).abs() < 1e-3);
         assert!(cam.build_view_projection_matrix().is_finite());
 
         // Réapparition : debout
-        cam.spawn_on_ground(&gen);
+        cam.spawn_on_ground(&world_gen);
         assert!(!cam.is_dead);
         assert_eq!(cam.view_roll(), 0.0);
     }

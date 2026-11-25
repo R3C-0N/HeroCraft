@@ -475,10 +475,9 @@ impl Server {
         if let Err(e) = self.fields.save() {
             warn!("Échec de l'enregistrement des cultures : {e}");
         }
-        if let Some(dir) = &self.save_dir {
-            if let Err(e) = self.clock.save(dir) {
-                warn!("Échec de l'enregistrement de l'horloge du ciel : {e}");
-            }
+        if let Some(dir) = &self.save_dir
+            && let Err(e) = self.clock.save(dir) {
+            warn!("Échec de l'enregistrement de l'horloge du ciel : {e}");
         }
     }
 
@@ -713,10 +712,9 @@ impl Server {
             }
             ClientPacket::VisionAwaken => self.awaken_in_vision(id),
             ClientPacket::Vision { enter: true } => {
-                if let Err(reason) = self.enter_vision(id) {
-                    if let Some(player) = self.players.get(&id) {
-                        tell(player, &reason.to_string());
-                    }
+                if let Err(reason) = self.enter_vision(id)
+                    && let Some(player) = self.players.get(&id) {
+                    tell(player, &reason.to_string());
                 }
             }
             ClientPacket::Vision { enter: false } => self.leave_vision(id),

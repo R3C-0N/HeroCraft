@@ -169,15 +169,13 @@ impl WorldChunkCache {
             }
         }
 
-        if let Some(coord) = oldest_coord {
-            if let Some(cached) = self.chunks.remove(&coord) {
-                // Sauvegarder sur disque avant suppression si le chunk a été modifié
-                if cached.dirty {
-                    if let Some(ref storage) = self.storage {
-                        let _ = storage.save_chunk(&coord, &cached.data);
-                    }
+        if let Some(coord) = oldest_coord
+            && let Some(cached) = self.chunks.remove(&coord) {
+            // Sauvegarder sur disque avant suppression si le chunk a été modifié
+            if cached.dirty
+                && let Some(ref storage) = self.storage {
+                    let _ = storage.save_chunk(&coord, &cached.data);
                 }
-            }
         }
     }
 

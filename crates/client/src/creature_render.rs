@@ -304,11 +304,10 @@ impl CreatureRenderer {
             let p = Vec3::from(v.position);
             (lo.min(p), hi.max(p))
         });
-        if gpu {
-            if let (Some(skin), Some(b)) = (self.skinning.as_mut(), self.buffers.as_ref()) {
-                let (lo, hi) = skin.prepare(device, queue, frame, [&b.positions, &b.attributes, &b.uvs], cpu_vertices as u32, reallocated);
-                (min, max) = (min.min(lo), max.max(hi));
-            }
+        if gpu
+            && let (Some(skin), Some(b)) = (self.skinning.as_mut(), self.buffers.as_ref()) {
+            let (lo, hi) = skin.prepare(device, queue, frame, [&b.positions, &b.attributes, &b.uvs], cpu_vertices as u32, reallocated);
+            (min, max) = (min.min(lo), max.max(hi));
         }
         (self.center, self.radius) = ((min + max) * 0.5, (max - min).length() * 0.5);
     }
@@ -549,8 +548,7 @@ mod tests {
         let read = |b: &wgpu::Buffer| {
             b.slice(..).map_async(wgpu::MapMode::Read, |_| ());
             let _ = device.poll(wgpu::PollType::wait_indefinitely());
-            let data = b.slice(..).get_mapped_range().expect("lecture du tampon").to_vec();
-            data
+            b.slice(..).get_mapped_range().expect("lecture du tampon").to_vec()
         };
         let positions: Vec<[f32; 3]> = bytemuck::cast_slice(&read(&readback[0])).to_vec();
         let attributes: Vec<PackedAttributes> = bytemuck::cast_slice(&read(&readback[1])).to_vec();

@@ -74,7 +74,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn main() -> anyhow::Result<()> {
     // Variables du fichier `.env` (sans écraser celles déjà définies dans l'environnement)
     let _ = dotenvy::dotenv();
-    // Journal au niveau info, sauf si RUST_LOG en demande un autre
+    // Niveau `info` par défaut, `RUST_LOG` (ou le `.env`) le remplace s'il est défini
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     herocraft_common::profiler::init_main_thread();
     if cfg!(debug_assertions) {
