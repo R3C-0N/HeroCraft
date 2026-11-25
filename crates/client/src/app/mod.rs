@@ -66,9 +66,9 @@ pub(crate) struct App {
     villager_animator: villagers::VillagerAnimator,
     hero_gait: hero_model::HeroGait,
     /// Démarche des héros des autres joueurs
-    remote_gaits: std::collections::HashMap<u64, hero_model::HeroGait>,
+    remote_gaits: std::collections::HashMap<herocraft_common::PlayerId, hero_model::HeroGait>,
     /// Pieds des héros changés en bête (formes du Druide) à l'image d'avant, pour leur allure
-    form_feet: std::collections::HashMap<u64, glam::Vec3>,
+    form_feet: std::collections::HashMap<herocraft_common::CreatureId, glam::Vec3>,
     hero_figure: hero_model::FigureCache,
     /// Compétences : lancements, recharges, gestes du héros et frappes à montrer
     skill_play: skill_play::SkillPlay,
@@ -81,9 +81,9 @@ pub(crate) struct App {
     /// Créatures dessinées à la dernière image, que le réticule peut viser
     creature_views: Vec<creatures::CreatureView>,
     /// Humanoïde visé quand le clic gauche a été enfoncé : seul lui se frappe tant que le clic est tenu
-    strike_lock: Option<u64>,
+    strike_lock: Option<herocraft_common::CreatureId>,
     /// En solo, combien de fois on a parlé à chaque habitant (il enchaîne ses répliques)
-    solo_talks: std::collections::HashMap<u64, usize>,
+    solo_talks: std::collections::HashMap<herocraft_common::CreatureId, usize>,
 
     /// Moteur WGPU
     state: State,

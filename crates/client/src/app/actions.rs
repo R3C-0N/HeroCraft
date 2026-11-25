@@ -233,8 +233,8 @@ impl App {
                 self.hosted = Some(host);
             }
             Err(e) => {
-                warn!("{}", e);
-                self.ui_state.multiplayer.notice = Some(e);
+                warn!("{e:#}");
+                self.ui_state.multiplayer.notice = Some(format!("{e:#}"));
             }
         }
     }

@@ -2,9 +2,10 @@ use std::io::BufRead;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use anyhow::Context;
 use herocraft_common::DEFAULT_PORT;
 use herocraft_server::{Server, ServerConfig, TICK_RATE};
-use log::{error, info, warn};
+use log::{info, warn};
 
 const USAGE: &str = "Usage : herocraft_server [--bind ADRESSE:PORT] [--port PORT] [--seed GRAINE] [--name NOM] [--no-lan]";
 
@@ -14,7 +15,7 @@ const USAGE: &str = "Usage : herocraft_server [--bind ADRESSE:PORT] [--port PORT
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     if std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", "info");
     }
@@ -38,7 +39,7 @@ fn main() {
             "--no-lan" => lan = false,
             "-h" | "--help" => {
                 println!("{USAGE}");
-                return;
+                return Ok(());
             }
             other => exit_with_usage(&format!("argument inconnu : {other}")),
         }
@@ -48,13 +49,7 @@ fn main() {
     info!("   HeroCraft - Serveur Dédié Voxel RPG    ");
     info!("==========================================");
 
-    let mut server = match Server::bind(ServerConfig::new(&bind, seed)) {
-        Ok(server) => server,
-        Err(e) => {
-            error!("Impossible d'écouter sur {bind} : {e}");
-            std::process::exit(1);
-        }
-    };
+    let mut server = Server::bind(ServerConfig::new(&bind, seed)).with_context(|| format!("impossible d'écouter sur {bind}"))?;
     if lan {
         match server.enable_lan(name.as_str()) {
             Ok(()) => info!("Partie « {name} » annoncée sur le réseau local."),
@@ -90,6 +85,7 @@ fn main() {
 
     server.run(&running);
     info!("Serveur arrêté, monde enregistré.");
+    Ok(())
 }
 
 fn exit_with_usage(message: &str) -> ! {

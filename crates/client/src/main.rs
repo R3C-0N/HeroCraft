@@ -307,7 +307,7 @@ fn begin_vision_tutorial(
         ui_state.player.enter_vision();
         if let Some(species) = registry.find(vision_tutorial::VisionTutorial::soldier_species()) {
             let block = geometry.block_height as f32;
-            let ids: Vec<u64> = tutorial.soldier_spots(feet, block).into_iter().map(|dir| {
+            let ids: Vec<herocraft_common::CreatureId> = tutorial.soldier_spots(feet, block).into_iter().map(|dir| {
                     let feet = dir * camera.ground_radius_at(dir, generator);
                     let yaw = tutorial.charge.as_ref().map_or(0.0, |c| c.facing_gate(feet));
                     world.spawn_led(species, feet, yaw)
@@ -407,7 +407,7 @@ fn apply_charge_events(
 fn end_vision_tutorial(tutorial: &mut Option<vision_tutorial::VisionTutorial>, ui_state: &mut UiState, solo: &mut herocraft_world::CreatureWorld) -> bool {
     let Some(t) = tutorial.take() else { return false };
     let completed = t.assault.as_ref().is_some_and(|a| a.completed());
-    let fighters: Vec<u64> = t.assault.as_ref().map(|a| a.creatures().collect()).unwrap_or_default();
+    let fighters: Vec<herocraft_common::CreatureId> = t.assault.as_ref().map(|a| a.creatures().collect()).unwrap_or_default();
     for id in fighters.into_iter().chain(t.end(&mut ui_state.inventory)) {
         solo.despawn(id);
     }
@@ -708,7 +708,7 @@ fn set_cursor_captured(window: &Window, captured: bool) {
 }
 
 /// Bête morte sous le réticule, à portée et devant le bloc visé : à dépecer
-fn aimed_corpse(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<u64> {
+fn aimed_corpse(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<herocraft_common::CreatureId> {
     let (eye, dir, arm) = camera.view_ray()?;
     let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
     let reach = interaction.target().map_or(arm + block_interaction::REACH_BLOCKS as f32 * block, |hit| hit.distance as f32);
@@ -716,7 +716,7 @@ fn aimed_corpse(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[c
 }
 
 /// Créature vivante sous le réticule, à portée et devant le bloc visé
-fn aimed_creature(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<u64> {
+fn aimed_creature(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<herocraft_common::CreatureId> {
     let (eye, dir, arm) = camera.view_ray()?;
     let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
     let reach = interaction.target().map_or(arm + block_interaction::REACH_BLOCKS as f32 * block, |hit| hit.distance as f32);
@@ -782,7 +782,7 @@ fn show_wound(hurt: f32, what: &str, camera: &mut OrbitCamera, ui_state: &mut Ui
 /// fuite), sauf si le coup précédent est trop récent pour l'arme tenue.
 /// Renvoie vrai si le coup a porté ici, en solo.
 fn hit_creature(
-    id: u64,
+    id: herocraft_common::CreatureId,
     skill_play: &mut skill_play::SkillPlay,
     camera: &OrbitCamera,
     net: Option<&mut NetClient>,
@@ -806,7 +806,7 @@ fn hit_creature(
         None => {
             let factor = if critical { herocraft_world::CRITICAL_FACTOR } else { 1.0 };
             let boost = skill_play.solo_hit_factor(id, solo);
-            solo.wound(id, camera.player_pos, 0, damage * factor * boost);
+            solo.wound(id, camera.player_pos, skill_play::SOLO_PLAYER, damage * factor * boost);
         }
     }
     // Coup sourd
@@ -841,7 +841,7 @@ fn lay_egg(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, feet
 
 /// Dépèce la bête morte `id` : en solo, son butin tombe aussitôt ; en ligne, le serveur le tire et
 /// l'envoie (`NetEvent::Loot`)
-fn skin_creature(id: u64, net: Option<&mut NetClient>, solo: &mut herocraft_world::CreatureWorld, dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera) {
+fn skin_creature(id: herocraft_common::CreatureId, net: Option<&mut NetClient>, solo: &mut herocraft_world::CreatureWorld, dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera) {
     match net {
         Some(client) => client.send_skin_creature(id),
         None => {
@@ -1206,7 +1206,7 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
             Ok(vec![format!("Cinematics: {}", ids.join(", "))])
         }
         Command::Cinematic(Some(id)) => {
-            game.cinematics.player.play(&id)?;
+            game.cinematics.player.play(&id).map_err(|e| e.to_string())?;
             Ok(Vec::new())
         }
         Command::Event(text) => {

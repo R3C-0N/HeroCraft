@@ -174,6 +174,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.105"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cb931c189b85683d69a5cfad41d4d418671e1ac413dd209f3f2fc31e3cfd902"
+
+[[package]]
 name = "arrayref"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1261,6 +1267,7 @@ checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
 name = "herocraft_client"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "base64",
  "bytemuck",
  "cpal",
@@ -1284,6 +1291,7 @@ dependencies = [
  "rodio",
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
  "thread-priority",
  "wgpu",
  "windows-sys 0.48.0",
@@ -1301,6 +1309,7 @@ dependencies = [
  "postcard",
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
  "tracy-client",
 ]
 
@@ -1323,6 +1332,7 @@ dependencies = [
 name = "herocraft_server"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "env_logger",
  "glam",
  "herocraft_common",
@@ -1331,6 +1341,7 @@ dependencies = [
  "log",
  "mimalloc",
  "serde",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

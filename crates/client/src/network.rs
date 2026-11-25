@@ -100,7 +100,7 @@ pub fn server_address(input: &str) -> String {
 /// Connexion menée en tâche de fond : le jeu continue de s'afficher pendant l'accueil
 pub struct PendingJoin {
     pub addr: String,
-    result: Receiver<Result<JoinedWorld, String>>,
+    result: Receiver<anyhow::Result<JoinedWorld>>,
 }
 
 impl PendingJoin {
@@ -114,11 +114,11 @@ impl PendingJoin {
     }
 
     /// Le résultat, une fois la connexion aboutie ou échouée
-    pub fn poll(&self) -> Option<Result<JoinedWorld, String>> {
+    pub fn poll(&self) -> Option<anyhow::Result<JoinedWorld>> {
         match self.result.try_recv() {
             Ok(result) => Some(result),
             Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => Some(Err("connexion interrompue".into())),
+            Err(TryRecvError::Disconnected) => Some(Err(anyhow::anyhow!("connexion interrompue"))),
         }
     }
 }
@@ -132,13 +132,13 @@ pub struct HostedServer {
 }
 
 impl HostedServer {
-    pub fn start(seed: u64, save_dir: PathBuf, pseudo: &str) -> Result<Self, String> {
+    pub fn start(seed: u64, save_dir: PathBuf, pseudo: &str) -> anyhow::Result<Self> {
         let config = |bind: String| ServerConfig { bind, seed, save_dir: Some(save_dir.clone()) };
         // Port habituel s'il est libre, sinon un port choisi par le système
         let mut server = Server::bind(config(format!("0.0.0.0:{}", herocraft_common::DEFAULT_PORT)))
             .or_else(|_| Server::bind(config("0.0.0.0:0".into())))
-            .map_err(|e| format!("impossible d'ouvrir la partie : {e}"))?;
-        let port = server.local_addr().map_err(|e| e.to_string())?.port();
+            .map_err(|e| anyhow::anyhow!("impossible d'ouvrir la partie : {e}"))?;
+        let port = server.local_addr()?.port();
         if let Err(e) = server.enable_lan(format!("Monde de {pseudo}")) {
             warn!("Annonce de la partie sur le réseau local impossible : {e}");
         }
@@ -146,8 +146,7 @@ impl HostedServer {
         let thread_running = running.clone();
         let thread = std::thread::Builder::new()
             .name("serveur-integre".into())
-            .spawn(move || server.run(&thread_running))
-            .map_err(|e| e.to_string())?;
+            .spawn(move || server.run(&thread_running))?;
         info!("Partie ouverte au réseau local sur le port {port}.");
         Ok(Self { port, running, thread: Some(thread) })
     }
@@ -173,16 +172,16 @@ pub struct JoinedWorld {
 }
 
 /// Se connecte et attend l'accueil du serveur (bloquant)
-pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
-    let connection = ServerConnection::connect(addr, CONNECT_TIMEOUT).map_err(|e| format!("connexion à {addr} impossible : {e}"))?;
+pub fn join(addr: &str, name: &str) -> anyhow::Result<JoinedWorld> {
+    let connection = ServerConnection::connect(addr, CONNECT_TIMEOUT).map_err(|e| anyhow::anyhow!("connexion à {addr} impossible : {e}"))?;
     connection.send(&ClientPacket::Connect { player_name: name.to_string(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
 
     let (player_id, seed, spawn_position, chunk_count) = match connection.recv_timeout(CONNECT_TIMEOUT)? {
         ServerPacket::ConnectAck { player_id, world_seed, spawn_position, edited_chunks, .. } => {
             (player_id, world_seed, spawn_position, edited_chunks)
         }
-        ServerPacket::Disconnect(reason) => return Err(format!("refusé par le serveur : {reason}")),
-        other => return Err(format!("réponse inattendue du serveur : {other:?}")),
+        ServerPacket::Disconnect(reason) => anyhow::bail!("refusé par le serveur : {reason}"),
+        other => anyhow::bail!("réponse inattendue du serveur : {other:?}"),
     };
 
     let mut client = NetClient {
@@ -200,7 +199,7 @@ pub fn join(addr: &str, name: &str) -> Result<JoinedWorld, String> {
         match client.connection.recv_timeout(CONNECT_TIMEOUT)? {
             ServerPacket::ChunkData { coord, compressed_voxels } => match ChunkData::decompress_rle(&compressed_voxels) {
                 Ok(chunk) => edited_chunks.push((coord, chunk)),
-                Err(e) => return Err(format!("chunk {coord:?} illisible : {e}")),
+                Err(e) => anyhow::bail!("chunk {coord:?} illisible : {e}"),
             },
             other => {
                 // Rien d'autre n'est attendu avant la fin des chunks, mais un paquet reste un paquet
@@ -300,7 +299,7 @@ pub struct RemoteCreature {
     pub scale: f32,
     pub mood: u8,
     /// Invocateur et allure copiée (`CreatureState::summoner`, `copy`)
-    pub summoner: Option<u64>,
+    pub summoner: Option<herocraft_common::PlayerId>,
     pub copy: Option<u32>,
     track: Track,
     /// Derniers coups, morts et actions reçus, avec leur instant, pour les montrer au rythme des
@@ -352,15 +351,15 @@ pub enum NetEvent {
     /// Horloge du ciel du serveur et temps imposé, qui font foi
     Clock { time: f64, forced: Option<herocraft_common::WeatherKind> },
     /// Un joueur (peut-être nous) lance une compétence
-    SkillCast { player_id: u64, skill: String, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool },
+    SkillCast { player_id: herocraft_common::PlayerId, skill: String, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool },
     /// Un joueur (peut-être nous) a tiré à l'arc ou à l'arbalète
-    PlayerShot { player_id: u64, from: Vec3, to: Vec3, target: Option<u64>, special: Option<String> },
+    PlayerShot { player_id: herocraft_common::PlayerId, from: Vec3, to: Vec3, target: Option<herocraft_common::CreatureId>, special: Option<String> },
     /// Le serveur refuse notre lancement de `skill`
     SkillRefused { skill: String, reason: String },
     /// Une compétence nous déplace (téléportation, traction vers sa cible)
     SkillMove(herocraft_common::skills::SkillMove),
     /// Une compétence frappe : centre de sa zone et cibles touchées
-    SkillHit { player_id: u64, skill: String, rank: u8, center: Vec3, creatures: Vec<u64>, players: Vec<u64>, parried: bool, contact: bool },
+    SkillHit { player_id: herocraft_common::PlayerId, skill: String, rank: u8, center: Vec3, creatures: Vec<herocraft_common::CreatureId>, players: Vec<herocraft_common::PlayerId>, parried: bool, contact: bool },
     /// Notre parade ratée : la recharge de `skill` dure `seconds` de plus
     SkillCooldown { skill: String, seconds: f32 },
     /// Le coup d'une bête nous repousse
@@ -377,11 +376,11 @@ pub enum NetEvent {
 
 pub struct NetClient {
     connection: ServerConnection,
-    player_id: u64,
-    players: HashMap<u64, RemotePlayer>,
-    creatures: HashMap<u64, RemoteCreature>,
+    player_id: herocraft_common::PlayerId,
+    players: HashMap<herocraft_common::PlayerId, RemotePlayer>,
+    creatures: HashMap<herocraft_common::CreatureId, RemoteCreature>,
     /// Fiches des habitants et des voyageurs du voisinage, par créature
-    villager_cards: HashMap<u64, std::sync::Arc<herocraft_common::VillagerCard>>,
+    villager_cards: HashMap<herocraft_common::CreatureId, std::sync::Arc<herocraft_common::VillagerCard>>,
     last_move_sent: Option<Instant>,
     last_move: Option<(Vec3, f32, f32, bool, bool, Option<u16>)>,
     /// Dernières pièces portées envoyées au serveur
@@ -422,7 +421,7 @@ impl NetClient {
     }
 
     /// Donne à manger à une créature (l'objet est déjà retiré de l'inventaire)
-    pub fn send_feed_creature(&mut self, creature_id: u64, item: herocraft_common::ItemId) {
+    pub fn send_feed_creature(&mut self, creature_id: herocraft_common::CreatureId, item: herocraft_common::ItemId) {
         self.connection.send(&ClientPacket::FeedCreature { creature_id, item: item.0 });
     }
 
@@ -434,22 +433,22 @@ impl NetClient {
 
     /// Parle à l'habitant `creature_id` (sans rien à échanger) : le serveur renvoie sa réplique à tous
     /// les joueurs proches de lui
-    pub fn send_talk_to_villager(&mut self, creature_id: u64) {
+    pub fn send_talk_to_villager(&mut self, creature_id: herocraft_common::CreatureId) {
         self.connection.send(&ClientPacket::TalkToVillager { creature_id });
     }
 
     /// Signale au serveur un coup porté à une créature
-    pub fn send_hit_creature(&mut self, creature_id: u64) {
+    pub fn send_hit_creature(&mut self, creature_id: herocraft_common::CreatureId) {
         self.connection.send(&ClientPacket::HitCreature { creature_id });
     }
 
     /// Dépèce la bête morte `creature_id` (le serveur renvoie son butin)
-    pub fn send_skin_creature(&mut self, creature_id: u64) {
+    pub fn send_skin_creature(&mut self, creature_id: herocraft_common::CreatureId) {
         self.connection.send(&ClientPacket::SkinCreature { creature_id });
     }
 
     /// Notre identifiant de joueur sur le serveur
-    pub fn player_id(&self) -> u64 {
+    pub fn player_id(&self) -> herocraft_common::PlayerId {
         self.player_id
     }
 
@@ -541,7 +540,7 @@ impl NetClient {
                 Ok(Some((at, packet))) => events.extend(self.handle(at, packet)),
                 Ok(None) => break,
                 Err(reason) => {
-                    events.push(NetEvent::Disconnected(reason));
+                    events.push(NetEvent::Disconnected(reason.to_string()));
                     break;
                 }
             }
@@ -675,7 +674,7 @@ impl NetClient {
 
     /// Boîtes (8 coins, dans l'ordre de `BlockGeometry::block_corners`) des autres joueurs visibles
     /// Pieds affichés d'un autre joueur
-    pub fn remote_player_feet(&self, id: u64) -> Option<Vec3> {
+    pub fn remote_player_feet(&self, id: herocraft_common::PlayerId) -> Option<Vec3> {
         self.players.get(&id).and_then(|p| p.position)
     }
 
@@ -692,12 +691,12 @@ impl NetClient {
     }
 
     /// Allure du héros d'un autre joueur, si le serveur l'a envoyée
-    pub fn remote_appearance(&self, id: u64) -> Option<&herocraft_common::hero::Appearance> {
+    pub fn remote_appearance(&self, id: herocraft_common::PlayerId) -> Option<&herocraft_common::hero::Appearance> {
         self.players.get(&id).and_then(|p| p.appearance.as_ref())
     }
 
     /// Héros des autres joueurs à dessiner : identifiant, pieds, cap, allure
-    pub fn remote_heroes(&self) -> Vec<(u64, Vec3, f32, &herocraft_common::hero::Appearance)> {
+    pub fn remote_heroes(&self) -> Vec<(herocraft_common::PlayerId, Vec3, f32, &herocraft_common::hero::Appearance)> {
         self.players
             .iter()
             .filter_map(|(&id, p)| Some((id, p.position?, p.yaw, p.appearance.as_ref()?)))
@@ -707,7 +706,7 @@ impl NetClient {
 
     /// Créatures du voisinage à dessiner, leur espèce cherchée dans `registry`
     /// Fiche de l'habitant ou du voyageur qu'incarne la créature `id`
-    pub fn villager_card(&self, id: u64) -> Option<&std::sync::Arc<herocraft_common::VillagerCard>> {
+    pub fn villager_card(&self, id: herocraft_common::CreatureId) -> Option<&std::sync::Arc<herocraft_common::VillagerCard>> {
         self.villager_cards.get(&id)
     }
 

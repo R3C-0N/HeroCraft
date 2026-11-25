@@ -5,6 +5,7 @@
 //! testant la profondeur sans l'écrire. Une couche qui luit (`glow` > 1) s'ajoute à la lumière
 //! de la scène ; une couche mate (poussière, fumée) se pose dessus comme un voile.
 
+use anyhow::Context;
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
@@ -197,14 +198,14 @@ pub struct EffectDef {
 }
 
 impl EffectDef {
-    fn parse(json: &str) -> Result<Self, String> {
+    fn parse(json: &str) -> anyhow::Result<Self> {
         #[derive(Deserialize)]
         struct File {
             #[serde(default)]
             unit: Option<String>,
             layers: Vec<serde_json::Map<String, Value>>,
         }
-        let file: File = serde_json::from_str(json).map_err(|e| e.to_string())?;
+        let file: File = serde_json::from_str(json)?;
         let mut layers = Vec::new();
         for l in file.layers {
             let num = |k: &str, d: f32| l.get(k).and_then(Value::as_f64).map_or(d, |v| v as f32);
@@ -248,7 +249,7 @@ impl EffectDef {
                 };
                 (LayerKind::Particles(layer), p.clone())
             } else {
-                let shape = match l.get("shape").and_then(Value::as_str).ok_or("couche sans shape ni particles")? {
+                let shape = match l.get("shape").and_then(Value::as_str).context("couche sans shape ni particles")? {
                     "ring" => Shape::Ring,
                     "disc" => Shape::Disc,
                     "arc" => Shape::Arc,
@@ -257,7 +258,7 @@ impl EffectDef {
                     "column" => Shape::Column,
                     "sprite" => Shape::Sprite,
                     "trail" => Shape::Trail,
-                    other => return Err(format!("forme inconnue {other}")),
+                    other => anyhow::bail!("forme inconnue {other}"),
                 };
                 let layer = ShapeLayer {
                     shape,
@@ -339,7 +340,7 @@ impl EffectLibrary {
                 continue;
             }
             let name = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
-            match std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|t| EffectDef::parse(&t)) {
+            match std::fs::read_to_string(&path).map_err(anyhow::Error::from).and_then(|t| EffectDef::parse(&t)) {
                 Ok(def) => {
                     effects.insert(name, def);
                 }
@@ -360,11 +361,11 @@ pub struct AnchorWorld<'a> {
     /// Cap du héros local
     pub hero_forward: Vec3,
     /// Les autres joueurs : pieds et cap
-    pub players: &'a dyn Fn(u64) -> Option<(Vec3, f32)>,
+    pub players: &'a dyn Fn(herocraft_common::PlayerId) -> Option<(Vec3, f32)>,
     /// Pieds des créatures
-    pub creatures: &'a dyn Fn(u64) -> Option<Vec3>,
+    pub creatures: &'a dyn Fn(herocraft_common::CreatureId) -> Option<Vec3>,
     /// Position des projectiles en vol
-    pub projectiles: &'a dyn Fn(u64) -> Option<Vec3>,
+    pub projectiles: &'a dyn Fn(herocraft_common::ProjectileId) -> Option<Vec3>,
     pub eye: Vec3,
     pub block: f32,
 }
@@ -458,7 +459,7 @@ impl Effects {
     }
 
     /// Le projectile `id` s'est arrêté : les visuels qui le suivaient s'achèvent
-    pub fn end_projectile(&mut self, id: u64) {
+    pub fn end_projectile(&mut self, id: herocraft_common::ProjectileId) {
         let now = Instant::now();
         for run in self.running.iter_mut().filter(|r| r.cue.projectile == Some(id)) {
             run.seconds = run.seconds.min(now.saturating_duration_since(run.started).as_secs_f32());
@@ -926,6 +927,7 @@ impl EffectRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use herocraft_common::{CreatureId, PlayerId, ProjectileId};
 
     #[test]
     fn every_effect_parses() {
@@ -946,8 +948,8 @@ mod tests {
         let feet = Vec3::new(0.0, 1000.0, 0.0);
         let cue = VisualCue { effect: "shockRing".into(), anchor: Anchor::Feet, caster: None, point: feet, creature: None, aim: Vec3::NEG_Z, hold: None, area_blocks: 3.0, travel: None, delay: 0.0, projectile: None };
         effects.start(vec![cue]);
-        let no_player = |_: u64| None; let no_creature = |_: u64| None;
-        let world = AnchorWorld { hero: HeroAnchors::standing(feet, 0.0, 1.0), hero_forward: Vec3::NEG_Z, players: &no_player, creatures: &no_creature, projectiles: &no_creature, eye: feet + Vec3::new(0.0, 3.0, 6.0), block: 1.0 };
+        let no_player = |_: PlayerId| None; let no_creature = |_: CreatureId| None; let no_projectile = |_: ProjectileId| None;
+        let world = AnchorWorld { hero: HeroAnchors::standing(feet, 0.0, 1.0), hero_forward: Vec3::NEG_Z, players: &no_player, creatures: &no_creature, projectiles: &no_projectile, eye: feet + Vec3::new(0.0, 3.0, 6.0), block: 1.0 };
         let mut out = Vec::new();
         effects.update(0.016, &world, &mut out);
         assert_eq!(out.len(), 1, "l'anneau seul avant les étincelles");
@@ -969,14 +971,14 @@ mod tests {
         let (library, _) = EffectLibrary::load_dir(&dir);
         let mut effects = Effects { library, running: Vec::new(), next_seed: 1 };
         let feet = Vec3::new(0.0, 1000.0, 0.0);
-        let cue = VisualCue { effect: "arrowTrail".into(), anchor: Anchor::Projectile, caster: None, point: feet, creature: None, aim: Vec3::NEG_Z, hold: Some(8.0), area_blocks: 1.0, travel: None, delay: 0.0, projectile: Some(3) };
+        let cue = VisualCue { effect: "arrowTrail".into(), anchor: Anchor::Projectile, caster: None, point: feet, creature: None, aim: Vec3::NEG_Z, hold: Some(8.0), area_blocks: 1.0, travel: None, delay: 0.0, projectile: Some(ProjectileId(3)) };
         effects.start(vec![cue]);
-        let no_player = |_: u64| None;
-        let no_creature = |_: u64| None;
+        let no_player = |_: PlayerId| None;
+        let no_creature = |_: CreatureId| None;
         let mut out = Vec::new();
         // La flèche avance de 2 blocs entre deux images : le ruban va de l'ancienne position à la nouvelle
         for (k, z) in [0.0f32, -2.0].into_iter().enumerate() {
-            let at = move |id: u64| (id == 3).then_some(feet + Vec3::new(0.0, 1.4, z));
+            let at = move |id: ProjectileId| (id == ProjectileId(3)).then_some(feet + Vec3::new(0.0, 1.4, z));
             let world = AnchorWorld { hero: HeroAnchors::standing(feet, 0.0, 1.0), hero_forward: Vec3::NEG_Z, players: &no_player, creatures: &no_creature, projectiles: &at, eye: feet + Vec3::new(3.0, 3.0, 0.0), block: 1.0 };
             effects.running[0].started -= std::time::Duration::from_millis(50 * k as u64);
             effects.update(0.05, &world, &mut out);
@@ -986,9 +988,9 @@ mod tests {
         let half = Vec3::from_slice(&out[0].axis_v[..3]).length();
         assert!((half - 1.0).abs() < 0.05, "le ruban couvre les 2 blocs parcourus : {half}");
         // Le projectile s'arrête : le visuel s'achève
-        effects.end_projectile(3);
+        effects.end_projectile(ProjectileId(3));
         effects.running[0].started -= std::time::Duration::from_secs(3);
-        let gone = |_: u64| None;
+        let gone = |_: ProjectileId| None;
         let world = AnchorWorld { hero: HeroAnchors::standing(feet, 0.0, 1.0), hero_forward: Vec3::NEG_Z, players: &no_player, creatures: &no_creature, projectiles: &gone, eye: feet, block: 1.0 };
         effects.update(0.05, &world, &mut out);
         assert!(effects.is_empty());

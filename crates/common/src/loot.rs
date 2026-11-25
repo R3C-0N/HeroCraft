@@ -67,14 +67,23 @@ impl<'de> Deserialize<'de> for LootCount {
     }
 }
 
+/// Ligne de butin qui ne tient pas debout (le nom de l'objet en paramètre)
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum LootError {
+    #[error("butin « {0} » : chance invalide (de 0 exclu à 1)")]
+    Chance(String),
+    #[error("butin « {0} » : nombre invalide (au moins 1, min ≤ max)")]
+    Count(String),
+}
+
 /// Vérifie qu'une liste de butin tient debout (sans regarder si les objets existent)
-pub fn check_entries(entries: &[LootEntry]) -> Result<(), String> {
+pub fn check_entries(entries: &[LootEntry]) -> Result<(), LootError> {
     for entry in entries {
         if !(entry.chance > 0.0 && entry.chance <= 1.0) {
-            return Err(format!("butin « {} » : chance invalide (de 0 exclu à 1)", entry.item));
+            return Err(LootError::Chance(entry.item.clone()));
         }
         if entry.count.max == 0 || entry.count.min > entry.count.max {
-            return Err(format!("butin « {} » : nombre invalide (au moins 1, min ≤ max)", entry.item));
+            return Err(LootError::Count(entry.item.clone()));
         }
     }
     Ok(())
@@ -231,8 +240,8 @@ mod tests {
         let entry: LootEntry = serde_json::from_str(r#"{"item": "fibre", "count": [1, 3], "chance": 0.5}"#).unwrap();
         assert_eq!((entry.count, entry.chance), (LootCount { min: 1, max: 3 }, 0.5));
         assert!(check_entries(&[entry.clone()]).is_ok());
-        assert!(check_entries(&[LootEntry { chance: 0.0, ..entry.clone() }]).is_err());
-        assert!(check_entries(&[LootEntry { count: LootCount { min: 3, max: 1 }, ..entry }]).is_err());
+        assert!(matches!(check_entries(&[LootEntry { chance: 0.0, ..entry.clone() }]), Err(LootError::Chance(_))));
+        assert!(matches!(check_entries(&[LootEntry { count: LootCount { min: 3, max: 1 }, ..entry }]), Err(LootError::Count(_))));
     }
 
     #[test]

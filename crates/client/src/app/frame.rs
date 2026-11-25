@@ -6,9 +6,9 @@ use super::*;
 #[derive(Default)]
 struct Aim {
     /// La créature sous le réticule, qu'on frapperait
-    creature: Option<u64>,
+    creature: Option<herocraft_common::CreatureId>,
     /// L'habitant sous le réticule, sans bloc devant lui : on lit son nom
-    looked_at: Option<u64>,
+    looked_at: Option<herocraft_common::CreatureId>,
 }
 
 impl App {
@@ -432,7 +432,7 @@ impl App {
         if !block_interaction.is_breaking_held() {
             *strike_lock = None;
         }
-        let humanoid = |id: u64| creature_views.iter().find(|v| v.id == id).is_some_and(|v| villagers::is_humanoid(v, creature_registry));
+        let humanoid = |id: herocraft_common::CreatureId| creature_views.iter().find(|v| v.id == id).is_some_and(|v| villagers::is_humanoid(v, creature_registry));
         let striking = aimed.filter(|_| !shooting && block_interaction.is_breaking_held()).filter(|&id| *strike_lock == Some(id) || !humanoid(id));
         if let Some(id) = striking {
             block_interaction.pause_mining();

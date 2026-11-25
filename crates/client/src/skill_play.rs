@@ -9,7 +9,7 @@ use std::time::Instant;
 
 use glam::Vec3;
 use herocraft_common::skills::{skills, Anchor, Effect, GrappleTo, Moment, SkillCatalog, SkillMove};
-use herocraft_common::CharacterStats;
+use herocraft_common::{CastError, CharacterStats};
 use herocraft_world::{CreatureWorld, SkillImpact, SkillRunner, SoloPlayer};
 
 use crate::gestures::GestureLibrary;
@@ -21,7 +21,17 @@ pub fn grapple_of<'a>(catalog: &'a SkillCatalog, skill: &str) -> Option<&'a hero
 }
 
 /// Identifiant du joueur en solo
-pub const SOLO_PLAYER: u64 = 0;
+pub const SOLO_PLAYER: herocraft_common::PlayerId = herocraft_common::PlayerId(0);
+
+/// Pourquoi le joueur local ne lance pas une compétence : le message est affiché tel quel
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CastRefusal {
+    #[error(transparent)]
+    Cast(#[from] CastError),
+    /// Pas la bonne arme en main : les armes qui conviennent
+    #[error("il te faut {}", .0.join(" ou "))]
+    Weapon(Vec<&'static str>),
+}
 
 /// Une compétence qu'un joueur est en train de lancer (le geste et ses visuels). Rang et visée
 /// serviront aux gestes des autres joueurs, quand ils seront dessinés en entier.
@@ -29,7 +39,7 @@ pub const SOLO_PLAYER: u64 = 0;
 #[allow(dead_code)]
 pub struct Play {
     /// `None` : le joueur local
-    pub player: Option<u64>,
+    pub player: Option<herocraft_common::PlayerId>,
     pub skill: String,
     pub rank: u8,
     pub started: Instant,
@@ -49,12 +59,12 @@ impl Play {
 /// Une frappe arrivée, à montrer : où, et qui elle a touché
 #[derive(Debug, Clone)]
 pub struct Shown {
-    pub caster: Option<u64>,
+    pub caster: Option<herocraft_common::PlayerId>,
     pub skill: String,
     pub rank: u8,
     pub center: Vec3,
-    pub creatures: Vec<u64>,
-    pub players: Vec<u64>,
+    pub creatures: Vec<herocraft_common::CreatureId>,
+    pub players: Vec<herocraft_common::PlayerId>,
     /// La touche d'un projectile en vol : seuls les visuels « hit » jouent
     pub contact: bool,
     /// La riposte d'une garde : seuls les visuels de parade se jouent
@@ -78,11 +88,11 @@ pub struct VisualCue {
     pub effect: String,
     pub anchor: Anchor,
     /// Lanceur (`None` : le joueur local)
-    pub caster: Option<u64>,
+    pub caster: Option<herocraft_common::PlayerId>,
     /// Point de départ, pour les ancres fixes (zone, cible au moment du coup, point visé)
     pub point: Vec3,
     /// Créature suivie (ancre `target`)
-    pub creature: Option<u64>,
+    pub creature: Option<herocraft_common::CreatureId>,
     /// Direction visée
     pub aim: Vec3,
     /// Durée imposée (`to`), en secondes, sinon celle des couches de l'effet
@@ -94,7 +104,7 @@ pub struct VisualCue {
     /// Secondes avant que l'effet commence
     pub delay: f32,
     /// Projectile suivi (ancre `projectile`)
-    pub projectile: Option<u64>,
+    pub projectile: Option<herocraft_common::ProjectileId>,
 }
 
 /// Un déplacement de compétence que la caméra du joueur local joue
@@ -131,11 +141,11 @@ pub struct SkillPlay {
     plays: Vec<Play>,
     cues: Vec<VisualCue>,
     /// Pièces greffées : sur qui (`None` : le joueur local), laquelle, jusqu'à quand
-    grafts: Vec<(Option<u64>, String, Instant)>,
+    grafts: Vec<(Option<herocraft_common::PlayerId>, String, Instant)>,
     /// Formes complètes (`SkillDef::form`) : sur qui, par quelle compétence, jusqu'à quand
-    forms: Vec<(Option<u64>, String, Instant)>,
+    forms: Vec<(Option<herocraft_common::PlayerId>, String, Instant)>,
     /// Lancements amplifiés par la Fusion, en attente de leur frappe : qui, quoi, jusqu'à quand
-    amplified: Vec<(Option<u64>, String, Instant)>,
+    amplified: Vec<(Option<herocraft_common::PlayerId>, String, Instant)>,
     /// Renforcements de vitesse du joueur local : de combien, jusqu'à quand
     speed_buffs: Vec<(f32, Instant, bool)>,
     /// Élan de la compétence locale qui commence : ruée, bond, bond de côté, en combien de secondes
@@ -143,15 +153,15 @@ pub struct SkillPlay {
     /// Déplacements du joueur local à jouer, et à partir de quand : la compétence et son déplacement
     moves: Vec<(Instant, String, Motion)>,
     /// Identifiant du joueur local (en ligne, celui du serveur)
-    pub me: u64,
+    pub me: herocraft_common::PlayerId,
     /// Dernier refus, à montrer au joueur
     pub last_refusal: Option<(String, Instant)>,
     /// Projectiles en vol, que le client fait voler entre deux nouvelles du serveur
-    live: HashMap<u64, LiveShot>,
+    live: HashMap<herocraft_common::ProjectileId, LiveShot>,
     /// Projectiles arrêtés dont les visuels doivent s'achever (`take_ended_projectiles`)
-    ended: Vec<u64>,
+    ended: Vec<herocraft_common::ProjectileId>,
     /// Qui a tiré chaque projectile en vol, et par quelle compétence
-    shooters: HashMap<u64, (herocraft_common::Shooter, String)>,
+    shooters: HashMap<herocraft_common::ProjectileId, (herocraft_common::Shooter, String)>,
 }
 
 impl Default for SkillPlay {
@@ -198,51 +208,50 @@ impl SkillPlay {
 
     /// Le joueur local lance `skill`. En ligne (`online`), la demande part au serveur par
     /// `send` ; en solo, les règles s'appliquent ici. Renvoie l'erreur à afficher.
-    pub fn request(&mut self, skill: &str, stats: &mut CharacterStats, aim: Vec3, aimed: Option<Vec3>, online: Option<&mut dyn FnMut(&str, Vec3, Option<Vec3>)>) -> Result<(), String> {
+    pub fn request(&mut self, skill: &str, stats: &mut CharacterStats, aim: Vec3, aimed: Option<Vec3>, online: Option<&mut dyn FnMut(&str, Vec3, Option<Vec3>)>) -> Result<(), CastRefusal> {
         let catalog = skills();
         let now = Instant::now();
         let requested = skill;
         // La Fusion lance le mélange des deux derniers sorts élémentaires (ou le dernier amplifié)
         let fused = match catalog.get(requested).and_then(|d| d.fusion.as_ref()) {
-            Some(_) if catalog.rank(stats, requested) == 0 => return Err(herocraft_common::CastError::NotLearned.message().to_string()),
-            Some(_) => Some(self.runner.fusion_preview(catalog, SOLO_PLAYER, stats).map_err(|e| e.message().to_string())?),
-            None if catalog.fusion_of_mix(requested).is_some() => return Err(herocraft_common::CastError::FusionOnly.message().to_string()),
+            Some(_) if catalog.rank(stats, requested) == 0 => return Err(CastError::NotLearned.into()),
+            Some(_) => Some(self.runner.fusion_preview(catalog, SOLO_PLAYER, stats)?),
+            None if catalog.fusion_of_mix(requested).is_some() => return Err(CastError::FusionOnly.into()),
             None => None,
         };
         let skill = fused.as_ref().map_or(requested, |f| f.skill());
         let amplified = matches!(fused, Some(herocraft_common::skills::Fused::Amplified { .. }));
         let (left, _) = self.cooldown(requested, now);
         if let Some(error) = catalog.cast_check(stats, skill, left) {
-            return Err(error.message().to_string());
+            return Err(error.into());
         }
         if stats.is_stunned() {
-            return Err(herocraft_common::CastError::Stunned.message().to_string());
+            return Err(CastError::Stunned.into());
         }
         if grapple_of(catalog, skill).is_some_and(|g| g.to == GrappleTo::Block) && aimed.is_none() {
-            return Err(herocraft_common::CastError::NothingToGrab.message().to_string());
+            return Err(CastError::NothingToGrab.into());
         }
         // Changé en bête, seules ses deux attaques ; et elles seulement sous elle
         let form = self.form_skill(None);
         match (catalog.form_of_attack(skill), form) {
             (Some(of), Some(current)) if of.id == current => {}
-            (Some(_), _) => return Err(herocraft_common::CastError::NotInForm.message().to_string()),
-            (None, Some(_)) => return Err(herocraft_common::CastError::InForm.message().to_string()),
+            (Some(_), _) => return Err(CastError::NotInForm.into()),
+            (None, Some(_)) => return Err(CastError::InForm.into()),
             (None, None) => {}
         }
         // L'arme en main (jugée aussi par le serveur ; ici pour répondre tout de suite)
         if let Some(cast) = catalog.get(skill).and_then(|d| d.cast.as_ref()) {
             let held = self.runner.arsenal().held(SOLO_PLAYER);
             if !cast.weapons.is_empty() && !held.kind.is_some_and(|k| cast.weapons.contains(&k)) {
-                let names: Vec<&str> = cast.weapons.iter().map(|w| w.name()).collect();
-                return Err(format!("il te faut {}", names.join(" ou ")));
+                return Err(CastRefusal::Weapon(cast.weapons.iter().map(|w| w.name()).collect()));
             }
             if cast.uses_round && self.runner.arsenal().magazine(SOLO_PLAYER).is_none_or(|m| m.loaded == 0) {
-                return Err(herocraft_common::CastError::Reloading.message().to_string());
+                return Err(CastError::Reloading.into());
             }
             if let Some(charge) = &cast.charge {
                 if charge.power_after(self.runner.arsenal().charge_held(SOLO_PLAYER, Some(requested))).is_none() {
                     self.runner.arsenal_mut().release_charge(SOLO_PLAYER, Some(requested));
-                    return Err(herocraft_common::CastError::NotCharged.message().to_string());
+                    return Err(CastError::NotCharged.into());
                 }
             }
         }
@@ -254,7 +263,7 @@ impl SkillPlay {
                 self.runner.remember(catalog, SOLO_PLAYER, requested);
                 catalog.rank(stats, skill)
             }
-            None => self.runner.cast_as(catalog, SOLO_PLAYER, stats, requested, aim, aimed).map_err(|e| e.message().to_string())?.rank,
+            None => self.runner.cast_as(catalog, SOLO_PLAYER, stats, requested, aim, aimed)?.rank,
         };
         self.arm_cooldown(catalog, requested, skill, rank, now);
         self.start(None, skill, rank, aim, aimed, now, amplified);
@@ -293,7 +302,7 @@ impl SkillPlay {
     }
 
     /// Un coup au corps à corps du joueur local : ses dégâts de base, s'il n'est pas trop tôt
-    pub fn strike(&mut self) -> Result<f32, herocraft_common::CastError> {
+    pub fn strike(&mut self) -> Result<f32, CastError> {
         self.runner.arsenal_mut().strike(SOLO_PLAYER)
     }
 
@@ -309,7 +318,7 @@ impl SkillPlay {
 
     /// Le tir du joueur local part (arc relâché, arbalète) : refusé trop tôt, l'arbalète vide, l'arc
     /// pas assez bandé
-    pub fn fire(&mut self) -> Result<herocraft_world::Fired, herocraft_common::CastError> {
+    pub fn fire(&mut self) -> Result<herocraft_world::Fired, CastError> {
         self.runner.arsenal_mut().fire(SOLO_PLAYER)
     }
 
@@ -322,7 +331,7 @@ impl SkillPlay {
 
     /// Un tir à montrer : la traînée qui file de `from` à `to`, l'étincelle sur la bête touchée, et
     /// ce que fait la munition spéciale à l'impact (nuage de poison, explosion)
-    pub fn show_shot(&mut self, caster: Option<u64>, from: Vec3, to: Vec3, target: Option<u64>, special: Option<&str>, block: f32) {
+    pub fn show_shot(&mut self, caster: Option<herocraft_common::PlayerId>, from: Vec3, to: Vec3, target: Option<herocraft_common::CreatureId>, special: Option<&str>, block: f32) {
         let flight = (from.distance(to) / block / 60.0).clamp(0.05, 0.5);
         let base = VisualCue { effect: "arrowTrail".into(), anchor: Anchor::Aimed, caster, point: from, creature: None, projectile: None, aim: to - from, hold: Some(flight), area_blocks: 1.0, travel: Some((to, flight)), delay: 0.0 };
         self.cues.push(base.clone());
@@ -399,7 +408,7 @@ impl SkillPlay {
 
     /// Le geste commence, et les visuels `start` avec lui (et ceux de l'amplification, `amplified`)
     #[allow(clippy::too_many_arguments)]
-    fn start(&mut self, player: Option<u64>, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, now: Instant, amplified: bool) {
+    fn start(&mut self, player: Option<herocraft_common::PlayerId>, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, now: Instant, amplified: bool) {
         let catalog = skills();
         let Some(def) = catalog.get(skill) else { return };
         let Some(cast) = &def.cast else { return };
@@ -464,7 +473,7 @@ impl SkillPlay {
 
     /// Un joueur (peut-être nous) lance une compétence, d'après le serveur
     #[allow(clippy::too_many_arguments)]
-    pub fn on_cast(&mut self, player: u64, me: u64, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool) {
+    pub fn on_cast(&mut self, player: herocraft_common::PlayerId, me: herocraft_common::PlayerId, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool) {
         if player == me {
             // Notre geste a déjà commencé ; la recharge du serveur fait foi (celle de la Fusion pour un mélange)
             let catalog = skills();
@@ -618,13 +627,13 @@ impl SkillPlay {
     }
 
     /// Où est le projectile `id` en ce moment, d'après ce que le serveur en a dit
-    pub fn projectile_at(&self, id: u64) -> Option<Vec3> {
+    pub fn projectile_at(&self, id: herocraft_common::ProjectileId) -> Option<Vec3> {
         let l = self.live.get(&id)?;
         Some(l.at + l.velocity * Instant::now().duration_since(l.since).as_secs_f32())
     }
 
     /// Projectiles arrêtés depuis le dernier appel : leurs visuels s'achèvent
-    pub fn take_ended_projectiles(&mut self) -> Vec<u64> {
+    pub fn take_ended_projectiles(&mut self) -> Vec<herocraft_common::ProjectileId> {
         std::mem::take(&mut self.ended)
     }
 
@@ -766,21 +775,21 @@ impl SkillPlay {
 
     /// Le joueur solo a frappé la créature `id` de son arme : ses renforcements qui portent des
     /// effets (Marteau Consacré) les jouent autour d'elle
-    pub fn solo_weapon_hit(&mut self, id: u64, creatures: &mut CreatureWorld, feet: Vec3, stats: &mut CharacterStats) {
+    pub fn solo_weapon_hit(&mut self, id: herocraft_common::CreatureId, creatures: &mut CreatureWorld, feet: Vec3, stats: &mut CharacterStats) {
         let Some(at) = creatures.creatures().iter().find(|c| c.id == id).map(|c| c.position) else { return };
         let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
         self.runner.ride(SOLO_PLAYER, &[at], creatures, &mut player);
     }
 
     /// Facteur des dégâts d'un coup d'arme du joueur solo sur la créature `id` (renforcements de dégâts)
-    pub fn solo_hit_factor(&self, id: u64, creatures: &herocraft_world::CreatureWorld) -> f32 {
+    pub fn solo_hit_factor(&self, id: herocraft_common::CreatureId, creatures: &herocraft_world::CreatureWorld) -> f32 {
         self.runner.hit_factor(SOLO_PLAYER, id, creatures)
     }
 
     /// Le coup `damage` de la créature `attacker` arrive sur le joueur solo, qui regarde vers
     /// `facing` : sa garde le pare peut-être, et sa riposte se montre. Renvoie les dégâts qui
     /// passent, et si le coup a été paré.
-    pub fn solo_parry(&mut self, creatures: &mut CreatureWorld, feet: Vec3, facing: Vec3, stats: &mut CharacterStats, attacker: u64, damage: f32, kind: herocraft_common::DamageKind) -> (f32, bool) {
+    pub fn solo_parry(&mut self, creatures: &mut CreatureWorld, feet: Vec3, facing: Vec3, stats: &mut CharacterStats, attacker: herocraft_common::CreatureId, damage: f32, kind: herocraft_common::DamageKind) -> (f32, bool) {
         let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
         let parry = self.runner.parry(SOLO_PLAYER, Some(facing), attacker, damage, kind.name(), creatures, &mut player);
         if let Some(SkillImpact { skill, rank, center, creatures, players, parried, .. }) = parry.impact {
@@ -827,18 +836,18 @@ impl SkillPlay {
     }
 
     /// Espèce dont le héros du joueur `player` (`None` : le joueur local) a pris la forme
-    pub fn form_of(&mut self, player: Option<u64>) -> Option<String> {
+    pub fn form_of(&mut self, player: Option<herocraft_common::PlayerId>) -> Option<String> {
         self.form_skill(player).and_then(|s| skills().get(&s)).and_then(|d| d.form.clone())
     }
 
     /// Le joueur `player` (`None` : le joueur local) joue l'une des attaques de sa forme
-    pub fn form_attacking(&self, player: Option<u64>) -> bool {
+    pub fn form_attacking(&self, player: Option<herocraft_common::PlayerId>) -> bool {
         let now = Instant::now();
         self.plays.iter().any(|p| p.player == player && skills().form_of_attack(&p.skill).is_some() && now.duration_since(p.started).as_secs_f32() < p.duration)
     }
 
     /// La compétence de forme que le joueur `player` (`None` : le joueur local) a lancée, tant qu'elle dure
-    pub fn form_skill(&mut self, player: Option<u64>) -> Option<String> {
+    pub fn form_skill(&mut self, player: Option<herocraft_common::PlayerId>) -> Option<String> {
         let now = Instant::now();
         self.forms.retain(|(_, _, until)| *until > now);
         self.forms.iter().find(|(who, _, _)| *who == player).map(|(_, f, _)| f.clone())
@@ -849,7 +858,7 @@ impl SkillPlay {
     }
 
     /// Pièces greffées sur le héros du joueur `player` (`None` : le joueur local) en ce moment
-    pub fn grafts_of(&mut self, player: Option<u64>) -> Vec<String> {
+    pub fn grafts_of(&mut self, player: Option<herocraft_common::PlayerId>) -> Vec<String> {
         let now = Instant::now();
         self.grafts.retain(|(_, _, until)| *until > now);
         self.grafts.iter().filter(|(who, _, _)| *who == player).map(|(_, g, _)| g.clone()).collect()
@@ -860,7 +869,7 @@ impl SkillPlay {
     }
 
     /// La pose du héros du joueur `player` (`None` : le joueur local) : son geste en cours par-dessus la marche
-    pub fn pose_of(&self, player: Option<u64>, swing: f32, units_per_block: f32) -> FigurePose {
+    pub fn pose_of(&self, player: Option<herocraft_common::PlayerId>, swing: f32, units_per_block: f32) -> FigurePose {
         let now = Instant::now();
         let mut pose = FigurePose { swing, ..FigurePose::default() };
         let Some(play) = self.plays.iter().find(|p| p.player == player) else { return pose };
@@ -920,6 +929,7 @@ fn effect_seconds(effects: &[herocraft_common::skills::EffectEntry], rank: u8) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use herocraft_common::PlayerId;
     use herocraft_common::{CreatureRegistry, PlayerClass};
     use std::sync::Arc;
 
@@ -950,15 +960,15 @@ mod tests {
         assert!(play.speed_factor(0.0) > 1.3, "{}", play.speed_factor(0.0));
 
         // Loup des Bois : le héros devient le loup, et n'a plus que ses deux attaques
-        assert_eq!(play.request("wolfBite", &mut stats, Vec3::NEG_Y, None, None), Err(herocraft_common::CastError::NotInForm.message().to_string()));
+        assert_eq!(play.request("wolfBite", &mut stats, Vec3::NEG_Y, None, None), Err(CastError::NotInForm.into()));
         play.request("forestWolf", &mut stats, Vec3::NEG_Y, None, None).unwrap();
         assert_eq!(play.form_of(None).as_deref(), Some("forestWolf"));
-        assert_eq!(play.form_of(Some(7)), None);
+        assert_eq!(play.form_of(Some(PlayerId(7))), None);
         play.request("wolfBite", &mut stats, Vec3::NEG_Y, None, None).unwrap();
         assert!(play.form_attacking(None));
         play.request("wolfPounce", &mut stats, Vec3::NEG_Y, None, None).unwrap();
         stats.skills.insert("packClaws".into(), 1);
         let refused = play.request("packClaws", &mut stats, Vec3::NEG_Y, None, None);
-        assert_eq!(refused, Err(herocraft_common::CastError::InForm.message().to_string()), "une autre compétence sous la forme");
+        assert_eq!(refused, Err(CastError::InForm.into()), "une autre compétence sous la forme");
     }
 }

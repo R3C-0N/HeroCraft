@@ -6,13 +6,13 @@ use super::*;
 
 /// Une bête dessinée à la place d'un héros changé en bête (formes du Druide) : identifiant de
 /// dessin, espèce, pieds, cap et attaque en cours
-type BeastShape = (u64, String, glam::Vec3, f32, bool);
+type BeastShape = (herocraft_common::CreatureId, String, glam::Vec3, f32, bool);
 
 impl App {
     /// Créatures : celles que le serveur montre en ligne, sinon celles de la partie solo, en pause
     /// avec le menu. Dessinées d'après le modèle de leur espèce. Rend si des blocs ont changé (les
     /// plantes poussent) et le nombre de sommets dessinés.
-    pub(super) fn update_creatures(&mut self, dt: f32, looked_at: Option<u64>) -> (bool, usize) {
+    pub(super) fn update_creatures(&mut self, dt: f32, looked_at: Option<herocraft_common::CreatureId>) -> (bool, usize) {
         herocraft_common::prof_scope!("creatures");
         let section = Instant::now();
         let terrain_edited = self.simulate_creatures(dt);
@@ -161,12 +161,12 @@ impl App {
         ui_state.beast_attacks = attacks;
         let mut shapes: Vec<BeastShape> = Vec::new();
         if let Some(form) = local_form.clone().filter(|_| third_person) {
-            shapes.push((u64::MAX, form, camera.player_pos, camera.player_yaw, skill_play.form_attacking(None)));
+            shapes.push((herocraft_common::CreatureId(u64::MAX), form, camera.player_pos, camera.player_yaw, skill_play.form_attacking(None)));
         }
         if let Some(client) = net.as_ref() {
             for (id, feet, yaw, _) in client.remote_heroes() {
                 if let Some(form) = skill_play.form_of(Some(id)) {
-                    shapes.push((u64::MAX - 1 - id, form, feet, yaw, skill_play.form_attacking(Some(id))));
+                    shapes.push((herocraft_common::CreatureId(u64::MAX - 1 - id.0), form, feet, yaw, skill_play.form_attacking(Some(id))));
                 }
             }
         }
@@ -185,18 +185,18 @@ impl App {
 
     /// Les habitants, les gardes et les voyageurs avec le corps des héros, et les noms à afficher
     /// au-dessus des têtes
-    fn push_villagers(&mut self, frame: &mut creatures::CreatureFrame, anim_dt: f32, block: f32, looked_at: Option<u64>) {
+    fn push_villagers(&mut self, frame: &mut creatures::CreatureFrame, anim_dt: f32, block: f32, looked_at: Option<herocraft_common::CreatureId>) {
         let Self { villager_animator, creature_views, creature_registry, state, net, solo_creatures, ui_state, camera, .. } = self;
         villager_animator.update(creature_views, creature_registry, anim_dt, block);
         state.begin_villagers();
-        let card_of = |id: u64| match net.as_ref() {
+        let card_of = |id: herocraft_common::CreatureId| match net.as_ref() {
             Some(client) => client.villager_card(id).cloned(),
             None => solo_creatures.villager_card(id).cloned(),
         };
         // Un leurre copie le héros de son lanceur, le nôtre ou celui d'un autre joueur
         let me = net.as_ref().map_or(skill_play::SOLO_PLAYER, |c| c.player_id());
         let my_look = ui_state.legend.as_ref().map(|l| l.appearance.clone());
-        let hero_of = |id: u64| if id == me { my_look.clone() } else { net.as_ref().and_then(|c| c.remote_appearance(id)).cloned() };
+        let hero_of = |id: herocraft_common::PlayerId| if id == me { my_look.clone() } else { net.as_ref().and_then(|c| c.remote_appearance(id)).cloned() };
         villagers::push_villagers(frame, creature_views, creature_registry, card_of, &hero_of, villager_animator, |a| state.villager_texture(a), block);
         let mut tags = net.as_ref().map(|c| c.name_tags(camera, state.size.width as f32, state.size.height as f32)).unwrap_or_default();
         tags.extend(villagers::name_tags(creature_views, card_of, looked_at, camera, state.size.width as f32, state.size.height as f32));
@@ -290,11 +290,11 @@ impl App {
             let up = camera.player_pos.normalize_or_zero();
             let (east, north) = herocraft_common::tangent_frame(up);
             let hero_forward = north * camera.player_yaw.cos() + east * camera.player_yaw.sin();
-            let players = |id: u64| net.as_ref().and_then(|c| c.remote_player_feet(id)).map(|f| (f, 0.0));
+            let players = |id: herocraft_common::PlayerId| net.as_ref().and_then(|c| c.remote_player_feet(id)).map(|f| (f, 0.0));
             let views = &*creature_views;
-            let creature_feet = |id: u64| views.iter().find(|v| v.id == id).map(|v| v.feet);
+            let creature_feet = |id: herocraft_common::CreatureId| views.iter().find(|v| v.id == id).map(|v| v.feet);
             let shots = &*skill_play;
-            let projectile_at = |id: u64| shots.projectile_at(id);
+            let projectile_at = |id: herocraft_common::ProjectileId| shots.projectile_at(id);
             let world = effects::AnchorWorld { hero: hero_anchors, hero_forward, players: &players, creatures: &creature_feet, projectiles: &projectile_at, eye: camera.eye_position(), block };
             skill_effects.update(anim_dt, &world, effect_quads);
         }
@@ -354,7 +354,7 @@ impl App {
                 if let Some(assault) = t.assault.as_mut().filter(|_| sealed) {
                     let mut assault_events = Vec::new();
                     if assault.phase() == vision_assault::Phase::Waiting {
-                        let allies: Vec<u64> = solo_creatures.creatures().iter().filter(|c| c.is_alive() && soldiers.contains(&c.id)).map(|c| c.id).collect();
+                        let allies: Vec<herocraft_common::CreatureId> = solo_creatures.creatures().iter().filter(|c| c.is_alive() && soldiers.contains(&c.id)).map(|c| c.id).collect();
                         assault.start(&allies);
                     }
                     let ground = |dir: glam::Vec3| dir * camera.ground_radius_at(dir, generator);

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use herocraft_common::net::Connection;
 use glam::Vec3;
-use herocraft_common::{BlockId, BlockInteractionAction, ClientPacket, PlanetFace, ServerPacket, PROTOCOL_VERSION};
+use herocraft_common::{BlockId, BlockInteractionAction, ClientPacket, PlanetFace, PlayerId, ServerPacket, PROTOCOL_VERSION};
 use herocraft_server::{Server, ServerConfig};
 use herocraft_world::{BlockGeometry, BlockPos, WORLD_HEIGHT};
 
@@ -15,7 +15,7 @@ type Client = Connection<ClientPacket, ServerPacket>;
 
 const WAIT: Duration = Duration::from_secs(10);
 
-fn connect(addr: &str, name: &str) -> (Client, u64, u32) {
+fn connect(addr: &str, name: &str) -> (Client, PlayerId, u32) {
     let client = Client::connect(addr, WAIT).unwrap();
     client.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
     match client.recv_timeout(WAIT).unwrap() {
