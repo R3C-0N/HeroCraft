@@ -52,7 +52,7 @@ impl Tab {
 
 /// Ce que le créateur demande au jeu
 #[derive(Debug, Clone, PartialEq)]
-pub enum CreatorEvent {
+pub(crate) enum CreatorEvent {
     /// Le baptême est accepté : la légende est à enregistrer et à envoyer au serveur
     Sealed(Box<Legend>),
     /// Le héros entre dans le monde : l'écran se referme
@@ -60,7 +60,7 @@ pub enum CreatorEvent {
 }
 
 /// Le créateur ouvert
-pub struct HeroCreator {
+pub(crate) struct HeroCreator {
     step: usize,
     tab: Tab,
     cfg: Appearance,
@@ -81,7 +81,7 @@ impl Default for HeroCreator {
 }
 
 impl HeroCreator {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             step: 0,
             tab: Tab::Species,
@@ -129,7 +129,7 @@ impl HeroCreator {
     }
 
     /// Dessine l'écran sur tout l'écran ; renvoie ce que le joueur vient de décider
-    pub fn show(&mut self, ctx: &egui::Context) -> Option<CreatorEvent> {
+    pub(crate) fn show(&mut self, ctx: &egui::Context) -> Option<CreatorEvent> {
         let mut event = None;
         let screen = ctx.content_rect();
         // Le temps réel écoulé (et non le pas prévu par egui) : la figure tourne à la même allure

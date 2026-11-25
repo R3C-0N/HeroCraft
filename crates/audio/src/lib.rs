@@ -90,11 +90,11 @@ impl AudioSettings {
 
     /// Gain final des bruitages. L'oreille perçoit le volume de façon logarithmique : la courbe au
     /// carré rend le curseur régulier.
-    pub fn effects_gain(&self) -> f32 {
+    pub(crate) fn effects_gain(&self) -> f32 {
         if self.muted { 0.0 } else { (self.master * self.effects).powi(2) }
     }
 
-    pub fn ambience_gain(&self) -> f32 {
+    pub(crate) fn ambience_gain(&self) -> f32 {
         if self.muted { 0.0 } else { (self.master * self.ambience).powi(2) }
     }
 }

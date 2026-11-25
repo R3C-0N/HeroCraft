@@ -206,7 +206,7 @@ impl SkinnedModel {
 
     /// Matrices de chaque os (pose de l'animation à l'instant `time`, ou de repos) : elles amènent
     /// un sommet de la pose de liaison à sa place dans le repère du modèle
-    pub fn skin_matrices(&self, animation: Option<&Animation>, time: f32) -> Vec<Mat4> {
+    pub(crate) fn skin_matrices(&self, animation: Option<&Animation>, time: f32) -> Vec<Mat4> {
         self.posed_matrices(animation, time, &[])
     }
 

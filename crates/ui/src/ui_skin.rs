@@ -10,13 +10,13 @@ use std::sync::Arc;
 /// Crème des textes, comme l'ancien thème (FFF3DC)
 pub const TEXT: egui::Color32 = egui::Color32::from_rgb(255, 243, 220);
 /// Ombre portée sous les titres (17100C)
-pub const TEXT_SHADOW: egui::Color32 = egui::Color32::from_rgb(23, 16, 12);
+pub(crate) const TEXT_SHADOW: egui::Color32 = egui::Color32::from_rgb(23, 16, 12);
 /// Texte gravé sur la plaque de métal (23282B)
-pub const ENGRAVED: egui::Color32 = egui::Color32::from_rgb(35, 40, 43);
+pub(crate) const ENGRAVED: egui::Color32 = egui::Color32::from_rgb(35, 40, 43);
 /// Texte d'un bouton enfoncé (FFE08C)
-pub const PRESSED_TEXT: egui::Color32 = egui::Color32::from_rgb(255, 224, 140);
+pub(crate) const PRESSED_TEXT: egui::Color32 = egui::Color32::from_rgb(255, 224, 140);
 /// Texte désactivé (B49E7C)
-pub const DISABLED_TEXT: egui::Color32 = egui::Color32::from_rgb(180, 158, 124);
+pub(crate) const DISABLED_TEXT: egui::Color32 = egui::Color32::from_rgb(180, 158, 124);
 
 /// Bois sombre des fonds (planches de l'ancien panneau)
 pub const WOOD_DARK: egui::Color32 = egui::Color32::from_rgb(32, 18, 10);
@@ -26,7 +26,7 @@ pub const WOOD: egui::Color32 = egui::Color32::from_rgb(147, 90, 41);
 pub const WOOD_LIGHT: egui::Color32 = egui::Color32::from_rgb(168, 103, 47);
 
 /// Famille de police des titres (Uncial Antiqua)
-pub const TITLE_FONT: &str = "titre";
+pub(crate) const TITLE_FONT: &str = "titre";
 
 macro_rules! skin_textures {
     ($($name:ident => $file:literal),* $(,)?) => {
@@ -214,7 +214,7 @@ pub const PANEL: Slice = Slice::uniform(Tex::PanelSlim, 60.0);
 /// Marge en points flottants (celle d'egui est en entiers depuis la 0.31)
 pub type Margin = egui::epaint::MarginF32;
 
-pub const PANEL_MARGIN: Margin = Margin { left: 46.0, right: 46.0, top: 38.0, bottom: 46.0 };
+pub(crate) const PANEL_MARGIN: Margin = Margin { left: 46.0, right: 46.0, top: 38.0, bottom: 46.0 };
 /// Marge intérieure du panneau à l'échelle donnée
 pub fn panel_margin(scale: f32) -> Margin {
     Margin {
@@ -226,11 +226,11 @@ pub fn panel_margin(scale: f32) -> Margin {
 }
 
 /// Cadre sombre des bulles et des petits panneaux du HUD
-pub const AREA: Slice = Slice::uniform(Tex::Area, 9.0);
+pub(crate) const AREA: Slice = Slice::uniform(Tex::Area, 9.0);
 /// Encadré d'ardoise (touches, champs)
 pub const BOX: Slice = Slice::uniform(Tex::Box, 12.0);
 pub const SLOT: Slice = Slice::uniform(Tex::Slot, 12.0);
-pub const PLAQUE: Slice = Slice::new(Tex::Plaque, 63.0, 63.0, 15.0, 15.0);
+pub(crate) const PLAQUE: Slice = Slice::new(Tex::Plaque, 63.0, 63.0, 15.0, 15.0);
 
 /// Dessine `slice` dans `rect`, chaque pixel de texture valant `scale` points. Les bords et le
 /// centre sont répétés (pas étirés) pour garder le grain du bois.
@@ -241,7 +241,7 @@ pub fn paint_slice(painter: &egui::Painter, skin: &Skin, slice: Slice, rect: egu
     painter.add(slice_shape(skin, slice, rect, scale, tint));
 }
 
-pub fn slice_shape(skin: &Skin, slice: Slice, rect: egui::Rect, scale: f32, tint: egui::Color32) -> egui::Shape {
+pub(crate) fn slice_shape(skin: &Skin, slice: Slice, rect: egui::Rect, scale: f32, tint: egui::Color32) -> egui::Shape {
     let texture = skin.texture(slice.tex);
     let [tw, th] = texture.size().map(|v| v as f32);
     let mut mesh = egui::Mesh::with_texture(texture.id());

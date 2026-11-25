@@ -11,7 +11,7 @@ use winit::keyboard::KeyCode;
 
 /// Touche lue par le crochet, à traiter comme un événement clavier de la fenêtre
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HookedKey {
+pub(crate) struct HookedKey {
     pub key: KeyCode,
     pub pressed: bool,
     pub repeat: bool,
@@ -34,7 +34,7 @@ fn is_modifier(key: KeyCode) -> bool {
 }
 
 /// Ne garde que les touches que le crochet peut intercepter
-pub fn interceptable(keys: impl IntoIterator<Item = KeyCode>) -> Vec<KeyCode> {
+pub(crate) fn interceptable(keys: impl IntoIterator<Item = KeyCode>) -> Vec<KeyCode> {
     keys.into_iter().filter(|&k| !is_modifier(k)).collect()
 }
 
@@ -153,21 +153,21 @@ mod imp {
 
     use super::HookedKey;
 
-    pub fn install(_window: &Window) {}
+    pub(crate) fn install(_window: &Window) {}
 
-    pub fn set_capture(_keys: Option<Vec<KeyCode>>) {}
+    pub(crate) fn set_capture(_keys: Option<Vec<KeyCode>>) {}
 
-    pub fn drain() -> Vec<HookedKey> {
+    pub(crate) fn drain() -> Vec<HookedKey> {
         Vec::new()
     }
 }
 
 /// Pose le crochet (une fois, au lancement) ; il reste inactif tant que `set_capture` ne l'arme pas
-pub use imp::install;
+pub(crate) use imp::install;
 /// Arme le crochet sur ces touches (`Some`, souris capturée en jeu) ou le désarme (`None`)
-pub use imp::set_capture;
+pub(crate) use imp::set_capture;
 /// Touches lues par le crochet depuis le dernier appel
-pub use imp::drain;
+pub(crate) use imp::drain;
 
 #[cfg(test)]
 mod tests {

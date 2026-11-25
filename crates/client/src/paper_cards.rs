@@ -15,32 +15,32 @@ use std::path::{Path, PathBuf};
 use crate::post;
 
 /// Côté d'une page de l'atlas, en pixels
-pub const PAGE_SIZE: u32 = 2048;
+pub(crate) const PAGE_SIZE: u32 = 2048;
 /// Plus grand côté d'une découpe dans l'atlas (les plus grandes sont réduites)
-pub const MAX_IMAGE: u32 = 1024;
+pub(crate) const MAX_IMAGE: u32 = 1024;
 /// Distance au dessin, en pixels, que couvre le champ du liseré (voir `paper_cards.wgsl`)
-pub const OUTLINE_RANGE: f32 = 16.0;
+pub(crate) const OUTLINE_RANGE: f32 = 16.0;
 /// Marge autour de chaque découpe dans l'atlas : la place du liseré
-pub const PAD: u32 = 16;
+pub(crate) const PAD: u32 = 16;
 /// Couche « sans image » (feuille unie)
-pub const NO_TEXTURE: u32 = 65535;
+pub(crate) const NO_TEXTURE: u32 = 65535;
 /// Mélanges d'une carte (`CardInstance::extra[2]`) : découpée et opaque, translucide, lumineuse
-pub const BLEND_CUT: f32 = 0.0;
-pub const BLEND_ALPHA: f32 = 1.0;
-pub const BLEND_ADD: f32 = 2.0;
+pub(crate) const BLEND_CUT: f32 = 0.0;
+pub(crate) const BLEND_ALPHA: f32 = 1.0;
+pub(crate) const BLEND_ADD: f32 = 2.0;
 
 /// Cartes dessinées au plus à la fois
-pub const MAX_CARDS: usize = 1024;
+pub(crate) const MAX_CARDS: usize = 1024;
 /// Cases de la grille d'une carte, de côté (voir le shader)
 const GRID: u32 = 8;
 
 /// Dossier des découpes
-pub const CARDS_DIR: &str = "assets/cinematics/cards";
+pub(crate) const CARDS_DIR: &str = "assets/cinematics/cards";
 
 /// Une carte à dessiner : centre et demi-axes dans le monde
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct CardInstance {
+pub(crate) struct CardInstance {
     /// Centre (xyz), page de l'atlas (w, `NO_TEXTURE` sans image)
     pub center: [f32; 4],
     /// Demi-largeur (xyz), gondolement (w, en part de la demi-largeur)
@@ -59,7 +59,7 @@ pub struct CardInstance {
 /// Lumière et caméra de la scène
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct CardUniform {
+pub(crate) struct CardUniform {
     pub view_proj: [[f32; 4]; 4],
     /// Vers la lumière (xyz), part ambiante (w)
     pub light_dir: [f32; 4],
@@ -79,7 +79,7 @@ impl Default for CardUniform {
 
 /// Une découpe rangée dans l'atlas
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CardSprite {
+pub(crate) struct CardSprite {
     pub page: u32,
     /// Coins de la découpe et de sa marge dans la page (u0, v0, u1, v1)
     pub uv: [f32; 4],
@@ -89,42 +89,42 @@ pub struct CardSprite {
 
 impl CardSprite {
     /// Largeur / hauteur de la découpe
-    pub fn aspect(&self) -> f32 {
+    pub(crate) fn aspect(&self) -> f32 {
         self.size[0] / self.size[1].max(1.0)
     }
 
     /// Ce que la marge ajoute de chaque côté, en part de la largeur et de la hauteur
-    pub fn margin(&self) -> [f32; 2] {
+    pub(crate) fn margin(&self) -> [f32; 2] {
         [PAD as f32 / self.size[0].max(1.0), PAD as f32 / self.size[1].max(1.0)]
     }
 }
 
 /// Les découpes de l'atlas, par nom (chemin dans `assets/cinematics/cards/`)
 #[derive(Debug, Clone, Default)]
-pub struct CardLayers {
+pub(crate) struct CardLayers {
     sprites: HashMap<String, CardSprite>,
 }
 
 impl CardLayers {
     /// Place d'une découpe dans l'atlas (`None` : image inconnue)
-    pub fn get(&self, image: &str) -> Option<CardSprite> {
+    pub(crate) fn get(&self, image: &str) -> Option<CardSprite> {
         self.sprites.get(image).copied()
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.sprites.len()
     }
 }
 
 /// Les découpes d'un plan de cinématique : ce qui identifie l'atlas et les images à y ranger
 #[derive(Debug, Clone, PartialEq)]
-pub struct CardSet {
+pub(crate) struct CardSet {
     pub key: String,
     pub images: Vec<String>,
 }
 
 /// Les découpes d'une cinématique, rangées en pages : couleurs, champ du liseré
-pub struct CardImages {
+pub(crate) struct CardImages {
     pub layers: CardLayers,
     pub pages: u32,
     pub pixels: Vec<u8>,
@@ -133,17 +133,17 @@ pub struct CardImages {
 
 impl CardImages {
     /// Le dossier des découpes du jeu
-    pub fn default_dir() -> PathBuf {
+    pub(crate) fn default_dir() -> PathBuf {
         herocraft_common::skills::asset_dir(CARDS_DIR).unwrap_or_default()
     }
 
     /// Un atlas vide (une page transparente, la texture ne pouvant pas en avoir zéro)
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self::pack(Vec::new())
     }
 
     /// Les découpes `names` de `dir` ; une image absente ou illisible est signalée et ignorée
-    pub fn load<'a>(dir: &Path, names: impl IntoIterator<Item = &'a str>) -> Self {
+    pub(crate) fn load<'a>(dir: &Path, names: impl IntoIterator<Item = &'a str>) -> Self {
         let mut images = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for name in names {
@@ -276,7 +276,7 @@ fn outline_field(rgba: &[u8], side: usize) -> Vec<u8> {
     d.into_iter().map(|v| ((v as f32 / 3.0) / OUTLINE_RANGE * 255.0).min(255.0) as u8).collect()
 }
 
-pub struct CardRenderer {
+pub(crate) struct CardRenderer {
     pipeline: wgpu::RenderPipeline,
     /// Cartes translucides et lumineuses : mélangées à ce qui est derrière, sans écrire la profondeur
     blended: wgpu::RenderPipeline,
@@ -371,7 +371,7 @@ fn create_bind_group(device: &wgpu::Device, queue: &wgpu::Queue, layout: &wgpu::
 }
 
 impl CardRenderer {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, target: post::SceneTarget, images: CardImages) -> Self {
+    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, target: post::SceneTarget, images: CardImages) -> Self {
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Paper Cards Sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -417,14 +417,14 @@ impl CardRenderer {
         Self { pipeline: create_pipeline(device, &layout, target, false), blended: create_pipeline(device, &layout, target, true), opaque_count: 0, layout, bind_layout, sampler, bind_group, uniform, instances, count: 0, loaded: None, pending: None, layers: images.layers }
     }
 
-    pub fn set_target(&mut self, device: &wgpu::Device, target: post::SceneTarget) {
+    pub(crate) fn set_target(&mut self, device: &wgpu::Device, target: post::SceneTarget) {
         self.pipeline = create_pipeline(device, &self.layout, target, false);
         self.blended = create_pipeline(device, &self.layout, target, true);
     }
 
     /// Charge l'atlas du plan en cours s'il ne l'est pas déjà (`None` : le libère), et prépare
     /// en arrière-plan celui du plan suivant, prêt à la coupe
-    pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, current: Option<&CardSet>, next: Option<&CardSet>) {
+    pub(crate) fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, current: Option<&CardSet>, next: Option<&CardSet>) {
         if self.loaded.as_deref() != current.map(|c| c.key.as_str()) {
             let atlas = match current {
                 None => {
@@ -455,7 +455,7 @@ impl CardRenderer {
     }
 
     /// Les cartes de cette image (aucune hors des cinématiques de papier)
-    pub fn update(&mut self, queue: &wgpu::Queue, uniform: &CardUniform, cards: &[CardInstance]) {
+    pub(crate) fn update(&mut self, queue: &wgpu::Queue, uniform: &CardUniform, cards: &[CardInstance]) {
         let cards = order_cards(uniform, &cards[..cards.len().min(MAX_CARDS)]);
         self.count = cards.len() as u32;
         self.opaque_count = cards.iter().take_while(|c| c.extra[2] < 0.5).count() as u32;
@@ -466,7 +466,7 @@ impl CardRenderer {
     }
 
     /// À appeler dans la passe 3D, avec les objets opaques
-    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
+    pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
         if self.count == 0 {
             return;
         }

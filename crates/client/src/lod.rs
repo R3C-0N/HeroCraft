@@ -15,7 +15,7 @@ use herocraft_world::VOXEL_LEVEL;
 use rayon::prelude::*;
 
 /// Maillage calculé en tâche de fond (chunk voxel ou patch polygonal)
-pub struct VoxelBuildResult {
+pub(crate) struct VoxelBuildResult {
     /// Génération des caches au lancement de la tâche (incrémentée par `clear`) : un résultat périmé est ignoré
     pub generation: u64,
     /// Version des patchs au lancement (incrémentée par `set_precision`)
@@ -28,7 +28,7 @@ pub struct VoxelBuildResult {
 }
 
 /// Colonne de chunks voxel maillée en tâche de fond
-pub struct VoxelColumnResult {
+pub(crate) struct VoxelColumnResult {
     pub generation: u64,
     pub key: QuadNodeKey,
     pub column: VoxelColumnMesh,
@@ -39,7 +39,7 @@ pub struct VoxelColumnResult {
 /// Identité d'un maillage affiché : change dès que son contenu peut changer (nouvelle génération
 /// des caches, ou bloc modifié dans la colonne)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct LodMeshId {
+pub(crate) struct LodMeshId {
     pub generation: u64,
     pub key: QuadNodeKey,
     pub voxel: bool,
@@ -59,7 +59,7 @@ fn patch_resolution(level: u8) -> usize {
 /// chunks voxel (vus du sol, de ~130 à ~770 blocs) ont l'allure des voxels : une cellule par bloc,
 /// textures et arbres bloc par bloc ; plus loin, cellules plus grandes et arbres simplifiés, puis
 /// couleurs seules.
-pub fn patch_detail(level: u8, precision: crate::ui::LodPrecisionSetting) -> PatchDetail {
+pub(crate) fn patch_detail(level: u8, precision: crate::ui::LodPrecisionSetting) -> PatchDetail {
     use crate::ui::LodPrecisionSetting as P;
     let side_blocks = (herocraft_world::FACE_BLOCKS >> level).max(1) as usize;
     let normal = patch_resolution(level);
@@ -95,7 +95,7 @@ fn lod_cache_limit(precision: crate::ui::LodPrecisionSetting) -> usize {
 }
 
 /// Gestionnaire de LOD planétaire piloté par QuadTree Cubed-Sphere avec transitions douces hybrides
-pub struct PlanetLodManager {
+pub(crate) struct PlanetLodManager {
     pub quadtree: PlanetQuadTree,
     pub base_radius: f32,
     pub current_seed: u64,
@@ -151,7 +151,7 @@ fn nearest_first(keys: &mut [QuadNodeKey], camera_pos: Vec3) {
 }
 
 impl PlanetLodManager {
-    pub fn new(base_radius: f32, current_seed: u64) -> Self {
+    pub(crate) fn new(base_radius: f32, current_seed: u64) -> Self {
         herocraft_common::prof_scope!("lod::PlanetLodManager::new");
         let num_cpus = std::thread::available_parallelism()
             .map(|p| p.get())
@@ -232,7 +232,7 @@ impl PlanetLodManager {
 
     /// Récupère le maillage propre au nœud (voxel haute résolution ou patch polygonal dédié)
     #[allow(dead_code)]
-    pub fn get_mesh_or_ancestor(&self, key: &QuadNodeKey) -> Option<&PlanetMesh> {
+    pub(crate) fn get_mesh_or_ancestor(&self, key: &QuadNodeKey) -> Option<&PlanetMesh> {
         if let Some(m) = self.voxel_cache.get(key) {
             return Some(&m.mesh);
         }
@@ -240,7 +240,7 @@ impl PlanetLodManager {
     }
 
     /// Définit le filtre de visualisation actif et force la régénération si modifié
-    pub fn set_filter(&mut self, filter: herocraft_world::VisualizationFilter) {
+    pub(crate) fn set_filter(&mut self, filter: herocraft_world::VisualizationFilter) {
         if self.active_filter != filter {
             self.active_filter = filter;
             self.clear(self.current_seed);
@@ -250,7 +250,7 @@ impl PlanetLodManager {
     /// Change la précision des patchs polygonaux : tous les patchs sont refaits en tâche de fond,
     /// les anciens restent affichés jusqu'à ce que les nouveaux soient tous prêts (les chunks
     /// voxel ne bougent pas)
-    pub fn set_precision(&mut self, precision: crate::ui::LodPrecisionSetting) {
+    pub(crate) fn set_precision(&mut self, precision: crate::ui::LodPrecisionSetting) {
         if self.precision == precision {
             return;
         }
@@ -268,7 +268,7 @@ impl PlanetLodManager {
     }
 
     /// Ajuste les seuils de distance du QuadTree selon le préréglage vidéo sélectionné
-    pub fn set_distance_preset(&mut self, preset: crate::ui::LodDistanceSetting) {
+    pub(crate) fn set_distance_preset(&mut self, preset: crate::ui::LodDistanceSetting) {
         let mult = match preset {
             crate::ui::LodDistanceSetting::Courte => 0.8,
             crate::ui::LodDistanceSetting::Normale => 1.0,
@@ -281,7 +281,7 @@ impl PlanetLodManager {
     }
 
     /// Réinitialise les caches (par exemple lors d'un changement de seed avec 'G')
-    pub fn clear(&mut self, new_seed: u64) {
+    pub(crate) fn clear(&mut self, new_seed: u64) {
         herocraft_common::prof_scope!("lod::clear");
         self.current_seed = new_seed;
         self.lod_cache.clear();
@@ -330,19 +330,19 @@ impl PlanetLodManager {
     }
 
     /// Blocs modifiés de la planète courante
-    pub fn terrain_edits(&self) -> &Arc<TerrainEdits> {
+    pub(crate) fn terrain_edits(&self) -> &Arc<TerrainEdits> {
         &self.edits
     }
 
     /// Blocs modifiés de la planète courante (à donner après `clear` lors d'un changement de planète)
-    pub fn set_terrain_edits(&mut self, edits: Arc<TerrainEdits>) {
+    pub(crate) fn set_terrain_edits(&mut self, edits: Arc<TerrainEdits>) {
         self.edits = edits;
     }
 
     /// Change un bloc et refait tout de suite, dans cette frame, les couches de chunks dont
     /// l'affichage en dépend : celle du bloc et, s'il touche un bord de son chunk, la voisine de
     /// ce côté (ses faces et son ombrage ambiant le voient). Renvoie `true` si le bloc a changé.
-    pub fn set_block(&mut self, generator: &PlanetWorldGenerator, pos: BlockPos, block: BlockId) -> bool {
+    pub(crate) fn set_block(&mut self, generator: &PlanetWorldGenerator, pos: BlockPos, block: BlockId) -> bool {
         herocraft_common::prof_scope!("lod::set_block");
         let coord = pos.chunk_coord();
         let own_key = QuadNodeKey::new(coord.face, VOXEL_LEVEL, coord.x as u32, coord.y as u32);
@@ -393,13 +393,13 @@ impl PlanetLodManager {
 
     /// Invalide un chunk voxel modifié pour forcer son recalcul
     #[allow(dead_code)]
-    pub fn invalidate_chunk(&mut self, key: &QuadNodeKey) {
+    pub(crate) fn invalidate_chunk(&mut self, key: &QuadNodeKey) {
         self.voxel_cache.remove(key);
     }
 
     /// Met à jour la hiérarchie LOD selon la position de la caméra, le temps écoulé dt et le cône de vision (Frustum)
     /// Renvoie `true` si la topologie a changé ou que de nouveaux maillages sont prêts
-    pub fn update(
+    pub(crate) fn update(
         &mut self,
         camera_pos: Vec3,
         generator: &PlanetWorldGenerator,
@@ -666,12 +666,12 @@ impl PlanetLodManager {
     }
 
     /// Génération courante (incrémentée à chaque nouvelle planète)
-    pub fn generation(&self) -> u64 {
+    pub(crate) fn generation(&self) -> u64 {
         self.generation
     }
 
     /// Maillages à afficher pour les feuilles courantes (voxel si prêt, sinon patch polygonal)
-    pub fn visible_meshes(&self) -> Vec<(LodMeshId, &PlanetMesh)> {
+    pub(crate) fn visible_meshes(&self) -> Vec<(LodMeshId, &PlanetMesh)> {
         let generation = self.generation;
         self.current_leaves
             .iter()

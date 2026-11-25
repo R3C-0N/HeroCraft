@@ -19,18 +19,18 @@ use crate::chat::Chat;
 use crate::inventory::Inventory;
 
 /// La Pierre entière tenue en main, si c'en est une (un fragment ne se touche pas)
-pub fn held_stone(inventory: &Inventory) -> Option<ItemId> {
+pub(crate) fn held_stone(inventory: &Inventory) -> Option<ItemId> {
     inventory.slot(inventory.selected()).map(|s| s.item).filter(|&item| StoneKind::of(item) == Some(StoneKind::Whole))
 }
 
 /// Le joueur touche la Pierre qu'il tient (clic droit) : signale `Touched`
-pub fn touch(item: ItemId, events: &mut StoneEvents) {
+pub(crate) fn touch(item: ItemId, events: &mut StoneEvents) {
     events.push(StoneEvent::Touched { item });
 }
 
 /// La Pierre `item` donne ses dernières forces : elle quitte l'inventaire, détruite, et
 /// `Absorbed` est signalé. Faux si l'inventaire ne la contient pas.
-pub fn absorb(item: ItemId, inventory: &mut Inventory, events: &mut StoneEvents) -> bool {
+pub(crate) fn absorb(item: ItemId, inventory: &mut Inventory, events: &mut StoneEvents) -> bool {
     if StoneKind::of(item) != Some(StoneKind::Whole) || !inventory.take_one(item) {
         return false;
     }
@@ -39,7 +39,7 @@ pub fn absorb(item: ItemId, inventory: &mut Inventory, events: &mut StoneEvents)
 }
 
 /// Distribue les événements de l'image et les rend, pour les autres systèmes (cinématiques)
-pub fn dispatch(events: &mut StoneEvents, chat: &mut Chat) -> Vec<StoneEvent> {
+pub(crate) fn dispatch(events: &mut StoneEvents, chat: &mut Chat) -> Vec<StoneEvent> {
     let events = events.drain();
     for event in events.iter().cloned() {
         log::info!("Pierre du Néant : {event:?}");
@@ -55,7 +55,7 @@ pub fn dispatch(events: &mut StoneEvents, chat: &mut Chat) -> Vec<StoneEvent> {
 
 /// L'événement de cinématique d'une Pierre obtenue (`stone_obtained`, `stone=voidStone`,
 /// `kind=whole|fragment`, à l'endroit du ramassage) ; aucun pour un autre événement
-pub fn cinematic_event(event: &StoneEvent) -> Option<herocraft_common::cinematics::GameEvent> {
+pub(crate) fn cinematic_event(event: &StoneEvent) -> Option<herocraft_common::cinematics::GameEvent> {
     let StoneEvent::Obtained { kind, position, .. } = event else { return None };
     let kind = match kind {
         StoneKind::Whole => "whole",
@@ -65,7 +65,7 @@ pub fn cinematic_event(event: &StoneEvent) -> Option<herocraft_common::cinematic
 }
 
 /// Identifiant de la fiche du bloc posé
-pub const PLACED_BLOCK: &str = "voidStonePlaced";
+pub(crate) const PLACED_BLOCK: &str = "voidStonePlaced";
 /// Intervalle entre deux recherches des Pierres posées, en secondes
 const SCAN_INTERVAL: f32 = 0.5;
 /// Distance au plus (en blocs) d'une Pierre posée dont on dessine le néant
@@ -78,21 +78,21 @@ const DUST_SECONDS: f32 = 2.6;
 const DUST_RADIUS_BLOCKS: f32 = 1.3;
 
 /// Le bloc posé, s'il a sa fiche
-pub fn placed_block() -> Option<BlockId> {
+pub(crate) fn placed_block() -> Option<BlockId> {
     blocks().find(PLACED_BLOCK)
 }
 
 /// Une Pierre posée : le centre de son bloc et ses trois arêtes (x, haut, z), repère du monde.
 /// Le shader y retrouve le cristal par lancer de rayon.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct StoneSite {
+pub(crate) struct StoneSite {
     pub center: Vec3,
     pub edges: [Vec3; 3],
 }
 
 impl StoneSite {
     /// Le bloc `corners` (bit 0 = x + 1, bit 1 = y + 1, bit 2 = z + 1)
-    pub fn from_corners(corners: &[glam::DVec3; 8]) -> Self {
+    pub(crate) fn from_corners(corners: &[glam::DVec3; 8]) -> Self {
         let center = (corners.iter().copied().sum::<glam::DVec3>() / 8.0).as_vec3();
         let edge = |bit: usize| {
             let sum: glam::DVec3 = (0..8).filter(|i| i & bit == 0).map(|i| corners[i | bit] - corners[i]).sum();
@@ -104,23 +104,23 @@ impl StoneSite {
 
 /// Les Pierres posées près du joueur, retrouvées dans les blocs modifiés
 #[derive(Debug, Default)]
-pub struct VoidStoneSites {
+pub(crate) struct VoidStoneSites {
     sites: Vec<StoneSite>,
     since_scan: f32,
 }
 
 impl VoidStoneSites {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { sites: Vec::new(), since_scan: SCAN_INTERVAL }
     }
 
     #[allow(dead_code)]
-    pub fn sites(&self) -> &[StoneSite] {
+    pub(crate) fn sites(&self) -> &[StoneSite] {
         &self.sites
     }
 
     /// Cherche de temps en temps les Pierres posées dans les chunks modifiés proches de `player`
-    pub fn update(&mut self, dt: f32, edits: &TerrainEdits, geometry: &BlockGeometry, player: Vec3) {
+    pub(crate) fn update(&mut self, dt: f32, edits: &TerrainEdits, geometry: &BlockGeometry, player: Vec3) {
         self.since_scan += dt;
         if self.since_scan < SCAN_INTERVAL {
             return;
@@ -130,7 +130,7 @@ impl VoidStoneSites {
     }
 
     /// Cherche tout de suite (une Pierre vient d'être posée ou cassée)
-    pub fn scan(&mut self, edits: &TerrainEdits, geometry: &BlockGeometry, player: Vec3) {
+    pub(crate) fn scan(&mut self, edits: &TerrainEdits, geometry: &BlockGeometry, player: Vec3) {
         self.sites.clear();
         let Some(stone) = placed_block() else { return };
         let h = geometry.block_height as f32;
@@ -164,7 +164,7 @@ impl VoidStoneSites {
     }
 
     /// Le cœur et les poussières de chaque Pierre, vus de `eye` (`block` : hauteur d'un bloc)
-    pub fn push_quads(&self, time: f32, eye: Vec3, block: f32, out: &mut Vec<EffectQuad>) {
+    pub(crate) fn push_quads(&self, time: f32, eye: Vec3, block: f32, out: &mut Vec<EffectQuad>) {
         for (index, site) in self.sites.iter().enumerate() {
             push_stone(site, index as u32, time, eye, block, out);
         }

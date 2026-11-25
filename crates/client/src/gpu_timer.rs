@@ -9,18 +9,18 @@ use std::sync::Arc;
 use crate::camera::CameraViewMode;
 
 /// Points de mesure écrits dans une frame
-pub const TS_SHADOW_BEGIN: u32 = 0;
-pub const TS_SHADOW_END: u32 = 1;
-pub const TS_3D_BEGIN: u32 = 2;
-pub const TS_AFTER_TERRAIN: u32 = 3;
-pub const TS_AFTER_SKY: u32 = 4;
-pub const TS_3D_END: u32 = 5;
-pub const TS_POST_BEGIN: u32 = 6;
-pub const TS_POST_END: u32 = 7;
-pub const TS_UI_BEGIN: u32 = 8;
-pub const TS_UI_END: u32 = 9;
-pub const TS_GOD_RAYS_BEGIN: u32 = 10;
-pub const TS_GOD_RAYS_END: u32 = 11;
+pub(crate) const TS_SHADOW_BEGIN: u32 = 0;
+pub(crate) const TS_SHADOW_END: u32 = 1;
+pub(crate) const TS_3D_BEGIN: u32 = 2;
+pub(crate) const TS_AFTER_TERRAIN: u32 = 3;
+pub(crate) const TS_AFTER_SKY: u32 = 4;
+pub(crate) const TS_3D_END: u32 = 5;
+pub(crate) const TS_POST_BEGIN: u32 = 6;
+pub(crate) const TS_POST_END: u32 = 7;
+pub(crate) const TS_UI_BEGIN: u32 = 8;
+pub(crate) const TS_UI_END: u32 = 9;
+pub(crate) const TS_GOD_RAYS_BEGIN: u32 = 10;
+pub(crate) const TS_GOD_RAYS_END: u32 = 11;
 const TIMESTAMP_COUNT: u32 = 12;
 const SLOT_COUNT: usize = 4;
 const BUFFER_SIZE: u64 = TIMESTAMP_COUNT as u64 * 8;
@@ -34,7 +34,7 @@ struct Slot {
     view_mode: CameraViewMode,
 }
 
-pub struct GpuTimer {
+pub(crate) struct GpuTimer {
     slots: Vec<Slot>,
     /// Slot utilisé par la frame en cours d'encodage
     current: Option<usize>,
@@ -45,14 +45,14 @@ pub struct GpuTimer {
 
 impl GpuTimer {
     /// Fonctionnalités à demander au device (vide sans la feature `profiling`)
-    pub fn wanted_features(adapter_features: wgpu::Features) -> wgpu::Features {
+    pub(crate) fn wanted_features(adapter_features: wgpu::Features) -> wgpu::Features {
         if !herocraft_common::profiler::is_enabled() && !crate::benchmark::requested() {
             return wgpu::Features::empty();
         }
         adapter_features & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES)
     }
 
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<Self> {
+    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<Self> {
         let features = device.features();
         let wanted = herocraft_common::profiler::is_enabled() || crate::benchmark::requested();
         if !wanted || !features.contains(wgpu::Features::TIMESTAMP_QUERY) {
@@ -101,7 +101,7 @@ impl GpuTimer {
     }
 
     /// Relit les résultats disponibles puis réserve un slot pour la frame (None si tous sont en vol)
-    pub fn begin_frame(&mut self, device: &wgpu::Device, view_mode: CameraViewMode) -> Option<&wgpu::QuerySet> {
+    pub(crate) fn begin_frame(&mut self, device: &wgpu::Device, view_mode: CameraViewMode) -> Option<&wgpu::QuerySet> {
         let _ = device.poll(wgpu::PollType::Poll);
         for slot in &mut self.slots {
             if slot.in_flight && slot.mapped.load(Ordering::Acquire) {
@@ -121,12 +121,12 @@ impl GpuTimer {
         Some(&slot.query_set)
     }
 
-    pub fn query_set(&self) -> Option<&wgpu::QuerySet> {
+    pub(crate) fn query_set(&self) -> Option<&wgpu::QuerySet> {
         self.current.map(|i| &self.slots[i].query_set)
     }
 
     /// À appeler sur l'encodeur après la dernière passe
-    pub fn resolve(&self, encoder: &mut wgpu::CommandEncoder) {
+    pub(crate) fn resolve(&self, encoder: &mut wgpu::CommandEncoder) {
         if let Some(i) = self.current {
             let slot = &self.slots[i];
             encoder.resolve_query_set(&slot.query_set, 0..TIMESTAMP_COUNT, &slot.resolve_buffer, 0);
@@ -135,7 +135,7 @@ impl GpuTimer {
     }
 
     /// À appeler après `queue.submit`
-    pub fn end_frame(&mut self) {
+    pub(crate) fn end_frame(&mut self) {
         if let Some(i) = self.current.take() {
             let slot = &mut self.slots[i];
             slot.in_flight = true;

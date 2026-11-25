@@ -16,7 +16,7 @@ const LINE_FADE: Duration = Duration::from_secs(1);
 /// Lignes affichées chat fermé
 const MAX_CLOSED_LINES: usize = 10;
 /// Longueur maximale d'une saisie, en caractères (celle des messages que relaie le serveur)
-pub const MAX_INPUT_CHARS: usize = 256;
+pub(crate) const MAX_INPUT_CHARS: usize = 256;
 /// Largeur du chat et hauteur de son historique déroulant, en points logiques
 const CHAT_WIDTH: f32 = 520.0;
 const CHAT_HISTORY_HEIGHT: f32 = 240.0;
@@ -166,7 +166,7 @@ impl Chat {
     }
 
     /// Rappelle une ligne de l'historique : `-1` la précédente (↑), `+1` la suivante (↓)
-    pub fn recall(&mut self, step: i32) {
+    pub(crate) fn recall(&mut self, step: i32) {
         if self.history.is_empty() {
             return;
         }

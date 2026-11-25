@@ -7,12 +7,12 @@ use wgpu::util::DeviceExt;
 use crate::settings::PostSettings;
 
 /// Format HDR complet : niveaux du bloom, rayons crépusculaires, et passe 3D avec MSAA
-pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+pub(crate) const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 /// Format HDR allégé de la passe 3D : 4 octets par pixel au lieu de 8, sans alpha, avec une
 /// mantisse de 6 bits (5 pour le bleu). Les shaders tramant leur couleur avant de l'y écrire
 /// (`quantization_dither` dans common.wgsl), les dégradés du ciel ne font pas de bandes.
-pub const COMPACT_HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg11b10Ufloat;
+pub(crate) const COMPACT_HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg11b10Ufloat;
 
 /// Cible de la passe 3D : échantillonnage (MSAA ou non) et format HDR. Les pipelines qui y
 /// dessinent en dépendent, et sont recréés quand elle change (`State::set_msaa`).

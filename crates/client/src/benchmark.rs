@@ -23,24 +23,24 @@ use crate::camera::OrbitCamera;
 use crate::ui::{GraphicsQuality, LodDistanceSetting, LodPrecisionSetting, UiState};
 
 /// Graine par défaut : la même planète d'un banc d'essai à l'autre
-pub const DEFAULT_SEED: u64 = 2026;
+pub(crate) const DEFAULT_SEED: u64 = 2026;
 /// Durées par défaut de la chauffe et de la mesure de chaque phase, en secondes
 const WARMUP_SECS: f32 = 3.0;
 const MEASURE_SECS: f32 = 8.0;
 /// Mise en route avant la première mesure : relief, nuages et textures se chargent
 const STARTUP_SECS: f32 = 20.0;
 /// Bêtes ajoutées autour du joueur pour la phase « beaucoup de créatures »
-pub const STRESS_CREATURES: usize = 60;
+pub(crate) const STRESS_CREATURES: usize = 60;
 
 /// Le banc d'essai est demandé sur la ligne de commande
-pub fn requested() -> bool {
+pub(crate) fn requested() -> bool {
     static REQUESTED: OnceLock<bool> = OnceLock::new();
     *REQUESTED.get_or_init(|| std::env::args().any(|a| a == "--benchmark"))
 }
 
 /// Ce qu'on fait des créatures pendant une phase
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CreatureMode {
+pub(crate) enum CreatureMode {
     /// Simulées, animées et dessinées (le jeu normal)
     Full,
     /// Simulées seulement : ni animation, ni maillage, ni dessin
@@ -192,7 +192,7 @@ fn phases() -> Vec<Phase> {
 }
 
 /// Ce que la boucle principale doit faire au début d'une phase
-pub struct PhaseStart {
+pub(crate) struct PhaseStart {
     /// Recréer la population de créatures (même graine : même point de départ à chaque phase)
     pub reset_creatures: bool,
     /// Bêtes à ajouter autour du joueur
@@ -205,7 +205,7 @@ static GPU_SAMPLES: Mutex<Vec<(&'static str, u64)>> = Mutex::new(Vec::new());
 static META: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
 
 /// Enregistre le temps GPU d'une passe (appelé par `gpu_timer` quand une image est relue)
-pub fn record_gpu(name: &'static str, ns: u64) {
+pub(crate) fn record_gpu(name: &'static str, ns: u64) {
     if requested()
         && let Ok(mut samples) = GPU_SAMPLES.lock() {
         samples.push((name, ns));
@@ -213,7 +213,7 @@ pub fn record_gpu(name: &'static str, ns: u64) {
 }
 
 /// Information affichée en tête du rapport (carte graphique, mode de présentation…)
-pub fn set_meta(key: &str, value: String) {
+pub(crate) fn set_meta(key: &str, value: String) {
     if let Ok(mut meta) = META.lock() {
         meta.retain(|(k, _)| k != key);
         meta.push((key.to_string(), value));
@@ -259,7 +259,7 @@ impl Stats {
 }
 
 /// Étapes de l'image mesurées côté CPU, dans l'ordre du rapport
-pub const SECTIONS: [&str; 11] = [
+pub(crate) const SECTIONS: [&str; 11] = [
     "caméra et joueur",
     "créatures : simulation",
     "créatures : animation et maillage",
@@ -274,30 +274,30 @@ pub const SECTIONS: [&str; 11] = [
 ];
 
 /// Au-delà, une image est un à-coup : signalée dans la console et détaillée dans le rapport
-pub const HITCH_MS: f32 = 100.0;
+pub(crate) const HITCH_MS: f32 = 100.0;
 
 /// Chronométrage des étapes de chaque image, actif en permanence (quelques `Instant::now` par
 /// image) : il explique les à-coups dans la console, et nourrit le banc d'essai
 #[derive(Default)]
-pub struct FrameProbe {
+pub(crate) struct FrameProbe {
     sections: Vec<(&'static str, Duration)>,
     last_end: Option<Instant>,
 }
 
 /// Une image chronométrée
-pub struct FrameRecord {
+pub(crate) struct FrameRecord {
     /// Étapes de l'image, avec « reste de l'image » et « hors image » (temps passé depuis la fin
     /// de l'image précédente : événements de la fenêtre, système)
     pub sections: Vec<(&'static str, Duration)>,
 }
 
 impl FrameRecord {
-    pub fn total(&self) -> Duration {
+    pub(crate) fn total(&self) -> Duration {
         self.sections.iter().map(|(_, d)| *d).sum()
     }
 
     /// Les étapes les plus longues, en clair
-    pub fn describe(&self) -> String {
+    pub(crate) fn describe(&self) -> String {
         let mut parts: Vec<&(&str, Duration)> = self.sections.iter().filter(|(_, d)| d.as_secs_f32() * 1000.0 >= 1.0).collect();
         parts.sort_by_key(|p| std::cmp::Reverse(p.1));
         parts.iter().map(|(n, d)| format!("{n} {:.0} ms", d.as_secs_f32() * 1000.0)).collect::<Vec<_>>().join(", ")
@@ -306,17 +306,17 @@ impl FrameRecord {
 
 impl FrameProbe {
     /// Ajoute le temps d'une étape de l'image en cours, commencée à `since`
-    pub fn section(&mut self, name: &'static str, since: Instant) {
+    pub(crate) fn section(&mut self, name: &'static str, since: Instant) {
         self.sections.push((name, since.elapsed()));
     }
 
     /// Ajoute une étape déjà mesurée
-    pub fn push(&mut self, name: &'static str, duration: Duration) {
+    pub(crate) fn push(&mut self, name: &'static str, duration: Duration) {
         self.sections.push((name, duration));
     }
 
     /// Termine l'image commencée à `frame_start`
-    pub fn finish(&mut self, frame_start: Instant) -> FrameRecord {
+    pub(crate) fn finish(&mut self, frame_start: Instant) -> FrameRecord {
         let end = Instant::now();
         let mut sections = std::mem::take(&mut self.sections);
         let accounted: Duration = sections.iter().map(|(_, d)| *d).sum();
@@ -340,7 +340,7 @@ struct Hitch {
 /// Pires images gardées pour le rapport
 const WORST_KEPT: usize = 12;
 
-pub struct Benchmark {
+pub(crate) struct Benchmark {
     phases: Vec<Phase>,
     index: usize,
     started_at: Instant,
@@ -360,7 +360,7 @@ pub struct Benchmark {
 
 impl Benchmark {
     /// Banc d'essai prêt à partir de la position actuelle du joueur
-    pub fn new(camera: &OrbitCamera, seed: u64) -> Self {
+    pub(crate) fn new(camera: &OrbitCamera, seed: u64) -> Self {
         let arg = |name: &str| {
             let args: Vec<String> = std::env::args().collect();
             args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).and_then(|s| s.parse::<f32>().ok())
@@ -391,13 +391,13 @@ impl Benchmark {
         self.phases[self.index].setup
     }
 
-    pub fn creature_mode(&self) -> CreatureMode {
+    pub(crate) fn creature_mode(&self) -> CreatureMode {
         self.setup().creatures
     }
 
     /// À appeler en début d'image, avant la mise à jour de la caméra : impose les réglages et les
     /// entrées de la phase. Renvoie de quoi préparer les créatures quand une phase commence.
-    pub fn before_frame(&mut self, dt: f32, camera: &mut OrbitCamera, ui: &mut UiState, generator: &herocraft_world::PlanetWorldGenerator) -> Option<PhaseStart> {
+    pub(crate) fn before_frame(&mut self, dt: f32, camera: &mut OrbitCamera, ui: &mut UiState, generator: &herocraft_world::PlanetWorldGenerator) -> Option<PhaseStart> {
         let setup = self.setup();
         // Réglages : imposés à chaque image (un clic dans le menu ne fausse pas la mesure)
         ui.video_settings.vsync = false;
@@ -483,7 +483,7 @@ impl Benchmark {
     }
 
     /// À appeler en fin d'image. Renvoie vrai quand le banc d'essai est terminé.
-    pub fn after_frame(&mut self, dt: f32, record: &FrameRecord, creatures: usize, creature_vertices: usize) -> bool {
+    pub(crate) fn after_frame(&mut self, dt: f32, record: &FrameRecord, creatures: usize, creature_vertices: usize) -> bool {
         let gpu: Vec<(&'static str, u64)> = GPU_SAMPLES.lock().map(|mut s| std::mem::take(&mut *s)).unwrap_or_default();
         let elapsed = self.started_at.elapsed().as_secs_f32();
         let startup = self.phases[self.index].startup;
@@ -685,7 +685,7 @@ impl Benchmark {
 
 /// Positions où poser `count` bêtes en cercles autour de `feet` (entre 5 et 20 blocs), un peu
 /// au-dessus du sol pour qu'elles s'y posent en tombant
-pub fn stress_positions(feet: Vec3, block: f32, count: usize) -> Vec<Vec3> {
+pub(crate) fn stress_positions(feet: Vec3, block: f32, count: usize) -> Vec<Vec3> {
     let up = feet.normalize_or_zero();
     let (east, north) = herocraft_common::tangent_frame(up);
     (0..count)

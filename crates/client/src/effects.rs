@@ -21,20 +21,20 @@ use crate::post;
 use crate::skill_play::VisualCue;
 
 /// Quadrilatères au plus par image
-pub const MAX_QUADS: usize = 4000;
+pub(crate) const MAX_QUADS: usize = 4000;
 /// Côté des textures, ramenées toutes à cette taille dans le tableau de textures
 const TEXTURE_SIZE: u32 = 64;
 /// Noms des textures, dans l'ordre des couches du tableau (`TEXTURES[i]` est la couche `i`)
 const TEXTURES: [&str; 7] = ["soft.png", "spark.png", "flame.png", "smoke.png", "shard.png", "star.png", "rune.png"];
 /// Aucune texture : tache ronde calculée par le shader
-pub const NO_TEXTURE: u32 = 255;
+pub(crate) const NO_TEXTURE: u32 = 255;
 /// Durée d'une couche sans durée ni boucle, en secondes
 const DEFAULT_LAYER_SECONDS: f32 = 0.5;
 
 // Formes, telles que le shader les lit (`kind`)
 /// Secondes de trajet dont un sillage se souvient au plus
 const TRAIL_MEMORY: f32 = 0.6;
-pub const KIND_SPRITE: u32 = 0;
+pub(crate) const KIND_SPRITE: u32 = 0;
 const KIND_RING: u32 = 1;
 const KIND_ARC: u32 = 2;
 const KIND_DOME: u32 = 3;
@@ -42,7 +42,7 @@ const KIND_BEAM: u32 = 4;
 const KIND_DISC: u32 = 5;
 /// Fenêtre sur le néant (le cœur d'une Pierre du Néant posée) : un losange qui montre un ciel
 /// noir étoilé, fixe dans le monde (`void_stones`)
-pub const KIND_VOID: u32 = 6;
+pub(crate) const KIND_VOID: u32 = 6;
 
 // ------------------------------------------------------------------------------------------------
 // Format
@@ -192,7 +192,7 @@ struct Layer {
 
 /// Un effet : ses couches, et l'échelle de ses longueurs
 #[derive(Debug, Clone)]
-pub struct EffectDef {
+pub(crate) struct EffectDef {
     area_unit: bool,
     layers: Vec<Layer>,
 }
@@ -314,12 +314,12 @@ impl EffectDef {
 
 /// Tous les effets, par nom
 #[derive(Debug, Default)]
-pub struct EffectLibrary {
+pub(crate) struct EffectLibrary {
     effects: HashMap<String, EffectDef>,
 }
 
 impl EffectLibrary {
-    pub fn load_default() -> Self {
+    pub(crate) fn load_default() -> Self {
         let Some(dir) = herocraft_common::skills::asset_dir("assets/effects") else {
             log::warn!("Dossier assets/effects/ introuvable : pas d'effets visuels.");
             return Self::default();
@@ -355,7 +355,7 @@ impl EffectLibrary {
 // Simulation
 
 /// Où sont les ancres à cette image
-pub struct AnchorWorld<'a> {
+pub(crate) struct AnchorWorld<'a> {
     /// Le héros local
     pub hero: HeroAnchors,
     /// Cap du héros local
@@ -403,7 +403,7 @@ struct Running {
 /// Un quadrilatère à dessiner, tel que le shader le lit
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct EffectQuad {
+pub(crate) struct EffectQuad {
     /// Centre (xyz), forme (w, `KIND_*` en flottant)
     pub center: [f32; 4],
     /// Demi-axe u (xyz), paramètre 0 (w)
@@ -419,7 +419,7 @@ pub struct EffectQuad {
 
 /// Les effets en cours
 #[derive(Debug)]
-pub struct Effects {
+pub(crate) struct Effects {
     library: EffectLibrary,
     running: Vec<Running>,
     next_seed: u32,
@@ -440,7 +440,7 @@ fn hash(n: u32) -> f32 {
 
 impl Effects {
     /// Commence les visuels annoncés
-    pub fn start(&mut self, cues: Vec<VisualCue>) {
+    pub(crate) fn start(&mut self, cues: Vec<VisualCue>) {
         for cue in cues {
             let Some(def) = self.library.effects.get(&cue.effect) else {
                 log::debug!("Effet inconnu : {}", cue.effect);
@@ -454,12 +454,12 @@ impl Effects {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.running.is_empty()
     }
 
     /// Le projectile `id` s'est arrêté : les visuels qui le suivaient s'achèvent
-    pub fn end_projectile(&mut self, id: herocraft_common::ProjectileId) {
+    pub(crate) fn end_projectile(&mut self, id: herocraft_common::ProjectileId) {
         let now = Instant::now();
         for run in self.running.iter_mut().filter(|r| r.cue.projectile == Some(id)) {
             run.seconds = run.seconds.min(now.saturating_duration_since(run.started).as_secs_f32());
@@ -467,7 +467,7 @@ impl Effects {
     }
 
     /// Avance de `dt` secondes et écrit les quadrilatères de l'image dans `out`
-    pub fn update(&mut self, dt: f32, world: &AnchorWorld, out: &mut Vec<EffectQuad>) {
+    pub(crate) fn update(&mut self, dt: f32, world: &AnchorWorld, out: &mut Vec<EffectQuad>) {
         out.clear();
         let now = Instant::now();
         self.running.retain(|r| now.duration_since(r.started).as_secs_f32() < r.seconds + 2.0);
@@ -751,7 +751,7 @@ fn push_shape(shape: &ShapeLayer, s: f32, local: f32, origin: Vec3, tail: Vec3, 
 // ------------------------------------------------------------------------------------------------
 // Rendu
 
-pub struct EffectRenderer {
+pub(crate) struct EffectRenderer {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::PipelineLayout,
     bind_group: wgpu::BindGroup,
@@ -843,7 +843,7 @@ pub(crate) fn read_png(path: &Path) -> Option<(usize, usize, Vec<u8>)> {
 }
 
 impl EffectRenderer {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, scene_layout: &wgpu::BindGroupLayout, target: post::SceneTarget) -> Self {
+    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, scene_layout: &wgpu::BindGroupLayout, target: post::SceneTarget) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Effects Textures"),
             size: wgpu::Extent3d { width: TEXTURE_SIZE, height: TEXTURE_SIZE, depth_or_array_layers: TEXTURES.len() as u32 },
@@ -896,11 +896,11 @@ impl EffectRenderer {
         Self { pipeline: create_pipeline(device, &layout, target), layout, bind_group, quads, count: 0 }
     }
 
-    pub fn set_target(&mut self, device: &wgpu::Device, target: post::SceneTarget) {
+    pub(crate) fn set_target(&mut self, device: &wgpu::Device, target: post::SceneTarget) {
         self.pipeline = create_pipeline(device, &self.layout, target);
     }
 
-    pub fn update(&mut self, queue: &wgpu::Queue, quads: &[EffectQuad]) {
+    pub(crate) fn update(&mut self, queue: &wgpu::Queue, quads: &[EffectQuad]) {
         let quads = &quads[..quads.len().min(MAX_QUADS)];
         self.count = quads.len() as u32;
         if !quads.is_empty() {
@@ -909,7 +909,7 @@ impl EffectRenderer {
     }
 
     /// À appeler dans la passe 3D, après les objets opaques
-    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, scene_bind_group: &wgpu::BindGroup) {
+    pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>, scene_bind_group: &wgpu::BindGroup) {
         if self.count == 0 {
             return;
         }

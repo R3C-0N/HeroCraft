@@ -17,7 +17,7 @@ use crate::ui::{AtmosphereSettings, CloudSettings, LightingSettings, PostSetting
 
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct CameraUniform {
+pub(crate) struct CameraUniform {
     pub view_proj: [[f32; 4]; 4],
     pub inv_view_proj: [[f32; 4]; 4],
     pub camera_pos: [f32; 3],
@@ -62,7 +62,7 @@ fn orbit_factor(eye_distance: f32, planet_radius: f32, ground_factor: f32) -> f3
     ((altitude - 3.0 * scale) / (12.0 * scale)).clamp(0.0, 1.0).min(1.0 - ground_factor)
 }
 
-pub use herocraft_render::flattening::planet_flattening;
+pub(crate) use herocraft_render::flattening::planet_flattening;
 
 /// Distance au sol (en blocs) sur laquelle l'aplatissement passe de rien à complet
 const FLATTEN_BLEND_BLOCKS: f32 = 16.0;
@@ -117,7 +117,7 @@ fn draw_set_fingerprint(ids: &[LodMeshId]) -> u64 {
 /// Nombre de synchronisations après lequel un maillage non affiché est libéré du GPU
 const LOD_GPU_MESH_TTL: u64 = 120;
 
-pub struct State {
+pub(crate) struct State {
     /// Temps figé par la vision (`time_frozen`) : le ciel s'arrête et l'image se teinte de violet
     pub time_frozen: bool,
     /// Part de l'effet du temps figé, qui suit `time_frozen` en fondu
@@ -219,7 +219,7 @@ pub struct State {
     view_mode: CameraViewMode,
 }
 
-pub use herocraft_world::sky::{compute_sun_dir, local_hour, time_for_local_hour};
+pub(crate) use herocraft_world::sky::{compute_sun_dir, local_hour, time_for_local_hour};
 #[cfg(test)]
 use herocraft_world::sky::SUN_PERIOD;
 
@@ -228,7 +228,7 @@ use herocraft_world::sky::SUN_PERIOD;
 /// - Période orbitale : 21 minutes (1260 secondes)
 /// - Inclinaison orbitale lunaire : ~28.5° (0.497 rad)
 /// - Cycle synodique complet (retour à la même phase) : 21 jours de jeu (420 minutes)
-pub fn compute_moon_data(time: f32, sun_dir: glam::Vec3) -> (glam::Vec3, f32) {
+pub(crate) fn compute_moon_data(time: f32, sun_dir: glam::Vec3) -> (glam::Vec3, f32) {
     let l_sun = sun_dir.normalize();
     let moon_tilt: f32 = 0.497;
     let u_moon = glam::Vec3::new(moon_tilt.cos(), moon_tilt.sin(), 0.0);
@@ -400,7 +400,7 @@ impl ScenePipelines {
 
 /// Image de la fenêtre qu'on n'a pas pu obtenir pour cette frame
 #[derive(Debug)]
-pub enum FrameError {
+pub(crate) enum FrameError {
     /// Surface périmée ou perdue : la reconfigurer
     Lost,
     /// Fenêtre cachée, délai dépassé... : sauter la frame
@@ -408,7 +408,7 @@ pub enum FrameError {
 }
 
 impl State {
-    pub async fn new(window: Arc<Window>, _ui_state: &UiState) -> Self {
+    pub(crate) async fn new(window: Arc<Window>, _ui_state: &UiState) -> Self {
         herocraft_common::prof_scope!("render::State::new");
         let size = window.inner_size();
         crate::benchmark::set_meta("Résolution", format!("{} × {}", size.width, size.height));
@@ -749,7 +749,7 @@ impl State {
         (texture, view)
     }
 
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+    pub(crate) fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         herocraft_common::prof_scope!("render::resize");
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
@@ -769,14 +769,14 @@ impl State {
     }
 
     /// Carte graphique intégrée au processeur (Intel UHD, Iris…)
-    pub fn integrated_gpu(&self) -> bool {
+    pub(crate) fn integrated_gpu(&self) -> bool {
         self.integrated_gpu
     }
 
     /// Coupe ou rétablit le MSAA 4x : la profondeur, la cible HDR (dont le format suit, voir
     /// `SceneTarget::new`) et tous les pipelines de la passe 3D sont recréés (rien à faire si
     /// l'échantillonnage ne change pas)
-    pub fn set_msaa(&mut self, enabled: bool) {
+    pub(crate) fn set_msaa(&mut self, enabled: bool) {
         let sample_count = if enabled { self.max_sample_count } else { 1 };
         if sample_count == self.scene_target.sample_count {
             return;
@@ -802,7 +802,7 @@ impl State {
         crate::benchmark::set_meta("Cible HDR", target.describe());
     }
 
-    pub fn set_vsync(&mut self, enabled: bool) {
+    pub(crate) fn set_vsync(&mut self, enabled: bool) {
         let target_mode = if enabled {
             self.vsync_mode
         } else {
@@ -817,7 +817,7 @@ impl State {
         }
     }
 
-    pub fn update_camera(
+    pub(crate) fn update_camera(
         &mut self,
         camera: &OrbitCamera,
         lighting: &LightingSettings,
@@ -920,7 +920,7 @@ impl State {
     }
 
     /// Cascades centrées sur le joueur, à appeler après `update_camera`
-    pub fn update_shadows(&mut self, camera: &OrbitCamera, settings: &ShadowSettings) {
+    pub(crate) fn update_shadows(&mut self, camera: &OrbitCamera, settings: &ShadowSettings) {
         let (_, _, _, forward) = camera.look_vectors();
         self.shadows.update(
             &self.device,
@@ -937,17 +937,17 @@ impl State {
     }
 
     /// Paramètres de l'atmosphère, à appeler après `update_shadows` (les rayons suivent les ombres)
-    pub fn update_atmosphere(&mut self, camera: &OrbitCamera, settings: &AtmosphereSettings, lighting: &LightingSettings) {
+    pub(crate) fn update_atmosphere(&mut self, camera: &OrbitCamera, settings: &AtmosphereSettings, lighting: &LightingSettings) {
         self.atmosphere.update(&self.device, &self.queue, settings, lighting, camera.base_radius, self.shadows.is_active());
     }
 
     /// Vitesse du temps du monde : un ralenti énorme quand le temps est figé, jamais tout à fait nul
-    pub fn time_scale(&self) -> f32 {
+    pub(crate) fn time_scale(&self) -> f32 {
         0.01 + 0.99 * (1.0 - self.frozen).powi(3)
     }
 
     /// `overcast` : ciel voilé par la météo au joueur (0 à 1)
-    pub fn update_post(&mut self, settings: &PostSettings, overcast: f32) {
+    pub(crate) fn update_post(&mut self, settings: &PostSettings, overcast: f32) {
         self.bloom_enabled = settings.bloom_enabled && settings.bloom_intensity > 0.0;
         let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
         self.post.update(&self.queue, settings, overcast, [self.frozen, self.frozen_clock, aspect]);
@@ -957,7 +957,7 @@ impl State {
     /// sont envoyés, ceux qui ne sont plus affichés sont libérés après `LOD_GPU_MESH_TTL` synchronisations.
     /// Les envois sont limités à `LOD_UPLOAD_BUDGET` octets par appel : tant que le nouvel ensemble
     /// n'est pas entièrement sur le GPU, l'ancien reste affiché (voir `has_pending_lod_uploads`).
-    pub fn sync_lod_meshes(&mut self, lod: &PlanetLodManager) {
+    pub(crate) fn sync_lod_meshes(&mut self, lod: &PlanetLodManager) {
         use rayon::prelude::*;
         herocraft_common::prof_scope!("render::sync_lod_meshes");
         self.lod_sync_count += 1;
@@ -1041,73 +1041,73 @@ impl State {
     }
 
     /// Coins du bloc visé à cerner (ou rien), à appeler après `update_camera`
-    pub fn set_block_outline(&mut self, corners: Option<[glam::Vec3; 8]>) {
+    pub(crate) fn set_block_outline(&mut self, corners: Option<[glam::Vec3; 8]>) {
         self.block_outline.update(&self.queue, corners.as_slice(), self.camera_eye);
     }
 
     /// Bloc en train de casser (ses coins et l'avancement de 0 à 1), à appeler après `update_camera`
-    pub fn set_block_cracks(&mut self, cracks: Option<([glam::Vec3; 8], f32)>) {
+    pub(crate) fn set_block_cracks(&mut self, cracks: Option<([glam::Vec3; 8], f32)>) {
         self.block_cracks.update(&self.queue, cracks, self.camera_eye);
     }
 
     /// Silhouettes des autres joueurs (8 coins chacune), à appeler après `update_camera`
-    pub fn set_player_outlines(&mut self, boxes: &[[glam::Vec3; 8]]) {
+    pub(crate) fn set_player_outlines(&mut self, boxes: &[[glam::Vec3; 8]]) {
         self.player_outlines.update(&self.queue, boxes, self.camera_eye);
     }
 
     /// Textures des espèces de créatures, dans l'ordre du registre
-    pub fn set_creature_textures(&mut self, textures: &[Option<crate::skinned_model::Texture>]) {
+    pub(crate) fn set_creature_textures(&mut self, textures: &[Option<crate::skinned_model::Texture>]) {
         self.creatures.set_textures(&self.device, &self.queue, textures);
     }
 
     /// Modèles des espèces : leurs os sont appliqués sur le GPU (`creatures::Skinning::Gpu`)
-    pub fn set_creature_models(&mut self, models: &crate::creatures::CreatureModels) {
+    pub(crate) fn set_creature_models(&mut self, models: &crate::creatures::CreatureModels) {
         if self.gpu_skinning() {
             self.creatures.set_models(&self.device, models);
         }
     }
 
     /// Les os des créatures peuvent être appliqués sur le GPU (compute shaders disponibles)
-    pub fn gpu_skinning(&self) -> bool {
+    pub(crate) fn gpu_skinning(&self) -> bool {
         self.device.limits().max_compute_workgroups_per_dimension > 0 && self.device.limits().max_storage_buffers_per_shader_stage >= 6
     }
 
     /// Planche du héros vu à la troisième personne
-    pub fn set_hero_sheet(&mut self, appearance: &herocraft_common::hero::Appearance) {
+    pub(crate) fn set_hero_sheet(&mut self, appearance: &herocraft_common::hero::Appearance) {
         self.creatures.set_hero_sheet(&self.device, &self.queue, appearance);
     }
 
     /// Début d'une image de créatures : voir `CreatureRenderer::begin_villagers`
-    pub fn begin_villagers(&mut self) {
+    pub(crate) fn begin_villagers(&mut self) {
         self.creatures.begin_villagers();
     }
 
     /// Indice de texture de la planche d'un habitant
-    pub fn villager_texture(&mut self, source: crate::creature_render::SheetSource) -> usize {
+    pub(crate) fn villager_texture(&mut self, source: crate::creature_render::SheetSource) -> usize {
         self.creatures.villager_texture(&self.device, &self.queue, source)
     }
 
     /// Maillage des créatures de l'image (`creatures::build_frame`)
-    pub fn set_creature_frame(&mut self, frame: &crate::creatures::CreatureFrame) {
+    pub(crate) fn set_creature_frame(&mut self, frame: &crate::creatures::CreatureFrame) {
         self.creatures.upload(&self.device, &self.queue, frame);
     }
 
     /// Cubes des blocs tombés au sol, dans le format du relief
-    pub fn set_dropped_items(&mut self, mesh: &crate::planet_mesh::PlanetMesh) {
+    pub(crate) fn set_dropped_items(&mut self, mesh: &crate::planet_mesh::PlanetMesh) {
         self.dropped_items.upload(&self.device, &self.queue, mesh);
     }
 
     /// Des maillages LOD restent à envoyer : appeler `sync_lod_meshes` à la prochaine frame
-    pub fn has_pending_lod_uploads(&self) -> bool {
+    pub(crate) fn has_pending_lod_uploads(&self) -> bool {
         self.lod_uploads_pending
     }
 
     /// Direction du Soleil à la dernière image (jour ou nuit pour l'ambiance sonore)
-    pub fn sun_dir(&self) -> glam::Vec3 {
+    pub(crate) fn sun_dir(&self) -> glam::Vec3 {
         self.sun_dir
     }
 
-    pub fn update_cloud_mesh(&mut self, base_radius: f32, seed: u64) {
+    pub(crate) fn update_cloud_mesh(&mut self, base_radius: f32, seed: u64) {
         herocraft_common::prof_scope!("render::update_cloud_mesh");
         use wgpu::util::DeviceExt;
         let cloud_mesh = crate::cloud_mesh::CloudMeshGenerator::generate_cloud_mesh(base_radius, seed);
@@ -1131,7 +1131,7 @@ impl State {
     }
 
     /// Relit le temps qu'il fait sous quelques nuages ; le tampon est renvoyé à chaque tour complet
-    pub fn update_cloud_weather(&mut self, model: &herocraft_world::WeatherModel) {
+    pub(crate) fn update_cloud_weather(&mut self, model: &herocraft_world::WeatherModel) {
         herocraft_common::prof_scope!("render::update_cloud_weather");
         if self.cloud_weather.advance(model, self.simulated_time as f64) {
             self.queue.write_buffer(&self.cloud_weather_buffer, 0, bytemuck::cast_slice(&self.cloud_weather.vertex_values()));
@@ -1139,36 +1139,36 @@ impl State {
     }
 
     /// Dessus des colonnes où s'arrête la pluie
-    pub fn set_precipitation_columns(&mut self, columns: &[crate::precipitation::Column]) {
+    pub(crate) fn set_precipitation_columns(&mut self, columns: &[crate::precipitation::Column]) {
         self.precipitation.set_columns(&self.queue, columns);
     }
 
     /// Averse de cette image (`None` : rien ne tombe)
-    pub fn update_precipitation(&mut self, frame: Option<crate::precipitation::PrecipFrame>) {
+    pub(crate) fn update_precipitation(&mut self, frame: Option<crate::precipitation::PrecipFrame>) {
         self.precipitation.update(&self.queue, frame);
     }
 
     /// Les quadrilatères des effets de compétences de cette image
-    pub fn update_effects(&mut self, quads: &[crate::effects::EffectQuad]) {
+    pub(crate) fn update_effects(&mut self, quads: &[crate::effects::EffectQuad]) {
         self.effects.update(&self.queue, quads);
     }
 
     /// Les cartes de papier de la cinématique en cours (aucune hors des cinématiques)
-    pub fn update_cards(&mut self, uniform: &crate::paper_cards::CardUniform, cards: &[crate::paper_cards::CardInstance]) {
+    pub(crate) fn update_cards(&mut self, uniform: &crate::paper_cards::CardUniform, cards: &[crate::paper_cards::CardInstance]) {
         self.cards.update(&self.queue, uniform, cards);
     }
 
     /// Charge l'atlas des découpes du plan en cours (`None` : le libère) et prépare le suivant
-    pub fn prepare_cards(&mut self, (current, next): (Option<crate::paper_cards::CardSet>, Option<crate::paper_cards::CardSet>)) {
+    pub(crate) fn prepare_cards(&mut self, (current, next): (Option<crate::paper_cards::CardSet>, Option<crate::paper_cards::CardSet>)) {
         self.cards.prepare(&self.device, &self.queue, current.as_ref(), next.as_ref());
     }
 
     /// Les découpes chargées pour les cartes de papier
-    pub fn card_layers(&self) -> &crate::paper_cards::CardLayers {
+    pub(crate) fn card_layers(&self) -> &crate::paper_cards::CardLayers {
         &self.cards.layers
     }
 
-    pub fn render(
+    pub(crate) fn render(
         &mut self,
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &egui_wgpu::ScreenDescriptor,
@@ -1447,7 +1447,7 @@ impl State {
 
 /// Durées CPU des étapes d'un `render`
 #[derive(Debug, Clone, Copy, Default)]
-pub struct RenderTimings {
+pub(crate) struct RenderTimings {
     /// Attente d'une image libre de la chaîne de présentation (le GPU est en retard, ou V-Sync)
     pub acquire: std::time::Duration,
     /// Textures de l'interface et encodage des passes

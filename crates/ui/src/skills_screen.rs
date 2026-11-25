@@ -34,7 +34,7 @@ const SCROLL_STEP: f32 = 40.0;
 /// Largeur de la fiche à droite de la roue
 const SHEET_WIDTH: f32 = 250.0;
 /// Expérience que donne le bouton d'essai
-pub const TEST_EXPERIENCE: u64 = 100;
+pub(crate) const TEST_EXPERIENCE: u64 = 100;
 
 /// Ce que le joueur a demandé sur l'écran, à appliquer par le jeu
 #[derive(Debug, Default, PartialEq, Eq)]

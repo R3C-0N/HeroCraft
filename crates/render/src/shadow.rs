@@ -7,7 +7,7 @@ use wgpu::util::DeviceExt;
 
 use crate::settings::ShadowSettings;
 
-pub const CASCADE_COUNT: usize = 3;
+pub(crate) const CASCADE_COUNT: usize = 3;
 /// Côté des cascades : ombres fines, ombres allégées (`ShadowSettings::fine`)
 const CASCADE_SIZE_FINE: u32 = 2048;
 const CASCADE_SIZE_LIGHT: u32 = 1024;

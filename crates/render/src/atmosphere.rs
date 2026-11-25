@@ -64,7 +64,7 @@ const NOON_WHITE_BALANCE: f32 = 0.6;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct AtmosphereUniform {
+pub(crate) struct AtmosphereUniform {
     rayleigh_scattering: [f32; 3],
     bottom_radius: f32,
     mie_scattering: [f32; 3],

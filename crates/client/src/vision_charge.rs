@@ -36,7 +36,7 @@ const CHARGE_PACE: f32 = 2.2;
 
 /// Ce que la boucle du jeu doit faire
 #[derive(Debug, Clone, PartialEq)]
-pub enum ChargeEvent {
+pub(crate) enum ChargeEvent {
     /// Changer ces blocs de la vision
     Blocks(Vec<(BlockPos, BlockId)>),
     /// Envoyer ces soldats (solo) vers ces points (direction depuis le centre de la planète), à
@@ -53,7 +53,7 @@ pub enum ChargeEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Phase {
+pub(crate) enum Phase {
     /// Le tutoriel de l'éclat n'est pas fini : la porte attend, fermée
     Waiting,
     /// L'armée court vers la porte
@@ -68,7 +68,7 @@ pub enum Phase {
 
 /// Le plan de l'assaut, tiré de la ville-souvenir : la porte, l'axe qui sort de la ville, le sol
 #[derive(Debug, Clone, Copy)]
-pub struct Siege {
+pub(crate) struct Siege {
     face: PlanetFace,
     gate: (i32, i32),
     /// Axe qui sort de la ville par la porte (un des quatre axes de la face)
@@ -80,7 +80,7 @@ pub struct Siege {
 }
 
 impl Siege {
-    pub fn of(city: &MemoryCity, face: PlanetFace, generator: &PlanetWorldGenerator) -> Self {
+    pub(crate) fn of(city: &MemoryCity, face: PlanetFace, generator: &PlanetWorldGenerator) -> Self {
         let (gx, gz) = city.gate;
         let (dx, dz) = (city.muster.0 - gx, city.muster.1 - gz);
         let out = if dx.abs() >= dz.abs() { (dx.signum(), 0) } else { (0, dz.signum()) };
@@ -123,7 +123,7 @@ fn block(id: &str) -> BlockId {
     herocraft_common::blocks().find(id).unwrap_or(BlockId::AIR)
 }
 
-pub struct VisionCharge {
+pub(crate) struct VisionCharge {
     siege: Siege,
     geometry: BlockGeometry,
     phase: Phase,
@@ -136,16 +136,16 @@ pub struct VisionCharge {
 }
 
 impl VisionCharge {
-    pub fn new(siege: Siege, geometry: BlockGeometry) -> Self {
+    pub(crate) fn new(siege: Siege, geometry: BlockGeometry) -> Self {
         Self { siege, geometry, phase: Phase::Waiting, timer: 0.0, hits: 0, ram_forward: false, soldiers: Vec::new() }
     }
 
-    pub fn phase(&self) -> Phase {
+    pub(crate) fn phase(&self) -> Phase {
         self.phase
     }
 
     /// Cap (0 : nord, π/2 : est, comme celui des créatures) qui regarde la porte depuis `from`
-    pub fn facing_gate(&self, from: Vec3) -> f32 {
+    pub(crate) fn facing_gate(&self, from: Vec3) -> f32 {
         let up = from.normalize_or_zero();
         let (east, north) = herocraft_common::tangent_frame(up);
         let to = self.siege.point(&self.geometry, GATE_HALF as f32, 0.0, 0.0) - from;
@@ -153,7 +153,7 @@ impl VisionCharge {
     }
 
     /// La porte fermée (des planches dans tout le passage) et le bélier qui l'attend, sous son abri
-    pub fn initial_blocks(&self) -> Vec<(BlockPos, BlockId)> {
+    pub(crate) fn initial_blocks(&self) -> Vec<(BlockPos, BlockId)> {
         let s = &self.siege;
         let (plank, post) = (block("plank"), block("oakTrunk"));
         let mut blocks = Vec::new();
@@ -200,7 +200,7 @@ impl VisionCharge {
     }
 
     /// La porte, le bélier, son abri et la herse ne se cassent pas à la pioche
-    pub fn protects(&self, pos: BlockPos) -> bool {
+    pub(crate) fn protects(&self, pos: BlockPos) -> bool {
         let s = &self.siege;
         if pos.face != s.face || pos.y < s.floor || pos.y > s.floor + GATE_HEIGHT {
             return false;
@@ -210,7 +210,7 @@ impl VisionCharge {
     }
 
     /// Le cri de la charge : les soldats `soldiers` (solo, vide en ligne) courent vers la porte
-    pub fn start(&mut self, soldiers: &[herocraft_common::CreatureId], out: &mut Vec<ChargeEvent>) {
+    pub(crate) fn start(&mut self, soldiers: &[herocraft_common::CreatureId], out: &mut Vec<ChargeEvent>) {
         if self.phase != Phase::Waiting {
             return;
         }
@@ -231,7 +231,7 @@ impl VisionCharge {
     }
 
     /// Avance l'assaut : `player` (pieds du joueur)
-    pub fn update(&mut self, dt: f32, player: Vec3, out: &mut Vec<ChargeEvent>) {
+    pub(crate) fn update(&mut self, dt: f32, player: Vec3, out: &mut Vec<ChargeEvent>) {
         self.timer += dt;
         let s = self.siege;
         let at = self.geometry.block_at_point(player.as_dvec3()).filter(|p| p.face == s.face);
@@ -308,7 +308,7 @@ impl VisionCharge {
     }
 
     /// La consigne de la phase
-    pub fn hint(&self) -> Option<String> {
+    pub(crate) fn hint(&self) -> Option<String> {
         Some(match self.phase {
             Phase::Waiting => return None,
             Phase::Charging | Phase::Ramming => "À la charge ! Cours vers la grande porte avec l'armée.".to_string(),
@@ -319,7 +319,7 @@ impl VisionCharge {
     }
 
     /// Avance l'horloge de la phase scellée (la consigne s'efface)
-    pub fn tick_hint(&mut self, dt: f32) {
+    pub(crate) fn tick_hint(&mut self, dt: f32) {
         if self.phase == Phase::Sealed {
             self.timer += dt;
         }

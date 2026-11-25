@@ -19,14 +19,14 @@ use crate::creatures::{CreatureFrame, CreatureView};
 use crate::hero_model::{figure, push_figure, Figure, FigurePose, HeroGait};
 
 /// Distance jusqu'où l'on lit le nom d'un habitant, en blocs
-pub const NAME_TAG_BLOCKS: f32 = 10.0;
+pub(crate) const NAME_TAG_BLOCKS: f32 = 10.0;
 /// Figures gardées en mémoire (une par apparence)
 const MAX_FIGURES: usize = 128;
 /// Rouge d'un habitant qui vient d'être frappé
 const HURT_TINT: [f32; 3] = [1.0, 0.35, 0.35];
 
 /// La créature est un humanoïde (habitant, garde, voyageur)
-pub fn is_humanoid(view: &CreatureView, registry: &CreatureRegistry) -> bool {
+pub(crate) fn is_humanoid(view: &CreatureView, registry: &CreatureRegistry) -> bool {
     view.species.and_then(|s| registry.get(s)).is_some_and(|s| s.humanoid)
 }
 
@@ -38,7 +38,7 @@ fn stranger() -> &'static Appearance {
 
 /// La marche et les gestes de chaque humanoïde
 #[derive(Default)]
-pub struct VillagerAnimator {
+pub(crate) struct VillagerAnimator {
     gaits: HashMap<herocraft_common::CreatureId, HeroGait>,
     /// Corps de chaque apparence (selon sa planche), et l'instant où il a servi
     figures: HashMap<String, (Figure, f32)>,
@@ -47,11 +47,11 @@ pub struct VillagerAnimator {
 
 impl VillagerAnimator {
     /// Le corps taillé pour l'allure d'un héros (celui d'un autre joueur), gardé tant qu'il sert
-    pub fn hero_figure(&mut self, appearance: &Appearance) -> &Figure {
+    pub(crate) fn hero_figure(&mut self, appearance: &Appearance) -> &Figure {
         self.figure(appearance)
     }
 
-    pub fn update(&mut self, views: &[CreatureView], registry: &CreatureRegistry, dt: f32, block: f32) {
+    pub(crate) fn update(&mut self, views: &[CreatureView], registry: &CreatureRegistry, dt: f32, block: f32) {
         self.time = (self.time + dt) % 3600.0;
         let mut seen = Vec::new();
         for view in views.iter().filter(|v| is_humanoid(v, registry)) {
@@ -110,7 +110,7 @@ impl VillagerAnimator {
 /// Ajoute les humanoïdes au maillage des créatures ; `texture` donne l'indice de la planche d'une
 /// apparence ou d'une image fixe. Une invocation humanoïde (Chevalier de la Mort, Seigneur Liche)
 /// porte sa propre planche et son arme dans la main droite.
-pub fn push_villagers(
+pub(crate) fn push_villagers(
     frame: &mut CreatureFrame,
     views: &[CreatureView],
     registry: &CreatureRegistry,
@@ -151,7 +151,7 @@ pub fn push_villagers(
 
 /// Nom et métier de l'humanoïde visé (`looked_at`, qu'aucun bloc ne cache), à l'écran
 /// (position, texte)
-pub fn name_tags(views: &[CreatureView], card: impl Fn(herocraft_common::CreatureId) -> Option<Arc<VillagerCard>>, looked_at: Option<herocraft_common::CreatureId>, camera: &OrbitCamera, width: f32, height: f32) -> Vec<(egui::Pos2, String)> {
+pub(crate) fn name_tags(views: &[CreatureView], card: impl Fn(herocraft_common::CreatureId) -> Option<Arc<VillagerCard>>, looked_at: Option<herocraft_common::CreatureId>, camera: &OrbitCamera, width: f32, height: f32) -> Vec<(egui::Pos2, String)> {
     let Some(looked_at) = looked_at.filter(|_| camera.view_mode() != CameraViewMode::SatelliteOrbit) else {
         return Vec::new();
     };
@@ -182,7 +182,7 @@ pub fn name_tags(views: &[CreatureView], card: impl Fn(herocraft_common::Creatur
 }
 
 /// Pieds d'un humanoïde, pour savoir s'il est à portée de parole
-pub fn feet_of(views: &[CreatureView], id: herocraft_common::CreatureId) -> Option<Vec3> {
+pub(crate) fn feet_of(views: &[CreatureView], id: herocraft_common::CreatureId) -> Option<Vec3> {
     views.iter().find(|v| v.id == id).map(|v| v.feet)
 }
 

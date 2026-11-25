@@ -61,7 +61,7 @@ const NOTICE_SECONDS: f32 = 5.0;
 
 /// Ce que la boucle du jeu doit faire
 #[derive(Debug, Clone, PartialEq)]
-pub enum AssaultEvent {
+pub(crate) enum AssaultEvent {
     /// Un effet visuel en ce point, tenu tant de secondes s'il boucle
     Effect(&'static str, Vec3, Option<f32>),
     /// Un événement de cinématique, en ce point
@@ -77,7 +77,7 @@ pub enum AssaultEvent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Phase {
+pub(crate) enum Phase {
     /// La charge n'est pas finie
     Waiting,
     /// Dans les rues, avec l'armée
@@ -101,7 +101,7 @@ struct Arena {
     done: bool,
 }
 
-pub struct VisionAssault {
+pub(crate) struct VisionAssault {
     face: PlanetFace,
     geometry: BlockGeometry,
     posts: Vec<((i32, i32), bool)>,
@@ -126,7 +126,7 @@ pub struct VisionAssault {
 }
 
 impl VisionAssault {
-    pub fn new(city: &MemoryCity, site: &TempleSite, geometry: BlockGeometry) -> Self {
+    pub(crate) fn new(city: &MemoryCity, site: &TempleSite, geometry: BlockGeometry) -> Self {
         let face = site.face;
         let (gx, gz) = city.gate;
         let (cx, cz) = city.center;
@@ -153,7 +153,7 @@ impl VisionAssault {
         }
     }
 
-    pub fn phase(&self) -> Phase {
+    pub(crate) fn phase(&self) -> Phase {
         self.phase
     }
 
@@ -178,7 +178,7 @@ impl VisionAssault {
     }
 
     /// La herse est tombée : la traversée commence, avec les soldats qui ont passé la porte
-    pub fn start(&mut self, allies: &[herocraft_common::CreatureId]) {
+    pub(crate) fn start(&mut self, allies: &[herocraft_common::CreatureId]) {
         if self.phase == Phase::Waiting {
             self.phase = Phase::Streets;
             self.allies = allies.to_vec();
@@ -187,29 +187,29 @@ impl VisionAssault {
     }
 
     /// Le héros tombé reprend ici (direction depuis le centre de la planète)
-    pub fn checkpoint(&self) -> Option<Vec3> {
+    pub(crate) fn checkpoint(&self) -> Option<Vec3> {
         self.checkpoint.map(|c| self.dir(c))
     }
 
     /// Où la Pierre appelle le héros (le murmure en vient), une fois le monstre vaincu
-    pub fn calling(&self) -> Option<Vec3> {
+    pub(crate) fn calling(&self) -> Option<Vec3> {
         (self.phase == Phase::Crystal).then(|| self.at_floor(self.stone) + self.at_floor(self.stone).normalize_or_zero() * 0.5 * self.block())
     }
 
     /// La Pierre de l'autel est ramassée : le souvenir s'achève (`fin-de-la-vision` suit)
-    pub fn on_stone(&mut self, event: &StoneEvent) {
+    pub(crate) fn on_stone(&mut self, event: &StoneEvent) {
         if self.phase == Phase::Crystal && matches!(event, StoneEvent::Obtained { kind: StoneKind::Whole, .. }) {
             self.phase = Phase::Done;
         }
     }
 
     /// Le souvenir est allé au bout
-    pub fn completed(&self) -> bool {
+    pub(crate) fn completed(&self) -> bool {
         self.phase == Phase::Done
     }
 
     /// Les créatures du souvenir, à retirer au retour
-    pub fn creatures(&self) -> impl Iterator<Item = herocraft_common::CreatureId> + '_ {
+    pub(crate) fn creatures(&self) -> impl Iterator<Item = herocraft_common::CreatureId> + '_ {
         self.allies.iter().chain(&self.enemies).chain(&self.ring).chain(&self.boss).chain(&self.herald).copied()
     }
 
@@ -235,7 +235,7 @@ impl VisionAssault {
     }
 
     /// Avance la traversée. `ground(dir)` : les pieds posés au sol dans cette direction.
-    pub fn update(&mut self, dt: f32, player: Vec3, world: &mut CreatureWorld, ground: &dyn Fn(Vec3) -> Vec3, out: &mut Vec<AssaultEvent>) {
+    pub(crate) fn update(&mut self, dt: f32, player: Vec3, world: &mut CreatureWorld, ground: &dyn Fn(Vec3) -> Vec3, out: &mut Vec<AssaultEvent>) {
         if let Some((_, left)) = self.notice.as_mut() {
             *left -= dt;
             if *left <= 0.0 {
@@ -461,7 +461,7 @@ impl VisionAssault {
     }
 
     /// La consigne de la phase
-    pub fn hint(&self, world: &CreatureWorld) -> Option<String> {
+    pub(crate) fn hint(&self, world: &CreatureWorld) -> Option<String> {
         if let Some((notice, _)) = &self.notice {
             return Some(notice.clone());
         }

@@ -26,10 +26,10 @@ use crate::planet_mesh::PlanetVertex;
 use crate::skinned_model::{skin_normal, skin_point, Animation, SkinnedModel, Texture};
 
 /// Corps solide d'une entité, qui repousse le joueur : pieds, cap, forme à l'échelle, fixe
-pub type Obstacle = (Vec3, f32, herocraft_common::Collider, bool);
+pub(crate) type Obstacle = (Vec3, f32, herocraft_common::Collider, bool);
 
 /// Les corps solides des entités vivantes (un piège, de résistance 0, n'en a pas)
-pub fn obstacles(views: &[CreatureView], registry: &CreatureRegistry) -> Vec<Obstacle> {
+pub(crate) fn obstacles(views: &[CreatureView], registry: &CreatureRegistry) -> Vec<Obstacle> {
     views
         .iter()
         .filter(|v| v.death <= 0.0)
@@ -46,7 +46,7 @@ pub fn obstacles(views: &[CreatureView], registry: &CreatureRegistry) -> Vec<Obs
 
 /// Une créature à dessiner
 #[derive(Debug, Clone, Copy)]
-pub struct CreatureView {
+pub(crate) struct CreatureView {
     pub id: herocraft_common::CreatureId,
     /// Rang de son espèce dans le registre (`None` : espèce inconnue de ce client)
     pub species: Option<usize>,
@@ -72,7 +72,7 @@ pub struct CreatureView {
 }
 
 impl CreatureView {
-    pub fn new(species: Option<usize>, state: &CreatureState) -> Self {
+    pub(crate) fn new(species: Option<usize>, state: &CreatureState) -> Self {
         Self {
             id: state.creature_id,
             species,
@@ -204,14 +204,14 @@ impl Rig {
 }
 
 /// Les modèles des espèces du registre, dans son ordre (`None` : modèle illisible)
-pub struct CreatureModels {
+pub(crate) struct CreatureModels {
     rigs: Vec<Option<Rig>>,
 }
 
 impl CreatureModels {
     /// Lit le modèle et la texture de chaque espèce. Les textures, dans le même ordre, sont pour le
     /// rendu ; un fichier illisible est signalé, l'espèce est alors dessinée en pavé gris.
-    pub fn load(registry: &CreatureRegistry) -> (Self, Vec<Option<Texture>>) {
+    pub(crate) fn load(registry: &CreatureRegistry) -> (Self, Vec<Option<Texture>>) {
         let mut rigs = Vec::new();
         let mut textures = Vec::new();
         for species in registry.iter() {
@@ -248,7 +248,7 @@ impl CreatureModels {
 
     /// Pour chaque espèce, la distance de ses pieds au plus lointain de ses sommets au repos, en
     /// tailles de bête, avec une marge pour les membres qui s'étendent en bougeant
-    pub fn reaches(&self) -> Vec<f32> {
+    pub(crate) fn reaches(&self) -> Vec<f32> {
         self.rigs
             .iter()
             .map(|rig| {
@@ -262,7 +262,7 @@ impl CreatureModels {
 
     /// Sommets de liaison de tous les modèles, pour le GPU (`skinning.wgsl`), et pour chaque espèce
     /// (dans l'ordre du registre) son premier sommet dans cette liste (0 sans modèle)
-    pub fn gpu_vertices(&self) -> (Vec<GpuModelVertex>, Vec<u32>) {
+    pub(crate) fn gpu_vertices(&self) -> (Vec<GpuModelVertex>, Vec<u32>) {
         let mut vertices = Vec::new();
         let mut starts = Vec::with_capacity(self.rigs.len());
         for rig in &self.rigs {
@@ -284,7 +284,7 @@ impl CreatureModels {
 /// poids et rangs des quatre os
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct GpuModelVertex {
+pub(crate) struct GpuModelVertex {
     pub position: [f32; 4],
     pub normal: [f32; 4],
     pub weights: [f32; 4],
@@ -299,7 +299,7 @@ type CachedPose = (u64, Option<usize>, Vec<glam::Mat4>);
 
 /// L'allure de chaque créature : vitesse mesurée, animation jouée et celle qu'elle quitte
 #[derive(Default)]
-pub struct CreatureAnimator {
+pub(crate) struct CreatureAnimator {
     gaits: HashMap<herocraft_common::CreatureId, Gait>,
     /// Images animées (une par `update`)
     frame: u64,
@@ -334,7 +334,7 @@ struct Gait {
 impl CreatureAnimator {
     /// Choisit et avance l'animation de chaque créature selon son action et le chemin parcouru
     /// depuis l'image précédente (`dt` secondes) ; `block` : taille d'un bloc
-    pub fn update(&mut self, views: &[CreatureView], registry: &CreatureRegistry, models: &CreatureModels, dt: f32, block: f32) {
+    pub(crate) fn update(&mut self, views: &[CreatureView], registry: &CreatureRegistry, models: &CreatureModels, dt: f32, block: f32) {
         self.gaits.retain(|id, _| views.iter().any(|v| v.id == *id));
         self.poses.get_mut().retain(|id, _| views.iter().any(|v| v.id == *id));
         self.frame += 1;
@@ -386,7 +386,7 @@ impl CreatureAnimator {
 
     /// Animation jouée par la créature `id`
     #[cfg(test)]
-    pub fn current(&self, id: herocraft_common::CreatureId) -> Option<&str> {
+    pub(crate) fn current(&self, id: herocraft_common::CreatureId) -> Option<&str> {
         self.gaits.get(&id).map(|g| g.current.as_str())
     }
 
@@ -449,7 +449,7 @@ fn wanted_animation<'a>(view: &CreatureView, species: &'a CreatureSpecies, rig: 
 /// Le maillage des créatures d'une image : sommets (comme le relief), coordonnées de texture, et
 /// une plage d'indices par espèce
 #[derive(Default)]
-pub struct CreatureFrame {
+pub(crate) struct CreatureFrame {
     pub vertices: Vec<PlanetVertex>,
     pub uvs: Vec<[f32; 2]>,
     /// Indices ; ceux qui portent `SKINNED_INDEX` désignent un sommet animé sur le GPU (rang dans
@@ -465,11 +465,11 @@ pub struct CreatureFrame {
 }
 
 /// Bit des indices qui désignent un sommet animé sur le GPU (`CreatureFrame::indices`)
-pub const SKINNED_INDEX: u32 = 1 << 31;
+pub(crate) const SKINNED_INDEX: u32 = 1 << 31;
 
 /// Où sont appliqués les os des bêtes
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Skinning {
+pub(crate) enum Skinning {
     /// Chaque sommet transformé ici, puis envoyé (tests, et référence du GPU)
     #[cfg_attr(not(test), allow(dead_code))]
     Cpu,
@@ -482,7 +482,7 @@ pub enum Skinning {
 /// (miroir de `Instance` dans `skinning.wgsl`)
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct SkinnedInstance {
+pub(crate) struct SkinnedInstance {
     /// x vers sa gauche, y vers le haut, z vers l'avant, multipliés par sa taille
     pub left: [f32; 4],
     pub up: [f32; 4],
@@ -501,7 +501,7 @@ pub struct SkinnedInstance {
 /// Construit le maillage de toutes les créatures ; `block` : taille d'un bloc
 /// `eye` : position de la caméra, pour animer moins souvent les bêtes lointaines (`None` : toutes
 /// à chaque image)
-pub fn build_frame(views: &[CreatureView], registry: &CreatureRegistry, models: &CreatureModels, animator: &CreatureAnimator, block: f32, skinning: Skinning, eye: Option<Vec3>) -> CreatureFrame {
+pub(crate) fn build_frame(views: &[CreatureView], registry: &CreatureRegistry, models: &CreatureModels, animator: &CreatureAnimator, block: f32, skinning: Skinning, eye: Option<Vec3>) -> CreatureFrame {
     let mut frame = CreatureFrame::default();
     let mut hearts = Vec::new();
     let mut views = views.to_vec();
@@ -638,12 +638,12 @@ fn push_cube(frame: &mut CreatureFrame, center: Vec3, axes: [Vec3; 3]) {
 /// direction `dir` (unitaire), à moins de `max_distance`. Renvoie son identifiant et la distance.
 /// Chaque bête est une boîte de son corps (`CreatureSpecies::body`), tournée selon son cap ; `block`
 /// : taille d'un bloc.
-pub fn aimed_creature(views: &[CreatureView], registry: &CreatureRegistry, eye: Vec3, dir: Vec3, max_distance: f32, block: f32) -> Option<(herocraft_common::CreatureId, f32)> {
+pub(crate) fn aimed_creature(views: &[CreatureView], registry: &CreatureRegistry, eye: Vec3, dir: Vec3, max_distance: f32, block: f32) -> Option<(herocraft_common::CreatureId, f32)> {
     aimed_body(views.iter().filter(|v| v.death <= 0.0), registry, eye, dir, max_distance, block)
 }
 
 /// Bête morte, couchée sur le flanc, sous le réticule (à dépecer), comme `aimed_creature`
-pub fn aimed_corpse(views: &[CreatureView], registry: &CreatureRegistry, eye: Vec3, dir: Vec3, max_distance: f32, block: f32) -> Option<(herocraft_common::CreatureId, f32)> {
+pub(crate) fn aimed_corpse(views: &[CreatureView], registry: &CreatureRegistry, eye: Vec3, dir: Vec3, max_distance: f32, block: f32) -> Option<(herocraft_common::CreatureId, f32)> {
     aimed_body(views.iter().filter(|v| v.death > 0.0), registry, eye, dir, max_distance, block)
 }
 

@@ -21,7 +21,7 @@ const FLASH_TIME: f32 = 0.35;
 
 /// Ce que le rendu et le son tirent de la météo, à chaque image
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct WeatherVisual {
+pub(crate) struct WeatherVisual {
     /// Couverture nuageuse, de 0 à 1
     pub cloud_cover: f32,
     /// Force de la pluie ou de la neige, de 0 à 1
@@ -44,20 +44,20 @@ pub struct WeatherVisual {
 
 impl WeatherVisual {
     /// Ciel voilé : assombrit et grise le ciel, de 0 à 1
-    pub fn overcast(&self) -> f32 {
+    pub(crate) fn overcast(&self) -> f32 {
         ((self.cloud_cover - 0.55).max(0.0) * 0.9 + self.precipitation * 0.45 + self.storm * 0.3).clamp(0.0, 1.0)
     }
 
     /// Pour l'uniforme caméra (common.wgsl, `camera.weather`) : voile, sol mouillé, neige au sol,
     /// éclair
-    pub fn weather_uniform(&self) -> [f32; 4] {
+    pub(crate) fn weather_uniform(&self) -> [f32; 4] {
         [self.overcast(), self.wetness, self.snow_cover, self.flash]
     }
 
     /// Éclairage sous ce temps : soleil voilé par les nuages, brume de l'averse, ciel éclairé par
     /// l'éclair. La brume entre dans les tables de l'atmosphère : elle change par paliers, pour ne
     /// pas les recalculer à chaque image.
-    pub fn lighting(&self, base: &LightingSettings) -> LightingSettings {
+    pub(crate) fn lighting(&self, base: &LightingSettings) -> LightingSettings {
         let overcast = self.overcast();
         let mut lighting = *base;
         lighting.sun_intensity *= 1.0 - 0.85 * overcast;
@@ -71,7 +71,7 @@ impl WeatherVisual {
 
 /// Valeurs des saisons pour le shader, d'après le moment de l'année : rougeur d'automne et
 /// dépouillement d'hiver des feuillus, au nord puis au sud
-pub fn season_uniform(time: f64) -> [f32; 4] {
+pub(crate) fn season_uniform(time: f64) -> [f32; 4] {
     let tint = |phase: f64| -> (f32, f32) {
         let s = |a: f64, b: f64, x: f64| {
             let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
@@ -89,7 +89,7 @@ pub fn season_uniform(time: f64) -> [f32; 4] {
 }
 
 /// Météo du joueur
-pub struct ClientWeather {
+pub(crate) struct ClientWeather {
     pub model: WeatherModel,
     /// Dernier temps lu au joueur
     pub sample: Option<WeatherSample>,
@@ -106,7 +106,7 @@ pub struct ClientWeather {
 }
 
 impl ClientWeather {
-    pub fn new(seed: u64) -> Self {
+    pub(crate) fn new(seed: u64) -> Self {
         Self {
             model: WeatherModel::new(seed),
             sample: None,
@@ -121,19 +121,19 @@ impl ClientWeather {
     }
 
     /// Nouvelle planète : la météo de sa graine, sans transition
-    pub fn reset(&mut self, seed: u64) {
+    pub(crate) fn reset(&mut self, seed: u64) {
         let forced = self.model.forced;
         *self = Self::new(seed);
         self.model.forced = forced;
     }
 
-    pub fn visual(&self) -> &WeatherVisual {
+    pub(crate) fn visual(&self) -> &WeatherVisual {
         &self.visual
     }
 
     /// Avance d'une image : `time` est le temps du ciel, `feet` les pieds du joueur. Au sol
     /// seulement (`ground`) : en orbite, ni pluie ni éclairs.
-    pub fn update(&mut self, dt: f32, time: f64, feet: Vec3, base_radius: f32, ground: bool) {
+    pub(crate) fn update(&mut self, dt: f32, time: f64, feet: Vec3, base_radius: f32, ground: bool) {
         self.clock += dt;
         self.sample_in -= dt;
         let first = self.sample.is_none();
@@ -195,7 +195,7 @@ impl ClientWeather {
     }
 
     /// Coups de tonnerre arrivés à l'oreille du joueur à cette image (force de 0 à 1)
-    pub fn take_thunder(&mut self) -> Vec<f32> {
+    pub(crate) fn take_thunder(&mut self) -> Vec<f32> {
         let arrived: Vec<f32> = self.thunder.iter().filter(|t| t.0 <= 0.0).map(|t| t.1).collect();
         self.thunder.retain(|t| t.0 > 0.0);
         arrived
@@ -204,7 +204,7 @@ impl ClientWeather {
 
 /// Dessus des colonnes autour du joueur, où s'arrêtent les gouttes : relu quand le joueur change
 /// de colonne, et de temps en temps (blocs posés ou cassés)
-pub struct ColumnTops {
+pub(crate) struct ColumnTops {
     center: Option<(herocraft_common::PlanetFace, i32, i32)>,
     refresh_in: f32,
 }
@@ -217,7 +217,7 @@ impl Default for ColumnTops {
 
 impl ColumnTops {
     /// Nouvelles colonnes s'il faut les relire, sinon `None`
-    pub fn update(&mut self, dt: f32, collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3, base_radius: f32) -> Option<Vec<Column>> {
+    pub(crate) fn update(&mut self, dt: f32, collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3, base_radius: f32) -> Option<Vec<Column>> {
         self.refresh_in -= dt;
         let geometry = BlockGeometry::new(base_radius as f64);
         let at = geometry.block_at_point(feet.as_dvec3())?;
@@ -255,7 +255,7 @@ impl ColumnTops {
 
 /// Temps qu'il fait sous chaque nuage, pour les montrer ou les cacher et les assombrir : quelques
 /// nuages relus par image, le tampon envoyé quand ils ont tous été relus
-pub struct CloudWeather {
+pub(crate) struct CloudWeather {
     centers: Vec<Vec3>,
     ranks: Vec<f32>,
     values: Vec<[f32; 2]>,
@@ -266,19 +266,19 @@ pub struct CloudWeather {
 const CLOUDS_PER_FRAME: usize = 40;
 
 impl CloudWeather {
-    pub fn new(centers: Vec<Vec3>, ranks: Vec<f32>) -> Self {
+    pub(crate) fn new(centers: Vec<Vec3>, ranks: Vec<f32>) -> Self {
         let values = ranks.iter().map(|&rank| [crate::cloud_mesh::cloud_visibility(rank, 0.7), 0.0]).collect();
         Self { centers, ranks, values, cursor: 0 }
     }
 
     /// Valeurs par sommet (8 par nuage) : visibilité et noirceur
-    pub fn vertex_values(&self) -> Vec<[f32; 2]> {
+    pub(crate) fn vertex_values(&self) -> Vec<[f32; 2]> {
         self.values.iter().flat_map(|v| [*v; 8]).collect()
     }
 
     /// Relit quelques nuages ; `true` quand le tour est fini (le tampon est à renvoyer). `time` :
     /// temps du ciel, d'où la dérive du vent (cloud_shader.wgsl, `cloud_vertex`).
-    pub fn advance(&mut self, model: &WeatherModel, time: f64) -> bool {
+    pub(crate) fn advance(&mut self, model: &WeatherModel, time: f64) -> bool {
         if self.centers.is_empty() {
             return false;
         }

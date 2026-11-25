@@ -14,16 +14,16 @@ use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::monitor::MonitorHandle;
 
-pub const MONITOR_VAR: &str = "HEROCRAFT_MONITOR";
+pub(crate) const MONITOR_VAR: &str = "HEROCRAFT_MONITOR";
 
 /// Écran demandé par `HEROCRAFT_MONITOR`, ou `None` (choix laissé au système).
-pub fn requested() -> Option<String> {
+pub(crate) fn requested() -> Option<String> {
     std::env::var(MONITOR_VAR).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }
 
 /// Crée la boucle d'événements. Sous Linux, Wayland ne laisse pas une application placer
 /// sa fenêtre : si un écran est demandé, on passe par X11 (XWayland sous WSLg).
-pub fn build_event_loop(wants_monitor: bool) -> anyhow::Result<EventLoop<()>> {
+pub(crate) fn build_event_loop(wants_monitor: bool) -> anyhow::Result<EventLoop<()>> {
     let mut builder = EventLoop::builder();
     #[cfg(target_os = "linux")]
     if wants_monitor {
@@ -36,7 +36,7 @@ pub fn build_event_loop(wants_monitor: bool) -> anyhow::Result<EventLoop<()>> {
 }
 
 /// Retrouve l'écran correspondant à `wanted` parmi ceux que voit winit.
-pub fn find(event_loop: &ActiveEventLoop, wanted: &str) -> Option<MonitorHandle> {
+pub(crate) fn find(event_loop: &ActiveEventLoop, wanted: &str) -> Option<MonitorHandle> {
     let monitors: Vec<MonitorHandle> = event_loop.available_monitors().collect();
     let key = normalize(wanted);
 
@@ -56,7 +56,7 @@ pub fn find(event_loop: &ActiveEventLoop, wanted: &str) -> Option<MonitorHandle>
 }
 
 /// Position qui centre une fenêtre de taille `window` sur l'écran `monitor`.
-pub fn centered_position(monitor: &MonitorHandle, window: PhysicalSize<u32>) -> PhysicalPosition<i32> {
+pub(crate) fn centered_position(monitor: &MonitorHandle, window: PhysicalSize<u32>) -> PhysicalPosition<i32> {
     let (pos, size) = (monitor.position(), monitor.size());
     PhysicalPosition::new(
         pos.x + (size.width as i32 - window.width as i32).max(0) / 2,

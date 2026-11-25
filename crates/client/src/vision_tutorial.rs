@@ -41,7 +41,7 @@ const SOLDIER_CLEARING_BLOCKS: f32 = 2.2;
 const MAX_SOLDIERS: usize = 70;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Step {
+pub(crate) enum Step {
     /// La cinématique d'entrée se joue
     Arriving,
     /// Marcher vers le murmure
@@ -60,12 +60,12 @@ pub enum Step {
 
 /// Ce que la boucle du jeu doit faire après une mise à jour
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub struct Outcome {
+pub(crate) struct Outcome {
     /// Figer le temps (la cinématique d'entrée ne l'a pas fait : déjà vue, ou passée trop tôt)
     pub freeze: bool,
 }
 
-pub struct VisionTutorial {
+pub(crate) struct VisionTutorial {
     step: Step,
     /// Bloc de la roche à l'éclat
     shard: BlockPos,
@@ -88,7 +88,7 @@ pub struct VisionTutorial {
 impl VisionTutorial {
     /// Le héros entre dans la vision : il revêt le paquetage du soldat et l'éclat est posé dans
     /// sa roche, en `shard`. `inventory` devient le paquetage ; celui du présent est gardé.
-    pub fn begin(shard: BlockPos, geometry: &BlockGeometry, inventory: &mut Inventory) -> Self {
+    pub(crate) fn begin(shard: BlockPos, geometry: &BlockGeometry, inventory: &mut Inventory) -> Self {
         let present = std::mem::replace(inventory, Inventory::soldier_kit());
         let corners = geometry.block_corners(shard);
         let shard_center = (corners.iter().copied().sum::<glam::DVec3>() / 8.0).as_vec3();
@@ -96,22 +96,22 @@ impl VisionTutorial {
     }
 
     /// La roche à poser (avec `lod.set_block`) : le bloc et sa place
-    pub fn shard_rock(&self) -> Option<(BlockPos, BlockId)> {
+    pub(crate) fn shard_rock(&self) -> Option<(BlockPos, BlockId)> {
         herocraft_common::blocks().find(herocraft_common::vision::SHARD_ROCK).map(|rock| (self.shard, rock))
     }
 
     #[allow(dead_code)]
-    pub fn step(&self) -> Step {
+    pub(crate) fn step(&self) -> Step {
         self.step
     }
 
     #[allow(dead_code)]
-    pub fn shard_center(&self) -> Vec3 {
+    pub(crate) fn shard_center(&self) -> Vec3 {
         self.shard_center
     }
 
     /// Le héros revient au présent : son inventaire lui est rendu ; rend les soldats à retirer
-    pub fn end(mut self, inventory: &mut Inventory) -> Vec<herocraft_common::CreatureId> {
+    pub(crate) fn end(mut self, inventory: &mut Inventory) -> Vec<herocraft_common::CreatureId> {
         if let Some(present) = self.present_inventory.take() {
             *inventory = present;
         }
@@ -120,7 +120,7 @@ impl VisionTutorial {
 
     /// Les places des soldats figés, en solo : des rangs serrés qui couvrent le terrain du héros
     /// (`feet`) jusqu'à la roche, à poser au sol avec `ground`
-    pub fn soldier_spots(&self, feet: Vec3, block: f32) -> Vec<Vec3> {
+    pub(crate) fn soldier_spots(&self, feet: Vec3, block: f32) -> Vec<Vec3> {
         let up = feet.normalize_or_zero();
         let (t1, t2) = herocraft_common::tangent_frame(up);
         let rel = self.shard_center - feet;
@@ -162,23 +162,23 @@ impl VisionTutorial {
     }
 
     /// Les soldats posés (à retirer au retour)
-    pub fn add_soldiers(&mut self, ids: impl IntoIterator<Item = herocraft_common::CreatureId>) {
+    pub(crate) fn add_soldiers(&mut self, ids: impl IntoIterator<Item = herocraft_common::CreatureId>) {
         self.soldiers.extend(ids);
     }
 
     /// Les soldats posés en solo
-    pub fn soldiers(&self) -> &[herocraft_common::CreatureId] {
+    pub(crate) fn soldiers(&self) -> &[herocraft_common::CreatureId] {
         &self.soldiers
     }
 
     /// Espèce des soldats figés
-    pub fn soldier_species() -> &'static str {
+    pub(crate) fn soldier_species() -> &'static str {
         SOLDIER_SPECIES
     }
 
     /// Avance le tutoriel : `player` (pieds du joueur), `block` (hauteur d'un bloc),
     /// `cinematic` (une cinématique se joue), `frozen` (le temps est figé)
-    pub fn update(&mut self, dt: f32, player: Vec3, block: f32, cinematic: bool, frozen: bool, inventory: &Inventory, generator: &PlanetWorldGenerator, edits: &TerrainEdits) -> Outcome {
+    pub(crate) fn update(&mut self, dt: f32, player: Vec3, block: f32, cinematic: bool, frozen: bool, inventory: &Inventory, generator: &PlanetWorldGenerator, edits: &TerrainEdits) -> Outcome {
         self.clock += dt;
         let mut outcome = Outcome::default();
         let distance = (player + player.normalize_or_zero() * block - self.shard_center).length() / block;
@@ -216,7 +216,7 @@ impl VisionTutorial {
     }
 
     /// Un éclat ramassé pendant le tutoriel : le héros s'éveille (vrai une seule fois)
-    pub fn on_stone(&mut self, event: &StoneEvent) -> bool {
+    pub(crate) fn on_stone(&mut self, event: &StoneEvent) -> bool {
         let fragment = matches!(event, StoneEvent::Obtained { kind: StoneKind::Fragment, .. });
         if fragment && matches!(self.step, Step::Pickup | Step::Break | Step::Hold | Step::Inventory | Step::Walk) {
             self.step = Step::Awakened;
@@ -227,18 +227,18 @@ impl VisionTutorial {
 
     /// La roche ne cède qu'à la pioche : le joueur qui la frappe d'autre chose n'avance pas
     /// (la porte, le bélier et la herse de la charge, eux, ne cèdent à rien)
-    pub fn blocks_mining(&self, target: Option<BlockPos>, inventory: &Inventory) -> bool {
+    pub(crate) fn blocks_mining(&self, target: Option<BlockPos>, inventory: &Inventory) -> bool {
         let siege = target.is_some_and(|pos| self.charge.as_ref().is_some_and(|c| c.protects(pos)));
         siege || (self.step != Step::Awakened && target == Some(self.shard) && !inventory.holds_pickaxe())
     }
 
     /// Volume du murmure, de 0 à 1
-    pub fn whisper(&self) -> f32 {
+    pub(crate) fn whisper(&self) -> f32 {
         self.whisper
     }
 
     /// La consigne de l'étape, avec les touches du joueur ; aucune hors des étapes guidées
-    pub fn hint(&self, controls: &Controls, aiming_rock: bool) -> Option<String> {
+    pub(crate) fn hint(&self, controls: &Controls, aiming_rock: bool) -> Option<String> {
         let key = |a: Action| controls.action_key_label(a);
         Some(match self.step {
             Step::Arriving => return None,
@@ -263,7 +263,7 @@ impl VisionTutorial {
 
     /// La lueur de la roche, visible de loin entre les rangs : un halo violet qui respire et
     /// des poussières qui en montent ; plus rien une fois la roche brisée
-    pub fn push_quads(&self, eye: Vec3, block: f32, out: &mut Vec<EffectQuad>) {
+    pub(crate) fn push_quads(&self, eye: Vec3, block: f32, out: &mut Vec<EffectQuad>) {
         if matches!(self.step, Step::Pickup | Step::Awakened) {
             return;
         }

@@ -220,7 +220,7 @@ impl Tonemapper {
     }
 
     /// Valeur de `post.mode.x` dans post_shader.wgsl
-    pub fn shader_index(self) -> u32 {
+    pub(crate) fn shader_index(self) -> u32 {
         match self {
             Tonemapper::Clip => 0,
             Tonemapper::SoftShoulder => 1,

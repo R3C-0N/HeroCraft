@@ -43,7 +43,7 @@ impl LightField {
     /// faces de la case que son bloc couvre entièrement (bit `dir` de `FACE_DIRS`, `FULL` pour un
     /// bloc plein) : la lumière n'entre ni ne sort par une face couverte (un toit d'escaliers, une
     /// dalle l'arrêtent). Chaque case n'est lue qu'une fois. `None` sans source qui atteigne le chunk.
-    pub fn compute(sources: &[(i32, i32, i32, u8)], mut covers: impl FnMut(i32, i32, i32) -> u8) -> Option<Self> {
+    pub(crate) fn compute(sources: &[(i32, i32, i32, u8)], mut covers: impl FnMut(i32, i32, i32) -> u8) -> Option<Self> {
         // Une lumière qui n'atteint pas le chunk (ni la rangée de cases qui borde ses faces) ne sert à rien
         let reaches = |&&(x, y, z, level): &&(i32, i32, i32, u8)| {
             let gap = |v: i32| if v < -1 { -1 - v } else if v > 32 { v - 32 } else { 0 };
@@ -102,7 +102,7 @@ impl LightField {
 
     /// Lumière de la case (0 hors du champ, et dans un bloc plein)
     #[inline(always)]
-    pub fn level(&self, x: i32, y: i32, z: i32) -> u8 {
+    pub(crate) fn level(&self, x: i32, y: i32, z: i32) -> u8 {
         index(x, y, z).map_or(0, |i| self.levels[i])
     }
 }

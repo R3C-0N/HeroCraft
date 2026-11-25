@@ -29,15 +29,15 @@ use rayon::prelude::*;
 use crate::theme::{GOLD, GOLD_BRIGHT, TEXT_DIM, TEXT_SOFT};
 
 /// Côté de l'image du relief, en pixels de carte
-pub const MAP_PIXELS: usize = 320;
+pub(crate) const MAP_PIXELS: usize = 320;
 /// Échelles de la carte, en blocs par pixel de carte
-pub const ZOOM_LEVELS: [f64; 7] = [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0];
+pub(crate) const ZOOM_LEVELS: [f64; 7] = [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0];
 /// Échelle à l'ouverture : 4 blocs par pixel, soit 1 280 blocs de côté
 const DEFAULT_ZOOM: usize = 2;
 /// Au-delà de cette échelle, les plans des établissements ne sont plus dessinés dans le relief
 const FOOTPRINT_MAX_BPP: f64 = 4.0;
 /// Rayon des environs que la boussole connaît, en blocs
-pub const COMPASS_RANGE: f64 = 1600.0;
+pub(crate) const COMPASS_RANGE: f64 = 1600.0;
 /// Le joueur doit s'être déplacé d'autant (en blocs) pour que les environs soient relus
 const NEARBY_REFRESH: f64 = 200.0;
 /// Délai minimal entre deux demandes de relief pendant un glissé
@@ -47,7 +47,7 @@ const ROAD_BATCH: usize = 4;
 
 /// Rayon de la planète en blocs : un bloc au centre d'une face a la largeur d'un pas d'angle de π/2
 /// divisé par le nombre de blocs de la face
-pub fn planet_radius_blocks() -> f64 {
+pub(crate) fn planet_radius_blocks() -> f64 {
     FACE_BLOCKS as f64 * 2.0 / PI
 }
 
@@ -73,7 +73,7 @@ impl Frame {
     }
 
     /// Direction sur la sphère d'un point de la carte, donné en blocs vers l'est et le nord
-    pub fn unproject(&self, offset: DVec2) -> DVec3 {
+    pub(crate) fn unproject(&self, offset: DVec2) -> DVec3 {
         let dist = offset.length();
         if dist < 1e-9 {
             return self.up;
@@ -98,7 +98,7 @@ impl Frame {
 
     /// Cap (en radians, 0 au nord, dans le sens des aiguilles d'une montre) et distance en blocs
     /// d'une direction
-    pub fn bearing_distance(&self, dir: DVec3) -> (f64, f64) {
+    pub(crate) fn bearing_distance(&self, dir: DVec3) -> (f64, f64) {
         let p = self.project(dir);
         (p.x.atan2(p.y).rem_euclid(TAU), p.length())
     }
@@ -553,7 +553,7 @@ impl WorldMap {
     }
 
     /// Échelle affichée, en blocs par pixel de carte
-    pub fn bpp(&self) -> f64 {
+    pub(crate) fn bpp(&self) -> f64 {
         ZOOM_LEVELS[self.zoom]
     }
 
@@ -1014,7 +1014,7 @@ fn kind_label(kind: SettlementKind) -> &'static str {
 }
 
 /// Distance lisible : en mètres (un bloc fait un mètre), en kilomètres au-delà de 1 000
-pub fn format_distance(blocks: f64) -> String {
+pub(crate) fn format_distance(blocks: f64) -> String {
     if blocks >= 1000.0 {
         format!("{:.1} km", blocks / 1000.0).replace('.', ",")
     } else {
@@ -1023,7 +1023,7 @@ pub fn format_distance(blocks: f64) -> String {
 }
 
 /// Point cardinal le plus proche d'un cap
-pub fn cardinal(bearing: f64) -> &'static str {
+pub(crate) fn cardinal(bearing: f64) -> &'static str {
     const POINTS: [&str; 8] = ["nord", "nord-est", "est", "sud-est", "sud", "sud-ouest", "ouest", "nord-ouest"];
     POINTS[((bearing.rem_euclid(TAU) / (TAU / 8.0)).round() as usize) % 8]
 }
