@@ -297,13 +297,11 @@ fn render_terrain(generator: &PlanetWorldGenerator, center: DVec3, bpp: f64) -> 
                     let column = generator.sample_block_column(face, x, z);
                     let mut color = ground_color(column.biome, column.elevation);
                     let mut built = false;
-                    if bpp <= FOOTPRINT_MAX_BPP {
-                        if let Some(s) = generator.settlement_at(face, x, z) {
-                            if s.occupies(x, z, 0) {
-                                color = footprint_color(s.kind);
-                                built = true;
-                            }
-                        }
+                    if bpp <= FOOTPRINT_MAX_BPP
+                        && let Some(s) = generator.settlement_at(face, x, z)
+                        && s.occupies(x, z, 0) {
+                        color = footprint_color(s.kind);
+                        built = true;
                     }
                     (column.elevation, color, built, column.biome, (face_index(face), x, z))
                 })
@@ -739,11 +737,10 @@ impl WorldMap {
                 self.center = frame.unproject(DVec2::new(-d.x as f64, d.y as f64) / scale);
             }
         }
-        if response.secondary_clicked() {
-            if let Some(pos) = response.interact_pointer_pos() {
-                let near_waypoint = self.waypoint.is_some_and(|w| self.to_screen(&frame, rect, w).distance(pos) < 12.0);
-                self.waypoint = if near_waypoint { None } else { Some(self.dir_at_screen(&frame, rect, pos)) };
-            }
+        if response.secondary_clicked()
+            && let Some(pos) = response.interact_pointer_pos() {
+            let near_waypoint = self.waypoint.is_some_and(|w| self.to_screen(&frame, rect, w).distance(pos) < 12.0);
+            self.waypoint = if near_waypoint { None } else { Some(self.dir_at_screen(&frame, rect, pos)) };
         }
         if response.hovered() {
             self.scroll += ui.input(|i| crate::ui::raw_scroll_delta(i).y);

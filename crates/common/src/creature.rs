@@ -905,29 +905,26 @@ impl CreatureSpecies {
         if species.spawn.iter().any(|rule| !(rule.weight >= 0.0 && (0.0..=1.0).contains(&rule.chance))) {
             return Err(CreatureError::Spawn);
         }
-        if let Some(a) = &species.attack {
-            if !(a.damage > 0.0 && a.cooldown > 0.0 && a.sight > 0.0 && a.reach >= 0.0 && a.chase_speed > 0.0 && a.pack_size >= 1) {
-                return Err(CreatureError::Attack);
-            }
+        if let Some(a) = &species.attack
+            && !(a.damage > 0.0 && a.cooldown > 0.0 && a.sight > 0.0 && a.reach >= 0.0 && a.chase_speed > 0.0 && a.pack_size >= 1) {
+            return Err(CreatureError::Attack);
         }
         if let Some(b) = &species.breeding {
             if b.food.is_empty() || b.taming_chance.is_nan() || b.taming_chance <= 0.0 || b.taming_chance > 1.0 || b.growth_minutes.is_nan() || b.growth_minutes <= 0.0 {
                 return Err(CreatureError::Breeding);
             }
-            if let Some(Laying { minutes: [min, max], .. }) = b.lays {
-                if !(min > 0.0 && max >= min) {
-                    return Err(CreatureError::Laying);
-                }
+            if let Some(Laying { minutes: [min, max], .. }) = b.lays
+                && !(min > 0.0 && max >= min) {
+                return Err(CreatureError::Laying);
             }
         }
         for (name, animation) in &species.model.animations {
             if !(animation.cycle > 0.0 && animation.foulee.is_none_or(|f| f > 0.0)) {
                 return Err(CreatureError::AnimationCycle(name.clone()));
             }
-            if let Some(PauseRule { poids, duree: [min, max] }) = animation.pause {
-                if !(poids >= 0.0 && min > 0.0 && max >= min) {
-                    return Err(CreatureError::AnimationPause(name.clone()));
-                }
+            if let Some(PauseRule { poids, duree: [min, max] }) = animation.pause
+                && !(poids >= 0.0 && min > 0.0 && max >= min) {
+                return Err(CreatureError::AnimationPause(name.clone()));
             }
             let values = animation.os.values().flat_map(|m| m.rotation.into_iter().chain(m.rotation_fixe).chain(m.translation).chain(m.translation_fixe).chain([m.phase, m.frequence, m.decalage]));
             if values.into_iter().any(|v| !v.is_finite()) {

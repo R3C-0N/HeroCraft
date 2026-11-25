@@ -115,10 +115,9 @@ impl DroppedItems {
 
     /// Au-delà de `MAX_ITEMS`, le plus ancien objet disparaît (jamais une Pierre du Néant)
     fn evict_oldest(&mut self) {
-        if self.items.len() > MAX_ITEMS {
-            if let Some(oldest) = self.items.iter().position(|item| !item.item.is_void_stone()) {
-                self.items.remove(oldest);
-            }
+        if self.items.len() > MAX_ITEMS
+            && let Some(oldest) = self.items.iter().position(|item| !item.item.is_void_stone()) {
+            self.items.remove(oldest);
         }
     }
 

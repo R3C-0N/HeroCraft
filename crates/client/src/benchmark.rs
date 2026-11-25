@@ -206,10 +206,9 @@ static META: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
 
 /// Enregistre le temps GPU d'une passe (appelé par `gpu_timer` quand une image est relue)
 pub fn record_gpu(name: &'static str, ns: u64) {
-    if requested() {
-        if let Ok(mut samples) = GPU_SAMPLES.lock() {
-            samples.push((name, ns));
-        }
+    if requested()
+        && let Ok(mut samples) = GPU_SAMPLES.lock() {
+        samples.push((name, ns));
     }
 }
 

@@ -833,22 +833,20 @@ impl SkillRunner {
         }
         for buff in &mut self.buffs {
             buff.left -= dt;
-            if buff.scaled {
-                if let Some(stats) = players.stats_mut(buff.player) {
-                    buff.scale = missing_health(stats);
-                }
+            if buff.scaled
+                && let Some(stats) = players.stats_mut(buff.player) {
+                buff.scale = missing_health(stats);
             }
             // Régénération : des points de vie rendus chaque instant
             let regenerates = matches!(buff.stat, BuffStat::Regeneration | BuffStat::ManaRegen | BuffStat::StaminaRegen);
-            if regenerates && buff.value > 0.0 {
-                if let Some(stats) = players.stats_mut(buff.player) {
-                    match buff.stat {
-                        BuffStat::Regeneration => stats.hp = (stats.hp + buff.value * REGENERATION_HP * dt).min(stats.max_hp),
-                        BuffStat::ManaRegen => stats.mana = (stats.mana + buff.value * REGENERATION_MANA * dt).min(stats.max_mana),
-                        _ => stats.stamina = (stats.stamina + buff.value * REGENERATION_STAMINA * dt).min(stats.max_stamina),
-                    }
-                    out.changed.push(buff.player);
+            if regenerates && buff.value > 0.0
+                && let Some(stats) = players.stats_mut(buff.player) {
+                match buff.stat {
+                    BuffStat::Regeneration => stats.hp = (stats.hp + buff.value * REGENERATION_HP * dt).min(stats.max_hp),
+                    BuffStat::ManaRegen => stats.mana = (stats.mana + buff.value * REGENERATION_MANA * dt).min(stats.max_mana),
+                    _ => stats.stamina = (stats.stamina + buff.value * REGENERATION_STAMINA * dt).min(stats.max_stamina),
                 }
+                out.changed.push(buff.player);
             }
         }
         self.buffs.retain(|b| b.left > 0.0);
@@ -948,12 +946,11 @@ impl SkillRunner {
                     let Some(flight) = self.flights.remove(&tag) else { continue };
                     let p = flight.pending;
                     // Perdu sans rien toucher : ce que la compétence fait quand elle manque
-                    if flight.hits == 0 {
-                        if let Some(cast) = catalog.get(&p.skill).and_then(|d| d.cast.as_ref()) {
-                            for entry in &cast.on_miss {
-                                self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, p.caster, players);
-                                out.changed.push(p.caster);
-                            }
+                    if flight.hits == 0
+                        && let Some(cast) = catalog.get(&p.skill).and_then(|d| d.cast.as_ref()) {
+                        for entry in &cast.on_miss {
+                            self.apply_to_player(entry, p.caster, p.rank, p.power, &p.skill, p.caster, players);
+                            out.changed.push(p.caster);
                         }
                     }
                 }
@@ -1147,10 +1144,9 @@ impl SkillRunner {
             if let Some(teleport) = &movement.teleport {
                 self.delayed.push(Delayed { pending: p.clone(), targets: vec![first], left: teleport.delay.at(p.rank), what: Later::Teleport });
             }
-            if let Some(grapple) = movement.grapple.as_ref().filter(|g| g.to == GrappleTo::Target) {
-                if let Some(to) = creatures.creatures().iter().find(|c| c.id == first).map(|c| c.position) {
-                    self.moves.push((p.caster, SkillMove::Pull { to, speed: grapple.speed.at(p.rank), stop: grapple.stop.at(p.rank) }));
-                }
+            if let Some(grapple) = movement.grapple.as_ref().filter(|g| g.to == GrappleTo::Target)
+                && let Some(to) = creatures.creatures().iter().find(|c| c.id == first).map(|c| c.position) {
+                self.moves.push((p.caster, SkillMove::Pull { to, speed: grapple.speed.at(p.rank), stop: grapple.stop.at(p.rank) }));
             }
         }
         if let Some(follow) = cast.follow_up.as_ref().filter(|_| !found.is_empty()) {
@@ -1175,10 +1171,9 @@ impl SkillRunner {
         }
         let attacks = cast.effects.iter().any(|e| matches!(e.effect, Effect::Damage { .. }));
         // Une compétence de tir emporte la munition spéciale chargée
-        if attacks && !enemies.is_empty() && cast.weapons.iter().any(|w| w.is_ranged()) {
-            if let Some(special) = self.arsenal.take_special(p.caster) {
-                self.apply_special(&special, p.caster, &enemies, creatures, players);
-            }
+        if attacks && !enemies.is_empty() && cast.weapons.iter().any(|w| w.is_ranged())
+            && let Some(special) = self.arsenal.take_special(p.caster) {
+            self.apply_special(&special, p.caster, &enemies, creatures, players);
         }
         if attacks {
             let points: Vec<Vec3> = spots.iter().map(|s| s.0).collect();
@@ -1212,10 +1207,9 @@ impl SkillRunner {
             if let Some(teleport) = &movement.teleport {
                 self.delayed.push(Delayed { pending: p.clone(), targets: vec![id], left: teleport.delay.at(p.rank), what: Later::Teleport });
             }
-            if let Some(grapple) = movement.grapple.as_ref().filter(|g| g.to == GrappleTo::Target) {
-                if let Some(to) = creatures.creatures().iter().find(|c| c.id == id).map(|c| c.position) {
-                    self.moves.push((p.caster, SkillMove::Pull { to, speed: grapple.speed.at(p.rank), stop: grapple.stop.at(p.rank) }));
-                }
+            if let Some(grapple) = movement.grapple.as_ref().filter(|g| g.to == GrappleTo::Target)
+                && let Some(to) = creatures.creatures().iter().find(|c| c.id == id).map(|c| c.position) {
+                self.moves.push((p.caster, SkillMove::Pull { to, speed: grapple.speed.at(p.rank), stop: grapple.stop.at(p.rank) }));
             }
         }
         if let Some(follow) = &cast.follow_up {
@@ -1230,10 +1224,9 @@ impl SkillRunner {
         }
         let attacks = cast.effects.iter().any(|e| matches!(e.effect, Effect::Damage { .. }));
         // Le premier ennemi touché par un tir d'arme reçoit la munition spéciale chargée
-        if attacks && first && cast.weapons.iter().any(|w| w.is_ranged()) {
-            if let Some(special) = self.arsenal.take_special(p.caster) {
-                self.apply_special(&special, p.caster, &[id], creatures, players);
-            }
+        if attacks && first && cast.weapons.iter().any(|w| w.is_ranged())
+            && let Some(special) = self.arsenal.take_special(p.caster) {
+            self.apply_special(&special, p.caster, &[id], creatures, players);
         }
         if attacks {
             let points: Vec<Vec3> = spot.map(|s| s.0).into_iter().collect();

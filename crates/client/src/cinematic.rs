@@ -138,10 +138,9 @@ impl Cinematics {
                 camera.transition_to_ground(generator);
             }
             self.anchor = Some(self.anchor_for(camera));
-            if let Some(dir) = &self.world {
-                if let Err(e) = self.player.save_seen(&dir.join(SEEN_FILE)) {
-                    log::warn!("Cinématiques vues non enregistrées : {e}");
-                }
+            if let Some(dir) = &self.world
+                && let Err(e) = self.player.save_seen(&dir.join(SEEN_FILE)) {
+                log::warn!("Cinématiques vues non enregistrées : {e}");
             }
         }
 

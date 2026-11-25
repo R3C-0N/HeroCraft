@@ -251,11 +251,10 @@ impl SkillPlay {
             if cast.uses_round && self.runner.arsenal().magazine(SOLO_PLAYER).is_none_or(|m| m.loaded == 0) {
                 return Err(CastError::Reloading.into());
             }
-            if let Some(charge) = &cast.charge {
-                if charge.power_after(self.runner.arsenal().charge_held(SOLO_PLAYER, Some(requested))).is_none() {
-                    self.runner.arsenal_mut().release_charge(SOLO_PLAYER, Some(requested));
-                    return Err(CastError::NotCharged.into());
-                }
+            if let Some(charge) = &cast.charge
+                && charge.power_after(self.runner.arsenal().charge_held(SOLO_PLAYER, Some(requested))).is_none() {
+                self.runner.arsenal_mut().release_charge(SOLO_PLAYER, Some(requested));
+                return Err(CastError::NotCharged.into());
             }
         }
         let rank = match online {
