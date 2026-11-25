@@ -30,8 +30,8 @@ jobs:
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - name: Clippy
-        # Les erreurs font échouer la CI ; les avertissements seront traités par la configuration des lints
-        run: cargo clippy --workspace --all-targets --locked
+        # Le moindre avertissement fait échouer la CI
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
         run: cargo test --workspace --locked
 

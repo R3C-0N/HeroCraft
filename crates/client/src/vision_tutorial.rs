@@ -178,7 +178,6 @@ impl VisionTutorial {
 
     /// Avance le tutoriel : `player` (pieds du joueur), `block` (hauteur d'un bloc),
     /// `cinematic` (une cinématique se joue), `frozen` (le temps est figé)
-    #[allow(clippy::too_many_arguments)]
     pub fn update(&mut self, dt: f32, player: Vec3, block: f32, cinematic: bool, frozen: bool, inventory: &Inventory, generator: &PlanetWorldGenerator, edits: &TerrainEdits) -> Outcome {
         self.clock += dt;
         let mut outcome = Outcome::default();

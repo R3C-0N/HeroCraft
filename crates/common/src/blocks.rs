@@ -472,7 +472,7 @@ fn covers_face(boxes: &[ShapeBox], dir: usize) -> bool {
         2 | 3 => 1,
         _ => 2,
     };
-    let plane = if dir % 2 == 0 { 16 } else { 0 };
+    let plane = if dir.is_multiple_of(2) { 16 } else { 0 };
     let (a, b) = ((axis + 1) % 3, (axis + 2) % 3);
     let mut covered = [[false; 16]; 16];
     for bx in boxes {

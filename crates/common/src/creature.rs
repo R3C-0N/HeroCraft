@@ -911,7 +911,7 @@ impl CreatureSpecies {
             }
         }
         if let Some(b) = &species.breeding {
-            if b.food.is_empty() || !(b.taming_chance > 0.0 && b.taming_chance <= 1.0) || !(b.growth_minutes > 0.0) {
+            if b.food.is_empty() || b.taming_chance.is_nan() || b.taming_chance <= 0.0 || b.taming_chance > 1.0 || b.growth_minutes.is_nan() || b.growth_minutes <= 0.0 {
                 return Err(CreatureError::Breeding);
             }
             if let Some(Laying { minutes: [min, max], .. }) = b.lays {

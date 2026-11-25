@@ -851,7 +851,6 @@ impl CreatureWorld {
         id
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn wake_creature(&mut self, id: CreatureId, species: usize, herd: u64, feet: Vec3, yaw: f32, health: f32, tamed: bool, age: Option<f32>) {
         let timer = self.rng.gen_range(0.5..3.0);
         let breeding = self.registry.get(species).and_then(|s| s.breeding.as_ref());
@@ -1339,7 +1338,7 @@ impl CreatureWorld {
     /// coup qui les a rabattues
     fn land(&mut self) {
         let block = self.geometry.block_height as f32;
-        let landed: Vec<(CreatureId, Vec3, f32, Option<(PlayerId, f32)>)> = self.creatures.iter_mut().filter_map(|c| c.landed.take().map(|(fall, slam)| (c.id, c.position, fall, slam))).collect();
+        let landed: Vec<_> = self.creatures.iter_mut().filter_map(|c| c.landed.take().map(|(fall, slam)| (c.id, c.position, fall, slam))).collect();
         for (id, at, fall, slam) in landed {
             let (player, hit) = slam.unwrap_or((PlayerId(0), 0.0));
             let damage = hit + (fall - LAUNCH_SAFE_FALL).max(0.0) * LAUNCH_FALL_DAMAGE;
@@ -2520,7 +2519,6 @@ impl Walker<'_, '_> {
 
     /// Nouveau cap pour contourner ce qui gêne sur le chemin `current` : le plus petit écart qui
     /// mène plus loin (ou au sec), du côté habituel d'abord. Bloquée de partout, elle fait demi-tour.
-    #[allow(clippy::too_many_arguments)]
     fn detour(&mut self, c: &mut Creature, altitude: f32, reach: f32, height: f32, current: Path, avoid_water: bool, rng: &mut StdRng) -> Option<f32> {
         let up = c.position.normalize_or_zero();
         let (east, north) = tangent_frame(up);
@@ -2620,7 +2618,6 @@ impl Walker<'_, '_> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, food: &[ItemId], nearest_player: Option<PlayerPresence>, herd: HerdPull, rng: &mut StdRng, dt: f32) {
         let block = self.block();
         let base_radius = self.geometry.base_radius as f32;

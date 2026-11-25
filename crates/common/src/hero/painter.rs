@@ -271,7 +271,6 @@ impl Brosse {
         self.pxa(g, x, y, col, 1.0, w, h);
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn pxa(&self, g: &mut Toile, x: i32, y: i32, col: u32, alpha: f64, largeur: i32, hauteur: i32) {
         let w = if largeur != 0 { largeur } else { 1 };
         let h = if hauteur != 0 { hauteur } else { 1 };

@@ -108,6 +108,7 @@ pub struct CloudMeshGenerator;
 impl CloudMeshGenerator {
     /// Hauteur d'un bloc dans les unités du prototype (rayon 25, 1 024 blocs par face), celles de
     /// toutes les altitudes ci-dessous (multipliées ensuite par `block_scale`)
+    #[cfg(test)]
     pub const BLOCK_HEIGHT: f32 = std::f32::consts::PI * 25.0 / 2048.0;
     /// Milieu de la couche nuageuse au-dessus du rayon de base : 391 blocs au-dessus du fond du
     /// monde, la dalle commençant à 375. Les plus hauts sommets plafonnent à 350 blocs
@@ -115,8 +116,10 @@ impl CloudMeshGenerator {
     /// cloud_shader.wgsl (`CLOUD_LAYER_MID`).
     pub const CLOUD_ALTITUDE_MID: f32 = 15.0;
     /// Bas de la couche nuageuse
+    #[cfg(test)]
     pub const CLOUD_ALTITUDE_BOT: f32 = Self::CLOUD_ALTITUDE_MID - Self::CLOUD_HALF_DEPTH;
     /// Haut de la couche nuageuse (dalle de 1.2, soit 31 blocs d'épaisseur)
+    #[cfg(test)]
     pub const CLOUD_ALTITUDE_TOP: f32 = Self::CLOUD_ALTITUDE_MID + Self::CLOUD_HALF_DEPTH;
 
     /// Vitesse angulaire du vent qui fait tourner la couche autour de l'axe Y, en radians par

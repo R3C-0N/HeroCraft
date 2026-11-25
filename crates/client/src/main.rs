@@ -153,7 +153,6 @@ fn block_sound(
 }
 
 /// Pas, saut et réception du joueur au sol, puis ambiance (vent, oiseaux, grillons)
-#[allow(clippy::too_many_arguments)]
 fn update_sound(
     audio: &mut audio::Audio,
     camera: &OrbitCamera,
@@ -322,7 +321,6 @@ fn begin_vision_tutorial(
 
 /// Applique ce que la charge de la vision demande : blocs de la porte et du bélier, soldats qui
 /// courent (solo), coups de bélier, porte qui vole en éclats, rayon violet et herse
-#[allow(clippy::too_many_arguments)]
 fn apply_charge_events(
     events: Vec<vision_charge::ChargeEvent>,
     camera: &mut OrbitCamera,
@@ -425,7 +423,6 @@ fn end_vision_tutorial(tutorial: &mut Option<vision_tutorial::VisionTutorial>, u
 
 /// Applique ce que l'assaut de la ville demande : effets, événements de cinématique, blocs
 /// (la Pierre sur l'autel), héros repoussé vers le centre d'une place, secousses et grondements
-#[allow(clippy::too_many_arguments)]
 fn apply_assault_events(
     events: Vec<vision_assault::AssaultEvent>,
     camera: &mut OrbitCamera,
@@ -492,7 +489,6 @@ const VISION_TEMPLE_BLOCKS: i32 = 2048;
 /// vierges, ou en revient (`None`) avec les blocs du présent mis de côté ; le terrain est refait et
 /// le joueur posé en `feet`. `back` : en solo, là où revenir ; `storage` : sauvegarde des blocs du
 /// présent, au retour en solo.
-#[allow(clippy::too_many_arguments)]
 fn switch_epoch(
     holder: Option<herocraft_world::Culture>,
     feet: glam::Vec3,
@@ -538,7 +534,6 @@ fn switch_epoch(
 
 /// Remplace la planète affichée (nouvelle graine, partie en ligne ou retour au solo) : générateur,
 /// blocs modifiés, caches, maillages, nuages et inventaire, puis pose le joueur au sol
-#[allow(clippy::too_many_arguments)]
 fn switch_planet(
     seed: u64,
     online: bool,
@@ -586,7 +581,6 @@ fn switch_planet(
 }
 
 /// Touche attribuée à une action, en jeu (menu fermé) : lue par la fenêtre ou par le crochet clavier
-#[allow(clippy::too_many_arguments)]
 fn game_key(
     action: Action,
     is_pressed: bool,
@@ -726,7 +720,6 @@ fn aimed_creature(camera: &OrbitCamera, interaction: &BlockInteraction, views: &
 /// Donne à la bête visée ce que le joueur tient en main, si c'est sa nourriture et qu'elle en veut :
 /// la simulation solo, ou le serveur en ligne, l'apprivoise, la rend amoureuse ou fait grandir le
 /// petit. Renvoie vrai si elle a mangé (l'objet est retiré de l'inventaire).
-#[allow(clippy::too_many_arguments)]
 fn feed_aimed_creature(
     camera: &OrbitCamera,
     interaction: &BlockInteraction,

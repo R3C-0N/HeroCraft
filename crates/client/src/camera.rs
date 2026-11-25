@@ -1345,8 +1345,7 @@ mod tests {
 
     #[test]
     fn test_view_mode_thresholds() {
-        let mut cam = OrbitCamera::default();
-        cam.effective_distance = 0.0;
+        let mut cam = OrbitCamera { effective_distance: 0.0, ..Default::default() };
         assert_eq!(cam.view_mode(), CameraViewMode::FirstPerson);
 
         cam.effective_distance = 0.04;

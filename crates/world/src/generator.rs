@@ -1086,12 +1086,10 @@ mod tests {
 
     #[test]
     fn test_planets_diversity_across_seeds() {
-        let mut desc1 = PlanetDescriptor::default();
-        desc1.seed = 1001;
+        let desc1 = PlanetDescriptor { seed: 1001, ..Default::default() };
         let gen1 = PlanetWorldGenerator::new(desc1);
 
-        let mut desc2 = PlanetDescriptor::default();
-        desc2.seed = 2026;
+        let desc2 = PlanetDescriptor { seed: 2026, ..Default::default() };
         let gen2 = PlanetWorldGenerator::new(desc2);
 
         let mut diff_water = 0;

@@ -77,6 +77,9 @@ mod imp {
             _ => return,
         };
         WINDOW.store(hwnd, Ordering::Relaxed);
+        // SAFETY: appels Win32 sur ce fil, qui garde le crochet et sa boucle de messages jusqu'à
+        // la fin du jeu ; `hook_proc` a la signature attendue par `WH_KEYBOARD_LL`, `GetModuleHandleW`
+        // reçoit un nom nul (le module du jeu) et `MSG` est une structure C valide à zéro
         let spawned = std::thread::Builder::new().name("crochet-clavier".into()).spawn(|| unsafe {
             let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), GetModuleHandleW(std::ptr::null()), 0);
             if hook == 0 {
@@ -103,6 +106,9 @@ mod imp {
         std::mem::take(&mut STATE.lock().unwrap_or_else(|e| e.into_inner()).events)
     }
 
+    /// # Safety
+    /// Appelée seulement par Windows pour le crochet `WH_KEYBOARD_LL` : `lparam` pointe alors sur
+    /// un `KBDLLHOOKSTRUCT` valide le temps de l'appel.
     unsafe extern "system" fn hook_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         if code == HC_ACTION as i32 && ACTIVE.load(Ordering::Relaxed) && intercept(wparam, lparam) {
             return 1;
@@ -111,6 +117,9 @@ mod imp {
     }
 
     /// Prend la touche pour le jeu si elle lui est attribuée et que sa fenêtre est au premier plan
+    ///
+    /// # Safety
+    /// `lparam` doit pointer sur un `KBDLLHOOKSTRUCT` valide (celui que reçoit `hook_proc`).
     unsafe fn intercept(wparam: WPARAM, lparam: LPARAM) -> bool {
         let info = &*(lparam as *const KBDLLHOOKSTRUCT);
         // Les touches simulées (caractères envoyés par d'autres programmes) passent

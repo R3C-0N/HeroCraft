@@ -36,7 +36,7 @@ struct AnchorFrame {
 }
 
 impl AnchorFrame {
-    fn to_world(&self, local: Vec3) -> Vec3 {
+    fn to_world(self, local: Vec3) -> Vec3 {
         self.origin + (self.right * local.x + self.up * local.y + self.forward * local.z) * self.block
     }
 }

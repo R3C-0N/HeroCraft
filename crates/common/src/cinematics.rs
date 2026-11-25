@@ -92,6 +92,11 @@ impl Track<f32> {
         let (a, b) = (self.start(), self.end());
         a + (b - a) * k
     }
+
+    /// Les deux bornes sont strictement positives (faux pour NaN)
+    pub fn is_positive(&self) -> bool {
+        self.start() > 0.0 && self.end() > 0.0
+    }
 }
 
 impl Track<[f32; 3]> {
@@ -634,7 +639,7 @@ impl Cinematic {
         }
         for (i, shot) in self.shots.iter().enumerate() {
             let name = if shot.name.is_empty() { format!("plan {}", i + 1) } else { format!("plan « {} »", shot.name) };
-            if !(shot.duration > 0.0) {
+            if shot.duration.is_nan() || shot.duration <= 0.0 {
                 return Err(I::ShotDuration(name));
             }
             match (&shot.position, &shot.orbit) {
@@ -647,7 +652,7 @@ impl Cinematic {
             }
         }
         for caption in &self.captions {
-            if caption.at < 0.0 || !(caption.duration > 0.0) {
+            if caption.at < 0.0 || caption.duration.is_nan() || caption.duration <= 0.0 {
                 return Err(I::CaptionTiming(caption.text.clone()));
             }
         }
@@ -662,10 +667,10 @@ impl Cinematic {
         }
         for (i, card) in self.cards.iter().enumerate() {
             let name = if card.name.is_empty() { format!("carte {}", i + 1) } else { format!("carte « {} »", card.name) };
-            if card.at < 0.0 || card.duration.is_some_and(|d| !(d > 0.0)) || card.fade < 0.0 {
+            if card.at < 0.0 || card.duration.is_some_and(|d| d.is_nan() || d <= 0.0) || card.fade < 0.0 {
                 return Err(I::CardTiming(name));
             }
-            if !(card.width.start() > 0.0 && card.width.end() > 0.0) || card.height.is_some_and(|h| !(h.start() > 0.0 && h.end() > 0.0)) || card.keys.iter().any(|k| !(k.width > 0.0)) {
+            if !card.width.is_positive() || card.height.is_some_and(|h| !h.is_positive()) || card.keys.iter().any(|k| k.width.is_nan() || k.width <= 0.0) {
                 return Err(I::CardSize(name));
             }
             if let Some(color) = &card.color {
@@ -674,7 +679,7 @@ impl Cinematic {
             if card.image.as_deref().is_some_and(|i| i.is_empty() || i.contains("..") || i.starts_with('/') || i.contains('\\')) {
                 return Err(I::CardImage(name));
             }
-            if card.keys.windows(2).any(|w| !(w[1].t >= w[0].t)) || card.keys.first().is_some_and(|k| k.t < 0.0) {
+            if card.keys.windows(2).any(|w| w[1].t.partial_cmp(&w[0].t).is_none_or(std::cmp::Ordering::is_lt)) || card.keys.first().is_some_and(|k| k.t < 0.0) {
                 return Err(I::CardKeys(name));
             }
         }

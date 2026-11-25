@@ -3197,6 +3197,25 @@ impl UiState {
     }
 }
 
+/// Défilement de la molette reçu cette frame, sans le lissage d'egui
+pub fn raw_scroll_delta(input: &egui::InputState) -> egui::Vec2 {
+    input
+        .raw
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            egui::Event::MouseWheel { delta, .. } => Some(*delta),
+            _ => None,
+        })
+        .fold(egui::Vec2::ZERO, |a, b| a + b)
+}
+
+/// Bulle d'aide qui suit le pointeur
+fn show_tooltip_at_pointer(ctx: &egui::Context, id: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
+    let id = egui::Id::unique(id);
+    egui::Tooltip::always_open(ctx.clone(), egui::LayerId::new(egui::Order::Tooltip, id), id, egui::PopupAnchor::Pointer).show(add_contents);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3734,7 +3753,9 @@ mod tests {
             .and_then(|t| t.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
             .unwrap_or((1280_usize, 720_usize));
 
-        let scenes: [(&str, fn(&mut UiState), bool, Option<egui::Pos2>); 9] = [
+        /// Une scène capturée : son nom, la mise en place de l'interface, le monde affiché ou non, la souris
+        type Scene = (&'static str, fn(&mut UiState), bool, Option<egui::Pos2>);
+        let scenes: [Scene; 9] = [
             ("menu", |ui| ui.open_menu_at(MenuPage::Main), true, None),
             ("menu_survol", |ui| ui.open_menu_at(MenuPage::Main), true, Some(egui::pos2(640.0, 372.0))),
             ("options", |ui| ui.open_menu_at(MenuPage::Options), true, None),
@@ -3765,8 +3786,7 @@ mod tests {
                 ui.open_trade(herocraft_common::CreatureId(1), std::sync::Arc::new(card));
             }, true, None),
             ("inventaire_equipe", |ui| {
-                let mut appearance = herocraft_common::hero::Appearance::default();
-                appearance.nom = "Aldric".to_string();
+                let appearance = herocraft_common::hero::Appearance { nom: "Aldric".to_string(), ..Default::default() };
                 ui.legend = Some(Legend { appearance, class: herocraft_common::PlayerClass::Adventurer });
                 for id in ["ironPlateHelmet", "ironPlateChestplate", "hideLeggings", "boneBoots", "flintSword", "hideHelmet"] {
                     ui.inventory.add(items().find(id).unwrap());
@@ -3780,7 +3800,7 @@ mod tests {
                 ui.inventory.click(5);
             }, true, Some(egui::pos2(900.0, 600.0))),
         ];
-        let mut all: Vec<(&str, fn(&mut UiState), bool, Option<egui::Pos2>)> = scenes.to_vec();
+        let mut all: Vec<Scene> = scenes.to_vec();
         all.push(("hud", |_| {}, true, None));
         // Ventre presque vide, du pain en main : jauge de satiété qui clignote et avertissement
         all.push((
@@ -3851,23 +3871,4 @@ mod tests {
         }
     }
 
-}
-
-/// Défilement de la molette reçu cette frame, sans le lissage d'egui
-pub fn raw_scroll_delta(input: &egui::InputState) -> egui::Vec2 {
-    input
-        .raw
-        .events
-        .iter()
-        .filter_map(|e| match e {
-            egui::Event::MouseWheel { delta, .. } => Some(*delta),
-            _ => None,
-        })
-        .fold(egui::Vec2::ZERO, |a, b| a + b)
-}
-
-/// Bulle d'aide qui suit le pointeur
-fn show_tooltip_at_pointer(ctx: &egui::Context, id: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
-    let id = egui::Id::unique(id);
-    egui::Tooltip::always_open(ctx.clone(), egui::LayerId::new(egui::Order::Tooltip, id), id, egui::PopupAnchor::Pointer).show(add_contents);
 }

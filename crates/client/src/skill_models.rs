@@ -165,7 +165,6 @@ pub fn drawn_as(view: &CreatureView, registry: &CreatureRegistry) -> CreatureVie
 
 /// Ajoute une pièce greffée, posée comme la figure (`push_figure`) : chaque sommet suit l'os du
 /// héros dont il porte le nom
-#[allow(clippy::too_many_arguments)]
 pub fn push_graft(frame: &mut CreatureFrame, model: &SkinnedModel, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, texture: usize, block: f32) {
     // Le même repère que `push_figure`
     let up = feet.normalize_or_zero();

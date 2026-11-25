@@ -435,7 +435,6 @@ fn peint(sheet: &Sheet, x: i32, y: i32) -> bool {
 /// `taper` : sur les quatre côtés, les deux derniers rangs avant le bas d'une plage peinte
 /// s'amincissent. Une chevelure finit ainsi en lisière, plaquée sur la nuque et les tempes, au
 /// lieu d'une marche nette qui la ferait paraître coupée au couteau.
-#[allow(clippy::too_many_arguments)]
 fn relief(out: &mut Vec<Quad>, sheet: &Sheet, cx: f32, bottom: f32, size: Vec3, pat: [f32; 3], u: f32, v: f32, t: f32, taper: bool) {
     for (index, face) in boite(cx, bottom, size, pat, u, v, t).into_iter().enumerate() {
         let [fu, fv, fw, fh] = face.uv.map(|x| x as i32);
@@ -477,7 +476,6 @@ fn relief(out: &mut Vec<Quad>, sheet: &Sheet, cx: f32, bottom: f32, size: Vec3, 
 /// Une pièce plate extrudée : chaque texel peint du rectangle `(u, v, w, h)` devient un pavé.
 /// `origin` : coin du texel (0, 0) côté haut gauche, `step_x` / `step_y` : pas d'une colonne et
 /// d'un rang (rangs descendants), `thick` : épaisseur, centrée sur le plan.
-#[allow(clippy::too_many_arguments)]
 fn extrude(out: &mut Vec<Quad>, sheet: &Sheet, (u, v, w, h): (i32, i32, i32, i32), origin: Vec3, step_x: Vec3, step_y: Vec3, thick: Vec3, mirror: bool) {
     let col = |i: i32| if mirror { w - 1 - i } else { i };
     let on = |i: i32, j: i32| (0..w).contains(&i) && (0..h).contains(&j) && peint(sheet, u + col(i), v + j);
@@ -683,7 +681,6 @@ const ARM_BONES: [Bone; 6] = [Bone::RightArm, Bone::LeftArm, Bone::RightForearm,
 /// Vue à la première personne, pendant le geste d'une compétence : les bras du héros posé (et
 /// l'arme de sa main droite, s'il en tient une), accrochés à l'œil `eye` qui regarde vers `look`.
 /// Renvoie les points des mains, où se jouent les effets.
-#[allow(clippy::too_many_arguments)]
 pub fn push_first_person_arms(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, eye: Vec3, look: Vec3, pose: &FigurePose, weapon: Option<[f32; 4]>, block: f32) -> (Vec3, Vec3) {
     let up_hint = eye.normalize_or_zero();
     let forward = look.normalize_or(up_hint.any_orthonormal_vector());
@@ -843,7 +840,6 @@ impl FigurePose {
 }
 
 /// Ajoute une figure humanoïde au maillage des créatures avec la planche d'indice `texture`
-#[allow(clippy::too_many_arguments)]
 pub fn push_figure(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, texture: usize, block: f32) {
     let up = feet.normalize_or_zero();
     let (east, north) = tangent_frame(up);

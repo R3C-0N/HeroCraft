@@ -377,7 +377,7 @@ impl CharacterStats {
     /// Mange un aliment qui rend `satiety` points : renvoie faux (rien n'est mangé) si ce n'est pas
     /// un aliment ou si le joueur n'a plus faim
     pub fn eat(&mut self, satiety: f32) -> bool {
-        if !(satiety > 0.0) || self.satiety >= self.max_satiety - 0.5 {
+        if (satiety.is_nan() || satiety <= 0.0) || self.satiety >= self.max_satiety - 0.5 {
             return false;
         }
         self.satiety = (self.satiety + satiety).min(self.max_satiety);

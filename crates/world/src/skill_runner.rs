@@ -398,7 +398,6 @@ impl SkillRunner {
     /// Le tir `fired` du joueur `caster` part de ses pieds `feet` dans la direction `aim`, avec
     /// `damage` points (arme et munition, avant renforcements) : il frappe la première bête ennemie
     /// de son couloir, et y porte sa munition spéciale
-    #[allow(clippy::too_many_arguments)]
     pub fn shoot(&mut self, caster: PlayerId, feet: Vec3, aim: Vec3, damage: f32, fired: Fired, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> ShotHit {
         use herocraft_common::skills::{Area, Ranked};
         use herocraft_common::weapons::{SHOT_RANGE_BLOCKS, SHOT_WIDTH_BLOCKS};
@@ -623,7 +622,6 @@ impl SkillRunner {
 
     /// Joue les effets de `around` dans son rayon autour de chacun des `points`, une fois par cible :
     /// renvoie les créatures et les joueurs touchés
-    #[allow(clippy::too_many_arguments)]
     fn burst(&mut self, around: &Around, caster: PlayerId, rank: u8, skill: &str, points: &[Vec3], creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> (Vec<CreatureId>, Vec<PlayerId>) {
         let radius = around.radius.at(rank) * creatures.block_size();
         let near = |at: Vec3| points.iter().any(|p| p.distance(at) <= radius);
@@ -723,7 +721,6 @@ impl SkillRunner {
     /// Le joueur `player`, qui regarde vers `facing` (s'il est connu), reçoit de la créature
     /// `attacker` un coup de `damage` points, de type `kind` (`physical`, `magical`). Sa garde, s'il
     /// en a levé une et que le coup arrive de face, en bloque sa part et lance sa riposte.
-    #[allow(clippy::too_many_arguments)]
     pub fn parry(&mut self, player: PlayerId, facing: Option<Vec3>, attacker: CreatureId, damage: f32, kind: &str, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> Parry {
         let untouched = Parry { damage, parried: false, impact: None };
         let Some(i) = self.guards.iter().position(|g| g.player == player && g.guard.blocks(kind)) else { return untouched };
@@ -1194,7 +1191,6 @@ impl SkillRunner {
 
     /// Le tir en vol du lancement `p` touche la créature `id` au point `at` : ses effets sur elle,
     /// ce qu'une touche déclenche pour le lanceur, ce que fait sa mort
-    #[allow(clippy::too_many_arguments)]
     fn touch(&mut self, catalog: &SkillCatalog, p: &Pending, id: CreatureId, at: Vec3, damage_factor: f32, first: bool, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers, changed: &mut Vec<PlayerId>) -> Option<SkillImpact> {
         let cast = catalog.get(&p.skill)?.cast.as_ref()?;
         let feet = players.feet(p.caster).unwrap_or(at);
@@ -1286,7 +1282,7 @@ impl SkillRunner {
 
     /// Applique les effets `effects` à ceux qui se trouvent dans la zone `area` : les créatures et
     /// les joueurs touchés, et les créatures vivantes de la zone (identifiant, alliée ou non)
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    #[allow(clippy::type_complexity)]
     fn sweep(&mut self, targets: Targets, effects: &[EffectEntry], p: &Pending, feet: Vec3, area: &PlacedArea, damage_factor: f32, creatures: &mut CreatureWorld, players: &mut dyn SkillPlayers) -> (Vec<CreatureId>, Vec<PlayerId>, Vec<(CreatureId, bool)>) {
         let block = creatures.block_size();
         // Les cibles de la zone : créatures vivantes (les bêtes apprivoisées sont des alliées) et joueurs
@@ -1491,7 +1487,6 @@ impl SkillRunner {
 
     /// Effet `entry` de la compétence `skill` du lanceur `caster` sur le joueur `id`, ses soins et
     /// boucliers multipliés par `power`
-    #[allow(clippy::too_many_arguments)]
     fn apply_to_player(&mut self, entry: &EffectEntry, caster: PlayerId, rank: u8, power: f32, skill: &str, id: PlayerId, players: &mut dyn SkillPlayers) {
         match &entry.effect {
             Effect::Heal { amount } => {
@@ -1640,6 +1635,9 @@ mod tests {
     use super::*;
     use herocraft_common::{CreatureRegistry, PlayerClass};
     use std::sync::Arc;
+
+    /// Événements datés (l'instant en secondes, puis l'événement)
+    type Timed<T> = Vec<(f32, T)>;
 
     fn world() -> (CreatureWorld, Vec3) {
         let registry = Arc::new(CreatureRegistry::load_default());
@@ -2514,7 +2512,7 @@ mod tests {
         until_impact(&mut runner, &catalog, &mut creatures, &mut SoloPlayer { id: PlayerId(6), feet, stats: &mut stats });
         let expected = 1.3 * SKILL_BASE_DAMAGE * 1.75;
         assert!((before - health(&creatures, cow) - expected).abs() < 0.01, "dégâts amplifiés : {}", before - health(&creatures, cow));
-        assert_eq!(runner.cooldown(PlayerId(6), "fusion") > 0.0, true, "la Fusion a sa propre recharge");
+        assert!(runner.cooldown(PlayerId(6), "fusion") > 0.0, "la Fusion a sa propre recharge");
     }
 
     #[test]
@@ -2587,7 +2585,7 @@ mod tests {
 
     /// Lance `skill` (rang 1) et avance de `seconds` par pas de 0,02 s : les frappes et les
     /// déplacements rendus, avec l'instant où ils arrivent
-    fn run_moving(runner: &mut SkillRunner, catalog: &SkillCatalog, creatures: &mut CreatureWorld, stats: &mut CharacterStats, feet: Vec3, skill: &str, seconds: f32) -> (Vec<(f32, SkillImpact)>, Vec<(f32, SkillMove)>) {
+    fn run_moving(runner: &mut SkillRunner, catalog: &SkillCatalog, creatures: &mut CreatureWorld, stats: &mut CharacterStats, feet: Vec3, skill: &str, seconds: f32) -> (Timed<SkillImpact>, Timed<SkillMove>) {
         stats.skills.insert(skill.into(), 1);
         stats.mana = 100.0;
         stats.stamina = 100.0;

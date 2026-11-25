@@ -1576,7 +1576,7 @@ mod tests {
         let id = |x: u32| LodMeshId {
             generation: 3,
             key: herocraft_world::quadtree::QuadNodeKey::new(herocraft_common::PlanetFace::PosX, 4, x, 1),
-            voxel: x % 2 == 0,
+            voxel: x.is_multiple_of(2),
             revision: 0,
         };
         let ids = [id(1), id(2), id(3)];
@@ -1674,7 +1674,7 @@ mod tests {
             assert!((sun_dir.length() - 1.0).abs() < 1e-5);
             assert!((moon_dir.length() - 1.0).abs() < 1e-5);
             // Vérifie que la phase est bien bornée [0.0, 1.0]
-            assert!(phase >= 0.0 && phase <= 1.0);
+            assert!((0.0..=1.0).contains(&phase));
 
             if phase < min_phase {
                 min_phase = phase;
@@ -1792,7 +1792,7 @@ mod sky_tests {
         let up = glam::Vec3::new(0.3, 0.2, -0.9).normalize();
         let noon = time_for_local_hour(100.0, up, 12.0).unwrap();
         let midnight = time_for_local_hour(100.0, up, 0.0).unwrap();
-        assert!(noon >= 100.0 && noon < 100.0 + SUN_PERIOD);
+        assert!((100.0..100.0 + SUN_PERIOD).contains(&noon));
         assert!(compute_sun_dir(noon).dot(up) > 0.9);
         assert!(compute_sun_dir(midnight).dot(up) < -0.9);
         for hour in [0.0, 6.5, 12.0, 18.25, 23.9] {

@@ -9,3 +9,6 @@ herocraft_common = { path = "../common" }
 glam = { workspace = true }
 serde = { workspace = true }
 log = { workspace = true }
+
+[lints]
+workspace = true

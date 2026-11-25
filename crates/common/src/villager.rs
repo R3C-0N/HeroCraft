@@ -163,7 +163,7 @@ impl Profession {
     /// Lit la fiche JSON d'un métier ; `find` donne le numéro d'un objet d'après son identifiant
     pub fn parse(id: &str, json: &str, find: &impl Fn(&str) -> Option<ItemId>) -> Result<Self, ProfessionError> {
         let sheet: ProfessionSheet = serde_json::from_str(json)?;
-        if !(sheet.poids >= 0.0) || sheet.par_lieu == 0 {
+        if (sheet.poids.is_nan() || sheet.poids < 0.0) || sheet.par_lieu == 0 {
             return Err(ProfessionError::WeightOrCount);
         }
         let resolve = |key: &str, count: u16| -> Result<(ItemId, u16), ProfessionError> {

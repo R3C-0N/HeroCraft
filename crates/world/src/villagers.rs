@@ -130,10 +130,10 @@ impl NavGrid {
 
     /// La colonne praticable la plus proche, à moins de 8 colonnes
     fn nearest_walkable(&self, (x, z): Cell) -> Option<Cell> {
-        for r in 0..=8 {
+        for r in 0..=8_i32 {
             for dz in -r..=r {
                 for dx in -r..=r {
-                    if (dx as i32).abs().max((dz as i32).abs()) == r && self.walkable((x + dx, z + dz)) {
+                    if dx.abs().max(dz.abs()) == r && self.walkable((x + dx, z + dz)) {
                         return Some((x + dx, z + dz));
                     }
                 }
@@ -939,7 +939,7 @@ impl Villages {
     fn found_town(&mut self, s: &Settlement, generator: &PlanetWorldGenerator) {
         let key = (s.face, s.center.0, s.center.1);
         let herd = VILLAGE_HERD_BASE | (self.towns.len() as u64);
-        let town_seed = mix(self.seed ^ hash2(0x7A11_A6E ^ ((face_index(s.face) as u64) << 48), s.center.0, s.center.1));
+        let town_seed = mix(self.seed ^ hash2(0x07A1_1A6E ^ ((face_index(s.face) as u64) << 48), s.center.0, s.center.1));
         let town = Town::new(s);
         let mut rng = StdRng::seed_from_u64(town_seed);
         let registry = professions();
@@ -1029,7 +1029,6 @@ impl Villages {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn add_traveller(&mut self, face: PlanetFace, from: Cell, to: Cell, route: Vec<Cell>, k: usize, visiting: Option<(TownKey, f32)>, rng: &mut StdRng) {
         if route.is_empty() {
             return;

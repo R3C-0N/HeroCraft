@@ -31,7 +31,7 @@ struct RangeAllocator {
 
 impl RangeAllocator {
     fn new(capacity: u32) -> Self {
-        Self { free: vec![0..capacity], capacity }
+        Self { free: std::iter::once(0..capacity).collect(), capacity }
     }
 
     fn alloc(&mut self, size: u32) -> Option<Range<u32>> {

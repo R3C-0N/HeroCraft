@@ -300,7 +300,7 @@ impl FrameRecord {
     /// Les étapes les plus longues, en clair
     pub fn describe(&self) -> String {
         let mut parts: Vec<&(&str, Duration)> = self.sections.iter().filter(|(_, d)| d.as_secs_f32() * 1000.0 >= 1.0).collect();
-        parts.sort_by(|a, b| b.1.cmp(&a.1));
+        parts.sort_by_key(|p| std::cmp::Reverse(p.1));
         parts.iter().map(|(n, d)| format!("{n} {:.0} ms", d.as_secs_f32() * 1000.0)).collect::<Vec<_>>().join(", ")
     }
 }
