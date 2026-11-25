@@ -432,7 +432,7 @@ pub enum FrameError {
     /// Surface périmée ou perdue : la reconfigurer
     Lost,
     /// Fenêtre cachée, délai dépassé... : sauter la frame
-    Skipped(String),
+    Skipped(#[allow(dead_code, reason = "lu seulement par le Debug du journal (main.rs)")] String),
 }
 
 impl State {
