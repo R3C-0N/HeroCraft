@@ -3364,7 +3364,7 @@ mod tests {
         ui.set_pointer_captured(true);
         ui.raw_input.events.clear();
         let window_event = WindowEvent::MouseWheel {
-            device_id: unsafe { winit::event::DeviceId::dummy() },
+            device_id: winit::event::DeviceId::dummy(),
             delta: MouseScrollDelta::LineDelta(0.0, 1.0),
             phase: winit::event::TouchPhase::Moved,
         };
