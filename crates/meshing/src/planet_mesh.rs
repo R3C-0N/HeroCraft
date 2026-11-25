@@ -96,11 +96,7 @@ pub enum PackedIndices {
 
 impl PackedIndices {
     pub fn new(indices: &[u32], vertex_count: usize) -> Self {
-        if vertex_count <= 1 << 16 {
-            Self::U16(indices.iter().map(|&i| i as u16).collect())
-        } else {
-            Self::U32(indices.to_vec())
-        }
+        if vertex_count <= 1 << 16 { Self::U16(indices.iter().map(|&i| i as u16).collect()) } else { Self::U32(indices.to_vec()) }
     }
 
     #[cfg(test)]
@@ -211,7 +207,13 @@ fn tree_extent(tree: &herocraft_world::Tree) -> Vec<(i32, i32, i32, BlockId, boo
 
 /// Arbre bloc par bloc : les faces de ses blocs que l'arbre ne cache pas lui-même, texturées comme
 /// dans les chunks voxel. `lift` : décalage vertical (en blocs) vers le dessus de la cellule.
-fn emit_tree_blocks(vertices: &mut Vec<PlanetVertex>, indices: &mut Vec<u32>, tree: &herocraft_world::Tree, lift: f64, corner: &impl Fn(f64, f64, f64) -> Vec3) {
+fn emit_tree_blocks(
+    vertices: &mut Vec<PlanetVertex>,
+    indices: &mut Vec<u32>,
+    tree: &herocraft_world::Tree,
+    lift: f64,
+    corner: &impl Fn(f64, f64, f64) -> Vec3,
+) {
     let blocks = tree_extent(tree);
     let occupied: std::collections::HashSet<(i32, i32, i32)> = blocks.iter().map(|b| (b.0, b.1, b.2)).collect();
     for &(dx, dy, dz, block, _) in &blocks {
@@ -225,11 +227,7 @@ fn emit_tree_blocks(vertices: &mut Vec<PlanetVertex>, indices: &mut Vec<u32>, tr
             let c = crate::voxel_mesh::VoxelMeshBuilder::block_color(block, dir);
             let color = [c[0] * shade, c[1] * shade, c[2] * shade, c[3]];
             let p = face.corners.map(|(cx, cy, cz)| {
-                corner(
-                    (tree.x + dx) as f64 + cx as f64,
-                    (tree.ground + dy) as f64 + lift + cy as f64,
-                    (tree.z + dz) as f64 + cz as f64,
-                )
+                corner((tree.x + dx) as f64 + cx as f64, (tree.ground + dy) as f64 + lift + cy as f64, (tree.z + dz) as f64 + cz as f64)
             });
             let texture = face.corners.map(|(cx, cy, cz)| {
                 let (u, v) = crate::block_textures::face_uv(dir, [cx * 16, cy * 16, cz * 16]);
@@ -241,7 +239,13 @@ fn emit_tree_blocks(vertices: &mut Vec<PlanetVertex>, indices: &mut Vec<u32>, tr
 }
 
 /// Arbre simplifié : un pavé de feuillage (ses bornes) sur un tronc d'un bloc de section
-fn emit_tree_boxes(vertices: &mut Vec<PlanetVertex>, indices: &mut Vec<u32>, tree: &herocraft_world::Tree, lift: f64, corner: &impl Fn(f64, f64, f64) -> Vec3) {
+fn emit_tree_boxes(
+    vertices: &mut Vec<PlanetVertex>,
+    indices: &mut Vec<u32>,
+    tree: &herocraft_world::Tree,
+    lift: f64,
+    corner: &impl Fn(f64, f64, f64) -> Vec3,
+) {
     let blocks = tree_extent(tree);
     let mut boxes: Vec<(BlockId, [i32; 6])> = Vec::with_capacity(2);
     for want_trunk in [true, false] {
@@ -262,13 +266,20 @@ fn emit_tree_boxes(vertices: &mut Vec<PlanetVertex>, indices: &mut Vec<u32>, tre
             let color = [c[0] * shade, c[1] * shade, c[2] * shade, 1.0];
             let p = face.corners.map(|(cx, cy, cz)| {
                 let pick = |lo: i32, hi: i32, c: u8| if c == 0 { lo } else { hi } as f64;
-                corner(
-                    tree.x as f64 + pick(ax, bx, cx),
-                    tree.ground as f64 + lift + pick(ay, by, cy),
-                    tree.z as f64 + pick(az, bz, cz),
-                )
+                corner(tree.x as f64 + pick(ax, bx, cx), tree.ground as f64 + lift + pick(ay, by, cy), tree.z as f64 + pick(az, bz, cz))
             });
-            crate::voxel_mesh::VoxelMeshBuilder::add_quad(vertices, indices, p[0], p[1], p[2], p[3], color, [1.0; 4], [0.0; 4], [PlanetVertex::UNTEXTURED; 4]);
+            crate::voxel_mesh::VoxelMeshBuilder::add_quad(
+                vertices,
+                indices,
+                p[0],
+                p[1],
+                p[2],
+                p[3],
+                color,
+                [1.0; 4],
+                [0.0; 4],
+                [PlanetVertex::UNTEXTURED; 4],
+            );
         }
     }
 }
@@ -320,10 +331,7 @@ impl PlanetMesh {
         grid_resolution: usize,
         filter: herocraft_world::VisualizationFilter,
     ) -> Self {
-        let mut combined_mesh = PlanetMesh {
-            vertices: Vec::new(),
-            indices: Vec::new(),
-        };
+        let mut combined_mesh = PlanetMesh { vertices: Vec::new(), indices: Vec::new() };
 
         for &face in &PlanetFace::ALL {
             let key = herocraft_world::QuadNodeKey::new(face, 0, 0, 0);
@@ -343,7 +351,7 @@ impl PlanetMesh {
         if !biome.is_water() && raw_elevation >= 300.0 {
             let t = ((raw_elevation - 300.0) / 50.0).clamp(0.0, 1.0) as f32;
             let c_snowline = [0.88, 0.93, 0.99, 1.0]; // Ligne des neiges / séracs bleutés à 300
-            let c_summit = [1.00, 1.00, 1.00, 1.0];   // Sommet éclatant de pureté à 350
+            let c_summit = [1.00, 1.00, 1.00, 1.0]; // Sommet éclatant de pureté à 350
             return [
                 c_snowline[0] * (1.0 - t) + c_summit[0] * t,
                 c_snowline[1] * (1.0 - t) + c_summit[1] * t,
@@ -365,7 +373,6 @@ impl PlanetMesh {
             let c_shallow = [0.08, 0.48, 0.78, 1.0];
             let c_mid = [0.04, 0.22, 0.62, 1.0];
             let c_trench = [0.006, 0.025, 0.16, 1.0];
-
 
             if t < 0.40 {
                 let k = t / 0.40;
@@ -394,12 +401,7 @@ impl PlanetMesh {
                         let k = ((raw_elevation - 140.0) / 30.0).clamp(0.0, 1.0) as f32;
                         let base = [0.14, 0.44, 0.16, 1.0];
                         let rock = [0.25, 0.35, 0.22, 1.0];
-                        [
-                            base[0] * (1.0 - k) + rock[0] * k,
-                            base[1] * (1.0 - k) + rock[1] * k,
-                            base[2] * (1.0 - k) + rock[2] * k,
-                            1.0,
-                        ]
+                        [base[0] * (1.0 - k) + rock[0] * k, base[1] * (1.0 - k) + rock[1] * k, base[2] * (1.0 - k) + rock[2] * k, 1.0]
                     } else {
                         [0.14, 0.44, 0.16, 1.0]
                     }
@@ -410,12 +412,7 @@ impl PlanetMesh {
                         let k = ((raw_elevation - 140.0) / 30.0).clamp(0.0, 1.0) as f32;
                         let base = [0.28, 0.64, 0.22, 1.0];
                         let rock = [0.35, 0.42, 0.26, 1.0];
-                        [
-                            base[0] * (1.0 - k) + rock[0] * k,
-                            base[1] * (1.0 - k) + rock[1] * k,
-                            base[2] * (1.0 - k) + rock[2] * k,
-                            1.0,
-                        ]
+                        [base[0] * (1.0 - k) + rock[0] * k, base[1] * (1.0 - k) + rock[1] * k, base[2] * (1.0 - k) + rock[2] * k, 1.0]
                     } else {
                         [0.28, 0.64, 0.22, 1.0]
                     }
@@ -438,7 +435,7 @@ impl PlanetMesh {
                     } else {
                         let k = (t - 0.35) / 0.65;
                         let c_rock_base = [0.36, 0.34, 0.33, 1.0]; // Ardoise / basalte sombre
-                        let c_granite = [0.60, 0.58, 0.56, 1.0];   // Granite minéral clair
+                        let c_granite = [0.60, 0.58, 0.56, 1.0]; // Granite minéral clair
                         [
                             c_rock_base[0] * (1.0 - k) + c_granite[0] * k,
                             c_rock_base[1] * (1.0 - k) + c_granite[1] * k,
@@ -455,7 +452,7 @@ impl PlanetMesh {
                         // Enneigement au-dessus de 300.0 jusqu'aux sommets (300.0 -> 350.0)
                         let t = ((raw_elevation - 300.0) / 50.0).clamp(0.0, 1.0) as f32;
                         let c_snowline = [0.88, 0.93, 0.99, 1.0]; // Ligne des neiges / séracs bleutés
-                        let c_summit = [1.00, 1.00, 1.00, 1.0];   // Sommet éclatant de pureté
+                        let c_summit = [1.00, 1.00, 1.00, 1.0]; // Sommet éclatant de pureté
                         [
                             c_snowline[0] * (1.0 - t) + c_summit[0] * t,
                             c_snowline[1] * (1.0 - t) + c_summit[1] * t,
@@ -470,12 +467,7 @@ impl PlanetMesh {
                     if raw_elevation > 140.0 {
                         let k = ((raw_elevation - 140.0) / 30.0).clamp(0.0, 1.0) as f32;
                         let rock = [0.34, 0.38, 0.28, 1.0];
-                        [
-                            base[0] * (1.0 - k) + rock[0] * k,
-                            base[1] * (1.0 - k) + rock[1] * k,
-                            base[2] * (1.0 - k) + rock[2] * k,
-                            1.0,
-                        ]
+                        [base[0] * (1.0 - k) + rock[0] * k, base[1] * (1.0 - k) + rock[1] * k, base[2] * (1.0 - k) + rock[2] * k, 1.0]
                     } else {
                         base
                     }
@@ -493,16 +485,16 @@ impl PlanetMesh {
             BiomeType::Ocean => [0.07, 0.28, 0.68, 1.0],     // Bleu océan intense
             BiomeType::Sea => [0.10, 0.54, 0.82, 1.0],       // Bleu lagon / azur mer intérieure
             // Zones côtières et terrestres
-            BiomeType::Beach => [0.88, 0.82, 0.56, 1.0],      // Sable doré des plages
-            BiomeType::Plains => [0.28, 0.64, 0.22, 1.0],     // Plaines et prairies verdoyantes
-            BiomeType::Forest => [0.14, 0.44, 0.16, 1.0],     // Forêts et forêts boréales
-            BiomeType::Desert => [0.90, 0.72, 0.38, 1.0],     // Dunes et déserts chauds
-            BiomeType::Mountains => [0.52, 0.50, 0.48, 1.0],  // Roches grises des massifs
-            BiomeType::SnowPeaks => [0.96, 0.97, 1.00, 1.0],  // Sommets enneigés et calottes polaires
-            BiomeType::Tundra => [0.56, 0.60, 0.48, 1.0],     // Toundra rase, vert-de-gris givré
-            BiomeType::Taiga => [0.12, 0.33, 0.22, 1.0],      // Conifères vert sombre bleuté
-            BiomeType::Savanna => [0.68, 0.62, 0.30, 1.0],    // Herbes sèches jaune paille
-            BiomeType::Jungle => [0.04, 0.47, 0.20, 1.0],     // Canopée tropicale vert émeraude
+            BiomeType::Beach => [0.88, 0.82, 0.56, 1.0],     // Sable doré des plages
+            BiomeType::Plains => [0.28, 0.64, 0.22, 1.0],    // Plaines et prairies verdoyantes
+            BiomeType::Forest => [0.14, 0.44, 0.16, 1.0],    // Forêts et forêts boréales
+            BiomeType::Desert => [0.90, 0.72, 0.38, 1.0],    // Dunes et déserts chauds
+            BiomeType::Mountains => [0.52, 0.50, 0.48, 1.0], // Roches grises des massifs
+            BiomeType::SnowPeaks => [0.96, 0.97, 1.00, 1.0], // Sommets enneigés et calottes polaires
+            BiomeType::Tundra => [0.56, 0.60, 0.48, 1.0],    // Toundra rase, vert-de-gris givré
+            BiomeType::Taiga => [0.12, 0.33, 0.22, 1.0],     // Conifères vert sombre bleuté
+            BiomeType::Savanna => [0.68, 0.62, 0.30, 1.0],   // Herbes sèches jaune paille
+            BiomeType::Jungle => [0.04, 0.47, 0.20, 1.0],    // Canopée tropicale vert émeraude
         }
     }
 
@@ -510,11 +502,7 @@ impl PlanetMesh {
     pub(crate) fn blend_tectonic_color(base_color: [f32; 4], sample: &herocraft_world::TectonicSample) -> [f32; 4] {
         // Sur les lignes de failles (< 0.12), l'accent est marqué (80%),
         // au cœur des plaques, transparence douce (35%) pour laisser voir les continents, mers et biomes
-        let alpha = if sample.dist_to_boundary < 0.12 {
-            0.80_f32
-        } else {
-            0.35_f32
-        };
+        let alpha = if sample.dist_to_boundary < 0.12 { 0.80_f32 } else { 0.35_f32 };
         [
             base_color[0] * (1.0 - alpha) + sample.debug_color[0] * alpha,
             base_color[1] * (1.0 - alpha) + sample.debug_color[1] * alpha,
@@ -531,7 +519,13 @@ impl PlanetMesh {
         grid_resolution: usize,
         filter: herocraft_world::VisualizationFilter,
     ) -> Self {
-        Self::generate_lod_patch_stepped(generator, key, base_radius, PatchDetail::plain(grid_resolution, Self::ORBIT_TERRACE_STEP_HEIGHT), filter)
+        Self::generate_lod_patch_stepped(
+            generator,
+            key,
+            base_radius,
+            PatchDetail::plain(grid_resolution, Self::ORBIT_TERRACE_STEP_HEIGHT),
+            filter,
+        )
     }
 
     /// Plus haut bloc posé par une ville, un village, des ruines (si `settlements`) ou un chemin
@@ -547,8 +541,7 @@ impl PlanetMesh {
         roads: bool,
     ) -> Option<(i32, BlockId)> {
         let ground = elevation.floor() as i32;
-        if settlements
-            && let Some(s) = generator.settlement_at(face, x, z) {
+        if settlements && let Some(s) = generator.settlement_at(face, x, z) {
             let span = s.span(x, z, ground);
             if !span.is_empty() {
                 for y in span.rev() {
@@ -563,8 +556,7 @@ impl PlanetMesh {
                 return None;
             }
         }
-        if roads
-            && let Some(b) = generator.roads.surface(generator, face, x, z) {
+        if roads && let Some(b) = generator.roads.surface(generator, face, x, z) {
             return Some((ground, b));
         }
         None
@@ -609,17 +601,15 @@ impl PlanetMesh {
             let (lat, _lon) = unit_sphere_to_lat_lon(sphere_dir);
             let (raw_elevation, biome) = generator.sample_elevation_and_biome(sphere_dir, lat);
             let is_water = biome.is_water();
-            let stepped = if is_water {
-                SEA_LEVEL_BLOCKS
-            } else {
-                Self::quantize_elevation(raw_elevation, terrace_step)
-            };
+            let stepped = if is_water { SEA_LEVEL_BLOCKS } else { Self::quantize_elevation(raw_elevation, terrace_step) };
             let to_block = |t: f64| ((t + 1.0) / block_uv).floor() as i32;
             let (bx, bz) = (to_block(u_mid), to_block(v_mid));
             // Ville, village ou chemin sous le centre de la cellule : dessus et matière du plus
             // haut bloc qu'ils posent dans cette colonne
-            if (show_settlements || show_roads) && !is_water
-                && let Some((top, block)) = Self::structure_top(generator, key.face, bx, bz, raw_elevation, show_settlements, show_roads) {
+            if (show_settlements || show_roads)
+                && !is_water
+                && let Some((top, block)) = Self::structure_top(generator, key.face, bx, bz, raw_elevation, show_settlements, show_roads)
+            {
                 let color = crate::voxel_mesh::VoxelMeshBuilder::block_color(block, 2);
                 let material = textured.then_some(block);
                 return LodCell { height: top as f64, water: false, color, top: material, under: material };
@@ -663,16 +653,15 @@ impl PlanetMesh {
         herocraft_common::prof_scope!("mesh::lod_patch::geometry");
 
         // Helper pour ajouter un quad (4 sommets + 2 triangles CCW)
-        let add_quad = |verts: &mut Vec<PlanetVertex>, inds: &mut Vec<u32>,
-                        p: [Vec3; 4],
-                        normal: Vec3, color: [f32; 4], texture: [u32; 4]| {
-            let base_idx = verts.len() as u32;
-            let norm_arr = normal.to_array();
-            for k in 0..4 {
-                verts.push(PlanetVertex { position: p[k].to_array(), normal: norm_arr, color, texture: texture[k], light: 0.0 });
-            }
-            inds.extend_from_slice(&[base_idx, base_idx + 1, base_idx + 2, base_idx, base_idx + 2, base_idx + 3]);
-        };
+        let add_quad =
+            |verts: &mut Vec<PlanetVertex>, inds: &mut Vec<u32>, p: [Vec3; 4], normal: Vec3, color: [f32; 4], texture: [u32; 4]| {
+                let base_idx = verts.len() as u32;
+                let norm_arr = normal.to_array();
+                for k in 0..4 {
+                    verts.push(PlanetVertex { position: p[k].to_array(), normal: norm_arr, color, texture: texture[k], light: 0.0 });
+                }
+                inds.extend_from_slice(&[base_idx, base_idx + 1, base_idx + 2, base_idx, base_idx + 2, base_idx + 3]);
+            };
         let untextured = [PlanetVertex::UNTEXTURED; 4];
         // Texture d'un mur : u le long du bord, v vers le bas
         let wall_texture = |block: BlockId, dir: usize| {
@@ -683,28 +672,29 @@ impl PlanetMesh {
         // Mur vertical entre les directions a et b (unitaires), du haut `h_top` au bas `h_bot` (en
         // blocs) ; `dir` : sa direction dans `FACE_DIRS`. Avec textures : un bloc de la matière du
         // dessus (le flanc de l'herbe), puis celle d'en dessous.
-        let emit_wall = |verts: &mut Vec<PlanetVertex>, inds: &mut Vec<u32>, a: Vec3, b: Vec3, h_top: f64, h_bot: f64, cell: &LodCell, dir: usize| {
-            let quad = |hi: f64, lo: f64| [a * radius(hi), a * radius(lo), b * radius(lo), b * radius(hi)];
-            let top = quad(h_top, h_bot);
-            let normal = (top[3] - top[0]).cross(top[0] - top[1]).normalize_or_zero();
-            match (cell.top, cell.under) {
-                (Some(top_block), Some(under_block)) => {
-                    let shade = |block: BlockId| {
-                        let c = crate::voxel_mesh::VoxelMeshBuilder::block_color(block, dir);
-                        [c[0] * 0.78, c[1] * 0.78, c[2] * 0.78, 1.0]
-                    };
-                    let split = (h_top - 1.0).max(h_bot);
-                    add_quad(verts, inds, quad(h_top, split), normal, shade(top_block), wall_texture(top_block, dir));
-                    if split > h_bot {
-                        add_quad(verts, inds, quad(split, h_bot), normal, shade(under_block), wall_texture(under_block, dir));
+        let emit_wall =
+            |verts: &mut Vec<PlanetVertex>, inds: &mut Vec<u32>, a: Vec3, b: Vec3, h_top: f64, h_bot: f64, cell: &LodCell, dir: usize| {
+                let quad = |hi: f64, lo: f64| [a * radius(hi), a * radius(lo), b * radius(lo), b * radius(hi)];
+                let top = quad(h_top, h_bot);
+                let normal = (top[3] - top[0]).cross(top[0] - top[1]).normalize_or_zero();
+                match (cell.top, cell.under) {
+                    (Some(top_block), Some(under_block)) => {
+                        let shade = |block: BlockId| {
+                            let c = crate::voxel_mesh::VoxelMeshBuilder::block_color(block, dir);
+                            [c[0] * 0.78, c[1] * 0.78, c[2] * 0.78, 1.0]
+                        };
+                        let split = (h_top - 1.0).max(h_bot);
+                        add_quad(verts, inds, quad(h_top, split), normal, shade(top_block), wall_texture(top_block, dir));
+                        if split > h_bot {
+                            add_quad(verts, inds, quad(split, h_bot), normal, shade(under_block), wall_texture(under_block, dir));
+                        }
+                    }
+                    _ => {
+                        let c = cell.color;
+                        add_quad(verts, inds, top, normal, [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3]], untextured);
                     }
                 }
-                _ => {
-                    let c = cell.color;
-                    add_quad(verts, inds, top, normal, [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3]], untextured);
-                }
-            }
-        };
+            };
 
         let skirt_depth = (base_radius * 0.015).max(0.25);
 
@@ -889,14 +879,19 @@ mod tests {
         let level = herocraft_world::VOXEL_LEVEL - 2;
         let side = herocraft_world::FACE_BLOCKS >> level;
         let key = herocraft_world::QuadNodeKey::new(face, level, (town.center.0 / side) as u32, (town.center.1 / side) as u32);
-        let configs = [PatchDetail::plain(16, PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT), PatchDetail { textured: true, trees: TreeDetail::Boxes, ..PatchDetail::plain(side as usize / 2, 1.0) }, PatchDetail { textured: true, trees: TreeDetail::Blocks, ..PatchDetail::plain(side as usize, 1.0) }];
+        let configs = [
+            PatchDetail::plain(16, PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT),
+            PatchDetail { textured: true, trees: TreeDetail::Boxes, ..PatchDetail::plain(side as usize / 2, 1.0) },
+            PatchDetail { textured: true, trees: TreeDetail::Blocks, ..PatchDetail::plain(side as usize, 1.0) },
+        ];
         let px = 4usize;
         let panel = side as usize * px;
         let (w, h) = (panel * configs.len() + 8 * (configs.len() - 1), panel);
         let mut img = vec![30u8; w * h * 3];
         let (u0, u1, v0, v1) = key.uv_bounds();
         for (n, &detail) in configs.iter().enumerate() {
-            let mesh = PlanetMesh::generate_lod_patch_stepped(&generator, &key, 1.0, detail, herocraft_world::VisualizationFilter::Standard);
+            let mesh =
+                PlanetMesh::generate_lod_patch_stepped(&generator, &key, 1.0, detail, herocraft_world::VisualizationFilter::Standard);
             let ox = n * (panel + 8);
             let base = 1.0f32;
             for quad in mesh.vertices.chunks(4) {
@@ -908,7 +903,9 @@ mod tests {
                 let (Some((a, b)), Some((e, f))) = (
                     face.project_to_face_uv(Vec3::from(quad[0].position).as_dvec3().normalize()),
                     face.project_to_face_uv(Vec3::from(quad[2].position).as_dvec3().normalize()),
-                ) else { continue };
+                ) else {
+                    continue;
+                };
                 let to_px = |t: f64, lo: f64, hi: f64| (((t - lo) / (hi - lo)) * panel as f64).round().clamp(0.0, panel as f64) as usize;
                 let (x0, x1) = (to_px(a.min(e), u0, u1), to_px(a.max(e), u0, u1));
                 let (y0, y1) = (to_px(b.min(f), v0, v1), to_px(b.max(f), v0, v1));
@@ -1012,10 +1009,7 @@ mod tests {
 
     #[test]
     fn test_vertical_walls_are_orthogonal() {
-        let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor {
-            seed: 2026,
-            ..Default::default()
-        });
+        let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 2026, ..Default::default() });
         let key = herocraft_world::QuadNodeKey::new(PlanetFace::PosZ, 2, 1, 1);
         let mesh = PlanetMesh::generate_lod_patch(&generator, &key, 50.0, 8, herocraft_world::VisualizationFilter::Standard);
 

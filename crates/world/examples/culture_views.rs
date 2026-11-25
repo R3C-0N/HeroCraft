@@ -1,7 +1,7 @@
 //! Vue isométrique d'une ville ou d'un village de chaque culture (blocs aux couleurs de leurs
 //! fiches), pour comparer les styles. Une image PPM par établissement.
 //! Usage : cargo run -p herocraft_world --release --example culture_views -- [graine] [ville|village] [dossier] [demi-côté]
-use herocraft_common::{blocks, BlockId, PlanetFace};
+use herocraft_common::{BlockId, PlanetFace, blocks};
 use herocraft_world::structures::CELLS_PER_FACE;
 use herocraft_world::{Culture, PlanetDescriptor, PlanetWorldGenerator, Settlement};
 use std::io::Write;
@@ -41,7 +41,10 @@ fn main() {
 }
 
 fn color(block: BlockId, top: bool) -> [f32; 3] {
-    let c = blocks().get(BlockId(block.0 & !(0x7 << BlockId::ROTATION_SHIFT))).map(|b| if top { b.top_color() } else { b.side_color() }).unwrap_or([1.0, 0.0, 1.0, 1.0]);
+    let c = blocks()
+        .get(BlockId(block.0 & !(0x7 << BlockId::ROTATION_SHIFT)))
+        .map(|b| if top { b.top_color() } else { b.side_color() })
+        .unwrap_or([1.0, 0.0, 1.0, 1.0]);
     [c[0], c[1], c[2]]
 }
 

@@ -3,7 +3,7 @@
 //! Usage : cargo run -p herocraft_world --release --example cave_slice -- [seed] [face 0-5] [x] [z] [préfixe]
 //! ou `-- [seed] scan` pour lister les régions de terre
 use herocraft_common::{PlanetChunkCoord, PlanetFace};
-use herocraft_world::{PlanetDescriptor, PlanetWorldGenerator, CAVE_DEPTH, SEA_LEVEL_BLOCKS};
+use herocraft_world::{CAVE_DEPTH, PlanetDescriptor, PlanetWorldGenerator, SEA_LEVEL_BLOCKS};
 use std::io::Write;
 use std::time::Instant;
 
@@ -118,9 +118,8 @@ fn main() {
     );
 
     // 3. Coût : génération de chunks avec et sans grottes sur une colonne de couches
-    let coords: Vec<PlanetChunkCoord> = (0..8)
-        .flat_map(|i| (2..7).map(move |layer| PlanetChunkCoord::new(face, 8 + i, 17, layer)))
-        .collect();
+    let coords: Vec<PlanetChunkCoord> =
+        (0..8).flat_map(|i| (2..7).map(move |layer| PlanetChunkCoord::new(face, 8 + i, 17, layer))).collect();
     let columns: Vec<_> = (0..8).map(|i| generator.sample_chunk_columns(face, 8 + i, 17, 1)).collect();
     // Meilleur temps sur 10 passes, la machine n'étant pas au repos
     let best = |f: &dyn Fn()| {

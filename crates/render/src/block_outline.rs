@@ -7,9 +7,18 @@ use crate::post;
 
 /// Les 12 arêtes d'un bloc, par indices de coins (bit 0 = x + 1, bit 1 = y + 1, bit 2 = z + 1)
 const EDGES: [(usize, usize); 12] = [
-    (0, 1), (2, 3), (4, 5), (6, 7), // le long de x
-    (0, 2), (1, 3), (4, 6), (5, 7), // le long de y
-    (0, 4), (1, 5), (2, 6), (3, 7), // le long de z
+    (0, 1),
+    (2, 3),
+    (4, 5),
+    (6, 7), // le long de x
+    (0, 2),
+    (1, 3),
+    (4, 6),
+    (5, 7), // le long de y
+    (0, 4),
+    (1, 5),
+    (2, 6),
+    (3, 7), // le long de z
 ];
 const VERTICES: usize = EDGES.len() * 6;
 
@@ -39,8 +48,14 @@ pub struct BlockOutline {
 }
 
 /// Pipeline du contour, qui dépend de la cible de la passe 3D (MSAA, format HDR)
-fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget, fragment: &str) -> wgpu::RenderPipeline {
-    let shader = crate::shaders::create_shader_module(device, "Block Outline Shader", include_str!("block_outline.wgsl"), "block_outline.wgsl");
+fn create_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    target: post::SceneTarget,
+    fragment: &str,
+) -> wgpu::RenderPipeline {
+    let shader =
+        crate::shaders::create_shader_module(device, "Block Outline Shader", include_str!("block_outline.wgsl"), "block_outline.wgsl");
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Block Outline Pipeline"),
         layout: Some(layout),
@@ -64,11 +79,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
             })],
             compilation_options: Default::default(),
         }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            cull_mode: None,
-            ..Default::default()
-        },
+        primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
             depth_write_enabled: Some(false),
@@ -76,11 +87,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
-        multisample: wgpu::MultisampleState {
-            count: target.sample_count,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
+        multisample: wgpu::MultisampleState { count: target.sample_count, mask: !0, alpha_to_coverage_enabled: false },
         multiview_mask: None,
         cache: crate::shaders::pipeline_cache(),
     })
@@ -99,7 +106,13 @@ impl BlockOutline {
 
     /// `layout` : celui du ciel et des nuages (groupe 0 = scène, dont la caméra) ; `fragment` :
     /// point d'entrée de couleur dans `block_outline.wgsl`
-    fn with_style(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget, fragment: &'static str, max_boxes: usize) -> Self {
+    fn with_style(
+        device: &wgpu::Device,
+        layout: &wgpu::PipelineLayout,
+        target: post::SceneTarget,
+        fragment: &'static str,
+        max_boxes: usize,
+    ) -> Self {
         let pipeline = create_pipeline(device, layout, target, fragment);
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Block Outline Vertex Buffer"),

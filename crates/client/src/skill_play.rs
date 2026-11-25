@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use glam::Vec3;
-use herocraft_common::skills::{skills, Anchor, Effect, GrappleTo, Moment, SkillCatalog, SkillMove};
+use herocraft_common::skills::{Anchor, Effect, GrappleTo, Moment, SkillCatalog, SkillMove, skills};
 use herocraft_common::{CastError, CharacterStats};
 use herocraft_world::{CreatureWorld, SkillImpact, SkillRunner, SoloPlayer};
 
@@ -211,7 +211,14 @@ impl SkillPlay {
 
     /// Le joueur local lance `skill`. En ligne (`online`), la demande part au serveur par
     /// `send` ; en solo, les règles s'appliquent ici. Renvoie l'erreur à afficher.
-    pub(crate) fn request(&mut self, skill: &str, stats: &mut CharacterStats, aim: Vec3, aimed: Option<Vec3>, online: Option<OnlineSend<'_>>) -> Result<(), CastRefusal> {
+    pub(crate) fn request(
+        &mut self,
+        skill: &str,
+        stats: &mut CharacterStats,
+        aim: Vec3,
+        aimed: Option<Vec3>,
+        online: Option<OnlineSend<'_>>,
+    ) -> Result<(), CastRefusal> {
         let catalog = skills();
         let now = Instant::now();
         let requested = skill;
@@ -252,7 +259,8 @@ impl SkillPlay {
                 return Err(CastError::Reloading.into());
             }
             if let Some(charge) = &cast.charge
-                && charge.power_after(self.runner.arsenal().charge_held(SOLO_PLAYER, Some(requested))).is_none() {
+                && charge.power_after(self.runner.arsenal().charge_held(SOLO_PLAYER, Some(requested))).is_none()
+            {
                 self.runner.arsenal_mut().release_charge(SOLO_PLAYER, Some(requested));
                 return Err(CastError::NotCharged.into());
             }
@@ -286,7 +294,14 @@ impl SkillPlay {
                 Effect::Reload {} => arsenal.reload_now(SOLO_PLAYER),
                 Effect::LoadAmmo { shots, duration, radius, effects } => arsenal.load(
                     SOLO_PLAYER,
-                    herocraft_world::Special { skill: skill.to_string(), rank: 1, shots: shots.at(1).round().max(1.0) as u32, left: duration.at(1), radius: radius.as_ref().map(|r| r.at(1)), effects: effects.clone() },
+                    herocraft_world::Special {
+                        skill: skill.to_string(),
+                        rank: 1,
+                        shots: shots.at(1).round().max(1.0) as u32,
+                        left: duration.at(1),
+                        radius: radius.as_ref().map(|r| r.at(1)),
+                        effects: effects.clone(),
+                    },
                 ),
                 _ => {}
             }
@@ -325,19 +340,56 @@ impl SkillPlay {
     }
 
     /// En solo, le tir `fired` part des pieds `feet` dans la direction `aim` avec `damage` points
-    pub(crate) fn solo_shoot(&mut self, feet: Vec3, aim: Vec3, damage: f32, fired: herocraft_world::Fired, creatures: &mut CreatureWorld, stats: &mut CharacterStats) -> herocraft_world::ShotHit {
+    pub(crate) fn solo_shoot(
+        &mut self,
+        feet: Vec3,
+        aim: Vec3,
+        damage: f32,
+        fired: herocraft_world::Fired,
+        creatures: &mut CreatureWorld,
+        stats: &mut CharacterStats,
+    ) -> herocraft_world::ShotHit {
         let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
         self.runner.shoot(SOLO_PLAYER, feet, aim, damage, fired, creatures, &mut player)
     }
 
     /// Un tir à montrer : la traînée qui file de `from` à `to`, l'étincelle sur la bête touchée, et
     /// ce que fait la munition spéciale à l'impact (nuage de poison, explosion)
-    pub(crate) fn show_shot(&mut self, caster: Option<herocraft_common::PlayerId>, from: Vec3, to: Vec3, target: Option<herocraft_common::CreatureId>, special: Option<&str>, block: f32) {
+    pub(crate) fn show_shot(
+        &mut self,
+        caster: Option<herocraft_common::PlayerId>,
+        from: Vec3,
+        to: Vec3,
+        target: Option<herocraft_common::CreatureId>,
+        special: Option<&str>,
+        block: f32,
+    ) {
         let flight = (from.distance(to) / block / 60.0).clamp(0.05, 0.5);
-        let base = VisualCue { effect: "arrowTrail".into(), anchor: Anchor::Aimed, caster, point: from, creature: None, projectile: None, aim: to - from, hold: Some(flight), area_blocks: 1.0, travel: Some((to, flight)), delay: 0.0 };
+        let base = VisualCue {
+            effect: "arrowTrail".into(),
+            anchor: Anchor::Aimed,
+            caster,
+            point: from,
+            creature: None,
+            projectile: None,
+            aim: to - from,
+            hold: Some(flight),
+            area_blocks: 1.0,
+            travel: Some((to, flight)),
+            delay: 0.0,
+        };
         self.cues.push(base.clone());
         let Some(id) = target else { return };
-        self.cues.push(VisualCue { effect: "impactSpark".into(), anchor: Anchor::Target, point: to, creature: Some(id), travel: None, hold: None, delay: flight, ..base.clone() });
+        self.cues.push(VisualCue {
+            effect: "impactSpark".into(),
+            anchor: Anchor::Target,
+            point: to,
+            creature: Some(id),
+            travel: None,
+            hold: None,
+            delay: flight,
+            ..base.clone()
+        });
         let Some(def) = special.and_then(|s| skills().get(s)) else { return };
         let radius = def.cast.as_ref().into_iter().flat_map(|c| &c.self_effects).find_map(|e| match &e.effect {
             Effect::LoadAmmo { radius, .. } => radius.as_ref().map(|r| r.at(1)),
@@ -363,15 +415,22 @@ impl SkillPlay {
         let catalog = skills();
         let arsenal = self.runner.arsenal();
         let magazine = arsenal.magazine(SOLO_PLAYER).map(|m| (m.loaded, m.size, m.reload_left, m.reload_total));
-        let special = arsenal.special(SOLO_PLAYER).map(|(skill, shots)| (catalog.get(skill).map_or(skill.to_string(), |d| d.name.clone()), shots));
+        let special =
+            arsenal.special(SOLO_PLAYER).map(|(skill, shots)| (catalog.get(skill).map_or(skill.to_string(), |d| d.name.clone()), shots));
         let charge = match charging {
-            Some(skill) if arsenal.is_charging(SOLO_PLAYER, Some(skill)) => catalog.get(skill).and_then(|d| d.cast.as_ref().and_then(|c| c.charge.as_ref()).map(|c| (d, c))).map(|(def, c)| {
-                let held = arsenal.charge_held(SOLO_PLAYER, Some(skill));
-                (def.name.clone(), (held / c.max.max(1e-3)).min(1.0), c.power_after(held).is_some())
-            }),
+            Some(skill) if arsenal.is_charging(SOLO_PLAYER, Some(skill)) => {
+                catalog.get(skill).and_then(|d| d.cast.as_ref().and_then(|c| c.charge.as_ref()).map(|c| (d, c))).map(|(def, c)| {
+                    let held = arsenal.charge_held(SOLO_PLAYER, Some(skill));
+                    (def.name.clone(), (held / c.max.max(1e-3)).min(1.0), c.power_after(held).is_some())
+                })
+            }
             _ if arsenal.is_charging(SOLO_PLAYER, None) => {
                 let held = arsenal.charge_held(SOLO_PLAYER, None);
-                Some(("Arc bandé".to_string(), (held / herocraft_common::weapons::BOW_FULL_DRAW).min(1.0), herocraft_common::weapons::bow_power(held).is_some()))
+                Some((
+                    "Arc bandé".to_string(),
+                    (held / herocraft_common::weapons::BOW_FULL_DRAW).min(1.0),
+                    herocraft_common::weapons::bow_power(held).is_some(),
+                ))
             }
             _ => None,
         };
@@ -398,7 +457,9 @@ impl SkillPlay {
         };
         let unlearned = catalog.rank(stats, &fusion.id) == 0;
         Some(match face {
-            Some(herocraft_common::skills::Fused::Amplified { element, spell }) => (format!("amplify:{element}"), unlearned || catalog.cast_check(stats, &spell, 0.0).is_some()),
+            Some(herocraft_common::skills::Fused::Amplified { element, spell }) => {
+                (format!("amplify:{element}"), unlearned || catalog.cast_check(stats, &spell, 0.0).is_some())
+            }
             Some(herocraft_common::skills::Fused::Mix(mix)) => {
                 let blocked = unlearned || catalog.cast_check(stats, &mix, 0.0).is_some();
                 (mix, blocked)
@@ -408,7 +469,16 @@ impl SkillPlay {
     }
 
     /// Le geste commence, et les visuels `start` avec lui (et ceux de l'amplification, `amplified`)
-    fn start(&mut self, player: Option<herocraft_common::PlayerId>, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, now: Instant, amplified: bool) {
+    fn start(
+        &mut self,
+        player: Option<herocraft_common::PlayerId>,
+        skill: &str,
+        rank: u8,
+        aim: Vec3,
+        aimed: Option<Vec3>,
+        now: Instant,
+        amplified: bool,
+    ) {
         let catalog = skills();
         let Some(def) = catalog.get(skill) else { return };
         let Some(cast) = &def.cast else { return };
@@ -440,12 +510,20 @@ impl SkillPlay {
             let at = |r: &Option<herocraft_common::skills::Ranked>| r.as_ref().map_or(0.0, |d| d.at(rank));
             self.motion = Some((at(&movement.dash), at(&movement.leap), at(&movement.side), seconds));
             if let Some(hover) = &movement.hover {
-                self.moves.push((now, skill.to_string(), Motion::Hover { height: hover.height.at(rank), duration: hover.duration.at(rank) }));
+                self.moves.push((
+                    now,
+                    skill.to_string(),
+                    Motion::Hover { height: hover.height.at(rank), duration: hover.duration.at(rank) },
+                ));
             }
             // Le grappin part à l'impact du geste, vers le bloc visé
             if let (Some(grapple), Some(to)) = (movement.grapple.as_ref().filter(|g| g.to == GrappleTo::Block), aimed) {
                 let at = now + std::time::Duration::from_secs_f32(impact.max(0.0));
-                self.moves.push((at, skill.to_string(), Motion::Pull { to, speed: grapple.speed.at(rank), stop: grapple.stop.at(rank), hoist: true }));
+                self.moves.push((
+                    at,
+                    skill.to_string(),
+                    Motion::Pull { to, speed: grapple.speed.at(rank), stop: grapple.stop.at(rank), hoist: true },
+                ));
             }
         }
         for visual in def.visuals.iter().chain(amplify.iter().flat_map(|a| &a.visuals)).filter(|v| v.from == Moment::Start) {
@@ -472,7 +550,17 @@ impl SkillPlay {
     }
 
     /// Un joueur (peut-être nous) lance une compétence, d'après le serveur
-    pub(crate) fn on_cast(&mut self, player: herocraft_common::PlayerId, me: herocraft_common::PlayerId, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool) {
+    pub(crate) fn on_cast(
+        &mut self,
+        player: herocraft_common::PlayerId,
+        me: herocraft_common::PlayerId,
+        skill: &str,
+        rank: u8,
+        aim: Vec3,
+        aimed: Option<Vec3>,
+        fused: bool,
+        amplified: bool,
+    ) {
         if player == me {
             // Notre geste a déjà commencé ; la recharge du serveur fait foi (celle de la Fusion pour un mélange)
             let catalog = skills();
@@ -561,7 +649,11 @@ impl SkillPlay {
                         Shooter::Creature { species, .. } => {
                             let shot = registry.get(*species as usize).and_then(|s| s.attack.as_ref()).and_then(|a| a.shot.as_ref());
                             if let Some(effect) = shot.and_then(|s| s.projectile.as_ref()).filter(|_| shot.is_some_and(|s| s.speed > 0.0)) {
-                                self.cues.push(VisualCue { effect: effect.clone(), area_blocks: shot.map_or(1.0, |s| s.radius.max(1.0)), ..base });
+                                self.cues.push(VisualCue {
+                                    effect: effect.clone(),
+                                    area_blocks: shot.map_or(1.0, |s| s.radius.max(1.0)),
+                                    ..base
+                                });
                             }
                         }
                         Shooter::Player(player) => {
@@ -602,7 +694,11 @@ impl SkillPlay {
                         Some((Shooter::Creature { species, .. }, _)) => {
                             let shot = registry.get(species as usize).and_then(|s| s.attack.as_ref()).and_then(|a| a.shot.as_ref());
                             if let Some(effect) = shot.and_then(|s| s.impact.as_ref()) {
-                                self.cues.push(VisualCue { effect: effect.clone(), area_blocks: shot.map_or(1.0, |s| s.radius.max(1.0)), ..fixed });
+                                self.cues.push(VisualCue {
+                                    effect: effect.clone(),
+                                    area_blocks: shot.map_or(1.0, |s| s.radius.max(1.0)),
+                                    ..fixed
+                                });
                             }
                         }
                         Some((Shooter::Player(_), skill)) if matches!(reason, ProjectileEnd::Blocked | ProjectileEnd::Terrain) => {
@@ -672,7 +768,8 @@ impl SkillPlay {
         let now = Instant::now();
         self.amplified.retain(|(_, _, until)| *until > now);
         let who = shown.caster.filter(|&c| c != self.me);
-        let amplified = self.amplified.iter().position(|(p, s, _)| *p == who && *s == shown.skill).map(|i| self.amplified.remove(i)).is_some();
+        let amplified =
+            self.amplified.iter().position(|(p, s, _)| *p == who && *s == shown.skill).map(|i| self.amplified.remove(i)).is_some();
         let amplify = catalog.fusion().and_then(|f| f.fusion.as_ref()).map(|f| f.amplify.clone()).filter(|_| amplified);
         let size = amplify.as_ref().map_or(1.0, |a| a.area);
         // Une zone qui reste se montre tant qu'elle dure
@@ -682,9 +779,19 @@ impl SkillPlay {
         let mine = shown.caster.is_none_or(|c| c == self.me);
         let on_me = shown.players.contains(&self.me);
         let now = Instant::now();
-        for (entry, applies) in cast.self_effects.iter().map(|e| (e, mine && !shown.parried)).chain(cast.effects.iter().map(|e| (e, on_me && e.to.unwrap_or(cast.targets) != herocraft_common::skills::Targets::Enemies))) {
-            if let (true, Effect::Buff { stat: herocraft_common::skills::BuffStat::Speed, value, duration, per_missing_health, .. }) = (applies, &entry.effect) {
-                self.speed_buffs.push((value.at(shown.rank), now + std::time::Duration::from_secs_f32(duration.at(shown.rank).max(0.0)), *per_missing_health));
+        for (entry, applies) in
+            cast.self_effects.iter().map(|e| (e, mine && !shown.parried)).chain(
+                cast.effects.iter().map(|e| (e, on_me && e.to.unwrap_or(cast.targets) != herocraft_common::skills::Targets::Enemies)),
+            )
+        {
+            if let (true, Effect::Buff { stat: herocraft_common::skills::BuffStat::Speed, value, duration, per_missing_health, .. }) =
+                (applies, &entry.effect)
+            {
+                self.speed_buffs.push((
+                    value.at(shown.rank),
+                    now + std::time::Duration::from_secs_f32(duration.at(shown.rank).max(0.0)),
+                    *per_missing_health,
+                ));
             }
         }
         for visual in def.visuals.iter().chain(amplify.iter().flat_map(|a| &a.visuals)) {
@@ -767,14 +874,22 @@ impl SkillPlay {
     /// sur place dans une nova
     pub(crate) fn solo_last_stand(&mut self, creatures: &mut CreatureWorld, feet: Vec3, stats: &mut CharacterStats) {
         let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
-        if let Some(SkillImpact { skill, rank, center, creatures, players, parried, .. }) = self.runner.last_stand(SOLO_PLAYER, creatures, &mut player) {
+        if let Some(SkillImpact { skill, rank, center, creatures, players, parried, .. }) =
+            self.runner.last_stand(SOLO_PLAYER, creatures, &mut player)
+        {
             self.on_hit(Shown { caster: None, skill, rank, center, creatures, players, parried, contact: false });
         }
     }
 
     /// Le joueur solo a frappé la créature `id` de son arme : ses renforcements qui portent des
     /// effets (Marteau Consacré) les jouent autour d'elle
-    pub(crate) fn solo_weapon_hit(&mut self, id: herocraft_common::CreatureId, creatures: &mut CreatureWorld, feet: Vec3, stats: &mut CharacterStats) {
+    pub(crate) fn solo_weapon_hit(
+        &mut self,
+        id: herocraft_common::CreatureId,
+        creatures: &mut CreatureWorld,
+        feet: Vec3,
+        stats: &mut CharacterStats,
+    ) {
         let Some(at) = creatures.creatures().iter().find(|c| c.id == id).map(|c| c.position) else { return };
         let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
         self.runner.ride(SOLO_PLAYER, &[at], creatures, &mut player);
@@ -788,7 +903,16 @@ impl SkillPlay {
     /// Le coup `damage` de la créature `attacker` arrive sur le joueur solo, qui regarde vers
     /// `facing` : sa garde le pare peut-être, et sa riposte se montre. Renvoie les dégâts qui
     /// passent, et si le coup a été paré.
-    pub(crate) fn solo_parry(&mut self, creatures: &mut CreatureWorld, feet: Vec3, facing: Vec3, stats: &mut CharacterStats, attacker: herocraft_common::CreatureId, damage: f32, kind: herocraft_common::DamageKind) -> (f32, bool) {
+    pub(crate) fn solo_parry(
+        &mut self,
+        creatures: &mut CreatureWorld,
+        feet: Vec3,
+        facing: Vec3,
+        stats: &mut CharacterStats,
+        attacker: herocraft_common::CreatureId,
+        damage: f32,
+        kind: herocraft_common::DamageKind,
+    ) -> (f32, bool) {
         let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
         let parry = self.runner.parry(SOLO_PLAYER, Some(facing), attacker, damage, kind.name(), creatures, &mut player);
         if let Some(SkillImpact { skill, rank, center, creatures, players, parried, .. }) = parry.impact {
@@ -842,7 +966,9 @@ impl SkillPlay {
     /// Le joueur `player` (`None` : le joueur local) joue l'une des attaques de sa forme
     pub(crate) fn form_attacking(&self, player: Option<herocraft_common::PlayerId>) -> bool {
         let now = Instant::now();
-        self.plays.iter().any(|p| p.player == player && skills().form_of_attack(&p.skill).is_some() && now.duration_since(p.started).as_secs_f32() < p.duration)
+        self.plays.iter().any(|p| {
+            p.player == player && skills().form_of_attack(&p.skill).is_some() && now.duration_since(p.started).as_secs_f32() < p.duration
+        })
     }
 
     /// La compétence de forme que le joueur `player` (`None` : le joueur local) a lancée, tant qu'elle dure
@@ -872,7 +998,9 @@ impl SkillPlay {
         let now = Instant::now();
         let mut pose = FigurePose { swing, ..FigurePose::default() };
         let Some(play) = self.plays.iter().find(|p| p.player == player) else { return pose };
-        let Some(gesture) = skills().get(&play.skill).and_then(|s| s.cast.as_ref()).and_then(|c| self.gestures.get(&c.animation)) else { return pose };
+        let Some(gesture) = skills().get(&play.skill).and_then(|s| s.cast.as_ref()).and_then(|c| self.gestures.get(&c.animation)) else {
+            return pose;
+        };
         if gesture.legs_locked {
             pose.swing = 0.0;
         } else {

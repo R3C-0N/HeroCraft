@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use herocraft_common::{fall_damage, CharacterStats, PlayerClass};
+use herocraft_common::{CharacterStats, PlayerClass, fall_damage};
 
 use crate::camera::OrbitCamera;
 
@@ -59,7 +59,16 @@ struct SavedProgress {
 impl Default for PlayerStats {
     /// Même personnage que celui que le serveur donne à chaque nouveau joueur
     fn default() -> Self {
-        Self { stats: CharacterStats::new(PlayerClass::Adventurer), hurt_at: None, hurt_strength: 0.0, death: None, progress_path: None, revived_seen: 0, respawned_at: None, present_skills: None }
+        Self {
+            stats: CharacterStats::new(PlayerClass::Adventurer),
+            hurt_at: None,
+            hurt_strength: 0.0,
+            death: None,
+            progress_path: None,
+            revived_seen: 0,
+            respawned_at: None,
+            present_skills: None,
+        }
     }
 }
 
@@ -248,9 +257,7 @@ impl PlayerStats {
 
 fn read_progress(path: &Path) -> Option<SavedProgress> {
     let text = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&text)
-        .map_err(|e| log::warn!("Progression illisible dans {} ({}), personnage neuf.", path.display(), e))
-        .ok()
+    serde_json::from_str(&text).map_err(|e| log::warn!("Progression illisible dans {} ({}), personnage neuf.", path.display(), e)).ok()
 }
 
 #[cfg(test)]

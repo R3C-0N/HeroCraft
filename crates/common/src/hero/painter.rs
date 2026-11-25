@@ -11,8 +11,8 @@
 //! Ailes, barbe, cheveux, appendices crâniens et queue se peignent dans les cases libres de la
 //! même planche.
 
-use super::atlas::{atlas, Rect, Traits};
 use super::Appearance;
+use super::atlas::{Rect, Traits, atlas};
 
 /// Côté de la planche, en texels
 pub const SHEET_SIZE: usize = 64;
@@ -30,33 +30,94 @@ type Bandes = &'static [&'static [[i32; 2]]];
 fn appendice(kind: &str) -> Option<(Bandes, Option<&'static str>)> {
     // matière : absente pour une oreille (elle prend la peau), `accent` pour l'accent de la variante
     Some(match kind {
-        "oreillesFelin" => (&[&[], &[], &[], &[[0, 2], [6, 2]], &[[0, 2], [6, 2]], &[[0, 3], [5, 3]], &[[1, 2], [5, 2]], &[[1, 2], [5, 2]]], None),
+        "oreillesFelin" => {
+            (&[&[], &[], &[], &[[0, 2], [6, 2]], &[[0, 2], [6, 2]], &[[0, 3], [5, 3]], &[[1, 2], [5, 2]], &[[1, 2], [5, 2]]], None)
+        }
         "oreillesLupin" => (
-            &[&[[0, 2], [6, 2]], &[[0, 2], [6, 2]], &[[0, 2], [6, 2]], &[[0, 3], [5, 3]], &[[0, 3], [5, 3]], &[[1, 3], [4, 3]], &[[1, 2], [5, 2]], &[[1, 2], [5, 2]]],
+            &[
+                &[[0, 2], [6, 2]],
+                &[[0, 2], [6, 2]],
+                &[[0, 2], [6, 2]],
+                &[[0, 3], [5, 3]],
+                &[[0, 3], [5, 3]],
+                &[[1, 3], [4, 3]],
+                &[[1, 2], [5, 2]],
+                &[[1, 2], [5, 2]],
+            ],
             None,
         ),
         "oreillesVulpin" => (
-            &[&[[1, 2], [5, 2]], &[[0, 3], [5, 3]], &[[0, 3], [5, 3]], &[[0, 3], [5, 3]], &[[0, 3], [5, 3]], &[[1, 3], [4, 3]], &[[1, 2], [5, 2]], &[[2, 2], [4, 2]]],
+            &[
+                &[[1, 2], [5, 2]],
+                &[[0, 3], [5, 3]],
+                &[[0, 3], [5, 3]],
+                &[[0, 3], [5, 3]],
+                &[[0, 3], [5, 3]],
+                &[[1, 3], [4, 3]],
+                &[[1, 2], [5, 2]],
+                &[[2, 2], [4, 2]],
+            ],
             None,
         ),
         "cornes" => (
-            &[&[], &[[0, 2], [6, 2]], &[[0, 2], [6, 2]], &[[1, 2], [5, 2]], &[[1, 2], [5, 2]], &[[1, 2], [5, 2]], &[[2, 2], [4, 2]], &[[2, 2], [4, 2]]],
+            &[
+                &[],
+                &[[0, 2], [6, 2]],
+                &[[0, 2], [6, 2]],
+                &[[1, 2], [5, 2]],
+                &[[1, 2], [5, 2]],
+                &[[1, 2], [5, 2]],
+                &[[2, 2], [4, 2]],
+                &[[2, 2], [4, 2]],
+            ],
             Some("#D8CAA8"),
         ),
-        "cornesCourtes" => (&[&[], &[], &[], &[], &[[0, 2], [6, 2]], &[[1, 2], [5, 2]], &[[1, 2], [5, 2]], &[[2, 2], [4, 2]]], Some("#CBBA96")),
+        "cornesCourtes" => {
+            (&[&[], &[], &[], &[], &[[0, 2], [6, 2]], &[[1, 2], [5, 2]], &[[1, 2], [5, 2]], &[[2, 2], [4, 2]]], Some("#CBBA96"))
+        }
         "bois" => (
-            &[&[[0, 1], [7, 1]], &[[0, 1], [2, 1], [5, 1], [7, 1]], &[[1, 1], [2, 1], [5, 1], [6, 1]], &[[1, 2], [5, 2]], &[[2, 1], [5, 1]], &[[2, 1], [5, 1]], &[[2, 2], [4, 2]], &[[3, 2]]],
+            &[
+                &[[0, 1], [7, 1]],
+                &[[0, 1], [2, 1], [5, 1], [7, 1]],
+                &[[1, 1], [2, 1], [5, 1], [6, 1]],
+                &[[1, 2], [5, 2]],
+                &[[2, 1], [5, 1]],
+                &[[2, 1], [5, 1]],
+                &[[2, 2], [4, 2]],
+                &[[3, 2]],
+            ],
             Some("#8A6A44"),
         ),
         "couronneOs" => (
-            &[&[], &[[0, 1], [7, 1]], &[[0, 1], [3, 2], [7, 1]], &[[0, 1], [3, 2], [7, 1]], &[[0, 2], [3, 2], [6, 2]], &[[0, 2], [3, 2], [6, 2]], &[[0, 8]], &[[0, 8]]],
+            &[
+                &[],
+                &[[0, 1], [7, 1]],
+                &[[0, 1], [3, 2], [7, 1]],
+                &[[0, 1], [3, 2], [7, 1]],
+                &[[0, 2], [3, 2], [6, 2]],
+                &[[0, 2], [3, 2], [6, 2]],
+                &[[0, 8]],
+                &[[0, 8]],
+            ],
             Some("#E8DFC8"),
         ),
         "cristaux" => (
-            &[&[[1, 1], [6, 1]], &[[1, 2], [5, 2]], &[[1, 2], [3, 2], [5, 2]], &[[2, 1], [3, 2], [5, 1]], &[[2, 2], [4, 2]], &[[3, 2]], &[[3, 2]], &[[2, 4]]],
+            &[
+                &[[1, 1], [6, 1]],
+                &[[1, 2], [5, 2]],
+                &[[1, 2], [3, 2], [5, 2]],
+                &[[2, 1], [3, 2], [5, 1]],
+                &[[2, 2], [4, 2]],
+                &[[3, 2]],
+                &[[3, 2]],
+                &[[2, 4]],
+            ],
             Some("accent"),
         ),
-        "couronne" => (&[&[], &[], &[[0, 1], [2, 1], [5, 1], [7, 1]], &[[0, 1], [2, 1], [5, 1], [7, 1]], &[[0, 8]], &[[0, 8]], &[], &[]], Some("accent")),
+        "couronne" => (
+            &[&[], &[], &[[0, 1], [2, 1], [5, 1], [7, 1]], &[[0, 1], [2, 1], [5, 1], [7, 1]], &[[0, 8]], &[[0, 8]], &[], &[]],
+            Some("accent"),
+        ),
         _ => return None,
     })
 }
@@ -383,7 +444,15 @@ fn peindre_ailes(g: &mut Toile, teinte: u32) {
                 let plume = (x + y) % 3 == 0;
                 let alpha = au_centieme(0.92 - y as f64 * 0.045 - x as f64 * 0.03);
                 // la face arrière reflète l'avant : c'est elle qu'on voit sur l'aile droite, tournée d'un demi-tour
-                let l = if bord { 0.42 } else if plume { 0.2 } else if k != 0 { 0.0 } else { 0.08 };
+                let l = if bord {
+                    0.42
+                } else if plume {
+                    0.2
+                } else if k != 0 {
+                    0.0
+                } else {
+                    0.08
+                };
                 b.pxa(g, if k != 0 { 6 - x } else { x }, y, eclaircir(teinte, l), alpha, 1, 1);
             }
         }
@@ -403,7 +472,8 @@ fn pelage(g: &mut Toile, peau: u32, t: &Traits) {
     let sombre = shade(peau, -0.22);
     let force = t.pelage.filter(|&v| vrai_f(Some(v))).unwrap_or(1.0);
     let seuil = 0.86 - 0.08 * (force - 1.0);
-    let zones = [("torse", "devant"), ("torse", "derriere"), ("brasD", "devant"), ("brasG", "devant"), ("jambeD", "devant"), ("jambeG", "devant")];
+    let zones =
+        [("torse", "devant"), ("torse", "derriere"), ("brasD", "devant"), ("brasG", "devant"), ("jambeD", "devant"), ("jambeG", "devant")];
     for (i, (p, f)) in zones.iter().enumerate() {
         let b = Brosse::sur(p, f);
         for y in 0..b.r.hauteur {
@@ -424,8 +494,8 @@ fn pelage(g: &mut Toile, peau: u32, t: &Traits) {
 }
 
 /* ---------- motifs corporels de sous-race ----------
-   Chaque motif couvre le crâne et les mains, qu'aucune tenue ne cache : la sous-race reste
-   lisible même en armure de plates. */
+Chaque motif couvre le crâne et les mains, qu'aucune tenue ne cache : la sous-race reste
+lisible même en armure de plates. */
 
 fn motif(g: &mut Toile, motif: &str, peau: u32, acc: u32) {
     match motif {
@@ -534,7 +604,7 @@ fn front(g: &mut Toile, peau: u32, acc: u32) {
 }
 
 /* Pigment, usure, gravure : des motifs qui tiennent tous sur le crâne et les mains, la seule peau
-   qu'aucune tenue ne cache. */
+qu'aucune tenue ne cache. */
 
 fn taches(g: &mut Toile, acc: u32) {
     let bt = Brosse::sur("tete", "devant");
@@ -656,7 +726,15 @@ fn givre(g: &mut Toile, acc: u32) {
 }
 
 fn ecailles(g: &mut Toile, acc: u32) {
-    let zones = [("tete", "devant"), ("tete", "droite"), ("tete", "gauche"), ("torse", "devant"), ("torse", "derriere"), ("brasD", "devant"), ("brasG", "devant")];
+    let zones = [
+        ("tete", "devant"),
+        ("tete", "droite"),
+        ("tete", "gauche"),
+        ("torse", "devant"),
+        ("torse", "derriere"),
+        ("brasD", "devant"),
+        ("brasG", "devant"),
+    ];
     for (i, (p, f)) in zones.iter().enumerate() {
         let b = Brosse::sur(p, f);
         for y in 0..b.r.hauteur {
@@ -704,7 +782,17 @@ fn veines(g: &mut Toile, t: &Traits) {
     let enc = if vrai_b(t.craquelee) { 0x211B1B } else { 0x2A2426 };
     let dense = t.veines.unwrap_or(0) > 1;
     let zones: &[(&str, &str)] = if dense {
-        &[("tete", "devant"), ("torse", "devant"), ("brasD", "devant"), ("brasG", "devant"), ("torse", "derriere"), ("jambeD", "devant"), ("jambeG", "devant"), ("tete", "droite"), ("tete", "gauche")]
+        &[
+            ("tete", "devant"),
+            ("torse", "devant"),
+            ("brasD", "devant"),
+            ("brasG", "devant"),
+            ("torse", "derriere"),
+            ("jambeD", "devant"),
+            ("jambeG", "devant"),
+            ("tete", "droite"),
+            ("tete", "gauche"),
+        ]
     } else {
         &[("tete", "devant"), ("torse", "devant"), ("brasD", "devant"), ("brasG", "devant")]
     };
@@ -926,7 +1014,18 @@ fn tenue(g: &mut Toile, cfg: &Appearance, t: &Traits, peau: u32) {
 /// Texel de cheveux avec son grain : plus clair ou plus sombre selon le bruit
 fn pose_cheveu(g: &mut Toile, b: &Brosse, x: i32, y: i32, col: u32) {
     let n = bruit(x * 3 + y, y * 5, 61);
-    b.px(g, x, y, if n > 0.86 { shade(col, 0.1) } else if n < 0.2 { shade(col, -0.16) } else { col });
+    b.px(
+        g,
+        x,
+        y,
+        if n > 0.86 {
+            shade(col, 0.1)
+        } else if n < 0.2 {
+            shade(col, -0.16)
+        } else {
+            col
+        },
+    );
 }
 
 /// La lisière suit un profil par colonne, jamais une coupe droite. Les côtés vont de l'avant vers
@@ -1022,8 +1121,8 @@ fn couche2(g: &mut Toile, cfg: &Appearance, t: &Traits, cheveux: u32, peau: u32)
 }
 
 /* ---------- appendices crâniens ----------
-   Une case du patron porte les deux côtés : la figure en extrude les texels en un plan vertical
-   posé sur le crâne. */
+Une case du patron porte les deux côtés : la figure en extrude les texels en un plan vertical
+posé sur le crâne. */
 
 fn peindre_appendice(g: &mut Toile, kind: &str, peau: u32, acc: u32) {
     let Some((lignes, matiere)) = appendice(kind) else { return };
@@ -1089,7 +1188,7 @@ fn peindre_queue(g: &mut Toile, kind: &str, peau: u32, acc: u32) {
 }
 
 /* Cheveux : deux pièces peintes chacune dans sa case 8 × 8 du patron. La figure en extrude les
-   texels ; rien ne se peint sur la peau ni sur le torse. */
+texels ; rien ne se peint sur la peau ni sur le torse. */
 
 fn peindre_chevelure(g: &mut Toile, coiffure: &str, cheveux: u32, t: &Traits) {
     let Some(co) = atlas().coiffure(coiffure) else { return };
@@ -1116,7 +1215,18 @@ fn peindre_chevelure(g: &mut Toile, coiffure: &str, cheveux: u32, t: &Traits) {
 
 fn pose_meche(g: &mut Toile, b: &Brosse, x: i32, y: i32, col: u32, clair: u32, sombre: u32) {
     let n = bruit(x, y, 47);
-    b.px(g, x, y, if n > 0.84 { clair } else if n < 0.22 { sombre } else { col });
+    b.px(
+        g,
+        x,
+        y,
+        if n > 0.84 {
+            clair
+        } else if n < 0.22 {
+            sombre
+        } else {
+            col
+        },
+    );
 }
 
 fn peindre_barbe(g: &mut Toile, style: &str, cheveux: u32) {
@@ -1129,7 +1239,18 @@ fn peindre_barbe(g: &mut Toile, style: &str, cheveux: u32) {
         for &[x, w] in bandes {
             for i in 0..w {
                 let n = bruit(x + i, y, 31);
-                b.px(g, x + i, y, if n > 0.84 { clair } else if n < 0.2 { sombre } else { cheveux });
+                b.px(
+                    g,
+                    x + i,
+                    y,
+                    if n > 0.84 {
+                        clair
+                    } else if n < 0.2 {
+                        sombre
+                    } else {
+                        cheveux
+                    },
+                );
             }
         }
     }

@@ -63,7 +63,11 @@ impl App {
                 self.camera.toggle_view(&self.generator);
                 info!(
                     "Bouton cliqué : Transition vers {}",
-                    if self.camera.target_distance <= self.camera.base_radius { "Vue Première Personne (FPS)" } else { "Vue Satellite (Orbite)" }
+                    if self.camera.target_distance <= self.camera.base_radius {
+                        "Vue Première Personne (FPS)"
+                    } else {
+                        "Vue Satellite (Orbite)"
+                    }
                 );
             }
             UiAction::ToggleAutoRotate => {
@@ -108,15 +112,23 @@ impl App {
             .and_then(|at| generator.vision_entry(at.face, at.x, at.z, VISION_TEMPLE_BLOCKS, herocraft_world::Culture::Humains));
         match entry {
             Some(entry) => {
-                info!("Vision du temple {:?} ({}, {}), tenu par les {}.", entry.site.face, entry.site.center().0, entry.site.center().1, entry.holder.name());
+                info!(
+                    "Vision du temple {:?} ({}, {}), tenu par les {}.",
+                    entry.site.face,
+                    entry.site.center().0,
+                    entry.site.center().1,
+                    entry.holder.name()
+                );
                 // Les blocs du présent sont enregistrés avant de les mettre de côté
                 let _ = chunk_cache.flush_dirty();
                 save_terrain_edits(lod_manager);
-                let feet = geometry.corner(entry.feet.face, entry.feet.x as f64 + 0.5, entry.feet.y as f64, entry.feet.z as f64 + 0.5).as_vec3();
+                let feet =
+                    geometry.corner(entry.feet.face, entry.feet.x as f64 + 0.5, entry.feet.y as f64, entry.feet.z as f64 + 0.5).as_vec3();
                 let back = camera.player_pos;
                 switch_epoch(Some(entry.holder), feet, Some(back), None, vision, generator, chunk_cache, lod_manager, camera, state);
                 if tutorial.is_none() {
-                    *tutorial = begin_vision_tutorial(feet, camera, generator, lod_manager, ui_state, Some((solo_creatures, creature_registry)));
+                    *tutorial =
+                        begin_vision_tutorial(feet, camera, generator, lod_manager, ui_state, Some((solo_creatures, creature_registry)));
                     state.sync_lod_meshes(lod_manager);
                 }
                 cinematics.notify(&herocraft_common::cinematics::GameEvent::new(cinematic::VISION_ENTERED));
@@ -149,19 +161,24 @@ impl App {
             // Le souvenir achevé : il revient dans un nuage de fumée violette
             if end_vision_tutorial(tutorial, ui_state, solo_creatures) {
                 let feet = camera.player_pos;
-                skill_effects.start(["shadowSmoke", "mistCloud"].into_iter().map(|effect| skill_play::VisualCue {
-                    effect: effect.into(),
-                    anchor: herocraft_common::skills::Anchor::Feet,
-                    caster: None,
-                    point: feet,
-                    creature: None,
-                    aim: glam::Vec3::ZERO,
-                    hold: None,
-                    area_blocks: 1.0,
-                    travel: None,
-                    delay: 0.0,
-                    projectile: None,
-                }).collect());
+                skill_effects.start(
+                    ["shadowSmoke", "mistCloud"]
+                        .into_iter()
+                        .map(|effect| skill_play::VisualCue {
+                            effect: effect.into(),
+                            anchor: herocraft_common::skills::Anchor::Feet,
+                            caster: None,
+                            point: feet,
+                            creature: None,
+                            aim: glam::Vec3::ZERO,
+                            hold: None,
+                            area_blocks: 1.0,
+                            travel: None,
+                            delay: 0.0,
+                            projectile: None,
+                        })
+                        .collect(),
+                );
                 ui_state.chat.info("Tu reviens au présent sans souvenir de la bataille. Mais sa force est restée en toi, et un éclat du cristal brille dans ton sac.");
             }
             block_interaction.invalidate();
@@ -311,7 +328,19 @@ impl App {
             client_weather.model.forced = clock.forced;
         } else {
             *current_seed = *solo_seed;
-            switch_planet(*current_seed, false, edits, storage, generator, chunk_cache, lod_manager, camera, state, ui_state, client_weather);
+            switch_planet(
+                *current_seed,
+                false,
+                edits,
+                storage,
+                generator,
+                chunk_cache,
+                lod_manager,
+                camera,
+                state,
+                ui_state,
+                client_weather,
+            );
             dropped_items.clear();
         }
         block_interaction.invalidate();

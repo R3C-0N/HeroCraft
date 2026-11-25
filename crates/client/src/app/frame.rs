@@ -91,13 +91,26 @@ impl App {
 
     /// Banc d'essai : réglages et entrées de la phase en cours
     fn drive_benchmark(&mut self, dt: f32) {
-        let Self { bench, camera, ui_state, generator, lod_manager, solo_creatures, creature_animator, creature_registry, state, current_seed, .. } = self;
+        let Self {
+            bench,
+            camera,
+            ui_state,
+            generator,
+            lod_manager,
+            solo_creatures,
+            creature_animator,
+            creature_registry,
+            state,
+            current_seed,
+            ..
+        } = self;
         if let Some(b) = bench.as_mut() {
             if let Some(start) = b.before_frame(dt, camera, ui_state, generator) {
                 lod_manager.set_distance_preset(ui_state.video_settings.lod_distance);
                 lod_manager.set_precision(ui_state.video_settings.lod_precision);
                 if start.reset_creatures {
-                    *solo_creatures = herocraft_world::CreatureWorld::new(camera.base_radius as f64, *current_seed, creature_registry.clone());
+                    *solo_creatures =
+                        herocraft_world::CreatureWorld::new(camera.base_radius as f64, *current_seed, creature_registry.clone());
                     *creature_animator = creatures::CreatureAnimator::default();
                 }
                 let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
@@ -135,7 +148,12 @@ impl App {
             ui_state.set_map_open(false);
         }
         // Première arrivée au sol d'un héros sans légende : le créateur s'ouvre
-        if bench.is_none() && ui_state.legend.is_none() && !ui_state.creator_open() && camera.target_distance <= camera.base_radius && !ui_state.player.is_dead() {
+        if bench.is_none()
+            && ui_state.legend.is_none()
+            && !ui_state.creator_open()
+            && camera.target_distance <= camera.base_radius
+            && !ui_state.player.is_dead()
+        {
             ui_state.open_creator();
         }
         // Mort : la souris est libérée pour le bouton de réapparition
@@ -152,9 +170,7 @@ impl App {
             *cursor_captured = want_capture;
             set_cursor_captured(window, want_capture);
             let controls = &ui_state.controls;
-            keyboard_hook::set_capture(
-                want_capture.then(|| keyboard_hook::interceptable(Action::ALL.map(|a| controls.key(a)))),
-            );
+            keyboard_hook::set_capture(want_capture.then(|| keyboard_hook::interceptable(Action::ALL.map(|a| controls.key(a)))));
             ui_state.set_pointer_captured(want_capture);
             *is_dragging = false;
         }
@@ -305,7 +321,8 @@ impl App {
             let visual = *client_weather.visual();
             let raining = ground && visual.precipitation > 0.01;
             if let Some(collider) = camera.collider.as_ref().filter(|_| raining)
-                && let Some(columns) = column_tops.update(dt, collider, generator, camera.player_pos, camera.base_radius) {
+                && let Some(columns) = column_tops.update(dt, collider, generator, camera.player_pos, camera.base_radius)
+            {
                 state.set_precipitation_columns(&columns);
             }
             let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
@@ -415,8 +432,22 @@ impl App {
                             Some(client) => client.send_shoot(aim, ammo),
                             None => {
                                 let damage = held.damage + herocraft_common::weapons::ammo_damage(ammo);
-                                let hit = skill_play.solo_shoot(camera.player_pos, aim, damage, fired, solo_creatures, &mut ui_state.player.stats);
-                                skill_play.show_shot(None, camera.eye_position(), hit.to + up * 0.8 * block, hit.target, hit.special.as_deref(), block);
+                                let hit = skill_play.solo_shoot(
+                                    camera.player_pos,
+                                    aim,
+                                    damage,
+                                    fired,
+                                    solo_creatures,
+                                    &mut ui_state.player.stats,
+                                );
+                                skill_play.show_shot(
+                                    None,
+                                    camera.eye_position(),
+                                    hit.to + up * 0.8 * block,
+                                    hit.target,
+                                    hit.special.as_deref(),
+                                    block,
+                                );
                                 announce_solo_crimes(solo_creatures, ui_state);
                             }
                         }
@@ -431,18 +462,31 @@ impl App {
         if !block_interaction.is_breaking_held() {
             *strike_lock = None;
         }
-        let humanoid = |id: herocraft_common::CreatureId| creature_views.iter().find(|v| v.id == id).is_some_and(|v| villagers::is_humanoid(v, creature_registry));
-        let striking = aimed.filter(|_| !shooting && block_interaction.is_breaking_held()).filter(|&id| *strike_lock == Some(id) || !humanoid(id));
+        let humanoid = |id: herocraft_common::CreatureId| {
+            creature_views.iter().find(|v| v.id == id).is_some_and(|v| villagers::is_humanoid(v, creature_registry))
+        };
+        let striking =
+            aimed.filter(|_| !shooting && block_interaction.is_breaking_held()).filter(|&id| *strike_lock == Some(id) || !humanoid(id));
         if let Some(id) = striking {
             block_interaction.pause_mining();
-            if hit_creature(id, skill_play, camera, net.as_mut(), solo_creatures, &mut ui_state.player.stats, audio, &ui_state.audio_settings) {
+            if hit_creature(
+                id,
+                skill_play,
+                camera,
+                net.as_mut(),
+                solo_creatures,
+                &mut ui_state.player.stats,
+                audio,
+                &ui_state.audio_settings,
+            ) {
                 skill_play.solo_weapon_hit(id, solo_creatures, camera.player_pos, &mut ui_state.player.stats);
             }
             // Un habitant tué en solo : le chat l'annonce (en ligne, c'est le serveur)
             announce_solo_crimes(solo_creatures, ui_state);
         }
         // La roche à l'éclat ne cède qu'à la pioche
-        let bare_hands = tutorial.as_ref().is_some_and(|t| t.blocks_mining(block_interaction.target().map(|h| h.block), &ui_state.inventory));
+        let bare_hands =
+            tutorial.as_ref().is_some_and(|t| t.blocks_mining(block_interaction.target().map(|h| h.block), &ui_state.inventory));
         if bare_hands {
             block_interaction.pause_mining();
         }
@@ -536,7 +580,9 @@ impl App {
                     state.simulated_time = time as f32;
                     client_weather.model.forced = forced;
                 }
-                NetEvent::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified } => skill_play.on_cast(player_id, client.player_id(), &skill, rank, aim, aimed, fused, amplified),
+                NetEvent::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified } => {
+                    skill_play.on_cast(player_id, client.player_id(), &skill, rank, aim, aimed, fused, amplified)
+                }
                 NetEvent::SkillRefused { skill, reason } => {
                     ui_state.skill_notice = Some((format!("{} : {reason}", skill_name(&skill)), Instant::now()));
                     skill_play.on_refused(&skill, &reason);
@@ -621,7 +667,19 @@ impl App {
                     window.set_title(&format!("HeroCraft — partie ouverte au réseau local (port {})", host.port));
                 } else {
                     *current_seed = world.seed;
-                    switch_planet(*current_seed, true, edits, None, generator, chunk_cache, lod_manager, camera, state, ui_state, client_weather);
+                    switch_planet(
+                        *current_seed,
+                        true,
+                        edits,
+                        None,
+                        generator,
+                        chunk_cache,
+                        lod_manager,
+                        camera,
+                        state,
+                        ui_state,
+                        client_weather,
+                    );
                     dropped_items.clear();
                     // De retour sur ce serveur : là où le joueur l'avait quitté
                     if let Some(spawn) = world.spawn_position {
@@ -655,9 +713,8 @@ impl App {
     /// Page Multijoueur ouverte en solo : écoute des parties annoncées sur le réseau local
     fn update_lan_browser(&mut self, now: Instant) {
         let Self { ui_state, lan_browser, lan_retry_at, .. } = self;
-        let browsing = ui_state.is_settings_open
-            && ui_state.menu_page == MenuPage::Multiplayer
-            && ui_state.multiplayer.status == NetStatus::Solo;
+        let browsing =
+            ui_state.is_settings_open && ui_state.menu_page == MenuPage::Multiplayer && ui_state.multiplayer.status == NetStatus::Solo;
         if browsing {
             if lan_browser.is_none() && now >= *lan_retry_at {
                 match LanBrowser::new() {
@@ -784,10 +841,8 @@ impl App {
         let Self { camera, ui_state, generator, skill_play, cinematics, .. } = self;
         let is_ground = camera.distance <= camera.base_radius;
         // Carte et boussole : position du joueur, demandes au fil de la carte
-        ui_state.world_map.navigation = is_ground.then(|| world_map::Navigation {
-            up: camera.player_pos.as_dvec3().normalize(),
-            yaw: camera.player_yaw as f64,
-        });
+        ui_state.world_map.navigation =
+            is_ground.then(|| world_map::Navigation { up: camera.player_pos.as_dvec3().normalize(), yaw: camera.player_yaw as f64 });
         let map_ctx = ui_state.ctx.clone();
         ui_state.world_map.pump(&map_ctx, generator, ui_state.map_open);
         let cooldown_now = Instant::now();
@@ -852,7 +907,8 @@ impl App {
         // Commandes de test (`HEROCRAFT_COMMANDES=fichier`) : les lignes déposées dans
         // le fichier passent comme si elles avaient été tapées dans le chat
         if let Some(file) = command_file.as_ref()
-            && let Some(text) = std::fs::read_to_string(file).ok().filter(|t| !t.trim().is_empty()) {
+            && let Some(text) = std::fs::read_to_string(file).ok().filter(|t| !t.trim().is_empty())
+        {
             let _ = std::fs::write(file, "");
             for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
                 ui_state.chat.inject(line.to_string());
@@ -910,15 +966,25 @@ impl App {
         for skill in std::mem::take(&mut ui_state.skill_casts) {
             let (_, _, _, aim) = camera.look_vectors();
             // Un grappin vise plus loin que la main : jusqu'à sa portée
-            let aimed = match skill_play::grapple_of(herocraft_common::skills::skills(), &skill).filter(|g| g.to == herocraft_common::skills::GrappleTo::Block) {
+            let aimed = match skill_play::grapple_of(herocraft_common::skills::skills(), &skill)
+                .filter(|g| g.to == herocraft_common::skills::GrappleTo::Block)
+            {
                 Some(grapple) => {
                     let rank = herocraft_common::skills::skills().rank(&ui_state.player.stats, &skill);
-                    block_interaction.hit_within(camera, generator, &lod_manager.terrain_edits().clone(), grapple.range.at(rank) as f64).map(|d| camera.eye_position() + aim * d)
+                    block_interaction
+                        .hit_within(camera, generator, &lod_manager.terrain_edits().clone(), grapple.range.at(rank) as f64)
+                        .map(|d| camera.eye_position() + aim * d)
                 }
                 None => block_interaction.target().map(|hit| camera.eye_position() + aim * hit.distance as f32),
             };
             let result = match net.as_mut() {
-                Some(client) => skill_play.request(&skill, &mut ui_state.player.stats, aim, aimed, Some(&mut |s: &str, aim, aimed| client.send_cast_skill(s, aim, aimed))),
+                Some(client) => skill_play.request(
+                    &skill,
+                    &mut ui_state.player.stats,
+                    aim,
+                    aimed,
+                    Some(&mut |s: &str, aim, aimed| client.send_cast_skill(s, aim, aimed)),
+                ),
                 None => skill_play.request(&skill, &mut ui_state.player.stats, aim, aimed, None),
             };
             if let Err(reason) = result {
@@ -935,10 +1001,8 @@ impl App {
             ui_state.ctx.tessellate(full_output.shapes, ui_state.scale_factor)
         };
         probe.section("interface", ui_section);
-        let screen_descriptor = egui_wgpu::ScreenDescriptor {
-            size_in_pixels: [state.size.width, state.size.height],
-            pixels_per_point: ui_state.scale_factor,
-        };
+        let screen_descriptor =
+            egui_wgpu::ScreenDescriptor { size_in_pixels: [state.size.width, state.size.height], pixels_per_point: ui_state.scale_factor };
 
         match state.render(&paint_jobs, &screen_descriptor, &full_output.textures_delta) {
             Ok(_) => {}
@@ -1003,7 +1067,8 @@ impl App {
 /// En solo, les habitants tués et les attaques de village sont annoncés dans le chat (en ligne,
 /// c'est le serveur)
 pub(super) fn announce_solo_crimes(solo_creatures: &mut herocraft_world::CreatureWorld, ui_state: &mut UiState) {
-    let name = ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
+    let name =
+        ui_state.legend.as_ref().map(|l| l.appearance.nom.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| "Le joueur".to_string());
     for murder in solo_creatures.take_murders() {
         ui_state.chat.server(&murder.announce(&name));
     }

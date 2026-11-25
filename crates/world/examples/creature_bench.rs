@@ -52,6 +52,11 @@ fn main() {
     let over = |ms: f64| times.iter().filter(|&&t| t > ms).count();
     println!(
         "{frames} images, jusqu'à {max_creatures} bêtes : moyenne {mean:.3} ms, p50 {:.3}, p95 {:.3}, p99 {:.3}, max {:.2} ms ; {} images > 4 ms, {} > 16 ms",
-        pct(0.5), pct(0.95), pct(0.99), sorted[sorted.len() - 1], over(4.0), over(16.0)
+        pct(0.5),
+        pct(0.95),
+        pct(0.99),
+        sorted[sorted.len() - 1],
+        over(4.0),
+        over(16.0)
     );
 }

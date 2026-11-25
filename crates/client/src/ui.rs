@@ -4,16 +4,16 @@ use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{Key, KeyCode, NamedKey};
 
 use crate::audio::AudioSettings;
-use crate::input::{is_reserved_key, Action, Controls, ACTION_GROUPS};
-use crate::inventory::{Inventory, ItemStack, BAG_SLOTS, EQUIPMENT, FIRST_EQUIPMENT, HOTBAR_SLOTS};
+use crate::hero_creator::{CreatorEvent, HeroCreator};
+use crate::input::{ACTION_GROUPS, Action, Controls, is_reserved_key};
+use crate::inventory::{BAG_SLOTS, EQUIPMENT, FIRST_EQUIPMENT, HOTBAR_SLOTS, Inventory, ItemStack};
 use crate::item_icons::ItemIcons;
-use herocraft_common::{blocks, crafting, items, Hunger, ItemId, Recipe, StationAt};
 use crate::player_stats::PlayerStats;
 use crate::skills_screen::{SkillScreen, SkillScreenRequests};
-use herocraft_common::SkillWheel;
-use crate::hero_creator::{CreatorEvent, HeroCreator};
-use herocraft_common::hero::Legend;
 use crate::ui_skin::{ButtonKind, SkinButton};
+use herocraft_common::SkillWheel;
+use herocraft_common::hero::Legend;
+use herocraft_common::{Hunger, ItemId, Recipe, StationAt, blocks, crafting, items};
 
 /// Actions déclenchées par l'interface utilisateur
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,7 +57,9 @@ pub(crate) enum NetStatus {
     /// Connexion en cours à cette adresse
     Connecting(String),
     /// Partie solo ouverte au réseau local sur ce port
-    Hosting { port: u16 },
+    Hosting {
+        port: u16,
+    },
     /// Connecté à cette adresse
     Online(String),
 }
@@ -750,8 +752,10 @@ impl UiState {
                 if let Some(key) = egui_key(&event.logical_key) {
                     self.raw_input.events.push(egui::Event::Key { key, physical_key: None, pressed, repeat: event.repeat, modifiers });
                 }
-                if pressed && !modifiers.ctrl
-                    && let Some(text) = event.text.as_ref().filter(|t| t.chars().all(|c| !c.is_control())) {
+                if pressed
+                    && !modifiers.ctrl
+                    && let Some(text) = event.text.as_ref().filter(|t| t.chars().all(|c| !c.is_control()))
+                {
                     self.raw_input.events.push(egui::Event::Text(text.to_string()));
                 }
             }
@@ -783,10 +787,7 @@ impl UiState {
         let logical_width = self.screen_width / ppp;
         let logical_height = self.screen_height / ppp;
 
-        raw_input.screen_rect = Some(egui::Rect::from_min_size(
-            egui::Pos2::ZERO,
-            egui::vec2(logical_width, logical_height),
-        ));
+        raw_input.screen_rect = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(logical_width, logical_height)));
         self.ctx.set_pixels_per_point(ppp);
 
         let mut action: Option<UiAction> = None;
@@ -880,8 +881,11 @@ impl UiState {
             // 4. Menu de pause (Échap) : voile en fondu puis panneau centré
             let fade = ctx.animate_bool_with_time(egui::Id::unique("pause_backdrop"), self.is_settings_open, 0.15_f32);
             if fade > 0.0_f32 {
-                ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("backdrop")))
-                    .rect_filled(ctx.content_rect(), 0.0_f32, egui::Color32::from_black_alpha((170.0_f32 * fade) as u8));
+                ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("backdrop"))).rect_filled(
+                    ctx.content_rect(),
+                    0.0_f32,
+                    egui::Color32::from_black_alpha((170.0_f32 * fade) as u8),
+                );
             }
             if self.is_settings_open {
                 self.draw_pause_menu(ctx, &mut action);
@@ -934,7 +938,8 @@ impl UiState {
                         ui.spacing_mut().item_spacing = egui::vec2(3.0_f32, 0.0_f32);
                         ui.horizontal(|ui| {
                             for i in 0..HOTBAR_SLOTS {
-                                let (rect, _) = ui.allocate_exact_size(egui::vec2(HOTBAR_SLOT_SIZE, HOTBAR_SLOT_SIZE), egui::Sense::hover());
+                                let (rect, _) =
+                                    ui.allocate_exact_size(egui::vec2(HOTBAR_SLOT_SIZE, HOTBAR_SLOT_SIZE), egui::Sense::hover());
                                 paint_slot(ui.painter(), &self.icons, rect, self.inventory.slot(i), i == self.inventory.selected(), false);
                                 ui.painter().text(
                                     rect.left_top() + egui::vec2(4.0_f32, 2.0_f32),
@@ -972,13 +977,17 @@ impl UiState {
             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("weapon_hud")));
             let bottom = screen.bottom() - SCREEN_MARGIN - HOTBAR_SLOT_SIZE - 52.0_f32;
             let galley = painter.layout_no_wrap(parts.join("   "), egui::FontId::proportional(12.0_f32), TEXT_SOFT);
-            let rect = egui::Rect::from_center_size(egui::pos2(screen.center().x, bottom - galley.size().y / 2.0_f32), galley.size() + egui::vec2(16.0_f32, 6.0_f32));
+            let rect = egui::Rect::from_center_size(
+                egui::pos2(screen.center().x, bottom - galley.size().y / 2.0_f32),
+                galley.size() + egui::vec2(16.0_f32, 6.0_f32),
+            );
             painter.rect_filled(rect, 4.0_f32, egui::Color32::from_black_alpha(150));
             painter.galley(rect.min + egui::vec2(8.0_f32, 3.0_f32), galley, TEXT_SOFT);
             // Le rechargement : une fine jauge sous le texte
             if let Some((_, _, left, total)) = hud.magazine.filter(|m| m.2 > 0.0 && m.3 > 0.0) {
                 let done = (1.0 - left / total).clamp(0.0, 1.0);
-                let bar = egui::Rect::from_min_size(egui::pos2(rect.left(), rect.bottom() + 2.0_f32), egui::vec2(rect.width() * done, 3.0_f32));
+                let bar =
+                    egui::Rect::from_min_size(egui::pos2(rect.left(), rect.bottom() + 2.0_f32), egui::vec2(rect.width() * done, 3.0_f32));
                 painter.rect_filled(bar, 1.0_f32, GOLD_BRIGHT);
             }
         }
@@ -989,7 +998,13 @@ impl UiState {
             painter.rect_filled(back, 2.0_f32, egui::Color32::from_black_alpha(160));
             let fill = egui::Rect::from_min_size(back.min, egui::vec2(back.width() * progress.clamp(0.0, 1.0), back.height()));
             painter.rect_filled(fill, 2.0_f32, if *ready { GOLD_BRIGHT } else { egui::Color32::from_gray(150) });
-            painter.text(back.center_bottom() + egui::vec2(0.0_f32, 3.0_f32), egui::Align2::CENTER_TOP, label, egui::FontId::proportional(11.0_f32), TEXT_SOFT);
+            painter.text(
+                back.center_bottom() + egui::vec2(0.0_f32, 3.0_f32),
+                egui::Align2::CENTER_TOP,
+                label,
+                egui::FontId::proportional(11.0_f32),
+                TEXT_SOFT,
+            );
         }
     }
 
@@ -1012,8 +1027,10 @@ impl UiState {
                 ui.vertical(|ui| {
                     let notice = self.skill_notice.as_ref().filter(|(_, at)| at.elapsed().as_secs_f32() < 2.5_f32);
                     let text = notice.map_or(String::new(), |(text, _)| text.clone());
-                    let galley = ui.painter().layout_no_wrap(text, egui::FontId::proportional(12.0_f32), egui::Color32::from_rgb(255, 170, 150));
-                    let (rect, _) = ui.allocate_exact_size(egui::vec2(galley.size().x + 16.0_f32, galley.size().y + 4.0_f32), egui::Sense::hover());
+                    let galley =
+                        ui.painter().layout_no_wrap(text, egui::FontId::proportional(12.0_f32), egui::Color32::from_rgb(255, 170, 150));
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(galley.size().x + 16.0_f32, galley.size().y + 4.0_f32), egui::Sense::hover());
                     if notice.is_some() {
                         ui.painter().rect_filled(rect, 4.0_f32, egui::Color32::from_black_alpha(150));
                         ui.painter().galley(rect.min + egui::vec2(8.0_f32, 2.0_f32), galley, TEXT_SOFT);
@@ -1022,14 +1039,17 @@ impl UiState {
                         ui.spacing_mut().item_spacing = egui::vec2(3.0_f32, 0.0_f32);
                         ui.horizontal(|ui| {
                             for (slot, action) in SLOT_ACTIONS.into_iter().enumerate() {
-                                let (rect, _) = ui.allocate_exact_size(egui::vec2(HOTBAR_SLOT_SIZE, HOTBAR_SLOT_SIZE), egui::Sense::hover());
+                                let (rect, _) =
+                                    ui.allocate_exact_size(egui::vec2(HOTBAR_SLOT_SIZE, HOTBAR_SLOT_SIZE), egui::Sense::hover());
                                 paint_slot(ui.painter(), &self.icons, rect, None, false, false);
                                 if let Some(id) = self.skill_bar.get(slot) {
                                     let (left, total) = self.skill_cooldowns[slot];
                                     let mut blocked = catalog.cast_check(&self.player.stats, id, 0.0).is_some();
                                     // La Fusion montre le mélange qu'elle lancerait, grisé s'il n'est pas appris
                                     let mut face = id;
-                                    if let Some((shown, locked)) = self.fusion_face.as_ref().filter(|_| catalog.get(id).is_some_and(|d| d.fusion.is_some())) {
+                                    if let Some((shown, locked)) =
+                                        self.fusion_face.as_ref().filter(|_| catalog.get(id).is_some_and(|d| d.fusion.is_some()))
+                                    {
                                         face = shown.as_str();
                                         blocked = *locked;
                                     }
@@ -1038,10 +1058,19 @@ impl UiState {
                                     if left > 0.0 && total > 0.0 {
                                         // Le voile descend à mesure que la recharge passe
                                         let part = (left / total).clamp(0.0, 1.0);
-                                        let veil = egui::Rect::from_min_max(egui::pos2(icon.left(), icon.bottom() - icon.height() * part), icon.max);
+                                        let veil = egui::Rect::from_min_max(
+                                            egui::pos2(icon.left(), icon.bottom() - icon.height() * part),
+                                            icon.max,
+                                        );
                                         ui.painter().rect_filled(veil, 0.0_f32, egui::Color32::from_black_alpha(160));
                                         let seconds = if left >= 1.0 { format!("{}", left.ceil() as u32) } else { format!("{left:.1}") };
-                                        ui.painter().text(icon.center(), egui::Align2::CENTER_CENTER, seconds, egui::FontId::proportional(14.0_f32), egui::Color32::WHITE);
+                                        ui.painter().text(
+                                            icon.center(),
+                                            egui::Align2::CENTER_CENTER,
+                                            seconds,
+                                            egui::FontId::proportional(14.0_f32),
+                                            egui::Color32::WHITE,
+                                        );
                                     }
                                 }
                                 ui.painter().text(
@@ -1076,12 +1105,21 @@ impl UiState {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(&card.name).font(crate::ui_skin::title_font(20.0_f32)).color(GOLD_BRIGHT));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add(SkinButton::new("Fermer").kind(ButtonKind::Secondary).small()).on_hover_text("Fermer (Échap)").clicked() {
+                            if ui
+                                .add(SkinButton::new("Fermer").kind(ButtonKind::Secondary).small())
+                                .on_hover_text("Fermer (Échap)")
+                                .clicked()
+                            {
                                 close = true;
                             }
                         });
                     });
-                    let who = [card.profession.as_str(), card.culture.as_str(), card.origin.as_str()].iter().filter(|s| !s.is_empty()).copied().collect::<Vec<_>>().join(" · ");
+                    let who = [card.profession.as_str(), card.culture.as_str(), card.origin.as_str()]
+                        .iter()
+                        .filter(|s| !s.is_empty())
+                        .copied()
+                        .collect::<Vec<_>>()
+                        .join(" · ");
                     ui.label(egui::RichText::new(who).size(12.0_f32).color(TEXT_DIM));
                     ui.add_space(6.0_f32);
                     ui.label(egui::RichText::new(format!("« {} »", card.greeting)).italics().color(egui::Color32::from_rgb(232, 220, 196)));
@@ -1165,137 +1203,149 @@ impl UiState {
             .order(egui::Order::Middle)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
-                crate::ui_skin::SkinFrame::panel()
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            let title = match self.station {
-                                Some(at) => crafting().place_name(Some(at)).to_string(),
-                                None => "Inventaire".to_string(),
-                            };
-                            ui.label(egui::RichText::new(title).font(crate::ui_skin::title_font(20.0_f32)).color(GOLD_BRIGHT));
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.label(egui::RichText::new(format!("[{}] ou [Échap] pour fermer", open_key)).size(11.0_f32).color(TEXT_DIM));
-                            });
-                        });
-                        ui.add_space(4.0_f32);
-                        // Pile tenue à la souris : les cases d'équipement où elle se porte s'éclairent
-                        let held_kind = self.inventory.held().and_then(|s| s.item.equip_slot());
-                        let inventory = &self.inventory;
-                        let icons = &self.icons;
-                        // Une case cliquable de l'inventaire, quelle qu'elle soit
-                        let cell = |ui: &mut egui::Ui, i: usize| {
-                            let size = egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE);
-                            let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-                            let selected = i == inventory.selected();
-                            let stack = inventory.slot(i);
-                            let kind = crate::inventory::equipment_kind(i);
-                            paint_slot(ui.painter(), icons, rect, stack, selected, response.hovered());
-                            if let Some(kind) = kind {
-                                paint_equipment_placeholder(ui.painter(), rect, kind, stack.is_none(), held_kind == Some(kind));
-                            }
-                            if response.hovered() {
-                                hovered_cell.set(stack.map(|s| (s.item, Some(s.count))));
-                                if stack.is_none() {
-                                    hovered_empty.set(kind);
-                                }
-                            }
-                            if response.clicked() && shift {
-                                quick.set(Some(i));
-                            } else if response.clicked() {
-                                clicked.set(Some((i, false)));
-                            } else if response.secondary_clicked() {
-                                clicked.set(Some((i, true)));
-                            }
+                crate::ui_skin::SkinFrame::panel().show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let title = match self.station {
+                            Some(at) => crafting().place_name(Some(at)).to_string(),
+                            None => "Inventaire".to_string(),
                         };
-                        ui.horizontal_top(|ui| {
-                            ui.vertical(|ui| {
-                                caption(ui, "ÉQUIPEMENT");
-                                let column_height = 4.0_f32 * INVENTORY_SLOT_SIZE + 3.0_f32 * 4.0_f32;
-                                ui.horizontal_top(|ui| {
-                                    ui.spacing_mut().item_spacing = egui::vec2(6.0_f32, 4.0_f32);
-                                    ui.vertical(|ui| {
-                                        ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
-                                        for i in 0..4 {
-                                            cell(ui, FIRST_EQUIPMENT + i);
-                                        }
-                                    });
-                                    let (well, _) = ui.allocate_exact_size(egui::vec2(PORTRAIT_WIDTH, column_height), egui::Sense::hover());
-                                    ui.painter().rect_filled(well, 4.0_f32, egui::Color32::from_black_alpha(90));
-                                    ui.painter().rect_stroke(well, 4.0_f32, egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(18)), egui::StrokeKind::Middle);
-                                    match &self.legend {
-                                        Some(legend) => self.hero_portrait.paint(ui.painter(), well.shrink(4.0_f32), &legend.appearance),
-                                        None => {
-                                            ui.painter().text(
-                                                well.center(),
-                                                egui::Align2::CENTER_CENTER,
-                                                "Héros\nsans légende",
-                                                egui::FontId::proportional(11.0_f32),
-                                                TEXT_DIM,
-                                            );
-                                        }
-                                    }
-                                    ui.vertical(|ui| {
-                                        ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
-                                        for i in 4..EQUIPMENT.len() {
-                                            cell(ui, FIRST_EQUIPMENT + i);
-                                        }
-                                    });
-                                });
-                                ui.add_space(4.0_f32);
-                                if let Some(legend) = &self.legend {
-                                    ui.label(egui::RichText::new(&legend.appearance.nom).font(crate::ui_skin::title_font(15.0_f32)).color(GOLD_BRIGHT));
-                                }
-                                ui.horizontal(|ui| {
-                                    ui.label(egui::RichText::new("Protection").size(12.5_f32).color(TEXT_SOFT));
-                                    ui.label(egui::RichText::new(inventory.protection().to_string()).size(12.5_f32).strong().color(GOLD_BRIGHT));
-                                    // La part des coups physiques que l'armure retire
-                                    let kept = herocraft_common::armor_factor(inventory.protection() as f32);
-                                    ui.label(egui::RichText::new(format!("−{:.0} % physique", (1.0 - kept) * 100.0)).size(11.0_f32).color(TEXT_DIM));
-                                });
-                                ui.label(egui::RichText::new("Maj + clic : porter / ôter").size(11.0_f32).color(TEXT_DIM));
-                            });
-                            ui.add_space(10.0_f32);
-                            ui.vertical(|ui| {
-                                let slot_row = |ui: &mut egui::Ui, range: std::ops::Range<usize>| {
-                                    ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
-                                    ui.horizontal(|ui| {
-                                        for i in range {
-                                            cell(ui, i);
-                                        }
-                                    });
-                                };
-                                caption(ui, "SAC");
-                                for row in 0..BAG_SLOTS / HOTBAR_SLOTS {
-                                    let start = HOTBAR_SLOTS + row * HOTBAR_SLOTS;
-                                    slot_row(ui, start..start + HOTBAR_SLOTS);
-                                }
-                                ui.add_space(6.0_f32);
-                                caption(ui, "BARRE D'OBJETS");
-                                slot_row(ui, 0..HOTBAR_SLOTS);
-                                ui.add_space(2.0_f32);
-                                ui.label(
-                                    egui::RichText::new("Clic gauche : prendre / poser une pile · Clic droit : moitié / un seul")
-                                        .size(11.0_f32)
-                                        .color(TEXT_DIM),
-                                );
-                            });
-                            ui.add_space(10.0_f32);
-                            ui.vertical(|ui| {
-                                let place = match self.station {
-                                    Some(at) => format!("FABRICATION · {} ET À LA MAIN", crafting().place_name(Some(at)).to_uppercase()),
-                                    None => "FABRICATION À LA MAIN".to_string(),
-                                };
-                                caption(ui, &place);
-                                self.crafting.draw(ui, &self.icons, &self.inventory, self.station, &mut crafted, &mut hovered);
-                                ui.add_space(2.0_f32);
-                                ui.label(
-                                    egui::RichText::new("Clic gauche : une fois · Clic droit : autant que possible")
-                                        .size(11.0_f32)
-                                        .color(TEXT_DIM),
-                                );
-                            });
+                        ui.label(egui::RichText::new(title).font(crate::ui_skin::title_font(20.0_f32)).color(GOLD_BRIGHT));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(egui::RichText::new(format!("[{}] ou [Échap] pour fermer", open_key)).size(11.0_f32).color(TEXT_DIM));
                         });
                     });
+                    ui.add_space(4.0_f32);
+                    // Pile tenue à la souris : les cases d'équipement où elle se porte s'éclairent
+                    let held_kind = self.inventory.held().and_then(|s| s.item.equip_slot());
+                    let inventory = &self.inventory;
+                    let icons = &self.icons;
+                    // Une case cliquable de l'inventaire, quelle qu'elle soit
+                    let cell = |ui: &mut egui::Ui, i: usize| {
+                        let size = egui::vec2(INVENTORY_SLOT_SIZE, INVENTORY_SLOT_SIZE);
+                        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+                        let selected = i == inventory.selected();
+                        let stack = inventory.slot(i);
+                        let kind = crate::inventory::equipment_kind(i);
+                        paint_slot(ui.painter(), icons, rect, stack, selected, response.hovered());
+                        if let Some(kind) = kind {
+                            paint_equipment_placeholder(ui.painter(), rect, kind, stack.is_none(), held_kind == Some(kind));
+                        }
+                        if response.hovered() {
+                            hovered_cell.set(stack.map(|s| (s.item, Some(s.count))));
+                            if stack.is_none() {
+                                hovered_empty.set(kind);
+                            }
+                        }
+                        if response.clicked() && shift {
+                            quick.set(Some(i));
+                        } else if response.clicked() {
+                            clicked.set(Some((i, false)));
+                        } else if response.secondary_clicked() {
+                            clicked.set(Some((i, true)));
+                        }
+                    };
+                    ui.horizontal_top(|ui| {
+                        ui.vertical(|ui| {
+                            caption(ui, "ÉQUIPEMENT");
+                            let column_height = 4.0_f32 * INVENTORY_SLOT_SIZE + 3.0_f32 * 4.0_f32;
+                            ui.horizontal_top(|ui| {
+                                ui.spacing_mut().item_spacing = egui::vec2(6.0_f32, 4.0_f32);
+                                ui.vertical(|ui| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+                                    for i in 0..4 {
+                                        cell(ui, FIRST_EQUIPMENT + i);
+                                    }
+                                });
+                                let (well, _) = ui.allocate_exact_size(egui::vec2(PORTRAIT_WIDTH, column_height), egui::Sense::hover());
+                                ui.painter().rect_filled(well, 4.0_f32, egui::Color32::from_black_alpha(90));
+                                ui.painter().rect_stroke(
+                                    well,
+                                    4.0_f32,
+                                    egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(18)),
+                                    egui::StrokeKind::Middle,
+                                );
+                                match &self.legend {
+                                    Some(legend) => self.hero_portrait.paint(ui.painter(), well.shrink(4.0_f32), &legend.appearance),
+                                    None => {
+                                        ui.painter().text(
+                                            well.center(),
+                                            egui::Align2::CENTER_CENTER,
+                                            "Héros\nsans légende",
+                                            egui::FontId::proportional(11.0_f32),
+                                            TEXT_DIM,
+                                        );
+                                    }
+                                }
+                                ui.vertical(|ui| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+                                    for i in 4..EQUIPMENT.len() {
+                                        cell(ui, FIRST_EQUIPMENT + i);
+                                    }
+                                });
+                            });
+                            ui.add_space(4.0_f32);
+                            if let Some(legend) = &self.legend {
+                                ui.label(
+                                    egui::RichText::new(&legend.appearance.nom)
+                                        .font(crate::ui_skin::title_font(15.0_f32))
+                                        .color(GOLD_BRIGHT),
+                                );
+                            }
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("Protection").size(12.5_f32).color(TEXT_SOFT));
+                                ui.label(
+                                    egui::RichText::new(inventory.protection().to_string()).size(12.5_f32).strong().color(GOLD_BRIGHT),
+                                );
+                                // La part des coups physiques que l'armure retire
+                                let kept = herocraft_common::armor_factor(inventory.protection() as f32);
+                                ui.label(
+                                    egui::RichText::new(format!("−{:.0} % physique", (1.0 - kept) * 100.0)).size(11.0_f32).color(TEXT_DIM),
+                                );
+                            });
+                            ui.label(egui::RichText::new("Maj + clic : porter / ôter").size(11.0_f32).color(TEXT_DIM));
+                        });
+                        ui.add_space(10.0_f32);
+                        ui.vertical(|ui| {
+                            let slot_row = |ui: &mut egui::Ui, range: std::ops::Range<usize>| {
+                                ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
+                                ui.horizontal(|ui| {
+                                    for i in range {
+                                        cell(ui, i);
+                                    }
+                                });
+                            };
+                            caption(ui, "SAC");
+                            for row in 0..BAG_SLOTS / HOTBAR_SLOTS {
+                                let start = HOTBAR_SLOTS + row * HOTBAR_SLOTS;
+                                slot_row(ui, start..start + HOTBAR_SLOTS);
+                            }
+                            ui.add_space(6.0_f32);
+                            caption(ui, "BARRE D'OBJETS");
+                            slot_row(ui, 0..HOTBAR_SLOTS);
+                            ui.add_space(2.0_f32);
+                            ui.label(
+                                egui::RichText::new("Clic gauche : prendre / poser une pile · Clic droit : moitié / un seul")
+                                    .size(11.0_f32)
+                                    .color(TEXT_DIM),
+                            );
+                        });
+                        ui.add_space(10.0_f32);
+                        ui.vertical(|ui| {
+                            let place = match self.station {
+                                Some(at) => format!("FABRICATION · {} ET À LA MAIN", crafting().place_name(Some(at)).to_uppercase()),
+                                None => "FABRICATION À LA MAIN".to_string(),
+                            };
+                            caption(ui, &place);
+                            self.crafting.draw(ui, &self.icons, &self.inventory, self.station, &mut crafted, &mut hovered);
+                            ui.add_space(2.0_f32);
+                            ui.label(
+                                egui::RichText::new("Clic gauche : une fois · Clic droit : autant que possible")
+                                    .size(11.0_f32)
+                                    .color(TEXT_DIM),
+                            );
+                        });
+                    });
+                });
             });
 
         if let Some(cell) = hovered_cell.get() {
@@ -1340,8 +1390,11 @@ impl UiState {
     fn draw_death_screen(&mut self, ctx: &egui::Context, action: &mut Option<UiAction>) {
         let Some(death) = self.player.death.clone() else { return };
         let fade = (death.at.elapsed().as_secs_f32() / 0.8_f32).min(1.0_f32);
-        ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("death_backdrop")))
-            .rect_filled(ctx.content_rect(), 0.0_f32, egui::Color32::from_rgba_unmultiplied(60, 0, 0, (170.0_f32 * fade) as u8));
+        ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::unique("death_backdrop"))).rect_filled(
+            ctx.content_rect(),
+            0.0_f32,
+            egui::Color32::from_rgba_unmultiplied(60, 0, 0, (170.0_f32 * fade) as u8),
+        );
         let wait = self.player.respawn_in().unwrap_or(0.0_f32);
         egui::Area::new(egui::Id::unique("death_screen"))
             .order(egui::Order::Foreground)
@@ -1452,8 +1505,16 @@ impl UiState {
                 if !self.player.is_dead() {
                     let states = [
                         (stats.is_stunned(), format!("Étourdi  {:.0} s", stats.stun_time.ceil()), egui::Color32::from_rgb(240, 200, 80)),
-                        (stats.slow > 0.0_f32 && stats.slow_time > 0.0_f32, format!("Ralenti {:.0} %  {:.0} s", stats.slow * 100.0_f32, stats.slow_time.ceil()), egui::Color32::from_rgb(130, 180, 240)),
-                        (stats.is_invisible(), format!("Invisible  {:.0} s", stats.invisible_time.ceil()), egui::Color32::from_rgb(190, 160, 240)),
+                        (
+                            stats.slow > 0.0_f32 && stats.slow_time > 0.0_f32,
+                            format!("Ralenti {:.0} %  {:.0} s", stats.slow * 100.0_f32, stats.slow_time.ceil()),
+                            egui::Color32::from_rgb(130, 180, 240),
+                        ),
+                        (
+                            stats.is_invisible(),
+                            format!("Invisible  {:.0} s", stats.invisible_time.ceil()),
+                            egui::Color32::from_rgb(190, 160, 240),
+                        ),
                     ];
                     for (active, text, color) in states {
                         if active {
@@ -1483,7 +1544,9 @@ impl UiState {
                     ui.label(egui::RichText::new(format!("{} FPS", self.current_fps)).strong().color(fps_color));
                     // Le compteur est une moyenne : un gel d'une seconde y passe presque inaperçu
                     if let Some((ms, _)) = self.hitch.filter(|(_, at)| at.elapsed().as_secs_f32() < HITCH_DISPLAY_SECS) {
-                        ui.label(egui::RichText::new(format!("à-coup {ms:.0} ms")).size(11.0_f32).color(egui::Color32::from_rgb(240, 80, 80)));
+                        ui.label(
+                            egui::RichText::new(format!("à-coup {ms:.0} ms")).size(11.0_f32).color(egui::Color32::from_rgb(240, 80, 80)),
+                        );
                     }
                 });
             });
@@ -1522,29 +1585,28 @@ impl UiState {
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
-                crate::ui_skin::SkinFrame::panel_scaled(panel_scale)
-                    .show(ui, |ui| {
-                        ui.set_width(inner_width);
-                        ui.set_max_width(inner_width);
+                crate::ui_skin::SkinFrame::panel_scaled(panel_scale).show(ui, |ui| {
+                    ui.set_width(inner_width);
+                    ui.set_max_width(inner_width);
 
-                        let top = ui.cursor().top();
-                        self.draw_menu_header(ui, inner_width);
-                        let header_height = ui.cursor().top() - top;
-                        let spacing = ui.spacing().item_spacing.y;
-                        let body_height = (inner_max_height - header_height - footer_height - spacing).max(60.0_f32);
+                    let top = ui.cursor().top();
+                    self.draw_menu_header(ui, inner_width);
+                    let header_height = ui.cursor().top() - top;
+                    let spacing = ui.spacing().item_spacing.y;
+                    let body_height = (inner_max_height - header_height - footer_height - spacing).max(60.0_f32);
 
-                        match page {
-                            MenuPage::Main => self.draw_main_page(ui, body_height, action),
-                            MenuPage::Options => self.draw_options_page(ui, inner_width, body_height, action),
-                            MenuPage::Controls => self.draw_controls_page(ui, body_height),
-                            MenuPage::Multiplayer => self.draw_multiplayer_page(ui, body_height, action),
-                        }
+                    match page {
+                        MenuPage::Main => self.draw_main_page(ui, body_height, action),
+                        MenuPage::Options => self.draw_options_page(ui, inner_width, body_height, action),
+                        MenuPage::Controls => self.draw_controls_page(ui, body_height),
+                        MenuPage::Multiplayer => self.draw_multiplayer_page(ui, body_height, action),
+                    }
 
-                        let footer_top = ui.cursor().top();
-                        self.draw_menu_footer(ui, page, action);
-                        let measured = ui.min_rect().bottom() - footer_top;
-                        ui.ctx().data_mut(|d| d.insert_temp(footer_id, measured));
-                    });
+                    let footer_top = ui.cursor().top();
+                    self.draw_menu_footer(ui, page, action);
+                    let measured = ui.min_rect().bottom() - footer_top;
+                    ui.ctx().data_mut(|d| d.insert_temp(footer_id, measured));
+                });
             });
     }
 
@@ -1567,7 +1629,11 @@ impl UiState {
                     _ => "⌨  Commandes",
                 };
                 ui.horizontal(|ui| {
-                    if ui.add(SkinButton::new("⬅ Retour").kind(ButtonKind::Secondary).small()).on_hover_text("Revenir au menu (Échap)").clicked() {
+                    if ui
+                        .add(SkinButton::new("⬅ Retour").kind(ButtonKind::Secondary).small())
+                        .on_hover_text("Revenir au menu (Échap)")
+                        .clicked()
+                    {
                         self.menu_page = MenuPage::Main;
                     }
                     ui.add_space(4.0_f32);
@@ -1581,150 +1647,157 @@ impl UiState {
 
     /// Accueil du menu : grandes entrées de navigation
     fn draw_main_page(&mut self, ui: &mut egui::Ui, body_height: f32, action: &mut Option<UiAction>) {
-        egui::ScrollArea::vertical()
-            .id_salt("pause_main_scroll")
-            .max_height(body_height)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                let size = egui::vec2(ui.available_width(), 48.0_f32);
-                ui.spacing_mut().item_spacing.y = 4.0_f32;
+        egui::ScrollArea::vertical().id_salt("pause_main_scroll").max_height(body_height).auto_shrink([false, true]).show(ui, |ui| {
+            let size = egui::vec2(ui.available_width(), 48.0_f32);
+            ui.spacing_mut().item_spacing.y = 4.0_f32;
 
-                if menu_entry(ui, size, "▶   Reprendre la partie", None).clicked() {
-                    self.set_settings_open(false);
-                    *action = Some(UiAction::ResumeGame);
-                }
-                if menu_entry(ui, size, "🌍   Multijoueur", Some("Ouvrir sa partie au réseau local, rejoindre une partie")).clicked() {
-                    self.menu_page = MenuPage::Multiplayer;
-                }
-                if menu_entry(ui, size, "⚙   Options", Some("Affichage, éclairage, nuages, rendu…")).clicked() {
-                    self.menu_page = MenuPage::Options;
-                }
-                if menu_entry(ui, size, "⌨   Commandes", Some("Touches modifiables et sensibilité de la souris")).clicked() {
-                    self.menu_page = MenuPage::Controls;
-                }
+            if menu_entry(ui, size, "▶   Reprendre la partie", None).clicked() {
+                self.set_settings_open(false);
+                *action = Some(UiAction::ResumeGame);
+            }
+            if menu_entry(ui, size, "🌍   Multijoueur", Some("Ouvrir sa partie au réseau local, rejoindre une partie")).clicked() {
+                self.menu_page = MenuPage::Multiplayer;
+            }
+            if menu_entry(ui, size, "⚙   Options", Some("Affichage, éclairage, nuages, rendu…")).clicked() {
+                self.menu_page = MenuPage::Options;
+            }
+            if menu_entry(ui, size, "⌨   Commandes", Some("Touches modifiables et sensibilité de la souris")).clicked() {
+                self.menu_page = MenuPage::Controls;
+            }
 
-                ui.add_space(2.0_f32);
-                ui.separator();
-                ui.add_space(2.0_f32);
+            ui.add_space(2.0_f32);
+            ui.separator();
+            ui.add_space(2.0_f32);
 
-                // Quitter enregistre le monde et ferme le jeu, sans confirmation
-                if ui
-                    .add(SkinButton::new(egui::RichText::new("🚪   Quitter le jeu").size(16.0_f32)).kind(ButtonKind::MenuDanger).min_size(size))
-                    .clicked()
-                {
-                    *action = Some(UiAction::QuitGame);
-                }
-            });
+            // Quitter enregistre le monde et ferme le jeu, sans confirmation
+            if ui
+                .add(SkinButton::new(egui::RichText::new("🚪   Quitter le jeu").size(16.0_f32)).kind(ButtonKind::MenuDanger).min_size(size))
+                .clicked()
+            {
+                *action = Some(UiAction::QuitGame);
+            }
+        });
     }
 
     /// Page Multijoueur : état de la partie, nom du joueur, ouverture au réseau local, parties
     /// trouvées sur le réseau local et connexion par adresse
     fn draw_multiplayer_page(&mut self, ui: &mut egui::Ui, body_height: f32, action: &mut Option<UiAction>) {
-        egui::ScrollArea::vertical()
-            .id_salt("multiplayer_scroll")
-            .max_height(body_height)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                let mp = &mut self.multiplayer;
-                let size = egui::vec2(ui.available_width(), 48.0_f32);
+        egui::ScrollArea::vertical().id_salt("multiplayer_scroll").max_height(body_height).auto_shrink([false, true]).show(ui, |ui| {
+            let mp = &mut self.multiplayer;
+            let size = egui::vec2(ui.available_width(), 48.0_f32);
 
-                // État de la partie
-                let (status, color) = match &mp.status {
-                    NetStatus::Solo => ("Partie solo".to_string(), TEXT_SOFT),
-                    NetStatus::Connecting(addr) => (format!("Connexion à {addr}…"), GOLD_BRIGHT),
-                    NetStatus::Hosting { port } => (format!("Partie ouverte au réseau local (port {port})"), GOLD_BRIGHT),
-                    NetStatus::Online(addr) => (format!("En ligne sur {addr}"), GOLD_BRIGHT),
-                };
-                ui.horizontal(|ui| {
-                    if matches!(mp.status, NetStatus::Connecting(_)) {
-                        ui.spinner();
-                    }
-                    ui.label(egui::RichText::new(status).size(15.0_f32).strong().color(color));
-                });
-                if let NetStatus::Hosting { .. } = mp.status {
-                    ui.label(
-                        egui::RichText::new("Les joueurs du réseau local la voient dans leur page Multijoueur.").size(11.5_f32).color(TEXT_DIM),
-                    );
+            // État de la partie
+            let (status, color) = match &mp.status {
+                NetStatus::Solo => ("Partie solo".to_string(), TEXT_SOFT),
+                NetStatus::Connecting(addr) => (format!("Connexion à {addr}…"), GOLD_BRIGHT),
+                NetStatus::Hosting { port } => (format!("Partie ouverte au réseau local (port {port})"), GOLD_BRIGHT),
+                NetStatus::Online(addr) => (format!("En ligne sur {addr}"), GOLD_BRIGHT),
+            };
+            ui.horizontal(|ui| {
+                if matches!(mp.status, NetStatus::Connecting(_)) {
+                    ui.spinner();
                 }
-                if let Some(notice) = &mp.notice {
-                    ui.label(egui::RichText::new(notice).size(12.0_f32).color(DANGER));
-                }
-                ui.add_space(4.0_f32);
-
-                match mp.status {
-                    NetStatus::Solo => {
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Votre nom").color(TEXT_SOFT));
-                            ui.add(egui::TextEdit::singleline(&mut mp.pseudo).char_limit(24).desired_width(180.0_f32));
-                        });
-                        ui.add_space(4.0_f32);
-                        let can_play = !mp.pseudo.trim().is_empty();
-                        let open = ui
-                            .add_enabled(can_play, SkinButton::new(egui::RichText::new("🌍   Ouvrir au réseau local").size(16.0_f32)).kind(ButtonKind::Menu).min_size(size))
-                            .on_hover_text("Lance un serveur sur ce monde : les joueurs du réseau local peuvent vous rejoindre");
-                        if open.clicked() {
-                            *action = Some(UiAction::OpenToLan);
-                        }
-
-                        ui.add_space(6.0_f32);
-                        caption(ui, "PARTIES SUR LE RÉSEAU LOCAL");
-                        if !mp.lan_search_ok {
-                            ui.label(egui::RichText::new("Recherche impossible : le port 7778 est déjà utilisé sur cette machine.").size(12.0_f32).color(TEXT_DIM));
-                        } else if mp.lan_servers.is_empty() {
-                            ui.horizontal(|ui| {
-                                ui.spinner();
-                                ui.label(egui::RichText::new("Recherche de parties…").size(12.0_f32).color(TEXT_DIM));
-                            });
-                        }
-                        for server in &mp.lan_servers {
-                            ui.horizontal(|ui| {
-                                ui.vertical(|ui| {
-                                    ui.label(egui::RichText::new(&server.name).strong().color(TEXT_SOFT));
-                                    let players = if server.players == 1 { "1 joueur".to_string() } else { format!("{} joueurs", server.players) };
-                                    ui.label(egui::RichText::new(format!("{}  ·  {players}", server.addr)).monospace().size(11.0_f32).color(TEXT_DIM));
-                                });
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.add_enabled(can_play, SkinButton::new("▶ Rejoindre").small()).clicked() {
-                                        mp.join_target = server.addr.clone();
-                                        *action = Some(UiAction::JoinServer);
-                                    }
-                                });
-                            });
-                            ui.separator();
-                        }
-
-                        ui.add_space(6.0_f32);
-                        caption(ui, "REJOINDRE PAR ADRESSE");
-                        ui.horizontal(|ui| {
-                            let field = ui.add(
-                                egui::TextEdit::singleline(&mut mp.address)
-                                    .hint_text(format!("ip:{}", herocraft_common::DEFAULT_PORT))
-                                    .desired_width(220.0_f32),
-                            );
-                            let submit = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                            let can_join = can_play && !mp.address.trim().is_empty();
-                            if (ui.add_enabled(can_join, SkinButton::new("▶ Se connecter").small()).clicked() || submit) && can_join {
-                                mp.join_target = mp.address.trim().to_string();
-                                *action = Some(UiAction::JoinServer);
-                            }
-                        });
-                    }
-                    NetStatus::Connecting(_) => {}
-                    NetStatus::Hosting { .. } | NetStatus::Online(_) => {
-                        let label = if matches!(mp.status, NetStatus::Hosting { .. }) {
-                            "✖   Fermer la partie au réseau local"
-                        } else {
-                            "🚪   Se déconnecter"
-                        };
-                        let leave = ui
-                            .add(SkinButton::new(egui::RichText::new(label).size(16.0_f32)).kind(ButtonKind::MenuDanger).min_size(size))
-                            .on_hover_text("Revient à la partie solo");
-                        if leave.clicked() {
-                            *action = Some(UiAction::LeaveServer);
-                        }
-                    }
-                }
+                ui.label(egui::RichText::new(status).size(15.0_f32).strong().color(color));
             });
+            if let NetStatus::Hosting { .. } = mp.status {
+                ui.label(
+                    egui::RichText::new("Les joueurs du réseau local la voient dans leur page Multijoueur.").size(11.5_f32).color(TEXT_DIM),
+                );
+            }
+            if let Some(notice) = &mp.notice {
+                ui.label(egui::RichText::new(notice).size(12.0_f32).color(DANGER));
+            }
+            ui.add_space(4.0_f32);
+
+            match mp.status {
+                NetStatus::Solo => {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Votre nom").color(TEXT_SOFT));
+                        ui.add(egui::TextEdit::singleline(&mut mp.pseudo).char_limit(24).desired_width(180.0_f32));
+                    });
+                    ui.add_space(4.0_f32);
+                    let can_play = !mp.pseudo.trim().is_empty();
+                    let open = ui
+                        .add_enabled(
+                            can_play,
+                            SkinButton::new(egui::RichText::new("🌍   Ouvrir au réseau local").size(16.0_f32))
+                                .kind(ButtonKind::Menu)
+                                .min_size(size),
+                        )
+                        .on_hover_text("Lance un serveur sur ce monde : les joueurs du réseau local peuvent vous rejoindre");
+                    if open.clicked() {
+                        *action = Some(UiAction::OpenToLan);
+                    }
+
+                    ui.add_space(6.0_f32);
+                    caption(ui, "PARTIES SUR LE RÉSEAU LOCAL");
+                    if !mp.lan_search_ok {
+                        ui.label(
+                            egui::RichText::new("Recherche impossible : le port 7778 est déjà utilisé sur cette machine.")
+                                .size(12.0_f32)
+                                .color(TEXT_DIM),
+                        );
+                    } else if mp.lan_servers.is_empty() {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label(egui::RichText::new("Recherche de parties…").size(12.0_f32).color(TEXT_DIM));
+                        });
+                    }
+                    for server in &mp.lan_servers {
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(egui::RichText::new(&server.name).strong().color(TEXT_SOFT));
+                                let players =
+                                    if server.players == 1 { "1 joueur".to_string() } else { format!("{} joueurs", server.players) };
+                                ui.label(
+                                    egui::RichText::new(format!("{}  ·  {players}", server.addr))
+                                        .monospace()
+                                        .size(11.0_f32)
+                                        .color(TEXT_DIM),
+                                );
+                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.add_enabled(can_play, SkinButton::new("▶ Rejoindre").small()).clicked() {
+                                    mp.join_target = server.addr.clone();
+                                    *action = Some(UiAction::JoinServer);
+                                }
+                            });
+                        });
+                        ui.separator();
+                    }
+
+                    ui.add_space(6.0_f32);
+                    caption(ui, "REJOINDRE PAR ADRESSE");
+                    ui.horizontal(|ui| {
+                        let field = ui.add(
+                            egui::TextEdit::singleline(&mut mp.address)
+                                .hint_text(format!("ip:{}", herocraft_common::DEFAULT_PORT))
+                                .desired_width(220.0_f32),
+                        );
+                        let submit = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        let can_join = can_play && !mp.address.trim().is_empty();
+                        if (ui.add_enabled(can_join, SkinButton::new("▶ Se connecter").small()).clicked() || submit) && can_join {
+                            mp.join_target = mp.address.trim().to_string();
+                            *action = Some(UiAction::JoinServer);
+                        }
+                    });
+                }
+                NetStatus::Connecting(_) => {}
+                NetStatus::Hosting { .. } | NetStatus::Online(_) => {
+                    let label = if matches!(mp.status, NetStatus::Hosting { .. }) {
+                        "✖   Fermer la partie au réseau local"
+                    } else {
+                        "🚪   Se déconnecter"
+                    };
+                    let leave = ui
+                        .add(SkinButton::new(egui::RichText::new(label).size(16.0_f32)).kind(ButtonKind::MenuDanger).min_size(size))
+                        .on_hover_text("Revient à la partie solo");
+                    if leave.clicked() {
+                        *action = Some(UiAction::LeaveServer);
+                    }
+                }
+            }
+        });
     }
 
     /// Sous-menu Options : onglets latéraux (ou en bandeau sur écran étroit) et réglages défilants
@@ -1776,7 +1849,11 @@ impl UiState {
                 for tab in OptionsTab::ALL {
                     let selected = self.options_tab == tab;
                     let text = if selected { format!("{} {}", tab.icon(), tab.label()) } else { tab.icon().to_string() };
-                    if ui.add(SkinButton::new(text).kind(ButtonKind::Secondary).selected(selected).small()).on_hover_text(tab.label()).clicked() {
+                    if ui
+                        .add(SkinButton::new(text).kind(ButtonKind::Secondary).selected(selected).small())
+                        .on_hover_text(tab.label())
+                        .clicked()
+                    {
                         self.options_tab = tab;
                     }
                 }
@@ -1791,7 +1868,9 @@ impl UiState {
     fn draw_options_content(&mut self, ui: &mut egui::Ui, width: f32, height: f32, action: &mut Option<UiAction>) {
         let tab = self.options_tab;
         let top = ui.cursor().top();
-        ui.label(egui::RichText::new(format!("{}  {}", tab.icon(), tab.label())).font(crate::ui_skin::title_font(18.0_f32)).color(GOLD_BRIGHT));
+        ui.label(
+            egui::RichText::new(format!("{}  {}", tab.icon(), tab.label())).font(crate::ui_skin::title_font(18.0_f32)).color(GOLD_BRIGHT),
+        );
         ui.add_space(-6.0_f32);
         ui.label(egui::RichText::new(tab.subtitle()).size(11.0_f32).color(TEXT_DIM));
         ui.add_space(2.0_f32);
@@ -1827,7 +1906,9 @@ impl UiState {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0_f32;
                 for q in GraphicsQuality::ALL {
-                    if ui.add(SkinButton::new(q.label()).kind(ButtonKind::Secondary).selected(quality == Some(q)).small()).clicked() && quality != Some(q) {
+                    if ui.add(SkinButton::new(q.label()).kind(ButtonKind::Secondary).selected(quality == Some(q)).small()).clicked()
+                        && quality != Some(q)
+                    {
                         chosen = Some(q);
                     }
                 }
@@ -1837,7 +1918,11 @@ impl UiState {
             });
             ui.end_row();
 
-            row_label(ui, "Anticrénelage (MSAA 4×)", "Lisse les bords du relief ; coûteux sur une puce graphique intégrée, où il est coupé par défaut");
+            row_label(
+                ui,
+                "Anticrénelage (MSAA 4×)",
+                "Lisse les bords du relief ; coûteux sur une puce graphique intégrée, où il est coupé par défaut",
+            );
             toggle_switch(ui, &mut self.video_settings.msaa);
             ui.end_row();
 
@@ -1854,17 +1939,18 @@ impl UiState {
             ui.end_row();
 
             row_label(ui, "Distance de détail (LOD)", "Distance à laquelle le terrain garde sa pleine résolution");
-            let lod_choices = [
-                (LodDistanceSetting::Courte, "Courte"),
-                (LodDistanceSetting::Normale, "Normale"),
-                (LodDistanceSetting::Elevee, "Élevée"),
-            ];
+            let lod_choices =
+                [(LodDistanceSetting::Courte, "Courte"), (LodDistanceSetting::Normale, "Normale"), (LodDistanceSetting::Elevee, "Élevée")];
             if choice_row(ui, &mut self.video_settings.lod_distance, &lod_choices) {
                 *action = Some(UiAction::SetLodDistance);
             }
             ui.end_row();
 
-            row_label(ui, "Précision du relief lointain", "Distance jusqu'à laquelle le terrain lointain garde l'allure des blocs proches (textures, arbres) : Normale : couleurs seules (léger), Ultra : ~380 blocs puis arbres simplifiés jusqu'à ~770, 1:1 : ~1 300 (test, très lourd)");
+            row_label(
+                ui,
+                "Précision du relief lointain",
+                "Distance jusqu'à laquelle le terrain lointain garde l'allure des blocs proches (textures, arbres) : Normale : couleurs seules (léger), Ultra : ~380 blocs puis arbres simplifiés jusqu'à ~770, 1:1 : ~1 300 (test, très lourd)",
+            );
             let precision_choices = LodPrecisionSetting::ALL.map(|p| (p, p.label()));
             if choice_row(ui, &mut self.video_settings.lod_precision, &precision_choices) {
                 *action = Some(UiAction::SetLodPrecision);
@@ -1887,11 +1973,14 @@ impl UiState {
             );
         });
         if let Some(q) = chosen
-            && self.apply_graphics_quality(q) {
+            && self.apply_graphics_quality(q)
+        {
             *action = Some(UiAction::SetLodDistance);
         }
         ui.add_space(4.0_f32);
-        ui.label(egui::RichText::new(format!("Détail actuel : {}", self.video_settings.lod_distance.label())).size(11.0_f32).color(TEXT_DIM));
+        ui.label(
+            egui::RichText::new(format!("Détail actuel : {}", self.video_settings.lod_distance.label())).size(11.0_f32).color(TEXT_DIM),
+        );
     }
 
     fn draw_lighting_tab(&mut self, ui: &mut egui::Ui) {
@@ -1938,13 +2027,11 @@ impl UiState {
             slider_row(ui, "Exposition (EV)", &mut p.exposure_ev, -3.0..=3.0, "Éclaircit ou assombrit toute l'image");
 
             row_label(ui, "Courbe de tons", "Conversion des lumières HDR vers l'écran");
-            egui::ComboBox::from_id_salt("tonemapper")
-                .selected_text(p.tonemapper.label())
-                .show_ui(ui, |ui| {
-                    for t in Tonemapper::ALL {
-                        ui.selectable_value(&mut p.tonemapper, t, t.label());
-                    }
-                });
+            egui::ComboBox::from_id_salt("tonemapper").selected_text(p.tonemapper.label()).show_ui(ui, |ui| {
+                for t in Tonemapper::ALL {
+                    ui.selectable_value(&mut p.tonemapper, t, t.label());
+                }
+            });
             ui.end_row();
 
             row_label(ui, "Bloom", "Halo lumineux autour des sources très vives");
@@ -1953,7 +2040,14 @@ impl UiState {
 
             let enabled = p.bloom_enabled;
             slider_row_enabled(ui, enabled, "   Intensité", &mut p.bloom_intensity, 0.0..=1.0, "Part du halo ajoutée à l'image");
-            slider_row_enabled(ui, enabled, "   Seuil", &mut p.bloom_threshold, 0.0..=8.0, "Luminance à partir de laquelle un pixel diffuse");
+            slider_row_enabled(
+                ui,
+                enabled,
+                "   Seuil",
+                &mut p.bloom_threshold,
+                0.0..=8.0,
+                "Luminance à partir de laquelle un pixel diffuse",
+            );
             slider_row_enabled(ui, enabled, "   Douceur", &mut p.bloom_knee, 0.0..=3.0, "Largeur de la transition autour du seuil");
         });
         if reset_button(ui, "Réinitialiser le rendu HDR") {
@@ -1968,16 +2062,34 @@ impl UiState {
             toggle_switch(ui, &mut s.enabled);
             ui.end_row();
 
-            slider_row_enabled(ui, s.enabled, "   Force du relief", &mut s.strength, 0.0..=1.0, "Part de la lumière directe retirée à l'ombre");
+            slider_row_enabled(
+                ui,
+                s.enabled,
+                "   Force du relief",
+                &mut s.strength,
+                0.0..=1.0,
+                "Part de la lumière directe retirée à l'ombre",
+            );
 
             row_label(ui, "Ombres des nuages", "Les nuages assombrissent le sol");
             ui.add_enabled_ui(s.enabled, |ui| toggle_switch(ui, &mut s.cloud_shadows));
             ui.end_row();
 
             let clouds_on = s.enabled && s.cloud_shadows;
-            slider_row_enabled(ui, clouds_on, "   Force sous les nuages", &mut s.cloud_strength, 0.0..=1.0, "Part de la lumière directe retirée sous un nuage");
+            slider_row_enabled(
+                ui,
+                clouds_on,
+                "   Force sous les nuages",
+                &mut s.cloud_strength,
+                0.0..=1.0,
+                "Part de la lumière directe retirée sous un nuage",
+            );
 
-            row_label(ui, "Ombres fines", "Cartes d'ombre deux fois plus précises et bords plus doux ; coupé, les ombres coûtent bien moins cher (puces intégrées)");
+            row_label(
+                ui,
+                "Ombres fines",
+                "Cartes d'ombre deux fois plus précises et bords plus doux ; coupé, les ombres coûtent bien moins cher (puces intégrées)",
+            );
             ui.add_enabled_ui(s.enabled, |ui| toggle_switch(ui, &mut s.fine));
             ui.end_row();
         });
@@ -1990,7 +2102,13 @@ impl UiState {
         let a = &mut self.atmosphere_settings;
         let fog = &mut self.lighting_settings.fog_intensity;
         settings_grid(ui, "atmosphere_grid", |ui| {
-            slider_row(ui, "Densité de l'air", &mut a.air_density, 0.2..=3.0, "Diffusion de Rayleigh : bleu du ciel, rougeoiement du couchant");
+            slider_row(
+                ui,
+                "Densité de l'air",
+                &mut a.air_density,
+                0.2..=3.0,
+                "Diffusion de Rayleigh : bleu du ciel, rougeoiement du couchant",
+            );
             slider_row(ui, "Halo solaire", &mut a.sun_halo, 0.0..=0.95, "Resserre la brume lumineuse autour du Soleil");
             slider_row(ui, "Brume", fog, 0.0..=2.0, "Voile de distance sur le relief lointain");
 
@@ -1998,9 +2116,20 @@ impl UiState {
             toggle_switch(ui, &mut a.god_rays);
             ui.end_row();
 
-            slider_row_enabled(ui, a.god_rays, "   Intensité", &mut a.god_rays_intensity, 0.0..=4.0, "1 = physique ; au-delà, rayons accentués");
+            slider_row_enabled(
+                ui,
+                a.god_rays,
+                "   Intensité",
+                &mut a.god_rays_intensity,
+                0.0..=4.0,
+                "1 = physique ; au-delà, rayons accentués",
+            );
 
-            row_label(ui, "   Rayons fins", "Calcul à demi-résolution sur 28 pas ; coupé, au quart de la résolution sur 14 pas, environ 8 fois moins cher");
+            row_label(
+                ui,
+                "   Rayons fins",
+                "Calcul à demi-résolution sur 28 pas ; coupé, au quart de la résolution sur 14 pas, environ 8 fois moins cher",
+            );
             ui.add_enabled_ui(a.god_rays, |ui| toggle_switch(ui, &mut a.god_rays_fine));
             ui.end_row();
         });
@@ -2099,7 +2228,13 @@ const PORTRAIT_WIDTH: f32 = 112.0;
 
 /// Case d'équipement : vide, le nom de ce qui s'y porte, en clair ; un liseré d'or quand la pile
 /// tenue à la souris peut s'y poser
-fn paint_equipment_placeholder(painter: &egui::Painter, rect: egui::Rect, kind: herocraft_common::EquipSlot, empty: bool, accepts_held: bool) {
+fn paint_equipment_placeholder(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    kind: herocraft_common::EquipSlot,
+    empty: bool,
+    accepts_held: bool,
+) {
     if accepts_held {
         painter.rect_stroke(rect.shrink(3.0_f32), 2.0_f32, egui::Stroke::new(1.5_f32, GOLD_BRIGHT), egui::StrokeKind::Middle);
     }
@@ -2412,14 +2547,25 @@ impl CraftingPanel {
             ui.spacing_mut().item_spacing = egui::vec2(4.0_f32, 4.0_f32);
             for &(tab, craftable) in &tabs {
                 let text = if craftable > 0 { format!("{} · {craftable}", tab.label()) } else { tab.label().to_string() };
-                let color = if tab == current { GOLD_BRIGHT } else if craftable > 0 { TEXT_SOFT } else { TEXT_DIM };
+                let color = if tab == current {
+                    GOLD_BRIGHT
+                } else if craftable > 0 {
+                    TEXT_SOFT
+                } else {
+                    TEXT_DIM
+                };
                 if ui.selectable_label(tab == current, egui::RichText::new(text).size(12.0_f32).color(color)).clicked() {
                     self.set_tab(at, tab);
                 }
             }
         });
         ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.search).hint_text("Rechercher…").margin(egui::Margin::symmetric(4, 2)).desired_width(CRAFTING_WIDTH - 110.0_f32));
+            ui.add(
+                egui::TextEdit::singleline(&mut self.search)
+                    .hint_text("Rechercher…")
+                    .margin(egui::Margin::symmetric(4, 2))
+                    .desired_width(CRAFTING_WIDTH - 110.0_f32),
+            );
             ui.checkbox(&mut self.only_craftable, "Faisables");
         });
         ui.add_space(2.0_f32);
@@ -2454,7 +2600,13 @@ impl CraftingPanel {
                         vec![c + egui::vec2(-2.5_f32, -4.0_f32), c + egui::vec2(3.0_f32, 0.0_f32), c + egui::vec2(-2.5_f32, 4.0_f32)]
                     };
                     ui.painter().add(egui::Shape::convex_polygon(points, color, egui::Stroke::NONE));
-                    ui.painter().text(egui::pos2(rect.left() + 18.0_f32, rect.center().y), egui::Align2::LEFT_CENTER, text, egui::FontId::proportional(12.5_f32), color);
+                    ui.painter().text(
+                        egui::pos2(rect.left() + 18.0_f32, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        text,
+                        egui::FontId::proportional(12.5_f32),
+                        color,
+                    );
                     if header.clicked() {
                         toggled = Some((section.title.clone(), !open));
                     }
@@ -2464,7 +2616,8 @@ impl CraftingPanel {
                 }
                 for &(index, times) in &section.recipes {
                     let recipe = &recipes[index];
-                    let (rect, response) = ui.allocate_exact_size(egui::vec2(CRAFTING_WIDTH, RECIPE_ROW_HEIGHT - 4.0_f32), egui::Sense::click());
+                    let (rect, response) =
+                        ui.allocate_exact_size(egui::vec2(CRAFTING_WIDTH, RECIPE_ROW_HEIGHT - 4.0_f32), egui::Sense::click());
                     if ui.is_rect_visible(rect) {
                         paint_recipe(ui, icons, inventory, rect, recipe, times, response.hovered(), hovered);
                     }
@@ -2476,7 +2629,8 @@ impl CraftingPanel {
                 }
             }
             if sections.is_empty() {
-                let text = if self.search.trim().is_empty() && !self.only_craftable { "Aucune recette ici." } else { "Rien ne correspond." };
+                let text =
+                    if self.search.trim().is_empty() && !self.only_craftable { "Aucune recette ici." } else { "Rien ne correspond." };
                 ui.label(egui::RichText::new(text).color(TEXT_DIM));
             }
         });
@@ -2497,7 +2651,12 @@ impl SortedByCraftable for Vec<(usize, u32)> {
         let recipes = &crafting().recipes;
         self.sort_by_key(|&(i, times)| {
             let recipe = &recipes[i];
-            (times == 0, at.is_some() && recipe.station.is_none(), std::cmp::Reverse(recipe.station.map_or(0, |s| s.level)), recipe.result.name())
+            (
+                times == 0,
+                at.is_some() && recipe.station.is_none(),
+                std::cmp::Reverse(recipe.station.map_or(0, |s| s.level)),
+                recipe.result.name(),
+            )
         });
         self
     }
@@ -2539,7 +2698,13 @@ fn paint_recipe(
 
     let left = icon.right() + 8.0_f32;
     let name_color = if times > 0 { GOLD_BRIGHT } else { TEXT_SOFT };
-    painter.text(egui::pos2(left, rect.top() + 4.0_f32), egui::Align2::LEFT_TOP, recipe.result.name(), egui::FontId::proportional(13.0_f32), name_color);
+    painter.text(
+        egui::pos2(left, rect.top() + 4.0_f32),
+        egui::Align2::LEFT_TOP,
+        recipe.result.name(),
+        egui::FontId::proportional(13.0_f32),
+        name_color,
+    );
     if recipe.station.is_some() {
         painter.text(
             egui::pos2(rect.right() - 6.0_f32, rect.top() + 5.0_f32),
@@ -2555,7 +2720,12 @@ fn paint_recipe(
     for ingredient in &recipe.ingredients {
         let have = inventory.count_ingredient(ingredient);
         // La variante que l'inventaire a le plus, sinon la première
-        let shown = ingredient.options.iter().copied().max_by_key(|&item| (inventory.count(item), std::cmp::Reverse(ingredient.options.iter().position(|&o| o == item)))).unwrap_or(recipe.result);
+        let shown = ingredient
+            .options
+            .iter()
+            .copied()
+            .max_by_key(|&item| (inventory.count(item), std::cmp::Reverse(ingredient.options.iter().position(|&o| o == item))))
+            .unwrap_or(recipe.result);
         let small = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(INGREDIENT_ICON_SIZE, INGREDIENT_ICON_SIZE));
         icons.paint(painter, small, shown);
         let text = format!("{}/{}", have.min(999), ingredient.count);
@@ -2583,10 +2753,21 @@ fn gauge(ui: &mut egui::Ui, width: f32, height: f32, fraction: f32, color: egui:
     }
     // Liseré de bois clair puis bord sombre, comme les cadres de l'ancien HUD
     painter.rect_stroke(rect, rounding, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(92, 65, 45)), egui::StrokeKind::Middle);
-    painter.rect_stroke(rect.expand(1.0_f32), rounding, egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(23, 13, 8)), egui::StrokeKind::Middle);
+    painter.rect_stroke(
+        rect.expand(1.0_f32),
+        rounding,
+        egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(23, 13, 8)),
+        egui::StrokeKind::Middle,
+    );
     if let Some(text) = text {
         let font = egui::FontId::proportional(11.5_f32);
-        painter.text(rect.center() + egui::vec2(1.0_f32, 1.0_f32), egui::Align2::CENTER_CENTER, text, font.clone(), egui::Color32::from_black_alpha(200));
+        painter.text(
+            rect.center() + egui::vec2(1.0_f32, 1.0_f32),
+            egui::Align2::CENTER_CENTER,
+            text,
+            font.clone(),
+            egui::Color32::from_black_alpha(200),
+        );
         painter.text(rect.center(), egui::Align2::CENTER_CENTER, text, font, egui::Color32::WHITE);
     }
 }
@@ -2663,11 +2844,7 @@ fn keycap(ui: &mut egui::Ui, key: &str) {
 
 /// Grille à deux colonnes (libellé, réglage) commune aux onglets d'options
 fn settings_grid(ui: &mut egui::Ui, id: &str, add_rows: impl FnOnce(&mut egui::Ui)) {
-    egui::Grid::new(id)
-        .num_columns(2)
-        .spacing([16.0_f32, 10.0_f32])
-        .min_col_width(110.0_f32)
-        .show(ui, add_rows);
+    egui::Grid::new(id).num_columns(2).spacing([16.0_f32, 10.0_f32]).min_col_width(110.0_f32).show(ui, add_rows);
 }
 
 fn row_label(ui: &mut egui::Ui, text: &str, hint: &str) {
@@ -2691,9 +2868,9 @@ fn slider_row_enabled(ui: &mut egui::Ui, enabled: bool, label: &str, value: &mut
 /// c'est le moment de l'enregistrer et de faire entendre le nouveau volume.
 fn volume_row(ui: &mut egui::Ui, enabled: bool, label: &str, value: &mut f32, hint: &str) -> bool {
     ui.add_enabled_ui(enabled, |ui| row_label(ui, label, hint));
-    let slider = egui::Slider::new(value, 0.0..=1.0).custom_formatter(|v, _| format!("{:.0} %", v * 100.0)).custom_parser(|text| {
-        text.trim().trim_end_matches('%').trim().parse::<f64>().ok().map(|v| v / 100.0)
-    });
+    let slider = egui::Slider::new(value, 0.0..=1.0)
+        .custom_formatter(|v, _| format!("{:.0} %", v * 100.0))
+        .custom_parser(|text| text.trim().trim_end_matches('%').trim().parse::<f64>().ok().map(|v| v / 100.0));
     let response = ui.add_enabled(enabled, slider).on_hover_text(hint);
     ui.end_row();
     response.drag_stopped() || (response.changed() && !response.dragged())
@@ -2705,7 +2882,9 @@ fn choice_row<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, choices: &[
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0_f32;
         for (choice, label) in choices {
-            if ui.add(SkinButton::new(*label).kind(ButtonKind::Secondary).selected(*value == *choice).small()).clicked() && *value != *choice {
+            if ui.add(SkinButton::new(*label).kind(ButtonKind::Secondary).selected(*value == *choice).small()).clicked()
+                && *value != *choice
+            {
                 *value = *choice;
                 changed = true;
             }
@@ -2769,90 +2948,86 @@ fn fixed_control_row(ui: &mut egui::Ui, keys: &[&str], description: &str) {
 impl UiState {
     /// Page Commandes : touches modifiables par clic, réglages de la souris et raccourcis fixes
     fn draw_controls_page(&mut self, ui: &mut egui::Ui, body_height: f32) {
-        egui::ScrollArea::vertical()
-            .id_salt("controls_scroll")
-            .max_height(body_height)
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                ui.label(
-                    egui::RichText::new("Cliquez sur une touche puis appuyez sur la nouvelle (Échap pour annuler).")
-                        .size(11.5_f32)
-                        .color(TEXT_DIM),
-                );
-                if let Some(notice) = &self.rebind_notice {
-                    ui.label(egui::RichText::new(notice).size(11.5_f32).color(GOLD));
-                }
+        egui::ScrollArea::vertical().id_salt("controls_scroll").max_height(body_height).auto_shrink([false, true]).show(ui, |ui| {
+            ui.label(
+                egui::RichText::new("Cliquez sur une touche puis appuyez sur la nouvelle (Échap pour annuler).")
+                    .size(11.5_f32)
+                    .color(TEXT_DIM),
+            );
+            if let Some(notice) = &self.rebind_notice {
+                ui.label(egui::RichText::new(notice).size(11.5_f32).color(GOLD));
+            }
 
-                // Une seule grille pour toutes les sections : la colonne des touches reste alignée
-                let zoom_key = self.controls.action_key_label(Action::ZoomModifier);
-                let mut save = false;
-                egui::Grid::new("controls_grid")
-                    .num_columns(2)
-                    .spacing([24.0_f32, 6.0_f32])
-                    .min_col_width(130.0_f32)
-                    .show(ui, |ui| {
-                        for (title, actions) in ACTION_GROUPS {
-                            section_row(ui, title);
-                            for &action in actions {
-                                ui.label(egui::RichText::new(action.label()).color(TEXT_SOFT));
-                                let listening = self.rebinding == Some(action);
-                                let text = if listening { "…".to_string() } else { self.controls.action_key_label(action) };
-                                let response = keycap_button(ui, &text, listening)
-                                    .on_hover_text(if listening { "Appuyez sur la nouvelle touche" } else { "Changer la touche" });
-                                if response.clicked() {
-                                    self.rebinding = if listening { None } else { Some(action) };
-                                    self.rebind_notice = None;
-                                }
-                                ui.end_row();
-                            }
+            // Une seule grille pour toutes les sections : la colonne des touches reste alignée
+            let zoom_key = self.controls.action_key_label(Action::ZoomModifier);
+            let mut save = false;
+            egui::Grid::new("controls_grid").num_columns(2).spacing([24.0_f32, 6.0_f32]).min_col_width(130.0_f32).show(ui, |ui| {
+                for (title, actions) in ACTION_GROUPS {
+                    section_row(ui, title);
+                    for &action in actions {
+                        ui.label(egui::RichText::new(action.label()).color(TEXT_SOFT));
+                        let listening = self.rebinding == Some(action);
+                        let text = if listening { "…".to_string() } else { self.controls.action_key_label(action) };
+                        let response = keycap_button(ui, &text, listening).on_hover_text(if listening {
+                            "Appuyez sur la nouvelle touche"
+                        } else {
+                            "Changer la touche"
+                        });
+                        if response.clicked() {
+                            self.rebinding = if listening { None } else { Some(action) };
+                            self.rebind_notice = None;
                         }
-
-                        section_row(ui, "BARRE D'OBJETS");
-                        fixed_control_row(ui, &["1", "…", "9"], "Choisir une case");
-                        fixed_control_row(ui, &["Molette"], "Case précédente / suivante");
-
-                        section_row(ui, "SOURIS");
-                        fixed_control_row(ui, &["Souris"], "Regarder autour (au sol)");
-                        fixed_control_row(ui, &["Clic gauche"], "Casser le bloc visé (il tombe, à ramasser)");
-                        fixed_control_row(ui, &["Clic droit"], "Poser le bloc de la case choisie");
-                        fixed_control_row(ui, &[zoom_key.as_str(), "Molette"], "Zoom, du sol à l'orbite");
-                        fixed_control_row(ui, &["Clic", "glisser"], "Tourner la planète (vue satellite)");
-
-                        row_label(ui, "Sensibilité", "Vitesse de rotation de la vue à la souris");
-                        let sensitivity = ui.add(egui::Slider::new(&mut self.controls.mouse_sensitivity, 0.1..=5.0).fixed_decimals(2));
                         ui.end_row();
-
-                        row_label(ui, "Inverser l'axe vertical", "Pousser la souris vers l'avant baisse le regard");
-                        let invert = toggle_switch(ui, &mut self.controls.invert_y);
-                        ui.end_row();
-
-                        // Le curseur n'enregistre qu'au relâchement, pas à chaque image du glisser
-                        save = sensitivity.drag_stopped() || (sensitivity.changed() && !sensitivity.dragged()) || invert.changed();
-
-                        section_row(ui, "SYSTÈME");
-                        fixed_control_row(ui, &["Échap"], "Menu de pause / revenir en arrière");
-                        fixed_control_row(ui, &["F9"], "Écrire le rapport de profilage");
-                    });
-                if save {
-                    self.controls.save();
+                    }
                 }
 
-                if reset_button(ui, "Touches et souris par défaut") {
-                    self.controls.reset_bindings();
-                    self.controls.mouse_sensitivity = 1.0;
-                    self.controls.invert_y = false;
-                    self.rebinding = None;
-                    self.rebind_notice = None;
-                    self.controls.save();
-                }
+                section_row(ui, "BARRE D'OBJETS");
+                fixed_control_row(ui, &["1", "…", "9"], "Choisir une case");
+                fixed_control_row(ui, &["Molette"], "Case précédente / suivante");
+
+                section_row(ui, "SOURIS");
+                fixed_control_row(ui, &["Souris"], "Regarder autour (au sol)");
+                fixed_control_row(ui, &["Clic gauche"], "Casser le bloc visé (il tombe, à ramasser)");
+                fixed_control_row(ui, &["Clic droit"], "Poser le bloc de la case choisie");
+                fixed_control_row(ui, &[zoom_key.as_str(), "Molette"], "Zoom, du sol à l'orbite");
+                fixed_control_row(ui, &["Clic", "glisser"], "Tourner la planète (vue satellite)");
+
+                row_label(ui, "Sensibilité", "Vitesse de rotation de la vue à la souris");
+                let sensitivity = ui.add(egui::Slider::new(&mut self.controls.mouse_sensitivity, 0.1..=5.0).fixed_decimals(2));
+                ui.end_row();
+
+                row_label(ui, "Inverser l'axe vertical", "Pousser la souris vers l'avant baisse le regard");
+                let invert = toggle_switch(ui, &mut self.controls.invert_y);
+                ui.end_row();
+
+                // Le curseur n'enregistre qu'au relâchement, pas à chaque image du glisser
+                save = sensitivity.drag_stopped() || (sensitivity.changed() && !sensitivity.dragged()) || invert.changed();
+
+                section_row(ui, "SYSTÈME");
+                fixed_control_row(ui, &["Échap"], "Menu de pause / revenir en arrière");
+                fixed_control_row(ui, &["F9"], "Écrire le rapport de profilage");
             });
+            if save {
+                self.controls.save();
+            }
+
+            if reset_button(ui, "Touches et souris par défaut") {
+                self.controls.reset_bindings();
+                self.controls.mouse_sensitivity = 1.0;
+                self.controls.invert_y = false;
+                self.rebinding = None;
+                self.rebind_notice = None;
+                self.controls.save();
+            }
+        });
     }
 }
 
 /// Bulle d'aide qui suit le pointeur
 fn show_tooltip_at_pointer(ctx: &egui::Context, id: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
     let id = egui::Id::unique(id);
-    egui::Tooltip::always_open(ctx.clone(), egui::LayerId::new(egui::Order::Tooltip, id), id, egui::PopupAnchor::Pointer).show(add_contents);
+    egui::Tooltip::always_open(ctx.clone(), egui::LayerId::new(egui::Order::Tooltip, id), id, egui::PopupAnchor::Pointer)
+        .show(add_contents);
 }
 
 #[cfg(test)]
@@ -3037,16 +3212,14 @@ mod tests {
     /// Chaque page et chaque onglet du menu tient dans l'écran, y compris sur de petites fenêtres
     #[test]
     fn test_pause_menu_fits_screen() {
-        let pages = [
-            (MenuPage::Main, None),
-            (MenuPage::Controls, None),
-            (MenuPage::Multiplayer, None),
-        ]
-        .into_iter()
-        .chain(OptionsTab::ALL.into_iter().map(|t| (MenuPage::Options, Some(t))));
+        let pages = [(MenuPage::Main, None), (MenuPage::Controls, None), (MenuPage::Multiplayer, None)]
+            .into_iter()
+            .chain(OptionsTab::ALL.into_iter().map(|t| (MenuPage::Options, Some(t))));
 
         for (page, tab) in pages {
-            for (w, h, scale) in [(1920.0, 1080.0, 1.0), (1280.0, 720.0, 1.0), (800.0, 450.0, 1.0), (1280.0, 720.0, 2.0), (480.0, 320.0, 1.0)] {
+            for (w, h, scale) in
+                [(1920.0, 1080.0, 1.0), (1280.0, 720.0, 1.0), (800.0, 450.0, 1.0), (1280.0, 720.0, 2.0), (480.0, 320.0, 1.0)]
+            {
                 let mut ui = UiState::new(1);
                 ui.set_screen_size(w, h);
                 ui.set_scale_factor(scale);
@@ -3059,21 +3232,9 @@ mod tests {
                     ui.test_frame(true);
                 }
 
-                let rect = ui
-                    .ctx
-                    .memory(|m| m.area_rect(egui::Id::unique(("pause_menu", page))))
-                    .expect("menu de pause dessiné");
+                let rect = ui.ctx.memory(|m| m.area_rect(egui::Id::unique(("pause_menu", page)))).expect("menu de pause dessiné");
                 let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w / scale, h / scale));
-                assert!(
-                    screen.expand(0.5).contains_rect(rect),
-                    "{:?}/{:?} dépasse l'écran {}x{}@{} : {:?}",
-                    page,
-                    tab,
-                    w,
-                    h,
-                    scale,
-                    rect
-                );
+                assert!(screen.expand(0.5).contains_rect(rect), "{:?}/{:?} dépasse l'écran {}x{}@{} : {:?}", page, tab, w, h, scale, rect);
             }
         }
     }
@@ -3081,7 +3242,7 @@ mod tests {
     /// Échap referme d'abord l'inventaire, sans ouvrir le menu ; ouvrir le menu referme l'inventaire
     #[test]
     fn test_crafting_panel_lists_what_can_be_made_here() {
-        use herocraft_common::{blocks, crafting, BlockId};
+        use herocraft_common::{BlockId, blocks, crafting};
         let mut ui = UiState::new(1);
         let plank = ItemId::from(blocks().find("plank").unwrap());
         let workbench = blocks().find("workbench").unwrap();
@@ -3336,7 +3497,8 @@ mod tests {
         // À 300 blocs au sud-ouest d'un établissement de la face 0, regard au nord-est
         let up = crate::world_map::dir_of(herocraft_common::PlanetFace::ALL[0], 600.5, 1600.5);
         let target = crate::world_map::dir_of(herocraft_common::PlanetFace::ALL[0], 900.5, 1200.5);
-        let scenes: [(&str, Option<usize>); 4] = [("carte", Some(2)), ("carte_proche", Some(0)), ("carte_large", Some(5)), ("boussole", None)];
+        let scenes: [(&str, Option<usize>); 4] =
+            [("carte", Some(2)), ("carte_proche", Some(0)), ("carte_large", Some(5)), ("boussole", None)];
         for (name, zoom) in scenes {
             let mut ui = UiState::new(42);
             ui.set_screen_size(1280.0, 720.0);
@@ -3355,7 +3517,11 @@ mod tests {
             let start = std::time::Instant::now();
             loop {
                 ui.world_map.pump(&ctx, &generator, ui.map_open);
-                let ready = if zoom.is_some() { ui.world_map.terrain_ready() && ui.world_map.road_count() > 0 } else { ui.world_map.places().count() > 0 };
+                let ready = if zoom.is_some() {
+                    ui.world_map.terrain_ready() && ui.world_map.road_count() > 0
+                } else {
+                    ui.world_map.places().count() > 0
+                };
                 if (ready && start.elapsed().as_secs_f32() > 2.0) || start.elapsed().as_secs() > 60 {
                     break;
                 }
@@ -3377,7 +3543,6 @@ mod tests {
         }
     }
 
-
     /// Captures des menus en PNG, rendues sur le processeur :
     /// `HEROCRAFT_CAPTURES=dossier [HEROCRAFT_CAPTURES_FOND=image.png] cargo test -p herocraft_client snapshot_menus -- --ignored`
     #[test]
@@ -3398,46 +3563,64 @@ mod tests {
             ("menu", |ui| ui.open_menu_at(MenuPage::Main), true, None),
             ("menu_survol", |ui| ui.open_menu_at(MenuPage::Main), true, Some(egui::pos2(640.0, 372.0))),
             ("options", |ui| ui.open_menu_at(MenuPage::Options), true, None),
-            ("options_ombres", |ui| {
-                ui.open_menu_at(MenuPage::Options);
-                ui.options_tab = OptionsTab::Shadows;
-            }, true, None),
+            (
+                "options_ombres",
+                |ui| {
+                    ui.open_menu_at(MenuPage::Options);
+                    ui.options_tab = OptionsTab::Shadows;
+                },
+                true,
+                None,
+            ),
             ("commandes", |ui| ui.open_menu_at(MenuPage::Controls), true, None),
             ("multijoueur", |ui| ui.open_menu_at(MenuPage::Multiplayer), true, None),
             ("inventaire", |ui| ui.set_inventory_open(true), true, None),
-            ("echanges", |ui| {
-                let registry = herocraft_common::professions();
-                let forgeron = registry.get(registry.find("forgeron").unwrap()).unwrap();
-                let mut look = herocraft_common::hero::atlas().defaut("nain");
-                look.tenue = "tablier".into();
-                let card = herocraft_common::VillagerCard {
-                    name: "Thorgrim".into(),
-                    profession: forgeron.name.clone(),
-                    culture: "Nains".into(),
-                    origin: "Habitant de la ville".into(),
-                    appearance: look,
-                    trades: forgeron.trades.iter().take(4).cloned().collect(),
-                    greeting: forgeron.lines[0].clone(),
-                };
-                let (ingot, coal) = (herocraft_common::villager::find_item("ironIngot").unwrap(), herocraft_common::villager::find_item("coal").unwrap());
-                ui.inventory.add_many(ingot, 5);
-                ui.inventory.add_many(coal, 3);
-                ui.open_trade(herocraft_common::CreatureId(1), std::sync::Arc::new(card));
-            }, true, None),
-            ("inventaire_equipe", |ui| {
-                let appearance = herocraft_common::hero::Appearance { nom: "Aldric".to_string(), ..Default::default() };
-                ui.legend = Some(Legend { appearance, class: herocraft_common::PlayerClass::Adventurer });
-                for id in ["ironPlateHelmet", "ironPlateChestplate", "hideLeggings", "boneBoots", "flintSword", "hideHelmet"] {
-                    ui.inventory.add(items().find(id).unwrap());
-                }
-                ui.inventory.add_many(herocraft_common::BlockId::STONE, 40);
-                ui.set_inventory_open(true);
-                for i in 0..4 {
-                    ui.inventory.quick_move(i);
-                }
-                // Le heaume de cuir en main : la case de la tête s'éclaire
-                ui.inventory.click(5);
-            }, true, Some(egui::pos2(900.0, 600.0))),
+            (
+                "echanges",
+                |ui| {
+                    let registry = herocraft_common::professions();
+                    let forgeron = registry.get(registry.find("forgeron").unwrap()).unwrap();
+                    let mut look = herocraft_common::hero::atlas().defaut("nain");
+                    look.tenue = "tablier".into();
+                    let card = herocraft_common::VillagerCard {
+                        name: "Thorgrim".into(),
+                        profession: forgeron.name.clone(),
+                        culture: "Nains".into(),
+                        origin: "Habitant de la ville".into(),
+                        appearance: look,
+                        trades: forgeron.trades.iter().take(4).cloned().collect(),
+                        greeting: forgeron.lines[0].clone(),
+                    };
+                    let (ingot, coal) = (
+                        herocraft_common::villager::find_item("ironIngot").unwrap(),
+                        herocraft_common::villager::find_item("coal").unwrap(),
+                    );
+                    ui.inventory.add_many(ingot, 5);
+                    ui.inventory.add_many(coal, 3);
+                    ui.open_trade(herocraft_common::CreatureId(1), std::sync::Arc::new(card));
+                },
+                true,
+                None,
+            ),
+            (
+                "inventaire_equipe",
+                |ui| {
+                    let appearance = herocraft_common::hero::Appearance { nom: "Aldric".to_string(), ..Default::default() };
+                    ui.legend = Some(Legend { appearance, class: herocraft_common::PlayerClass::Adventurer });
+                    for id in ["ironPlateHelmet", "ironPlateChestplate", "hideLeggings", "boneBoots", "flintSword", "hideHelmet"] {
+                        ui.inventory.add(items().find(id).unwrap());
+                    }
+                    ui.inventory.add_many(herocraft_common::BlockId::STONE, 40);
+                    ui.set_inventory_open(true);
+                    for i in 0..4 {
+                        ui.inventory.quick_move(i);
+                    }
+                    // Le heaume de cuir en main : la case de la tête s'éclaire
+                    ui.inventory.click(5);
+                },
+                true,
+                Some(egui::pos2(900.0, 600.0)),
+            ),
         ];
         let mut all: Vec<Scene> = scenes.to_vec();
         all.push(("hud", |_| {}, true, None));
@@ -3464,7 +3647,11 @@ mod tests {
                 ui.skill_cooldowns[1] = (3.4, 8.0);
                 ui.skill_notice = Some(("Jugement : pas assez de mana".into(), std::time::Instant::now()));
                 // Une arbalète de Rôdeur qui recharge, des balles à fragmentation et un tir chargé
-                ui.weapon_hud = WeaponHud { magazine: Some((0, 2, 0.5, 0.8)), special: Some(("Balles à Fragmentation".into(), 2)), charge: Some(("Tir de Baliste".into(), 0.7, true)) };
+                ui.weapon_hud = WeaponHud {
+                    magazine: Some((0, 2, 0.5, 0.8)),
+                    special: Some(("Balles à Fragmentation".into(), 2)),
+                    charge: Some(("Tir de Baliste".into(), 0.7, true)),
+                };
             },
             true,
             None,
@@ -3509,5 +3696,4 @@ mod tests {
             snapshot.save(&dir.join(format!("{name}.png")));
         }
     }
-
 }

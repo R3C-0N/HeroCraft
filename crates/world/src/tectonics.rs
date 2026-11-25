@@ -145,20 +145,20 @@ impl TectonicSimulation {
             PlateRole { category: PlateCategory::Major, weight: 1.45, is_oceanic: false, drift_speed: 0.45 },
             PlateRole { category: PlateCategory::Major, weight: 1.45, is_oceanic: false, drift_speed: 0.48 },
             PlateRole { category: PlateCategory::Major, weight: 1.45, is_oceanic: false, drift_speed: 0.52 },
-            PlateRole { category: PlateCategory::Major, weight: 1.45, is_oceanic: true,  drift_speed: 0.56 },
+            PlateRole { category: PlateCategory::Major, weight: 1.45, is_oceanic: true, drift_speed: 0.56 },
             // 3 Moyennes plaques (2 continents moyens + 1 océan intermédiaire)
             PlateRole { category: PlateCategory::Medium, weight: 1.05, is_oceanic: false, drift_speed: 0.65 },
             PlateRole { category: PlateCategory::Medium, weight: 1.05, is_oceanic: false, drift_speed: 0.68 },
-            PlateRole { category: PlateCategory::Medium, weight: 1.05, is_oceanic: true,  drift_speed: 0.72 },
+            PlateRole { category: PlateCategory::Medium, weight: 1.05, is_oceanic: true, drift_speed: 0.72 },
             // 8 Petites plaques (2 micro-continents + 6 plaques de subduction rapides)
             PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: false, drift_speed: 0.85 },
             PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: false, drift_speed: 0.90 },
-            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true,  drift_speed: 1.05 },
-            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true,  drift_speed: 1.10 },
-            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true,  drift_speed: 1.15 },
-            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true,  drift_speed: 1.20 },
-            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true,  drift_speed: 1.25 },
-            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true,  drift_speed: 1.30 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true, drift_speed: 1.05 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true, drift_speed: 1.10 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true, drift_speed: 1.15 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true, drift_speed: 1.20 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true, drift_speed: 1.25 },
+            PlateRole { category: PlateCategory::Minor, weight: 0.65, is_oceanic: true, drift_speed: 1.30 },
         ];
 
         // Brassage aléatoire (Fisher-Yates) des rôles selon la graine
@@ -183,11 +183,7 @@ impl TectonicSimulation {
             let jy = rng.next_range(-0.25, 0.25);
             let jz = rng.next_range(-0.25, 0.25);
 
-            let raw_pos = DVec3::new(
-                radius_at_y * theta.cos() + jx,
-                y + jy,
-                radius_at_y * theta.sin() + jz,
-            ).normalize();
+            let raw_pos = DVec3::new(radius_at_y * theta.cos() + jx, y + jy, radius_at_y * theta.sin() + jz).normalize();
 
             // Application de la rotation 3D globale pour une disposition spatiale 100% unique par seed
             let center = rotate_vector(raw_pos, global_rot_axis, global_rot_angle).normalize();
@@ -223,11 +219,7 @@ impl TectonicSimulation {
     /// selon un noyau exponentiel de sa distance pondérée : le passage océan/continent devient un gradient
     /// large que le bruit continental peut déformer librement, au lieu d'imposer la géométrie des plaques au rivage.
     pub fn continental_crust(&self, dir: DVec3, softness: f64) -> f64 {
-        let dists: Vec<f64> = self
-            .plates
-            .iter()
-            .map(|p| dir.dot(p.center).clamp(-1.0, 1.0).acos() / p.weight)
-            .collect();
+        let dists: Vec<f64> = self.plates.iter().map(|p| dir.dot(p.center).clamp(-1.0, 1.0).acos() / p.weight).collect();
         let min_dist = dists.iter().cloned().fold(f64::MAX, f64::min);
 
         let mut total = 0.0;

@@ -13,8 +13,8 @@
 use glam::DVec3;
 use serde::{Deserialize, Serialize};
 
-use crate::cubed_sphere::{base_solar_temperature, FACE_SCALE};
-use crate::generator::{fbm_3d, moisture_at, smoothstep, FBM_SPAN};
+use crate::cubed_sphere::{FACE_SCALE, base_solar_temperature};
+use crate::generator::{FBM_SPAN, fbm_3d, moisture_at, smoothstep};
 use crate::sky::SUN_PERIOD;
 
 /// Jours de jeu (20 minutes chacun) par saison
@@ -89,11 +89,7 @@ pub fn season_at(time: f64, lat: f64) -> (Season, f32) {
 
 /// L'hémisphère sud a six mois de décalage
 fn hemisphere_phase(phase: f64, lat: f64) -> f64 {
-    if lat < 0.0 {
-        (phase + 0.5).rem_euclid(1.0)
-    } else {
-        phase
-    }
+    if lat < 0.0 { (phase + 0.5).rem_euclid(1.0) } else { phase }
 }
 
 /// Force des saisons à une latitude : nulle sous les tropiques, entière aux latitudes tempérées

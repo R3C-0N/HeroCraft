@@ -11,7 +11,7 @@
 
 use std::f32::consts::{PI, TAU};
 
-use herocraft_common::skills::{rank, SkillNode};
+use herocraft_common::skills::{SkillNode, rank};
 use herocraft_common::{CharacterStats, SkillWheel};
 
 use crate::theme::{GOLD, GOLD_BRIGHT, MENU_PADDING, TEXT_DIM, TEXT_SOFT};
@@ -128,9 +128,13 @@ impl SkillScreen {
                             ui.add_space(12.0_f32);
                             let points = stats.skill_points;
                             let color = if points > 0 { GOLD_BRIGHT } else { TEXT_DIM };
-                            ui.label(egui::RichText::new(format!("{points} point{} à investir", if points > 1 { "s" } else { "" })).color(color));
+                            ui.label(
+                                egui::RichText::new(format!("{points} point{} à investir", if points > 1 { "s" } else { "" })).color(color),
+                            );
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.label(egui::RichText::new(format!("[{close_hint}] ou [Échap] pour fermer")).size(11.0_f32).color(TEXT_DIM));
+                                ui.label(
+                                    egui::RichText::new(format!("[{close_hint}] ou [Échap] pour fermer")).size(11.0_f32).color(TEXT_DIM),
+                                );
                             });
                         });
                         ui.add_space(6.0_f32);
@@ -143,7 +147,11 @@ impl SkillScreen {
                                 draw_progress(ui, stats);
                                 if allow_test_experience {
                                     let button = egui::Button::new(format!("+{TEST_EXPERIENCE} xp (essai)"));
-                                    if ui.add(button).on_hover_text("Donne de l'expérience au héros, le temps que l'expérience se gagne en jeu").clicked() {
+                                    if ui
+                                        .add(button)
+                                        .on_hover_text("Donne de l'expérience au héros, le temps que l'expérience se gagne en jeu")
+                                        .clicked()
+                                    {
                                         requests.experience += TEST_EXPERIENCE;
                                     }
                                 }
@@ -161,7 +169,10 @@ impl SkillScreen {
                                         requests.place = place;
                                     }
                                     None => {
-                                        ui.label(egui::RichText::new("Choisissez une compétence sur la roue pour voir sa fiche.").color(TEXT_DIM));
+                                        ui.label(
+                                            egui::RichText::new("Choisissez une compétence sur la roue pour voir sa fiche.")
+                                                .color(TEXT_DIM),
+                                        );
                                     }
                                 }
                             });
@@ -201,7 +212,10 @@ impl SkillScreen {
         }
         // Molette sur la roue : une classe par cran
         if response.hovered() {
-            self.scroll += ui.input(|i| { let d = crate::theme::raw_scroll_delta(i); d.y + d.x });
+            self.scroll += ui.input(|i| {
+                let d = crate::theme::raw_scroll_delta(i);
+                d.y + d.x
+            });
             while self.scroll.abs() >= SCROLL_STEP {
                 let step = self.scroll.signum();
                 self.turn(-(step as i32), count);
@@ -212,9 +226,8 @@ impl SkillScreen {
         }
 
         let ctx = ui.ctx().clone();
-        let weights: Vec<f32> = (0..count)
-            .map(|i| ctx.animate_bool_with_time(egui::Id::unique(("skills_focus", i)), i == self.focus, TURN_SECS))
-            .collect();
+        let weights: Vec<f32> =
+            (0..count).map(|i| ctx.animate_bool_with_time(egui::Id::unique(("skills_focus", i)), i == self.focus, TURN_SECS)).collect();
         let track = ctx.animate_value_with_time(egui::Id::unique("skills_track"), self.track as f32, TURN_SECS);
         let painter = ui.painter_at(rect);
         let layout = WheelLayout::new(rect.center(), size / 2.0 - 2.0, wheel.rings(), &weights, track);
@@ -229,7 +242,10 @@ impl SkillScreen {
             let tint = egui::Color32::from_rgba_unmultiplied(r, g, bl, alpha as u8);
             let (start, end) = layout.sector(b);
             painter.add(sector_shape(centre, hub, outer, start, end, tint));
-            painter.line_segment([layout.point(start, hub), layout.point(start, outer)], egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(22)));
+            painter.line_segment(
+                [layout.point(start, hub), layout.point(start, outer)],
+                egui::Stroke::new(1.0_f32, egui::Color32::from_white_alpha(22)),
+            );
             // Nom de la classe le long du bord, jamais à l'envers ; sur deux lignes ou plus quand
             // sa part resserrée est trop étroite pour lui (« Sorcier élémentaire »)
             let mid = (start + end) / 2.0;
@@ -260,7 +276,13 @@ impl SkillScreen {
         // Moyeu : niveau du héros et points à investir
         painter.circle_filled(centre, hub, egui::Color32::from_rgb(28, 34, 48));
         painter.circle_stroke(centre, hub, egui::Stroke::new(1.5_f32, GOLD));
-        painter.text(centre - egui::vec2(0.0, 9.0), egui::Align2::CENTER_CENTER, format!("Niv. {}", stats.level), egui::FontId::proportional(15.0_f32), GOLD_BRIGHT);
+        painter.text(
+            centre - egui::vec2(0.0, 9.0),
+            egui::Align2::CENTER_CENTER,
+            format!("Niv. {}", stats.level),
+            egui::FontId::proportional(15.0_f32),
+            GOLD_BRIGHT,
+        );
         let points = stats.skill_points;
         painter.text(
             centre + egui::vec2(0.0, 10.0),
@@ -299,7 +321,10 @@ impl SkillScreen {
                 } else {
                     egui::Color32::from_white_alpha((24.0 + 36.0 * w) as u8)
                 };
-                painter.line_segment([position(required), position(node)], egui::Stroke::new(if lit { 1.8_f32 } else { 1.0 + 0.5 * w }, color));
+                painter.line_segment(
+                    [position(required), position(node)],
+                    egui::Stroke::new(if lit { 1.8_f32 } else { 1.0 + 0.5 * w }, color),
+                );
             }
         }
 
@@ -362,14 +387,22 @@ impl SkillScreen {
             let class = wheel.branch(&node.branch).map_or("", |b| b.name.as_str());
             response.clone().on_hover_ui_at_pointer(|ui| {
                 ui.label(egui::RichText::new(&node.name).strong().color(GOLD_BRIGHT));
-                ui.label(egui::RichText::new(format!("{class} · {} · rang {}/{}", node.tier_label(), rank(stats, &node.id), node.max_rank)).size(11.0_f32).color(TEXT_SOFT));
+                ui.label(
+                    egui::RichText::new(format!("{class} · {} · rang {}/{}", node.tier_label(), rank(stats, &node.id), node.max_rank))
+                        .size(11.0_f32)
+                        .color(TEXT_SOFT),
+                );
             });
         } else if let Some(b) = hovered_sector.filter(|&b| b != self.focus) {
             let branch = &wheel.branches[b];
             let learned = wheel.nodes.iter().filter(|n| n.branch == branch.id && rank(stats, &n.id) > 0).count();
             response.clone().on_hover_ui_at_pointer(|ui| {
                 ui.label(egui::RichText::new(&branch.name).strong().color(GOLD_BRIGHT));
-                ui.label(egui::RichText::new(format!("{learned} apprise{} · clic pour l'examiner", if learned > 1 { "s" } else { "" })).size(11.0_f32).color(TEXT_SOFT));
+                ui.label(
+                    egui::RichText::new(format!("{learned} apprise{} · clic pour l'examiner", if learned > 1 { "s" } else { "" }))
+                        .size(11.0_f32)
+                        .color(TEXT_SOFT),
+                );
             });
         }
         if response.clicked() {
@@ -402,7 +435,13 @@ fn draw_progress(ui: &mut egui::Ui, stats: &CharacterStats) {
 }
 
 /// Fiche d'une compétence ; renvoie son identifiant si le joueur y investit un point
-fn draw_sheet(ui: &mut egui::Ui, wheel: &SkillWheel, stats: &CharacterStats, node: &SkillNode, bar: &BarView) -> (Option<String>, Option<(usize, String)>) {
+fn draw_sheet(
+    ui: &mut egui::Ui,
+    wheel: &SkillWheel,
+    stats: &CharacterStats,
+    node: &SkillNode,
+    bar: &BarView,
+) -> (Option<String>, Option<(usize, String)>) {
     let current = rank(stats, &node.id);
     ui.horizontal(|ui| {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(36.0_f32, 36.0_f32), egui::Sense::hover());
@@ -410,7 +449,9 @@ fn draw_sheet(ui: &mut egui::Ui, wheel: &SkillWheel, stats: &CharacterStats, nod
         ui.label(egui::RichText::new(&node.name).strong().size(15.0_f32).color(GOLD_BRIGHT));
     });
     let branch = wheel.branch(&node.branch).map_or("", |b| b.name.as_str());
-    ui.label(egui::RichText::new(format!("{branch} · {} · rang {current}/{}", node.tier_label(), node.max_rank)).size(11.0_f32).color(TEXT_DIM));
+    ui.label(
+        egui::RichText::new(format!("{branch} · {} · rang {current}/{}", node.tier_label(), node.max_rank)).size(11.0_f32).color(TEXT_DIM),
+    );
     ui.add_space(4.0_f32);
     if !node.description.is_empty() {
         ui.label(egui::RichText::new(&node.description).color(TEXT_SOFT));
@@ -476,7 +517,11 @@ fn draw_placement(ui: &mut egui::Ui, stats: &CharacterStats, node: &SkillNode, b
                 let here = bar.bar.get(slot) == Some(id);
                 let text = egui::RichText::new(key).size(11.0_f32).color(if here { GOLD_BRIGHT } else { TEXT_SOFT });
                 let occupant = bar.bar.get(slot).and_then(|o| catalog.get(o)).map_or("vide".to_string(), |o| o.name.clone());
-                if ui.add(egui::Button::new(text).selected(here).small()).on_hover_text(format!("Poser sur [{key}] (aujourd'hui : {occupant})")).clicked() {
+                if ui
+                    .add(egui::Button::new(text).selected(here).small())
+                    .on_hover_text(format!("Poser sur [{key}] (aujourd'hui : {occupant})"))
+                    .clicked()
+                {
                     place = Some((slot, id.to_string()));
                 }
             }
@@ -617,7 +662,10 @@ mod tests {
             let layout = layout(focus, 15);
             let (start, end) = layout.sector(focus);
             assert!((end - start - FOCUS_SPAN).abs() < 1e-4);
-            assert!(((start + end) / 2.0 + PI / 2.0).rem_euclid(TAU).min((-(start + end) / 2.0 - PI / 2.0).rem_euclid(TAU)) < 1e-4, "en haut");
+            assert!(
+                ((start + end) / 2.0 + PI / 2.0).rem_euclid(TAU).min((-(start + end) / 2.0 - PI / 2.0).rem_euclid(TAU)) < 1e-4,
+                "en haut"
+            );
             let total: f32 = (0..15).map(|b| layout.sector(b)).map(|(s, e)| e - s).sum();
             assert!((total - TAU).abs() < 1e-4);
             // Le haut de la roue est dans la part sous la loupe

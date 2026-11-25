@@ -21,8 +21,8 @@
 //! Une pièce dont la case est vide (pas de barbe, pas de queue…) ne donne aucun pavé : la figure
 //! se lit sur la planche peinte, et rien d'autre ne décide de ce qui se voit.
 
-use glam::{vec3, Quat, Vec3};
-use herocraft_common::hero::{atlas, paint, Appearance, Sheet, SHEET_SIZE};
+use glam::{Quat, Vec3, vec3};
+use herocraft_common::hero::{Appearance, SHEET_SIZE, Sheet, atlas, paint};
 use herocraft_common::tangent_frame;
 
 use crate::creatures::CreatureFrame;
@@ -476,7 +476,16 @@ fn relief(out: &mut Vec<Quad>, sheet: &Sheet, cx: f32, bottom: f32, size: Vec3, 
 /// Une pièce plate extrudée : chaque texel peint du rectangle `(u, v, w, h)` devient un pavé.
 /// `origin` : coin du texel (0, 0) côté haut gauche, `step_x` / `step_y` : pas d'une colonne et
 /// d'un rang (rangs descendants), `thick` : épaisseur, centrée sur le plan.
-fn extrude(out: &mut Vec<Quad>, sheet: &Sheet, (u, v, w, h): (i32, i32, i32, i32), origin: Vec3, step_x: Vec3, step_y: Vec3, thick: Vec3, mirror: bool) {
+fn extrude(
+    out: &mut Vec<Quad>,
+    sheet: &Sheet,
+    (u, v, w, h): (i32, i32, i32, i32),
+    origin: Vec3,
+    step_x: Vec3,
+    step_y: Vec3,
+    thick: Vec3,
+    mirror: bool,
+) {
     let col = |i: i32| if mirror { w - 1 - i } else { i };
     let on = |i: i32, j: i32| (0..w).contains(&i) && (0..h).contains(&j) && peint(sheet, u + col(i), v + j);
     for j in 0..h {
@@ -529,8 +538,28 @@ pub(crate) fn figure(cfg: &Appearance, sheet: &Sheet) -> Figure {
     let membres: [(Bone, Vec<Joint>, f32, f32, Vec3, [f32; 3], (f32, f32), (f32, f32), f32); 6] = [
         (Bone::Head, vec![], 0.0, shoulders, Vec3::splat(8.0 * k), [8.0, 8.0, 8.0], (0.0, 0.0), (32.0, 0.0), RELIEF_TETE),
         (Bone::Torso, vec![], 0.0, legs, vec3(8.0 * sx, 12.0, 4.0 * sx), [8.0, 12.0, 4.0], (16.0, 16.0), (16.0, 32.0), RELIEF_CORPS),
-        (Bone::RightArm, arm(Bone::RightForearm, Bone::RightHand), -arm_x, legs, vec3(4.0 * ab, 12.0, 4.0 * ab), [4.0, 12.0, 4.0], (40.0, 16.0), (40.0, 32.0), RELIEF_CORPS),
-        (Bone::LeftArm, arm(Bone::LeftForearm, Bone::LeftHand), arm_x, legs, vec3(4.0 * ab, 12.0, 4.0 * ab), [4.0, 12.0, 4.0], (32.0, 48.0), (48.0, 48.0), RELIEF_CORPS),
+        (
+            Bone::RightArm,
+            arm(Bone::RightForearm, Bone::RightHand),
+            -arm_x,
+            legs,
+            vec3(4.0 * ab, 12.0, 4.0 * ab),
+            [4.0, 12.0, 4.0],
+            (40.0, 16.0),
+            (40.0, 32.0),
+            RELIEF_CORPS,
+        ),
+        (
+            Bone::LeftArm,
+            arm(Bone::LeftForearm, Bone::LeftHand),
+            arm_x,
+            legs,
+            vec3(4.0 * ab, 12.0, 4.0 * ab),
+            [4.0, 12.0, 4.0],
+            (32.0, 48.0),
+            (48.0, 48.0),
+            RELIEF_CORPS,
+        ),
         (Bone::RightLeg, leg(Bone::RightShin), -2.0, 0.0, vec3(4.0, legs, 4.0), [4.0, 12.0, 4.0], (0.0, 16.0), (0.0, 32.0), RELIEF_CORPS),
         (Bone::LeftLeg, leg(Bone::LeftShin), 2.0, 0.0, vec3(4.0, legs, 4.0), [4.0, 12.0, 4.0], (16.0, 48.0), (0.0, 48.0), RELIEF_CORPS),
     ];
@@ -671,7 +700,15 @@ impl HeroGait {
 
 /// Ajoute le héros au maillage des créatures, debout sur `feet` et tourné vers `yaw` (0 = nord),
 /// dans la pose `pose` (balancement de la marche, geste d'une compétence) ; `block` : taille d'un bloc
-pub(crate) fn push_hero_posed(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, block: f32) {
+pub(crate) fn push_hero_posed(
+    frame: &mut CreatureFrame,
+    cfg: &Appearance,
+    figure: &Figure,
+    feet: Vec3,
+    yaw: f32,
+    pose: &FigurePose,
+    block: f32,
+) {
     push_figure(frame, cfg, figure, feet, yaw, pose, HERO_TEXTURE, block);
 }
 
@@ -681,7 +718,16 @@ const ARM_BONES: [Bone; 6] = [Bone::RightArm, Bone::LeftArm, Bone::RightForearm,
 /// Vue à la première personne, pendant le geste d'une compétence : les bras du héros posé (et
 /// l'arme de sa main droite, s'il en tient une), accrochés à l'œil `eye` qui regarde vers `look`.
 /// Renvoie les points des mains, où se jouent les effets.
-pub(crate) fn push_first_person_arms(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, eye: Vec3, look: Vec3, pose: &FigurePose, weapon: Option<[f32; 4]>, block: f32) -> (Vec3, Vec3) {
+pub(crate) fn push_first_person_arms(
+    frame: &mut CreatureFrame,
+    cfg: &Appearance,
+    figure: &Figure,
+    eye: Vec3,
+    look: Vec3,
+    pose: &FigurePose,
+    weapon: Option<[f32; 4]>,
+    block: f32,
+) -> (Vec3, Vec3) {
     let up_hint = eye.normalize_or_zero();
     let forward = look.normalize_or(up_hint.any_orthonormal_vector());
     let left = up_hint.cross(forward).normalize_or(forward.any_orthonormal_vector());
@@ -708,7 +754,13 @@ pub(crate) fn push_first_person_arms(frame: &mut CreatureFrame, cfg: &Appearance
         let uvs = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
         let base = frame.vertices.len() as u32;
         for (p, uv) in c.iter().zip(uvs) {
-            frame.vertices.push(PlanetVertex { position: to_world(*p).to_array(), normal: normal.to_array(), color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
+            frame.vertices.push(PlanetVertex {
+                position: to_world(*p).to_array(),
+                normal: normal.to_array(),
+                color,
+                texture: PlanetVertex::UNTEXTURED,
+                light: 0.0,
+            });
             frame.uvs.push(uv);
         }
         frame.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -749,7 +801,13 @@ fn push_box(frame: &mut CreatureFrame, base: Vec3, along: Vec3, side: Vec3, leng
         let normal = side * n[1] + third * n[2] + along * n[0];
         let base_index = frame.vertices.len() as u32;
         for [a, s, t] in corners {
-            frame.vertices.push(PlanetVertex { position: corner(a * length, s * h, t * h).to_array(), normal: normal.to_array(), color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
+            frame.vertices.push(PlanetVertex {
+                position: corner(a * length, s * h, t * h).to_array(),
+                normal: normal.to_array(),
+                color,
+                texture: PlanetVertex::UNTEXTURED,
+                light: 0.0,
+            });
             frame.uvs.push([0.5, 0.5]);
         }
         frame.indices.extend_from_slice(&[base_index, base_index + 1, base_index + 2, base_index, base_index + 2, base_index + 3]);
@@ -774,7 +832,13 @@ impl HeroAnchors {
         let forward = north * yaw.cos() + east * yaw.sin();
         let left = up.cross(forward);
         let body = feet + up * 1.0 * block;
-        Self { feet, body, head: feet + up * 1.6 * block, right_hand: body - left * 0.35 * block + forward * 0.35 * block, left_hand: body + left * 0.35 * block + forward * 0.35 * block }
+        Self {
+            feet,
+            body,
+            head: feet + up * 1.6 * block,
+            right_hand: body - left * 0.35 * block + forward * 0.35 * block,
+            left_hand: body + left * 0.35 * block + forward * 0.35 * block,
+        }
     }
 
     /// Points du héros `figure` posé en `pose`, debout sur `feet` et tourné vers `yaw`
@@ -840,7 +904,16 @@ impl FigurePose {
 }
 
 /// Ajoute une figure humanoïde au maillage des créatures avec la planche d'indice `texture`
-pub(crate) fn push_figure(frame: &mut CreatureFrame, cfg: &Appearance, figure: &Figure, feet: Vec3, yaw: f32, pose: &FigurePose, texture: usize, block: f32) {
+pub(crate) fn push_figure(
+    frame: &mut CreatureFrame,
+    cfg: &Appearance,
+    figure: &Figure,
+    feet: Vec3,
+    yaw: f32,
+    pose: &FigurePose,
+    texture: usize,
+    block: f32,
+) {
     let up = feet.normalize_or_zero();
     let (east, north) = tangent_frame(up);
     let forward = north * yaw.cos() + east * yaw.sin();
@@ -866,7 +939,13 @@ pub(crate) fn push_figure(frame: &mut CreatureFrame, cfg: &Appearance, figure: &
         let uvs = [[u0, v1], [u1, v1], [u1, v0], [u0, v0]];
         let base = frame.vertices.len() as u32;
         for (p, uv) in c.iter().zip(uvs) {
-            frame.vertices.push(PlanetVertex { position: to_world(*p).to_array(), normal: normal.to_array(), color, texture: PlanetVertex::UNTEXTURED, light: 0.0 });
+            frame.vertices.push(PlanetVertex {
+                position: to_world(*p).to_array(),
+                normal: normal.to_array(),
+                color,
+                texture: PlanetVertex::UNTEXTURED,
+                light: 0.0,
+            });
             frame.uvs.push(uv);
         }
         frame.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -1157,10 +1236,12 @@ mod tests {
                 let mut pose = FigurePose::default();
                 for (name, bone_pose) in key["bones"].as_object().into_iter().flatten() {
                     let bone = Bone::from_name(name).unwrap_or_else(|| panic!("{}: os inconnu {name}", path.display()));
-                    let v = |field: &str| bone_pose.get(field).map(|a| {
-                        let a = a.as_array().unwrap();
-                        [0, 1, 2].map(|i| a[i].as_f64().unwrap() as f32)
-                    });
+                    let v = |field: &str| {
+                        bone_pose.get(field).map(|a| {
+                            let a = a.as_array().unwrap();
+                            [0, 1, 2].map(|i| a[i].as_f64().unwrap() as f32)
+                        })
+                    };
                     if let Some(r) = v("rotation") {
                         pose.bone_mut(bone).rotation = bone.rotation_from_degrees(r);
                     }

@@ -12,8 +12,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 /// Taille maximale d'un paquet : au-delà, la connexion est jugée corrompue
 pub(crate) const MAX_PACKET_BYTES: usize = 16 * 1024 * 1024;
@@ -198,8 +198,8 @@ impl<Out, In> Drop for Connection<Out, In> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::{BlockAddress, BlockInteractionAction, ClientPacket, ServerPacket};
     use crate::PlanetFace;
+    use crate::protocol::{BlockAddress, BlockInteractionAction, ClientPacket, ServerPacket};
     use std::net::TcpListener;
 
     #[test]
@@ -212,7 +212,10 @@ mod tests {
         let decoded: ClientPacket = read_frame(&mut frame.as_slice()).unwrap();
         assert!(matches!(
             decoded,
-            ClientPacket::InteractBlock { block: BlockAddress { face: PlanetFace::NegY, x: 12, y: 300, z: 1023 }, action: BlockInteractionAction::Place(1) }
+            ClientPacket::InteractBlock {
+                block: BlockAddress { face: PlanetFace::NegY, x: 12, y: 300, z: 1023 },
+                action: BlockInteractionAction::Place(1)
+            }
         ));
     }
 

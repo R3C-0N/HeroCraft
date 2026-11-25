@@ -6,10 +6,10 @@
 //! Module enfant de `creatures` : il lit directement les bêtes, le registre et la géométrie.
 
 use glam::Vec3;
-use herocraft_common::{CreatureId, PlayerId, ProjectileId, DamageKind, ProjectileEnd, ProjectileEvent, ProjectileSize, Shooter};
+use herocraft_common::{CreatureId, DamageKind, PlayerId, ProjectileEnd, ProjectileEvent, ProjectileId, ProjectileSize, Shooter};
 
 use super::{CreatureWorld, PlayerHit, TARGET_RADIUS};
-use crate::edits::{raycast_blocks, TerrainQuery};
+use crate::edits::{TerrainQuery, raycast_blocks};
 
 /// Hauteur d'un joueur visé par un tir, en blocs
 const PLAYER_HEIGHT: f32 = 1.8;
@@ -129,7 +129,18 @@ impl CreatureWorld {
     }
 
     /// Lance le tir d'une créature
-    pub(crate) fn launch_creature_shot(&mut self, shooter: CreatureId, species: usize, allied: bool, from: Vec3, to: Vec3, homing: Option<Homing>, shot: &herocraft_common::CreatureShot, damage: f32, kind: DamageKind) {
+    pub(crate) fn launch_creature_shot(
+        &mut self,
+        shooter: CreatureId,
+        species: usize,
+        allied: bool,
+        from: Vec3,
+        to: Vec3,
+        homing: Option<Homing>,
+        shot: &herocraft_common::CreatureShot,
+        damage: f32,
+        kind: DamageKind,
+    ) {
         let block = self.geometry.block_height as f32;
         let line = to - from;
         let distance = line.length().max(1e-4);
@@ -138,7 +149,8 @@ impl CreatureWorld {
         let id = self.next_projectile_id();
         // Un tir perforant file droit au-delà de sa cible, jusqu'au bout de la grappe ; un tir guidé
         // a de la marge pour suivre une cible qui fuit
-        let (left, homing, radius, pierce_count) = if pierce > 0.0 { (distance + 4.0 * pierce, None, pierce, u32::MAX) } else { (distance * 2.0 + 4.0 * block, homing, 0.0, 0) };
+        let (left, homing, radius, pierce_count) =
+            if pierce > 0.0 { (distance + 4.0 * pierce, None, pierce, u32::MAX) } else { (distance * 2.0 + 4.0 * block, homing, 0.0, 0) };
         let speed = shot.speed.max(0.0) * block;
         self.projectiles.push(Projectile {
             id,
@@ -161,7 +173,13 @@ impl CreatureWorld {
             payload: Payload::Creature { species, damage, kind, blast: shot.radius * block },
         });
         let shown = if speed > 0.0 { speed } else { distance * 20.0 };
-        self.projectile_events.push(ProjectileEvent::Launch { id, shooter: Shooter::Creature { id: shooter, species: species as u32 }, skill: String::new(), from, velocity: direction * shown });
+        self.projectile_events.push(ProjectileEvent::Launch {
+            id,
+            shooter: Shooter::Creature { id: shooter, species: species as u32 },
+            skill: String::new(),
+            from,
+            velocity: direction * shown,
+        });
     }
 
     /// Lance le tir d'une compétence ; ses touches sont rendues par `take_contacts`
@@ -189,7 +207,13 @@ impl CreatureWorld {
             spared: Vec::new(),
             payload: Payload::Skill { tag: shot.tag },
         });
-        self.projectile_events.push(ProjectileEvent::Launch { id, shooter: Shooter::Player(shot.caster), skill: shot.skill, from: shot.from, velocity: direction * shot.speed * block });
+        self.projectile_events.push(ProjectileEvent::Launch {
+            id,
+            shooter: Shooter::Player(shot.caster),
+            skill: shot.skill,
+            from: shot.from,
+            velocity: direction * shot.speed * block,
+        });
         id
     }
 
@@ -316,7 +340,11 @@ impl CreatureWorld {
                                     p.direction = (aim - at).normalize_or_zero();
                                     p.left = distance * 1.5 + 2.0 * block;
                                     p.homing = Some(Homing::Creature(target_id));
-                                    self.projectile_events.push(ProjectileEvent::Turn { id: p.id, at, velocity: p.direction * p.speed.max(1.0) });
+                                    self.projectile_events.push(ProjectileEvent::Turn {
+                                        id: p.id,
+                                        at,
+                                        velocity: p.direction * p.speed.max(1.0),
+                                    });
                                     advanced = t;
                                     turned = true;
                                     break;
@@ -334,12 +362,15 @@ impl CreatureWorld {
                             let guard = self.guards.iter().find(|g| g.key == key).copied();
                             // De face, sur la garde du Mur vivant : il s'arrête net
                             if let Some((facing, cos)) = guard.and_then(|g| g.front)
-                                && (-p.direction).dot(facing) >= cos {
+                                && (-p.direction).dot(facing) >= cos
+                            {
                                 end = Some((at, ProjectileEnd::Blocked));
                                 break;
                             }
                             // Le vent du Manteau de Zéphyr l'écarte
-                            let deflects = guard.and_then(|g| g.deflect).is_some_and(|most| most == ProjectileSize::Large || p.size == ProjectileSize::Small);
+                            let deflects = guard
+                                .and_then(|g| g.deflect)
+                                .is_some_and(|most| most == ProjectileSize::Large || p.size == ProjectileSize::Small);
                             if deflects && turns < MAX_TURNS_PER_STEP {
                                 turns += 1;
                                 let up = at.normalize_or_zero();
@@ -350,7 +381,11 @@ impl CreatureWorld {
                                 p.homing = None;
                                 p.spared.push(key);
                                 p.left = p.left.min(DEFLECTED_RANGE * block);
-                                self.projectile_events.push(ProjectileEvent::Turn { id: p.id, at, velocity: p.direction * p.speed.max(1.0) });
+                                self.projectile_events.push(ProjectileEvent::Turn {
+                                    id: p.id,
+                                    at,
+                                    velocity: p.direction * p.speed.max(1.0),
+                                });
                                 advanced = t;
                                 turned = true;
                                 break;
@@ -393,11 +428,16 @@ impl CreatureWorld {
                 // Un tir qui explose touche tout ennemi dans son rayon, où qu'il s'arrête
                 if let Payload::Creature { species, damage, kind, blast } = p.payload {
                     if blast > 0.0 {
-                        for c in self.creatures.iter().filter(|c| c.is_alive() && !c.hidden && self.is_foe(p, c) && c.position.distance(at) <= blast) {
+                        for c in self
+                            .creatures
+                            .iter()
+                            .filter(|c| c.is_alive() && !c.hidden && self.is_foe(p, c) && c.position.distance(at) <= blast)
+                        {
                             blasts.push((c.id, at, damage, kind));
                         }
                         if !p.allied
-                            && let Shooter::Creature { id, .. } = p.shooter {
+                            && let Shooter::Creature { id, .. } = p.shooter
+                        {
                             for (k, feet) in players.iter().enumerate() {
                                 if feet.distance(at) <= blast && !p.spared.contains(&key_of(k)) {
                                     player_hits.push(PlayerHit { player: k, creature_id: id, species, damage, kind });
@@ -410,7 +450,8 @@ impl CreatureWorld {
                         match p.homing {
                             Some(Homing::Creature(id)) if !p.hit.contains(&id) => blasts.push((id, at, damage, kind)),
                             Some(Homing::Player(key)) if !p.spared.contains(&key) => {
-                                if let (Some(k), Shooter::Creature { id, .. }) = ((0..players.len()).find(|&k| key_of(k) == key), p.shooter) {
+                                if let (Some(k), Shooter::Creature { id, .. }) = ((0..players.len()).find(|&k| key_of(k) == key), p.shooter)
+                                {
                                     player_hits.push(PlayerHit { player: k, creature_id: id, species, damage, kind });
                                 }
                             }
@@ -442,20 +483,25 @@ impl CreatureWorld {
         if matches!(p.shooter, Shooter::Creature { id, .. } if id == c.id) {
             return false;
         }
-        if p.allied {
-            !c.tamed && c.summoner.is_none()
-        } else {
-            c.summoner.is_some() || c.tamed
-        }
+        if p.allied { !c.tamed && c.summoner.is_none() } else { c.summoner.is_some() || c.tamed }
     }
 
     /// Les rencontres du segment de longueur `step` que le projectile `p` parcourt depuis sa position
-    fn meets(&self, p: &Projectile, step: f32, query: Option<&mut TerrainQuery>, players: &[Vec3], key_of: &dyn Fn(usize) -> PlayerId) -> Vec<(f32, Meet)> {
+    fn meets(
+        &self,
+        p: &Projectile,
+        step: f32,
+        query: Option<&mut TerrainQuery>,
+        players: &[Vec3],
+        key_of: &dyn Fn(usize) -> PlayerId,
+    ) -> Vec<(f32, Meet)> {
         let block = self.geometry.block_height as f32;
         let mut meets = Vec::new();
         let (from, dir) = (p.position, p.direction);
         if let (false, Some(query)) = (p.through_terrain, query) {
-            let hit = raycast_blocks(&self.geometry, from.as_dvec3(), dir.as_dvec3(), step as f64, |pos| Some(query.block(pos)).filter(|b| b.is_solid()));
+            let hit = raycast_blocks(&self.geometry, from.as_dvec3(), dir.as_dvec3(), step as f64, |pos| {
+                Some(query.block(pos)).filter(|b| b.is_solid())
+            });
             if let Some(hit) = hit {
                 meets.push((hit.distance as f32, Meet::Terrain));
             }
@@ -466,8 +512,10 @@ impl CreatureWorld {
             if wall {
                 // Un mur arrête les tirs du camp d'en face : un mur invoqué, ceux des bêtes hostiles
                 let blocks = c.summoner.is_some() != p.allied;
-                if blocks && !p.through_obstacles
-                    && let Some(t) = box_entry(from, dir, step, c.position, c.yaw, &species.collider(), c.scale() * block, p.radius) {
+                if blocks
+                    && !p.through_obstacles
+                    && let Some(t) = box_entry(from, dir, step, c.position, c.yaw, &species.collider(), c.scale() * block, p.radius)
+                {
                     meets.push((t, Meet::Obstacle(c.id)));
                 }
                 continue;
@@ -479,7 +527,9 @@ impl CreatureWorld {
             let scale = c.scale() * block;
             let reach = p.radius + species.body.half_width.max(TARGET_RADIUS) * scale;
             let up = c.position.normalize_or_zero();
-            if let Some(t) = capsule_entry(from, dir, step, c.position, up, species.body.height.max(0.5) * scale, reach, VERTICAL_SLACK * block) {
+            if let Some(t) =
+                capsule_entry(from, dir, step, c.position, up, species.body.height.max(0.5) * scale, reach, VERTICAL_SLACK * block)
+            {
                 meets.push((t, Meet::Creature(c.id)));
             }
         }
@@ -490,7 +540,16 @@ impl CreatureWorld {
                     continue;
                 }
                 let up = feet.normalize_or_zero();
-                if let Some(t) = capsule_entry(from, dir, step, *feet, up, PLAYER_HEIGHT * block, p.radius + TARGET_RADIUS * block, VERTICAL_SLACK * block) {
+                if let Some(t) = capsule_entry(
+                    from,
+                    dir,
+                    step,
+                    *feet,
+                    up,
+                    PLAYER_HEIGHT * block,
+                    p.radius + TARGET_RADIUS * block,
+                    VERTICAL_SLACK * block,
+                ) {
                     meets.push((t, Meet::Player(k)));
                 }
             }
@@ -516,7 +575,16 @@ pub(crate) fn capsule_entry(from: Vec3, dir: Vec3, length: f32, base: Vec3, up: 
 /// Où le segment `from + dir·t` (t de 0 à `length`) entre dans la boîte d'un corps solide posé en
 /// `feet`, tourné du cap `yaw` (`scale` : taille d'un bloc, à l'échelle de la bête), grossie de
 /// `margin`
-pub(crate) fn box_entry(from: Vec3, dir: Vec3, length: f32, feet: Vec3, yaw: f32, collider: &herocraft_common::Collider, scale: f32, margin: f32) -> Option<f32> {
+pub(crate) fn box_entry(
+    from: Vec3,
+    dir: Vec3,
+    length: f32,
+    feet: Vec3,
+    yaw: f32,
+    collider: &herocraft_common::Collider,
+    scale: f32,
+    margin: f32,
+) -> Option<f32> {
     let up = feet.normalize_or_zero();
     let (east, north) = herocraft_common::tangent_frame(up);
     let ahead = north * yaw.cos() + east * yaw.sin();

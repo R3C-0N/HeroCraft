@@ -4,7 +4,7 @@
 //! (lumière voilée, nuages, colonnes où tombe la pluie).
 
 use glam::Vec3;
-use herocraft_world::weather::{year_phase, SNOW_TEMPERATURE};
+use herocraft_world::weather::{SNOW_TEMPERATURE, year_phase};
 use herocraft_world::{BlockGeometry, PlanetWorldGenerator, WeatherModel, WeatherSample};
 
 use crate::audio::synth::Noise;
@@ -217,7 +217,14 @@ impl Default for ColumnTops {
 
 impl ColumnTops {
     /// Nouvelles colonnes s'il faut les relire, sinon `None`
-    pub(crate) fn update(&mut self, dt: f32, collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3, base_radius: f32) -> Option<Vec<Column>> {
+    pub(crate) fn update(
+        &mut self,
+        dt: f32,
+        collider: &VoxelCollider,
+        generator: &PlanetWorldGenerator,
+        feet: Vec3,
+        base_radius: f32,
+    ) -> Option<Vec<Column>> {
         self.refresh_in -= dt;
         let geometry = BlockGeometry::new(base_radius as f64);
         let at = geometry.block_at_point(feet.as_dvec3())?;
@@ -231,7 +238,8 @@ impl ColumnTops {
         let r = precipitation::RADIUS_BLOCKS;
         let face_blocks = herocraft_world::FACE_BLOCKS;
         let cells: Vec<(i32, i32)> = (-r..=r).flat_map(|dz| (-r..=r).map(move |dx| (at.x + dx, at.z + dz))).collect();
-        let inside: Vec<(i32, i32)> = cells.iter().copied().filter(|&(x, z)| (0..face_blocks).contains(&x) && (0..face_blocks).contains(&z)).collect();
+        let inside: Vec<(i32, i32)> =
+            cells.iter().copied().filter(|&(x, z)| (0..face_blocks).contains(&x) && (0..face_blocks).contains(&z)).collect();
         let tops = collider.support_tops(generator, at.face, &inside);
         let mut tops = tops.into_iter();
         Some(
@@ -303,8 +311,8 @@ impl CloudWeather {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use herocraft_world::weather::SEASON_SECONDS;
     use herocraft_world::WeatherKind;
+    use herocraft_world::weather::SEASON_SECONDS;
 
     #[test]
     fn seasons_colour_the_leaves_in_autumn_and_strip_them_in_winter() {

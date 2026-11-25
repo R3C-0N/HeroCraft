@@ -28,7 +28,14 @@ fn main() {
     println!("{} chemins tracés en {:.0} ms", roads.len(), start.elapsed().as_secs_f64() * 1000.0);
     for road in &roads {
         let straight = (((road.from.0 - road.to.0) as f64).powi(2) + ((road.from.1 - road.to.1) as f64).powi(2)).sqrt();
-        println!("  {:?} → {:?} : {:.0} blocs ({:.0} à vol d'oiseau), {} colonnes", road.from, road.to, road.length(), straight, road.columns());
+        println!(
+            "  {:?} → {:?} : {:.0} blocs ({:.0} à vol d'oiseau), {} colonnes",
+            road.from,
+            road.to,
+            road.length(),
+            straight,
+            road.columns()
+        );
     }
     let Some(out) = args.get(3) else {
         return;

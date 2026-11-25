@@ -16,9 +16,9 @@ pub mod painter;
 use serde::{Deserialize, Serialize};
 
 use crate::character::PlayerClass;
-pub use atlas::{atlas, Atlas, Espece, Variante};
-pub use classes::{class_sheet, ClassSheet, Family, CLASSES};
-pub use painter::{paint, Sheet, SHEET_SIZE};
+pub use atlas::{Atlas, Espece, Variante, atlas};
+pub use classes::{CLASSES, ClassSheet, Family, class_sheet};
+pub use painter::{SHEET_SIZE, Sheet, paint};
 
 /// Le plus long nom qu'un héros peut porter
 pub const NAME_MAX: usize = 32;
@@ -145,11 +145,7 @@ impl Appearance {
             self.barbe = b;
         }
         fn dans(valeur: &str, permis: impl IntoIterator<Item = impl AsRef<str>>, quoi: &'static str) -> Result<(), LegendError> {
-            if permis.into_iter().any(|p| p.as_ref() == valeur) {
-                Ok(())
-            } else {
-                Err(LegendError::UnknownChoice(quoi))
-            }
+            if permis.into_iter().any(|p| p.as_ref() == valeur) { Ok(()) } else { Err(LegendError::UnknownChoice(quoi)) }
         }
         use atlas::Choix;
         dans(&self.peau, a.peaux_de(self), "couleur de peau")?;
@@ -250,11 +246,7 @@ pub fn random_name(rng: &mut impl FnMut() -> f64) -> String {
         liste[((rng() * liste.len() as f64) as usize).min(liste.len() - 1)]
     }
     let nom = format!("{}{}", pick(rng, &SYL1), pick(rng, &SYL2));
-    if rng() < 0.55 {
-        format!("{nom} {}", pick(rng, &TITRES))
-    } else {
-        nom
-    }
+    if rng() < 0.55 { format!("{nom} {}", pick(rng, &TITRES)) } else { nom }
 }
 
 /// Un petit générateur de hasard (xorshift), semé par l'horloge : la forge n'a besoin que de dés

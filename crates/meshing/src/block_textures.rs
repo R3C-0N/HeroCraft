@@ -9,7 +9,7 @@
 
 use std::sync::OnceLock;
 
-use herocraft_common::{blocks, items, BlockId, ItemId};
+use herocraft_common::{BlockId, ItemId, blocks, items};
 
 use crate::texture::Texture;
 
@@ -177,10 +177,8 @@ impl BlockTextureSet {
                 );
             }
         }
-        let view = texture.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            ..Default::default()
-        });
+        let view = texture
+            .create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
         // Texels nets de près, fondus de loin (sans scintillement). Répétée : le dessus d'une rangée
         // de blocs semblables du relief lointain est un seul quad qui répète la texture.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -194,11 +192,14 @@ impl BlockTextureSet {
         });
         // Genre de végétation de chaque couche, pour les saisons (2 bits par couche)
         let classes = self.foliage_words();
-        let foliage = wgpu::util::DeviceExt::create_buffer_init(device, &wgpu::util::BufferInitDescriptor {
-            label: Some("Block Foliage Classes"),
-            contents: bytemuck::cast_slice(&classes),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
+        let foliage = wgpu::util::DeviceExt::create_buffer_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Block Foliage Classes"),
+                contents: bytemuck::cast_slice(&classes),
+                usage: wgpu::BufferUsages::UNIFORM,
+            },
+        );
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Block Texture Bind Group Layout"),
             entries: &[
@@ -221,7 +222,11 @@ impl BlockTextureSet {
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 },
             ],
@@ -281,7 +286,8 @@ impl Layer {
     /// Couche neutre : la couleur du sommet seule
     fn flat() -> Self {
         let neutral = (255.0 / RATIO_RANGE).round() as u8;
-        let mips = (0..MIP_LEVELS).map(|level| [neutral, neutral, neutral, 255].repeat(((TEXTURE_SIZE >> level).pow(2)) as usize)).collect();
+        let mips =
+            (0..MIP_LEVELS).map(|level| [neutral, neutral, neutral, 255].repeat(((TEXTURE_SIZE >> level).pow(2)) as usize)).collect();
         Self { mips, mean: [1.0; 3] }
     }
 

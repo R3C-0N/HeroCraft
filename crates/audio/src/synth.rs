@@ -113,11 +113,7 @@ fn samples(seconds: f32) -> usize {
 
 /// Enveloppe attaque linéaire puis déclin exponentiel (`decay` en secondes pour perdre ~63 %)
 fn envelope(t: f32, attack: f32, decay: f32) -> f32 {
-    if t < attack {
-        t / attack
-    } else {
-        (-(t - attack) / decay).exp()
-    }
+    if t < attack { t / attack } else { (-(t - attack) / decay).exp() }
 }
 
 /// Ramène le pic du son à `peak` (les filtres donnent des niveaux très différents selon la matière)

@@ -98,7 +98,7 @@ impl PlanetDescriptor {
 /// Convertit un point 3D sur la sphère unitaire en latitude et longitude géographiques
 pub fn unit_sphere_to_lat_lon(point: DVec3) -> (f64, f64) {
     let lat = point.y.clamp(-1.0, 1.0).asin(); // Latitude [-pi/2, pi/2]
-    let lon = point.z.atan2(point.x);          // Longitude [-pi, pi]
+    let lon = point.z.atan2(point.x); // Longitude [-pi, pi]
     (lat, lon)
 }
 

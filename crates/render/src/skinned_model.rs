@@ -85,7 +85,12 @@ impl SkinnedModel {
             .buffers
             .iter()
             .map(|b| {
-                let data = b.uri.as_deref().and_then(|uri| uri.split_once(";base64,")).map(|(_, data)| data).context("seuls les tampons embarqués en base64 sont lus")?;
+                let data = b
+                    .uri
+                    .as_deref()
+                    .and_then(|uri| uri.split_once(";base64,"))
+                    .map(|(_, data)| data)
+                    .context("seuls les tampons embarqués en base64 sont lus")?;
                 base64::engine::general_purpose::STANDARD.decode(data).map_err(|e| anyhow::anyhow!("tampon illisible : {e}"))
             })
             .collect::<anyhow::Result<Vec<_>>>()?;

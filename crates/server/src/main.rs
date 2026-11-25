@@ -1,6 +1,6 @@
 use std::io::BufRead;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Context;
 use herocraft_common::DEFAULT_PORT;
@@ -8,7 +8,6 @@ use herocraft_server::{Server, ServerConfig, TICK_RATE};
 use log::{info, warn};
 
 const USAGE: &str = "Usage : herocraft_server [--bind ADRESSE:PORT] [--port PORT] [--seed GRAINE] [--name NOM] [--no-lan]";
-
 
 /// Allocateur mimalloc : les fils de génération et de maillage allouent beaucoup de petits `Vec`
 /// en parallèle, cas où l'allocateur du système (surtout celui de Windows) est le plus lent
@@ -55,7 +54,10 @@ fn main() -> anyhow::Result<()> {
         }
     }
     info!("Planète de graine #{seed}, sauvegarde dans {}/.", herocraft_world::save_dir_name("serveur_monde", seed));
-    info!("En écoute sur {} à {TICK_RATE} TPS. Tapez « stop » pour arrêter le serveur proprement, « help » pour les autres commandes.", server.local_addr().map(|a| a.to_string()).unwrap_or(bind));
+    info!(
+        "En écoute sur {} à {TICK_RATE} TPS. Tapez « stop » pour arrêter le serveur proprement, « help » pour les autres commandes.",
+        server.local_addr().map(|a| a.to_string()).unwrap_or(bind)
+    );
 
     // Console : « stop » arrête la boucle, qui enregistre le monde avant de rendre la main
     let running = Arc::new(AtomicBool::new(true));

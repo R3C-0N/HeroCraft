@@ -215,7 +215,15 @@ impl Audio {
                 None
             }
         };
-        Self { output, rng: Noise::new(0xA0D1), last_variant: usize::MAX, tracker: PlayerSoundTracker::default(), wind_level: 0.0, rain_level: 0.0, critter_in: 4.0 }
+        Self {
+            output,
+            rng: Noise::new(0xA0D1),
+            last_variant: usize::MAX,
+            tracker: PlayerSoundTracker::default(),
+            wind_level: 0.0,
+            rain_level: 0.0,
+            critter_in: 4.0,
+        }
     }
 
     /// Tire une variante, différente de la précédente quand il y en a plusieurs
@@ -431,7 +439,8 @@ mod tests {
         let muted = AudioSettings { muted: true, ..AudioSettings::default() };
         audio.block_broken(Material::Stone, 0.0, &muted);
         audio.preview(&muted);
-        let input = AmbienceInput { ground_view: true, paused: false, height_blocks: 0.0, covered: false, is_day: true, rain: 0.0, wind: 0.0 };
+        let input =
+            AmbienceInput { ground_view: true, paused: false, height_blocks: 0.0, covered: false, is_day: true, rain: 0.0, wind: 0.0 };
         audio.update_ambience(0.016, input, &muted);
     }
 
@@ -465,7 +474,8 @@ mod tests {
         audio.play(|b| &b.crickets, 0.5, 0.0);
         pause(1.5);
         println!("Vent");
-        let input = AmbienceInput { ground_view: true, paused: false, height_blocks: 40.0, covered: false, is_day: true, rain: 0.0, wind: 0.0 };
+        let input =
+            AmbienceInput { ground_view: true, paused: false, height_blocks: 40.0, covered: false, is_day: true, rain: 0.0, wind: 0.0 };
         for _ in 0..300 {
             audio.update_ambience(0.016, AmbienceInput { is_day: false, ..input }, &settings);
             pause(0.016);

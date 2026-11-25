@@ -158,11 +158,7 @@ pub fn carvable_range(column: &ColumnSample) -> Range<i32> {
 /// Profondeur sous la surface d'un bloc qui peut être creusé, `None` s'il doit rester plein
 #[inline]
 fn carvable_depth(column: &ColumnSample, y: i32) -> Option<f64> {
-    if carvable_range(column).contains(&y) {
-        Some(column.elevation.floor() - y as f64)
-    } else {
-        None
-    }
+    if carvable_range(column).contains(&y) { Some(column.elevation.floor() - y as f64) } else { None }
 }
 
 #[inline]

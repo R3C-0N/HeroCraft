@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::items::{items, ItemId};
+use crate::items::{ItemId, items};
 
 /// Dégâts d'un coup à mains nues (ou d'un objet qui n'est pas une arme)
 pub(crate) const BARE_HAND_DAMAGE: f32 = crate::creature::PLAYER_HIT_DAMAGE;
@@ -170,11 +170,7 @@ impl Held {
 
     /// Dégâts d'un coup au corps à corps : ceux de l'arme, un coup de crosse pour un arc ou une arbalète
     pub fn melee_damage(&self) -> f32 {
-        if self.is_ranged() {
-            BUTT_DAMAGE
-        } else {
-            self.damage
-        }
+        if self.is_ranged() { BUTT_DAMAGE } else { self.damage }
     }
 }
 

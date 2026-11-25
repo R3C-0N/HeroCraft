@@ -6,12 +6,12 @@
 //! (`StoneEvent::Obtained`).
 
 use glam::{Quat, Vec3};
-use herocraft_common::{blocks, BlockId, ItemId, StoneEvent, StoneKind};
+use herocraft_common::{BlockId, ItemId, StoneEvent, StoneKind, blocks};
 use herocraft_world::PlanetWorldGenerator;
 
 use crate::block_textures::{block_textures, face_uv};
 use crate::collision::VoxelCollider;
-use crate::inventory::{item_colors, Inventory};
+use crate::inventory::{Inventory, item_colors};
 use crate::planet_mesh::{PlanetMesh, PlanetVertex};
 
 /// Côté du cube dessiné, en blocs
@@ -116,7 +116,8 @@ impl DroppedItems {
     /// Au-delà de `MAX_ITEMS`, le plus ancien objet disparaît (jamais une Pierre du Néant)
     fn evict_oldest(&mut self) {
         if self.items.len() > MAX_ITEMS
-            && let Some(oldest) = self.items.iter().position(|item| !item.item.is_void_stone()) {
+            && let Some(oldest) = self.items.iter().position(|item| !item.item.is_void_stone())
+        {
             self.items.remove(oldest);
         }
     }
@@ -225,7 +226,13 @@ fn push_icon(mesh: &mut PlanetMesh, center: Vec3, right: Vec3, up: Vec3, item: I
     // Une Pierre du Néant luit de sa propre lumière, même dans la nuit d'une crypte
     let light = if item.is_void_stone() { 1.0 } else { 0.0 };
     let Some(layer) = block_textures().icon_layer(item) else {
-        push_cube(mesh, center, [right / ICON_SCALE, up / ICON_SCALE, right.cross(up).normalize_or_zero() * right.length() / ICON_SCALE], BlockId::AIR, light);
+        push_cube(
+            mesh,
+            center,
+            [right / ICON_SCALE, up / ICON_SCALE, right.cross(up).normalize_or_zero() * right.length() / ICON_SCALE],
+            BlockId::AIR,
+            light,
+        );
         return;
     };
     let mean = block_textures().mean(layer).unwrap_or([1.0; 3]);
@@ -238,7 +245,13 @@ fn push_icon(mesh: &mut PlanetMesh, center: Vec3, right: Vec3, up: Vec3, item: I
             let tu = if su * side > 0.0 { 16 } else { 0 };
             let tv = if sv > 0.0 { 0 } else { 16 };
             let texture = PlanetVertex::pack_texture(layer, tu, tv);
-            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: (normal * side).to_array(), color: [mean[0], mean[1], mean[2], 1.0], texture, light });
+            mesh.vertices.push(PlanetVertex {
+                position: corner.to_array(),
+                normal: (normal * side).to_array(),
+                color: [mean[0], mean[1], mean[2], 1.0],
+                texture,
+                light,
+            });
         }
         mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
@@ -266,7 +279,13 @@ fn push_cube(mesh: &mut PlanetMesh, center: Vec3, axes: [Vec3; 3], block: BlockI
             }
             let (tu, tv) = face_uv(dir, local);
             let texture = PlanetVertex::pack_texture(layer, tu, tv);
-            mesh.vertices.push(PlanetVertex { position: corner.to_array(), normal: normal.to_array(), color: [color[0], color[1], color[2], 1.0], texture, light });
+            mesh.vertices.push(PlanetVertex {
+                position: corner.to_array(),
+                normal: normal.to_array(),
+                color: [color[0], color[1], color[2], 1.0],
+                texture,
+                light,
+            });
         }
         mesh.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }

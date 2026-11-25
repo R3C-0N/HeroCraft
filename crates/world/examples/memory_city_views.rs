@@ -3,7 +3,7 @@
 //! deux vues isométriques du passé, depuis l'entrée du temple et depuis le fond. Une image PPM par
 //! vue.
 //! Usage : cargo run -p herocraft_world --release --example memory_city_views -- [graine] [dossier] [peuple du joueur]
-use herocraft_common::{blocks, BlockId, PlanetFace};
+use herocraft_common::{BlockId, PlanetFace, blocks};
 use herocraft_world::{Culture, Epoch, MemoryCity, PlanetDescriptor, PlanetWorldGenerator, TempleSite};
 use std::io::Write;
 
@@ -50,7 +50,10 @@ struct View {
 }
 
 fn color(block: BlockId, top: bool) -> [f32; 3] {
-    let c = blocks().get(BlockId(block.0 & !(0x7 << BlockId::ROTATION_SHIFT))).map(|b| if top { b.top_color() } else { b.side_color() }).unwrap_or([1.0, 0.0, 1.0, 1.0]);
+    let c = blocks()
+        .get(BlockId(block.0 & !(0x7 << BlockId::ROTATION_SHIFT)))
+        .map(|b| if top { b.top_color() } else { b.side_color() })
+        .unwrap_or([1.0, 0.0, 1.0, 1.0]);
     [c[0], c[1], c[2]]
 }
 
@@ -94,7 +97,13 @@ impl View {
                 let (x, z) = self.world(i, j, false);
                 let column = generator.sample_block_column(self.face, x, z);
                 let ground = column.elevation.floor() as i32;
-                let Some((y, b)) = (ground - 4..ground + 30).rev().map(|y| (y, generator.column_block(&column, self.face, x, y, z))).find(|(_, b)| !b.is_air()) else { continue };
+                let Some((y, b)) = (ground - 4..ground + 30)
+                    .rev()
+                    .map(|y| (y, generator.column_block(&column, self.face, x, y, z)))
+                    .find(|(_, b)| !b.is_air())
+                else {
+                    continue;
+                };
                 let shade = (0.75 + 0.025 * (y - base) as f32).clamp(0.4, 1.25);
                 let px = color(b, true).map(|v| ((v * shade).clamp(0.0, 1.0) * 255.0) as u8);
                 for py in 0..P {
@@ -178,7 +187,13 @@ impl View {
                             if v < half || v > 2.0 * S as f32 - half {
                                 continue;
                             }
-                            let (c, k) = if v < S as f32 - half { (top, 1.0) } else if u < 0.0 { (side, 0.8) } else { (side, 0.62) };
+                            let (c, k) = if v < S as f32 - half {
+                                (top, 1.0)
+                            } else if u < 0.0 {
+                                (side, 0.8)
+                            } else {
+                                (side, 0.62)
+                            };
                             let (sx, sy) = (px + dx - S, py + dy - S / 2);
                             if sx < 0 || sy < 0 || sx >= width || sy >= height {
                                 continue;

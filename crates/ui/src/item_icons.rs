@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use herocraft_common::{blocks, items, BlockId, ItemId};
+use herocraft_common::{BlockId, ItemId, blocks, items};
 
 use herocraft_render::skinned_model::Texture;
 
@@ -45,7 +45,13 @@ impl ItemIcons {
                 match icon {
                     Some(texture) => paint_flat(painter, rect.shrink(rect.width() * 0.16), texture, egui::Color32::WHITE),
                     None => {
-                        painter.text(rect.center(), egui::Align2::CENTER_CENTER, "?", egui::FontId::proportional(18.0), egui::Color32::GRAY);
+                        painter.text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "?",
+                            egui::FontId::proportional(18.0),
+                            egui::Color32::GRAY,
+                        );
                     }
                 }
             }
@@ -60,7 +66,8 @@ impl ItemIcons {
         let tint = sheet.texture_tint.map_or(egui::Color32::WHITE, |t| to_color(t.0, 1.0));
         let side = self.block_texture(ctx, &sheet.textures.side);
         if block.is_plant()
-            && let Some(texture) = side {
+            && let Some(texture) = side
+        {
             return paint_flat(painter, rect.shrink(rect.width() * 0.14), texture, tint);
         }
         let top = self.block_texture(ctx, &sheet.textures.top).or(side);
@@ -81,7 +88,13 @@ fn paint_flat(painter: &egui::Painter, rect: egui::Rect, texture: egui::TextureI
 
 /// Petit cube isométrique : dessus, face gauche et face droite, chacune couverte de sa texture
 /// (`textures` : dessus, côtés) ou de sa couleur, assombrie selon son orientation
-fn paint_cube(painter: &egui::Painter, rect: egui::Rect, textures: [Option<egui::TextureId>; 2], colors: [[f32; 4]; 2], tint: egui::Color32) {
+fn paint_cube(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    textures: [Option<egui::TextureId>; 2],
+    colors: [[f32; 4]; 2],
+    tint: egui::Color32,
+) {
     let c = rect.center();
     let s = rect.width() * 0.62_f32;
     let (hx, hy) = (s * 0.43_f32, s * 0.25_f32);

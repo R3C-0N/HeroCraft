@@ -1,4 +1,4 @@
-use crate::chunk::{ChunkData, CHUNK_SIZE};
+use crate::chunk::{CHUNK_SIZE, ChunkData};
 
 /// Sommet de maillage voxel pour le pipeline WGPU / GPU
 #[repr(C)]
@@ -66,15 +66,7 @@ impl VoxelMesh {
         mesh
     }
 
-    fn add_quad(
-        &mut self,
-        v0: [f32; 3],
-        v1: [f32; 3],
-        v2: [f32; 3],
-        v3: [f32; 3],
-        normal: [f32; 3],
-        block_id: u32,
-    ) {
+    fn add_quad(&mut self, v0: [f32; 3], v1: [f32; 3], v2: [f32; 3], v3: [f32; 3], normal: [f32; 3], block_id: u32) {
         let base_index = self.vertices.len() as u32;
 
         self.vertices.push(VoxelVertex { position: v0, normal, uv: [0.0, 0.0], block_id });
@@ -83,80 +75,31 @@ impl VoxelMesh {
         self.vertices.push(VoxelVertex { position: v3, normal, uv: [0.0, 1.0], block_id });
 
         // Deux triangles par quad
-        self.indices.extend_from_slice(&[
-            base_index,
-            base_index + 1,
-            base_index + 2,
-            base_index,
-            base_index + 2,
-            base_index + 3,
-        ]);
+        self.indices.extend_from_slice(&[base_index, base_index + 1, base_index + 2, base_index, base_index + 2, base_index + 3]);
     }
 
     fn add_quad_top(&mut self, x: f32, y: f32, z: f32, id: u32) {
-        self.add_quad(
-            [x, y + 1.0, z + 1.0],
-            [x + 1.0, y + 1.0, z + 1.0],
-            [x + 1.0, y + 1.0, z],
-            [x, y + 1.0, z],
-            [0.0, 1.0, 0.0],
-            id,
-        );
+        self.add_quad([x, y + 1.0, z + 1.0], [x + 1.0, y + 1.0, z + 1.0], [x + 1.0, y + 1.0, z], [x, y + 1.0, z], [0.0, 1.0, 0.0], id);
     }
 
     fn add_quad_bottom(&mut self, x: f32, y: f32, z: f32, id: u32) {
-        self.add_quad(
-            [x, y, z],
-            [x + 1.0, y, z],
-            [x + 1.0, y, z + 1.0],
-            [x, y, z + 1.0],
-            [0.0, -1.0, 0.0],
-            id,
-        );
+        self.add_quad([x, y, z], [x + 1.0, y, z], [x + 1.0, y, z + 1.0], [x, y, z + 1.0], [0.0, -1.0, 0.0], id);
     }
 
     fn add_quad_left(&mut self, x: f32, y: f32, z: f32, id: u32) {
-        self.add_quad(
-            [x, y, z + 1.0],
-            [x, y + 1.0, z + 1.0],
-            [x, y + 1.0, z],
-            [x, y, z],
-            [-1.0, 0.0, 0.0],
-            id,
-        );
+        self.add_quad([x, y, z + 1.0], [x, y + 1.0, z + 1.0], [x, y + 1.0, z], [x, y, z], [-1.0, 0.0, 0.0], id);
     }
 
     fn add_quad_right(&mut self, x: f32, y: f32, z: f32, id: u32) {
-        self.add_quad(
-            [x + 1.0, y, z],
-            [x + 1.0, y + 1.0, z],
-            [x + 1.0, y + 1.0, z + 1.0],
-            [x + 1.0, y, z + 1.0],
-            [1.0, 0.0, 0.0],
-            id,
-        );
+        self.add_quad([x + 1.0, y, z], [x + 1.0, y + 1.0, z], [x + 1.0, y + 1.0, z + 1.0], [x + 1.0, y, z + 1.0], [1.0, 0.0, 0.0], id);
     }
 
     fn add_quad_front(&mut self, x: f32, y: f32, z: f32, id: u32) {
-        self.add_quad(
-            [x, y, z + 1.0],
-            [x + 1.0, y, z + 1.0],
-            [x + 1.0, y + 1.0, z + 1.0],
-            [x, y + 1.0, z + 1.0],
-            [0.0, 0.0, 1.0],
-            id,
-        );
+        self.add_quad([x, y, z + 1.0], [x + 1.0, y, z + 1.0], [x + 1.0, y + 1.0, z + 1.0], [x, y + 1.0, z + 1.0], [0.0, 0.0, 1.0], id);
     }
 
     fn add_quad_back(&mut self, x: f32, y: f32, z: f32, id: u32) {
-        self.add_quad(
-            [x + 1.0, y, z],
-            [x, y, z],
-            [x, y + 1.0, z],
-            [x + 1.0, y + 1.0, z],
-            [0.0, 0.0, -1.0],
-            id,
-        );
+        self.add_quad([x + 1.0, y, z], [x, y, z], [x, y + 1.0, z], [x + 1.0, y + 1.0, z], [0.0, 0.0, -1.0], id);
     }
 }
 

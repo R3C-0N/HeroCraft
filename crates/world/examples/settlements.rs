@@ -1,7 +1,7 @@
 //! Liste les villes, villages et ruines d'une planète, et dessine le plan vu de dessus de l'un d'eux (PPM).
 //! Usage : cargo run -p herocraft_world --release --example settlements -- [graine] [n° à dessiner] [sortie.ppm]
-use herocraft_common::{blocks, PlanetFace};
-use herocraft_world::structures::{Piece, Use, CELLS_PER_FACE};
+use herocraft_common::{PlanetFace, blocks};
+use herocraft_world::structures::{CELLS_PER_FACE, Piece, Use};
 use herocraft_world::{PlanetDescriptor, PlanetWorldGenerator};
 use std::io::Write;
 
@@ -36,7 +36,10 @@ fn main() {
             }
         }
         let buildings = if count.iter().any(|&n| n > 0) {
-            format!(" ({} maisons, {} tavernes, {} granges, {} églises, {} forges, {} étals)", count[0], count[1], count[2], count[3], count[4], count[5])
+            format!(
+                " ({} maisons, {} tavernes, {} granges, {} églises, {} forges, {} étals)",
+                count[0], count[1], count[2], count[3], count[4], count[5]
+            )
         } else {
             String::new()
         };

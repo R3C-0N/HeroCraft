@@ -26,12 +26,7 @@ pub struct WorldChunkCache {
 impl WorldChunkCache {
     /// Crée un nouveau cache avec une capacité maximale et un stockage disque optionnel
     pub fn new(storage: Option<ChunkStorage>, capacity: usize) -> Self {
-        Self {
-            storage,
-            chunks: HashMap::with_capacity(capacity.min(512)),
-            capacity: capacity.max(1),
-            access_counter: 0,
-        }
+        Self { storage, chunks: HashMap::with_capacity(capacity.min(512)), capacity: capacity.max(1), access_counter: 0 }
     }
 
     /// Nombre de chunks actuellement en mémoire vive
@@ -78,11 +73,7 @@ impl WorldChunkCache {
         }
 
         // 2. Présent sur le disque ?
-        let loaded_from_disk = if let Some(ref storage) = self.storage {
-            storage.load_chunk(coord).ok().flatten()
-        } else {
-            None
-        };
+        let loaded_from_disk = if let Some(ref storage) = self.storage { storage.load_chunk(coord).ok().flatten() } else { None };
 
         let (data, is_dirty) = if let Some(disk_chunk) = loaded_from_disk {
             (disk_chunk, false)
@@ -96,28 +87,14 @@ impl WorldChunkCache {
             self.evict_oldest();
         }
 
-        self.chunks.insert(
-            *coord,
-            CachedChunk {
-                data,
-                dirty: is_dirty,
-                last_accessed: counter,
-            },
-        );
+        self.chunks.insert(*coord, CachedChunk { data, dirty: is_dirty, last_accessed: counter });
 
         &self.chunks.get(coord).unwrap().data
     }
 
     /// Modifie un voxel dans un chunk (marque le chunk comme `dirty`)
-    pub fn set_voxel<F>(
-        &mut self,
-        coord: &PlanetChunkCoord,
-        x: u8,
-        y: u8,
-        z: u8,
-        block: BlockId,
-        generator: F,
-    ) where
+    pub fn set_voxel<F>(&mut self, coord: &PlanetChunkCoord, x: u8, y: u8, z: u8, block: BlockId, generator: F)
+    where
         F: FnOnce() -> ChunkData,
     {
         self.get_or_load(coord, generator);
@@ -170,12 +147,14 @@ impl WorldChunkCache {
         }
 
         if let Some(coord) = oldest_coord
-            && let Some(cached) = self.chunks.remove(&coord) {
+            && let Some(cached) = self.chunks.remove(&coord)
+        {
             // Sauvegarder sur disque avant suppression si le chunk a été modifié
             if cached.dirty
-                && let Some(ref storage) = self.storage {
-                    let _ = storage.save_chunk(&coord, &cached.data);
-                }
+                && let Some(ref storage) = self.storage
+            {
+                let _ = storage.save_chunk(&coord, &cached.data);
+            }
         }
     }
 

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use glam::{DVec3, Mat4, Vec3};
 use herocraft_common::BlockId;
 pub(crate) use herocraft_common::tangent_frame;
-use herocraft_world::generator::PlanetWorldGenerator;
 use herocraft_world::TerrainEdits;
+use herocraft_world::generator::PlanetWorldGenerator;
 
 use crate::collision::VoxelCollider;
 
@@ -331,7 +331,8 @@ impl OrbitCamera {
         use herocraft_world::structures::CELLS_PER_FACE;
         let args: Vec<String> = std::env::args().collect();
         let wanted = args.iter().position(|a| a == "--visiter").and_then(|i| args.get(i + 1))?;
-        let rank: usize = args.iter().position(|a| a == "--visiter").and_then(|i| args.get(i + 2)).and_then(|n| n.parse().ok()).unwrap_or(1);
+        let rank: usize =
+            args.iter().position(|a| a == "--visiter").and_then(|i| args.get(i + 2)).and_then(|n| n.parse().ok()).unwrap_or(1);
         // `--culture nain|humain|elfeBois|hautElfe` : seulement les établissements de cette culture
         let culture = args.iter().position(|a| a == "--culture").and_then(|i| args.get(i + 1)).and_then(|c| {
             let found = herocraft_world::Culture::ALL.into_iter().find(|k| k.espece_id().eq_ignore_ascii_case(c));
@@ -341,17 +342,21 @@ impl OrbitCamera {
             found
         });
         let found = herocraft_common::PlanetFace::ALL.into_iter().flat_map(|face| {
-            (0..CELLS_PER_FACE * CELLS_PER_FACE).filter_map(move |i| generator.structures.cell(generator, face, i % CELLS_PER_FACE, i / CELLS_PER_FACE))
+            (0..CELLS_PER_FACE * CELLS_PER_FACE)
+                .filter_map(move |i| generator.structures.cell(generator, face, i % CELLS_PER_FACE, i / CELLS_PER_FACE))
         });
         let found = found.filter(|s| culture.is_none() || s.culture == culture);
         // `temple` : les ruines qui gardent un temple (celui d'une ville-souvenir)
         let temple = wanted.as_str() == "temple";
-        let has_temple = |s: &herocraft_world::structures::Settlement| s.pieces.iter().any(|p| matches!(p, herocraft_world::structures::Piece::Temple(_)));
+        let has_temple = |s: &herocraft_world::structures::Settlement| {
+            s.pieces.iter().any(|p| matches!(p, herocraft_world::structures::Piece::Temple(_)))
+        };
         let mut found = found.filter(|s| !temple || has_temple(s));
         let kind = if temple { "ruines" } else { wanted.as_str() };
-        let Some(settlement) = found.find(|s| s.kind.name() == kind).and_then(|first| {
-            if rank <= 1 { Some(first) } else { found.filter(|s| s.kind == first.kind).nth(rank - 2) }
-        }) else {
+        let Some(settlement) = found
+            .find(|s| s.kind.name() == kind)
+            .and_then(|first| if rank <= 1 { Some(first) } else { found.filter(|s| s.kind == first.kind).nth(rank - 2) })
+        else {
             log::warn!("--visiter {wanted} : aucun établissement de ce genre sur cette planète (ville, village ou ruines).");
             return None;
         };
@@ -407,12 +412,8 @@ impl OrbitCamera {
 
     /// Direction orbitale unitaire de la caméra par rapport au centre planétaire
     pub(crate) fn orbit_direction(&self) -> Vec3 {
-        Vec3::new(
-            self.orbit_pitch.cos() * self.orbit_yaw.sin(),
-            self.orbit_pitch.sin(),
-            self.orbit_pitch.cos() * self.orbit_yaw.cos(),
-        )
-        .normalize()
+        Vec3::new(self.orbit_pitch.cos() * self.orbit_yaw.sin(), self.orbit_pitch.sin(), self.orbit_pitch.cos() * self.orbit_yaw.cos())
+            .normalize()
     }
 
     /// Calcule le rayon minimum de sécurité du sol sous une direction donnée. Avec les collisions par
@@ -797,10 +798,18 @@ impl OrbitCamera {
 
         // 1. Déplacement horizontal ZQSD / WASD
         let mut move_dir = Vec3::ZERO;
-        if self.move_forward { move_dir += forward_tangent; }
-        if self.move_backward { move_dir -= forward_tangent; }
-        if self.move_left { move_dir -= right_tangent; }
-        if self.move_right { move_dir += right_tangent; }
+        if self.move_forward {
+            move_dir += forward_tangent;
+        }
+        if self.move_backward {
+            move_dir -= forward_tangent;
+        }
+        if self.move_left {
+            move_dir -= right_tangent;
+        }
+        if self.move_right {
+            move_dir += right_tangent;
+        }
 
         if move_dir.length_squared() > 0.001 {
             move_dir = move_dir.normalize();
@@ -814,7 +823,9 @@ impl OrbitCamera {
                 (false, true) => 0.45,
                 (true, false) => 0.50,
                 (true, true) => 1.10,
-            } * scale * self.speed_multiplier * self.buff_speed.max(0.0);
+            } * scale
+                * self.speed_multiplier
+                * self.buff_speed.max(0.0);
             let delta = move_dir * speed * dt;
             match &self.collider {
                 // Les murs arrêtent le joueur, qui glisse le long d'eux (axe est puis axe nord)
@@ -830,7 +841,8 @@ impl OrbitCamera {
                         !climbing
                             || self.is_grounded
                             || ladder_contact(collider, generator, candidate).is_some()
-                            || footprint_ground(collider, generator, candidate, STEP_UP) >= start.length() - STEP_UP * collider.block_height()
+                            || footprint_ground(collider, generator, candidate, STEP_UP)
+                                >= start.length() - STEP_UP * collider.block_height()
                     };
                     let moved = [delta, east * delta.dot(east), north * delta.dot(north)].into_iter().find_map(|d| {
                         let candidate = (start + d).normalize() * start.length();
@@ -922,8 +934,12 @@ impl OrbitCamera {
         } else if self.is_flying {
             // Vol : vitesse verticale pilotée directement (~10 blocs/s), sans gravité
             let mut climb = 0.0;
-            if self.ascend_held { climb += 0.40 * scale; }
-            if self.descend_held { climb -= 0.40 * scale; }
+            if self.ascend_held {
+                climb += 0.40 * scale;
+            }
+            if self.descend_held {
+                climb -= 0.40 * scale;
+            }
             self.vertical_velocity = climb;
             self.jump_requested = false;
             current_radius += climb * dt;
@@ -988,7 +1004,8 @@ impl OrbitCamera {
 
         // Plafond : la tête qui monte dans un bloc s'y arrête
         if current_radius > previous_radius
-            && let Some(collider) = &self.collider {
+            && let Some(collider) = &self.collider
+        {
             let h = collider.block_height();
             let head = new_up * (current_radius + self.hero_height * h);
             if collider.any_solid(generator, &footprint(head, h)) {
@@ -1309,10 +1326,7 @@ pub(crate) fn footprint(p: Vec3, block_height: f32) -> [Vec3; 5] {
 /// Rayon du sol sous l'empreinte du joueur : le plus haut des sols de ses coins, au plus `step`
 /// blocs au-dessus des pieds
 fn footprint_ground(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet: Vec3, step: f32) -> f32 {
-    footprint(feet, collider.block_height())
-        .iter()
-        .map(|&p| collider.ground_radius(generator, p, step))
-        .fold(f32::MIN, f32::max)
+    footprint(feet, collider.block_height()).iter().map(|&p| collider.ground_radius(generator, p, step)).fold(f32::MIN, f32::max)
 }
 
 /// Le corps du joueur aux pieds `feet` touche une échelle (de ses pieds, ou juste dessous pour
@@ -1331,10 +1345,8 @@ fn body_blocked(collider: &VoxelCollider, generator: &PlanetWorldGenerator, feet
     let h = collider.block_height();
     let up = feet.normalize();
     let base = feet.length().max(footprint_ground(collider, generator, feet, step));
-    let points: Vec<Vec3> = [GROUND_TOLERANCE, 0.6, 1.2, PLAYER_HEIGHT]
-        .iter()
-        .flat_map(|&height| footprint(up * (base + height * h), h))
-        .collect();
+    let points: Vec<Vec3> =
+        [GROUND_TOLERANCE, 0.6, 1.2, PLAYER_HEIGHT].iter().flat_map(|&height| footprint(up * (base + height * h), h)).collect();
     collider.any_solid(generator, &points)
 }
 
@@ -1385,11 +1397,8 @@ mod tests {
         for &dist in &[0.0, 0.05, 1.0, 10.0, 25.0, 50.0, 165.0, 330.0] {
             cam.distance = dist;
             cam.effective_distance = dist;
-            cam.effective_eye = if dist <= 0.05 {
-                cam.player_pos + Vec3::Y * eye_height
-            } else {
-                cam.player_pos + Vec3::Y * eye_height + Vec3::Z * dist
-            };
+            cam.effective_eye =
+                if dist <= 0.05 { cam.player_pos + Vec3::Y * eye_height } else { cam.player_pos + Vec3::Y * eye_height + Vec3::Z * dist };
             let mat = cam.build_view_projection_matrix();
             for col in 0..4 {
                 for row in 0..4 {
@@ -1402,10 +1411,7 @@ mod tests {
 
     #[test]
     fn test_camera_never_penetrates_ground() {
-        let desc = herocraft_world::PlanetDescriptor {
-            seed: 2026,
-            ..Default::default()
-        };
+        let desc = herocraft_world::PlanetDescriptor { seed: 2026, ..Default::default() };
         let world_gen = PlanetWorldGenerator::new(desc);
         let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &world_gen);
 
@@ -1421,7 +1427,10 @@ mod tests {
                 assert!(
                     cam.effective_eye.length() >= ground_r + 0.02,
                     "Camera went underground! Eye radius {}, ground radius {} at dist {}, pitch {}",
-                    cam.effective_eye.length(), ground_r, dist, pitch
+                    cam.effective_eye.length(),
+                    ground_r,
+                    dist,
+                    pitch
                 );
             }
         }
@@ -1448,10 +1457,7 @@ mod tests {
 
     #[test]
     fn test_camera_smooth_zoom_transition() {
-        let desc = herocraft_world::PlanetDescriptor {
-            seed: 2026,
-            ..Default::default()
-        };
+        let desc = herocraft_world::PlanetDescriptor { seed: 2026, ..Default::default() };
         let world_gen = PlanetWorldGenerator::new(desc);
         let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &world_gen);
 
@@ -1481,10 +1487,7 @@ mod tests {
     }
 
     fn ground_test_camera() -> (OrbitCamera, PlanetWorldGenerator) {
-        let desc = herocraft_world::PlanetDescriptor {
-            seed: 2026,
-            ..Default::default()
-        };
+        let desc = herocraft_world::PlanetDescriptor { seed: 2026, ..Default::default() };
         let world_gen = PlanetWorldGenerator::new(desc);
         let mut cam = OrbitCamera::new(6.6 * crate::camera::DEFAULT_RADIUS, crate::camera::DEFAULT_RADIUS, &world_gen);
         cam.spawn_on_ground(&world_gen);
@@ -1657,7 +1660,14 @@ mod tests {
         (cam.player_pos.length() - cam.base_radius) / h
     }
 
-    fn fill(cam: &OrbitCamera, world_gen: &PlanetWorldGenerator, edits: &TerrainEdits, forwards: &[f32], ys: &[i32], block: herocraft_common::BlockId) {
+    fn fill(
+        cam: &OrbitCamera,
+        world_gen: &PlanetWorldGenerator,
+        edits: &TerrainEdits,
+        forwards: &[f32],
+        ys: &[i32],
+        block: herocraft_common::BlockId,
+    ) {
         for &f in forwards {
             for r in [-1.0, 0.0, 1.0] {
                 for &y in ys {
@@ -1766,7 +1776,13 @@ mod tests {
         let start = cam.player_pos;
         let (east, north) = tangent_frame(start.normalize());
         // Un mur de pierre à deux blocs devant, en travers du chemin
-        let wall = herocraft_common::Collider { shape: herocraft_common::CollisionShape::Box, half_width: 2.6, half_length: 0.6, height: 3.0, resistance: 1.0 };
+        let wall = herocraft_common::Collider {
+            shape: herocraft_common::CollisionShape::Box,
+            half_width: 2.6,
+            half_length: 0.6,
+            height: 3.0,
+            resistance: 1.0,
+        };
         let yaw = forward.dot(east).atan2(forward.dot(north));
         cam.obstacles = vec![(start + forward * 2.0 * h, yaw, wall, true)];
         walk(&mut cam, &world_gen, 1.5);
@@ -1924,7 +1940,11 @@ mod tests {
         for _ in 0..120 {
             cam.update(0.016, &world_gen);
         }
-        assert!(cam.is_grounded && (altitude_blocks(&cam) - floor as f32).abs() < 1e-2, "au pied de l'échelle : pieds à {}", altitude_blocks(&cam));
+        assert!(
+            cam.is_grounded && (altitude_blocks(&cam) - floor as f32).abs() < 1e-2,
+            "au pied de l'échelle : pieds à {}",
+            altitude_blocks(&cam)
+        );
     }
 
     #[test]

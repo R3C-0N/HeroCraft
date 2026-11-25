@@ -194,7 +194,8 @@ mod tests {
     fn test_gpu_cull_matches_cpu() {
         use crate::terrain_pool::{CullPass, PoolSlot, TerrainPool};
         let instance = wgpu::Instance::default();
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("aucun adaptateur graphique");
+        let adapter =
+            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("aucun adaptateur graphique");
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
         let mut pool = TerrainPool::new(&device);
         assert!(pool.gpu_culling());
@@ -220,12 +221,17 @@ mod tests {
         }
         pool.set_draw_table(&device, &queue, meshes.iter().map(|(s, c, r, m)| (s, *c, *r, *m)));
         // Ordre de la table : indices courts puis longs
-        let table: Vec<_> = meshes.iter().filter(|m| m.0.format == wgpu::IndexFormat::Uint16).chain(meshes.iter().filter(|m| m.0.format == wgpu::IndexFormat::Uint32)).collect();
+        let table: Vec<_> = meshes
+            .iter()
+            .filter(|m| m.0.format == wgpu::IndexFormat::Uint16)
+            .chain(meshes.iter().filter(|m| m.0.format == wgpu::IndexFormat::Uint32))
+            .collect();
 
         let views = [ground_view([0.0, 1.0, 0.0, 0.0]), ground_view([R, 2.0, 0.0, 10.0 * BLOCK])];
         let (right, up) = (Vec3::X, Vec3::Z);
         let (cascade_center, extent) = (Vec3::Y * R + Vec3::X * 20.0 * BLOCK, 50.0 * BLOCK);
-        let mut passes = vec![views[0].gpu_pass(), views[1].gpu_pass(), CullPass::cascade(cascade_center, extent, right, up), CullPass::everything()];
+        let mut passes =
+            vec![views[0].gpu_pass(), views[1].gpu_pass(), CullPass::cascade(cascade_center, extent, right, up), CullPass::everything()];
         let mut encoder = device.create_command_encoder(&Default::default());
         let draws = pool.cull(&device, &queue, &mut encoder, &mut passes);
         queue.submit([encoder.finish()]);

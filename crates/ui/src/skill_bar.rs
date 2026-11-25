@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use herocraft_common::{skills, CharacterStats};
+use herocraft_common::{CharacterStats, skills};
 
 use herocraft_render::skinned_model::Texture;
 

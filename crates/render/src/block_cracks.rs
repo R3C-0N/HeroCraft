@@ -36,7 +36,8 @@ pub struct BlockCracks {
 
 /// Pipeline des fissures, qui dépend de la cible de la passe 3D (MSAA, format HDR)
 fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget) -> wgpu::RenderPipeline {
-    let shader = crate::shaders::create_shader_module(device, "Block Cracks Shader", include_str!("block_cracks.wgsl"), "block_cracks.wgsl");
+    let shader =
+        crate::shaders::create_shader_module(device, "Block Cracks Shader", include_str!("block_cracks.wgsl"), "block_cracks.wgsl");
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Block Cracks Pipeline"),
         layout: Some(layout),
@@ -60,11 +61,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
             })],
             compilation_options: Default::default(),
         }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            cull_mode: None,
-            ..Default::default()
-        },
+        primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: None, ..Default::default() },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
             depth_write_enabled: Some(false),
@@ -72,11 +69,7 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
-        multisample: wgpu::MultisampleState {
-            count: target.sample_count,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
+        multisample: wgpu::MultisampleState { count: target.sample_count, mask: !0, alpha_to_coverage_enabled: false },
         multiview_mask: None,
         cache: crate::shaders::pipeline_cache(),
     })

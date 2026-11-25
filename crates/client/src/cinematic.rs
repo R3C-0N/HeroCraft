@@ -124,7 +124,12 @@ impl Cinematics {
     /// Avance la lecture et place la caméra. Renvoie les événements que la cinématique renvoie au
     /// jeu (changer d'époque, fin…), déjà renvoyés au lecteur lui-même pour qu'un événement puisse
     /// en déclencher une autre.
-    pub(crate) fn update(&mut self, dt: f32, camera: &mut OrbitCamera, generator: &herocraft_world::PlanetWorldGenerator) -> Vec<GameEvent> {
+    pub(crate) fn update(
+        &mut self,
+        dt: f32,
+        camera: &mut OrbitCamera,
+        generator: &herocraft_world::PlanetWorldGenerator,
+    ) -> Vec<GameEvent> {
         self.player.update(dt);
         let mut events = self.player.take_events();
         // Une cinématique renvoie un événement qui en déclenche une autre : elle se joue à la suite
@@ -139,7 +144,8 @@ impl Cinematics {
             }
             self.anchor = Some(self.anchor_for(camera));
             if let Some(dir) = &self.world
-                && let Err(e) = self.player.save_seen(&dir.join(SEEN_FILE)) {
+                && let Err(e) = self.player.save_seen(&dir.join(SEEN_FILE))
+            {
                 log::warn!("Cinématiques vues non enregistrées : {e}");
             }
         }
@@ -241,7 +247,9 @@ impl Cinematics {
             // La carte s'étend sur la marge de la découpe, où se dessine le liseré
             let [mx, my] = sprite.map_or([0.0; 2], |s| s.margin());
             // Repère de la carte dans celui de l'ancre : face vers l'arrière (-z), puis tournée
-            let rotation = glam::Quat::from_rotation_y(-sample.yaw) * glam::Quat::from_rotation_x(sample.pitch) * glam::Quat::from_rotation_z(-sample.roll);
+            let rotation = glam::Quat::from_rotation_y(-sample.yaw)
+                * glam::Quat::from_rotation_x(sample.pitch)
+                * glam::Quat::from_rotation_z(-sample.roll);
             let u = to_world_dir(rotation * Vec3::X) * width * (0.5 + mx) * anchor.block;
             let v = to_world_dir(rotation * Vec3::Y) * height * (0.5 + my) * anchor.block;
             let [r, g, b] = card.color.as_deref().map_or([1.0; 3], linear_color);
@@ -279,7 +287,12 @@ impl Cinematics {
             captions: frame
                 .captions
                 .iter()
-                .map(|c| OverlayCaption { text: c.caption.text.clone(), speaker: c.caption.speaker.clone(), style: c.caption.style, alpha: c.alpha })
+                .map(|c| OverlayCaption {
+                    text: c.caption.text.clone(),
+                    speaker: c.caption.speaker.clone(),
+                    style: c.caption.style,
+                    alpha: c.alpha,
+                })
                 .collect(),
             skip_armed: playing.skip_armed.is_some(),
             skippable: playing.cinematic.skippable,
@@ -348,9 +361,21 @@ pub(crate) fn draw(ctx: &egui::Context, overlay: &Overlay) {
                 egui::Align2::CENTER_BOTTOM,
                 egui::pos2(screen.center().x, screen.max.y - band.max(screen.height() * 0.06) - 14.0),
             ),
-            CaptionStyle::Narration => (egui::FontId::proportional(28.0), ink, egui::Align2::CENTER_CENTER, egui::pos2(screen.center().x, screen.min.y + screen.height() * 0.68)),
-            CaptionStyle::Title => (crate::ui_skin::title_font(64.0), if light_veil { ink } else { GOLD }, egui::Align2::CENTER_CENTER, screen.center()),
-            CaptionStyle::Place => (crate::ui_skin::title_font(20.0), if light_veil { ink } else { GOLD }, egui::Align2::LEFT_TOP, egui::pos2(screen.min.x + 36.0, screen.min.y + band + 22.0)),
+            CaptionStyle::Narration => (
+                egui::FontId::proportional(28.0),
+                ink,
+                egui::Align2::CENTER_CENTER,
+                egui::pos2(screen.center().x, screen.min.y + screen.height() * 0.68),
+            ),
+            CaptionStyle::Title => {
+                (crate::ui_skin::title_font(64.0), if light_veil { ink } else { GOLD }, egui::Align2::CENTER_CENTER, screen.center())
+            }
+            CaptionStyle::Place => (
+                crate::ui_skin::title_font(20.0),
+                if light_veil { ink } else { GOLD },
+                egui::Align2::LEFT_TOP,
+                egui::pos2(screen.min.x + 36.0, screen.min.y + band + 22.0),
+            ),
         };
         let mut job = egui::text::LayoutJob::default();
         job.wrap.max_width = wrap;
@@ -359,10 +384,18 @@ pub(crate) fn draw(ctx: &egui::Context, overlay: &Overlay) {
             _ => egui::Align::Center,
         };
         if let Some(speaker) = caption.speaker.as_ref().filter(|_| caption.style == CaptionStyle::Subtitle) {
-            job.append(&format!("{speaker} : "), 0.0, egui::TextFormat { font_id: font.clone(), color: faded(GOLD, caption.alpha), ..Default::default() });
+            job.append(
+                &format!("{speaker} : "),
+                0.0,
+                egui::TextFormat { font_id: font.clone(), color: faded(GOLD, caption.alpha), ..Default::default() },
+            );
         }
         let italics = caption.style == CaptionStyle::Narration;
-        job.append(&caption.text, 0.0, egui::TextFormat { font_id: font.clone(), color: faded(color, caption.alpha), italics, ..Default::default() });
+        job.append(
+            &caption.text,
+            0.0,
+            egui::TextFormat { font_id: font.clone(), color: faded(color, caption.alpha), italics, ..Default::default() },
+        );
         let galley = painter.layout_job(job);
         // Un texte centré est mis en page autour de x = 0 : on le recale sur son coin
         let rect = anchor.anchor_size(pos, galley.size());
@@ -489,11 +522,13 @@ mod tests {
         let images = crate::paper_cards::CardImages::empty();
 
         let instance = wgpu::Instance::default();
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("aucun adaptateur graphique");
+        let adapter =
+            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("aucun adaptateur graphique");
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
         // Demi-flottants : mélangeables, comme la cible HDR du jeu
         let format = wgpu::TextureFormat::Rgba16Float;
-        let mut renderer = crate::paper_cards::CardRenderer::new(&device, &queue, crate::post::SceneTarget { sample_count: 1, format }, images);
+        let mut renderer =
+            crate::paper_cards::CardRenderer::new(&device, &queue, crate::post::SceneTarget { sample_count: 1, format }, images);
         let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
         let color = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
@@ -515,7 +550,12 @@ mod tests {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
-        let readback = device.create_buffer(&wgpu::BufferDescriptor { label: None, size: (width * height * 8) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (width * height * 8) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
 
         let generator = herocraft_world::PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 2026, ..Default::default() });
         let radius = crate::camera::DEFAULT_RADIUS;
@@ -539,24 +579,45 @@ mod tests {
             {
                 let color_view = color.create_view(&Default::default());
                 let depth_view = depth.create_view(&Default::default());
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    multiview_mask: None,
                     label: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment { depth_slice: None, view: &color_view, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store } })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &depth_view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        depth_slice: None,
+                        view: &color_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &depth_view,
+                        depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+                        stencil_ops: None,
+                    }),
                     timestamp_writes: None,
                     occlusion_query_set: None,
                 });
                 renderer.draw(&mut pass);
             }
             encoder.copy_texture_to_buffer(
-                wgpu::TexelCopyTextureInfo { texture: &color, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-                wgpu::TexelCopyBufferInfo { buffer: &readback, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(width * 8), rows_per_image: Some(height) } },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &color,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &readback,
+                    layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(width * 8), rows_per_image: Some(height) },
+                },
                 size,
             );
             queue.submit([encoder.finish()]);
             readback.slice(..).map_async(wgpu::MapMode::Read, |_| {});
             let _ = device.poll(wgpu::PollType::wait_indefinitely());
-            let data: Vec<f32> = bytemuck::cast_slice::<u8, u16>(&readback.slice(..).get_mapped_range().expect("lecture du tampon")).iter().map(|&h| half_to_f32(h)).collect();
+            let data: Vec<f32> = bytemuck::cast_slice::<u8, u16>(&readback.slice(..).get_mapped_range().expect("lecture du tampon"))
+                .iter()
+                .map(|&h| half_to_f32(h))
+                .collect();
             readback.unmap();
             // Exposition du jeu (-0,3 EV), courbe filmique simple, puis sRGB ; voile de la cinématique
             let frame = cinematics.player.frame().unwrap();

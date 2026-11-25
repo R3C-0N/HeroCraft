@@ -10,13 +10,13 @@ use std::f32::consts::TAU;
 use std::sync::{Arc, OnceLock};
 
 use glam::Vec3;
-use herocraft_common::hero::{atlas, Appearance};
+use herocraft_common::hero::{Appearance, atlas};
 use herocraft_common::{CreatureAction, CreatureRegistry, VillagerCard};
 
 use crate::camera::{CameraViewMode, OrbitCamera};
 use crate::creature_render::SheetSource;
 use crate::creatures::{CreatureFrame, CreatureView};
-use crate::hero_model::{figure, push_figure, Figure, FigurePose, HeroGait};
+use crate::hero_model::{Figure, FigurePose, HeroGait, figure, push_figure};
 
 /// Distance jusqu'où l'on lit le nom d'un habitant, en blocs
 pub(crate) const NAME_TAG_BLOCKS: f32 = 10.0;
@@ -67,7 +67,7 @@ impl VillagerAnimator {
         if !self.figures.contains_key(&key) {
             if self.figures.len() >= MAX_FIGURES {
                 // Oublie le corps resté le plus longtemps sans servir
-                if let Some(old) = self.figures.iter().min_by(|a, b| a.1 .1.total_cmp(&b.1 .1)).map(|(k, _)| k.clone()) {
+                if let Some(old) = self.figures.iter().min_by(|a, b| a.1.1.total_cmp(&b.1.1)).map(|(k, _)| k.clone()) {
                     self.figures.remove(&old);
                 }
             }
@@ -88,7 +88,9 @@ impl VillagerAnimator {
         let tint = [0, 1, 2].map(|i| 1.0 + (HURT_TINT[i] - 1.0) * hurt);
         let mut pose = FigurePose { swing, tint, ..FigurePose::default() };
         let pause = match view.action {
-            CreatureAction::Pause(i) => view.species.and_then(|s| registry.get(s)).and_then(|s| s.pauses().nth(i as usize)).map(|(name, _)| name),
+            CreatureAction::Pause(i) => {
+                view.species.and_then(|s| registry.get(s)).and_then(|s| s.pauses().nth(i as usize)).map(|(name, _)| name)
+            }
             _ => None,
         };
         match (view.action, pause) {
@@ -132,7 +134,17 @@ pub(crate) fn push_villagers(
             push_figure(frame, &look.appearance, &look.figure, view.feet, view.yaw, &pose, slot, block);
             if let Some(weapon) = &look.weapon {
                 let slot = texture(SheetSource::Fixed(&weapon.id, &weapon.texture));
-                crate::skill_models::push_graft(frame, &weapon.model, &look.appearance, &look.figure, view.feet, view.yaw, &pose, slot, block);
+                crate::skill_models::push_graft(
+                    frame,
+                    &weapon.model,
+                    &look.appearance,
+                    &look.figure,
+                    view.feet,
+                    view.yaw,
+                    &pose,
+                    slot,
+                    block,
+                );
             }
             continue;
         }
@@ -151,7 +163,14 @@ pub(crate) fn push_villagers(
 
 /// Nom et métier de l'humanoïde visé (`looked_at`, qu'aucun bloc ne cache), à l'écran
 /// (position, texte)
-pub(crate) fn name_tags(views: &[CreatureView], card: impl Fn(herocraft_common::CreatureId) -> Option<Arc<VillagerCard>>, looked_at: Option<herocraft_common::CreatureId>, camera: &OrbitCamera, width: f32, height: f32) -> Vec<(egui::Pos2, String)> {
+pub(crate) fn name_tags(
+    views: &[CreatureView],
+    card: impl Fn(herocraft_common::CreatureId) -> Option<Arc<VillagerCard>>,
+    looked_at: Option<herocraft_common::CreatureId>,
+    camera: &OrbitCamera,
+    width: f32,
+    height: f32,
+) -> Vec<(egui::Pos2, String)> {
     let Some(looked_at) = looked_at.filter(|_| camera.view_mode() != CameraViewMode::SatelliteOrbit) else {
         return Vec::new();
     };
@@ -189,8 +208,8 @@ pub(crate) fn feet_of(views: &[CreatureView], id: herocraft_common::CreatureId) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use herocraft_common::{CreatureId};
     use crate::hero_model::Bone;
+    use herocraft_common::CreatureId;
 
     #[test]
     fn humanoid_summons_wear_their_own_sheet_and_hold_their_weapon() {
@@ -198,16 +217,38 @@ mod tests {
         let mut animator = VillagerAnimator::default();
         for (k, id) in ["deathKnight", "lichLord"].into_iter().enumerate() {
             let species = registry.find(id).unwrap_or_else(|| panic!("{id}"));
-            let view = CreatureView { id: herocraft_common::CreatureId(k as u64), species: Some(species), feet: Vec3::new(0.0, 1000.0, 0.0), yaw: 0.0, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
+            let view = CreatureView {
+                id: herocraft_common::CreatureId(k as u64),
+                species: Some(species),
+                feet: Vec3::new(0.0, 1000.0, 0.0),
+                yaw: 0.0,
+                hurt: 0.0,
+                death: 0.0,
+                action: CreatureAction::Repos,
+                scale: 1.0,
+                mood: 0,
+                summoner: None,
+                copy: None,
+                tint: None,
+            };
             let mut frame = CreatureFrame::default();
             let mut asked = Vec::new();
-            push_villagers(&mut frame, &[view], &registry, |_| None, &|_| None, &mut animator, |source| {
-                asked.push(match source {
-                    SheetSource::Painted(_) => "peinte".to_string(),
-                    SheetSource::Fixed(key, _) => key.to_string(),
-                });
-                asked.len() - 1
-            }, 1.0);
+            push_villagers(
+                &mut frame,
+                &[view],
+                &registry,
+                |_| None,
+                &|_| None,
+                &mut animator,
+                |source| {
+                    asked.push(match source {
+                        SheetSource::Painted(_) => "peinte".to_string(),
+                        SheetSource::Fixed(key, _) => key.to_string(),
+                    });
+                    asked.len() - 1
+                },
+                1.0,
+            );
             let look = crate::skill_models::summon_look(id).unwrap();
             assert_eq!(asked, vec![id.to_string(), look.weapon.as_ref().unwrap().id.clone()], "sa planche puis son arme");
             assert_eq!(frame.draws.len(), 2);
@@ -220,7 +261,20 @@ mod tests {
         let species = registry.find("villageois").unwrap();
         let s = registry.get(species).unwrap();
         let pause = |name: &str| CreatureAction::Pause(s.pauses().position(|(n, _)| n == name).unwrap() as u8);
-        let view = |action| CreatureView { id: CreatureId(1), species: Some(species), feet: Vec3::new(0.0, 0.0, 1000.0), yaw: 0.0, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None };
+        let view = |action| CreatureView {
+            id: CreatureId(1),
+            species: Some(species),
+            feet: Vec3::new(0.0, 0.0, 1000.0),
+            yaw: 0.0,
+            hurt: 0.0,
+            death: 0.0,
+            action,
+            scale: 1.0,
+            mood: 0,
+            summoner: None,
+            copy: None,
+            tint: None,
+        };
         let mut animator = VillagerAnimator::default();
         assert!(is_humanoid(&view(CreatureAction::Repos), &registry));
         let still = animator.pose(&view(CreatureAction::Repos), &registry);
@@ -267,9 +321,27 @@ mod portraits {
                         painter.rect_filled(frame, 6.0, egui::Color32::from_rgb(72, 80, 90));
                         preview.paint(&painter, frame, &card.appearance);
                         let sex = if i < 3 { "Femme" } else { "Homme" };
-                        painter.text(egui::pos2(x + cell / 2.0, 462.0), egui::Align2::CENTER_CENTER, &card.name, egui::FontId::proportional(24.0), egui::Color32::WHITE);
-                        painter.text(egui::pos2(x + cell / 2.0, 494.0), egui::Align2::CENTER_CENTER, format!("{} · {}", card.profession, card.culture), egui::FontId::proportional(16.0), egui::Color32::from_rgb(220, 210, 180));
-                        painter.text(egui::pos2(x + cell / 2.0, 520.0), egui::Align2::CENTER_CENTER, sex, egui::FontId::proportional(14.0), egui::Color32::from_rgb(170, 180, 190));
+                        painter.text(
+                            egui::pos2(x + cell / 2.0, 462.0),
+                            egui::Align2::CENTER_CENTER,
+                            &card.name,
+                            egui::FontId::proportional(24.0),
+                            egui::Color32::WHITE,
+                        );
+                        painter.text(
+                            egui::pos2(x + cell / 2.0, 494.0),
+                            egui::Align2::CENTER_CENTER,
+                            format!("{} · {}", card.profession, card.culture),
+                            egui::FontId::proportional(16.0),
+                            egui::Color32::from_rgb(220, 210, 180),
+                        );
+                        painter.text(
+                            egui::pos2(x + cell / 2.0, 520.0),
+                            egui::Align2::CENTER_CENTER,
+                            sex,
+                            egui::FontId::proportional(14.0),
+                            egui::Color32::from_rgb(170, 180, 190),
+                        );
                     }
                 });
             });
@@ -282,7 +354,10 @@ mod portraits {
         std::fs::create_dir_all(&dir).unwrap();
         snapshot.save(&std::path::Path::new(&dir).join("habitants.png"));
         for card in &cards {
-            println!("{} · {} · {} · barbe {} · coiffure {}", card.name, card.profession, card.culture, card.appearance.barbe, card.appearance.coiffure);
+            println!(
+                "{} · {} · {} · barbe {} · coiffure {}",
+                card.name, card.profession, card.culture, card.appearance.barbe, card.appearance.coiffure
+            );
         }
     }
 }

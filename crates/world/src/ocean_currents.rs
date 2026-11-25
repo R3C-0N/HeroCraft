@@ -29,16 +29,11 @@ impl OceanicCurrentSimulation {
         herocraft_common::prof_scope!("world::ocean_currents::sample");
         if !is_water {
             // Sur la terre ferme : teinte neutre sépia sombre pour mettre en valeur les océans
-            return OceanCurrentSample {
-                velocity: DVec3::ZERO,
-                speed: 0.0,
-                temp_anomaly: 0.0,
-                color: [0.22, 0.22, 0.24, 1.0],
-            };
+            return OceanCurrentSample { velocity: DVec3::ZERO, speed: 0.0, temp_anomaly: 0.0, color: [0.22, 0.22, 0.24, 1.0] };
         }
 
         let lat = dir.y.clamp(-1.0, 1.0).asin(); // [-pi/2, pi/2]
-        let lon = dir.z.atan2(dir.x);          // [-pi, pi]
+        let lon = dir.z.atan2(dir.x); // [-pi, pi]
 
         // Vecteurs unitaires locaux de la sphère :
         // Est (longitude croissante) et Nord (latitude croissante)
@@ -68,11 +63,7 @@ impl OceanicCurrentSimulation {
 
         let meridional_speed = if deg_lat.abs() > 10.0 && deg_lat.abs() < 55.0 {
             let gyre_strength = ((deg_lat.abs() - 10.0) / 45.0).sin();
-            if is_northern {
-                gyre_wave * gyre_strength * 0.8
-            } else {
-                -gyre_wave * gyre_strength * 0.8
-            }
+            if is_northern { gyre_wave * gyre_strength * 0.8 } else { -gyre_wave * gyre_strength * 0.8 }
         } else {
             0.0
         };
@@ -83,11 +74,7 @@ impl OceanicCurrentSimulation {
         // 3. Calcul de la température du courant :
         // Un courant qui se dirige vers les pôles (meridional > 0 au Nord, < 0 au Sud) transporte de l'eau CHAUDE
         // Un courant qui se dirige vers l'équateur transporte de l'eau FROIDE
-        let poleward_component = if is_northern {
-            velocity.dot(north)
-        } else {
-            -velocity.dot(north)
-        };
+        let poleward_component = if is_northern { velocity.dot(north) } else { -velocity.dot(north) };
 
         // Influence de la latitude de base : équateur = chaud (+0.4), pôles = froid (-0.5)
         let lat_base_temp = (deg_lat.abs() / 90.0).clamp(0.0, 1.0);
@@ -114,19 +101,9 @@ impl OceanicCurrentSimulation {
 
         // Si très proche de la côte, on assombrit légèrement le tracé pour démarquer le rivage
         let shore_factor = if continental_value > -0.05 { 0.85 } else { 1.0 };
-        let final_color = [
-            color[0] * shore_factor as f32,
-            color[1] * shore_factor as f32,
-            color[2] * shore_factor as f32,
-            1.0,
-        ];
+        let final_color = [color[0] * shore_factor as f32, color[1] * shore_factor as f32, color[2] * shore_factor as f32, 1.0];
 
-        OceanCurrentSample {
-            velocity,
-            speed,
-            temp_anomaly,
-            color: final_color,
-        }
+        OceanCurrentSample { velocity, speed, temp_anomaly, color: final_color }
     }
 }
 

@@ -10,7 +10,7 @@
 //! ondule et entouré d'une ombre qui boit la lumière du cristal, et des poussières aspirées.
 
 use glam::Vec3;
-use herocraft_common::{blocks, BlockId, ItemId, StoneEvent, StoneEvents, StoneKind};
+use herocraft_common::{BlockId, ItemId, StoneEvent, StoneEvents, StoneKind, blocks};
 use herocraft_world::{BlockGeometry, BlockPos, TerrainEdits};
 
 use crate::effects::{EffectQuad, KIND_SPRITE, KIND_VOID, NO_TEXTURE};
@@ -44,7 +44,9 @@ pub(crate) fn dispatch(events: &mut StoneEvents, chat: &mut Chat) -> Vec<StoneEv
     for event in events.iter().cloned() {
         log::info!("Pierre du Néant : {event:?}");
         match event {
-            StoneEvent::Obtained { kind: StoneKind::Whole, .. } => chat.info("Vous avez obtenu une Pierre du Néant. Une mémoire ancienne y dort."),
+            StoneEvent::Obtained { kind: StoneKind::Whole, .. } => {
+                chat.info("Vous avez obtenu une Pierre du Néant. Une mémoire ancienne y dort.")
+            }
             StoneEvent::Obtained { kind: StoneKind::Fragment, .. } => chat.info("Vous avez obtenu un fragment de Pierre du Néant."),
             StoneEvent::Touched { .. } => chat.info("La Pierre du Néant vibre sous vos doigts…"),
             StoneEvent::Absorbed { .. } => chat.info("La Pierre du Néant s'éteint et se brise : sa force est en vous."),
@@ -61,7 +63,12 @@ pub(crate) fn cinematic_event(event: &StoneEvent) -> Option<herocraft_common::ci
         StoneKind::Whole => "whole",
         StoneKind::Fragment => "fragment",
     };
-    Some(herocraft_common::cinematics::GameEvent::new("stone_obtained").tag("stone", "voidStone").tag("kind", kind).at(glam::Vec3::from(*position)))
+    Some(
+        herocraft_common::cinematics::GameEvent::new("stone_obtained")
+            .tag("stone", "voidStone")
+            .tag("kind", kind)
+            .at(glam::Vec3::from(*position)),
+    )
 }
 
 /// Identifiant de la fiche du bloc posé

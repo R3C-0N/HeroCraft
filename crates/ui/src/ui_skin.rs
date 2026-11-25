@@ -156,10 +156,9 @@ fn install_fonts(ctx: &egui::Context) {
         "Grenze-SemiBold".to_owned(),
         Arc::new(egui::FontData::from_static(include_bytes!("../assets/ui/fonts/Grenze-SemiBold.ttf")).tweak(grenze_tweak.clone())),
     );
-    fonts.font_data.insert(
-        "Uncial".to_owned(),
-        Arc::new(egui::FontData::from_static(include_bytes!("../assets/ui/fonts/UncialAntiqua-Regular.ttf"))),
-    );
+    fonts
+        .font_data
+        .insert("Uncial".to_owned(), Arc::new(egui::FontData::from_static(include_bytes!("../assets/ui/fonts/UncialAntiqua-Regular.ttf"))));
 
     let fallbacks = fonts.families.get(&egui::FontFamily::Proportional).cloned().unwrap_or_default();
     fonts.families.insert(egui::FontFamily::Proportional, std::iter::once("Grenze".to_owned()).chain(fallbacks.iter().cloned()).collect());
@@ -333,7 +332,8 @@ impl SkinFrame {
         let outer_available = ui.available_rect_before_wrap();
         let inner_rect = egui::Rect::from_min_max(
             outer_available.min + egui::vec2(self.margin.left, self.margin.top),
-            (outer_available.max - egui::vec2(self.margin.right, self.margin.bottom)).max(outer_available.min + egui::vec2(self.margin.left, self.margin.top)),
+            (outer_available.max - egui::vec2(self.margin.right, self.margin.bottom))
+                .max(outer_available.min + egui::vec2(self.margin.left, self.margin.top)),
         );
         let mut content_ui = ui.new_child(egui::UiBuilder::new().max_rect(inner_rect).layout(*ui.layout()));
         let inner = add_contents(&mut content_ui);
@@ -479,7 +479,11 @@ impl egui::Widget for SkinButton {
                 TEXT
             };
             let pos = egui::pos2(x, y);
-            ui.painter().galley_with_override_text_color(pos + egui::vec2(1.0_f32, 1.0_f32), galley.clone(), TEXT_SHADOW.gamma_multiply(0.8_f32));
+            ui.painter().galley_with_override_text_color(
+                pos + egui::vec2(1.0_f32, 1.0_f32),
+                galley.clone(),
+                TEXT_SHADOW.gamma_multiply(0.8_f32),
+            );
             ui.painter().galley(pos, galley, fallback);
         }
         response

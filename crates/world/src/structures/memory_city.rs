@@ -118,7 +118,8 @@ fn dist(c: (i32, i32), x: i32, z: i32) -> f64 {
 /// Rayon du rempart : le plus grand qui reste sur la face et dont tout le tour est au-dessus de
 /// l'eau (sinon on passerait le rempart à la nage)
 fn outer_radius(generator: &PlanetWorldGenerator, face: PlanetFace, c: (i32, i32)) -> i32 {
-    let to_edge = c.0.min(c.1).min(crate::edits::FACE_BLOCKS - 1 - c.0).min(crate::edits::FACE_BLOCKS - 1 - c.1) - FACE_MARGIN - FIELD_DEPTH - 2;
+    let to_edge =
+        c.0.min(c.1).min(crate::edits::FACE_BLOCKS - 1 - c.0).min(crate::edits::FACE_BLOCKS - 1 - c.1) - FACE_MARGIN - FIELD_DEPTH - 2;
     let mut r = OUTER_MAX.min(to_edge);
     while r > OUTER_MIN {
         let dry = (0..128).all(|i| {
@@ -136,11 +137,18 @@ fn outer_radius(generator: &PlanetWorldGenerator, face: PlanetFace, c: (i32, i32
 
 /// Dessine la ville-souvenir du temple `temple` (d'un établissement de ruines de `face`), tenue
 /// par le peuple `holder`
-pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFace, temple: Temple, biome: BiomeType, holder: Culture) -> Option<MemoryCity> {
+pub(crate) fn plan_memory_city(
+    generator: &PlanetWorldGenerator,
+    face: PlanetFace,
+    temple: Temple,
+    biome: BiomeType,
+    holder: Culture,
+) -> Option<MemoryCity> {
     use std::f64::consts::{PI, TAU};
     let c = temple.center;
     let (fx, fz) = (c.0 as f64 + 0.5, c.1 as f64 + 0.5);
-    let mut dice = Dice(mix(temple.seed ^ 0x5E7E_C17E ^ hash2(0x3E3, Culture::ALL.iter().position(|&k| k == holder).unwrap_or(0) as i32, 0)));
+    let mut dice =
+        Dice(mix(temple.seed ^ 0x5E7E_C17E ^ hash2(0x3E3, Culture::ALL.iter().position(|&k| k == holder).unwrap_or(0) as i32, 0)));
     let outer = outer_radius(generator, face, c);
     // Le parvis descend jusqu'à `radius + STEPS_MAX + PARVIS_DEPTH` du centre
     let court = temple.radius + Temple::STEPS_MAX + Temple::PARVIS_DEPTH + ESPLANADE;
@@ -194,10 +202,12 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
     // est le chemin de l'assaut) et autour de l'esplanade
     for (r, half) in [(outer as f64 - 4.0, 1.5), (inner as f64 + 3.0, 2.0), (inner as f64 - 3.5, 1.5), (court as f64 + 2.0, 1.6)] {
         let steps = (r * TAU / 3.0) as i32;
-        let line: Vec<(f64, f64)> = (0..=steps).map(|i| {
-            let t = TAU * i as f64 / steps as f64;
-            (fx + r * t.cos(), fz + r * t.sin())
-        }).collect();
+        let line: Vec<(f64, f64)> = (0..=steps)
+            .map(|i| {
+                let t = TAU * i as f64 / steps as f64;
+                (fx + r * t.cos(), fz + r * t.sin())
+            })
+            .collect();
         m.stroke(&line, half, |v| (v == IN).then_some(ROAD));
     }
     // Grandes rues : dix dans la ville basse, de la seconde muraille au rempart (celle de l'axe part
@@ -206,13 +216,23 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
     let mut lower: Vec<f64> = (0..10).map(|i| a_front + TAU * i as f64 / 10.0).collect();
     lower.iter_mut().skip(1).for_each(|a| *a += (unit(dice.next()) - 0.5) * 0.12);
     for &a in &lower {
-        let line = wobbly(polar(inner as f64 + 3.0, a).into_f(), polar(outer as f64 - 2.0, a).into_f(), if a == a_front { 0.0 } else { 2.5 }, &mut dice);
+        let line = wobbly(
+            polar(inner as f64 + 3.0, a).into_f(),
+            polar(outer as f64 - 2.0, a).into_f(),
+            if a == a_front { 0.0 } else { 2.5 },
+            &mut dice,
+        );
         m.stroke(&line, if a == a_front { 2.2 } else { 1.4 }, |v| (v == IN).then_some(ROAD));
     }
     let mut upper: Vec<f64> = (0..6).map(|i| a_back + TAU * i as f64 / 6.0).collect();
     upper.iter_mut().skip(1).for_each(|a| *a += (unit(dice.next()) - 0.5) * 0.15);
     for &a in &upper {
-        let line = wobbly(polar(court as f64 + 1.0, a).into_f(), polar(inner as f64 - 2.0, a).into_f(), if a == a_back { 0.0 } else { 2.0 }, &mut dice);
+        let line = wobbly(
+            polar(court as f64 + 1.0, a).into_f(),
+            polar(inner as f64 - 2.0, a).into_f(),
+            if a == a_back { 0.0 } else { 2.0 },
+            &mut dice,
+        );
         m.stroke(&line, if a == a_back { 2.0 } else { 1.4 }, |v| (v == IN).then_some(ROAD));
     }
     // Ruelles étroites dans la ville basse
@@ -241,7 +261,12 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
     let muster = at(front, (outer + FIELD_DEPTH / 2 + 2) as f64);
     let (fa, fb) = (at(front, outer as f64 + 2.0), at(front, (outer + FIELD_DEPTH) as f64));
     let (px, pz) = (-dz, dx);
-    let corners = [(fa.0 + px * FIELD_HALF, fa.1 + pz * FIELD_HALF), (fa.0 - px * FIELD_HALF, fa.1 - pz * FIELD_HALF), (fb.0 + px * FIELD_HALF, fb.1 + pz * FIELD_HALF), (fb.0 - px * FIELD_HALF, fb.1 - pz * FIELD_HALF)];
+    let corners = [
+        (fa.0 + px * FIELD_HALF, fa.1 + pz * FIELD_HALF),
+        (fa.0 - px * FIELD_HALF, fa.1 - pz * FIELD_HALF),
+        (fb.0 + px * FIELD_HALF, fb.1 + pz * FIELD_HALF),
+        (fb.0 - px * FIELD_HALF, fb.1 - pz * FIELD_HALF),
+    ];
     let field = Rect::new(
         corners.iter().map(|c| c.0).min().unwrap_or(0),
         corners.iter().map(|c| c.1).min().unwrap_or(0),
@@ -305,7 +330,15 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
         }
     }
 
-    let mut p = Planner { generator, face, area: Rect::around(c.0, c.1, ext + 2), pieces: Vec::new(), taken: Vec::new(), exits: Vec::new(), culture: Some(holder) };
+    let mut p = Planner {
+        generator,
+        face,
+        area: Rect::around(c.0, c.1, ext + 2),
+        pieces: Vec::new(),
+        taken: Vec::new(),
+        exits: Vec::new(),
+        culture: Some(holder),
+    };
     // Le temple, au centre ; l'esplanade, pavée jusqu'à son pied : le temple passe avant elle là
     // où il pose quelque chose (il vient le premier dans le plan)
     let temple_rect = temple.rect();
@@ -369,7 +402,8 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
     let mut houses = 0;
     let mut place = |m: &mut TownMask, p: &mut Planner, dice: &mut Dice, foot: Rect, door: Side| -> bool {
         let fits = (foot.z0..foot.z1).all(|z| (foot.x0..foot.x1).all(|x| m.get(x, z) == IN));
-        let clear = (foot.z0 - 1..foot.z1 + 1).all(|z| (foot.x0 - 1..foot.x1 + 1).all(|x| matches!(m.get(x, z), IN | ROAD | SQUARE | BUILT | EAVES)));
+        let clear = (foot.z0 - 1..foot.z1 + 1)
+            .all(|z| (foot.x0 - 1..foot.x1 + 1).all(|x| matches!(m.get(x, z), IN | ROAD | SQUARE | BUILT | EAVES)));
         if !fits || !clear {
             return false;
         }
@@ -454,7 +488,12 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
         if m.get(x, z) != IN {
             continue;
         }
-        let Some((ox, oz)) = dirs.iter().filter_map(|&(ox, oz)| (1..12).find(|&k| matches!(m.get(x + ox * k, z + oz * k), ROAD | SQUARE)).map(|k| (k, (ox, oz)))).min_by_key(|e| e.0).map(|e| e.1) else {
+        let Some((ox, oz)) = dirs
+            .iter()
+            .filter_map(|&(ox, oz)| (1..12).find(|&k| matches!(m.get(x + ox * k, z + oz * k), ROAD | SQUARE)).map(|k| (k, (ox, oz))))
+            .min_by_key(|e| e.0)
+            .map(|e| e.1)
+        else {
             continue;
         };
         let door = match (ox, oz) {
@@ -477,7 +516,11 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
     let seed = dice.next();
     for z in c.1 - ext..=c.1 + ext {
         for x in c.0 - ext..=c.0 + ext {
-            if m.get(x, z) == ROAD && dist(c, x, z) < inner as f64 - 1.0 && hash2(seed, x, z).is_multiple_of(30) && dirs.iter().any(|&(ox, oz)| matches!(m.get(x + ox, z + oz), IN | BUILT | EAVES)) {
+            if m.get(x, z) == ROAD
+                && dist(c, x, z) < inner as f64 - 1.0
+                && hash2(seed, x, z).is_multiple_of(30)
+                && dirs.iter().any(|&(ox, oz)| matches!(m.get(x + ox, z + oz), IN | BUILT | EAVES))
+            {
                 p.pieces.push(Piece::Lamp { x, z, masonry });
             }
         }
@@ -490,7 +533,13 @@ pub(crate) fn plan_memory_city(generator: &PlanetWorldGenerator, face: PlanetFac
         for x in c.0 - ext..=c.0 + ext {
             let v = m.get(x, z);
             let d = dist(c, x, z);
-            let ring = if d <= court as f64 { Ring::Temple } else if d <= inner as f64 { Ring::Upper } else { Ring::Lower };
+            let ring = if d <= court as f64 {
+                Ring::Temple
+            } else if d <= inner as f64 {
+                Ring::Upper
+            } else {
+                Ring::Lower
+            };
             let spot = match v {
                 ROAD | SQUARE => d < outer as f64 - 1.5 && hash2(seed, x, z).is_multiple_of(80),
                 COURT => !temple_rect.contains(x, z) && hash2(seed, x, z).is_multiple_of(55),

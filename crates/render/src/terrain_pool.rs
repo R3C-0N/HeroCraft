@@ -143,7 +143,13 @@ impl CullPass {
 
     /// Cascade de centre `center` et de demi-côté `extent`, dans le plan (`right`, `up`) de la lumière
     pub fn cascade(center: glam::Vec3, extent: f32, right: glam::Vec3, up: glam::Vec3) -> Self {
-        Self { kind: Self::CASCADE, cascade: center.extend(extent).to_array(), right: right.extend(0.0).to_array(), light_up: up.extend(0.0).to_array(), ..Default::default() }
+        Self {
+            kind: Self::CASCADE,
+            cascade: center.extend(extent).to_array(),
+            right: right.extend(0.0).to_array(),
+            light_up: up.extend(0.0).to_array(),
+            ..Default::default()
+        }
     }
 }
 
@@ -164,7 +170,12 @@ struct GpuCull {
 }
 
 fn cull_buffer(device: &wgpu::Device, label: &str, size: u64, usage: wgpu::BufferUsages) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: size.max(16), usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false })
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: size.max(16),
+        usage: usage | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
 }
 
 impl GpuCull {
@@ -172,7 +183,11 @@ impl GpuCull {
         let storage = |binding, read_only| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only }, has_dynamic_offset: false, min_binding_size: None },
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
             count: None,
         };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -184,13 +199,24 @@ impl GpuCull {
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 },
             ],
         });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Terrain Cull Pipeline Layout"), bind_group_layouts: &[Some(&layout)], immediate_size: 0 });
-        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("Terrain Cull Shader"), source: wgpu::ShaderSource::Wgsl(include_str!("terrain_cull.wgsl").into()) });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Terrain Cull Pipeline Layout"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Terrain Cull Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("terrain_cull.wgsl").into()),
+        });
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Terrain Cull Pipeline"),
             layout: Some(&pipeline_layout),
@@ -203,10 +229,25 @@ impl GpuCull {
         Self {
             pipeline,
             layout,
-            records: cull_buffer(device, "Terrain Cull Records", capacity.0 as u64 * std::mem::size_of::<CullRecord>() as u64, wgpu::BufferUsages::STORAGE),
-            passes: cull_buffer(device, "Terrain Cull Passes", capacity.1 as u64 * std::mem::size_of::<CullPass>() as u64, wgpu::BufferUsages::STORAGE),
+            records: cull_buffer(
+                device,
+                "Terrain Cull Records",
+                capacity.0 as u64 * std::mem::size_of::<CullRecord>() as u64,
+                wgpu::BufferUsages::STORAGE,
+            ),
+            passes: cull_buffer(
+                device,
+                "Terrain Cull Passes",
+                capacity.1 as u64 * std::mem::size_of::<CullPass>() as u64,
+                wgpu::BufferUsages::STORAGE,
+            ),
             params: cull_buffer(device, "Terrain Cull Params", 16, wgpu::BufferUsages::UNIFORM),
-            draws: cull_buffer(device, "Terrain Culled Draws", capacity.2 as u64 * std::mem::size_of::<DrawIndexedIndirectArgs>() as u64, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_SRC),
+            draws: cull_buffer(
+                device,
+                "Terrain Culled Draws",
+                capacity.2 as u64 * std::mem::size_of::<DrawIndexedIndirectArgs>() as u64,
+                wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_SRC,
+            ),
             capacity,
             bind_group: None,
             counts: [0, 0],
@@ -224,7 +265,12 @@ impl TerrainPool {
     pub(crate) fn read_culled(&self, device: &wgpu::Device, queue: &wgpu::Queue, draws: &PreparedDraws) -> Vec<DrawIndexedIndirectArgs> {
         let (PreparedDraws::Gpu { offset, counts }, Some(cull)) = (draws, self.gpu_cull.as_ref()) else { return Vec::new() };
         let size = (counts[0] + counts[1]) as u64 * std::mem::size_of::<DrawIndexedIndirectArgs>() as u64;
-        let readback = device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let mut encoder = device.create_command_encoder(&Default::default());
         encoder.copy_buffer_to_buffer(&cull.draws, *offset, &readback, 0, size);
         queue.submit([encoder.finish()]);
@@ -234,7 +280,13 @@ impl TerrainPool {
         data.chunks_exact(20)
             .map(|c| {
                 let u = |i: usize| u32::from_le_bytes(c[i * 4..i * 4 + 4].try_into().unwrap());
-                DrawIndexedIndirectArgs { index_count: u(0), instance_count: u(1), first_index: u(2), base_vertex: u(3) as i32, first_instance: u(4) }
+                DrawIndexedIndirectArgs {
+                    index_count: u(0),
+                    instance_count: u(1),
+                    first_index: u(2),
+                    base_vertex: u(3) as i32,
+                    first_instance: u(4),
+                }
             })
             .collect()
     }
@@ -242,8 +294,18 @@ impl TerrainPool {
 
 fn vertex_buffers(device: &wgpu::Device, vertices: u32) -> (wgpu::Buffer, wgpu::Buffer) {
     let usage = wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC;
-    let buffer = |label, size: usize| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: (size * vertices as usize) as u64, usage, mapped_at_creation: false });
-    (buffer("Terrain Pool Positions", std::mem::size_of::<[f32; 3]>()), buffer("Terrain Pool Attributes", std::mem::size_of::<PackedAttributes>()))
+    let buffer = |label, size: usize| {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: (size * vertices as usize) as u64,
+            usage,
+            mapped_at_creation: false,
+        })
+    };
+    (
+        buffer("Terrain Pool Positions", std::mem::size_of::<[f32; 3]>()),
+        buffer("Terrain Pool Attributes", std::mem::size_of::<PackedAttributes>()),
+    )
 }
 
 /// Octets d'un indice
@@ -313,7 +375,12 @@ impl TerrainPool {
 
     /// Nouvelle liste des morceaux à afficher (sphère englobante, plus grande distance au centre de
     /// la planète), du plus proche au plus lointain : la passe 3D les dessine dans cet ordre
-    pub fn set_draw_table<'s>(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, meshes: impl Iterator<Item = (&'s PoolSlot, glam::Vec3, f32, f32)>) {
+    pub fn set_draw_table<'s>(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        meshes: impl Iterator<Item = (&'s PoolSlot, glam::Vec3, f32, f32)>,
+    ) {
         let Some(cull) = self.gpu_cull.as_mut() else { return };
         let mut groups: [Vec<CullRecord>; 2] = [Vec::new(), Vec::new()];
         for (slot, center, radius, max_radius) in meshes {
@@ -330,7 +397,12 @@ impl TerrainPool {
         let total = cull.total();
         if total > cull.capacity.0 {
             cull.capacity.0 = total.next_power_of_two();
-            cull.records = cull_buffer(device, "Terrain Cull Records", cull.capacity.0 as u64 * std::mem::size_of::<CullRecord>() as u64, wgpu::BufferUsages::STORAGE);
+            cull.records = cull_buffer(
+                device,
+                "Terrain Cull Records",
+                cull.capacity.0 as u64 * std::mem::size_of::<CullRecord>() as u64,
+                wgpu::BufferUsages::STORAGE,
+            );
             cull.bind_group = None;
         }
         if total > 0 {
@@ -341,7 +413,13 @@ impl TerrainPool {
 
     /// Trie la table pour chaque passe de `passes` sur le GPU (encodé dans `encoder`, avant les
     /// passes de rendu) ; rend les dessins de chaque passe, dans l'ordre
-    pub fn cull(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, passes: &mut [CullPass]) -> Vec<PreparedDraws> {
+    pub fn cull(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        passes: &mut [CullPass],
+    ) -> Vec<PreparedDraws> {
         let Some(cull) = self.gpu_cull.as_mut() else { return Vec::new() };
         let total = cull.total();
         let empty = || PreparedDraws::Gpu { offset: 0, counts: [0, 0] };
@@ -351,12 +429,22 @@ impl TerrainPool {
         let pass_count = passes.len() as u32;
         if pass_count > cull.capacity.1 {
             cull.capacity.1 = pass_count.next_power_of_two();
-            cull.passes = cull_buffer(device, "Terrain Cull Passes", cull.capacity.1 as u64 * std::mem::size_of::<CullPass>() as u64, wgpu::BufferUsages::STORAGE);
+            cull.passes = cull_buffer(
+                device,
+                "Terrain Cull Passes",
+                cull.capacity.1 as u64 * std::mem::size_of::<CullPass>() as u64,
+                wgpu::BufferUsages::STORAGE,
+            );
             cull.bind_group = None;
         }
         if pass_count * total > cull.capacity.2 {
             cull.capacity.2 = (pass_count * total).next_power_of_two();
-            cull.draws = cull_buffer(device, "Terrain Culled Draws", cull.capacity.2 as u64 * std::mem::size_of::<DrawIndexedIndirectArgs>() as u64, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_SRC);
+            cull.draws = cull_buffer(
+                device,
+                "Terrain Culled Draws",
+                cull.capacity.2 as u64 * std::mem::size_of::<DrawIndexedIndirectArgs>() as u64,
+                wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_SRC,
+            );
             cull.bind_group = None;
         }
         for (i, pass) in passes.iter_mut().enumerate() {

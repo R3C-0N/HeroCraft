@@ -70,30 +70,12 @@ impl QuadNodeKey {
 
     /// Convertit un nœud de niveau `VOXEL_LEVEL` (feuille voxel) en coordonnée de chunk voxel
     pub fn to_chunk_coord(&self, altitude_layer: i32) -> Option<PlanetChunkCoord> {
-        if self.level == VOXEL_LEVEL {
-            Some(PlanetChunkCoord::new(
-                self.face,
-                self.x as i32,
-                self.y as i32,
-                altitude_layer,
-            ))
-        } else {
-            None
-        }
+        if self.level == VOXEL_LEVEL { Some(PlanetChunkCoord::new(self.face, self.x as i32, self.y as i32, altitude_layer)) } else { None }
     }
 
     /// Nœud parent (niveau immédiatement supérieur)
     pub fn parent(&self) -> Option<QuadNodeKey> {
-        if self.level == 0 {
-            None
-        } else {
-            Some(QuadNodeKey::new(
-                self.face,
-                self.level - 1,
-                self.x / 2,
-                self.y / 2,
-            ))
-        }
+        if self.level == 0 { None } else { Some(QuadNodeKey::new(self.face, self.level - 1, self.x / 2, self.y / 2)) }
     }
 
     /// Les 4 nœuds enfants
@@ -132,14 +114,7 @@ pub struct WorldFrustum {
 impl WorldFrustum {
     pub fn from_view_projection(vp: glam::Mat4) -> Self {
         let cols = vp.to_cols_array_2d();
-        let row = |i: usize| -> [f64; 4] {
-            [
-                cols[0][i] as f64,
-                cols[1][i] as f64,
-                cols[2][i] as f64,
-                cols[3][i] as f64,
-            ]
-        };
+        let row = |i: usize| -> [f64; 4] { [cols[0][i] as f64, cols[1][i] as f64, cols[2][i] as f64, cols[3][i] as f64] };
 
         let r0 = row(0);
         let r1 = row(1);
@@ -150,15 +125,9 @@ impl WorldFrustum {
             let normal = DVec3::new(nx, ny, nz);
             let len = normal.length();
             if len > 1e-6 {
-                FrustumPlane {
-                    normal: normal / len,
-                    distance: d / len,
-                }
+                FrustumPlane { normal: normal / len, distance: d / len }
             } else {
-                FrustumPlane {
-                    normal: DVec3::ZERO,
-                    distance: 0.0,
-                }
+                FrustumPlane { normal: DVec3::ZERO, distance: 0.0 }
             }
         };
 
@@ -170,9 +139,7 @@ impl WorldFrustum {
         let near = make_plane(r2[0], r2[1], r2[2], r2[3]);
         let far = make_plane(r3[0] - r2[0], r3[1] - r2[1], r3[2] - r2[2], r3[3] - r2[3]);
 
-        Self {
-            planes: [left, right, bottom, top, near, far],
-        }
+        Self { planes: [left, right, bottom, top, near, far] }
     }
 
     /// Teste si une sphère englobante intersecte ou est à l'intérieur du frustum
@@ -230,13 +197,7 @@ impl PlanetQuadTree {
         let max_level = VOXEL_LEVEL;
         let split_distances = split_distances(base_radius, 1.0);
 
-        Self {
-            base_radius,
-            min_level,
-            max_level,
-            split_distances,
-            elevation_cache: Mutex::new(ElevationCache::default()),
-        }
+        Self { base_radius, min_level, max_level, split_distances, elevation_cache: Mutex::new(ElevationCache::default()) }
     }
 
     /// Élévation du relief au point (u, v) d'une face, arrondie à la colonne de voxels la plus proche.
@@ -264,11 +225,7 @@ impl PlanetQuadTree {
     }
 
     /// Évalue l'arbre en tenant compte de l'élévation réelle du relief planétaire pour un niveau de détail parfait
-    pub fn evaluate_with_generator(
-        &self,
-        camera_pos: DVec3,
-        generator: Option<&PlanetWorldGenerator>,
-    ) -> Vec<QuadLeaf> {
+    pub fn evaluate_with_generator(&self, camera_pos: DVec3, generator: Option<&PlanetWorldGenerator>) -> Vec<QuadLeaf> {
         self.evaluate_with_frustum(camera_pos, generator, None)
     }
 
@@ -303,11 +260,7 @@ impl PlanetQuadTree {
         let altitude_scale = self.base_radius * std::f64::consts::FRAC_PI_4 * (2.0 / crate::edits::FACE_BLOCKS as f64);
 
         let cam_r = camera_pos.length();
-        let cam_dir = if cam_r > 1e-6 {
-            camera_pos / cam_r
-        } else {
-            DVec3::Y
-        };
+        let cam_dir = if cam_r > 1e-6 { camera_pos / cam_r } else { DVec3::Y };
 
         // Calcule le point de surface le plus proche sur le nœud par rapport à la caméra.
         // Mesurer la distance au point le plus proche (au lieu d'un centre unique) évite
@@ -328,11 +281,7 @@ impl PlanetQuadTree {
             self.base_radius + eff_elev * altitude_scale
         } else {
             let sea_r = self.base_radius + 100.0 * altitude_scale;
-            if cam_r >= self.base_radius && cam_r <= self.base_radius + 400.0 * altitude_scale {
-                cam_r
-            } else {
-                sea_r
-            }
+            if cam_r >= self.base_radius && cam_r <= self.base_radius + 400.0 * altitude_scale { cam_r } else { sea_r }
         };
 
         let closest_surface_pos = closest_dir * surface_radius;
@@ -340,22 +289,15 @@ impl PlanetQuadTree {
 
         // 1. Culling d'horizon planétaire : si le nœud se trouve sur l'hémisphère arrière masqué
         // par la courbure de la planète, on ne le subdivise pas au-delà du niveau 1
-        let is_behind_horizon = if cam_r < self.base_radius * 2.2 && node.level >= 1 {
-            closest_dir.dot(cam_dir) < -0.22
-        } else {
-            false
-        };
+        let is_behind_horizon = if cam_r < self.base_radius * 2.2 && node.level >= 1 { closest_dir.dot(cam_dir) < -0.22 } else { false };
 
         // 2. Frustum Culling (Cône de vision) :
         // Rayon de la sphère englobant le nœud avec marge pour le relief montagneux maximal
         let max_mountain_r = self.base_radius + 360.0 * altitude_scale;
         let center_pos = center_dir * surface_radius;
         let bounding_radius = max_mountain_r * (1.85 / (1 << node.level) as f64) + 1.5;
-        let is_outside_frustum = if let Some(frust) = frustum {
-            node.level >= 1 && !frust.intersects_sphere(center_pos, bounding_radius)
-        } else {
-            false
-        };
+        let is_outside_frustum =
+            if let Some(frust) = frustum { node.level >= 1 && !frust.intersects_sphere(center_pos, bounding_radius) } else { false };
 
         let should_split = !is_behind_horizon
             && !is_outside_frustum
@@ -373,11 +315,7 @@ impl PlanetQuadTree {
             if is_outside_frustum && node.level >= 1 {
                 return;
             }
-            let kind = if node.level == self.max_level {
-                QuadLeafKind::VoxelChunk
-            } else {
-                QuadLeafKind::LodPatch
-            };
+            let kind = if node.level == self.max_level { QuadLeafKind::VoxelChunk } else { QuadLeafKind::LodPatch };
             leaves.push(QuadLeaf { key: node, kind });
         }
     }
@@ -444,17 +382,11 @@ mod tests {
         let leaves = qt.evaluate(cam_pos);
 
         // Il doit y avoir des feuilles VoxelChunk (level 5) directement sous la caméra
-        let voxel_leaves: Vec<_> = leaves
-            .iter()
-            .filter(|l| l.kind == QuadLeafKind::VoxelChunk)
-            .collect();
+        let voxel_leaves: Vec<_> = leaves.iter().filter(|l| l.kind == QuadLeafKind::VoxelChunk).collect();
         assert!(!voxel_leaves.is_empty());
 
         // Et des feuilles LodPatch plus loin vers l'horizon
-        let lod_leaves: Vec<_> = leaves
-            .iter()
-            .filter(|l| l.kind == QuadLeafKind::LodPatch)
-            .collect();
+        let lod_leaves: Vec<_> = leaves.iter().filter(|l| l.kind == QuadLeafKind::LodPatch).collect();
         assert!(!lod_leaves.is_empty());
     }
 
@@ -538,7 +470,9 @@ mod tests {
             let (u0, u1, v0, v1) = l.key.uv_bounds();
             cam_u >= u0 && cam_u <= u1 && cam_v >= v0 && cam_v <= v1
         });
-        assert!(found_under_camera, "Le chunk directement sous le joueur au sommet de la montagne doit être maillé en voxels (pas de trou)");
+        assert!(
+            found_under_camera,
+            "Le chunk directement sous le joueur au sommet de la montagne doit être maillé en voxels (pas de trou)"
+        );
     }
 }
-

@@ -33,17 +33,18 @@ impl SceneTarget {
     /// Amplitude relative du tramage avant l'écriture dans la cible (`camera.screen.z`) : un pas
     /// de la mantisse de 6 bits du format allégé, rien en `Rgba16Float`
     pub fn dither_amplitude(&self) -> f32 {
-        if self.format == COMPACT_HDR_FORMAT {
-            1.0 / 64.0
-        } else {
-            0.0
-        }
+        if self.format == COMPACT_HDR_FORMAT { 1.0 / 64.0 } else { 0.0 }
     }
 
     /// Pour le rapport du banc d'essai
     pub fn describe(&self) -> String {
         let bytes = self.format.block_copy_size(None).unwrap_or(0);
-        format!("{:?}, {} octets par pixel{}", self.format, bytes, if self.sample_count > 1 { format!(", MSAA {}×", self.sample_count) } else { String::new() })
+        format!(
+            "{:?}, {} octets par pixel{}",
+            self.format,
+            bytes,
+            if self.sample_count > 1 { format!(", MSAA {}×", self.sample_count) } else { String::new() }
+        )
     }
 }
 
@@ -104,11 +105,7 @@ impl PostProcess {
     /// MSAA 4x si l'adaptateur le permet sur le format HDR
     pub fn sample_count(adapter: &wgpu::Adapter) -> u32 {
         let flags = adapter.get_texture_format_features(HDR_FORMAT).flags;
-        if flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X4) {
-            4
-        } else {
-            1
-        }
+        if flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_X4) { 4 } else { 1 }
     }
 
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, target: SceneTarget) -> Self {
@@ -143,11 +140,7 @@ impl PostProcess {
             wgpu::BindGroupLayoutEntry {
                 binding: 2,
                 visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
+                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
                 count: None,
             },
         ];
@@ -179,11 +172,7 @@ impl PostProcess {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: Some(entry),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format,
-                        blend: Some(blend),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
+                    targets: &[Some(wgpu::ColorTargetState { format, blend: Some(blend), write_mask: wgpu::ColorWrites::ALL })],
                     compilation_options: Default::default(),
                 }),
                 primitive: wgpu::PrimitiveState::default(),
@@ -202,9 +191,11 @@ impl PostProcess {
             alpha: wgpu::BlendComponent::REPLACE,
         };
         let prefilter_pipeline = pipeline("Bloom Prefilter Pipeline", &blur_layout, "fs_prefilter", HDR_FORMAT, wgpu::BlendState::REPLACE);
-        let downsample_pipeline = pipeline("Bloom Downsample Pipeline", &blur_layout, "fs_downsample", HDR_FORMAT, wgpu::BlendState::REPLACE);
+        let downsample_pipeline =
+            pipeline("Bloom Downsample Pipeline", &blur_layout, "fs_downsample", HDR_FORMAT, wgpu::BlendState::REPLACE);
         let upsample_pipeline = pipeline("Bloom Upsample Pipeline", &blur_layout, "fs_upsample", HDR_FORMAT, additive);
-        let composite_pipeline = pipeline("Composite Pipeline", &composite_layout, "fs_composite", config.format, wgpu::BlendState::REPLACE);
+        let composite_pipeline =
+            pipeline("Composite Pipeline", &composite_layout, "fs_composite", config.format, wgpu::BlendState::REPLACE);
 
         let targets = Self::create_targets(device, config, target, &sampler, &uniform_buffer, &blur_layout, &composite_layout);
 
@@ -304,9 +295,7 @@ impl PostProcess {
                 ],
             })
         };
-        let down_bind_groups = (0..levels as usize)
-            .map(|i| blur_group(if i == 0 { &hdr_view } else { &bloom_views[i - 1] }))
-            .collect();
+        let down_bind_groups = (0..levels as usize).map(|i| blur_group(if i == 0 { &hdr_view } else { &bloom_views[i - 1] })).collect();
         let up_bind_groups = (0..levels as usize - 1).map(|i| blur_group(&bloom_views[i + 1])).collect();
 
         let composite_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -383,9 +372,11 @@ impl PostProcess {
                                pipeline: &wgpu::RenderPipeline,
                                bind_group: &wgpu::BindGroup,
                                timestamp_writes: Option<wgpu::RenderPassTimestampWrites>| {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                multiview_mask: None,
                 label: Some(label),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment { depth_slice: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    depth_slice: None,
                     view: target,
                     resolve_target: None,
                     ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },
@@ -419,7 +410,15 @@ impl PostProcess {
                 fullscreen_pass(encoder, "Bloom Downsample Pass", &t.bloom_views[i], clear, pipeline, &t.down_bind_groups[i], ts);
             }
             for i in (0..levels - 1).rev() {
-                fullscreen_pass(encoder, "Bloom Upsample Pass", &t.bloom_views[i], wgpu::LoadOp::Load, &self.upsample_pipeline, &t.up_bind_groups[i], None);
+                fullscreen_pass(
+                    encoder,
+                    "Bloom Upsample Pass",
+                    &t.bloom_views[i],
+                    wgpu::LoadOp::Load,
+                    &self.upsample_pipeline,
+                    &t.up_bind_groups[i],
+                    None,
+                );
             }
         } else if let Some((query_set, begin, end)) = timestamps {
             // Sans bloom, la composition porte les deux timestamps

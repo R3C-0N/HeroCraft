@@ -1,16 +1,16 @@
-use crate::caves::{block_carved, carvable_range, CaveField};
-use crate::cubed_sphere::{base_solar_temperature, unit_sphere_to_lat_lon, PlanetDescriptor, FACE_SCALE};
+use crate::caves::{CaveField, block_carved, carvable_range};
+use crate::cubed_sphere::{FACE_SCALE, PlanetDescriptor, base_solar_temperature, unit_sphere_to_lat_lon};
 use crate::ocean_currents::OceanicCurrentSimulation;
-use crate::roads::{road_block, RoadMap};
+use crate::roads::{RoadMap, road_block};
 use crate::structures::{MemoryCity, Rect, Settlement, StructureMap};
 use crate::tectonics::TectonicSimulation;
 use crate::temples::Epoch;
-use crate::vegetation::{VegetationField, VEGETATION_SPAN};
+use crate::vegetation::{VEGETATION_SPAN, VegetationField};
 use glam::DVec3;
+use herocraft_common::{BlockId, PlanetChunkCoord, PlanetFace};
+use herocraft_voxel_engine::{CHUNK_SIZE, ChunkData};
 use std::ops::Range;
 use std::sync::Arc;
-use herocraft_common::{BlockId, PlanetChunkCoord, PlanetFace};
-use herocraft_voxel_engine::{ChunkData, CHUNK_SIZE};
 
 /// Mode de filtre de visualisation pour la planète
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -194,11 +194,7 @@ impl PlanetWorldGenerator {
                         // - Au-dessus de 220 : crêtes et parois de roche massive (BlockId::STONE)
                         // - Entre 170 et 220 : alternance réaliste d'affleurements rocheux et d'alpages
                         let rock_noise = fbm_3d(sphere_dir * (16.0 * FACE_SCALE), 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
-                        if global_y > 220.0 || rock_noise > -0.05 {
-                            BlockId::STONE
-                        } else {
-                            BlockId::GRASS
-                        }
+                        if global_y > 220.0 || rock_noise > -0.05 { BlockId::STONE } else { BlockId::GRASS }
                     }
                     _ => BlockId::GRASS,
                 }
@@ -209,11 +205,7 @@ impl PlanetWorldGenerator {
         } else if global_y + 4.0 >= elev_floor {
             if biome == BiomeType::Mountains {
                 let rock_noise = fbm_3d(sphere_dir * (16.0 * FACE_SCALE), 2, 2.0, 0.5, self.planet.seed.wrapping_add(40404));
-                if global_y > 215.0 || rock_noise > -0.05 {
-                    BlockId::STONE
-                } else {
-                    BlockId::DIRT
-                }
+                if global_y > 215.0 || rock_noise > -0.05 { BlockId::STONE } else { BlockId::DIRT }
             } else if biome == BiomeType::SnowPeaks {
                 BlockId::STONE
             } else if biome == BiomeType::Desert || biome == BiomeType::Beach {
@@ -262,11 +254,7 @@ impl PlanetWorldGenerator {
                 self.solid_block(column.dir, column.biome, global_y, elev_floor)
             }
         } else if global_y < SEA_LEVEL_BLOCKS {
-            if column.biome == BiomeType::SnowPeaks {
-                BlockId::SNOW
-            } else {
-                BlockId::WATER
-            }
+            if column.biome == BiomeType::SnowPeaks { BlockId::SNOW } else { BlockId::WATER }
         } else {
             BlockId::AIR
         }
@@ -323,12 +311,24 @@ impl PlanetWorldGenerator {
 
     /// Blocs qui éclairent posés par les structures dans les colonnes `area` d'une face : position
     /// et bloc. `ground(x, z)` : altitude du premier bloc d'air au-dessus du relief de la colonne.
-    pub fn structure_lights(&self, face: PlanetFace, area: crate::structures::Rect, ground: impl Fn(i32, i32) -> i32) -> Vec<(i32, i32, i32, BlockId)> {
+    pub fn structure_lights(
+        &self,
+        face: PlanetFace,
+        area: crate::structures::Rect,
+        ground: impl Fn(i32, i32) -> i32,
+    ) -> Vec<(i32, i32, i32, BlockId)> {
         let cities = self.memory_cities_touching(face, area);
         let covered = |x: i32, z: i32| cities.iter().any(|c| c.covers(x, z));
-        let mut lights: Vec<(i32, i32, i32, BlockId)> =
-            self.structures.touching(self, face, area).into_iter().flat_map(|s| s.lights_in(self.epoch, area, &ground)).filter(|l| !covered(l.0, l.2)).collect();
-        lights.extend(cities.iter().flat_map(|c| c.settlement.lights_in(self.epoch, area, &ground).into_iter().filter(|l| c.covers(l.0, l.2))));
+        let mut lights: Vec<(i32, i32, i32, BlockId)> = self
+            .structures
+            .touching(self, face, area)
+            .into_iter()
+            .flat_map(|s| s.lights_in(self.epoch, area, &ground))
+            .filter(|l| !covered(l.0, l.2))
+            .collect();
+        lights.extend(
+            cities.iter().flat_map(|c| c.settlement.lights_in(self.epoch, area, &ground).into_iter().filter(|l| c.covers(l.0, l.2))),
+        );
         lights
     }
 
@@ -344,11 +344,7 @@ impl PlanetWorldGenerator {
                 return span;
             }
         }
-        if self.roads.surface(self, face, x, z).is_some() {
-            ground - 1..ground
-        } else {
-            0..0
-        }
+        if self.roads.surface(self, face, x, z).is_some() { ground - 1..ground } else { 0..0 }
     }
 
     /// La colonne (x, z) est bâtie (rue, maison, champ, rempart…) ou à moins de `margin` colonnes
@@ -358,13 +354,15 @@ impl PlanetWorldGenerator {
         if self.memory_city_at(face, x, z).is_some() {
             return true;
         }
-        self.structures.touching(self, face, area).iter().any(|s| s.occupies(x, z, margin)) || self.roads.near(self, face, x, z, margin.max(0))
+        self.structures.touching(self, face, area).iter().any(|s| s.occupies(x, z, margin))
+            || self.roads.near(self, face, x, z, margin.max(0))
     }
 
     /// Plus haut bloc (exclu) que posent les structures d'un chunk et de sa bordure de `border` blocs
     pub fn structures_top(&self, face: PlanetFace, chunk_x: i32, chunk_y: i32, border: i32) -> Option<i32> {
         let size = CHUNK_SIZE as i32;
-        let area = Rect::new(chunk_x * size - border, chunk_y * size - border, (chunk_x + 1) * size + border, (chunk_y + 1) * size + border);
+        let area =
+            Rect::new(chunk_x * size - border, chunk_y * size - border, (chunk_x + 1) * size + border, (chunk_y + 1) * size + border);
         let cities = self.memory_cities_touching(face, area);
         self.structures.touching(self, face, area).iter().map(|s| s.top).chain(cities.iter().map(|c| c.settlement.top)).max()
     }
@@ -399,13 +397,7 @@ impl PlanetWorldGenerator {
         }
         let size = CHUNK_SIZE as i32;
         let (x0, z0) = (coord.x * size, coord.y * size);
-        Some(CaveField::new(
-            self.planet.seed,
-            coord.face,
-            x0 - border..x0 + size + border,
-            low..high,
-            z0 - border..z0 + size + border,
-        ))
+        Some(CaveField::new(self.planet.seed, coord.face, x0 - border..x0 + size + border, low..high, z0 - border..z0 + size + border))
     }
 
     /// Colonne de la grille voxel (x, z) d'une face, échantillonnée au même point que `sample_chunk_columns`
@@ -433,7 +425,8 @@ impl PlanetWorldGenerator {
             let ground = crate::vegetation::column_ground(c);
             ground < layer_base + CHUNK_SIZE as i32 && ground + VEGETATION_SPAN > layer_base
         });
-        let vegetation = if reaches { self.chunk_vegetation(coord.face, coord.x, coord.y, columns, border) } else { VegetationField::default() };
+        let vegetation =
+            if reaches { self.chunk_vegetation(coord.face, coord.x, coord.y, columns, border) } else { VegetationField::default() };
         self.generate_chunk_full(coord, columns, border, caves, &vegetation)
     }
 
@@ -461,8 +454,7 @@ impl PlanetWorldGenerator {
 
         let layer_base_y = coord.altitude_layer as f64 * CHUNK_SIZE as f64;
 
-        let sea_level_y = (SEA_LEVEL_BLOCKS - layer_base_y)
-            .clamp(0.0, CHUNK_SIZE as f64) as u8;
+        let sea_level_y = (SEA_LEVEL_BLOCKS - layer_base_y).clamp(0.0, CHUNK_SIZE as f64) as u8;
 
         for z in 0..CHUNK_SIZE as u8 {
             for x in 0..CHUNK_SIZE as u8 {
@@ -471,8 +463,7 @@ impl PlanetWorldGenerator {
                 let elevation = column.elevation;
                 let biome = column.biome;
 
-                let ground_y = ((elevation - layer_base_y)
-                    .clamp(0.0, CHUNK_SIZE as f64)) as u8;
+                let ground_y = ((elevation - layer_base_y).clamp(0.0, CHUNK_SIZE as f64)) as u8;
 
                 // 1. Remplissage du sol solide, sauf les blocs creusés par les grottes
                 let elev_floor = elevation.floor();
@@ -511,7 +502,14 @@ impl PlanetWorldGenerator {
 
     /// Pose dans le chunk les arbres puis les plantes du sol, là où le terrain a laissé de l'air
     /// au-dessus du sol : exactement ce que renvoie `vegetation_block` bloc par bloc
-    fn place_vegetation(&self, chunk: &mut ChunkData, coord: &PlanetChunkCoord, columns: &[ColumnSample], border: i32, vegetation: &VegetationField) {
+    fn place_vegetation(
+        &self,
+        chunk: &mut ChunkData,
+        coord: &PlanetChunkCoord,
+        columns: &[ColumnSample],
+        border: i32,
+        vegetation: &VegetationField,
+    ) {
         herocraft_common::prof_scope!("world::place_vegetation");
         let size = CHUNK_SIZE as i32;
         let side = size + 2 * border;
@@ -621,7 +619,10 @@ impl PlanetWorldGenerator {
                     let column = &columns[((z + border) * side + x + border) as usize];
                     let ground = column.elevation.floor() as i32;
                     let y = ground - 1;
-                    if !(layer_base..layer_base + size).contains(&y) || covered(bx, bz) || settlements.iter().any(|s| !s.span(bx, bz, ground).is_empty()) {
+                    if !(layer_base..layer_base + size).contains(&y)
+                        || covered(bx, bz)
+                        || settlements.iter().any(|s| !s.span(bx, bz, ground).is_empty())
+                    {
                         continue;
                     }
                     if let Some(block) = road_block(surface, y, ground) {
@@ -714,8 +715,7 @@ impl PlanetWorldGenerator {
             } else {
                 // Fond marin sous le niveau de la mer (avec fosses ou dorsales médio-océaniques)
                 let depth_ratio = (sea_threshold - continental) / (1.0 + sea_threshold);
-                (SEA_LEVEL_BLOCKS - depth_ratio * 65.0 + tectonic_sample.elevation_offset * 3.5)
-                    .clamp(15.0, SEA_LEVEL_BLOCKS - 2.0)
+                (SEA_LEVEL_BLOCKS - depth_ratio * 65.0 + tectonic_sample.elevation_offset * 3.5).clamp(15.0, SEA_LEVEL_BLOCKS - 2.0)
             }
         } else {
             // Terre émergée : continents, collines, montagnes intérieures ET super-chaînes tectoniques
@@ -726,11 +726,7 @@ impl PlanetWorldGenerator {
             let inland = smoothstep(0.0, 0.20, continental - sea_threshold);
 
             // Dôme glaciaire naturel sur la terre polaire
-            let polar_dome = if is_polar {
-                (lat.abs() - polar_boundary).max(0.0) * 40.0
-            } else {
-                0.0
-            };
+            let polar_dome = if is_polar { (lat.abs() - polar_boundary).max(0.0) * 40.0 } else { 0.0 };
 
             // 1. Massifs montagneux : régions d'altitude basse fréquence (environ un tiers des terres)
             let massif_noise = fbm_3d(dir * 1.7, 3, 2.0, 0.50, seed.wrapping_add(10203)) / FBM_SPAN;
@@ -765,13 +761,7 @@ impl PlanetWorldGenerator {
     }
 
     /// `determine_biome` avec une valeur continentale fournie (calculée seulement si nécessaire)
-    fn determine_biome_with_continental(
-        &self,
-        lat: f64,
-        elevation: f64,
-        dir: DVec3,
-        continental: impl FnOnce() -> f64,
-    ) -> BiomeType {
+    fn determine_biome_with_continental(&self, lat: f64, elevation: f64, dir: DVec3, continental: impl FnOnce() -> f64) -> BiomeType {
         herocraft_common::prof_scope!("world::determine_biome");
         // 1. Calottes glaciaires et banquises permanentes aux pôles (Pôle Nord et Pôle Sud)
         // Calibrées à ~73° de latitude pour un équilibre parfait entre vue de profil et vue du dessus
@@ -813,11 +803,7 @@ impl PlanetWorldGenerator {
                 BiomeType::Mountains // Versants et massifs montagneux
             } else if temp < 0.50 {
                 // Régions froides : forêts de conifères si l'air est humide, toundra rase sinon
-                if moisture > 0.52 {
-                    BiomeType::Taiga
-                } else {
-                    BiomeType::Tundra
-                }
+                if moisture > 0.52 { BiomeType::Taiga } else { BiomeType::Tundra }
             } else if temp > 0.78 {
                 // Régions chaudes, des déserts aux jungles selon l'humidité
                 if moisture < 0.30 {
@@ -1011,22 +997,14 @@ mod tests {
         let elev_n = generator.sample_elevation(north_pole, lat_n, lon_n);
         let biome_n = generator.determine_biome(lat_n, elev_n, north_pole);
 
-        assert_eq!(
-            biome_n,
-            BiomeType::SnowPeaks,
-            "Le Pôle Nord doit obligatoirement être une calotte polaire (SnowPeaks)"
-        );
+        assert_eq!(biome_n, BiomeType::SnowPeaks, "Le Pôle Nord doit obligatoirement être une calotte polaire (SnowPeaks)");
 
         let south_pole = DVec3::new(0.0, -1.0, 0.0);
         let (lat_s, lon_s) = unit_sphere_to_lat_lon(south_pole);
         let elev_s = generator.sample_elevation(south_pole, lat_s, lon_s);
         let biome_s = generator.determine_biome(lat_s, elev_s, south_pole);
 
-        assert_eq!(
-            biome_s,
-            BiomeType::SnowPeaks,
-            "Le Pôle Sud doit obligatoirement être une calotte polaire (SnowPeaks)"
-        );
+        assert_eq!(biome_s, BiomeType::SnowPeaks, "Le Pôle Sud doit obligatoirement être une calotte polaire (SnowPeaks)");
     }
 
     #[test]
@@ -1073,11 +1051,7 @@ mod tests {
             water_percentage, deep_ocean_points, sea_points, polar_points, land_points
         );
 
-        assert!(
-            water_percentage >= 40.0,
-            "La couverture maritime ({:.1}%) doit être d'au moins 40%",
-            water_percentage
-        );
+        assert!(water_percentage >= 40.0, "La couverture maritime ({:.1}%) doit être d'au moins 40%", water_percentage);
         assert!(sea_points > 0, "Il doit y avoir des mers");
         assert!(deep_ocean_points > 0, "Il doit y avoir des océans profonds");
         assert!(land_points > 0, "Il doit y avoir des continents massifs");
@@ -1156,11 +1130,7 @@ mod tests {
         let mountain_ratio = mountains as f64 / land as f64;
         println!("Relief : sommet={:.0} blocs, terres > 170 = {:.1}%", highest, mountain_ratio * 100.0);
         assert!(highest > 280.0, "Les plus hauts sommets doivent dépasser 280 blocs (constaté : {:.0})", highest);
-        assert!(
-            mountain_ratio > 0.08,
-            "Au moins 8% des terres doivent être montagneuses (constaté : {:.1}%)",
-            mountain_ratio * 100.0
-        );
+        assert!(mountain_ratio > 0.08, "Au moins 8% des terres doivent être montagneuses (constaté : {:.1}%)", mountain_ratio * 100.0);
     }
 
     #[test]
@@ -1251,7 +1221,13 @@ mod empreinte {
             }
         }
         let chunk = generator.generate_chunk(&PlanetChunkCoord::new(PlanetFace::PosZ, 300, 512, 3));
-        for x in 0..32 { for y in 0..32 { for z in 0..32 { h = h.rotate_left(3) ^ chunk.get_voxel(x, y, z).0 as u64; } } }
+        for x in 0..32 {
+            for y in 0..32 {
+                for z in 0..32 {
+                    h = h.rotate_left(3) ^ chunk.get_voxel(x, y, z).0 as u64;
+                }
+            }
+        }
         assert_eq!(format!("{h:016x}"), "2d5896e2c6625d89", "le relief généré a changé");
     }
 }

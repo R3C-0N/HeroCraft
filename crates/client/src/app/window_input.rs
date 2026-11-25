@@ -87,10 +87,13 @@ impl App {
         let villager = (pressed && button == MouseButton::Right)
             .then(|| aimed_creature(camera, block_interaction, creature_views, creature_registry))
             .flatten()
-            .and_then(|id| match net.as_ref() {
-                Some(client) => client.villager_card(id).cloned(),
-                None => solo_creatures.villager_card(id).cloned(),
-            }.map(|card| (id, card)));
+            .and_then(|id| {
+                match net.as_ref() {
+                    Some(client) => client.villager_card(id).cloned(),
+                    None => solo_creatures.villager_card(id).cloned(),
+                }
+                .map(|card| (id, card))
+            });
         if let Some((id, card)) = villager.as_ref().filter(|(_, card)| card.chats_only()) {
             // Rien à échanger : il répond dans le chat, que lisent les joueurs proches
             match net.as_mut() {
@@ -108,19 +111,32 @@ impl App {
         } else if let Some(action) = block_interaction.on_mouse_button(button, pressed) {
             block_interaction.update_target(camera, generator, &lod_manager.terrain_edits().clone());
             // Clic droit sur un établi : il s'ouvre (accroupi, on pose contre lui)
-            let station = block_interaction.aimed_station().filter(|_| action == block_interaction::BlockAction::Place && !camera.is_crouching());
+            let station =
+                block_interaction.aimed_station().filter(|_| action == block_interaction::BlockAction::Place && !camera.is_crouching());
             // Clic droit sur une bête morte, couteau ou dague en main : on la dépèce
-            let knife = action == block_interaction::BlockAction::Place && ui_state.inventory.slot(ui_state.inventory.selected()).is_some_and(|s| s.item.can_skin());
+            let knife = action == block_interaction::BlockAction::Place
+                && ui_state.inventory.slot(ui_state.inventory.selected()).is_some_and(|s| s.item.can_skin());
             let corpse = if knife { aimed_corpse(camera, block_interaction, creature_views, creature_registry) } else { None };
             // Clic droit sur une bête vivante avec sa nourriture en main : elle la mange
             let fed = corpse.is_none()
                 && action == block_interaction::BlockAction::Place
                 && station.is_none()
-                && feed_aimed_creature(camera, block_interaction, creature_views, creature_registry, net.as_mut(), solo_creatures, ui_state, audio);
+                && feed_aimed_creature(
+                    camera,
+                    block_interaction,
+                    creature_views,
+                    creature_registry,
+                    net.as_mut(),
+                    solo_creatures,
+                    ui_state,
+                    audio,
+                );
             // Une Pierre du Néant en main : le joueur la touche
-            let stone = void_stones::held_stone(&ui_state.inventory).filter(|_| action == block_interaction::BlockAction::Place && station.is_none() && !fed && corpse.is_none());
+            let stone = void_stones::held_stone(&ui_state.inventory)
+                .filter(|_| action == block_interaction::BlockAction::Place && station.is_none() && !fed && corpse.is_none());
             // Sinon, un aliment en main : le joueur le mange
-            let food = ui_state.inventory.selected_food().filter(|_| action == block_interaction::BlockAction::Place && station.is_none() && !fed);
+            let food =
+                ui_state.inventory.selected_food().filter(|_| action == block_interaction::BlockAction::Place && station.is_none() && !fed);
             if let Some(item) = stone {
                 void_stones::touch(item, stone_events);
             } else if let Some(id) = corpse {
@@ -272,7 +288,16 @@ impl App {
                 return;
             }
             let Some(action) = ui_state.controls.action_for(key_code) else { return };
-            game_key(action, is_pressed, is_pressed && !repeat, &mut self.camera, ui_state, &mut self.pending_actions, &mut self.jump_tap, &mut self.zoom_modifier_held);
+            game_key(
+                action,
+                is_pressed,
+                is_pressed && !repeat,
+                &mut self.camera,
+                ui_state,
+                &mut self.pending_actions,
+                &mut self.jump_tap,
+                &mut self.zoom_modifier_held,
+            );
         }
     }
 

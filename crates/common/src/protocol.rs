@@ -43,67 +43,40 @@ pub enum ClientPacket {
         holding: Option<u16>,
     },
     /// Le joueur vient de retomber au sol après une chute de `blocks` blocs
-    Fall {
-        blocks: f32,
-    },
+    Fall { blocks: f32 },
     /// Action de minage ou de pose d'un bloc
-    InteractBlock {
-        block: BlockAddress,
-        action: BlockInteractionAction,
-    },
+    InteractBlock { block: BlockAddress, action: BlockInteractionAction },
     /// Le joueur frappe une créature (dégâts, recul et fuite décidés par le serveur)
-    HitCreature {
-        creature_id: crate::CreatureId,
-    },
+    HitCreature { creature_id: crate::CreatureId },
     /// Le joueur commence à tenir chargé un tir d'arc (`skill` : `None`) ou une compétence qui se
     /// charge (`Cast::charge`) : le serveur compte le temps jusqu'au tir ou au lancement
-    BeginCharge {
-        skill: Option<String>,
-    },
+    BeginCharge { skill: Option<String> },
     /// Le joueur tire à l'arc ou à l'arbalète dans la direction `aim`, la munition `ammo` (numéro
     /// d'`ItemId`) déjà retirée de son inventaire. Le serveur juge l'arme, la cadence, le chargeur
     /// et l'arc bandé, puis annonce le tir (`PlayerShot`) ; un tir refusé est ignoré.
-    Shoot {
-        aim: Vec3,
-        ammo: u16,
-    },
+    Shoot { aim: Vec3, ammo: u16 },
     /// Le joueur donne à manger à une créature l'objet `item` (numéro d'`ItemId`), déjà retiré de son
     /// inventaire : le serveur l'apprivoise, la rend amoureuse ou fait grandir le petit
-    FeedCreature {
-        creature_id: crate::CreatureId,
-        item: u16,
-    },
+    FeedCreature { creature_id: crate::CreatureId, item: u16 },
     /// Le joueur parle à un habitant sans rien à échanger (clic droit) : le serveur choisit sa
     /// réplique et l'envoie aux joueurs qui l'entendent (`ServerPacket::VillagerSays`)
-    TalkToVillager {
-        creature_id: crate::CreatureId,
-    },
+    TalkToVillager { creature_id: crate::CreatureId },
     /// Le joueur dépèce une bête morte à sa portée, couteau ou dague en main : le serveur tire son
     /// butin (`ServerPacket::CreatureLoot`) et la retire
-    SkinCreature {
-        creature_id: crate::CreatureId,
-    },
+    SkinCreature { creature_id: crate::CreatureId },
     /// Le joueur investit un point dans une compétence de la roue (le serveur vérifie points et
     /// prérequis, puis renvoie ses statistiques)
-    LearnSkill {
-        id: String,
-    },
+    LearnSkill { id: String },
     /// Le joueur lance la compétence `skill`, en regardant dans la direction `aim` (repère du
     /// centre de la planète) et en visant le point `aimed` au sol, s'il en vise un. Le serveur
     /// vérifie rang, coût et recharge, puis l'annonce (`SkillCast`) ou la refuse (`SkillRefused`).
-    CastSkill {
-        skill: String,
-        aim: Vec3,
-        aimed: Option<Vec3>,
-    },
+    CastSkill { skill: String, aim: Vec3, aimed: Option<Vec3> },
     /// Légende du héros, envoyée à la connexion et au baptême : le serveur vérifie chaque choix
     /// contre l'atlas et en prend la voie (ses jauges et ses gains de niveau en dépendent)
     Legend(Box<crate::hero::Legend>),
     /// Le joueur mange un aliment (numéro d'objet) : le serveur en lit la satiété et renvoie ses
     /// statistiques
-    Eat {
-        item: u16,
-    },
+    Eat { item: u16 },
     /// Pièces que le joueur porte (numéros d'objets), envoyées à la connexion et à chaque
     /// changement : leur Protection réduit les coups physiques qu'il reçoit
     Equipment(Vec<u16>),
@@ -111,11 +84,7 @@ pub enum ClientPacket {
     ChatMessage(String),
     /// Commande `/summon` : `count` créatures de l'espèce `species` (nom de son fichier) aux pieds
     /// `feet`, près du joueur
-    Summon {
-        species: String,
-        count: u32,
-        feet: Vec3,
-    },
+    Summon { species: String, count: u32, feet: Vec3 },
     /// Commande `/heal` : jauges pleines
     Heal,
     /// Commande `/xp` : points d'expérience gagnés
@@ -123,10 +92,7 @@ pub enum ClientPacket {
     /// Commandes `/time set`, `/season` et `/weather` : le ciel est celui du serveur, pour tous.
     /// `time` : nouveau temps du ciel ; `forced` : nouveau temps imposé (`Some(None)` : le temps
     /// naturel revient)
-    SetSky {
-        time: Option<f64>,
-        forced: Option<Option<crate::WeatherKind>>,
-    },
+    SetSky { time: Option<f64>, forced: Option<Option<crate::WeatherKind>> },
     /// Le joueur quitte la partie
     Disconnect,
     /// Le joueur tombé réapparaît (écran de mort quitté) : une résurrection ne peut plus le relever
@@ -168,30 +134,16 @@ pub enum ServerPacket {
         edited_chunks: u32,
     },
     /// Chunk modifié par les joueurs, compressé en RLE (`ChunkData::compress_rle`)
-    ChunkData {
-        coord: PlanetChunkCoord,
-        compressed_voxels: Vec<u8>,
-    },
+    ChunkData { coord: PlanetChunkCoord, compressed_voxels: Vec<u8> },
     /// Mise à jour d'un voxel individuel
-    VoxelUpdate {
-        block: BlockAddress,
-        block_id: u16,
-    },
+    VoxelUpdate { block: BlockAddress, block_id: u16 },
     /// Un joueur est en ligne (à la connexion : un message par joueur déjà présent)
-    PlayerJoined {
-        player_id: crate::PlayerId,
-        name: String,
-    },
+    PlayerJoined { player_id: crate::PlayerId, name: String },
     /// Allure d'un joueur (sa légende vérifiée), pour dessiner son héros : à chaque baptême, et à
     /// la connexion pour les joueurs déjà présents
-    PlayerAppearance {
-        player_id: crate::PlayerId,
-        appearance: Box<crate::hero::Appearance>,
-    },
+    PlayerAppearance { player_id: crate::PlayerId, appearance: Box<crate::hero::Appearance> },
     /// Un joueur a quitté la partie
-    PlayerLeft {
-        player_id: crate::PlayerId,
-    },
+    PlayerLeft { player_id: crate::PlayerId },
     /// Positions des autres joueurs, envoyées à intervalle régulier
     PlayerStates(Vec<PlayerState>),
     /// Une créature entre dans le voisinage du joueur (elle vient d'apparaître, ou il s'en approche)
@@ -202,10 +154,7 @@ pub enum ServerPacket {
     },
     /// Fiche de l'habitant ou du voyageur qu'incarne une créature humanoïde, envoyée juste avant
     /// son `CreatureSpawned`
-    VillagerCard {
-        creature_id: crate::CreatureId,
-        card: Box<crate::villager::VillagerCard>,
-    },
+    VillagerCard { creature_id: crate::CreatureId, card: Box<crate::villager::VillagerCard> },
     /// Créatures sorties du voisinage du joueur, ou disparues
     CreaturesDespawned(Vec<crate::CreatureId>),
     /// Positions des créatures du voisinage, envoyées à intervalle régulier
@@ -224,27 +173,15 @@ pub enum ServerPacket {
     },
     /// Le joueur vient de dépecer une bête morte : son butin tombe au sol à côté d'elle (`position`),
     /// objets et nombres (`ItemId`), tirés par le serveur
-    CreatureLoot {
-        position: Vec3,
-        items: Vec<(u16, u16)>,
-    },
+    CreatureLoot { position: Vec3, items: Vec<(u16, u16)> },
     /// Une bête apprivoisée vient de pondre `item` (`ItemId`) à ses pieds (`position`) : il reste
     /// au sol jusqu'à ce qu'on marche dessus
-    Laid {
-        position: Vec3,
-        item: u16,
-    },
+    Laid { position: Vec3, item: u16 },
     /// Un habitant parle (on vient de lui adresser la parole) : seuls les joueurs proches de lui le
     /// reçoivent, et le lisent dans le chat
-    VillagerSays {
-        speaker: String,
-        line: String,
-    },
+    VillagerSays { speaker: String, line: String },
     /// Message de chat ou notification système
-    ChatMessage {
-        sender: String,
-        message: String,
-    },
+    ChatMessage { sender: String, message: String },
     /// Horloge du ciel du serveur (heure, saison, météo), à la connexion puis à intervalle régulier
     Clock {
         time: f64,
@@ -266,18 +203,9 @@ pub enum ServerPacket {
     },
     /// Un joueur a tiré à l'arc ou à l'arbalète (envoyé à tous, tireur compris) : d'où, jusqu'où,
     /// la bête touchée, la munition spéciale qu'il portait (compétence qui l'a chargée)
-    PlayerShot {
-        player_id: crate::PlayerId,
-        from: Vec3,
-        to: Vec3,
-        target: Option<crate::CreatureId>,
-        special: Option<String>,
-    },
+    PlayerShot { player_id: crate::PlayerId, from: Vec3, to: Vec3, target: Option<crate::CreatureId>, special: Option<String> },
     /// Le lancement de `skill` est refusé (`reason` : pourquoi, en clair) ; le client arrête le geste
-    SkillRefused {
-        skill: String,
-        reason: String,
-    },
+    SkillRefused { skill: String, reason: String },
     /// Une compétence déplace son lanceur (téléportation près de sa cible, traction vers elle) :
     /// envoyé à lui seul, qui décide de sa position
     SkillMove(crate::skills::SkillMove),
@@ -295,16 +223,10 @@ pub enum ServerPacket {
         parried: bool,
     },
     /// La garde de `skill` s'est fermée sans rien parer : sa recharge dure `seconds` de plus
-    SkillCooldown {
-        skill: String,
-        seconds: f32,
-    },
+    SkillCooldown { skill: String, seconds: f32 },
     /// Le coup d'une bête repousse le joueur : direction le long du sol et vitesse, en blocs par
     /// seconde
-    PlayerPushed {
-        direction: Vec3,
-        speed: f32,
-    },
+    PlayerPushed { direction: Vec3, speed: f32 },
     /// Le joueur entre dans la vision d'un temple, seul dans le passé de la ville tenue par le
     /// peuple `holder` (rang dans `Culture::ALL`), ou en revient (`None`) : le client change
     /// d'époque, oublie les blocs modifiés de l'autre monde et pose le joueur en `feet`

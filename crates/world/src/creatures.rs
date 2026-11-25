@@ -32,19 +32,23 @@
 //! au serveur ou à la partie solo le soin de les retirer des jauges de vie.
 
 use std::collections::{HashMap, HashSet};
+use std::f32::consts::{PI, TAU};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::f32::consts::{PI, TAU};
 
 use glam::Vec3;
 use herocraft_common::skills::Status;
-use herocraft_common::{CreatureId, PlayerId, armor_factor, blocks, items, tangent_frame, AttackMode, DamageKind, BlockId, ItemId, MOOD_HEARTS, MOOD_SATED, MOOD_TAMED, CreatureAction, CreatureShotEvent, Collider, PLAYER_COLLIDER, CreatureRegistry, CreatureSpecies, CreatureState, Temperament, PlanetFace, CORPSE_TIME, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, DEFAULT_PAUSE, PLAYER_HIT_DAMAGE};
+use herocraft_common::{
+    AttackMode, BlockId, CORPSE_TIME, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, Collider, CreatureAction, CreatureId, CreatureRegistry,
+    CreatureShotEvent, CreatureSpecies, CreatureState, DEFAULT_PAUSE, DamageKind, ItemId, MOOD_HEARTS, MOOD_SATED, MOOD_TAMED,
+    PLAYER_COLLIDER, PLAYER_HIT_DAMAGE, PlanetFace, PlayerId, Temperament, armor_factor, blocks, items, tangent_frame,
+};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use crate::edits::{BlockGeometry, BlockPos, TerrainEdits, TerrainQuery, WORLD_HEIGHT};
 use crate::generator::{BiomeType, PlanetWorldGenerator};
-use crate::population::{PopulationSave, SleepingCreature, ZoneKey, ZONE_BLOCKS};
+use crate::population::{PopulationSave, SleepingCreature, ZONE_BLOCKS, ZoneKey};
 
 /// Un tir à lancer à la fin de la chasse : tireur, espèce, camp (invoqué), bouche, cible visée,
 /// guidage, dégâts
@@ -435,7 +439,6 @@ pub struct PlayerHit {
     pub kind: DamageKind,
 }
 
-
 /// Ce qu'une bête chasse
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Target {
@@ -688,7 +691,8 @@ impl CreatureWorld {
                 })
                 .collect()
         };
-        let prey_table = registry.iter().map(|species| resolve(species, species.attack.as_ref().map_or(&[][..], |a| &a.prey[..]), "proie")).collect();
+        let prey_table =
+            registry.iter().map(|species| resolve(species, species.attack.as_ref().map_or(&[][..], |a| &a.prey[..]), "proie")).collect();
         let fear_table = registry.iter().map(|species| resolve(species, &species.afraid_of, "bête crainte")).collect();
         let villages = crate::villagers::Villages::new(seed, &registry);
         let food_table = registry
@@ -851,7 +855,17 @@ impl CreatureWorld {
         id
     }
 
-    fn wake_creature(&mut self, id: CreatureId, species: usize, herd: u64, feet: Vec3, yaw: f32, health: f32, tamed: bool, age: Option<f32>) {
+    fn wake_creature(
+        &mut self,
+        id: CreatureId,
+        species: usize,
+        herd: u64,
+        feet: Vec3,
+        yaw: f32,
+        health: f32,
+        tamed: bool,
+        age: Option<f32>,
+    ) {
         let timer = self.rng.gen_range(0.5..3.0);
         let breeding = self.registry.get(species).and_then(|s| s.breeding.as_ref());
         let growth_seconds = breeding.map_or(600.0, |b| b.growth_minutes * 60.0);
@@ -1018,7 +1032,8 @@ impl CreatureWorld {
             }
             c.mate = None;
         }
-        let lovers: Vec<usize> = (0..self.creatures.len()).filter(|&i| self.creatures[i].love > 0.0 && self.creatures[i].is_alive()).collect();
+        let lovers: Vec<usize> =
+            (0..self.creatures.len()).filter(|&i| self.creatures[i].love > 0.0 && self.creatures[i].is_alive()).collect();
         let mut births = Vec::new();
         for (k, &i) in lovers.iter().enumerate() {
             if self.creatures[i].love <= 0.0 {
@@ -1079,10 +1094,23 @@ impl CreatureWorld {
     }
 
     /// Comme `wound`, pour un coup de type `kind` qui ignore la part `pierce` de l'armure
-    pub(crate) fn wound_with(&mut self, id: CreatureId, from: Vec3, player: PlayerId, damage: f32, kind: DamageKind, pierce: f32) -> Option<bool> {
+    pub(crate) fn wound_with(
+        &mut self,
+        id: CreatureId,
+        from: Vec3,
+        player: PlayerId,
+        damage: f32,
+        kind: DamageKind,
+        pierce: f32,
+    ) -> Option<bool> {
         let damage = damage * (1.0 - self.guard_against(id, from));
-        let victim = self.creatures.iter().find(|c| c.id == id && c.is_alive()).map(|c| (c.herd, c.position, c.managed && self.registry.get(c.species).is_some_and(|s| s.humanoid)));
-        let who = self.villages.card(id).map(|card| (card.name.clone(), card.profession.clone(), self.villages.town_of(id).map(str::to_string)));
+        let victim = self
+            .creatures
+            .iter()
+            .find(|c| c.id == id && c.is_alive())
+            .map(|c| (c.herd, c.position, c.managed && self.registry.get(c.species).is_some_and(|s| s.humanoid)));
+        let who =
+            self.villages.card(id).map(|card| (card.name.clone(), card.profession.clone(), self.villages.town_of(id).map(str::to_string)));
         let killed = self.strike(id, from, damage, kind, pierce, true)?;
         if let Some((herd, position, true)) = victim {
             // Le premier coup (pas ceux qui suivent tant que les gardes lui en veulent) est signalé
@@ -1099,7 +1127,11 @@ impl CreatureWorld {
             let mut herds: Vec<u64> = self
                 .creatures
                 .iter()
-                .filter(|o| o.is_alive() && o.position.distance(position) <= radius && registry.get(o.species).and_then(|s| s.attack.as_ref()).is_some_and(|a| a.defends_herd))
+                .filter(|o| {
+                    o.is_alive()
+                        && o.position.distance(position) <= radius
+                        && registry.get(o.species).and_then(|s| s.attack.as_ref()).is_some_and(|a| a.defends_herd)
+                })
                 .map(|o| o.herd)
                 .collect();
             herds.push(herd);
@@ -1280,7 +1312,13 @@ impl CreatureWorld {
 
     /// La garde de la créature `id` tient en ce moment (elle n'est ni étourdie ni brisée)
     pub fn guarding(&self, id: CreatureId) -> bool {
-        self.creatures.iter().any(|c| c.id == id && c.is_alive() && c.stun <= 0.0 && c.guard_broken <= 0.0 && self.registry.get(c.species).is_some_and(|s| s.guard.is_some()))
+        self.creatures.iter().any(|c| {
+            c.id == id
+                && c.is_alive()
+                && c.stun <= 0.0
+                && c.guard_broken <= 0.0
+                && self.registry.get(c.species).is_some_and(|s| s.guard.is_some())
+        })
     }
 
     /// Aveuglée en ce moment
@@ -1338,7 +1376,8 @@ impl CreatureWorld {
     /// coup qui les a rabattues
     fn land(&mut self) {
         let block = self.geometry.block_height as f32;
-        let landed: Vec<_> = self.creatures.iter_mut().filter_map(|c| c.landed.take().map(|(fall, slam)| (c.id, c.position, fall, slam))).collect();
+        let landed: Vec<_> =
+            self.creatures.iter_mut().filter_map(|c| c.landed.take().map(|(fall, slam)| (c.id, c.position, fall, slam))).collect();
         for (id, at, fall, slam) in landed {
             let (player, hit) = slam.unwrap_or((PlayerId(0), 0.0));
             let damage = hit + (fall - LAUNCH_SAFE_FALL).max(0.0) * LAUNCH_FALL_DAMAGE;
@@ -1389,12 +1428,13 @@ impl CreatureWorld {
         let damage = damage * self.mitigation(index, kind, pierce);
         let species = self.creatures[index].species;
         let attack = self.registry.get(species).and_then(|s| s.attack.as_ref());
-        let fights_back = by_player
-            && attack.is_some_and(|a| a.mode != AttackMode::Pack || self.pack_count(index) >= a.pack_size as usize);
+        let fights_back = by_player && attack.is_some_and(|a| a.mode != AttackMode::Pack || self.pack_count(index) >= a.pack_size as usize);
         if fights_back && attack.is_some_and(|a| a.mode == AttackMode::Pack) {
             // Toute la meute prend la défense de la bête frappée
             let (position, radius) = (self.creatures[index].position, PACK_RADIUS * self.geometry.block_height as f32);
-            for other in self.creatures.iter_mut().filter(|o| o.is_alive() && o.species == species && o.position.distance(position) <= radius) {
+            for other in
+                self.creatures.iter_mut().filter(|o| o.is_alive() && o.species == species && o.position.distance(position) <= radius)
+            {
                 other.anger = ANGER_TIME;
             }
         }
@@ -1495,8 +1535,11 @@ impl CreatureWorld {
         }
         self.wanted.retain(|w| w.2 > 0.0);
         // Identifiant, espèce, pieds, vivante et visible, en chasse, apprivoisée, invoquée
-        let snapshot: Vec<(CreatureId, usize, Vec3, bool, bool, bool, bool)> =
-            self.creatures.iter().map(|c| (c.id, c.species, c.position, c.is_alive() && !c.hidden, c.hunting, c.tamed, c.summoner.is_some())).collect();
+        let snapshot: Vec<(CreatureId, usize, Vec3, bool, bool, bool, bool)> = self
+            .creatures
+            .iter()
+            .map(|c| (c.id, c.species, c.position, c.is_alive() && !c.hidden, c.hunting, c.tamed, c.summoner.is_some()))
+            .collect();
         let mut player_hits = Vec::new();
         let mut blasts = Vec::new();
         let mut spawns: Vec<(herocraft_common::BurstSpawn, Vec3, PlayerId)> = Vec::new();
@@ -1506,7 +1549,9 @@ impl CreatureWorld {
             .creatures
             .iter()
             .filter(|c| c.is_alive() && c.appearing <= 0.0)
-            .filter_map(|c| self.registry.get(c.species)?.magnet.map(|m| (c.id, c.position, m.radius * block, m.speed, c.summoner.is_some())))
+            .filter_map(|c| {
+                self.registry.get(c.species)?.magnet.map(|m| (c.id, c.position, m.radius * block, m.speed, c.summoner.is_some()))
+            })
             .collect();
         for &(magnet, at, radius, speed, allied) in &magnets {
             for c in self.creatures.iter_mut().filter(|c| c.is_alive() && c.id != magnet) {
@@ -1705,7 +1750,8 @@ impl CreatureWorld {
             let flat = to - up * to.dot(up);
             let flat_distance = flat.length() / block;
             let toward = yaw_to(flat);
-            let in_reach = flat_distance <= species.body.half_length + attack.reach + TARGET_RADIUS && (to.dot(up) / block).abs() <= MAX_STRIKE_HEIGHT;
+            let in_reach =
+                flat_distance <= species.body.half_length + attack.reach + TARGET_RADIUS && (to.dot(up) / block).abs() <= MAX_STRIKE_HEIGHT;
             // Trop loin pour frapper, assez près pour tirer
             let shot = attack.shot.as_ref().filter(|s| !in_reach && flat_distance <= s.range);
             let mut strikes = false;
@@ -1795,7 +1841,13 @@ impl CreatureWorld {
                     if !summoned {
                         for (player, feet) in players.iter().enumerate() {
                             if feet.distance(c.position) <= reach {
-                                player_hits.push(PlayerHit { player, creature_id: c.id, species: c.species, damage: attack.damage, kind: attack.kind });
+                                player_hits.push(PlayerHit {
+                                    player,
+                                    creature_id: c.id,
+                                    species: c.species,
+                                    damage: attack.damage,
+                                    kind: attack.kind,
+                                });
                             }
                         }
                     }
@@ -1825,7 +1877,13 @@ impl CreatureWorld {
                     }
                 }
                 match target {
-                    Target::Player(player) => player_hits.push(PlayerHit { player, creature_id: c.id, species: c.species, damage: attack.damage, kind: attack.kind }),
+                    Target::Player(player) => player_hits.push(PlayerHit {
+                        player,
+                        creature_id: c.id,
+                        species: c.species,
+                        damage: attack.damage,
+                        kind: attack.kind,
+                    }),
                     Target::Creature(prey) => bites.push((prey, c.position, attack.damage, attack.kind, index)),
                 }
             }
@@ -1861,19 +1919,33 @@ impl CreatureWorld {
         }
         for (prey, from, damage, kind, hunter) in bites {
             // Un garde reste sur le qui-vive ; une bête repue laisse les proies un moment
-            let defends = self.registry.get(self.creatures[hunter].species).and_then(|s| s.attack.as_ref()).is_some_and(|a| a.defends_herd || !a.hunts_players);
+            let defends = self
+                .registry
+                .get(self.creatures[hunter].species)
+                .and_then(|s| s.attack.as_ref())
+                .is_some_and(|a| a.defends_herd || !a.hunts_players);
             let attacker = self.creatures[hunter].id;
-            if self.strike(prey, from, damage, kind, 0.0, false) == Some(true) && !defends
-                && let Some(c) = self.creatures.iter_mut().find(|c| c.id == attacker) {
+            if self.strike(prey, from, damage, kind, 0.0, false) == Some(true)
+                && !defends
+                && let Some(c) = self.creatures.iter_mut().find(|c| c.id == attacker)
+            {
                 c.sated = SATED_TIME;
             }
             // Un mur incandescent brûle qui le frappe
-            let thorns = self.creatures.iter().find(|c| c.id == prey).and_then(|c| self.registry.get(c.species)).and_then(|s| s.obstacle).and_then(|o| o.thorns);
+            let thorns = self
+                .creatures
+                .iter()
+                .find(|c| c.id == prey)
+                .and_then(|c| self.registry.get(c.species))
+                .and_then(|s| s.obstacle)
+                .and_then(|o| o.thorns);
             if let Some(thorns) = thorns {
                 let at = self.creatures.iter().find(|c| c.id == prey).map_or(from, |c| c.position);
                 self.strike(attacker, at, thorns.damage, DamageKind::Magical, 0.0, false);
-                if thorns.burn > 0.0 && thorns.seconds > 0.0
-                    && let Some(c) = self.creatures.iter_mut().find(|c| c.id == attacker && c.is_alive()) {
+                if thorns.burn > 0.0
+                    && thorns.seconds > 0.0
+                    && let Some(c) = self.creatures.iter_mut().find(|c| c.id == attacker && c.is_alive())
+                {
                     (c.bleed, c.bleed_left, c.bleed_next) = (thorns.burn, thorns.seconds, 1.0);
                 }
             }
@@ -1892,13 +1964,26 @@ impl CreatureWorld {
     /// posture (accroupi ou debout) : éveille les zones qui s'en approchent (en les peuplant la
     /// première fois), endort les autres, et renvoie les coups que les bêtes agressives leur ont portés
     /// (`PlayerHit::player` : rang dans `presences`)
-    pub fn tick_with_presences(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, presences: &[PlayerPresence]) -> Vec<PlayerHit> {
+    pub fn tick_with_presences(
+        &mut self,
+        dt: f32,
+        generator: &PlanetWorldGenerator,
+        edits: &TerrainEdits,
+        presences: &[PlayerPresence],
+    ) -> Vec<PlayerHit> {
         self.tick_players(dt, generator, edits, presences, &[])
     }
 
     /// Comme `tick_with_presences`, chaque joueur reconnu par sa clé `keys[k]` (celle de `hit_by`) :
     /// les gardes poursuivent le joueur recherché, pas son voisin. Sans clé, un joueur a la clé 0.
-    pub fn tick_players(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, presences: &[PlayerPresence], keys: &[PlayerId]) -> Vec<PlayerHit> {
+    pub fn tick_players(
+        &mut self,
+        dt: f32,
+        generator: &PlanetWorldGenerator,
+        edits: &TerrainEdits,
+        presences: &[PlayerPresence],
+        keys: &[PlayerId],
+    ) -> Vec<PlayerHit> {
         let players: Vec<Vec3> = presences.iter().map(|p| p.feet).collect();
         let players = players.as_slice();
         // Une image très longue (fenêtre en arrière-plan) ne fait pas traverser les murs
@@ -1928,7 +2013,9 @@ impl CreatureWorld {
                     .iter()
                     .copied()
                     .filter(|p| !p.hidden)
-                    .filter(|p| creature.blind <= 0.0 || p.feet.distance(creature.position) <= BLIND_SIGHT * self.geometry.block_height as f32)
+                    .filter(|p| {
+                        creature.blind <= 0.0 || p.feet.distance(creature.position) <= BLIND_SIGHT * self.geometry.block_height as f32
+                    })
                     .min_by(|a, b| a.feet.distance_squared(creature.position).total_cmp(&b.feet.distance_squared(creature.position)));
                 let food = self.food_table.get(creature.species).map_or(&[][..], |f| &f[..]);
                 walker.step(creature, species, food, nearest, herd, &mut self.rng, dt);
@@ -1964,9 +2051,8 @@ impl CreatureWorld {
         // Un groupe dont le centre est loin de tous les joueurs n'a aucune zone assez proche (marge
         // de 1,5 pour l'étirement des cases vers les coins des faces)
         let group_reach = sleep + 1.5 * ZONE_GROUP_HALF_DIAGONAL * block;
-        let near_groups = self.zone_groups.iter().filter(|(center, _)| {
-            players.iter().any(|p| (*center * p.length()).distance(*p) <= group_reach)
-        });
+        let near_groups =
+            self.zone_groups.iter().filter(|(center, _)| players.iter().any(|p| (*center * p.length()).distance(*p) <= group_reach));
         for &(zone, center) in near_groups.flat_map(|(_, zones)| zones) {
             let nearest = players.iter().map(|p| (center * p.length()).distance(*p)).fold(f32::INFINITY, f32::min);
             if nearest <= sleep && self.awake.contains(&zone) {
@@ -1987,7 +2073,9 @@ impl CreatureWorld {
             };
             for c in creatures {
                 match self.registry.find(&c.species) {
-                    Some(species) => self.wake_creature(c.id, species, c.herd.unwrap_or(c.id.0), c.position, c.yaw, c.health, c.tamed, c.age),
+                    Some(species) => {
+                        self.wake_creature(c.id, species, c.herd.unwrap_or(c.id.0), c.position, c.yaw, c.health, c.tamed, c.age)
+                    }
                     None => log::warn!("Créature {} : espèce « {} » inconnue, laissée de côté.", c.id, c.species),
                 }
             }
@@ -2021,7 +2109,16 @@ impl CreatureWorld {
             return None;
         }
         let species = self.registry.get(c.species)?.id.clone();
-        Some(SleepingCreature { id: c.id, species, herd: Some(c.herd), position: c.position, yaw: c.yaw, health: c.health, tamed: c.tamed, age: c.age })
+        Some(SleepingCreature {
+            id: c.id,
+            species,
+            herd: Some(c.herd),
+            position: c.position,
+            yaw: c.yaw,
+            health: c.health,
+            tamed: c.tamed,
+            age: c.age,
+        })
     }
 
     /// Bêtes que la graine du monde destine à cette zone : au plus un groupe, d'une espèce de son
@@ -2054,7 +2151,16 @@ impl CreatureWorld {
                 let id = CreatureId((zone.index() << 16) | n as u64);
                 // Le groupe d'une zone forme un troupeau
                 let herd = Some(zone.index() << 16);
-                population.push(SleepingCreature { id, species: info.id.clone(), herd, position: feet, yaw, health: info.health, tamed: false, age: None });
+                population.push(SleepingCreature {
+                    id,
+                    species: info.id.clone(),
+                    herd,
+                    position: feet,
+                    yaw,
+                    health: info.health,
+                    tamed: false,
+                    age: None,
+                });
             }
         }
         population
@@ -2065,7 +2171,8 @@ impl CreatureWorld {
     /// Les créatures qui craignent une espèce s'enfuient quand une bête de cette espèce s'approche
     fn scare(&mut self) {
         let radius = FEAR_RADIUS_BLOCKS * self.geometry.block_height as f32;
-        let threats: Vec<(usize, Vec3)> = self.creatures.iter().filter(|c| c.is_alive() && !c.hidden).map(|c| (c.species, c.position)).collect();
+        let threats: Vec<(usize, Vec3)> =
+            self.creatures.iter().filter(|c| c.is_alive() && !c.hidden).map(|c| (c.species, c.position)).collect();
         for c in &mut self.creatures {
             let fears = &self.fear_table[c.species];
             if fears.is_empty() || !c.is_alive() || c.hidden || c.hunting {
@@ -2275,10 +2382,7 @@ fn herd_pulls(creatures: &[Creature], block: f32) -> Vec<HerdPull> {
             };
             let offset = sum / count as f32 - c.position;
             let distance = (offset - up * offset.dot(up)).length() / block;
-            HerdPull {
-                toward: yaw_of(offset).map(|yaw| (yaw, distance)),
-                heading: if walkers > 0 { yaw_of(heading) } else { None },
-            }
+            HerdPull { toward: yaw_of(offset).map(|yaw| (yaw, distance)), heading: if walkers > 0 { yaw_of(heading) } else { None } }
         })
         .collect()
 }
@@ -2333,7 +2437,8 @@ impl Walker<'_, '_> {
         let altitude = self.altitude(p) as f64 - crate::generator::SEA_LEVEL_BLOCKS;
         let sample = model.sample(p.as_dvec3(), altitude, *time);
         let hibernating = species.hibernation && sample.season == crate::weather::Season::Winter && sample.season_strength > 0.3;
-        let sheltering = species.activity != herocraft_common::Activity::Always && (sample.storm > 0.3 || (sample.precipitation > 0.8 && !sample.snow));
+        let sheltering =
+            species.activity != herocraft_common::Activity::Always && (sample.storm > 0.3 || (sample.precipitation > 0.8 && !sample.snow));
         hibernating || sheltering
     }
 
@@ -2517,7 +2622,16 @@ impl Walker<'_, '_> {
 
     /// Nouveau cap pour contourner ce qui gêne sur le chemin `current` : le plus petit écart qui
     /// mène plus loin (ou au sec), du côté habituel d'abord. Bloquée de partout, elle fait demi-tour.
-    fn detour(&mut self, c: &mut Creature, altitude: f32, reach: f32, height: f32, current: Path, avoid_water: bool, rng: &mut StdRng) -> Option<f32> {
+    fn detour(
+        &mut self,
+        c: &mut Creature,
+        altitude: f32,
+        reach: f32,
+        height: f32,
+        current: Path,
+        avoid_water: bool,
+        rng: &mut StdRng,
+    ) -> Option<f32> {
         let up = c.position.normalize_or_zero();
         let (east, north) = tangent_frame(up);
         let perfect = LOOKAHEAD_STEPS * 2 + 1;
@@ -2616,7 +2730,16 @@ impl Walker<'_, '_> {
         }
     }
 
-    fn step(&mut self, c: &mut Creature, species: &CreatureSpecies, food: &[ItemId], nearest_player: Option<PlayerPresence>, herd: HerdPull, rng: &mut StdRng, dt: f32) {
+    fn step(
+        &mut self,
+        c: &mut Creature,
+        species: &CreatureSpecies,
+        food: &[ItemId],
+        nearest_player: Option<PlayerPresence>,
+        herd: HerdPull,
+        rng: &mut StdRng,
+        dt: f32,
+    ) {
         let block = self.block();
         let base_radius = self.geometry.base_radius as f32;
         let radius_of = move |altitude: f32| base_radius + altitude * block;
@@ -2658,7 +2781,8 @@ impl Walker<'_, '_> {
         }) {
             // Le joueur tient sa nourriture : elle le suit au lieu de fuir
             self.approach(c, player.feet, LURE_STOP_BLOCKS);
-        } else if !c.sleeping && nearest_player.is_some_and(|player| self.react(c, tamed_temperament(c, species.temperament), player, rng)) {
+        } else if !c.sleeping && nearest_player.is_some_and(|player| self.react(c, tamed_temperament(c, species.temperament), player, rng))
+        {
             // Éveillée, elle s'occupe du joueur ; endormie, elle ne le remarque pas (un coup la réveille)
         } else {
             // Humeur : marcher un moment dans une direction, puis s'arrêter brouter. Au sein d'un
@@ -2745,8 +2869,10 @@ impl Walker<'_, '_> {
             // En vol, elle ne marche ni ne frappe
             flight.peak = flight.peak.max(altitude);
             c.stun = c.stun.max(0.1);
-            if c.vertical_speed == 0.0 && altitude <= ground + 1e-4
-                && let Some(flight) = c.flight.take() {
+            if c.vertical_speed == 0.0
+                && altitude <= ground + 1e-4
+                && let Some(flight) = c.flight.take()
+            {
                 c.landed = Some(((flight.peak - ground).max(0.0), flight.slam));
             }
         }
@@ -2777,8 +2903,10 @@ impl Walker<'_, '_> {
             let path = self.path(c.position, altitude, heading, reach, species.body.height);
             // Au calme et à pied sec, elle longe l'eau plutôt que d'y entrer, si elle le peut
             let avoid_water = c.panic <= 0.0 && !c.swimming;
-            if turn.abs() < FACING_TOLERANCE && path.score(avoid_water) < LOOKAHEAD_STEPS * 2 + 1
-                && let Some(yaw) = self.detour(c, altitude, reach, species.body.height, path, avoid_water, rng) {
+            if turn.abs() < FACING_TOLERANCE
+                && path.score(avoid_water) < LOOKAHEAD_STEPS * 2 + 1
+                && let Some(yaw) = self.detour(c, altitude, reach, species.body.height, path, avoid_water, rng)
+            {
                 c.target_yaw = yaw;
             }
             if let Some(ahead) = path.first {
@@ -2921,7 +3049,11 @@ mod tests {
         // Mur de deux blocs tout autour : le sanglier ne passe pas, quel que soit son cap
         for (dx, dz) in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)] {
             for dy in 0..2 {
-                assert!(edits.set_block(&generator, BlockPos { x: ground.x + dx, y: ground.y + dy, z: ground.z + dz, ..ground }, BlockId::STONE));
+                assert!(edits.set_block(
+                    &generator,
+                    BlockPos { x: ground.x + dx, y: ground.y + dy, z: ground.z + dz, ..ground },
+                    BlockId::STONE
+                ));
             }
         }
         for _ in 0..600 {
@@ -3220,7 +3352,8 @@ mod tests {
 
         // Accroupi tout près, il finit par le remarquer
         let (east, _) = tangent_frame(c.position.normalize());
-        let close = PlayerPresence { feet: c.position + east * 2.0 * geometry.block_height as f32, crouching: true, holding: None, hidden: false };
+        let close =
+            PlayerPresence { feet: c.position + east * 2.0 * geometry.block_height as f32, crouching: true, holding: None, hidden: false };
         world.tick_with_presences(0.05, &generator, &edits, &[close]);
         assert!(world.creatures()[0].panic > 0.0, "le lapin ne fuit pas un joueur accroupi à 2 blocs");
     }
@@ -3515,7 +3648,9 @@ mod tests {
         let (east, _) = tangent_frame(feet.normalize());
         assert!(world.hit(victim, feet - east * 2.0 * geometry.block_height as f32));
 
-        let get = |world: &CreatureWorld, id: CreatureId| world.creatures().iter().find(|c| c.id == id).map(|c| (c.panic, c.panic_speed)).unwrap();
+        let get = |world: &CreatureWorld, id: CreatureId| {
+            world.creatures().iter().find(|c| c.id == id).map(|c| (c.panic, c.panic_speed)).unwrap()
+        };
         assert_eq!(get(&world, victim), (PANIC_TIME, PANIC_SPEED));
         for &mate in &mates {
             let (panic, speed) = get(&world, mate);
@@ -3681,7 +3816,12 @@ mod tests {
 
     /// `count` bêtes de l'espèce `id` sur une colonne d'herbe plate, et un joueur à `blocks` blocs à
     /// l'est d'elles
-    fn beasts_and_player(id: &str, count: usize, blocks: f32, seed: u64) -> (PlanetWorldGenerator, TerrainEdits, CreatureWorld, Vec3, Vec3) {
+    fn beasts_and_player(
+        id: &str,
+        count: usize,
+        blocks: f32,
+        seed: u64,
+    ) -> (PlanetWorldGenerator, TerrainEdits, CreatureWorld, Vec3, Vec3) {
         let generator = generator();
         let edits = TerrainEdits::new(None);
         let geometry = BlockGeometry::new(generator.base_radius());
@@ -3697,7 +3837,13 @@ mod tests {
     }
 
     /// Coups portés au joueur en `seconds` secondes de jeu
-    fn hits_over(world: &mut CreatureWorld, generator: &PlanetWorldGenerator, edits: &TerrainEdits, player: Vec3, seconds: f32) -> Vec<PlayerHit> {
+    fn hits_over(
+        world: &mut CreatureWorld,
+        generator: &PlanetWorldGenerator,
+        edits: &TerrainEdits,
+        player: Vec3,
+        seconds: f32,
+    ) -> Vec<PlayerHit> {
         (0..(seconds / 0.05) as usize).flat_map(|_| world.tick(0.05, generator, edits, &[player])).collect()
     }
 
@@ -3854,7 +4000,11 @@ mod tests {
         let hp = |w: &CreatureWorld, id| w.creatures().iter().find(|c| c.id == id).map_or(0.0, |c| c.health);
         assert_eq!(hp(&world, target), 1000.0, "le mur a arrêté les carreaux");
         assert!(hp(&world, wall) < 150.0, "le mur a encaissé");
-        assert!(events.iter().any(|e| matches!(e, herocraft_common::ProjectileEvent::End { reason: herocraft_common::ProjectileEnd::Blocked, .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, herocraft_common::ProjectileEvent::End { reason: herocraft_common::ProjectileEnd::Blocked, .. }))
+        );
     }
 
     #[test]
@@ -4397,7 +4547,11 @@ mod tests {
         for _ in 0..200 {
             world.tick_with_presences(0.05, &generator, &edits, &[lure]);
         }
-        assert!(distance(&world) < start.min(LURE_RADIUS_BLOCKS) - 1.0, "le lapin devait approcher ({start} puis {} blocs)", distance(&world));
+        assert!(
+            distance(&world) < start.min(LURE_RADIUS_BLOCKS) - 1.0,
+            "le lapin devait approcher ({start} puis {} blocs)",
+            distance(&world)
+        );
     }
 
     #[test]
@@ -4505,4 +4659,3 @@ mod tests {
         assert!(!stats.is_stunned(), "immunisé, il n'est pas étourdi");
     }
 }
-

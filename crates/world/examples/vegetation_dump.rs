@@ -3,7 +3,7 @@
 //!
 //! Usage : cargo run -p herocraft_world --release --example vegetation_dump -- <biome> [graine] [côté]
 //! (`Forest`, `Plains`, `Jungle`…). Écrit une ligne par bloc : `x y z #dessus #côté plante`.
-use herocraft_common::{blocks, PlanetChunkCoord, PlanetFace};
+use herocraft_common::{PlanetChunkCoord, PlanetFace, blocks};
 use herocraft_world::{BiomeType, PlanetDescriptor, PlanetWorldGenerator};
 
 fn main() {
@@ -41,9 +41,8 @@ fn main() {
         let chunk = chunks.entry(coord).or_insert_with(|| generator.generate_chunk(&coord));
         chunk.get_voxel(x.rem_euclid(32) as u8, y.rem_euclid(32) as u8, z.rem_euclid(32) as u8)
     };
-    let grounds: Vec<i32> = (0..side * side)
-        .map(|i| generator.sample_block_column(face, x0 + i % side, z0 + i / side).elevation.floor() as i32)
-        .collect();
+    let grounds: Vec<i32> =
+        (0..side * side).map(|i| generator.sample_block_column(face, x0 + i % side, z0 + i / side).elevation.floor() as i32).collect();
     let (low, high) = (grounds.iter().min().unwrap() - 3, grounds.iter().max().unwrap() + 24);
     for z in z0..z0 + side {
         for x in x0..x0 + side {
@@ -61,7 +60,15 @@ fn main() {
                     continue;
                 }
                 let Some(sheet) = blocks().get(block) else { continue };
-                println!("{} {} {} {} {} {}", x - x0, y - low, z - z0, hex(sheet.top_color()), hex(sheet.side_color()), block.is_plant() as u8);
+                println!(
+                    "{} {} {} {} {} {}",
+                    x - x0,
+                    y - low,
+                    z - z0,
+                    hex(sheet.top_color()),
+                    hex(sheet.side_color()),
+                    block.is_plant() as u8
+                );
             }
         }
     }

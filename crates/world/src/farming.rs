@@ -15,12 +15,12 @@ use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use herocraft_common::{cultures, BlockAddress, BlockId, CropRegistry, WATER_REACH_BLOCKS};
+use herocraft_common::{BlockAddress, BlockId, CropRegistry, WATER_REACH_BLOCKS, cultures};
 use serde::{Deserialize, Serialize};
 
-use crate::edits::{BlockPos, TerrainEdits, TerrainQuery, FACE_BLOCKS};
+use crate::edits::{BlockPos, FACE_BLOCKS, TerrainEdits, TerrainQuery};
 use crate::generator::{PlanetWorldGenerator, SEA_LEVEL_BLOCKS};
-use crate::weather::{crop_growth_factor, WeatherModel};
+use crate::weather::{WeatherModel, crop_growth_factor};
 
 /// Côté, en blocs, d'une parcelle où le temps est le même pour toutes les plantes (le temps ne
 /// change pas d'un bloc à l'autre : inutile de le calculer pour chacune)
@@ -118,7 +118,13 @@ impl Fields {
     /// (saison, météo ; 1 par défaut). Renvoie les plantes qui passent au stade suivant, avec ce
     /// stade : à poser dans le monde (sans repasser par `observe`, déjà fait ici). Une plante qui
     /// n'est plus là est oubliée.
-    pub fn tick(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, mut growth: impl FnMut(BlockPos) -> f32) -> Vec<(BlockPos, BlockId)> {
+    pub fn tick(
+        &mut self,
+        dt: f32,
+        generator: &PlanetWorldGenerator,
+        edits: &TerrainEdits,
+        mut growth: impl FnMut(BlockPos) -> f32,
+    ) -> Vec<(BlockPos, BlockId)> {
         if self.plants.is_empty() || dt <= 0.0 {
             return Vec::new();
         }
@@ -151,7 +157,14 @@ impl Fields {
     /// `tick` sous le temps qu'il fait : la saison et la météo de `model` au temps du ciel `time`
     /// règlent la pousse de chaque plante (rien sous la neige ni dans le gel, moins en automne et
     /// en hiver, un peu plus sous la pluie)
-    pub fn tick_in_weather(&mut self, dt: f32, generator: &PlanetWorldGenerator, edits: &TerrainEdits, model: &WeatherModel, time: f64) -> Vec<(BlockPos, BlockId)> {
+    pub fn tick_in_weather(
+        &mut self,
+        dt: f32,
+        generator: &PlanetWorldGenerator,
+        edits: &TerrainEdits,
+        model: &WeatherModel,
+        time: f64,
+    ) -> Vec<(BlockPos, BlockId)> {
         let mut patches: HashMap<(u8, i32, i32, i32), f32> = HashMap::new();
         self.tick(dt, generator, edits, |pos| {
             let s = WEATHER_PATCH_BLOCKS;
@@ -187,7 +200,7 @@ pub fn tilled_block(query: &mut TerrainQuery, pos: BlockPos, registry: &CropRegi
 mod tests {
     use super::*;
     use crate::PlanetDescriptor;
-    use herocraft_common::{items, PlanetFace};
+    use herocraft_common::{PlanetFace, items};
 
     #[test]
     fn test_sown_crop_grows_stage_by_stage_on_farmland() {

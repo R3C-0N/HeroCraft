@@ -44,15 +44,7 @@ pub(crate) enum Action {
 pub(crate) const ACTION_GROUPS: [(&str, &[Action]); 8] = [
     (
         "DÉPLACEMENT",
-        &[
-            Action::MoveForward,
-            Action::MoveBackward,
-            Action::MoveLeft,
-            Action::MoveRight,
-            Action::Jump,
-            Action::Descend,
-            Action::Sprint,
-        ],
+        &[Action::MoveForward, Action::MoveBackward, Action::MoveLeft, Action::MoveRight, Action::Jump, Action::Descend, Action::Sprint],
     ),
     ("OBJETS", &[Action::OpenInventory]),
     ("HÉROS", &[Action::OpenSkills]),
@@ -251,10 +243,7 @@ impl Controls {
         }
         for action in Action::ALL {
             let key = self.key(action);
-            let taken = Action::ALL
-                .iter()
-                .take_while(|&&other| other != action)
-                .any(|&other| self.bindings.get(&other) == Some(&key));
+            let taken = Action::ALL.iter().take_while(|&&other| other != action).any(|&other| self.bindings.get(&other) == Some(&key));
             if !self.bindings.contains_key(&action) || taken || is_reserved_key(key) {
                 self.bindings.insert(action, defaults.key(action));
             }
@@ -481,7 +470,10 @@ mod tests {
         controls.repair();
         assert_eq!(controls.key(Action::OpenInventory), KeyCode::KeyF);
         assert_eq!(controls.key(Action::ToggleView), KeyCode::KeyV);
-        assert_eq!([Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4].map(|a| controls.key(a)), [KeyCode::KeyQ, KeyCode::KeyE, KeyCode::KeyR, KeyCode::KeyT]);
+        assert_eq!(
+            [Action::Skill1, Action::Skill2, Action::Skill3, Action::Skill4].map(|a| controls.key(a)),
+            [KeyCode::KeyQ, KeyCode::KeyE, KeyCode::KeyR, KeyCode::KeyT]
+        );
         assert_eq!(controls.key(Action::Jump), KeyCode::KeyJ);
     }
 

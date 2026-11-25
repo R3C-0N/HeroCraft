@@ -463,7 +463,14 @@ impl Card {
             (Some(ha), Some(hb)) => Some(ha + (hb - ha) * k),
             (h, None) | (None, h) => h,
         };
-        Some((Vec3::from(a.position).lerp(Vec3::from(b.position), k), a.width + (b.width - a.width) * k, a.opacity + (b.opacity - a.opacity) * k, Vec3::from(a.tint).lerp(Vec3::from(b.tint), k), a.roll + (b.roll - a.roll) * k, height))
+        Some((
+            Vec3::from(a.position).lerp(Vec3::from(b.position), k),
+            a.width + (b.width - a.width) * k,
+            a.opacity + (b.opacity - a.opacity) * k,
+            Vec3::from(a.tint).lerp(Vec3::from(b.tint), k),
+            a.roll + (b.roll - a.roll) * k,
+            height,
+        ))
     }
 }
 
@@ -670,7 +677,10 @@ impl Cinematic {
             if card.at < 0.0 || card.duration.is_some_and(|d| d.is_nan() || d <= 0.0) || card.fade < 0.0 {
                 return Err(I::CardTiming(name));
             }
-            if !card.width.is_positive() || card.height.is_some_and(|h| !h.is_positive()) || card.keys.iter().any(|k| k.width.is_nan() || k.width <= 0.0) {
+            if !card.width.is_positive()
+                || card.height.is_some_and(|h| !h.is_positive())
+                || card.keys.iter().any(|k| k.width.is_nan() || k.width <= 0.0)
+            {
                 return Err(I::CardSize(name));
             }
             if let Some(color) = &card.color {
@@ -679,7 +689,9 @@ impl Cinematic {
             if card.image.as_deref().is_some_and(|i| i.is_empty() || i.contains("..") || i.starts_with('/') || i.contains('\\')) {
                 return Err(I::CardImage(name));
             }
-            if card.keys.windows(2).any(|w| w[1].t.partial_cmp(&w[0].t).is_none_or(std::cmp::Ordering::is_lt)) || card.keys.first().is_some_and(|k| k.t < 0.0) {
+            if card.keys.windows(2).any(|w| w[1].t.partial_cmp(&w[0].t).is_none_or(std::cmp::Ordering::is_lt))
+                || card.keys.first().is_some_and(|k| k.t < 0.0)
+            {
                 return Err(I::CardKeys(name));
             }
         }
@@ -834,7 +846,11 @@ impl Cinematic {
 
     /// Événements des `cues` entre `from` (exclu) et `to` (inclus)
     fn cues_between(&self, from: f32, to: f32) -> impl Iterator<Item = GameEvent> + '_ {
-        self.cues.iter().filter(move |c| c.at > from && c.at <= to).map(|c| GameEvent { name: c.emit.clone(), tags: c.tags.clone(), position: None })
+        self.cues.iter().filter(move |c| c.at > from && c.at <= to).map(|c| GameEvent {
+            name: c.emit.clone(),
+            tags: c.tags.clone(),
+            position: None,
+        })
     }
 }
 
@@ -874,11 +890,20 @@ impl CinematicCatalog {
     pub fn load_dir(dir: &Path) -> (Self, Vec<String>) {
         let mut catalog = Self::default();
         let mut errors = Vec::new();
-        let mut files: Vec<_> = std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e == "json")).collect();
+        let mut files: Vec<_> = std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e == "json"))
+            .collect();
         files.sort();
         for path in files {
             let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
-            match std::fs::read_to_string(&path).map_err(|e| CinematicError { id: id.clone(), issue: CinematicIssue::Io(e) }).and_then(|text| Cinematic::from_json(&id, &text)) {
+            match std::fs::read_to_string(&path)
+                .map_err(|e| CinematicError { id: id.clone(), issue: CinematicIssue::Io(e) })
+                .and_then(|text| Cinematic::from_json(&id, &text))
+            {
                 Ok(cinematic) => catalog.insert(cinematic),
                 Err(e) => errors.push(e.to_string()),
             }
@@ -1003,7 +1028,8 @@ impl CinematicPlayer {
     }
 
     fn enqueue(&mut self, cinematic: std::sync::Arc<Cinematic>, event: Option<GameEvent>) {
-        let already = self.playing.as_ref().is_some_and(|p| p.cinematic.id == cinematic.id) || self.queue.iter().any(|(c, _)| c.id == cinematic.id);
+        let already =
+            self.playing.as_ref().is_some_and(|p| p.cinematic.id == cinematic.id) || self.queue.iter().any(|(c, _)| c.id == cinematic.id);
         if already {
             return;
         }
@@ -1095,7 +1121,12 @@ impl CinematicPlayer {
 
     /// Lit la liste des cinématiques déjà vues (`cinematiques.json` de la sauvegarde)
     pub fn load_seen(&mut self, file: &Path) {
-        self.seen = std::fs::read_to_string(file).ok().and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok()).unwrap_or_default().into_iter().collect();
+        self.seen = std::fs::read_to_string(file)
+            .ok()
+            .and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
     }
 
     /// Enregistre la liste des cinématiques déjà vues
@@ -1168,7 +1199,9 @@ mod tests {
     #[test]
     fn test_invalid_files_are_explained() {
         assert!(matches!(Cinematic::from_json("x", r#"{"title": "x", "shots": []}"#).unwrap_err().issue, CinematicIssue::NoShots));
-        assert!(Cinematic::from_json("x", r#"{"title": "x", "shots": [{"duration": 1}]}"#).unwrap_err().to_string().contains("ni `position`"));
+        assert!(
+            Cinematic::from_json("x", r#"{"title": "x", "shots": [{"duration": 1}]}"#).unwrap_err().to_string().contains("ni `position`")
+        );
         let bad_color = r##"{"title": "x", "shots": [{"duration": 1, "position": [0,0,0]}], "fades": [{"at": 0, "duration": 1, "from": 0, "to": 1, "color": "rouge"}]}"##;
         assert!(matches!(Cinematic::from_json("x", bad_color).unwrap_err().issue, CinematicIssue::Color { .. }));
         assert!(Cinematic::from_json("x", r#"{"title": "x", "shots": [{"duration": 1, "position": [0,0,0]}], "typo": 1}"#).is_err());

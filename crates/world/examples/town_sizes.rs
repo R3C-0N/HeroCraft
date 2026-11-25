@@ -2,9 +2,9 @@
 //! même endroit : un plan vu de dessus (un pixel par bloc, même échelle pour toutes) et une vue
 //! isométrique de chacune, plus un gros plan du cœur de la capitale. Images PPM.
 //! Usage : cargo run -p herocraft_world --release --example town_sizes -- [graine] [dossier] [culture]
-use herocraft_common::{blocks, BlockId, PlanetFace};
-use herocraft_world::structures::{preview_town, Rect, TownSize};
-use herocraft_world::{VEGETATION_SPAN, BiomeType, Culture, PlanetDescriptor, PlanetWorldGenerator, Settlement};
+use herocraft_common::{BlockId, PlanetFace, blocks};
+use herocraft_world::structures::{Rect, TownSize, preview_town};
+use herocraft_world::{BiomeType, Culture, PlanetDescriptor, PlanetWorldGenerator, Settlement, VEGETATION_SPAN};
 use std::io::Write;
 
 fn main() {
@@ -61,7 +61,10 @@ fn main() {
 }
 
 fn accepts(biome: BiomeType) -> bool {
-    !matches!(biome, BiomeType::DeepOcean | BiomeType::Ocean | BiomeType::Sea | BiomeType::SnowPeaks | BiomeType::Mountains | BiomeType::Beach)
+    !matches!(
+        biome,
+        BiomeType::DeepOcean | BiomeType::Ocean | BiomeType::Sea | BiomeType::SnowPeaks | BiomeType::Mountains | BiomeType::Beach
+    )
 }
 
 /// Un site de terre ferme assez plat pour une capitale (le plus plat d'un balayage de la planète)
@@ -171,8 +174,14 @@ impl Scene {
                                         b = Some(BlockId::STONE);
                                     }
                                     let mut b = b.unwrap_or_else(|| generator.natural_block(column, face, bx, gy, bz));
-                                    if b.is_air() && gy >= ground && gy < ground + VEGETATION_SPAN + 2 && (wild || !tile.occupies(bx, bz, 2)) {
-                                        b = generator.vegetation_block(column, face, bx, gy, bz, |cx, cz| *trees.entry((cx, cz)).or_insert_with(|| generator.tree_in_cell(face, cx, cz)));
+                                    if b.is_air()
+                                        && gy >= ground
+                                        && gy < ground + VEGETATION_SPAN + 2
+                                        && (wild || !tile.occupies(bx, bz, 2))
+                                    {
+                                        b = generator.vegetation_block(column, face, bx, gy, bz, |cx, cz| {
+                                            *trees.entry((cx, cz)).or_insert_with(|| generator.tree_in_cell(face, cx, cz))
+                                        });
                                     }
                                     row[(y * w + x) as usize] = b;
                                 }
@@ -293,7 +302,10 @@ impl Scene {
 }
 
 fn color(block: BlockId, top: bool) -> [f32; 3] {
-    let c = blocks().get(BlockId(block.0 & !(0x7 << BlockId::ROTATION_SHIFT))).map(|b| if top { b.top_color() } else { b.side_color() }).unwrap_or([1.0, 0.0, 1.0, 1.0]);
+    let c = blocks()
+        .get(BlockId(block.0 & !(0x7 << BlockId::ROTATION_SHIFT)))
+        .map(|b| if top { b.top_color() } else { b.side_color() })
+        .unwrap_or([1.0, 0.0, 1.0, 1.0]);
     [c[0], c[1], c[2]]
 }
 

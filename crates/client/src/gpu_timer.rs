@@ -3,8 +3,8 @@
 //! Les résultats sont relus de façon asynchrone (anneau de buffers) pour ne jamais bloquer
 //! le thread principal, puis envoyés au profileur dans le groupe `gpu`.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::camera::CameraViewMode;
 
@@ -92,12 +92,7 @@ impl GpuTimer {
             })
             .collect();
 
-        Some(Self {
-            slots,
-            current: None,
-            period_ns: queue.get_timestamp_period() as f64,
-            inside_passes,
-        })
+        Some(Self { slots, current: None, period_ns: queue.get_timestamp_period() as f64, inside_passes })
     }
 
     /// Relit les résultats disponibles puis réserve un slot pour la frame (None si tous sont en vol)

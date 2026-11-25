@@ -236,10 +236,35 @@ impl Traits {
     /// Ces traits avec ceux de `over` posés par-dessus
     pub fn fusion(&self, over: Option<&Traits>) -> Traits {
         fusion!(
-            self, over, relief, alpha, pelage, oreilles, canines, veines, barbe_min, motif, accent, reflet, lueur,
-            regard, appendice, queue, oreilles_animales, coiffure_forcee, barbe_forcee, yeux_forces,
-            forme_tete_forcee, bouche_forcee, mains_massives, machoire, machoire_lourde, craquelee,
-            chevelure_etheree, halo, griffes
+            self,
+            over,
+            relief,
+            alpha,
+            pelage,
+            oreilles,
+            canines,
+            veines,
+            barbe_min,
+            motif,
+            accent,
+            reflet,
+            lueur,
+            regard,
+            appendice,
+            queue,
+            oreilles_animales,
+            coiffure_forcee,
+            barbe_forcee,
+            yeux_forces,
+            forme_tete_forcee,
+            bouche_forcee,
+            mains_massives,
+            machoire,
+            machoire_lourde,
+            craquelee,
+            chevelure_etheree,
+            halo,
+            griffes
         )
     }
 }

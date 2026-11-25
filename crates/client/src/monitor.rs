@@ -46,7 +46,8 @@ pub(crate) fn find(event_loop: &ActiveEventLoop, wanted: &str) -> Option<Monitor
 
     // Nom Windows introuvable tel quel : on est probablement sous WSLg
     if key.starts_with("DISPLAY")
-        && let Some(m) = find_via_windows(&monitors, &key) {
+        && let Some(m) = find_via_windows(&monitors, &key)
+    {
         return Some(m);
     }
 

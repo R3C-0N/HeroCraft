@@ -3,7 +3,7 @@
 //! cela, un pic de génération (arrivée sur une zone neuve) volait du temps au fil principal et se
 //! voyait en à-coups.
 
-use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
+use thread_priority::{ThreadPriority, ThreadPriorityValue, set_current_thread_priority};
 
 /// Passe le fil courant en priorité basse (sous la normale : `BelowNormal` sous Windows, gentillesse
 /// 7 sous Linux). Sans effet si le système refuse.

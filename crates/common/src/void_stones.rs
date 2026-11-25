@@ -18,7 +18,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::items::{items, ItemId};
+use crate::items::{ItemId, items};
 
 /// Identifiant de la fiche de la Pierre entière
 pub(crate) const VOID_STONE: &str = "voidStone";

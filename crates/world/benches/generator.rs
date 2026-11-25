@@ -3,11 +3,11 @@
 //! Toujours la même colonne de chunks (graine 2026, face +Z, chunk 10, 12) pour comparer un
 //! changement à l'autre. Rapports HTML de criterion dans `target/criterion/`.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use herocraft_common::{PlanetChunkCoord, PlanetFace};
 use herocraft_voxel_engine::chunk::CHUNK_SIZE;
-use herocraft_world::generator::PlanetWorldGenerator;
 use herocraft_world::PlanetDescriptor;
+use herocraft_world::generator::PlanetWorldGenerator;
 
 const SEED: u64 = 2026;
 const FACE: PlanetFace = PlanetFace::PosZ;
