@@ -19,13 +19,13 @@ use serde::{Deserialize, Serialize};
 use crate::edits::FACE_BLOCKS;
 
 /// Côté d'une zone de population, en blocs
-pub const ZONE_BLOCKS: i32 = 32;
+pub(crate) const ZONE_BLOCKS: i32 = 32;
 /// Zones par arête de face
-pub const FACE_ZONES: i32 = FACE_BLOCKS / ZONE_BLOCKS;
+pub(crate) const FACE_ZONES: i32 = FACE_BLOCKS / ZONE_BLOCKS;
 
 /// Une zone de population : face du cube et rang de la zone le long de x et de z
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ZoneKey {
+pub(crate) struct ZoneKey {
     pub face: PlanetFace,
     pub x: i32,
     pub z: i32,
@@ -33,7 +33,7 @@ pub struct ZoneKey {
 
 impl ZoneKey {
     /// La zone qui contient la colonne de blocs (x, z)
-    pub fn of_column(face: PlanetFace, x: i32, z: i32) -> Self {
+    pub(crate) fn of_column(face: PlanetFace, x: i32, z: i32) -> Self {
         Self { face, x: x.div_euclid(ZONE_BLOCKS), z: z.div_euclid(ZONE_BLOCKS) }
     }
 
@@ -65,7 +65,7 @@ fn splitmix(mut x: u64) -> u64 {
 
 /// Une bête endormie : de quoi la remettre exactement où elle était
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SleepingCreature {
+pub(crate) struct SleepingCreature {
     pub id: herocraft_common::CreatureId,
     /// Identifiant de son espèce (nom du fichier, ex. `vache`)
     pub species: String,
@@ -85,7 +85,7 @@ pub struct SleepingCreature {
 
 /// Zones dont la population a déjà été tirée, et bêtes des zones endormies
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct PopulationSave {
+pub(crate) struct PopulationSave {
     /// Prochain identifiant d'une bête posée à la main (commande, test)
     pub next_id: u64,
     /// Chaque zone déjà peuplée, avec ses bêtes (liste vide : toutes mortes ou parties)
@@ -113,7 +113,7 @@ impl PopulationSave {
         fs::rename(&tmp, path)
     }
 
-    pub fn into_map(self) -> HashMap<ZoneKey, Vec<SleepingCreature>> {
+    pub(crate) fn into_map(self) -> HashMap<ZoneKey, Vec<SleepingCreature>> {
         self.zones.into_iter().collect()
     }
 }

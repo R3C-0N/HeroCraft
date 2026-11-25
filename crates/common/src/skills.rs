@@ -24,11 +24,11 @@ use serde::{Deserialize, Serialize};
 use crate::CharacterStats;
 
 /// Dossier des compétences, depuis la racine du projet
-pub const SKILLS_DIR: &str = "assets/skills";
+pub(crate) const SKILLS_DIR: &str = "assets/skills";
 /// Dossier des gestes du héros (le serveur n'en lit que la durée et l'impact)
 pub const GESTURES_DIR: &str = "assets/hero/animations";
 /// Rang maximal d'une compétence, sauf mention contraire
-pub const DEFAULT_MAX_RANK: u8 = 3;
+pub(crate) const DEFAULT_MAX_RANK: u8 = 3;
 /// Dégâts d'une compétence de puissance 1, en attendant les dégâts propres aux armes
 pub const SKILL_BASE_DAMAGE: f32 = 5.0;
 
@@ -1059,7 +1059,7 @@ enum FileError {
 /// Ce qui cloche dans une fiche de compétence : nombres, références aux autres compétences, aux
 /// gestes et aux espèces
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum SkillError {
+pub(crate) enum SkillError {
     #[error("palier de 1 à 4, anneau et rang maximal à partir de 1")]
     Wheel,
     #[error("compétence inconnue {0}")]
@@ -1135,7 +1135,7 @@ impl SkillCatalog {
 
     /// Lit les classes et les compétences de `dir`, les gestes de `gestures`, et renvoie aussi les
     /// erreurs trouvées (fichier illisible, référence inconnue) : les fichiers fautifs sont ignorés
-    pub fn load_dirs(dir: &Path, gestures: &Path) -> (Self, Vec<String>) {
+    pub(crate) fn load_dirs(dir: &Path, gestures: &Path) -> (Self, Vec<String>) {
         let mut errors = Vec::new();
         let mut hash = Fnv::default();
         let classes = match std::fs::read_to_string(dir.join("classes.json")) {
@@ -1431,7 +1431,7 @@ impl SkillCatalog {
     }
 
     /// Le nœud de la roue qui donne `id`, s'il en est un
-    pub fn granted_by(&self, id: &str) -> Option<&str> {
+    pub(crate) fn granted_by(&self, id: &str) -> Option<&str> {
         self.granted_by.get(id).map(String::as_str)
     }
 
@@ -1670,7 +1670,7 @@ pub enum PlacedArea {
 
 /// Hauteur sous laquelle une zone attrape une cible au-dessus ou au-dessous du sol du lanceur, en
 /// blocs
-pub const AREA_HEIGHT_BLOCKS: f32 = 3.0;
+pub(crate) const AREA_HEIGHT_BLOCKS: f32 = 3.0;
 
 impl Area {
     /// La zone posée aux pieds `feet` du lanceur, qui vise `aim` (direction quelconque) et

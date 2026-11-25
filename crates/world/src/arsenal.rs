@@ -12,7 +12,7 @@ use herocraft_common::weapons::{bow_power, Held, WeaponKind};
 use herocraft_common::{PlayerId, CastError, ItemId, PlayerClass};
 
 /// Secondes entre deux carreaux d'un même chargeur (deux arbalètes de poing)
-pub const MAGAZINE_GAP: f32 = 0.2;
+pub(crate) const MAGAZINE_GAP: f32 = 0.2;
 
 /// Une munition spéciale chargée : les `shots` prochains tirs portent ses effets
 #[derive(Debug, Clone)]
@@ -231,7 +231,7 @@ impl Arsenal {
     }
 
     /// Prend un tir de la munition spéciale chargée, s'il en reste
-    pub fn take_special(&mut self, player: PlayerId) -> Option<Special> {
+    pub(crate) fn take_special(&mut self, player: PlayerId) -> Option<Special> {
         let gear = self.gear.get_mut(&player)?;
         let special = gear.specials.first_mut()?;
         special.shots -= 1;
@@ -256,7 +256,7 @@ impl Arsenal {
         self.gear.get(&player).map_or((0.0, 0.0), |g| (g.cooldown, g.held.interval))
     }
 
-    pub fn forget(&mut self, player: PlayerId) {
+    pub(crate) fn forget(&mut self, player: PlayerId) {
         self.gear.remove(&player);
     }
 }

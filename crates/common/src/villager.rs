@@ -19,7 +19,7 @@ use crate::hero::Appearance;
 use crate::items::{items, ItemId};
 
 /// Dossier des fiches de métiers, depuis le dossier de lancement
-pub const PROFESSIONS_DIR: &str = "assets/metiers";
+pub(crate) const PROFESSIONS_DIR: &str = "assets/metiers";
 
 /// Lieu où s'exerce un métier, dans le plan d'une ville ou d'un village
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -252,7 +252,7 @@ impl ProfessionRegistry {
         Ok((Self::from_professions(professions), errors))
     }
 
-    pub fn from_professions(mut professions: Vec<Profession>) -> Self {
+    pub(crate) fn from_professions(mut professions: Vec<Profession>) -> Self {
         professions.sort_by(|a, b| a.id.cmp(&b.id));
         Self { professions }
     }

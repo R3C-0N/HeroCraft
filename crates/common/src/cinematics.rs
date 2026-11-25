@@ -17,7 +17,7 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 /// Dossier des cinématiques
-pub const CINEMATICS_DIR: &str = "assets/cinematics";
+pub(crate) const CINEMATICS_DIR: &str = "assets/cinematics";
 
 /// Événement envoyé par le jeu au lecteur (« Pierre obtenue », « temple atteint »…), et renvoyé
 /// par une cinématique au jeu (`cues`, `on_end`). Un nom, des étiquettes, une position facultative.
@@ -570,19 +570,19 @@ pub struct Frame<'a> {
 }
 
 /// Secondes pour que les bandeaux noirs entrent ou sortent
-pub const LETTERBOX_SECS: f32 = 0.8;
+pub(crate) const LETTERBOX_SECS: f32 = 0.8;
 
 /// Cinématique illisible ou qui ne se tient pas, avec son identifiant
 #[derive(Debug, thiserror::Error)]
 #[error("{id} : {issue}")]
-pub struct CinematicError {
+pub(crate) struct CinematicError {
     pub id: String,
     pub issue: CinematicIssue,
 }
 
 /// Ce qui cloche dans une cinématique (`name` : « plan 2 », « carte « titre » »…)
 #[derive(Debug, thiserror::Error)]
-pub enum CinematicIssue {
+pub(crate) enum CinematicIssue {
     #[error(transparent)]
     Io(std::io::Error),
     #[error(transparent)]
@@ -624,7 +624,7 @@ pub struct UnknownCinematic(pub String);
 
 impl Cinematic {
     /// Lit une cinématique et vérifie qu'elle se tient
-    pub fn from_json(id: &str, text: &str) -> Result<Self, CinematicError> {
+    pub(crate) fn from_json(id: &str, text: &str) -> Result<Self, CinematicError> {
         let error = |issue| CinematicError { id: id.to_string(), issue };
         let mut cinematic: Cinematic = serde_json::from_str(text).map_err(|e| error(CinematicIssue::Json(e)))?;
         cinematic.id = id.to_string();
@@ -935,7 +935,7 @@ pub struct Playing {
 }
 
 /// Secondes pendant lesquelles un premier appui attend le second pour passer
-pub const SKIP_CONFIRM_SECS: f32 = 3.0;
+pub(crate) const SKIP_CONFIRM_SECS: f32 = 3.0;
 
 /// Ce qu'a donné une demande de passer
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -964,7 +964,7 @@ pub struct CinematicPlayer {
 
 /// Nom de l'événement renvoyé à la fin de chaque cinématique (étiquette `id`, et `skipped` =
 /// `true` si elle a été passée)
-pub const ENDED_EVENT: &str = "cinematic_ended";
+pub(crate) const ENDED_EVENT: &str = "cinematic_ended";
 
 impl CinematicPlayer {
     pub fn new(catalog: CinematicCatalog) -> Self {

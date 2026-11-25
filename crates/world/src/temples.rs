@@ -62,7 +62,7 @@ pub enum Epoch {
 }
 
 impl Epoch {
-    pub fn is_past(self) -> bool {
+    pub(crate) fn is_past(self) -> bool {
         matches!(self, Epoch::Past(_))
     }
 }

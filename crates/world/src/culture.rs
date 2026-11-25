@@ -37,7 +37,7 @@ pub enum Culture {
 }
 
 /// Part des habitants d'une ville qui sont de sa culture ; les autres viennent d'ailleurs
-pub const NATIVE_SHARE: f64 = 0.85;
+pub(crate) const NATIVE_SHARE: f64 = 0.85;
 
 impl Culture {
     pub const ALL: [Culture; 10] = [
@@ -54,10 +54,10 @@ impl Culture {
     ];
 
     /// Les cultures qui bâtissent des villes ; les autres n'ont que des villages
-    pub const TOWN_BUILDERS: [Culture; 4] = [Culture::Humains, Culture::Nains, Culture::ElfesDesBois, Culture::HautsElfes];
+    pub(crate) const TOWN_BUILDERS: [Culture; 4] = [Culture::Humains, Culture::Nains, Culture::ElfesDesBois, Culture::HautsElfes];
 
     /// La culture bâtit des villes fortifiées, et pas seulement des villages
-    pub fn builds_towns(self) -> bool {
+    pub(crate) fn builds_towns(self) -> bool {
         Self::TOWN_BUILDERS.contains(&self)
     }
 
@@ -111,7 +111,7 @@ impl Culture {
     }
 
     /// Goût de la culture pour un climat : poids de tirage d'une ville de ce biome
-    pub fn affinity(self, biome: BiomeType) -> f64 {
+    pub(crate) fn affinity(self, biome: BiomeType) -> f64 {
         use BiomeType::*;
         match self {
             Culture::Humains => match biome {
@@ -208,7 +208,7 @@ impl Culture {
 
     /// Culture d'un habitant d'une ville de cette culture, `roll` et `other` étant deux tirages
     /// uniformes dans [0, 1) : celle de la ville le plus souvent, sinon l'une des autres
-    pub fn resident(self, roll: f64, other: f64) -> Culture {
+    pub(crate) fn resident(self, roll: f64, other: f64) -> Culture {
         if roll < NATIVE_SHARE {
             return self;
         }

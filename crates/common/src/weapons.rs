@@ -11,22 +11,22 @@ use serde::{Deserialize, Serialize};
 use crate::items::{items, ItemId};
 
 /// Dégâts d'un coup à mains nues (ou d'un objet qui n'est pas une arme)
-pub const BARE_HAND_DAMAGE: f32 = crate::creature::PLAYER_HIT_DAMAGE;
+pub(crate) const BARE_HAND_DAMAGE: f32 = crate::creature::PLAYER_HIT_DAMAGE;
 /// Secondes entre deux coups à mains nues
-pub const BARE_HAND_INTERVAL: f32 = 0.4;
+pub(crate) const BARE_HAND_INTERVAL: f32 = 0.4;
 /// Dégâts d'un coup de crosse : un arc ou une arbalète au corps à corps, faute de munition
-pub const BUTT_DAMAGE: f32 = 1.0;
+pub(crate) const BUTT_DAMAGE: f32 = 1.0;
 /// Portée d'un tir d'arc ou d'arbalète, en blocs
 pub const SHOT_RANGE_BLOCKS: f32 = 24.0;
 /// Largeur du couloir d'un tir, en blocs
 pub const SHOT_WIDTH_BLOCKS: f32 = 1.0;
 /// Arc bandé : il faut le tenir au moins tant de secondes pour qu'il tire, il est plein au bout de
 /// `BOW_FULL_DRAW`, et sa puissance va de `BOW_MIN_POWER` à 1
-pub const BOW_MIN_DRAW: f32 = 0.3;
+pub(crate) const BOW_MIN_DRAW: f32 = 0.3;
 pub const BOW_FULL_DRAW: f32 = 1.0;
-pub const BOW_MIN_POWER: f32 = 0.3;
+pub(crate) const BOW_MIN_POWER: f32 = 0.3;
 /// Carreaux que tient une arbalète de poing entre les mains d'un Rôdeur (ses deux arbalètes)
-pub const RANGER_HAND_MAGAZINE: u8 = 2;
+pub(crate) const RANGER_HAND_MAGAZINE: u8 = 2;
 
 /// Famille d'arme
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -179,7 +179,7 @@ impl Held {
 }
 
 /// Caractéristique des fiches qui donne les dégâts d'une arme ou d'une munition
-pub const DAMAGE_STAT: &str = "Dégâts";
+pub(crate) const DAMAGE_STAT: &str = "Dégâts";
 
 /// Dégâts qu'ajoute la munition `item` à un tir
 pub fn ammo_damage(item: ItemId) -> f32 {

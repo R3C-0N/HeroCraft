@@ -16,7 +16,7 @@ pub const SHARD_ROCK: &str = "rocheEclat";
 
 /// Branche de la roue des compétences d'une voie. L'aventurier, qui n'en a pas encore choisi,
 /// vit la vision en soldat.
-pub fn skill_branch(class: PlayerClass) -> &'static str {
+pub(crate) fn skill_branch(class: PlayerClass) -> &'static str {
     match class {
         PlayerClass::Adventurer | PlayerClass::Soldier => "soldier",
         PlayerClass::Sorcerer => "elementalist",

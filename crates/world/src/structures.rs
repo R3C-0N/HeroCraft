@@ -35,7 +35,7 @@ pub const CELL: i32 = 128;
 pub const CELLS_PER_FACE: i32 = crate::edits::FACE_BLOCKS / CELL;
 /// Cases par côté d'une région, qui accueille au plus une ville ou un village (2 048 blocs : à
 /// 5,2 blocs par seconde, de 4 à 9 minutes de marche d'un établissement au suivant)
-pub const REGION_CELLS: i32 = 16;
+pub(crate) const REGION_CELLS: i32 = 16;
 /// Les villes et villages s'installent à au moins tant de cases du bord de leur région : deux
 /// établissements de régions voisines restent à `2 × REGION_MARGIN` cases l'un de l'autre au moins
 const REGION_MARGIN: i32 = 5;
@@ -55,61 +55,61 @@ pub mod block {
 
     pub const STONE: BlockId = BlockId::STONE;
     pub const WATER: BlockId = BlockId::WATER;
-    pub const OAK_LOG: BlockId = BlockId::WOOD;
-    pub const BIRCH_LOG: BlockId = BlockId(14);
-    pub const PINE_LOG: BlockId = BlockId(17);
-    pub const FURNACE: BlockId = BlockId(20);
-    pub const WORKBENCH: BlockId = BlockId(23);
-    pub const BRICK: BlockId = BlockId(26);
-    pub const WHITE_BRICK: BlockId = BlockId(27);
-    pub const GLASS: BlockId = BlockId(41);
-    pub const CUT_STONE: BlockId = BlockId(43);
-    pub const PLANK: BlockId = BlockId(51);
-    pub const WOOD_PANEL: BlockId = BlockId(55);
-    pub const WHEAT: BlockId = BlockId(59);
-    pub const CARROT: BlockId = BlockId(63);
-    pub const SQUASH: BlockId = BlockId(67);
-    pub const POTATO: BlockId = BlockId(75);
+    pub(crate) const OAK_LOG: BlockId = BlockId::WOOD;
+    pub(crate) const BIRCH_LOG: BlockId = BlockId(14);
+    pub(crate) const PINE_LOG: BlockId = BlockId(17);
+    pub(crate) const FURNACE: BlockId = BlockId(20);
+    pub(crate) const WORKBENCH: BlockId = BlockId(23);
+    pub(crate) const BRICK: BlockId = BlockId(26);
+    pub(crate) const WHITE_BRICK: BlockId = BlockId(27);
+    pub(crate) const GLASS: BlockId = BlockId(41);
+    pub(crate) const CUT_STONE: BlockId = BlockId(43);
+    pub(crate) const PLANK: BlockId = BlockId(51);
+    pub(crate) const WOOD_PANEL: BlockId = BlockId(55);
+    pub(crate) const WHEAT: BlockId = BlockId(59);
+    pub(crate) const CARROT: BlockId = BlockId(63);
+    pub(crate) const SQUASH: BlockId = BlockId(67);
+    pub(crate) const POTATO: BlockId = BlockId(75);
     pub const FARMLAND: BlockId = BlockId(84);
-    pub const LADDER: BlockId = BlockId(88);
-    pub const TORCH: BlockId = BlockId(92);
-    pub const COBBLE: BlockId = BlockId(120);
-    pub const GRAVEL: BlockId = BlockId(123);
-    pub const HARD_STONE: BlockId = BlockId(124);
-    pub const PLANK_SLAB: BlockId = BlockId(136);
-    pub const PLANK_STAIRS: BlockId = BlockId(137);
-    pub const COBBLE_SLAB: BlockId = BlockId(138);
-    pub const COBBLE_STAIRS: BlockId = BlockId(139);
-    pub const BRICK_SLAB: BlockId = BlockId(140);
-    pub const BRICK_STAIRS: BlockId = BlockId(141);
-    pub const GREEN_LEAF: BlockId = BlockId(9);
-    pub const DARK_LEAF: BlockId = BlockId(15);
-    pub const LIGHT_LEAF: BlockId = BlockId(16);
-    pub const FLINT_BRICK: BlockId = BlockId(40);
-    pub const GLOWBELL_BLOOM: BlockId = BlockId(105);
-    pub const BASALT: BlockId = BlockId(118);
+    pub(crate) const LADDER: BlockId = BlockId(88);
+    pub(crate) const TORCH: BlockId = BlockId(92);
+    pub(crate) const COBBLE: BlockId = BlockId(120);
+    pub(crate) const GRAVEL: BlockId = BlockId(123);
+    pub(crate) const HARD_STONE: BlockId = BlockId(124);
+    pub(crate) const PLANK_SLAB: BlockId = BlockId(136);
+    pub(crate) const PLANK_STAIRS: BlockId = BlockId(137);
+    pub(crate) const COBBLE_SLAB: BlockId = BlockId(138);
+    pub(crate) const COBBLE_STAIRS: BlockId = BlockId(139);
+    pub(crate) const BRICK_SLAB: BlockId = BlockId(140);
+    pub(crate) const BRICK_STAIRS: BlockId = BlockId(141);
+    pub(crate) const GREEN_LEAF: BlockId = BlockId(9);
+    pub(crate) const DARK_LEAF: BlockId = BlockId(15);
+    pub(crate) const LIGHT_LEAF: BlockId = BlockId(16);
+    pub(crate) const FLINT_BRICK: BlockId = BlockId(40);
+    pub(crate) const GLOWBELL_BLOOM: BlockId = BlockId(105);
+    pub(crate) const BASALT: BlockId = BlockId(118);
     // Barrières, dont les poteaux des lampadaires
-    pub const OAK_FENCE: BlockId = BlockId(148);
-    pub const BIRCH_FENCE: BlockId = BlockId(149);
-    pub const CUT_STONE_FENCE: BlockId = BlockId(154);
-    pub const SILVER_FENCE: BlockId = BlockId(161);
-    pub const LANTERN: BlockId = BlockId(163);
+    pub(crate) const OAK_FENCE: BlockId = BlockId(148);
+    pub(crate) const BIRCH_FENCE: BlockId = BlockId(149);
+    pub(crate) const CUT_STONE_FENCE: BlockId = BlockId(154);
+    pub(crate) const SILVER_FENCE: BlockId = BlockId(161);
+    pub(crate) const LANTERN: BlockId = BlockId(163);
     // Ornements : l'aspect des métaux et du cristal, sans leur valeur. Cassés, ils ne donnent
     // qu'eux-mêmes et aucune recette ne les refond en lingots ni en minerai : piller une ville ne
     // rapporte ni or, ni mithril, ni cristal.
-    pub const BRONZE_TRIM: BlockId = BlockId(142);
-    pub const SILVER_TRIM: BlockId = BlockId(143);
-    pub const GILDING: BlockId = BlockId(144);
-    pub const IRON_TRIM: BlockId = BlockId(145);
-    pub const CUT_CRYSTAL: BlockId = BlockId(146);
+    pub(crate) const BRONZE_TRIM: BlockId = BlockId(142);
+    pub(crate) const SILVER_TRIM: BlockId = BlockId(143);
+    pub(crate) const GILDING: BlockId = BlockId(144);
+    pub(crate) const IRON_TRIM: BlockId = BlockId(145);
+    pub(crate) const CUT_CRYSTAL: BlockId = BlockId(146);
     // Sols et matériaux des villages des races sans ville
     pub const DIRT: BlockId = BlockId::DIRT;
     pub const GRASS: BlockId = BlockId::GRASS;
     pub const SAND: BlockId = BlockId::SAND;
-    pub const PEAT: BlockId = BlockId(134);
-    pub const VOID_ROCK: BlockId = BlockId(129);
-    pub const PINE_FENCE: BlockId = BlockId(150);
-    pub const BRONZE_FENCE: BlockId = BlockId(160);
+    pub(crate) const PEAT: BlockId = BlockId(134);
+    pub(crate) const VOID_ROCK: BlockId = BlockId(129);
+    pub(crate) const PINE_FENCE: BlockId = BlockId(150);
+    pub(crate) const BRONZE_FENCE: BlockId = BlockId(160);
 
     /// Tous les blocs que posent les structures (pour vérifier qu'ils ont leur fiche)
     pub const ALL: [(BlockId, &str); 52] = [
@@ -294,13 +294,13 @@ impl Rect {
 
     /// La colonne est sur le pourtour
     #[inline]
-    pub fn on_edge(&self, x: i32, z: i32) -> bool {
+    pub(crate) fn on_edge(&self, x: i32, z: i32) -> bool {
         x == self.x0 || x == self.x1 - 1 || z == self.z0 || z == self.z1 - 1
     }
 
     /// La colonne est un coin
     #[inline]
-    pub fn on_corner(&self, x: i32, z: i32) -> bool {
+    pub(crate) fn on_corner(&self, x: i32, z: i32) -> bool {
         (x == self.x0 || x == self.x1 - 1) && (z == self.z0 || z == self.z1 - 1)
     }
 }
@@ -1475,7 +1475,7 @@ impl Temple {
     }
 
     /// Sol du parvis (premier bloc d'air au-dessus du dallage)
-    pub fn parvis_floor(&self) -> i32 {
+    pub(crate) fn parvis_floor(&self) -> i32 {
         self.floor - self.steps()
     }
 
@@ -1568,7 +1568,7 @@ impl Temple {
     }
 
     /// Colonne de l'autel
-    pub fn altar(&self) -> (i32, i32) {
+    pub(crate) fn altar(&self) -> (i32, i32) {
         let (u, v) = self.altar_local();
         self.world(u, v)
     }
@@ -2812,7 +2812,7 @@ impl Settlement {
 
     /// `block` à l'époque `epoch` : dans le passé, les temples sont intacts (voir `temples`), le
     /// reste du plan est celui du présent
-    pub fn block_in(&self, epoch: Epoch, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
+    pub(crate) fn block_in(&self, epoch: Epoch, x: i32, y: i32, z: i32, ground: i32) -> Option<BlockId> {
         if !self.bounds.contains(x, z) {
             return None;
         }
@@ -2836,7 +2836,7 @@ impl Settlement {
     }
 
     /// `lights` à l'époque `epoch`
-    pub fn lights_in(&self, epoch: Epoch, area: Rect, ground: impl Fn(i32, i32) -> i32) -> Vec<(i32, i32, i32, BlockId)> {
+    pub(crate) fn lights_in(&self, epoch: Epoch, area: Rect, ground: impl Fn(i32, i32) -> i32) -> Vec<(i32, i32, i32, BlockId)> {
         let mut found = Vec::new();
         if !self.bounds.intersects(&area) {
             return found;
@@ -2907,7 +2907,7 @@ impl Settlement {
     /// Culture du `n`-ième habitant : celle de la ville le plus souvent (`culture::NATIVE_SHARE`),
     /// parfois une autre. Ne dépend que de l'établissement et de `n`. Des ruines n'ont pas
     /// d'habitants : on y prend des Humains.
-    pub fn resident_culture(&self, n: u64) -> Culture {
+    pub(crate) fn resident_culture(&self, n: u64) -> Culture {
         let home = self.culture.unwrap_or(Culture::Humains);
         let seed = mix(n ^ ((face_index(self.face) as u64) << 56) ^ 0x4AB1_7A47);
         let h = hash2(seed, self.center.0, self.center.1);
@@ -2961,7 +2961,7 @@ impl StructureMap {
     }
 
     /// Les régions réservées au village de chaque race, calculées à la première lecture
-    pub fn pins(&self, generator: &PlanetWorldGenerator) -> &[Pin] {
+    pub(crate) fn pins(&self, generator: &PlanetWorldGenerator) -> &[Pin] {
         self.pins.get_or_init(|| plan_pins(generator))
     }
 
@@ -3036,7 +3036,7 @@ impl StructureMap {
 
     /// La ville-souvenir tenue par `holder` qui prend la colonne (x, z) d'une face. Une ville ne
     /// déborde que sur les cases voisines de celle de son temple.
-    pub fn memory_at(&self, generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32, holder: Culture) -> Option<&MemoryCity> {
+    pub(crate) fn memory_at(&self, generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32, holder: Culture) -> Option<&MemoryCity> {
         let (cx, cz) = (x.div_euclid(CELL), z.div_euclid(CELL));
         for dz in -1..=1 {
             for dx in -1..=1 {
@@ -3050,7 +3050,7 @@ impl StructureMap {
     }
 
     /// Les villes-souvenirs tenues par `holder` dont le plan touche le rectangle `area` d'une face
-    pub fn memories_touching(&self, generator: &PlanetWorldGenerator, face: PlanetFace, area: Rect, holder: Culture) -> Vec<&MemoryCity> {
+    pub(crate) fn memories_touching(&self, generator: &PlanetWorldGenerator, face: PlanetFace, area: Rect, holder: Culture) -> Vec<&MemoryCity> {
         let mut found = Vec::new();
         for cz in area.z0.div_euclid(CELL) - 1..=(area.z1 - 1).div_euclid(CELL) + 1 {
             for cx in area.x0.div_euclid(CELL) - 1..=(area.x1 - 1).div_euclid(CELL) + 1 {
@@ -3420,7 +3420,7 @@ fn plan_site(generator: &PlanetWorldGenerator, face: PlanetFace, cx: i32, cz: i3
 
 /// Une région réservée au village d'une race : chaque race a ainsi au moins un village sur la planète
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Pin {
+pub(crate) struct Pin {
     pub face: PlanetFace,
     pub region: (i32, i32),
     /// La case candidate de la région où le village se pose
@@ -4306,20 +4306,20 @@ fn plan_town_sized(mut p: Planner, center: (i32, i32), biome: BiomeType, dice: &
 
 /// Ce que porte une colonne du plan d'une ville aux formes libres
 mod cell {
-    pub const OUT: u8 = 0;
-    pub const IN: u8 = 1;
-    pub const WALL: u8 = 2;
-    pub const WALK: u8 = 3;
-    pub const GATE: u8 = 4;
-    pub const GATE_WALK: u8 = 5;
-    pub const ROAD: u8 = 6;
-    pub const SQUARE: u8 = 7;
-    pub const BUILT: u8 = 8;
-    pub const RESERVED: u8 = 9;
+    pub(crate) const OUT: u8 = 0;
+    pub(crate) const IN: u8 = 1;
+    pub(crate) const WALL: u8 = 2;
+    pub(crate) const WALK: u8 = 3;
+    pub(crate) const GATE: u8 = 4;
+    pub(crate) const GATE_WALK: u8 = 5;
+    pub(crate) const ROAD: u8 = 6;
+    pub(crate) const SQUARE: u8 = 7;
+    pub(crate) const BUILT: u8 = 8;
+    pub(crate) const RESERVED: u8 = 9;
     /// Sous l'avant-toit d'un bâtiment, ou devant sa porte : pas de mur, mais rien d'autre non plus
-    pub const EAVES: u8 = 10;
+    pub(crate) const EAVES: u8 = 10;
     /// Passage d'une porte de ville
-    pub const GATEHOUSE: u8 = 11;
+    pub(crate) const GATEHOUSE: u8 = 11;
 }
 
 /// Plan colonne par colonne d'une ville aux formes libres, autour de son centre

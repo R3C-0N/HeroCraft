@@ -50,7 +50,7 @@ impl SkillPlayers for SoloPlayer<'_> {
 
 /// Qui subit un effet qui dure
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SkillTarget {
+pub(crate) enum SkillTarget {
     Creature(CreatureId),
     Player(PlayerId),
 }
@@ -775,7 +775,7 @@ impl SkillRunner {
     }
 
     /// Oublie le joueur `player` (il quitte la partie)
-    pub fn forget(&mut self, player: PlayerId) {
+    pub(crate) fn forget(&mut self, player: PlayerId) {
         self.summoned.retain(|s| s.caster != player);
         self.pending.retain(|p| p.caster != player);
         self.over_time.retain(|o| o.caster != player && o.target != SkillTarget::Player(player));
@@ -1410,7 +1410,7 @@ impl SkillRunner {
     }
 
     /// Chance de coup critique du joueur `caster` sur la créature `id` : son renforcement, plus ses marques
-    pub fn critical_chance(&self, caster: PlayerId, id: CreatureId) -> f32 {
+    pub(crate) fn critical_chance(&self, caster: PlayerId, id: CreatureId) -> f32 {
         self.buff(caster, BuffStat::Critical) + self.marks.iter().filter(|m| m.0 == caster && m.1 == id).map(|m| m.2).sum::<f32>()
     }
 
@@ -1603,7 +1603,7 @@ impl SkillRunner {
 
 /// Où arrive une téléportation près d'une cible aux pieds `target`, pour un lanceur aux pieds
 /// `feet` qui visait `aim` : les pieds d'arrivée et la direction du regard
-pub fn teleport_spot(teleport: &herocraft_common::skills::Teleport, rank: u8, feet: Vec3, target: Vec3, aim: Vec3, block: f32) -> (Vec3, Vec3) {
+pub(crate) fn teleport_spot(teleport: &herocraft_common::skills::Teleport, rank: u8, feet: Vec3, target: Vec3, aim: Vec3, block: f32) -> (Vec3, Vec3) {
     let up = target.normalize_or(Vec3::Y);
     let flat = |v: Vec3| v - up * v.dot(up);
     let forward = flat(target - feet).try_normalize().or_else(|| flat(aim).try_normalize()).unwrap_or_else(|| up.any_orthonormal_vector());
