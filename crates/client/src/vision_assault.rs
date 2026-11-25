@@ -322,7 +322,7 @@ impl VisionAssault {
             self.posts[k].1 = true;
             woken += 1;
             // Un ou deux par poste
-            let count = 1 + (self.spawned % 3 == 0) as u32;
+            let count = 1 + self.spawned.is_multiple_of(3) as u32;
             for j in 0..count {
                 let up = self.dir(post);
                 let (t1, _) = herocraft_common::tangent_frame(up);
@@ -515,7 +515,7 @@ mod tests {
     }
 
     fn feet_at(s: &Setup, (x, z): (i32, i32)) -> Vec3 {
-        let ground = s.generator.sample_block_column(s.site.face, x, z).elevation.floor() as f64 + 1.0;
+        let ground = s.generator.sample_block_column(s.site.face, x, z).elevation.floor() + 1.0;
         s.geometry.corner(s.site.face, x as f64 + 0.5, ground, z as f64 + 0.5).as_vec3()
     }
 
@@ -546,12 +546,12 @@ mod tests {
         assert!(!alive(&s.world, ENEMY).is_empty(), "des défenseurs aux postes");
         assert!(s.assault.hint(&s.world).is_some());
         // Les trois places : le cercle, le mini-boss, puis le cercle se défait
-        for i in 0..3 {
+        for (i, &boss_kind) in MINI_BOSSES.iter().enumerate() {
             let center = s.city.arenas[i];
             s.assault.update(0.1, feet_at(&s, center), &mut s.world, ground, &mut out);
             assert_eq!(s.assault.phase(), Phase::Arena(i));
             assert_eq!(alive(&s.world, RING).len(), RING_SOLDIERS);
-            let boss = alive(&s.world, MINI_BOSSES[i]);
+            let boss = alive(&s.world, boss_kind);
             assert_eq!(boss.len(), 1);
             // Le héros qui s'éloigne est repoussé vers le centre
             out.clear();

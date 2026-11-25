@@ -295,6 +295,8 @@ pub struct GpuModelVertex {
 /// Pose d'une créature : l'animation du glTF jouée dessous et son instant, puis la rotation et le
 /// déplacement ajoutés à chaque nœud
 type Pose<'r> = (Option<(&'r Animation, f32)>, Vec<(Quat, Vec3)>);
+/// Pose mise en cache : l'image où elle a été calculée, l'espèce, puis les matrices des os
+type CachedPose = (u64, Option<usize>, Vec<glam::Mat4>);
 
 /// L'allure de chaque créature : vitesse mesurée, animation jouée et celle qu'elle quitte
 #[derive(Default)]
@@ -303,7 +305,7 @@ pub struct CreatureAnimator {
     /// Images animées (une par `update`)
     frame: u64,
     /// Dernière pose calculée de chaque bête, et l'image où elle l'a été (niveaux de détail)
-    poses: std::cell::RefCell<HashMap<u64, (u64, Option<usize>, Vec<glam::Mat4>)>>,
+    poses: std::cell::RefCell<HashMap<u64, CachedPose>>,
 }
 
 /// Une image sur combien la pose d'une bête à `distance` blocs de la caméra est recalculée
@@ -399,7 +401,7 @@ impl CreatureAnimator {
             // Une bête qui change d'espèce (forme d'un joueur) n'a plus les mêmes os
             if let Some((at, _, matrices)) = poses.get(&view.id).filter(|p| p.1 == view.species) {
                 // Chaque bête a son tour, décalé selon son identifiant
-                let due = (self.frame + view.id) % interval == 0;
+                let due = (self.frame + view.id).is_multiple_of(interval);
                 if !due && self.frame - at < interval {
                     return matrices.clone();
                 }
@@ -992,7 +994,6 @@ pub(crate) mod apercu {
 
     /// Dessine `frame` (une bête aux pieds `feet`) dans la case de coin (`ox`, `oy`) et de côté
     /// `cell` d'une image `w` de large : vue de trois quarts, z-buffer, texels au plus proche
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn rasterize(img: &mut [[u8; 3]], depth: &mut [f32], w: usize, frame: &CreatureFrame, tex: &Texture, feet: Vec3, (ox, oy, cell): (usize, usize, usize), scale: f32) {
         // x = est, y = haut (z monde), profondeur = nord, inclinée
         let (ca, sa) = (0.5f32.cos(), 0.5f32.sin());

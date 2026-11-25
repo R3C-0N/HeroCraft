@@ -43,9 +43,9 @@ fn normal_offset(cascade_size: u32) -> f32 {
 /// tour que si sa carte ne correspond plus à la scène (`FarCascadeState::is_stale`).
 fn cascade_refresh(frame: u64, fine: bool) -> [bool; CASCADE_COUNT] {
     if fine {
-        [true, frame % 2 == 0, frame % 2 == 1]
+        [true, frame.is_multiple_of(2), frame % 2 == 1]
     } else {
-        [true, frame % 2 == 0, frame % 4 == 1]
+        [true, frame.is_multiple_of(2), frame % 4 == 1]
     }
 }
 
@@ -53,7 +53,7 @@ fn cascade_refresh(frame: u64, fine: bool) -> [bool; CASCADE_COUNT] {
 /// (allégées), en décalé des cascades lointaines
 fn cloud_refresh(frame: u64, fine: bool) -> bool {
     if fine {
-        frame % 2 == 0
+        frame.is_multiple_of(2)
     } else {
         frame % 4 == 3
     }
@@ -488,7 +488,6 @@ impl Shadows {
     /// Place les cascades autour du joueur (décalées vers l'avant du regard) et met à jour
     /// les matrices. `ground_factor` vaut 0 en orbite, où les ombres sont coupées. `terrain` :
     /// empreinte des maillages du relief affichés, qui change quand l'un d'eux apparaît ou part.
-    #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
         device: &wgpu::Device,

@@ -436,8 +436,8 @@ impl PlanetLodManager {
                 self.pending_details.remove(&res.key);
                 // Le patch rapide est remplacé sur place : même feuille, nouveau maillage
                 if let Some(mesh) = res.mesh {
-                    if self.lod_cache.contains_key(&res.key) {
-                        self.lod_cache.insert(res.key, mesh);
+                    if let std::collections::hash_map::Entry::Occupied(mut e) = self.lod_cache.entry(res.key) {
+                        e.insert(mesh);
                         self.detailed.insert(res.key);
                         received_new_mesh = true;
                     }
@@ -877,7 +877,8 @@ mod tests {
         let lod = PlanetLodManager::new(crate::camera::DEFAULT_RADIUS, 42);
         let leaves = lod.quadtree.evaluate_with_generator(camera.eye_position().as_dvec3(), Some(&generator));
         let patches: Vec<QuadNodeKey> = leaves.iter().filter(|l| l.kind == QuadLeafKind::LodPatch).map(|l| l.key).collect();
-        let configs: [(&str, Box<dyn Fn(u8) -> PatchDetail + Sync>); 4] = [
+        type DetailFn = Box<dyn Fn(u8) -> PatchDetail + Sync>;
+        let configs: [(&str, DetailFn); 4] = [
             ("Ancienne (couleurs, terrasses)", Box::new(|l| PatchDetail::plain(patch_resolution(l), PlanetMesh::ORBIT_TERRACE_STEP_HEIGHT))),
             ("Normale", Box::new(|l| patch_detail(l, P::Normale))),
             ("Ultra", Box::new(|l| patch_detail(l, P::Ultra))),

@@ -341,7 +341,7 @@ impl Audio {
         if input.paused {
             rain_target *= 0.5;
         }
-        self.rain_level += (rain_target - self.rain_level) * (1.0 - (-1.0 * dt).exp());
+        self.rain_level += (rain_target - self.rain_level) * (1.0 - (-dt).exp());
         if let Some(output) = &self.output {
             output.wind.set_volume(self.wind_level * gain * 0.5);
             output.rain.set_volume(self.rain_level * gain * 0.55);

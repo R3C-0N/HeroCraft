@@ -333,7 +333,7 @@ mod tests {
     fn charge() -> (VisionCharge, BlockGeometry) {
         let geometry = BlockGeometry::new(crate::camera::DEFAULT_RADIUS as f64);
         let siege = Siege { face: PlanetFace::PosY, gate: (500, 500), out: (0, 1), floor: 120, center: (500, 440), center_floor: 125 };
-        (VisionCharge::new(siege, geometry.clone()), geometry)
+        (VisionCharge::new(siege, geometry), geometry)
     }
 
     fn feet(c: &VisionCharge, g: &BlockGeometry, along: f32) -> Vec3 {

@@ -208,7 +208,7 @@ pub fn droppable_items() -> &'static [ItemId] {
         let mut out: Vec<ItemId> = block_tables().iter().flat_map(|t| t.0.iter().map(|r| r.item)).collect();
         let creatures = CreatureRegistry::load_quiet();
         for species in 0..creatures.len() {
-            let (table, _) = LootTable::resolve(&creatures.get(species).map_or(&[][..], |s| &s.loot), "");
+            let (table, _) = LootTable::resolve(creatures.get(species).map_or(&[][..], |s| &s.loot), "");
             out.extend(table.0.iter().map(|r| r.item));
         }
         out.retain(|item| item.block().is_none());
@@ -230,7 +230,7 @@ mod tests {
         assert_eq!(entry.count, LootCount { min: 3, max: 3 });
         let entry: LootEntry = serde_json::from_str(r#"{"item": "fibre", "count": [1, 3], "chance": 0.5}"#).unwrap();
         assert_eq!((entry.count, entry.chance), (LootCount { min: 1, max: 3 }, 0.5));
-        assert!(check_entries(&[entry.clone()]).is_ok());
+        assert!(check_entries(std::slice::from_ref(&entry)).is_ok());
         assert!(check_entries(&[LootEntry { chance: 0.0, ..entry.clone() }]).is_err());
         assert!(check_entries(&[LootEntry { count: LootCount { min: 3, max: 1 }, ..entry }]).is_err());
     }

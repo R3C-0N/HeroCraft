@@ -536,7 +536,6 @@ fn anchor_of(cue: &VisualCue, world: &AnchorWorld, t: f32) -> Option<(Option<Vec
     Some((point, forward))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn simulate(run: &mut Running, t: f32, dt: f32, anchor: Vec3, forward: Vec3, scale: f32, world: &AnchorWorld, out: &mut Vec<EffectQuad>) {
     let up = anchor.normalize_or_zero();
     let right = forward.cross(up).normalize_or_zero();
@@ -625,7 +624,6 @@ fn simulate(run: &mut Running, t: f32, dt: f32, anchor: Vec3, forward: Vec3, sca
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn(p: &ParticleLayer, seed: u32, origin: Vec3, up: Vec3, forward: Vec3, right: Vec3, scale: f32, block: f32) -> Particle {
     let r = |k: u32| hash(seed.wrapping_mul(13).wrapping_add(k));
     let theta = r(1) * std::f32::consts::TAU;
@@ -675,7 +673,6 @@ fn billboard(center: Vec3, eye: Vec3, up: Vec3, half: f32) -> (Vec3, Vec3) {
     (u * half, v * half)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn push_shape(shape: &ShapeLayer, s: f32, local: f32, origin: Vec3, tail: Vec3, up: Vec3, forward: Vec3, right: Vec3, scale: f32, block: f32, eye: Vec3, rgb: [f32; 4], additive: f32, out: &mut Vec<EffectQuad>) {
     let quad = |center: Vec3, u: Vec3, v: Vec3, kind: u32, p0: f32, p1: f32, texture: u32, rotation: f32| EffectQuad {
         center: [center.x, center.y, center.z, kind as f32],

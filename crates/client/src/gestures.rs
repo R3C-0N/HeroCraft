@@ -74,7 +74,7 @@ pub struct Gesture {
 
 impl Gesture {
     fn from_file(file: GestureFile) -> Result<Self, String> {
-        if !(file.duration > 0.0) || file.keys.len() < 2 {
+        if (file.duration.is_nan() || file.duration <= 0.0) || file.keys.len() < 2 {
             return Err("durée positive et deux clés au moins".into());
         }
         let mut keys = Vec::new();

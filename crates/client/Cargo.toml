@@ -52,3 +52,6 @@ tracy = ["profiling", "herocraft_common/tracy"]
 
 [dev-dependencies]
 naga = { version = "30", features = ["wgsl-in"] }
+
+[lints]
+workspace = true

@@ -52,7 +52,7 @@ impl OceanicCurrentSimulation {
         // Ferrel (30° - 60°) : vers l'Est (+east)
         // Polaire (> 60°) : vers l'Ouest (-east)
         let zonal_speed = if deg_lat.abs() < 28.0 {
-            -1.0 * (1.0 - (deg_lat.abs() / 28.0).powi(2))
+            -(1.0 - (deg_lat.abs() / 28.0).powi(2))
         } else if deg_lat.abs() < 62.0 {
             let mid_ratio = (deg_lat.abs() - 45.0) / 17.0;
             0.9 * (1.0 - mid_ratio.powi(2)).max(0.0)

@@ -95,7 +95,7 @@ fn find_site(generator: &PlanetWorldGenerator) -> Option<(PlanetFace, (i32, i32)
                     }
                     dz += 24;
                 }
-                if best.map_or(true, |b| hi - lo < b.0) {
+                if best.is_none_or(|b| hi - lo < b.0) {
                     best = Some((hi - lo, face, (cx, cz)));
                     if hi - lo <= 14 {
                         return Some((face, (cx, cz)));

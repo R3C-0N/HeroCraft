@@ -593,7 +593,6 @@ fn draw_figure(painter: &egui::Painter, frame: egui::Rect, texture: &egui::Textu
 }
 
 /// Comme `draw_figure`, la figure dans la pose `pose`
-#[allow(clippy::too_many_arguments)]
 fn draw_posed_figure(painter: &egui::Painter, frame: egui::Rect, texture: &egui::TextureHandle, cfg: &Appearance, figure: &Figure, pose: &FigurePose, angle: f32, tilt: f32) {
     let rotation = glam::Quat::from_rotation_x(-tilt) * glam::Quat::from_rotation_y(-angle);
     let width = cfg.width_scale();

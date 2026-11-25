@@ -416,27 +416,27 @@ impl Server {
             }
         }
 
-        if self.tick_counter % STATE_BROADCAST_TICKS == 0 {
+        if self.tick_counter.is_multiple_of(STATE_BROADCAST_TICKS) {
             self.broadcast_player_states();
         }
-        if self.tick_counter % CREATURE_BROADCAST_TICKS == 0 {
+        if self.tick_counter.is_multiple_of(CREATURE_BROADCAST_TICKS) {
             self.send_creatures();
         }
-        if self.tick_counter % LAN_ANNOUNCE_TICKS == 0 {
+        if self.tick_counter.is_multiple_of(LAN_ANNOUNCE_TICKS) {
             self.announce_lan();
         }
-        if self.tick_counter % CLOCK_TICKS == 0 {
+        if self.tick_counter.is_multiple_of(CLOCK_TICKS) {
             self.broadcast(&self.clock_packet());
         }
-        if self.tick_counter % STATS_TICKS == 0 {
+        if self.tick_counter.is_multiple_of(STATS_TICKS) {
             for player in self.players.values() {
                 player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
             }
         }
-        if self.tick_counter % AUTOSAVE_TICKS == 0 {
+        if self.tick_counter.is_multiple_of(AUTOSAVE_TICKS) {
             self.save();
         }
-        if self.tick_counter % (TICK_RATE as u64 * 60) == 0 {
+        if self.tick_counter.is_multiple_of(TICK_RATE as u64 * 60) {
             info!(
                 "Tick #{} : {} joueur(s) en ligne, {} créature(s), {} chunks modifiés.",
                 self.tick_counter,
@@ -618,8 +618,7 @@ impl Server {
     fn process_players(&mut self) {
         let ids: Vec<u64> = self.players.keys().copied().collect();
         for id in ids {
-            loop {
-                let Some(player) = self.players.get(&id) else { break };
+            while let Some(player) = self.players.get(&id) {
                 match player.connection.try_recv() {
                     Ok(Some(packet)) => self.handle_packet(id, packet),
                     Ok(None) => break,

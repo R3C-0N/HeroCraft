@@ -56,7 +56,7 @@ impl CropSheet {
         if sheet.stages.len() < 2 {
             return Err("il faut au moins deux stades (le semis et la plante mûre)".into());
         }
-        if !(sheet.stage_minutes > 0.0) {
+        if sheet.stage_minutes.is_nan() || sheet.stage_minutes <= 0.0 {
             return Err("durée d'un stade invalide (positive, en minutes)".into());
         }
         Ok(sheet)

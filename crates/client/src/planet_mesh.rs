@@ -103,6 +103,7 @@ impl PackedIndices {
         }
     }
 
+    #[cfg(test)]
     pub fn bytes(&self) -> &[u8] {
         match self {
             Self::U16(i) => bytemuck::cast_slice(i),
@@ -796,7 +797,6 @@ impl PlanetMesh {
                 while i < n {
                     let start = i;
                     let cell = grid_cells[j * n + i];
-                    let max_run = max_run;
                     while i + 1 < n && i + 1 - start < max_run && same(&grid_cells[j * n + i + 1], &cell) {
                         i += 1;
                     }

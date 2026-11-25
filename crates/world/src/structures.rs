@@ -816,7 +816,7 @@ impl House {
     }
 
     /// Distance (le long du mur) de la colonne à la porte, `None` si elle n'est pas sur le mur de la porte
-    fn from_door(&self, x: i32, z: i32) -> Option<i32> {
+    fn door_offset(&self, x: i32, z: i32) -> Option<i32> {
         let (dx, dz) = self.door_column();
         match self.door {
             Side::North | Side::South => (z == dz).then_some((x - dx).abs()),
@@ -893,7 +893,7 @@ impl House {
             }
             // Devant la porte : un seuil, et de l'air sur la hauteur de la porte même si le terrain monte
             let (ox, oz) = self.door.delta();
-            if self.from_door(x - ox, z - oz).is_some_and(|d| d <= self.door_width / 2) {
+            if self.door_offset(x - ox, z - oz).is_some_and(|d| d <= self.door_width / 2) {
                 if y == f - 1 {
                     return Some(self.style.foundation);
                 }
@@ -934,12 +934,12 @@ impl House {
                 if foot.on_corner(x, z) {
                     return Some(self.style.corner);
                 }
-                let from_door = self.from_door(x, z);
-                if from_door.is_some_and(|d| d <= self.door_width / 2) && level < self.door_height() {
+                let door_offset = self.door_offset(x, z);
+                if door_offset.is_some_and(|d| d <= self.door_width / 2) && level < self.door_height() {
                     return Some(BlockId::AIR);
                 }
                 let along = if z == foot.z0 || z == foot.z1 - 1 { x - foot.x0 } else { z - foot.z0 };
-                let door_near = from_door.is_some_and(|d| d <= self.door_width / 2 + 1);
+                let door_near = door_offset.is_some_and(|d| d <= self.door_width / 2 + 1);
                 let window = match self.usage {
                     // Hautes fenêtres étroites
                     Use::Church => along % 3 == 1 && (1..=3).contains(&level),
@@ -1062,7 +1062,7 @@ impl House {
                 }
                 Use::Barn => {
                     let h = hash2(self.floor as u64 ^ 0xBA, x, z);
-                    return if depth > 1 && h % 4 == 0 { WHEAT } else { BlockId::AIR };
+                    return if depth > 1 && h.is_multiple_of(4) { WHEAT } else { BlockId::AIR };
                 }
                 Use::Tavern => {
                     // Tables (une dalle haute) sur une grille, loin de la porte
@@ -1183,7 +1183,7 @@ impl House {
         let h = self.burrow_height(x, z);
         let (ox, oz) = self.door.delta();
         // Le tunnel de la porte traverse le talus
-        let before_door = !foot.contains(x, z) && self.from_door(x - ox, z - oz).is_some_and(|d| d <= self.door_width / 2);
+        let before_door = !foot.contains(x, z) && self.door_offset(x - ox, z - oz).is_some_and(|d| d <= self.door_width / 2);
         if before_door {
             if y == f - 1 {
                 return Some(self.style.foundation);
@@ -1213,7 +1213,7 @@ impl House {
             return Some(DIRT);
         }
         if foot.on_edge(x, z) {
-            if let Some(d) = self.from_door(x, z) {
+            if let Some(d) = self.door_offset(x, z) {
                 let door_h = self.door_height();
                 if d <= self.door_width / 2 && level < door_h {
                     return Some(BlockId::AIR);
@@ -1224,7 +1224,7 @@ impl House {
                 }
             }
             let along = if z == foot.z0 || z == foot.z1 - 1 { x - foot.x0 } else { z - foot.z0 };
-            let door_near = self.from_door(x, z).is_some_and(|d| d <= self.door_width / 2 + 1);
+            let door_near = self.door_offset(x, z).is_some_and(|d| d <= self.door_width / 2 + 1);
             if level == 2 && along % 4 == 2 && !door_near && !foot.on_corner(x, z) {
                 return Some(GLASS);
             }
@@ -1311,7 +1311,7 @@ impl Forge {
             if level == 0 && (x, z) == (cx, cz) {
                 return Some(IRON_TRIM);
             }
-            if level == 0 && foot.on_edge(x, z) && !on_back && hash2(0xF0, x, z) % 3 == 0 {
+            if level == 0 && foot.on_edge(x, z) && !on_back && hash2(0xF0, x, z).is_multiple_of(3) {
                 return Some(WORKBENCH);
             }
             return Some(BlockId::AIR);
@@ -1609,7 +1609,6 @@ impl Temple {
     }
 
     /// Bloc de l'escalier ou du parvis dont le sol est à `level`
-    #[allow(clippy::too_many_arguments)]
     fn forecourt_block(&self, u: i32, v: i32, y: i32, ground: i32, level: i32, half: i32, holder: Option<Culture>, h: u64) -> Option<BlockId> {
         let past = holder.is_some();
         let masonry = holder.map(Masonry::of);
@@ -2071,10 +2070,10 @@ impl RuinTower {
             let door = (angle + phase - std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) < 0.35;
             if level < wall && !(door && level < 2) {
                 // Meurtrières
-                if level % 4 == 2 && hash2(self.seed ^ 0x45, x, z) % 4 == 0 {
+                if level % 4 == 2 && hash2(self.seed ^ 0x45, x, z).is_multiple_of(4) {
                     return Some(BlockId::AIR);
                 }
-                return Some(if hash2(self.seed ^ 0x46, x, y) % 4 == 0 { STONE } else { COBBLE });
+                return Some(if hash2(self.seed ^ 0x46, x, y).is_multiple_of(4) { STONE } else { COBBLE });
             }
             return (y < ground).then_some(BlockId::AIR);
         }
@@ -3105,7 +3104,6 @@ fn site_fits(generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32,
 }
 
 /// `site_fits`, avec un écart d'altitude admis donné
-#[allow(clippy::too_many_arguments)]
 fn site_fits_relief(generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32, radius: i32, step: i32, kind: SettlementKind, max_relief: i32) -> bool {
     let (mut min, mut max) = (i32::MAX, i32::MIN);
     let mut dz = -radius;
@@ -4759,7 +4757,7 @@ fn plan_town_organic(mut p: Planner, center: (i32, i32), biome: BiomeType, dice:
         }
     };
     // Maisons alignées sur les rues, la porte sur la rue ; celles des places d'abord
-    let mut fronts: Vec<((i32, i32), (i32, i32), bool)> = Vec::new();
+    let mut fronts = Vec::new();
     for cz in z - ext..=z + ext {
         for cx in x - ext..=x + ext {
             let c = m.get(cx, cz);
@@ -4925,7 +4923,7 @@ fn plan_town_organic(mut p: Planner, center: (i32, i32), biome: BiomeType, dice:
     let seed = dice.next();
     for cz in z - ext..=z + ext {
         for cx in x - ext..=x + ext {
-            if m.get(cx, cz) == ROAD && !occupied.contains(&(cx, cz)) && hash2(seed, cx, cz) % 40 == 0 && dirs.iter().any(|&(dx, dz)| matches!(m.get(cx + dx, cz + dz), IN | BUILT)) {
+            if m.get(cx, cz) == ROAD && !occupied.contains(&(cx, cz)) && hash2(seed, cx, cz).is_multiple_of(40) && dirs.iter().any(|&(dx, dz)| matches!(m.get(cx + dx, cz + dz), IN | BUILT)) {
                 p.pieces.push(Piece::Lamp { x: cx, z: cz, masonry });
             }
         }
@@ -5410,7 +5408,7 @@ mod tests {
         // Camp demi-orque : une arène et une palissade qu'aucun bâtiment ne touche
         let camp = village(Culture::DemiOrques);
         assert!(camp.pieces.iter().any(|p| matches!(p, Piece::Arena { .. })));
-        let walls: Vec<Rect> = camp.pieces.iter().filter_map(|p| matches!(p, Piece::Rampart { .. } | Piece::Gate { .. }).then(|| p.rect())).collect();
+        let walls: Vec<Rect> = camp.pieces.iter().filter(|&p| matches!(p, Piece::Rampart { .. } | Piece::Gate { .. })).map(|p| p.rect()).collect();
         assert!(!walls.is_empty(), "une palissade");
         for piece in &camp.pieces {
             if matches!(piece, Piece::House(_) | Piece::Forge(_) | Piece::Arena { .. }) {

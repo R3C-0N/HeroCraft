@@ -1612,7 +1612,6 @@ impl Area {
 
     /// Comme `place`, la zone agrandie de `size` (amplification) et sa portée allongée de `reach`
     /// (renforcement de portée)
-    #[allow(clippy::too_many_arguments)]
     pub fn place_scaled(&self, rank: u8, feet: Vec3, aim: Vec3, aimed: Option<Vec3>, block: f32, size: f32, reach: f32) -> PlacedArea {
         let up = feet.normalize_or_zero();
         let flat = aim - up * aim.dot(up);

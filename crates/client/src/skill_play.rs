@@ -23,6 +23,9 @@ pub fn grapple_of<'a>(catalog: &'a SkillCatalog, skill: &str) -> Option<&'a hero
 /// Identifiant du joueur en solo
 pub const SOLO_PLAYER: u64 = 0;
 
+/// En ligne, l'envoi d'une demande de lancer au serveur (compétence, visée, cible visée)
+pub type OnlineSend<'a> = &'a mut dyn FnMut(&str, Vec3, Option<Vec3>);
+
 /// Une compétence qu'un joueur est en train de lancer (le geste et ses visuels). Rang et visée
 /// serviront aux gestes des autres joueurs, quand ils seront dessinés en entier.
 #[derive(Debug, Clone)]
@@ -198,7 +201,7 @@ impl SkillPlay {
 
     /// Le joueur local lance `skill`. En ligne (`online`), la demande part au serveur par
     /// `send` ; en solo, les règles s'appliquent ici. Renvoie l'erreur à afficher.
-    pub fn request(&mut self, skill: &str, stats: &mut CharacterStats, aim: Vec3, aimed: Option<Vec3>, online: Option<&mut dyn FnMut(&str, Vec3, Option<Vec3>)>) -> Result<(), String> {
+    pub fn request(&mut self, skill: &str, stats: &mut CharacterStats, aim: Vec3, aimed: Option<Vec3>, online: Option<OnlineSend<'_>>) -> Result<(), String> {
         let catalog = skills();
         let now = Instant::now();
         let requested = skill;
@@ -314,7 +317,6 @@ impl SkillPlay {
     }
 
     /// En solo, le tir `fired` part des pieds `feet` dans la direction `aim` avec `damage` points
-    #[allow(clippy::too_many_arguments)]
     pub fn solo_shoot(&mut self, feet: Vec3, aim: Vec3, damage: f32, fired: herocraft_world::Fired, creatures: &mut CreatureWorld, stats: &mut CharacterStats) -> herocraft_world::ShotHit {
         let mut player = SoloPlayer { id: SOLO_PLAYER, feet, stats };
         self.runner.shoot(SOLO_PLAYER, feet, aim, damage, fired, creatures, &mut player)
@@ -398,7 +400,6 @@ impl SkillPlay {
     }
 
     /// Le geste commence, et les visuels `start` avec lui (et ceux de l'amplification, `amplified`)
-    #[allow(clippy::too_many_arguments)]
     fn start(&mut self, player: Option<u64>, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, now: Instant, amplified: bool) {
         let catalog = skills();
         let Some(def) = catalog.get(skill) else { return };
@@ -463,7 +464,6 @@ impl SkillPlay {
     }
 
     /// Un joueur (peut-être nous) lance une compétence, d'après le serveur
-    #[allow(clippy::too_many_arguments)]
     pub fn on_cast(&mut self, player: u64, me: u64, skill: &str, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool) {
         if player == me {
             // Notre geste a déjà commencé ; la recharge du serveur fait foi (celle de la Fusion pour un mélange)

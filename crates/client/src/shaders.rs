@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
-use naga_oil::compose::{ComposableModuleDescriptor, Composer, ComposerError, NagaModuleDescriptor, ShaderLanguage, ShaderType};
+use naga_oil::compose::{ComposableModuleDescriptor, Composer, NagaModuleDescriptor, ShaderLanguage, ShaderType};
 
 const MODULES: [(&str, &str); 3] = [
     (include_str!("common.wgsl"), "common.wgsl"),
@@ -34,27 +34,25 @@ pub fn compose(source: &str, file_path: &str) -> Result<naga::Module, String> {
 fn compose_uncached(source: &str, file_path: &str) -> Result<naga::Module, String> {
     herocraft_common::prof_scope!("render::shaders::compose");
     let mut composer = Composer::default();
-    let result = MODULES
-        .iter()
-        .try_for_each(|&(source, file_path)| {
-            composer
-                .add_composable_module(ComposableModuleDescriptor {
-                    source,
-                    file_path,
-                    language: ShaderLanguage::Wgsl,
-                    ..Default::default()
-                })
-                .map(|_| ())
-        })
-        .and_then(|_| {
-            composer.make_naga_module(NagaModuleDescriptor {
-                source,
-                file_path,
-                shader_type: ShaderType::Wgsl,
-                ..Default::default()
-            })
+    for &(source, file_path) in MODULES.iter() {
+        let added = composer.add_composable_module(ComposableModuleDescriptor {
+            source,
+            file_path,
+            language: ShaderLanguage::Wgsl,
+            ..Default::default()
         });
-    result.map_err(|e: ComposerError| e.emit_to_string(&composer))
+        if let Err(e) = added {
+            return Err(e.emit_to_string(&composer));
+        }
+    }
+    composer
+        .make_naga_module(NagaModuleDescriptor {
+            source,
+            file_path,
+            shader_type: ShaderType::Wgsl,
+            ..Default::default()
+        })
+        .map_err(|e| e.emit_to_string(&composer))
 }
 
 /// Crée un module de shader wgpu à partir d'une source WGSL utilisant les imports partagés
@@ -81,7 +79,7 @@ pub fn init_pipeline_cache(adapter_info: &wgpu::AdapterInfo, device: &wgpu::Devi
     let Some(key) = wgpu::util::pipeline_cache_key(adapter_info) else { return };
     let path = PathBuf::from(CACHE_DIR).join(key);
     let data = std::fs::read(&path).ok();
-    // SAFETY : les données viennent de `PipelineCache::get_data` (fichier écrit par
+    // SAFETY: les données viennent de `PipelineCache::get_data` (fichier écrit par
     // `save_pipeline_cache`) ; un fichier d'un autre pilote ou abîmé est écarté (`fallback`)
     let cache = unsafe {
         device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor { label: Some("HeroCraft Pipeline Cache"), data: data.as_deref(), fallback: true })

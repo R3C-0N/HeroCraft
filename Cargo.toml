@@ -48,3 +48,11 @@ panic = "abort"
 [profile.distribution]
 inherits = "release"
 lto = "fat"
+
+# Lints communs à toutes les crates (chaque crate les reprend par `[lints] workspace = true`).
+[workspace.lints.clippy]
+# Les fonctions de génération et de rendu prennent beaucoup de paramètres par nature :
+# un allow global plutôt qu'un `#[allow]` au cas par cas.
+too_many_arguments = "allow"
+# Chaque bloc `unsafe` doit justifier son invariant par un commentaire `// SAFETY:`.
+undocumented_unsafe_blocks = "warn"

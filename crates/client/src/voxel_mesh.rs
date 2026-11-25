@@ -191,7 +191,7 @@ impl VoxelMeshBuilder {
             if gy < 0 || gy >= CHUNK_SIZE as i32 {
                 return BlockId::AIR;
             }
-            if gx < 0 || gx >= 96 || gz < 0 || gz >= 96 {
+            if !(0..96).contains(&gx) || !(0..96).contains(&gz) {
                 // En dehors de la zone 3x3 chargée :
                 // On simule du solide sous le niveau de la mer (12) pour éviter tout mur souterrain sur la bordure extérieure
                 return if gy <= 12 { BlockId::STONE } else { BlockId::AIR };
@@ -640,7 +640,7 @@ impl VoxelMeshBuilder {
         let center_chunk: &ChunkData = edited.as_deref().unwrap_or(&generated);
 
         let get_voxel = |gx: i32, gy: i32, gz: i32| -> BlockId {
-            if gx >= 0 && gx < 32 && gz >= 0 && gz < 32 && gy >= 0 && gy < 32 {
+            if (0..32).contains(&gx) && (0..32).contains(&gz) && (0..32).contains(&gy) {
                 return center_chunk.get_voxel(gx as u8, gy as u8, gz as u8);
             }
             if gy < 0 && layer == 0 {
@@ -1045,10 +1045,10 @@ impl VoxelMeshBuilder {
     fn box_face_covered(boxes: &[ShapeBox], i: usize, dir: usize) -> bool {
         let b = boxes[i];
         let axis = dir / 2;
-        let plane = if dir % 2 == 0 { b[axis + 3] } else { b[axis] };
+        let plane = if dir.is_multiple_of(2) { b[axis + 3] } else { b[axis] };
         let (a1, a2) = ((axis + 1) % 3, (axis + 2) % 3);
         boxes.iter().enumerate().any(|(j, o)| {
-            let touching = if dir % 2 == 0 { o[axis] == plane } else { o[axis + 3] == plane };
+            let touching = if dir.is_multiple_of(2) { o[axis] == plane } else { o[axis + 3] == plane };
             j != i && touching && o[a1] <= b[a1] && o[a1 + 3] >= b[a1 + 3] && o[a2] <= b[a2] && o[a2 + 3] >= b[a2 + 3]
         })
     }
