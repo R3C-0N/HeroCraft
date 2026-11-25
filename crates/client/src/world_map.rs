@@ -1359,9 +1359,9 @@ mod tests {
 
     #[test]
     fn la_carte_trouve_les_villes_et_les_chemins() {
-        // Graine 42, face 0 : un chemin part d'un établissement en (805, 1370)
+        // Graine 42, face 0 : un chemin part d'un village en (812, 1355)
         let generator = PlanetWorldGenerator::new(herocraft_world::PlanetDescriptor { seed: 42, ..Default::default() });
-        let center = dir_of(PlanetFace::ALL[0], 805.5, 1370.5);
+        let center = dir_of(PlanetFace::ALL[0], 812.5, 1355.5);
         let places = nearby_places(&generator, 42, center);
         assert!(places.iter().any(|(_, p)| p.kind != SettlementKind::Ruins && p.dir.angle_between(center) * planet_radius_blocks() < 2.0));
         let terrain = render_terrain(&generator, center, 8.0);
