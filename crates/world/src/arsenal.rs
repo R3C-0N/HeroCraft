@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use herocraft_common::skills::EffectEntry;
 use herocraft_common::weapons::{bow_power, Held, WeaponKind};
-use herocraft_common::{CastError, ItemId, PlayerClass};
+use herocraft_common::{PlayerId, CastError, ItemId, PlayerClass};
 
 /// Secondes entre deux carreaux d'un même chargeur (deux arbalètes de poing)
 pub const MAGAZINE_GAP: f32 = 0.2;
@@ -86,13 +86,13 @@ pub struct Magazine {
 /// Les armes de tous les joueurs
 #[derive(Debug, Default)]
 pub struct Arsenal {
-    gear: HashMap<u64, Gear>,
+    gear: HashMap<PlayerId, Gear>,
 }
 
 impl Arsenal {
     /// Le joueur `player` tient `item` (`None` : mains nues). Changer d'objet remet la cadence à
     /// zéro et vide le chargeur de l'arbalète, qui se recharge.
-    pub fn hold(&mut self, player: u64, item: Option<ItemId>, class: PlayerClass) {
+    pub fn hold(&mut self, player: PlayerId, item: Option<ItemId>, class: PlayerClass) {
         let held = Held::of(item, class);
         match self.gear.get_mut(&player) {
             Some(gear) if gear.held == held => {}
@@ -110,16 +110,16 @@ impl Arsenal {
     }
 
     /// Ce que tient le joueur `player`
-    pub fn held(&self, player: u64) -> Held {
+    pub fn held(&self, player: PlayerId) -> Held {
         self.gear.get(&player).map_or(Held::of(None, PlayerClass::Adventurer), |g| g.held)
     }
 
-    fn gear(&mut self, player: u64) -> &mut Gear {
+    fn gear(&mut self, player: PlayerId) -> &mut Gear {
         self.gear.entry(player).or_insert_with(|| Gear::new(Held::of(None, PlayerClass::Adventurer)))
     }
 
     /// Avance de `dt` secondes ; `speed` : facteur de vitesse d'attaque de chaque joueur (1 : aucun)
-    pub fn tick(&mut self, dt: f32, speed: impl Fn(u64) -> f32) {
+    pub fn tick(&mut self, dt: f32, speed: impl Fn(PlayerId) -> f32) {
         for (&player, gear) in &mut self.gear {
             let step = dt * speed(player).max(0.1);
             gear.cooldown = (gear.cooldown - step).max(0.0);
@@ -142,7 +142,7 @@ impl Arsenal {
 
     /// Un coup au corps à corps : refusé si le précédent est trop récent ; sinon ses dégâts de base
     /// (ceux de l'arme), et la cadence repart
-    pub fn strike(&mut self, player: u64) -> Result<f32, CastError> {
+    pub fn strike(&mut self, player: PlayerId) -> Result<f32, CastError> {
         let gear = self.gear(player);
         if gear.cooldown > 0.0 {
             return Err(CastError::Cooldown);
@@ -152,22 +152,22 @@ impl Arsenal {
     }
 
     /// Le joueur commence à tenir chargé un tir d'arc (`skill` : `None`) ou une compétence
-    pub fn begin_charge(&mut self, player: u64, skill: Option<&str>) {
+    pub fn begin_charge(&mut self, player: PlayerId, skill: Option<&str>) {
         self.gear(player).charging = Some(Charging { skill: skill.map(str::to_string), held: 0.0 });
     }
 
     /// Secondes que le joueur tient chargé ce tir ou cette compétence (0 : il ne le charge pas)
-    pub fn charge_held(&self, player: u64, skill: Option<&str>) -> f32 {
+    pub fn charge_held(&self, player: PlayerId, skill: Option<&str>) -> f32 {
         self.gear.get(&player).and_then(|g| g.charging.as_ref()).filter(|c| c.skill.as_deref() == skill).map_or(0.0, |c| c.held)
     }
 
     /// Le joueur tient chargé ce tir ou cette compétence
-    pub fn is_charging(&self, player: u64, skill: Option<&str>) -> bool {
+    pub fn is_charging(&self, player: PlayerId, skill: Option<&str>) -> bool {
         self.gear.get(&player).and_then(|g| g.charging.as_ref()).is_some_and(|c| c.skill.as_deref() == skill)
     }
 
     /// Fin de la charge (relâchée) : ce qu'elle a duré
-    pub fn release_charge(&mut self, player: u64, skill: Option<&str>) -> f32 {
+    pub fn release_charge(&mut self, player: PlayerId, skill: Option<&str>) -> f32 {
         let held = self.charge_held(player, skill);
         if let Some(gear) = self.gear.get_mut(&player).filter(|g| g.charging.as_ref().is_some_and(|c| c.skill.as_deref() == skill)) {
             gear.charging = None;
@@ -178,7 +178,7 @@ impl Arsenal {
     /// Un tir d'arc ou d'arbalète part : refusé sans arme à distance, trop tôt, l'arbalète vide
     /// ou l'arc pas assez bandé. Il prend un carreau du chargeur (qui se recharge une fois vide)
     /// et la prochaine munition spéciale.
-    pub fn fire(&mut self, player: u64) -> Result<Fired, CastError> {
+    pub fn fire(&mut self, player: PlayerId) -> Result<Fired, CastError> {
         let drawn = self.release_charge(player, None);
         let gear = self.gear(player);
         if !gear.held.is_ranged() {
@@ -203,7 +203,7 @@ impl Arsenal {
     }
 
     /// Une compétence qui tire un carreau (`Cast::uses_round`) : refusée tant que l'arbalète recharge
-    pub fn use_round(&mut self, player: u64) -> Result<(), CastError> {
+    pub fn use_round(&mut self, player: PlayerId) -> Result<(), CastError> {
         let gear = self.gear(player);
         if !gear.is_crossbow() {
             return Err(CastError::NoWeapon);
@@ -217,21 +217,21 @@ impl Arsenal {
     }
 
     /// Le chargeur se remplit d'un coup (Esquive tactique)
-    pub fn reload_now(&mut self, player: u64) {
+    pub fn reload_now(&mut self, player: PlayerId) {
         let gear = self.gear(player);
         gear.loaded = gear.held.magazine;
         gear.reload = 0.0;
     }
 
     /// Une munition spéciale chargée par une compétence remplace la précédente
-    pub fn load(&mut self, player: u64, special: Special) {
+    pub fn load(&mut self, player: PlayerId, special: Special) {
         let gear = self.gear(player);
         gear.specials.clear();
         gear.specials.push(special);
     }
 
     /// Prend un tir de la munition spéciale chargée, s'il en reste
-    pub fn take_special(&mut self, player: u64) -> Option<Special> {
+    pub fn take_special(&mut self, player: PlayerId) -> Option<Special> {
         let gear = self.gear.get_mut(&player)?;
         let special = gear.specials.first_mut()?;
         special.shots -= 1;
@@ -241,22 +241,22 @@ impl Arsenal {
     }
 
     /// La munition spéciale chargée : compétence et tirs restants
-    pub fn special(&self, player: u64) -> Option<(&str, u32)> {
+    pub fn special(&self, player: PlayerId) -> Option<(&str, u32)> {
         self.gear.get(&player)?.specials.first().map(|s| (s.skill.as_str(), s.shots))
     }
 
     /// Le chargeur de l'arbalète tenue, `None` pour une autre arme
-    pub fn magazine(&self, player: u64) -> Option<Magazine> {
+    pub fn magazine(&self, player: PlayerId) -> Option<Magazine> {
         let gear = self.gear.get(&player).filter(|g| g.is_crossbow())?;
         Some(Magazine { loaded: gear.loaded, size: gear.held.magazine, reload_left: gear.reload, reload_total: gear.held.interval })
     }
 
     /// Secondes avant le prochain coup, et l'intervalle de l'arme
-    pub fn cooldown(&self, player: u64) -> (f32, f32) {
+    pub fn cooldown(&self, player: PlayerId) -> (f32, f32) {
         self.gear.get(&player).map_or((0.0, 0.0), |g| (g.cooldown, g.held.interval))
     }
 
-    pub fn forget(&mut self, player: u64) {
+    pub fn forget(&mut self, player: PlayerId) {
         self.gear.remove(&player);
     }
 }
@@ -273,74 +273,74 @@ mod tests {
     #[test]
     fn hits_follow_the_weapon_pace_and_attack_speed() {
         let mut arsenal = Arsenal::default();
-        arsenal.hold(1, item("ironDagger"), PlayerClass::Adventurer);
-        assert_eq!(arsenal.strike(1), Ok(10.0));
-        assert_eq!(arsenal.strike(1), Err(CastError::Cooldown));
+        arsenal.hold(PlayerId(1), item("ironDagger"), PlayerClass::Adventurer);
+        assert_eq!(arsenal.strike(PlayerId(1)), Ok(10.0));
+        assert_eq!(arsenal.strike(PlayerId(1)), Err(CastError::Cooldown));
         arsenal.tick(0.26, |_| 1.0);
-        assert!(arsenal.strike(1).is_ok(), "une dague frappe toutes les 0,25 s");
-        arsenal.hold(1, item("ironBattleAxe"), PlayerClass::Adventurer);
+        assert!(arsenal.strike(PlayerId(1)).is_ok(), "une dague frappe toutes les 0,25 s");
+        arsenal.hold(PlayerId(1), item("ironBattleAxe"), PlayerClass::Adventurer);
         arsenal.tick(0.3, |_| 1.0);
-        assert!(arsenal.strike(1).is_ok());
+        assert!(arsenal.strike(PlayerId(1)).is_ok());
         arsenal.tick(0.5, |_| 1.0);
-        assert_eq!(arsenal.strike(1), Err(CastError::Cooldown), "une hache de bataille : 0,8 s");
+        assert_eq!(arsenal.strike(PlayerId(1)), Err(CastError::Cooldown), "une hache de bataille : 0,8 s");
         // 60 % plus vite : 0,5 s suffisent
         arsenal.tick(0.5, |_| 1.6);
-        assert!(arsenal.strike(1).is_ok());
+        assert!(arsenal.strike(PlayerId(1)).is_ok());
     }
 
     #[test]
     fn a_crossbow_reloads_after_each_bolt() {
         let mut arsenal = Arsenal::default();
-        arsenal.hold(1, item("handCrossbow"), PlayerClass::Adventurer);
-        assert_eq!(arsenal.fire(1).unwrap_err(), CastError::Reloading, "prise en main : elle se charge d'abord");
+        arsenal.hold(PlayerId(1), item("handCrossbow"), PlayerClass::Adventurer);
+        assert_eq!(arsenal.fire(PlayerId(1)).unwrap_err(), CastError::Reloading, "prise en main : elle se charge d'abord");
         arsenal.tick(0.85, |_| 1.0);
-        assert_eq!(arsenal.magazine(1).unwrap().loaded, 1);
-        assert!(arsenal.fire(1).is_ok());
+        assert_eq!(arsenal.magazine(PlayerId(1)).unwrap().loaded, 1);
+        assert!(arsenal.fire(PlayerId(1)).is_ok());
         arsenal.tick(0.3, |_| 1.0);
-        assert_eq!(arsenal.fire(1).unwrap_err(), CastError::Reloading);
+        assert_eq!(arsenal.fire(PlayerId(1)).unwrap_err(), CastError::Reloading);
         arsenal.tick(0.6, |_| 1.0);
-        assert!(arsenal.fire(1).is_ok());
+        assert!(arsenal.fire(PlayerId(1)).is_ok());
         // Esquive tactique : rechargée d'un coup
         arsenal.tick(0.25, |_| 1.0);
-        arsenal.reload_now(1);
-        assert!(arsenal.fire(1).is_ok());
+        arsenal.reload_now(PlayerId(1));
+        assert!(arsenal.fire(PlayerId(1)).is_ok());
     }
 
     #[test]
     fn a_ranger_shoots_twice_before_reloading() {
         let mut arsenal = Arsenal::default();
-        arsenal.hold(1, item("handCrossbow"), PlayerClass::Ranger);
-        arsenal.reload_now(1);
-        assert!(arsenal.fire(1).is_ok());
+        arsenal.hold(PlayerId(1), item("handCrossbow"), PlayerClass::Ranger);
+        arsenal.reload_now(PlayerId(1));
+        assert!(arsenal.fire(PlayerId(1)).is_ok());
         arsenal.tick(MAGAZINE_GAP + 0.01, |_| 1.0);
-        assert!(arsenal.fire(1).is_ok());
+        assert!(arsenal.fire(PlayerId(1)).is_ok());
         arsenal.tick(MAGAZINE_GAP + 0.01, |_| 1.0);
-        assert_eq!(arsenal.fire(1).unwrap_err(), CastError::Reloading);
+        assert_eq!(arsenal.fire(PlayerId(1)).unwrap_err(), CastError::Reloading);
     }
 
     #[test]
     fn a_bow_must_be_drawn() {
         let mut arsenal = Arsenal::default();
-        arsenal.hold(1, item("shortBow"), PlayerClass::Adventurer);
-        arsenal.begin_charge(1, None);
+        arsenal.hold(PlayerId(1), item("shortBow"), PlayerClass::Adventurer);
+        arsenal.begin_charge(PlayerId(1), None);
         arsenal.tick(0.1, |_| 1.0);
-        assert_eq!(arsenal.fire(1).unwrap_err(), CastError::NotCharged);
-        arsenal.begin_charge(1, None);
+        assert_eq!(arsenal.fire(PlayerId(1)).unwrap_err(), CastError::NotCharged);
+        arsenal.begin_charge(PlayerId(1), None);
         arsenal.tick(1.2, |_| 1.0);
-        assert_eq!(arsenal.fire(1).unwrap().power, 1.0);
-        arsenal.hold(1, item("ironSword"), PlayerClass::Adventurer);
-        assert_eq!(arsenal.fire(1).unwrap_err(), CastError::NoWeapon);
+        assert_eq!(arsenal.fire(PlayerId(1)).unwrap().power, 1.0);
+        arsenal.hold(PlayerId(1), item("ironSword"), PlayerClass::Adventurer);
+        assert_eq!(arsenal.fire(PlayerId(1)).unwrap_err(), CastError::NoWeapon);
     }
 
     #[test]
     fn special_ammo_rides_the_next_shots() {
         let mut arsenal = Arsenal::default();
-        arsenal.hold(1, item("shortBow"), PlayerClass::Adventurer);
-        arsenal.load(1, Special { skill: "poisonBolt".into(), rank: 1, shots: 2, left: 10.0, radius: None, effects: Vec::new() });
+        arsenal.hold(PlayerId(1), item("shortBow"), PlayerClass::Adventurer);
+        arsenal.load(PlayerId(1), Special { skill: "poisonBolt".into(), rank: 1, shots: 2, left: 10.0, radius: None, effects: Vec::new() });
         for expected in [Some("poisonBolt"), Some("poisonBolt"), None] {
-            arsenal.begin_charge(1, None);
+            arsenal.begin_charge(PlayerId(1), None);
             arsenal.tick(1.0, |_| 1.0);
-            assert_eq!(arsenal.fire(1).unwrap().special.map(|s| s.skill).as_deref(), expected);
+            assert_eq!(arsenal.fire(PlayerId(1)).unwrap().special.map(|s| s.skill).as_deref(), expected);
         }
     }
 }
