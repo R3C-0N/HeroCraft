@@ -429,22 +429,7 @@ impl PlanetLodManager {
             self.spawn_voxel_task(key, generator);
         }
         while let Ok(res) = self.patch_rx.try_recv() {
-            if res.generation != self.generation || res.patch_epoch != self.patch_epoch {
-                continue;
-            }
-            if res.detailed {
-                self.pending_details.remove(&res.key);
-                // Le patch rapide est remplacé sur place : même feuille, nouveau maillage
-                if let Some(mesh) = res.mesh
-                    && let std::collections::hash_map::Entry::Occupied(mut e) = self.lod_cache.entry(res.key) {
-                    e.insert(mesh);
-                    self.detailed.insert(res.key);
-                    received_new_mesh = true;
-                }
-            } else if let Some(mesh) = res.mesh {
-                self.pending_patches.remove(&res.key);
-                self.lod_cache.insert(res.key, mesh);
-            }
+            received_new_mesh |= self.accept_patch(res);
         }
 
         if received_count > 0 {
@@ -596,6 +581,28 @@ impl PlanetLodManager {
         true
     }
 
+    /// Range un patch calculé en tâche de fond. Renvoie `true` si un patch détaillé a remplacé
+    /// un patch affiché
+    fn accept_patch(&mut self, res: VoxelBuildResult) -> bool {
+        if res.generation != self.generation || res.patch_epoch != self.patch_epoch {
+            return false;
+        }
+        if res.detailed {
+            self.pending_details.remove(&res.key);
+            // Le patch rapide est remplacé sur place : même feuille, nouveau maillage
+            if let Some(mesh) = res.mesh
+                && let std::collections::hash_map::Entry::Occupied(mut e) = self.lod_cache.entry(res.key) {
+                e.insert(mesh);
+                self.detailed.insert(res.key);
+                return true;
+            }
+        } else if let Some(mesh) = res.mesh {
+            self.pending_patches.remove(&res.key);
+            self.lod_cache.insert(res.key, mesh);
+        }
+        false
+    }
+
     /// Révision d'un patch dans `LodMeshId` : sa version (précision) et sa finesse, pour que le GPU
     /// ne confonde pas un patch refait avec l'ancien
     fn patch_revision(epoch: u32, detailed: bool) -> u32 {
@@ -700,6 +707,21 @@ mod tests {
     use super::*;
     use std::time::Instant;
     const SEA_LEVEL_BLOCKS_F: f64 = herocraft_world::SEA_LEVEL_BLOCKS;
+
+    impl PlanetLodManager {
+        /// Attend que les feuilles en attente basculent, en bloquant sur le canal des patchs au
+        /// lieu d'un délai : le résultat ne dépend pas de la vitesse des fils de génération
+        fn wait_for_pending_leaves(&mut self, eye: Vec3, generator: &PlanetWorldGenerator, cache: &mut WorldChunkCache) {
+            // Filet de sécurité contre un blocage, pas une attente normale
+            const STUCK: std::time::Duration = std::time::Duration::from_secs(600);
+            while self.pending_leaves.is_some() {
+                assert!(!self.pending_patches.is_empty(), "des feuilles attendent un patch qui n'a pas été demandé");
+                let res = self.patch_rx.recv_timeout(STUCK).expect("aucun patch reçu depuis 10 minutes");
+                self.accept_patch(res);
+                self.update(eye, generator, cache, 0.016, None);
+            }
+        }
+    }
 
     #[test]
     fn test_lod_update_performance_when_stationary() {
@@ -1099,12 +1121,10 @@ mod tests {
         camera.target_distance = 0.0;
         camera.update_camera_bounds(&generator);
         lod.update(camera.eye_position(), &generator, &mut cache, 0.16, None);
-        // Les patchs des nouvelles feuilles sont générés en tâche de fond : bascule après quelques frames
-        let start = std::time::Instant::now();
-        while lod.pending_leaves.is_some() && start.elapsed().as_secs() < 30 {
-            std::thread::sleep(std::time::Duration::from_millis(5));
-            lod.update(camera.eye_position(), &generator, &mut cache, 0.016, None);
-        }
+        // Les patchs des nouvelles feuilles sont générés en tâche de fond : on attend chacun d'eux
+        // sur le canal des résultats, quelle que soit la charge de la machine
+        lod.wait_for_pending_leaves(camera.eye_position(), &generator, &mut cache);
+        assert!(lod.pending_leaves.is_none(), "les nouvelles feuilles remplacent les anciennes une fois leurs patchs prêts");
         let voxels_ground = lod.current_leaves.iter().filter(|l| l.kind == herocraft_world::QuadLeafKind::VoxelChunk).count();
         assert!(voxels_ground > 0, "Des voxels doivent être présents au sol sur la planète de taille doublée (50.0)");
     }
