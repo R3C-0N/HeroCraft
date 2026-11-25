@@ -92,7 +92,17 @@ impl VisionTutorial {
         let present = std::mem::replace(inventory, Inventory::soldier_kit());
         let corners = geometry.block_corners(shard);
         let shard_center = (corners.iter().copied().sum::<glam::DVec3>() / 8.0).as_vec3();
-        Self { step: Step::Arriving, shard, shard_center, present_inventory: Some(present), soldiers: Vec::new(), whisper: 0.0, clock: 0.0, charge: None, assault: None }
+        Self {
+            step: Step::Arriving,
+            shard,
+            shard_center,
+            present_inventory: Some(present),
+            soldiers: Vec::new(),
+            whisper: 0.0,
+            clock: 0.0,
+            charge: None,
+            assault: None,
+        }
     }
 
     /// La roche à poser (avec `lod.set_block`) : le bloc et sa place
@@ -178,7 +188,17 @@ impl VisionTutorial {
 
     /// Avance le tutoriel : `player` (pieds du joueur), `block` (hauteur d'un bloc),
     /// `cinematic` (une cinématique se joue), `frozen` (le temps est figé)
-    pub(crate) fn update(&mut self, dt: f32, player: Vec3, block: f32, cinematic: bool, frozen: bool, inventory: &Inventory, generator: &PlanetWorldGenerator, edits: &TerrainEdits) -> Outcome {
+    pub(crate) fn update(
+        &mut self,
+        dt: f32,
+        player: Vec3,
+        block: f32,
+        cinematic: bool,
+        frozen: bool,
+        inventory: &Inventory,
+        generator: &PlanetWorldGenerator,
+        edits: &TerrainEdits,
+    ) -> Outcome {
         self.clock += dt;
         let mut outcome = Outcome::default();
         let distance = (player + player.normalize_or_zero() * block - self.shard_center).length() / block;
@@ -334,7 +354,9 @@ mod tests {
         let (pos, rock) = tutorial.shard_rock().expect("fiche de la roche");
         edits.set_block(&generator, pos, rock);
         let block = geometry.block_height as f32;
-        let far = tutorial.shard_center() + tutorial.shard_center().normalize() * 0.0 + herocraft_common::tangent_frame(tutorial.shard_center().normalize()).0 * 20.0 * block;
+        let far = tutorial.shard_center()
+            + tutorial.shard_center().normalize() * 0.0
+            + herocraft_common::tangent_frame(tutorial.shard_center().normalize()).0 * 20.0 * block;
         (tutorial, inventory, generator, edits, far, block)
     }
 
@@ -356,7 +378,9 @@ mod tests {
         assert_eq!(t.step(), Step::Inventory);
         assert!(t.blocks_mining(Some(t.shard), &inventory));
         // La pioche passe du sac à la barre, puis en main
-        let pickaxe = (crate::inventory::HOTBAR_SLOTS..crate::inventory::STORAGE_SLOTS).find(|&i| inventory.slot(i).is_some_and(|s| crate::inventory::is_pickaxe(s.item))).unwrap();
+        let pickaxe = (crate::inventory::HOTBAR_SLOTS..crate::inventory::STORAGE_SLOTS)
+            .find(|&i| inventory.slot(i).is_some_and(|s| crate::inventory::is_pickaxe(s.item)))
+            .unwrap();
         inventory.click(pickaxe);
         inventory.click(3);
         t.update(0.1, near, block, false, true, &inventory, &generator, &edits);

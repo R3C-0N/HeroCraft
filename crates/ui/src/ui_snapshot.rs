@@ -146,7 +146,8 @@ impl Snapshot {
         encoder.set_color(png::ColorType::Rgb);
         encoder.set_depth(png::BitDepth::Eight);
         let mut writer = encoder.write_header().expect("en-tête PNG");
-        let data: Vec<u8> = self.pixels.iter().flat_map(|p| [p[0], p[1], p[2]].map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8)).collect();
+        let data: Vec<u8> =
+            self.pixels.iter().flat_map(|p| [p[0], p[1], p[2]].map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8)).collect();
         writer.write_image_data(&data).expect("données PNG");
     }
 }

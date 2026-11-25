@@ -16,8 +16,8 @@ mod scene;
 mod window_input;
 
 use super::*;
-use winit::dpi::PhysicalSize;
 use winit::application::ApplicationHandler;
+use winit::dpi::PhysicalSize;
 use winit::event_loop::EventLoop;
 use winit::keyboard::Key;
 
@@ -137,7 +137,8 @@ impl App {
         // nouvelle planète à chaque partie
         let launch = network::launch_options();
         // Banc d'essai : toujours la même planète, sauf graine imposée
-        let current_seed = launch.seed.or(benchmark::requested().then_some(benchmark::DEFAULT_SEED)).unwrap_or_else(herocraft_world::random_seed);
+        let current_seed =
+            launch.seed.or(benchmark::requested().then_some(benchmark::DEFAULT_SEED)).unwrap_or_else(herocraft_world::random_seed);
         info!("Planète de graine #{current_seed} (relancer avec --seed {current_seed} pour la retrouver).");
         let planet_desc = herocraft_world::PlanetDescriptor { seed: current_seed, ..Default::default() };
 
@@ -312,13 +313,7 @@ impl App {
             WindowEvent::CursorMoved { position, .. } => self.cursor_moved(*position),
             WindowEvent::MouseWheel { delta, .. } => self.mouse_wheel(*delta),
             WindowEvent::KeyboardInput {
-                event: KeyEvent {
-                    state,
-                    physical_key: PhysicalKey::Code(key_code),
-                    logical_key,
-                    repeat,
-                    ..
-                },
+                event: KeyEvent { state, physical_key: PhysicalKey::Code(key_code), logical_key, repeat, .. },
                 ..
             } => self.keyboard_input(*state, *key_code, logical_key, *repeat),
             WindowEvent::RedrawRequested => self.redraw(event_loop),

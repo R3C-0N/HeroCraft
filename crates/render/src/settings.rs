@@ -76,7 +76,8 @@ pub struct QualityEffects {
 }
 
 impl GraphicsQuality {
-    pub const ALL: [GraphicsQuality; 4] = [GraphicsQuality::Basse, GraphicsQuality::Moyenne, GraphicsQuality::Haute, GraphicsQuality::Ultra];
+    pub const ALL: [GraphicsQuality; 4] =
+        [GraphicsQuality::Basse, GraphicsQuality::Moyenne, GraphicsQuality::Haute, GraphicsQuality::Ultra];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -186,13 +187,7 @@ pub struct CloudSettings {
 
 impl Default for CloudSettings {
     fn default() -> Self {
-        Self {
-            density: 1.0,
-            roundness: 0.45,
-            shadow_intensity: 1.0,
-            sunset_glow: 1.0,
-            micro_noise: 0.0,
-        }
+        Self { density: 1.0, roundness: 0.45, shadow_intensity: 1.0, sunset_glow: 1.0, micro_noise: 0.0 }
     }
 }
 
@@ -233,7 +228,7 @@ impl Tonemapper {
 /// Réglages du post-traitement HDR (exposition, tonemapper, bloom)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PostSettings {
-    pub exposure_ev: f32,     // Exposition en EV [-3.0 .. 3.0] (0 = neutre)
+    pub exposure_ev: f32, // Exposition en EV [-3.0 .. 3.0] (0 = neutre)
     pub tonemapper: Tonemapper,
     pub bloom_enabled: bool,
     pub bloom_intensity: f32, // Part du halo ajoutée à l'image [0.0 .. 1.0]
@@ -258,7 +253,7 @@ impl Default for PostSettings {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShadowSettings {
     pub enabled: bool,
-    pub strength: f32,       // Part de la lumière directe retirée à l'ombre du relief [0.0 .. 1.0]
+    pub strength: f32, // Part de la lumière directe retirée à l'ombre du relief [0.0 .. 1.0]
     pub cloud_shadows: bool,
     pub cloud_strength: f32, // Part de la lumière directe retirée sous un nuage [0.0 .. 1.0]
     /// Ombres fines : cascades de 2048 texels filtrées sur 3x3, cascades lointaines redessinées
@@ -271,13 +266,7 @@ pub struct ShadowSettings {
 
 impl Default for ShadowSettings {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            strength: 1.0,
-            cloud_shadows: true,
-            cloud_strength: 0.7,
-            fine: true,
-        }
+        Self { enabled: true, strength: 1.0, cloud_shadows: true, cloud_strength: 0.7, fine: true }
     }
 }
 
@@ -292,8 +281,8 @@ impl ShadowSettings {
 /// le curseur Brume de l'éclairage)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AtmosphereSettings {
-    pub air_density: f32,        // Densité de l'air (diffusion de Rayleigh) [0.2 .. 3.0]
-    pub sun_halo: f32,           // Anisotropie de la brume (g de Mie) : halo resserré autour du soleil [0.0 .. 0.95]
+    pub air_density: f32, // Densité de l'air (diffusion de Rayleigh) [0.2 .. 3.0]
+    pub sun_halo: f32,    // Anisotropie de la brume (g de Mie) : halo resserré autour du soleil [0.0 .. 0.95]
     pub god_rays: bool,
     pub god_rays_intensity: f32, // Accentuation de l'ombre de l'air (1 = physique) [0.0 .. 4.0]
     /// Rayons fins : marche de 28 pas à demi-résolution. Sinon (allégés) : 14 pas au quart de
@@ -303,13 +292,7 @@ pub struct AtmosphereSettings {
 
 impl Default for AtmosphereSettings {
     fn default() -> Self {
-        Self {
-            air_density: 1.0,
-            sun_halo: 0.8,
-            god_rays: true,
-            god_rays_intensity: 2.5,
-            god_rays_fine: true,
-        }
+        Self { air_density: 1.0, sun_halo: 0.8, god_rays: true, god_rays_intensity: 2.5, god_rays_fine: true }
     }
 }
 
@@ -323,13 +306,13 @@ impl AtmosphereSettings {
 /// Réglages d'éclairage et d'ambiance céleste ajustables via sliders
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LightingSettings {
-    pub moon_intensity: f32,     // Multiplicateur lumière de Lune (défaut: 1.0, [0.0 .. 3.0])
-    pub sun_intensity: f32,      // Multiplicateur lumière du Soleil (défaut: 1.0, [0.0 .. 3.0])
-    pub night_ambient: f32,      // Multiplicateur obscurité nocturne / étoiles (défaut: 1.0, [0.0 .. 3.0])
-    pub day_ambient: f32,        // Multiplicateur clarté ambiante diurne (défaut: 1.0, [0.0 .. 3.0])
-    pub moon_speed: f32,         // Vitesse orbitale de la Lune (défaut: 1.0, [0.0 .. 5.0], 0 = fige la lune)
-    pub fog_intensity: f32,      // Multiplicateur brouillard de distance (défaut: 1.0, [0.0 .. 2.0])
-    pub cloud_density: f32,      // Densité des nuages volumétriques arrondis (défaut: 1.0, [0.0 .. 2.0])
+    pub moon_intensity: f32, // Multiplicateur lumière de Lune (défaut: 1.0, [0.0 .. 3.0])
+    pub sun_intensity: f32,  // Multiplicateur lumière du Soleil (défaut: 1.0, [0.0 .. 3.0])
+    pub night_ambient: f32,  // Multiplicateur obscurité nocturne / étoiles (défaut: 1.0, [0.0 .. 3.0])
+    pub day_ambient: f32,    // Multiplicateur clarté ambiante diurne (défaut: 1.0, [0.0 .. 3.0])
+    pub moon_speed: f32,     // Vitesse orbitale de la Lune (défaut: 1.0, [0.0 .. 5.0], 0 = fige la lune)
+    pub fog_intensity: f32,  // Multiplicateur brouillard de distance (défaut: 1.0, [0.0 .. 2.0])
+    pub cloud_density: f32,  // Densité des nuages volumétriques arrondis (défaut: 1.0, [0.0 .. 2.0])
 }
 
 impl Default for LightingSettings {

@@ -80,29 +80,48 @@ impl App {
                         hidden: ui_state.player.stats.is_invisible() || ui_state.player.is_dead(),
                     };
                     // Les plantes semées poussent (le serveur s'en charge en ligne)
-                    for (pos, block) in solo_fields.tick_in_weather(dt, generator, lod_manager.terrain_edits(), &client_weather.model, state.simulated_time as f64) {
+                    for (pos, block) in solo_fields.tick_in_weather(
+                        dt,
+                        generator,
+                        lod_manager.terrain_edits(),
+                        &client_weather.model,
+                        state.simulated_time as f64,
+                    ) {
                         terrain_edited |= lod_manager.set_block(generator, pos, block);
                         block_interaction.invalidate();
                     }
                     // Morsures et charges des bêtes agressives
                     // Le temps figé de la vision ralentit aussi les bêtes
-                    let hits = solo_creatures.tick_with_presences(dt * state.time_scale(), generator, lod_manager.terrain_edits(), &[player]);
+                    let hits =
+                        solo_creatures.tick_with_presences(dt * state.time_scale(), generator, lod_manager.terrain_edits(), &[player]);
                     // Banc d'essai : les bêtes ne blessent pas le joueur
                     for hit in hits.into_iter().filter(|_| bench.is_none()) {
                         // Une garde levée pare le coup qui arrive de face, et riposte
                         let (_, facing, _, _) = camera.look_vectors();
-                        let (damage, parried) = skill_play.solo_parry(solo_creatures, camera.player_pos, facing, &mut ui_state.player.stats, hit.creature_id, hit.damage, hit.kind);
+                        let (damage, parried) = skill_play.solo_parry(
+                            solo_creatures,
+                            camera.player_pos,
+                            facing,
+                            &mut ui_state.player.stats,
+                            hit.creature_id,
+                            hit.damage,
+                            hit.kind,
+                        );
                         // Ralenti, étourdi, repoussé : le coup de certaines bêtes le laisse sonné
                         if !ui_state.player.is_dead() && !parried {
                             let ignores = skill_play.solo_immunities();
                             solo_creatures.afflict(&hit, &mut ui_state.player.stats, &ignores);
-                            if let Some((direction, speed)) = solo_creatures.knockback(&hit, camera.player_pos).filter(|_| !ignores.contains(&herocraft_common::skills::Status::Knockback)) {
+                            if let Some((direction, speed)) = solo_creatures
+                                .knockback(&hit, camera.player_pos)
+                                .filter(|_| !ignores.contains(&herocraft_common::skills::Status::Knockback))
+                            {
                                 camera.push(direction, speed);
                             }
                         }
                         let cause = creature_registry.get(hit.species).map_or("Une créature", |s| s.name.as_str());
                         // L'armure portée, puis les renforcements de défense
-                        let damage = herocraft_common::through_armor(damage, hit.kind, ui_state.inventory.protection() as f32) * skill_play.solo_damage_factor(hit.kind);
+                        let damage = herocraft_common::through_armor(damage, hit.kind, ui_state.inventory.protection() as f32)
+                            * skill_play.solo_damage_factor(hit.kind);
                         let hurt = ui_state.player.bitten(damage, Some(hit.kind), cause);
                         // Tombé sous un effet à la mort : la nova part, il se relève
                         if ui_state.player.is_dead() {
@@ -145,15 +164,32 @@ impl App {
     /// Les bêtes d'après leur modèle, avec celles des héros changés en bête (formes du Druide).
     /// Rend l'image des créatures à compléter, et la forme de bête du joueur s'il en a pris une.
     fn build_beasts(&mut self, dt: f32, anim_dt: f32, block: f32) -> (creatures::CreatureFrame, Option<String>) {
-        let Self { creature_views, creature_registry, skill_play, net, camera, ui_state, block_interaction, form_feet, creature_animator, creature_models, state, .. } = self;
+        let Self {
+            creature_views,
+            creature_registry,
+            skill_play,
+            net,
+            camera,
+            ui_state,
+            block_interaction,
+            form_feet,
+            creature_animator,
+            creature_models,
+            state,
+            ..
+        } = self;
         // Les habitants et les voyageurs se dessinent avec le corps des héros (`push_villagers`)
-        let mut beasts: Vec<creatures::CreatureView> = creature_views.iter().filter(|v| !villagers::is_humanoid(v, creature_registry)).copied().collect();
+        let mut beasts: Vec<creatures::CreatureView> =
+            creature_views.iter().filter(|v| !villagers::is_humanoid(v, creature_registry)).copied().collect();
         // Héros changés en bête (formes du Druide) : la bête à leur place
         skill_play.me = net.as_ref().map_or(skill_play::SOLO_PLAYER, |c| c.player_id());
         let third_person = camera.view_mode() == camera::CameraViewMode::ThirdPerson;
         let local_form = skill_play.form_of(None).filter(|_| ui_state.legend.is_some());
         // Changé en bête : les clics lancent ses attaques, l'inventaire se ferme
-        let attacks = skill_play.form_skill(None).and_then(|s| herocraft_common::skills().get(&s)).and_then(|d| <[String; 2]>::try_from(d.form_attacks.clone()).ok());
+        let attacks = skill_play
+            .form_skill(None)
+            .and_then(|s| herocraft_common::skills().get(&s))
+            .and_then(|d| <[String; 2]>::try_from(d.form_attacks.clone()).ok());
         if attacks.is_some() && ui_state.beast_attacks.is_none() {
             ui_state.set_inventory_open(false);
             block_interaction.reset();
@@ -161,7 +197,13 @@ impl App {
         ui_state.beast_attacks = attacks;
         let mut shapes: Vec<BeastShape> = Vec::new();
         if let Some(form) = local_form.clone().filter(|_| third_person) {
-            shapes.push((herocraft_common::CreatureId(u64::MAX), form, camera.player_pos, camera.player_yaw, skill_play.form_attacking(None)));
+            shapes.push((
+                herocraft_common::CreatureId(u64::MAX),
+                form,
+                camera.player_pos,
+                camera.player_yaw,
+                skill_play.form_attacking(None),
+            ));
         }
         if let Some(client) = net.as_ref() {
             for (id, feet, yaw, _) in client.remote_heroes() {
@@ -175,17 +217,50 @@ impl App {
             let speed = form_feet.insert(*id, *feet).map_or(0.0, |last| last.distance(*feet) / block / dt.max(1e-3));
             let action = if *attacking {
                 herocraft_common::CreatureAction::Attaque
-            } else if speed > 4.0 { herocraft_common::CreatureAction::Course } else if speed > 0.3 { herocraft_common::CreatureAction::Marche } else { herocraft_common::CreatureAction::Repos };
-            beasts.push(creatures::CreatureView { id: *id, species: creature_registry.find(form), feet: *feet, yaw: *yaw, hurt: 0.0, death: 0.0, action, scale: 1.0, mood: 0, summoner: None, copy: None, tint: None });
+            } else if speed > 4.0 {
+                herocraft_common::CreatureAction::Course
+            } else if speed > 0.3 {
+                herocraft_common::CreatureAction::Marche
+            } else {
+                herocraft_common::CreatureAction::Repos
+            };
+            beasts.push(creatures::CreatureView {
+                id: *id,
+                species: creature_registry.find(form),
+                feet: *feet,
+                yaw: *yaw,
+                hurt: 0.0,
+                death: 0.0,
+                action,
+                scale: 1.0,
+                mood: 0,
+                summoner: None,
+                copy: None,
+                tint: None,
+            });
         }
         creature_animator.update(&beasts, creature_registry, creature_models, anim_dt, block);
-        let frame = creatures::build_frame(&beasts, creature_registry, creature_models, creature_animator, block, if state.gpu_skinning() { creatures::Skinning::Gpu } else { creatures::Skinning::Cpu }, Some(camera.eye_position()));
+        let frame = creatures::build_frame(
+            &beasts,
+            creature_registry,
+            creature_models,
+            creature_animator,
+            block,
+            if state.gpu_skinning() { creatures::Skinning::Gpu } else { creatures::Skinning::Cpu },
+            Some(camera.eye_position()),
+        );
         (frame, local_form)
     }
 
     /// Les habitants, les gardes et les voyageurs avec le corps des héros, et les noms à afficher
     /// au-dessus des têtes
-    fn push_villagers(&mut self, frame: &mut creatures::CreatureFrame, anim_dt: f32, block: f32, looked_at: Option<herocraft_common::CreatureId>) {
+    fn push_villagers(
+        &mut self,
+        frame: &mut creatures::CreatureFrame,
+        anim_dt: f32,
+        block: f32,
+        looked_at: Option<herocraft_common::CreatureId>,
+    ) {
         let Self { villager_animator, creature_views, creature_registry, state, net, solo_creatures, ui_state, camera, .. } = self;
         villager_animator.update(creature_views, creature_registry, anim_dt, block);
         state.begin_villagers();
@@ -196,8 +271,19 @@ impl App {
         // Un leurre copie le héros de son lanceur, le nôtre ou celui d'un autre joueur
         let me = net.as_ref().map_or(skill_play::SOLO_PLAYER, |c| c.player_id());
         let my_look = ui_state.legend.as_ref().map(|l| l.appearance.clone());
-        let hero_of = |id: herocraft_common::PlayerId| if id == me { my_look.clone() } else { net.as_ref().and_then(|c| c.remote_appearance(id)).cloned() };
-        villagers::push_villagers(frame, creature_views, creature_registry, card_of, &hero_of, villager_animator, |a| state.villager_texture(a), block);
+        let hero_of = |id: herocraft_common::PlayerId| {
+            if id == me { my_look.clone() } else { net.as_ref().and_then(|c| c.remote_appearance(id)).cloned() }
+        };
+        villagers::push_villagers(
+            frame,
+            creature_views,
+            creature_registry,
+            card_of,
+            &hero_of,
+            villager_animator,
+            |a| state.villager_texture(a),
+            block,
+        );
         let mut tags = net.as_ref().map(|c| c.name_tags(camera, state.size.width as f32, state.size.height as f32)).unwrap_or_default();
         tags.extend(villagers::name_tags(creature_views, card_of, looked_at, camera, state.size.width as f32, state.size.height as f32));
         ui_state.name_tags = tags;
@@ -213,7 +299,8 @@ impl App {
     /// Compétences : en solo les règles tournent ici, sur nos créatures
     fn tick_skills(&mut self, anim_dt: f32) {
         let Self { net, ui_state, solo_creatures, camera, skill_effects, skill_play, .. } = self;
-        let solo_skills = (net.is_none() && !ui_state.is_settings_open).then_some((&mut *solo_creatures, camera.player_pos, &mut ui_state.player.stats));
+        let solo_skills =
+            (net.is_none() && !ui_state.is_settings_open).then_some((&mut *solo_creatures, camera.player_pos, &mut ui_state.player.stats));
         skill_effects.start(skill_play.tick(anim_dt, solo_skills));
         for id in skill_play.take_ended_projectiles() {
             skill_effects.end_projectile(id);
@@ -229,12 +316,20 @@ impl App {
     /// Le héros vu de dehors à la troisième personne (s'il n'a pas pris de forme de bête), les
     /// héros des autres joueurs, et à la première personne les bras le temps d'un geste. Rend les
     /// points du héros où s'accrochent les effets.
-    fn push_heroes(&mut self, frame: &mut creatures::CreatureFrame, anim_dt: f32, block: f32, without_beast_form: bool) -> hero_model::HeroAnchors {
+    fn push_heroes(
+        &mut self,
+        frame: &mut creatures::CreatureFrame,
+        anim_dt: f32,
+        block: f32,
+        without_beast_form: bool,
+    ) -> hero_model::HeroAnchors {
         let Self { hero_gait, camera, ui_state, state, hero_figure, skill_play, net, remote_gaits, villager_animator, .. } = self;
         // Le héros, vu de dehors à la troisième personne, avec le geste de sa compétence
         hero_gait.update(camera.player_pos, anim_dt, block);
         let mut hero_anchors = hero_model::HeroAnchors::standing(camera.player_pos, camera.player_yaw, block);
-        if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson && without_beast_form) {
+        if let Some(legend) =
+            ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::ThirdPerson && without_beast_form)
+        {
             state.set_hero_sheet(&legend.appearance);
             let figure = hero_figure.get(&legend.appearance);
             let pose = skill_play.hero_pose(hero_gait.swing(), figure.units_per_block(&legend.appearance));
@@ -242,7 +337,17 @@ impl App {
             // Transformations partielles du Druide : patte, fourrure, pattes de cerf, plumes
             for graft in skill_play.hero_grafts().iter().filter_map(|g| skill_models::graft(g)) {
                 let slot = state.villager_texture(creature_render::SheetSource::Fixed(&graft.id, &graft.texture));
-                skill_models::push_graft(frame, &graft.model, &legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, slot, block);
+                skill_models::push_graft(
+                    frame,
+                    &graft.model,
+                    &legend.appearance,
+                    figure,
+                    camera.player_pos,
+                    camera.player_yaw,
+                    &pose,
+                    slot,
+                    block,
+                );
             }
             hero_anchors = hero_model::HeroAnchors::posed(&legend.appearance, figure, camera.player_pos, camera.player_yaw, &pose, block);
         }
@@ -267,7 +372,11 @@ impl App {
             }
         }
         // À la première personne, le temps d'un geste : les bras et l'arme devant l'œil
-        if let Some(legend) = ui_state.legend.as_ref().filter(|_| camera.view_mode() == camera::CameraViewMode::FirstPerson && skill_play.local_play().is_some()) {
+        if let Some(legend) = ui_state
+            .legend
+            .as_ref()
+            .filter(|_| camera.view_mode() == camera::CameraViewMode::FirstPerson && skill_play.local_play().is_some())
+        {
             state.set_hero_sheet(&legend.appearance);
             let figure = hero_figure.get(&legend.appearance);
             let pose = skill_play.hero_pose(0.0, figure.units_per_block(&legend.appearance));
@@ -275,7 +384,8 @@ impl App {
             // Un objet tenu (pas un bloc) fait l'arme ; sa couleur d'acier en attendant les vraies armes
             let weapon = held.filter(|item| item.block().is_none()).map(|_| [0.72, 0.74, 0.78, 1.0]);
             let (_, _, _, look) = camera.look_vectors();
-            let (right, left) = hero_model::push_first_person_arms(frame, &legend.appearance, figure, camera.eye_position(), look, &pose, weapon, block);
+            let (right, left) =
+                hero_model::push_first_person_arms(frame, &legend.appearance, figure, camera.eye_position(), look, &pose, weapon, block);
             hero_anchors.right_hand = right;
             hero_anchors.left_hand = left;
         }
@@ -295,7 +405,15 @@ impl App {
             let creature_feet = |id: herocraft_common::CreatureId| views.iter().find(|v| v.id == id).map(|v| v.feet);
             let shots = &*skill_play;
             let projectile_at = |id: herocraft_common::ProjectileId| shots.projectile_at(id);
-            let world = effects::AnchorWorld { hero: hero_anchors, hero_forward, players: &players, creatures: &creature_feet, projectiles: &projectile_at, eye: camera.eye_position(), block };
+            let world = effects::AnchorWorld {
+                hero: hero_anchors,
+                hero_forward,
+                players: &players,
+                creatures: &creature_feet,
+                projectiles: &projectile_at,
+                eye: camera.eye_position(),
+                block,
+            };
             skill_effects.update(anim_dt, &world, effect_quads);
         }
     }
@@ -327,7 +445,16 @@ impl App {
         ui_state.vision_hint = None;
         match tutorial.as_mut() {
             Some(t) => {
-                let outcome = t.update(anim_dt, camera.player_pos, block, cinematics.is_playing(), state.time_frozen, &ui_state.inventory, generator, lod_manager.terrain_edits());
+                let outcome = t.update(
+                    anim_dt,
+                    camera.player_pos,
+                    block,
+                    cinematics.is_playing(),
+                    state.time_frozen,
+                    &ui_state.inventory,
+                    generator,
+                    lod_manager.terrain_edits(),
+                );
                 if outcome.freeze {
                     state.time_frozen = true;
                 }
@@ -348,13 +475,25 @@ impl App {
                     charge.update(anim_dt, camera.player_pos, &mut charge_events);
                     charge.tick_hint(anim_dt);
                 }
-                apply_charge_events(charge_events, camera, generator, lod_manager, state, solo_creatures, skill_effects, audio, &ui_state.audio_settings, cinematics);
+                apply_charge_events(
+                    charge_events,
+                    camera,
+                    generator,
+                    lod_manager,
+                    state,
+                    solo_creatures,
+                    skill_effects,
+                    audio,
+                    &ui_state.audio_settings,
+                    cinematics,
+                );
                 // Passé la herse : les rues, les trois places, le héraut, la Pierre
                 let sealed = t.charge.as_ref().is_some_and(|c| c.phase() == vision_charge::Phase::Sealed);
                 if let Some(assault) = t.assault.as_mut().filter(|_| sealed) {
                     let mut assault_events = Vec::new();
                     if assault.phase() == vision_assault::Phase::Waiting {
-                        let allies: Vec<herocraft_common::CreatureId> = solo_creatures.creatures().iter().filter(|c| c.is_alive() && soldiers.contains(&c.id)).map(|c| c.id).collect();
+                        let allies: Vec<herocraft_common::CreatureId> =
+                            solo_creatures.creatures().iter().filter(|c| c.is_alive() && soldiers.contains(&c.id)).map(|c| c.id).collect();
                         assault.start(&allies);
                     }
                     let ground = |dir: glam::Vec3| dir * camera.ground_radius_at(dir, generator);
@@ -367,7 +506,17 @@ impl App {
                         let near = 1.0 - (camera.player_pos.distance(stone) / block / 60.0).clamp(0.0, 1.0);
                         audio.set_whisper(0.25 + 0.75 * near, &ui_state.audio_settings);
                     }
-                    apply_assault_events(assault_events, camera, generator, lod_manager, state, skill_effects, audio, &ui_state.audio_settings, cinematics);
+                    apply_assault_events(
+                        assault_events,
+                        camera,
+                        generator,
+                        lod_manager,
+                        state,
+                        skill_effects,
+                        audio,
+                        &ui_state.audio_settings,
+                        cinematics,
+                    );
                 }
             }
             None => audio.set_whisper(0.0, &ui_state.audio_settings),

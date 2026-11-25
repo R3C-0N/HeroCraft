@@ -46,4 +46,3 @@ pub fn time_for_local_hour(time: f32, up: Vec3, hour: f32) -> Option<f32> {
     let target = noon + (hour - 12.0) / 24.0 * SUN_PERIOD;
     Some(time + (target - time).rem_euclid(SUN_PERIOD))
 }
-

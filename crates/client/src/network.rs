@@ -7,18 +7,19 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
-use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use herocraft_common::net::Connection;
-use herocraft_server::{Server, ServerConfig};
 use herocraft_common::{
-    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, ItemId, CreatureAction, CreatureRegistry, CreatureState, PlanetChunkCoord, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, ServerPacket, PROTOCOL_VERSION,
+    BlockId, BlockInteractionAction, CREATURE_DEATH_TIME, CREATURE_HURT_TIME, CharacterStats, ClientPacket, CreatureAction,
+    CreatureRegistry, CreatureState, ItemId, PROTOCOL_VERSION, PlanetChunkCoord, ServerPacket,
 };
+use herocraft_server::{Server, ServerConfig};
 use herocraft_voxel_engine::ChunkData;
 use herocraft_world::{BlockGeometry, BlockPos};
 use log::{info, warn};
@@ -73,10 +74,8 @@ pub(crate) fn launch_options() -> LaunchOptions {
             _ => {}
         }
     }
-    let pseudo = pseudo
-        .or_else(|| std::env::var("USERNAME").ok())
-        .or_else(|| std::env::var("USER").ok())
-        .unwrap_or_else(|| "Héros".to_string());
+    let pseudo =
+        pseudo.or_else(|| std::env::var("USERNAME").ok()).or_else(|| std::env::var("USER").ok()).unwrap_or_else(|| "Héros".to_string());
     let seed = seed.and_then(|s| {
         let parsed = s.trim().parse().ok();
         if parsed.is_none() {
@@ -90,11 +89,7 @@ pub(crate) fn launch_options() -> LaunchOptions {
 /// Adresse saisie, complétée du port par défaut s'il manque
 pub(crate) fn server_address(input: &str) -> String {
     let input = input.trim();
-    if input.contains(':') {
-        input.to_string()
-    } else {
-        format!("{input}:{}", herocraft_common::DEFAULT_PORT)
-    }
+    if input.contains(':') { input.to_string() } else { format!("{input}:{}", herocraft_common::DEFAULT_PORT) }
 }
 
 /// Connexion menée en tâche de fond : le jeu continue de s'afficher pendant l'accueil
@@ -144,9 +139,7 @@ impl HostedServer {
         }
         let running = Arc::new(AtomicBool::new(true));
         let thread_running = running.clone();
-        let thread = std::thread::Builder::new()
-            .name("serveur-integre".into())
-            .spawn(move || server.run(&thread_running))?;
+        let thread = std::thread::Builder::new().name("serveur-integre".into()).spawn(move || server.run(&thread_running))?;
         info!("Partie ouverte au réseau local sur le port {port}.");
         Ok(Self { port, running, thread: Some(thread) })
     }
@@ -173,8 +166,13 @@ pub(crate) struct JoinedWorld {
 
 /// Se connecte et attend l'accueil du serveur (bloquant)
 pub(crate) fn join(addr: &str, name: &str) -> anyhow::Result<JoinedWorld> {
-    let connection = ServerConnection::connect(addr, CONNECT_TIMEOUT).map_err(|e| anyhow::anyhow!("connexion à {addr} impossible : {e}"))?;
-    connection.send(&ClientPacket::Connect { player_name: name.to_string(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
+    let connection =
+        ServerConnection::connect(addr, CONNECT_TIMEOUT).map_err(|e| anyhow::anyhow!("connexion à {addr} impossible : {e}"))?;
+    connection.send(&ClientPacket::Connect {
+        player_name: name.to_string(),
+        protocol_version: PROTOCOL_VERSION,
+        skills: herocraft_common::skills().fingerprint(),
+    });
 
     let (player_id, seed, spawn_position, chunk_count) = match connection.recv_timeout(CONNECT_TIMEOUT)? {
         ServerPacket::ConnectAck { player_id, world_seed, spawn_position, edited_chunks, .. } => {
@@ -309,7 +307,19 @@ pub(crate) struct RemoteCreature {
 
 impl RemoteCreature {
     fn new(species: String) -> Self {
-        Self { species, position: None, hurt: 0.0, death: 0.0, action: CreatureAction::Repos, scale: 1.0, mood: 0, summoner: None, copy: None, track: Track::default(), effects: VecDeque::new() }
+        Self {
+            species,
+            position: None,
+            hurt: 0.0,
+            death: 0.0,
+            action: CreatureAction::Repos,
+            scale: 1.0,
+            mood: 0,
+            summoner: None,
+            copy: None,
+            track: Track::default(),
+            effects: VecDeque::new(),
+        }
     }
 
     fn push(&mut self, at: Instant, state: &CreatureState) {
@@ -325,7 +335,9 @@ impl RemoteCreature {
     /// passé depuis (la rougeur s'efface, la bête morte continue de basculer)
     fn sample_effects(&self, now: Instant, delay: Duration) -> (f32, f32, CreatureAction) {
         let render = now.checked_sub(delay).unwrap_or(now);
-        let Some(&(at, hurt, death, action)) = self.effects.iter().rev().find(|(at, ..)| *at <= render) else { return (0.0, 0.0, CreatureAction::Repos) };
+        let Some(&(at, hurt, death, action)) = self.effects.iter().rev().find(|(at, ..)| *at <= render) else {
+            return (0.0, 0.0, CreatureAction::Repos);
+        };
         let elapsed = (render - at).as_secs_f32();
         let death = if death > 0.0 { (death + elapsed / CREATURE_DEATH_TIME).min(1.0) } else { 0.0 };
         ((hurt - elapsed / CREATURE_HURT_TIME).max(0.0), death, action)
@@ -339,37 +351,90 @@ pub(crate) enum NetEvent {
     /// Statistiques RPG du joueur, qui font foi
     Stats(CharacterStats),
     /// Un habitant proche parle (quelqu'un, peut-être nous, lui a adressé la parole)
-    VillagerSays { speaker: String, line: String },
+    VillagerSays {
+        speaker: String,
+        line: String,
+    },
     /// Le joueur vient d'être frappé par une créature (`cause` : son nom)
-    Hurt { damage: f32, cause: String },
+    Hurt {
+        damage: f32,
+        cause: String,
+    },
     /// Le joueur a tué une créature : son butin tombe en `position`
-    Loot { position: Vec3, items: Vec<(ItemId, u16)> },
+    Loot {
+        position: Vec3,
+        items: Vec<(ItemId, u16)>,
+    },
     /// Œuf pondu par une bête aux pieds `position`
-    Laid { position: Vec3, item: ItemId },
+    Laid {
+        position: Vec3,
+        item: ItemId,
+    },
     /// Message du chat (`sender` vide : annonce du serveur, ou réponse d'une commande)
-    Chat { sender: String, message: String },
+    Chat {
+        sender: String,
+        message: String,
+    },
     /// Horloge du ciel du serveur et temps imposé, qui font foi
-    Clock { time: f64, forced: Option<herocraft_common::WeatherKind> },
+    Clock {
+        time: f64,
+        forced: Option<herocraft_common::WeatherKind>,
+    },
     /// Un joueur (peut-être nous) lance une compétence
-    SkillCast { player_id: herocraft_common::PlayerId, skill: String, rank: u8, aim: Vec3, aimed: Option<Vec3>, fused: bool, amplified: bool },
+    SkillCast {
+        player_id: herocraft_common::PlayerId,
+        skill: String,
+        rank: u8,
+        aim: Vec3,
+        aimed: Option<Vec3>,
+        fused: bool,
+        amplified: bool,
+    },
     /// Un joueur (peut-être nous) a tiré à l'arc ou à l'arbalète
-    PlayerShot { player_id: herocraft_common::PlayerId, from: Vec3, to: Vec3, target: Option<herocraft_common::CreatureId>, special: Option<String> },
+    PlayerShot {
+        player_id: herocraft_common::PlayerId,
+        from: Vec3,
+        to: Vec3,
+        target: Option<herocraft_common::CreatureId>,
+        special: Option<String>,
+    },
     /// Le serveur refuse notre lancement de `skill`
-    SkillRefused { skill: String, reason: String },
+    SkillRefused {
+        skill: String,
+        reason: String,
+    },
     /// Une compétence nous déplace (téléportation, traction vers sa cible)
     SkillMove(herocraft_common::skills::SkillMove),
     /// Une compétence frappe : centre de sa zone et cibles touchées
-    SkillHit { player_id: herocraft_common::PlayerId, skill: String, rank: u8, center: Vec3, creatures: Vec<herocraft_common::CreatureId>, players: Vec<herocraft_common::PlayerId>, parried: bool, contact: bool },
+    SkillHit {
+        player_id: herocraft_common::PlayerId,
+        skill: String,
+        rank: u8,
+        center: Vec3,
+        creatures: Vec<herocraft_common::CreatureId>,
+        players: Vec<herocraft_common::PlayerId>,
+        parried: bool,
+        contact: bool,
+    },
     /// Notre parade ratée : la recharge de `skill` dure `seconds` de plus
-    SkillCooldown { skill: String, seconds: f32 },
+    SkillCooldown {
+        skill: String,
+        seconds: f32,
+    },
     /// Le coup d'une bête nous repousse
-    Pushed { direction: Vec3, speed: f32 },
+    Pushed {
+        direction: Vec3,
+        speed: f32,
+    },
     /// Des créatures tirent (tourelles, bastion, liche)
     CreatureShots(Vec<herocraft_common::CreatureShotEvent>),
     Projectiles(Vec<herocraft_common::ProjectileEvent>),
     /// Le serveur nous fait entrer dans la vision d'un temple (peuple qui tient la ville) ou en
     /// revenir (`None`), les pieds en `feet`
-    Vision { holder: Option<herocraft_world::Culture>, feet: Vec3 },
+    Vision {
+        holder: Option<herocraft_world::Culture>,
+        feet: Vec3,
+    },
     /// Connexion perdue ou fermée par le serveur
     Disconnected(String),
 }
@@ -391,13 +456,21 @@ impl NetClient {
     /// Envoie la position du joueur et ce qu'il tient en main (au plus 20 fois par seconde, et
     /// seulement si elle a changé)
     pub(crate) fn send_move(&mut self, camera: &OrbitCamera, holding: Option<herocraft_common::ItemId>) {
-        let state = (camera.player_pos, camera.player_yaw, camera.player_pitch, camera.is_running(), camera.is_crouching(), holding.map(|i| i.0));
+        let state =
+            (camera.player_pos, camera.player_yaw, camera.player_pitch, camera.is_running(), camera.is_crouching(), holding.map(|i| i.0));
         if self.last_move == Some(state) || self.last_move_sent.is_some_and(|t| t.elapsed() < MOVE_SEND_INTERVAL) {
             return;
         }
         self.last_move = Some(state);
         self.last_move_sent = Some(Instant::now());
-        self.connection.send(&ClientPacket::PlayerMove { position: state.0, yaw: state.1, pitch: state.2, sprinting: state.3, crouching: state.4, holding: state.5 });
+        self.connection.send(&ClientPacket::PlayerMove {
+            position: state.0,
+            yaw: state.1,
+            pitch: state.2,
+            sprinting: state.3,
+            crouching: state.4,
+            holding: state.5,
+        });
     }
 
     /// Envoie les pièces portées (numéros d'objets) quand elles ont changé : leur Protection
@@ -616,17 +689,25 @@ impl NetClient {
             ServerPacket::ChunkData { coord, .. } => warn!("Chunk {coord:?} reçu hors de la connexion, ignoré."),
             ServerPacket::StatsUpdate(stats) => return Some(NetEvent::Stats(stats)),
             ServerPacket::PlayerHurt { damage, cause } => return Some(NetEvent::Hurt { damage, cause }),
-            ServerPacket::Laid { position, item } if ItemId(item).is_known() => return Some(NetEvent::Laid { position, item: ItemId(item) }),
+            ServerPacket::Laid { position, item } if ItemId(item).is_known() => {
+                return Some(NetEvent::Laid { position, item: ItemId(item) });
+            }
             ServerPacket::Laid { .. } => {}
             ServerPacket::CreatureLoot { position, items } => {
                 let items = items.into_iter().map(|(item, count)| (ItemId(item), count)).filter(|(item, _)| item.is_known()).collect();
                 return Some(NetEvent::Loot { position, items });
             }
-            ServerPacket::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified } => return Some(NetEvent::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified }),
-            ServerPacket::PlayerShot { player_id, from, to, target, special } => return Some(NetEvent::PlayerShot { player_id, from, to, target, special }),
+            ServerPacket::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified } => {
+                return Some(NetEvent::SkillCast { player_id, skill, rank, aim, aimed, fused, amplified });
+            }
+            ServerPacket::PlayerShot { player_id, from, to, target, special } => {
+                return Some(NetEvent::PlayerShot { player_id, from, to, target, special });
+            }
             ServerPacket::SkillRefused { skill, reason } => return Some(NetEvent::SkillRefused { skill, reason }),
             ServerPacket::SkillMove(m) => return Some(NetEvent::SkillMove(m)),
-            ServerPacket::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact } => return Some(NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact }),
+            ServerPacket::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact } => {
+                return Some(NetEvent::SkillHit { player_id, skill, rank, center, creatures, players, parried, contact });
+            }
             ServerPacket::SkillCooldown { skill, seconds } => return Some(NetEvent::SkillCooldown { skill, seconds }),
             ServerPacket::PlayerPushed { direction, speed } => return Some(NetEvent::Pushed { direction, speed }),
             ServerPacket::Vision { holder, feet } => {
@@ -697,11 +778,7 @@ impl NetClient {
 
     /// Héros des autres joueurs à dessiner : identifiant, pieds, cap, allure
     pub(crate) fn remote_heroes(&self) -> Vec<(herocraft_common::PlayerId, Vec3, f32, &herocraft_common::hero::Appearance)> {
-        self.players
-            .iter()
-            .filter_map(|(&id, p)| Some((id, p.position?, p.yaw, p.appearance.as_ref()?)))
-            .take(MAX_REMOTE_PLAYERS)
-            .collect()
+        self.players.iter().filter_map(|(&id, p)| Some((id, p.position?, p.yaw, p.appearance.as_ref()?))).take(MAX_REMOTE_PLAYERS).collect()
     }
 
     /// Créatures du voisinage à dessiner, leur espèce cherchée dans `registry`
@@ -715,7 +792,20 @@ impl NetClient {
             .iter()
             .filter_map(|(&id, c)| {
                 let (feet, yaw) = c.position?;
-                Some(CreatureView { id, species: registry.find(&c.species), feet, yaw, hurt: c.hurt, death: c.death, action: c.action, scale: c.scale, mood: c.mood, summoner: c.summoner, copy: c.copy, tint: None })
+                Some(CreatureView {
+                    id,
+                    species: registry.find(&c.species),
+                    feet,
+                    yaw,
+                    hurt: c.hurt,
+                    death: c.death,
+                    action: c.action,
+                    scale: c.scale,
+                    mood: c.mood,
+                    summoner: c.summoner,
+                    copy: c.copy,
+                    tint: None,
+                })
             })
             .collect()
     }

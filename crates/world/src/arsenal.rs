@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 
 use herocraft_common::skills::EffectEntry;
-use herocraft_common::weapons::{bow_power, Held, WeaponKind};
-use herocraft_common::{PlayerId, CastError, ItemId, PlayerClass};
+use herocraft_common::weapons::{Held, WeaponKind, bow_power};
+use herocraft_common::{CastError, ItemId, PlayerClass, PlayerId};
 
 /// Secondes entre deux carreaux d'un même chargeur (deux arbalètes de poing)
 pub(crate) const MAGAZINE_GAP: f32 = 0.2;

@@ -68,7 +68,12 @@ impl VoxelCollider {
                     _ if block.is_climbable() => None,
                     Some(_) if block.is_fence() => {
                         let links = fence_links_at(q, BlockPos { y, ..pos });
-                        herocraft_common::boxes_top_at(&herocraft_common::fence_collision_boxes(links), local[0], local[2], limit - y as f64)
+                        herocraft_common::boxes_top_at(
+                            &herocraft_common::fence_collision_boxes(links),
+                            local[0],
+                            local[2],
+                            limit - y as f64,
+                        )
                     }
                     Some(shape) => shape.top_at(block.shape_variant(), local[0], local[2], limit - y as f64),
                     None => Some(1.0),
@@ -94,7 +99,8 @@ impl VoxelCollider {
     /// Rayon du dessus du plus haut bloc porteur de chaque colonne `(x, z)` de la face `face`
     /// (là où s'arrête la pluie), en une seule lecture du terrain
     pub(crate) fn support_tops(&self, generator: &PlanetWorldGenerator, face: PlanetFace, columns: &[(i32, i32)]) -> Vec<f32> {
-        let tops: Vec<i32> = self.with_query(generator, |q| columns.iter().map(|&(x, z)| q.support_top(face, x, z, WORLD_HEIGHT - 1)).collect());
+        let tops: Vec<i32> =
+            self.with_query(generator, |q| columns.iter().map(|&(x, z)| q.support_top(face, x, z, WORLD_HEIGHT - 1)).collect());
         tops.into_iter().map(|y| self.radius_of_altitude(y)).collect()
     }
 

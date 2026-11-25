@@ -193,7 +193,8 @@ impl VisionAssault {
 
     /// Où la Pierre appelle le héros (le murmure en vient), une fois le monstre vaincu
     pub(crate) fn calling(&self) -> Option<Vec3> {
-        (self.phase == Phase::Crystal).then(|| self.at_floor(self.stone) + self.at_floor(self.stone).normalize_or_zero() * 0.5 * self.block())
+        (self.phase == Phase::Crystal)
+            .then(|| self.at_floor(self.stone) + self.at_floor(self.stone).normalize_or_zero() * 0.5 * self.block())
     }
 
     /// La Pierre de l'autel est ramassée : le souvenir s'achève (`fin-de-la-vision` suit)
@@ -235,7 +236,14 @@ impl VisionAssault {
     }
 
     /// Avance la traversée. `ground(dir)` : les pieds posés au sol dans cette direction.
-    pub(crate) fn update(&mut self, dt: f32, player: Vec3, world: &mut CreatureWorld, ground: &dyn Fn(Vec3) -> Vec3, out: &mut Vec<AssaultEvent>) {
+    pub(crate) fn update(
+        &mut self,
+        dt: f32,
+        player: Vec3,
+        world: &mut CreatureWorld,
+        ground: &dyn Fn(Vec3) -> Vec3,
+        out: &mut Vec<AssaultEvent>,
+    ) {
         if let Some((_, left)) = self.notice.as_mut() {
             *left -= dt;
             if *left <= 0.0 {
@@ -337,7 +345,14 @@ impl VisionAssault {
 
     /// Le cercle se forme sur la place `i` : les combattants s'écartent, les soldats du cercle
     /// l'entourent, le mini-boss attend au centre
-    fn begin_arena(&mut self, i: usize, player: Vec3, world: &mut CreatureWorld, ground: &dyn Fn(Vec3) -> Vec3, out: &mut Vec<AssaultEvent>) {
+    fn begin_arena(
+        &mut self,
+        i: usize,
+        player: Vec3,
+        world: &mut CreatureWorld,
+        ground: &dyn Fn(Vec3) -> Vec3,
+        out: &mut Vec<AssaultEvent>,
+    ) {
         let center_dir = self.dir(self.arenas[i].center);
         let center = ground(center_dir);
         let up = center_dir;
@@ -396,7 +411,12 @@ impl VisionAssault {
             }
             None => {
                 // Le mini-boss est tombé : le cercle se défait, la traversée reprend
-                let name = world.registry().find(self.arenas[i].species).and_then(|s| world.registry().get(s)).map(|s| s.name.clone()).unwrap_or_default();
+                let name = world
+                    .registry()
+                    .find(self.arenas[i].species)
+                    .and_then(|s| world.registry().get(s))
+                    .map(|s| s.name.clone())
+                    .unwrap_or_default();
                 for id in self.ring.drain(..) {
                     world.despawn(id);
                 }
@@ -406,7 +426,11 @@ impl VisionAssault {
                 self.phase = Phase::Streets;
                 self.order_in = 0.0;
                 let left = self.arenas.iter().filter(|a| !a.done).count();
-                let next = if left == 0 { "Le chemin du temple est ouvert.".to_string() } else { format!("Encore {left} à abattre avant le temple.") };
+                let next = if left == 0 {
+                    "Le chemin du temple est ouvert.".to_string()
+                } else {
+                    format!("Encore {left} à abattre avant le temple.")
+                };
                 self.notice = Some((format!("{name} est tombé ! {next}"), NOTICE_SECONDS));
                 out.push(AssaultEvent::Effect("dustPuff", center, None));
                 out.push(AssaultEvent::Notify("arena_won", center));
@@ -470,18 +494,26 @@ impl VisionAssault {
             Phase::Streets => {
                 let left = self.arenas.iter().filter(|a| !a.done).count();
                 if left > 0 {
-                    "Traverse la ville vers le temple, sous le rayon violet. Les défenseurs tiennent les rues : l'armée te suit.".to_string()
+                    "Traverse la ville vers le temple, sous le rayon violet. Les défenseurs tiennent les rues : l'armée te suit."
+                        .to_string()
                 } else {
                     "Le temple est tout proche, sous le rayon violet.".to_string()
                 }
             }
             Phase::Arena(i) => {
-                let name = world.registry().find(self.arenas[i].species).and_then(|s| world.registry().get(s)).map(|s| s.name.clone()).unwrap_or_default();
+                let name = world
+                    .registry()
+                    .find(self.arenas[i].species)
+                    .and_then(|s| world.registry().get(s))
+                    .map(|s| s.name.clone())
+                    .unwrap_or_default();
                 format!("Le cercle s'est refermé : on n'en sort pas. Abats {name} !")
             }
             Phase::Herald => "Dans l'arène du temple, quelqu'un t'attend, seul.".to_string(),
             Phase::Monster => "Le héraut a pris la forme d'un monstre du Néant ! Abats-le.".to_string(),
-            Phase::Crystal => "Le monstre est vaincu. La Pierre du Néant t'appelle, sur l'autel du sanctuaire : brise-la et prends-la.".to_string(),
+            Phase::Crystal => {
+                "Le monstre est vaincu. La Pierre du Néant t'appelle, sur l'autel du sanctuaire : brise-la et prends-la.".to_string()
+            }
         })
     }
 }
@@ -535,7 +567,8 @@ mod tests {
         s.assault.update(0.1, feet_at(&s, s.city.gate), &mut s.world, ground, &mut out);
         assert_eq!(s.assault.phase(), Phase::Waiting);
         let inside = feet_at(&s, s.assault.inside);
-        let allies: Vec<herocraft_common::CreatureId> = (0..6).filter_map(|_| VisionAssault::spawn(&mut s.world, "soldatAllie", inside, 0.0)).collect();
+        let allies: Vec<herocraft_common::CreatureId> =
+            (0..6).filter_map(|_| VisionAssault::spawn(&mut s.world, "soldatAllie", inside, 0.0)).collect();
         s.assault.start(&allies);
         assert!(s.assault.checkpoint().is_some());
         // Dans les rues : les défenseurs prennent leurs postes à l'approche

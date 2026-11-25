@@ -9,7 +9,7 @@ use std::ops::Range;
 
 use glam::Vec3;
 
-use crate::creatures::{CreatureFrame, SkinnedInstance, SKINNED_INDEX};
+use crate::creatures::{CreatureFrame, SKINNED_INDEX, SkinnedInstance};
 use crate::planet_mesh::{PackedAttributes, PlanetVertex};
 use crate::post;
 use crate::skinned_model::Texture;
@@ -21,7 +21,14 @@ const SKINNING_GROUP: u32 = 64;
 
 /// Tampons des bêtes et des matrices d'os, pour `capacity` (bêtes, matrices)
 fn skinning_buffers(device: &wgpu::Device, capacity: (usize, usize)) -> (wgpu::Buffer, wgpu::Buffer, (usize, usize)) {
-    let buffer = |label, size: usize| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: size as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+    let buffer = |label, size: usize| {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: size as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    };
     let instances = buffer("Creature Skinning Instances", capacity.0 * std::mem::size_of::<SkinnedInstance>());
     let bones = buffer("Creature Bone Matrices", capacity.1 * 64);
     (instances, bones, capacity)
@@ -134,7 +141,13 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
 
 impl CreatureRenderer {
     /// `scene_layout` et `shadow_layout` : groupes 0 et 1 du relief
-    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, scene_layout: &wgpu::BindGroupLayout, shadow_layout: &wgpu::BindGroupLayout, target: post::SceneTarget) -> Self {
+    pub(crate) fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        scene_layout: &wgpu::BindGroupLayout,
+        shadow_layout: &wgpu::BindGroupLayout,
+        target: post::SceneTarget,
+    ) -> Self {
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Creature Texture Layout"),
             entries: &[
@@ -173,7 +186,23 @@ impl CreatureRenderer {
         });
         let white = Texture { width: 1, height: 1, rgba: vec![255; 4] };
         let plain = texture_bind_group(device, queue, &texture_layout, &sampler, &white, "Creature Plain Texture");
-        Self { pipeline, pipeline_layout: layout, texture_layout, sampler, textures: Vec::new(), plain, hero: None, villagers: Vec::new(), frame_number: 0, buffers: None, draws: Vec::new(), num_indices: 0, center: Vec3::ZERO, radius: 0.0, skinning: None }
+        Self {
+            pipeline,
+            pipeline_layout: layout,
+            texture_layout,
+            sampler,
+            textures: Vec::new(),
+            plain,
+            hero: None,
+            villagers: Vec::new(),
+            frame_number: 0,
+            buffers: None,
+            draws: Vec::new(),
+            num_indices: 0,
+            center: Vec3::ZERO,
+            radius: 0.0,
+            skinning: None,
+        }
     }
 
     /// Modèles des espèces, pour appliquer leurs os sur le GPU (`Skinning::Gpu`)
@@ -272,12 +301,29 @@ impl CreatureRenderer {
             }
             let capacity = (vertices.next_power_of_two().max(4096), indices.next_power_of_two().max(8192));
             let buffer = |label, size: usize, usage| {
-                device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: size as u64, usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false })
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(label),
+                    size: size as u64,
+                    usage: usage | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
             };
             self.buffers = Some(Buffers {
-                positions: buffer("Creature Position Buffer", capacity.0 * std::mem::size_of::<[f32; 3]>(), wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE),
-                attributes: buffer("Creature Attribute Buffer", capacity.0 * std::mem::size_of::<PackedAttributes>(), wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE),
-                uvs: buffer("Creature UV Buffer", capacity.0 * std::mem::size_of::<[f32; 2]>(), wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE),
+                positions: buffer(
+                    "Creature Position Buffer",
+                    capacity.0 * std::mem::size_of::<[f32; 3]>(),
+                    wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE,
+                ),
+                attributes: buffer(
+                    "Creature Attribute Buffer",
+                    capacity.0 * std::mem::size_of::<PackedAttributes>(),
+                    wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE,
+                ),
+                uvs: buffer(
+                    "Creature UV Buffer",
+                    capacity.0 * std::mem::size_of::<[f32; 2]>(),
+                    wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE,
+                ),
                 indices: buffer("Creature Index Buffer", capacity.1 * 4, wgpu::BufferUsages::INDEX),
                 capacity,
             });
@@ -296,7 +342,11 @@ impl CreatureRenderer {
             } else {
                 // Les sommets animés sur le GPU viennent après ceux du CPU
                 let base = cpu_vertices as u32;
-                let resolved: Vec<u32> = frame.indices.iter().map(|&i| if i & SKINNED_INDEX != 0 { if gpu { base + (i & !SKINNED_INDEX) } else { 0 } } else { i }).collect();
+                let resolved: Vec<u32> = frame
+                    .indices
+                    .iter()
+                    .map(|&i| if i & SKINNED_INDEX != 0 { if gpu { base + (i & !SKINNED_INDEX) } else { 0 } } else { i })
+                    .collect();
                 queue.write_buffer(&b.indices, 0, bytemuck::cast_slice(&resolved));
             }
         }
@@ -304,8 +354,7 @@ impl CreatureRenderer {
             let p = Vec3::from(v.position);
             (lo.min(p), hi.max(p))
         });
-        if gpu
-            && let (Some(skin), Some(b)) = (self.skinning.as_mut(), self.buffers.as_ref()) {
+        if gpu && let (Some(skin), Some(b)) = (self.skinning.as_mut(), self.buffers.as_ref()) {
             let (lo, hi) = skin.prepare(device, queue, frame, [&b.positions, &b.attributes, &b.uvs], cpu_vertices as u32, reallocated);
             (min, max) = (min.min(lo), max.max(hi));
         }
@@ -338,7 +387,9 @@ impl CreatureRenderer {
         for (texture, range) in &self.draws {
             let bind_group = match texture {
                 Some(crate::hero_model::HERO_TEXTURE) => self.hero.as_ref().map(|(_, b)| b),
-                Some(t) if *t >= crate::hero_model::VILLAGER_TEXTURE_BASE => self.villagers.get(t - crate::hero_model::VILLAGER_TEXTURE_BASE).map(|(_, b, _)| b),
+                Some(t) if *t >= crate::hero_model::VILLAGER_TEXTURE_BASE => {
+                    self.villagers.get(t - crate::hero_model::VILLAGER_TEXTURE_BASE).map(|(_, b, _)| b)
+                }
                 Some(t) => self.textures.get(*t).and_then(|b| b.as_ref()),
                 None => None,
             }
@@ -356,7 +407,11 @@ impl GpuSkinning {
         let storage = |binding, read_only| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only }, has_dynamic_offset: false, min_binding_size: None },
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Storage { read_only },
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
             count: None,
         };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -371,13 +426,24 @@ impl GpuSkinning {
                 wgpu::BindGroupLayoutEntry {
                     binding: 6,
                     visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 },
             ],
         });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Creature Skinning Pipeline Layout"), bind_group_layouts: &[Some(&layout)], immediate_size: 0 });
-        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("Creature Skinning Shader"), source: wgpu::ShaderSource::Wgsl(include_str!("skinning.wgsl").into()) });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Creature Skinning Pipeline Layout"),
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
+        });
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Creature Skinning Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("skinning.wgsl").into()),
+        });
         let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Creature Skinning Pipeline"),
             layout: Some(&pipeline_layout),
@@ -393,16 +459,40 @@ impl GpuSkinning {
             contents: bytemuck::cast_slice(if vertices.is_empty() { &placeholder[..] } else { &vertices[..] }),
             usage: wgpu::BufferUsages::STORAGE,
         });
-        let params = device.create_buffer(&wgpu::BufferDescriptor { label: Some("Creature Skinning Params"), size: 16, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let params = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Creature Skinning Params"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let (instances, bones, capacity) = skinning_buffers(device, (64, 2048));
-        GpuSkinning { pipeline, layout, model_vertices, model_starts, model_reach, instances, bones, params, capacity, bind_group: None, pending: (0, 0) }
+        GpuSkinning {
+            pipeline,
+            layout,
+            model_vertices,
+            model_starts,
+            model_reach,
+            instances,
+            bones,
+            params,
+            capacity,
+            bind_group: None,
+            pending: (0, 0),
+        }
     }
-
 
     /// Envoie les bêtes et les matrices de l'image ; les sommets seront écrits dans `outputs`
     /// (positions, attributs, coordonnées de texture) à partir du sommet `output_base`.
     /// `rebind` : les tampons de sortie ont changé. Renvoie la boîte qui englobe les bêtes.
-    fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: &CreatureFrame, outputs: [&wgpu::Buffer; 3], output_base: u32, rebind: bool) -> (Vec3, Vec3) {
+    fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frame: &CreatureFrame,
+        outputs: [&wgpu::Buffer; 3],
+        output_base: u32,
+        rebind: bool,
+    ) -> (Vec3, Vec3) {
         let (mut min, mut max) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
         let instances: Vec<SkinnedInstance> = frame
             .skinned
@@ -418,7 +508,10 @@ impl GpuSkinning {
         }
         let mut rebind = rebind || self.bind_group.is_none();
         if instances.len() > self.capacity.0 || frame.bone_matrices.len() > self.capacity.1 {
-            let wanted = (instances.len().next_power_of_two().max(self.capacity.0), frame.bone_matrices.len().next_power_of_two().max(self.capacity.1));
+            let wanted = (
+                instances.len().next_power_of_two().max(self.capacity.0),
+                frame.bone_matrices.len().next_power_of_two().max(self.capacity.1),
+            );
             (self.instances, self.bones, self.capacity) = skinning_buffers(device, wanted);
             rebind = true;
         }
@@ -454,14 +547,22 @@ impl GpuSkinning {
         if count == 0 {
             return;
         }
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("Creature Skinning Pass"), timestamp_writes: None });
+        let mut pass =
+            encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("Creature Skinning Pass"), timestamp_writes: None });
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, bind_group, &[]);
         pass.dispatch_workgroups(largest.div_ceil(SKINNING_GROUP), count, 1);
     }
 }
 
-fn texture_bind_group(device: &wgpu::Device, queue: &wgpu::Queue, layout: &wgpu::BindGroupLayout, sampler: &wgpu::Sampler, texture: &Texture, label: &str) -> wgpu::BindGroup {
+fn texture_bind_group(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+    texture: &Texture,
+    label: &str,
+) -> wgpu::BindGroup {
     let size = wgpu::Extent3d { width: texture.width, height: texture.height, depth_or_array_layers: 1 };
     let gpu = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
@@ -494,7 +595,7 @@ fn texture_bind_group(device: &wgpu::Device, queue: &wgpu::Queue, layout: &wgpu:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::creatures::{build_frame, CreatureAnimator, CreatureModels, CreatureView, Skinning};
+    use crate::creatures::{CreatureAnimator, CreatureModels, CreatureView, Skinning, build_frame};
     use herocraft_common::{CreatureAction, CreatureRegistry};
 
     /// Le compute shader des os donne les mêmes sommets que le calcul du CPU. Demande un
@@ -504,12 +605,26 @@ mod tests {
     fn skinning_gpu_matches_cpu() {
         let registry = CreatureRegistry::load_default();
         let (models, _) = CreatureModels::load(&registry);
-        let species: Vec<usize> = (0..registry.len()).filter(|&s| models.gpu_vertices().1.get(s + 1).is_some_and(|&n| n > models.gpu_vertices().1[s])).collect();
+        let species: Vec<usize> =
+            (0..registry.len()).filter(|&s| models.gpu_vertices().1.get(s + 1).is_some_and(|&n| n > models.gpu_vertices().1[s])).collect();
         let views: Vec<CreatureView> = (0..24)
             .map(|i| {
                 let feet = glam::Vec3::new(i as f32 * 3.0, 50.0, 1000.0);
                 let action = [CreatureAction::Marche, CreatureAction::Repos, CreatureAction::Course][i % 3];
-                CreatureView { id: herocraft_common::CreatureId(i as u64), species: Some(species[i % species.len()]), feet, yaw: i as f32 * 0.7, hurt: if i == 5 { 0.5 } else { 0.0 }, death: if i == 7 { 0.6 } else { 0.0 }, action, scale: if i == 3 { 0.5 } else { 1.0 }, mood: 0, summoner: None, copy: None, tint: None }
+                CreatureView {
+                    id: herocraft_common::CreatureId(i as u64),
+                    species: Some(species[i % species.len()]),
+                    feet,
+                    yaw: i as f32 * 0.7,
+                    hurt: if i == 5 { 0.5 } else { 0.0 },
+                    death: if i == 7 { 0.6 } else { 0.0 },
+                    action,
+                    scale: if i == 3 { 0.5 } else { 1.0 },
+                    mood: 0,
+                    summoner: None,
+                    copy: None,
+                    tint: None,
+                }
             })
             .collect();
         let mut animator = CreatureAnimator::default();
@@ -527,11 +642,19 @@ mod tests {
         assert_eq!(gpu.indices.iter().map(|i| i & !SKINNED_INDEX).collect::<Vec<_>>(), cpu.indices);
 
         let instance = wgpu::Instance::default();
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("aucun adaptateur graphique");
+        let adapter =
+            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("aucun adaptateur graphique");
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).unwrap();
         let mut skin = GpuSkinning::new(&device, &models);
         let n = cpu.vertices.len();
-        let output = |size: usize| device.create_buffer(&wgpu::BufferDescriptor { label: None, size: size as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
+        let output = |size: usize| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: size as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            })
+        };
         let outputs = [output(n * 12), output(n * 12), output(n * 8)];
         let (lo, hi) = skin.prepare(&device, &queue, &gpu, [&outputs[0], &outputs[1], &outputs[2]], 0, true);
         let mut encoder = device.create_command_encoder(&Default::default());
@@ -539,7 +662,12 @@ mod tests {
         let readback: Vec<wgpu::Buffer> = outputs
             .iter()
             .map(|o| {
-                let r = device.create_buffer(&wgpu::BufferDescriptor { label: None, size: o.size(), usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+                let r = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: None,
+                    size: o.size(),
+                    usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
                 encoder.copy_buffer_to_buffer(o, 0, &r, 0, o.size());
                 r
             })
@@ -562,7 +690,12 @@ mod tests {
             assert_eq!(want.texture, attributes[k].texture);
             assert_eq!(want.color[..3], attributes[k].color[..3], "couleur du sommet {k}");
             for c in 0..4 {
-                assert!((want.normal_alpha[c] as i32 - attributes[k].normal_alpha[c] as i32).abs() <= 2, "normale du sommet {k} : {:?} / {:?}", want.normal_alpha, attributes[k].normal_alpha);
+                assert!(
+                    (want.normal_alpha[c] as i32 - attributes[k].normal_alpha[c] as i32).abs() <= 2,
+                    "normale du sommet {k} : {:?} / {:?}",
+                    want.normal_alpha,
+                    attributes[k].normal_alpha
+                );
             }
             assert_eq!(cpu.uvs[k], uvs[k]);
         }

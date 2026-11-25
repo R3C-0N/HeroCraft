@@ -6,19 +6,19 @@ use herocraft_common::PlanetFace;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CloudVertex {
-    pub position: [f32; 3],     // Position 3D du sommet dans le monde
+    pub position: [f32; 3], // Position 3D du sommet dans le monde
     pub _pad0: f32,
-    pub frame_u: [f32; 3],      // Tangente locale U (alignée sur l'axe u de la face)
+    pub frame_u: [f32; 3], // Tangente locale U (alignée sur l'axe u de la face)
     pub _pad1: f32,
-    pub frame_v: [f32; 3],      // Tangente locale V (alignée sur l'axe v de la face)
+    pub frame_v: [f32; 3], // Tangente locale V (alignée sur l'axe v de la face)
     pub _pad2: f32,
-    pub frame_w: [f32; 3],      // Normale locale W (Up/Radiale)
+    pub frame_w: [f32; 3], // Normale locale W (Up/Radiale)
     pub _pad3: f32,
     pub cloud_center: [f32; 3], // Centre du nuage dans l'espace planétaire
     pub _pad4: f32,
-    pub bbox: [f32; 4],         // Emprise locale des cellules occupées [min_x, min_y, max_x, max_y]
-    pub mask: [u32; 4],         // Masque 11x11 sur 128 bits (mot 0 = bits 0..31), bit = y * 11 + x
-    pub config: [f32; 4],       // [taille de cellule, half_depth, id de secteur, rang (météo)]
+    pub bbox: [f32; 4],   // Emprise locale des cellules occupées [min_x, min_y, max_x, max_y]
+    pub mask: [u32; 4],   // Masque 11x11 sur 128 bits (mot 0 = bits 0..31), bit = y * 11 + x
+    pub config: [f32; 4], // [taille de cellule, half_depth, id de secteur, rang (météo)]
 }
 
 impl CloudVertex {

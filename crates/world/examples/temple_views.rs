@@ -2,7 +2,7 @@
 //! passé (entier, puis toit ôté pour voir le sanctuaire). L'emplacement de la Pierre du Néant est
 //! marqué d'un bloc violet. La vue est tournée pour montrer l'entrée. Une image PPM par vue.
 //! Usage : cargo run -p herocraft_world --release --example temple_views -- [graine] [dossier] [peuple du joueur]
-use herocraft_common::{blocks, BlockId, PlanetFace};
+use herocraft_common::{BlockId, PlanetFace, blocks};
 use herocraft_world::structures::Side;
 use herocraft_world::{Culture, Epoch, PlanetDescriptor, PlanetWorldGenerator, TempleSite};
 use std::io::Write;
@@ -19,10 +19,7 @@ fn main() {
         desc.seed = seed;
     }
     let dir = args.get(2).cloned().unwrap_or_else(|| ".".into());
-    let player = args
-        .get(3)
-        .and_then(|n| Culture::ALL.into_iter().find(|c| format!("{c:?}") == *n))
-        .unwrap_or(Culture::Humains);
+    let player = args.get(3).and_then(|n| Culture::ALL.into_iter().find(|c| format!("{c:?}") == *n)).unwrap_or(Culture::Humains);
     let generator = PlanetWorldGenerator::new(desc);
     let mid = herocraft_world::FACE_BLOCKS / 2;
     // Le plus grand temple trouvé près du milieu de chaque face
@@ -45,48 +42,13 @@ fn main() {
     let past = generator.with_epoch(Epoch::Past(holder));
     render_plan(&past, &site, past.epoch, site.floor() + 3, &format!("{dir}/temple-passe-plan.ppm"));
     render_plan(&generator, &site, Epoch::Present, site.floor() + 3, &format!("{dir}/temple-present-plan.ppm"));
-    render(
-        &generator,
-        &site,
-        Epoch::Present,
-        false,
-        &format!("{dir}/temple-present.ppm"),
-    );
-    render(
-        &past,
-        &site,
-        past.epoch,
-        false,
-        &format!("{dir}/temple-passe.ppm"),
-    );
-    render(
-        &past,
-        &site,
-        past.epoch,
-        true,
-        &format!("{dir}/temple-passe-coupe.ppm"),
-    );
-    render(
-        &generator,
-        &site,
-        Epoch::Present,
-        true,
-        &format!("{dir}/temple-present-coupe.ppm"),
-    );
-    for c in [
-        Culture::Nains,
-        Culture::HautsElfes,
-        Culture::DemiOrques,
-        Culture::ElfesDesBois,
-    ] {
+    render(&generator, &site, Epoch::Present, false, &format!("{dir}/temple-present.ppm"));
+    render(&past, &site, past.epoch, false, &format!("{dir}/temple-passe.ppm"));
+    render(&past, &site, past.epoch, true, &format!("{dir}/temple-passe-coupe.ppm"));
+    render(&generator, &site, Epoch::Present, true, &format!("{dir}/temple-present-coupe.ppm"));
+    for c in [Culture::Nains, Culture::HautsElfes, Culture::DemiOrques, Culture::ElfesDesBois] {
         let g = generator.with_epoch(Epoch::Past(c));
-        render(
-            &g,
-            &site,
-            g.epoch,
-            false,
-            &format!("{dir}/temple-passe-{c:?}.ppm"),
-        );
+        render(&g, &site, g.epoch, false, &format!("{dir}/temple-passe-{c:?}.ppm"));
     }
 }
 
@@ -133,13 +95,8 @@ fn render(generator: &PlanetWorldGenerator, site: &TempleSite, epoch: Epoch, cut
                 }
                 // Les arbres autour masquent le temple : la vue les ôte
                 let plain = BlockId(b.0 & !(0x7 << BlockId::ROTATION_SHIFT));
-                let id = blocks()
-                    .get(plain)
-                    .map(|s| s.id.clone())
-                    .unwrap_or_default();
-                let plant = ["Leaf", "tallGrass", "Flower", "Bush", "Mushroom"]
-                    .iter()
-                    .any(|k| id.contains(k))
+                let id = blocks().get(plain).map(|s| s.id.clone()).unwrap_or_default();
+                let plant = ["Leaf", "tallGrass", "Flower", "Bush", "Mushroom"].iter().any(|k| id.contains(k))
                     || [BlockId::WOOD, BlockId(14), BlockId(17)].contains(&plain);
                 if plant && !site.rect().contains(bx, bz) {
                     b = BlockId::AIR;
@@ -173,11 +130,7 @@ fn render(generator: &PlanetWorldGenerator, site: &TempleSite, epoch: Epoch, cut
                 let px = origin.0 + (x - z) * S;
                 let py = origin.1 + (x + z) * S / 2 - y * S;
                 let key = x + z + y;
-                let (top, side) = if b == SLOT {
-                    ([0.75, 0.2, 1.0], [0.55, 0.1, 0.85])
-                } else {
-                    (color(b, true), color(b, false))
-                };
+                let (top, side) = if b == SLOT { ([0.75, 0.2, 1.0], [0.55, 0.1, 0.85]) } else { (color(b, true), color(b, false)) };
                 let lift = 0.75 + 0.25 * (y as f32 / h as f32);
                 for dy in 0..2 * S {
                     for dx in 0..2 * S {
@@ -203,8 +156,7 @@ fn render(generator: &PlanetWorldGenerator, site: &TempleSite, epoch: Epoch, cut
                             continue;
                         }
                         depth[i] = key;
-                        img[i] = [c[0], c[1], c[2]]
-                            .map(|v| ((v * k * lift).clamp(0.0, 1.0) * 255.0) as u8);
+                        img[i] = [c[0], c[1], c[2]].map(|v| ((v * k * lift).clamp(0.0, 1.0) * 255.0) as u8);
                     }
                 }
             }

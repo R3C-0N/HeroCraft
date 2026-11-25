@@ -55,8 +55,7 @@ impl ChunkStorage {
         }
 
         let compressed_bytes = fs::read(&path)?;
-        let chunk = ChunkData::decompress_rle(&compressed_bytes)
-            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+        let chunk = ChunkData::decompress_rle(&compressed_bytes).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
         Ok(Some(chunk))
     }
@@ -73,17 +72,13 @@ impl ChunkStorage {
             };
             for entry in entries {
                 let name = entry?.file_name();
-                let parsed = name
-                    .to_str()
-                    .and_then(|n| n.strip_prefix("c_"))
-                    .and_then(|n| n.strip_suffix(".rle"))
-                    .and_then(|n| {
-                        let mut parts = n.split('_').map(|p| p.parse::<i32>());
-                        match (parts.next(), parts.next(), parts.next(), parts.next()) {
-                            (Some(Ok(x)), Some(Ok(y)), Some(Ok(alt)), None) => Some((x, y, alt)),
-                            _ => None,
-                        }
-                    });
+                let parsed = name.to_str().and_then(|n| n.strip_prefix("c_")).and_then(|n| n.strip_suffix(".rle")).and_then(|n| {
+                    let mut parts = n.split('_').map(|p| p.parse::<i32>());
+                    match (parts.next(), parts.next(), parts.next(), parts.next()) {
+                        (Some(Ok(x)), Some(Ok(y)), Some(Ok(alt)), None) => Some((x, y, alt)),
+                        _ => None,
+                    }
+                });
                 if let Some((x, y, alt)) = parsed {
                     coords.push(PlanetChunkCoord::new(face, x, y, alt));
                 }

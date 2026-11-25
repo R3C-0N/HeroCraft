@@ -17,8 +17,8 @@ use std::sync::OnceLock;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
-use crate::blocks::{blocks, BlockRegistry};
-use crate::items::{items, ItemId, ItemRegistry};
+use crate::blocks::{BlockRegistry, blocks};
+use crate::items::{ItemId, ItemRegistry, items};
 use crate::voxel::BlockId;
 
 /// Dossier des fiches d'établis, depuis le dossier de lancement
@@ -239,9 +239,10 @@ impl CraftingBook {
     /// Établi que forme ce bloc posé, et son niveau
     pub fn station_of(&self, block: BlockId) -> Option<StationAt> {
         let block = block.kind();
-        self.stations.iter().enumerate().find_map(|(station, s)| {
-            s.levels.iter().position(|&b| b == block).map(|i| StationAt { station, level: i as u8 + 1 })
-        })
+        self.stations
+            .iter()
+            .enumerate()
+            .find_map(|(station, s)| s.levels.iter().position(|&b| b == block).map(|i| StationAt { station, level: i as u8 + 1 }))
     }
 
     /// Établi d'identifiant `id`
@@ -298,7 +299,13 @@ enum StationSheetError {
     Json(#[from] serde_json::Error),
 }
 
-fn resolve(sheet: &RecipeSheet, result: ItemId, stations: &[Station], find: &impl Fn(&str) -> Option<ItemId>, blocks: &BlockRegistry) -> Result<Recipe, RecipeError> {
+fn resolve(
+    sheet: &RecipeSheet,
+    result: ItemId,
+    stations: &[Station],
+    find: &impl Fn(&str) -> Option<ItemId>,
+    blocks: &BlockRegistry,
+) -> Result<Recipe, RecipeError> {
     if sheet.count == 0 {
         return Err(RecipeError::NoCount);
     }
@@ -306,7 +313,8 @@ fn resolve(sheet: &RecipeSheet, result: ItemId, stations: &[Station], find: &imp
         return Err(RecipeError::NoIngredient);
     }
     if let Some(block) = result.block()
-        && blocks.drop_of(block) != Some(block) {
+        && blocks.drop_of(block) != Some(block)
+    {
         return Err(RecipeError::BlockNotKept);
     }
     let station = match &sheet.station {
@@ -347,7 +355,9 @@ pub fn load_station_sheets(dir: &Path) -> io::Result<(Vec<StationSheet>, Vec<Str
             continue;
         }
         let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();
-        let parsed = std::fs::read_to_string(&path).map_err(StationSheetError::from).and_then(|text| Ok(serde_json::from_str::<StationSheet>(&text)?));
+        let parsed = std::fs::read_to_string(&path)
+            .map_err(StationSheetError::from)
+            .and_then(|text| Ok(serde_json::from_str::<StationSheet>(&text)?));
         match parsed {
             Ok(mut sheet) => {
                 sheet.id = id;

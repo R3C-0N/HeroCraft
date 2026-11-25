@@ -982,7 +982,11 @@ impl SkillDef {
 
     /// Les apparitions de la compétence (`summon`), dans l'ordre du fichier
     pub fn summons(&self) -> impl Iterator<Item = &Effect> {
-        self.cast.iter().flat_map(|c| c.effects.iter().chain(&c.self_effects)).map(|e| &e.effect).filter(|e| matches!(e, Effect::Summon { .. }))
+        self.cast
+            .iter()
+            .flat_map(|c| c.effects.iter().chain(&c.self_effects))
+            .map(|e| &e.effect)
+            .filter(|e| matches!(e, Effect::Summon { .. }))
     }
 }
 
@@ -1209,9 +1213,20 @@ impl SkillCatalog {
 
         // Ce qu'une compétence peut faire apparaître : les espèces de `assets/creatures/` (à côté
         // de `assets/skills/`)
-        let creatures: HashSet<String> = dir.parent().map(|d| json_files(&d.join("creatures")).iter().map(|p| stem(p)).collect()).unwrap_or_default();
+        let creatures: HashSet<String> =
+            dir.parent().map(|d| json_files(&d.join("creatures")).iter().map(|p| stem(p)).collect()).unwrap_or_default();
 
-        let mut catalog = Self { classes, skills: Vec::new(), index: HashMap::new(), granted_by: HashMap::new(), form_attack_of: HashMap::new(), mix_of: HashMap::new(), amplify_icons: HashMap::new(), gestures: timing, fingerprint: 0 };
+        let mut catalog = Self {
+            classes,
+            skills: Vec::new(),
+            index: HashMap::new(),
+            granted_by: HashMap::new(),
+            form_attack_of: HashMap::new(),
+            mix_of: HashMap::new(),
+            amplify_icons: HashMap::new(),
+            gestures: timing,
+            fingerprint: 0,
+        };
         // Les fichiers en double ou mal formés sont écartés, puis les références vérifiées
         let mut seen = HashSet::new();
         skills.retain(|s| {
@@ -1328,16 +1343,23 @@ impl SkillCatalog {
                 }
             }
             if let Some(m) = &cast.movement {
-                if m.grapple.as_ref().is_some_and(|g| !(g.range.is_finite() && g.range.at(1) > 0.0 && g.speed.is_finite() && g.speed.at(1) > 0.0 && g.stop.is_finite())) {
+                if m.grapple.as_ref().is_some_and(|g| {
+                    !(g.range.is_finite() && g.range.at(1) > 0.0 && g.speed.is_finite() && g.speed.at(1) > 0.0 && g.stop.is_finite())
+                }) {
                     return Err(SkillError::Grapple);
                 }
                 if m.hover.as_ref().is_some_and(|h| !(h.height.is_finite() && h.duration.is_finite() && h.duration.at(1) > 0.0)) {
                     return Err(SkillError::Hover);
                 }
-                if m.teleport.as_ref().is_some_and(|t| ![&t.behind, &t.above, &t.side, &t.delay].iter().all(|r| r.is_finite()) || t.delay.at(1) < 0.0) {
+                if m.teleport
+                    .as_ref()
+                    .is_some_and(|t| ![&t.behind, &t.above, &t.side, &t.delay].iter().all(|r| r.is_finite()) || t.delay.at(1) < 0.0)
+                {
                     return Err(SkillError::Teleport);
                 }
-                if (m.teleport.is_some() || m.grapple.as_ref().is_some_and(|g| g.to == GrappleTo::Target)) && matches!(cast.area, Area::Caster) {
+                if (m.teleport.is_some() || m.grapple.as_ref().is_some_and(|g| g.to == GrappleTo::Target))
+                    && matches!(cast.area, Area::Caster)
+                {
                     return Err(SkillError::MovementArea);
                 }
             }
@@ -1345,7 +1367,8 @@ impl SkillCatalog {
                 return Err(SkillError::FollowUp);
             }
             if let Some(c) = &cast.charge
-                && !(c.min >= 0.0 && c.max >= c.min && c.max <= 10.0 && c.power.iter().all(|p| p.is_finite() && *p > 0.0)) {
+                && !(c.min >= 0.0 && c.max >= c.min && c.max <= 10.0 && c.power.iter().all(|p| p.is_finite() && *p > 0.0))
+            {
                 return Err(SkillError::Charge);
             }
             if cast.uses_round && !cast.weapons.contains(&crate::weapons::WeaponKind::Crossbow) {
@@ -1365,14 +1388,24 @@ impl SkillCatalog {
                     if !entities.contains(species) {
                         return Err(SkillError::UnknownSummon(species.clone()));
                     }
-                    if !(count.is_finite() && count.at(1) >= 1.0) || duration.as_ref().is_some_and(|d| !d.is_finite()) || limit.as_ref().is_some_and(|l| !l.is_finite()) {
+                    if !(count.is_finite() && count.at(1) >= 1.0)
+                        || duration.as_ref().is_some_and(|d| !d.is_finite())
+                        || limit.as_ref().is_some_and(|l| !l.is_finite())
+                    {
                         return Err(SkillError::SummonNumbers(species.clone()));
                     }
                 }
             }
             // Percer et briser se comptent en parts de l'armure, de 0 à 1
             let share = |r: &Ranked| r.is_finite() && (0..=3).all(|rank| (0.0..=1.0).contains(&r.at(rank)));
-            let mut entries: Vec<&EffectEntry> = cast.effects.iter().chain(&cast.self_effects).chain(&cast.on_hit).chain(&cast.on_miss).chain(cast.on_kill.iter().flat_map(|a| &a.effects)).collect();
+            let mut entries: Vec<&EffectEntry> = cast
+                .effects
+                .iter()
+                .chain(&cast.self_effects)
+                .chain(&cast.on_hit)
+                .chain(&cast.on_miss)
+                .chain(cast.on_kill.iter().flat_map(|a| &a.effects))
+                .collect();
             let mut i = 0;
             while i < entries.len() {
                 if let Effect::Buff { rider, on_death, .. } = &entries[i].effect {
@@ -1383,8 +1416,17 @@ impl SkillCatalog {
             for entry in entries {
                 match &entry.effect {
                     Effect::Guard(guard) => {
-                        let numbers = [Some(&guard.duration), Some(&guard.block), guard.hits.as_ref(), guard.reflect.as_ref(), guard.counter.as_ref().map(|c| &c.around.radius)];
-                        if !numbers.iter().flatten().all(|r| r.is_finite()) || guard.arc.is_some_and(|a| !(a > 0.0 && a <= 360.0)) || guard.miss_cooldown.is_some_and(|m| !(m.is_finite() && m > 0.0)) {
+                        let numbers = [
+                            Some(&guard.duration),
+                            Some(&guard.block),
+                            guard.hits.as_ref(),
+                            guard.reflect.as_ref(),
+                            guard.counter.as_ref().map(|c| &c.around.radius),
+                        ];
+                        if !numbers.iter().flatten().all(|r| r.is_finite())
+                            || guard.arc.is_some_and(|a| !(a > 0.0 && a <= 360.0))
+                            || guard.miss_cooldown.is_some_and(|m| !(m.is_finite() && m > 0.0))
+                        {
                             return Err(SkillError::GuardNumbers);
                         }
                         if let Some(kind) = guard.kinds.iter().find(|k| !matches!(k.as_str(), "physical" | "magical")) {
@@ -1395,7 +1437,9 @@ impl SkillCatalog {
                         return Err(SkillError::Immune);
                     }
                     Effect::Damage { pierce, .. } if !share(pierce) => return Err(SkillError::Pierce),
-                    Effect::Shred { amount, duration, max } if !share(amount) || !duration.is_finite() || max.as_ref().is_some_and(|m| !share(m)) => {
+                    Effect::Shred { amount, duration, max }
+                        if !share(amount) || !duration.is_finite() || max.as_ref().is_some_and(|m| !share(m)) =>
+                    {
                         return Err(SkillError::Shred);
                     }
                     _ => {}
@@ -1476,7 +1520,11 @@ impl SkillCatalog {
             return Some(Fused::Amplified { spell: last.to_string(), element: a.to_string() });
         }
         let rules = self.fusion()?.fusion.as_ref()?;
-        rules.mixes.iter().find(|m| (m.elements[0] == a && m.elements[1] == b) || (m.elements[0] == b && m.elements[1] == a)).map(|m| Fused::Mix(m.skill.clone()))
+        rules
+            .mixes
+            .iter()
+            .find(|m| (m.elements[0] == a && m.elements[1] == b) || (m.elements[0] == b && m.elements[1] == a))
+            .map(|m| Fused::Mix(m.skill.clone()))
     }
 
     /// Icône de l'amplification de l'élément `element`
@@ -1659,11 +1707,24 @@ impl Fnv {
 /// Une zone posée dans le monde, au moment de la frappe. Les longueurs sont en unités du monde.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlacedArea {
-    Circle { center: Vec3, radius: f32 },
+    Circle {
+        center: Vec3,
+        radius: f32,
+    },
     /// Secteur : sommet, direction (unitaire, dans le plan du sol), portée, demi-ouverture en radians
-    Arc { apex: Vec3, forward: Vec3, range: f32, half_angle: f32 },
+    Arc {
+        apex: Vec3,
+        forward: Vec3,
+        range: f32,
+        half_angle: f32,
+    },
     /// Rectangle : départ, direction (unitaire, dans le plan du sol), longueur, demi-largeur
-    Line { start: Vec3, forward: Vec3, length: f32, half_width: f32 },
+    Line {
+        start: Vec3,
+        forward: Vec3,
+        length: f32,
+        half_width: f32,
+    },
     /// Le lanceur seul
     Caster,
 }
@@ -1691,21 +1752,25 @@ impl Area {
                     (Center::Aimed, Some(point)) => {
                         let range = distance.at(rank) * reach * block;
                         let offset = point - feet;
-                        if offset.length() > range {
-                            feet + offset.normalize() * range
-                        } else {
-                            point
-                        }
+                        if offset.length() > range { feet + offset.normalize() * range } else { point }
                     }
                     (Center::Aimed, None) => feet + forward * distance.at(rank) * reach * block,
                     (Center::Caster, _) => feet,
                 };
                 PlacedArea::Circle { center, radius: radius.at(rank) * size * block }
             }
-            Area::Arc { range, angle } => PlacedArea::Arc { apex: feet, forward, range: range.at(rank) * size * reach * block, half_angle: (angle.at(rank) * 0.5).to_radians() },
-            Area::Line { length, width } => {
-                PlacedArea::Line { start: feet, forward, length: length.at(rank) * size * reach * block, half_width: width.at(rank) * 0.5 * size * block }
-            }
+            Area::Arc { range, angle } => PlacedArea::Arc {
+                apex: feet,
+                forward,
+                range: range.at(rank) * size * reach * block,
+                half_angle: (angle.at(rank) * 0.5).to_radians(),
+            },
+            Area::Line { length, width } => PlacedArea::Line {
+                start: feet,
+                forward,
+                length: length.at(rank) * size * reach * block,
+                half_width: width.at(rank) * 0.5 * size * block,
+            },
             Area::Caster => PlacedArea::Caster,
         }
     }
@@ -1929,7 +1994,11 @@ mod tests {
         assert_eq!(catalog.form_of_attack("wolfBite").map(|f| f.id.as_str()), Some("forestWolf"));
         // Identifiants en anglais : ni accent, ni nom de fichier hors de la convention
         for skill in catalog.iter() {
-            assert!(skill.id.chars().all(|c| c.is_ascii_alphanumeric()) && skill.id.chars().next().unwrap().is_ascii_lowercase(), "{}", skill.id);
+            assert!(
+                skill.id.chars().all(|c| c.is_ascii_alphanumeric()) && skill.id.chars().next().unwrap().is_ascii_lowercase(),
+                "{}",
+                skill.id
+            );
         }
         assert_ne!(catalog.fingerprint(), 0);
         // Toutes se jouent, sauf les nœuds qui donnent d'autres sorts (éléments)
@@ -1946,7 +2015,10 @@ mod tests {
         assert_eq!(catalog.element_of("judgment"), None);
         assert_eq!(catalog.fuse("foamingWhip", "igneousOrb"), Some(Fused::Mix("scaldingTyphoon".into())));
         assert_eq!(catalog.fuse("seismicShard", "galeBlades"), Some(Fused::Mix("shrapnelStorm".into())));
-        assert_eq!(catalog.fuse("igneousOrb", "volcanicRune"), Some(Fused::Amplified { spell: "volcanicRune".into(), element: "fire".into() }));
+        assert_eq!(
+            catalog.fuse("igneousOrb", "volcanicRune"),
+            Some(Fused::Amplified { spell: "volcanicRune".into(), element: "fire".into() })
+        );
         // Les six paires d'éléments ont leur mélange, chaque élément son icône d'amplification
         let elements = ["fire", "water", "earth", "air"];
         let spell = |e: &str| catalog.iter().find(|s| catalog.granted_by(&s.id) == Some(e)).unwrap().id.clone();
@@ -2064,7 +2136,13 @@ mod tests {
         assert!(circle.place(2, feet, aim, None, block).contains(feet + Vec3::new(3.5, 0.0, 0.0), block));
 
         // Un point visé trop loin est ramené à la portée
-        let aimed = Area::Circle { radius: Ranked::One(2.0), center: Center::Aimed, distance: Ranked::One(5.0) }.place(1, feet, aim, Some(feet + Vec3::new(0.0, 0.0, -20.0)), block);
+        let aimed = Area::Circle { radius: Ranked::One(2.0), center: Center::Aimed, distance: Ranked::One(5.0) }.place(
+            1,
+            feet,
+            aim,
+            Some(feet + Vec3::new(0.0, 0.0, -20.0)),
+            block,
+        );
         assert!(matches!(aimed, PlacedArea::Circle { center, .. } if (center - (feet + Vec3::new(0.0, 0.0, -5.0))).length() < 1e-3));
     }
 }

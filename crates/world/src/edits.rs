@@ -13,7 +13,7 @@ use std::sync::{Arc, RwLock};
 
 use glam::DVec3;
 use herocraft_common::{BlockAddress, BlockId, PlanetChunkCoord, PlanetFace};
-use herocraft_voxel_engine::{ChunkData, ChunkStorage, CHUNK_SIZE};
+use herocraft_voxel_engine::{CHUNK_SIZE, ChunkData, ChunkStorage};
 
 use crate::caves::carvable_range;
 use crate::generator::{ColumnSample, PlanetWorldGenerator};
@@ -151,13 +151,7 @@ impl TerrainEdits {
 
     /// Couches modifiées d'une colonne de chunks, de bas en haut
     pub fn edited_layers(&self, face: PlanetFace, chunk_x: i32, chunk_y: i32) -> Vec<i32> {
-        self.inner
-            .read()
-            .unwrap()
-            .layers
-            .get(&(face, chunk_x, chunk_y))
-            .map(|layers| layers.iter().copied().collect())
-            .unwrap_or_default()
+        self.inner.read().unwrap().layers.get(&(face, chunk_x, chunk_y)).map(|layers| layers.iter().copied().collect()).unwrap_or_default()
     }
 
     /// Le bloc à cette position : celui du joueur s'il l'a modifié, sinon celui du générateur
@@ -282,7 +276,15 @@ impl QueryCache {
 
 impl<'a> TerrainQuery<'a> {
     pub fn new(generator: &'a PlanetWorldGenerator, edits: &'a TerrainEdits) -> Self {
-        Self { generator, edits, columns: FxHashMap::default(), trees: FxHashMap::default(), blocks: FxHashMap::default(), spans: FxHashMap::default(), caves: FxHashMap::default() }
+        Self {
+            generator,
+            edits,
+            columns: FxHashMap::default(),
+            trees: FxHashMap::default(),
+            blocks: FxHashMap::default(),
+            spans: FxHashMap::default(),
+            caves: FxHashMap::default(),
+        }
     }
 
     /// Reprend des colonnes et des arbres déjà échantillonnés (cache gardé d'une image à l'autre)
@@ -612,7 +614,10 @@ mod tests {
         let edits = TerrainEdits::new(None);
         let (face, x, z) = (PlanetFace::PosZ, 430, 610);
         let naive = |edits: &TerrainEdits, from_y: i32| {
-            (0..=from_y.min(WORLD_HEIGHT - 1)).rev().find(|&y| bears(edits.block(&generator, BlockPos::new(face, x, y, z)))).map_or(0, |y| y + 1)
+            (0..=from_y.min(WORLD_HEIGHT - 1))
+                .rev()
+                .find(|&y| bears(edits.block(&generator, BlockPos::new(face, x, y, z))))
+                .map_or(0, |y| y + 1)
         };
         let surface = TerrainQuery::new(&generator, &edits).support_top(face, x, z, WORLD_HEIGHT - 1);
         // Un trou de 3 blocs, un bloc flottant au-dessus et un autre en couche haute
@@ -673,7 +678,10 @@ mod tests {
         let face = PlanetFace::NegZ;
         let (x, z, cave_y) = column_with_cave(&generator);
         let naive = |from_y: i32| {
-            (0..=from_y.min(WORLD_HEIGHT - 1)).rev().find(|&y| bears(edits.block(&generator, BlockPos::new(face, x, y, z)))).map_or(0, |y| y + 1)
+            (0..=from_y.min(WORLD_HEIGHT - 1))
+                .rev()
+                .find(|&y| bears(edits.block(&generator, BlockPos::new(face, x, y, z))))
+                .map_or(0, |y| y + 1)
         };
         let mut query = TerrainQuery::new(&generator, &edits);
         // Debout dans la grotte : le sol est son plancher, pas la surface au-dessus
@@ -705,18 +713,26 @@ mod tests {
         let column = BlockPos::new(face, 300, 0, 400);
         let corners = geometry.block_corners(BlockPos { y: 103, ..column });
         let origin = corners.iter().fold(DVec3::ZERO, |a, c| a + *c) / 8.0;
-        let hit = raycast_blocks(&geometry, origin, -origin.normalize(), 10.0 * geometry.block_height, |p| (p.y < 100).then_some(BlockId::STONE)).unwrap();
+        let hit =
+            raycast_blocks(&geometry, origin, -origin.normalize(), 10.0 * geometry.block_height, |p| (p.y < 100).then_some(BlockId::STONE))
+                .unwrap();
         assert_eq!(hit.block, BlockPos { y: 99, ..column });
         assert_eq!(hit.before, Some(BlockPos { y: 100, ..column }));
         assert!((hit.distance - 3.5 * geometry.block_height).abs() < 0.01 * geometry.block_height);
 
         // Trop loin : rien
-        assert!(raycast_blocks(&geometry, origin, -origin.normalize(), 2.0 * geometry.block_height, |p| (p.y < 100).then_some(BlockId::STONE)).is_none());
+        assert!(
+            raycast_blocks(&geometry, origin, -origin.normalize(), 2.0 * geometry.block_height, |p| (p.y < 100).then_some(BlockId::STONE))
+                .is_none()
+        );
 
         // Un mur à x = 305 : visé de côté, le bloc d'avant est son voisin en x
         let side = geometry.corner(face, 302.5, 100.5, 400.5);
         let target = geometry.corner(face, 310.5, 100.5, 400.5);
-        let hit = raycast_blocks(&geometry, side, (target - side).normalize(), 10.0 * geometry.block_height, |p| (p.x >= 305).then_some(BlockId::STONE)).unwrap();
+        let hit = raycast_blocks(&geometry, side, (target - side).normalize(), 10.0 * geometry.block_height, |p| {
+            (p.x >= 305).then_some(BlockId::STONE)
+        })
+        .unwrap();
         assert_eq!(hit.block, BlockPos::new(face, 305, 100, 400));
         assert_eq!(hit.before, Some(BlockPos::new(face, 304, 100, 400)));
     }

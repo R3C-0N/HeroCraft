@@ -24,7 +24,7 @@ use herocraft_common::{BlockId, PlanetFace};
 
 use crate::edits::FACE_BLOCKS;
 use crate::generator::{BiomeType, PlanetWorldGenerator, SEA_LEVEL_BLOCKS};
-use crate::structures::{block::GRAVEL, face_index, hash2, mix, unit, Rect, Settlement, REGIONS_PER_FACE, REGION_BLOCKS};
+use crate::structures::{REGION_BLOCKS, REGIONS_PER_FACE, Rect, Settlement, block::GRAVEL, face_index, hash2, mix, unit};
 
 /// Pas de la grille de recherche du tracé, en blocs
 const STEP: i32 = 16;
@@ -191,7 +191,13 @@ impl RoadMap {
     }
 
     /// Les chemins qui peuvent passer dans la région (rx, rz)
-    fn in_region<'a>(&'a self, generator: &'a PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i32) -> impl Iterator<Item = &'a Road> + 'a {
+    fn in_region<'a>(
+        &'a self,
+        generator: &'a PlanetWorldGenerator,
+        face: PlanetFace,
+        rx: i32,
+        rz: i32,
+    ) -> impl Iterator<Item = &'a Road> + 'a {
         Link::around(rx, rz).into_iter().filter_map(move |(lx, lz, link)| self.link(generator, face, lx, lz, link))
     }
 
@@ -290,7 +296,8 @@ fn plan_guide(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i
     let a = structures.region_settlement(generator, face, ra.0, ra.1)?;
     let b = structures.region_settlement(generator, face, rb.0, rb.1)?;
     if let Some(others) = link.others(rx, rz)
-        && others.iter().any(|&(ox, oz)| structures.region_settlement(generator, face, ox, oz).is_some()) {
+        && others.iter().any(|&(ox, oz)| structures.region_settlement(generator, face, ox, oz).is_some())
+    {
         return None;
     }
     herocraft_common::prof_scope!("world::roads::plan_guide");
@@ -363,7 +370,13 @@ impl Trunk {
 /// Le tronc que le chemin de la région `region` vers la région `target` partage avec les autres
 /// chemins qui partent du même établissement dans la même direction. Tout se décide sur les guides
 /// (qui ne dépendent d'aucun tronc) : chaque chemin du groupe trouve le même tronc.
-fn shared_trunk(generator: &PlanetWorldGenerator, face: PlanetFace, s: &Settlement, region: (i32, i32), target: (i32, i32)) -> Option<Trunk> {
+fn shared_trunk(
+    generator: &PlanetWorldGenerator,
+    face: PlanetFace,
+    s: &Settlement,
+    region: (i32, i32),
+    target: (i32, i32),
+) -> Option<Trunk> {
     use std::f64::consts::TAU;
     let c = (s.center.0 as f64 + 0.5, s.center.1 as f64 + 0.5);
     // Les guides des liaisons de l'établissement, orientés depuis lui, et leur direction de départ
@@ -413,7 +426,8 @@ fn shared_trunk(generator: &PlanetWorldGenerator, face: PlanetFace, s: &Settleme
     let reference = *group.iter().min_by_key(|&&i| guides[i].1)?;
     let main = &guides[reference].2;
     let r = REGION_BLOCKS;
-    let inside = Rect::new(region.0 * r, region.1 * r, ((region.0 + 1) * r).min(FACE_BLOCKS), ((region.1 + 1) * r).min(FACE_BLOCKS)).expand(-32);
+    let inside =
+        Rect::new(region.0 * r, region.1 * r, ((region.0 + 1) * r).min(FACE_BLOCKS), ((region.1 + 1) * r).min(FACE_BLOCKS)).expand(-32);
     let clear = s.bounds.expand(24);
     let max = ((MAX_TRUNK / RESAMPLE) as usize).min(main.len() * 2 / 5);
     // Les guides peuvent partir de portes différentes avant de se rejoindre : on garde le dernier
@@ -495,7 +509,9 @@ fn plan_road(generator: &PlanetWorldGenerator, face: PlanetFace, rx: i32, rz: i3
         points.extend(wavy.iter().rev().skip(1));
     }
     let columns = rasterize(&points, &area, generator.planet.seed);
-    let bounds = columns.keys().fold(Rect::new(i32::MAX, i32::MAX, i32::MIN, i32::MIN), |r, &(x, z)| Rect::new(r.x0.min(x), r.z0.min(z), r.x1.max(x + 1), r.z1.max(z + 1)));
+    let bounds = columns.keys().fold(Rect::new(i32::MAX, i32::MAX, i32::MIN, i32::MIN), |r, &(x, z)| {
+        Rect::new(r.x0.min(x), r.z0.min(z), r.x1.max(x + 1), r.z1.max(z + 1))
+    });
     Some(Road { face, from: a.center, to: b.center, points, bounds, columns })
 }
 
@@ -597,7 +613,13 @@ fn catmull_rom(controls: &[(f64, f64)]) -> Vec<Vec<(f64, f64)>> {
 /// le point où l'on quitte les abords) et suit le guide `grid` du A* par des points espacés de
 /// `CONTROL_SPACING` blocs. Là où la courbe couperait par l'eau, un point du guide de plus la
 /// ramène vers lui.
-fn smooth_curve(generator: &PlanetWorldGenerator, face: PlanetFace, head: [(f64, f64); 2], grid: &[(f64, f64)], tail: [(f64, f64); 2]) -> Vec<(f64, f64)> {
+fn smooth_curve(
+    generator: &PlanetWorldGenerator,
+    face: PlanetFace,
+    head: [(f64, f64); 2],
+    grid: &[(f64, f64)],
+    tail: [(f64, f64); 2],
+) -> Vec<(f64, f64)> {
     let guide = if grid.len() >= 2 { resample(grid) } else { grid.to_vec() };
     let spacing = CONTROL_SPACING / RESAMPLE as usize;
     // Indices des points du guide retenus (ni trop près des bouts, où la courbe rejoint les rues)
@@ -609,7 +631,9 @@ fn smooth_curve(generator: &PlanetWorldGenerator, face: PlanetFace, head: [(f64,
             picks.push(margin + (guide.len() - 1 - 2 * margin) * k / count);
         }
     }
-    let wet = |p: (f64, f64)| generator.sample_block_column(face, p.0.floor() as i32, p.1.floor() as i32).elevation.floor() <= SEA_LEVEL_BLOCKS + 1.0;
+    let wet = |p: (f64, f64)| {
+        generator.sample_block_column(face, p.0.floor() as i32, p.1.floor() as i32).elevation.floor() <= SEA_LEVEL_BLOCKS + 1.0
+    };
     for _ in 0..6 {
         let controls: Vec<(f64, f64)> = head.iter().copied().chain(picks.iter().map(|&i| guide[i])).chain(tail).collect();
         let segments = catmull_rom(&controls);
@@ -694,7 +718,8 @@ fn meander(generator: &PlanetWorldGenerator, face: PlanetFace, points: &[(f64, f
     }
     // Lissage du resserrement : un minimum glissant (on reste prudent autour d'un obstacle), puis une moyenne
     let window = 16usize;
-    let eroded: Vec<f64> = (0..n).map(|k| allowed[k.saturating_sub(window)..(k + window + 1).min(n)].iter().copied().fold(1.0, f64::min)).collect();
+    let eroded: Vec<f64> =
+        (0..n).map(|k| allowed[k.saturating_sub(window)..(k + window + 1).min(n)].iter().copied().fold(1.0, f64::min)).collect();
     let mut out = Vec::with_capacity(n);
     for k in 0..n {
         let slice = &eroded[k.saturating_sub(window)..(k + window + 1).min(n)];
@@ -756,7 +781,8 @@ struct Search<'a> {
 impl<'a> Search<'a> {
     /// Recherche dans la zone `area`, qui contourne les établissements qui la touchent
     fn for_area(generator: &'a PlanetWorldGenerator, face: PlanetFace, area: Rect, seed: u64) -> Self {
-        let obstacles: Vec<Rect> = generator.structures.touching(generator, face, area).iter().map(|s| s.bounds.expand(SETTLEMENT_CLEARANCE)).collect();
+        let obstacles: Vec<Rect> =
+            generator.structures.touching(generator, face, area).iter().map(|s| s.bounds.expand(SETTLEMENT_CLEARANCE)).collect();
         Search { generator, face, area: area.expand(-4), obstacles, seed, grounds: HashMap::new() }
     }
 
@@ -878,7 +904,10 @@ impl<'a> Search<'a> {
             let (nx, nz) = (-dz / dist.max(1.0), dx / dist.max(1.0));
             // Repli vers la ligne droite si l'étape tombe dans l'eau ou sur un obstacle
             for shrink in [1.0, 0.6, 0.3] {
-                let w = ((start.0 as f64 + dx * t + nx * offset * shrink).round() as i32, (start.1 as f64 + dz * t + nz * offset * shrink).round() as i32);
+                let w = (
+                    (start.0 as f64 + dx * t + nx * offset * shrink).round() as i32,
+                    (start.1 as f64 + dz * t + nz * offset * shrink).round() as i32,
+                );
                 // Pas d'étape perchée : elle ferait grimper le chemin pour rien
                 let expected = start_ground + (goal_ground - start_ground) * t;
                 if self.ground(w).is_some_and(|g| (g as f64 - expected).abs() < 24.0) {

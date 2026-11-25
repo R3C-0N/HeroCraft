@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-use crate::blocks::{blocks, FIRST_OBJECT_ID};
+use crate::blocks::{FIRST_OBJECT_ID, blocks};
 use crate::voxel::BlockId;
 
 /// Dossier des fiches d'objets, depuis le dossier de lancement
@@ -218,7 +218,12 @@ impl ItemRegistry {
     /// Protection totale des pièces `worn` : la somme de la caractéristique `Protection` de
     /// celles qui se portent (une armure ou un bijou)
     pub fn protection(&self, worn: impl IntoIterator<Item = ItemId>) -> f32 {
-        worn.into_iter().filter_map(|item| self.get(item)).filter(|sheet| sheet.slot.is_some()).filter_map(|sheet| sheet.stats.get("Protection")).map(|p| p.max(0.0)).sum()
+        worn.into_iter()
+            .filter_map(|item| self.get(item))
+            .filter(|sheet| sheet.slot.is_some())
+            .filter_map(|sheet| sheet.stats.get("Protection"))
+            .map(|p| p.max(0.0))
+            .sum()
     }
 
     /// Les objets de `assets/items/` : depuis le dossier de lancement, sinon ceux livrés avec les
@@ -368,7 +373,12 @@ mod tests {
         assert!(matches!(ItemSheet::parse("caillou", &empty), Err(ItemSheetError::MaxStack)));
         let ring = ok.replace(r#""icon""#, r#""slot": "ring", "max_stack": 1, "icon""#);
         assert_eq!(ItemSheet::parse("anneau", &ring).unwrap().slot, Some(EquipSlot::Ring));
-        assert!(ItemSheet::parse("anneau", &ring.replace(r#""max_stack": 1"#, r#""max_stack": 4"#)).unwrap_err().to_string().contains("max_stack"));
+        assert!(
+            ItemSheet::parse("anneau", &ring.replace(r#""max_stack": 1"#, r#""max_stack": 4"#))
+                .unwrap_err()
+                .to_string()
+                .contains("max_stack")
+        );
         assert!(ItemSheet::parse("anneau", &ring.replace("ring", "doigt")).is_err());
     }
 }

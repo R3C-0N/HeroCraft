@@ -145,7 +145,12 @@ fn phases() -> Vec<Phase> {
     vec![
         Phase { startup: true, ..p("Mise en route (non mesurée)", "", r, false) },
         Phase { reference: true, ..p("Référence (tout activé)", "", r, false) },
-        p("Sans ombres du relief", "ombres portées du relief (coupe aussi les ombres des nuages et les rayons, qui en dépendent)", Setup { shadows: false, ..r }, true),
+        p(
+            "Sans ombres du relief",
+            "ombres portées du relief (coupe aussi les ombres des nuages et les rayons, qui en dépendent)",
+            Setup { shadows: false, ..r },
+            true,
+        ),
         p("Sans ombres des nuages", "ombres des nuages", Setup { cloud_shadows: false, ..r }, true),
         p("Sans nuages", "nuages", Setup { clouds: false, ..r }, true),
         p("Sans rayons crépusculaires", "rayons crépusculaires", Setup { god_rays: false, ..r }, true),
@@ -168,21 +173,41 @@ fn phases() -> Vec<Phase> {
             Setup { flip_msaa: true, ..r },
             true,
         ),
-        p("Créatures simulées, non dessinées", "animation et dessin des créatures", Setup { creatures: CreatureMode::SimulationOnly, ..r }, true),
+        p(
+            "Créatures simulées, non dessinées",
+            "animation et dessin des créatures",
+            Setup { creatures: CreatureMode::SimulationOnly, ..r },
+            true,
+        ),
         p("Sans créatures", "créatures (simulation, animation et dessin)", Setup { creatures: CreatureMode::Off, ..r }, true),
         p("Distance LOD courte", "passage de la distance LOD normale à courte", Setup { lod: LodDistanceSetting::Courte, ..r }, true),
         p("Distance LOD élevée", "passage de la distance LOD normale à élevée", Setup { lod: LodDistanceSetting::Elevee, ..r }, true),
-        p("Précision LOD 1:1", "passage du relief lointain de la précision normale à 1:1 (allure des blocs jusqu'à ~1 300 blocs ; coût négatif : ce qu'elle ajoute)", Setup { lod_precision: LodPrecisionSetting::Exacte, ..r }, true),
+        p(
+            "Précision LOD 1:1",
+            "passage du relief lointain de la précision normale à 1:1 (allure des blocs jusqu'à ~1 300 blocs ; coût négatif : ce qu'elle ajoute)",
+            Setup { lod_precision: LodPrecisionSetting::Exacte, ..r },
+            true,
+        ),
         p(
             "Minimum (tout coupé)",
             "tous les effets et les créatures",
             Setup { shadows: false, cloud_shadows: false, clouds: false, god_rays: false, bloom: false, creatures: CreatureMode::Off, ..r },
             true,
         ),
-        p("Qualité ultra", "passage de la qualité haute à ultra (relief lointain avec l'allure des blocs ; coût négatif : ce qu'elle ajoute)", Setup::quality(GraphicsQuality::Ultra), true),
+        p(
+            "Qualité ultra",
+            "passage de la qualité haute à ultra (relief lointain avec l'allure des blocs ; coût négatif : ce qu'elle ajoute)",
+            Setup::quality(GraphicsQuality::Ultra),
+            true,
+        ),
         p("Qualité moyenne", "passage de la qualité haute à moyenne", Setup::quality(GraphicsQuality::Moyenne), true),
         p("Qualité basse", "passage de la qualité haute à basse", Setup::quality(GraphicsQuality::Basse), true),
-        p("Beaucoup de créatures (+60)", "60 créatures de plus (coût négatif : ce qu'elles ajoutent)", Setup { creatures: CreatureMode::Stress, ..r }, true),
+        p(
+            "Beaucoup de créatures (+60)",
+            "60 créatures de plus (coût négatif : ce qu'elles ajoutent)",
+            Setup { creatures: CreatureMode::Stress, ..r },
+            true,
+        ),
         p("Vue à la troisième personne", "", Setup { view: View::ThirdPerson, ..r }, false),
         p("Vue satellite", "", Setup { view: View::Orbit, ..r }, false),
         p("Marche (sprint)", "", Setup { motion: Motion::Walk, ..r }, false),
@@ -207,7 +232,8 @@ static META: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
 /// Enregistre le temps GPU d'une passe (appelé par `gpu_timer` quand une image est relue)
 pub(crate) fn record_gpu(name: &'static str, ns: u64) {
     if requested()
-        && let Ok(mut samples) = GPU_SAMPLES.lock() {
+        && let Ok(mut samples) = GPU_SAMPLES.lock()
+    {
         samples.push((name, ns));
     }
 }
@@ -367,9 +393,16 @@ impl Benchmark {
         };
         let up = camera.player_pos.normalize_or_zero();
         // Heure où le soleil est le plus haut au-dessus du point de départ
-        let sun_time = (0..1200).map(|t| t as f32).max_by(|a, b| crate::renderer::compute_sun_dir(*a).dot(up).total_cmp(&crate::renderer::compute_sun_dir(*b).dot(up))).unwrap_or(0.0);
+        let sun_time = (0..1200)
+            .map(|t| t as f32)
+            .max_by(|a, b| crate::renderer::compute_sun_dir(*a).dot(up).total_cmp(&crate::renderer::compute_sun_dir(*b).dot(up)))
+            .unwrap_or(0.0);
         let phases = phases();
-        log::info!("BANC D'ESSAI : {} phases, environ {:.0} s. Ne touchez à rien.", phases.len(), STARTUP_SECS + (phases.len() - 1) as f32 * (WARMUP_SECS + MEASURE_SECS));
+        log::info!(
+            "BANC D'ESSAI : {} phases, environ {:.0} s. Ne touchez à rien.",
+            phases.len(),
+            STARTUP_SECS + (phases.len() - 1) as f32 * (WARMUP_SECS + MEASURE_SECS)
+        );
         Self {
             stats: phases.iter().map(|_| Stats::default()).collect(),
             phases,
@@ -397,7 +430,13 @@ impl Benchmark {
 
     /// À appeler en début d'image, avant la mise à jour de la caméra : impose les réglages et les
     /// entrées de la phase. Renvoie de quoi préparer les créatures quand une phase commence.
-    pub(crate) fn before_frame(&mut self, dt: f32, camera: &mut OrbitCamera, ui: &mut UiState, generator: &herocraft_world::PlanetWorldGenerator) -> Option<PhaseStart> {
+    pub(crate) fn before_frame(
+        &mut self,
+        dt: f32,
+        camera: &mut OrbitCamera,
+        ui: &mut UiState,
+        generator: &herocraft_world::PlanetWorldGenerator,
+    ) -> Option<PhaseStart> {
         let setup = self.setup();
         // Réglages : imposés à chaque image (un clic dans le menu ne fausse pas la mesure)
         ui.video_settings.vsync = false;
@@ -599,7 +638,8 @@ impl Benchmark {
         }
 
         // Ce que coûte chaque fonction : temps gagné en la coupant
-        let mut costs: Vec<(&str, f32)> = self.phases.iter().zip(&self.stats).filter(|(p, _)| p.comparable).map(|(p, s)| (p.what, ref_ms - s.mean_ms())).collect();
+        let mut costs: Vec<(&str, f32)> =
+            self.phases.iter().zip(&self.stats).filter(|(p, _)| p.comparable).map(|(p, s)| (p.what, ref_ms - s.mean_ms())).collect();
         costs.sort_by(|a, b| b.1.total_cmp(&a.1));
         let _ = writeln!(out, "\n## Ce que coûte chaque fonction\n");
         let _ = writeln!(
@@ -625,7 +665,11 @@ impl Benchmark {
         );
 
         let _ = writeln!(out, "\n## Pires images (à-coups)\n");
-        let _ = writeln!(out, "Les {} images les plus longues de tout le banc d'essai, mise en route comprise, et leurs étapes de plus d'1 ms.\n", self.worst.len());
+        let _ = writeln!(
+            out,
+            "Les {} images les plus longues de tout le banc d'essai, mise en route comprise, et leurs étapes de plus d'1 ms.\n",
+            self.worst.len()
+        );
         let _ = writeln!(out, "| Durée | Phase | À | Détail |");
         let _ = writeln!(out, "|---:|---|---:|---|");
         for w in &self.worst {

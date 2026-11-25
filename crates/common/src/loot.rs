@@ -16,10 +16,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Deserializer};
 
-use crate::blocks::blocks;
-use crate::items::{items, ItemId};
-use crate::voxel::BlockId;
 use crate::CreatureRegistry;
+use crate::blocks::blocks;
+use crate::items::{ItemId, items};
+use crate::voxel::BlockId;
 
 /// Une ligne de butin telle qu'écrite dans une fiche
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -287,7 +287,22 @@ mod tests {
             assert!(errors.is_empty(), "{errors:?}");
             found.extend(table.0.iter().map(|r| r.item));
         }
-        for id in ["fibre", "flint", "hide", "bone", "ble", "carotte", "pommeDeTerre", "oignon", "riz", "soja", "courge", "viandeVache", "laine", "plumes"] {
+        for id in [
+            "fibre",
+            "flint",
+            "hide",
+            "bone",
+            "ble",
+            "carotte",
+            "pommeDeTerre",
+            "oignon",
+            "riz",
+            "soja",
+            "courge",
+            "viandeVache",
+            "laine",
+            "plumes",
+        ] {
             let item = items().find(id).unwrap();
             assert!(found.contains(&item), "{id} ne tombe de rien");
         }

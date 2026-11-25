@@ -383,7 +383,8 @@ impl BlockShape {
                     .collect()
             })
             .collect();
-        let full_faces = variants.iter().map(|boxes| (0..6).filter(|&dir| covers_face(boxes, dir)).fold(0, |m, dir| m | (1 << dir))).collect();
+        let full_faces =
+            variants.iter().map(|boxes| (0..6).filter(|&dir| covers_face(boxes, dir)).fold(0, |m, dir| m | (1 << dir))).collect();
         Ok(Self { variants, full_faces, texture })
     }
 
@@ -605,10 +606,36 @@ struct BlockFlags {
 }
 
 /// Bloc sans fiche (fichier retiré d'un monde existant) : un cube plein
-const UNKNOWN: BlockFlags =
-    BlockFlags { known: false, solid: true, opaque: true, liquid: false, plant: false, replaceable: false, climbable: false, shaped: false, material_opaque: true, rotation: BlockRotation::None, orientations: 1, light: 0, fence: false };
-const AIR: BlockFlags =
-    BlockFlags { known: false, solid: false, opaque: false, liquid: false, plant: false, replaceable: false, climbable: false, shaped: false, material_opaque: false, rotation: BlockRotation::None, orientations: 1, light: 0, fence: false };
+const UNKNOWN: BlockFlags = BlockFlags {
+    known: false,
+    solid: true,
+    opaque: true,
+    liquid: false,
+    plant: false,
+    replaceable: false,
+    climbable: false,
+    shaped: false,
+    material_opaque: true,
+    rotation: BlockRotation::None,
+    orientations: 1,
+    light: 0,
+    fence: false,
+};
+const AIR: BlockFlags = BlockFlags {
+    known: false,
+    solid: false,
+    opaque: false,
+    liquid: false,
+    plant: false,
+    replaceable: false,
+    climbable: false,
+    shaped: false,
+    material_opaque: false,
+    rotation: BlockRotation::None,
+    orientations: 1,
+    light: 0,
+    fence: false,
+};
 
 /// Tous les blocs connus
 #[derive(Debug, Clone)]
@@ -741,7 +768,10 @@ impl BlockRegistry {
                 ShapeSpec::Named(name) => match named_shapes.get(name) {
                     Some(shape) => Some(shape.clone()),
                     None => {
-                        errors.push(format!("Bloc {} : forme « {name} » inconnue (ni cube, ni plant, ni {SHAPES_DIR}/{name}.json), dessiné en cube", sheet.id));
+                        errors.push(format!(
+                            "Bloc {} : forme « {name} » inconnue (ni cube, ni plant, ni {SHAPES_DIR}/{name}.json), dessiné en cube",
+                            sheet.id
+                        ));
                         None
                     }
                 },
@@ -1006,8 +1036,19 @@ mod tests {
         assert!(registry.len() > 100);
         // Les blocs que pose le générateur de terrain ont tous leur fiche
         let terrain = [
-            BlockId::STONE, BlockId::DIRT, BlockId::GRASS, BlockId::SAND, BlockId::SNOW, BlockId::WATER, BlockId::LAVA,
-            BlockId::WOOD, BlockId::LEAVES, BlockId::IRON_ORE, BlockId::GOLD_ORE, BlockId::CRYSTAL, BlockId::OBSIDIAN,
+            BlockId::STONE,
+            BlockId::DIRT,
+            BlockId::GRASS,
+            BlockId::SAND,
+            BlockId::SNOW,
+            BlockId::WATER,
+            BlockId::LAVA,
+            BlockId::WOOD,
+            BlockId::LEAVES,
+            BlockId::IRON_ORE,
+            BlockId::GOLD_ORE,
+            BlockId::CRYSTAL,
+            BlockId::OBSIDIAN,
         ];
         for block in terrain {
             assert!(registry.is_known(block), "{block:?} sans fiche");
@@ -1078,7 +1119,8 @@ mod tests {
 
         assert!(BlockShape::new(&[[0, 0, 0, 16, 17, 16]], ShapeTexture::Crop).is_err());
         assert!(BlockShape::new(&[[4, 0, 0, 4, 8, 16]], ShapeTexture::Crop).is_err());
-        let inline = r##"{ "numeric_id": 500, "name": "Plaque", "color": { "side": "#808080" }, "shape": { "boxes": [[0, 0, 0, 16, 2, 16]] } }"##;
+        let inline =
+            r##"{ "numeric_id": 500, "name": "Plaque", "color": { "side": "#808080" }, "shape": { "boxes": [[0, 0, 0, 16, 2, 16]] } }"##;
         assert!(BlockSheet::parse("plaque", inline).is_ok());
         assert!(BlockSheet::parse("plaque", &inline.replace("16, 2, 16", "16, 2, 99")).unwrap_err().to_string().contains("invalide"));
     }

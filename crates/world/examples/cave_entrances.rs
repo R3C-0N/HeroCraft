@@ -14,20 +14,10 @@ use herocraft_world::{PlanetDescriptor, PlanetWorldGenerator, SEA_LEVEL_BLOCKS};
 const SIDE: i32 = 1024;
 
 fn main() {
-    let seeds: Vec<u64> = std::env::args()
-        .skip(1)
-        .filter_map(|s| s.parse().ok())
-        .collect();
-    let seeds = if seeds.is_empty() {
-        vec![42, 1, 7, 2024]
-    } else {
-        seeds
-    };
+    let seeds: Vec<u64> = std::env::args().skip(1).filter_map(|s| s.parse().ok()).collect();
+    let seeds = if seeds.is_empty() { vec![42, 1, 7, 2024] } else { seeds };
     for seed in seeds {
-        let desc = PlanetDescriptor {
-            seed,
-            ..Default::default()
-        };
+        let desc = PlanetDescriptor { seed, ..Default::default() };
         let generator = PlanetWorldGenerator::new(desc);
         let results: Vec<(usize, usize, usize, usize)> = std::thread::scope(|s| {
             let handles: Vec<_> = PlanetFace::ALL
@@ -41,10 +31,7 @@ fn main() {
         });
         let (mut land, mut open, mut entrances, mut top_only) = (0, 0, 0, 0);
         for (f, r) in results.iter().enumerate() {
-            println!(
-                "graine {seed} face {f} : {} colonnes de terre, {} entrées ({} par le haut)",
-                r.0, r.2, r.3
-            );
+            println!("graine {seed} face {f} : {} colonnes de terre, {} entrées ({} par le haut)", r.0, r.2, r.3);
             land += r.0;
             open += r.1;
             entrances += r.2;
@@ -95,11 +82,7 @@ fn scan_face(generator: &PlanetWorldGenerator, face: PlanetFace) -> (usize, usiz
                 continue;
             }
             // À flanc : la plus basse des voisines laisse à l'air libre les blocs au-dessus d'elle
-            let lowest = [i - 1, i + 1, i - n, i + n]
-                .iter()
-                .map(|&j| ground[j])
-                .min()
-                .unwrap();
+            let lowest = [i - 1, i + 1, i - n, i + n].iter().map(|&j| ground[j]).min().unwrap();
             let lowest = lowest.max(SEA_LEVEL_BLOCKS.ceil() as i32);
             let mut previous = false;
             for y in lowest..top {
@@ -167,9 +150,6 @@ fn scan_face(generator: &PlanetWorldGenerator, face: PlanetFace) -> (usize, usiz
             covered += big.iter().any(|&(x, z)| x / tile == tx && z / tile == tz) as usize;
         }
     }
-    eprintln!(
-        "{face:?} : {} entrées >= 4 colonnes, {covered}/{tiles} carrés de 128 de terre en ont une",
-        big.len()
-    );
+    eprintln!("{face:?} : {} entrées >= 4 colonnes, {covered}/{tiles} carrés de 128 de terre en ont une", big.len());
     (land, opened, entrances, from_top)
 }

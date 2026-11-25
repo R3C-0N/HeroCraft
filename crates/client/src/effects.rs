@@ -279,7 +279,9 @@ impl EffectDef {
                 };
                 (LayerKind::Shape(layer), l.clone())
             };
-            let offset = fields.get("offset").and_then(Value::as_array).filter(|a| a.len() == 3).map_or(Vec3::ZERO, |a| Vec3::new(a[0].as_f64().unwrap_or(0.0) as f32, a[1].as_f64().unwrap_or(0.0) as f32, a[2].as_f64().unwrap_or(0.0) as f32));
+            let offset = fields.get("offset").and_then(Value::as_array).filter(|a| a.len() == 3).map_or(Vec3::ZERO, |a| {
+                Vec3::new(a[0].as_f64().unwrap_or(0.0) as f32, a[1].as_f64().unwrap_or(0.0) as f32, a[2].as_f64().unwrap_or(0.0) as f32)
+            });
             layers.push(Layer {
                 kind,
                 delay: num("delay", 0.0),
@@ -450,7 +452,18 @@ impl Effects {
             let n = def.layers.len();
             self.next_seed = self.next_seed.wrapping_add(7919);
             let started = Instant::now() + std::time::Duration::from_secs_f32(cue.delay.clamp(0.0, 30.0));
-            self.running.push(Running { def: def.clone(), cue, started, seconds, particles: vec![Vec::new(); n], emitted: vec![false; n], carry: vec![0.0; n], last_anchor: None, history: Vec::new(), seed: self.next_seed });
+            self.running.push(Running {
+                def: def.clone(),
+                cue,
+                started,
+                seconds,
+                particles: vec![Vec::new(); n],
+                emitted: vec![false; n],
+                carry: vec![0.0; n],
+                last_anchor: None,
+                history: Vec::new(),
+                seed: self.next_seed,
+            });
         }
     }
 
@@ -580,14 +593,27 @@ fn simulate(run: &mut Running, t: f32, dt: f32, anchor: Vec3, forward: Vec3, sca
                 if local >= 0.0 && !run.emitted[i] && p.count > 0 {
                     run.emitted[i] = true;
                     for k in 0..p.count.min(400) {
-                        parts.push(spawn(p, run.seed.wrapping_add((i as u32) << 16).wrapping_add(k), origin, up, forward, right, scale, block));
+                        parts.push(spawn(
+                            p,
+                            run.seed.wrapping_add((i as u32) << 16).wrapping_add(k),
+                            origin,
+                            up,
+                            forward,
+                            right,
+                            scale,
+                            block,
+                        ));
                     }
                 }
                 if p.rate > 0.0 && (0.0..span).contains(&local) {
                     run.carry[i] += p.rate * dt * fade.max(0.2);
                     while run.carry[i] >= 1.0 && parts.len() < 600 {
                         run.carry[i] -= 1.0;
-                        let k = run.seed.wrapping_add((i as u32) << 16).wrapping_add((local * 1000.0) as u32).wrapping_add(parts.len() as u32 * 31);
+                        let k = run
+                            .seed
+                            .wrapping_add((i as u32) << 16)
+                            .wrapping_add((local * 1000.0) as u32)
+                            .wrapping_add(parts.len() as u32 * 31);
                         parts.push(spawn(p, k, origin, up, forward, right, scale, block));
                     }
                 }
@@ -663,7 +689,15 @@ fn spawn(p: &ParticleLayer, seed: u32, origin: Vec3, up: Vec3, forward: Vec3, ri
     let dir = if p.direction == Direction::Random { base } else { (base * spread.cos() + side * spread.sin()).normalize_or(base) };
     let speed = if p.direction == Direction::None { 0.0 } else { p.speed.pick(r(8)) * block };
     let orbit = (p.orbit != 0.0).then(|| (theta, (start - origin).dot(pa).hypot((start - origin).dot(pb)).max(0.3 * block)));
-    Particle { pos: start, vel: dir * speed, age: 0.0, life: p.life.pick(r(9)).max(0.05), spin: p.spin.pick(r(10)), angle: r(11) * std::f32::consts::TAU, orbit }
+    Particle {
+        pos: start,
+        vel: dir * speed,
+        age: 0.0,
+        life: p.life.pick(r(9)).max(0.05),
+        spin: p.spin.pick(r(10)),
+        angle: r(11) * std::f32::consts::TAU,
+        orbit,
+    }
 }
 
 /// Demi-axes d'un carré face à l'œil
@@ -674,7 +708,22 @@ fn billboard(center: Vec3, eye: Vec3, up: Vec3, half: f32) -> (Vec3, Vec3) {
     (u * half, v * half)
 }
 
-fn push_shape(shape: &ShapeLayer, s: f32, local: f32, origin: Vec3, tail: Vec3, up: Vec3, forward: Vec3, right: Vec3, scale: f32, block: f32, eye: Vec3, rgb: [f32; 4], additive: f32, out: &mut Vec<EffectQuad>) {
+fn push_shape(
+    shape: &ShapeLayer,
+    s: f32,
+    local: f32,
+    origin: Vec3,
+    tail: Vec3,
+    up: Vec3,
+    forward: Vec3,
+    right: Vec3,
+    scale: f32,
+    block: f32,
+    eye: Vec3,
+    rgb: [f32; 4],
+    additive: f32,
+    out: &mut Vec<EffectQuad>,
+) {
     let quad = |center: Vec3, u: Vec3, v: Vec3, kind: u32, p0: f32, p1: f32, texture: u32, rotation: f32| EffectQuad {
         center: [center.x, center.y, center.z, kind as f32],
         axis_u: [u.x, u.y, u.z, p0],
@@ -763,8 +812,16 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
     let shader = crate::shaders::create_shader_module(device, "Effects Shader", include_str!("effects.wgsl"), "effects.wgsl");
     // Couleur prémultipliée : une couche qui luit n'occulte rien (alpha 0), un voile occulte
     let blend = wgpu::BlendState {
-        color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
-        alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::Zero, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+        color: wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+            operation: wgpu::BlendOperation::Add,
+        },
+        alpha: wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::Zero,
+            dst_factor: wgpu::BlendFactor::One,
+            operation: wgpu::BlendOperation::Add,
+        },
     };
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Effects Pipeline"),
@@ -860,7 +917,8 @@ impl EffectRenderer {
             wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(TEXTURE_SIZE * 4), rows_per_image: Some(TEXTURE_SIZE) },
             wgpu::Extent3d { width: TEXTURE_SIZE, height: TEXTURE_SIZE, depth_or_array_layers: TEXTURES.len() as u32 },
         );
-        let view = texture.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
+        let view = texture
+            .create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Effects Sampler"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -875,18 +933,34 @@ impl EffectRenderer {
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2Array, multisampled: false },
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
                     count: None,
                 },
-                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Effects Bind Group"),
             layout: &texture_layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) }, wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) }],
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+            ],
         });
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Effects Pipeline Layout"), bind_group_layouts: &[Some(scene_layout), Some(&texture_layout)], immediate_size: 0 });
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Effects Pipeline Layout"),
+            bind_group_layouts: &[Some(scene_layout), Some(&texture_layout)],
+            immediate_size: 0,
+        });
         let quads = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Effects Quads"),
             size: (MAX_QUADS * std::mem::size_of::<EffectQuad>()) as wgpu::BufferAddress,
@@ -943,10 +1017,32 @@ mod tests {
         let (library, _) = EffectLibrary::load_dir(&dir);
         let mut effects = Effects { library, running: Vec::new(), next_seed: 1 };
         let feet = Vec3::new(0.0, 1000.0, 0.0);
-        let cue = VisualCue { effect: "shockRing".into(), anchor: Anchor::Feet, caster: None, point: feet, creature: None, aim: Vec3::NEG_Z, hold: None, area_blocks: 3.0, travel: None, delay: 0.0, projectile: None };
+        let cue = VisualCue {
+            effect: "shockRing".into(),
+            anchor: Anchor::Feet,
+            caster: None,
+            point: feet,
+            creature: None,
+            aim: Vec3::NEG_Z,
+            hold: None,
+            area_blocks: 3.0,
+            travel: None,
+            delay: 0.0,
+            projectile: None,
+        };
         effects.start(vec![cue]);
-        let no_player = |_: PlayerId| None; let no_creature = |_: CreatureId| None; let no_projectile = |_: ProjectileId| None;
-        let world = AnchorWorld { hero: HeroAnchors::standing(feet, 0.0, 1.0), hero_forward: Vec3::NEG_Z, players: &no_player, creatures: &no_creature, projectiles: &no_projectile, eye: feet + Vec3::new(0.0, 3.0, 6.0), block: 1.0 };
+        let no_player = |_: PlayerId| None;
+        let no_creature = |_: CreatureId| None;
+        let no_projectile = |_: ProjectileId| None;
+        let world = AnchorWorld {
+            hero: HeroAnchors::standing(feet, 0.0, 1.0),
+            hero_forward: Vec3::NEG_Z,
+            players: &no_player,
+            creatures: &no_creature,
+            projectiles: &no_projectile,
+            eye: feet + Vec3::new(0.0, 3.0, 6.0),
+            block: 1.0,
+        };
         let mut out = Vec::new();
         effects.update(0.016, &world, &mut out);
         assert_eq!(out.len(), 1, "l'anneau seul avant les étincelles");
@@ -968,7 +1064,19 @@ mod tests {
         let (library, _) = EffectLibrary::load_dir(&dir);
         let mut effects = Effects { library, running: Vec::new(), next_seed: 1 };
         let feet = Vec3::new(0.0, 1000.0, 0.0);
-        let cue = VisualCue { effect: "arrowTrail".into(), anchor: Anchor::Projectile, caster: None, point: feet, creature: None, aim: Vec3::NEG_Z, hold: Some(8.0), area_blocks: 1.0, travel: None, delay: 0.0, projectile: Some(ProjectileId(3)) };
+        let cue = VisualCue {
+            effect: "arrowTrail".into(),
+            anchor: Anchor::Projectile,
+            caster: None,
+            point: feet,
+            creature: None,
+            aim: Vec3::NEG_Z,
+            hold: Some(8.0),
+            area_blocks: 1.0,
+            travel: None,
+            delay: 0.0,
+            projectile: Some(ProjectileId(3)),
+        };
         effects.start(vec![cue]);
         let no_player = |_: PlayerId| None;
         let no_creature = |_: CreatureId| None;
@@ -976,7 +1084,15 @@ mod tests {
         // La flèche avance de 2 blocs entre deux images : le ruban va de l'ancienne position à la nouvelle
         for (k, z) in [0.0f32, -2.0].into_iter().enumerate() {
             let at = move |id: ProjectileId| (id == ProjectileId(3)).then_some(feet + Vec3::new(0.0, 1.4, z));
-            let world = AnchorWorld { hero: HeroAnchors::standing(feet, 0.0, 1.0), hero_forward: Vec3::NEG_Z, players: &no_player, creatures: &no_creature, projectiles: &at, eye: feet + Vec3::new(3.0, 3.0, 0.0), block: 1.0 };
+            let world = AnchorWorld {
+                hero: HeroAnchors::standing(feet, 0.0, 1.0),
+                hero_forward: Vec3::NEG_Z,
+                players: &no_player,
+                creatures: &no_creature,
+                projectiles: &at,
+                eye: feet + Vec3::new(3.0, 3.0, 0.0),
+                block: 1.0,
+            };
             effects.running[0].started -= std::time::Duration::from_millis(50 * k as u64);
             effects.update(0.05, &world, &mut out);
         }
@@ -988,7 +1104,15 @@ mod tests {
         effects.end_projectile(ProjectileId(3));
         effects.running[0].started -= std::time::Duration::from_secs(3);
         let gone = |_: ProjectileId| None;
-        let world = AnchorWorld { hero: HeroAnchors::standing(feet, 0.0, 1.0), hero_forward: Vec3::NEG_Z, players: &no_player, creatures: &no_creature, projectiles: &gone, eye: feet, block: 1.0 };
+        let world = AnchorWorld {
+            hero: HeroAnchors::standing(feet, 0.0, 1.0),
+            hero_forward: Vec3::NEG_Z,
+            players: &no_player,
+            creatures: &no_creature,
+            projectiles: &gone,
+            eye: feet,
+            block: 1.0,
+        };
         effects.update(0.05, &world, &mut out);
         assert!(effects.is_empty());
     }

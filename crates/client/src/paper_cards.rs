@@ -73,7 +73,13 @@ pub(crate) struct CardUniform {
 
 impl Default for CardUniform {
     fn default() -> Self {
-        Self { view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(), light_dir: [0.0, 1.0, 0.0, 0.5], light_color: [1.0; 4], params: [1.0, 0.0, 0.0, 0.0], eye: [0.0; 4] }
+        Self {
+            view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            light_dir: [0.0, 1.0, 0.0, 0.5],
+            light_color: [1.0; 4],
+            params: [1.0, 0.0, 0.0, 0.0],
+            eye: [0.0; 4],
+        }
     }
 }
 
@@ -191,7 +197,14 @@ impl CardImages {
                 pixels[dst..dst + w * 4].copy_from_slice(&rgba[line * w * 4..(line + 1) * w * 4]);
             }
             let s = side as f32;
-            sprites.insert(name, CardSprite { page: page as u32, uv: [x as f32 / s, y as f32 / s, (x + pw) as f32 / s, (y + ph) as f32 / s], size: [w as f32, h as f32] });
+            sprites.insert(
+                name,
+                CardSprite {
+                    page: page as u32,
+                    uv: [x as f32 / s, y as f32 / s, (x + pw) as f32 / s, (y + ph) as f32 / s],
+                    size: [w as f32, h as f32],
+                },
+            );
             x += pw;
             row = row.max(ph);
         }
@@ -297,7 +310,10 @@ pub(crate) struct CardRenderer {
 }
 
 fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget, blended: bool) -> wgpu::RenderPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("Paper Cards Shader"), source: wgpu::ShaderSource::Wgsl(include_str!("paper_cards.wgsl").into()) });
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Paper Cards Shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("paper_cards.wgsl").into()),
+    });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Paper Cards Pipeline"),
         layout: Some(layout),
@@ -334,7 +350,15 @@ fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target:
     })
 }
 
-fn texture_array(device: &wgpu::Device, queue: &wgpu::Queue, label: &str, format: wgpu::TextureFormat, bytes_per_pixel: u32, layers: u32, data: &[u8]) -> wgpu::TextureView {
+fn texture_array(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    format: wgpu::TextureFormat,
+    bytes_per_pixel: u32,
+    layers: u32,
+    data: &[u8],
+) -> wgpu::TextureView {
     let size = wgpu::Extent3d { width: PAGE_SIZE, height: PAGE_SIZE, depth_or_array_layers: layers };
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some(label),
@@ -355,7 +379,14 @@ fn texture_array(device: &wgpu::Device, queue: &wgpu::Queue, label: &str, format
     texture.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() })
 }
 
-fn create_bind_group(device: &wgpu::Device, queue: &wgpu::Queue, layout: &wgpu::BindGroupLayout, uniform: &wgpu::Buffer, sampler: &wgpu::Sampler, images: &CardImages) -> wgpu::BindGroup {
+fn create_bind_group(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layout: &wgpu::BindGroupLayout,
+    uniform: &wgpu::Buffer,
+    sampler: &wgpu::Sampler,
+    images: &CardImages,
+) -> wgpu::BindGroup {
     let cut_outs = texture_array(device, queue, "Paper Cards", wgpu::TextureFormat::Rgba8UnormSrgb, 4, images.pages, &images.pixels);
     let outlines = texture_array(device, queue, "Paper Card Outlines", wgpu::TextureFormat::R8Unorm, 1, images.pages, &images.outlines);
     device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -389,7 +420,11 @@ impl CardRenderer {
         let texture_entry = |binding: u32| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2Array, multisampled: false },
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2Array,
+                multisampled: false,
+            },
             count: None,
         };
         let bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -398,23 +433,50 @@ impl CardRenderer {
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
                     count: None,
                 },
                 texture_entry(1),
                 texture_entry(2),
-                wgpu::BindGroupLayoutEntry { binding: 3, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
         let bind_group = create_bind_group(device, queue, &bind_layout, &uniform, &sampler, &images);
-        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Paper Cards Pipeline Layout"), bind_group_layouts: &[Some(&bind_layout)], immediate_size: 0 });
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Paper Cards Pipeline Layout"),
+            bind_group_layouts: &[Some(&bind_layout)],
+            immediate_size: 0,
+        });
         let instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Paper Cards Instances"),
             size: (MAX_CARDS * std::mem::size_of::<CardInstance>()) as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self { pipeline: create_pipeline(device, &layout, target, false), blended: create_pipeline(device, &layout, target, true), opaque_count: 0, layout, bind_layout, sampler, bind_group, uniform, instances, count: 0, loaded: None, pending: None, layers: images.layers }
+        Self {
+            pipeline: create_pipeline(device, &layout, target, false),
+            blended: create_pipeline(device, &layout, target, true),
+            opaque_count: 0,
+            layout,
+            bind_layout,
+            sampler,
+            bind_group,
+            uniform,
+            instances,
+            count: 0,
+            loaded: None,
+            pending: None,
+            layers: images.layers,
+        }
     }
 
     pub(crate) fn set_target(&mut self, device: &wgpu::Device, target: post::SceneTarget) {
@@ -432,7 +494,9 @@ impl CardRenderer {
                     CardImages::empty()
                 }
                 Some(set) => match self.pending.take() {
-                    Some((key, handle)) if key == set.key => handle.join().unwrap_or_else(|_| CardImages::load(&CardImages::default_dir(), set.images.iter().map(String::as_str))),
+                    Some((key, handle)) if key == set.key => handle
+                        .join()
+                        .unwrap_or_else(|_| CardImages::load(&CardImages::default_dir(), set.images.iter().map(String::as_str))),
                     // Un atlas préparé pour un autre plan est abandonné (son fil finit seul)
                     _ => CardImages::load(&CardImages::default_dir(), set.images.iter().map(String::as_str)),
                 },
@@ -538,8 +602,10 @@ mod tests {
     #[test]
     fn test_blended_cards_come_last_far_to_near() {
         let uniform = CardUniform { view_proj: glam::Mat4::perspective_rh(1.0, 1.0, 0.1, 100.0).to_cols_array_2d(), ..Default::default() };
-        let card = |z: f32, blend: f32| CardInstance { center: [0.0, 0.0, z, 0.0], extra: [1.0, 0.0, blend, 0.0], ..bytemuck::Zeroable::zeroed() };
-        let ordered = order_cards(&uniform, &[card(-2.0, BLEND_ALPHA), card(-9.0, BLEND_CUT), card(-5.0, BLEND_ADD), card(-1.0, BLEND_CUT)]);
+        let card =
+            |z: f32, blend: f32| CardInstance { center: [0.0, 0.0, z, 0.0], extra: [1.0, 0.0, blend, 0.0], ..bytemuck::Zeroable::zeroed() };
+        let ordered =
+            order_cards(&uniform, &[card(-2.0, BLEND_ALPHA), card(-9.0, BLEND_CUT), card(-5.0, BLEND_ADD), card(-1.0, BLEND_CUT)]);
         let z: Vec<f32> = ordered.iter().map(|c| c.center[2]).collect();
         assert_eq!(z, [-9.0, -1.0, -5.0, -2.0]);
     }
@@ -547,7 +613,8 @@ mod tests {
     #[test]
     fn test_pack_keeps_images_apart() {
         let side = PAGE_SIZE as usize;
-        let images: Vec<_> = (0..40).map(|i| (format!("{i}.png"), 300 + i, 200 + 7 * i, vec![255u8; (300 + i) * (200 + 7 * i) * 4])).collect();
+        let images: Vec<_> =
+            (0..40).map(|i| (format!("{i}.png"), 300 + i, 200 + 7 * i, vec![255u8; (300 + i) * (200 + 7 * i) * 4])).collect();
         let atlas = CardImages::pack(images);
         assert_eq!(atlas.layers.len(), 40);
         assert!(atlas.pages >= 2);

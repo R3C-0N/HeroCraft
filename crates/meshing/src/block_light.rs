@@ -5,7 +5,7 @@
 
 use std::collections::VecDeque;
 
-use herocraft_common::{opposite_face, FACE_DIRS};
+use herocraft_common::{FACE_DIRS, opposite_face};
 
 /// Plus haute lumière d'un bloc
 pub(crate) const MAX_LIGHT: u8 = 15;
@@ -46,7 +46,15 @@ impl LightField {
     pub(crate) fn compute(sources: &[(i32, i32, i32, u8)], mut covers: impl FnMut(i32, i32, i32) -> u8) -> Option<Self> {
         // Une lumière qui n'atteint pas le chunk (ni la rangée de cases qui borde ses faces) ne sert à rien
         let reaches = |&&(x, y, z, level): &&(i32, i32, i32, u8)| {
-            let gap = |v: i32| if v < -1 { -1 - v } else if v > 32 { v - 32 } else { 0 };
+            let gap = |v: i32| {
+                if v < -1 {
+                    -1 - v
+                } else if v > 32 {
+                    v - 32
+                } else {
+                    0
+                }
+            };
             level > 0 && gap(x) + gap(y) + gap(z) < level as i32
         };
         let sources: Vec<_> = sources.iter().filter(reaches).collect();
@@ -59,7 +67,8 @@ impl LightField {
         let mut queue = VecDeque::new();
         for &&(x, y, z, level) in &sources {
             if let Some(i) = index(x, y, z)
-                && levels[i] < level {
+                && levels[i] < level
+            {
                 levels[i] = level.min(MAX_LIGHT);
                 // Le bloc qui éclaire laisse sortir sa lumière de tous côtés
                 state[i] = KNOWN;
@@ -141,7 +150,8 @@ mod tests {
     #[test]
     fn light_goes_around_obstacles() {
         // Un muret en x = 2, de y = 0 à 6 : la lumière passe par-dessus
-        let field = LightField::compute(&[(0, 0, 0, 15)], |x, y, z| if x == 2 && (0..=6).contains(&y) && z == 0 { FULL } else { 0 }).unwrap();
+        let field =
+            LightField::compute(&[(0, 0, 0, 15)], |x, y, z| if x == 2 && (0..=6).contains(&y) && z == 0 { FULL } else { 0 }).unwrap();
         assert_eq!(field.level(3, 0, 0), 15 - 5, "contourné par z = ±1");
     }
 

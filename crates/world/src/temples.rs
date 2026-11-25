@@ -44,9 +44,7 @@ use herocraft_common::PlanetFace;
 use crate::culture::Culture;
 use crate::edits::BlockPos;
 use crate::generator::PlanetWorldGenerator;
-use crate::structures::{
-    mix, MemoryCity, Piece, Rect, Settlement, SettlementKind, Side, Temple, CELL, CELLS_PER_FACE,
-};
+use crate::structures::{CELL, CELLS_PER_FACE, MemoryCity, Piece, Rect, Settlement, SettlementKind, Side, Temple, mix};
 use herocraft_common::PlanetChunkCoord;
 use herocraft_voxel_engine::CHUNK_SIZE;
 
@@ -107,10 +105,7 @@ impl TempleSite {
             return None;
         }
         settlement.pieces.iter().find_map(|p| match p {
-            Piece::Temple(t) => Some(TempleSite {
-                face: settlement.face,
-                temple: *t,
-            }),
+            Piece::Temple(t) => Some(TempleSite { face: settlement.face, temple: *t }),
             _ => None,
         })
     }
@@ -214,10 +209,7 @@ impl PlanetWorldGenerator {
     /// Le même générateur, qui dessine les temples à l'époque `epoch` (il partage les plans des
     /// établissements et les chemins déjà tracés)
     pub fn with_epoch(&self, epoch: Epoch) -> PlanetWorldGenerator {
-        PlanetWorldGenerator {
-            epoch,
-            ..self.clone()
-        }
+        PlanetWorldGenerator { epoch, ..self.clone() }
     }
 
     /// La ville-souvenir qui entoure le temple `site` dans la vision, tenue par le peuple `holder`
@@ -287,7 +279,8 @@ impl PlanetWorldGenerator {
         // Les premiers pieds libres de la colonne (x, z), au-dessus du sol
         let standing = |x: i32, z: i32| {
             let ground = past.sample_block_column(site.face, x, z).elevation.floor() as i32;
-            (ground..ground + 64).find(|&y| !past.block_at(site.face, x, y, z).is_solid() && !past.block_at(site.face, x, y + 1, z).is_solid())
+            (ground..ground + 64)
+                .find(|&y| !past.block_at(site.face, x, y, z).is_solid() && !past.block_at(site.face, x, y + 1, z).is_solid())
         };
         let y = standing(mx, mz)?;
         // Dos à la porte, puis sur le côté
@@ -302,13 +295,7 @@ impl PlanetWorldGenerator {
 
     /// Le temple le plus proche de la colonne (x, z) d'une face, cherché jusqu'à `max_blocks` blocs
     /// (sur cette face seulement). Il y en a environ un par région de 2 048 blocs de côté.
-    pub fn nearest_temple(
-        &self,
-        face: PlanetFace,
-        x: i32,
-        z: i32,
-        max_blocks: i32,
-    ) -> Option<TempleSite> {
+    pub fn nearest_temple(&self, face: PlanetFace, x: i32, z: i32, max_blocks: i32) -> Option<TempleSite> {
         let (cx, cz) = (x.div_euclid(CELL), z.div_euclid(CELL));
         let rings = max_blocks.div_euclid(CELL) + 1;
         let mut best: Option<(i64, TempleSite)> = None;
@@ -330,11 +317,7 @@ impl PlanetWorldGenerator {
                     if !(0..CELLS_PER_FACE).contains(&nx) || !(0..CELLS_PER_FACE).contains(&nz) {
                         continue;
                     }
-                    let Some(site) = self
-                        .structures
-                        .cell(self, face, nx, nz)
-                        .and_then(TempleSite::of)
-                    else {
+                    let Some(site) = self.structures.cell(self, face, nx, nz).and_then(TempleSite::of) else {
                         continue;
                     };
                     let (tx, tz) = site.center();
@@ -375,7 +358,11 @@ mod tests {
 
     /// Altitude où l'on se tient debout dans la colonne (x, z), cherchée de `low` à `high`
     fn standing(generator: &PlanetWorldGenerator, face: PlanetFace, x: i32, z: i32, low: i32, high: i32) -> Option<i32> {
-        (low..=high).find(|&y| generator.block_at(face, x, y - 1, z).is_solid() && !generator.block_at(face, x, y, z).is_solid() && !generator.block_at(face, x, y + 1, z).is_solid())
+        (low..=high).find(|&y| {
+            generator.block_at(face, x, y - 1, z).is_solid()
+                && !generator.block_at(face, x, y, z).is_solid()
+                && !generator.block_at(face, x, y + 1, z).is_solid()
+        })
     }
 
     /// Distance de la colonne (x, z) à l'axe de l'entrée
@@ -428,7 +415,11 @@ mod tests {
                 }
                 let ground = present.sample_block_column(site.face, x, z).elevation.floor() as i32;
                 for y in ground - 3..ground + 12 {
-                    assert_eq!(present.block_at(site.face, x, y, z), past.block_at(site.face, x, y, z), "({x}, {y}, {z}) change hors de la ville-souvenir");
+                    assert_eq!(
+                        present.block_at(site.face, x, y, z),
+                        past.block_at(site.face, x, y, z),
+                        "({x}, {y}, {z}) change hors de la ville-souvenir"
+                    );
                 }
             }
         }
@@ -451,7 +442,14 @@ mod tests {
 
     /// Les colonnes qu'on atteint à pied depuis `start` sans dépasser `limit` du centre `center`,
     /// sans passer par les colonnes que `shut` ferme
-    fn walk(generator: &PlanetWorldGenerator, face: PlanetFace, start: (i32, i32), center: (i32, i32), limit: f64, shut: impl Fn(i32, i32) -> bool) -> std::collections::HashMap<(i32, i32), i32> {
+    fn walk(
+        generator: &PlanetWorldGenerator,
+        face: PlanetFace,
+        start: (i32, i32),
+        center: (i32, i32),
+        limit: f64,
+        shut: impl Fn(i32, i32) -> bool,
+    ) -> std::collections::HashMap<(i32, i32), i32> {
         let ground = generator.sample_block_column(face, start.0, start.1).elevation.floor() as i32;
         let y0 = feet(generator, face, start.0, start.1, ground + 2).expect("on se tient au point de départ");
         let mut seen = std::collections::HashMap::from([(start, y0)]);
@@ -484,7 +482,10 @@ mod tests {
         assert!(city.outer >= 42, "le rempart est assez large ({})", city.outer);
         assert!(city.court > site.radius() && city.inner > city.court + 10 && city.outer > city.inner + 12);
         assert_eq!(city.arenas.len(), 3);
-        assert!([Ring::Lower, Ring::Upper, Ring::Temple].iter().all(|r| city.posts.iter().any(|p| p.1 == *r)), "des ennemis dans chaque cercle");
+        assert!(
+            [Ring::Lower, Ring::Upper, Ring::Temple].iter().all(|r| city.posts.iter().any(|p| p.1 == *r)),
+            "des ennemis dans chaque cercle"
+        );
         // L'armée se masse dehors, devant la grande porte, dans l'axe de l'entrée du temple
         let (dx, dz) = site.door().delta();
         let (cx, cz) = site.center();
@@ -492,7 +493,9 @@ mod tests {
         assert!(city.covers(city.muster.0, city.muster.1));
         assert!(dx * (city.muster.0 - cx) + dz * (city.muster.1 - cz) > city.outer, "l'armée attaque face à l'entrée du temple");
         let arena = site.arena_center();
-        let reaches = |seen: &std::collections::HashMap<(i32, i32), i32>, at: (i32, i32)| seen.iter().any(|(&(x, z), &y)| y != i32::MIN && (x - at.0).abs() <= 2 && (z - at.1).abs() <= 2);
+        let reaches = |seen: &std::collections::HashMap<(i32, i32), i32>, at: (i32, i32)| {
+            seen.iter().any(|(&(x, z), &y)| y != i32::MIN && (x - at.0).abs() <= 2 && (z - at.1).abs() <= 2)
+        };
         // Porte ouverte : depuis le rassemblement, on entre et on arrive dans l'arène
         let open = walk(&past, site.face, city.muster, city.center, (city.outer + 40) as f64, |_, _| false);
         assert!(reaches(&open, (arena.x, arena.z)), "on n'atteint pas l'arène depuis la porte");
@@ -526,11 +529,16 @@ mod tests {
         let (x, z) = (city.center.0 + city.outer, city.center.1);
         let ground = present.sample_block_column(site.face, x, z).elevation.floor() as i32;
         assert!((ground..ground + 6).all(|y| past.block_at(site.face, x, y, z).is_solid()), "le rempart se dresse dans le passé");
-        assert!((ground..ground + 6).any(|y| present.block_at(site.face, x, y, z) != past.block_at(site.face, x, y, z)), "pas de rempart au présent");
+        assert!(
+            (ground..ground + 6).any(|y| present.block_at(site.face, x, y, z) != past.block_at(site.face, x, y, z)),
+            "pas de rempart au présent"
+        );
         // Les chunks de la vision couvrent toute la ville
         let chunks = past.vision_chunks(&site, holder);
         let size = CHUNK_SIZE as i32;
-        assert!(chunks.iter().any(|c| c.x == x.div_euclid(size) && c.y == z.div_euclid(size) && c.altitude_layer == ground.div_euclid(size)));
+        assert!(
+            chunks.iter().any(|c| c.x == x.div_euclid(size) && c.y == z.div_euclid(size) && c.altitude_layer == ground.div_euclid(size))
+        );
         assert!(chunks.len() > site.chunks().len());
     }
 
@@ -569,7 +577,8 @@ mod tests {
         let (mut x, mut z) = (start.x - dx, start.z - dz);
         let mut previous = standing(&past, site.face, start.x, start.z, start.y - 1, start.y + 1).expect("on se tient devant l'entrée");
         while (x - dx, z - dz) != (ax, az) {
-            let here = standing(&past, site.face, x, z, previous - 1, previous + 1).unwrap_or_else(|| panic!("({x}, {z}) bouche le chemin de l'autel"));
+            let here = standing(&past, site.face, x, z, previous - 1, previous + 1)
+                .unwrap_or_else(|| panic!("({x}, {z}) bouche le chemin de l'autel"));
             previous = here;
             x -= dx;
             z -= dz;
@@ -634,6 +643,10 @@ mod tests {
         let chunks = site.chunks();
         let size = CHUNK_SIZE as i32;
         let slot = site.stone_slot(Epoch::Present);
-        assert!(chunks.iter().any(|c| c.x == slot.x.div_euclid(size) && c.y == slot.z.div_euclid(size) && c.altitude_layer == slot.y.div_euclid(size)));
+        assert!(
+            chunks
+                .iter()
+                .any(|c| c.x == slot.x.div_euclid(size) && c.y == slot.z.div_euclid(size) && c.altitude_layer == slot.y.div_euclid(size))
+        );
     }
 }

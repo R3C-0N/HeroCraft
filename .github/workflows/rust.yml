@@ -17,7 +17,17 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  # `cargo fmt --check` sera ajouté avec le formatage global du dépôt
+  format:
+    name: Formatage (cargo fmt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # La version de Rust (et rustfmt) vient de rust-toolchain.toml
+      - name: Installer Rust
+        run: rustup toolchain install
+      - name: Vérifier le formatage
+        run: cargo fmt --all --check
+
   clippy-et-tests:
     name: Clippy et tests
     runs-on: ubuntu-latest

@@ -14,42 +14,41 @@ use winit::{
 use herocraft_meshing::{block_light, block_textures, planet_mesh, voxel_mesh};
 // Passes de rendu GPU et réglages graphiques : crate herocraft_render
 use herocraft_render::{
-    atmosphere, block_cracks, block_outline, cloud_mesh, post, precipitation, shaders, shadow, skinned_model, terrain_cull,
-    terrain_pool,
+    atmosphere, block_cracks, block_outline, cloud_mesh, post, precipitation, shaders, shadow, skinned_model, terrain_cull, terrain_pool,
 };
 // Briques de l'interface egui : crate herocraft_ui
-use herocraft_ui::{chat, commands, item_icons, skill_bar, skills_screen, ui_skin, world_map};
 #[cfg(test)]
 use herocraft_ui::ui_snapshot;
+use herocraft_ui::{chat, commands, item_icons, skill_bar, skills_screen, ui_skin, world_map};
 // Son synthétisé : crate herocraft_audio
 use herocraft_audio as audio;
 mod app;
 mod benchmark;
 mod block_interaction;
 mod camera;
-mod paper_cards;
 mod cinematic;
 mod collision;
 mod creature_render;
 mod creatures;
 mod dropped_items;
 mod effects;
+mod gestures;
 mod gpu_timer;
 mod hero_creator;
-mod gestures;
 mod hero_model;
-mod villagers;
 mod input;
 mod inventory;
 mod keyboard_hook;
 mod lod;
 mod monitor;
 mod network;
+mod paper_cards;
 mod player_stats;
 mod renderer;
 mod skill_models;
 mod skill_play;
 mod ui;
+mod villagers;
 mod vision_assault;
 mod vision_charge;
 mod vision_tutorial;
@@ -58,13 +57,12 @@ mod weather;
 
 use block_interaction::BlockInteraction;
 use camera::OrbitCamera;
+use herocraft_common::lan::LanBrowser;
 use input::Action;
 use lod::PlanetLodManager;
 use network::{HostedServer, NetClient, NetEvent, PendingJoin};
-use herocraft_common::lan::LanBrowser;
 use renderer::State;
 use ui::{MenuPage, NetStatus, UiAction, UiState};
-
 
 /// Allocateur mimalloc : les fils de génération et de maillage allouent beaucoup de petits `Vec`
 /// en parallèle, cas où l'allocateur du système (surtout celui de Windows) est le plus lent
@@ -78,7 +76,9 @@ fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     herocraft_common::profiler::init_main_thread();
     if cfg!(debug_assertions) {
-        warn!("Jeu compilé en DEBUG : il tourne 5 à 10 fois plus lentement qu'en release. Pour jouer : cargo run --release --bin herocraft_client");
+        warn!(
+            "Jeu compilé en DEBUG : il tourne 5 à 10 fois plus lentement qu'en release. Pour jouer : cargo run --release --bin herocraft_client"
+        );
     }
     if herocraft_common::profiler::is_enabled() {
         info!("PROFILAGE ACTIF : rapport écrit dans ./profiling/ à la fermeture (ou avec [F9]).");
@@ -295,7 +295,10 @@ fn begin_vision_tutorial(
         ui_state.player.enter_vision();
         if let Some(species) = registry.find(vision_tutorial::VisionTutorial::soldier_species()) {
             let block = geometry.block_height as f32;
-            let ids: Vec<herocraft_common::CreatureId> = tutorial.soldier_spots(feet, block).into_iter().map(|dir| {
+            let ids: Vec<herocraft_common::CreatureId> = tutorial
+                .soldier_spots(feet, block)
+                .into_iter()
+                .map(|dir| {
                     let feet = dir * camera.ground_radius_at(dir, generator);
                     let yaw = tutorial.charge.as_ref().map_or(0.0, |c| c.facing_gate(feet));
                     world.spawn_led(species, feet, yaw)
@@ -368,7 +371,12 @@ fn apply_charge_events(
                     audio.block_broken(audio::synth::Material::Wood, distance(at) * 0.3, settings);
                 }
                 audio.thunder(0.5, settings);
-                effects.start(vec![cue("groundBurst", at, None), cue("dustPuff", at, None), cue("armorShatter", at, None), cue("shockRing", at, None)]);
+                effects.start(vec![
+                    cue("groundBurst", at, None),
+                    cue("dustPuff", at, None),
+                    cue("armorShatter", at, None),
+                    cue("shockRing", at, None),
+                ]);
                 camera.hurt(0.8);
                 cinematics.notify(&herocraft_common::cinematics::GameEvent::new(cinematic::GATE_BROKEN).at(at));
             }
@@ -391,7 +399,11 @@ fn apply_charge_events(
 ///
 /// Rend vrai pour un souvenir achevé (la Pierre prise) : le héros garde alors la force que
 /// l'éclat a éveillée et revient avec un éclat du cristal
-fn end_vision_tutorial(tutorial: &mut Option<vision_tutorial::VisionTutorial>, ui_state: &mut UiState, solo: &mut herocraft_world::CreatureWorld) -> bool {
+fn end_vision_tutorial(
+    tutorial: &mut Option<vision_tutorial::VisionTutorial>,
+    ui_state: &mut UiState,
+    solo: &mut herocraft_world::CreatureWorld,
+) -> bool {
     let Some(t) = tutorial.take() else { return false };
     let completed = t.assault.as_ref().is_some_and(|a| a.completed());
     let fighters: Vec<herocraft_common::CreatureId> = t.assault.as_ref().map(|a| a.creatures().collect()).unwrap_or_default();
@@ -662,7 +674,8 @@ fn game_key(
                 None => {
                     let key = ui_state.controls.action_key_label(action);
                     let wheel = ui_state.controls.action_key_label(Action::OpenSkills);
-                    ui_state.skill_notice = Some((format!("Rien sur [{key}] : posez une compétence depuis la roue [{wheel}]"), Instant::now()));
+                    ui_state.skill_notice =
+                        Some((format!("Rien sur [{key}] : posez une compétence depuis la roue [{wheel}]"), Instant::now()));
                 }
             }
         }
@@ -675,9 +688,7 @@ fn set_cursor_captured(window: &Window, captured: bool) {
     if captured {
         // Locked n'existe pas partout (Windows, X11) : Confined garde le curseur dans la fenêtre,
         // et la vue lit de toute façon le mouvement brut de la souris
-        let grab = window
-            .set_cursor_grab(CursorGrabMode::Locked)
-            .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined));
+        let grab = window.set_cursor_grab(CursorGrabMode::Locked).or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined));
         if let Err(e) = grab {
             warn!("Capture de la souris impossible : {}", e);
         }
@@ -691,7 +702,12 @@ fn set_cursor_captured(window: &Window, captured: bool) {
 }
 
 /// Bête morte sous le réticule, à portée et devant le bloc visé : à dépecer
-fn aimed_corpse(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<herocraft_common::CreatureId> {
+fn aimed_corpse(
+    camera: &OrbitCamera,
+    interaction: &BlockInteraction,
+    views: &[creatures::CreatureView],
+    registry: &herocraft_common::CreatureRegistry,
+) -> Option<herocraft_common::CreatureId> {
     let (eye, dir, arm) = camera.view_ray()?;
     let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
     let reach = interaction.target().map_or(arm + block_interaction::REACH_BLOCKS as f32 * block, |hit| hit.distance as f32);
@@ -699,7 +715,12 @@ fn aimed_corpse(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[c
 }
 
 /// Créature vivante sous le réticule, à portée et devant le bloc visé
-fn aimed_creature(camera: &OrbitCamera, interaction: &BlockInteraction, views: &[creatures::CreatureView], registry: &herocraft_common::CreatureRegistry) -> Option<herocraft_common::CreatureId> {
+fn aimed_creature(
+    camera: &OrbitCamera,
+    interaction: &BlockInteraction,
+    views: &[creatures::CreatureView],
+    registry: &herocraft_common::CreatureRegistry,
+) -> Option<herocraft_common::CreatureId> {
     let (eye, dir, arm) = camera.view_ray()?;
     let block = herocraft_world::BlockGeometry::new(camera.base_radius as f64).block_height as f32;
     let reach = interaction.target().map_or(arm + block_interaction::REACH_BLOCKS as f32 * block, |hit| hit.distance as f32);
@@ -798,7 +819,13 @@ fn hit_creature(
 
 /// Le bloc cassé tombe au sol (s'il se ramasse : ni eau, ni lave), avec le butin de sa fiche
 /// (fibre des herbes hautes, silex du gravier, récolte d'une plante mûre…)
-fn drop_broken_block(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, pos: herocraft_world::BlockPos, block: herocraft_common::BlockId, previous: herocraft_common::BlockId) {
+fn drop_broken_block(
+    dropped: &mut dropped_items::DroppedItems,
+    camera: &OrbitCamera,
+    pos: herocraft_world::BlockPos,
+    block: herocraft_common::BlockId,
+    previous: herocraft_common::BlockId,
+) {
     if !block.is_air() {
         return;
     }
@@ -823,12 +850,19 @@ fn lay_egg(dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera, feet
 
 /// Dépèce la bête morte `id` : en solo, son butin tombe aussitôt ; en ligne, le serveur le tire et
 /// l'envoie (`NetEvent::Loot`)
-fn skin_creature(id: herocraft_common::CreatureId, net: Option<&mut NetClient>, solo: &mut herocraft_world::CreatureWorld, dropped: &mut dropped_items::DroppedItems, camera: &OrbitCamera) {
+fn skin_creature(
+    id: herocraft_common::CreatureId,
+    net: Option<&mut NetClient>,
+    solo: &mut herocraft_world::CreatureWorld,
+    dropped: &mut dropped_items::DroppedItems,
+    camera: &OrbitCamera,
+) {
     match net {
         Some(client) => client.send_skin_creature(id),
         None => {
             if let Some((species, feet)) = solo.skin(id) {
-                let loot = herocraft_common::loot::creature_loot(solo.registry(), species).roll(&mut herocraft_common::LootRng::from_clock());
+                let loot =
+                    herocraft_common::loot::creature_loot(solo.registry(), species).roll(&mut herocraft_common::LootRng::from_clock());
                 drop_loot(dropped, camera, feet, &loot);
             }
         }
@@ -890,7 +924,10 @@ fn skill_name(id: &str) -> String {
 
 /// Identifiants des blocs et objets que `/give` peut donner (ceux du catalogue de l'inventaire)
 fn commands_items() -> Vec<String> {
-    let blocks = herocraft_common::blocks().iter().filter(|s| inventory::can_hold(herocraft_common::BlockId(s.numeric_id).into())).map(|s| s.id.clone());
+    let blocks = herocraft_common::blocks()
+        .iter()
+        .filter(|s| inventory::can_hold(herocraft_common::BlockId(s.numeric_id).into()))
+        .map(|s| s.id.clone());
     let items = herocraft_common::items().iter().map(|s| s.id.clone());
     blocks.chain(items).collect()
 }
@@ -898,7 +935,7 @@ fn commands_items() -> Vec<String> {
 /// Bloc ou objet de `/give`, par identifiant de fiche, sinon par nom affiché (sans tenir compte de
 /// la casse)
 fn find_item(name: &str) -> Option<herocraft_common::ItemId> {
-    use herocraft_common::{blocks, items, BlockId, ItemId};
+    use herocraft_common::{BlockId, ItemId, blocks, items};
     let block = |s: &herocraft_common::BlockSheet| ItemId::from(BlockId(s.numeric_id));
     let holdable_blocks = || blocks().iter().filter(|s| inventory::can_hold(block(s)));
     holdable_blocks()
@@ -949,7 +986,7 @@ fn season_english(season: herocraft_world::weather::Season) -> &'static str {
 
 /// Exécute une commande du chat : renvoie les lignes de réponse, ou l'erreur à afficher
 fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String>, String> {
-    use commands::{format_hour, Command};
+    use commands::{Command, format_hour};
     let block = herocraft_world::BlockGeometry::new(game.camera.base_radius as f64).block_height as f32;
     let online = game.ui.multiplayer.status != NetStatus::Solo;
     let moves = matches!(command, Command::TeleportLatLon { .. } | Command::TeleportPlayer(_) | Command::Spawn | Command::Fly);
@@ -1174,7 +1211,11 @@ fn run_command(command: commands::Command, game: &mut Game) -> Result<Vec<String
                 Some(client) => client.send_sky(Some(time), None),
                 None => game.sky.simulated_time = time as f32,
             }
-            one(format!("{} begins in the north ({} in the south)", season_english(season), season_english(herocraft_world::weather::Season::ALL[(season as usize + 2) % 4])))
+            one(format!(
+                "{} begins in the north ({} in the south)",
+                season_english(season),
+                season_english(herocraft_world::weather::Season::ALL[(season as usize + 2) % 4])
+            ))
         }
         Command::ClearChat => {
             game.ui.chat.clear();

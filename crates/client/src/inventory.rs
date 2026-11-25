@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use herocraft_common::{blocks, items, BlockId, EquipSlot, Ingredient, ItemId, Recipe};
+use herocraft_common::{BlockId, EquipSlot, Ingredient, ItemId, Recipe, blocks, items};
 use serde::{Deserialize, Serialize};
 
 /// Cases de la barre d'objets, en bas de l'écran
@@ -234,7 +234,11 @@ impl Inventory {
 
     /// Une munition de ce type dans la barre ou le sac (la barre d'abord), sans la retirer
     pub(crate) fn find_ammo(&self, kind: herocraft_common::AmmoKind) -> Option<ItemId> {
-        self.slots[..STORAGE_SLOTS].iter().flatten().find(|s| s.item.block().is_none() && items().get(s.item).is_some_and(|sheet| sheet.ammo == Some(kind))).map(|s| s.item)
+        self.slots[..STORAGE_SLOTS]
+            .iter()
+            .flatten()
+            .find(|s| s.item.block().is_none() && items().get(s.item).is_some_and(|sheet| sheet.ammo == Some(kind)))
+            .map(|s| s.item)
     }
 
     /// Retire un exemplaire de `item` (la barre d'abord) ; faux s'il n'y en a pas

@@ -30,16 +30,16 @@ use std::sync::Arc;
 
 use glam::Vec3;
 use herocraft_common::hero::atlas;
-use herocraft_common::{CreatureId, professions, CreatureRegistry, PlanetFace, Profession, VillagerCard, Workplace};
+use herocraft_common::{CreatureId, CreatureRegistry, PlanetFace, Profession, VillagerCard, Workplace, professions};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
-use crate::creatures::{CreatureWorld, CREATURE_RANGE_BLOCKS};
+use crate::creatures::{CREATURE_RANGE_BLOCKS, CreatureWorld};
 use crate::culture::Culture;
 use crate::edits::{BlockGeometry, TerrainQuery, WORLD_HEIGHT};
 use crate::generator::PlanetWorldGenerator;
 use crate::roads::Road;
-use crate::structures::{face_index, hash2, mix, Piece, Rect, Settlement, SettlementKind, Use};
+use crate::structures::{Piece, Rect, Settlement, SettlementKind, Use, face_index, hash2, mix};
 
 /// Distance du centre d'un établissement au joueur le plus proche sous laquelle ses habitants
 /// sont dans les rues, en blocs
@@ -150,7 +150,9 @@ impl NavGrid {
             let t = if steps == 0 { 0.0 } else { i as f32 / steps as f32 };
             let (x, z) = (a.0 as f32 + 0.5 + dx * t, a.1 as f32 + 0.5 + dz * t);
             // Le corps a une largeur : les colonnes voisines de la ligne comptent aussi
-            [(-0.3, -0.3), (0.3, -0.3), (-0.3, 0.3), (0.3, 0.3)].iter().all(|(ox, oz)| self.walkable(((x + ox).floor() as i32, (z + oz).floor() as i32)))
+            [(-0.3, -0.3), (0.3, -0.3), (-0.3, 0.3), (0.3, 0.3)]
+                .iter()
+                .all(|(ox, oz)| self.walkable(((x + ox).floor() as i32, (z + oz).floor() as i32)))
         })
     }
 
@@ -171,7 +173,9 @@ impl NavGrid {
             let ci = self.index(cell)?;
             for (dx, dz) in DIRS {
                 let next = (cell.0 + dx, cell.1 + dz);
-                if !self.walkable(next) || (dx != 0 && dz != 0 && !(self.walkable((cell.0 + dx, cell.1)) && self.walkable((cell.0, cell.1 + dz)))) {
+                if !self.walkable(next)
+                    || (dx != 0 && dz != 0 && !(self.walkable((cell.0 + dx, cell.1)) && self.walkable((cell.0, cell.1 + dz))))
+                {
                     continue;
                 }
                 let ni = self.index(next)?;
@@ -341,7 +345,18 @@ pub struct Villages {
 
 impl Default for Villages {
     fn default() -> Self {
-        Self { seed: 0, enabled: false, species: SpeciesIds::default(), towns: HashMap::new(), people: Vec::new(), cards: HashMap::new(), rng: StdRng::seed_from_u64(0), scan_timer: 0.0, outdoors: HashMap::new(), players: Vec::new() }
+        Self {
+            seed: 0,
+            enabled: false,
+            species: SpeciesIds::default(),
+            towns: HashMap::new(),
+            people: Vec::new(),
+            cards: HashMap::new(),
+            rng: StdRng::seed_from_u64(0),
+            scan_timer: 0.0,
+            outdoors: HashMap::new(),
+            players: Vec::new(),
+        }
     }
 }
 
@@ -361,7 +376,8 @@ const INDOOR_TASK: std::ops::Range<f32> = 90.0..300.0;
 /// Coiffures qui se lisent comme celles d'une femme
 const FEMININE_HAIR: [&str; 7] = ["chignon", "longue", "lisse", "afro", "tresse", "nattes", "couettes"];
 /// Coiffures d'homme (aucune ne se lit comme celle d'une femme)
-const MASCULINE_HAIR: [&str; 13] = ["rasee", "courte", "brosse", "degrade", "frange", "bol", "raie", "arriere", "herisse", "tonsure", "mi", "queue", "mulet"];
+const MASCULINE_HAIR: [&str; 13] =
+    ["rasee", "courte", "brosse", "degrade", "frange", "bol", "raie", "arriere", "herisse", "tonsure", "mi", "queue", "mulet"];
 
 /// L'apparence se lit comme celle d'une femme : sans barbe (les naines ont la leur) et coiffée en
 /// femme
@@ -381,24 +397,65 @@ fn random_name(culture: Culture, feminine: bool, rng: &mut StdRng) -> String {
             &["Aud", "Isab", "Marg", "Clém", "Blanch", "Mahi", "Ysol", "Agn", "Ermen", "Berth", "Ali", "Ros", "Jeann", "Perrin", "Gaut"],
             &["e", "ette", "ine", "elle", "ence", "otte", "aude", "ise", "ie", "eline"],
         ),
-        (Culture::Nains, false) => (&["Thor", "Bram", "Dur", "Grim", "Kar", "Bor", "Dag", "Orm", "Gund", "Sto"], &["grim", "in", "dak", "rik", "dun", "gar", "bek", "rak", "nar"]),
-        (Culture::Nains, true) => (&["Hal", "Brun", "Dis", "Hel", "Sig", "Ast", "Gunn", "Thyr", "Ingr", "Bryn"], &["na", "hild", "ra", "li", "dis", "run", "veig", "ja", "dra"]),
-        (Culture::ElfesDesBois, false) => (&["Ael", "Thal", "Fen", "Oro", "Lin", "Eir", "Syl", "Ilv"], &["dil", "las", "or", "ion", "ir", "andir", "oth", "ael"]),
-        (Culture::ElfesDesBois, true) => (&["Syl", "Fae", "Nim", "Ari", "Ilv", "Lin", "Eir", "Ael"], &["wen", "rien", "iel", "wyn", "ith", "anna", "eth", "ia"]),
-        (Culture::HautsElfes, false) => (&["Cael", "Vael", "Ser", "Tir", "Elo", "Ilo"], &["andor", "thas", "dris", "eon", "marin", "nael", "ion"]),
-        (Culture::HautsElfes, true) => (&["Ithi", "Ara", "Lumi", "Sae", "Elo", "Ser"], &["riel", "lise", "esse", "wyn", "anne", "iel", "ena"]),
-        (Culture::DemiOrques, false) => (&["Gor", "Thrak", "Ug", "Mog", "Kru", "Zag", "Brug", "Dorg", "Grom"], &["ash", "uk", "nak", "rag", "gul", "dush", "mok", "gar"]),
-        (Culture::DemiOrques, true) => (&["Sha", "Gra", "Ur", "Mag", "Ruu", "Zhe", "Bag", "Kha"], &["ka", "rha", "gha", "dra", "mosh", "ra", "na", "gah"]),
-        (Culture::Revenants, false) => (&["Mor", "Vesp", "Ond", "Sil", "Cend", "Nocht", "Brum", "Lith"], &["ain", "rel", "ost", "ur", "ias", "orn", "ide", "al"]),
-        (Culture::Revenants, true) => (&["Morw", "Vesp", "Ond", "Sil", "Cend", "Ylv", "Brum", "Lith"], &["ine", "era", "a", "ue", "ia", "ève", "ée", "ys"]),
-        (Culture::Sylphes, false) => (&["Zeph", "Aer", "Ven", "Bris", "Cirr", "Al", "Fyr", "Sour"], &["ir", "el", "ion", "an", "us", "ast", "en", "is"]),
-        (Culture::Sylphes, true) => (&["Zeph", "Aer", "Ven", "Bris", "Cirr", "Al", "Fyr", "Sour"], &["ire", "elle", "ia", "ane", "ée", "a", "ine", "is"]),
-        (Culture::Gnomes, false) => (&["Fizz", "Bim", "Tock", "Nim", "Pip", "Gim", "Wob", "Zook", "Dabb"], &["wick", "ble", "bert", "o", "kin", "pot", "nob", "ster"]),
-        (Culture::Gnomes, true) => (&["Fizz", "Bim", "Tilly", "Nim", "Pip", "Lil", "Wob", "Zook", "Dabb"], &["ette", "belle", "a", "ina", "kin", "wyn", "ie", "ra"]),
-        (Culture::Aasimars, false) => (&["Aur", "Sol", "Cel", "Ser", "Lum", "Ori", "Hel", "Zar"], &["iel", "on", "as", "ael", "ian", "ius", "or", "eth"]),
-        (Culture::Aasimars, true) => (&["Aur", "Sol", "Cel", "Ser", "Lum", "Ori", "Hel", "Zar"], &["iela", "ine", "ise", "aëlle", "iane", "a", "ora", "eth"]),
-        (Culture::HommesBetes, false) => (&["Rakh", "Fen", "Tar", "Grif", "Kaz", "Bor", "Shir", "Vulk"], &["an", "rok", "ash", "ur", "kar", "ruk", "ix", "ok"]),
-        (Culture::HommesBetes, true) => (&["Rakh", "Fen", "Tar", "Nyr", "Kaz", "Ssa", "Shir", "Vel"], &["ia", "ra", "sha", "ya", "ka", "ri", "ix", "ane"]),
+        (Culture::Nains, false) => (
+            &["Thor", "Bram", "Dur", "Grim", "Kar", "Bor", "Dag", "Orm", "Gund", "Sto"],
+            &["grim", "in", "dak", "rik", "dun", "gar", "bek", "rak", "nar"],
+        ),
+        (Culture::Nains, true) => (
+            &["Hal", "Brun", "Dis", "Hel", "Sig", "Ast", "Gunn", "Thyr", "Ingr", "Bryn"],
+            &["na", "hild", "ra", "li", "dis", "run", "veig", "ja", "dra"],
+        ),
+        (Culture::ElfesDesBois, false) => {
+            (&["Ael", "Thal", "Fen", "Oro", "Lin", "Eir", "Syl", "Ilv"], &["dil", "las", "or", "ion", "ir", "andir", "oth", "ael"])
+        }
+        (Culture::ElfesDesBois, true) => {
+            (&["Syl", "Fae", "Nim", "Ari", "Ilv", "Lin", "Eir", "Ael"], &["wen", "rien", "iel", "wyn", "ith", "anna", "eth", "ia"])
+        }
+        (Culture::HautsElfes, false) => {
+            (&["Cael", "Vael", "Ser", "Tir", "Elo", "Ilo"], &["andor", "thas", "dris", "eon", "marin", "nael", "ion"])
+        }
+        (Culture::HautsElfes, true) => {
+            (&["Ithi", "Ara", "Lumi", "Sae", "Elo", "Ser"], &["riel", "lise", "esse", "wyn", "anne", "iel", "ena"])
+        }
+        (Culture::DemiOrques, false) => (
+            &["Gor", "Thrak", "Ug", "Mog", "Kru", "Zag", "Brug", "Dorg", "Grom"],
+            &["ash", "uk", "nak", "rag", "gul", "dush", "mok", "gar"],
+        ),
+        (Culture::DemiOrques, true) => {
+            (&["Sha", "Gra", "Ur", "Mag", "Ruu", "Zhe", "Bag", "Kha"], &["ka", "rha", "gha", "dra", "mosh", "ra", "na", "gah"])
+        }
+        (Culture::Revenants, false) => {
+            (&["Mor", "Vesp", "Ond", "Sil", "Cend", "Nocht", "Brum", "Lith"], &["ain", "rel", "ost", "ur", "ias", "orn", "ide", "al"])
+        }
+        (Culture::Revenants, true) => {
+            (&["Morw", "Vesp", "Ond", "Sil", "Cend", "Ylv", "Brum", "Lith"], &["ine", "era", "a", "ue", "ia", "ève", "ée", "ys"])
+        }
+        (Culture::Sylphes, false) => {
+            (&["Zeph", "Aer", "Ven", "Bris", "Cirr", "Al", "Fyr", "Sour"], &["ir", "el", "ion", "an", "us", "ast", "en", "is"])
+        }
+        (Culture::Sylphes, true) => {
+            (&["Zeph", "Aer", "Ven", "Bris", "Cirr", "Al", "Fyr", "Sour"], &["ire", "elle", "ia", "ane", "ée", "a", "ine", "is"])
+        }
+        (Culture::Gnomes, false) => (
+            &["Fizz", "Bim", "Tock", "Nim", "Pip", "Gim", "Wob", "Zook", "Dabb"],
+            &["wick", "ble", "bert", "o", "kin", "pot", "nob", "ster"],
+        ),
+        (Culture::Gnomes, true) => (
+            &["Fizz", "Bim", "Tilly", "Nim", "Pip", "Lil", "Wob", "Zook", "Dabb"],
+            &["ette", "belle", "a", "ina", "kin", "wyn", "ie", "ra"],
+        ),
+        (Culture::Aasimars, false) => {
+            (&["Aur", "Sol", "Cel", "Ser", "Lum", "Ori", "Hel", "Zar"], &["iel", "on", "as", "ael", "ian", "ius", "or", "eth"])
+        }
+        (Culture::Aasimars, true) => {
+            (&["Aur", "Sol", "Cel", "Ser", "Lum", "Ori", "Hel", "Zar"], &["iela", "ine", "ise", "aëlle", "iane", "a", "ora", "eth"])
+        }
+        (Culture::HommesBetes, false) => {
+            (&["Rakh", "Fen", "Tar", "Grif", "Kaz", "Bor", "Shir", "Vulk"], &["an", "rok", "ash", "ur", "kar", "ruk", "ix", "ok"])
+        }
+        (Culture::HommesBetes, true) => {
+            (&["Rakh", "Fen", "Tar", "Nyr", "Kaz", "Ssa", "Shir", "Vel"], &["ia", "ra", "sha", "ya", "ka", "ri", "ix", "ane"])
+        }
     };
     format!("{}{}", starts[rng.gen_range(0..starts.len())], ends[rng.gen_range(0..ends.len())])
 }
@@ -435,11 +492,7 @@ fn appearance_for(culture: Culture, profession: &Profession, feminine: bool, rng
 
 /// « de Brumeval », « d'Ithilien »
 fn of_town(name: &str) -> String {
-    if name.starts_with(['A', 'E', 'I', 'O', 'U', 'Y', 'É']) {
-        format!("d'{name}")
-    } else {
-        format!("de {name}")
-    }
+    if name.starts_with(['A', 'E', 'I', 'O', 'U', 'Y', 'É']) { format!("d'{name}") } else { format!("de {name}") }
 }
 
 /// Nom d'une ville ou d'un village, tiré de sa place et de sa culture
@@ -447,18 +500,46 @@ pub(crate) fn town_name(s: &Settlement) -> String {
     let h = mix(hash2(0x0A3E ^ ((face_index(s.face) as u64) << 40), s.center.0, s.center.1));
     let (starts, ends): (&[&str], &[&str]) = match s.culture.unwrap_or(Culture::Humains) {
         Culture::Humains => (
-            &["Brume", "Clair", "Haut", "Roche", "Beau", "Vert", "Fonte", "Mont", "Pierre", "Saule", "Bois", "Val", "Gué", "Champ", "Chêne", "Loup"],
+            &[
+                "Brume", "Clair", "Haut", "Roche", "Beau", "Vert", "Fonte", "Mont", "Pierre", "Saule", "Bois", "Val", "Gué", "Champ",
+                "Chêne", "Loup",
+            ],
             &["val", "fort", "mont", "bourg", "lieu", "ville", "fontaine", "pré", "combe", "brune", "rive", "croix"],
         ),
-        Culture::Nains => (&["Khaz", "Dur", "Bar", "Grim", "Thor", "Kar", "Ered", "Bram", "Gund", "Orm"], &["ak", "dum", "heim", "grund", "bar", "zar", "dor", "hold", "karak"]),
-        Culture::ElfesDesBois => (&["Syl", "Lor", "Fael", "Eryn", "Thal", "Nim", "Aer", "Linde"], &["wen", "lindë", "dor", "lóme", "anor", "thil", "nost", "lad"]),
-        Culture::HautsElfes => (&["Ith", "Caer", "Vael", "Sil", "Aer", "Lum", "Tir", "Ela"], &["ilien", "andor", "esse", "marë", "athil", "ion", "orië", "vanyar"]),
-        Culture::DemiOrques => (&["Gor", "Krag", "Thrak", "Mog", "Uruk", "Zag", "Brug", "Dush"], &["gash", "mar", "thor", "nak", "ruk", "gor", "bal", "kul"]),
-        Culture::Revenants => (&["Brume", "Noir", "Cendre", "Sel", "Morte", "Grève", "Pâle", "Ombre"], &["rive", "lac", "anse", "grève", "étang", "marais", "eau", "port"]),
-        Culture::Sylphes => (&["Zéph", "Aéri", "Ventu", "Cirr", "Alti", "Nuée", "Bris", "Hau"], &["mont", "pic", "aire", "cime", "flèche", "haut", "voile", "crête"]),
-        Culture::Gnomes => (&["Bric", "Fouil", "Taupe", "Cuivre", "Rouage", "Butte", "Terrier", "Clou"], &["bourg", "trou", "fosse", "ville", "nid", "motte", "creux", "boule"]),
-        Culture::Aasimars => (&["Aur", "Sol", "Cél", "Lumi", "Héli", "Ori", "Séra", "Zén"], &["ia", "ion", "ade", "elle", "ys", "or", "iel", "ane"]),
-        Culture::HommesBetes => (&["Croc", "Griffe", "Fauve", "Crin", "Corne", "Pelage", "Rugi", "Traque"], &["roc", "val", "sente", "terre", "lande", "gîte", "tanière", "piste"]),
+        Culture::Nains => (
+            &["Khaz", "Dur", "Bar", "Grim", "Thor", "Kar", "Ered", "Bram", "Gund", "Orm"],
+            &["ak", "dum", "heim", "grund", "bar", "zar", "dor", "hold", "karak"],
+        ),
+        Culture::ElfesDesBois => (
+            &["Syl", "Lor", "Fael", "Eryn", "Thal", "Nim", "Aer", "Linde"],
+            &["wen", "lindë", "dor", "lóme", "anor", "thil", "nost", "lad"],
+        ),
+        Culture::HautsElfes => (
+            &["Ith", "Caer", "Vael", "Sil", "Aer", "Lum", "Tir", "Ela"],
+            &["ilien", "andor", "esse", "marë", "athil", "ion", "orië", "vanyar"],
+        ),
+        Culture::DemiOrques => {
+            (&["Gor", "Krag", "Thrak", "Mog", "Uruk", "Zag", "Brug", "Dush"], &["gash", "mar", "thor", "nak", "ruk", "gor", "bal", "kul"])
+        }
+        Culture::Revenants => (
+            &["Brume", "Noir", "Cendre", "Sel", "Morte", "Grève", "Pâle", "Ombre"],
+            &["rive", "lac", "anse", "grève", "étang", "marais", "eau", "port"],
+        ),
+        Culture::Sylphes => (
+            &["Zéph", "Aéri", "Ventu", "Cirr", "Alti", "Nuée", "Bris", "Hau"],
+            &["mont", "pic", "aire", "cime", "flèche", "haut", "voile", "crête"],
+        ),
+        Culture::Gnomes => (
+            &["Bric", "Fouil", "Taupe", "Cuivre", "Rouage", "Butte", "Terrier", "Clou"],
+            &["bourg", "trou", "fosse", "ville", "nid", "motte", "creux", "boule"],
+        ),
+        Culture::Aasimars => {
+            (&["Aur", "Sol", "Cél", "Lumi", "Héli", "Ori", "Séra", "Zén"], &["ia", "ion", "ade", "elle", "ys", "or", "iel", "ane"])
+        }
+        Culture::HommesBetes => (
+            &["Croc", "Griffe", "Fauve", "Crin", "Corne", "Pelage", "Rugi", "Traque"],
+            &["roc", "val", "sente", "terre", "lande", "gîte", "tanière", "piste"],
+        ),
     };
     let start = starts[(h % starts.len() as u64) as usize];
     let end = ends[(h / 97 % ends.len() as u64) as usize];
@@ -496,13 +577,25 @@ fn card_of_sex(culture: Culture, profession: &Profession, origin: String, femini
     // Le nom suit ce que l'apparence montre
     let name = random_name(culture, looks_feminine(&appearance), rng);
     appearance.nom = name.clone();
-    let greeting = if profession.lines.is_empty() { "Bonjour.".to_string() } else { profession.lines[rng.gen_range(0..profession.lines.len())].clone() };
+    let greeting = if profession.lines.is_empty() {
+        "Bonjour.".to_string()
+    } else {
+        profession.lines[rng.gen_range(0..profession.lines.len())].clone()
+    };
     let profession_name = profession.name_for(looks_feminine(&appearance)).to_string();
     let origin = match origin.strip_prefix("Habitant ") {
         Some(rest) if looks_feminine(&appearance) => format!("Habitante {rest}"),
         _ => origin,
     };
-    Arc::new(VillagerCard { name, profession: profession_name, culture: culture.name().to_string(), origin, appearance, trades: trades_for(profession, rng), greeting })
+    Arc::new(VillagerCard {
+        name,
+        profession: profession_name,
+        culture: culture.name().to_string(),
+        origin,
+        appearance,
+        trades: trades_for(profession, rng),
+        greeting,
+    })
 }
 
 /// Colonne de la porte d'une maison (au milieu du mur de la porte) et celle juste devant
@@ -686,16 +779,26 @@ impl Town {
         // Les gardes gardent leur poste libre des badauds
         let gathering = gathering.into_iter().filter(|c| posts.iter().all(|p| p.cell != *c)).collect();
         work.insert(Workplace::Rempart, posts);
-        let radius = homes.iter().map(|h| (((h.door.0 - s.center.0).pow(2) + (h.door.1 - s.center.1).pow(2)) as f32).sqrt()).fold(0.0, f32::max);
-        Town { nav: Arc::new(nav), homes, work, customers, wander, plaza, gathering, gathering_center, inn, name: town_name(s), radius, active: false }
+        let radius =
+            homes.iter().map(|h| (((h.door.0 - s.center.0).pow(2) + (h.door.1 - s.center.1).pow(2)) as f32).sqrt()).fold(0.0, f32::max);
+        Town {
+            nav: Arc::new(nav),
+            homes,
+            work,
+            customers,
+            wander,
+            plaza,
+            gathering,
+            gathering_center,
+            inn,
+            name: town_name(s),
+            radius,
+            active: false,
+        }
     }
 
     fn random_street(&self, rng: &mut StdRng) -> Cell {
-        if self.wander.is_empty() {
-            self.plaza
-        } else {
-            self.wander[rng.gen_range(0..self.wander.len())]
-        }
+        if self.wander.is_empty() { self.plaza } else { self.wander[rng.gen_range(0..self.wander.len())] }
     }
 }
 
@@ -711,7 +814,10 @@ fn gathering_cells(nav: &NavGrid, landmark: Rect) -> Vec<Cell> {
         dx.max(dz)
     };
     let around = landmark.expand(GATHERING_RADIUS);
-    let mut cells: Vec<Cell> = (around.z0..around.z1).flat_map(|z| (around.x0..around.x1).map(move |x| (x, z))).filter(|&c| ring(c) >= 1 && nav.walkable(c)).collect();
+    let mut cells: Vec<Cell> = (around.z0..around.z1)
+        .flat_map(|z| (around.x0..around.x1).map(move |x| (x, z)))
+        .filter(|&c| ring(c) >= 1 && nav.walkable(c))
+        .collect();
     let (cx, cz) = landmark.center();
     cells.sort_by_key(|&(x, z)| (ring((x, z)), (x - cx).abs() + (z - cz).abs(), x, z));
     cells
@@ -764,11 +870,7 @@ fn roads_from<'a>(generator: &'a PlanetWorldGenerator, s: &Settlement) -> Vec<&'
 }
 
 fn other_end(road: &Road, from: Cell) -> Cell {
-    if road.from == from {
-        road.to
-    } else {
-        road.from
-    }
+    if road.from == from { road.to } else { road.from }
 }
 
 impl Villages {
@@ -815,7 +917,14 @@ impl Villages {
         self.species.by_id.get(&profession.species).or_else(|| self.species.by_id.get("villageois")).copied().unwrap_or(0)
     }
 
-    pub(crate) fn tick(&mut self, world: &mut CreatureWorld, query: &mut TerrainQuery, generator: &PlanetWorldGenerator, players: &[Vec3], dt: f32) {
+    pub(crate) fn tick(
+        &mut self,
+        world: &mut CreatureWorld,
+        query: &mut TerrainQuery,
+        generator: &PlanetWorldGenerator,
+        players: &[Vec3],
+        dt: f32,
+    ) {
         if !self.enabled {
             return;
         }
@@ -926,7 +1035,9 @@ impl Villages {
                 }
             } else if distance < TRAVELLER_EMBODY_BLOCKS && !visiting_inactive && !indoors {
                 let cell = match &self.people[i].role {
-                    Role::Traveller(Trip { visiting: Some((key, _)), .. }) => self.towns.get(key).map_or((key.1, key.2), |t| t.random_street(&mut self.rng)),
+                    Role::Traveller(Trip { visiting: Some((key, _)), .. }) => {
+                        self.towns.get(key).map_or((key.1, key.2), |t| t.random_street(&mut self.rng))
+                    }
                     Role::Traveller(trip) => trip.route[trip.k.min(trip.route.len() - 1)],
                     _ => continue,
                 };
@@ -956,7 +1067,8 @@ impl Villages {
                 }
             }
         }
-        let idle: Vec<usize> = registry.iter().enumerate().filter(|(_, p)| !p.traveller && p.workplace == Workplace::Aucun).map(|(i, _)| i).collect();
+        let idle: Vec<usize> =
+            registry.iter().enumerate().filter(|(_, p)| !p.traveller && p.workplace == Workplace::Aucun).map(|(i, _)| i).collect();
         if town.homes.is_empty() || idle.is_empty() {
             self.towns.insert(key, town);
             return;
@@ -1029,7 +1141,16 @@ impl Villages {
         }
     }
 
-    fn add_traveller(&mut self, face: PlanetFace, from: Cell, to: Cell, route: Vec<Cell>, k: usize, visiting: Option<(TownKey, f32)>, rng: &mut StdRng) {
+    fn add_traveller(
+        &mut self,
+        face: PlanetFace,
+        from: Cell,
+        to: Cell,
+        route: Vec<Cell>,
+        k: usize,
+        visiting: Option<(TownKey, f32)>,
+        rng: &mut StdRng,
+    ) {
         if route.is_empty() {
             return;
         }
@@ -1040,10 +1161,13 @@ impl Villages {
             return;
         }
         let mut roll = rng.gen_range(0.0..total);
-        let index = candidates.iter().find(|c| {
-            roll -= c.1;
-            roll < 0.0
-        }).map_or(candidates[0].0, |c| c.0);
+        let index = candidates
+            .iter()
+            .find(|c| {
+                roll -= c.1;
+                roll < 0.0
+            })
+            .map_or(candidates[0].0, |c| c.0);
         let p = registry.get(index).unwrap();
         // Surtout des humains, qui voyagent le plus
         let culture = if rng.gen_bool(0.55) { Culture::Humains } else { Culture::ALL[rng.gen_range(1..Culture::ALL.len())] };
@@ -1099,7 +1223,8 @@ impl Villages {
             world.remove(id);
             self.cards.remove(&id);
             if let (Role::Resident { town, .. }, false) = (&self.people[i].role, self.people[i].guard)
-                && let Some(n) = self.outdoors.get_mut(town) {
+                && let Some(n) = self.outdoors.get_mut(town)
+            {
                 *n = n.saturating_sub(1);
             }
         }
@@ -1419,12 +1544,14 @@ impl Villages {
         // Un garde ne quitte pas l'entrée qu'il garde : il y revient (après une poursuite) et y reste
         if guard
             && let Some(spot) = work
-            && self.send(i, &nav, here, spot.cell, Goal::Work, Some(spot)) {
+            && self.send(i, &nav, here, spot.cell, Goal::Work, Some(spot))
+        {
             return;
         }
         // Une tâche à l'intérieur : de temps en temps, et toujours quand la rue est trop peuplée
         let Role::Resident { home, .. } = self.people[i].role else { return };
-        let crowded = !self.room_outside(key, false) && self.outdoors.get(&key).copied().unwrap_or(0) > outdoor_cap(self.towns[&key].homes.len());
+        let crowded =
+            !self.room_outside(key, false) && self.outdoors.get(&key).copied().unwrap_or(0) > outdoor_cap(self.towns[&key].homes.len());
         let near = self.near_player(world.geometry(), key.0, here);
         if !guard && !near && (crowded || self.rng.gen_bool(0.12)) {
             let home_spot = self.towns[&key].homes[home];
@@ -1435,7 +1562,8 @@ impl Villages {
             }
         }
         if let Some(spot) = work.filter(|_| roll < 0.55)
-            && self.send(i, &nav, here, spot.cell, Goal::Work, Some(spot)) {
+            && self.send(i, &nav, here, spot.cell, Goal::Work, Some(spot))
+        {
             return;
         }
         if roll < 0.8 && self.people[i].chat_cooldown <= 0.0 && self.find_chat(i, key, here, world) {
@@ -1446,7 +1574,9 @@ impl Villages {
             let spot = town.customers[self.rng.gen_range(0..town.customers.len())];
             // Le marchand de cet étal, s'il est là, le servira
             let merchant = self.people.iter().position(|p| {
-                matches!(p.role, Role::Resident { work: Some(w), .. } if w.cell == spot.look) && p.task == Task::Working && p.creature.is_some()
+                matches!(p.role, Role::Resident { work: Some(w), .. } if w.cell == spot.look)
+                    && p.task == Task::Working
+                    && p.creature.is_some()
             });
             if self.send(i, &nav, here, spot.cell, Goal::Shop, Some(spot)) {
                 self.people[i].partner = merchant;
@@ -1455,7 +1585,8 @@ impl Villages {
         }
         if roll < 0.93
             && let Some(spot) = self.gathering_spot(i, key, world)
-            && self.send(i, &nav, here, spot.cell, Goal::Wander, Some(spot)) {
+            && self.send(i, &nav, here, spot.cell, Goal::Wander, Some(spot))
+        {
             return;
         }
         let target = self.towns[&key].random_street(&mut self.rng);
@@ -1496,18 +1627,24 @@ impl Villages {
     /// Cherche un voisin désœuvré à qui parler ; s'il en trouve un, le rejoint
     fn find_chat(&mut self, i: usize, key: TownKey, here: Cell, world: &mut CreatureWorld) -> bool {
         let block = world.geometry().block_height as f32;
-        let Some(me) = self.people[i].creature.and_then(|id| world.creatures().iter().find(|c| c.id == id)).map(|c| c.position) else { return false };
+        let Some(me) = self.people[i].creature.and_then(|id| world.creatures().iter().find(|c| c.id == id)).map(|c| c.position) else {
+            return false;
+        };
         let in_town = |p: &Person| match &p.role {
             Role::Resident { town, .. } => *town == key,
             Role::Traveller(t) => t.visiting.is_some_and(|(k, _)| k == key),
         };
-        let partner = self.people.iter().enumerate().filter(|(j, p)| {
-            *j != i && p.alive && in_town(p) && p.task == Task::Idle && p.partner.is_none() && p.chat_cooldown <= 0.0
-        }).filter_map(|(j, p)| {
-            let pos = world.creatures().iter().find(|c| Some(c.id) == p.creature)?.position;
-            let d = pos.distance(me) / block;
-            (d < CHAT_RADIUS_BLOCKS).then_some((j, pos, d))
-        }).min_by(|a, b| a.2.total_cmp(&b.2));
+        let partner = self
+            .people
+            .iter()
+            .enumerate()
+            .filter(|(j, p)| *j != i && p.alive && in_town(p) && p.task == Task::Idle && p.partner.is_none() && p.chat_cooldown <= 0.0)
+            .filter_map(|(j, p)| {
+                let pos = world.creatures().iter().find(|c| Some(c.id) == p.creature)?.position;
+                let d = pos.distance(me) / block;
+                (d < CHAT_RADIUS_BLOCKS).then_some((j, pos, d))
+            })
+            .min_by(|a, b| a.2.total_cmp(&b.2));
         let Some((j, pos, _)) = partner else { return false };
         // Le voisin retenu a forcément une créature : sa position vient d'elle
         let Some(pid) = self.people[j].creature else { return false };
@@ -1531,12 +1668,22 @@ impl Villages {
         true
     }
 
-    fn think_traveller(&mut self, i: usize, world: &mut CreatureWorld, query: &mut TerrainQuery, generator: &PlanetWorldGenerator, dt: f32) {
+    fn think_traveller(
+        &mut self,
+        i: usize,
+        world: &mut CreatureWorld,
+        query: &mut TerrainQuery,
+        generator: &PlanetWorldGenerator,
+        dt: f32,
+    ) {
         let geometry = *world.geometry();
         let Role::Traveller(trip) = &self.people[i].role else { return };
         let trip = trip.clone();
         let face = self.people[i].face;
-        let creature = self.people[i].creature.and_then(|id| world.creatures().iter().find(|c| c.id == id)).map(|c| (c.position, c.panic > 0.0 || c.is_hunting()));
+        let creature = self.people[i]
+            .creature
+            .and_then(|id| world.creatures().iter().find(|c| c.id == id))
+            .map(|c| (c.position, c.panic > 0.0 || c.is_hunting()));
         // En visite
         if let Some((key, left)) = trip.visiting {
             let left = left - dt;
@@ -1673,7 +1820,10 @@ impl Villages {
                 let (dx, dz) = ((b.0 - a.0) as f32, (b.1 - a.1) as f32);
                 let length = (dx * dx + dz * dz).sqrt().max(1e-3);
                 let side = if self.rng.gen_bool(0.5) { 1.0 } else { -1.0 };
-                let camp = (trip.route[k].0 + (-dz / length * CAMP_OFFSET_BLOCKS * side).round() as i32, trip.route[k].1 + (dx / length * CAMP_OFFSET_BLOCKS * side).round() as i32);
+                let camp = (
+                    trip.route[k].0 + (-dz / length * CAMP_OFFSET_BLOCKS * side).round() as i32,
+                    trip.route[k].1 + (dx / length * CAMP_OFFSET_BLOCKS * side).round() as i32,
+                );
                 let person = &mut self.people[i];
                 person.path = VecDeque::from([camp]);
                 person.task = Task::Going(Goal::Camp);
@@ -1746,7 +1896,8 @@ impl Villages {
         t.visiting = Some((key, self.rng.gen_range(90.0..300.0)));
         if !self.towns.contains_key(&key)
             && let Some(s) = generator.structures.at(generator, face, t.to.0, t.to.1)
-            && s.kind != SettlementKind::Ruins {
+            && s.kind != SettlementKind::Ruins
+        {
             self.found_town(s, generator);
         }
         let person = &mut self.people[i];
@@ -1779,9 +1930,14 @@ impl Villages {
         let to = other_end(road, s.center);
         self.end_chat(i, world);
         // Il quitte la ville par les rues jusqu'au départ du chemin, puis suit la route
-        let here = self.people[i].creature.and_then(|id| world.creatures().iter().find(|c| c.id == id)).and_then(|c| Self::cell_of(world, c.position)).map(|(_, cell)| cell);
+        let here = self.people[i]
+            .creature
+            .and_then(|id| world.creatures().iter().find(|c| c.id == id))
+            .and_then(|c| Self::cell_of(world, c.position))
+            .map(|(_, cell)| cell);
         if let (Some(here), Some(town), Some(&start)) = (here, self.towns.get(&key), route.first())
-            && let Some(mut streets) = town.nav.path(here, start) {
+            && let Some(mut streets) = town.nav.path(here, start)
+        {
             streets.extend(route);
             route = streets;
         }
@@ -1803,9 +1959,9 @@ impl Villages {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use herocraft_common::PlayerId;
-    use crate::edits::TerrainEdits;
     use crate::cubed_sphere::PlanetDescriptor;
+    use crate::edits::TerrainEdits;
+    use herocraft_common::PlayerId;
 
     fn generator() -> PlanetWorldGenerator {
         PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() })
@@ -1878,7 +2034,8 @@ mod tests {
         for rz in 0..crate::structures::REGIONS_PER_FACE {
             for rx in 0..crate::structures::REGIONS_PER_FACE {
                 if let Some(s) = generator.structures.region_settlement(generator, face, rx, rz)
-                    && found.is_none_or(|f| s.pieces.len() < f.pieces.len()) {
+                    && found.is_none_or(|f| s.pieces.len() < f.pieces.len())
+                {
                     found = Some(s);
                 }
             }
@@ -1915,7 +2072,9 @@ mod tests {
         // Le même établissement donne les mêmes habitants
         let mut again = Villages::new(1, &registry);
         again.found_town(&s, &generator);
-        let names = |v: &Villages| v.people.iter().filter(|p| matches!(p.role, Role::Resident { .. })).map(|p| p.card.name.clone()).collect::<Vec<_>>();
+        let names = |v: &Villages| {
+            v.people.iter().filter(|p| matches!(p.role, Role::Resident { .. })).map(|p| p.card.name.clone()).collect::<Vec<_>>()
+        };
         assert_eq!(names(&villages), names(&again));
     }
 
@@ -1938,14 +2097,22 @@ mod tests {
             world.tick(0.1, &generator, &edits, &[feet]);
         }
         let block = world.geometry().block_height as f32;
-        let moved = start.iter().filter(|(id, p)| world.creatures().iter().find(|c| c.id == *id).is_some_and(|c| c.position.distance(*p) > 2.0 * block)).count();
+        let moved = start
+            .iter()
+            .filter(|(id, p)| world.creatures().iter().find(|c| c.id == *id).is_some_and(|c| c.position.distance(*p) > 2.0 * block))
+            .count();
         assert!(moved > 0, "personne n'a bougé en une minute");
         // La nuit tombe : ils rentrent (sauf les gardes de nuit et les voyageurs)
         world.set_sun_dir(-feet.normalize());
         for _ in 0..1800 {
             world.tick(0.1, &generator, &edits, &[feet]);
         }
-        let residents_out = world.creatures().iter().filter(|c| c.managed).filter(|c| world.villager_card(c.id).is_some_and(|card| card.origin.starts_with("Habitant") && card.profession != "Garde")).count();
+        let residents_out = world
+            .creatures()
+            .iter()
+            .filter(|c| c.managed)
+            .filter(|c| world.villager_card(c.id).is_some_and(|card| card.origin.starts_with("Habitant") && card.profession != "Garde"))
+            .count();
         assert!(residents_out <= out / 4, "{residents_out} habitants encore dehors la nuit (sur {out})");
         let indoors = world.villages.people.iter().filter(|p| p.task == Task::Indoors).count();
         assert!(indoors > 0);
@@ -1971,7 +2138,12 @@ mod tests {
             .creatures()
             .iter()
             .filter(|c| c.managed && c.is_alive())
-            .find_map(|c| world.villager_card(c.id).filter(|card| card.origin.starts_with("Habitant") && card.profession != "Garde").map(|card| (c.id, c.herd, c.position, card.clone())))
+            .find_map(|c| {
+                world
+                    .villager_card(c.id)
+                    .filter(|card| card.origin.starts_with("Habitant") && card.profession != "Garde")
+                    .map(|card| (c.id, c.herd, c.position, card.clone()))
+            })
             .expect("un habitant dehors");
         assert!(card.origin.ends_with(&name), "{} / {name}", card.origin);
         // Le premier coup est signalé à son auteur, une fois, avec la ville
@@ -1997,7 +2169,11 @@ mod tests {
         for face in PlanetFace::ALL {
             for rz in 0..crate::structures::REGIONS_PER_FACE {
                 for rx in 0..crate::structures::REGIONS_PER_FACE {
-                    if let Some(s) = generator.structures.region_settlement(generator, face, rx, rz).filter(|s| s.size == Some(crate::structures::TownSize::PetiteVille)) {
+                    if let Some(s) = generator
+                        .structures
+                        .region_settlement(generator, face, rx, rz)
+                        .filter(|s| s.size == Some(crate::structures::TownSize::PetiteVille))
+                    {
                         return s.clone();
                     }
                 }
@@ -2012,8 +2188,10 @@ mod tests {
         let s = walled_town(&generator);
         let town = Town::new(&s);
         // Les portes du rempart (pas les passages sous le chemin de ronde, qui les doublent en dedans)
-        let gates: Vec<Rect> = s.pieces.iter().filter_map(|p| if let Piece::Gate { rect, walk: false, .. } = p { Some(*rect) } else { None }).collect();
-        let openings: Vec<Rect> = s.pieces.iter().filter_map(|p| if let Piece::Gate { rect, .. } = p { Some(*rect) } else { None }).collect();
+        let gates: Vec<Rect> =
+            s.pieces.iter().filter_map(|p| if let Piece::Gate { rect, walk: false, .. } = p { Some(*rect) } else { None }).collect();
+        let openings: Vec<Rect> =
+            s.pieces.iter().filter_map(|p| if let Piece::Gate { rect, .. } = p { Some(*rect) } else { None }).collect();
         let posts = &town.work[&Workplace::Rempart];
         assert!(posts.len() >= gates.len() * 2 - 1, "{} postes pour {} portes", posts.len(), gates.len());
         for (k, post) in posts.iter().enumerate() {
@@ -2029,10 +2207,15 @@ mod tests {
         let registry = Arc::new(CreatureRegistry::load_default());
         let mut villages = Villages::new(1, &registry);
         villages.found_town(&s, &generator);
-        let guards: Vec<Spot> = villages.people.iter().filter(|p| p.guard).filter_map(|p| match p.role {
-            Role::Resident { work, .. } => work,
-            _ => None,
-        }).collect();
+        let guards: Vec<Spot> = villages
+            .people
+            .iter()
+            .filter(|p| p.guard)
+            .filter_map(|p| match p.role {
+                Role::Resident { work, .. } => work,
+                _ => None,
+            })
+            .collect();
         assert!(!guards.is_empty());
         for (k, g) in guards.iter().enumerate() {
             assert!(guards[..k].iter().all(|o| o.cell != g.cell), "deux gardes au même poste");
@@ -2077,7 +2260,11 @@ mod tests {
         let generator = generator();
         let edits = TerrainEdits::new(None);
         let capital = generator.structures.capital(&generator).expect("une capitale");
-        let s = generator.structures.region_settlement(&generator, capital.face, capital.region.0, capital.region.1).expect("la capitale").clone();
+        let s = generator
+            .structures
+            .region_settlement(&generator, capital.face, capital.region.0, capital.region.1)
+            .expect("la capitale")
+            .clone();
         let geometry = BlockGeometry::new(generator.base_radius());
         let mut query = TerrainQuery::new(&generator, &edits);
         let feet = feet_at(&geometry, &mut query, s.face, s.center, None).unwrap();
@@ -2092,7 +2279,12 @@ mod tests {
             if k == 0 {
                 assert!(world.villages.towns[&key].active);
             }
-            let out = world.villages.people.iter().filter(|p| !p.guard && p.creature.is_some() && matches!(p.role, Role::Resident { town, .. } if town == key)).count();
+            let out = world
+                .villages
+                .people
+                .iter()
+                .filter(|p| !p.guard && p.creature.is_some() && matches!(p.role, Role::Resident { town, .. } if town == key))
+                .count();
             most = most.max(out);
         }
         let residents = world.villages.people.iter().filter(|p| matches!(p.role, Role::Resident { town, .. } if town == key)).count();
@@ -2100,7 +2292,12 @@ mod tests {
         assert!(residents > 400, "{residents} habitants");
         assert!(most > 10 && most <= outdoor_cap(homes(&world)), "{most} habitants dehors");
         // Et ils tournent : certains sont rentrés travailler chez eux pendant que d'autres sortaient
-        let indoors_by_day = world.villages.people.iter().filter(|p| p.task == Task::Indoors && matches!(p.role, Role::Resident { town, .. } if town == key)).count();
+        let indoors_by_day = world
+            .villages
+            .people
+            .iter()
+            .filter(|p| p.task == Task::Indoors && matches!(p.role, Role::Resident { town, .. } if town == key))
+            .count();
         assert!(indoors_by_day > residents / 2);
     }
 
@@ -2109,7 +2306,11 @@ mod tests {
         let generator = generator();
         let edits = TerrainEdits::new(None);
         let capital = generator.structures.capital(&generator).expect("une capitale");
-        let s = generator.structures.region_settlement(&generator, capital.face, capital.region.0, capital.region.1).expect("la capitale").clone();
+        let s = generator
+            .structures
+            .region_settlement(&generator, capital.face, capital.region.0, capital.region.1)
+            .expect("la capitale")
+            .clone();
         let geometry = BlockGeometry::new(generator.base_radius());
         let mut query = TerrainQuery::new(&generator, &edits);
         let registry = Arc::new(CreatureRegistry::load_default());
@@ -2131,7 +2332,12 @@ mod tests {
         }
         assert!(world.villages.towns[&key].active, "la capitale s'éveille quand on arrive par ses quartiers");
         let town = &world.villages.towns[&key];
-        let near: Vec<&Person> = world.villages.people.iter().filter(|p| matches!(p.role, Role::Resident { town: t, home, .. } if t == key && far_from(town.homes[home].door, edge) < 20.0)).collect();
+        let near: Vec<&Person> = world
+            .villages
+            .people
+            .iter()
+            .filter(|p| matches!(p.role, Role::Resident { town: t, home, .. } if t == key && far_from(town.homes[home].door, edge) < 20.0))
+            .collect();
         let bodies = near.iter().filter(|p| p.creature.is_some()).count();
         println!("{bodies} / {} voisins du joueur ont un corps", near.len());
         assert!(!near.is_empty());
@@ -2153,7 +2359,11 @@ mod tests {
         world.tick(0.05, &generator, &edits, &[feet]);
         let key = (s.face, s.center.0, s.center.1);
         let mut villages = std::mem::take(&mut world.villages);
-        let out: Vec<usize> = (0..villages.people.len()).filter(|&i| villages.people[i].creature.is_some() && matches!(villages.people[i].role, Role::Resident { town, .. } if town == key)).collect();
+        let out: Vec<usize> = (0..villages.people.len())
+            .filter(|&i| {
+                villages.people[i].creature.is_some() && matches!(villages.people[i].role, Role::Resident { town, .. } if town == key)
+            })
+            .collect();
         assert!(out.len() > 3, "{} habitants dehors", out.len());
         // Tous se rendent au rassemblement l'un après l'autre : chacun reçoit sa colonne
         let mut cells = Vec::new();
@@ -2188,7 +2398,8 @@ mod tests {
         for _ in 0..(len as f32 * ROUTE_SPACING as f32 / 1.5 / 0.5) as usize + 20 {
             villages.think_traveller(i, &mut world, &mut query, &generator, 0.5);
             if let Role::Traveller(t) = &villages.people[i].role
-                && t.visiting.is_some() {
+                && t.visiting.is_some()
+            {
                 arrived = true;
                 break;
             }

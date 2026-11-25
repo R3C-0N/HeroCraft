@@ -9,21 +9,23 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use herocraft_common::lan::{LanAnnounce, LanAnnouncer};
-use herocraft_common::net::{encode_frame, Connection};
+use herocraft_common::net::{Connection, encode_frame};
 use herocraft_common::{
-    DamageKind,
-    fall_damage, BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureId, CreatureRegistry, CreatureState, ItemId, PlayerClass, PlayerId, PlayerState,
-    ServerPacket, SkillWheel, PROTOCOL_VERSION,
+    BlockId, BlockInteractionAction, CharacterStats, ClientPacket, CreatureId, CreatureRegistry, CreatureState, DamageKind, ItemId,
+    PROTOCOL_VERSION, PlayerClass, PlayerId, PlayerState, ServerPacket, SkillWheel, fall_damage,
 };
 use herocraft_voxel_engine::ChunkStorage;
-use herocraft_world::{BlockGeometry, BlockPos, Culture, CreatureWorld, Epoch, TempleSite, Fields, PlanetDescriptor, PlanetWorldGenerator, SkillPlayers, SkillRunner, TerrainEdits, CREATURE_RANGE_BLOCKS};
+use herocraft_world::{
+    BlockGeometry, BlockPos, CREATURE_RANGE_BLOCKS, CreatureWorld, Culture, Epoch, Fields, PlanetDescriptor, PlanetWorldGenerator,
+    SkillPlayers, SkillRunner, TempleSite, TerrainEdits,
+};
 use log::{info, warn};
 
 /// Ticks de simulation par seconde
@@ -381,13 +383,36 @@ impl Server {
         self.creatures.set_sun_dir(herocraft_world::sky::compute_sun_dir(self.clock.time as f32));
         self.creatures.set_climate(&self.weather, self.clock.time);
 
-        let (ids, presences): (Vec<PlayerId>, Vec<herocraft_world::PlayerPresence>) =
-            self.players.values().filter_map(|p| p.position.map(|feet| (p.id, herocraft_world::PlayerPresence { feet, crouching: p.crouching, holding: p.holding, hidden: p.stats.is_invisible() || p.stats.fallen }))).unzip();
+        let (ids, presences): (Vec<PlayerId>, Vec<herocraft_world::PlayerPresence>) = self
+            .players
+            .values()
+            .filter_map(|p| {
+                p.position.map(|feet| {
+                    (
+                        p.id,
+                        herocraft_world::PlayerPresence {
+                            feet,
+                            crouching: p.crouching,
+                            holding: p.holding,
+                            hidden: p.stats.is_invisible() || p.stats.fallen,
+                        },
+                    )
+                })
+            })
+            .unzip();
         for hit in self.creatures.tick_players(dt, &self.generator, &self.edits, &presences, &ids) {
             let id = ids[hit.player];
             // Une garde levée pare le coup qui arrive de face, et riposte
             let facing = self.players.get(&id).and_then(|p| p.position.map(|feet| herocraft_common::yaw_direction(feet, p.yaw)));
-            let parry = self.skill_runner.parry(id, facing, hit.creature_id, hit.damage, hit.kind.name(), &mut self.creatures, &mut PlayersView(&mut self.players));
+            let parry = self.skill_runner.parry(
+                id,
+                facing,
+                hit.creature_id,
+                hit.damage,
+                hit.kind.name(),
+                &mut self.creatures,
+                &mut PlayersView(&mut self.players),
+            );
             if let Some(impact) = parry.impact {
                 self.announce_impact(impact);
             }
@@ -395,7 +420,10 @@ impl Server {
                 let ignores = self.skill_runner.immunities(id);
                 if let Some(player) = self.players.get_mut(&id) {
                     self.creatures.afflict(&hit, &mut player.stats, &ignores);
-                    let push = player.position.and_then(|feet| self.creatures.knockback(&hit, feet)).filter(|_| !ignores.contains(&herocraft_common::skills::Status::Knockback));
+                    let push = player
+                        .position
+                        .and_then(|feet| self.creatures.knockback(&hit, feet))
+                        .filter(|_| !ignores.contains(&herocraft_common::skills::Status::Knockback));
                     if let Some((direction, speed)) = push {
                         player.connection.send(&ServerPacket::PlayerPushed { direction, speed });
                     }
@@ -418,7 +446,8 @@ impl Server {
         // Œufs pondus, à la place de la bête : montrés au joueur le plus proche (les objets au sol
         // sont propres à chaque client, un seul peut le ramasser)
         for (feet, item) in self.creatures.take_laid() {
-            let nearest = presences.iter().zip(&ids).min_by(|a, b| a.0.feet.distance_squared(feet).total_cmp(&b.0.feet.distance_squared(feet)));
+            let nearest =
+                presences.iter().zip(&ids).min_by(|a, b| a.0.feet.distance_squared(feet).total_cmp(&b.0.feet.distance_squared(feet)));
             if let Some(player) = nearest.and_then(|(_, id)| self.players.get(id)) {
                 player.connection.send(&ServerPacket::Laid { position: feet, item: item.0 });
             }
@@ -476,7 +505,8 @@ impl Server {
             warn!("Échec de l'enregistrement des cultures : {e}");
         }
         if let Some(dir) = &self.save_dir
-            && let Err(e) = self.clock.save(dir) {
+            && let Err(e) = self.clock.save(dir)
+        {
             warn!("Échec de l'enregistrement de l'horloge du ciel : {e}");
         }
     }
@@ -713,7 +743,8 @@ impl Server {
             ClientPacket::VisionAwaken => self.awaken_in_vision(id),
             ClientPacket::Vision { enter: true } => {
                 if let Err(reason) = self.enter_vision(id)
-                    && let Some(player) = self.players.get(&id) {
+                    && let Some(player) = self.players.get(&id)
+                {
                     tell(player, &reason.to_string());
                 }
             }
@@ -825,7 +856,16 @@ impl Server {
     /// Annonce une frappe à tous, et les meurtres et agressions d'habitants qu'elle a faits
     fn announce_impact(&mut self, impact: herocraft_world::SkillImpact) {
         let name = self.players.get(&impact.caster).map(|p| p.name.clone()).unwrap_or_default();
-        self.broadcast(&ServerPacket::SkillHit { player_id: impact.caster, skill: impact.skill, rank: impact.rank, center: impact.center, creatures: impact.creatures, players: impact.players, parried: impact.parried, contact: impact.contact });
+        self.broadcast(&ServerPacket::SkillHit {
+            player_id: impact.caster,
+            skill: impact.skill,
+            rank: impact.rank,
+            center: impact.center,
+            creatures: impact.creatures,
+            players: impact.players,
+            parried: impact.parried,
+            contact: impact.contact,
+        });
         for murder in self.creatures.take_murders() {
             self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: murder.announce(&name) });
         }
@@ -890,7 +930,9 @@ impl Server {
                 Some(BlockId(block))
             }
             // Labour à la houe (herbe ou terre en terre labourée), sans casser le bloc d'abord
-            BlockInteractionAction::Place(block) if herocraft_common::cultures().allows_change(current, BlockId(block)) => Some(BlockId(block)),
+            BlockInteractionAction::Place(block) if herocraft_common::cultures().allows_change(current, BlockId(block)) => {
+                Some(BlockId(block))
+            }
             _ => None,
         };
         let in_reach = player.position.is_some_and(|feet| {
@@ -963,7 +1005,8 @@ impl Server {
             return;
         }
         let held = self.skill_runner.arsenal().held(id);
-        let fits = ammo.block().is_none() && held.ammo.is_some() && herocraft_common::items().get(ammo).is_some_and(|s| s.ammo == held.ammo);
+        let fits =
+            ammo.block().is_none() && held.ammo.is_some() && herocraft_common::items().get(ammo).is_some_and(|s| s.ammo == held.ammo);
         if !fits || self.players.get(&id).is_some_and(|p| p.stats.is_stunned() || p.stats.fallen) {
             return;
         }
@@ -973,7 +1016,8 @@ impl Server {
             player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
         }
         let damage = held.damage + herocraft_common::weapons::ammo_damage(ammo);
-        let hit = self.skill_runner.shoot(id, feet, aim.normalize(), damage, fired, &mut self.creatures, &mut PlayersView(&mut self.players));
+        let hit =
+            self.skill_runner.shoot(id, feet, aim.normalize(), damage, fired, &mut self.creatures, &mut PlayersView(&mut self.players));
         self.broadcast(&ServerPacket::PlayerShot { player_id: id, from: feet, to: hit.to, target: hit.target, special: hit.special });
         let name = self.players.get(&id).map(|p| p.name.clone()).unwrap_or_default();
         for murder in self.creatures.take_murders() {
@@ -991,7 +1035,15 @@ impl Server {
     fn talk_to_villager(&mut self, id: PlayerId, creature_id: CreatureId) {
         let Some(feet) = self.players.get(&id).and_then(|p| p.position) else { return };
         let block = self.geometry.block_height as f32;
-        let Some(at) = self.creatures.creatures().iter().find(|c| c.id == creature_id && c.is_alive() && c.position.distance(feet) <= MAX_REACH_BLOCKS as f32 * block).map(|c| c.position) else { return };
+        let Some(at) = self
+            .creatures
+            .creatures()
+            .iter()
+            .find(|c| c.id == creature_id && c.is_alive() && c.position.distance(feet) <= MAX_REACH_BLOCKS as f32 * block)
+            .map(|c| c.position)
+        else {
+            return;
+        };
         let Some(card) = self.creatures.villager_card(creature_id).cloned() else { return };
         // Les habitants disparus sont oubliés
         let alive: Vec<CreatureId> = self.creatures.creatures().iter().map(|c| c.id).collect();
@@ -1042,7 +1094,10 @@ impl Server {
     fn overlaps_other_player(&self, id: PlayerId, pos: BlockPos) -> bool {
         self.players.values().filter(|p| p.id != id).filter_map(|p| p.position).any(|feet| {
             let Some(feet_block) = self.geometry.block_at_point(feet.as_dvec3()) else { return false };
-            feet_block.face == pos.face && feet_block.x == pos.x && feet_block.z == pos.z && (pos.y == feet_block.y || pos.y == feet_block.y + 1)
+            feet_block.face == pos.face
+                && feet_block.x == pos.x
+                && feet_block.z == pos.z
+                && (pos.y == feet_block.y || pos.y == feet_block.y + 1)
         })
     }
 
@@ -1056,7 +1111,15 @@ impl Server {
             Ok(casting) => {
                 player.connection.send(&ServerPacket::StatsUpdate(player.stats.clone()));
                 let fused = casting.skill != skill;
-                self.broadcast(&ServerPacket::SkillCast { player_id: id, skill: casting.skill, rank: casting.rank, aim, aimed, fused, amplified: casting.amplified });
+                self.broadcast(&ServerPacket::SkillCast {
+                    player_id: id,
+                    skill: casting.skill,
+                    rank: casting.rank,
+                    aim,
+                    aimed,
+                    fused,
+                    amplified: casting.amplified,
+                });
             }
             Err(error) => {
                 player.connection.send(&ServerPacket::SkillRefused { skill, reason: error.message().to_string() });
@@ -1089,7 +1152,9 @@ impl Server {
                 player.stats.fallen = true;
                 let name = player.name.clone();
                 info!("{name} a succombé à ses blessures.");
-                self.broadcast(&ServerPacket::ChatMessage { sender: String::new(), message: format!("{name} a succombé à ses blessures") });
+                self.broadcast(&ServerPacket::ChatMessage {
+                    sender: String::new(), message: format!("{name} a succombé à ses blessures")
+                });
             }
         }
         for id in tick.changed {
@@ -1135,13 +1200,21 @@ impl Server {
         let back = player.position.ok_or(VisionError::UnknownPosition)?;
         let pos = self.geometry.block_at_point(back.as_dvec3()).ok_or(VisionError::OffPlanet)?;
         // Le peuple du joueur viendra de sa légende ; d'ici là, la vision est celle d'un humain
-        let entry = self.generator.vision_entry(pos.face, pos.x, pos.z, VISION_TEMPLE_BLOCKS, Culture::Humains).ok_or(VisionError::NoTemple)?;
+        let entry =
+            self.generator.vision_entry(pos.face, pos.x, pos.z, VISION_TEMPLE_BLOCKS, Culture::Humains).ok_or(VisionError::NoTemple)?;
         let (site, holder) = (entry.site, entry.holder);
         let generator = self.generator.with_epoch(Epoch::Past(holder));
         let feet = self.geometry.corner(site.face, entry.feet.x as f64 + 0.5, entry.feet.y as f64, entry.feet.z as f64 + 0.5).as_vec3();
         let rank = Culture::ALL.iter().position(|&c| c == holder).expect("peuple connu") as u8;
         let player = self.players.get_mut(&id).expect("joueur en ligne");
-        info!("{} entre dans la vision du temple {:?} ({}, {}), tenu par les {}.", player.name, site.face, site.center().0, site.center().1, holder.name());
+        info!(
+            "{} entre dans la vision du temple {:?} ({}, {}), tenu par les {}.",
+            player.name,
+            site.face,
+            site.center().0,
+            site.center().1,
+            holder.name()
+        );
         // Un simple soldat : ses compétences sont mises de côté jusqu'à l'éveil
         let present_skills = herocraft_common::vision::PresentSkills::set_aside(&mut player.stats);
         // L'éclat du tutoriel, pris dans sa roche, sur le terrain de l'armée

@@ -40,15 +40,15 @@ pub(crate) fn interceptable(keys: impl IntoIterator<Item = KeyCode>) -> Vec<KeyC
 
 #[cfg(windows)]
 mod imp {
-    use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
     use log::{info, warn};
     use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, GetForegroundWindow, GetMessageW, SetWindowsHookExW, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_EXTENDED,
-        LLKHF_INJECTED, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+        CallNextHookEx, GetForegroundWindow, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, LLKHF_INJECTED, MSG,
+        SetWindowsHookExW, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
     };
     use winit::keyboard::{KeyCode, PhysicalKey};
     use winit::platform::scancode::PhysicalKeyExtScancode;
@@ -162,12 +162,12 @@ mod imp {
     }
 }
 
+/// Touches lues par le crochet depuis le dernier appel
+pub(crate) use imp::drain;
 /// Pose le crochet (une fois, au lancement) ; il reste inactif tant que `set_capture` ne l'arme pas
 pub(crate) use imp::install;
 /// Arme le crochet sur ces touches (`Some`, souris capturée en jeu) ou le désarme (`None`)
 pub(crate) use imp::set_capture;
-/// Touches lues par le crochet depuis le dernier appel
-pub(crate) use imp::drain;
 
 #[cfg(test)]
 mod tests {

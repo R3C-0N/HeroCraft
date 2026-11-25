@@ -61,11 +61,7 @@ impl PlayerClass {
 
 /// Points de vie perdus pour une chute de `blocks` blocs
 pub fn fall_damage(blocks: f32) -> f32 {
-    if blocks.is_finite() {
-        (blocks - SAFE_FALL_BLOCKS).max(0.0) * FALL_DAMAGE_PER_BLOCK
-    } else {
-        0.0
-    }
+    if blocks.is_finite() { (blocks - SAFE_FALL_BLOCKS).max(0.0) * FALL_DAMAGE_PER_BLOCK } else { 0.0 }
 }
 
 /// Ce que la faim fait au joueur, selon sa satiété
@@ -94,12 +90,7 @@ pub struct Attributes {
 
 impl Default for Attributes {
     fn default() -> Self {
-        Self {
-            strength: 10,
-            agility: 10,
-            intelligence: 10,
-            constitution: 10,
-        }
+        Self { strength: 10, agility: 10, intelligence: 10, constitution: 10 }
     }
 }
 

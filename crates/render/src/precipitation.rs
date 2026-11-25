@@ -71,7 +71,8 @@ pub struct Precipitation {
 }
 
 fn create_pipeline(device: &wgpu::Device, layout: &wgpu::PipelineLayout, target: post::SceneTarget) -> wgpu::RenderPipeline {
-    let shader = crate::shaders::create_shader_module(device, "Precipitation Shader", include_str!("precipitation.wgsl"), "precipitation.wgsl");
+    let shader =
+        crate::shaders::create_shader_module(device, "Precipitation Shader", include_str!("precipitation.wgsl"), "precipitation.wgsl");
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("Precipitation Pipeline"),
         layout: Some(layout),
@@ -142,7 +143,16 @@ impl Precipitation {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        Self { pipeline: create_pipeline(device, &layout, target), layout, uniform, bind_group, columns, column_count: 0, drops: 0, integrated }
+        Self {
+            pipeline: create_pipeline(device, &layout, target),
+            layout,
+            uniform,
+            bind_group,
+            columns,
+            column_count: 0,
+            drops: 0,
+            integrated,
+        }
     }
 
     pub fn set_target(&mut self, device: &wgpu::Device, target: post::SceneTarget) {

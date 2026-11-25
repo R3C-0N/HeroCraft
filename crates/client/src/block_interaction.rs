@@ -4,13 +4,12 @@
 //! de la barre d'objets, et répète la pose tant qu'il reste enfoncé. La modification est
 //! appliquée et remaillée dans la frame même.
 
-
 use glam::Vec3;
-use herocraft_common::{cultures, opposite_face, BlockId, BlockRotation, ATTACHED_FACES, FACE_DIRS};
-use herocraft_world::{raycast_blocks, BlockGeometry, BlockPos, PlanetWorldGenerator, RayHit, TerrainEdits, TerrainQuery};
+use herocraft_common::{ATTACHED_FACES, BlockId, BlockRotation, FACE_DIRS, cultures, opposite_face};
+use herocraft_world::{BlockGeometry, BlockPos, PlanetWorldGenerator, RayHit, TerrainEdits, TerrainQuery, raycast_blocks};
 use winit::event::MouseButton;
 
-use crate::camera::{footprint, OrbitCamera, PLAYER_HEIGHT};
+use crate::camera::{OrbitCamera, PLAYER_HEIGHT, footprint};
 use crate::inventory::Inventory;
 use crate::lod::PlanetLodManager;
 
@@ -212,31 +211,46 @@ impl BlockInteraction {
         }
         self.last_aim = Some(aim);
         let mut query = TerrainQuery::with_columns(generator, edits, std::mem::take(&mut self.columns));
-        self.target = raycast_blocks(&geometry, eye.as_dvec3(), dir.as_dvec3(), reach, |pos| Some(query.block(pos)).filter(|&b| is_targetable(b)));
+        self.target =
+            raycast_blocks(&geometry, eye.as_dvec3(), dir.as_dvec3(), reach, |pos| Some(query.block(pos)).filter(|&b| is_targetable(b)));
         self.target_block = self.target.map_or(BlockId::AIR, |hit| query.block(hit.block));
         self.columns = query.into_columns();
     }
 
     /// Distance libre sous le réticule, jusqu'au premier bloc solide et au plus `blocks` blocs
     /// au-delà du bras : ce que le joueur voit (pour lire le nom d'un habitant visé de loin)
-    pub(crate) fn sight(&mut self, camera: &OrbitCamera, generator: &PlanetWorldGenerator, edits: &TerrainEdits, blocks: f64) -> Option<f32> {
+    pub(crate) fn sight(
+        &mut self,
+        camera: &OrbitCamera,
+        generator: &PlanetWorldGenerator,
+        edits: &TerrainEdits,
+        blocks: f64,
+    ) -> Option<f32> {
         let (eye, dir, arm) = camera.view_ray()?;
         let geometry = BlockGeometry::new(camera.base_radius as f64);
         let reach = arm as f64 + blocks * geometry.block_height;
         let mut query = TerrainQuery::with_columns(generator, edits, std::mem::take(&mut self.columns));
-        let hit = raycast_blocks(&geometry, eye.as_dvec3(), dir.as_dvec3(), reach, |pos| Some(query.block(pos)).filter(|&b| is_targetable(b)));
+        let hit =
+            raycast_blocks(&geometry, eye.as_dvec3(), dir.as_dvec3(), reach, |pos| Some(query.block(pos)).filter(|&b| is_targetable(b)));
         self.columns = query.into_columns();
         Some(hit.map_or(reach, |h| h.distance) as f32)
     }
 
     /// Distance au premier bloc solide sous le réticule, s'il est à moins de `blocks` blocs au-delà
     /// du bras (le point d'accroche d'un grappin)
-    pub(crate) fn hit_within(&mut self, camera: &OrbitCamera, generator: &PlanetWorldGenerator, edits: &TerrainEdits, blocks: f64) -> Option<f32> {
+    pub(crate) fn hit_within(
+        &mut self,
+        camera: &OrbitCamera,
+        generator: &PlanetWorldGenerator,
+        edits: &TerrainEdits,
+        blocks: f64,
+    ) -> Option<f32> {
         let (eye, dir, arm) = camera.view_ray()?;
         let geometry = BlockGeometry::new(camera.base_radius as f64);
         let reach = arm as f64 + blocks * geometry.block_height;
         let mut query = TerrainQuery::with_columns(generator, edits, std::mem::take(&mut self.columns));
-        let hit = raycast_blocks(&geometry, eye.as_dvec3(), dir.as_dvec3(), reach, |pos| Some(query.block(pos)).filter(|&b| is_targetable(b)));
+        let hit =
+            raycast_blocks(&geometry, eye.as_dvec3(), dir.as_dvec3(), reach, |pos| Some(query.block(pos)).filter(|&b| is_targetable(b)));
         self.columns = query.into_columns();
         hit.map(|h| h.distance as f32)
     }
@@ -308,7 +322,13 @@ impl BlockInteraction {
     /// folle visée, qui disparaît) : terre labourée, humide près de l'eau. Avec une graine sur une
     /// terre labourée où sa plante pousse : son semis, juste au-dessus. Renvoie les blocs à changer,
     /// le premier étant celui qui compte, et si l'objet tenu est dépensé (la graine, pas la houe).
-    fn farming_change(&self, hit: &RayHit, generator: &PlanetWorldGenerator, lod: &PlanetLodManager, inventory: &Inventory) -> Option<(Vec<(BlockPos, BlockId)>, bool)> {
+    fn farming_change(
+        &self,
+        hit: &RayHit,
+        generator: &PlanetWorldGenerator,
+        lod: &PlanetLodManager,
+        inventory: &Inventory,
+    ) -> Option<(Vec<(BlockPos, BlockId)>, bool)> {
         let item = inventory.selected_item()?;
         let registry = cultures();
         let edits = lod.terrain_edits();
@@ -423,9 +443,9 @@ fn overlaps_player(camera: &OrbitCamera, pos: BlockPos) -> bool {
     let geometry = BlockGeometry::new(camera.base_radius as f64);
     let h = geometry.block_height as f32;
     let up = camera.player_pos.normalize();
-    [0.05, 0.9, PLAYER_HEIGHT].iter().any(|&height| {
-        footprint(camera.player_pos + up * height * h, h).iter().any(|p| geometry.block_at_point(p.as_dvec3()) == Some(pos))
-    })
+    [0.05, 0.9, PLAYER_HEIGHT]
+        .iter()
+        .any(|&height| footprint(camera.player_pos + up * height * h, h).iter().any(|p| geometry.block_at_point(p.as_dvec3()) == Some(pos)))
 }
 
 #[cfg(test)]

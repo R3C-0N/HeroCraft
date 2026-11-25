@@ -1,12 +1,12 @@
 //! Mesure des délais entre deux joueurs sur un serveur local : position relayée et bloc cassé.
 //! cargo run --release -p herocraft_server --example latence
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use herocraft_common::net::Connection;
-use herocraft_common::{BlockId, BlockInteractionAction, ClientPacket, PlanetFace, ServerPacket, PROTOCOL_VERSION};
+use herocraft_common::{BlockId, BlockInteractionAction, ClientPacket, PROTOCOL_VERSION, PlanetFace, ServerPacket};
 use herocraft_server::{Server, ServerConfig};
 use herocraft_world::{BlockGeometry, BlockPos, PlanetDescriptor, PlanetWorldGenerator, WORLD_HEIGHT};
 
@@ -14,7 +14,11 @@ type Client = Connection<ClientPacket, ServerPacket>;
 
 fn connect(addr: &str, name: &str) -> Client {
     let c = Client::connect(addr, Duration::from_secs(5)).unwrap();
-    c.send(&ClientPacket::Connect { player_name: name.into(), protocol_version: PROTOCOL_VERSION, skills: herocraft_common::skills().fingerprint() });
+    c.send(&ClientPacket::Connect {
+        player_name: name.into(),
+        protocol_version: PROTOCOL_VERSION,
+        skills: herocraft_common::skills().fingerprint(),
+    });
     c
 }
 
@@ -24,16 +28,23 @@ fn main() {
     let server = Server::bind(config).unwrap();
     let addr = server.local_addr().unwrap().to_string();
     let face = PlanetFace::PosZ;
-    let (x, z, top) = (0..herocraft_world::FACE_BLOCKS).step_by(37).flat_map(|x| (0..herocraft_world::FACE_BLOCKS).step_by(37).map(move |z| (x, z))).find_map(|(x, z)| {
-        let top = (0..WORLD_HEIGHT).rev().find(|&y| !server.block(BlockPos::new(face, x, y, z)).is_air())?;
-        (server.block(BlockPos::new(face, x, top, z)) != BlockId::WATER).then_some((x, z, top))
-    }).unwrap();
+    let (x, z, top) = (0..herocraft_world::FACE_BLOCKS)
+        .step_by(37)
+        .flat_map(|x| (0..herocraft_world::FACE_BLOCKS).step_by(37).map(move |z| (x, z)))
+        .find_map(|(x, z)| {
+            let top = (0..WORLD_HEIGHT).rev().find(|&y| !server.block(BlockPos::new(face, x, y, z)).is_air())?;
+            (server.block(BlockPos::new(face, x, top, z)) != BlockId::WATER).then_some((x, z, top))
+        })
+        .unwrap();
     let geometry = BlockGeometry::new(PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() }).base_radius());
     let feet = geometry.corner(face, x as f64 + 0.5, (top + 1) as f64, z as f64 + 0.5).as_vec3();
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
-    let t = std::thread::spawn(move || { let mut s = server; s.run(&r); });
+    let t = std::thread::spawn(move || {
+        let mut s = server;
+        s.run(&r);
+    });
 
     let a = connect(&addr, "A");
     let b = connect(&addr, "B");

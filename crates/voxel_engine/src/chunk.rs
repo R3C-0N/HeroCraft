@@ -17,12 +17,7 @@ impl Default for ChunkData {
 
 impl ChunkData {
     pub fn new_empty() -> Self {
-        Self {
-            voxels: vec![BlockId::AIR; CHUNK_VOLUME]
-                .into_boxed_slice()
-                .try_into()
-                .unwrap(),
-        }
+        Self { voxels: vec![BlockId::AIR; CHUNK_VOLUME].into_boxed_slice().try_into().unwrap() }
     }
 
     #[inline(always)]

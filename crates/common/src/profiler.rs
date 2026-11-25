@@ -331,10 +331,7 @@ mod imp {
                         t.trace_dropped += 1;
                     }
                 }
-                if depth <= FRAME_CAPTURE_MAX_DEPTH
-                    && dur >= FRAME_CAPTURE_MIN_NS
-                    && IS_FRAME_THREAD.with(|f| f.get())
-                {
+                if depth <= FRAME_CAPTURE_MAX_DEPTH && dur >= FRAME_CAPTURE_MIN_NS && IS_FRAME_THREAD.with(|f| f.get()) {
                     let start_ns = self.start.duration_since(global().start).as_nanos() as u64;
                     t.frame_capture.push(FrameEntry { site: id, depth, start_ns, dur_ns: dur });
                 }
@@ -406,10 +403,7 @@ mod imp {
         let _ = global();
         IS_FRAME_THREAD.with(|f| f.set(true));
         set_meta("os", format!("{} {}", std::env::consts::OS, std::env::consts::ARCH));
-        set_meta(
-            "threads_cpu",
-            std::thread::available_parallelism().map(|p| p.get().to_string()).unwrap_or_default(),
-        );
+        set_meta("threads_cpu", std::thread::available_parallelism().map(|p| p.get().to_string()).unwrap_or_default());
         set_meta("build", if cfg!(debug_assertions) { "DEBUG (non optimisé !)".into() } else { "release".into() });
     }
 
@@ -491,11 +485,7 @@ mod imp {
     /// Regroupe les threads par nom sans le numéro final (herocraft-worker-3 -> herocraft-worker-*).
     fn thread_group(name: &str) -> String {
         let trimmed = name.trim_end_matches(|c: char| c.is_ascii_digit());
-        if trimmed.len() != name.len() {
-            format!("{}*", trimmed)
-        } else {
-            name.to_string()
-        }
+        if trimmed.len() != name.len() { format!("{}*", trimmed) } else { name.to_string() }
     }
 
     fn json_escape(s: &str) -> String {
@@ -514,14 +504,7 @@ mod imp {
         let wall_ns = g.start.elapsed().as_nanos() as f64;
         let sites: Vec<&'static Site> = g.sites.lock().unwrap().clone();
         let site_name = |id: u32| -> &'static str { sites.get(id as usize - 1).map(|s| s.name).unwrap_or("?") };
-        let threads: Vec<_> = g
-            .threads
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|t| t.lock().unwrap().name != CALIBRATION_THREAD)
-            .cloned()
-            .collect();
+        let threads: Vec<_> = g.threads.lock().unwrap().iter().filter(|t| t.lock().unwrap().name != CALIBRATION_THREAD).cloned().collect();
 
         // Agrégation par (groupe de threads, site)
         let mut groups: Vec<(String, usize, Vec<Option<SiteStats>>)> = Vec::new();
@@ -543,21 +526,14 @@ mod imp {
             for (i, s) in t.stats.iter().enumerate() {
                 if let Some(s) = s {
                     // Plusieurs points de mesure du même nom sont fusionnés sur le premier
-                    let canon = sites
-                        .iter()
-                        .position(|site| site.name == site_name(i as u32))
-                        .map(|p| p + 1)
-                        .unwrap_or(i);
+                    let canon = sites.iter().position(|site| site.name == site_name(i as u32)).map(|p| p + 1).unwrap_or(i);
                     entry.2[canon].get_or_insert_with(SiteStats::new).merge(s);
                 }
             }
         }
 
         let mut out = String::new();
-        let unix = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+        let unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let _ = writeln!(out, "=== RAPPORT DE PROFILAGE HEROCRAFT ===");
         let _ = writeln!(out, "horodatage_unix: {}", unix);
         let _ = writeln!(out, "duree_session: {}", fmt_ns(wall_ns));
@@ -589,11 +565,7 @@ mod imp {
                 fmt_ns(pct(0.99)),
                 fmt_ns(frames[n - 1] as f64 * 1000.0)
             );
-            let _ = writeln!(
-                out,
-                "frames > 16.7ms: {}  > 33ms: {}  > 50ms: {}  > 100ms: {}",
-                o16, o33, o50, o100
-            );
+            let _ = writeln!(out, "frames > 16.7ms: {}  > 33ms: {}  > 50ms: {}  > 100ms: {}", o16, o33, o50, o100);
         }
 
         // Tables par groupe de threads, triées par temps propre

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::blocks::blocks;
 use crate::hero::Appearance;
-use crate::items::{items, ItemId};
+use crate::items::{ItemId, items};
 
 /// Dossier des fiches de métiers, depuis le dossier de lancement
 pub(crate) const PROFESSIONS_DIR: &str = "assets/metiers";
@@ -153,11 +153,7 @@ pub enum ProfessionError {
 impl Profession {
     /// Nom du métier accordé à qui l'exerce
     pub fn name_for(&self, feminine: bool) -> &str {
-        if feminine {
-            &self.name_feminine
-        } else {
-            &self.name
-        }
+        if feminine { &self.name_feminine } else { &self.name }
     }
 
     /// Lit la fiche JSON d'un métier ; `find` donne le numéro d'un objet d'après son identifiant
@@ -314,11 +310,7 @@ impl VillagerCard {
 
     /// Nom sous lequel il parle dans le chat : « Aude » ou « Bertrand (Garde) »
     pub fn speaker(&self) -> String {
-        if self.profession.is_empty() {
-            self.name.clone()
-        } else {
-            format!("{} ({})", self.name, self.profession)
-        }
+        if self.profession.is_empty() { self.name.clone() } else { format!("{} ({})", self.name, self.profession) }
     }
 
     /// Ce qu'il dit la `turn`-ième fois qu'on lui parle : d'abord son bonjour, puis, à chaque fois,
@@ -338,10 +330,7 @@ impl ProfessionRegistry {
     /// Répliques du métier d'un habitant, d'après le nom de métier de sa fiche (au masculin ou au
     /// féminin ; vide : sans métier)
     pub fn lines_of(&self, card: &VillagerCard) -> &[String] {
-        self.professions
-            .iter()
-            .find(|p| p.name == card.profession || p.name_feminine == card.profession)
-            .map_or(&[], |p| &p.lines)
+        self.professions.iter().find(|p| p.name == card.profession || p.name_feminine == card.profession).map_or(&[], |p| &p.lines)
     }
 }
 
@@ -354,7 +343,8 @@ mod tests {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(PROFESSIONS_DIR);
         let (registry, errors) = ProfessionRegistry::load_dir(&dir, &find_item).unwrap();
         assert!(errors.is_empty(), "{errors:?}");
-        for id in ["forgeron", "marchand", "fermier", "garde", "aubergiste", "pretre", "sansMetier", "colporteur", "pelerin", "aventurier"] {
+        for id in ["forgeron", "marchand", "fermier", "garde", "aubergiste", "pretre", "sansMetier", "colporteur", "pelerin", "aventurier"]
+        {
             assert!(registry.find(id).is_some(), "{id} manquant");
         }
         let garde = registry.get(registry.find("garde").unwrap()).unwrap();
@@ -410,9 +400,14 @@ mod tests {
         assert_eq!(p.workplace, Workplace::Etal);
         assert_eq!(p.species, "villageois");
         assert_eq!(p.trades, vec![Trade { give: vec![(ItemId(20000), 6)], get: (ItemId(20001), 1) }]);
-        assert!(matches!(Profession::parse("x", &ok.replace("pain", "brioche"), &find), Err(ProfessionError::UnknownItem(item)) if item == "brioche"));
+        assert!(
+            matches!(Profession::parse("x", &ok.replace("pain", "brioche"), &find), Err(ProfessionError::UnknownItem(item)) if item == "brioche")
+        );
         assert!(matches!(Profession::parse("x", &ok.replace("etal", "moulin"), &find), Err(ProfessionError::Json(_))));
         assert!(matches!(Profession::parse("x", &ok.replace(": 6", ": 0"), &find), Err(ProfessionError::ZeroCount(_))));
-        assert!(matches!(Profession::parse("x", &ok.replace("\"lieu\"", "\"couleurs\": [\"rouge\"], \"lieu\""), &find), Err(ProfessionError::Colour)));
+        assert!(matches!(
+            Profession::parse("x", &ok.replace("\"lieu\"", "\"couleurs\": [\"rouge\"], \"lieu\""), &find),
+            Err(ProfessionError::Colour)
+        ));
     }
 }

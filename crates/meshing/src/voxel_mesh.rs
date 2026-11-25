@@ -2,13 +2,13 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use glam::Vec3;
-use herocraft_common::{blocks, opposite_face, BlockId, PlanetChunkCoord, PlanetFace, ShapeBox, ShapeTexture, FACE_DIRS};
+use herocraft_common::{BlockId, FACE_DIRS, PlanetChunkCoord, PlanetFace, ShapeBox, ShapeTexture, blocks, opposite_face};
 use herocraft_voxel_engine::cache::WorldChunkCache;
-use herocraft_voxel_engine::chunk::{ChunkData, CHUNK_SIZE};
+use herocraft_voxel_engine::chunk::{CHUNK_SIZE, ChunkData};
 use herocraft_world::generator::{ColumnSample, PlanetWorldGenerator};
-use herocraft_world::{carvable_range, TerrainEdits, VegetationField, ALTITUDE_LAYERS, FACE_CHUNKS};
+use herocraft_world::{ALTITUDE_LAYERS, FACE_CHUNKS, TerrainEdits, VegetationField, carvable_range};
 
-use crate::block_light::{self, LightField, LIGHT_REACH};
+use crate::block_light::{self, LIGHT_REACH, LightField};
 use crate::block_textures::{block_textures, face_uv};
 use crate::planet_mesh::{PlanetMesh, PlanetVertex};
 
@@ -23,27 +23,57 @@ pub(crate) struct CubeFace {
 pub(crate) const CUBE_FACES: [CubeFace; 6] = [
     CubeFace {
         corners: [(1, 0, 1), (1, 0, 0), (1, 1, 0), (1, 1, 1)],
-        ao: [[(1, -1, 0), (1, 0, 1), (1, -1, 1)], [(1, -1, 0), (1, 0, -1), (1, -1, -1)], [(1, 1, 0), (1, 0, -1), (1, 1, -1)], [(1, 1, 0), (1, 0, 1), (1, 1, 1)]],
+        ao: [
+            [(1, -1, 0), (1, 0, 1), (1, -1, 1)],
+            [(1, -1, 0), (1, 0, -1), (1, -1, -1)],
+            [(1, 1, 0), (1, 0, -1), (1, 1, -1)],
+            [(1, 1, 0), (1, 0, 1), (1, 1, 1)],
+        ],
     },
     CubeFace {
         corners: [(0, 0, 0), (0, 0, 1), (0, 1, 1), (0, 1, 0)],
-        ao: [[(-1, -1, 0), (-1, 0, -1), (-1, -1, -1)], [(-1, -1, 0), (-1, 0, 1), (-1, -1, 1)], [(-1, 1, 0), (-1, 0, 1), (-1, 1, 1)], [(-1, 1, 0), (-1, 0, -1), (-1, 1, -1)]],
+        ao: [
+            [(-1, -1, 0), (-1, 0, -1), (-1, -1, -1)],
+            [(-1, -1, 0), (-1, 0, 1), (-1, -1, 1)],
+            [(-1, 1, 0), (-1, 0, 1), (-1, 1, 1)],
+            [(-1, 1, 0), (-1, 0, -1), (-1, 1, -1)],
+        ],
     },
     CubeFace {
         corners: [(0, 1, 0), (0, 1, 1), (1, 1, 1), (1, 1, 0)],
-        ao: [[(-1, 1, 0), (0, 1, -1), (-1, 1, -1)], [(-1, 1, 0), (0, 1, 1), (-1, 1, 1)], [(1, 1, 0), (0, 1, 1), (1, 1, 1)], [(1, 1, 0), (0, 1, -1), (1, 1, -1)]],
+        ao: [
+            [(-1, 1, 0), (0, 1, -1), (-1, 1, -1)],
+            [(-1, 1, 0), (0, 1, 1), (-1, 1, 1)],
+            [(1, 1, 0), (0, 1, 1), (1, 1, 1)],
+            [(1, 1, 0), (0, 1, -1), (1, 1, -1)],
+        ],
     },
     CubeFace {
         corners: [(0, 0, 0), (1, 0, 0), (1, 0, 1), (0, 0, 1)],
-        ao: [[(-1, -1, 0), (0, -1, -1), (-1, -1, -1)], [(1, -1, 0), (0, -1, -1), (1, -1, -1)], [(1, -1, 0), (0, -1, 1), (1, -1, 1)], [(-1, -1, 0), (0, -1, 1), (-1, -1, 1)]],
+        ao: [
+            [(-1, -1, 0), (0, -1, -1), (-1, -1, -1)],
+            [(1, -1, 0), (0, -1, -1), (1, -1, -1)],
+            [(1, -1, 0), (0, -1, 1), (1, -1, 1)],
+            [(-1, -1, 0), (0, -1, 1), (-1, -1, 1)],
+        ],
     },
     CubeFace {
         corners: [(1, 0, 1), (0, 0, 1), (0, 1, 1), (1, 1, 1)],
-        ao: [[(1, 0, 1), (0, -1, 1), (1, -1, 1)], [(-1, 0, 1), (0, -1, 1), (-1, -1, 1)], [(-1, 0, 1), (0, 1, 1), (-1, 1, 1)], [(1, 0, 1), (0, 1, 1), (1, 1, 1)]],
+        ao: [
+            [(1, 0, 1), (0, -1, 1), (1, -1, 1)],
+            [(-1, 0, 1), (0, -1, 1), (-1, -1, 1)],
+            [(-1, 0, 1), (0, 1, 1), (-1, 1, 1)],
+            [(1, 0, 1), (0, 1, 1), (1, 1, 1)],
+        ],
     },
     CubeFace {
         corners: [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)],
-        ao: [[(-1, 0, -1), (0, -1, -1), (-1, -1, -1)], [(1, 0, -1), (0, -1, -1), (1, -1, -1)], [(1, 0, -1), (0, 1, -1), (1, 1, -1)], [(-1, 0, -1), (0, 1, -1), (-1, 1, -1)]],
+        ao: [
+            [(-1, 0, -1), (0, -1, -1), (-1, -1, -1)],
+            [(1, 0, -1), (0, -1, -1), (1, -1, -1)],
+            [(1, 0, -1), (0, 1, -1), (1, 1, -1)],
+            [(-1, 0, -1), (0, 1, -1), (-1, 1, -1)],
+        ],
     },
 ];
 
@@ -163,7 +193,7 @@ impl VoxelMeshBuilder {
         let face_chunks_count = FACE_CHUNKS as f64;
         let chunk_span_uv = 2.0 / face_chunks_count;
         let voxel_span_uv = chunk_span_uv / (CHUNK_SIZE as f64);
-        
+
         // Échelle verticale calibrée pour que les voxels soient de vrais cubes 1:1:1
         // Sur une planète de rayon 25.0, la taille horizontale d'un voxel vaut environ 0.03835 unité
         let altitude_scale = (base_radius as f64 * std::f64::consts::FRAC_PI_4 * voxel_span_uv) as f32;
@@ -232,11 +262,8 @@ impl VoxelMeshBuilder {
 
                     // 1. Face Haut (+Y)
                     let neighbor_top = get_voxel(gx, gy + 1, gz);
-                    let should_emit_top = if is_water {
-                        neighbor_top.is_air()
-                    } else {
-                        neighbor_top.is_air() || neighbor_top == BlockId::WATER
-                    };
+                    let should_emit_top =
+                        if is_water { neighbor_top.is_air() } else { neighbor_top.is_air() || neighbor_top == BlockId::WATER };
                     if should_emit_top {
                         let c0 = get_corner(fx, fy + 1.0, fz);
                         let c1 = get_corner(fx, fy + 1.0, fz + 1.0);
@@ -277,11 +304,8 @@ impl VoxelMeshBuilder {
 
                     // 3. Face Gauche (-X)
                     let neighbor_left = get_voxel(gx - 1, gy, gz);
-                    let should_emit_left = if is_water {
-                        neighbor_left.is_air()
-                    } else {
-                        neighbor_left.is_air() || neighbor_left == BlockId::WATER
-                    };
+                    let should_emit_left =
+                        if is_water { neighbor_left.is_air() } else { neighbor_left.is_air() || neighbor_left == BlockId::WATER };
                     if should_emit_left {
                         let c0 = get_corner(fx, fy, fz);
                         let c1 = get_corner(fx, fy, fz + 1.0);
@@ -303,11 +327,8 @@ impl VoxelMeshBuilder {
 
                     // 4. Face Droite (+X)
                     let neighbor_right = get_voxel(gx + 1, gy, gz);
-                    let should_emit_right = if is_water {
-                        neighbor_right.is_air()
-                    } else {
-                        neighbor_right.is_air() || neighbor_right == BlockId::WATER
-                    };
+                    let should_emit_right =
+                        if is_water { neighbor_right.is_air() } else { neighbor_right.is_air() || neighbor_right == BlockId::WATER };
                     if should_emit_right {
                         let c0 = get_corner(fx + 1.0, fy, fz + 1.0);
                         let c1 = get_corner(fx + 1.0, fy, fz);
@@ -329,11 +350,8 @@ impl VoxelMeshBuilder {
 
                     // 5. Face Avant (+Z)
                     let neighbor_front = get_voxel(gx, gy, gz + 1);
-                    let should_emit_front = if is_water {
-                        neighbor_front.is_air()
-                    } else {
-                        neighbor_front.is_air() || neighbor_front == BlockId::WATER
-                    };
+                    let should_emit_front =
+                        if is_water { neighbor_front.is_air() } else { neighbor_front.is_air() || neighbor_front == BlockId::WATER };
                     if should_emit_front {
                         let c0 = get_corner(fx + 1.0, fy, fz + 1.0);
                         let c1 = get_corner(fx, fy, fz + 1.0);
@@ -355,11 +373,8 @@ impl VoxelMeshBuilder {
 
                     // 6. Face Arrière (-Z)
                     let neighbor_back = get_voxel(gx, gy, gz - 1);
-                    let should_emit_back = if is_water {
-                        neighbor_back.is_air()
-                    } else {
-                        neighbor_back.is_air() || neighbor_back == BlockId::WATER
-                    };
+                    let should_emit_back =
+                        if is_water { neighbor_back.is_air() } else { neighbor_back.is_air() || neighbor_back == BlockId::WATER };
                     if should_emit_back {
                         let c0 = get_corner(fx, fy, fz);
                         let c1 = get_corner(fx + 1.0, fy, fz);
@@ -445,8 +460,12 @@ impl VoxelMeshBuilder {
             let dir = face.uv_to_sphere_direction(u, v);
             let (lat, lon) = herocraft_world::cubed_sphere::unit_sphere_to_lat_lon(dir);
             let e = generator.sample_elevation(dir, lat, lon);
-            if e < min_elev { min_elev = e; }
-            if e > max_elev { max_elev = e; }
+            if e < min_elev {
+                min_elev = e;
+            }
+            if e > max_elev {
+                max_elev = e;
+            }
         }
 
         // Colonnes du chunk + bordure d'une colonne (voisins des faces et de l'AO), échantillonnées
@@ -460,8 +479,12 @@ impl VoxelMeshBuilder {
             for cx in 0..32 {
                 let column = &columns[(cz + COLUMN_BORDER as usize) * side + cx + COLUMN_BORDER as usize];
                 let (dir, raw_elevation, biome) = (column.dir, column.elevation, column.biome);
-                if raw_elevation < min_elev { min_elev = raw_elevation; }
-                if raw_elevation > max_elev { max_elev = raw_elevation; }
+                if raw_elevation < min_elev {
+                    min_elev = raw_elevation;
+                }
+                if raw_elevation > max_elev {
+                    max_elev = raw_elevation;
+                }
 
                 let mut biome_color = PlanetMesh::relief_biome_color(biome, raw_elevation);
                 match filter {
@@ -494,7 +517,19 @@ impl VoxelMeshBuilder {
                 Vec3::new(dir.x as f32, dir.y as f32, dir.z as f32)
             })
             .collect();
-        VoxelColumnSource { face, chunk_x, chunk_y, base_radius, min_elev, max_elev, cave_bottom, column_colors, columns, vegetation, corner_dirs }
+        VoxelColumnSource {
+            face,
+            chunk_x,
+            chunk_y,
+            base_radius,
+            min_elev,
+            max_elev,
+            cave_bottom,
+            column_colors,
+            columns,
+            vegetation,
+            corner_dirs,
+        }
     }
 
     /// Couches d'altitude à mailler : celles que le relief et la mer occupent, plus celles que le
@@ -672,17 +707,9 @@ impl VoxelMeshBuilder {
                     // Sans champ, aucune colonne de la bordure n'a de grotte à ces altitudes
                     None => false,
                 };
-                if carved {
-                    BlockId::AIR
-                } else {
-                    BlockId::STONE
-                }
+                if carved { BlockId::AIR } else { BlockId::STONE }
             } else if global_y < sea {
-                if column.biome == herocraft_world::BiomeType::SnowPeaks {
-                    BlockId::SNOW
-                } else {
-                    BlockId::WATER
-                }
+                if column.biome == herocraft_world::BiomeType::SnowPeaks { BlockId::SNOW } else { BlockId::WATER }
             } else if in_border {
                 // Arbres voisins : leurs troncs et feuillages cachent ou non les faces d'à côté (les
                 // herbes et les fleurs ne cachent rien)
@@ -768,12 +795,7 @@ impl VoxelMeshBuilder {
                 let c = own_color(side_shade);
                 [c[0], c[1], c[2], 1.0]
             } else {
-                [
-                    biome_color[0] * 0.78,
-                    biome_color[1] * 0.78,
-                    biome_color[2] * 0.78,
-                    1.0,
-                ]
+                [biome_color[0] * 0.78, biome_color[1] * 0.78, biome_color[2] * 0.78, 1.0]
             }
         };
         // Texture d'une face : coordonnées de chaque coin, depuis sa place dans le bloc (seizièmes)
@@ -810,7 +832,8 @@ impl VoxelMeshBuilder {
                             let (c2, c3) = (corner(b.0, 1.0, b.1), corner(a.0, 1.0, a.1));
                             let front = [tex(0, 16), tex(16, 16), tex(16, 0), tex(0, 0)];
                             let back = [tex(16, 16), tex(0, 16), tex(0, 0), tex(16, 0)];
-                            let glow = [if block.light() > 0 { block_light::EMISSIVE } else { block_light::intensity(light_at(gx, gy, gz)) }; 4];
+                            let glow =
+                                [if block.light() > 0 { block_light::EMISSIVE } else { block_light::intensity(light_at(gx, gy, gz)) }; 4];
                             Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, [1.0; 4], glow, front);
                             Self::add_quad(&mut vertices, &mut indices, c1, c0, c3, c2, color, [1.0; 4], glow, back);
                         }
@@ -844,21 +867,30 @@ impl VoxelMeshBuilder {
                                     continue;
                                 }
                                 let local: [[u8; 3]; 4] = face.corners.map(|o| {
-                                    [if o.0 > 0 { b[3] } else { b[0] }, if o.1 > 0 { b[4] } else { b[1] }, if o.2 > 0 { b[5] } else { b[2] }]
+                                    [
+                                        if o.0 > 0 { b[3] } else { b[0] },
+                                        if o.1 > 0 { b[4] } else { b[1] },
+                                        if o.2 > 0 { b[5] } else { b[2] },
+                                    ]
                                 });
-                                let [c0, c1, c2, c3] = local.map(|c| {
-                                    get_corner(fx + c[0] as f64 / 16.0, fy + c[1] as f64 / 16.0, fz + c[2] as f64 / 16.0, layer)
-                                });
+                                let [c0, c1, c2, c3] = local
+                                    .map(|c| get_corner(fx + c[0] as f64 / 16.0, fy + c[1] as f64 / 16.0, fz + c[2] as f64 / 16.0, layer));
                                 let color = get_color(gx, gy, gz, block, dir);
                                 // Texture étirée : chaque face du pavé la montre en entier
                                 let uv_corners = match shape.texture {
                                     ShapeTexture::Crop => local,
-                                    ShapeTexture::Stretch => local.map(|c| std::array::from_fn(|k| ((c[k] - b[k]) as u32 * 16 / (b[k + 3] - b[k]) as u32) as u8)),
+                                    ShapeTexture::Stretch => {
+                                        local.map(|c| std::array::from_fn(|k| ((c[k] - b[k]) as u32 * 16 / (b[k + 3] - b[k]) as u32) as u8))
+                                    }
                                 };
                                 let tex = face_texture(block, dir, uv_corners);
                                 let d = FACE_DIRS[dir];
                                 // Torche, lanterne : leurs faces brillent
-                                let glow = [if block.light() > 0 { block_light::EMISSIVE } else { block_light::intensity(own_light.max(light_at(gx + d.0, gy + d.1, gz + d.2))) }; 4];
+                                let glow = [if block.light() > 0 {
+                                    block_light::EMISSIVE
+                                } else {
+                                    block_light::intensity(own_light.max(light_at(gx + d.0, gy + d.1, gz + d.2)))
+                                }; 4];
                                 Self::add_quad(&mut vertices, &mut indices, c0, c1, c2, c3, color, [1.0; 4], glow, tex);
                             }
                         }
@@ -895,7 +927,9 @@ impl VoxelMeshBuilder {
                         let mut tex = face_texture(block, dir, face.corners.map(|o| [o.0 * 16, o.1 * 16, o.2 * 16]));
                         if blocks().get(block).is_some_and(|sheet| sheet.connected) {
                             // Verre : le cadre ne court que sur les bords qui ne touchent pas un bloc pareil
-                            let mask = Self::connected_mask(dir, |o: (i32, i32, i32)| get_voxel(gx + o.0, gy + o.1, gz + o.2).kind() == block.kind());
+                            let mask = Self::connected_mask(dir, |o: (i32, i32, i32)| {
+                                get_voxel(gx + o.0, gy + o.1, gz + o.2).kind() == block.kind()
+                            });
                             let layer = block_textures().connected_layer(blocks().face_texture(block, dir), mask);
                             tex = tex.map(|t| (t & !0xFFFF) | layer as u32);
                         }
@@ -963,7 +997,12 @@ impl VoxelMeshBuilder {
             };
             elevation.floor() as i32
         };
-        let area = herocraft_world::structures::Rect::new(block_x0 - LIGHT_REACH, block_z0 - LIGHT_REACH, block_x0 + 32 + LIGHT_REACH, block_z0 + 32 + LIGHT_REACH);
+        let area = herocraft_world::structures::Rect::new(
+            block_x0 - LIGHT_REACH,
+            block_z0 - LIGHT_REACH,
+            block_x0 + 32 + LIGHT_REACH,
+            block_z0 + 32 + LIGHT_REACH,
+        );
         let y0 = layer * 32;
         for (x, y, z, block) in generator.structure_lights(face, area, ground) {
             let (lx, ly, lz) = (x - block_x0, y - y0, z - block_z0);
@@ -1000,14 +1039,11 @@ impl VoxelMeshBuilder {
             let span = spans[(z + LIGHT_REACH) as usize * side + (x + LIGHT_REACH) as usize]
                 .get_or_insert_with(|| generator.structure_span(column, face, bx, bz));
             if span.contains(&by)
-                && let Some(block) = generator.structure_block(column, face, bx, by, bz) {
+                && let Some(block) = generator.structure_block(column, face, bx, by, bz)
+            {
                 return covers(block);
             }
-            if (by as f64) < column.elevation.floor() {
-                block_light::FULL
-            } else {
-                0
-            }
+            if (by as f64) < column.elevation.floor() { block_light::FULL } else { 0 }
         })
     }
 
@@ -1102,12 +1138,7 @@ impl VoxelMeshBuilder {
         let make_vert = |pos: Vec3, ao_factor: f32, light: f32, texture: u32| PlanetVertex {
             position: pos.to_array(),
             normal,
-            color: [
-                color[0] * ao_factor,
-                color[1] * ao_factor,
-                color[2] * ao_factor,
-                color[3],
-            ],
+            color: [color[0] * ao_factor, color[1] * ao_factor, color[2] * ao_factor, color[3]],
             texture,
             light,
         };
@@ -1162,10 +1193,7 @@ mod tests {
 
     #[test]
     fn test_chunk_border_no_missing_faces() {
-        let generator = PlanetWorldGenerator::new(PlanetDescriptor {
-            seed: 2026,
-            ..Default::default()
-        });
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
 
         let face = PlanetFace::PosX;
         let cx0 = 10;
@@ -1173,23 +1201,11 @@ mod tests {
         let cy = 10;
         let base_radius = 25.0;
 
-        let mesh0 = VoxelMeshBuilder::build_incurved_single_chunk_fast(
-            &generator,
-            face,
-            cx0,
-            cy,
-            base_radius,
-            VisualizationFilter::Standard,
-        );
+        let mesh0 =
+            VoxelMeshBuilder::build_incurved_single_chunk_fast(&generator, face, cx0, cy, base_radius, VisualizationFilter::Standard);
 
-        let mesh1 = VoxelMeshBuilder::build_incurved_single_chunk_fast(
-            &generator,
-            face,
-            cx1,
-            cy,
-            base_radius,
-            VisualizationFilter::Standard,
-        );
+        let mesh1 =
+            VoxelMeshBuilder::build_incurved_single_chunk_fast(&generator, face, cx1, cy, base_radius, VisualizationFilter::Standard);
 
         assert!(!mesh0.vertices.is_empty(), "Mesh 0 should not be empty");
         assert!(!mesh1.vertices.is_empty(), "Mesh 1 should not be empty");
@@ -1212,10 +1228,7 @@ mod tests {
                     if !b0.is_air() && b0 != BlockId::WATER && b1.is_air() {
                         // Le maillage de chunk0 doit contenir des sommets à x=32
                         // Cela prouve que la face droite a bien été émise
-                        assert!(
-                            !mesh0.indices.is_empty(),
-                            "Chunk 0 must emit faces when exposed to air in chunk 1"
-                        );
+                        assert!(!mesh0.indices.is_empty(), "Chunk 0 must emit faces when exposed to air in chunk 1");
                     }
                 }
             }
@@ -1224,18 +1237,9 @@ mod tests {
 
     #[test]
     fn test_curved_voxel_mesh_integrity() {
-        let generator = PlanetWorldGenerator::new(PlanetDescriptor {
-            seed: 2026,
-            ..Default::default()
-        });
-        let mesh = VoxelMeshBuilder::build_incurved_single_chunk_fast(
-            &generator,
-            PlanetFace::PosZ,
-            16,
-            16,
-            25.0,
-            VisualizationFilter::Standard,
-        );
+        let generator = PlanetWorldGenerator::new(PlanetDescriptor { seed: 2026, ..Default::default() });
+        let mesh =
+            VoxelMeshBuilder::build_incurved_single_chunk_fast(&generator, PlanetFace::PosZ, 16, 16, 25.0, VisualizationFilter::Standard);
         assert!(!mesh.vertices.is_empty(), "Curved voxel mesh should have vertices");
         assert_eq!(mesh.indices.len() % 3, 0, "Indices must form complete triangles");
         for v in &mesh.vertices {
@@ -1351,7 +1355,11 @@ mod tests {
         assert!(max > 0.8, "{max}");
         // Un cube de pierre à 10 blocs de la torche reçoit moins de lumière qu'au pied de la torche
         edits.set_block(&generator, at(30, 501, 10), BlockId::STONE);
-        let far = sky_layer(15).iter().filter(|v| v.texture & 0xFFFF == blocks().face_texture(BlockId::STONE, 0) as u32).map(|v| v.light).fold(0.0, f32::max);
+        let far = sky_layer(15)
+            .iter()
+            .filter(|v| v.texture & 0xFFFF == blocks().face_texture(BlockId::STONE, 0) as u32)
+            .map(|v| v.light)
+            .fold(0.0, f32::max);
         assert!(far > 0.0 && far < 0.3, "{far}");
         // La torche retirée, plus rien ne brille
         edits.set_block(&generator, at(20, 501, 10), BlockId::AIR);
@@ -1380,7 +1388,14 @@ mod tests {
             .take(4)
             .collect();
         for (cx, cy) in chunks {
-            let source = Arc::new(VoxelMeshBuilder::sample_column_source(&generator, PlanetFace::NegZ, cx, cy, (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32, VisualizationFilter::Standard));
+            let source = Arc::new(VoxelMeshBuilder::sample_column_source(
+                &generator,
+                PlanetFace::NegZ,
+                cx,
+                cy,
+                (herocraft_world::REFERENCE_BASE_RADIUS * herocraft_world::DEFAULT_PLANET_SCALE) as f32,
+                VisualizationFilter::Standard,
+            ));
             let column = VoxelMeshBuilder::build_column(&generator, &edits, source.clone());
             // La couleur porte l'occlusion ambiante : on compare la teinte, pas la valeur exacte
             cave_vertices += column
@@ -1421,5 +1436,4 @@ mod tests {
         let t_edit = t.elapsed();
         println!("relief {:?}, maillage complet {:?}, modification + remaillage {:?}", t_source, t_build, t_edit);
     }
-
 }

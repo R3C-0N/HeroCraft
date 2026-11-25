@@ -45,9 +45,7 @@ impl ZoneKey {
 
     /// Toutes les zones de la planète
     pub(crate) fn all() -> impl Iterator<Item = ZoneKey> {
-        PlanetFace::ALL
-            .into_iter()
-            .flat_map(|face| (0..FACE_ZONES).flat_map(move |x| (0..FACE_ZONES).map(move |z| ZoneKey { face, x, z })))
+        PlanetFace::ALL.into_iter().flat_map(|face| (0..FACE_ZONES).flat_map(move |x| (0..FACE_ZONES).map(move |z| ZoneKey { face, x, z })))
     }
 
     /// Graine du tirage de la population de cette zone, tirée de la graine du monde
@@ -141,7 +139,19 @@ mod tests {
         let zone = ZoneKey { face: PlanetFace::NegY, x: 3, z: 9 };
         let save = PopulationSave {
             next_id: 42,
-            zones: vec![(zone, vec![SleepingCreature { id: CreatureId(7), species: "vache".into(), herd: Some(7), position: Vec3::new(1.0, 2.0, 3.0), yaw: 0.5, health: 4.0, tamed: true, age: Some(12.0) }])],
+            zones: vec![(
+                zone,
+                vec![SleepingCreature {
+                    id: CreatureId(7),
+                    species: "vache".into(),
+                    herd: Some(7),
+                    position: Vec3::new(1.0, 2.0, 3.0),
+                    yaw: 0.5,
+                    health: 4.0,
+                    tamed: true,
+                    age: Some(12.0),
+                }],
+            )],
         };
         save.save(&path).unwrap();
         let back = PopulationSave::load(&path).unwrap().unwrap();

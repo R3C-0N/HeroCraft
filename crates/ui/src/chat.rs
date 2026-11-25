@@ -196,7 +196,8 @@ impl Chat {
             self.input = c.candidates[c.index].clone();
             return;
         }
-        let sources = CompletionSources { items: &self.items, creatures: &self.creatures, players: &self.players, cinematics: &self.cinematics };
+        let sources =
+            CompletionSources { items: &self.items, creatures: &self.creatures, players: &self.players, cinematics: &self.cinematics };
         let candidates = commands::complete(&self.input, &sources);
         let Some(first) = candidates.first() else {
             self.completion = None;
@@ -256,25 +257,29 @@ impl Chat {
                 if self.open {
                     egui::Frame::NONE.fill(egui::Color32::from_black_alpha(150)).corner_radius(4.0).inner_margin(6.0).show(ui, |ui| {
                         ui.set_width(width - 12.0);
-                        egui::ScrollArea::vertical().max_height(CHAT_HISTORY_HEIGHT).stick_to_bottom(true).auto_shrink([false, true]).show(ui, |ui| {
-                            for line in &self.lines {
-                                ui.label(line_text(line, 1.0));
-                            }
-                        });
+                        egui::ScrollArea::vertical().max_height(CHAT_HISTORY_HEIGHT).stick_to_bottom(true).auto_shrink([false, true]).show(
+                            ui,
+                            |ui| {
+                                for line in &self.lines {
+                                    ui.label(line_text(line, 1.0));
+                                }
+                            },
+                        );
                     });
                     self.draw_suggestions(ui);
-                    let response = egui::Frame::NONE.fill(egui::Color32::from_black_alpha(190)).corner_radius(4.0).inner_margin(4.0).show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.input)
-                                .id(input_id)
-                                .desired_width(width - 8.0)
-                                .char_limit(MAX_INPUT_CHARS)
-                                .lock_focus(true)
-                                .frame(egui::Frame::NONE)
-                                .hint_text("Message, or /help for the commands")
-                                .font(egui::FontId::proportional(15.0)),
-                        )
-                    });
+                    let response =
+                        egui::Frame::NONE.fill(egui::Color32::from_black_alpha(190)).corner_radius(4.0).inner_margin(4.0).show(ui, |ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.input)
+                                    .id(input_id)
+                                    .desired_width(width - 8.0)
+                                    .char_limit(MAX_INPUT_CHARS)
+                                    .lock_focus(true)
+                                    .frame(egui::Frame::NONE)
+                                    .hint_text("Message, or /help for the commands")
+                                    .font(egui::FontId::proportional(15.0)),
+                            )
+                        });
                     let response = response.inner;
                     if response.changed() {
                         self.history_pos = None;
@@ -286,13 +291,17 @@ impl Chat {
                         self.focus_pending = false;
                     }
                 } else {
-                    let recent: Vec<&ChatLine> = self.lines.iter().rev().take(MAX_CLOSED_LINES).take_while(|l| now.duration_since(l.at) < LINE_VISIBLE).collect();
+                    let recent: Vec<&ChatLine> =
+                        self.lines.iter().rev().take(MAX_CLOSED_LINES).take_while(|l| now.duration_since(l.at) < LINE_VISIBLE).collect();
                     for line in recent.into_iter().rev() {
                         let left = LINE_VISIBLE.saturating_sub(now.duration_since(line.at));
                         let alpha = (left.as_secs_f32() / LINE_FADE.as_secs_f32()).min(1.0);
-                        egui::Frame::NONE.fill(egui::Color32::from_black_alpha((110.0 * alpha) as u8)).inner_margin(egui::Margin::symmetric(5, 1)).show(ui, |ui| {
-                            ui.label(line_text(line, alpha));
-                        });
+                        egui::Frame::NONE
+                            .fill(egui::Color32::from_black_alpha((110.0 * alpha) as u8))
+                            .inner_margin(egui::Margin::symmetric(5, 1))
+                            .show(ui, |ui| {
+                                ui.label(line_text(line, alpha));
+                            });
                     }
                     // Le fondu continue sans attendre d'autre événement
                     ctx.request_repaint();
@@ -321,7 +330,9 @@ impl Chat {
                     ui.label(word);
                 }
                 if c.candidates.len() > MAX_SUGGESTIONS {
-                    ui.label(egui::RichText::new(format!("({} matches)", c.candidates.len())).size(12.0).color(egui::Color32::from_gray(150)));
+                    ui.label(
+                        egui::RichText::new(format!("({} matches)", c.candidates.len())).size(12.0).color(egui::Color32::from_gray(150)),
+                    );
                 }
             });
         });

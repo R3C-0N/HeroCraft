@@ -13,7 +13,7 @@
 
 use std::sync::OnceLock;
 
-use herocraft_common::{blocks, BlockId, PlanetFace};
+use herocraft_common::{BlockId, PlanetFace, blocks};
 
 use crate::caves::block_carved;
 use crate::edits::FACE_BLOCKS;
@@ -396,14 +396,32 @@ impl PlanetWorldGenerator {
                 };
                 (density, kind)
             }
-            BiomeType::Jungle => (0.90, if pick < 0.30 { TreeKind::Bush } else if pick < 0.52 { TreeKind::Oak } else { TreeKind::Jungle }),
+            BiomeType::Jungle => (
+                0.90,
+                if pick < 0.30 {
+                    TreeKind::Bush
+                } else if pick < 0.52 {
+                    TreeKind::Oak
+                } else {
+                    TreeKind::Jungle
+                },
+            ),
             BiomeType::Taiga => (0.80, if pick < 0.10 { TreeKind::Bush } else { TreeKind::Spruce }),
             BiomeType::Tundra => (0.07, if pick < 0.45 { TreeKind::Bush } else { TreeKind::Spruce }),
             BiomeType::Mountains => (0.22, if pick < 0.2 { TreeKind::Bush } else { TreeKind::Spruce }),
             BiomeType::Plains => {
                 // Prairie ouverte, quelques bosquets
                 let density = 0.03 + 0.45 * smooth(0.7, 0.85, groves);
-                (density, if pick < 0.40 { TreeKind::Bush } else if pick < 0.55 { TreeKind::Birch } else { TreeKind::Oak })
+                (
+                    density,
+                    if pick < 0.40 {
+                        TreeKind::Bush
+                    } else if pick < 0.55 {
+                        TreeKind::Birch
+                    } else {
+                        TreeKind::Oak
+                    },
+                )
             }
             BiomeType::Savanna => (0.12, if pick < 0.45 { TreeKind::Bush } else { TreeKind::Acacia }),
             BiomeType::Desert => (0.07, TreeKind::Cactus),
@@ -504,26 +522,22 @@ impl PlanetWorldGenerator {
             return block;
         }
         if y == ground
-            && let Some(plant) = self.ground_plant(column, face, x, z) {
+            && let Some(plant) = self.ground_plant(column, face, x, z)
+        {
             return plant;
         }
         BlockId::AIR
     }
 
     /// Bloc d'arbre en (x, y, z), en cherchant les arbres des cases voisines
-    pub(crate) fn column_tree_block(
-        &self,
-        x: i32,
-        y: i32,
-        z: i32,
-        tree_of: &mut impl FnMut(i32, i32) -> Option<Tree>,
-    ) -> Option<BlockId> {
+    pub(crate) fn column_tree_block(&self, x: i32, y: i32, z: i32, tree_of: &mut impl FnMut(i32, i32) -> Option<Tree>) -> Option<BlockId> {
         let mut trees: [Option<Tree>; 4] = [None; 4];
         let mut n = 0;
         for cz in cell_span(z..z + 1) {
             for cx in cell_span(x..x + 1) {
                 if let Some(tree) = tree_of(cx, cz)
-                    && n < trees.len() {
+                    && n < trees.len()
+                {
                     trees[n] = Some(tree);
                     n += 1;
                 }
@@ -538,7 +552,8 @@ impl PlanetWorldGenerator {
         for cz in cell_span(z..z + 1) {
             for cx in cell_span(x..x + 1) {
                 if let Some(tree) = tree_of(cx, cz)
-                    && tree.covers(x, z) {
+                    && tree.covers(x, z)
+                {
                     top = top.max(tree.top());
                 }
             }

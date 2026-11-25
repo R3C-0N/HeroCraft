@@ -86,9 +86,18 @@ impl Siege {
         let out = if dx.abs() >= dz.abs() { (dx.signum(), 0) } else { (0, dz.signum()) };
         let floor_at = |x: i32, z: i32| {
             let ground = generator.sample_block_column(face, x, z).elevation.floor() as i32;
-            (ground - 4..ground + 40).find(|&y| generator.block_at(face, x, y - 1, z).is_solid() && !generator.block_at(face, x, y, z).is_solid()).unwrap_or(ground + 1)
+            (ground - 4..ground + 40)
+                .find(|&y| generator.block_at(face, x, y - 1, z).is_solid() && !generator.block_at(face, x, y, z).is_solid())
+                .unwrap_or(ground + 1)
         };
-        Self { face, gate: (gx, gz), out, floor: floor_at(gx, gz), center: city.center, center_floor: floor_at(city.center.0, city.center.1) }
+        Self {
+            face,
+            gate: (gx, gz),
+            out,
+            floor: floor_at(gx, gz),
+            center: city.center,
+            center_floor: floor_at(city.center.0, city.center.1),
+        }
     }
 
     /// Colonne à `along` blocs de la porte vers l'extérieur et `side` blocs sur le côté
@@ -196,7 +205,10 @@ impl VisionCharge {
     /// La herse, dans le dernier rang du passage côté ville
     fn portcullis(&self) -> Vec<(BlockPos, BlockId)> {
         let bars = block("barriereFer");
-        (-GATE_HALF..=GATE_HALF).flat_map(|side| (0..GATE_HEIGHT).map(move |level| (side, level))).map(|(side, level)| (self.siege.pos(-GATE_HALF, side, level), bars)).collect()
+        (-GATE_HALF..=GATE_HALF)
+            .flat_map(|side| (0..GATE_HEIGHT).map(move |level| (side, level)))
+            .map(|(side, level)| (self.siege.pos(-GATE_HALF, side, level), bars))
+            .collect()
     }
 
     /// La porte, le bélier, son abri et la herse ne se cassent pas à la pioche
@@ -313,7 +325,10 @@ impl VisionCharge {
             Phase::Waiting => return None,
             Phase::Charging | Phase::Ramming => "À la charge ! Cours vers la grande porte avec l'armée.".to_string(),
             Phase::Breached => "La porte a cédé ! Entre dans la ville avec les soldats.".to_string(),
-            Phase::Sealed if self.timer < SEALED_HINT_SECONDS => "Une herse s'abat derrière toi : plus de retour possible. Le temple t'attend au cœur de la ville, sous le rayon violet.".to_string(),
+            Phase::Sealed if self.timer < SEALED_HINT_SECONDS => {
+                "Une herse s'abat derrière toi : plus de retour possible. Le temple t'attend au cœur de la ville, sous le rayon violet."
+                    .to_string()
+            }
             Phase::Sealed => return None,
         })
     }
@@ -367,7 +382,9 @@ mod tests {
             broken |= out.iter().any(|e| matches!(e, ChargeEvent::GateBroken(_)));
             if broken {
                 assert!(out.iter().any(|e| matches!(e, ChargeEvent::Beam(_))), "le rayon s'élève");
-                assert!(out.iter().any(|e| matches!(e, ChargeEvent::Blocks(b) if b.iter().any(|&(p, id)| p == c.siege.pos(0, 0, 1) && id == BlockId::AIR))));
+                assert!(out.iter().any(
+                    |e| matches!(e, ChargeEvent::Blocks(b) if b.iter().any(|&(p, id)| p == c.siege.pos(0, 0, 1) && id == BlockId::AIR))
+                ));
                 break;
             }
         }

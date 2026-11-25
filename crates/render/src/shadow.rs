@@ -42,21 +42,13 @@ fn normal_offset(cascade_size: u32) -> f32 {
 /// qu'un retard de quelques images ne se voie pas. Une cascade lointaine n'est redessinée à son
 /// tour que si sa carte ne correspond plus à la scène (`FarCascadeState::is_stale`).
 fn cascade_refresh(frame: u64, fine: bool) -> [bool; CASCADE_COUNT] {
-    if fine {
-        [true, frame.is_multiple_of(2), frame % 2 == 1]
-    } else {
-        [true, frame.is_multiple_of(2), frame % 4 == 1]
-    }
+    if fine { [true, frame.is_multiple_of(2), frame % 2 == 1] } else { [true, frame.is_multiple_of(2), frame % 4 == 1] }
 }
 
 /// La carte des nuages est redessinée à cette image : une sur deux (fines), une sur quatre
 /// (allégées), en décalé des cascades lointaines
 fn cloud_refresh(frame: u64, fine: bool) -> bool {
-    if fine {
-        frame.is_multiple_of(2)
-    } else {
-        frame % 4 == 3
-    }
+    if fine { frame.is_multiple_of(2) } else { frame % 4 == 3 }
 }
 
 /// Hauteur d'ombre (en blocs) dont le bout ne doit pas se décaler de plus d'un demi-texel avant
@@ -237,11 +229,7 @@ impl Shadows {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
+                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
                 count: None,
             }],
         });
@@ -273,11 +261,8 @@ impl Shadows {
         };
         // La vue des cascades est celle de `maps` (recréée avec elles), celle des nuages est gardée
         let cascades = (0..CASCADE_COUNT).map(|i| caster_pass("Shadow Cascade Pass", None, CASCADE_EXTENTS[i])).collect();
-        let cloud = caster_pass(
-            "Cloud Shadow Pass",
-            Some(cloud_texture.create_view(&wgpu::TextureViewDescriptor::default())),
-            CLOUD_EXTENT,
-        );
+        let cloud =
+            caster_pass("Cloud Shadow Pass", Some(cloud_texture.create_view(&wgpu::TextureViewDescriptor::default())), CLOUD_EXTENT);
 
         // Pipelines des passes depuis le soleil
         let caster_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -314,7 +299,8 @@ impl Shadows {
             cache: crate::shaders::pipeline_cache(),
         });
 
-        let cloud_shader = crate::shaders::create_shader_module(device, "Cloud Shadow Shader", include_str!("cloud_shader.wgsl"), "cloud_shader.wgsl");
+        let cloud_shader =
+            crate::shaders::create_shader_module(device, "Cloud Shadow Shader", include_str!("cloud_shader.wgsl"), "cloud_shader.wgsl");
         let cloud_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Cloud Shadow Pipeline"),
             layout: Some(&caster_layout),
@@ -342,11 +328,7 @@ impl Shadows {
                 })],
                 compilation_options: Default::default(),
             }),
-            primitive: wgpu::PrimitiveState {
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                ..Default::default()
-            },
+            primitive: wgpu::PrimitiveState { front_face: wgpu::FrontFace::Ccw, cull_mode: None, ..Default::default() },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview_mask: None,
@@ -368,22 +350,27 @@ impl Shadows {
         let receiver_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Shadow Receiver Bind Group Layout"),
             entries: &[
-                fragment_entry(0, wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                }),
-                fragment_entry(1, wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Depth,
-                    view_dimension: wgpu::TextureViewDimension::D2Array,
-                    multisampled: false,
-                }),
+                fragment_entry(
+                    0,
+                    wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                ),
+                fragment_entry(
+                    1,
+                    wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                ),
                 fragment_entry(2, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison)),
-                fragment_entry(3, wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                }),
+                fragment_entry(
+                    3,
+                    wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                ),
                 fragment_entry(4, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
             ],
         });
@@ -561,7 +548,11 @@ impl Shadows {
                 CLOUD_LIGHT_DISTANCE * scale,
                 CLOUD_LIGHT_DEPTH * scale,
             );
-            queue.write_buffer(&self.cloud.buffer, 0, bytemuck::cast_slice(&[ShadowPassUniform { view_proj: cloud_vp.to_cols_array_2d() }]));
+            queue.write_buffer(
+                &self.cloud.buffer,
+                0,
+                bytemuck::cast_slice(&[ShadowPassUniform { view_proj: cloud_vp.to_cols_array_2d() }]),
+            );
             self.uniform.cloud_view_proj = cloud_vp.to_cols_array_2d();
         }
         let uniform = &mut self.uniform;
@@ -634,7 +625,8 @@ impl Shadows {
             let (right, up) = light_basis(self.light_dir);
             // La cascade 0, toujours redessinée, porte le timestamp de début
             for (i, pass) in self.cascades.iter().enumerate().filter(|(_, pass)| pass.refresh) {
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    multiview_mask: None,
                     label: Some("Shadow Cascade Pass"),
                     color_attachments: &[],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
@@ -670,9 +662,11 @@ impl Shadows {
         // nouveau dessin, la carte de la frame précédente est gardée.
         let redraw_clouds = !self.active || self.cloud.refresh;
         let load = if redraw_clouds { wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT) } else { wgpu::LoadOp::Load };
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { multiview_mask: None,
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            multiview_mask: None,
             label: Some("Cloud Shadow Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment { depth_slice: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                depth_slice: None,
                 view: self.cloud.view.as_ref().expect("carte des nuages"),
                 resolve_target: None,
                 ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },

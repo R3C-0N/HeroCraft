@@ -74,18 +74,50 @@ pub(crate) struct CommandHelp {
 /// Toutes les commandes, dans l'ordre de `/help`
 pub(crate) const COMMANDS: &[CommandHelp] = &[
     CommandHelp { name: "help", usage: "/help [command]", description: "List the commands, or explain one" },
-    CommandHelp { name: "tp", usage: "/tp <latitude> <longitude> [height] | /tp <player>", description: "Teleport to the ground at a latitude and longitude (degrees), optionally some blocks above it, or next to a player" },
+    CommandHelp {
+        name: "tp",
+        usage: "/tp <latitude> <longitude> [height] | /tp <player>",
+        description: "Teleport to the ground at a latitude and longitude (degrees), optionally some blocks above it, or next to a player",
+    },
     CommandHelp { name: "spawn", usage: "/spawn", description: "Go back to the spawn point" },
     CommandHelp { name: "pos", usage: "/pos", description: "Show your latitude, longitude, altitude and block" },
-    CommandHelp { name: "time", usage: "/time [set <0-24|hh:mm|sunrise|day|noon|sunset|night|midnight>] | /time speed <factor>", description: "Show or set the local time, or change how fast the sky moves (1 = 20 min day, 0 = frozen)" },
-    CommandHelp { name: "weather", usage: "/weather [clear|cloudy|rain|storm|snow|auto]", description: "Show the weather, force it everywhere, or let nature decide again (auto)" },
-    CommandHelp { name: "season", usage: "/season [spring|summer|autumn|winter]", description: "Show the season, or jump to the start of one (northern hemisphere; the south has the opposite)" },
+    CommandHelp {
+        name: "time",
+        usage: "/time [set <0-24|hh:mm|sunrise|day|noon|sunset|night|midnight>] | /time speed <factor>",
+        description: "Show or set the local time, or change how fast the sky moves (1 = 20 min day, 0 = frozen)",
+    },
+    CommandHelp {
+        name: "weather",
+        usage: "/weather [clear|cloudy|rain|storm|snow|auto]",
+        description: "Show the weather, force it everywhere, or let nature decide again (auto)",
+    },
+    CommandHelp {
+        name: "season",
+        usage: "/season [spring|summer|autumn|winter]",
+        description: "Show the season, or jump to the start of one (northern hemisphere; the south has the opposite)",
+    },
     CommandHelp { name: "seed", usage: "/seed", description: "Show the planet seed" },
-    CommandHelp { name: "planet", usage: "/planet [seed]", description: "Generate a new planet, random or from a seed (single player only)" },
-    CommandHelp { name: "give", usage: "/give <item> [count]", description: "Put blocks or items in your inventory (Tab completes the name)" },
-    CommandHelp { name: "drop", usage: "/drop <item> [count]", description: "Drop blocks or items on the ground in front of you (Tab completes the name)" },
+    CommandHelp {
+        name: "planet",
+        usage: "/planet [seed]",
+        description: "Generate a new planet, random or from a seed (single player only)",
+    },
+    CommandHelp {
+        name: "give",
+        usage: "/give <item> [count]",
+        description: "Put blocks or items in your inventory (Tab completes the name)",
+    },
+    CommandHelp {
+        name: "drop",
+        usage: "/drop <item> [count]",
+        description: "Drop blocks or items on the ground in front of you (Tab completes the name)",
+    },
     CommandHelp { name: "fly", usage: "/fly", description: "Toggle flight" },
-    CommandHelp { name: "camera", usage: "/camera <distance> [yaw|~] [pitch|~]", description: "Put the camera some blocks behind the hero (0 = first person), facing yaw degrees (0 = north) and tilted pitch degrees (negative = down); ~ keeps the current angle" },
+    CommandHelp {
+        name: "camera",
+        usage: "/camera <distance> [yaw|~] [pitch|~]",
+        description: "Put the camera some blocks behind the hero (0 = first person), facing yaw degrees (0 = north) and tilted pitch degrees (negative = down); ~ keeps the current angle",
+    },
     CommandHelp { name: "speed", usage: "/speed <factor>", description: "Movement speed multiplier (1 = normal, up to 20)" },
     CommandHelp { name: "summon", usage: "/summon <creature> [count]", description: "Spawn creatures in front of you" },
     CommandHelp { name: "heal", usage: "/heal", description: "Restore health, mana and stamina" },
@@ -95,7 +127,11 @@ pub(crate) const COMMANDS: &[CommandHelp] = &[
     CommandHelp { name: "list", usage: "/list", description: "List the players online" },
     CommandHelp { name: "clear", usage: "/clear", description: "Clear the chat" },
     CommandHelp { name: "cinematic", usage: "/cinematic [name]", description: "List the cinematics, or play one (Tab completes the name)" },
-    CommandHelp { name: "event", usage: "/event <name> [key=value ...]", description: "Send a game event at your feet, as the game would (e.g. /event stone_obtained stone=voidStone kind=whole)" },
+    CommandHelp {
+        name: "event",
+        usage: "/event <name> [key=value ...]",
+        description: "Send a game event at your feet, as the game would (e.g. /event stone_obtained stone=voidStone kind=whole)",
+    },
 ];
 
 /// Exemplaires au plus d'un `/give`, de créatures d'un `/summon`, et vitesse maximale
@@ -122,9 +158,12 @@ pub fn parse(line: &str) -> Result<Command, String> {
         ("tp" | "teleport", [player]) => Command::TeleportPlayer(player.to_string()),
         ("tp" | "teleport", [lat, lon, rest @ ..]) if rest.len() <= 1 => {
             let lat = number(lat).filter(|l| l.abs() <= 90.0).ok_or_else(|| wrong(&format!("Invalid latitude \"{lat}\" (-90 to 90)")))?;
-            let lon = number(lon).filter(|l| l.abs() <= 180.0).ok_or_else(|| wrong(&format!("Invalid longitude \"{lon}\" (-180 to 180)")))?;
+            let lon =
+                number(lon).filter(|l| l.abs() <= 180.0).ok_or_else(|| wrong(&format!("Invalid longitude \"{lon}\" (-180 to 180)")))?;
             let height = match rest.first() {
-                Some(h) => number(h).filter(|h| (0.0..=10_000.0).contains(h)).ok_or_else(|| wrong(&format!("Invalid height \"{h}\" (0 to 10000 blocks)")))?,
+                Some(h) => number(h)
+                    .filter(|h| (0.0..=10_000.0).contains(h))
+                    .ok_or_else(|| wrong(&format!("Invalid height \"{h}\" (0 to 10000 blocks)")))?,
                 None => 0.0,
             };
             Command::TeleportLatLon { lat, lon, height }
@@ -133,40 +172,61 @@ pub fn parse(line: &str) -> Result<Command, String> {
         ("pos" | "where", []) => Command::Position,
         ("time", []) | ("time", ["query"]) => Command::TimeQuery,
         ("time", ["set", hour]) => Command::TimeSet(parse_hour(hour).ok_or_else(|| wrong(&format!("Invalid time \"{hour}\"")))?),
-        ("time", ["speed", factor]) => {
-            Command::TimeSpeed(number(factor).filter(|f| (0.0..=100.0).contains(f)).ok_or_else(|| wrong(&format!("Invalid speed \"{factor}\" (0 to 100)")))?)
-        }
+        ("time", ["speed", factor]) => Command::TimeSpeed(
+            number(factor).filter(|f| (0.0..=100.0).contains(f)).ok_or_else(|| wrong(&format!("Invalid speed \"{factor}\" (0 to 100)")))?,
+        ),
         ("seed", []) => Command::Seed,
         ("planet", []) => Command::Planet(None),
-        ("planet", [seed]) => Command::Planet(Some(seed.parse().map_err(|_| wrong(&format!("Invalid seed \"{seed}\" (a positive whole number)")))?)),
+        ("planet", [seed]) => {
+            Command::Planet(Some(seed.parse().map_err(|_| wrong(&format!("Invalid seed \"{seed}\" (a positive whole number)")))?))
+        }
         ("give", [item, rest @ ..]) if rest.len() <= 1 => {
             let count = match rest.first() {
-                Some(n) => n.parse::<u16>().ok().filter(|n| (1..=MAX_GIVE).contains(n)).ok_or_else(|| wrong(&format!("Invalid count \"{n}\" (1 to {MAX_GIVE})")))?,
+                Some(n) => n
+                    .parse::<u16>()
+                    .ok()
+                    .filter(|n| (1..=MAX_GIVE).contains(n))
+                    .ok_or_else(|| wrong(&format!("Invalid count \"{n}\" (1 to {MAX_GIVE})")))?,
                 None => 1,
             };
             Command::Give { item: item.to_string(), count }
         }
         ("drop", [item, rest @ ..]) if rest.len() <= 1 => {
             let count = match rest.first() {
-                Some(n) => n.parse::<u16>().ok().filter(|n| (1..=MAX_DROP).contains(n)).ok_or_else(|| wrong(&format!("Invalid count \"{n}\" (1 to {MAX_DROP})")))?,
+                Some(n) => n
+                    .parse::<u16>()
+                    .ok()
+                    .filter(|n| (1..=MAX_DROP).contains(n))
+                    .ok_or_else(|| wrong(&format!("Invalid count \"{n}\" (1 to {MAX_DROP})")))?,
                 None => 1,
             };
             Command::Drop { item: item.to_string(), count }
         }
         ("fly", []) => Command::Fly,
         ("camera" | "cam", [distance, rest @ ..]) if rest.len() <= 2 => {
-            let distance = number(distance).filter(|d| (0.0..=2000.0).contains(d)).ok_or_else(|| wrong(&format!("Invalid distance \"{distance}\" (0 to 2000 blocks)")))?;
+            let distance = number(distance)
+                .filter(|d| (0.0..=2000.0).contains(d))
+                .ok_or_else(|| wrong(&format!("Invalid distance \"{distance}\" (0 to 2000 blocks)")))?;
             let angle = |i: usize, max: f32| -> Result<Option<f32>, String> {
-                rest.get(i).filter(|a| **a != "~").map(|a| number(a).filter(|v| v.abs() <= max).ok_or_else(|| wrong(&format!("Invalid angle \"{a}\""))) ).transpose()
+                rest.get(i)
+                    .filter(|a| **a != "~")
+                    .map(|a| number(a).filter(|v| v.abs() <= max).ok_or_else(|| wrong(&format!("Invalid angle \"{a}\""))))
+                    .transpose()
             };
             Command::Camera { distance, yaw: angle(0, 360.0)?, pitch: angle(1, 89.0)? }
         }
-        ("speed", [factor]) => {
-            Command::Speed(number(factor).filter(|f| (0.1..=MAX_SPEED).contains(f)).ok_or_else(|| wrong(&format!("Invalid speed \"{factor}\" (0.1 to {MAX_SPEED})")))?)
-        }
+        ("speed", [factor]) => Command::Speed(
+            number(factor)
+                .filter(|f| (0.1..=MAX_SPEED).contains(f))
+                .ok_or_else(|| wrong(&format!("Invalid speed \"{factor}\" (0.1 to {MAX_SPEED})")))?,
+        ),
         ("summon", [species, rest @ ..]) if rest.len() <= 1 => {
             let count = match rest.first() {
-                Some(n) => n.parse::<u32>().ok().filter(|n| (1..=MAX_SUMMON).contains(n)).ok_or_else(|| wrong(&format!("Invalid count \"{n}\" (1 to {MAX_SUMMON})")))?,
+                Some(n) => n
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|n| (1..=MAX_SUMMON).contains(n))
+                    .ok_or_else(|| wrong(&format!("Invalid count \"{n}\" (1 to {MAX_SUMMON})")))?,
                 None => 1,
             };
             Command::Summon { species: species.to_string(), count }
@@ -175,18 +235,24 @@ pub fn parse(line: &str) -> Result<Command, String> {
         ("vision", []) => Command::Vision(true),
         ("vision", ["end" | "leave" | "exit"]) => Command::Vision(false),
         ("cast", [skill]) => Command::Cast(skill.to_string()),
-        ("xp" | "experience", [amount]) => {
-            Command::Experience(amount.parse().ok().filter(|n| (1..=MAX_XP).contains(n)).ok_or_else(|| wrong(&format!("Invalid amount \"{amount}\" (1 to {MAX_XP})")))?)
-        }
+        ("xp" | "experience", [amount]) => Command::Experience(
+            amount
+                .parse()
+                .ok()
+                .filter(|n| (1..=MAX_XP).contains(n))
+                .ok_or_else(|| wrong(&format!("Invalid amount \"{amount}\" (1 to {MAX_XP})")))?,
+        ),
         ("list" | "who", []) => Command::List,
         ("clear", []) => Command::ClearChat,
         ("weather" | "meteo", []) => Command::Weather(None),
         ("weather" | "meteo", ["auto" | "natural" | "reset"]) => Command::Weather(Some(None)),
-        ("weather" | "meteo", [kind]) => {
-            Command::Weather(Some(Some(herocraft_common::WeatherKind::parse(kind).ok_or_else(|| wrong(&format!("Unknown weather \"{kind}\"")))?)))
-        }
+        ("weather" | "meteo", [kind]) => Command::Weather(Some(Some(
+            herocraft_common::WeatherKind::parse(kind).ok_or_else(|| wrong(&format!("Unknown weather \"{kind}\"")))?,
+        ))),
         ("season" | "saison", []) => Command::Season(None),
-        ("season" | "saison", [season]) => Command::Season(Some(herocraft_world::Season::parse(season).ok_or_else(|| wrong(&format!("Unknown season \"{season}\"")))?)),
+        ("season" | "saison", [season]) => {
+            Command::Season(Some(herocraft_world::Season::parse(season).ok_or_else(|| wrong(&format!("Unknown season \"{season}\"")))?))
+        }
         ("cinematic" | "cine", []) => Command::Cinematic(None),
         ("cinematic" | "cine", [id]) => Command::Cinematic(Some(id.to_string())),
         ("event", [_, ..]) => {
@@ -273,7 +339,8 @@ pub fn complete(line: &str, sources: &CompletionSources) -> Vec<String> {
     };
     let prefix = last.to_lowercase();
     let head = &line[..line.len() - last.len()];
-    let mut found: Vec<String> = candidates.into_iter().filter(|c| c.to_lowercase().starts_with(&prefix)).map(|c| format!("{head}{c}")).collect();
+    let mut found: Vec<String> =
+        candidates.into_iter().filter(|c| c.to_lowercase().starts_with(&prefix)).map(|c| format!("{head}{c}")).collect();
     found.sort_by_key(|c| c.to_lowercase());
     found.dedup();
     found
@@ -385,7 +452,9 @@ mod tests {
             assert!(help(Some(c.name)).is_ok());
         }
         // Chaque commande sans argument obligatoire se lit telle quelle
-        for name in ["help", "spawn", "pos", "time", "seed", "planet", "fly", "heal", "vision", "list", "clear", "weather", "season", "cinematic"] {
+        for name in
+            ["help", "spawn", "pos", "time", "seed", "planet", "fly", "heal", "vision", "list", "clear", "weather", "season", "cinematic"]
+        {
             assert!(parse(&format!("/{name}")).is_ok(), "/{name}");
         }
     }

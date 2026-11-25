@@ -14,7 +14,7 @@ use std::sync::OnceLock;
 use serde::Deserialize;
 
 use crate::blocks::blocks;
-use crate::items::{items, ItemId};
+use crate::items::{ItemId, items};
 use crate::voxel::BlockId;
 
 /// Dossier des fiches de cultures, depuis le dossier de lancement
@@ -244,11 +244,7 @@ impl CropRegistry {
 
     /// Terre labourée sèche ou humide
     pub fn farmland(&self, wet: bool) -> Option<BlockId> {
-        if wet {
-            self.wet_farmland.or(self.farmland)
-        } else {
-            self.farmland
-        }
+        if wet { self.wet_farmland.or(self.farmland) } else { self.farmland }
     }
 
     /// `Some(humide)` si le bloc est une terre labourée
@@ -342,7 +338,10 @@ mod tests {
         let ok = r#"{ "name": "Blé", "seed": "grainesBle", "stages": ["bleStade1", "bleStade4"], "stage_minutes": 1 }"#;
         assert!(CropSheet::parse("ble", ok).is_ok());
         assert!(CropSheet::parse("ble", &ok.replace(r#""bleStade1", "#, "")).unwrap_err().to_string().contains("deux stades"));
-        assert!(matches!(CropSheet::parse("ble", &ok.replace(r#""stage_minutes": 1"#, r#""stage_minutes": 0"#)), Err(CropSheetError::StageMinutes)));
+        assert!(matches!(
+            CropSheet::parse("ble", &ok.replace(r#""stage_minutes": 1"#, r#""stage_minutes": 0"#)),
+            Err(CropSheetError::StageMinutes)
+        ));
         assert!(matches!(CropSheet::parse("ble", &ok.replace("seed", "graine")), Err(CropSheetError::Json(_))));
         let unknown = CropSheet::parse("x", &ok.replace("bleStade4", "inconnu")).unwrap();
         let (registry, errors) = CropRegistry::from_sheets(vec![unknown]);

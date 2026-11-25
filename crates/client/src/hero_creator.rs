@@ -8,9 +8,8 @@
 //! ([`Legend::verify`]) et scelle le héros pour de bon.
 
 use crate::hero_model::{Figure, FigureCache, FigurePose};
-use herocraft_common::hero::{self, atlas, Appearance, ClassSheet, Dice, Family, Legend, CLASSES, NAME_MAX, SHEET_SIZE};
 use herocraft_common::PlayerClass;
-
+use herocraft_common::hero::{self, Appearance, CLASSES, ClassSheet, Dice, Family, Legend, NAME_MAX, SHEET_SIZE, atlas};
 
 // Palette du créateur : bois sombre, parchemin et or
 const GOLD: egui::Color32 = egui::Color32::from_rgb(212, 175, 55);
@@ -140,25 +139,22 @@ impl HeroCreator {
         self.preview.update(dt);
         ctx.request_repaint();
 
-        egui::Area::new(egui::Id::unique("hero_creator"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(screen.min)
-            .show(ctx, |ui| {
-                ui.set_min_size(screen.size());
-                paint_planks(ui.painter(), screen);
+        egui::Area::new(egui::Id::unique("hero_creator")).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
+            ui.set_min_size(screen.size());
+            paint_planks(ui.painter(), screen);
 
-                let margin = (screen.width() * 0.03_f32).clamp(12.0_f32, 40.0_f32);
-                let inner = screen.shrink(margin);
-                let gap = 18.0_f32;
-                let left_w = (inner.width() * 0.4_f32).clamp(240.0_f32, 520.0_f32);
-                let left = egui::Rect::from_min_size(inner.min, egui::vec2(left_w, inner.height()));
-                let right = egui::Rect::from_min_max(egui::pos2(left.right() + gap, inner.top()), inner.max);
+            let margin = (screen.width() * 0.03_f32).clamp(12.0_f32, 40.0_f32);
+            let inner = screen.shrink(margin);
+            let gap = 18.0_f32;
+            let left_w = (inner.width() * 0.4_f32).clamp(240.0_f32, 520.0_f32);
+            let left = egui::Rect::from_min_size(inner.min, egui::vec2(left_w, inner.height()));
+            let right = egui::Rect::from_min_max(egui::pos2(left.right() + gap, inner.top()), inner.max);
 
-                ui.scope_builder(egui::UiBuilder::new().max_rect(left), |ui| self.draw_preview_panel(ui, left));
-                ui.scope_builder(egui::UiBuilder::new().max_rect(right), |ui| {
-                    event = self.draw_step_panel(ui, right);
-                });
+            ui.scope_builder(egui::UiBuilder::new().max_rect(left), |ui| self.draw_preview_panel(ui, left));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(right), |ui| {
+                event = self.draw_step_panel(ui, right);
             });
+        });
         event
     }
 
@@ -252,10 +248,9 @@ impl HeroCreator {
                     let enabled = !frozen && (i < 2 || self.class.is_some());
                     let text = egui::RichText::new(format!("{}  {}", i + 1, pas.to_uppercase())).size(12.0_f32).strong();
                     let text = if i == self.step { text.color(GOLD_BRIGHT) } else { text.color(INK_DIM) };
-                    let button = egui::Button::new(text).fill(if i == self.step { CASE_ON } else { egui::Color32::TRANSPARENT }).stroke(egui::Stroke::new(
-                        1.0_f32,
-                        if i == self.step { GOLD } else { EDGE },
-                    ));
+                    let button = egui::Button::new(text)
+                        .fill(if i == self.step { CASE_ON } else { egui::Color32::TRANSPARENT })
+                        .stroke(egui::Stroke::new(1.0_f32, if i == self.step { GOLD } else { EDGE }));
                     if ui.add_enabled(enabled, button).clicked() {
                         self.go(i);
                     }
@@ -339,7 +334,9 @@ impl HeroCreator {
             for (tab, label) in Tab::ALL {
                 let on = tab == self.tab;
                 let text = egui::RichText::new(label.to_uppercase()).size(11.5_f32).strong().color(if on { GOLD_BRIGHT } else { INK_DIM });
-                let button = egui::Button::new(text).fill(if on { CASE_ON } else { CASE }).stroke(egui::Stroke::new(1.0_f32, if on { GOLD } else { EDGE }));
+                let button = egui::Button::new(text)
+                    .fill(if on { CASE_ON } else { CASE })
+                    .stroke(egui::Stroke::new(1.0_f32, if on { GOLD } else { EDGE }));
                 if ui.add(button).clicked() {
                     self.tab = tab;
                 }
@@ -460,7 +457,9 @@ impl HeroCreator {
             ui.label(egui::RichText::new(format!("« {} »", sheet.role)).size(13.5_f32).italics().color(INK));
             ui.label(egui::RichText::new(sheet.armament).size(12.0_f32).color(INK_SOFT));
             ui.label(
-                egui::RichText::new(format!("Mêlée {} · Distance {} · Magie {}", sheet.melee, sheet.ranged, sheet.magic)).size(12.0_f32).color(INK_DIM),
+                egui::RichText::new(format!("Mêlée {} · Distance {} · Magie {}", sheet.melee, sheet.ranged, sheet.magic))
+                    .size(12.0_f32)
+                    .color(INK_DIM),
             );
         });
     }
@@ -486,7 +485,10 @@ impl HeroCreator {
                 self.refusal = None;
             }
         });
-        note(ui, "Un nom se porte longtemps. Les crieurs le répéteront mal, les bardes l’allongeront, les registres de garnison l’abrégeront.");
+        note(
+            ui,
+            "Un nom se porte longtemps. Les crieurs le répéteront mal, les bardes l’allongeront, les registres de garnison l’abrégeront.",
+        );
 
         ui.add_space(6.0_f32);
         well_frame().show(ui, |ui| {
@@ -505,7 +507,12 @@ impl HeroCreator {
 
         if let Some(legend) = &self.sealed {
             ui.add_space(8.0_f32);
-            ui.label(egui::RichText::new(format!("Ainsi commence la légende de {}.", legend.appearance.nom)).size(20.0_f32).strong().color(GOLD_BRIGHT));
+            ui.label(
+                egui::RichText::new(format!("Ainsi commence la légende de {}.", legend.appearance.nom))
+                    .size(20.0_f32)
+                    .strong()
+                    .color(GOLD_BRIGHT),
+            );
             ui.label(
                 egui::RichText::new("La garnison de Valbrume vous inscrit au palier 1. Le monde ne connaît pas encore votre nom : il l’apprendra, ou il l’oubliera.")
                     .size(12.5_f32)
@@ -540,7 +547,15 @@ pub(crate) struct Preview {
 
 impl Default for Preview {
     fn default() -> Self {
-        Self { angle: 46.0_f32.to_radians(), tilt: (-4.0_f32).to_radians(), turning: true, held: false, last_time: None, texture: None, figure: FigureCache::default() }
+        Self {
+            angle: 46.0_f32.to_radians(),
+            tilt: (-4.0_f32).to_radians(),
+            turning: true,
+            held: false,
+            last_time: None,
+            texture: None,
+            figure: FigureCache::default(),
+        }
     }
 }
 
@@ -573,7 +588,8 @@ impl Preview {
     fn texture(&mut self, ctx: &egui::Context, cfg: &Appearance) -> egui::TextureHandle {
         let key = cfg.sheet_key();
         if let Some((k, tex)) = &self.texture
-            && *k == key {
+            && *k == key
+        {
             return tex.clone();
         }
         let sheet = hero::paint(cfg);
@@ -587,12 +603,29 @@ impl Preview {
 /// Dessine la figure tournée de `angle` et inclinée de `tilt` dans le cadre : à la taille de son
 /// espèce contre un cadre de deux mètres (agrandi si cornes ou bois dépassent), pieds sur la même
 /// ligne, élargie par sa carrure
-fn draw_figure(painter: &egui::Painter, frame: egui::Rect, texture: &egui::TextureHandle, cfg: &Appearance, figure: &Figure, angle: f32, tilt: f32) {
+fn draw_figure(
+    painter: &egui::Painter,
+    frame: egui::Rect,
+    texture: &egui::TextureHandle,
+    cfg: &Appearance,
+    figure: &Figure,
+    angle: f32,
+    tilt: f32,
+) {
     draw_posed_figure(painter, frame, texture, cfg, figure, &FigurePose::default(), angle, tilt);
 }
 
 /// Comme `draw_figure`, la figure dans la pose `pose`
-fn draw_posed_figure(painter: &egui::Painter, frame: egui::Rect, texture: &egui::TextureHandle, cfg: &Appearance, figure: &Figure, pose: &FigurePose, angle: f32, tilt: f32) {
+fn draw_posed_figure(
+    painter: &egui::Painter,
+    frame: egui::Rect,
+    texture: &egui::TextureHandle,
+    cfg: &Appearance,
+    figure: &Figure,
+    pose: &FigurePose,
+    angle: f32,
+    tilt: f32,
+) {
     let rotation = glam::Quat::from_rotation_x(-tilt) * glam::Quat::from_rotation_y(-angle);
     let width = cfg.width_scale();
     // Mètres par unité du patron : la taille va des pieds au sommet du crâne
@@ -683,7 +716,10 @@ fn paint_planks(painter: &egui::Painter, rect: egui::Rect) {
         let offset = if i.is_multiple_of(2) { 0.0_f32 } else { 170.0_f32 };
         let mut x = rect.left() + offset + 120.0_f32;
         while x < rect.right() {
-            painter.line_segment([egui::pos2(x, r.top()), egui::pos2(x, r.bottom())], egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(26, 18, 12)));
+            painter.line_segment(
+                [egui::pos2(x, r.top()), egui::pos2(x, r.bottom())],
+                egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(26, 18, 12)),
+            );
             x += 340.0_f32;
         }
         y += plank;
@@ -698,7 +734,11 @@ fn panel_frame(painter: &egui::Painter, rect: egui::Rect) {
 }
 
 fn well_frame() -> egui::Frame {
-    egui::Frame::NONE.fill(WELL.gamma_multiply(0.9_f32)).stroke(egui::Stroke::new(1.0_f32, EDGE)).corner_radius(6.0_f32).inner_margin(12.0_f32)
+    egui::Frame::NONE
+        .fill(WELL.gamma_multiply(0.9_f32))
+        .stroke(egui::Stroke::new(1.0_f32, EDGE))
+        .corner_radius(6.0_f32)
+        .inner_margin(12.0_f32)
 }
 
 /// Filet doré orné d'un losange central
@@ -756,7 +796,13 @@ fn selector(ui: &mut egui::Ui, label: &str, liste: &[(String, String)], current:
     header(ui, label, &format!("{} / {}", i + 1, liste.len()));
     let mut next = None;
     ui.horizontal(|ui| {
-        let arrow = |ui: &mut egui::Ui, text: &str| ui.add(egui::Button::new(egui::RichText::new(text).size(16.0_f32).strong().color(GOLD_BRIGHT)).fill(CASE).min_size(egui::vec2(34.0_f32, 30.0_f32)));
+        let arrow = |ui: &mut egui::Ui, text: &str| {
+            ui.add(
+                egui::Button::new(egui::RichText::new(text).size(16.0_f32).strong().color(GOLD_BRIGHT))
+                    .fill(CASE)
+                    .min_size(egui::vec2(34.0_f32, 30.0_f32)),
+            )
+        };
         if arrow(ui, "‹").clicked() {
             next = Some((i + liste.len() - 1) % liste.len());
         }
@@ -841,15 +887,32 @@ fn case(ui: &mut egui::Ui, width: f32, title: &str, detail: Option<&str>, on: bo
     };
     let painter = ui.painter();
     painter.rect_filled(rect, 4.0_f32, fill);
-    painter.rect_stroke(rect, 4.0_f32, egui::Stroke::new(if on { 1.5_f32 } else { 1.0_f32 }, if on { GOLD } else { EDGE }), egui::StrokeKind::Middle);
+    painter.rect_stroke(
+        rect,
+        4.0_f32,
+        egui::Stroke::new(if on { 1.5_f32 } else { 1.0_f32 }, if on { GOLD } else { EDGE }),
+        egui::StrokeKind::Middle,
+    );
     let check = egui::Rect::from_center_size(egui::pos2(rect.left() + 16.0_f32, rect.center().y), egui::vec2(12.0_f32, 12.0_f32));
     painter.rect_stroke(check, 2.0_f32, egui::Stroke::new(1.0_f32, if on { GOLD_BRIGHT } else { INK_DIM }), egui::StrokeKind::Middle);
     if on {
         painter.rect_filled(check.shrink(3.0_f32), 1.0_f32, GOLD_BRIGHT);
     }
-    painter.text(egui::pos2(rect.left() + 30.0_f32, rect.center().y), egui::Align2::LEFT_CENTER, title, egui::FontId::proportional(14.0_f32), if on { GOLD_BRIGHT } else { INK });
+    painter.text(
+        egui::pos2(rect.left() + 30.0_f32, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        title,
+        egui::FontId::proportional(14.0_f32),
+        if on { GOLD_BRIGHT } else { INK },
+    );
     if let Some(detail) = detail {
-        painter.text(egui::pos2(rect.right() - 10.0_f32, rect.center().y), egui::Align2::RIGHT_CENTER, detail, egui::FontId::proportional(12.0_f32), INK_DIM);
+        painter.text(
+            egui::pos2(rect.right() - 10.0_f32, rect.center().y),
+            egui::Align2::RIGHT_CENTER,
+            detail,
+            egui::FontId::proportional(12.0_f32),
+            INK_DIM,
+        );
     }
     response
 }
@@ -863,11 +926,21 @@ fn paint_check(painter: &egui::Painter, rect: egui::Rect, label: &str, on: bool,
     if on {
         painter.rect_filled(check.shrink(2.5_f32), 1.0_f32, GOLD_BRIGHT);
     }
-    painter.text(egui::pos2(rect.left() + 25.0_f32, rect.center().y), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(12.5_f32), INK_SOFT);
+    painter.text(
+        egui::pos2(rect.left() + 25.0_f32, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(12.5_f32),
+        INK_SOFT,
+    );
 }
 
 fn ghost_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
-    ui.add(egui::Button::new(egui::RichText::new(text).size(13.0_f32).color(GOLD_BRIGHT)).fill(egui::Color32::TRANSPARENT).stroke(egui::Stroke::new(1.0_f32, GOLD.gamma_multiply(0.7_f32))))
+    ui.add(
+        egui::Button::new(egui::RichText::new(text).size(13.0_f32).color(GOLD_BRIGHT))
+            .fill(egui::Color32::TRANSPARENT)
+            .stroke(egui::Stroke::new(1.0_f32, GOLD.gamma_multiply(0.7_f32))),
+    )
 }
 
 #[cfg(test)]
@@ -876,7 +949,10 @@ mod tests {
 
     fn run(creator: &mut HeroCreator, ctx: &egui::Context) -> Option<CreatorEvent> {
         let mut event = None;
-        let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 720.0))), ..Default::default() };
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 720.0))),
+            ..Default::default()
+        };
         ctx.run_pass(input, |ctx| event = creator.show(ctx)).textures_delta.clear();
         event
     }
@@ -955,7 +1031,10 @@ mod tests {
             let mut snapshot = crate::ui_snapshot::Snapshot::new(width, height);
             snapshot.set_background(None);
             let mut previews: Vec<Preview> = heroes.iter().map(|_| Preview::default()).collect();
-            let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))), ..Default::default() };
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))),
+                ..Default::default()
+            };
             let mut output = ctx.run_ui(input, |root| {
                 egui::CentralPanel::default().frame(egui::Frame::NONE).show(root, |ui| {
                     for (i, (cfg, preview)) in heroes.iter().zip(previews.iter_mut()).enumerate() {
@@ -1046,10 +1125,63 @@ mod tests {
         };
         let poses = [
             ("repos", pose(&[], 0.0)),
-            ("estoc", pose(&[(Bone::RightArm, [40.0, 0.0, 0.0]), (Bone::RightForearm, [70.0, 0.0, 0.0]), (Bone::LeftArm, [20.0, 0.0, 10.0]), (Bone::LeftForearm, [100.0, 0.0, 0.0])], 0.0)),
-            ("accroupi", pose(&[(Bone::RightLeg, [70.0, 0.0, 0.0]), (Bone::LeftLeg, [70.0, 0.0, 0.0]), (Bone::RightShin, [110.0, 0.0, 0.0]), (Bone::LeftShin, [110.0, 0.0, 0.0]), (Bone::Torso, [25.0, 0.0, 0.0]), (Bone::RightArm, [50.0, 0.0, 0.0]), (Bone::LeftArm, [50.0, 0.0, 0.0]), (Bone::RightForearm, [40.0, 0.0, 0.0]), (Bone::LeftForearm, [40.0, 0.0, 0.0])], 6.0)),
-            ("frappe", pose(&[(Bone::RightArm, [160.0, 0.0, 10.0]), (Bone::RightForearm, [60.0, 0.0, 0.0]), (Bone::RightHand, [40.0, 0.0, 0.0]), (Bone::Torso, [-10.0, 25.0, 0.0]), (Bone::Head, [0.0, -20.0, 0.0]), (Bone::LeftLeg, [35.0, 0.0, 0.0]), (Bone::LeftShin, [45.0, 0.0, 0.0])], 0.0)),
-            ("incantation", pose(&[(Bone::RightArm, [60.0, 0.0, 15.0]), (Bone::LeftArm, [60.0, 0.0, 15.0]), (Bone::RightForearm, [80.0, 30.0, 0.0]), (Bone::LeftForearm, [80.0, -30.0, 0.0]), (Bone::Head, [15.0, 0.0, 0.0])], 0.0)),
+            (
+                "estoc",
+                pose(
+                    &[
+                        (Bone::RightArm, [40.0, 0.0, 0.0]),
+                        (Bone::RightForearm, [70.0, 0.0, 0.0]),
+                        (Bone::LeftArm, [20.0, 0.0, 10.0]),
+                        (Bone::LeftForearm, [100.0, 0.0, 0.0]),
+                    ],
+                    0.0,
+                ),
+            ),
+            (
+                "accroupi",
+                pose(
+                    &[
+                        (Bone::RightLeg, [70.0, 0.0, 0.0]),
+                        (Bone::LeftLeg, [70.0, 0.0, 0.0]),
+                        (Bone::RightShin, [110.0, 0.0, 0.0]),
+                        (Bone::LeftShin, [110.0, 0.0, 0.0]),
+                        (Bone::Torso, [25.0, 0.0, 0.0]),
+                        (Bone::RightArm, [50.0, 0.0, 0.0]),
+                        (Bone::LeftArm, [50.0, 0.0, 0.0]),
+                        (Bone::RightForearm, [40.0, 0.0, 0.0]),
+                        (Bone::LeftForearm, [40.0, 0.0, 0.0]),
+                    ],
+                    6.0,
+                ),
+            ),
+            (
+                "frappe",
+                pose(
+                    &[
+                        (Bone::RightArm, [160.0, 0.0, 10.0]),
+                        (Bone::RightForearm, [60.0, 0.0, 0.0]),
+                        (Bone::RightHand, [40.0, 0.0, 0.0]),
+                        (Bone::Torso, [-10.0, 25.0, 0.0]),
+                        (Bone::Head, [0.0, -20.0, 0.0]),
+                        (Bone::LeftLeg, [35.0, 0.0, 0.0]),
+                        (Bone::LeftShin, [45.0, 0.0, 0.0]),
+                    ],
+                    0.0,
+                ),
+            ),
+            (
+                "incantation",
+                pose(
+                    &[
+                        (Bone::RightArm, [60.0, 0.0, 15.0]),
+                        (Bone::LeftArm, [60.0, 0.0, 15.0]),
+                        (Bone::RightForearm, [80.0, 30.0, 0.0]),
+                        (Bone::LeftForearm, [80.0, -30.0, 0.0]),
+                        (Bone::Head, [15.0, 0.0, 0.0]),
+                    ],
+                    0.0,
+                ),
+            ),
         ];
         let cell = egui::vec2(260.0, 400.0);
         for (name, angle) in [("articulations-profil", 90.0_f32), ("articulations-trois-quarts", 40.0)] {
@@ -1059,7 +1191,10 @@ mod tests {
             let mut snapshot = crate::ui_snapshot::Snapshot::new(width, height);
             snapshot.set_background(None);
             let mut previews: Vec<Preview> = heroes.iter().map(|_| Preview::default()).collect();
-            let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))), ..Default::default() };
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width as f32, height as f32))),
+                ..Default::default()
+            };
             let mut output = ctx.run_ui(input, |root| {
                 egui::CentralPanel::default().frame(egui::Frame::NONE).show(root, |ui| {
                     for (row, (cfg, preview)) in heroes.iter().zip(previews.iter_mut()).enumerate() {
@@ -1069,8 +1204,23 @@ mod tests {
                             let min = egui::pos2(col as f32 * cell.x, row as f32 * cell.y);
                             let rect = egui::Rect::from_min_size(min, cell).shrink(4.0);
                             ui.painter().rect_filled(rect, 0.0, egui::Color32::from_rgb(58, 46, 36));
-                            draw_posed_figure(ui.painter(), rect, &texture, cfg, &figure, pose, angle.to_radians(), (-4.0_f32).to_radians());
-                            ui.painter().text(rect.left_top() + egui::vec2(8.0, 6.0), egui::Align2::LEFT_TOP, *label, egui::FontId::proportional(18.0), egui::Color32::from_rgb(235, 220, 190));
+                            draw_posed_figure(
+                                ui.painter(),
+                                rect,
+                                &texture,
+                                cfg,
+                                &figure,
+                                pose,
+                                angle.to_radians(),
+                                (-4.0_f32).to_radians(),
+                            );
+                            ui.painter().text(
+                                rect.left_top() + egui::vec2(8.0, 6.0),
+                                egui::Align2::LEFT_TOP,
+                                *label,
+                                egui::FontId::proportional(18.0),
+                                egui::Color32::from_rgb(235, 220, 190),
+                            );
                         }
                     }
                 });

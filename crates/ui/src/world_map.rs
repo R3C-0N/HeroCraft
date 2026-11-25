@@ -22,7 +22,7 @@ use glam::{DVec2, DVec3};
 use herocraft_common::PlanetFace;
 use herocraft_world::edits::FACE_BLOCKS;
 use herocraft_world::generator::{BiomeType, SEA_LEVEL_BLOCKS};
-use herocraft_world::structures::{Rect, CELL, REGIONS_PER_FACE, REGION_BLOCKS};
+use herocraft_world::structures::{CELL, REGION_BLOCKS, REGIONS_PER_FACE, Rect};
 use herocraft_world::{PlanetWorldGenerator, SettlementKind};
 use rayon::prelude::*;
 
@@ -161,14 +161,51 @@ fn face_index(face: PlanetFace) -> usize {
 /// Nom d'un établissement, tiré de la graine et de sa place : le même pour tous les joueurs
 pub fn place_name(seed: u64, face: PlanetFace, center: (i32, i32), kind: SettlementKind) -> String {
     const HEADS: [&str; 40] = [
-        "Bel", "Mont", "Roche", "Val", "Brume", "Haute", "Clair", "Fonte", "Gris", "Bois", "Lune", "Pierre", "Cendre", "Saule",
-        "Givre", "Ronce", "Orme", "Aube", "Corbe", "Fer", "Sombre", "Vieux", "Ambre", "Rive", "Chêne", "Loup", "Blanche", "Noire",
-        "Grand", "Beau", "Frêne", "Bruy", "Mousse", "Rouge", "Sable", "Houx", "Crête", "Vert", "Saint-Aure", "Hêtre",
+        "Bel",
+        "Mont",
+        "Roche",
+        "Val",
+        "Brume",
+        "Haute",
+        "Clair",
+        "Fonte",
+        "Gris",
+        "Bois",
+        "Lune",
+        "Pierre",
+        "Cendre",
+        "Saule",
+        "Givre",
+        "Ronce",
+        "Orme",
+        "Aube",
+        "Corbe",
+        "Fer",
+        "Sombre",
+        "Vieux",
+        "Ambre",
+        "Rive",
+        "Chêne",
+        "Loup",
+        "Blanche",
+        "Noire",
+        "Grand",
+        "Beau",
+        "Frêne",
+        "Bruy",
+        "Mousse",
+        "Rouge",
+        "Sable",
+        "Houx",
+        "Crête",
+        "Vert",
+        "Saint-Aure",
+        "Hêtre",
     ];
     const TAILS: [&str; 32] = [
-        "val", "mont", "fort", "lac", "bourg", "combe", "ville", "pierre", "roc", "mer", "lieu", "champ", "court", "pré", "fond",
-        "garde", "brune", "mare", "vent", "aigue", "castel", "ferme", "font", "lande", "moulin", "rive", "brande", "haie", "marche",
-        "bois", "sauge", "colline",
+        "val", "mont", "fort", "lac", "bourg", "combe", "ville", "pierre", "roc", "mer", "lieu", "champ", "court", "pré", "fond", "garde",
+        "brune", "mare", "vent", "aigue", "castel", "ferme", "font", "lande", "moulin", "rive", "brande", "haie", "marche", "bois",
+        "sauge", "colline",
     ];
     let mut h = seed ^ 0x9e37_79b9_7f4a_7c15;
     for v in [face_index(face) as u64, center.0 as u64, center.1 as u64] {
@@ -299,7 +336,8 @@ fn render_terrain(generator: &PlanetWorldGenerator, center: DVec3, bpp: f64) -> 
                     let mut built = false;
                     if bpp <= FOOTPRINT_MAX_BPP
                         && let Some(s) = generator.settlement_at(face, x, z)
-                        && s.occupies(x, z, 0) {
+                        && s.occupies(x, z, 0)
+                    {
                         color = footprint_color(s.kind);
                         built = true;
                     }
@@ -376,7 +414,9 @@ fn render_terrain(generator: &PlanetWorldGenerator, center: DVec3, bpp: f64) -> 
                         || (py + 1 < n && level(at(px, py + 1).0.max(SEA_LEVEL_BLOCKS)) != here);
                     if crosses {
                         c = mix(c, INK, 0.28);
-                    } else if matches!(biome, BiomeType::Forest | BiomeType::Jungle | BiomeType::Taiga) && column_hash(f, x, z).is_multiple_of(9) {
+                    } else if matches!(biome, BiomeType::Forest | BiomeType::Jungle | BiomeType::Taiga)
+                        && column_hash(f, x, z).is_multiple_of(9)
+                    {
                         // Forêts : pointillés d'encre verte
                         c = mix(c, [0.22, 0.32, 0.18], 0.45);
                     }
@@ -660,7 +700,14 @@ impl WorldMap {
                 let map_rect = egui::Rect::from_min_size(sheet.min + egui::vec2(SHEET_MARGIN * u, SHEET_HEADER * u), egui::vec2(u, u));
                 // En-tête : titre calligraphié, fermeture discrète, filet orné
                 let title_y = sheet.top() + SHEET_HEADER * u * 0.52;
-                ink_text(painter, egui::pos2(sheet.center().x, title_y), egui::Align2::CENTER_CENTER, "Carte du monde", crate::ui_skin::title_font((u * 0.052).clamp(18.0, 30.0)), ink);
+                ink_text(
+                    painter,
+                    egui::pos2(sheet.center().x, title_y),
+                    egui::Align2::CENTER_CENTER,
+                    "Carte du monde",
+                    crate::ui_skin::title_font((u * 0.052).clamp(18.0, 30.0)),
+                    ink,
+                );
                 let flourish_y = title_y + (u * 0.032).clamp(12.0, 20.0);
                 paint_flourish(painter, egui::pos2(sheet.center().x, flourish_y), (u * 0.22).clamp(90.0, 170.0), ink);
                 painter.text(
@@ -680,12 +727,19 @@ impl WorldMap {
                 let row_y = map_rect.bottom() + SHEET_FOOTER * u * 0.30;
                 self.scale_bar(painter, egui::pos2(map_rect.left() + 4.0, row_y), u, ink);
                 let recenter = painter.layout_no_wrap("⌖ Recentrer".to_string(), crate::ui_skin::strong_font(13.0), ink);
-                let r = egui::Rect::from_min_size(egui::pos2(map_rect.right() - recenter.size().x, row_y - recenter.size().y / 2.0), recenter.size()).expand(3.0);
+                let r = egui::Rect::from_min_size(
+                    egui::pos2(map_rect.right() - recenter.size().x, row_y - recenter.size().y / 2.0),
+                    recenter.size(),
+                )
+                .expand(3.0);
                 let button = ui.interact(r, egui::Id::unique("map_recenter"), egui::Sense::click());
                 let color = if button.hovered() { egui::Color32::from_rgb(150, 44, 32) } else { ink };
                 ink_text(painter, r.center(), egui::Align2::CENTER_CENTER, "⌖ Recentrer", crate::ui_skin::strong_font(13.0), color);
                 if button.hovered() {
-                    painter.line_segment([r.left_bottom() + egui::vec2(3.0, -2.0), r.right_bottom() - egui::vec2(3.0, 2.0)], egui::Stroke::new(1.0_f32, color));
+                    painter.line_segment(
+                        [r.left_bottom() + egui::vec2(3.0, -2.0), r.right_bottom() - egui::vec2(3.0, 2.0)],
+                        egui::Stroke::new(1.0_f32, color),
+                    );
                 }
                 if button.clicked() {
                     self.recenter();
@@ -738,15 +792,15 @@ impl WorldMap {
             }
         }
         if response.secondary_clicked()
-            && let Some(pos) = response.interact_pointer_pos() {
+            && let Some(pos) = response.interact_pointer_pos()
+        {
             let near_waypoint = self.waypoint.is_some_and(|w| self.to_screen(&frame, rect, w).distance(pos) < 12.0);
             self.waypoint = if near_waypoint { None } else { Some(self.dir_at_screen(&frame, rect, pos)) };
         }
         if response.hovered() {
             self.scroll += ui.input(|i| crate::theme::raw_scroll_delta(i).y);
-            let (plus, minus) = ui.input(|i| {
-                (i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals), i.key_pressed(egui::Key::Minus))
-            });
+            let (plus, minus) =
+                ui.input(|i| (i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals), i.key_pressed(egui::Key::Minus)));
             let mut step = 0_i32;
             if self.scroll >= 40.0 || plus {
                 step = -1;
@@ -801,7 +855,12 @@ impl WorldMap {
             }
             let line: Vec<egui::Pos2> = points.iter().map(|&d| self.to_screen(&frame, rect, d)).collect();
             let dash = road_width * 3.0;
-            painter.extend(egui::Shape::dashed_line(&line, egui::Stroke::new(road_width, egui::Color32::from_rgb(120, 70, 38)), dash, dash * 0.6));
+            painter.extend(egui::Shape::dashed_line(
+                &line,
+                egui::Stroke::new(road_width, egui::Color32::from_rgb(120, 70, 38)),
+                dash,
+                dash * 0.6,
+            ));
         }
 
         // Établissements, des ruines aux villes (les villes par-dessus)
@@ -867,7 +926,14 @@ impl WorldMap {
 
         // Chargement
         if self.loading {
-            ink_text(&painter, rect.left_bottom() + egui::vec2(24.0, -22.0), egui::Align2::LEFT_BOTTOM, "Relevé du terrain…", egui::FontId::proportional(12.5), ink);
+            ink_text(
+                &painter,
+                rect.left_bottom() + egui::vec2(24.0, -22.0),
+                egui::Align2::LEFT_BOTTOM,
+                "Relevé du terrain…",
+                egui::FontId::proportional(12.5),
+                ink,
+            );
         }
 
         // Fiche du lieu survolé, ou distance au point survolé
@@ -919,7 +985,13 @@ impl WorldMap {
             painter.rect_filled(cell, 0.0, if k % 2 == 0 { ink } else { egui::Color32::from_rgb(238, 226, 196) });
         }
         painter.rect_stroke(bar, 0.0, stroke, egui::StrokeKind::Middle);
-        painter.text(bar.right_center() + egui::vec2(8.0, 0.0), egui::Align2::LEFT_CENTER, format_distance(nice as f64), egui::FontId::proportional(12.5), ink);
+        painter.text(
+            bar.right_center() + egui::vec2(8.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            format_distance(nice as f64),
+            egui::FontId::proportional(12.5),
+            ink,
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -948,11 +1020,26 @@ impl WorldMap {
             let Some(x) = x_of(bearing) else { continue };
             if step % 3 == 0 {
                 let label = POINTS[step / 3];
-                let color = if label == "N" { egui::Color32::from_rgb(232, 86, 66) } else if label.len() == 1 { TEXT_SOFT } else { TEXT_DIM };
+                let color = if label == "N" {
+                    egui::Color32::from_rgb(232, 86, 66)
+                } else if label.len() == 1 {
+                    TEXT_SOFT
+                } else {
+                    TEXT_DIM
+                };
                 let size = if label.len() == 1 { 14.0 } else { 11.5 };
-                clip.text(egui::pos2(x, rect.center().y + 1.0), egui::Align2::CENTER_CENTER, label, crate::ui_skin::strong_font(size), color);
+                clip.text(
+                    egui::pos2(x, rect.center().y + 1.0),
+                    egui::Align2::CENTER_CENTER,
+                    label,
+                    crate::ui_skin::strong_font(size),
+                    color,
+                );
             } else {
-                clip.line_segment([egui::pos2(x, rect.bottom() - 7.0), egui::pos2(x, rect.bottom() - 2.0)], egui::Stroke::new(1.0_f32, TEXT_DIM));
+                clip.line_segment(
+                    [egui::pos2(x, rect.bottom() - 7.0), egui::pos2(x, rect.bottom() - 2.0)],
+                    egui::Stroke::new(1.0_f32, TEXT_DIM),
+                );
             }
         }
         // Lieux des environs, puis le repère, au-dessus
@@ -1015,11 +1102,7 @@ fn kind_label(kind: SettlementKind) -> &'static str {
 
 /// Distance lisible : en mètres (un bloc fait un mètre), en kilomètres au-delà de 1 000
 pub(crate) fn format_distance(blocks: f64) -> String {
-    if blocks >= 1000.0 {
-        format!("{:.1} km", blocks / 1000.0).replace('.', ",")
-    } else {
-        format!("{:.0} m", blocks)
-    }
+    if blocks >= 1000.0 { format!("{:.1} km", blocks / 1000.0).replace('.', ",") } else { format!("{:.0} m", blocks) }
 }
 
 /// Point cardinal le plus proche d'un cap
@@ -1172,7 +1255,11 @@ fn paint_flourish(painter: &egui::Painter, c: egui::Pos2, half: f32, ink: egui::
         painter.circle_filled(c + egui::vec2(side * (half + 10.0), 0.0), 1.4, ink);
     }
     let d = 4.0;
-    painter.add(egui::Shape::convex_polygon(vec![c + egui::vec2(0.0, -d), c + egui::vec2(d, 0.0), c + egui::vec2(0.0, d), c + egui::vec2(-d, 0.0)], ink, egui::Stroke::NONE));
+    painter.add(egui::Shape::convex_polygon(
+        vec![c + egui::vec2(0.0, -d), c + egui::vec2(d, 0.0), c + egui::vec2(0.0, d), c + egui::vec2(-d, 0.0)],
+        ink,
+        egui::Stroke::NONE,
+    ));
 }
 
 /// Feuille de l'écran de carte, en côtés de carte : marges, en-tête et pied de page autour d'elle
@@ -1296,7 +1383,13 @@ fn paint_compass_rose(painter: &egui::Painter, c: egui::Pos2, r: f32, ink: egui:
         painter.add(egui::Shape::convex_polygon(vec![c, left, tip], dark, egui::Stroke::NONE));
         painter.add(egui::Shape::convex_polygon(vec![c, tip, right], light, stroke));
     }
-    painter.text(point(0.0, r + 2.0), egui::Align2::CENTER_BOTTOM, "N", crate::ui_skin::title_font(13.0), egui::Color32::from_rgb(150, 44, 32));
+    painter.text(
+        point(0.0, r + 2.0),
+        egui::Align2::CENTER_BOTTOM,
+        "N",
+        crate::ui_skin::title_font(13.0),
+        egui::Color32::from_rgb(150, 44, 32),
+    );
 }
 
 #[cfg(test)]

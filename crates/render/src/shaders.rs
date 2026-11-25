@@ -49,22 +49,14 @@ fn compose_uncached(source: &str, file_path: &str) -> anyhow::Result<naga::Modul
         }
     }
     composer
-        .make_naga_module(NagaModuleDescriptor {
-            source,
-            file_path,
-            shader_type: ShaderType::Wgsl,
-            ..Default::default()
-        })
+        .make_naga_module(NagaModuleDescriptor { source, file_path, shader_type: ShaderType::Wgsl, ..Default::default() })
         .map_err(|e| anyhow::anyhow!(e.emit_to_string(&composer)))
 }
 
 /// Crée un module de shader wgpu à partir d'une source WGSL utilisant les imports partagés
 pub fn create_shader_module(device: &wgpu::Device, label: &str, source: &str, file_path: &str) -> wgpu::ShaderModule {
     let module = compose(source, file_path).unwrap_or_else(|e| panic!("Échec d'assemblage de {file_path} :\n{e}"));
-    device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some(label),
-        source: wgpu::ShaderSource::Naga(Cow::Owned(module)),
-    })
+    device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(label), source: wgpu::ShaderSource::Naga(Cow::Owned(module)) })
 }
 
 /// Cache des pipelines du pilote (Vulkan), et le fichier où il est gardé d'une partie à l'autre :
@@ -85,7 +77,11 @@ pub fn init_pipeline_cache(adapter_info: &wgpu::AdapterInfo, device: &wgpu::Devi
     // SAFETY: les données viennent de `PipelineCache::get_data` (fichier écrit par
     // `save_pipeline_cache`) ; un fichier d'un autre pilote ou abîmé est écarté (`fallback`)
     let cache = unsafe {
-        device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor { label: Some("HeroCraft Pipeline Cache"), data: data.as_deref(), fallback: true })
+        device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
+            label: Some("HeroCraft Pipeline Cache"),
+            data: data.as_deref(),
+            fallback: true,
+        })
     };
     log::info!("Cache des pipelines : {} ({})", path.display(), if data.is_some() { "repris" } else { "nouveau" });
     let _ = PIPELINE_CACHE.set((cache, path));

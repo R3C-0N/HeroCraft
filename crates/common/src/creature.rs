@@ -227,14 +227,21 @@ pub struct Collider {
 }
 
 /// Le corps d'un joueur, pour les collisions avec les entités
-pub const PLAYER_COLLIDER: Collider = Collider { shape: CollisionShape::Circle, half_width: 0.3, half_length: 0.3, height: 1.8, resistance: 0.5 };
+pub const PLAYER_COLLIDER: Collider =
+    Collider { shape: CollisionShape::Circle, half_width: 0.3, half_length: 0.3, height: 1.8, resistance: 0.5 };
 
 impl CreatureSpecies {
     /// Son corps solide, à l'échelle 1
     pub fn collider(&self) -> Collider {
         let c = self.collision.unwrap_or(CreatureCollision { shape: CollisionShape::Circle, size: None, height: None, resistance: 0.5 });
         let [half_width, half_length] = c.size.unwrap_or([self.body.half_width, self.body.half_length]);
-        Collider { shape: c.shape, half_width, half_length, height: c.height.unwrap_or(self.body.height), resistance: c.resistance.clamp(0.0, 1.0) }
+        Collider {
+            shape: c.shape,
+            half_width,
+            half_length,
+            height: c.height.unwrap_or(self.body.height),
+            resistance: c.resistance.clamp(0.0, 1.0),
+        }
     }
 }
 
@@ -799,7 +806,11 @@ impl CreatureRegistry {
     /// Comme `load_default`, sans rien écrire dans la console (une espèce invalide est ignorée)
     pub fn load_quiet() -> Self {
         let candidates = [PathBuf::from(CREATURES_DIR), Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(CREATURES_DIR)];
-        candidates.iter().find(|dir| dir.is_dir()).and_then(|dir| Self::load_dir(dir).ok()).map_or_else(Self::default, |(registry, _)| registry)
+        candidates
+            .iter()
+            .find(|dir| dir.is_dir())
+            .and_then(|dir| Self::load_dir(dir).ok())
+            .map_or_else(Self::default, |(registry, _)| registry)
     }
 
     /// Lit chaque fichier `*.json` du dossier. Renvoie les espèces valides et les erreurs des autres.
@@ -906,15 +917,23 @@ impl CreatureSpecies {
             return Err(CreatureError::Spawn);
         }
         if let Some(a) = &species.attack
-            && !(a.damage > 0.0 && a.cooldown > 0.0 && a.sight > 0.0 && a.reach >= 0.0 && a.chase_speed > 0.0 && a.pack_size >= 1) {
+            && !(a.damage > 0.0 && a.cooldown > 0.0 && a.sight > 0.0 && a.reach >= 0.0 && a.chase_speed > 0.0 && a.pack_size >= 1)
+        {
             return Err(CreatureError::Attack);
         }
         if let Some(b) = &species.breeding {
-            if b.food.is_empty() || b.taming_chance.is_nan() || b.taming_chance <= 0.0 || b.taming_chance > 1.0 || b.growth_minutes.is_nan() || b.growth_minutes <= 0.0 {
+            if b.food.is_empty()
+                || b.taming_chance.is_nan()
+                || b.taming_chance <= 0.0
+                || b.taming_chance > 1.0
+                || b.growth_minutes.is_nan()
+                || b.growth_minutes <= 0.0
+            {
                 return Err(CreatureError::Breeding);
             }
             if let Some(Laying { minutes: [min, max], .. }) = b.lays
-                && !(min > 0.0 && max >= min) {
+                && !(min > 0.0 && max >= min)
+            {
                 return Err(CreatureError::Laying);
             }
         }
@@ -923,10 +942,17 @@ impl CreatureSpecies {
                 return Err(CreatureError::AnimationCycle(name.clone()));
             }
             if let Some(PauseRule { poids, duree: [min, max] }) = animation.pause
-                && !(poids >= 0.0 && min > 0.0 && max >= min) {
+                && !(poids >= 0.0 && min > 0.0 && max >= min)
+            {
                 return Err(CreatureError::AnimationPause(name.clone()));
             }
-            let values = animation.os.values().flat_map(|m| m.rotation.into_iter().chain(m.rotation_fixe).chain(m.translation).chain(m.translation_fixe).chain([m.phase, m.frequence, m.decalage]));
+            let values = animation.os.values().flat_map(|m| {
+                m.rotation.into_iter().chain(m.rotation_fixe).chain(m.translation).chain(m.translation_fixe).chain([
+                    m.phase,
+                    m.frequence,
+                    m.decalage,
+                ])
+            });
             if values.into_iter().any(|v| !v.is_finite()) {
                 return Err(CreatureError::AnimationBone(name.clone()));
             }
@@ -1045,10 +1071,13 @@ mod tests {
         let unknown = ok.replace(r#""walk_speed": 1,"#, r#""walk_speed": 1, "temperament": "farouche","#);
         assert!(CreatureSpecies::parse("cube", &unknown).unwrap_err().to_string().contains("farouche"));
 
-        let animated = ok.replace(r#""texture": "cube.png""#, r#""texture": "cube.png", "animations": {
+        let animated = ok.replace(
+            r#""texture": "cube.png""#,
+            r#""texture": "cube.png", "animations": {
             "marche": { "foulee": 0.5, "os": { "patte*": { "rotation": [20, 0, 0], "phase": 0.5, "decalage": 0.1 } } },
             "sommeil": { "cycle": 4, "pause": { "poids": 1, "duree": [10, 20] } },
-            "broute": { "pause": { "poids": 2, "duree": [3, 6] } } }"#);
+            "broute": { "pause": { "poids": 2, "duree": [3, 6] } } }"#,
+        );
         let cube = CreatureSpecies::parse("cube", &animated).unwrap();
         let pauses: Vec<&str> = cube.pauses().map(|(name, _)| name).collect();
         assert_eq!(pauses, ["broute", "sommeil"]);
@@ -1115,8 +1144,16 @@ pub enum ProjectileEvent {
         velocity: Vec3,
     },
     /// Il rebondit, est dévié ou corrige sa course vers sa cible
-    Turn { id: crate::ProjectileId, at: Vec3, velocity: Vec3 },
-    End { id: crate::ProjectileId, at: Vec3, reason: ProjectileEnd },
+    Turn {
+        id: crate::ProjectileId,
+        at: Vec3,
+        velocity: Vec3,
+    },
+    End {
+        id: crate::ProjectileId,
+        at: Vec3,
+        reason: ProjectileEnd,
+    },
 }
 
 impl ProjectileEvent {

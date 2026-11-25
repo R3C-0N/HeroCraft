@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use herocraft_common::hero::{atlas, paint, Appearance, SHEET_SIZE};
+use herocraft_common::hero::{Appearance, SHEET_SIZE, atlas, paint};
 
 fn dossier() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/legende")

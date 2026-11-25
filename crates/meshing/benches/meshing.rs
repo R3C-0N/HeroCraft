@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use herocraft_common::PlanetFace;
 use herocraft_meshing::voxel_mesh::VoxelMeshBuilder;
 use herocraft_world::generator::PlanetWorldGenerator;

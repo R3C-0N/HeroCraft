@@ -46,14 +46,8 @@ pub enum PlanetFace {
 }
 
 impl PlanetFace {
-    pub const ALL: [PlanetFace; 6] = [
-        PlanetFace::PosX,
-        PlanetFace::NegX,
-        PlanetFace::PosY,
-        PlanetFace::NegY,
-        PlanetFace::PosZ,
-        PlanetFace::NegZ,
-    ];
+    pub const ALL: [PlanetFace; 6] =
+        [PlanetFace::PosX, PlanetFace::NegX, PlanetFace::PosY, PlanetFace::NegY, PlanetFace::PosZ, PlanetFace::NegZ];
 
     /// Projette des coordonnées 2D (u, v) normalisées dans [-1.0, 1.0] sur la face
     /// vers une direction unitaire 3D sur la sphère.
@@ -84,23 +78,11 @@ impl PlanetFace {
         let abs_z = dir.z.abs();
 
         let (face, u_tan, v_tan) = if abs_x >= abs_y && abs_x >= abs_z {
-            if dir.x > 0.0 {
-                (PlanetFace::PosX, -dir.z / dir.x, -dir.y / dir.x)
-            } else {
-                (PlanetFace::NegX, -dir.z / dir.x, dir.y / dir.x)
-            }
+            if dir.x > 0.0 { (PlanetFace::PosX, -dir.z / dir.x, -dir.y / dir.x) } else { (PlanetFace::NegX, -dir.z / dir.x, dir.y / dir.x) }
         } else if abs_y >= abs_x && abs_y >= abs_z {
-            if dir.y > 0.0 {
-                (PlanetFace::PosY, dir.x / dir.y, dir.z / dir.y)
-            } else {
-                (PlanetFace::NegY, -dir.x / dir.y, dir.z / dir.y)
-            }
+            if dir.y > 0.0 { (PlanetFace::PosY, dir.x / dir.y, dir.z / dir.y) } else { (PlanetFace::NegY, -dir.x / dir.y, dir.z / dir.y) }
         } else {
-            if dir.z > 0.0 {
-                (PlanetFace::PosZ, dir.x / dir.z, -dir.y / dir.z)
-            } else {
-                (PlanetFace::NegZ, dir.x / dir.z, dir.y / dir.z)
-            }
+            if dir.z > 0.0 { (PlanetFace::PosZ, dir.x / dir.z, -dir.y / dir.z) } else { (PlanetFace::NegZ, dir.x / dir.z, dir.y / dir.z) }
         };
 
         let inv_pi_4 = 4.0 / std::f64::consts::PI;
@@ -114,27 +96,39 @@ impl PlanetFace {
     pub fn project_to_face_uv(&self, dir: DVec3) -> Option<(f64, f64)> {
         let (u_tan, v_tan) = match self {
             PlanetFace::PosX => {
-                if dir.x <= 1e-6 { return None; }
+                if dir.x <= 1e-6 {
+                    return None;
+                }
                 (-dir.z / dir.x, -dir.y / dir.x)
             }
             PlanetFace::NegX => {
-                if dir.x >= -1e-6 { return None; }
+                if dir.x >= -1e-6 {
+                    return None;
+                }
                 (-dir.z / dir.x, dir.y / dir.x)
             }
             PlanetFace::PosY => {
-                if dir.y <= 1e-6 { return None; }
+                if dir.y <= 1e-6 {
+                    return None;
+                }
                 (dir.x / dir.y, dir.z / dir.y)
             }
             PlanetFace::NegY => {
-                if dir.y >= -1e-6 { return None; }
+                if dir.y >= -1e-6 {
+                    return None;
+                }
                 (-dir.x / dir.y, dir.z / dir.y)
             }
             PlanetFace::PosZ => {
-                if dir.z <= 1e-6 { return None; }
+                if dir.z <= 1e-6 {
+                    return None;
+                }
                 (dir.x / dir.z, -dir.y / dir.z)
             }
             PlanetFace::NegZ => {
-                if dir.z >= -1e-6 { return None; }
+                if dir.z >= -1e-6 {
+                    return None;
+                }
                 (dir.x / dir.z, dir.y / dir.z)
             }
         };
@@ -157,12 +151,7 @@ pub struct PlanetChunkCoord {
 
 impl PlanetChunkCoord {
     pub fn new(face: PlanetFace, x: i32, y: i32, altitude_layer: i32) -> Self {
-        Self {
-            face,
-            x,
-            y,
-            altitude_layer,
-        }
+        Self { face, x, y, altitude_layer }
     }
 }
 
@@ -186,9 +175,7 @@ impl LocalVoxelCoord {
 
     #[inline(always)]
     pub fn to_linear_index(&self) -> usize {
-        (self.x as usize)
-            + (self.z as usize) * Self::CHUNK_SIZE
-            + (self.y as usize) * Self::CHUNK_SIZE * Self::CHUNK_SIZE
+        (self.x as usize) + (self.z as usize) * Self::CHUNK_SIZE + (self.y as usize) * Self::CHUNK_SIZE * Self::CHUNK_SIZE
     }
 
     #[inline(always)]
@@ -197,11 +184,7 @@ impl LocalVoxelCoord {
         let rem = idx % (Self::CHUNK_SIZE * Self::CHUNK_SIZE);
         let z = rem / Self::CHUNK_SIZE;
         let x = rem % Self::CHUNK_SIZE;
-        Self {
-            x: x as u8,
-            y: y as u8,
-            z: z as u8,
-        }
+        Self { x: x as u8, y: y as u8, z: z as u8 }
     }
 }
 
